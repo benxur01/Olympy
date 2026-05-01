@@ -1,0 +1,73 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(__dirname, '..');
+const sourceHtmlPath = path.join(root, 'Olympy.html');
+const srcDir = path.join(root, 'src');
+const entryPath = path.join(srcDir, 'olympy-entry.jsx');
+const indexPath = path.join(root, 'index.html');
+
+const sourceHtml = fs.readFileSync(sourceHtmlPath, 'utf8');
+const localScriptPattern = /<script\s+type="text\/babel"\s+src="([^"]+\.jsx)"\s*><\/script>/g;
+const sourceFiles = [...sourceHtml.matchAll(localScriptPattern)].map(match => match[1]);
+
+if (!sourceFiles.length) {
+  throw new Error('No local JSX scripts found in Olympy.html');
+}
+
+fs.mkdirSync(srcDir, { recursive: true });
+
+const collectTopLevelNames = (source) => {
+  const names = new Set();
+  const patterns = [
+    /^const\s+([A-Za-z_$][\w$]*)\s*=/gm,
+    /^let\s+([A-Za-z_$][\w$]*)\s*=/gm,
+    /^var\s+([A-Za-z_$][\w$]*)\s*=/gm,
+    /^function\s+([A-Za-z_$][\w$]*)\s*\(/gm,
+    /^class\s+([A-Za-z_$][\w$]*)\s*/gm,
+  ];
+
+  for (const pattern of patterns) {
+    for (const match of source.matchAll(pattern)) {
+      names.add(match[1]);
+    }
+  }
+
+  return [...names];
+};
+
+let entry = `import * as React from 'react';\n`;
+entry += `import * as ReactDOM from 'react-dom/client';\n\n`;
+entry += `import { OlympyApi } from './services/api.js';\n\n`;
+entry += `globalThis.React = React;\n`;
+entry += `globalThis.ReactDOM = ReactDOM;\n\n`;
+entry += `globalThis.OlympyApi = OlympyApi;\n\n`;
+
+for (const file of sourceFiles) {
+  const filePath = path.join(root, file);
+  const source = fs.readFileSync(filePath, 'utf8');
+  const names = collectTopLevelNames(source);
+
+  entry += `// ${file}\n{\n${source}\n`;
+  if (names.length) {
+    entry += `\nObject.assign(globalThis, { ${names.join(', ')} });\n`;
+  }
+  entry += `}\n`;
+  for (const name of names) {
+    entry += `var ${name} = globalThis.${name};\n`;
+  }
+  entry += `\n`;
+}
+
+fs.writeFileSync(entryPath, entry);
+
+const indexHtml = sourceHtml
+  .replace(/\n\s*<script\s+src="https:\/\/unpkg\.com\/react@[^"]+"[^>]*><\/script>/g, '')
+  .replace(/\n\s*<script\s+src="https:\/\/unpkg\.com\/react-dom@[^"]+"[^>]*><\/script>/g, '')
+  .replace(/\n\s*<script\s+src="https:\/\/unpkg\.com\/@babel\/standalone@[^"]+"[^>]*><\/script>/g, '')
+  .replace(/\n\s*<script\s+type="text\/babel"\s+src="[^"]+\.jsx"\s*><\/script>/g, '')
+  .replace('</body>', '  <script type="module" src="/src/olympy-entry.jsx"></script>\n</body>');
+
+fs.writeFileSync(indexPath, indexHtml);

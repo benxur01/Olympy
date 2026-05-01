@@ -1,0 +1,88 @@
+from django.shortcuts import get_object_or_404
+from rest_framework import status as http_status
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from centers.models import CenterMembership
+
+from .models import Olympiad
+from .serializers import OlympiadSerializer
+
+
+def _user_can_manage_center(user, center):
+    """True if user is owner of the center, an approved manager, or admin."""
+    if user.is_platform_admin:
+        return True
+    if center.owner_id == user.id:
+        return (
+            center.status == center.STATUS_APPROVED
+            and CenterMembership.objects.filter(
+                user=user,
+                center=center,
+                role=CenterMembership.ROLE_OWNER,
+                status=CenterMembership.STATUS_APPROVED,
+            ).exists()
+        )
+    return CenterMembership.objects.filter(
+        user=user, center=center,
+        role=CenterMembership.ROLE_MANAGER,
+        status=CenterMembership.STATUS_APPROVED,
+    ).exists()
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def olympiads_list_create(request):
+    """GET /api/olympiads/  — visible olympiads (filter to user's centers).
+    POST /api/olympiads/    — create draft olympiad (manager/owner/admin).
+    """
+    if request.method == 'GET':
+        if request.user.is_platform_admin:
+            qs = Olympiad.objects.all()
+        else:
+            # Olympiads at any center the user has an approved membership at.
+            center_ids = list(CenterMembership.objects.filter(
+                user=request.user, status=CenterMembership.STATUS_APPROVED,
+            ).values_list('center_id', flat=True))
+            qs = Olympiad.objects.filter(center_id__in=center_ids)
+        return Response(OlympiadSerializer(qs, many=True).data)
+
+    serializer = OlympiadSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    center = serializer.validated_data['center']
+    if not _user_can_manage_center(request.user, center):
+        return Response({'detail': "Sizda bu markaz uchun olimpiada yaratish huquqi yo'q"},
+                        status=http_status.HTTP_403_FORBIDDEN)
+    olympiad = serializer.save(
+        created_by=request.user,
+        status=Olympiad.STATUS_DRAFT,
+    )
+    return Response(OlympiadSerializer(olympiad).data,
+                    status=http_status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def publish_olympiad(request, olympiad_id):
+    """POST /api/olympiads/{id}/publish/ — flip status to active and notify."""
+    olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
+    if not _user_can_manage_center(request.user, olympiad.center):
+        return Response({'detail': 'Forbidden'},
+                        status=http_status.HTTP_403_FORBIDDEN)
+    if not olympiad.questions.exists():
+        return Response({'detail': "Avval savollar tayinlang"},
+                        status=http_status.HTTP_400_BAD_REQUEST)
+    olympiad.status = Olympiad.STATUS_ACTIVE
+    olympiad.save(update_fields=['status'])
+
+    # Lazy import: avoid circular dependency.
+    from notifications.services import send_olympiad_published_notification
+    approved_students = CenterMembership.objects.filter(
+        center=olympiad.center,
+        role=CenterMembership.ROLE_STUDENT,
+        status=CenterMembership.STATUS_APPROVED,
+    ).select_related('user')
+    for m in approved_students:
+        send_olympiad_published_notification(m.user, olympiad, olympiad.center)
+    return Response(OlympiadSerializer(olympiad).data)
