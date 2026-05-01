@@ -1,0 +1,18 @@
+{
+  "name": "olympy-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "node scripts/generate-vite-entry.mjs",
+    "dev": "vite --host 127.0.0.1",
+    "prebuild": "node scripts/generate-vite-entry.mjs",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "vite": "^7.0.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  }
+}

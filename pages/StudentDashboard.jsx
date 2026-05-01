@@ -1,0 +1,445 @@
+// pages/StudentDashboard.jsx
+
+const MOCK_OLYMPIADS = [
+  { id: 1, title: 'Matematika Olimpiadasi', subject: 'Matematika', date: '2026-05-02', time: '10:00', duration: 60, questions: 30, status: 'Faol', participants: 124, maxScore: 100 },
+  { id: 2, title: 'Ingliz tili Bellashuvi', subject: 'Ingliz tili', date: '2026-05-05', time: '14:00', duration: 45, questions: 25, status: 'Faol', participants: 89, maxScore: 100 },
+  { id: 3, title: 'Informatika Olimpiadasi', subject: 'Informatika', date: '2026-04-28', time: '09:00', duration: 90, questions: 40, status: 'Tugagan', participants: 201, maxScore: 100 },
+  { id: 4, title: 'Fizika Sinovlari', subject: 'Fizika', date: '2026-05-10', time: '11:00', duration: 60, questions: 30, status: 'Faol', participants: 67, maxScore: 100 },
+];
+
+const MOCK_RESULTS = [
+  { id: 1, olympiad: 'Informatika Olimpiadasi', subject: 'Informatika', score: 87, total: 100, rank: 3, date: '2026-04-28', correct: 35, wrong: 5 },
+  { id: 2, olympiad: 'Biologiya Testi', subject: 'Biologiya', score: 72, total: 100, rank: 12, date: '2026-04-15', correct: 29, wrong: 11 },
+  { id: 3, olympiad: 'Tarix Bellashuvi', subject: 'Tarix', score: 91, total: 100, rank: 1, date: '2026-04-05', correct: 38, wrong: 2 },
+];
+
+// MOCK_CENTERS kept for backward-compat (other pages may import it). Live data comes from the store.
+const MOCK_CENTERS = [
+  { id: 1, name: 'ProSkill Academy', city: 'Toshkent', students: 234, subjects: ['Matematika', 'Fizika', 'Informatika'], rating: 4.8, olympiads: 12 },
+  { id: 2, name: 'Brilliant Education', city: 'Samarqand', students: 187, subjects: ['Ingliz tili', 'Ona tili'], rating: 4.6, olympiads: 8 },
+  { id: 3, name: 'Leader Academy', city: 'Toshkent', students: 312, subjects: ['Matematika', 'Kimyo', 'Biologiya'], rating: 4.9, olympiads: 18 },
+  { id: 4, name: 'Najot Ta\'lim', city: 'Buxoro', students: 145, subjects: ['Informatika', 'Fizika'], rating: 4.7, olympiads: 7 },
+  { id: 5, name: 'IT Park Academy', city: 'Toshkent', students: 278, subjects: ['Informatika', 'Matematika'], rating: 4.8, olympiads: 14 },
+];
+
+const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
+  const store = useStore();
+  const [page, setPage] = React.useState('home');
+  const [centerModal, setCenterModal] = React.useState(null);
+  const [centerSearch, setCenterSearch] = React.useState('');
+  const [cityFilter, setCityFilter] = React.useState('');
+  const [activeOlympiad, setActiveOlympiad] = React.useState(null);
+  const [joinModal, setJoinModal] = React.useState(false);
+  const [mobileMenu, setMobileMenu] = React.useState(false);
+  const [olympiadFilter, setOlympiadFilter] = React.useState('Barchasi');
+
+  // Live student-role state from store
+  const studentRole = user.roles?.student;
+  const studentCenterId = studentRole?.centerId || null;
+  const studentStatus = studentRole?.status || null;
+  const isCenterApproved = studentStatus === 'approved' && !!studentCenterId;
+  const myCenter = studentCenterId ? store.centers.find(c => c.id === studentCenterId) : null;
+
+  // Map of centerId → join-request status for the current user
+  const myRequestByCenter = {};
+  store.requests.filter(r => r.userId === user.id && r.type === 'student').forEach(r => {
+    myRequestByCenter[r.centerId] = r.status;
+  });
+
+  // Olympiads visible to this student — only their approved center's olympiads
+  const visibleOlympiads = isCenterApproved
+    ? store.olympiads.filter(o => o.centerId === studentCenterId)
+    : [];
+
+  // Student's attempts and derived results
+  const myAttempts = store.attempts.filter(a => a.userId === user.id).slice().sort((a,b) => (b.submittedAt||'').localeCompare(a.submittedAt||''));
+  const myResults = myAttempts.map(a => {
+    const o = store.olympiads.find(x => x.id === a.olympiadId);
+    return {
+      id: a.id,
+      attempt: a,
+      olympiad: o?.title || 'Olimpiada',
+      subject: o?.subject || '—',
+      score: a.score,
+      total: a.totalQuestions ? 100 : 100,
+      rank: a.rank,
+      date: (a.submittedAt || '').slice(0,10),
+      correct: a.correctCount,
+      wrong: a.wrongCount,
+    };
+  });
+
+  const navItems = [
+    { key: 'home', icon: 'home', label: 'Asosiy' },
+    { key: 'olympiads', icon: 'trophy', label: 'Olimpiadalar' },
+    { key: 'results', icon: 'chart', label: 'Natijalar' },
+    { key: 'centers', icon: 'building', label: 'O\'quv markazlar' },
+    { key: 'leaderboard', icon: 'star', label: 'Reyting' },
+    { key: 'profile', icon: 'eye', label: 'Profil' },
+    { divider: true, key: 'd1' },
+    { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
+  ];
+
+  const hasCenter = isCenterApproved;
+
+  const sendRequest = (center) => {
+    // Reuse pending request if any, otherwise create one
+    const existing = store.requests.find(r => r.userId === user.id && r.type === 'student' && r.centerId === center.id);
+    if (!existing) {
+      OlympyStore.createRequest({ type: 'student', userId: user.id, centerId: center.id });
+      OlympyStore.setRole(user.id, 'student', { status: 'pending', centerId: center.id });
+    }
+    setCenterModal(null);
+    setJoinModal(true);
+    setTimeout(() => setJoinModal(false), 3000);
+  };
+
+  const renderHome = () => (
+    <div className="p-6 space-y-6 animate-in">
+      {/* Welcome */}
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <h2 className="text-2xl font-black text-white">Salom, {user.name.split(' ')[0]}! 👋</h2>
+          <p className="text-white/40 text-sm mt-1">{new Date().toLocaleDateString('uz-UZ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+        </div>
+        {!hasCenter && (
+          <div className="glass rounded-2xl p-4 border border-indigo-500/20 max-w-xs">
+            <div className="text-xs text-indigo-300 font-medium mb-1">💡 Maslahat</div>
+            <p className="text-xs text-white/50 mb-3">Yaqinda o'quv markazlarda olimpiadalar bo'lib o'tadi</p>
+            <button onClick={() => setPage('centers')} className="btn-primary text-xs px-4 py-2 rounded-xl font-semibold">O'quv markaz topish</button>
+          </div>
+        )}
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Umumiy ball" value="87.3" sub="↑ +5.2" icon={<Icon name="chart" size={20} />} color="from-indigo-500 to-purple-600" glow="glow-blue" />
+        <StatCard label="Reytingdagi o'rn" value="#3" sub="Top 5%" icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />
+        <StatCard label="Olimpiadalar" value={myResults.length} icon={<Icon name="bolt" size={20} />} color="from-cyan-500 to-blue-600" />
+        <StatCard label="Sertifikatlar" value="2" icon={<Icon name="award" size={20} />} color="from-emerald-500 to-teal-600" />
+      </div>
+
+      {/* Center status */}
+      {studentStatus && studentCenterId && myCenter && (
+        <div className={`glass rounded-2xl p-5 border ${studentStatus === 'approved' ? 'border-indigo-500/10' : studentStatus === 'rejected' ? 'border-rose-500/20' : 'border-amber-500/20'}`}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-sm font-semibold text-white">O'quv markaz holati</div>
+            <Badge status={statusLabel(studentStatus)} />
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center text-white font-bold">{myCenter.name[0]}</div>
+            <div className="flex-1">
+              <div className="font-semibold text-white">{myCenter.name}</div>
+              <div className="text-xs text-white/40">{myCenter.city}{user.joined ? ` · A'zo bo'lgan: ${user.joined}` : ''}</div>
+            </div>
+          </div>
+          {studentStatus === 'pending' && (
+            <div className="mt-3 text-xs text-amber-300 flex items-center gap-1.5">
+              <Icon name="info" size={12} /> Manager tasdig'i kutilmoqda — olimpiadalarda qatnasha olmaysiz
+            </div>
+          )}
+          {studentStatus === 'rejected' && (
+            <div className="mt-3 text-xs text-rose-300 flex items-center gap-1.5">
+              <Icon name="info" size={12} /> Ariza rad etildi. Boshqa markaz tanlashingiz mumkin.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Today's olympiads */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-white">Bugungi olimpiadalar</h3>
+          <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400 hover:text-indigo-300">Barchasini ko'rish →</button>
+        </div>
+        {!isCenterApproved && (
+          <div className="glass rounded-2xl p-4 border border-amber-500/20 mb-4 text-sm text-amber-300 flex items-center gap-2">
+            <Icon name="info" size={14} /> Olimpiadaga qatnashish uchun o'quv markaz tasdig'i kerak.
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {visibleOlympiads.filter(o => o.status === 'Active').slice(0, 2).map(o => (
+            <OlympiadCard key={o.id} olympiad={o} locked={!isCenterApproved}
+              onStart={() => { if (!isCenterApproved) return; setActiveOlympiad(o); onNavigate('test', o); }} />
+          ))}
+          {visibleOlympiads.filter(o => o.status === 'Active').length === 0 && isCenterApproved && (
+            <div className="md:col-span-2 text-center text-white/40 text-sm py-6 glass rounded-2xl">Bugungi faol olimpiadalar yo'q</div>
+          )}
+        </div>
+      </div>
+
+      {/* Subject performance */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="glass rounded-2xl p-5">
+          <h3 className="font-bold text-white mb-4">Fanlar bo'yicha natijalar</h3>
+          <div className="space-y-3">
+            {[
+              { subject: 'Informatika', score: 87, color: '#6366f1' },
+              { subject: 'Tarix', score: 91, color: '#22d3ee' },
+              { subject: 'Biologiya', score: 72, color: '#a855f7' },
+              { subject: 'Matematika', score: 78, color: '#f59e0b' },
+            ].map((s, i) => (
+              <div key={i}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm text-white/70">{s.subject}</span>
+                  <span className="text-sm font-bold text-white">{s.score}%</span>
+                </div>
+                <div className="progress-bar h-2">
+                  <div className="progress-fill" style={{ width: `${s.score}%`, background: s.color }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="glass rounded-2xl p-5">
+          <h3 className="font-bold text-white mb-4">So'nggi natijalar</h3>
+          <div className="space-y-3">
+            {myResults.length === 0 && <div className="text-sm text-white/40">Hali olimpiada topshirmagansiz.</div>}
+            {myResults.slice(0, 5).map(r => (
+              <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+                onClick={() => onNavigate('results', { ...r.attempt, olympiad: store.olympiads.find(o => o.id === r.attempt.olympiadId) })}>
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black ${r.rank === 1 ? 'bg-amber-500/20 text-amber-400' : r.rank <= 3 ? 'bg-indigo-500/20 text-indigo-400' : 'glass text-white/40'}`}>
+                  #{r.rank || '—'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-white truncate">{r.olympiad}</div>
+                  <div className="text-xs text-white/40">{r.date}</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-bold text-white">{r.score}/100</div>
+                  <div className="text-xs text-emerald-400">{r.correct} to'g'ri</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderOlympiads = () => (
+    <div className="p-6 space-y-6 animate-in">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h2 className="text-xl font-black text-white">Olimpiadalar</h2>
+        <div className="flex gap-2">
+          {['Barchasi', 'Faol', 'Tugagan'].map(f => (
+            <button key={f} onClick={() => setOlympiadFilter(f)}
+              className={`text-xs px-3 py-1.5 rounded-xl glass border transition-all ${olympiadFilter === f ? 'border-indigo-500/60 text-white' : 'border-white/10 text-white/60 hover:text-white hover:border-indigo-500/40'}`}>{f}</button>
+          ))}
+        </div>
+      </div>
+      {!isCenterApproved && (
+        <div className="glass rounded-2xl p-4 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
+          <Icon name="info" size={14} /> Olimpiadaga qatnashish uchun o'quv markaz tasdig'i kerak.
+        </div>
+      )}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {(() => {
+          const filteredOlympiads = visibleOlympiads.filter(o => {
+            if (olympiadFilter === 'Faol') return o.status === 'Active';
+            if (olympiadFilter === 'Tugagan') return o.status === 'Finished';
+            return true;
+          });
+          if (filteredOlympiads.length === 0 && isCenterApproved) {
+            return <div className="md:col-span-2 glass rounded-2xl p-8 text-center text-white/40 text-sm">{olympiadFilter === 'Barchasi' ? "Bu markaz uchun olimpiadalar mavjud emas" : `${olympiadFilter} olimpiadalar topilmadi`}</div>;
+          }
+          return filteredOlympiads.map(o => (
+            <OlympiadCard key={o.id} olympiad={o} locked={!isCenterApproved}
+              onStart={() => { if (!isCenterApproved) return; onNavigate('test', o); }} />
+          ));
+        })()}
+      </div>
+    </div>
+  );
+
+  const renderResults = () => {
+    const avg = myResults.length > 0 ? Math.round(myResults.reduce((sum, r) => sum + (r.score || 0), 0) / myResults.length * 10) / 10 : 0;
+    const bestRank = myResults.length > 0 ? Math.min(...myResults.map(r => r.rank || 999)) : 0;
+    return (
+      <div className="p-6 space-y-6 animate-in">
+        <h2 className="text-xl font-black text-white">Mening natijalarim</h2>
+        <div className="grid grid-cols-3 gap-4">
+          <StatCard label="O'rtacha ball" value={avg || '—'} icon={<Icon name="chart" size={18} />} color="from-indigo-500 to-purple-600" />
+          <StatCard label="Eng yaxshi o'rin" value={bestRank ? `#${bestRank}` : '—'} icon={<Icon name="trophy" size={18} />} color="from-amber-500 to-orange-500" />
+          <StatCard label="Jami olimpiada" value={myResults.length} icon={<Icon name="bolt" size={18} />} color="from-cyan-500 to-blue-600" />
+        </div>
+        <div className="glass rounded-2xl overflow-hidden">
+          <div className="p-4 border-b border-white/5 font-semibold text-white text-sm">Natijalar tarixi</div>
+          {myResults.length === 0 && (
+            <div className="px-4 py-10 text-center text-white/40 text-sm">Hali topshirmagansiz. Faol olimpiadalardan birini tanlab boshlang.</div>
+          )}
+          {myResults.map(r => (
+            <div key={r.id} className="table-row flex items-center gap-4 px-4 py-4">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0 ${r.rank === 1 ? 'bg-amber-500/20 text-amber-400' : 'glass text-white/40'}`}>#{r.rank || '—'}</div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold text-white">{r.olympiad}</div>
+                <div className="flex items-center gap-2 mt-0.5"><SubjectBadge subject={r.subject} /><span className="text-xs text-white/30">{r.date}</span></div>
+              </div>
+              <div className="text-right">
+                <div className="text-lg font-black text-white">{r.score}<span className="text-white/30 text-sm">/100</span></div>
+                <div className="text-xs text-white/40">{r.correct} to'g'ri · {r.wrong} noto'g'ri</div>
+              </div>
+              <button onClick={() => onNavigate('results', { ...r.attempt, olympiad: store.olympiads.find(o => o.id === r.attempt.olympiadId) })} className="btn-ghost text-xs px-3 py-1.5 rounded-xl">Ko'rish</button>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCenters = () => {
+    const liveCenters = store.centers.filter(c => c.status === 'approved');
+    const cities = [...new Set(liveCenters.map(c => c.city))];
+    const filtered = liveCenters.filter(c =>
+      c.name.toLowerCase().includes(centerSearch.toLowerCase()) &&
+      (!cityFilter || c.city === cityFilter)
+    );
+    return (
+      <div className="p-6 space-y-6 animate-in">
+        <h2 className="text-xl font-black text-white">O'quv markazlar</h2>
+        <div className="flex flex-wrap gap-3">
+          <div className="relative flex-1 min-w-48">
+            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+            <input className="input-field pl-10 py-2.5" placeholder="Markaz qidirish..." value={centerSearch}
+              onChange={e => setCenterSearch(e.target.value)} />
+          </div>
+          <select className="input-field py-2.5 w-auto" value={cityFilter} onChange={e => setCityFilter(e.target.value)}>
+            <option value="">Barcha shaharlar</option>
+            {cities.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {filtered.map(c => {
+            const st = myRequestByCenter[c.id];
+            const isMine = studentCenterId === c.id;
+            return (
+              <div key={c.id} className="glass rounded-2xl p-5 card-hover">
+                <div className="flex items-start gap-4 mb-4">
+                  <div className="w-12 h-12 gradient-bg rounded-2xl flex items-center justify-center text-white font-black text-lg flex-shrink-0">{c.name[0]}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-bold text-white">{c.name}</div>
+                    <div className="text-xs text-white/40">{c.city}</div>
+                    <div className="flex items-center gap-1 mt-1"><span className="text-amber-400 text-xs">★</span><span className="text-xs text-white/60">{c.rating || '—'}</span></div>
+                  </div>
+                </div>
+                <div className="flex gap-4 mb-4 text-center">
+                  <div className="flex-1 glass rounded-xl py-2"><div className="text-sm font-bold text-white">{c.students}</div><div className="text-xs text-white/40">O'quvchi</div></div>
+                  <div className="flex-1 glass rounded-xl py-2"><div className="text-sm font-bold text-white">{c.olympiads}</div><div className="text-xs text-white/40">Olimpiada</div></div>
+                </div>
+                <div className="flex flex-wrap gap-1 mb-4">
+                  {(c.subjects || []).slice(0, 3).map(s => <SubjectBadge key={s} subject={s} />)}
+                </div>
+                {st === 'pending' ? (
+                  <div className="w-full text-center py-2 rounded-xl badge-pending text-sm font-medium">⏳ Kutilmoqda</div>
+                ) : st === 'approved' || isMine ? (
+                  <div className="w-full text-center py-2 rounded-xl badge-approved text-sm font-medium">✓ Tasdiqlandi</div>
+                ) : st === 'rejected' ? (
+                  <div className="w-full text-center py-2 rounded-xl badge-rejected text-sm font-medium">✗ Rad etildi</div>
+                ) : (
+                  <button onClick={() => setCenterModal(c)} className="btn-primary w-full py-2.5 rounded-xl text-sm font-semibold">Ariza yuborish</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Center request modal */}
+        <Modal open={!!centerModal} onClose={() => setCenterModal(null)} title="Ariza yuborish">
+          {centerModal && (
+            <div>
+              <div className="flex items-center gap-4 glass rounded-xl p-4 mb-6">
+                <div className="w-12 h-12 gradient-bg rounded-xl flex items-center justify-center text-white font-black text-lg">{centerModal.name[0]}</div>
+                <div>
+                  <div className="font-bold text-white">{centerModal.name}</div>
+                  <div className="text-sm text-white/40">{centerModal.city} · {centerModal.students} o'quvchi</div>
+                </div>
+              </div>
+              <p className="text-white/60 text-sm mb-6 leading-relaxed">Ariza yuborilgandan so'ng, markaz manageri sizning arizangizni Telegram orqali ko'rib chiqadi va tasdiqlaydi.</p>
+              <div className="glass rounded-xl p-4 mb-6 border border-indigo-500/20">
+                <TelegramMockup studentName={user.name} centerName={centerModal.name} onApprove={() => {}} onReject={() => {}} />
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setCenterModal(null)} className="btn-ghost flex-1 py-3 rounded-xl">Bekor qilish</button>
+                <button onClick={() => sendRequest(centerModal)} className="btn-primary flex-1 py-3 rounded-xl font-semibold">Ariza yuborish</button>
+              </div>
+            </div>
+          )}
+        </Modal>
+
+        {/* Success toast */}
+        {joinModal && (
+          <div className="fixed bottom-6 right-6 z-50 glass-strong rounded-2xl p-4 border border-emerald-500/30 animate-in max-w-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-emerald-500/20 rounded-xl flex items-center justify-center"><Icon name="check" size={16} className="text-emerald-400" /></div>
+              <div><div className="text-sm font-semibold text-white">Ariza yuborildi!</div><div className="text-xs text-white/40">Manager Telegram orqali xabardor qilindi</div></div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const pages = { home: renderHome, olympiads: renderOlympiads, results: renderResults, centers: renderCenters };
+
+  return (
+    <div className="flex h-screen overflow-hidden">
+      <Sidebar items={navItems} activePage={page} setPage={setPage}
+        user={{ ...user, role: "O'quvchi" }} onLogout={onLogout}
+        logoClick={() => onNavigate('landing')}
+        mobileOpen={mobileMenu} onMobileClose={() => setMobileMenu(false)} />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Topbar title={navItems.find(n => n.key === page)?.label || 'Dashboard'} subtitle={`Salom, ${user.name}!`} user={user}
+          onMenuClick={() => setMobileMenu(true)}
+          actions={
+            <div className="flex items-center gap-2">
+              {onOpenSwitcher && (
+                <button onClick={onOpenSwitcher} className="btn-ghost text-xs px-3 py-2 rounded-xl hidden md:flex items-center gap-1.5">
+                  <Icon name="users" size={13} /> Rolni almashtirish
+                </button>
+              )}
+              <button onClick={() => setPage('olympiads')} className="btn-primary text-xs px-4 py-2 rounded-xl font-semibold hidden md:flex items-center gap-1">
+                <Icon name="trophy" size={14} /> Olimpiadalar
+              </button>
+            </div>
+          } />
+        <main className="flex-1 overflow-y-auto">
+          {page === 'leaderboard' ? <LeaderboardPage embedded /> :
+           page === 'profile' ? <ProfilePage user={user} embedded /> :
+           (pages[page] || renderHome)()}
+        </main>
+        <MobileBottomNav items={navItems} activePage={page} setPage={setPage} />
+      </div>
+    </div>
+  );
+};
+
+const OlympiadCard = ({ olympiad: o, onStart, locked }) => {
+  // Support both legacy ({status:'Faol'}) and new store ({status:'Active'}) shapes
+  const isActive = o.status === 'Active' || o.status === 'Faol';
+  const disabled = !isActive || locked;
+  const label = locked ? "🔒 Markaz tasdig'i kerak" : (isActive ? '▶ Boshlash' : (o.status === 'Draft' ? 'Hali e\'lon qilinmagan' : 'Tugagan'));
+  const time = o.startTime || o.time || '';
+  const qCount = (o.questionIds && o.questionIds.length) || o.questions || 0;
+  return (
+    <div className="glass rounded-2xl p-5 card-hover">
+      <div className="flex items-start justify-between mb-3">
+        <SubjectBadge subject={o.subject} />
+        <Badge status={statusLabel(o.status)} />
+      </div>
+      <h3 className="font-bold text-white mb-1">{o.title}</h3>
+      <div className="flex flex-wrap gap-3 text-xs text-white/40 mb-4">
+        <span className="flex items-center gap-1"><Icon name="clock" size={12} /> {time} · {o.duration} daqiqa</span>
+        <span className="flex items-center gap-1"><Icon name="file" size={12} /> {qCount} ta savol</span>
+        <span className="flex items-center gap-1"><Icon name="users" size={12} /> {o.participants || 0} ishtirokchi</span>
+      </div>
+      <button onClick={onStart}
+        className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all ${disabled ? 'btn-ghost opacity-50 cursor-not-allowed' : 'btn-primary'}`}
+        disabled={disabled}>
+        {label}
+      </button>
+    </div>
+  );
+};
+
+Object.assign(window, { StudentDashboard, OlympiadCard, MOCK_OLYMPIADS, MOCK_RESULTS, MOCK_CENTERS });
