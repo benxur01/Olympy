@@ -11,12 +11,38 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [assignModal, setAssignModal] = React.useState(null);
   const [toast, setToast] = React.useState('');
   const [mobileMenu, setMobileMenu] = React.useState(false);
+  const [pendingStudents, setPendingStudents] = React.useState([]);
+  const [assignedQuestionIds, setAssignedQuestionIds] = React.useState([]);
+  const [assignmentSaving, setAssignmentSaving] = React.useState(false);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
   // Manager's center
   const managerRole = user.roles?.manager;
   const managerCenterId = managerRole?.centerId || null;
+  const loadPendingStudents = React.useCallback(() => {
+    if (!isApi || !managerCenterId) {
+      setPendingStudents([]);
+      return Promise.resolve();
+    }
+    return OlympyApi.getPendingMemberships(managerCenterId, 'student', OlympyApi.getToken())
+      .then(rows => setPendingStudents(Array.isArray(rows) ? rows : []));
+  }, [isApi, managerCenterId]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    loadPendingStudents().catch(err => {
+      if (!cancelled) {
+        console.warn('getPendingMemberships failed:', err);
+        setPendingStudents([]);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [loadPendingStudents]);
+
+  React.useEffect(() => {
+    setAssignedQuestionIds(assignModal?.questionIds || []);
+  }, [assignModal?.id]);
 
   // ─── API rejimida olimpiada/savol/markazlarni real backend'dan olish ───
   const apiCentersRes = useApiData(
@@ -63,7 +89,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   }));
 
   // Live student-join requests at this center
-  const requests = store.requests.filter(r => r.type === 'student' && r.centerId === centerId).map(r => {
+  const mockRequests = store.requests.filter(r => r.type === 'student' && r.centerId === centerId).map(r => {
     const u = store.users.find(x => x.id === r.userId);
     return {
       id: r.id,
@@ -75,11 +101,22 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       _raw: r,
     };
   });
+  const apiRequests = pendingStudents.map(m => ({
+    id: `api:student:${m.membership_id}`,
+    name: m.user?.full_name || m.user?.name || '—',
+    phone: m.user?.normalized_phone || m.user?.phone || '—',
+    date: (m.created_at || '').slice(0, 10),
+    subject: m.subject || '—',
+    status: 'Kutilmoqda',
+    _raw: m,
+  }));
+  const requests = isApi ? apiRequests : mockRequests;
 
   const handleRequest = (id, action, raw) => {
     if (isApi) {
       const token = OlympyApi.getToken();
-      const membershipId = raw?.membershipId ?? raw?.backendId;
+      const requestRow = raw || requests.find(r => r.id === id)?._raw;
+      const membershipId = requestRow?.membership_id ?? requestRow?.membershipId ?? requestRow?.backendId;
       if (!membershipId || !centerId) {
         showToast('⚠ API rejimida ariza ma\'lumoti yetarli emas');
         return;
@@ -87,9 +124,10 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       const backendCenterId = center?.backendId ?? centerId;
       OlympyApi.approveStudent(
         backendCenterId,
-        { membership_id: membershipId, decision: action === 'approve' ? 'approve' : 'reject' },
+        { membership_id: membershipId, decision: action === 'approve' ? 'approved' : 'rejected' },
         token,
       )
+        .then(() => loadPendingStudents())
         .then(() => showToast(action === 'approve' ? '✓ Ariza tasdiqlandi' : '✗ Ariza rad etildi'))
         .catch(err => { console.warn('approveStudent failed:', err); showToast("⚠ Tasdiqlab bo'lmadi"); });
       return;
@@ -504,19 +542,46 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       {/* Assign-questions modal */}
       <Modal open={!!assignModal} onClose={() => setAssignModal(null)} title="Savollarni tayinlash" width="max-w-2xl">
         {assignModal && (() => {
-          const liveOlympiad = store.olympiads.find(o => o.id === assignModal.id);
+          const liveOlympiad = (isApi ? olympiads : store.olympiads).find(o => o.id === assignModal.id) || assignModal;
           if (!liveOlympiad) return null;
           const subjectQs = centerQuestions.filter(q => q.subject === liveOlympiad.subject);
           const otherQs = centerQuestions.filter(q => q.subject !== liveOlympiad.subject);
-          const assigned = new Set(liveOlympiad.questionIds || []);
+          const assigned = new Set(isApi ? assignedQuestionIds : (liveOlympiad.questionIds || []));
           const toggle = (id) => {
             const next = assigned.has(id) ? [...assigned].filter(x => x !== id) : [...assigned, id];
-            OlympyStore.updateOlympiad(liveOlympiad.id, { questionIds: next });
+            if (isApi) {
+              setAssignedQuestionIds(next);
+            } else {
+              OlympyStore.updateOlympiad(liveOlympiad.id, { questionIds: next });
+            }
+          };
+          const saveAssignment = () => {
+            if (!isApi) {
+              setAssignModal(null);
+              return;
+            }
+            const backendOlympiadId = liveOlympiad.backendId ?? liveOlympiad.id;
+            const selectedQuestionIds = assignedQuestionIds.map(id => {
+              const question = centerQuestions.find(q => String(q.id) === String(id));
+              return question?.backendId ?? id;
+            });
+            setAssignmentSaving(true);
+            OlympyApi.updateOlympiadQuestions(backendOlympiadId, selectedQuestionIds, OlympyApi.getToken())
+              .then(() => {
+                showToast('✓ Savollar tayinlandi');
+                setAssignModal(null);
+                apiOlympiadsRes.reload();
+              })
+              .catch(err => {
+                console.warn('updateOlympiadQuestions failed:', err);
+                showToast("⚠ Savollarni saqlab bo'lmadi");
+              })
+              .finally(() => setAssignmentSaving(false));
           };
           return (
             <div className="space-y-3">
               <div className="text-sm text-white/60">{liveOlympiad.title} — {liveOlympiad.subject}</div>
-              <div className="text-xs text-white/40">Tayinlangan: <span className="text-white">{(liveOlympiad.questionIds || []).length}</span> / {centerQuestions.length} ta mavjud</div>
+              <div className="text-xs text-white/40">Tayinlangan: <span className="text-white">{assigned.size}</span> / {centerQuestions.length} ta mavjud</div>
               <div className="space-y-2 max-h-80 overflow-y-auto">
                 {subjectQs.length > 0 && <div className="text-xs text-white/40 font-medium uppercase tracking-wider mt-1">Tegishli fan savollari</div>}
                 {subjectQs.map(q => (
@@ -543,7 +608,10 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 )}
               </div>
               <div className="flex gap-3 pt-2">
-                <button onClick={() => setAssignModal(null)} className="btn-primary flex-1 py-3 rounded-xl font-semibold">Yopish</button>
+                <button onClick={saveAssignment} disabled={assignmentSaving}
+                  className="btn-primary flex-1 py-3 rounded-xl font-semibold disabled:opacity-50">
+                  {isApi ? (assignmentSaving ? 'Saqlanmoqda...' : 'Saqlash') : 'Yopish'}
+                </button>
               </div>
             </div>
           );

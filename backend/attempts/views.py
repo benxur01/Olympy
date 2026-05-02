@@ -1,5 +1,8 @@
+from datetime import timedelta
+
 from django.db import transaction
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -38,6 +41,17 @@ def submit_attempt(request):
 
         if olympiad.status != Olympiad.STATUS_ACTIVE:
             return Response({'detail': "Olimpiada faol emas"},
+                            status=http_status.HTTP_400_BAD_REQUEST)
+        now = timezone.now()
+        if olympiad.start_datetime and now < olympiad.start_datetime:
+            return Response({'detail': 'Olimpiada hali boshlanmagan'},
+                            status=http_status.HTTP_400_BAD_REQUEST)
+        end_time = (
+            olympiad.start_datetime + timedelta(minutes=olympiad.duration_minutes)
+            if olympiad.start_datetime and olympiad.duration_minutes else None
+        )
+        if end_time and now > end_time:
+            return Response({'detail': 'Olimpiada vaqti tugagan'},
                             status=http_status.HTTP_400_BAD_REQUEST)
         is_approved_student = CenterMembership.objects.filter(
             user=request.user, center=olympiad.center,

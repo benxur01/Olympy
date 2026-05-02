@@ -14,29 +14,23 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
   // Resolve the question list: prefer store-backed olympiad.questionIds → store.questions
   const liveOlympiad = olympiad ? store.olympiads.find(o => o.id === olympiad.id) || olympiad : null;
+  const [apiQuestions, setApiQuestions] = React.useState(null);
+  const [questionsLoading, setQuestionsLoading] = React.useState(false);
 
   const now = new Date();
   const startStr = liveOlympiad?.startDate && liveOlympiad?.startTime
     ? `${liveOlympiad.startDate}T${liveOlympiad.startTime}` : null;
   const startDt = startStr ? new Date(startStr) : null;
   const endDt = startDt ? new Date(startDt.getTime() + (liveOlympiad.duration || 60) * 60000) : null;
-
-  if (startDt && now < startDt) {
-    return <PendingAccessCard title="Olimpiada hali boshlanmagan" status="pending"
-      message={`Boshlanish vaqti: ${liveOlympiad.startDate} ${liveOlympiad.startTime}`}
-      onBack={() => onNavigate('student')} />;
-  }
-  if (endDt && now > endDt) {
-    return <PendingAccessCard title="Olimpiada tugagan" status="rejected"
-      message="Bu olimpiadaga qatnashish muddati o'tib ketdi."
-      onBack={() => onNavigate('student')} />;
-  }
+  const isBeforeStart = startDt && now < startDt;
+  const isAfterEnd = endDt && now > endDt;
 
   const assignedIds = liveOlympiad?.questionIds || [];
   const assignedQuestions = assignedIds
     .map(qid => store.questions.find(q => q.id === qid))
     .filter(Boolean);
-  const TEST_QUESTIONS = assignedQuestions.length > 0 ? assignedQuestions : FALLBACK_QUESTIONS;
+  const fallbackQuestions = assignedQuestions.length > 0 ? assignedQuestions : FALLBACK_QUESTIONS;
+  const TEST_QUESTIONS = (user?._api && apiQuestions) ? apiQuestions : fallbackQuestions;
 
   const TOTAL = TEST_QUESTIONS.length;
   const DURATION = (liveOlympiad?.duration || olympiad?.duration || 30) * 60;
@@ -47,9 +41,32 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [timeLeft, setTimeLeft] = React.useState(DURATION);
   const [confirmModal, setConfirmModal] = React.useState(false);
   const [submitted, setSubmitted] = React.useState(false);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState('');
 
   React.useEffect(() => {
-    if (submitted) return;
+    if (!user?._api || !liveOlympiad?.backendId || isBeforeStart || isAfterEnd) {
+      setApiQuestions(null);
+      setQuestionsLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setQuestionsLoading(true);
+    globalThis.OlympyApi.getOlympiadQuestions(liveOlympiad.backendId, globalThis.OlympyApi.getToken())
+      .then(qs => {
+        if (!cancelled) setApiQuestions(Array.isArray(qs) ? qs : null);
+      })
+      .catch(() => {
+        if (!cancelled) setApiQuestions(null);
+      })
+      .finally(() => {
+        if (!cancelled) setQuestionsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [user?._api, liveOlympiad?.backendId, isBeforeStart, isAfterEnd]);
+
+  React.useEffect(() => {
+    if (submitted || isBeforeStart || isAfterEnd || questionsLoading) return;
     const t = setInterval(() => {
       setTimeLeft(prev => {
         if (prev <= 1) { clearInterval(t); handleSubmit(); return 0; }
@@ -57,56 +74,61 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       });
     }, 1000);
     return () => clearInterval(t);
-  }, [submitted]);
+  }, [submitted, isBeforeStart, isAfterEnd, questionsLoading]);
 
   const formatTime = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const answered = Object.keys(answers).length;
-  const progress = (answered / TOTAL) * 100;
+  const progress = TOTAL ? (answered / TOTAL) * 100 : 0;
   const isUrgent = timeLeft < 120;
 
   const handleAnswer = (optIdx) => setAnswers(prev => ({ ...prev, [current]: optIdx }));
   const toggleMark = () => setMarked(prev => ({ ...prev, [current]: !prev[current] }));
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    setSubmitError('');
     setConfirmModal(false);
     setSubmitted(true);
 
-    const formattedAnswers = {};
-    Object.entries(answers).forEach(([idx, optIdx]) => {
-      const q = TEST_QUESTIONS[parseInt(idx, 10)];
-      if (q) formattedAnswers[q.id] = optIdx;
-    });
+    try {
+      const formattedAnswers = {};
+      Object.entries(answers).forEach(([idx, optIdx]) => {
+        const q = TEST_QUESTIONS[parseInt(idx, 10)];
+        if (q) formattedAnswers[q.id] = optIdx;
+      });
 
-    // Local (mock) score — backend api rejimida bu qiymatlar fallback
-    // sifatida ishlatiladi (agar API javobi kelmasa).
-    const correct = TEST_QUESTIONS.filter((q, i) => answers[i] === (q.correctAnswer ?? q.correct)).length;
-    const wrong = TOTAL - correct;
-    const earnedScore = TEST_QUESTIONS.reduce((sum, q, i) => {
-      return answers[i] === (q.correctAnswer ?? q.correct) ? sum + (q.score || 3) : sum;
-    }, 0);
-    const maxPossible = TEST_QUESTIONS.reduce((sum, q) => sum + (q.score || 3), 0);
-    const localScore = maxPossible ? Math.round((earnedScore / maxPossible) * 100) : 0;
-    const timeSpent = DURATION - timeLeft;
+      // Local score is used only in mock mode.
+      const correct = TEST_QUESTIONS.filter((q, i) => answers[i] === (q.correctAnswer ?? q.correct)).length;
+      const wrong = TOTAL - correct;
+      const earnedScore = TEST_QUESTIONS.reduce((sum, q, i) => {
+        return answers[i] === (q.correctAnswer ?? q.correct) ? sum + (q.score || 3) : sum;
+      }, 0);
+      const maxPossible = TEST_QUESTIONS.reduce((sum, q) => sum + (q.score || 3), 0);
+      const localScore = maxPossible ? Math.round((earnedScore / maxPossible) * 100) : 0;
+      const timeSpent = DURATION - timeLeft;
 
-    // Compute rank within current attempts on this olympiad (mock fallback)
-    let localRank = 1;
-    if (liveOlympiad) {
-      const others = store.attempts.filter(a => a.olympiadId === liveOlympiad.id);
-      localRank = others.filter(a => (a.score || 0) > localScore).length + 1;
-    }
+      // Compute rank within current attempts on this olympiad (mock only)
+      let localRank = 1;
+      if (liveOlympiad) {
+        const others = store.attempts.filter(a => a.olympiadId === liveOlympiad.id);
+        localRank = others.filter(a => (a.score || 0) > localScore).length + 1;
+      }
 
-    const numericOlympiadId = liveOlympiad?.backendId
-      ?? (typeof liveOlympiad?.id === 'number' ? liveOlympiad.id : null);
+      const numericOlympiadId = liveOlympiad?.backendId
+        ?? (typeof liveOlympiad?.id === 'number' ? liveOlympiad.id : null);
 
-    // API rejimda — backend natijani avtoritar deb hisoblaymiz.
-    if (numericOlympiadId != null && user?._api) {
-      const token = globalThis.OlympyApi?.getToken?.()
-        ?? globalThis.OlympyApi?.loadAuth?.()?.token;
-      if (token) {
-        globalThis.OlympyApi.submitAttempt(
-          { olympiad: numericOlympiadId, answers: formattedAnswers, time_spent: timeSpent },
-          token,
-        ).then(resp => {
+      // API rejimda — backend natijani avtoritar deb hisoblaymiz.
+      if (user?._api) {
+        try {
+          if (numericOlympiadId == null) throw new Error('Missing olympiad id');
+          const token = globalThis.OlympyApi?.getToken?.()
+            ?? globalThis.OlympyApi?.loadAuth?.()?.token;
+          if (!token) throw new Error('Missing auth token');
+          const resp = await globalThis.OlympyApi.submitAttempt(
+            { olympiad: numericOlympiadId, answers: formattedAnswers, time_spent: timeSpent },
+            token,
+          );
           onFinish({
             attemptId: resp?.id,
             correct: resp?.correct_count ?? correct,
@@ -119,40 +141,60 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             olympiad: liveOlympiad || olympiad,
             _api: true,
           });
-        }).catch(err => {
+        } catch (err) {
           console.warn('submitAttempt failed:', err?.message);
-          // Backend ishlamasa, lokal natija bilan davom etamiz.
-          onFinish({
-            correct, wrong, score: localScore, total: TOTAL, rank: localRank,
-            time: timeSpent, olympiad: liveOlympiad || olympiad,
-          });
-        });
+          setSubmitError("Javoblar yuborilmadi. Qayta urinib ko'ring.");
+          setSubmitted(false);
+        }
         return;
       }
-    }
 
-    // Mock rejim — store ga yozib, lokal natijani ko'rsatamiz.
-    let attempt = null;
-    if (user && liveOlympiad) {
-      attempt = OlympyStore.recordAttempt({
-        userId: user.id,
-        olympiadId: liveOlympiad.id,
-        answers: formattedAnswers,
-        score: localScore,
-        correctCount: correct,
-        wrongCount: wrong,
-        totalQuestions: TOTAL,
-        timeSpent,
-        rank: localRank,
-      });
+      // Mock rejim — store ga yozib, lokal natijani ko'rsatamiz.
+      let attempt = null;
+      if (user && liveOlympiad) {
+        attempt = OlympyStore.recordAttempt({
+          userId: user.id,
+          olympiadId: liveOlympiad.id,
+          answers: formattedAnswers,
+          score: localScore,
+          correctCount: correct,
+          wrongCount: wrong,
+          totalQuestions: TOTAL,
+          timeSpent,
+          rank: localRank,
+        });
+      }
+      setTimeout(() => onFinish({
+        attemptId: attempt?.id,
+        correct, wrong, score: localScore, total: TOTAL, rank: localRank,
+        time: timeSpent,
+        olympiad: liveOlympiad || olympiad,
+      }), 400);
+    } finally {
+      setSubmitting(false);
     }
-    setTimeout(() => onFinish({
-      attemptId: attempt?.id,
-      correct, wrong, score: localScore, total: TOTAL, rank: localRank,
-      time: timeSpent,
-      olympiad: liveOlympiad || olympiad,
-    }), 400);
   };
+
+  if (isBeforeStart) {
+    return <PendingAccessCard title="Olimpiada hali boshlanmagan" status="pending"
+      message={`Boshlanish vaqti: ${liveOlympiad.startDate} ${liveOlympiad.startTime}`}
+      onBack={() => onNavigate('student')} />;
+  }
+  if (isAfterEnd) {
+    return <PendingAccessCard title="Olimpiada tugagan" status="rejected"
+      message="Bu olimpiadaga qatnashish muddati o'tib ketdi."
+      onBack={() => onNavigate('student')} />;
+  }
+  if (questionsLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#060818' }}>
+        <div className="flex flex-col items-center gap-4 text-white/70">
+          <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-indigo-400 animate-spin" />
+          <div className="text-sm font-semibold">Savollar yuklanmoqda...</div>
+        </div>
+      </div>
+    );
+  }
 
   const q = TEST_QUESTIONS[current] || FALLBACK_QUESTIONS[0];
   // Derive a "type" for True/False rendering even though store questions don't carry one
@@ -175,7 +217,8 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           {formatTime(timeLeft)}
         </div>
 
-        <button onClick={() => setConfirmModal(true)} className="btn-primary px-4 py-2 rounded-xl text-sm font-semibold">
+        <button onClick={() => setConfirmModal(true)} disabled={submitting}
+          className="btn-primary px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
           Yakunlash
         </button>
       </div>
@@ -224,6 +267,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
               </button>
             </div>
 
+            {submitError && (
+              <div className="mb-6 flex items-center gap-2 bg-rose-500/10 text-rose-300 rounded-xl px-4 py-3 text-sm border border-rose-500/20">
+                <Icon name="info" size={15} /> {submitError}
+              </div>
+            )}
+
             {/* Question text */}
             <div className="glass-strong rounded-2xl p-6 mb-6">
               <p className="text-white text-lg leading-relaxed font-medium">{q.text}</p>
@@ -258,7 +307,8 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
                   Keyingi <Icon name="chevronRight" size={15} />
                 </button>
               ) : (
-                <button onClick={() => setConfirmModal(true)} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold">
+                <button onClick={() => setConfirmModal(true)} disabled={submitting}
+                  className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
                   Testni yakunlash
                 </button>
               )}
@@ -284,7 +334,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         </div>
         <div className="flex gap-3">
           <button onClick={() => setConfirmModal(false)} className="btn-ghost flex-1 py-3 rounded-xl">Davom etish</button>
-          <button onClick={handleSubmit} className="btn-primary flex-1 py-3 rounded-xl font-bold">Yuborish ✓</button>
+          <button onClick={handleSubmit} disabled={submitting}
+            className="btn-primary flex-1 py-3 rounded-xl font-bold disabled:opacity-50">
+            {submitting ? 'Yuborilmoqda...' : 'Yuborish ✓'}
+          </button>
         </div>
       </Modal>
     </div>

@@ -1,11 +1,16 @@
 from rest_framework import serializers
 
+from questions.models import Question
+
 from .models import Olympiad
 
 
 class OlympiadSerializer(serializers.ModelSerializer):
     question_ids = serializers.PrimaryKeyRelatedField(
-        source='questions', many=True, read_only=True,
+        many=True,
+        queryset=Question.objects.all(),
+        source='questions',
+        required=False,
     )
 
     class Meta:
@@ -13,4 +18,4 @@ class OlympiadSerializer(serializers.ModelSerializer):
         fields = ['id', 'center', 'title', 'subject', 'start_datetime',
                   'duration_minutes', 'max_score', 'status', 'created_by',
                   'question_ids', 'created_at']
-        read_only_fields = ['id', 'created_by', 'created_at', 'question_ids']
+        read_only_fields = ['id', 'created_by', 'created_at']

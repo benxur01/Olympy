@@ -601,6 +601,7 @@ const mapApiAttempt = (a) => {
 
 const mapApiQuestion = (q) => {
   if (!q) return null;
+  const DIFFICULTY_MAP = { easy: 'Oson', medium: "O'rta", hard: 'Qiyin' };
   return {
     id: String(q.id),
     backendId: q.id,
@@ -610,7 +611,7 @@ const mapApiQuestion = (q) => {
     options: Array.isArray(q.options) ? q.options : [],
     correctAnswer: q.correct_answer ?? 0,
     score: q.score ?? 3,
-    difficulty: q.difficulty || 'medium',
+    difficulty: DIFFICULTY_MAP[q.difficulty] || q.difficulty,
     source: q.source || 'manual',
     _api: true,
   };

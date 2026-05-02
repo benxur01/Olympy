@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import secrets
 import urllib.parse
 import urllib.request
@@ -9,10 +10,11 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.authtoken.models import Token
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import PhoneVerification
 from .serializers import (
@@ -28,32 +30,51 @@ from .utils import normalize_phone
 logger = logging.getLogger('accounts.telegram')
 
 
+def _jwt_payload(user):
+    refresh = RefreshToken.for_user(user)
+    return {
+        'token': str(refresh.access_token),
+        'refresh': str(refresh),
+    }
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register(request):
     """POST /api/auth/register/ — create a new user account."""
     serializer = RegisterSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
+    verified = PhoneVerification.objects.filter(
+        normalized_phone=serializer.validated_data['phone'],
+        verified_at__isnull=False,
+    ).order_by('-verified_at').first()
+    if not verified:
+        return Response(
+            {'detail': 'Telefon raqami tasdiqlanmagan'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
     user = serializer.save()
-    token, _ = Token.objects.get_or_create(user=user)
     return Response({
-        'token': token.key,
+        **_jwt_payload(user),
         'user': UserSerializer(user).data,
     }, status=status.HTTP_201_CREATED)
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([ScopedRateThrottle])
 def login(request):
     """POST /api/auth/login/ — authenticate by normalized phone + password."""
     serializer = LoginSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     user = serializer.validated_data['user']
-    token, _ = Token.objects.get_or_create(user=user)
     return Response({
-        'token': token.key,
+        **_jwt_payload(user),
         'user': UserSerializer(user).data,
     })
+
+
+login.cls.throttle_scope = 'auth'
 
 
 @api_view(['GET'])
@@ -96,6 +117,7 @@ def _telegram_deep_link(verify_token):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([ScopedRateThrottle])
 def start_telegram_phone_verification(request):
     """Start phone verification and return Telegram deep link."""
     serializer = StartTelegramPhoneVerificationSerializer(data=request.data)
@@ -120,8 +142,12 @@ def start_telegram_phone_verification(request):
     }, status=status.HTTP_201_CREATED)
 
 
+start_telegram_phone_verification.cls.throttle_scope = 'auth'
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([ScopedRateThrottle])
 def verify_otp(request):
     """Verify Telegram-delivered OTP for a normalized phone number."""
     serializer = VerifyOtpSerializer(data=request.data)
@@ -153,6 +179,9 @@ def verify_otp(request):
     verification.verified_at = timezone.now()
     verification.save(update_fields=['attempts_count', 'verified_at', 'updated_at'])
     return Response({'verified': True, 'phone': normalized_phone})
+
+
+verify_otp.cls.throttle_scope = 'auth'
 
 
 def _message_from_update(update):
@@ -217,6 +246,10 @@ def handle_telegram_update(update):
 @permission_classes([AllowAny])
 def telegram_webhook(request):
     """Telegram webhook for /start verify_token and contact share updates."""
+    secret = os.environ.get('TELEGRAM_WEBHOOK_SECRET', '')
+    if secret and request.headers.get('X-Telegram-Bot-Api-Secret-Token', '') != secret:
+        return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+
     update = request.data if isinstance(request.data, dict) else {}
     if not update and request.body:
         try:

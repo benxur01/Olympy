@@ -10,6 +10,7 @@ following environment variables:
     OLYMPY_DB_HOST=localhost
     OLYMPY_DB_PORT=5432
 """
+from datetime import timedelta
 import os
 from pathlib import Path
 
@@ -39,7 +40,12 @@ SECRET_KEY = os.environ.get('OLYMPY_SECRET_KEY')
 if not SECRET_KEY:
     raise ImproperlyConfigured("OLYMPY_SECRET_KEY muhit o'zgaruvchisi o'rnatilmagan")
 DEBUG = os.environ.get('OLYMPY_DEBUG', '0') == '1'
-ALLOWED_HOSTS = os.environ.get('OLYMPY_ALLOWED_HOSTS', '*').split(',')
+_allowed = os.environ.get('OLYMPY_ALLOWED_HOSTS', '')
+ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()] or (
+    ['localhost', '127.0.0.1'] if DEBUG else []
+)
+if not DEBUG and not ALLOWED_HOSTS:
+    raise ImproperlyConfigured('OLYMPY_ALLOWED_HOSTS must be set in production')
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -51,7 +57,9 @@ INSTALLED_APPS = [
     # Third-party
     'rest_framework',
     'rest_framework.authtoken',
+    'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
+    'django_celery_beat',
     # Local
     'accounts',
     'centers',
@@ -129,7 +137,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # DRF
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
@@ -138,7 +146,31 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
     ],
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '20/min',
+        'user': '100/min',
+        'auth': '5/min',
+    },
 }
+
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+}
+
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Asia/Tashkent'
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
 # CORS — production rejimida ham faqat aniq ro'yxatdagi originlar.
 # Dev rejimda ham hech qachon ALL_ORIGINS ochilmaydi: developer
