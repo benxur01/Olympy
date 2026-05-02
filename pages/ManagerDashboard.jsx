@@ -5,7 +5,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [page, setPage] = React.useState('home');
   const [createModal, setCreateModal] = React.useState(false);
   const [telegramModal, setTelegramModal] = React.useState(null);
-  const [newOlympiad, setNewOlympiad] = React.useState({ title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'Draft' });
+  const [newOlympiad, setNewOlympiad] = React.useState({ title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft' });
   const [editingOlympiadId, setEditingOlympiadId] = React.useState(null);
   const [assignModal, setAssignModal] = React.useState(null);
   const [toast, setToast] = React.useState('');
@@ -85,7 +85,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard label="Jami o'quvchilar" value={students.length} sub={students.length > 0 ? `↑ ${students.length}` : ''} icon={<Icon name="users" size={20} />} color="from-indigo-500 to-purple-600" glow="glow-blue" />
-        <StatCard label="Faol olimpiadalar" value={olympiads.filter(o => o.status === 'Active').length} icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />
+        <StatCard label="Faol olimpiadalar" value={olympiads.filter(o => o.status === 'active').length} icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />
         <StatCard label="Kutilayotgan arizalar" value={pendingCount} sub={pendingCount > 0 ? 'Yangi' : ''} icon={<Icon name="bell" size={20} />} color="from-rose-500 to-pink-600" />
         <StatCard label="O'rtacha natija" value="78.4%" icon={<Icon name="chart" size={20} />} color="from-emerald-500 to-teal-600" />
       </div>
@@ -130,8 +130,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <div className="space-y-3">
             {olympiads.slice(0, 3).map(o => (
               <div key={o.id} className="flex items-center gap-3 p-3 rounded-xl glass">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0 ${o.status === 'Active' ? 'bg-emerald-500/20 text-emerald-400' : o.status === 'Draft' ? 'bg-white/10 text-white/40' : 'bg-indigo-500/20 text-indigo-400'}`}>
-                  {o.status === 'Active' ? '▶' : o.status === 'Draft' ? '✏' : '✓'}
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0 ${o.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : o.status === 'draft' ? 'bg-white/10 text-white/40' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                  {o.status === 'active' ? '▶' : o.status === 'draft' ? '✏' : '✓'}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold text-white truncate">{o.title}</div>
@@ -281,8 +281,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           const assignedCount = (o.questionIds || []).length;
           return (
             <div key={o.id} className="glass rounded-2xl p-5 flex items-center gap-4 flex-wrap">
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl flex-shrink-0 ${o.status === 'Active' ? 'bg-emerald-500/15' : o.status === 'Draft' ? 'bg-white/5' : 'bg-indigo-500/15'}`}>
-                {o.status === 'Active' ? '🏆' : o.status === 'Draft' ? '📝' : '✅'}
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl flex-shrink-0 ${o.status === 'active' ? 'bg-emerald-500/15' : o.status === 'draft' ? 'bg-white/5' : 'bg-indigo-500/15'}`}>
+                {o.status === 'active' ? '🏆' : o.status === 'draft' ? '📝' : '✅'}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-white mb-1">{o.title}</div>
@@ -300,7 +300,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 <button onClick={() => setAssignModal(o)} className="btn-ghost text-xs px-3 py-1.5 rounded-xl flex items-center gap-1">
                   <Icon name="book" size={13} /> Savollar ({assignedCount})
                 </button>
-                {o.status === 'Draft' && (
+                {o.status === 'draft' && (
                   <button onClick={() => {
                     if ((o.questionIds || []).length === 0) { showToast("⚠ Avval savollar tayinlang"); return; }
                     OlympyStore.publishOlympiad(o.id);
@@ -308,8 +308,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   }}
                     className="btn-primary text-xs px-3 py-1.5 rounded-xl">E'lon qilish</button>
                 )}
-                {o.status === 'Active' && (
-                  <button onClick={() => { OlympyStore.updateOlympiad(o.id, { status: 'Finished' }); showToast('✓ Olimpiada yakunlandi'); }}
+                {o.status === 'active' && (
+                  <button onClick={() => { OlympyStore.updateOlympiad(o.id, { status: 'finished' }); showToast('✓ Olimpiada yakunlandi'); }}
                     className="btn-ghost text-xs px-3 py-1.5 rounded-xl">Yakunlash</button>
                 )}
               </div>
@@ -330,14 +330,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       </div>
       <div className="glass rounded-2xl p-5">
         <h3 className="font-bold text-white mb-4">Olimpiada natijalari</h3>
-        {olympiads.filter(o => o.status === 'Finished').map(o => (
+        {olympiads.filter(o => o.status === 'finished').map(o => (
           <div key={o.id} className="flex items-center gap-4 p-4 glass rounded-xl mb-3">
             <div className="flex-1"><div className="font-semibold text-white">{o.title}</div><div className="text-xs text-white/40">{o.participants || 0} ishtirokchi</div></div>
             <DonutChart value={o.avgScore || 0} size={60} />
             <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl">Reyting</button>
           </div>
         ))}
-        {olympiads.filter(o => o.status === 'Finished').length === 0 && (
+        {olympiads.filter(o => o.status === 'finished').length === 0 && (
           <div className="text-sm text-white/40 px-3 py-2">Tugatilgan olimpiadalar yo'q</div>
         )}
       </div>
@@ -387,8 +387,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               </select></div>
             <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Holat</label>
               <select className="input-field" value={newOlympiad.status} onChange={e => setNewOlympiad({...newOlympiad, status: e.target.value})}>
-                <option value="Draft">Draft</option>
-                <option value="Active">Faol</option>
+                <option value="draft">Draft</option>
+                <option value="active">Faol</option>
               </select></div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -414,10 +414,10 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 startTime: newOlympiad.startTime,
                 duration: newOlympiad.duration,
                 maxScore: newOlympiad.maxScore,
-                status: 'Draft', // Always start as Draft; publish via button
+                status: 'draft', // Always start as draft; publish via button
                 createdBy: user.id,
               });
-              setNewOlympiad({ title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'Draft' });
+              setNewOlympiad({ title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft' });
               setCreateModal(false);
               showToast('✓ Olimpiada yaratildi');
             }} className="btn-primary flex-1 py-3 rounded-xl font-semibold">Saqlash</button>

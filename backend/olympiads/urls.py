@@ -6,4 +6,5 @@ from . import views
 urlpatterns = [
     path('', views.olympiads_list_create, name='olympiads-list-create'),
     path('<int:olympiad_id>/publish/', views.publish_olympiad, name='olympiad-publish'),
+    path('<int:olympiad_id>/finish/', views.finish_olympiad, name='olympiad-finish'),
 ]

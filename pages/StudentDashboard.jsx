@@ -136,11 +136,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           </div>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {visibleOlympiads.filter(o => o.status === 'Active').slice(0, 2).map(o => (
+          {visibleOlympiads.filter(o => o.status === 'active').slice(0, 2).map(o => (
             <OlympiadCard key={o.id} olympiad={o} locked={!isCenterApproved}
               onStart={() => { if (!isCenterApproved) return; setActiveOlympiad(o); onNavigate('test', o); }} />
           ))}
-          {visibleOlympiads.filter(o => o.status === 'Active').length === 0 && isCenterApproved && (
+          {visibleOlympiads.filter(o => o.status === 'active').length === 0 && isCenterApproved && (
             <div className="md:col-span-2 text-center text-white/40 text-sm py-6 glass rounded-2xl">Bugungi faol olimpiadalar yo'q</div>
           )}
         </div>
@@ -215,8 +215,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {(() => {
           const filteredOlympiads = visibleOlympiads.filter(o => {
-            if (olympiadFilter === 'Faol') return o.status === 'Active';
-            if (olympiadFilter === 'Tugagan') return o.status === 'Finished';
+            if (olympiadFilter === 'Faol') return o.status === 'active';
+            if (olympiadFilter === 'Tugagan') return o.status === 'finished';
             return true;
           });
           if (filteredOlympiads.length === 0 && isCenterApproved) {
@@ -393,10 +393,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 };
 
 const OlympiadCard = ({ olympiad: o, onStart, locked }) => {
-  // Support both legacy ({status:'Faol'}) and new store ({status:'Active'}) shapes
-  const isActive = o.status === 'Active' || o.status === 'Faol';
+  const isActive = o.status === 'active';
   const disabled = !isActive || locked;
-  const label = locked ? "🔒 Markaz tasdig'i kerak" : (isActive ? '▶ Boshlash' : (o.status === 'Draft' ? 'Hali e\'lon qilinmagan' : 'Tugagan'));
+  const label = locked ? "🔒 Markaz tasdig'i kerak" : (isActive ? '▶ Boshlash' : (o.status === 'draft' ? 'Hali e\'lon qilinmagan' : 'Tugagan'));
   const time = o.startTime || o.time || '';
   const qCount = (o.questionIds && o.questionIds.length) || o.questions || 0;
   return (

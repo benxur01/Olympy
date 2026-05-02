@@ -81,3 +81,19 @@ def publish_olympiad(request, olympiad_id):
     for m in approved_students:
         send_olympiad_published_notification(m.user, olympiad, olympiad.center)
     return Response(OlympiadSerializer(olympiad).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def finish_olympiad(request, olympiad_id):
+    """POST /api/olympiads/{id}/finish/ — flip status to finished."""
+    olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
+    if not _user_can_manage_center(request.user, olympiad.center):
+        return Response({'detail': 'Forbidden'},
+                        status=http_status.HTTP_403_FORBIDDEN)
+    if olympiad.status != Olympiad.STATUS_ACTIVE:
+        return Response({'detail': "Faqat faol olimpiadani yakunlash mumkin"},
+                        status=http_status.HTTP_400_BAD_REQUEST)
+    olympiad.status = Olympiad.STATUS_FINISHED
+    olympiad.save(update_fields=['status'])
+    return Response(OlympiadSerializer(olympiad).data)
