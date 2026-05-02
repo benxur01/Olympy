@@ -1,4 +1,5 @@
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -33,14 +34,20 @@ def olympiads_list_create(request):
     POST /api/olympiads/    — create draft olympiad (manager/owner/admin).
     """
     if request.method == 'GET':
+        queryset = (
+            Olympiad.objects
+            .prefetch_related('questions')
+            .select_related('center')
+            .order_by('-created_at')
+        )
         if request.user.is_platform_admin:
-            qs = Olympiad.objects.all()
+            qs = queryset
         else:
             # Olympiads at any center the user has an approved membership at.
             center_ids = list(CenterMembership.objects.filter(
                 user=request.user, status=CenterMembership.STATUS_APPROVED,
             ).values_list('center_id', flat=True))
-            qs = Olympiad.objects.filter(center_id__in=center_ids)
+            qs = queryset.filter(center_id__in=center_ids)
         return Response(OlympiadSerializer(qs, many=True).data)
 
     serializer = OlympiadSerializer(data=request.data)
@@ -85,6 +92,16 @@ def publish_olympiad(request, olympiad_id):
     if not _user_can_manage_center(request.user, olympiad.center):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
+    if olympiad.status != Olympiad.STATUS_DRAFT:
+        return Response(
+            {'detail': 'Faqat draft olimpiadani nashr qilish mumkin'},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if olympiad.start_datetime and olympiad.start_datetime < timezone.now():
+        return Response(
+            {'detail': "Boshlanish vaqti o'tib ketgan"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
     if not olympiad.questions.exists():
         return Response({'detail': "Avval savollar tayinlang"},
                         status=http_status.HTTP_400_BAD_REQUEST)
@@ -98,8 +115,12 @@ def publish_olympiad(request, olympiad_id):
         role=CenterMembership.ROLE_STUDENT,
         status=CenterMembership.STATUS_APPROVED,
     ).select_related('user')
-    for m in approved_students:
-        send_olympiad_published_notification(m.user, olympiad, olympiad.center)
+    try:
+        for m in approved_students:
+            send_olympiad_published_notification(m.user, olympiad, olympiad.center)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning('Notification send failed: %s', e)
     return Response(OlympiadSerializer(olympiad).data)
 
 

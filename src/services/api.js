@@ -8,6 +8,8 @@ const AUTH_TOKEN_KEY = 'olympy_api_token';
 const AUTH_REFRESH_KEY = 'olympy_refresh_token';
 const AUTH_USER_KEY = 'olympy_api_user';
 
+const unwrapList = (res) => Array.isArray(res) ? res : (res && res.results ? res.results : []);
+
 class ApiError extends Error {
   constructor(message, { status, data } = {}) {
     super(message);
@@ -201,32 +203,32 @@ export const OlympyApi = {
   // Me
   getMe: (token) => request('/api/me/', { token }),
   // Centers
-  getCenters: () => request('/api/centers/'),
+  getCenters: () => request('/api/centers/').then(unwrapList),
   registerCenter: (payload, token) => request('/api/centers/', { method: 'POST', body: payload, token }),
   joinCenter: (centerId, payload, token) => request(`/api/centers/${centerId}/join/`, { method: 'POST', body: payload, token }),
-  getPendingMemberships: (centerId, role, token) => request(`/api/centers/${centerId}/memberships/pending/${role ? '?role=' + role : ''}`, { token }),
+  getPendingMemberships: (centerId, role, token) => request(`/api/centers/${centerId}/memberships/pending/${role ? '?role=' + role : ''}`, { token }).then(unwrapList),
   approveStudent: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-student/`, { method: 'POST', body: payload, token }),
   approveTeacher: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-teacher/`, { method: 'POST', body: payload, token }),
   approveManager: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-manager/`, { method: 'POST', body: payload, token }),
-  getAdminCenters: (statusFilter, token) => request(`/api/admin/centers/${statusFilter ? '?status=' + statusFilter : ''}`, { token }),
+  getAdminCenters: (statusFilter, token) => request(`/api/admin/centers/${statusFilter ? '?status=' + statusFilter : ''}`, { token }).then(unwrapList),
   adminApproveCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/approve/`, { method: 'POST', token }),
   adminRejectCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/reject/`, { method: 'POST', token }),
   // Olympiads
-  getOlympiads: (token) => request('/api/olympiads/', { token }),
+  getOlympiads: (token) => request('/api/olympiads/', { token }).then(unwrapList),
   createOlympiad: (payload, token) => request('/api/olympiads/', { method: 'POST', body: payload, token }),
   getOlympiadQuestions: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/questions/`, { token }),
   updateOlympiadQuestions: (olympiadId, questionIds, token) => request(`/api/olympiads/${olympiadId}/`, { method: 'PATCH', body: { question_ids: questionIds }, token }),
   publishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/publish/`, { method: 'POST', token }),
   finishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/finish/`, { method: 'POST', token }),
   // Questions
-  getQuestions: (centerId, token) => request(`/api/questions/?center=${centerId}`, { token }),
+  getQuestions: (centerId, token) => request(`/api/questions/?center=${centerId}`, { token }).then(unwrapList),
   createQuestion: (payload, token) => request('/api/questions/', { method: 'POST', body: payload, token }),
   // Attempts / results / leaderboard
   submitAttempt: (payload, token) => request('/api/attempts/', { method: 'POST', body: payload, token }),
-  getMyResults: (token) => request('/api/results/me/', { token }),
-  getLeaderboard: (olympiadId, token) => request(`/api/leaderboard/${olympiadId ? '?olympiad=' + olympiadId : ''}`, { token }),
+  getMyResults: (token) => request('/api/results/me/', { token }).then(unwrapList),
+  getLeaderboard: (olympiadId, token) => request(`/api/leaderboard/${olympiadId ? '?olympiad=' + olympiadId : ''}`, { token }).then(unwrapList),
   // Notifications
-  getNotifications: (token) => request('/api/notifications/', { token }),
+  getNotifications: (token) => request('/api/notifications/', { token }).then(unwrapList),
   markNotificationRead: (id, token) => request(`/api/notifications/${id}/read/`, { method: 'POST', token }),
   markAllNotificationsRead: (token) => request('/api/notifications/read-all/', { method: 'POST', token }),
 };

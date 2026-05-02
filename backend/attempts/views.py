@@ -123,7 +123,11 @@ def leaderboard(request):
     Without ``olympiad`` query param, returns the top scores within the
     requesting user's approved centers (per-center isolation).
     """
-    qs = TestAttempt.objects.all().select_related('user', 'olympiad', 'olympiad__center')
+    qs = (
+        TestAttempt.objects
+        .select_related('user', 'olympiad', 'olympiad__center')
+        .order_by('-score', 'time_spent')
+    )
     olympiad_id = request.query_params.get('olympiad')
     if olympiad_id:
         qs = qs.filter(olympiad_id=olympiad_id)
@@ -132,7 +136,7 @@ def leaderboard(request):
             user=request.user, status=CenterMembership.STATUS_APPROVED,
         ).values_list('center_id', flat=True)
         qs = qs.filter(olympiad__center_id__in=allowed_center_ids)
-    qs = qs.order_by('-score', 'time_spent')[:200]
+    qs = qs[:200]
     return Response([
         {
             'rank': i + 1,
