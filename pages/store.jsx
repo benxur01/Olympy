@@ -1,7 +1,7 @@
 // store.jsx — Central mock state (users, centers, requests) with localStorage persistence
 
 const OlympyStore = (() => {
-  const KEY = 'olympy_store_v2';
+  const KEY = 'olympy_store_v3';
 
   // ─── Phone normalization ─────────────────────────────────────────────────
   // "+998 90 123 45 67", "+998901234567", "998901234567", "90 123 45 67"
@@ -121,11 +121,11 @@ const OlympyStore = (() => {
     ],
     // Olympiads — each belongs to a center and references its question IDs
     olympiads: [
-      { id:'o1', centerId:'c1', title:'Matematika Olimpiadasi — May 2026', subject:'Matematika', startDate:'2026-05-02', startTime:'10:00', duration:60, questionIds:['q1','q2','q3','q4','q5','q6','q7','q8','q9','q10'], status:'Active', createdBy:'u2', createdAt:'2026-04-20', participants:124, maxScore:100 },
-      { id:'o2', centerId:'c1', title:'Ingliz tili Bellashuvi', subject:'Ingliz tili', startDate:'2026-05-05', startTime:'14:00', duration:45, questionIds:[], status:'Draft', createdBy:'u2', createdAt:'2026-04-22', participants:0, maxScore:100 },
-      { id:'o3', centerId:'c1', title:'Informatika Olimpiadasi', subject:'Informatika', startDate:'2026-04-28', startTime:'09:00', duration:90, questionIds:[], status:'Finished', createdBy:'u2', createdAt:'2026-04-10', participants:201, maxScore:100, avgScore:81 },
-      { id:'o4', centerId:'c1', title:'Fizika Sinovlari', subject:'Fizika', startDate:'2026-05-10', startTime:'11:00', duration:60, questionIds:[], status:'Draft', createdBy:'u2', createdAt:'2026-04-25', participants:0, maxScore:100 },
-      { id:'o5', centerId:'c2', title:'Ingliz tili Olimpiada — Brilliant', subject:'Ingliz tili', startDate:'2026-05-08', startTime:'10:00', duration:45, questionIds:[], status:'Active', createdBy:null, createdAt:'2026-04-22', participants:42, maxScore:100 },
+      { id:'o1', centerId:'c1', title:'Matematika Olimpiadasi — May 2026', subject:'Matematika', startDate:'2026-05-02', startTime:'10:00', duration:60, questionIds:['q1','q2','q3','q4','q5','q6','q7','q8','q9','q10'], status:'active', createdBy:'u2', createdAt:'2026-04-20', participants:124, maxScore:100 },
+      { id:'o2', centerId:'c1', title:'Ingliz tili Bellashuvi', subject:'Ingliz tili', startDate:'2026-05-05', startTime:'14:00', duration:45, questionIds:[], status:'draft', createdBy:'u2', createdAt:'2026-04-22', participants:0, maxScore:100 },
+      { id:'o3', centerId:'c1', title:'Informatika Olimpiadasi', subject:'Informatika', startDate:'2026-04-28', startTime:'09:00', duration:90, questionIds:[], status:'finished', createdBy:'u2', createdAt:'2026-04-10', participants:201, maxScore:100, avgScore:81 },
+      { id:'o4', centerId:'c1', title:'Fizika Sinovlari', subject:'Fizika', startDate:'2026-05-10', startTime:'11:00', duration:60, questionIds:[], status:'draft', createdBy:'u2', createdAt:'2026-04-25', participants:0, maxScore:100 },
+      { id:'o5', centerId:'c2', title:'Ingliz tili Olimpiada — Brilliant', subject:'Ingliz tili', startDate:'2026-05-08', startTime:'10:00', duration:45, questionIds:[], status:'active', createdBy:null, createdAt:'2026-04-22', participants:42, maxScore:100 },
     ],
     // Test attempts — student submission history
     attempts: [
@@ -293,7 +293,7 @@ const OlympyStore = (() => {
   const createOlympiad = (data) => {
     const id = 'o' + Date.now() + Math.random().toString(36).slice(2,5);
     const o = {
-      id, status: 'Draft', questionIds: [], participants: 0, maxScore: 100,
+      id, status: 'draft', questionIds: [], participants: 0, maxScore: 100,
       createdAt: new Date().toISOString().slice(0,10),
       ...data,
     };
@@ -306,7 +306,7 @@ const OlympyStore = (() => {
   const publishOlympiad = (id) => {
     const o = state.olympiads.find(x => x.id === id);
     if (!o) return;
-    updateOlympiad(id, { status: 'Active' });
+    updateOlympiad(id, { status: 'active' });
     // Notify all approved students of that center
     const approvedStudents = state.users.filter(u =>
       u.roles?.student?.status === 'approved' && u.roles.student.centerId === o.centerId
@@ -469,9 +469,9 @@ const statusLabel = (s) =>
   s === 'pending' ? 'Kutilmoqda' :
   s === 'approved' ? 'Tasdiqlandi' :
   s === 'rejected' ? 'Rad etildi' :
-  s === 'Draft' ? 'Draft' :
-  s === 'Active' ? 'Faol' :
-  s === 'Finished' ? 'Tugagan' :
+  s === 'draft' ? 'Draft' :
+  s === 'active' ? 'Faol' :
+  s === 'finished' ? 'Tugagan' :
   s || '—';
 
 // ─── Cross-page helpers for derived data ─────────────────────────────────

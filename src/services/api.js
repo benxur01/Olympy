@@ -84,9 +84,10 @@ const mapBackendUser = (user) => {
     backendRoles.forEach(role => {
       roles[role] = { status: 'approved', centerId: null };
     });
-    if (user?.is_platform_admin) {
-      roles.admin = { status: 'approved', centerId: null };
-    }
+  }
+  // Platform admin is system-wide; surface it independently of detail.
+  if (user?.is_platform_admin) {
+    roles.admin = { status: 'approved', centerId: null };
   }
   const approvedRoles = Object.keys(roles).filter(r => roles[r]?.status === 'approved');
   return {
@@ -124,6 +125,10 @@ const clearAuth = () => {
   localStorage.removeItem(AUTH_USER_KEY);
 };
 
+const getToken = () => {
+  try { return localStorage.getItem(AUTH_TOKEN_KEY) || null; } catch { return null; }
+};
+
 export const OlympyApi = {
   API_BASE_URL,
   ApiError,
@@ -132,11 +137,39 @@ export const OlympyApi = {
   saveAuth,
   loadAuth,
   clearAuth,
+  getToken,
+  // Auth
   login: (payload) => request('/api/auth/login/', { method: 'POST', body: payload }),
   register: (payload) => request('/api/auth/register/', { method: 'POST', body: payload }),
   startTelegramVerification: (payload) => request('/api/auth/phone/start-telegram-verification/', { method: 'POST', body: payload }),
   verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload }),
+  // Me
+  getMe: (token) => request('/api/me/', { token }),
+  // Centers
+  getCenters: () => request('/api/centers/'),
+  registerCenter: (payload, token) => request('/api/centers/', { method: 'POST', body: payload, token }),
+  joinCenter: (centerId, payload, token) => request(`/api/centers/${centerId}/join/`, { method: 'POST', body: payload, token }),
+  approveStudent: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-student/`, { method: 'POST', body: payload, token }),
+  approveTeacher: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-teacher/`, { method: 'POST', body: payload, token }),
+  approveManager: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-manager/`, { method: 'POST', body: payload, token }),
+  adminApproveCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/approve/`, { method: 'POST', token }),
+  adminRejectCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/reject/`, { method: 'POST', token }),
+  // Olympiads
+  getOlympiads: (token) => request('/api/olympiads/', { token }),
+  createOlympiad: (payload, token) => request('/api/olympiads/', { method: 'POST', body: payload, token }),
+  publishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/publish/`, { method: 'POST', token }),
+  finishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/finish/`, { method: 'POST', token }),
+  // Questions
+  getQuestions: (centerId, token) => request(`/api/questions/?center=${centerId}`, { token }),
+  createQuestion: (payload, token) => request('/api/questions/', { method: 'POST', body: payload, token }),
+  // Attempts / results / leaderboard
   submitAttempt: (payload, token) => request('/api/attempts/', { method: 'POST', body: payload, token }),
+  getMyResults: (token) => request('/api/results/me/', { token }),
+  getLeaderboard: (olympiadId, token) => request(`/api/leaderboard/${olympiadId ? '?olympiad=' + olympiadId : ''}`, { token }),
+  // Notifications
+  getNotifications: (token) => request('/api/notifications/', { token }),
+  markNotificationRead: (id, token) => request(`/api/notifications/${id}/read/`, { method: 'POST', token }),
+  markAllNotificationsRead: (token) => request('/api/notifications/read-all/', { method: 'POST', token }),
 };
 
 Object.assign(globalThis, { OlympyApi });
