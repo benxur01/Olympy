@@ -2,6 +2,7 @@
 
 const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const store = useStore();
+  const isApi = !!user?._api;
   const [page, setPage] = React.useState('home');
   const [createModal, setCreateModal] = React.useState(false);
   const [telegramModal, setTelegramModal] = React.useState(null);
@@ -15,14 +16,37 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 
   // Manager's center
   const managerRole = user.roles?.manager;
-  const center = managerRole?.centerId ? store.centers.find(c => c.id === managerRole.centerId) : null;
+  const managerCenterId = managerRole?.centerId || null;
+
+  // ─── API rejimida olimpiada/savol/markazlarni real backend'dan olish ───
+  const apiCentersRes = useApiData(
+    () => isApi ? OlympyApi.getCenters() : Promise.resolve(null),
+    [isApi],
+  );
+  const apiOlympiadsRes = useApiData(
+    () => isApi ? OlympyApi.getOlympiads(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiQuestionsRes = useApiData(
+    () => (isApi && managerCenterId)
+      ? OlympyApi.getQuestions(managerCenterId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, managerCenterId],
+  );
+
+  const apiCenters = isApi && Array.isArray(apiCentersRes.data) ? apiCentersRes.data.map(mapApiCenter) : null;
+  const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data) ? apiOlympiadsRes.data.map(mapApiOlympiad) : null;
+  const apiQuestions = isApi && Array.isArray(apiQuestionsRes.data) ? apiQuestionsRes.data.map(mapApiQuestion) : null;
+
+  const baseCenters = apiCenters || store.centers;
+  const center = managerCenterId ? baseCenters.find(c => String(c.id) === String(managerCenterId)) : null;
   const centerId = center?.id;
   const centerName = center?.name || 'Markaz';
 
   // Olympiads of this center (live)
-  const olympiads = store.olympiads.filter(o => o.centerId === centerId);
+  const olympiads = (apiOlympiads || store.olympiads).filter(o => String(o.centerId) === String(centerId));
   // Questions of this center (for assigning to olympiads)
-  const centerQuestions = store.questions.filter(q => q.centerId === centerId);
+  const centerQuestions = (apiQuestions || store.questions).filter(q => String(q.centerId) === String(centerId));
 
   // Live students at this center (approved)
   const students = store.users.filter(u =>
@@ -52,7 +76,24 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     };
   });
 
-  const handleRequest = (id, action) => {
+  const handleRequest = (id, action, raw) => {
+    if (isApi) {
+      const token = OlympyApi.getToken();
+      const membershipId = raw?.membershipId ?? raw?.backendId;
+      if (!membershipId || !centerId) {
+        showToast('⚠ API rejimida ariza ma\'lumoti yetarli emas');
+        return;
+      }
+      const backendCenterId = center?.backendId ?? centerId;
+      OlympyApi.approveStudent(
+        backendCenterId,
+        { membership_id: membershipId, decision: action === 'approve' ? 'approve' : 'reject' },
+        token,
+      )
+        .then(() => showToast(action === 'approve' ? '✓ Ariza tasdiqlandi' : '✗ Ariza rad etildi'))
+        .catch(err => { console.warn('approveStudent failed:', err); showToast("⚠ Tasdiqlab bo'lmadi"); });
+      return;
+    }
     if (action === 'approve') OlympyStore.approveRequest(id);
     else OlympyStore.rejectRequest(id);
     showToast(action === 'approve' ? '✓ Ariza tasdiqlandi' : '✗ Ariza rad etildi');
@@ -303,13 +344,30 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 {o.status === 'draft' && (
                   <button onClick={() => {
                     if ((o.questionIds || []).length === 0) { showToast("⚠ Avval savollar tayinlang"); return; }
+                    if (isApi) {
+                      const token = OlympyApi.getToken();
+                      OlympyApi.publishOlympiad(o.backendId ?? o.id, token)
+                        .then(() => { showToast("✓ Olimpiada e'lon qilindi"); apiOlympiadsRes.reload(); })
+                        .catch(err => { console.warn('publishOlympiad failed:', err); showToast("⚠ E'lon qilib bo'lmadi"); });
+                      return;
+                    }
                     OlympyStore.publishOlympiad(o.id);
                     showToast("✓ Olimpiada e'lon qilindi va o'quvchilarga xabar yuborildi");
                   }}
                     className="btn-primary text-xs px-3 py-1.5 rounded-xl">E'lon qilish</button>
                 )}
                 {o.status === 'active' && (
-                  <button onClick={() => { OlympyStore.updateOlympiad(o.id, { status: 'finished' }); showToast('✓ Olimpiada yakunlandi'); }}
+                  <button onClick={() => {
+                    if (isApi) {
+                      const token = OlympyApi.getToken();
+                      OlympyApi.finishOlympiad(o.backendId ?? o.id, token)
+                        .then(() => { showToast('✓ Olimpiada yakunlandi'); apiOlympiadsRes.reload(); })
+                        .catch(err => { console.warn('finishOlympiad failed:', err); showToast("⚠ Yakunlab bo'lmadi"); });
+                      return;
+                    }
+                    OlympyStore.updateOlympiad(o.id, { status: 'finished' });
+                    showToast('✓ Olimpiada yakunlandi');
+                  }}
                     className="btn-ghost text-xs px-3 py-1.5 rounded-xl">Yakunlash</button>
                 )}
               </div>
@@ -406,6 +464,24 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             <button onClick={() => setCreateModal(false)} className="btn-ghost flex-1 py-3 rounded-xl">Bekor qilish</button>
             <button onClick={() => {
               if (!newOlympiad.title || !newOlympiad.startDate) { showToast('⚠ Nomi va sanani kiriting'); return; }
+              if (isApi) {
+                const token = OlympyApi.getToken();
+                const backendCenterId = center?.backendId ?? centerId;
+                const startIso = `${newOlympiad.startDate}T${newOlympiad.startTime || '00:00'}:00`;
+                OlympyApi.createOlympiad({
+                  center: backendCenterId,
+                  title: newOlympiad.title,
+                  subject: newOlympiad.subject,
+                  start_datetime: startIso,
+                  duration_minutes: newOlympiad.duration,
+                  max_score: newOlympiad.maxScore,
+                }, token)
+                  .then(() => { showToast('✓ Olimpiada yaratildi'); apiOlympiadsRes.reload(); })
+                  .catch(err => { console.warn('createOlympiad failed:', err); showToast("⚠ Yaratib bo'lmadi"); });
+                setNewOlympiad({ title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft' });
+                setCreateModal(false);
+                return;
+              }
               OlympyStore.createOlympiad({
                 centerId,
                 title: newOlympiad.title,

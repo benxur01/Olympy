@@ -518,6 +518,104 @@ const formatTime = (s) => {
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 };
 
+// ─── Backend → mock-store shape adapters ────────────────────────────────
+// These let dashboards render API payloads through the same components as
+// the mock store. Only fields actually used by views are mapped.
+const mapApiOlympiad = (o) => {
+  if (!o) return null;
+  const start = o.start_datetime ? new Date(o.start_datetime) : null;
+  return {
+    id: String(o.id),
+    backendId: o.id,
+    centerId: o.center != null ? String(o.center) : null,
+    title: o.title,
+    subject: o.subject,
+    startDate: start ? start.toISOString().slice(0, 10) : '',
+    startTime: start ? start.toTimeString().slice(0, 5) : '',
+    duration: o.duration_minutes ?? o.duration ?? 60,
+    duration_minutes: o.duration_minutes,
+    start_datetime: o.start_datetime,
+    questionIds: Array.isArray(o.question_ids)
+      ? o.question_ids.map(String)
+      : (Array.isArray(o.questions) ? o.questions.map(String) : []),
+    status: o.status || 'draft',
+    createdAt: (o.created_at || '').slice(0, 10),
+    participants: o.participants || 0,
+    maxScore: o.max_score ?? 100,
+    _api: true,
+  };
+};
+
+const mapApiCenter = (c) => {
+  if (!c) return null;
+  return {
+    id: String(c.id),
+    backendId: c.id,
+    name: c.name,
+    city: c.city,
+    ownerId: c.owner != null ? String(c.owner) : null,
+    status: c.status || 'pending',
+    subjects: Array.isArray(c.subjects) ? c.subjects : [],
+    rating: parseFloat(c.rating) || 0,
+    students: c.students || 0,
+    olympiads: c.olympiads || 0,
+    createdAt: (c.created_at || '').slice(0, 10),
+    _api: true,
+  };
+};
+
+const mapApiNotification = (n) => {
+  if (!n) return null;
+  return {
+    id: String(n.id),
+    backendId: n.id,
+    userId: n.user != null ? `api:${n.user}` : null,
+    centerId: n.center != null ? String(n.center) : null,
+    type: n.type || '',
+    title: n.title || '',
+    message: n.message || '',
+    isRead: !!n.is_read,
+    createdAt: n.created_at || '',
+    _api: true,
+  };
+};
+
+const mapApiAttempt = (a) => {
+  if (!a) return null;
+  return {
+    id: String(a.id),
+    backendId: a.id,
+    userId: a.user != null ? `api:${a.user}` : null,
+    olympiadId: a.olympiad != null ? String(a.olympiad) : null,
+    answers: a.answers || {},
+    score: a.score || 0,
+    correctCount: a.correct_count || 0,
+    wrongCount: a.wrong_count || 0,
+    totalQuestions: a.total_questions || 0,
+    timeSpent: a.time_spent || 0,
+    rank: a.rank || null,
+    submittedAt: a.submitted_at || '',
+    _api: true,
+  };
+};
+
+const mapApiQuestion = (q) => {
+  if (!q) return null;
+  return {
+    id: String(q.id),
+    backendId: q.id,
+    centerId: q.center != null ? String(q.center) : null,
+    subject: q.subject,
+    text: q.text,
+    options: Array.isArray(q.options) ? q.options : [],
+    correctAnswer: q.correct_answer ?? 0,
+    score: q.score ?? 3,
+    difficulty: q.difficulty || 'medium',
+    source: q.source || 'manual',
+    _api: true,
+  };
+};
+
 // Best-effort parse of an olympiad's scheduled start instant. Returns null
 // when the olympiad has no scheduled start (e.g. legacy mock entries without
 // a startDate).
@@ -546,4 +644,5 @@ Object.assign(window, {
   ROLE_META, getApprovedRoles, getPendingRoles, hasApprovedRole, getRoleStatus, roleHomePage, statusLabel,
   olympiadsForStudent, olympiadsForCenter, attemptsForUser, notificationsForUser, leaderboardForOlympiad,
   formatTime, olympiadStartMoment, telegramJoinRequestText, telegramOlympiadPublishedText,
+  mapApiOlympiad, mapApiCenter, mapApiNotification, mapApiAttempt, mapApiQuestion,
 });

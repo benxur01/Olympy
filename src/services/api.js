@@ -78,8 +78,19 @@ const mapBackendUser = (user) => {
   const detail = user?.roles_detail && typeof user.roles_detail === 'object'
     ? user.roles_detail
     : null;
-  const roles = detail ? { ...detail } : {};
-  if (!detail) {
+  const roles = {};
+  if (detail) {
+    // Normalize centerId to string — backend returns integer, the rest of
+    // the frontend (mock store, comparisons) treats centerIds as strings.
+    Object.keys(detail).forEach(role => {
+      const entry = detail[role] || {};
+      const cid = entry.centerId ?? entry.center_id;
+      roles[role] = {
+        status: entry.status || 'pending',
+        centerId: cid != null ? String(cid) : null,
+      };
+    });
+  } else {
     const backendRoles = Array.isArray(user?.roles) ? user.roles : [];
     backendRoles.forEach(role => {
       roles[role] = { status: 'approved', centerId: null };

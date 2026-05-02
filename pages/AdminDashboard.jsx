@@ -18,6 +18,7 @@ const ADMIN_USERS = [
 
 const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const store = useStore();
+  const isApi = !!user?._api;
   const [page, setPage] = React.useState('home');
   const [blockModal, setBlockModal] = React.useState(null);
   const [addCenterModal, setAddCenterModal] = React.useState(false);
@@ -28,8 +29,20 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
-  // Live data from store
-  const centers = store.centers;
+  // ─── API rejimida tasdiqlangan markazlar ───────────────────────────────
+  // TODO: admin centers endpoint qo'shilgach (pending markazlarni ham
+  //       qaytaradigan), bu joyda mock fallback'ini olib tashlash kerak.
+  //       Hozir public /api/centers/ faqat approved markazlarni beradi.
+  const apiCentersRes = useApiData(
+    () => isApi ? OlympyApi.getCenters() : Promise.resolve(null),
+    [isApi],
+  );
+  const apiCenters = isApi && Array.isArray(apiCentersRes.data) ? apiCentersRes.data.map(mapApiCenter) : null;
+
+  // Live data — API approved markazlar bilan, qolgan hammasi mock
+  const centers = apiCenters
+    ? [...apiCenters, ...store.centers.filter(c => c.status !== 'approved' && !apiCenters.some(ac => String(ac.id) === String(c.id)))]
+    : store.centers;
   const allUsers = store.users;
   const pendingCenterReqs = store.requests.filter(r => r.type === 'center' && r.status === 'pending');
   const pendingManagerReqs = store.requests.filter(r => r.type === 'manager' && r.status === 'pending');
@@ -40,8 +53,36 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     showToast('Foydalanuvchi holati yangilandi');
   };
 
-  const approveCenterReq = (id) => { OlympyStore.approveRequest(id); showToast('✓ Markaz tasdiqlandi'); };
-  const rejectCenterReq  = (id) => { OlympyStore.rejectRequest(id);  showToast('✗ Markaz rad etildi'); };
+  const approveCenterReq = (id) => {
+    if (isApi) {
+      const req = store.requests.find(r => r.id === id);
+      const c = req ? store.centers.find(x => x.id === req.centerId) : null;
+      const backendCenterId = c?.backendId;
+      if (backendCenterId) {
+        OlympyApi.adminApproveCenter(backendCenterId, OlympyApi.getToken())
+          .then(() => { showToast('✓ Markaz tasdiqlandi'); apiCentersRes.reload(); })
+          .catch(err => { console.warn('adminApproveCenter failed:', err); showToast("⚠ Tasdiqlab bo'lmadi"); });
+        return;
+      }
+    }
+    OlympyStore.approveRequest(id);
+    showToast('✓ Markaz tasdiqlandi');
+  };
+  const rejectCenterReq = (id) => {
+    if (isApi) {
+      const req = store.requests.find(r => r.id === id);
+      const c = req ? store.centers.find(x => x.id === req.centerId) : null;
+      const backendCenterId = c?.backendId;
+      if (backendCenterId) {
+        OlympyApi.adminRejectCenter(backendCenterId, OlympyApi.getToken())
+          .then(() => { showToast('✗ Markaz rad etildi'); apiCentersRes.reload(); })
+          .catch(err => { console.warn('adminRejectCenter failed:', err); showToast("⚠ Rad etib bo'lmadi"); });
+        return;
+      }
+    }
+    OlympyStore.rejectRequest(id);
+    showToast('✗ Markaz rad etildi');
+  };
 
   // Display table for users — derive label from real role data
   const userRows = allUsers.map(u => {
