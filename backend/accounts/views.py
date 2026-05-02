@@ -101,6 +101,11 @@ def start_telegram_phone_verification(request):
     serializer = StartTelegramPhoneVerificationSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     normalized_phone = serializer.validated_data['phone']
+    PhoneVerification.objects.filter(
+        normalized_phone=normalized_phone,
+        verified_at__isnull=True,
+        otp_expires_at__lt=timezone.now(),
+    ).delete()
     verification = PhoneVerification.objects.create(
         normalized_phone=normalized_phone,
         verify_token=secrets.token_urlsafe(32),
