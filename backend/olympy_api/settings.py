@@ -13,6 +13,8 @@ following environment variables:
 import os
 from pathlib import Path
 
+from django.core.exceptions import ImproperlyConfigured
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -33,8 +35,10 @@ def load_local_env(env_path):
 
 load_local_env(BASE_DIR / '.env')
 
-SECRET_KEY = os.environ.get('OLYMPY_SECRET_KEY', 'dev-only-change-me-in-production')
-DEBUG = os.environ.get('OLYMPY_DEBUG', '1') == '1'
+SECRET_KEY = os.environ.get('OLYMPY_SECRET_KEY')
+if not SECRET_KEY:
+    raise ImproperlyConfigured("OLYMPY_SECRET_KEY muhit o'zgaruvchisi o'rnatilmagan")
+DEBUG = os.environ.get('OLYMPY_DEBUG', '0') == '1'
 ALLOWED_HOSTS = os.environ.get('OLYMPY_ALLOWED_HOSTS', '*').split(',')
 
 INSTALLED_APPS = [

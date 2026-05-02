@@ -14,6 +14,24 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
   // Resolve the question list: prefer store-backed olympiad.questionIds → store.questions
   const liveOlympiad = olympiad ? store.olympiads.find(o => o.id === olympiad.id) || olympiad : null;
+
+  const now = new Date();
+  const startStr = liveOlympiad?.startDate && liveOlympiad?.startTime
+    ? `${liveOlympiad.startDate}T${liveOlympiad.startTime}` : null;
+  const startDt = startStr ? new Date(startStr) : null;
+  const endDt = startDt ? new Date(startDt.getTime() + (liveOlympiad.duration || 60) * 60000) : null;
+
+  if (startDt && now < startDt) {
+    return <PendingAccessCard title="Olimpiada hali boshlanmagan" status="pending"
+      message={`Boshlanish vaqti: ${liveOlympiad.startDate} ${liveOlympiad.startTime}`}
+      onBack={() => onNavigate('student')} />;
+  }
+  if (endDt && now > endDt) {
+    return <PendingAccessCard title="Olimpiada tugagan" status="rejected"
+      message="Bu olimpiadaga qatnashish muddati o'tib ketdi."
+      onBack={() => onNavigate('student')} />;
+  }
+
   const assignedIds = liveOlympiad?.questionIds || [];
   const assignedQuestions = assignedIds
     .map(qid => store.questions.find(q => q.id === qid))
@@ -52,6 +70,13 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const handleSubmit = () => {
     setConfirmModal(false);
     setSubmitted(true);
+
+    const formattedAnswers = {};
+    Object.entries(answers).forEach(([idx, optIdx]) => {
+      const q = TEST_QUESTIONS[parseInt(idx, 10)];
+      if (q) formattedAnswers[q.id] = optIdx;
+    });
+
     // Consistent score calculation: count correct, derive score & percentage from same source
     const correct = TEST_QUESTIONS.filter((q, i) => answers[i] === (q.correctAnswer ?? q.correct)).length;
     const wrong = TOTAL - correct;
@@ -70,7 +95,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       attempt = OlympyStore.recordAttempt({
         userId: user.id,
         olympiadId: liveOlympiad.id,
-        answers,
+        answers: formattedAnswers,
         score,
         correctCount: correct,
         wrongCount: wrong,
@@ -78,6 +103,23 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         timeSpent,
         rank,
       });
+    }
+
+    // If the olympiad is backend-backed (numeric id) and the user has a live
+    // API session, also persist the attempt server-side. Failures are logged
+    // but do not block the local result screen.
+    const numericOlympiadId = liveOlympiad?.backendId
+      ?? (typeof liveOlympiad?.id === 'number' ? liveOlympiad.id : null);
+    if (numericOlympiadId != null && user?._api) {
+      try {
+        const auth = globalThis.OlympyApi?.loadAuth?.();
+        if (auth?.token) {
+          globalThis.OlympyApi.submitAttempt(
+            { olympiad: numericOlympiadId, answers: formattedAnswers, time_spent: timeSpent },
+            auth.token,
+          ).catch(err => console.warn('submitAttempt failed:', err?.message));
+        }
+      } catch (err) { console.warn('submitAttempt error:', err); }
     }
 
     setTimeout(() => onFinish({

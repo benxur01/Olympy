@@ -75,15 +75,20 @@ const request = async (path, { method = 'GET', body, token, headers = {} } = {})
 };
 
 const mapBackendUser = (user) => {
-  const roles = {};
-  const backendRoles = Array.isArray(user?.roles) ? user.roles : [];
-  backendRoles.forEach(role => {
-    roles[role] = { status: 'approved' };
-  });
-  if (user?.is_platform_admin) {
-    roles.admin = { status: 'approved' };
+  const detail = user?.roles_detail && typeof user.roles_detail === 'object'
+    ? user.roles_detail
+    : null;
+  const roles = detail ? { ...detail } : {};
+  if (!detail) {
+    const backendRoles = Array.isArray(user?.roles) ? user.roles : [];
+    backendRoles.forEach(role => {
+      roles[role] = { status: 'approved', centerId: null };
+    });
+    if (user?.is_platform_admin) {
+      roles.admin = { status: 'approved', centerId: null };
+    }
   }
-  const approvedRoles = Object.keys(roles);
+  const approvedRoles = Object.keys(roles).filter(r => roles[r]?.status === 'approved');
   return {
     id: `api:${user.id}`,
     backendId: user.id,
@@ -91,7 +96,7 @@ const mapBackendUser = (user) => {
     phone: user.normalized_phone || user.phone,
     password: '',
     roles,
-    activeRole: approvedRoles[0] || null,
+    activeRole: approvedRoles[0] || Object.keys(roles)[0] || null,
     joined: (user.created_at || '').slice(0, 10),
     isPlatformAdmin: !!user.is_platform_admin,
     _api: true,
@@ -131,6 +136,7 @@ export const OlympyApi = {
   register: (payload) => request('/api/auth/register/', { method: 'POST', body: payload }),
   startTelegramVerification: (payload) => request('/api/auth/phone/start-telegram-verification/', { method: 'POST', body: payload }),
   verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload }),
+  submitAttempt: (payload, token) => request('/api/attempts/', { method: 'POST', body: payload, token }),
 };
 
 Object.assign(globalThis, { OlympyApi });

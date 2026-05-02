@@ -4,7 +4,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from centers.models import CenterMembership
+from centers.models import CenterMembership, EducationCenter
 
 from .models import Olympiad
 from .serializers import OlympiadSerializer
@@ -15,15 +15,10 @@ def _user_can_manage_center(user, center):
     if user.is_platform_admin:
         return True
     if center.owner_id == user.id:
-        return (
-            center.status == center.STATUS_APPROVED
-            and CenterMembership.objects.filter(
-                user=user,
-                center=center,
-                role=CenterMembership.ROLE_OWNER,
-                status=CenterMembership.STATUS_APPROVED,
-            ).exists()
-        )
+        # Once admin has approved the center, the owner has full management
+        # rights regardless of their CenterMembership state — the membership
+        # row is bookkeeping, the center.owner_id is authoritative.
+        return center.status == EducationCenter.STATUS_APPROVED
     return CenterMembership.objects.filter(
         user=user, center=center,
         role=CenterMembership.ROLE_MANAGER,

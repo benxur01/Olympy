@@ -1,28 +1,5 @@
 // pages/ManagerDashboard.jsx
 
-const MOCK_STUDENTS = [
-  { id: 1, name: 'Ali Valiyev', phone: '+998901234567', joined: '2026-03-15', status: 'Tasdiqlandi', olympiads: 5, avgScore: 87, subject: 'Matematika' },
-  { id: 2, name: 'Malika Toshmatova', phone: '+998901234570', joined: '2026-03-20', status: 'Tasdiqlandi', olympiads: 3, avgScore: 92, subject: 'Ingliz tili' },
-  { id: 3, name: 'Jasur Normatov', phone: '+998901234571', joined: '2026-04-01', status: 'Tasdiqlandi', olympiads: 4, avgScore: 75, subject: 'Fizika' },
-  { id: 4, name: 'Nilufar Karimova', phone: '+998901234572', joined: '2026-04-10', status: 'Tasdiqlandi', olympiads: 2, avgScore: 88, subject: 'Kimyo' },
-  { id: 5, name: 'Sherzod Tursunov', phone: '+998901234573', joined: '2026-04-15', status: 'Tasdiqlandi', olympiads: 1, avgScore: 70, subject: 'Biologiya' },
-];
-
-const MOCK_REQUESTS = [
-  { id: 1, name: 'Bobur Xolmatov', phone: '+998901234580', date: '2026-04-27', status: 'Kutilmoqda', subject: 'Matematika' },
-  { id: 2, name: 'Zulfiya Yusupova', phone: '+998901234581', date: '2026-04-27', status: 'Kutilmoqda', subject: 'Ingliz tili' },
-  { id: 3, name: 'Otabek Mirzayev', phone: '+998901234582', date: '2026-04-26', status: 'Kutilmoqda', subject: 'Fizika' },
-  { id: 4, name: 'Kamola Hasanova', phone: '+998901234583', date: '2026-04-25', status: 'Tasdiqlandi', subject: 'Kimyo' },
-  { id: 5, name: 'Eldor Raximov', phone: '+998901234584', date: '2026-04-24', status: 'Rad etildi', subject: 'Biologiya' },
-];
-
-const MANAGER_OLYMPIADS = [
-  { id: 1, title: 'Matematika Olimpiadasi — May 2026', subject: 'Matematika', date: '2026-05-02', participants: 124, status: 'Faol', avgScore: 74 },
-  { id: 2, title: 'Ingliz tili Bellashuvi', subject: 'Ingliz tili', date: '2026-05-05', participants: 89, status: 'Draft', avgScore: 0 },
-  { id: 3, title: 'Informatika Olimpiadasi', subject: 'Informatika', date: '2026-04-28', participants: 201, status: 'Tugagan', avgScore: 81 },
-  { id: 4, title: 'Fizika Sinovlari', subject: 'Fizika', date: '2026-05-10', participants: 67, status: 'Draft', avgScore: 0 },
-];
-
 const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const store = useStore();
   const [page, setPage] = React.useState('home');
@@ -504,4 +481,4 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   );
 };
 
-Object.assign(window, { ManagerDashboard, MOCK_STUDENTS, MOCK_REQUESTS, MANAGER_OLYMPIADS });
+Object.assign(window, { ManagerDashboard });

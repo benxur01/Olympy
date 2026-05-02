@@ -518,6 +518,23 @@ const formatTime = (s) => {
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
 };
 
+// Best-effort parse of an olympiad's scheduled start instant. Returns null
+// when the olympiad has no scheduled start (e.g. legacy mock entries without
+// a startDate).
+const olympiadStartMoment = (olympiad) => {
+  if (!olympiad) return null;
+  if (olympiad.start_datetime) {
+    const d = new Date(olympiad.start_datetime);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  if (olympiad.startDate) {
+    const time = olympiad.startTime || '00:00';
+    const d = new Date(`${olympiad.startDate}T${time.length === 5 ? `${time}:00` : time}`);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  return null;
+};
+
 // Telegram-style mock message strings (for toasts/preview)
 const telegramJoinRequestText = (studentName, centerName) =>
   `Yangi o'quvchi ariza yubordi: ${studentName}.\nO'quv markaz: ${centerName}.\nTasdiqlaysizmi?`;
@@ -528,5 +545,5 @@ Object.assign(window, {
   OlympyStore, useStore,
   ROLE_META, getApprovedRoles, getPendingRoles, hasApprovedRole, getRoleStatus, roleHomePage, statusLabel,
   olympiadsForStudent, olympiadsForCenter, attemptsForUser, notificationsForUser, leaderboardForOlympiad,
-  formatTime, telegramJoinRequestText, telegramOlympiadPublishedText,
+  formatTime, olympiadStartMoment, telegramJoinRequestText, telegramOlympiadPublishedText,
 });
