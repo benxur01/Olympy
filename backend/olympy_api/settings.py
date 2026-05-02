@@ -132,6 +132,8 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # DRF
@@ -155,6 +157,8 @@ REST_FRAMEWORK = {
         'user': '100/min',
         'auth': '5/min',
     },
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 50,
 }
 
 SIMPLE_JWT = {

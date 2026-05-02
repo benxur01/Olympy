@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
@@ -23,7 +24,8 @@ def centers_list_create(request):
     POST /api/centers/    — register a new center; status starts pending.
     """
     if request.method == 'GET':
-        qs = EducationCenter.objects.filter(status=EducationCenter.STATUS_APPROVED)
+        queryset = EducationCenter.objects.select_related('owner').order_by('-created_at')
+        qs = queryset.filter(status=EducationCenter.STATUS_APPROVED)
         return Response(EducationCenterSerializer(qs, many=True).data)
 
     if not request.user.is_authenticated:
@@ -31,21 +33,21 @@ def centers_list_create(request):
                         status=http_status.HTTP_401_UNAUTHORIZED)
     serializer = CenterRegisterSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-    center = EducationCenter.objects.create(
-        name=serializer.validated_data['name'],
-        city=serializer.validated_data['city'],
-        subjects=serializer.validated_data.get('subjects', []),
-        owner=request.user,
-        status=EducationCenter.STATUS_PENDING,
-    )
-    # Pre-create owner membership in pending state
-    CenterMembership.objects.get_or_create(
-        user=request.user,
-        center=center,
-        role=CenterMembership.ROLE_OWNER,
-        defaults={'status': CenterMembership.STATUS_PENDING},
-    )
-    request.user.add_role('owner')
+    with transaction.atomic():
+        center = EducationCenter.objects.create(
+            name=serializer.validated_data['name'],
+            city=serializer.validated_data['city'],
+            subjects=serializer.validated_data.get('subjects', []),
+            owner=request.user,
+            status=EducationCenter.STATUS_PENDING,
+        )
+        CenterMembership.objects.create(
+            user=request.user,
+            center=center,
+            role=CenterMembership.ROLE_OWNER,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        request.user.add_role('owner')
     return Response(EducationCenterSerializer(center).data,
                     status=http_status.HTTP_201_CREATED)
 
@@ -137,6 +139,11 @@ def _approve(request, center_id, role):
     if not _user_can_approve(request.user, center, role):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
+    if membership.status != CenterMembership.STATUS_PENDING:
+        return Response(
+            {'detail': "Bu ariza allaqachon ko'rib chiqilgan"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
     decision = serializer.validated_data['decision']
     membership.status = (
         CenterMembership.STATUS_APPROVED
@@ -224,15 +231,16 @@ def admin_approve_center(request, center_id):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
     center = get_object_or_404(EducationCenter, pk=center_id)
-    center.status = EducationCenter.STATUS_APPROVED
-    center.save(update_fields=['status'])
-    # Promote owner membership too
-    if center.owner_id:
-        CenterMembership.objects.filter(
-            user=center.owner, center=center,
-            role=CenterMembership.ROLE_OWNER,
-        ).update(status=CenterMembership.STATUS_APPROVED, approved_by=request.user)
-        center.owner.add_role('owner')
+    with transaction.atomic():
+        center.status = EducationCenter.STATUS_APPROVED
+        center.save(update_fields=['status'])
+        # Promote owner membership too
+        if center.owner_id:
+            CenterMembership.objects.filter(
+                user=center.owner, center=center,
+                role=CenterMembership.ROLE_OWNER,
+            ).update(status=CenterMembership.STATUS_APPROVED, approved_by=request.user)
+            center.owner.add_role('owner')
     return Response(EducationCenterSerializer(center).data)
 
 
@@ -244,11 +252,12 @@ def admin_reject_center(request, center_id):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
     center = get_object_or_404(EducationCenter, pk=center_id)
-    center.status = EducationCenter.STATUS_REJECTED
-    center.save(update_fields=['status'])
-    if center.owner_id:
-        CenterMembership.objects.filter(
-            user=center.owner, center=center,
-            role=CenterMembership.ROLE_OWNER,
-        ).update(status=CenterMembership.STATUS_REJECTED, approved_by=request.user)
+    with transaction.atomic():
+        center.status = EducationCenter.STATUS_REJECTED
+        center.save(update_fields=['status'])
+        if center.owner_id:
+            CenterMembership.objects.filter(
+                user=center.owner, center=center,
+                role=CenterMembership.ROLE_OWNER,
+            ).update(status=CenterMembership.STATUS_REJECTED, approved_by=request.user)
     return Response(EducationCenterSerializer(center).data)
