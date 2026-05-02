@@ -97,15 +97,9 @@ def _user_can_approve(user, center, role):
     if user.is_platform_admin:
         return True
     if center.owner_id == user.id:
-        return (
-            center.status == EducationCenter.STATUS_APPROVED
-            and CenterMembership.objects.filter(
-                user=user,
-                center=center,
-                role=CenterMembership.ROLE_OWNER,
-                status=CenterMembership.STATUS_APPROVED,
-            ).exists()
-        )
+        # Center owners always have approval authority once admin has approved
+        # the center; their own owner-membership record is informational only.
+        return center.status == EducationCenter.STATUS_APPROVED
     # Managers can approve students/teachers at their own center.
     if role in (CenterMembership.ROLE_STUDENT, CenterMembership.ROLE_TEACHER):
         return CenterMembership.objects.filter(

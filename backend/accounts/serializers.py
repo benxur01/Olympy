@@ -5,12 +5,25 @@ from .utils import normalize_phone
 
 
 class UserSerializer(serializers.ModelSerializer):
+    roles_detail = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = ['id', 'full_name', 'phone', 'normalized_phone', 'roles',
-                  'is_platform_admin', 'is_active', 'created_at']
-        read_only_fields = ['id', 'normalized_phone', 'is_platform_admin',
-                            'is_active', 'created_at']
+                  'roles_detail', 'is_platform_admin', 'is_active', 'created_at']
+        read_only_fields = ['id', 'normalized_phone', 'roles_detail',
+                            'is_platform_admin', 'is_active', 'created_at']
+
+    def get_roles_detail(self, obj):
+        from centers.models import CenterMembership
+
+        roles_detail = {}
+        for membership in CenterMembership.objects.filter(user=obj):
+            roles_detail[membership.role] = {
+                'status': membership.status,
+                'centerId': membership.center_id,
+            }
+        return roles_detail
 
 
 class RegisterSerializer(serializers.Serializer):

@@ -1,27 +1,5 @@
 // pages/StudentDashboard.jsx
 
-const MOCK_OLYMPIADS = [
-  { id: 1, title: 'Matematika Olimpiadasi', subject: 'Matematika', date: '2026-05-02', time: '10:00', duration: 60, questions: 30, status: 'Faol', participants: 124, maxScore: 100 },
-  { id: 2, title: 'Ingliz tili Bellashuvi', subject: 'Ingliz tili', date: '2026-05-05', time: '14:00', duration: 45, questions: 25, status: 'Faol', participants: 89, maxScore: 100 },
-  { id: 3, title: 'Informatika Olimpiadasi', subject: 'Informatika', date: '2026-04-28', time: '09:00', duration: 90, questions: 40, status: 'Tugagan', participants: 201, maxScore: 100 },
-  { id: 4, title: 'Fizika Sinovlari', subject: 'Fizika', date: '2026-05-10', time: '11:00', duration: 60, questions: 30, status: 'Faol', participants: 67, maxScore: 100 },
-];
-
-const MOCK_RESULTS = [
-  { id: 1, olympiad: 'Informatika Olimpiadasi', subject: 'Informatika', score: 87, total: 100, rank: 3, date: '2026-04-28', correct: 35, wrong: 5 },
-  { id: 2, olympiad: 'Biologiya Testi', subject: 'Biologiya', score: 72, total: 100, rank: 12, date: '2026-04-15', correct: 29, wrong: 11 },
-  { id: 3, olympiad: 'Tarix Bellashuvi', subject: 'Tarix', score: 91, total: 100, rank: 1, date: '2026-04-05', correct: 38, wrong: 2 },
-];
-
-// MOCK_CENTERS kept for backward-compat (other pages may import it). Live data comes from the store.
-const MOCK_CENTERS = [
-  { id: 1, name: 'ProSkill Academy', city: 'Toshkent', students: 234, subjects: ['Matematika', 'Fizika', 'Informatika'], rating: 4.8, olympiads: 12 },
-  { id: 2, name: 'Brilliant Education', city: 'Samarqand', students: 187, subjects: ['Ingliz tili', 'Ona tili'], rating: 4.6, olympiads: 8 },
-  { id: 3, name: 'Leader Academy', city: 'Toshkent', students: 312, subjects: ['Matematika', 'Kimyo', 'Biologiya'], rating: 4.9, olympiads: 18 },
-  { id: 4, name: 'Najot Ta\'lim', city: 'Buxoro', students: 145, subjects: ['Informatika', 'Fizika'], rating: 4.7, olympiads: 7 },
-  { id: 5, name: 'IT Park Academy', city: 'Toshkent', students: 278, subjects: ['Informatika', 'Matematika'], rating: 4.8, olympiads: 14 },
-];
-
 const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const store = useStore();
   const [page, setPage] = React.useState('home');
@@ -442,4 +420,4 @@ const OlympiadCard = ({ olympiad: o, onStart, locked }) => {
   );
 };
 
-Object.assign(window, { StudentDashboard, OlympiadCard, MOCK_OLYMPIADS, MOCK_RESULTS, MOCK_CENTERS });
+Object.assign(window, { StudentDashboard, OlympiadCard });

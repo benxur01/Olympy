@@ -7,7 +7,7 @@ from olympiads.models import Olympiad
 class TestAttempt(models.Model):
     """One submission of an olympiad by a student.
 
-    Score is stored as the final integer score (0..max_score). ``answers`` is
+    Score is stored as the final weighted percentage (0..100). ``answers`` is
     a JSON map of {question_id: chosen_option_index}. ``rank`` is calculated
     at submission time and may be re-computed by background jobs.
     """
@@ -32,6 +32,12 @@ class TestAttempt(models.Model):
 
     class Meta:
         ordering = ['-submitted_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'olympiad'],
+                name='unique_user_olympiad',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.user_id}@{self.olympiad_id} = {self.score}'
