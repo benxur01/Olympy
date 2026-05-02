@@ -31,10 +31,18 @@ def questions_list_create(request):
     POST /api/questions/                 — create one (approved teacher/manager/owner only).
     """
     if request.method == 'GET':
-        qs = Question.objects.all()
         center_id = request.query_params.get('center')
-        if center_id:
-            qs = qs.filter(center_id=center_id)
+        if not center_id:
+            return Response(
+                {'detail': 'center query parametri majburiy'},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        if not _user_can_create_for_center(request.user, center_id):
+            return Response(
+                {'detail': 'Forbidden'},
+                status=http_status.HTTP_403_FORBIDDEN,
+            )
+        qs = Question.objects.filter(center_id=center_id)
         return Response(QuestionSerializer(qs, many=True).data)
 
     serializer = QuestionSerializer(data=request.data)

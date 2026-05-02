@@ -80,7 +80,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     // Consistent score calculation: count correct, derive score & percentage from same source
     const correct = TEST_QUESTIONS.filter((q, i) => answers[i] === (q.correctAnswer ?? q.correct)).length;
     const wrong = TOTAL - correct;
-    const score = Math.round((correct / TOTAL) * 100);
+    const earnedScore = TEST_QUESTIONS.reduce((sum, q, i) => {
+      return answers[i] === (q.correctAnswer ?? q.correct) ? sum + (q.score || 3) : sum;
+    }, 0);
+    const maxPossible = TEST_QUESTIONS.reduce((sum, q) => sum + (q.score || 3), 0);
+    const score = maxPossible ? Math.round((earnedScore / maxPossible) * 100) : 0;
     const timeSpent = DURATION - timeLeft;
 
     // Compute rank within current attempts on this olympiad (live)
