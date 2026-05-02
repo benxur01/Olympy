@@ -14,14 +14,39 @@ const LEADERBOARD_SEED = [
   { rank:10, name:'Eldor Raximov', center:'Najot Ta\'lim', subject:'Matematika', score:77, time:'35:00', badge:'', city:'Buxoro' },
 ];
 
-const LeaderboardPage = ({ onNavigate, embedded }) => {
+// Backend leaderboard yozuvi → frontend mos shakl. Backend: { rank,
+// attempt_id, user_id, name, center, subject, score, time_spent }.
+const mapApiLeaderboard = (entry) => ({
+  key: 'api:' + (entry.attempt_id ?? `${entry.user_id}-${entry.rank}`),
+  rank: entry.rank,
+  name: entry.name || entry.user?.full_name || "Noma'lum",
+  center: entry.center || '—',
+  subject: entry.subject || '—',
+  score: entry.score || 0,
+  time: formatTime(entry.time_spent || 0),
+  city: entry.city || '—',
+  _api: true,
+});
+
+const LeaderboardPage = ({ onNavigate, embedded, user }) => {
   const store = useStore();
+  const isApi = !!user?._api || !!OlympyApi.getToken?.();
   const [filterSubject, setFilterSubject] = React.useState('');
   const [filterCity, setFilterCity] = React.useState('');
   const [activeTab, setActiveTab] = React.useState('all');
 
-  // Build live entries from attempts in the store, then merge with demo seed
-  const liveEntries = store.attempts.map(a => {
+  // ─── API rejimida real reyting ──────────────────────────────────────────
+  // Faqat API user / saqlangan token mavjud bo'lganda chaqiramiz.
+  const apiLbRes = useApiData(
+    () => isApi ? OlympyApi.getLeaderboard(null, OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiEntries = isApi && Array.isArray(apiLbRes.data)
+    ? apiLbRes.data.map(mapApiLeaderboard)
+    : null;
+
+  // Mock rejim — store.attempts dan derive qilib, demo seed bilan birga.
+  const liveEntries = (store.attempts || []).map(a => {
     const u = store.users.find(x => x.id === a.userId);
     const o = store.olympiads.find(x => x.id === a.olympiadId);
     const c = o ? store.centers.find(x => x.id === o.centerId) : null;
@@ -37,9 +62,14 @@ const LeaderboardPage = ({ onNavigate, embedded }) => {
     };
   });
 
-  const merged = [...liveEntries, ...LEADERBOARD_SEED.map(d => ({ ...d, key: 's' + d.rank }))]
-    .sort((a, b) => b.score - a.score)
-    .map((d, i) => ({ ...d, rank: i + 1, badge: i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '' }));
+  // API ro'yxati mavjud bo'lsa undan, aks holda mock + demo seed dan.
+  const merged = apiEntries
+    ? apiEntries.slice().sort((a, b) => b.score - a.score)
+        .map((d, i) => ({ ...d, rank: i + 1, badge: i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '' }))
+    : [...liveEntries, ...LEADERBOARD_SEED.map(d => ({ ...d, key: 's' + d.rank }))]
+        .sort((a, b) => b.score - a.score)
+        .map((d, i) => ({ ...d, rank: i + 1, badge: i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '' }));
+  const apiLoading = isApi && apiLbRes.loading && !apiEntries;
 
   const subjects = [...new Set(merged.map(d => d.subject))].filter(Boolean);
   const cities = [...new Set(merged.map(d => d.city))].filter(Boolean);
@@ -78,6 +108,10 @@ const LeaderboardPage = ({ onNavigate, embedded }) => {
           </button>
         ))}
       </div>
+
+      {apiLoading && (
+        <div className="glass rounded-2xl p-6 text-center text-white/50 text-sm">Reyting yuklanmoqda...</div>
+      )}
 
       {/* Top 3 podium */}
       <div className="grid grid-cols-3 gap-3">
@@ -142,4 +176,4 @@ const LeaderboardPage = ({ onNavigate, embedded }) => {
   return content;
 };
 
-Object.assign(window, { LeaderboardPage });
+Object.assign(window, { LeaderboardPage, mapApiLeaderboard });

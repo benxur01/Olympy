@@ -77,58 +77,78 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       if (q) formattedAnswers[q.id] = optIdx;
     });
 
-    // Consistent score calculation: count correct, derive score & percentage from same source
+    // Local (mock) score — backend api rejimida bu qiymatlar fallback
+    // sifatida ishlatiladi (agar API javobi kelmasa).
     const correct = TEST_QUESTIONS.filter((q, i) => answers[i] === (q.correctAnswer ?? q.correct)).length;
     const wrong = TOTAL - correct;
     const earnedScore = TEST_QUESTIONS.reduce((sum, q, i) => {
       return answers[i] === (q.correctAnswer ?? q.correct) ? sum + (q.score || 3) : sum;
     }, 0);
     const maxPossible = TEST_QUESTIONS.reduce((sum, q) => sum + (q.score || 3), 0);
-    const score = maxPossible ? Math.round((earnedScore / maxPossible) * 100) : 0;
+    const localScore = maxPossible ? Math.round((earnedScore / maxPossible) * 100) : 0;
     const timeSpent = DURATION - timeLeft;
 
-    // Compute rank within current attempts on this olympiad (live)
-    let rank = 1;
+    // Compute rank within current attempts on this olympiad (mock fallback)
+    let localRank = 1;
     if (liveOlympiad) {
       const others = store.attempts.filter(a => a.olympiadId === liveOlympiad.id);
-      rank = others.filter(a => (a.score || 0) > score).length + 1;
+      localRank = others.filter(a => (a.score || 0) > localScore).length + 1;
     }
 
+    const numericOlympiadId = liveOlympiad?.backendId
+      ?? (typeof liveOlympiad?.id === 'number' ? liveOlympiad.id : null);
+
+    // API rejimda — backend natijani avtoritar deb hisoblaymiz.
+    if (numericOlympiadId != null && user?._api) {
+      const token = globalThis.OlympyApi?.getToken?.()
+        ?? globalThis.OlympyApi?.loadAuth?.()?.token;
+      if (token) {
+        globalThis.OlympyApi.submitAttempt(
+          { olympiad: numericOlympiadId, answers: formattedAnswers, time_spent: timeSpent },
+          token,
+        ).then(resp => {
+          onFinish({
+            attemptId: resp?.id,
+            correct: resp?.correct_count ?? correct,
+            wrong: resp?.wrong_count ?? wrong,
+            score: resp?.score ?? localScore,
+            total: resp?.total_questions ?? TOTAL,
+            rank: resp?.rank ?? localRank,
+            time: resp?.time_spent ?? timeSpent,
+            maxScore: resp?.max_score ?? maxPossible,
+            olympiad: liveOlympiad || olympiad,
+            _api: true,
+          });
+        }).catch(err => {
+          console.warn('submitAttempt failed:', err?.message);
+          // Backend ishlamasa, lokal natija bilan davom etamiz.
+          onFinish({
+            correct, wrong, score: localScore, total: TOTAL, rank: localRank,
+            time: timeSpent, olympiad: liveOlympiad || olympiad,
+          });
+        });
+        return;
+      }
+    }
+
+    // Mock rejim — store ga yozib, lokal natijani ko'rsatamiz.
     let attempt = null;
     if (user && liveOlympiad) {
       attempt = OlympyStore.recordAttempt({
         userId: user.id,
         olympiadId: liveOlympiad.id,
         answers: formattedAnswers,
-        score,
+        score: localScore,
         correctCount: correct,
         wrongCount: wrong,
         totalQuestions: TOTAL,
         timeSpent,
-        rank,
+        rank: localRank,
       });
     }
-
-    // If the olympiad is backend-backed (numeric id) and the user has a live
-    // API session, also persist the attempt server-side. Failures are logged
-    // but do not block the local result screen.
-    const numericOlympiadId = liveOlympiad?.backendId
-      ?? (typeof liveOlympiad?.id === 'number' ? liveOlympiad.id : null);
-    if (numericOlympiadId != null && user?._api) {
-      try {
-        const auth = globalThis.OlympyApi?.loadAuth?.();
-        if (auth?.token) {
-          globalThis.OlympyApi.submitAttempt(
-            { olympiad: numericOlympiadId, answers: formattedAnswers, time_spent: timeSpent },
-            auth.token,
-          ).catch(err => console.warn('submitAttempt failed:', err?.message));
-        }
-      } catch (err) { console.warn('submitAttempt error:', err); }
-    }
-
     setTimeout(() => onFinish({
       attemptId: attempt?.id,
-      correct, wrong, score, total: TOTAL, rank,
+      correct, wrong, score: localScore, total: TOTAL, rank: localRank,
       time: timeSpent,
       olympiad: liveOlympiad || olympiad,
     }), 400);
