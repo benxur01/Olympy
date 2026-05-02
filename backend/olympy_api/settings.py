@@ -140,12 +140,18 @@ REST_FRAMEWORK = {
     ],
 }
 
-# CORS — open in dev, lock down in prod
-CORS_ALLOW_ALL_ORIGINS = DEBUG
-CORS_ALLOWED_ORIGINS = os.environ.get(
-    'OLYMPY_CORS_ALLOWED_ORIGINS',
-    'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500'
-).split(',')
+# CORS — production rejimida ham faqat aniq ro'yxatdagi originlar.
+# Dev rejimda ham hech qachon ALL_ORIGINS ochilmaydi: developer
+# OLYMPY_CORS_ALLOWED_ORIGINS ga localhost portlarini ro'yxatga oladi.
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    o.strip() for o in
+    os.environ.get(
+        'OLYMPY_CORS_ALLOWED_ORIGINS',
+        'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500',
+    ).split(',')
+    if o.strip()
+]
 
 # Telegram phone verification
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')

@@ -66,6 +66,13 @@ const App = () => {
     setPage('landing');
   };
 
+  // 401 javobi kelganda api.js auth state'ni tozalab 'olympy:logout' yuboradi.
+  useEffect(() => {
+    const onForcedLogout = () => handleLogout();
+    window.addEventListener('olympy:logout', onForcedLogout);
+    return () => window.removeEventListener('olympy:logout', onForcedLogout);
+  }, []);
+
   const navigate = (dest, data) => {
     if (dest === 'test' && data) { setActiveOlympiad(data); setPage('test'); return; }
     if (dest === 'results' && data) { setTestResult(data); setPage('results'); return; }

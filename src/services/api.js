@@ -66,6 +66,16 @@ const request = async (path, { method = 'GET', body, token, headers = {} } = {})
   const contentType = response.headers.get('content-type') || '';
   const data = contentType.includes('application/json') ? await response.json() : await response.text();
   if (!response.ok) {
+    if (response.status === 401) {
+      // Token muddati tugagan yoki tan olinmagan — auth state'ni tozalab,
+      // qatlam yuqorisidagi App'ga signal beramiz.
+      try {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        localStorage.removeItem(AUTH_USER_KEY);
+        window.dispatchEvent(new CustomEvent('olympy:logout'));
+      } catch {}
+      throw new ApiError('Session expired', { status: 401, data });
+    }
     throw new ApiError(extractErrorMessage(data) || response.statusText, {
       status: response.status,
       data,
@@ -163,6 +173,7 @@ export const OlympyApi = {
   approveStudent: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-student/`, { method: 'POST', body: payload, token }),
   approveTeacher: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-teacher/`, { method: 'POST', body: payload, token }),
   approveManager: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-manager/`, { method: 'POST', body: payload, token }),
+  getAdminCenters: (statusFilter, token) => request(`/api/admin/centers/${statusFilter ? '?status=' + statusFilter : ''}`, { token }),
   adminApproveCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/approve/`, { method: 'POST', token }),
   adminRejectCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/reject/`, { method: 'POST', token }),
   // Olympiads

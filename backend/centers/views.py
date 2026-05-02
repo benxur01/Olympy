@@ -157,6 +157,25 @@ def approve_manager(request, center_id):
 
 # ─── Platform admin: center approval ──────────────────────────────────────────
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def admin_list_centers(request):
+    """GET /api/admin/centers/?status=<status> — Platform Admin only.
+
+    Unlike the public listing (which only returns approved centers), this
+    surfaces every center so admins can see and act on pending and
+    rejected ones too. Optional ``status`` query param narrows the list.
+    """
+    if not request.user.is_platform_admin:
+        return Response({'detail': 'Forbidden'},
+                        status=http_status.HTTP_403_FORBIDDEN)
+    qs = EducationCenter.objects.all().order_by('-created_at')
+    status_filter = request.query_params.get('status')
+    if status_filter:
+        qs = qs.filter(status=status_filter)
+    return Response(EducationCenterSerializer(qs, many=True).data)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def admin_approve_center(request, center_id):

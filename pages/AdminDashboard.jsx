@@ -29,22 +29,31 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
-  // ─── API rejimida tasdiqlangan markazlar ───────────────────────────────
-  // TODO: admin centers endpoint qo'shilgach (pending markazlarni ham
-  //       qaytaradigan), bu joyda mock fallback'ini olib tashlash kerak.
-  //       Hozir public /api/centers/ faqat approved markazlarni beradi.
+  // ─── API rejimida barcha markazlar (admin endpointi) ───────────────────
+  // /api/admin/centers/ status'idan qat'iy nazar barcha markazlarni qaytaradi
+  // — pending'larni ko'rib tasdiqlash uchun zarur.
   const apiCentersRes = useApiData(
-    () => isApi ? OlympyApi.getCenters() : Promise.resolve(null),
+    () => isApi ? OlympyApi.getAdminCenters(null, OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
   const apiCenters = isApi && Array.isArray(apiCentersRes.data) ? apiCentersRes.data.map(mapApiCenter) : null;
 
-  // Live data — API approved markazlar bilan, qolgan hammasi mock
-  const centers = apiCenters
-    ? [...apiCenters, ...store.centers.filter(c => c.status !== 'approved' && !apiCenters.some(ac => String(ac.id) === String(c.id)))]
-    : store.centers;
+  // API rejimda admin endpointi to'liq ro'yxatni beradi; mock rejimda store.
+  const centers = apiCenters || store.centers;
   const allUsers = store.users;
-  const pendingCenterReqs = store.requests.filter(r => r.type === 'center' && r.status === 'pending');
+  // API rejimda backend "request" obyektlarini qaytarmaydi; admin uchun
+  // pending markazlar = status='pending' centerlar. Mock rejimda 'center'
+  // type'idagi request log mavjud, undan foydalanamiz.
+  const pendingCenterReqs = isApi
+    ? centers.filter(c => c.status === 'pending').map(c => ({
+        id: 'api:c:' + c.id,
+        type: 'center',
+        userId: c.ownerId,
+        centerId: c.id,
+        status: 'pending',
+        _apiCenter: c,
+      }))
+    : store.requests.filter(r => r.type === 'center' && r.status === 'pending');
   const pendingManagerReqs = store.requests.filter(r => r.type === 'manager' && r.status === 'pending');
 
   const toggleBlock = (id) => {
@@ -53,11 +62,21 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     showToast('Foydalanuvchi holati yangilandi');
   };
 
+  const _resolveBackendCenterId = (id) => {
+    // pendingCenterReqs API rejimda fake req yaratadi va u yerda _apiCenter
+    // backend ID bilan birga keladi. Mock rejimda esa store dan qidirilsin.
+    if (isApi) {
+      const fakeReq = pendingCenterReqs.find(r => r.id === id);
+      return fakeReq?._apiCenter?.backendId ?? null;
+    }
+    const req = store.requests.find(r => r.id === id);
+    const c = req ? store.centers.find(x => x.id === req.centerId) : null;
+    return c?.backendId ?? null;
+  };
+
   const approveCenterReq = (id) => {
     if (isApi) {
-      const req = store.requests.find(r => r.id === id);
-      const c = req ? store.centers.find(x => x.id === req.centerId) : null;
-      const backendCenterId = c?.backendId;
+      const backendCenterId = _resolveBackendCenterId(id);
       if (backendCenterId) {
         OlympyApi.adminApproveCenter(backendCenterId, OlympyApi.getToken())
           .then(() => { showToast('✓ Markaz tasdiqlandi'); apiCentersRes.reload(); })
@@ -70,9 +89,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   };
   const rejectCenterReq = (id) => {
     if (isApi) {
-      const req = store.requests.find(r => r.id === id);
-      const c = req ? store.centers.find(x => x.id === req.centerId) : null;
-      const backendCenterId = c?.backendId;
+      const backendCenterId = _resolveBackendCenterId(id);
       if (backendCenterId) {
         OlympyApi.adminRejectCenter(backendCenterId, OlympyApi.getToken())
           .then(() => { showToast('✗ Markaz rad etildi'); apiCentersRes.reload(); })

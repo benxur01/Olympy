@@ -32,6 +32,9 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   }
 
   const store = useStore();
+  const isApi = !!user?._api;
+  const [apiToast, setApiToast] = React.useState('');
+  const showApiToast = (m) => { setApiToast(m); setTimeout(() => setApiToast(''), 3000); };
   const [mode, setMode] = React.useState('list'); // list | manual | ai | pdf
   const [filterSubject, setFilterSubject] = React.useState('');
   const [filterLevel, setFilterLevel] = React.useState('');
@@ -52,10 +55,19 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const managerCenterId = user?.roles?.manager?.status === 'approved' ? user.roles.manager.centerId : null;
   const ownerCenterId = user?.roles?.owner?.status === 'approved' ? user.roles.owner.centerId : null;
   const myCenterId = teacherCenterId || managerCenterId || ownerCenterId;
-  const myCenter = myCenterId ? store.centers.find(c => c.id === myCenterId) : null;
+  const myCenter = myCenterId ? store.centers.find(c => String(c.id) === String(myCenterId)) : null;
+
+  // ─── API rejimida savollarni real backend'dan olish ────────────────────
+  const apiQuestionsRes = useApiData(
+    () => (isApi && myCenterId)
+      ? OlympyApi.getQuestions(myCenterId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, myCenterId],
+  );
+  const apiQuestions = isApi && Array.isArray(apiQuestionsRes.data) ? apiQuestionsRes.data.map(mapApiQuestion) : null;
 
   // Pull questions live from the store, scoped to this user's center
-  const questions = store.questions.filter(q => !myCenterId || q.centerId === myCenterId);
+  const questions = (apiQuestions || store.questions).filter(q => !myCenterId || String(q.centerId) === String(myCenterId));
   const allSubjects = store.subjects;
   const filtered = questions.filter(q =>
     (!filterSubject || q.subject === filterSubject) && (!filterLevel || q.difficulty === filterLevel)
@@ -97,8 +109,46 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     }, 2000);
   };
 
+  // Backend API uchun frontend savollarning daraja kalitlarini Django
+  // Question.DIFFICULTY_CHOICES ga moslashtiradi.
+  const _diffToApi = (level) =>
+    level === 'Oson' ? 'easy' : level === 'Qiyin' ? 'hard' : 'medium';
+
+  const _toApiQuestion = (q, source) => ({
+    center: myCenter?.backendId ?? myCenterId,
+    subject: q.subject,
+    text: q.text,
+    options: q.options || [],
+    correct_answer: q.correctAnswer ?? q.correct ?? 0,
+    score: q.score ?? 3,
+    difficulty: _diffToApi(q.difficulty || q.level),
+    source: source || q.source || 'manual',
+  });
+
+  const _createApiBulk = (items, source) => {
+    const token = OlympyApi.getToken();
+    return Promise.all(items.map(q => OlympyApi.createQuestion(_toApiQuestion(q, source), token)));
+  };
+
   const saveQuestion = () => {
     if (!newQ.text) return;
+    if (isApi) {
+      const token = OlympyApi.getToken();
+      OlympyApi.createQuestion({
+        center: myCenter?.backendId ?? myCenterId,
+        subject: newQ.subject,
+        text: newQ.text,
+        options: newQ.options,
+        correct_answer: newQ.correct,
+        score: newQ.score,
+        difficulty: _diffToApi(newQ.level),
+        source: 'manual',
+      }, token)
+        .then(() => { apiQuestionsRes.reload(); setMode('list'); })
+        .catch(err => { console.warn('createQuestion failed:', err); showApiToast("⚠ Savol saqlab bo'lmadi"); });
+      setNewQ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0 });
+      return;
+    }
     OlympyStore.createQuestion({
       centerId: myCenterId,
       subject: newQ.subject,
@@ -116,6 +166,12 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
 
   const saveAiQuestions = () => {
     if (!aiResult || aiResult.length === 0) return;
+    if (isApi) {
+      _createApiBulk(aiResult, 'ai')
+        .then(() => { apiQuestionsRes.reload(); setAiResult(null); setMode('list'); })
+        .catch(err => { console.warn('createQuestion (ai) failed:', err); showApiToast("⚠ Savollar saqlab bo'lmadi"); });
+      return;
+    }
     OlympyStore.createQuestionsBulk(aiResult.map(q => ({
       centerId: myCenterId,
       subject: q.subject,
@@ -133,6 +189,12 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
 
   const savePdfQuestions = () => {
     if (!pdfResult || pdfResult.length === 0) return;
+    if (isApi) {
+      _createApiBulk(pdfResult, 'pdf')
+        .then(() => { apiQuestionsRes.reload(); setPdfResult(null); setPdfFile(null); setMode('list'); })
+        .catch(err => { console.warn('createQuestion (pdf) failed:', err); showApiToast("⚠ Savollar saqlab bo'lmadi"); });
+      return;
+    }
     OlympyStore.createQuestionsBulk(pdfResult.map(q => ({
       centerId: myCenterId,
       subject: q.subject,
@@ -394,9 +456,22 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
         <p className="text-white/60 mb-5">Bu savolni o'chirishni tasdiqlaysizmi?</p>
         <div className="flex gap-3">
           <button onClick={() => setDeleteId(null)} className="btn-ghost flex-1 py-3 rounded-xl">Bekor qilish</button>
-          <button onClick={() => { OlympyStore.deleteQuestion(deleteId); setDeleteId(null); }} className="btn-danger flex-1 py-3 rounded-xl font-semibold">O'chirish</button>
+          <button onClick={() => {
+            if (isApi) {
+              // Backend'da DELETE endpointi hali yo'q — TODO: ulansin.
+              showApiToast("⚠ API rejimida o'chirish hozircha mavjud emas");
+              setDeleteId(null);
+              return;
+            }
+            OlympyStore.deleteQuestion(deleteId);
+            setDeleteId(null);
+          }} className="btn-danger flex-1 py-3 rounded-xl font-semibold">O'chirish</button>
         </div>
       </Modal>
+
+      {apiToast && (
+        <div className="fixed bottom-6 right-6 z-50 glass-strong rounded-2xl px-5 py-3.5 border border-rose-500/30 animate-in text-sm font-medium text-white">{apiToast}</div>
+      )}
 
       {/* New subject modal */}
       <Modal open={newSubjectModal} onClose={() => setNewSubjectModal(false)} title="Yangi fan qo'shish">
