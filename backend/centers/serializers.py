@@ -29,11 +29,19 @@ class CenterRegisterSerializer(serializers.Serializer):
 
 
 class JoinRequestSerializer(serializers.Serializer):
-    """POST /api/centers/{id}/join/ — student requests center membership."""
+    """POST /api/centers/{id}/join/ — user requests center membership."""
+    role = serializers.ChoiceField(
+        choices=[
+            CenterMembership.ROLE_STUDENT,
+            CenterMembership.ROLE_TEACHER,
+            CenterMembership.ROLE_MANAGER,
+        ],
+        default=CenterMembership.ROLE_STUDENT,
+    )
     subject = serializers.CharField(max_length=80, required=False, allow_blank=True)
 
 
 class ApproveSerializer(serializers.Serializer):
     """Approve/reject an existing membership by id."""
     membership_id = serializers.IntegerField()
-    decision = serializers.ChoiceField(choices=['approve', 'reject'])
+    decision = serializers.ChoiceField(choices=['approve', 'reject', 'approved', 'rejected'])

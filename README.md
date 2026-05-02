@@ -74,6 +74,26 @@ python manage.py runserver         # http://127.0.0.1:8000/
 The backend ships with SQLite by default. To switch to PostgreSQL, set
 `OLYMPY_DB_ENGINE=postgres` and the `OLYMPY_DB_*` env vars in `.env`.
 
+## Celery ishga tushirish
+
+Worker:
+
+```bash
+cd backend && celery -A olympy_api worker --loglevel=info
+```
+
+Beat (scheduler):
+
+```bash
+cd backend && celery -A olympy_api beat --loglevel=info
+```
+
+Yoki birgalikda (faqat development uchun):
+
+```bash
+cd backend && celery -A olympy_api worker --beat --loglevel=info
+```
+
 ## Telegram phone verification
 
 Set these env vars for the backend:

@@ -1,3 +1,4 @@
+from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -56,3 +57,27 @@ def questions_list_create(request):
     question = serializer.save(created_by=request.user)
     return Response(QuestionSerializer(question).data,
                     status=http_status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def olympiad_questions(request, olympiad_id):
+    from olympiads.models import Olympiad
+
+    olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
+    if olympiad.status != Olympiad.STATUS_ACTIVE:
+        return Response({'detail': 'Olimpiada faol emas'}, status=http_status.HTTP_403_FORBIDDEN)
+    membership = CenterMembership.objects.filter(
+        user=request.user,
+        center=olympiad.center,
+        status=CenterMembership.STATUS_APPROVED,
+        role=CenterMembership.ROLE_STUDENT,
+    ).first()
+    if not membership and not request.user.is_platform_admin:
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    questions = olympiad.questions.all()
+    data = [
+        {'id': q.id, 'text': q.text, 'options': q.options, 'score': q.score}
+        for q in questions
+    ]
+    return Response(data)

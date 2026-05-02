@@ -55,26 +55,27 @@ def centers_list_create(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def join_center(request, center_id):
-    """POST /api/centers/{id}/join/ — student requests to join a center.
+    """POST /api/centers/{id}/join/ — user requests to join a center.
 
-    Creates a pending student membership. Manager/Owner of the target center
+    Creates a pending role membership. Manager/Owner of the target center
     can later approve. Notification placeholder is fired.
     """
     center = get_object_or_404(EducationCenter, pk=center_id,
                                status=EducationCenter.STATUS_APPROVED)
     serializer = JoinRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
+    role = serializer.validated_data['role']
     membership, created = CenterMembership.objects.get_or_create(
         user=request.user,
         center=center,
-        role=CenterMembership.ROLE_STUDENT,
+        role=role,
         defaults={
             'subject': serializer.validated_data.get('subject', ''),
             'status': CenterMembership.STATUS_PENDING,
         },
     )
-    request.user.add_role('student')
-    if created:
+    request.user.add_role(role)
+    if created and role == CenterMembership.ROLE_STUDENT:
         # Lazy import: avoid circular dependency at module load time.
         from notifications.services import send_student_join_request_notification
         managers = CenterMembership.objects.filter(
@@ -91,6 +92,19 @@ def join_center(request, center_id):
 
 
 # ─── Approval endpoints ───────────────────────────────────────────────────────
+
+def _user_can_manage_center(user, center):
+    if user.is_platform_admin:
+        return True
+    if center.owner_id == user.id:
+        return center.status == EducationCenter.STATUS_APPROVED
+    return CenterMembership.objects.filter(
+        user=user,
+        center=center,
+        role=CenterMembership.ROLE_MANAGER,
+        status=CenterMembership.STATUS_APPROVED,
+    ).exists()
+
 
 def _user_can_approve(user, center, role):
     """Return True if ``user`` may approve a ``role`` request at ``center``."""
@@ -124,14 +138,40 @@ def _approve(request, center_id, role):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
     decision = serializer.validated_data['decision']
-    membership.status = (CenterMembership.STATUS_APPROVED
-                         if decision == 'approve'
-                         else CenterMembership.STATUS_REJECTED)
+    membership.status = (
+        CenterMembership.STATUS_APPROVED
+        if decision in ('approve', 'approved')
+        else CenterMembership.STATUS_REJECTED
+    )
     membership.approved_by = request.user
     membership.save(update_fields=['status', 'approved_by'])
-    if decision == 'approve':
+    if decision in ('approve', 'approved'):
         membership.user.add_role(role)
     return Response(CenterMembershipSerializer(membership).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pending_memberships(request, center_id):
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    if not _user_can_manage_center(request.user, center):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    role = request.query_params.get('role')
+    qs = CenterMembership.objects.filter(
+        center=center,
+        status=CenterMembership.STATUS_PENDING,
+    ).select_related('user')
+    if role:
+        qs = qs.filter(role=role)
+    from accounts.serializers import UserSerializer
+    data = [{
+        'membership_id': m.id,
+        'user': UserSerializer(m.user).data,
+        'role': m.role,
+        'subject': m.subject,
+        'created_at': str(m.created_at),
+    } for m in qs]
+    return Response(data)
 
 
 @api_view(['POST'])

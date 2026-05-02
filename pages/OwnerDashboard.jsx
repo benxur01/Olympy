@@ -7,11 +7,40 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [toast, setToast] = React.useState('');
   const [confirmAction, setConfirmAction] = React.useState(null);
+  const [pendingTeachers, setPendingTeachers] = React.useState([]);
+  const [pendingManagers, setPendingManagers] = React.useState([]);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const ownerRole = user.roles?.owner;
   const ownerCenterId = ownerRole?.centerId || null;
+  const loadPendingStaff = React.useCallback(() => {
+    if (!isApi || !ownerCenterId) {
+      setPendingTeachers([]);
+      setPendingManagers([]);
+      return Promise.resolve();
+    }
+    const token = OlympyApi.getToken();
+    return Promise.all([
+      OlympyApi.getPendingMemberships(ownerCenterId, 'teacher', token),
+      OlympyApi.getPendingMemberships(ownerCenterId, 'manager', token),
+    ]).then(([teachers, managers]) => {
+      setPendingTeachers(Array.isArray(teachers) ? teachers : []);
+      setPendingManagers(Array.isArray(managers) ? managers : []);
+    });
+  }, [isApi, ownerCenterId]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    loadPendingStaff().catch(err => {
+      if (!cancelled) {
+        console.warn('getPendingMemberships failed:', err);
+        setPendingTeachers([]);
+        setPendingManagers([]);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [loadPendingStaff]);
 
   // ─── API rejimida markaz va arizalarni real backend'dan olish ──────────
   const apiCentersRes = useApiData(
@@ -52,7 +81,28 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   }
 
   // Center is approved — show full dashboard
-  const centerRequests = store.requests.filter(r => r.centerId === center.id);
+  const apiStaffRequests = [
+    ...pendingManagers.map(m => ({
+      id: `api:manager:${m.membership_id}`,
+      type: 'manager',
+      status: 'pending',
+      date: (m.created_at || '').slice(0, 10),
+      membership_id: m.membership_id,
+      user: m.user,
+      _api: true,
+    })),
+    ...pendingTeachers.map(m => ({
+      id: `api:teacher:${m.membership_id}`,
+      type: 'teacher',
+      status: 'pending',
+      subject: m.subject,
+      date: (m.created_at || '').slice(0, 10),
+      membership_id: m.membership_id,
+      user: m.user,
+      _api: true,
+    })),
+  ];
+  const centerRequests = isApi ? apiStaffRequests : store.requests.filter(r => r.centerId === center.id);
   const pendingManagerReqs = centerRequests.filter(r => r.type === 'manager' && r.status === 'pending');
   const pendingTeacherReqs = centerRequests.filter(r => r.type === 'teacher' && r.status === 'pending');
   const pendingCount = pendingManagerReqs.length + pendingTeacherReqs.length;
@@ -71,41 +121,48 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     { key:'settings', icon:'settings', label:'Sozlamalar' },
   ];
 
-  // API rejim uchun: backend pending memberships ro'yxatini hozircha
-  // qaytarmaydi, shuning uchun owner uchun pending arizalar ko'rinishi
-  // mock orqali keladi. Tasdiqlanish/rad etilish backend'da membership_id
-  // mavjud bo'lganda API ga yuboriladi.
-  // TODO: backendga GET /api/centers/<id>/pending-memberships/ qo'shish.
   const callApiApproval = (req, decision) => {
     const token = OlympyApi.getToken();
     const backendCenterId = center?.backendId ?? center?.id;
-    const membershipId = req?.membershipId ?? req?.backendId;
+    const membershipId = req?.membership_id ?? req?.membershipId ?? req?.backendId;
     if (!membershipId || !backendCenterId) return Promise.reject(new Error('membership_id missing'));
     const fn = req.type === 'manager' ? OlympyApi.approveManager : OlympyApi.approveTeacher;
     return fn(backendCenterId, { membership_id: membershipId, decision }, token);
   };
+  const requestUser = (req) => req?._api
+    ? {
+        name: req.user?.full_name || req.user?.name || '—',
+        phone: req.user?.normalized_phone || req.user?.phone || '—',
+      }
+    : store.users.find(x => x.id === req.userId);
 
   const approve = (id) => {
     if (isApi) {
-      const req = (store.requests || []).find(r => r.id === id);
+      const req = centerRequests.find(r => r.id === id);
       if (req) {
-        callApiApproval(req, 'approve')
+        callApiApproval(req, 'approved')
+          .then(() => loadPendingStaff())
           .then(() => showToast('✓ Ariza tasdiqlandi'))
           .catch(err => { console.warn('approve failed:', err); showToast("⚠ Tasdiqlab bo'lmadi"); });
         return;
       }
+      showToast("⚠ Ariza topilmadi");
+      return;
     }
     OlympyStore.approveRequest(id); showToast("✓ Ariza tasdiqlandi");
   };
   const reject = (id) => {
     if (isApi) {
-      const req = (store.requests || []).find(r => r.id === id);
+      const req = centerRequests.find(r => r.id === id);
       if (req) {
-        callApiApproval(req, 'reject')
+        callApiApproval(req, 'rejected')
+          .then(() => loadPendingStaff())
           .then(() => showToast('✗ Ariza rad etildi'))
           .catch(err => { console.warn('reject failed:', err); showToast("⚠ Rad etib bo'lmadi"); });
         return;
       }
+      showToast("⚠ Ariza topilmadi");
+      return;
     }
     OlympyStore.rejectRequest(id); showToast("✗ Ariza rad etildi");
   };
@@ -137,7 +194,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           </div>
           <div className="space-y-2">
             {[...pendingManagerReqs, ...pendingTeacherReqs].slice(0, 4).map(r => {
-              const u = store.users.find(x => x.id === r.userId);
+              const u = requestUser(r);
               return (
                 <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl glass">
                   <Avatar name={u?.name || '?'} size={36} />
@@ -250,7 +307,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             </tr></thead>
             <tbody>
               {allCenterReqs.map(r => {
-                const u = store.users.find(x => x.id === r.userId);
+                const u = requestUser(r);
                 return (
                   <tr key={r.id} className="table-row">
                     <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={u?.name || '?'} size={32} /><span className="text-sm font-medium text-white">{u?.name}</span></div></td>

@@ -46,6 +46,7 @@ def olympiads_list_create(request):
     serializer = OlympiadSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     center = serializer.validated_data['center']
+    questions = serializer.validated_data.pop('questions', None)
     if not _user_can_manage_center(request.user, center):
         return Response({'detail': "Sizda bu markaz uchun olimpiada yaratish huquqi yo'q"},
                         status=http_status.HTTP_403_FORBIDDEN)
@@ -53,8 +54,27 @@ def olympiads_list_create(request):
         created_by=request.user,
         status=Olympiad.STATUS_DRAFT,
     )
+    if questions is not None:
+        olympiad.questions.set(questions)
     return Response(OlympiadSerializer(olympiad).data,
                     status=http_status.HTTP_201_CREATED)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def olympiad_detail(request, olympiad_id):
+    """PATCH /api/olympiads/{id}/ — update draft olympiad fields/questions."""
+    olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
+    if not _user_can_manage_center(request.user, olympiad.center):
+        return Response({'detail': 'Forbidden'},
+                        status=http_status.HTTP_403_FORBIDDEN)
+    serializer = OlympiadSerializer(olympiad, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    questions = serializer.validated_data.pop('questions', None)
+    olympiad = serializer.save()
+    if questions is not None:
+        olympiad.questions.set(questions)
+    return Response(OlympiadSerializer(olympiad).data)
 
 
 @api_view(['POST'])

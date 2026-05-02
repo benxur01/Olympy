@@ -263,6 +263,8 @@ const App = () => {
 
 // ─── Floating action button — switches role for logged-in users, demo login otherwise
 const FloatingRoleButton = () => {
+  if (!import.meta.env.DEV) return null;
+
   const store = useStore();
   const [open, setOpen] = React.useState(false);
 

@@ -5,6 +5,7 @@ const API_BASE_URL = (
 ).replace(/\/+$/, '');
 
 const AUTH_TOKEN_KEY = 'olympy_api_token';
+const AUTH_REFRESH_KEY = 'olympy_refresh_token';
 const AUTH_USER_KEY = 'olympy_api_user';
 
 class ApiError extends Error {
@@ -44,13 +45,16 @@ const toUserMessage = (error) => {
   return error?.message || "Server bilan bog‘lanishda xatolik yuz berdi";
 };
 
-const request = async (path, { method = 'GET', body, token, headers = {} } = {}) => {
+const request = async (
+  path,
+  { method = 'GET', body, token, headers = {}, retryOnAuth = true } = {},
+) => {
   const requestHeaders = {
     Accept: 'application/json',
     ...headers,
   };
   if (body !== undefined) requestHeaders['Content-Type'] = 'application/json';
-  if (token) requestHeaders.Authorization = `Token ${token}`;
+  if (token) requestHeaders.Authorization = `Bearer ${token}`;
 
   let response;
   try {
@@ -67,10 +71,36 @@ const request = async (path, { method = 'GET', body, token, headers = {} } = {})
   const data = contentType.includes('application/json') ? await response.json() : await response.text();
   if (!response.ok) {
     if (response.status === 401) {
+      const refresh = retryOnAuth && token
+        ? localStorage.getItem(AUTH_REFRESH_KEY)
+        : null;
+      if (refresh) {
+        try {
+          const refreshed = await request('/api/auth/token/refresh/', {
+            method: 'POST',
+            body: { refresh },
+            retryOnAuth: false,
+          });
+          const nextToken = refreshed?.access || refreshed?.token;
+          const nextRefresh = refreshed?.refresh || refresh;
+          if (nextToken) {
+            localStorage.setItem(AUTH_TOKEN_KEY, nextToken);
+            if (nextRefresh) localStorage.setItem(AUTH_REFRESH_KEY, nextRefresh);
+            return request(path, {
+              method,
+              body,
+              token: nextToken,
+              headers,
+              retryOnAuth: false,
+            });
+          }
+        } catch {}
+      }
       // Token muddati tugagan yoki tan olinmagan — auth state'ni tozalab,
       // qatlam yuqorisidagi App'ga signal beramiz.
       try {
         localStorage.removeItem(AUTH_TOKEN_KEY);
+        localStorage.removeItem(AUTH_REFRESH_KEY);
         localStorage.removeItem(AUTH_USER_KEY);
         window.dispatchEvent(new CustomEvent('olympy:logout'));
       } catch {}
@@ -125,17 +155,19 @@ const mapBackendUser = (user) => {
   };
 };
 
-const saveAuth = ({ token, user }) => {
+const saveAuth = ({ token, refresh, user }) => {
   if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+  if (refresh) localStorage.setItem(AUTH_REFRESH_KEY, refresh);
   if (user) localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
 };
 
 const loadAuth = () => {
   try {
     const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    const refresh = localStorage.getItem(AUTH_REFRESH_KEY);
     const rawUser = localStorage.getItem(AUTH_USER_KEY);
     if (!token || !rawUser) return null;
-    return { token, user: JSON.parse(rawUser) };
+    return { token, refresh, user: JSON.parse(rawUser) };
   } catch {
     return null;
   }
@@ -143,6 +175,7 @@ const loadAuth = () => {
 
 const clearAuth = () => {
   localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_REFRESH_KEY);
   localStorage.removeItem(AUTH_USER_KEY);
 };
 
@@ -162,6 +195,7 @@ export const OlympyApi = {
   // Auth
   login: (payload) => request('/api/auth/login/', { method: 'POST', body: payload }),
   register: (payload) => request('/api/auth/register/', { method: 'POST', body: payload }),
+  refreshToken: (refresh) => request('/api/auth/token/refresh/', { method: 'POST', body: { refresh }, retryOnAuth: false }),
   startTelegramVerification: (payload) => request('/api/auth/phone/start-telegram-verification/', { method: 'POST', body: payload }),
   verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload }),
   // Me
@@ -170,6 +204,7 @@ export const OlympyApi = {
   getCenters: () => request('/api/centers/'),
   registerCenter: (payload, token) => request('/api/centers/', { method: 'POST', body: payload, token }),
   joinCenter: (centerId, payload, token) => request(`/api/centers/${centerId}/join/`, { method: 'POST', body: payload, token }),
+  getPendingMemberships: (centerId, role, token) => request(`/api/centers/${centerId}/memberships/pending/${role ? '?role=' + role : ''}`, { token }),
   approveStudent: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-student/`, { method: 'POST', body: payload, token }),
   approveTeacher: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-teacher/`, { method: 'POST', body: payload, token }),
   approveManager: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-manager/`, { method: 'POST', body: payload, token }),
@@ -179,6 +214,8 @@ export const OlympyApi = {
   // Olympiads
   getOlympiads: (token) => request('/api/olympiads/', { token }),
   createOlympiad: (payload, token) => request('/api/olympiads/', { method: 'POST', body: payload, token }),
+  getOlympiadQuestions: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/questions/`, { token }),
+  updateOlympiadQuestions: (olympiadId, questionIds, token) => request(`/api/olympiads/${olympiadId}/`, { method: 'PATCH', body: { question_ids: questionIds }, token }),
   publishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/publish/`, { method: 'POST', token }),
   finishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/finish/`, { method: 'POST', token }),
   // Questions

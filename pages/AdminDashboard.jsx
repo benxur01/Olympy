@@ -83,6 +83,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           .catch(err => { console.warn('adminApproveCenter failed:', err); showToast("⚠ Tasdiqlab bo'lmadi"); });
         return;
       }
+      showToast("⚠ Markaz ID topilmadi");
+      return;
     }
     OlympyStore.approveRequest(id);
     showToast('✓ Markaz tasdiqlandi');
@@ -96,8 +98,34 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           .catch(err => { console.warn('adminRejectCenter failed:', err); showToast("⚠ Rad etib bo'lmadi"); });
         return;
       }
+      showToast("⚠ Markaz ID topilmadi");
+      return;
     }
     OlympyStore.rejectRequest(id);
+    showToast('✗ Markaz rad etildi');
+  };
+  const approveCenterDirect = (center) => {
+    if (isApi) {
+      const backendCenterId = center?.backendId;
+      if (!backendCenterId) { showToast("⚠ Markaz ID topilmadi"); return; }
+      OlympyApi.adminApproveCenter(backendCenterId, OlympyApi.getToken())
+        .then(() => { showToast('✓ Markaz tasdiqlandi'); apiCentersRes.reload(); })
+        .catch(err => { console.warn('adminApproveCenter failed:', err); showToast("⚠ Tasdiqlab bo'lmadi"); });
+      return;
+    }
+    OlympyStore.updateCenter(center.id, { status: 'approved' });
+    showToast('✓ Markaz tasdiqlandi');
+  };
+  const rejectCenterDirect = (center) => {
+    if (isApi) {
+      const backendCenterId = center?.backendId;
+      if (!backendCenterId) { showToast("⚠ Markaz ID topilmadi"); return; }
+      OlympyApi.adminRejectCenter(backendCenterId, OlympyApi.getToken())
+        .then(() => { showToast('✗ Markaz rad etildi'); apiCentersRes.reload(); })
+        .catch(err => { console.warn('adminRejectCenter failed:', err); showToast("⚠ Rad etib bo'lmadi"); });
+      return;
+    }
+    OlympyStore.updateCenter(center.id, { status: 'rejected' });
     showToast('✗ Markaz rad etildi');
   };
 
@@ -297,18 +325,21 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                         <button onClick={() => {
                           const req = store.requests.find(r => r.type === 'center' && r.centerId === c.id && r.status === 'pending');
                           if (req) approveCenterReq(req.id);
-                          else { OlympyStore.updateCenter(c.id, { status: 'approved' }); showToast('✓ Markaz tasdiqlandi'); }
+                          else approveCenterDirect(c);
                         }} className="btn-success text-xs px-2 py-1.5 rounded-xl">Tasdiqlash</button>
                         <button onClick={() => {
                           const req = store.requests.find(r => r.type === 'center' && r.centerId === c.id && r.status === 'pending');
                           if (req) rejectCenterReq(req.id);
-                          else { OlympyStore.updateCenter(c.id, { status: 'rejected' }); showToast('✗ Markaz rad etildi'); }
+                          else rejectCenterDirect(c);
                         }} className="btn-danger text-xs px-2 py-1.5 rounded-xl">Rad etish</button>
                       </div>
                     ) : (
                       <div className="flex gap-1">
                         <button className="btn-ghost text-xs px-2 py-1.5 rounded-xl"><Icon name="eye" size={13}/></button>
-                        <button onClick={() => OlympyStore.updateCenter(c.id, { status: c.status === 'approved' ? 'rejected' : 'approved' })}
+                        <button onClick={() => {
+                          if (c.status === 'approved') rejectCenterDirect(c);
+                          else approveCenterDirect(c);
+                        }}
                           className={`text-xs px-2 py-1.5 rounded-xl border ${c.status === 'approved' ? 'btn-danger' : 'btn-success'}`}>
                           {c.status === 'approved' ? "To'xtatish" : 'Faollashtirish'}
                         </button>

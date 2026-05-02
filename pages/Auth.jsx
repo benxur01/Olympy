@@ -29,7 +29,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
     try {
       const data = await OlympyApi.login({ phone: form.phone, password: form.password });
       const mappedUser = OlympyApi.mapBackendUser(data.user);
-      OlympyApi.saveAuth({ token: data.token, user: mappedUser });
+      OlympyApi.saveAuth({ token: data.token, refresh: data.refresh, user: mappedUser });
       onLogin(mappedUser);
     } catch (err) {
       setError(OlympyApi.toUserMessage(err));
@@ -157,12 +157,26 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   const [loading, setLoading] = React.useState(false);
   const [success, setSuccess] = React.useState(false);
   const [phoneVerified, setPhoneVerified] = React.useState(false);
+  const [apiCenters, setApiCenters] = React.useState(null);
 
   const normalizedRegisterPhone = OlympyStore.normalizePhone(form.phone);
   const phoneValidForVerify = !!normalizedRegisterPhone && (USE_MOCK_AUTH ? !OlympyStore.phoneExists(normalizedRegisterPhone) : !phoneError);
 
   // Reset verification whenever the entered phone changes
   React.useEffect(() => { setPhoneVerified(false); }, [normalizedRegisterPhone]);
+  React.useEffect(() => {
+    if (USE_MOCK_AUTH) return undefined;
+    let cancelled = false;
+    OlympyApi.getCenters()
+      .then(rows => {
+        if (!cancelled) setApiCenters(Array.isArray(rows) ? rows.map(mapApiCenter) : []);
+      })
+      .catch(err => {
+        console.warn('getCenters failed:', err);
+        if (!cancelled) setApiCenters([]);
+      });
+    return () => { cancelled = true; };
+  }, []);
 
   const validatePhone = (v) => {
     const norm = OlympyStore.normalizePhone(v);
@@ -171,7 +185,8 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
     else setPhoneError('');
   };
 
-  const approvedCenters = store.centers.filter(c => c.status === 'approved');
+  const centerOptions = (!USE_MOCK_AUTH && apiCenters) ? apiCenters : store.centers;
+  const approvedCenters = centerOptions.filter(c => c.status === 'approved');
   const filteredCenters = approvedCenters.filter(c =>
     c.name.toLowerCase().includes(centerSearch.toLowerCase()) ||
     c.city.toLowerCase().includes(centerSearch.toLowerCase())
@@ -202,8 +217,40 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
           phone: form.phone,
           password: form.password,
         });
-        const mappedUser = OlympyApi.mapBackendUser(data.user);
-        OlympyApi.saveAuth({ token: data.token, user: mappedUser });
+        const token = data.token;
+        const refresh = data.refresh;
+        let selectedCenterId = centerId;
+        const selectedRole = role;
+        const selectedSubject = subject;
+        const isNewCenter = selectedRole === 'owner';
+
+        if (isNewCenter) {
+          const createdCenter = await OlympyApi.registerCenter({
+            name: newCenter.name,
+            city: newCenter.city,
+            subjects: newCenter.subjects,
+          }, token);
+          selectedCenterId = createdCenter?.id;
+        } else if (selectedRole === 'student' && selectedCenterId) {
+          await OlympyApi.joinCenter(selectedCenterId, {
+            role: 'student',
+            subject: selectedSubject || '',
+          }, token);
+        } else if (selectedRole === 'teacher') {
+          await OlympyApi.joinCenter(selectedCenterId, {
+            role: 'teacher',
+            subject: selectedSubject,
+          }, token);
+        } else if (selectedRole === 'manager') {
+          await OlympyApi.joinCenter(selectedCenterId, {
+            role: 'manager',
+            subject: '',
+          }, token);
+        }
+
+        const freshUser = await OlympyApi.getMe(token);
+        const mappedUser = OlympyApi.mapBackendUser(freshUser);
+        OlympyApi.saveAuth({ token, refresh, user: mappedUser });
         setSuccess(true);
         setTimeout(() => onLogin(mappedUser), 1600);
       } catch (err) {
