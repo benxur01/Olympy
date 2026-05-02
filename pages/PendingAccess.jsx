@@ -219,8 +219,15 @@ const RoleSwitcherModal = ({ open, user, onClose, onSwitch, onLogout, onNavigate
 // ─── Notifications Bell ────────────────────────────────────────────────────
 const NotificationsBell = ({ user }) => {
   const store = useStore();
+  const isApi = !!user?._api;
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef(null);
+
+  // API rejimda backend'dan oladi; mock rejimda store dan oladi.
+  const apiRes = useApiData(
+    () => isApi ? OlympyApi.getNotifications(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
 
   React.useEffect(() => {
     const onDoc = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
@@ -229,8 +236,30 @@ const NotificationsBell = ({ user }) => {
   }, []);
 
   if (!user) return null;
-  const list = notificationsForUser(store, user.id);
+  const list = isApi
+    ? (Array.isArray(apiRes.data) ? apiRes.data.map(mapApiNotification).slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')) : [])
+    : notificationsForUser(store, user.id);
   const unread = list.filter(n => !n.isRead).length;
+
+  const markOne = (n) => {
+    if (n.isRead) return;
+    if (isApi) {
+      OlympyApi.markNotificationRead(n.backendId ?? n.id, OlympyApi.getToken())
+        .then(() => apiRes.reload())
+        .catch(err => console.warn('markNotificationRead failed:', err));
+      return;
+    }
+    OlympyStore.markNotificationRead(n.id);
+  };
+  const markAll = () => {
+    if (isApi) {
+      OlympyApi.markAllNotificationsRead(OlympyApi.getToken())
+        .then(() => apiRes.reload())
+        .catch(err => console.warn('markAllNotificationsRead failed:', err));
+      return;
+    }
+    OlympyStore.markAllNotificationsRead(user.id);
+  };
 
   return (
     <div ref={ref} className="relative">
@@ -248,7 +277,7 @@ const NotificationsBell = ({ user }) => {
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
             <div className="text-sm font-bold text-white">Bildirishnomalar</div>
             {unread > 0 && (
-              <button onClick={() => OlympyStore.markAllNotificationsRead(user.id)}
+              <button onClick={markAll}
                 className="text-xs text-indigo-400 hover:text-indigo-300">Hammasini o'qildi deb belgilash</button>
             )}
           </div>
@@ -258,7 +287,7 @@ const NotificationsBell = ({ user }) => {
             )}
             {list.map(n => (
               <div key={n.id}
-                onClick={() => { if (!n.isRead) OlympyStore.markNotificationRead(n.id); }}
+                onClick={() => markOne(n)}
                 className={`px-4 py-3 border-b border-white/5 cursor-pointer hover:bg-white/5 transition-colors ${!n.isRead ? 'bg-indigo-500/5' : ''}`}>
                 <div className="flex items-start gap-3">
                   <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${n.type?.includes('rejected') ? 'bg-rose-500/15 text-rose-400' : n.type?.includes('approved') ? 'bg-emerald-500/15 text-emerald-400' : 'bg-indigo-500/15 text-indigo-400'}`}>

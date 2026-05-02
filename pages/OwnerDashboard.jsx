@@ -2,6 +2,7 @@
 
 const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const store = useStore();
+  const isApi = !!user?._api;
   const [page, setPage] = React.useState('home');
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [toast, setToast] = React.useState('');
@@ -10,7 +11,17 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 2500); };
 
   const ownerRole = user.roles?.owner;
-  const center = ownerRole?.centerId ? store.centers.find(c => c.id === ownerRole.centerId) : null;
+  const ownerCenterId = ownerRole?.centerId || null;
+
+  // ─── API rejimida markaz va arizalarni real backend'dan olish ──────────
+  const apiCentersRes = useApiData(
+    () => isApi ? OlympyApi.getCenters() : Promise.resolve(null),
+    [isApi],
+  );
+  const apiCenters = isApi && Array.isArray(apiCentersRes.data) ? apiCentersRes.data.map(mapApiCenter) : null;
+  const baseCenters = apiCenters || store.centers;
+
+  const center = ownerCenterId ? baseCenters.find(c => String(c.id) === String(ownerCenterId)) : null;
 
   // Pending guard — owner cannot manage staff until center is approved
   if (!center || center.status !== 'approved') {
@@ -60,8 +71,44 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     { key:'settings', icon:'settings', label:'Sozlamalar' },
   ];
 
-  const approve = (id) => { OlympyStore.approveRequest(id); showToast("✓ Ariza tasdiqlandi"); };
-  const reject  = (id) => { OlympyStore.rejectRequest(id);  showToast("✗ Ariza rad etildi"); };
+  // API rejim uchun: backend pending memberships ro'yxatini hozircha
+  // qaytarmaydi, shuning uchun owner uchun pending arizalar ko'rinishi
+  // mock orqali keladi. Tasdiqlanish/rad etilish backend'da membership_id
+  // mavjud bo'lganda API ga yuboriladi.
+  // TODO: backendga GET /api/centers/<id>/pending-memberships/ qo'shish.
+  const callApiApproval = (req, decision) => {
+    const token = OlympyApi.getToken();
+    const backendCenterId = center?.backendId ?? center?.id;
+    const membershipId = req?.membershipId ?? req?.backendId;
+    if (!membershipId || !backendCenterId) return Promise.reject(new Error('membership_id missing'));
+    const fn = req.type === 'manager' ? OlympyApi.approveManager : OlympyApi.approveTeacher;
+    return fn(backendCenterId, { membership_id: membershipId, decision }, token);
+  };
+
+  const approve = (id) => {
+    if (isApi) {
+      const req = (store.requests || []).find(r => r.id === id);
+      if (req) {
+        callApiApproval(req, 'approve')
+          .then(() => showToast('✓ Ariza tasdiqlandi'))
+          .catch(err => { console.warn('approve failed:', err); showToast("⚠ Tasdiqlab bo'lmadi"); });
+        return;
+      }
+    }
+    OlympyStore.approveRequest(id); showToast("✓ Ariza tasdiqlandi");
+  };
+  const reject = (id) => {
+    if (isApi) {
+      const req = (store.requests || []).find(r => r.id === id);
+      if (req) {
+        callApiApproval(req, 'reject')
+          .then(() => showToast('✗ Ariza rad etildi'))
+          .catch(err => { console.warn('reject failed:', err); showToast("⚠ Rad etib bo'lmadi"); });
+        return;
+      }
+    }
+    OlympyStore.rejectRequest(id); showToast("✗ Ariza rad etildi");
+  };
 
   const renderHome = () => (
     <div className="p-6 space-y-6 animate-in">

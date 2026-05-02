@@ -2,6 +2,7 @@
 
 const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const store = useStore();
+  const isApi = !!user?._api;
   const [page, setPage] = React.useState('home');
   const [centerModal, setCenterModal] = React.useState(null);
   const [centerSearch, setCenterSearch] = React.useState('');
@@ -10,29 +11,59 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [joinModal, setJoinModal] = React.useState(false);
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [olympiadFilter, setOlympiadFilter] = React.useState('Barchasi');
+  const [apiToast, setApiToast] = React.useState('');
+  const showApiToast = (m) => { setApiToast(m); setTimeout(() => setApiToast(''), 3000); };
+
+  // ─── API rejimida ma'lumotlarni real backend'dan olish ─────────────────
+  const apiCentersRes = useApiData(
+    () => isApi ? OlympyApi.getCenters() : Promise.resolve(null),
+    [isApi],
+  );
+  const apiOlympiadsRes = useApiData(
+    () => isApi ? OlympyApi.getOlympiads(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiResultsRes = useApiData(
+    () => isApi ? OlympyApi.getMyResults(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
 
   // Live student-role state from store
   const studentRole = user.roles?.student;
   const studentCenterId = studentRole?.centerId || null;
   const studentStatus = studentRole?.status || null;
   const isCenterApproved = studentStatus === 'approved' && !!studentCenterId;
-  const myCenter = studentCenterId ? store.centers.find(c => c.id === studentCenterId) : null;
+  const apiCenters = isApi && Array.isArray(apiCentersRes.data) ? apiCentersRes.data.map(mapApiCenter) : null;
+  const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data) ? apiOlympiadsRes.data.map(mapApiOlympiad) : null;
+  const apiAttempts = isApi && Array.isArray(apiResultsRes.data) ? apiResultsRes.data.map(mapApiAttempt) : null;
+
+  const allCenters = apiCenters || store.centers;
+  const myCenter = studentCenterId ? allCenters.find(c => String(c.id) === String(studentCenterId)) : null;
 
   // Map of centerId → join-request status for the current user
+  // API rejimda backend joy-so'rovlar tarixini qaytarmaydi, faqat hozirgi
+  // membership status'i mapBackendUser orqali user.roles ga tushadi.
   const myRequestByCenter = {};
-  store.requests.filter(r => r.userId === user.id && r.type === 'student').forEach(r => {
-    myRequestByCenter[r.centerId] = r.status;
-  });
+  if (!isApi) {
+    store.requests.filter(r => r.userId === user.id && r.type === 'student').forEach(r => {
+      myRequestByCenter[r.centerId] = r.status;
+    });
+  } else if (studentCenterId && studentStatus) {
+    myRequestByCenter[studentCenterId] = studentStatus;
+  }
 
   // Olympiads visible to this student — only their approved center's olympiads
+  const baseOlympiads = apiOlympiads || store.olympiads;
   const visibleOlympiads = isCenterApproved
-    ? store.olympiads.filter(o => o.centerId === studentCenterId)
+    ? baseOlympiads.filter(o => String(o.centerId) === String(studentCenterId))
     : [];
 
   // Student's attempts and derived results
-  const myAttempts = store.attempts.filter(a => a.userId === user.id).slice().sort((a,b) => (b.submittedAt||'').localeCompare(a.submittedAt||''));
+  const myAttempts = (apiAttempts || store.attempts.filter(a => a.userId === user.id))
+    .slice()
+    .sort((a,b) => (b.submittedAt||'').localeCompare(a.submittedAt||''));
   const myResults = myAttempts.map(a => {
-    const o = store.olympiads.find(x => x.id === a.olympiadId);
+    const o = baseOlympiads.find(x => String(x.id) === String(a.olympiadId));
     return {
       id: a.id,
       attempt: a,
@@ -61,6 +92,23 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const hasCenter = isCenterApproved;
 
   const sendRequest = (center) => {
+    if (isApi) {
+      const token = OlympyApi.getToken();
+      const backendCenterId = center.backendId ?? center.id;
+      OlympyApi.joinCenter(backendCenterId, { subject: '' }, token)
+        .then(() => OlympyApi.getMe(token))
+        .then(me => {
+          if (me) {
+            const next = OlympyApi.mapBackendUser(me);
+            try { OlympyApi.saveAuth({ token, user: next }); } catch {}
+          }
+          setCenterModal(null);
+          setJoinModal(true);
+          setTimeout(() => setJoinModal(false), 3000);
+        })
+        .catch(err => { console.warn('joinCenter failed:', err); showApiToast("Ariza yuborib bo'lmadi"); });
+      return;
+    }
     // Reuse pending request if any, otherwise create one
     const existing = store.requests.find(r => r.userId === user.id && r.type === 'student' && r.centerId === center.id);
     if (!existing) {
@@ -176,7 +224,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             {myResults.length === 0 && <div className="text-sm text-white/40">Hali olimpiada topshirmagansiz.</div>}
             {myResults.slice(0, 5).map(r => (
               <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
-                onClick={() => onNavigate('results', { ...r.attempt, olympiad: store.olympiads.find(o => o.id === r.attempt.olympiadId) })}>
+                onClick={() => onNavigate('results', { ...r.attempt, olympiad: baseOlympiads.find(o => String(o.id) === String(r.attempt.olympiadId)) })}>
                 <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black ${r.rank === 1 ? 'bg-amber-500/20 text-amber-400' : r.rank <= 3 ? 'bg-indigo-500/20 text-indigo-400' : 'glass text-white/40'}`}>
                   #{r.rank || '—'}
                 </div>
@@ -258,7 +306,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 <div className="text-lg font-black text-white">{r.score}<span className="text-white/30 text-sm">/100</span></div>
                 <div className="text-xs text-white/40">{r.correct} to'g'ri · {r.wrong} noto'g'ri</div>
               </div>
-              <button onClick={() => onNavigate('results', { ...r.attempt, olympiad: store.olympiads.find(o => o.id === r.attempt.olympiadId) })} className="btn-ghost text-xs px-3 py-1.5 rounded-xl">Ko'rish</button>
+              <button onClick={() => onNavigate('results', { ...r.attempt, olympiad: baseOlympiads.find(o => String(o.id) === String(r.attempt.olympiadId)) })} className="btn-ghost text-xs px-3 py-1.5 rounded-xl">Ko'rish</button>
             </div>
           ))}
         </div>
@@ -267,7 +315,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   };
 
   const renderCenters = () => {
-    const liveCenters = store.centers.filter(c => c.status === 'approved');
+    const liveCenters = (apiCenters || store.centers).filter(c => c.status === 'approved');
     const cities = [...new Set(liveCenters.map(c => c.city))];
     const filtered = liveCenters.filter(c =>
       c.name.toLowerCase().includes(centerSearch.toLowerCase()) &&
@@ -388,6 +436,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         </main>
         <MobileBottomNav items={navItems} activePage={page} setPage={setPage} />
       </div>
+      {apiToast && (
+        <div className="fixed bottom-6 right-6 z-50 glass-strong rounded-2xl px-5 py-3.5 border border-rose-500/30 animate-in text-sm font-medium text-white">{apiToast}</div>
+      )}
     </div>
   );
 };

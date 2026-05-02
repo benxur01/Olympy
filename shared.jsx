@@ -320,5 +320,29 @@ const TelegramMockup = ({ studentName, centerName, onApprove, onReject }) => (
   </div>
 );
 
+// ─── Universal API data hook ──────────────────────────────────────────────
+// Use for any read-only fetch from the backend. Returns { data, loading,
+// error, reload }. Pass deps to refetch when they change. Cancels stale
+// state if the component unmounts mid-fetch.
+const useApiData = (fetcher, deps = []) => {
+  const [data, setData] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState(null);
+  const [tick, setTick] = React.useState(0);
+  const reload = React.useCallback(() => setTick(t => t + 1), []);
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    Promise.resolve()
+      .then(() => fetcher())
+      .then(d => { if (!cancelled) { setData(d); setLoading(false); } })
+      .catch(e => { if (!cancelled) { setError(e); setLoading(false); } });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [...deps, tick]);
+  return { data, loading, error, reload };
+};
+
 // Export all
-Object.assign(window, { Icon, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SubjectBadge, TelegramMockup, subjectColors });
+Object.assign(window, { Icon, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData });
