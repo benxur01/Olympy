@@ -10,6 +10,8 @@ from .serializers import (
     ApproveSerializer,
     CenterMembershipSerializer,
     CenterRegisterSerializer,
+    CreateManagerSerializer,
+    CreateTeacherSerializer,
     EducationCenterSerializer,
     JoinRequestSerializer,
 )
@@ -45,9 +47,15 @@ def centers_list_create(request):
             user=request.user,
             center=center,
             role=CenterMembership.ROLE_OWNER,
-            status=CenterMembership.STATUS_APPROVED,
+            status=CenterMembership.STATUS_PENDING,
         )
         request.user.add_role('owner')
+        from django.contrib.auth import get_user_model
+        from notifications.services import send_center_approval_request_notification
+        User = get_user_model()
+        admins = User.objects.filter(is_platform_admin=True, is_active=True)
+        for admin in admins:
+            send_center_approval_request_notification(admin, request.user, center)
     return Response(EducationCenterSerializer(center).data,
                     status=http_status.HTTP_201_CREATED)
 
@@ -116,8 +124,8 @@ def _user_can_approve(user, center, role):
         # Center owners always have approval authority once admin has approved
         # the center; their own owner-membership record is informational only.
         return center.status == EducationCenter.STATUS_APPROVED
-    # Managers can approve students/teachers at their own center.
-    if role in (CenterMembership.ROLE_STUDENT, CenterMembership.ROLE_TEACHER):
+    # Managers only handle student membership at their own center.
+    if role == CenterMembership.ROLE_STUDENT:
         return CenterMembership.objects.filter(
             user=user, center=center,
             role=CenterMembership.ROLE_MANAGER,
@@ -181,6 +189,114 @@ def pending_memberships(request, center_id):
     return Response(data)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def staff_memberships(request, center_id):
+    """GET approved managers/teachers for one center."""
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    if not _user_can_manage_center(request.user, center):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    role = request.query_params.get('role')
+    qs = CenterMembership.objects.filter(
+        center=center,
+        status=CenterMembership.STATUS_APPROVED,
+        role__in=[CenterMembership.ROLE_MANAGER, CenterMembership.ROLE_TEACHER],
+    ).select_related('user')
+    if role:
+        qs = qs.filter(role=role)
+    from accounts.serializers import UserSerializer
+    data = [{
+        'membership_id': m.id,
+        'user': UserSerializer(m.user).data,
+        'role': m.role,
+        'subject': m.subject,
+        'status': m.status,
+        'created_at': str(m.created_at),
+    } for m in qs]
+    return Response(data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_manager(request, center_id):
+    """POST /api/centers/{id}/managers/create/ — owner creates manager login."""
+    center = get_object_or_404(
+        EducationCenter,
+        pk=center_id,
+        status=EducationCenter.STATUS_APPROVED,
+    )
+    if not (request.user.is_platform_admin or center.owner_id == request.user.id):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    serializer = CreateManagerSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    with transaction.atomic():
+        from django.contrib.auth import get_user_model
+        from accounts.serializers import UserSerializer
+
+        user = get_user_model().objects.create_user(
+            phone=serializer.validated_data['phone'],
+            password=serializer.validated_data['password'],
+            full_name=serializer.validated_data['full_name'],
+        )
+        user.add_role(CenterMembership.ROLE_MANAGER)
+        membership = CenterMembership.objects.create(
+            user=user,
+            center=center,
+            role=CenterMembership.ROLE_MANAGER,
+            status=CenterMembership.STATUS_APPROVED,
+            approved_by=request.user,
+        )
+    return Response(
+        {
+            'membership': CenterMembershipSerializer(membership).data,
+            'user': UserSerializer(user).data,
+        },
+        status=http_status.HTTP_201_CREATED,
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def create_teacher(request, center_id):
+    """POST /api/centers/{id}/teachers/create/ — owner creates teacher login."""
+    center = get_object_or_404(
+        EducationCenter,
+        pk=center_id,
+        status=EducationCenter.STATUS_APPROVED,
+    )
+    if not (request.user.is_platform_admin or center.owner_id == request.user.id):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    serializer = CreateTeacherSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    with transaction.atomic():
+        from django.contrib.auth import get_user_model
+        from accounts.serializers import UserSerializer
+
+        user = get_user_model().objects.create_user(
+            phone=serializer.validated_data['phone'],
+            password=serializer.validated_data['password'],
+            full_name=serializer.validated_data['full_name'],
+        )
+        user.add_role(CenterMembership.ROLE_TEACHER)
+        membership = CenterMembership.objects.create(
+            user=user,
+            center=center,
+            role=CenterMembership.ROLE_TEACHER,
+            subject=serializer.validated_data.get('subject', ''),
+            status=CenterMembership.STATUS_APPROVED,
+            approved_by=request.user,
+        )
+    return Response(
+        {
+            'membership': CenterMembershipSerializer(membership).data,
+            'user': UserSerializer(user).data,
+        },
+        status=http_status.HTTP_201_CREATED,
+    )
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def approve_student(request, center_id):
@@ -241,6 +357,8 @@ def admin_approve_center(request, center_id):
                 role=CenterMembership.ROLE_OWNER,
             ).update(status=CenterMembership.STATUS_APPROVED, approved_by=request.user)
             center.owner.add_role('owner')
+            from notifications.services import send_center_decision_notification
+            send_center_decision_notification(center.owner, center, approved=True)
     return Response(EducationCenterSerializer(center).data)
 
 
@@ -260,4 +378,6 @@ def admin_reject_center(request, center_id):
                 user=center.owner, center=center,
                 role=CenterMembership.ROLE_OWNER,
             ).update(status=CenterMembership.STATUS_REJECTED, approved_by=request.user)
+            from notifications.services import send_center_decision_notification
+            send_center_decision_notification(center.owner, center, approved=False)
     return Response(EducationCenterSerializer(center).data)

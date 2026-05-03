@@ -55,7 +55,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const managerCenterId = user?.roles?.manager?.status === 'approved' ? user.roles.manager.centerId : null;
   const ownerCenterId = user?.roles?.owner?.status === 'approved' ? user.roles.owner.centerId : null;
   const myCenterId = teacherCenterId || managerCenterId || ownerCenterId;
-  const myCenter = myCenterId ? store.centers.find(c => String(c.id) === String(myCenterId)) : null;
+  const myCenter = !isApi && myCenterId ? store.centers.find(c => String(c.id) === String(myCenterId)) : null;
 
   // ─── API rejimida savollarni real backend'dan olish ────────────────────
   const apiQuestionsRes = useApiData(
@@ -67,7 +67,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const apiQuestions = isApi && Array.isArray(apiQuestionsRes.data) ? apiQuestionsRes.data.map(mapApiQuestion) : null;
 
   // Pull questions live from the store, scoped to this user's center
-  const questions = (apiQuestions || store.questions).filter(q => !myCenterId || String(q.centerId) === String(myCenterId));
+  const questions = (isApi ? (apiQuestions || []) : store.questions).filter(q => !myCenterId || String(q.centerId) === String(myCenterId));
   const allSubjects = store.subjects;
   const filtered = questions.filter(q =>
     (!filterSubject || q.subject === filterSubject) && (!filterLevel || q.difficulty === filterLevel)

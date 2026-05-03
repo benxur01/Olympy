@@ -1,14 +1,30 @@
 from rest_framework import serializers
 
+from accounts.utils import normalize_phone
 from .models import CenterMembership, EducationCenter
 
 
 class EducationCenterSerializer(serializers.ModelSerializer):
+    owner_full_name = serializers.CharField(source='owner.full_name', read_only=True)
+    owner_phone = serializers.CharField(source='owner.normalized_phone', read_only=True)
+    students = serializers.SerializerMethodField()
+    olympiads = serializers.SerializerMethodField()
+
     class Meta:
         model = EducationCenter
         fields = ['id', 'name', 'city', 'owner', 'status', 'subjects',
-                  'rating', 'created_at']
+                  'rating', 'created_at', 'owner_full_name', 'owner_phone',
+                  'students', 'olympiads']
         read_only_fields = ['id', 'owner', 'status', 'rating', 'created_at']
+
+    def get_students(self, obj):
+        return obj.memberships.filter(
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED,
+        ).count()
+
+    def get_olympiads(self, obj):
+        return obj.olympiads.count()
 
 
 class CenterMembershipSerializer(serializers.ModelSerializer):
@@ -45,3 +61,25 @@ class ApproveSerializer(serializers.Serializer):
     """Approve/reject an existing membership by id."""
     membership_id = serializers.IntegerField()
     decision = serializers.ChoiceField(choices=['approve', 'reject', 'approved', 'rejected'])
+
+
+class CreateManagerSerializer(serializers.Serializer):
+    """Owner-created manager account for an approved education center."""
+    full_name = serializers.CharField(max_length=120)
+    phone = serializers.CharField(max_length=20)
+    password = serializers.CharField(write_only=True, min_length=6)
+
+    def validate_phone(self, value):
+        from django.contrib.auth import get_user_model
+
+        norm = normalize_phone(value)
+        if not norm:
+            raise serializers.ValidationError("Telefon raqam noto'g'ri")
+        if get_user_model().objects.filter(normalized_phone=norm).exists():
+            raise serializers.ValidationError("Bu telefon raqam avval ro'yxatdan o'tgan")
+        return norm
+
+
+class CreateTeacherSerializer(CreateManagerSerializer):
+    """Owner-created teacher account for an approved education center."""
+    subject = serializers.CharField(max_length=80, required=False, allow_blank=True)

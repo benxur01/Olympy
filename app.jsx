@@ -2,67 +2,50 @@
 
 const { useState, useEffect } = React;
 
+const pageFromPath = () => {
+  try {
+    const path = window.location.pathname.replace(/\/+$/, '');
+    if (path === '/admin') return 'admin';
+  } catch {}
+  return null;
+};
+
 const App = () => {
-  const store = useStore();
   const [page, setPage] = React.useState('landing');
-  const [activeUserId, setActiveUserId] = React.useState(null);
   const [testResult, setTestResult] = React.useState(null);
   const [activeOlympiad, setActiveOlympiad] = React.useState(null);
   const [switcherOpen, setSwitcherOpen] = React.useState(false);
   const [apiUser, setApiUser] = React.useState(null);
 
-  const mockUser = activeUserId ? store.users.find(u => u.id === activeUserId) : null;
-  const user = apiUser || mockUser;
+  const user = apiUser;
 
-  // Persist session by user id
+  // Persist backend JWT session only.
   useEffect(() => {
     try {
-      if (!USE_MOCK_AUTH) {
-        const auth = globalThis.OlympyApi?.loadAuth?.();
-        if (auth?.user) {
-          setApiUser(auth.user);
-          setActiveUserId(null);
-          sessionStorage.removeItem('olympy_user_id');
-          setPage(roleHomePage(auth.user));
-          return;
-        }
+      const requestedPage = pageFromPath();
+      const auth = globalThis.OlympyApi?.loadAuth?.();
+      if (auth?.user) {
+        setApiUser(auth.user);
+        setPage(requestedPage || roleHomePage(auth.user));
+        return;
       }
-      const id = sessionStorage.getItem('olympy_user_id');
-      if (id) {
-        const u = OlympyStore.findUser(id);
-        if (u) {
-          setActiveUserId(u.id);
-          setPage(roleHomePage(u));
-        }
-      }
+      if (requestedPage) setPage(requestedPage);
     } catch {}
   }, []);
 
   const handleLogin = (u) => {
-    if (u?._api) {
-      setApiUser(u);
-      setActiveUserId(null);
-      try { sessionStorage.removeItem('olympy_user_id'); } catch {}
-      setPage(roleHomePage(u));
-      return;
-    }
-    setApiUser(null);
-    try { globalThis.OlympyApi?.clearAuth?.(); } catch {}
-    setActiveUserId(u.id);
-    try { sessionStorage.setItem('olympy_user_id', u.id); } catch {}
-    setPage(roleHomePage(u));
+    if (!u?._api) return;
+    const requestedPage = pageFromPath();
+    setApiUser(u);
+    setPage(requestedPage || roleHomePage(u));
   };
 
   const handleLogout = () => {
     setApiUser(null);
-    setActiveUserId(null);
     setTestResult(null);
     setActiveOlympiad(null);
     setSwitcherOpen(false);
-    try {
-      sessionStorage.removeItem('olympy_user_id');
-      globalThis.OlympyApi?.clearAuth?.();
-    } catch {}
+    try { globalThis.OlympyApi?.clearAuth?.(); } catch {}
     setPage('landing');
   };
 
@@ -86,18 +69,12 @@ const App = () => {
 
   const switchRole = (role) => {
     if (!user) return;
-    if (user._api) {
-      const nextUser = { ...user, activeRole: role };
-      setApiUser(nextUser);
-      try {
-        const auth = globalThis.OlympyApi?.loadAuth?.();
-        if (auth?.token) globalThis.OlympyApi.saveAuth({ token: auth.token, user: nextUser });
-      } catch {}
-      setSwitcherOpen(false);
-      setPage(ROLE_META[role]?.dest || 'student');
-      return;
-    }
-    OlympyStore.setActiveRole(user.id, role);
+    const nextUser = { ...user, activeRole: role };
+    setApiUser(nextUser);
+    try {
+      const auth = globalThis.OlympyApi?.loadAuth?.();
+      if (auth?.token) globalThis.OlympyApi.saveAuth({ token: auth.token, refresh: auth.refresh, user: nextUser });
+    } catch {}
     setSwitcherOpen(false);
     setPage(ROLE_META[role]?.dest || 'student');
   };
@@ -122,17 +99,17 @@ const App = () => {
       };
       if (role === 'student') return <StudentDashboard {...props} />;
       if (role === 'manager') return <ManagerDashboard {...props} />;
-      if (role === 'teacher') return <QuestionCreatorPage {...props} />;
+      if (role === 'teacher') return <TeacherDashboard {...props} />;
       if (role === 'owner')   return <OwnerDashboard {...props} />;
       if (role === 'admin')   return <AdminDashboard {...props} />;
     }
 
     if (status === 'pending') {
-      const center = data?.centerId ? OlympyStore.findCenter(data.centerId) : null;
+      const center = null;
       const messages = {
-        manager: "Manager paneliga kirish uchun arizangiz tasdiqlanishi kerak. Ariza markaz egasiga yuborildi.",
-        teacher: "Savol yaratish uchun o'qituvchi arizangiz tasdiqlanishi kerak. Ariza markaz egasiga yuborildi.",
-        owner:   "Markaz egasi paneliga kirish uchun markaz arizangiz Platform Admin tomonidan tasdiqlanishi kerak.",
+        manager: "Manager paneliga kirish uchun arizangiz tasdiqlanishi kerak. Ariza direktorga yuborildi.",
+        teacher: "Savol yaratish uchun o'qituvchi arizangiz tasdiqlanishi kerak. Ariza direktorga yuborildi.",
+        owner:   "Direktor paneliga kirish uchun markaz arizangiz Platform Admin tomonidan tasdiqlanishi kerak.",
         student: "Bu ekranga kirish uchun arizangiz tasdiqlanishi kerak.",
       };
       return (
@@ -261,75 +238,5 @@ const App = () => {
   );
 };
 
-// ─── Floating action button — switches role for logged-in users, demo login otherwise
-const FloatingRoleButton = () => {
-  if (!import.meta.env.DEV) return null;
-
-  const store = useStore();
-  const [open, setOpen] = React.useState(false);
-
-  // Only useful on landing/auth screens — avoid showing during test
-  const isOnTestPage = false; // simple heuristic; the App key remounts on page change
-
-  // Read current logged-in user from sessionStorage
-  let currentUser = null;
-  try {
-    const auth = !USE_MOCK_AUTH ? globalThis.OlympyApi?.loadAuth?.() : null;
-    if (auth?.user) currentUser = auth.user;
-    const id = sessionStorage.getItem('olympy_user_id');
-    if (!currentUser && id) currentUser = store.users.find(u => u.id === id) || null;
-  } catch {}
-
-  if (currentUser) return null; // when logged-in, sidebar/topbar provide role switching
-
-  return (
-    <div className="fixed bottom-5 left-5 z-50">
-      {open && (
-        <div className="glass-strong rounded-2xl p-4 mb-3 w-60 border border-indigo-500/20 animate-in">
-          <div className="text-xs text-white/40 font-medium mb-3">⚡ Demo — tezkor kirish</div>
-          <div className="space-y-2">
-            {[
-              { phone:'+998901234567', label:"O'quvchi", icon:'🎓', desc:'Ali Valiyev' },
-              { phone:'+998901234568', label:'Manager + Egasi', icon:'🏫', desc:'Sardor Usmonov' },
-              { phone:'+998901234570', label:"O'qituvchi", icon:'✏️', desc:'Malika Toshmatova' },
-              { phone:'+998901234569', label:'Admin', icon:'🛡', desc:'Admin Bekmurodov' },
-            ].map(r => (
-              <button key={r.phone}
-                onClick={() => {
-                  const u = OlympyStore.findUserByPhone(r.phone);
-                  if (u) {
-                    try {
-                      globalThis.OlympyApi?.clearAuth?.();
-                      sessionStorage.setItem('olympy_user_id', u.id);
-                    } catch {}
-                    window.location.reload();
-                  }
-                }}
-                className="w-full flex items-center gap-3 p-2.5 rounded-xl glass hover:bg-white/10 transition-all text-left">
-                <span className="text-xl">{r.icon}</span>
-                <div>
-                  <div className="text-sm font-semibold text-white">{r.label}</div>
-                  <div className="text-xs text-white/40">{r.desc}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      <button onClick={() => setOpen(!open)}
-        className="gradient-bg w-12 h-12 rounded-2xl flex items-center justify-center glow-blue shadow-xl transition-all hover:scale-105">
-        <span className="text-white text-lg">{open ? '×' : '⚡'}</span>
-      </button>
-    </div>
-  );
-};
-
-const Root = () => (
-  <>
-    <App />
-    <FloatingRoleButton />
-  </>
-);
-
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<Root />);
+root.render(<App />);

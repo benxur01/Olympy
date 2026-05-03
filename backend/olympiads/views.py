@@ -12,7 +12,7 @@ from .serializers import OlympiadSerializer
 
 
 def _user_can_manage_center(user, center):
-    """True if user is owner of the center, an approved manager, or admin."""
+    """True if user can create/manage olympiads for the center."""
     if user.is_platform_admin:
         return True
     if center.owner_id == user.id:
@@ -22,7 +22,7 @@ def _user_can_manage_center(user, center):
         return center.status == EducationCenter.STATUS_APPROVED
     return CenterMembership.objects.filter(
         user=user, center=center,
-        role=CenterMembership.ROLE_MANAGER,
+        role__in=[CenterMembership.ROLE_MANAGER, CenterMembership.ROLE_TEACHER],
         status=CenterMembership.STATUS_APPROVED,
     ).exists()
 

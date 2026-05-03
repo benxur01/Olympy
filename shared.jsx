@@ -1,7 +1,13 @@
 // shared.jsx — Global shared components
 
 const { useState, useEffect, useRef, useContext, createContext } = React;
-const USE_MOCK_AUTH = false;
+
+const formatUzPhoneInput = (raw) => {
+  const digits = String(raw || '').replace(/\D/g, '');
+  let local = digits.startsWith('998') ? digits.slice(3) : digits;
+  if (local.length > 9) local = local.slice(-9);
+  return '+998' + local.slice(0, 9);
+};
 
 // ─── Icons (inline SVG helpers) ───────────────────────────────────────────────
 const Icon = ({ name, size = 18, className = '' }) => {

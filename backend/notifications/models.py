@@ -17,6 +17,7 @@ class Notification(models.Model):
     TYPE_TEACHER_REJECTED = 'teacher_rejected'
     TYPE_MANAGER_APPROVED = 'manager_approved'
     TYPE_MANAGER_REJECTED = 'manager_rejected'
+    TYPE_CENTER_PENDING = 'center_pending'
     TYPE_CENTER_APPROVED = 'center_approved'
     TYPE_CENTER_REJECTED = 'center_rejected'
     TYPE_OLYMPIAD_PUBLISHED = 'olympiad_published'

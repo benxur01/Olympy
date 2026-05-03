@@ -4,7 +4,7 @@ const SUBJECTS_LIST = ['Matematika','Ingliz tili','Ona tili','Informatika','Fizi
 
 // ─── Login ────────────────────────────────────────────────────────────────
 const LoginPage = ({ onNavigate, onLogin }) => {
-  const [form, setForm] = React.useState({ phone: '', password: '' });
+  const [form, setForm] = React.useState({ phone: '+998', password: '' });
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
   const [showPass, setShowPass] = React.useState(false);
@@ -12,19 +12,6 @@ const LoginPage = ({ onNavigate, onLogin }) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-
-    if (USE_MOCK_AUTH) {
-      setTimeout(() => {
-        const u = OlympyStore.findUserByPhone(form.phone);
-        if (u && u.password === form.password) {
-          onLogin(u);
-        } else {
-          setError("Telefon raqam yoki parol noto'g'ri");
-          setLoading(false);
-        }
-      }, 700);
-      return;
-    }
 
     try {
       const data = await OlympyApi.login({ phone: form.phone, password: form.password });
@@ -34,21 +21,6 @@ const LoginPage = ({ onNavigate, onLogin }) => {
     } catch (err) {
       setError(OlympyApi.toUserMessage(err));
       setLoading(false);
-    }
-  };
-
-  // Demo quick-login keeps the original mock accounts available for testing.
-  const quickLogin = (phone) => {
-    const u = OlympyStore.findUserByPhone(phone);
-    if (u) {
-      try { OlympyApi.clearAuth(); } catch {}
-      onLogin(u);
-    } else {
-      setForm({ phone, password: '123456' });
-      if (USE_MOCK_AUTH) {
-        setError('');
-        setLoading(false);
-      }
     }
   };
 
@@ -86,29 +58,14 @@ const LoginPage = ({ onNavigate, onLogin }) => {
           <p className="text-white/40">Hisobingizga kiring</p>
         </div>
 
-        {/* Demo quick login */}
-        <div className="glass rounded-2xl p-4 mb-6 border border-indigo-500/20">
-          <div className="text-xs text-indigo-300 font-medium mb-3">⚡ Demo kirish (tez sinash uchun)</div>
-          <div className="flex flex-wrap gap-2">
-            {[
-              { phone: '+998901234567', label: "O'quvchi (Ali)" },
-              { phone: '+998901234568', label: 'Manager+Egasi' },
-              { phone: '+998901234570', label: "O'qituvchi" },
-              { phone: '+998901234569', label: 'Admin' },
-            ].map(d => (
-              <button key={d.phone} onClick={() => quickLogin(d.phone)}
-                className="text-xs px-3 py-1.5 rounded-lg glass border border-white/10 text-white/60 hover:text-white hover:border-indigo-500/40 transition-all">
-                {d.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
-            <input className="input-field" type="tel" placeholder="+998 90 123 45 67" value={form.phone}
-              onChange={e => setForm({ ...form, phone: e.target.value })} required />
+            <input className="input-field" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
+              placeholder="+998901234567" value={form.phone}
+              onChange={e => setForm({ ...form, phone: formatUzPhoneInput(e.target.value) })}
+              onFocus={e => setForm({ ...form, phone: formatUzPhoneInput(e.target.value) })}
+              required />
           </div>
           <div>
             <label className="block text-sm text-white/60 mb-2 font-medium">Parol</label>
@@ -147,7 +104,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
 const RegisterPage = ({ onNavigate, onLogin }) => {
   const store = useStore();
   const [step, setStep] = React.useState(1);
-  const [form, setForm] = React.useState({ name: '', phone: '', password: '', confirm: '' });
+  const [form, setForm] = React.useState({ name: '', phone: '+998', password: '', confirm: '' });
   const [role, setRole] = React.useState(null); // student|teacher|manager|owner
   const [centerId, setCenterId] = React.useState(null);
   const [centerSearch, setCenterSearch] = React.useState('');
@@ -160,12 +117,11 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   const [apiCenters, setApiCenters] = React.useState(null);
 
   const normalizedRegisterPhone = OlympyStore.normalizePhone(form.phone);
-  const phoneValidForVerify = !!normalizedRegisterPhone && (USE_MOCK_AUTH ? !OlympyStore.phoneExists(normalizedRegisterPhone) : !phoneError);
+  const phoneValidForVerify = !!normalizedRegisterPhone && !phoneError;
 
   // Reset verification whenever the entered phone changes
   React.useEffect(() => { setPhoneVerified(false); }, [normalizedRegisterPhone]);
   React.useEffect(() => {
-    if (USE_MOCK_AUTH) return undefined;
     let cancelled = false;
     OlympyApi.getCenters()
       .then(rows => {
@@ -181,11 +137,10 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   const validatePhone = (v) => {
     const norm = OlympyStore.normalizePhone(v);
     if (!norm) { setPhoneError(''); return; }
-    if (USE_MOCK_AUTH && OlympyStore.phoneExists(norm)) setPhoneError("Bu telefon raqam avval ro‘yxatdan o‘tgan");
-    else setPhoneError('');
+    setPhoneError('');
   };
 
-  const centerOptions = (!USE_MOCK_AUTH && apiCenters) ? apiCenters : store.centers;
+  const centerOptions = apiCenters || [];
   const approvedCenters = centerOptions.filter(c => c.status === 'approved');
   const filteredCenters = approvedCenters.filter(c =>
     c.name.toLowerCase().includes(centerSearch.toLowerCase()) ||
@@ -198,7 +153,6 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
       if (form.password !== form.confirm) return;
       const norm = OlympyStore.normalizePhone(form.phone);
       if (!norm) { setPhoneError("Telefon raqam noto'g'ri"); return; }
-      if (USE_MOCK_AUTH && OlympyStore.phoneExists(norm)) { setPhoneError("Bu telefon raqam avval ro‘yxatdan o‘tgan"); return; }
       if (!phoneVerified) { setPhoneError("Telefon raqamni Telegram orqali tasdiqlang"); return; }
       setStep(2);
     } else if (step === 2) {
@@ -210,103 +164,56 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   const submit = async () => {
     setLoading(true);
 
-    if (!USE_MOCK_AUTH) {
-      try {
-        const data = await OlympyApi.register({
-          full_name: form.name,
-          phone: form.phone,
-          password: form.password,
-        });
-        const token = data.token;
-        const refresh = data.refresh;
-        let selectedCenterId = centerId;
-        const selectedRole = role;
-        const selectedSubject = subject;
-        const isNewCenter = selectedRole === 'owner';
+    try {
+      const data = await OlympyApi.register({
+        full_name: form.name,
+        phone: form.phone,
+        password: form.password,
+      });
+      const token = data.token;
+      const refresh = data.refresh;
+      let selectedCenterId = centerId;
+      const selectedRole = role;
+      const selectedSubject = subject;
+      const isNewCenter = selectedRole === 'owner';
 
-        if (isNewCenter) {
-          const createdCenter = await OlympyApi.registerCenter({
-            name: newCenter.name,
-            city: newCenter.city,
-            subjects: newCenter.subjects,
-          }, token);
-          selectedCenterId = createdCenter?.id;
-        } else if (selectedRole === 'student' && selectedCenterId) {
-          await OlympyApi.joinCenter(selectedCenterId, {
-            role: 'student',
-            subject: selectedSubject || '',
-          }, token);
-        } else if (selectedRole === 'teacher') {
-          await OlympyApi.joinCenter(selectedCenterId, {
-            role: 'teacher',
-            subject: selectedSubject,
-          }, token);
-        } else if (selectedRole === 'manager') {
-          await OlympyApi.joinCenter(selectedCenterId, {
-            role: 'manager',
-            subject: '',
-          }, token);
-        }
-
-        const freshUser = await OlympyApi.getMe(token);
-        const mappedUser = OlympyApi.mapBackendUser(freshUser);
-        OlympyApi.saveAuth({ token, refresh, user: mappedUser });
-        setSuccess(true);
-        setTimeout(() => onLogin(mappedUser), 1600);
-      } catch (err) {
-        setPhoneError(OlympyApi.toUserMessage(err));
-        setLoading(false);
+      if (isNewCenter) {
+        const createdCenter = await OlympyApi.registerCenter({
+          name: newCenter.name,
+          city: newCenter.city,
+          subjects: newCenter.subjects,
+        }, token);
+        selectedCenterId = createdCenter?.id;
+      } else if (selectedRole === 'student' && selectedCenterId) {
+        await OlympyApi.joinCenter(selectedCenterId, {
+          role: 'student',
+          subject: selectedSubject || '',
+        }, token);
+      } else if (selectedRole === 'teacher') {
+        await OlympyApi.joinCenter(selectedCenterId, {
+          role: 'teacher',
+          subject: selectedSubject,
+        }, token);
+      } else if (selectedRole === 'manager') {
+        await OlympyApi.joinCenter(selectedCenterId, {
+          role: 'manager',
+          subject: '',
+        }, token);
       }
-      return;
+
+      const freshUser = await OlympyApi.getMe(token);
+      const mappedUser = OlympyApi.mapBackendUser(freshUser);
+      OlympyApi.saveAuth({ token, refresh, user: mappedUser });
+      setSuccess(true);
+      setTimeout(() => onLogin(mappedUser), 1600);
+    } catch (err) {
+      setPhoneError(OlympyApi.toUserMessage(err));
+      setLoading(false);
     }
-
-    setTimeout(() => {
-      try {
-        const user = OlympyStore.createUser({ name: form.name, phone: form.phone, password: form.password });
-
-        if (role === 'student') {
-          if (centerId) {
-            OlympyStore.setRole(user.id, 'student', { status: 'pending', centerId });
-            OlympyStore.createRequest({ type: 'student', userId: user.id, centerId });
-          } else {
-            // No center selected — student is auto-approved (browse-only)
-            OlympyStore.setRole(user.id, 'student', { status: 'approved', centerId: null });
-          }
-        } else if (role === 'teacher') {
-          if (!centerId || !subject) { setLoading(false); return; }
-          OlympyStore.setRole(user.id, 'teacher', { status: 'pending', centerId, subject });
-          OlympyStore.createRequest({ type: 'teacher', userId: user.id, centerId, subject });
-        } else if (role === 'manager') {
-          if (!centerId) { setLoading(false); return; }
-          OlympyStore.setRole(user.id, 'manager', { status: 'pending', centerId });
-          OlympyStore.createRequest({ type: 'manager', userId: user.id, centerId });
-        } else if (role === 'owner') {
-          if (!newCenter.name || !newCenter.city) { setLoading(false); return; }
-          const center = OlympyStore.createCenter({
-            name: newCenter.name,
-            city: newCenter.city,
-            subjects: newCenter.subjects,
-            ownerId: user.id,
-            status: 'pending',
-          });
-          OlympyStore.setRole(user.id, 'owner', { status: 'pending', centerId: center.id });
-          OlympyStore.createRequest({ type: 'center', userId: user.id, centerId: center.id });
-        }
-
-        // Default activeRole = chosen role, even if pending — UI will gate access
-        OlympyStore.setActiveRole(user.id, role);
-
-        setSuccess(true);
-        setTimeout(() => onLogin(OlympyStore.findUser(user.id)), 1600);
-      } catch (err) {
-        setPhoneError(err.message || 'Xatolik yuz berdi');
-        setLoading(false);
-      }
-    }, 1000);
   };
 
   if (success) {
-    const isAuto = !USE_MOCK_AUTH || (role === 'student' && !centerId);
+    const isAuto = role === 'student' && !centerId;
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#060818' }}>
         <div className="text-center animate-in">
@@ -318,8 +225,8 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
           {!isAuto && (
             <p className="text-amber-300 text-sm mt-3">
               {role === 'owner' ? "Markaz arizangiz Platform Adminga yuborildi" :
-               role === 'manager' ? "Manager arizangiz markaz egasiga yuborildi" :
-               role === 'teacher' ? "O'qituvchi arizangiz markaz egasiga yuborildi" :
+               role === 'manager' ? "Manager arizangiz direktorga yuborildi" :
+               role === 'teacher' ? "O'qituvchi arizangiz direktorga yuborildi" :
                'Arizangiz markaz managerига yuborildi'}
             </p>
           )}
@@ -339,7 +246,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
           <div className="glass rounded-3xl p-8 max-w-sm">
             <div className="text-4xl mb-4">{role === 'owner' ? '🏛' : role === 'manager' ? '🏫' : role === 'teacher' ? '✏️' : '🏆'}</div>
             <h3 className="text-xl font-black text-white mb-3">
-              {role === 'owner' ? 'Markaz egasi sifatida' :
+              {role === 'owner' ? 'Direktor sifatida' :
                role === 'manager' ? 'Manager sifatida' :
                role === 'teacher' ? "O'qituvchi sifatida" :
                "O'quvchi sifatida"} qo'shiling
@@ -393,8 +300,18 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
             </div>
             <div>
               <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
-              <input className="input-field" type="tel" placeholder="+998 90 123 45 67" value={form.phone}
-                onChange={e => { setForm({ ...form, phone: e.target.value }); validatePhone(e.target.value); }} />
+              <input className="input-field" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
+                placeholder="+998901234567" value={form.phone}
+                onChange={e => {
+                  const phone = formatUzPhoneInput(e.target.value);
+                  setForm({ ...form, phone });
+                  validatePhone(phone);
+                }}
+                onFocus={e => {
+                  const phone = formatUzPhoneInput(e.target.value);
+                  setForm({ ...form, phone });
+                  validatePhone(phone);
+                }} />
               {phoneError && <div className="flex items-center gap-1 text-red-400 text-xs mt-1"><Icon name="info" size={12} /> {phoneError}</div>}
             </div>
             <TelegramVerifyBlock
@@ -431,7 +348,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               { k:'student', icon:'🎓', label:"O'quvchi", desc:'Olimpiadalarda qatnashish' },
               { k:'teacher', icon:'✏️', label:"O'qituvchi", desc:'Savollar yaratish (markaz tasdig\'i bilan)' },
               { k:'manager', icon:'🏫', label:'Manager', desc:'O\'quvchilarni boshqarish (markaz tasdig\'i bilan)' },
-              { k:'owner',   icon:'🏛', label:'Markaz egasi', desc:"Yangi o'quv markaz ro'yxatdan o'tkazish" },
+              { k:'owner',   icon:'🏛', label:'Direktor', desc:"Yangi o'quv markaz ro'yxatdan o'tkazish" },
             ].map(r => (
               <button key={r.k} onClick={() => setRole(r.k)}
                 className={`w-full flex items-center gap-3 p-4 rounded-2xl text-left transition-all ${role === r.k ? 'border border-indigo-500 bg-indigo-500/10' : 'glass hover:bg-white/5 border border-transparent'}`}>

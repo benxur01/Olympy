@@ -13,6 +13,7 @@ following environment variables:
 from datetime import timedelta
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -36,10 +37,17 @@ def load_local_env(env_path):
 
 load_local_env(BASE_DIR / '.env')
 
+
+def env_bool(name, default=False):
+    return os.environ.get(name, '1' if default else '0').lower() in (
+        '1', 'true', 'yes', 'on',
+    )
+
+
 SECRET_KEY = os.environ.get('OLYMPY_SECRET_KEY')
 if not SECRET_KEY:
     raise ImproperlyConfigured("OLYMPY_SECRET_KEY muhit o'zgaruvchisi o'rnatilmagan")
-DEBUG = os.environ.get('OLYMPY_DEBUG', '0') == '1'
+DEBUG = env_bool('OLYMPY_DEBUG', False)
 _allowed = os.environ.get('OLYMPY_ALLOWED_HOSTS', '')
 ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()] or (
     ['localhost', '127.0.0.1'] if DEBUG else []
@@ -99,7 +107,22 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'olympy_api.wsgi.application'
 
-if os.environ.get('OLYMPY_DB_ENGINE', 'sqlite') == 'postgres':
+DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+if DATABASE_URL:
+    parsed_db = urlparse(DATABASE_URL)
+    if parsed_db.scheme not in ('postgres', 'postgresql'):
+        raise ImproperlyConfigured('DATABASE_URL must use postgres:// or postgresql://')
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': parsed_db.path.lstrip('/'),
+            'USER': parsed_db.username or '',
+            'PASSWORD': parsed_db.password or '',
+            'HOST': parsed_db.hostname or '',
+            'PORT': str(parsed_db.port or 5432),
+        }
+    }
+elif os.environ.get('OLYMPY_DB_ENGINE', 'sqlite') == 'postgres':
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -132,6 +155,7 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -176,18 +200,34 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Asia/Tashkent'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
 
-# CORS — production rejimida ham faqat aniq ro'yxatdagi originlar.
-# Dev rejimda ham hech qachon ALL_ORIGINS ochilmaydi: developer
-# OLYMPY_CORS_ALLOWED_ORIGINS ga localhost portlarini ro'yxatga oladi.
+# CORS — production rejimida faqat aniq ro'yxatdagi originlar.
 CORS_ALLOW_ALL_ORIGINS = False
+_cors_origins = os.environ.get(
+    'OLYMPY_CORS_ALLOWED_ORIGINS',
+    'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500' if DEBUG else '',
+)
 CORS_ALLOWED_ORIGINS = [
-    o.strip() for o in
-    os.environ.get(
-        'OLYMPY_CORS_ALLOWED_ORIGINS',
-        'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500',
-    ).split(',')
+    o.strip() for o in _cors_origins.split(',')
     if o.strip()
 ]
+if not DEBUG and not CORS_ALLOWED_ORIGINS:
+    raise ImproperlyConfigured('OLYMPY_CORS_ALLOWED_ORIGINS must be set in production')
+CSRF_TRUSTED_ORIGINS = [
+    o.strip() for o in os.environ.get('OLYMPY_CSRF_TRUSTED_ORIGINS', '').split(',')
+    if o.strip()
+]
+
+# Production security flags. Enable OLYMPY_SECURE_SSL_REDIRECT only after HTTPS
+# is correctly terminated by your hosting platform or reverse proxy.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = env_bool('OLYMPY_SECURE_SSL_REDIRECT', False)
+SESSION_COOKIE_SECURE = not DEBUG
+CSRF_COOKIE_SECURE = not DEBUG
+SECURE_HSTS_SECONDS = int(os.environ.get('OLYMPY_SECURE_HSTS_SECONDS', '0' if DEBUG else '31536000'))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool('OLYMPY_SECURE_HSTS_INCLUDE_SUBDOMAINS', not DEBUG)
+SECURE_HSTS_PRELOAD = env_bool('OLYMPY_SECURE_HSTS_PRELOAD', False)
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
 
 # Telegram phone verification
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
