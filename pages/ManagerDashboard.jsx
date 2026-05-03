@@ -64,15 +64,15 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data) ? apiOlympiadsRes.data.map(mapApiOlympiad) : null;
   const apiQuestions = isApi && Array.isArray(apiQuestionsRes.data) ? apiQuestionsRes.data.map(mapApiQuestion) : null;
 
-  const baseCenters = apiCenters || store.centers;
+  const baseCenters = isApi ? (apiCenters || []) : store.centers;
   const center = managerCenterId ? baseCenters.find(c => String(c.id) === String(managerCenterId)) : null;
   const centerId = center?.id;
   const centerName = center?.name || 'Markaz';
 
   // Olympiads of this center (live)
-  const olympiads = (apiOlympiads || store.olympiads).filter(o => String(o.centerId) === String(centerId));
+  const olympiads = (isApi ? (apiOlympiads || []) : store.olympiads).filter(o => String(o.centerId) === String(centerId));
   // Questions of this center (for assigning to olympiads)
-  const centerQuestions = (apiQuestions || store.questions).filter(q => String(q.centerId) === String(centerId));
+  const centerQuestions = (isApi ? (apiQuestions || []) : store.questions).filter(q => String(q.centerId) === String(centerId));
 
   // Live students at this center (approved)
   const students = store.users.filter(u =>
@@ -140,14 +140,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const pendingCount = requests.filter(r => r.status === 'Kutilmoqda').length;
   const navItems = [
     { key: 'home', icon: 'home', label: 'Asosiy' },
-    { key: 'students', icon: 'users', label: "O'quvchilar", badge: students.length },
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCount || undefined },
     { key: 'olympiads', icon: 'trophy', label: 'Olimpiadalar' },
-    { key: 'questions', icon: 'book', label: 'Savollar' },
-    { key: 'results', icon: 'chart', label: 'Natijalar' },
-    { key: 'leaderboard', icon: 'star', label: 'Reyting' },
-    { divider: true, key: 'd1' },
-    { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
   ];
 
   const renderHome = () => (
@@ -162,22 +156,17 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Jami o'quvchilar" value={students.length} sub={students.length > 0 ? `↑ ${students.length}` : ''} icon={<Icon name="users" size={20} />} color="from-indigo-500 to-purple-600" glow="glow-blue" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatCard label="Kutilayotgan arizalar" value={pendingCount} sub={pendingCount > 0 ? 'Yangi' : ''} icon={<Icon name="bell" size={20} />} color="from-rose-500 to-pink-600" glow="glow-blue" />
         <StatCard label="Faol olimpiadalar" value={olympiads.filter(o => o.status === 'active').length} icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />
-        <StatCard label="Kutilayotgan arizalar" value={pendingCount} sub={pendingCount > 0 ? 'Yangi' : ''} icon={<Icon name="bell" size={20} />} color="from-rose-500 to-pink-600" />
-        <StatCard label="O'rtacha natija" value="78.4%" icon={<Icon name="chart" size={20} />} color="from-emerald-500 to-teal-600" />
+        <StatCard label="Jami olimpiadalar" value={olympiads.length} icon={<Icon name="bolt" size={20} />} color="from-emerald-500 to-teal-600" />
       </div>
 
-      {/* Pending requests quick view */}
-      {requests.filter(r => r.status === 'Kutilmoqda').length > 0 && (
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div className="glass rounded-2xl p-5 border border-amber-500/20">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-              <h3 className="font-bold text-white">Yangi arizalar</h3>
-            </div>
-            <button onClick={() => setPage('requests')} className="text-xs text-indigo-400">Barchasini ko'rish →</button>
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="font-bold text-white">O'quvchi arizalari</h3>
+            <button onClick={() => setPage('requests')} className="text-xs text-indigo-400">Barchasi</button>
           </div>
           <div className="space-y-2">
             {requests.filter(r => r.status === 'Kutilmoqda').slice(0, 3).map(r => (
@@ -197,14 +186,10 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             {pendingCount === 0 && <div className="text-sm text-white/40 px-3 py-2">Yangi arizalar yo'q</div>}
           </div>
         </div>
-      )}
-
-      {/* Olympiad overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="glass rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-white">Olimpiadalar</h3>
-            <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400">Ko'rish →</button>
+            <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400">Ko'rish</button>
           </div>
           <div className="space-y-3">
             {olympiads.slice(0, 3).map(o => (
@@ -219,34 +204,9 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 <Badge status={statusLabel(o.status)} />
               </div>
             ))}
+            {olympiads.length === 0 && <div className="text-sm text-white/40">Hali olimpiada yo'q</div>}
           </div>
         </div>
-
-        <div className="glass rounded-2xl p-5">
-          <h3 className="font-bold text-white mb-4">Eng yaxshi o'quvchilar</h3>
-          <div className="space-y-3">
-            {[...students].sort((a,b) => b.avgScore - a.avgScore).slice(0,4).map((s, i) => (
-              <div key={s.id} className="flex items-center gap-3">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black ${i === 0 ? 'bg-amber-500/30 text-amber-400' : i === 1 ? 'bg-slate-400/30 text-slate-300' : i === 2 ? 'bg-amber-700/30 text-amber-600' : 'glass text-white/40'}`}>
-                  {i+1}
-                </div>
-                <Avatar name={s.name} size={30} gradient={i === 0 ? 'from-amber-400 to-orange-500' : 'from-indigo-500 to-purple-600'} />
-                <div className="flex-1 min-w-0"><div className="text-sm font-medium text-white truncate">{s.name}</div></div>
-                <div className="text-sm font-bold text-white">{s.avgScore}%</div>
-              </div>
-            ))}
-            {students.length === 0 && <div className="text-sm text-white/40">Hali tasdiqlangan o'quvchilar yo'q</div>}
-          </div>
-        </div>
-      </div>
-
-      {/* Weekly stats bar chart */}
-      <div className="glass rounded-2xl p-5">
-        <h3 className="font-bold text-white mb-4">Haftalik faollik</h3>
-        <BarChart data={[
-          { label: 'Dush', value: 42 }, { label: 'Sesh', value: 78 }, { label: 'Chor', value: 55 },
-          { label: 'Pay', value: 91 }, { label: 'Jum', value: 67 }, { label: 'Shan', value: 34 }, { label: 'Yak', value: 20 },
-        ]} />
       </div>
     </div>
   );
@@ -440,7 +400,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     </div>
   );
 
-  const pagesMap = { home: renderHome, students: renderStudents, requests: renderRequests, olympiads: renderOlympiads, results: renderResults };
+  const pagesMap = { home: renderHome, requests: renderRequests, olympiads: renderOlympiads };
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -464,9 +424,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             </div>
           } />
         <main className="flex-1 overflow-y-auto">
-          {page === 'leaderboard' ? <LeaderboardPage embedded /> :
-           page === 'questions' ? <QuestionCreatorPage embedded user={user} /> :
-           (pagesMap[page] || renderHome)()}
+          {(pagesMap[page] || renderHome)()}
         </main>
         <MobileBottomNav items={navItems} activePage={page} setPage={setPage} />
       </div>

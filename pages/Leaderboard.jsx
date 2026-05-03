@@ -1,19 +1,5 @@
 // pages/Leaderboard.jsx
 
-// Demo seed for visual richness — combined with live store attempts at runtime
-const LEADERBOARD_SEED = [
-  { rank:1, name:'Malika Toshmatova', center:'Leader Academy', subject:'Ingliz tili', score:96, time:'18:22', badge:'🥇', city:'Toshkent' },
-  { rank:2, name:'Jasur Normatov', center:'ProSkill Academy', subject:'Matematika', score:94, time:'21:05', badge:'🥈', city:'Toshkent' },
-  { rank:3, name:'Ali Valiyev', center:'Brilliant Education', subject:'Informatika', score:91, time:'24:18', badge:'🥉', city:'Samarqand' },
-  { rank:4, name:'Nilufar Karimova', center:'IT Park Academy', subject:'Kimyo', score:89, time:'26:40', badge:'', city:'Toshkent' },
-  { rank:5, name:'Sherzod Tursunov', center:'Najot Ta\'lim', subject:'Fizika', score:87, time:'28:11', badge:'', city:'Buxoro' },
-  { rank:6, name:'Kamola Hasanova', center:'Leader Academy', subject:'Biologiya', score:85, time:'29:30', badge:'', city:'Toshkent' },
-  { rank:7, name:'Otabek Mirzayev', center:'ProSkill Academy', subject:'Tarix', score:83, time:'31:00', badge:'', city:'Toshkent' },
-  { rank:8, name:'Zulfiya Yusupova', center:'Brilliant Education', subject:'Ingliz tili', score:81, time:'32:15', badge:'', city:'Samarqand' },
-  { rank:9, name:'Bobur Xolmatov', center:'IT Park Academy', subject:'Geografiya', score:79, time:'33:45', badge:'', city:'Toshkent' },
-  { rank:10, name:'Eldor Raximov', center:'Najot Ta\'lim', subject:'Matematika', score:77, time:'35:00', badge:'', city:'Buxoro' },
-];
-
 // Backend leaderboard yozuvi → frontend mos shakl. Backend: { rank,
 // attempt_id, user_id, name, center, subject, score, time_spent }.
 const mapApiLeaderboard = (entry) => ({
@@ -45,7 +31,7 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
     ? apiLbRes.data.map(mapApiLeaderboard)
     : null;
 
-  // Mock rejim — store.attempts dan derive qilib, demo seed bilan birga.
+  // Local fallback is only used when the page is embedded without API auth.
   const liveEntries = (store.attempts || []).map(a => {
     const u = store.users.find(x => x.id === a.userId);
     const o = store.olympiads.find(x => x.id === a.olympiadId);
@@ -62,11 +48,11 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
     };
   });
 
-  // API ro'yxati mavjud bo'lsa undan, aks holda mock + demo seed dan.
+  // Production uses API results only.
   const merged = apiEntries
     ? apiEntries.slice().sort((a, b) => b.score - a.score)
         .map((d, i) => ({ ...d, rank: i + 1, badge: i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '' }))
-    : [...liveEntries, ...LEADERBOARD_SEED.map(d => ({ ...d, key: 's' + d.rank }))]
+    : (isApi ? [] : liveEntries)
         .sort((a, b) => b.score - a.score)
         .map((d, i) => ({ ...d, rank: i + 1, badge: i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '' }));
   const apiLoading = isApi && apiLbRes.loading && !apiEntries;

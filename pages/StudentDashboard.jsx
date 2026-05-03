@@ -37,7 +37,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data) ? apiOlympiadsRes.data.map(mapApiOlympiad) : null;
   const apiAttempts = isApi && Array.isArray(apiResultsRes.data) ? apiResultsRes.data.map(mapApiAttempt) : null;
 
-  const allCenters = apiCenters || store.centers;
+  const allCenters = isApi ? (apiCenters || []) : store.centers;
   const myCenter = studentCenterId ? allCenters.find(c => String(c.id) === String(studentCenterId)) : null;
 
   // Map of centerId → join-request status for the current user
@@ -53,13 +53,13 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   }
 
   // Olympiads visible to this student — only their approved center's olympiads
-  const baseOlympiads = apiOlympiads || store.olympiads;
+  const baseOlympiads = isApi ? (apiOlympiads || []) : store.olympiads;
   const visibleOlympiads = isCenterApproved
     ? baseOlympiads.filter(o => String(o.centerId) === String(studentCenterId))
     : [];
 
   // Student's attempts and derived results
-  const myAttempts = (apiAttempts || store.attempts.filter(a => a.userId === user.id))
+  const myAttempts = (isApi ? (apiAttempts || []) : store.attempts.filter(a => a.userId === user.id))
     .slice()
     .sort((a,b) => (b.submittedAt||'').localeCompare(a.submittedAt||''));
   const myResults = myAttempts.map(a => {
@@ -315,7 +315,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   };
 
   const renderCenters = () => {
-    const liveCenters = (apiCenters || store.centers).filter(c => c.status === 'approved');
+    const liveCenters = (isApi ? (apiCenters || []) : store.centers).filter(c => c.status === 'approved');
     const cities = [...new Set(liveCenters.map(c => c.city))];
     const filtered = liveCenters.filter(c =>
       c.name.toLowerCase().includes(centerSearch.toLowerCase()) &&

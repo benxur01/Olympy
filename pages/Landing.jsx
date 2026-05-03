@@ -86,7 +86,7 @@ const LandingPage = ({ onNavigate }) => {
               🚀 Boshlash
             </button>
             <button onClick={() => onNavigate('login')} className="btn-ghost px-8 py-3.5 rounded-2xl text-base font-semibold">
-              Demo ko'rish →
+              Kirish →
             </button>
             <button onClick={() => onNavigate('register')} className="btn-ghost px-6 py-3.5 rounded-2xl text-base font-medium border-indigo-500/30 text-indigo-300">
               🏫 O'quv markaz qo'shish

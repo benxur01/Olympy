@@ -47,6 +47,47 @@ def send_student_join_request_notification(manager, student, center):
     #                                       reply_markup=approve_reject_keyboard)
 
 
+def send_center_approval_request_notification(admin, owner, center):
+    """Notify a platform admin that a director registered a new center."""
+    owner_name = owner.full_name or owner.normalized_phone
+    message = (
+        f"Direktor {owner_name} yangi o'quv markaz ro'yxatdan o'tkazdi.\n"
+        f"Markaz: {center.name}\n"
+        f"Shahar: {center.city}\n"
+        "Admin panelda tasdiqlash yoki rad etish kerak."
+    )
+    Notification.objects.create(
+        user=admin,
+        center=center,
+        type=Notification.TYPE_CENTER_PENDING,
+        title="Yangi direktor arizasi",
+        message=message,
+    )
+    logger.info('[telegram-mock] → %s : %s', admin.normalized_phone, message)
+
+
+def send_center_decision_notification(owner, center, approved):
+    """Notify a center owner about the platform admin decision."""
+    notification_type = (
+        Notification.TYPE_CENTER_APPROVED
+        if approved else Notification.TYPE_CENTER_REJECTED
+    )
+    title = "Markaz tasdiqlandi" if approved else "Markaz rad etildi"
+    message = (
+        f"{center.name} o'quv markazingiz tasdiqlandi va platformada ko'rinadi."
+        if approved else
+        f"{center.name} o'quv markazingiz rad etildi va platformada ko'rinmaydi."
+    )
+    Notification.objects.create(
+        user=owner,
+        center=center,
+        type=notification_type,
+        title=title,
+        message=message,
+    )
+    logger.info('[telegram-mock] → %s : %s', owner.normalized_phone, message)
+
+
 def send_olympiad_published_notification(student, olympiad, center):
     """Notify an approved student that a new olympiad is live at their center."""
     message = _telegram_olympiad_published_text(center.name, olympiad)

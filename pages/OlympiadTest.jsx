@@ -98,7 +98,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         if (q) formattedAnswers[q.id] = optIdx;
       });
 
-      // Local score is used only in mock mode.
+      // Local score is kept only as a fallback if the API response omits fields.
       const correct = TEST_QUESTIONS.filter((q, i) => answers[i] === (q.correctAnswer ?? q.correct)).length;
       const wrong = TOTAL - correct;
       const earnedScore = TEST_QUESTIONS.reduce((sum, q, i) => {
@@ -149,27 +149,8 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         return;
       }
 
-      // Mock rejim — store ga yozib, lokal natijani ko'rsatamiz.
-      let attempt = null;
-      if (user && liveOlympiad) {
-        attempt = OlympyStore.recordAttempt({
-          userId: user.id,
-          olympiadId: liveOlympiad.id,
-          answers: formattedAnswers,
-          score: localScore,
-          correctCount: correct,
-          wrongCount: wrong,
-          totalQuestions: TOTAL,
-          timeSpent,
-          rank: localRank,
-        });
-      }
-      setTimeout(() => onFinish({
-        attemptId: attempt?.id,
-        correct, wrong, score: localScore, total: TOTAL, rank: localRank,
-        time: timeSpent,
-        olympiad: liveOlympiad || olympiad,
-      }), 400);
+      setSubmitError("Javoblarni yuborish uchun real login kerak.");
+      setSubmitted(false);
     } finally {
       setSubmitting(false);
     }

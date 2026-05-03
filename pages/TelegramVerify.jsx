@@ -1,25 +1,11 @@
 // pages/TelegramVerify.jsx — Telegram phone-verification step.
 //
-// Talks to the real Django backend by default via OlympyApi (which reads
-// VITE_API_BASE_URL from src/services/api.js):
+// Talks to the real Django backend via OlympyApi:
 //   POST /api/auth/phone/start-telegram-verification/
 //   POST /api/auth/phone/verify-otp/
-//
-// Set USE_MOCK_OTP = true to fall back to the local mock flow that generates
-// the OTP in the browser and shows a "Demo kod" hint — useful for developing
-// the UI without a running backend or a configured Telegram bot.
 
-const USE_MOCK_OTP = false;
-
-const TELEGRAM_BOT_USERNAME_DEMO = 'OlympyVerifyBot';
 const OTP_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
-
-const generateLocalOtp = () =>
-  String(Math.floor(100000 + Math.random() * 900000));
-
-const generateLocalToken = () =>
-  'tok_' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
 // ─── Verification block ───────────────────────────────────────────────────
 const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
@@ -33,14 +19,10 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
   const [expiresAt, setExpiresAt] = React.useState(null);
   const [now, setNow] = React.useState(Date.now());
 
-  // Backend session state — populated when USE_MOCK_OTP is false
+  // Backend verification session state.
   const [verificationId, setVerificationId] = React.useState(null);
   const [verifyToken, setVerifyToken] = React.useState(null);
   const [botUsername, setBotUsername] = React.useState('');
-
-  // Mock-only state — only used when USE_MOCK_OTP is true
-  const [mockToken] = React.useState(generateLocalToken);
-  const [mockOtp, setMockOtp] = React.useState('');
 
   // Reset whenever the phone changes
   const lastPhoneRef = React.useRef(phone);
@@ -50,7 +32,6 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
       setStatus('idle'); setCode(''); setDeepLink('');
       setError(''); setExpiresAt(null); setAttempts(0);
       setVerificationId(null); setVerifyToken(null); setBotUsername('');
-      setMockOtp('');
     }
   }, [phone]);
 
@@ -89,18 +70,6 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
   const startFlow = async () => {
     if (!phoneValid || loading) return;
 
-    if (USE_MOCK_OTP) {
-      const otp = generateLocalOtp();
-      setMockOtp(otp);
-      setStatus('opened');
-      setExpiresAt(Date.now() + OTP_TTL_MS);
-      setError(''); setAttempts(0); setCode('');
-      const link = `https://t.me/${TELEGRAM_BOT_USERNAME_DEMO}?start=verify_${mockToken}`;
-      setDeepLink(link);
-      try { window.open(link, '_blank', 'noopener'); } catch (_) {}
-      return;
-    }
-
     if (!authApi || !authApi.startTelegramVerification) {
       setError("Server bilan bog‘lanishda xatolik yuz berdi");
       return;
@@ -138,17 +107,6 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
     if (attempts >= MAX_ATTEMPTS) { setError("Juda ko‘p urinish. Qayta boshlang."); return; }
     if (!code.trim()) { setError("Kodni kiriting"); return; }
 
-    if (USE_MOCK_OTP) {
-      if (code.trim() !== mockOtp) {
-        setAttempts(a => a + 1);
-        setError("Kod noto‘g‘ri kiritildi");
-        return;
-      }
-      setError('');
-      onVerified && onVerified();
-      return;
-    }
-
     if (!authApi || !authApi.verifyOtp) {
       setError("Server bilan bog‘lanishda xatolik yuz berdi");
       return;
@@ -185,7 +143,6 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
     setStatus('idle'); setCode(''); setDeepLink('');
     setError(''); setExpiresAt(null); setAttempts(0);
     setVerificationId(null); setVerifyToken(null); setBotUsername('');
-    setMockOtp('');
   };
 
   return (
@@ -235,11 +192,6 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
           {error && (
             <div className="text-xs text-rose-400 flex items-center gap-1">
               <Icon name="info" size={12} /> {error}
-            </div>
-          )}
-          {USE_MOCK_OTP && mockOtp && (
-            <div className="text-[11px] text-white/30">
-              Demo kod: <span className="font-mono text-indigo-300">{mockOtp}</span>
             </div>
           )}
         </>

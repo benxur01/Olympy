@@ -1,7 +1,7 @@
 // store.jsx — Central mock state (users, centers, requests) with localStorage persistence
 
 const OlympyStore = (() => {
-  const KEY = 'olympy_store_v3';
+  const KEY = 'olympy_store_v4';
 
   // ─── Phone normalization ─────────────────────────────────────────────────
   // "+998 90 123 45 67", "+998901234567", "998901234567", "90 123 45 67"
@@ -22,8 +22,8 @@ const OlympyStore = (() => {
         roles:{ student:{ status:'approved', centerId:'c1' } },
         activeRole:'student', joined:'2026-03-15' },
       { id:'u2', name:'Sardor Usmonov', phone:'+998901234568', password:'123456',
-        roles:{ owner:{ status:'approved', centerId:'c1' }, manager:{ status:'approved', centerId:'c1' } },
-        activeRole:'manager', joined:'2026-01-10' },
+        roles:{ owner:{ status:'approved', centerId:'c1' } },
+        activeRole:'owner', joined:'2026-01-10' },
       { id:'u3', name:'Admin Bekmurodov', phone:'+998901234569', password:'123456',
         roles:{ admin:{ status:'approved' } },
         activeRole:'admin', joined:'2025-12-01' },
@@ -71,6 +71,11 @@ const OlympyStore = (() => {
       { id:'u14', name:'Aziz Karimov', phone:'+998901234586', password:'123456',
         roles:{ manager:{ status:'pending', centerId:'c1' } },
         activeRole:'manager', joined:'2026-04-28' },
+
+      // Approved manager created by director
+      { id:'u16', name:'Javohir Manager', phone:'+998901234588', password:'123456',
+        roles:{ manager:{ status:'approved', centerId:'c1' } },
+        activeRole:'manager', joined:'2026-04-30' },
 
       // Pending center owner with pending center (Admin has work to do)
       { id:'u15', name:"Dilnoza Sa'dullayeva", phone:'+998901234587', password:'123456',
@@ -443,7 +448,7 @@ const ROLE_META = {
   student: { label: "O'quvchi",      icon: '🎓', dest: 'student' },
   teacher: { label: "O'qituvchi",    icon: '✏️', dest: 'teacher' },
   manager: { label: 'Manager',       icon: '🏫', dest: 'manager' },
-  owner:   { label: 'Markaz egasi',  icon: '👑', dest: 'owner'   },
+  owner:   { label: 'Direktor',      icon: '👑', dest: 'owner'   },
   admin:   { label: 'Admin',         icon: '🛡', dest: 'admin'   },
 };
 
@@ -554,6 +559,8 @@ const mapApiCenter = (c) => {
     name: c.name,
     city: c.city,
     ownerId: c.owner != null ? String(c.owner) : null,
+    ownerName: c.owner_full_name || '',
+    ownerPhone: c.owner_phone || '',
     status: c.status || 'pending',
     subjects: Array.isArray(c.subjects) ? c.subjects : [],
     rating: parseFloat(c.rating) || 0,
