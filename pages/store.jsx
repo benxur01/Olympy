@@ -83,18 +83,18 @@ const OlympyStore = (() => {
         activeRole:'owner', joined:'2026-04-29' },
     ],
     centers: [
-      { id:'c1', name:'ProSkill Academy', city:'Toshkent', ownerId:'u2', status:'approved',
+      { id:'c1', name:'ProSkill Academy', organizationType:"O'quv markaz", country:"O'zbekiston", region:'Toshkent shahri', district:'Yunusobod', city:'Yunusobod', ownerId:'u2', status:'approved',
         subjects:['Matematika','Fizika','Informatika'], rating:4.8, students:234, olympiads:12, createdAt:'2025-12-01' },
-      { id:'c2', name:'Brilliant Education', city:'Samarqand', ownerId:null, status:'approved',
+      { id:'c2', name:'Brilliant Education', organizationType:"O'quv markaz", country:"O'zbekiston", region:'Samarqand viloyati', district:'Samarqand', city:'Samarqand', ownerId:null, status:'approved',
         subjects:['Ingliz tili','Ona tili'], rating:4.6, students:187, olympiads:8 },
-      { id:'c3', name:'Leader Academy', city:'Toshkent', ownerId:null, status:'approved',
+      { id:'c3', name:'Leader Academy', organizationType:'Maktab', country:"O'zbekiston", region:'Toshkent viloyati', district:'Qibray', city:'Qibray', ownerId:null, status:'approved',
         subjects:['Matematika','Kimyo','Biologiya'], rating:4.9, students:312, olympiads:18 },
-      { id:'c4', name:"Najot Ta'lim", city:'Buxoro', ownerId:null, status:'approved',
+      { id:'c4', name:"Najot Ta'lim", organizationType:'Online academy', country:"O'zbekiston", region:'Buxoro viloyati', district:'Buxoro', city:'Buxoro', ownerId:null, status:'approved',
         subjects:['Informatika','Fizika'], rating:4.7, students:145, olympiads:7 },
-      { id:'c5', name:'IT Park Academy', city:'Toshkent', ownerId:null, status:'approved',
+      { id:'c5', name:'IT Park Academy', organizationType:'Tashkilot', country:"O'zbekiston", region:'Toshkent shahri', district:'Mirzo Ulug‘bek', city:'Mirzo Ulug‘bek', ownerId:null, status:'approved',
         subjects:['Informatika','Matematika'], rating:4.8, students:278, olympiads:14 },
       // Pending center for Admin to approve
-      { id:'c6', name:'Tech Innovate', city:'Toshkent', ownerId:'u15', status:'pending',
+      { id:'c6', name:'Tech Innovate', organizationType:'Tashkilot', country:"O'zbekiston", region:'Toshkent shahri', district:'Chilonzor', city:'Chilonzor', ownerId:'u15', status:'pending',
         subjects:['Informatika','Matematika'], rating:0, students:0, olympiads:0, createdAt:'2026-04-29' },
     ],
     // Mirror role-requests for admin/owner/manager tables (single source of truth via role.status,
@@ -204,6 +204,10 @@ const OlympyStore = (() => {
     const id = 'c' + Date.now() + Math.random().toString(36).slice(2,5);
     const center = {
       id, status: 'pending', students: 0, olympiads: 0, rating: 0, subjects: [],
+      organizationType: "O'quv markaz",
+      country: "O'zbekiston",
+      region: '',
+      district: '',
       createdAt: new Date().toISOString().slice(0,10),
       ...data,
     };
@@ -512,16 +516,27 @@ const leaderboardForOlympiad = (state, olympiadId) =>
         userId: a.userId,
         name: user?.name || 'Noma\'lum',
         center: center?.name || '—',
+        organizationType: center?.organizationType || "O'quv markaz",
         subject: olympiad?.subject || '—',
         score: a.score,
         time: formatTime(a.timeSpent || 0),
-        city: center?.city || '—',
+        city: center?.region || center?.city || '—',
       };
     });
 
 const formatTime = (s) => {
   const m = Math.floor((s || 0) / 60), sec = (s || 0) % 60;
   return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+};
+
+const formatCenterLocation = (center) => {
+  if (!center) return '—';
+  const country = center.country || "O'zbekiston";
+  const region = center.region || '';
+  const district = center.district || center.city || '';
+  const parts = [country, region, district].filter(Boolean);
+  if (parts.length > 1) return parts.join(' · ');
+  return center.city || parts[0] || '—';
 };
 
 // ─── Backend → mock-store shape adapters ────────────────────────────────
@@ -558,7 +573,11 @@ const mapApiCenter = (c) => {
     id: String(c.id),
     backendId: c.id,
     name: c.name,
-    city: c.city,
+    organizationType: c.organization_type || c.organizationType || "O'quv markaz",
+    country: c.country || "O'zbekiston",
+    region: c.region || '',
+    district: c.district || '',
+    city: c.city || c.district || c.region || '',
     ownerId: c.owner != null ? String(c.owner) : null,
     ownerName: c.owner_full_name || '',
     ownerPhone: c.owner_phone || '',
@@ -644,14 +663,14 @@ const olympiadStartMoment = (olympiad) => {
 
 // Telegram-style mock message strings (for toasts/preview)
 const telegramJoinRequestText = (studentName, centerName) =>
-  `Yangi o'quvchi ariza yubordi: ${studentName}.\nO'quv markaz: ${centerName}.\nTasdiqlaysizmi?`;
+  `Yangi o'quvchi ariza yubordi: ${studentName}.\nTashkilot: ${centerName}.\nTasdiqlaysizmi?`;
 const telegramOlympiadPublishedText = (centerName, olympiad) =>
-  `${centerName} o'quv markazida yangi olimpiada boshlandi:\nFan: ${olympiad.subject}\nSana: ${olympiad.startDate}\nQatnashish uchun platformaga kiring.`;
+  `${centerName} tashkilotida yangi olimpiada boshlandi:\nFan: ${olympiad.subject}\nSana: ${olympiad.startDate}\nQatnashish uchun platformaga kiring.`;
 
 Object.assign(window, {
   OlympyStore, useStore,
   ROLE_META, getApprovedRoles, getPendingRoles, hasApprovedRole, getRoleStatus, roleHomePage, statusLabel,
   olympiadsForStudent, olympiadsForCenter, attemptsForUser, notificationsForUser, leaderboardForOlympiad,
-  formatTime, olympiadStartMoment, telegramJoinRequestText, telegramOlympiadPublishedText,
+  formatTime, formatCenterLocation, olympiadStartMoment, telegramJoinRequestText, telegramOlympiadPublishedText,
   mapApiOlympiad, mapApiCenter, mapApiNotification, mapApiAttempt, mapApiQuestion,
 });

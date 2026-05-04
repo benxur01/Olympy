@@ -219,31 +219,31 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const approveCenterDirect = (center) => {
     if (isApi) {
       const backendCenterId = center?.backendId;
-      if (!backendCenterId) { showToast('Markaz ID topilmadi'); return; }
+      if (!backendCenterId) { showToast('Tashkilot ID topilmadi'); return; }
       OlympyApi.adminApproveCenter(backendCenterId, OlympyApi.getToken())
-        .then(() => { showToast('Markaz o\'quv markazlar ro\'yxatiga qo\'shildi'); reloadAdminData(); })
+        .then(() => { showToast('Tashkilot public ro\'yxatga qo\'shildi'); reloadAdminData(); })
         .catch(err => { console.warn('adminApproveCenter failed:', err); showToast('Tasdiqlab bo\'lmadi'); });
       return;
     }
     const req = store.requests.find(r => r.type === 'center' && r.centerId === center.id && r.status === 'pending');
     if (req) OlympyStore.approveRequest(req.id);
     else OlympyStore.updateCenter(center.id, { status: 'approved' });
-    showToast('Markaz o\'quv markazlar ro\'yxatiga qo\'shildi');
+    showToast('Tashkilot public ro\'yxatga qo\'shildi');
   };
 
   const rejectCenterDirect = (center) => {
     if (isApi) {
       const backendCenterId = center?.backendId;
-      if (!backendCenterId) { showToast('Markaz ID topilmadi'); return; }
+      if (!backendCenterId) { showToast('Tashkilot ID topilmadi'); return; }
       OlympyApi.adminRejectCenter(backendCenterId, OlympyApi.getToken())
-        .then(() => { showToast('Markaz rad etildi va ro\'yxatlardan olib tashlandi'); reloadAdminData(); })
+        .then(() => { showToast('Tashkilot rad etildi va ro\'yxatlardan olib tashlandi'); reloadAdminData(); })
         .catch(err => { console.warn('adminRejectCenter failed:', err); showToast('Rad etib bo\'lmadi'); });
       return;
     }
     const req = store.requests.find(r => r.type === 'center' && r.centerId === center.id && r.status === 'pending');
     if (req) OlympyStore.rejectRequest(req.id);
     else OlympyStore.updateCenter(center.id, { status: 'rejected' });
-    showToast('Markaz rad etildi va ro\'yxatlardan olib tashlandi');
+    showToast('Tashkilot rad etildi va ro\'yxatlardan olib tashlandi');
   };
 
   const approveCenterReq = (req) => {
@@ -297,7 +297,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       return {
         id: `pending:${req.id}`,
         title: 'Yangi direktor arizasi',
-        message: `${owner.name} · ${center?.name || 'Markaz'} · ${center?.city || '—'}`,
+        message: `${owner.name} · ${center?.name || 'Tashkilot'} · ${center?.organizationType || "O'quv markaz"} · ${formatCenterLocation(center)}`,
         time: formatAdminDate(center?.createdAt),
         tone: 'amber',
       };
@@ -439,7 +439,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 <div className="min-w-0">
                   <div className="truncate text-sm font-extrabold text-slate-900">{center.name}</div>
                   <div className="mt-1 text-xs font-medium text-slate-500">
-                    {center.city} · Direktor: {owner.name}{owner.phone ? ` · ${owner.phone}` : ''}
+                    {center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · Direktor: {owner.name}{owner.phone ? ` · ${owner.phone}` : ''}
                   </div>
                   {!compact && (center.subjects || []).length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
@@ -489,7 +489,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       </div>
 
       <div className="grid gap-[12px] md:grid-cols-2 xl:grid-cols-4">
-        <AdminMetricCard label="O'quv markazlar" value={approvedCenters.length.toLocaleString()} delta={pendingCenterReqs.length ? `${pendingCenterReqs.length} ta tasdiqlash kutilmoqda` : 'Barchasi ko\'rib chiqilgan'} icon={<Icon name="building" size={16} />} tone="indigo" />
+        <AdminMetricCard label="Tashkilotlar" value={approvedCenters.length.toLocaleString()} delta={pendingCenterReqs.length ? `${pendingCenterReqs.length} ta tasdiqlash kutilmoqda` : 'Barchasi ko\'rib chiqilgan'} icon={<Icon name="building" size={16} />} tone="indigo" />
         <AdminMetricCard label="Pending arizalar" value={pendingCenterReqs.length.toLocaleString()} delta={pendingCenterReqs.length ? "Ko'rib chiqish kerak" : "Bo'sh"} icon={<Icon name="bell" size={16} />} tone="emerald" />
         <AdminMetricCard label="Foydalanuvchilar" value={allUsers.length.toLocaleString()} delta={`${activeUsersCount} ta faol`} icon={<Icon name="users" size={16} />} tone="amber" />
         <AdminMetricCard label="Olimpiadalar" value={totalOlympiads.toLocaleString()} delta={`${activeOlympiadCount} ta faol`} icon={<Icon name="trophy" size={16} />} tone="rose" />
@@ -498,17 +498,17 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       <div className="grid gap-[12px] md:grid-cols-3">
         <AdminMetricCard label="O'quvchilar" value={studentCount.toLocaleString()} delta="Tasdiqlangan" icon={<Icon name="users" size={16} />} tone="indigo" />
         <AdminMetricCard label="Faol olimpiadalar" value={activeOlympiadCount.toLocaleString()} delta={activeOlympiadCount ? "Hozir o'tmoqda" : "Hech qaysi faol emas"} icon={<Icon name="bolt" size={16} />} tone="emerald" />
-        <AdminMetricCard label="Tasdiqlangan markazlar foizi" value={`${approvedCenterPct}%`} delta="Hammasi ichidan" icon={<Icon name="chart" size={16} />} tone="rose" />
+        <AdminMetricCard label="Tasdiqlangan tashkilotlar foizi" value={`${approvedCenterPct}%`} delta="Hammasi ichidan" icon={<Icon name="chart" size={16} />} tone="rose" />
       </div>
 
       <div className="grid gap-[12px] xl:grid-cols-[1.55fr_1.45fr]">
         <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[13px] font-extrabold text-slate-800">Eng so'nggi markazlar</h2>
+            <h2 className="text-[13px] font-extrabold text-slate-800">Eng so'nggi tashkilotlar</h2>
             <button onClick={() => setPage('centers')} className="text-[11px] font-bold text-indigo-600">Hammasi</button>
           </div>
           <div className="grid grid-cols-[1fr_70px_74px] border-b border-slate-100 pb-2 text-[10px] font-extrabold text-slate-400">
-            <span>Markaz</span><span className="text-right">O'quvchi</span><span className="text-right">Holat</span>
+            <span>Tashkilot</span><span className="text-right">O'quvchi</span><span className="text-right">Holat</span>
           </div>
           <div className="divide-y divide-slate-100">
             {dashboardCenters.map(center => (
@@ -517,14 +517,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-slate-100 text-xs font-black text-slate-700">{center.name?.[0] || 'O'}</div>
                   <div className="min-w-0">
                     <div className="truncate text-[12px] font-bold text-slate-700">{center.name}</div>
-                    <div className="truncate text-[10px] text-slate-400">{center.city}</div>
+                    <div className="truncate text-[10px] text-slate-400">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)}</div>
                   </div>
                 </div>
                 <div className="text-right text-[11px] font-semibold text-slate-500">{(center.students || 0).toLocaleString()}</div>
                 <div className="text-right"><AdminPill status={center.status} /></div>
               </div>
             ))}
-            {dashboardCenters.length === 0 && <div className="py-10 text-center text-[12px] font-semibold text-slate-400">Markazlar yo'q</div>}
+            {dashboardCenters.length === 0 && <div className="py-10 text-center text-[12px] font-semibold text-slate-400">Tashkilotlar yo'q</div>}
           </div>
         </section>
 
@@ -537,9 +537,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             {dashboardRequests.map(({ req, center, owner }) => (
               <div key={req.id} className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-[12px] font-extrabold text-slate-800 truncate">{center?.name || 'Yangi markaz'}</div>
+                  <div className="text-[12px] font-extrabold text-slate-800 truncate">{center?.name || 'Yangi tashkilot'}</div>
                   <div className="mt-0.5 truncate text-[11px] font-medium text-slate-500">{owner.name}</div>
-                  <div className="mt-0.5 truncate text-[10px] text-slate-400">{center?.city || '—'}</div>
+                  <div className="mt-0.5 truncate text-[10px] text-slate-400">{center?.organizationType || "O'quv markaz"} · {formatCenterLocation(center)}</div>
                 </div>
                 <div className="shrink-0 text-right">
                   <AdminPill status="pending">Kutilmoqda</AdminPill>
@@ -559,7 +559,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 
       <div className="grid gap-[12px] xl:grid-cols-[1fr_1fr]">
         <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-4 text-[13px] font-extrabold text-slate-800">Markazlar holati</h2>
+          <h2 className="mb-4 text-[13px] font-extrabold text-slate-800">Tashkilotlar holati</h2>
           <AdminDonut segments={[
             { label: 'Tasdiqlangan', value: approvedCenterPct, color: '#4f46e5' },
             { label: 'Kutilmoqda', value: pendingCenterPct, color: '#f59e0b' },
@@ -598,7 +598,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     <div className="space-y-5 p-4 lg:p-6">
       <div>
         <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Direktor arizalari</h1>
-        <p className="mt-1 text-sm font-medium text-slate-500">Direktor markaz ro'yxatdan o'tkazsa shu yerda xabar chiqadi.</p>
+        <p className="mt-1 text-sm font-medium text-slate-500">Direktor tashkilot yoki markaz ro'yxatdan o'tkazsa shu yerda xabar chiqadi.</p>
       </div>
       <CenterApprovalList />
     </div>
@@ -608,8 +608,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     <div className="space-y-5 p-4 lg:p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">O'quv markazlar</h1>
-          <p className="mt-1 text-sm font-medium text-slate-500">Faqat qabul qilingan markazlar public ro'yxatda ko'rinadi.</p>
+          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Tashkilotlar va markazlar</h1>
+          <p className="mt-1 text-sm font-medium text-slate-500">Faqat qabul qilingan tashkilotlar public ro'yxatda ko'rinadi.</p>
         </div>
         <div className="flex gap-2">
           <AdminPill status="approved">{approvedCenters.length} tasdiqlangan</AdminPill>
@@ -622,7 +622,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <table className="w-full min-w-[860px] text-left">
             <thead className="bg-slate-50">
               <tr className="text-xs font-bold uppercase text-slate-400">
-                {['Markaz', 'Shahar', 'Direktor', 'O\'quvchi', 'Olimpiada', 'Holat', 'Amal'].map(h => (
+                {['Tashkilot', 'Turi', 'Manzil', 'Direktor', 'O\'quvchi', 'Olimpiada', 'Holat', 'Amal'].map(h => (
                   <th key={h} className="px-5 py-3">{h}</th>
                 ))}
               </tr>
@@ -641,7 +641,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-4 font-medium text-slate-600">{center.city}</td>
+                    <td className="px-5 py-4 font-medium text-slate-600">{center.organizationType || "O'quv markaz"}</td>
+                    <td className="px-5 py-4 font-medium text-slate-600">{formatCenterLocation(center)}</td>
                     <td className="px-5 py-4">
                       <div className="font-semibold text-slate-700">{owner.name}</div>
                       {owner.phone && <div className="text-xs text-slate-400">{owner.phone}</div>}
@@ -665,7 +666,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 );
               })}
               {centers.length === 0 && (
-                <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-medium text-slate-500">Markazlar yo'q</td></tr>
+                <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-medium text-slate-500">Tashkilotlar yo'q</td></tr>
               )}
             </tbody>
           </table>
@@ -691,7 +692,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <table className="w-full min-w-[760px] text-left">
             <thead className="bg-slate-50">
               <tr className="text-xs font-bold uppercase text-slate-400">
-                {['Foydalanuvchi', 'Telefon', 'Rol', 'Markaz', 'Qo\'shilgan', 'Holat', 'Amal'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
+                {['Foydalanuvchi', 'Telefon', 'Rol', 'Tashkilot', 'Qo\'shilgan', 'Holat', 'Amal'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -745,7 +746,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <AdminBarChart />
         </section>
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-5 text-base font-extrabold text-slate-900">Markazlar holati</h2>
+          <h2 className="mb-5 text-base font-extrabold text-slate-900">Tashkilotlar holati</h2>
           <AdminDonut segments={[
             { label: 'Tasdiqlangan', value: approvedCenterPct, color: '#4f46e5' },
             { label: 'Kutilmoqda', value: pendingCenterPct, color: '#f59e0b' },
@@ -767,7 +768,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <table className="w-full min-w-[760px] text-left">
             <thead className="bg-slate-50">
               <tr className="text-xs font-bold uppercase text-slate-400">
-                {['Olimpiada', 'Markaz', 'Fan', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
+                {['Olimpiada', 'Tashkilot', 'Fan', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -844,7 +845,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-lg border border-slate-200 p-4">
             <div className="text-sm font-extrabold text-slate-900">Public listing qoidasi</div>
-            <div className="mt-2 text-sm text-slate-500">Faqat tasdiqlangan markazlar o'quvchilar va mehmonlarga ko'rinadi.</div>
+            <div className="mt-2 text-sm text-slate-500">Faqat tasdiqlangan tashkilotlar o'quvchilar va mehmonlarga ko'rinadi.</div>
           </div>
           <div className="rounded-lg border border-slate-200 p-4">
             <div className="text-sm font-extrabold text-slate-900">Ariza oqimi</div>

@@ -58,7 +58,7 @@ const OwnerSidebarItem = ({ item, active, onClick }) => (
   </button>
 );
 
-const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
+const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
   const [page, setPage] = React.useState('home');
@@ -73,6 +73,18 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [staffSaving, setStaffSaving] = React.useState(false);
   const emptyStaffForm = { full_name: '', phone: '+998', password: '', subject: '' };
   const [staffForm, setStaffForm] = React.useState(emptyStaffForm);
+  const emptyCenterForm = {
+    name: '',
+    organizationType: "O'quv markaz",
+    customOrganizationType: '',
+    country: "O'zbekiston",
+    region: '',
+    district: '',
+    subjects: [],
+  };
+  const [centerModal, setCenterModal] = React.useState(false);
+  const [centerSaving, setCenterSaving] = React.useState(false);
+  const [centerForm, setCenterForm] = React.useState(emptyCenterForm);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -80,7 +92,22 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   };
 
   const ownerRole = user.roles?.owner;
-  const ownerCenterId = ownerRole?.centerId || null;
+  const ownerRoleCenters = Array.isArray(ownerRole?.centers) ? ownerRole.centers : [];
+  const selectedCenterStorageKey = `olympy_owner_center_${user?.id || 'guest'}`;
+  const defaultOwnerCenterId = ownerRole?.centerId || ownerRoleCenters.find(c => c.status === 'approved')?.centerId || ownerRoleCenters[0]?.centerId || null;
+  const [selectedOwnerCenterId, setSelectedOwnerCenterId] = React.useState(() => {
+    try { return localStorage.getItem(selectedCenterStorageKey) || defaultOwnerCenterId; } catch { return defaultOwnerCenterId; }
+  });
+  const ownerCenterId = selectedOwnerCenterId || defaultOwnerCenterId;
+  const centerOrganizationTypes = typeof ORGANIZATION_TYPES !== 'undefined'
+    ? ORGANIZATION_TYPES
+    : ["O'quv markaz", 'Maktab', 'Universitet/Kollej', 'Tashkilot', 'Online academy', 'Boshqa'];
+  const centerRegions = typeof UZBEKISTAN_REGIONS !== 'undefined' ? UZBEKISTAN_REGIONS : [];
+  const centerDistricts = typeof UZBEKISTAN_DISTRICTS !== 'undefined' ? UZBEKISTAN_DISTRICTS : {};
+  const centerDistrictOptions = centerDistricts[centerForm.region] || [];
+  const selectedCenterType = centerForm.organizationType === 'Boshqa'
+    ? centerForm.customOrganizationType.trim()
+    : centerForm.organizationType;
 
   const loadPendingStaff = React.useCallback(() => {
     if (!isApi || !ownerCenterId) {
@@ -132,7 +159,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   }, [loadApiStaff]);
 
   const apiCentersRes = useApiData(
-    () => isApi ? OlympyApi.getCenters() : Promise.resolve(null),
+    () => isApi ? OlympyApi.getMyCenters(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
   const apiOlympiadsRes = useApiData(
@@ -141,32 +168,87 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   );
   const apiCenters = isApi && Array.isArray(apiCentersRes.data) ? apiCentersRes.data.map(mapApiCenter) : null;
   const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data) ? apiOlympiadsRes.data.map(mapApiOlympiad) : null;
-  const baseCenters = isApi ? (apiCenters || []) : store.centers;
+  const roleOwnerCentersAsCenters = ownerRoleCenters.filter(c => c.centerId != null).map(c => ({
+    id: String(c.centerId),
+    backendId: c.centerId,
+    name: c.centerName,
+    organizationType: c.organizationType || "O'quv markaz",
+    country: c.country || "O'zbekiston",
+    region: c.region || '',
+    district: c.district || '',
+    city: c.city || c.district || c.region || '',
+    status: c.status || 'pending',
+    subjects: [],
+    rating: 0,
+    students: 0,
+    olympiads: 0,
+    createdAt: c.createdAt || '',
+    _api: true,
+  }));
+  const baseCenters = isApi
+    ? (apiCenters || roleOwnerCentersAsCenters)
+    : store.centers.filter(c => c.ownerId === user.id || String(c.id) === String(defaultOwnerCenterId));
+  const ownerCenters = baseCenters.slice().sort((a, b) => {
+    const priority = { approved: 3, pending: 2, rejected: 1 };
+    return (priority[b.status] || 0) - (priority[a.status] || 0) || String(b.createdAt || '').localeCompare(String(a.createdAt || ''));
+  });
   const center = ownerCenterId ? baseCenters.find(c => String(c.id) === String(ownerCenterId)) : null;
 
+  React.useEffect(() => {
+    if (!ownerCenters.length) return;
+    const exists = ownerCenterId && ownerCenters.some(c => String(c.id) === String(ownerCenterId));
+    if (exists) return;
+    const next = ownerCenters.find(c => c.status === 'approved') || ownerCenters[0];
+    if (!next) return;
+    setSelectedOwnerCenterId(String(next.id));
+  }, [ownerCenters.map(c => `${c.id}:${c.status}`).join('|'), ownerCenterId]);
+
+  React.useEffect(() => {
+    if (!ownerCenterId) return;
+    try { localStorage.setItem(selectedCenterStorageKey, String(ownerCenterId)); } catch {}
+  }, [ownerCenterId, selectedCenterStorageKey]);
+
   if (!center || center.status !== 'approved') {
+    const approvedFallback = ownerCenters.find(c => c.status === 'approved');
     return (
       <PendingAccessCard
-        title={center?.status === 'rejected' ? 'Markaz arizasi rad etildi' : 'Markaz tasdig\'i kutilmoqda'}
+        title={center?.status === 'rejected' ? 'Tashkilot arizasi rad etildi' : 'Tashkilot tasdig\'i kutilmoqda'}
         status={center?.status || 'pending'}
         message={
           center?.status === 'rejected'
-            ? "Markaz ro'yxatdan o'tkazish arizangiz Platform Admin tomonidan rad etildi. Yangi ariza yuborish uchun support bilan bog'laning."
-            : "Direktor paneliga kirish uchun Platform Admin markazingizni tasdiqlashi kerak. Tasdiqlangach direktor paneli ochiladi."
+            ? "Tashkilot ro'yxatdan o'tkazish arizangiz Platform Admin tomonidan rad etildi. Yangi ariza yuborish uchun support bilan bog'laning."
+            : "Direktor paneliga kirish uchun Platform Admin tashkilotingizni tasdiqlashi kerak. Tasdiqlangach direktor paneli ochiladi."
         }
-        extra={center && (
-          <div className="glass rounded-2xl p-4 inline-flex items-center gap-3">
-            <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center text-white font-bold">{center.name[0]}</div>
-            <div className="text-left">
-              <div className="text-sm font-semibold text-white">{center.name}</div>
-              <div className="text-xs text-white/40">{center.city}</div>
-            </div>
-            <span className={`chip ${center.status === 'rejected' ? 'badge-rejected' : 'badge-pending'}`}>
-              {statusLabel(center.status)}
-            </span>
+        extra={(
+          <div className="space-y-3">
+            {center && (
+              <div className="glass rounded-2xl p-4 inline-flex items-center gap-3">
+                <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center text-white font-bold">{center.name[0]}</div>
+                <div className="text-left">
+                  <div className="text-sm font-semibold text-white">{center.name}</div>
+                  <div className="text-xs text-white/40">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)}</div>
+                </div>
+                <span className={`chip ${center.status === 'rejected' ? 'badge-rejected' : 'badge-pending'}`}>
+                  {statusLabel(center.status)}
+                </span>
+              </div>
+            )}
+            {ownerCenters.length > 1 && (
+              <select value={ownerCenterId || ''} onChange={e => setSelectedOwnerCenterId(e.target.value)} className="input-field max-w-sm">
+                {ownerCenters.map(c => <option key={c.id} value={c.id}>{c.name} — {statusLabel(c.status)}</option>)}
+              </select>
+            )}
+            {approvedFallback && (
+              <button onClick={() => setSelectedOwnerCenterId(String(approvedFallback.id))} className="btn-ghost px-4 py-2.5 rounded-xl text-sm font-bold">
+                Tasdiqlangan tashkilotga qaytish
+              </button>
+            )}
           </div>
         )}
-        onBack={() => onNavigate('landing')}
+        onBack={() => {
+          if (approvedFallback) setSelectedOwnerCenterId(String(approvedFallback.id));
+          else onNavigate('landing');
+        }}
       />
     );
   }
@@ -360,12 +442,86 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     }
   };
 
+  const openCenterModal = () => {
+    setCenterForm(emptyCenterForm);
+    setCenterModal(true);
+  };
+
+  const closeCenterModal = () => {
+    if (centerSaving) return;
+    setCenterModal(false);
+    setCenterForm(emptyCenterForm);
+  };
+
+  const updateCenterForm = (key, value) => {
+    setCenterForm(prev => ({ ...prev, [key]: value }));
+  };
+
+  const submitCenter = (event) => {
+    event.preventDefault();
+    const payload = {
+      name: centerForm.name.trim(),
+      organization_type: selectedCenterType || "O'quv markaz",
+      country: centerForm.country || "O'zbekiston",
+      region: centerForm.region,
+      district: centerForm.district,
+      city: centerForm.district || centerForm.region,
+      subjects: centerForm.subjects || [],
+    };
+    if (!payload.name || !payload.region || !payload.district || !payload.organization_type) {
+      showToast('Turi, manzil va nomini to‘liq kiriting');
+      return;
+    }
+    if (isApi) {
+      const token = OlympyApi.getToken();
+      setCenterSaving(true);
+      OlympyApi.registerCenter(payload, token)
+        .then(() => {
+          apiCentersRes.reload();
+          return OlympyApi.getMe(token).then(me => {
+            const mapped = OlympyApi.mapBackendUser(me);
+            onUserUpdate?.(mapped);
+          }).catch(() => null);
+        })
+        .then(() => {
+          setCenterModal(false);
+          setCenterForm(emptyCenterForm);
+          showToast('Yangi tashkilot arizasi adminga yuborildi');
+        })
+        .catch(err => {
+          console.warn('registerCenter failed:', err);
+          showToast(OlympyApi.toUserMessage(err));
+        })
+        .finally(() => setCenterSaving(false));
+      return;
+    }
+    try {
+      const created = OlympyStore.createCenter({
+        name: payload.name,
+        organizationType: payload.organization_type,
+        country: payload.country,
+        region: payload.region,
+        district: payload.district,
+        city: payload.city,
+        subjects: payload.subjects,
+        ownerId: user.id,
+      });
+      OlympyStore.createRequest({ type: 'center', userId: user.id, centerId: created.id });
+      setSelectedOwnerCenterId(created.id);
+      setCenterModal(false);
+      setCenterForm(emptyCenterForm);
+      showToast('Yangi tashkilot arizasi adminga yuborildi');
+    } catch (err) {
+      showToast(err?.message || "Tashkilot yaratib bo'lmadi");
+    }
+  };
+
   const navItems = [
     { key: 'home', icon: 'home', label: 'Overview' },
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCount || undefined },
     { key: 'staff', icon: 'users', label: 'Xodimlar' },
     { key: 'olympiads', icon: 'trophy', label: 'Olimpiadalar' },
-    { key: 'center', icon: 'building', label: 'Markaz profili' },
+    { key: 'center', icon: 'building', label: 'Profil' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
   ];
 
@@ -379,7 +535,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-lg font-black text-white">{center.name[0]}</div>
           <div className="min-w-0">
             <div className="truncate text-sm font-black text-slate-900">{center.name}</div>
-            <div className="truncate text-xs font-semibold text-slate-500">Direktor paneli</div>
+            <div className="truncate text-xs font-semibold text-slate-500">{center.organizationType || "O'quv markaz"} · Direktor paneli</div>
           </div>
         </button>
       </div>
@@ -389,9 +545,26 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         ))}
       </nav>
       <div className="border-t border-slate-200 p-4">
+        {ownerCenters.length > 1 && (
+          <label className="mb-3 block">
+            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wide text-slate-400">Tashkilot</span>
+            <select
+              value={ownerCenterId || ''}
+              onChange={e => { setSelectedOwnerCenterId(e.target.value); setPage('home'); }}
+              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+            >
+              {ownerCenters.map(c => (
+                <option key={c.id} value={c.id}>{c.name} · {statusLabel(c.status)}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        <button onClick={openCenterModal} className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">
+          <Icon name="plus" size={14} /> Yangi tashkilot
+        </button>
         <div className="mb-4 rounded-lg bg-emerald-50 p-3">
           <div className="mb-1 flex items-center gap-2 text-xs font-black text-emerald-700">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" /> Markaz faol
+            <span className="h-2 w-2 rounded-full bg-emerald-500" /> Tashkilot faol
           </div>
           <div className="text-[11px] font-semibold leading-relaxed text-emerald-700/70">
             Faqat {center.name} ma'lumotlari ko'rsatiladi.
@@ -412,10 +585,24 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         </button>
         <div>
           <div className="text-base font-black text-slate-900">{navItems.find(n => n.key === page)?.label || 'Overview'}</div>
-          <div className="text-xs font-semibold text-slate-500">{center.city} · {ownerFormatDate(center.createdAt)}</div>
+          <div className="text-xs font-semibold text-slate-500">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · {ownerFormatDate(center.createdAt)}</div>
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {ownerCenters.length > 1 && (
+          <select
+            value={ownerCenterId || ''}
+            onChange={e => { setSelectedOwnerCenterId(e.target.value); setPage('home'); }}
+            className="hidden h-9 max-w-[220px] rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none hover:bg-slate-50 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 md:block"
+          >
+            {ownerCenters.map(c => (
+              <option key={c.id} value={c.id}>{c.name} · {statusLabel(c.status)}</option>
+            ))}
+          </select>
+        )}
+        <button onClick={openCenterModal} className="hidden rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700 md:inline-flex">
+          Yangi tashkilot
+        </button>
         {onOpenSwitcher && (
           <button onClick={onOpenSwitcher} className="hidden rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 md:inline-flex">
             Rolni almashtirish
@@ -471,12 +658,13 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <div className="grid gap-0 lg:grid-cols-[1.25fr_.75fr]">
           <div className="p-6">
             <div className="mb-5 flex flex-wrap items-center gap-2">
-              <OwnerStatusPill status="approved">Tasdiqlangan markaz</OwnerStatusPill>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold text-slate-500">{center.city}</span>
+              <OwnerStatusPill status="approved">Tasdiqlangan tashkilot</OwnerStatusPill>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold text-slate-500">{center.region || center.city}</span>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold text-slate-500">{center.organizationType || "O'quv markaz"}</span>
             </div>
             <h1 className="text-2xl font-black tracking-tight text-slate-900">{center.name}</h1>
             <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
-              Direktor paneli faqat shu markazga tegishli xodimlar, arizalar va ko'rsatkichlarni boshqaradi.
+              Direktor paneli faqat shu tashkilotga tegishli xodimlar, arizalar va ko'rsatkichlarni boshqaradi.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               {(center.subjects || []).slice(0, 6).map(s => (
@@ -516,7 +704,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <OwnerMetric label="Xodimlar" value={myStaff.length} hint="Tasdiqlangan manager/o'qituvchi" icon={<Icon name="users" size={18} />} tone="emerald" />
         <OwnerMetric label="Kutilayotgan arizalar" value={pendingCount} hint={pendingCount ? 'Qaror kutilmoqda' : 'Navbat bo\'sh'} icon={<Icon name="bell" size={18} />} tone="amber" />
         <OwnerMetric label="Olimpiadalar" value={center.olympiads || centerOlympiads.length} hint={`${activeOlympiads.length} ta faol`} icon={<Icon name="trophy" size={18} />} tone="cyan" />
-        <OwnerMetric label="Reyting" value={center.rating || '—'} hint="Markaz profili ko'rsatkichi" icon={<Icon name="star" size={18} />} tone="indigo" />
+        <OwnerMetric label="Reyting" value={center.rating || '—'} hint="Tashkilot profili ko'rsatkichi" icon={<Icon name="star" size={18} />} tone="indigo" />
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
@@ -544,7 +732,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-base font-black text-slate-900">Markaz holati</h2>
+            <h2 className="text-base font-black text-slate-900">Tashkilot holati</h2>
             <OwnerStatusPill status={center.status} />
           </div>
           <div className="space-y-4">
@@ -575,7 +763,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-slate-900">Xodim arizalari</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500">Bu ro'yxat faqat {center.name} markazi uchun.</p>
+          <p className="mt-1 text-sm font-semibold text-slate-500">Bu ro'yxat faqat {center.name} uchun.</p>
         </div>
         <OwnerStatusPill status="pending">{pendingCount} ta kutilmoqda</OwnerStatusPill>
       </div>
@@ -636,7 +824,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     <div className="space-y-5 p-4 lg:p-6">
       <div>
         <h1 className="text-2xl font-black tracking-tight text-slate-900">Olimpiadalar</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">Direktor uchun markazdagi olimpiadalar ko'rinishi.</p>
+        <p className="mt-1 text-sm font-semibold text-slate-500">Direktor uchun tashkilotdagi olimpiadalar ko'rinishi.</p>
       </div>
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
@@ -667,15 +855,15 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const renderCenter = () => (
     <div className="space-y-5 p-4 lg:p-6">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Markaz profili</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">O'z markazingiz bo'yicha asosiy ma'lumotlar.</p>
+        <h1 className="text-2xl font-black tracking-tight text-slate-900">Tashkilot profili</h1>
+        <p className="mt-1 text-sm font-semibold text-slate-500">O'z tashkilotingiz bo'yicha asosiy ma'lumotlar.</p>
       </div>
       <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-5 md:flex-row md:items-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600 text-2xl font-black text-white">{center.name[0]}</div>
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-xl font-black text-slate-900">{center.name}</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-500">{center.city} · {ownerFormatDate(center.createdAt)}</p>
+            <p className="mt-1 text-sm font-semibold text-slate-500">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · {ownerFormatDate(center.createdAt)}</p>
           </div>
           <OwnerStatusPill status={center.status} />
         </div>
@@ -706,7 +894,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-lg border border-slate-200 p-4">
             <div className="text-sm font-black text-slate-900">Scope</div>
-            <div className="mt-2 text-sm font-medium text-slate-500">Direktor faqat o'z markazi ma'lumotlarini ko'radi.</div>
+            <div className="mt-2 text-sm font-medium text-slate-500">Direktor faqat o'z tashkiloti ma'lumotlarini ko'radi.</div>
           </div>
           <div className="rounded-lg border border-slate-200 p-4">
             <div className="text-sm font-black text-slate-900">Xodim tasdig'i</div>
@@ -804,6 +992,122 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               </button>
               <button disabled={staffSaving} className="flex-1 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
                 {staffSaving ? 'Yaratilmoqda...' : 'Yaratish'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+      {centerModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 p-4">
+          <form onSubmit={submitCenter} className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-black text-slate-900">Yangi tashkilot qo'shish</h2>
+                <div className="mt-1 text-xs font-bold text-slate-500">Ariza Platform Admin tasdig'iga yuboriladi</div>
+              </div>
+              <button type="button" onClick={closeCenterModal} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+                <Icon name="x" size={18} />
+              </button>
+            </div>
+            <div className="space-y-4">
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Tashkilot turi</span>
+                <select
+                  value={centerForm.organizationType}
+                  onChange={e => setCenterForm(prev => ({
+                    ...prev,
+                    organizationType: e.target.value,
+                    customOrganizationType: e.target.value === 'Boshqa' ? prev.customOrganizationType : '',
+                  }))}
+                  className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                >
+                  {centerOrganizationTypes.map(type => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </label>
+              {centerForm.organizationType === 'Boshqa' && (
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Tashkilot turini yozing</span>
+                  <input
+                    value={centerForm.customOrganizationType}
+                    onChange={e => updateCenterForm('customOrganizationType', e.target.value)}
+                    className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                    placeholder="Masalan, Respublika markazi"
+                  />
+                </label>
+              )}
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Davlat</span>
+                  <select
+                    value={centerForm.country}
+                    onChange={e => updateCenterForm('country', e.target.value)}
+                    className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                  >
+                    <option value="O'zbekiston">O'zbekiston</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Viloyat</span>
+                  <select
+                    value={centerForm.region}
+                    onChange={e => setCenterForm(prev => ({ ...prev, region: e.target.value, district: '' }))}
+                    className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                  >
+                    <option value="">Viloyatni tanlang</option>
+                    {centerRegions.map(region => <option key={region} value={region}>{region}</option>)}
+                  </select>
+                </label>
+              </div>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Tuman/Shahar</span>
+                <select
+                  value={centerForm.district}
+                  disabled={!centerForm.region}
+                  onChange={e => updateCenterForm('district', e.target.value)}
+                  className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 disabled:bg-slate-50 disabled:text-slate-400"
+                >
+                  <option value="">{centerForm.region ? 'Tumanni tanlang' : 'Avval viloyatni tanlang'}</option>
+                  {centerDistrictOptions.map(district => <option key={district} value={district}>{district}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Tashkilot nomi</span>
+                <input
+                  value={centerForm.name}
+                  onChange={e => updateCenterForm('name', e.target.value)}
+                  className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                  placeholder="Masalan, ProSkill Language"
+                  autoFocus
+                />
+              </label>
+              <div>
+                <span className="mb-2 block text-xs font-black uppercase text-slate-400">Yo'naltirilgan fanlar</span>
+                <div className="flex flex-wrap gap-2">
+                  {store.subjects.map(subject => {
+                    const active = centerForm.subjects.includes(subject);
+                    return (
+                      <button
+                        key={subject}
+                        type="button"
+                        onClick={() => setCenterForm(prev => ({
+                          ...prev,
+                          subjects: active ? prev.subjects.filter(s => s !== subject) : [...prev.subjects, subject],
+                        }))}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-black ring-1 transition ${active ? 'bg-emerald-600 text-white ring-emerald-600' : 'bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100'}`}
+                      >
+                        {subject}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div className="mt-6 flex gap-3">
+              <button type="button" onClick={closeCenterModal} className="flex-1 rounded-lg border border-slate-200 px-4 py-3 text-sm font-black text-slate-600 hover:bg-slate-50">
+                Bekor qilish
+              </button>
+              <button disabled={centerSaving} className="flex-1 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
+                {centerSaving ? 'Yuborilmoqda...' : 'Arizani yuborish'}
               </button>
             </div>
           </form>

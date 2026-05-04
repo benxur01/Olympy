@@ -136,7 +136,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const baseCenters = isApi ? (apiCenters || []) : store.centers;
   const center = managerCenterId ? baseCenters.find(c => String(c.id) === String(managerCenterId)) : null;
   const centerId = center?.id;
-  const centerName = center?.name || 'Markaz';
+  const centerName = center?.name || 'Tashkilot';
+  const centerType = center?.organizationType || "O'quv markaz";
 
   // Olympiads of this center (live)
   const olympiads = (isApi ? (apiOlympiads || []) : store.olympiads).filter(o => String(o.centerId) === String(centerId));
@@ -232,7 +233,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-black text-white">{centerName}</h2>
-          <p className="text-white/40 text-sm">Manager paneli · {new Date().toLocaleDateString('uz-UZ')}</p>
+          <p className="text-white/40 text-sm">{centerType} · Manager paneli · {new Date().toLocaleDateString('uz-UZ')}</p>
         </div>
         <button onClick={() => setCreateModal(true)} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
           <Icon name="plus" size={16} /> Olimpiada yaratish
@@ -510,7 +511,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         logoClick={() => onNavigate('landing')}
         mobileOpen={mobileMenu} onMobileClose={() => setMobileMenu(false)} />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Topbar title={navItems.find(n => n.key === page)?.label || 'Dashboard'} subtitle={centerName} user={user}
+        <Topbar title={navItems.find(n => n.key === page)?.label || 'Dashboard'} subtitle={`${centerName} · ${centerType}`} user={user}
           onMenuClick={() => setMobileMenu(true)}
           actions={
             <div className="flex items-center gap-2">

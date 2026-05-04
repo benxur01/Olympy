@@ -11,10 +11,25 @@ from .models import Notification
 logger = logging.getLogger('notifications.telegram')
 
 
-def _telegram_join_request_text(student_name, center_name):
+def _center_type(center):
+    return getattr(center, 'organization_type', '') or "O'quv markaz"
+
+
+def _center_location(center):
+    parts = [
+        getattr(center, 'country', '') or "O'zbekiston",
+        getattr(center, 'region', '') or '',
+        getattr(center, 'district', '') or getattr(center, 'city', '') or '',
+    ]
+    return ' · '.join(part for part in parts if part)
+
+
+def _telegram_join_request_text(student_name, center):
     return (
         f"Yangi o'quvchi ariza yubordi: {student_name}.\n"
-        f"O'quv markaz: {center_name}.\n"
+        f"Tashkilot: {center.name}\n"
+        f"Turi: {_center_type(center)}\n"
+        f"Manzil: {_center_location(center)}\n"
         f"Tasdiqlaysizmi?"
     )
 
@@ -69,9 +84,9 @@ def _student_join_keyboard(membership):
     }
 
 
-def _telegram_olympiad_published_text(center_name, olympiad):
+def _telegram_olympiad_published_text(center, olympiad):
     return (
-        f"{center_name} o'quv markazida yangi olimpiada boshlandi:\n"
+        f"{center.name} ({_center_type(center)}) da yangi olimpiada boshlandi:\n"
         f"Fan: {olympiad.subject}\n"
         f"Sana: {olympiad.start_datetime.date() if olympiad.start_datetime else '—'}\n"
         f"Qatnashish uchun platformaga kiring."
@@ -80,7 +95,7 @@ def _telegram_olympiad_published_text(center_name, olympiad):
 
 def send_student_join_request_notification(manager, student, center, membership=None):
     """Notify a manager (or owner) that a student wants to join their center."""
-    message = _telegram_join_request_text(student.full_name, center.name)
+    message = _telegram_join_request_text(student.full_name, center)
     Notification.objects.create(
         user=manager,
         center=center,
@@ -100,9 +115,10 @@ def send_center_approval_request_notification(admin, owner, center):
     """Notify a platform admin that a director registered a new center."""
     owner_name = owner.full_name or owner.normalized_phone
     message = (
-        f"Direktor {owner_name} yangi o'quv markaz ro'yxatdan o'tkazdi.\n"
-        f"Markaz: {center.name}\n"
-        f"Shahar: {center.city}\n"
+        f"Direktor {owner_name} yangi tashkilot/markaz ro'yxatdan o'tkazdi.\n"
+        f"Nomi: {center.name}\n"
+        f"Turi: {_center_type(center)}\n"
+        f"Manzil: {_center_location(center)}\n"
         "Admin panelda tasdiqlash yoki rad etish kerak."
     )
     Notification.objects.create(
@@ -121,11 +137,11 @@ def send_center_decision_notification(owner, center, approved):
         Notification.TYPE_CENTER_APPROVED
         if approved else Notification.TYPE_CENTER_REJECTED
     )
-    title = "Markaz tasdiqlandi" if approved else "Markaz rad etildi"
+    title = "Tashkilot tasdiqlandi" if approved else "Tashkilot rad etildi"
     message = (
-        f"{center.name} o'quv markazingiz tasdiqlandi va platformada ko'rinadi."
+        f"{center.name} ({_center_type(center)}) tasdiqlandi va platformada ko'rinadi."
         if approved else
-        f"{center.name} o'quv markazingiz rad etildi va platformada ko'rinmaydi."
+        f"{center.name} ({_center_type(center)}) rad etildi va platformada ko'rinmaydi."
     )
     Notification.objects.create(
         user=owner,
@@ -139,7 +155,7 @@ def send_center_decision_notification(owner, center, approved):
 
 def send_olympiad_published_notification(student, olympiad, center):
     """Notify an approved student that a new olympiad is live at their center."""
-    message = _telegram_olympiad_published_text(center.name, olympiad)
+    message = _telegram_olympiad_published_text(center, olympiad)
     Notification.objects.create(
         user=student,
         center=center,
@@ -155,7 +171,7 @@ def send_olympiad_published_bulk(students, olympiad, center):
     """Bulk variant for fan-out to many approved students at once."""
     if not students:
         return
-    message = _telegram_olympiad_published_text(center.name, olympiad)
+    message = _telegram_olympiad_published_text(center, olympiad)
     Notification.objects.bulk_create([
         Notification(
             user=s,
@@ -190,9 +206,9 @@ def send_membership_decision_notification(membership, approved):
     }.get(membership.role, membership.role)
     title = f"{role_label} arizasi tasdiqlandi" if approved else f"{role_label} arizasi rad etildi"
     message = (
-        f"{membership.center.name} markazidagi {role_label.lower()} arizangiz tasdiqlandi."
+        f"{membership.center.name} tashkilotidagi {role_label.lower()} arizangiz tasdiqlandi."
         if approved else
-        f"{membership.center.name} markazidagi {role_label.lower()} arizangiz rad etildi."
+        f"{membership.center.name} tashkilotidagi {role_label.lower()} arizangiz rad etildi."
     )
     Notification.objects.create(
         user=membership.user,

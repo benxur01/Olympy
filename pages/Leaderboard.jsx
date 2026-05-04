@@ -7,10 +7,14 @@ const mapApiLeaderboard = (entry) => ({
   rank: entry.rank,
   name: entry.name || entry.user?.full_name || "Noma'lum",
   center: entry.center || '—',
+  organizationType: entry.organization_type || entry.organizationType || "O'quv markaz",
+  country: entry.country || "O'zbekiston",
+  region: entry.region || '',
+  district: entry.district || '',
   subject: entry.subject || '—',
   score: entry.score || 0,
   time: formatTime(entry.time_spent || 0),
-  city: entry.city || '—',
+  city: entry.region || entry.city || '—',
   _api: true,
 });
 
@@ -40,10 +44,14 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
       key: a.id,
       name: u?.name || 'Foydalanuvchi',
       center: c?.name || '—',
+      organizationType: c?.organizationType || "O'quv markaz",
+      country: c?.country || "O'zbekiston",
+      region: c?.region || '',
+      district: c?.district || '',
       subject: o?.subject || '—',
       score: a.score,
       time: formatTime(a.timeSpent || 0),
-      city: c?.city || '—',
+      city: c?.region || c?.city || '—',
       _live: true,
     };
   });
@@ -80,7 +88,7 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
             {subjects.map(s => <option key={s}>{s}</option>)}
           </select>
           <select className="input-field py-2 w-auto text-sm" value={filterCity} onChange={e => setFilterCity(e.target.value)}>
-            <option value="">Barcha shaharlar</option>
+            <option value="">Barcha viloyatlar</option>
             {cities.map(c => <option key={c}>{c}</option>)}
           </select>
         </div>
@@ -90,7 +98,7 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
       <div className="nav-tabs flex gap-1">
         {['all','center','subject'].map(t => (
           <button key={t} onClick={() => setActiveTab(t)} className={`nav-tab ${activeTab===t?'active':''}`}>
-            {t==='all'?'Umumiy':t==='center'?"O'quv markaz":'Fan'}
+            {t==='all'?'Umumiy':t==='center'?'Tashkilot':'Fan'}
           </button>
         ))}
       </div>
@@ -109,7 +117,7 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
               <div className="text-3xl mb-1">{p.badge}</div>
               <Avatar name={p.name} size={isFirst?48:40} gradient={isFirst?'from-amber-400 to-orange-500':'from-indigo-500 to-purple-600'} />
               <div className="text-sm font-bold text-white mt-2 truncate">{p.name.split(' ')[0]}</div>
-              <div className="text-xs text-white/40 truncate mb-2">{p.center}</div>
+              <div className="text-xs text-white/40 truncate mb-2">{p.center} · {p.organizationType}</div>
               <div className={`text-2xl font-black ${isFirst?'text-amber-400':i===0?'text-slate-300':'text-amber-600'}`}>{p.score}</div>
               <SubjectBadge subject={p.subject} />
             </div>
@@ -122,7 +130,7 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
         <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 border-b border-white/5 text-xs text-white/40 font-medium">
           <div className="col-span-1">#</div>
           <div className="col-span-3">O'quvchi</div>
-          <div className="col-span-3">O'quv markaz</div>
+          <div className="col-span-3">Tashkilot</div>
           <div className="col-span-2">Fan</div>
           <div className="col-span-1 text-right">Ball</div>
           <div className="col-span-1 text-right">Vaqt</div>

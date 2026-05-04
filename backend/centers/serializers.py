@@ -12,8 +12,9 @@ class EducationCenterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = EducationCenter
-        fields = ['id', 'name', 'city', 'owner', 'status', 'subjects',
-                  'rating', 'created_at', 'owner_full_name', 'owner_phone',
+        fields = ['id', 'name', 'organization_type', 'country', 'region', 'district',
+                  'city', 'owner', 'status', 'subjects', 'rating', 'created_at',
+                  'owner_full_name', 'owner_phone',
                   'students', 'olympiads']
         read_only_fields = ['id', 'owner', 'status', 'rating', 'created_at']
 
@@ -44,12 +45,47 @@ class CenterMembershipSerializer(serializers.ModelSerializer):
 
 
 class CenterRegisterSerializer(serializers.Serializer):
-    """Used when a user registers a new center; they become its owner."""
+    """Used when a user registers a new organization; they become its owner."""
     name = serializers.CharField(max_length=160)
-    city = serializers.CharField(max_length=80)
+    organization_type = serializers.CharField(
+        max_length=80,
+        required=False,
+        allow_blank=True,
+        default="O'quv markaz",
+    )
+    country = serializers.CharField(
+        max_length=80,
+        required=False,
+        allow_blank=True,
+        default="O'zbekiston",
+    )
+    region = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
+    district = serializers.CharField(max_length=100, required=False, allow_blank=True, default='')
+    city = serializers.CharField(max_length=80, required=False, allow_blank=True)
     subjects = serializers.ListField(
         child=serializers.CharField(), required=False, default=list,
     )
+
+    def validate_organization_type(self, value):
+        value = str(value or '').strip()
+        return value or "O'quv markaz"
+
+    def validate_country(self, value):
+        value = str(value or '').strip()
+        return value or "O'zbekiston"
+
+    def validate(self, attrs):
+        city = str(attrs.get('city') or '').strip()
+        region = str(attrs.get('region') or '').strip()
+        district = str(attrs.get('district') or '').strip()
+        if not city:
+            city = district or region
+        if not city:
+            raise serializers.ValidationError({'district': "Tuman yoki shaharni tanlang"})
+        attrs['city'] = city
+        attrs['region'] = region
+        attrs['district'] = district
+        return attrs
 
 
 class JoinRequestSerializer(serializers.Serializer):

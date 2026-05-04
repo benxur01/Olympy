@@ -13,22 +13,22 @@ const LandingPage = ({ onNavigate }) => {
   ];
 
   const stats = [
-    { value: '120+', label: 'O\'quv markaz', icon: '🏫' },
+    { value: '120+', label: 'Tashkilot', icon: '🏫' },
     { value: '15 000+', label: 'O\'quvchi', icon: '👥' },
     { value: '50 000+', label: 'Test savollari', icon: '📝' },
     { value: '98%', label: 'Qoniqish darajasi', icon: '⭐' },
   ];
 
   const steps = [
-    { num: '01', title: 'Ro\'yxatdan o\'ting', desc: 'O\'quv markaz sifatida platformaga qo\'shiling va markazingizni sozlang', icon: '🚀' },
+    { num: '01', title: 'Ro\'yxatdan o\'ting', desc: 'Maktab, o\'quv markaz yoki tashkilot sifatida platformaga qo\'shiling', icon: '🚀' },
     { num: '02', title: 'Savollar yarating', desc: 'AI, PDF yoki qo\'lda savollar bazasini to\'ldiring', icon: '✏️' },
     { num: '03', title: 'Olimpiada o\'tkazing', desc: 'O\'quvchilarni qo\'shing va olimpiada boshlang', icon: '🏆' },
     { num: '04', title: 'Natijalarni tahlil qiling', desc: 'Avtomatik hisoblangan natijalar va reytingni ko\'ring', icon: '📈' },
   ];
 
   const pricing = [
-    { name: 'Boshlang\'ich', price: 'Bepul', desc: 'Kichik o\'quv markazlar uchun', features: ['5 ta olimpiada/oy', '50 ta o\'quvchi', 'Asosiy hisobotlar', 'Email qo\'llab-quvvatlash'], popular: false },
-    { name: 'Professional', price: '199 000 so\'m', period: '/oy', desc: 'O\'sib borayotgan markazlar uchun', features: ['Cheksiz olimpiada', '500 ta o\'quvchi', 'AI savol yaratish', 'PDF import', 'Telegram bot', 'Batafsil tahlil'], popular: true },
+    { name: 'Boshlang\'ich', price: 'Bepul', desc: 'Kichik tashkilotlar uchun', features: ['5 ta olimpiada/oy', '50 ta o\'quvchi', 'Asosiy hisobotlar', 'Email qo\'llab-quvvatlash'], popular: false },
+    { name: 'Professional', price: '199 000 so\'m', period: '/oy', desc: 'O\'sib borayotgan tashkilotlar uchun', features: ['Cheksiz olimpiada', '500 ta o\'quvchi', 'AI savol yaratish', 'PDF import', 'Telegram bot', 'Batafsil tahlil'], popular: true },
     { name: 'Enterprise', price: 'Narxlashish', desc: 'Yirik ta\'lim tarmoqlari uchun', features: ['Cheksiz hamma narsa', 'Maxsus integratsiya', 'Shaxsiy menejer', 'API kirish', 'SLA kafolati'], popular: false },
   ];
 
@@ -72,7 +72,7 @@ const LandingPage = ({ onNavigate }) => {
           </div>
 
           <h1 className="text-4xl md:text-6xl font-black text-white leading-tight mb-6" style={{ textWrap: 'balance' }}>
-            O'quv markazlar uchun<br/>
+            Ta'lim tashkilotlari uchun<br/>
             <span className="gradient-text">zamonaviy olimpiada</span><br/>
             platformasi
           </h1>
@@ -89,7 +89,7 @@ const LandingPage = ({ onNavigate }) => {
               Kirish →
             </button>
             <button onClick={() => onNavigate('register')} className="btn-ghost px-6 py-3.5 rounded-2xl text-base font-medium border-indigo-500/30 text-indigo-300">
-              🏫 O'quv markaz qo'shish
+              🏫 Tashkilot qo'shish
             </button>
           </div>
 
@@ -152,7 +152,7 @@ const LandingPage = ({ onNavigate }) => {
         <div className="text-center mb-16">
           <div className="inline-flex items-center gap-2 glass rounded-full px-4 py-2 mb-4 text-sm text-purple-300 border border-purple-500/20">✨ Xususiyatlar</div>
           <h2 className="text-3xl md:text-4xl font-black text-white mb-4">Hammasi bir joyda</h2>
-          <p className="text-white/40 max-w-xl mx-auto">O'quv markazingizni raqamlashtirishning eng zamonaviy yechimi</p>
+          <p className="text-white/40 max-w-xl mx-auto">Tashkilotingizni raqamlashtirishning eng zamonaviy yechimi</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {features.map((f, i) => (
@@ -241,7 +241,7 @@ const LandingPage = ({ onNavigate }) => {
         <div className="glass rounded-3xl p-12 relative overflow-hidden">
           <div className="hero-glow" style={{ background: '#6366f1', top: '-50%', left: '30%', opacity: 0.12 }} />
           <h2 className="text-3xl md:text-4xl font-black text-white mb-4 relative">Bugun boshlang</h2>
-          <p className="text-white/40 mb-8 relative">O'quv markazingizni raqamli olimpiada platformasiga ulang</p>
+          <p className="text-white/40 mb-8 relative">Tashkilotingizni raqamli olimpiada platformasiga ulang</p>
           <div className="flex flex-wrap items-center justify-center gap-4 relative">
             <button onClick={() => onNavigate('register')} className="btn-primary px-8 py-4 rounded-2xl text-base font-bold glow-blue">
               🚀 Bepul boshlash

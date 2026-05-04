@@ -3,10 +3,10 @@ from django.db import models
 
 
 class EducationCenter(models.Model):
-    """Education center owned by a single user.
+    """Organization owned by a single user.
 
-    Newly registered centers start as ``pending`` and are activated only after
-    a Platform Admin approves them. Owners cannot manage staff until then.
+    Newly registered organizations start as ``pending`` and are activated only
+    after a Platform Admin approves them. Owners cannot manage staff until then.
     """
     STATUS_PENDING = 'pending'
     STATUS_APPROVED = 'approved'
@@ -18,6 +18,14 @@ class EducationCenter(models.Model):
     ]
 
     name = models.CharField(max_length=160)
+    organization_type = models.CharField(
+        max_length=80,
+        default="O'quv markaz",
+        db_index=True,
+    )
+    country = models.CharField(max_length=80, default="O'zbekiston", db_index=True)
+    region = models.CharField(max_length=100, blank=True, default='', db_index=True)
+    district = models.CharField(max_length=100, blank=True, default='', db_index=True)
     city = models.CharField(max_length=80)
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -34,7 +42,8 @@ class EducationCenter(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f'{self.name} ({self.city})'
+        location = self.district or self.region or self.city
+        return f'{self.name} ({location})'
 
 
 class CenterMembership(models.Model):

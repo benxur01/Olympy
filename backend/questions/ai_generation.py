@@ -79,7 +79,7 @@ def _prompt(subject, topic, count, difficulty, question_type):
                 "mos mazmunni 4 variantli testga aylantir."
             )
     return (
-        "O'zbek tilida o'quv markazi olimpiadasi uchun original test savollarini tuz.\n"
+        "O'zbek tilida ta'lim tashkiloti olimpiadasi uchun original test savollarini tuz.\n"
         f"Fan: {subject}\n"
         f"Mavzu: {topic}\n"
         f"Savollar soni: {count}\n"
