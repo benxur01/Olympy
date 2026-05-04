@@ -73,9 +73,44 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     (!filterSubject || q.subject === filterSubject) && (!filterLevel || q.difficulty === filterLevel)
   );
 
-  const generateAI = () => {
+  const _diffFromApi = (level) =>
+    level === 'easy' ? 'Oson' : level === 'hard' ? 'Qiyin' : "O'rta";
+
+  const _mapAiGeneratedQuestion = (q, i) => ({
+    _tmpId: Date.now() + i,
+    text: q.text,
+    subject: q.subject || aiForm.subject,
+    difficulty: _diffFromApi(q.difficulty) || aiForm.level,
+    score: q.score ?? 3,
+    options: Array.isArray(q.options) ? q.options : [],
+    correctAnswer: q.correct_answer ?? q.correctAnswer ?? 0,
+    source: 'ai',
+  });
+
+  const generateAI = async () => {
     if (!aiForm.topic) return;
     setAiLoading(true);
+    setAiResult(null);
+    if (isApi) {
+      try {
+        const response = await OlympyApi.generateAiQuestions({
+          center: myCenter?.backendId ?? myCenterId,
+          subject: aiForm.subject,
+          topic: aiForm.topic,
+          count: aiForm.count,
+          difficulty: _diffToApi(aiForm.level),
+          question_type: aiForm.type,
+        }, OlympyApi.getToken());
+        const generated = (response?.questions || []).map(_mapAiGeneratedQuestion);
+        setAiResult(generated);
+      } catch (err) {
+        console.warn('generateAiQuestions failed:', err);
+        showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "AI savol yarata olmadi"}`);
+      } finally {
+        setAiLoading(false);
+      }
+      return;
+    }
     setTimeout(() => {
       const generated = Array.from({length: aiForm.count}, (_, i) => ({
         // tmp id for preview only — real id assigned on save
@@ -361,7 +396,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   {allSubjects.map(s => <option key={s}>{s}</option>)}
                 </select></div>
               <div><label className="block text-xs text-white/50 mb-1.5">Savollar soni</label>
-                <input type="number" className="input-field" min={1} max={50} value={aiForm.count} onChange={e => setAiForm({...aiForm, count: +e.target.value})} /></div>
+                <input type="number" className="input-field" min={1} max={30} value={aiForm.count} onChange={e => setAiForm({...aiForm, count: +e.target.value})} /></div>
             </div>
             <div><label className="block text-xs text-white/50 mb-1.5">Mavzu</label>
               <input className="input-field" placeholder="Masalan: Kvadrat tenglamalar, Past tenses..." value={aiForm.topic} onChange={e => setAiForm({...aiForm, topic: e.target.value})} /></div>

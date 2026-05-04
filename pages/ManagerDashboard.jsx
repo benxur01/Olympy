@@ -5,17 +5,64 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const isApi = !!user?._api;
   const [page, setPage] = React.useState('home');
   const [createModal, setCreateModal] = React.useState(false);
-  const [telegramModal, setTelegramModal] = React.useState(null);
+  const [telegramLink, setTelegramLink] = React.useState(null);
+  const [telegramLinkLoading, setTelegramLinkLoading] = React.useState(false);
+  const [telegramLinked, setTelegramLinked] = React.useState(!!user?.telegramLinked);
   const [newOlympiad, setNewOlympiad] = React.useState({ title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft' });
   const [editingOlympiadId, setEditingOlympiadId] = React.useState(null);
   const [assignModal, setAssignModal] = React.useState(null);
   const [toast, setToast] = React.useState('');
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [pendingStudents, setPendingStudents] = React.useState([]);
+  const [approvedStudents, setApprovedStudents] = React.useState([]);
   const [assignedQuestionIds, setAssignedQuestionIds] = React.useState([]);
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+
+  const startTelegramLink = () => {
+    if (!isApi) {
+      showToast('Real bot server rejimida ulanadi');
+      return;
+    }
+    setTelegramLinkLoading(true);
+    OlympyApi.startTelegramLink(OlympyApi.getToken())
+      .then(data => {
+        setTelegramLink(data);
+        if (data?.telegram_deep_link) {
+          try { window.open(data.telegram_deep_link, '_blank', 'noopener,noreferrer'); } catch {}
+          showToast('Telegram bot ochildi. Telefon raqamingizni yuboring.');
+          let tries = 0;
+          const token = OlympyApi.getToken();
+          const pollId = setInterval(() => {
+            tries += 1;
+            OlympyApi.getMe(token)
+              .then(fresh => {
+                const mapped = OlympyApi.mapBackendUser(fresh);
+                if (mapped.telegramLinked) {
+                  const auth = OlympyApi.loadAuth();
+                  OlympyApi.saveAuth({ token: auth?.token || token, refresh: auth?.refresh, user: mapped });
+                  setTelegramLinked(true);
+                  clearInterval(pollId);
+                }
+              })
+              .catch(() => {});
+            if (tries >= 12) clearInterval(pollId);
+          }, 5000);
+        } else {
+          showToast('Bot username sozlanmagan');
+        }
+      })
+      .catch(err => {
+        console.warn('startTelegramLink failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setTelegramLinkLoading(false));
+  };
+
+  React.useEffect(() => {
+    setTelegramLinked(!!user?.telegramLinked);
+  }, [user?.telegramLinked]);
 
   // Manager's center
   const managerRole = user.roles?.manager;
@@ -29,16 +76,38 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       .then(rows => setPendingStudents(Array.isArray(rows) ? rows : []));
   }, [isApi, managerCenterId]);
 
+  const loadApprovedStudents = React.useCallback(() => {
+    if (!isApi || !managerCenterId) {
+      setApprovedStudents([]);
+      return Promise.resolve();
+    }
+    return OlympyApi.getStudentMemberships(managerCenterId, 'approved', OlympyApi.getToken())
+      .then(rows => setApprovedStudents(Array.isArray(rows) ? rows : []));
+  }, [isApi, managerCenterId]);
+
   React.useEffect(() => {
     let cancelled = false;
-    loadPendingStudents().catch(err => {
-      if (!cancelled) {
-        console.warn('getPendingMemberships failed:', err);
-        setPendingStudents([]);
-      }
-    });
-    return () => { cancelled = true; };
-  }, [loadPendingStudents]);
+    const refresh = () => {
+      loadPendingStudents().catch(err => {
+        if (!cancelled) {
+          console.warn('getPendingMemberships failed:', err);
+          setPendingStudents([]);
+        }
+      });
+      loadApprovedStudents().catch(err => {
+        if (!cancelled) {
+          console.warn('getStudentMemberships failed:', err);
+          setApprovedStudents([]);
+        }
+      });
+    };
+    refresh();
+    const intervalId = isApi && managerCenterId ? setInterval(refresh, 15000) : null;
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isApi, managerCenterId, loadPendingStudents, loadApprovedStudents]);
 
   React.useEffect(() => {
     setAssignedQuestionIds(assignModal?.questionIds || []);
@@ -74,19 +143,31 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   // Questions of this center (for assigning to olympiads)
   const centerQuestions = (isApi ? (apiQuestions || []) : store.questions).filter(q => String(q.centerId) === String(centerId));
 
-  // Live students at this center (approved)
-  const students = store.users.filter(u =>
-    u.roles?.student?.status === 'approved' && u.roles.student.centerId === centerId
-  ).map(u => ({
-    id: u.id,
-    name: u.name,
-    phone: u.phone,
-    joined: u.joined,
-    subject: u.roles?.student?.subject || '—',
-    olympiads: u.olympiads || 0,
-    avgScore: u.avgScore || 0,
-    status: 'Tasdiqlandi',
-  }));
+  // Live students at this center (approved). API rejimida backend'dan keladi;
+  // mock rejimda esa eski mock store filteridan.
+  const students = isApi
+    ? approvedStudents.map(m => ({
+        id: `api:${m.membership_id}`,
+        name: m.user?.full_name || m.user?.name || '—',
+        phone: m.user?.normalized_phone || m.user?.phone || '—',
+        joined: (m.created_at || '').slice(0, 10),
+        subject: m.subject || '—',
+        olympiads: 0,
+        avgScore: 0,
+        status: 'Tasdiqlandi',
+      }))
+    : store.users.filter(u =>
+        u.roles?.student?.status === 'approved' && u.roles.student.centerId === centerId
+      ).map(u => ({
+        id: u.id,
+        name: u.name,
+        phone: u.phone,
+        joined: u.joined,
+        subject: u.roles?.student?.subject || '—',
+        olympiads: u.olympiads || 0,
+        avgScore: u.avgScore || 0,
+        status: 'Tasdiqlandi',
+      }));
 
   // Live student-join requests at this center
   const mockRequests = store.requests.filter(r => r.type === 'student' && r.centerId === centerId).map(r => {
@@ -97,6 +178,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       phone: u?.phone || '—',
       date: r.date,
       subject: u?.roles?.student?.subject || r.subject || '—',
+      approvalCode: '',
       status: statusLabel(r.status),
       _raw: r,
     };
@@ -107,6 +189,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     phone: m.user?.normalized_phone || m.user?.phone || '—',
     date: (m.created_at || '').slice(0, 10),
     subject: m.subject || '—',
+    approvalCode: m.approval_code || '',
     status: 'Kutilmoqda',
     _raw: m,
   }));
@@ -177,7 +260,6 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   <div className="text-xs text-white/40">{r.date} · {r.subject}</div>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setTelegramModal(r)} className="text-xs glass px-2 py-1.5 rounded-lg text-indigo-400 hover:bg-indigo-500/10 transition-all border border-indigo-500/20">📱</button>
                   <button onClick={() => handleRequest(r.id, 'approve')} className="btn-success text-xs px-3 py-1.5 rounded-lg">✓</button>
                   <button onClick={() => handleRequest(r.id, 'reject')} className="btn-danger text-xs px-3 py-1.5 rounded-lg">✗</button>
                 </div>
@@ -254,24 +336,43 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         </div>
       </div>
 
-      {/* Telegram bot mockup */}
       <div className="glass rounded-2xl p-5 border border-indigo-500/10">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-xl" style={{ background: '#2b5278' }}><div className="w-full h-full flex items-center justify-center text-white font-bold text-sm rounded-xl">TG</div></div>
-          <div><div className="text-sm font-bold text-white">Telegram Bot Integratsiya</div><div className="text-xs text-white/40">Arizalar Telegram orqali ham tasdiqlanadi</div></div>
-          <div className="ml-auto flex items-center gap-1.5 text-xs text-emerald-400"><span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span> Faol</div>
+          <div>
+            <div className="text-sm font-bold text-white">Telegram Bot Integratsiya</div>
+            <div className="text-xs text-white/40">Yangi o'quvchi arizalari botga avtomatik boradi</div>
+          </div>
+          <div className={`ml-auto flex items-center gap-1.5 text-xs ${telegramLinked ? 'text-emerald-400' : 'text-amber-300'}`}>
+            <span className={`w-2 h-2 rounded-full ${telegramLinked ? 'bg-emerald-400 animate-pulse' : 'bg-amber-300'}`}></span>
+            {telegramLinked ? 'Ulangan' : 'Ulanmagan'}
+          </div>
         </div>
-        {telegramModal && (
-          <div className="flex justify-center"><TelegramMockup studentName={telegramModal.name} centerName={centerName}
-            onApprove={() => { handleRequest(telegramModal.id, 'approve'); setTelegramModal(null); }}
-            onReject={() => { handleRequest(telegramModal.id, 'reject'); setTelegramModal(null); }} /></div>
+        {!telegramLinked && (
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={startTelegramLink} disabled={telegramLinkLoading}
+              className="btn-primary px-4 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-2 disabled:opacity-60">
+              <Icon name="send" size={13} /> {telegramLinkLoading ? 'Ulanmoqda...' : 'Botni ulash'}
+            </button>
+            {telegramLink?.telegram_deep_link && (
+              <a href={telegramLink.telegram_deep_link} target="_blank" rel="noreferrer" className="text-xs text-indigo-300 hover:text-indigo-200">
+                Telegram botni ochish
+              </a>
+            )}
+            <span className="text-xs text-white/40">Ulanmaguncha arizalar faqat sayt ichida ko'rinadi.</span>
+          </div>
+        )}
+        {telegramLinked && (
+          <div className="text-xs text-emerald-300 flex items-center gap-2">
+            <Icon name="check" size={13} /> Botdagi tasdiq saytdagi ariza holatini ham avtomatik yangilaydi.
+          </div>
         )}
       </div>
 
       <div className="glass rounded-2xl overflow-hidden">
         <table className="w-full">
           <thead><tr className="border-b border-white/5">
-            {['O\'quvchi', 'Telefon', 'Ariza sanasi', 'Fan', 'Holat', 'Amal'].map(h => (
+            {['O\'quvchi', 'Telefon', 'Ariza sanasi', 'Fan', 'Kod', 'Holat', 'Amal'].map(h => (
               <th key={h} className="text-left px-4 py-3 text-xs text-white/40 font-medium">{h}</th>
             ))}
           </tr></thead>
@@ -282,11 +383,11 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 <td className="px-4 py-3 text-sm text-white/60">{r.phone.replace ? r.phone.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2') : r.phone}</td>
                 <td className="px-4 py-3 text-sm text-white/60">{r.date}</td>
                 <td className="px-4 py-3">{r.subject && r.subject !== '—' ? <SubjectBadge subject={r.subject} /> : <span className="text-xs text-white/30">—</span>}</td>
+                <td className="px-4 py-3 text-xs font-mono text-white/50">{r.approvalCode || '—'}</td>
                 <td className="px-4 py-3"><Badge status={r.status} /></td>
                 <td className="px-4 py-3">
                   {r.status === 'Kutilmoqda' ? (
                     <div className="flex gap-2">
-                      <button onClick={() => setTelegramModal(r)} title="Telegram orqali" className="text-xs glass px-2 py-1.5 rounded-lg text-indigo-400 border border-indigo-500/20">📱</button>
                       <button onClick={() => handleRequest(r.id, 'approve')} className="btn-success text-xs px-3 py-1.5 rounded-xl">Tasdiqlash</button>
                       <button onClick={() => handleRequest(r.id, 'reject')} className="btn-danger text-xs px-3 py-1.5 rounded-xl">Rad etish</button>
                     </div>
@@ -295,7 +396,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               </tr>
             ))}
             {requests.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-white/40 text-sm">Arizalar yo'q</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-white/40 text-sm">Arizalar yo'q</td></tr>
             )}
           </tbody>
         </table>

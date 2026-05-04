@@ -21,16 +21,29 @@ const App = () => {
 
   // Persist backend JWT session only.
   useEffect(() => {
-    try {
+    let cancelled = false;
+    const restore = async () => {
       const requestedPage = pageFromPath();
       const auth = globalThis.OlympyApi?.loadAuth?.();
       if (auth?.user) {
+        if (cancelled) return;
         setApiUser(auth.user);
         setPage(requestedPage || roleHomePage(auth.user));
         return;
       }
-      if (requestedPage) setPage(requestedPage);
-    } catch {}
+      try {
+        const freshUser = await globalThis.OlympyApi?.getMe?.(null);
+        if (!freshUser || cancelled) throw new Error('No cookie session');
+        const mappedUser = globalThis.OlympyApi.mapBackendUser(freshUser);
+        globalThis.OlympyApi.saveAuth({ user: mappedUser, cookieAuth: true });
+        setApiUser(mappedUser);
+        setPage(requestedPage || roleHomePage(mappedUser));
+        return;
+      } catch {}
+      if (!cancelled && requestedPage) setPage(requestedPage);
+    };
+    try { restore(); } catch {}
+    return () => { cancelled = true; };
   }, []);
 
   const handleLogin = (u) => {
@@ -73,7 +86,7 @@ const App = () => {
     setApiUser(nextUser);
     try {
       const auth = globalThis.OlympyApi?.loadAuth?.();
-      if (auth?.token) globalThis.OlympyApi.saveAuth({ token: auth.token, refresh: auth.refresh, user: nextUser });
+      if (auth?.user) globalThis.OlympyApi.saveAuth({ token: auth.token, refresh: auth.refresh, user: nextUser });
     } catch {}
     setSwitcherOpen(false);
     setPage(ROLE_META[role]?.dest || 'student');
@@ -91,6 +104,17 @@ const App = () => {
     const status = getRoleStatus(user, role);
     const meta = ROLE_META[role];
     const data = user.roles?.[role];
+
+    if (role === 'student' && status) {
+      return (
+        <StudentDashboard
+          user={user}
+          onNavigate={navigate}
+          onLogout={handleLogout}
+          onOpenSwitcher={() => setSwitcherOpen(true)}
+        />
+      );
+    }
 
     if (status === 'approved') {
       const props = {

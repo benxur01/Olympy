@@ -76,6 +76,7 @@ class CenterMembership(models.Model):
     )
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     subject = models.CharField(max_length=80, blank=True)
+    approval_code = models.CharField(max_length=16, blank=True, db_index=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

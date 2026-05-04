@@ -18,21 +18,29 @@ class EducationCenterSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'owner', 'status', 'rating', 'created_at']
 
     def get_students(self, obj):
+        # Prefer the annotated count (centers/views._annotate_center_counts)
+        # to avoid an N+1 query per row; fall back to a query if absent.
+        annotated = getattr(obj, 'students_count', None)
+        if annotated is not None:
+            return annotated
         return obj.memberships.filter(
             role=CenterMembership.ROLE_STUDENT,
             status=CenterMembership.STATUS_APPROVED,
         ).count()
 
     def get_olympiads(self, obj):
+        annotated = getattr(obj, 'olympiads_count', None)
+        if annotated is not None:
+            return annotated
         return obj.olympiads.count()
 
 
 class CenterMembershipSerializer(serializers.ModelSerializer):
     class Meta:
         model = CenterMembership
-        fields = ['id', 'user', 'center', 'role', 'subject', 'status',
+        fields = ['id', 'user', 'center', 'role', 'subject', 'approval_code', 'status',
                   'approved_by', 'created_at']
-        read_only_fields = ['id', 'status', 'approved_by', 'created_at']
+        read_only_fields = ['id', 'approval_code', 'status', 'approved_by', 'created_at']
 
 
 class CenterRegisterSerializer(serializers.Serializer):

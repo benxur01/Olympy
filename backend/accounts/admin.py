@@ -6,12 +6,19 @@ from .models import PhoneVerification, User
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
-    list_display = ('full_name', 'normalized_phone', 'is_platform_admin', 'is_active', 'created_at')
-    search_fields = ('full_name', 'normalized_phone', 'phone')
+    list_display = (
+        'full_name', 'normalized_phone', 'telegram_linked_at',
+        'is_platform_admin', 'is_active', 'created_at',
+    )
+    search_fields = (
+        'full_name', 'normalized_phone', 'phone',
+        'telegram_chat_id', 'telegram_user_id',
+    )
     ordering = ('-created_at',)
     fieldsets = (
         (None, {'fields': ('full_name', 'phone', 'normalized_phone', 'password')}),
         ('Roles', {'fields': ('roles', 'is_platform_admin')}),
+        ('Telegram', {'fields': ('telegram_chat_id', 'telegram_user_id', 'telegram_linked_at')}),
         ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
     )
     add_fieldsets = (
@@ -20,7 +27,7 @@ class UserAdmin(DjangoUserAdmin):
             'fields': ('full_name', 'phone', 'password1', 'password2'),
         }),
     )
-    readonly_fields = ('normalized_phone', 'created_at')
+    readonly_fields = ('normalized_phone', 'created_at', 'telegram_linked_at')
 
 
 @admin.register(PhoneVerification)

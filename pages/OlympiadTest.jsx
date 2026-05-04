@@ -149,8 +149,37 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         return;
       }
 
-      setSubmitError("Javoblarni yuborish uchun real login kerak.");
-      setSubmitted(false);
+      // Mock/dev rejim — local store'ga attempt yozamiz va lokal natijani
+      // qaytaramiz. Real loginsiz ham testni yakunlash mumkin bo'ladi.
+      try {
+        const attemptRecord = OlympyStore.recordAttempt({
+          userId: user?.id || 'guest',
+          olympiadId: liveOlympiad?.id || olympiad?.id,
+          answers: formattedAnswers,
+          score: localScore,
+          correctCount: correct,
+          wrongCount: wrong,
+          totalQuestions: TOTAL,
+          timeSpent,
+          rank: localRank,
+        });
+        onFinish({
+          attemptId: attemptRecord?.id,
+          correct,
+          wrong,
+          score: localScore,
+          total: TOTAL,
+          rank: localRank,
+          time: timeSpent,
+          maxScore: maxPossible,
+          olympiad: liveOlympiad || olympiad,
+          _api: false,
+        });
+      } catch (err) {
+        console.warn('local recordAttempt failed:', err?.message);
+        setSubmitError("Javoblarni yuborib bo'lmadi. Qayta urinib ko'ring.");
+        setSubmitted(false);
+      }
     } finally {
       setSubmitting(false);
     }

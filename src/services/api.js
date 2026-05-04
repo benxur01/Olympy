@@ -10,6 +10,18 @@ const AUTH_TOKEN_KEY = 'olympy_api_token';
 const AUTH_REFRESH_KEY = 'olympy_refresh_token';
 const AUTH_USER_KEY = 'olympy_api_user';
 
+const _authStore = (() => {
+  try {
+    const env = (import.meta?.env?.VITE_AUTH_STORAGE || '').toLowerCase();
+    if (env === 'local' && typeof localStorage !== 'undefined') return localStorage;
+    if (typeof sessionStorage !== 'undefined') return sessionStorage;
+  } catch {}
+  return typeof localStorage !== 'undefined' ? localStorage : null;
+})();
+const _readAuth = (key) => { try { return _authStore ? _authStore.getItem(key) : null; } catch { return null; } };
+const _writeAuth = (key, value) => { try { _authStore && _authStore.setItem(key, value); } catch {} };
+const _removeAuth = (key) => { try { _authStore && _authStore.removeItem(key); } catch {} };
+
 const unwrapList = (res) => Array.isArray(res) ? res : (res && res.results ? res.results : []);
 
 class ApiError extends Error {
@@ -57,7 +69,10 @@ const request = async (
     Accept: 'application/json',
     ...headers,
   };
-  if (body !== undefined) requestHeaders['Content-Type'] = 'application/json';
+  // FormData / multipart bodies must be sent with the browser-supplied
+  // multipart boundary; do not set Content-Type and do not stringify.
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  if (body !== undefined && !isFormData) requestHeaders['Content-Type'] = 'application/json';
   if (token) requestHeaders.Authorization = `Bearer ${token}`;
 
   let response;
@@ -65,7 +80,10 @@ const request = async (
     response = await fetch(`${API_BASE_URL}${path}`, {
       method,
       headers: requestHeaders,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
+      credentials: 'include',
+      body: body === undefined
+        ? undefined
+        : (isFormData ? body : JSON.stringify(body)),
     });
   } catch (error) {
     throw new ApiError("Server bilan bog‘lanishda xatolik yuz berdi", { status: 0 });
@@ -75,25 +93,28 @@ const request = async (
   const data = contentType.includes('application/json') ? await response.json() : await response.text();
   if (!response.ok) {
     if (response.status === 401) {
-      const refresh = retryOnAuth && token
-        ? localStorage.getItem(AUTH_REFRESH_KEY)
-        : null;
-      if (refresh) {
+      const refresh = retryOnAuth ? _readAuth(AUTH_REFRESH_KEY) : null;
+      if (retryOnAuth) {
         try {
           const refreshed = await request('/api/auth/token/refresh/', {
             method: 'POST',
-            body: { refresh },
+            body: refresh ? { refresh } : undefined,
             retryOnAuth: false,
           });
           const nextToken = refreshed?.access || refreshed?.token;
           const nextRefresh = refreshed?.refresh || refresh;
-          if (nextToken) {
-            localStorage.setItem(AUTH_TOKEN_KEY, nextToken);
-            if (nextRefresh) localStorage.setItem(AUTH_REFRESH_KEY, nextRefresh);
+          if (nextToken || refreshed?.cookie_auth) {
+            if (refreshed?.cookie_auth) {
+              _removeAuth(AUTH_TOKEN_KEY);
+              _removeAuth(AUTH_REFRESH_KEY);
+            } else {
+              if (nextToken) _writeAuth(AUTH_TOKEN_KEY, nextToken);
+              if (nextRefresh) _writeAuth(AUTH_REFRESH_KEY, nextRefresh);
+            }
             return request(path, {
               method,
               body,
-              token: nextToken,
+              token: nextToken || null,
               headers,
               retryOnAuth: false,
             });
@@ -102,12 +123,10 @@ const request = async (
       }
       // Token muddati tugagan yoki tan olinmagan — auth state'ni tozalab,
       // qatlam yuqorisidagi App'ga signal beramiz.
-      try {
-        localStorage.removeItem(AUTH_TOKEN_KEY);
-        localStorage.removeItem(AUTH_REFRESH_KEY);
-        localStorage.removeItem(AUTH_USER_KEY);
-        window.dispatchEvent(new CustomEvent('olympy:logout'));
-      } catch {}
+      _removeAuth(AUTH_TOKEN_KEY);
+      _removeAuth(AUTH_REFRESH_KEY);
+      _removeAuth(AUTH_USER_KEY);
+      try { window.dispatchEvent(new CustomEvent('olympy:logout')); } catch {}
       throw new ApiError('Session expired', { status: 401, data });
     }
     throw new ApiError(extractErrorMessage(data) || response.statusText, {
@@ -118,33 +137,46 @@ const request = async (
   return data;
 };
 
+// Higher index wins. Used to pick activeRole when a user has multiple
+// roles approved at the same time. admin > owner > manager > teacher > student.
+const ROLE_PRIORITY = ['student', 'teacher', 'manager', 'owner', 'admin'];
+
 const mapBackendUser = (user) => {
   const detail = user?.roles_detail && typeof user.roles_detail === 'object'
     ? user.roles_detail
     : null;
   const roles = {};
+  const backendRoles = Array.isArray(user?.roles) ? user.roles : [];
+  backendRoles.forEach(role => {
+    roles[role] = { status: 'approved', centerId: null, centerName: '', subject: '' };
+  });
   if (detail) {
-    // Normalize centerId to string — backend returns integer, the rest of
-    // the frontend (mock store, comparisons) treats centerIds as strings.
+    // Membership detail overrides plain roles when a center approval state exists.
     Object.keys(detail).forEach(role => {
       const entry = detail[role] || {};
       const cid = entry.centerId ?? entry.center_id;
       roles[role] = {
         status: entry.status || 'pending',
         centerId: cid != null ? String(cid) : null,
+        centerName: entry.centerName || entry.center_name || '',
+        subject: entry.subject || '',
       };
-    });
-  } else {
-    const backendRoles = Array.isArray(user?.roles) ? user.roles : [];
-    backendRoles.forEach(role => {
-      roles[role] = { status: 'approved', centerId: null };
     });
   }
   // Platform admin is system-wide; surface it independently of detail.
   if (user?.is_platform_admin) {
-    roles.admin = { status: 'approved', centerId: null };
+    roles.admin = { status: 'approved', centerId: null, centerName: '', subject: '' };
   }
-  const approvedRoles = Object.keys(roles).filter(r => roles[r]?.status === 'approved');
+  const pickActive = (status) => {
+    const candidates = Object.keys(roles).filter(r => roles[r]?.status === status);
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => ROLE_PRIORITY.indexOf(b) - ROLE_PRIORITY.indexOf(a));
+    return candidates[0];
+  };
+  // Approved always wins over pending; fall back to pending only if no
+  // approved role exists (so a student with both approved + pending lands
+  // on the approved dashboard, not pending-home).
+  const activeRole = pickActive('approved') || pickActive('pending') || pickActive('rejected') || null;
   return {
     id: `api:${user.id}`,
     backendId: user.id,
@@ -152,40 +184,42 @@ const mapBackendUser = (user) => {
     phone: user.normalized_phone || user.phone,
     password: '',
     roles,
-    activeRole: approvedRoles[0] || Object.keys(roles)[0] || null,
+    activeRole,
     joined: (user.created_at || '').slice(0, 10),
     isPlatformAdmin: !!user.is_platform_admin,
+    isActive: user.is_active !== false,
+    telegramLinked: !!user.telegram_linked,
     _api: true,
   };
 };
 
-const saveAuth = ({ token, refresh, user }) => {
-  if (token) localStorage.setItem(AUTH_TOKEN_KEY, token);
-  if (refresh) localStorage.setItem(AUTH_REFRESH_KEY, refresh);
-  if (user) localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+const saveAuth = ({ token, refresh, user, cookieAuth } = {}) => {
+  if (cookieAuth) {
+    _removeAuth(AUTH_TOKEN_KEY);
+    _removeAuth(AUTH_REFRESH_KEY);
+  } else {
+    if (token) _writeAuth(AUTH_TOKEN_KEY, token);
+    if (refresh) _writeAuth(AUTH_REFRESH_KEY, refresh);
+  }
+  if (user) _writeAuth(AUTH_USER_KEY, JSON.stringify(user));
 };
 
 const loadAuth = () => {
-  try {
-    const token = localStorage.getItem(AUTH_TOKEN_KEY);
-    const refresh = localStorage.getItem(AUTH_REFRESH_KEY);
-    const rawUser = localStorage.getItem(AUTH_USER_KEY);
-    if (!token || !rawUser) return null;
-    return { token, refresh, user: JSON.parse(rawUser) };
-  } catch {
-    return null;
-  }
+  const token = _readAuth(AUTH_TOKEN_KEY);
+  const refresh = _readAuth(AUTH_REFRESH_KEY);
+  const rawUser = _readAuth(AUTH_USER_KEY);
+  if (!rawUser) return null;
+  try { return { token, refresh, user: JSON.parse(rawUser) }; } catch { return null; }
 };
 
 const clearAuth = () => {
-  localStorage.removeItem(AUTH_TOKEN_KEY);
-  localStorage.removeItem(AUTH_REFRESH_KEY);
-  localStorage.removeItem(AUTH_USER_KEY);
+  _removeAuth(AUTH_TOKEN_KEY);
+  _removeAuth(AUTH_REFRESH_KEY);
+  _removeAuth(AUTH_USER_KEY);
+  try { request('/api/auth/logout/', { method: 'POST', retryOnAuth: false }); } catch {}
 };
 
-const getToken = () => {
-  try { return localStorage.getItem(AUTH_TOKEN_KEY) || null; } catch { return null; }
-};
+const getToken = () => _readAuth(AUTH_TOKEN_KEY);
 
 export const OlympyApi = {
   API_BASE_URL,
@@ -199,8 +233,9 @@ export const OlympyApi = {
   // Auth
   login: (payload) => request('/api/auth/login/', { method: 'POST', body: payload }),
   register: (payload) => request('/api/auth/register/', { method: 'POST', body: payload }),
-  refreshToken: (refresh) => request('/api/auth/token/refresh/', { method: 'POST', body: { refresh }, retryOnAuth: false }),
+  refreshToken: (refresh) => request('/api/auth/token/refresh/', { method: 'POST', body: refresh ? { refresh } : undefined, retryOnAuth: false }),
   startTelegramVerification: (payload) => request('/api/auth/phone/start-telegram-verification/', { method: 'POST', body: payload }),
+  startTelegramLink: (token) => request('/api/auth/telegram/link/start/', { method: 'POST', token }),
   verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload }),
   // Me
   getMe: (token) => request('/api/me/', { token }),
@@ -210,6 +245,7 @@ export const OlympyApi = {
   joinCenter: (centerId, payload, token) => request(`/api/centers/${centerId}/join/`, { method: 'POST', body: payload, token }),
   getPendingMemberships: (centerId, role, token) => request(`/api/centers/${centerId}/memberships/pending/${role ? '?role=' + role : ''}`, { token }).then(unwrapList),
   getStaffMemberships: (centerId, role, token) => request(`/api/centers/${centerId}/memberships/staff/${role ? '?role=' + encodeURIComponent(role) : ''}`, { token }).then(unwrapList),
+  getStudentMemberships: (centerId, statusFilter, token) => request(`/api/centers/${centerId}/memberships/students/${statusFilter ? '?status=' + encodeURIComponent(statusFilter) : ''}`, { token }).then(unwrapList),
   createManager: (centerId, payload, token) => request(`/api/centers/${centerId}/managers/create/`, { method: 'POST', body: payload, token }),
   createTeacher: (centerId, payload, token) => request(`/api/centers/${centerId}/teachers/create/`, { method: 'POST', body: payload, token }),
   approveStudent: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-student/`, { method: 'POST', body: payload, token }),
@@ -218,6 +254,12 @@ export const OlympyApi = {
   getAdminCenters: (statusFilter, token) => request(`/api/admin/centers/${statusFilter ? '?status=' + statusFilter : ''}`, { token }).then(unwrapList),
   adminApproveCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/approve/`, { method: 'POST', token }),
   adminRejectCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/reject/`, { method: 'POST', token }),
+  // Admin users
+  getAdminUsers: (token) => request('/api/admin/users/', { token }).then(unwrapList),
+  adminSetUserActive: (userId, isActive, token) => request(`/api/admin/users/${userId}/set-active/`, { method: 'POST', body: { is_active: !!isActive }, token }),
+  // Subjects
+  getSubjects: (token) => request('/api/subjects/', { token }),
+  createSubject: (name, token) => request('/api/subjects/', { method: 'POST', body: { name }, token }),
   // Olympiads
   getOlympiads: (token) => request('/api/olympiads/', { token }).then(unwrapList),
   createOlympiad: (payload, token) => request('/api/olympiads/', { method: 'POST', body: payload, token }),
@@ -228,9 +270,22 @@ export const OlympyApi = {
   // Questions
   getQuestions: (centerId, token) => request(`/api/questions/?center=${centerId}`, { token }).then(unwrapList),
   createQuestion: (payload, token) => request('/api/questions/', { method: 'POST', body: payload, token }),
+  generateAiQuestions: (payload, token) => request('/api/questions/generate-ai/', { method: 'POST', body: payload, token }),
+  // Question with image — accepts a File via FormData
+  createQuestionMultipart: (payload, imageFile, token) => {
+    const fd = new FormData();
+    Object.keys(payload || {}).forEach(k => {
+      const v = payload[k];
+      if (v == null) return;
+      fd.append(k, Array.isArray(v) || typeof v === 'object' ? JSON.stringify(v) : String(v));
+    });
+    if (imageFile) fd.append('image', imageFile);
+    return request('/api/questions/', { method: 'POST', body: fd, token });
+  },
   // Attempts / results / leaderboard
   submitAttempt: (payload, token) => request('/api/attempts/', { method: 'POST', body: payload, token }),
   getMyResults: (token) => request('/api/results/me/', { token }).then(unwrapList),
+  getMyStats: (token) => request('/api/results/me/stats/', { token }),
   getLeaderboard: (olympiadId, token) => request(`/api/leaderboard/${olympiadId ? '?olympiad=' + olympiadId : ''}`, { token }).then(unwrapList),
   // Notifications
   getNotifications: (token) => request('/api/notifications/', { token }).then(unwrapList),

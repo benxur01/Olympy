@@ -41,3 +41,32 @@ class TestAttempt(models.Model):
 
     def __str__(self):
         return f'{self.user_id}@{self.olympiad_id} = {self.score}'
+
+
+class TestSession(models.Model):
+    """Server-side test start record and randomized question/option order."""
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='test_sessions',
+    )
+    olympiad = models.ForeignKey(
+        Olympiad,
+        on_delete=models.CASCADE,
+        related_name='test_sessions',
+    )
+    started_at = models.DateTimeField(auto_now_add=True)
+    question_order = models.JSONField(default=list, blank=True)
+    option_orders = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ['-started_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'olympiad'],
+                name='unique_user_olympiad_session',
+            ),
+        ]
+
+    def __str__(self):
+        return f'session:{self.user_id}@{self.olympiad_id}'

@@ -464,9 +464,10 @@ const getRoleStatus = (user, role) => user?.roles?.[role]?.status || null;
 const roleHomePage = (user) => {
   if (!user) return 'login';
   const approved = getApprovedRoles(user);
-  if (approved.length === 0) return 'pending-home';
   const active = user.activeRole && approved.includes(user.activeRole) ? user.activeRole : approved[0];
-  return ROLE_META[active]?.dest || 'student';
+  if (active) return ROLE_META[active]?.dest || 'student';
+  if (user.roles?.student) return 'student';
+  return 'pending-home';
 };
 
 // Status label localization

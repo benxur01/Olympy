@@ -147,6 +147,8 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
      'OPTIONS': {'min_length': 6}},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
 LANGUAGE_CODE = 'uz'
@@ -163,7 +165,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # DRF
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'accounts.authentication.OlympyJWTAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
@@ -180,17 +182,24 @@ REST_FRAMEWORK = {
         'anon': '20/min',
         'user': '100/min',
         'auth': '5/min',
+        'ai_question': '20/hour',
     },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,
 }
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),
+    # Short-lived access token reduces the blast radius if a token leaks.
+    # The frontend automatically refreshes via /api/auth/token/refresh/.
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': False,
 }
+JWT_ACCESS_COOKIE_NAME = os.environ.get('JWT_ACCESS_COOKIE_NAME', 'olympy_access')
+JWT_REFRESH_COOKIE_NAME = os.environ.get('JWT_REFRESH_COOKIE_NAME', 'olympy_refresh')
+JWT_COOKIE_SAMESITE = os.environ.get('JWT_COOKIE_SAMESITE', 'Lax')
 
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
@@ -199,6 +208,21 @@ CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Asia/Tashkent'
 CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Periodic tasks (used as a fallback when DatabaseScheduler is empty;
+# olympiads/migrations/0002_add_celery_beat_schedule.py also seeds these
+# rows into django_celery_beat). Both define the same name so duplicate
+# scheduling is safe.
+CELERY_BEAT_SCHEDULE = {
+    'finish-expired-olympiads': {
+        'task': 'olympiads.tasks.finish_expired_olympiads',
+        'schedule': timedelta(minutes=5),
+    },
+    'cleanup-phone-verifications': {
+        'task': 'accounts.tasks.cleanup_phone_verifications',
+        'schedule': timedelta(hours=1),
+    },
+}
 
 # CORS — production rejimida faqat aniq ro'yxatdagi originlar.
 CORS_ALLOW_ALL_ORIGINS = False
@@ -210,6 +234,7 @@ CORS_ALLOWED_ORIGINS = [
     o.strip() for o in _cors_origins.split(',')
     if o.strip()
 ]
+CORS_ALLOW_CREDENTIALS = True
 if not DEBUG and not CORS_ALLOWED_ORIGINS:
     raise ImproperlyConfigured('OLYMPY_CORS_ALLOWED_ORIGINS must be set in production')
 CSRF_TRUSTED_ORIGINS = [
@@ -238,3 +263,42 @@ PHONE_VERIFICATION_OTP_TTL_SECONDS = int(
 PHONE_VERIFICATION_MAX_ATTEMPTS = int(
     os.environ.get('PHONE_VERIFICATION_MAX_ATTEMPTS', '5')
 )
+
+# AI-assisted roster approval. AI extracts names only; backend permissions and
+# deterministic matching decide whether a pending student can be approved.
+AI_ROSTER_OPENAI_API_KEY = os.environ.get('AI_ROSTER_OPENAI_API_KEY') or os.environ.get('OPENAI_API_KEY', '')
+AI_ROSTER_OPENAI_API_KEYS = [
+    key.strip() for key in os.environ.get('AI_ROSTER_OPENAI_API_KEYS', '').split(',')
+    if key.strip()
+]
+if AI_ROSTER_OPENAI_API_KEY:
+    AI_ROSTER_OPENAI_API_KEYS.append(AI_ROSTER_OPENAI_API_KEY)
+AI_ROSTER_OPENAI_API_KEYS = list(dict.fromkeys(AI_ROSTER_OPENAI_API_KEYS))
+AI_ROSTER_GEMINI_API_KEY = os.environ.get('AI_ROSTER_GEMINI_API_KEY') or os.environ.get('GEMINI_API_KEY', '')
+AI_ROSTER_GEMINI_API_KEYS = [
+    key.strip() for key in os.environ.get('AI_ROSTER_GEMINI_API_KEYS', '').split(',')
+    if key.strip()
+]
+if AI_ROSTER_GEMINI_API_KEY:
+    AI_ROSTER_GEMINI_API_KEYS.append(AI_ROSTER_GEMINI_API_KEY)
+AI_ROSTER_GEMINI_API_KEYS = list(dict.fromkeys(AI_ROSTER_GEMINI_API_KEYS))
+AI_ROSTER_MODEL = os.environ.get('AI_ROSTER_MODEL', 'gpt-4o-mini')
+AI_ROSTER_GEMINI_MODEL = os.environ.get('AI_ROSTER_GEMINI_MODEL', 'gemini-1.5-flash')
+AI_ROSTER_AUTO_APPROVE = env_bool('AI_ROSTER_AUTO_APPROVE', True)
+AI_ROSTER_MIN_CONFIDENCE = float(os.environ.get('AI_ROSTER_MIN_CONFIDENCE', '0.98'))
+AI_ROSTER_MAX_NAMES = int(os.environ.get('AI_ROSTER_MAX_NAMES', '200'))
+AI_ROSTER_MAX_IMAGE_BYTES = int(os.environ.get('AI_ROSTER_MAX_IMAGE_BYTES', str(5 * 1024 * 1024)))
+
+# AI question generation for manager/teacher/owner panels. Generated questions
+# are only previews until the staff user explicitly saves them.
+AI_QUESTION_OPENAI_API_KEY = os.environ.get('AI_QUESTION_OPENAI_API_KEY', '')
+AI_QUESTION_OPENAI_API_KEYS = [
+    key.strip() for key in os.environ.get('AI_QUESTION_OPENAI_API_KEYS', '').split(',')
+    if key.strip()
+]
+if AI_QUESTION_OPENAI_API_KEY:
+    AI_QUESTION_OPENAI_API_KEYS.append(AI_QUESTION_OPENAI_API_KEY)
+AI_QUESTION_OPENAI_API_KEYS = list(dict.fromkeys(AI_QUESTION_OPENAI_API_KEYS))
+AI_QUESTION_MODEL = os.environ.get('AI_QUESTION_MODEL', 'gpt-4o-mini')
+AI_QUESTION_MAX_COUNT = int(os.environ.get('AI_QUESTION_MAX_COUNT', '30'))
+AI_QUESTION_MAX_OUTPUT_TOKENS = int(os.environ.get('AI_QUESTION_MAX_OUTPUT_TOKENS', '6000'))

@@ -11,8 +11,9 @@ from rest_framework.response import Response
 from centers.models import CenterMembership
 from olympiads.models import Olympiad
 
-from .models import TestAttempt
+from .models import TestAttempt, TestSession
 from .serializers import SubmitAttemptSerializer, TestAttemptSerializer
+from .session_utils import score_session_answers, session_is_expired
 
 
 @api_view(['POST'])
@@ -64,31 +65,31 @@ def submit_attempt(request):
                 status=http_status.HTTP_403_FORBIDDEN,
             )
 
-        answers = serializer.validated_data.get('answers', {}) or {}
-        questions = list(olympiad.questions.all())
-        total = len(questions)
-        correct = 0
-        earned_score = 0
-        for q in questions:
-            chosen = answers.get(str(q.id))
-            if chosen is None:
-                chosen = answers.get(q.id)  # tolerate int keys
-            if chosen is not None and int(chosen) == q.correct_answer:
-                correct += 1
-                earned_score += q.score
-        wrong = total - correct
-        max_possible = sum(q.score for q in questions)
-        score = round((earned_score / max_possible) * 100) if max_possible else 0
-
-        # Compute rank under select_for_update lock so concurrent submissions
-        # cannot land on the same rank.
-        better = (
-            TestAttempt.objects
+        session = (
+            TestSession.objects
             .select_for_update()
-            .filter(olympiad=olympiad, score__gt=score)
-            .count()
+            .filter(user=request.user, olympiad=olympiad)
+            .first()
         )
-        rank = better + 1
+        if not session:
+            return Response(
+                {'detail': "Avval test savollarini boshlang"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        if session_is_expired(session, olympiad):
+            return Response({'detail': 'Test vaqti tugagan'},
+                            status=http_status.HTTP_400_BAD_REQUEST)
+
+        answers = serializer.validated_data.get('answers', {}) or {}
+        scored = score_session_answers(session, olympiad, answers)
+        total = scored['total']
+        correct = scored['correct']
+        wrong = scored['wrong']
+        max_possible = scored['max_possible']
+        score = scored['score']
+        time_spent = max(0, int((timezone.now() - session.started_at).total_seconds()))
+        if olympiad.duration_minutes:
+            time_spent = min(time_spent, olympiad.duration_minutes * 60)
 
         attempt = TestAttempt.objects.create(
             user=request.user,
@@ -98,10 +99,29 @@ def submit_attempt(request):
             correct_count=correct,
             wrong_count=wrong,
             total_questions=total,
-            time_spent=serializer.validated_data.get('time_spent', 0),
-            rank=rank,
+            time_spent=time_spent,
+            rank=None,
         )
 
+        # Re-rank ALL attempts on this olympiad. Lock them all under
+        # select_for_update so concurrent submissions cannot leave stale
+        # ranks. Tie-break: higher score, then less time spent, then earlier
+        # submission.
+        all_attempts = list(
+            TestAttempt.objects
+            .select_for_update()
+            .filter(olympiad=olympiad)
+            .order_by('-score', 'time_spent', 'submitted_at')
+        )
+        to_update = []
+        for index, item in enumerate(all_attempts, start=1):
+            if item.rank != index:
+                item.rank = index
+                to_update.append(item)
+        if to_update:
+            TestAttempt.objects.bulk_update(to_update, ['rank'])
+
+        attempt.refresh_from_db(fields=['rank'])
         data = TestAttemptSerializer(attempt).data
         data['max_score'] = max_possible
         return Response(data, status=http_status.HTTP_201_CREATED)
@@ -113,6 +133,53 @@ def my_results(request):
     """GET /api/results/me/ — current user's attempt history."""
     qs = TestAttempt.objects.filter(user=request.user).select_related('olympiad')
     return Response(TestAttemptSerializer(qs, many=True).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_stats(request):
+    """GET /api/results/me/stats/ — aggregated per-subject stats.
+
+    Returns:
+      {
+        total_attempts, average_score, best_rank,
+        subjects: [{subject, attempts, average_score}, ...]
+      }
+    """
+    qs = TestAttempt.objects.filter(user=request.user).select_related('olympiad')
+    attempts = list(qs)
+    total = len(attempts)
+    if total == 0:
+        return Response({
+            'total_attempts': 0,
+            'average_score': 0,
+            'best_rank': None,
+            'subjects': [],
+        })
+    avg = round(sum(a.score for a in attempts) / total, 1)
+    ranks = [a.rank for a in attempts if a.rank]
+    best_rank = min(ranks) if ranks else None
+    subject_buckets = {}
+    for a in attempts:
+        subj = a.olympiad.subject if a.olympiad else '—'
+        bucket = subject_buckets.setdefault(subj, {'subject': subj, 'attempts': 0, 'total': 0})
+        bucket['attempts'] += 1
+        bucket['total'] += a.score
+    subjects = [
+        {
+            'subject': b['subject'],
+            'attempts': b['attempts'],
+            'average_score': round(b['total'] / b['attempts'], 1) if b['attempts'] else 0,
+        }
+        for b in subject_buckets.values()
+    ]
+    subjects.sort(key=lambda x: -x['average_score'])
+    return Response({
+        'total_attempts': total,
+        'average_score': avg,
+        'best_rank': best_rank,
+        'subjects': subjects,
+    })
 
 
 @api_view(['GET'])
@@ -130,7 +197,16 @@ def leaderboard(request):
     )
     olympiad_id = request.query_params.get('olympiad')
     if olympiad_id:
-        qs = qs.filter(olympiad_id=olympiad_id)
+        olympiad = get_object_or_404(Olympiad.objects.select_related('center'), pk=olympiad_id)
+        if not request.user.is_platform_admin:
+            allowed = CenterMembership.objects.filter(
+                user=request.user,
+                center=olympiad.center,
+                status=CenterMembership.STATUS_APPROVED,
+            ).exists()
+            if not allowed:
+                return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+        qs = qs.filter(olympiad=olympiad)
     if not olympiad_id:
         allowed_center_ids = CenterMembership.objects.filter(
             user=request.user, status=CenterMembership.STATUS_APPROVED,

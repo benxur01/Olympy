@@ -8,6 +8,7 @@ urlpatterns = [
     path('<int:center_id>/join/', views.join_center, name='center-join'),
     path('<int:center_id>/memberships/pending/', views.pending_memberships, name='pending-memberships'),
     path('<int:center_id>/memberships/staff/', views.staff_memberships, name='staff-memberships'),
+    path('<int:center_id>/memberships/students/', views.students_memberships, name='students-memberships'),
     path('<int:center_id>/managers/create/', views.create_manager, name='create-manager'),
     path('<int:center_id>/teachers/create/', views.create_teacher, name='create-teacher'),
     path('<int:center_id>/approve-student/', views.approve_student, name='approve-student'),
