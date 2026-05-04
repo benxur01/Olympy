@@ -67,6 +67,10 @@ def centers_list_create(request):
     with transaction.atomic():
         center = EducationCenter.objects.create(
             name=serializer.validated_data['name'],
+            organization_type=serializer.validated_data.get('organization_type', "O'quv markaz"),
+            country=serializer.validated_data.get('country', "O'zbekiston"),
+            region=serializer.validated_data.get('region', ''),
+            district=serializer.validated_data.get('district', ''),
             city=serializer.validated_data['city'],
             subjects=serializer.validated_data.get('subjects', []),
             owner=request.user,
@@ -89,6 +93,28 @@ def centers_list_create(request):
             send_center_approval_request_notification(admin, request.user, center)
     return Response(EducationCenterSerializer(center).data,
                     status=http_status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_centers(request):
+    """GET /api/centers/mine/ — centers the current user owns.
+
+    Includes pending and rejected rows so a director with multiple
+    organizations can see each approval state in their panel.
+    """
+    queryset = (
+        EducationCenter.objects
+        .select_related('owner')
+        .filter(
+            Q(owner=request.user) |
+            Q(memberships__user=request.user, memberships__role=CenterMembership.ROLE_OWNER)
+        )
+        .distinct()
+        .order_by('-created_at')
+    )
+    queryset = _annotate_center_counts(queryset)
+    return Response(EducationCenterSerializer(queryset, many=True).data)
 
 
 # ─── Student / Teacher / Manager join flow ────────────────────────────────────

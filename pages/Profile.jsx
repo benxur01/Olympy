@@ -49,7 +49,7 @@ const ProfilePage = ({ user, onNavigate, embedded }) => {
             <div className="flex flex-wrap gap-3 mt-3">
               <div className="flex items-center gap-1.5 text-sm text-white/50"><Icon name="building" size={14} />{(() => {
                 const cid = user?.roles?.student?.centerId || user?.roles?.teacher?.centerId || user?.roles?.manager?.centerId;
-                return store.centers.find(c => c.id === cid)?.name || 'Markazsiz';
+                return store.centers.find(c => c.id === cid)?.name || 'Tashkilotsiz';
               })()}</div>
               <div className="flex items-center gap-1.5 text-sm text-white/50"><Icon name="clock" size={14} />{user?.joined ? `${user.joined} dan` : '—'}</div>
             </div>

@@ -28,13 +28,31 @@ class UserSerializer(serializers.ModelSerializer):
             CenterMembership.objects
             .filter(user=obj)
             .select_related('center')
+            .order_by('-created_at')
         )
         # If the same role appears at multiple centers, prefer an approved
         # membership over pending/rejected so the dashboard lands the user
         # on the active one.
         priority = {'approved': 3, 'pending': 2, 'rejected': 1}
         for membership in memberships:
+            center = membership.center
+            center_payload = {
+                'membership_id': membership.id,
+                'status': membership.status,
+                'centerId': membership.center_id,
+                'centerName': center.name if center else '',
+                'organizationType': center.organization_type if center else '',
+                'country': center.country if center else '',
+                'region': center.region if center else '',
+                'district': center.district if center else '',
+                'city': center.city if center else '',
+                'subject': membership.subject or '',
+                'created_at': membership.created_at.isoformat() if membership.created_at else '',
+            }
             existing = roles_detail.get(membership.role)
+            centers = [*(existing.get('centers', []) if existing else []), center_payload]
+            if existing:
+                existing['centers'] = centers
             if existing and priority.get(existing['status'], 0) >= priority.get(membership.status, 0):
                 continue
             roles_detail[membership.role] = {
@@ -42,7 +60,17 @@ class UserSerializer(serializers.ModelSerializer):
                 'centerId': membership.center_id,
                 'centerName': membership.center.name if membership.center_id else '',
                 'subject': membership.subject or '',
+                'centers': centers,
             }
+        for detail in roles_detail.values():
+            centers = detail.get('centers') or []
+            centers.sort(
+                key=lambda item: (
+                    priority.get(item.get('status'), 0),
+                    item.get('created_at') or '',
+                ),
+                reverse=True,
+            )
         # Centerless approved roles (e.g. a student who registered without
         # picking a center) are tracked in user.roles but have no
         # CenterMembership row. Surface them explicitly so the frontend
@@ -54,6 +82,7 @@ class UserSerializer(serializers.ModelSerializer):
                     'centerId': None,
                     'centerName': '',
                     'subject': '',
+                    'centers': [],
                 }
         return roles_detail
 

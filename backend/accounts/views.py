@@ -527,7 +527,20 @@ def _handle_telegram_callback(callback):
     _answer_callback_query(callback_id, text)
     chat_id = (message.get('chat') or {}).get('id') or actor.telegram_chat_id
     if chat_id:
-        _send_telegram_message(chat_id, f"{text}\nMarkaz: {membership.center.name}")
+        location = ' · '.join(part for part in [
+            membership.center.country or "O'zbekiston",
+            membership.center.region,
+            membership.center.district or membership.center.city,
+        ] if part)
+        _send_telegram_message(
+            chat_id,
+            (
+                f"{text}\n"
+                f"Tashkilot: {membership.center.name}\n"
+                f"Turi: {membership.center.organization_type}\n"
+                f"Manzil: {location}"
+            ),
+        )
     return {'ok': True}
 
 

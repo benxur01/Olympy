@@ -44,7 +44,8 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const apiQuestions = isApi && Array.isArray(apiQuestionsRes.data) ? apiQuestionsRes.data.map(mapApiQuestion) : null;
   const baseCenters = isApi ? (apiCenters || []) : store.centers;
   const center = centerId ? baseCenters.find(c => String(c.id) === String(centerId)) : null;
-  const centerName = center?.name || 'Markaz';
+  const centerName = center?.name || 'Tashkilot';
+  const centerType = center?.organizationType || "O'quv markaz";
   const olympiads = (isApi ? (apiOlympiads || []) : store.olympiads).filter(o => String(o.centerId) === String(centerId));
   const questions = (isApi ? (apiQuestions || []) : store.questions).filter(q => String(q.centerId) === String(centerId));
   const activeOlympiads = olympiads.filter(o => o.status === 'active');
@@ -54,7 +55,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       <PendingAccessCard
         title="Ustoz paneli ochilmadi"
         status="pending"
-        message="Ustoz paneliga kirish uchun direktor sizni tasdiqlangan markazga biriktirishi kerak."
+        message="Ustoz paneliga kirish uchun direktor sizni tasdiqlangan tashkilotga biriktirishi kerak."
         onBack={() => onNavigate('landing')}
       />
     );
@@ -126,7 +127,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-2xl font-black text-white">{centerName}</h2>
-          <p className="text-white/40 text-sm">Ustoz paneli · olimpiada va savollar</p>
+          <p className="text-white/40 text-sm">{centerType} · Ustoz paneli · olimpiada va savollar</p>
         </div>
         <button onClick={() => setCreateModal(true)} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
           <Icon name="plus" size={16} /> Olimpiada yaratish
@@ -184,7 +185,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-xl font-black text-white">Olimpiadalar</h2>
-          <p className="text-white/40 text-sm">{centerName}</p>
+          <p className="text-white/40 text-sm">{centerName} · {centerType}</p>
         </div>
         <button onClick={() => setCreateModal(true)} className="btn-primary px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
           <Icon name="plus" size={15} /> Yangi olimpiada
@@ -241,7 +242,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Topbar
           title={navItems.find(n => n.key === page)?.label || 'Ustoz paneli'}
-          subtitle={centerName}
+          subtitle={`${centerName} · ${centerType}`}
           user={user}
           onMenuClick={() => setMobileMenu(true)}
           actions={

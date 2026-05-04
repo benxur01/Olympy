@@ -1,6 +1,24 @@
 // pages/Auth.jsx — Login + multi-role Register
 
 const SUBJECTS_LIST = ['Matematika','Ingliz tili','Ona tili','Informatika','Fizika','Kimyo','Biologiya','Tarix','Geografiya'];
+const ORGANIZATION_TYPES = ["O'quv markaz", 'Maktab', 'Universitet/Kollej', 'Tashkilot', 'Online academy', 'Boshqa'];
+const UZBEKISTAN_DISTRICTS = {
+  'Andijon viloyati': ['Bo‘ston', 'Ulug‘nor', 'Jalaquduq', 'Oltinko‘l', 'Andijon', 'Asaka', 'Baliqchi', 'Buloqboshi', 'Izboskan', 'Qo‘rg‘ontepa', 'Marhamat', 'Paxtaobod', 'Xo‘jaobod', 'Shahrixon'],
+  'Buxoro viloyati': ['Olot', 'Buxoro', 'Vobkent', 'G‘ijduvon', 'Jondor', 'Kogon', 'Qorako‘l', 'Qorovulbozor', 'Peshku', 'Romitan', 'Shofirkon'],
+  'Farg‘ona viloyati': ['Oltiariq', 'Bag‘dod', 'Beshariq', 'Buvayda', 'Dang‘ara', 'Farg‘ona', 'Furqat', 'Qo‘shtepa', 'Quva', 'Rishton', 'So‘x', 'Toshloq', 'Uchko‘prik', 'O‘zbekiston', 'Yozyovon'],
+  'Jizzax viloyati': ['Arnasoy', 'Baxmal', 'Do‘stlik', 'Forish', 'G‘allaorol', 'Sharof Rashidov', 'Mirzacho‘l', 'Paxtakor', 'Yangiobod', 'Zomin', 'Zafarobod', 'Zarbdor'],
+  'Xorazm viloyati': ['Bog‘ot', 'Gurlan', 'Xonqa', 'Hazorasp', 'Xiva', 'Qo‘shko‘pir', 'Shovot', 'Urganch', 'Yangiariq', 'Yangibozor', 'Tuproqqal’a'],
+  'Namangan viloyati': ['Chortoq', 'Chust', 'Kosonsoy', 'Mingbuloq', 'Namangan', 'Norin', 'Pop', 'To‘raqo‘rg‘on', 'Uchqo‘rg‘on', 'Uychi', 'Yangiqo‘rg‘on'],
+  'Navoiy viloyati': ['Konimex', 'Karmana', 'Qiziltepa', 'Xatirchi', 'Navbahor', 'Nurota', 'Tomdi', 'Uchquduq'],
+  'Qashqadaryo viloyati': ['Chiroqchi', 'Dehqonobod', 'G‘uzor', 'Qamashi', 'Qarshi', 'Koson', 'Kasbi', 'Kitob', 'Mirishkor', 'Muborak', 'Nishon', 'Shahrisabz', 'Yakkabog‘', 'Ko‘kdala'],
+  'Samarqand viloyati': ['Bulung‘ur', 'Ishtixon', 'Jomboy', 'Kattaqo‘rg‘on', 'Qo‘shrabot', 'Narpay', 'Nurobod', 'Oqdaryo', 'Paxtachi', 'Payariq', 'Pastdarg‘om', 'Samarqand', 'Toyloq', 'Urgut'],
+  'Surxondaryo viloyati': ['Angor', 'Boysun', 'Denov', 'Jarqo‘rg‘on', 'Qiziriq', 'Qumqo‘rg‘on', 'Muzrabot', 'Oltinsoy', 'Sariosiyo', 'Sherobod', 'Sho‘rchi', 'Termiz', 'Uzun', 'Bandixon'],
+  'Sirdaryo viloyati': ['Oqoltin', 'Boyovut', 'Guliston', 'Xovos', 'Mirzaobod', 'Sayxunobod', 'Sardoba', 'Sirdaryo'],
+  'Toshkent viloyati': ['Oqqo‘rg‘on', 'Ohangaron', 'Bekobod', 'Bo‘stonliq', 'Bo‘ka', 'Zangiota', 'Qibray', 'Quyi Chirchiq', 'Parkent', 'Piskent', 'Toshkent', 'O‘rta Chirchiq', 'Chinoz', 'Yuqori Chirchiq', 'Yangiyo‘l'],
+  'Qoraqalpog‘iston Respublikasi': ['Bo‘zatov', 'Amudaryo', 'Beruniy', 'Qanliko‘l', 'Qorao‘zak', 'Kegeyli', 'Qo‘ng‘irot', 'Mo‘ynoq', 'Nukus', 'Taxiatosh', 'Taxtako‘pir', 'To‘rtko‘l', 'Xo‘jayli', 'Chimboy', 'Shumanay', 'Ellikqal’a'],
+  'Toshkent shahri': ['Bektemir', 'Chilonzor', 'Yashnobod', 'Mirobod', 'Mirzo Ulug‘bek', 'Sergeli', 'Shayxontohur', 'Olmazor', 'Uchtepa', 'Yakkasaroy', 'Yunusobod', 'Yangihayot'],
+};
+const UZBEKISTAN_REGIONS = Object.keys(UZBEKISTAN_DISTRICTS);
 
 // ─── Login ────────────────────────────────────────────────────────────────
 const LoginPage = ({ onNavigate, onLogin }) => {
@@ -37,7 +55,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
           <h2 className="text-3xl font-black text-white mb-4">Xush kelibsiz!</h2>
           <p className="text-white/40 max-w-sm mx-auto leading-relaxed mb-10">O'zbekistonning eng zamonaviy olimpiada platformasiga kiring va yutuqlarga erishishni boshlang.</p>
           <div className="grid grid-cols-2 gap-4 max-w-xs mx-auto">
-            {[{ v: '120+', l: "O'quv markaz" }, { v: '15K+', l: "O'quvchi" }, { v: '50K+', l: 'Savollar' }, { v: '98%', l: 'Qoniqish' }].map((s, i) => (
+            {[{ v: '120+', l: 'Tashkilot' }, { v: '15K+', l: "O'quvchi" }, { v: '50K+', l: 'Savollar' }, { v: '98%', l: 'Qoniqish' }].map((s, i) => (
               <div key={i} className="glass rounded-2xl p-4 text-center">
                 <div className="text-xl font-black gradient-text">{s.v}</div>
                 <div className="text-xs text-white/40">{s.l}</div>
@@ -109,7 +127,15 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   const [centerId, setCenterId] = React.useState(null);
   const [centerSearch, setCenterSearch] = React.useState('');
   const [subject, setSubject] = React.useState('');
-  const [newCenter, setNewCenter] = React.useState({ name: '', city: '', subjects: [] });
+  const [newCenter, setNewCenter] = React.useState({
+    name: '',
+    organizationType: "O'quv markaz",
+    customOrganizationType: '',
+    country: "O'zbekiston",
+    region: '',
+    district: '',
+    subjects: [],
+  });
   const [phoneError, setPhoneError] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [success, setSuccess] = React.useState(false);
@@ -118,6 +144,12 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
 
   const normalizedRegisterPhone = OlympyStore.normalizePhone(form.phone);
   const phoneValidForVerify = !!normalizedRegisterPhone && !phoneError;
+  const selectedOrganizationType = newCenter.organizationType === 'Boshqa'
+    ? newCenter.customOrganizationType.trim()
+    : newCenter.organizationType;
+  const newCenterTypeValid = !!selectedOrganizationType;
+  const districtOptions = UZBEKISTAN_DISTRICTS[newCenter.region] || [];
+  const newCenterLocationValid = !!newCenter.country && !!newCenter.region && !!newCenter.district;
 
   // Reset verification whenever the entered phone changes
   React.useEffect(() => { setPhoneVerified(false); }, [normalizedRegisterPhone]);
@@ -144,7 +176,9 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   const approvedCenters = centerOptions.filter(c => c.status === 'approved');
   const filteredCenters = approvedCenters.filter(c =>
     c.name.toLowerCase().includes(centerSearch.toLowerCase()) ||
-    c.city.toLowerCase().includes(centerSearch.toLowerCase())
+    String(c.city || '').toLowerCase().includes(centerSearch.toLowerCase()) ||
+    formatCenterLocation(c).toLowerCase().includes(centerSearch.toLowerCase()) ||
+    String(c.organizationType || '').toLowerCase().includes(centerSearch.toLowerCase())
   );
 
   const goNext = () => {
@@ -182,7 +216,11 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
       if (isNewCenter) {
         const createdCenter = await OlympyApi.registerCenter({
           name: newCenter.name,
-          city: newCenter.city,
+          organization_type: selectedOrganizationType || "O'quv markaz",
+          country: newCenter.country,
+          region: newCenter.region,
+          district: newCenter.district,
+          city: newCenter.district || newCenter.region,
           subjects: newCenter.subjects,
         }, token);
         selectedCenterId = createdCenter?.id;
@@ -226,10 +264,10 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
           <p className="text-white/50">Hisobingiz muvaffaqiyatli yaratildi</p>
           {!isAuto && (
             <p className="text-amber-300 text-sm mt-3">
-              {role === 'owner' ? "Markaz arizangiz Platform Adminga yuborildi" :
+              {role === 'owner' ? "Tashkilot/markaz arizangiz Platform Adminga yuborildi" :
                role === 'manager' ? "Manager arizangiz direktorga yuborildi" :
                role === 'teacher' ? "O'qituvchi arizangiz direktorga yuborildi" :
-               'Arizangiz markaz managerига yuborildi'}
+               'Arizangiz tashkilot manageriga yuborildi'}
             </p>
           )}
         </div>
@@ -348,9 +386,9 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
             <div className="text-sm text-white/60 mb-2">Qaysi rolda qo'shilmoqchisiz?</div>
             {[
               { k:'student', icon:'🎓', label:"O'quvchi", desc:'Olimpiadalarda qatnashish' },
-              { k:'teacher', icon:'✏️', label:"O'qituvchi", desc:'Savollar yaratish (markaz tasdig\'i bilan)' },
-              { k:'manager', icon:'🏫', label:'Manager', desc:'O\'quvchilarni boshqarish (markaz tasdig\'i bilan)' },
-              { k:'owner',   icon:'🏛', label:'Direktor', desc:"Yangi o'quv markaz ro'yxatdan o'tkazish" },
+              { k:'teacher', icon:'✏️', label:"O'qituvchi", desc:'Savollar yaratish (tashkilot tasdig\'i bilan)' },
+              { k:'manager', icon:'🏫', label:'Manager', desc:'O\'quvchilarni boshqarish (tashkilot tasdig\'i bilan)' },
+              { k:'owner',   icon:'🏛', label:'Direktor', desc:"Tashkilot yoki markaz ro'yxatdan o'tkazish" },
             ].map(r => (
               <button key={r.k} onClick={() => setRole(r.k)}
                 className={`w-full flex items-center gap-3 p-4 rounded-2xl text-left transition-all ${role === r.k ? 'border border-indigo-500 bg-indigo-500/10' : 'glass hover:bg-white/5 border border-transparent'}`}>
@@ -373,10 +411,10 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
         {step === 3 && role === 'student' && (
           <div className="space-y-4 animate-in">
             <div>
-              <label className="block text-sm text-white/60 mb-2 font-medium">O'quv markaz tanlash <span className="text-white/30">(ixtiyoriy)</span></label>
+              <label className="block text-sm text-white/60 mb-2 font-medium">Tashkilot yoki markaz tanlash <span className="text-white/30">(ixtiyoriy)</span></label>
               <div className="relative">
                 <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-                <input className="input-field pl-10" placeholder="Markaz nomi yoki shahar..." value={centerSearch}
+                <input className="input-field pl-10" placeholder="Nomi, turi, viloyat yoki tuman..." value={centerSearch}
                   onChange={e => setCenterSearch(e.target.value)} />
               </div>
             </div>
@@ -389,7 +427,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
                     <div className="w-9 h-9 gradient-bg rounded-xl flex items-center justify-center text-white font-bold text-sm">{c.name[0]}</div>
                     <div>
                       <div className="text-sm font-semibold text-white">{c.name}</div>
-                      <div className="text-xs text-white/40">{c.city} · {c.students} o'quvchi</div>
+                      <div className="text-xs text-white/40">{c.organizationType || "O'quv markaz"} · {formatCenterLocation(c)} · {c.students} o'quvchi</div>
                     </div>
                   </div>
                   {centerId === c.id && <Icon name="check" size={16} className="text-indigo-400" />}
@@ -413,10 +451,10 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
         {step === 3 && role === 'teacher' && (
           <div className="space-y-4 animate-in">
             <div>
-              <label className="block text-sm text-white/60 mb-2 font-medium">O'quv markaz</label>
+              <label className="block text-sm text-white/60 mb-2 font-medium">Tashkilot yoki markaz</label>
               <select className="input-field" value={centerId || ''} onChange={e => setCenterId(e.target.value || null)}>
                 <option value="">Tanlang...</option>
-                {approvedCenters.map(c => <option key={c.id} value={c.id}>{c.name} — {c.city}</option>)}
+                {approvedCenters.map(c => <option key={c.id} value={c.id}>{c.name} — {c.organizationType || "O'quv markaz"} — {formatCenterLocation(c)}</option>)}
               </select>
             </div>
             <div>
@@ -427,7 +465,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               </select>
             </div>
             <div className="glass rounded-xl p-3 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
-              <Icon name="info" size={14} /> Ariza markaz egasiga yuboriladi. Tasdiqlangach savol yarata olasiz.
+              <Icon name="info" size={14} /> Ariza direktor/egaga yuboriladi. Tasdiqlangach savol yarata olasiz.
             </div>
             <div className="flex gap-3">
               <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
@@ -441,14 +479,14 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
         {step === 3 && role === 'manager' && (
           <div className="space-y-4 animate-in">
             <div>
-              <label className="block text-sm text-white/60 mb-2 font-medium">O'quv markaz</label>
+              <label className="block text-sm text-white/60 mb-2 font-medium">Tashkilot yoki markaz</label>
               <select className="input-field" value={centerId || ''} onChange={e => setCenterId(e.target.value || null)}>
                 <option value="">Tanlang...</option>
-                {approvedCenters.map(c => <option key={c.id} value={c.id}>{c.name} — {c.city}</option>)}
+                {approvedCenters.map(c => <option key={c.id} value={c.id}>{c.name} — {c.organizationType || "O'quv markaz"} — {formatCenterLocation(c)}</option>)}
               </select>
             </div>
             <div className="glass rounded-xl p-3 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
-              <Icon name="info" size={14} /> Ariza markaz egasiga yuboriladi. Tasdiqlangach Manager paneliga kira olasiz.
+              <Icon name="info" size={14} /> Ariza direktor/egaga yuboriladi. Tasdiqlangach Manager paneliga kira olasiz.
             </div>
             <div className="flex gap-3">
               <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
@@ -461,16 +499,49 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
 
         {step === 3 && role === 'owner' && (
           <div className="space-y-4 animate-in">
-            <div className="text-sm text-white/60">Yangi o'quv markaz ma'lumotlari</div>
+            <div className="text-sm text-white/60">Yangi tashkilot yoki markaz ma'lumotlari</div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Markaz nomi</label>
-              <input className="input-field" placeholder="Masalan: Smart Education" value={newCenter.name}
-                onChange={e => setNewCenter({ ...newCenter, name: e.target.value })} />
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Tashkilot turi</label>
+              <select className="input-field" value={newCenter.organizationType}
+                onChange={e => setNewCenter({ ...newCenter, organizationType: e.target.value, customOrganizationType: e.target.value === 'Boshqa' ? newCenter.customOrganizationType : '' })}>
+                {ORGANIZATION_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
+              </select>
+            </div>
+            {newCenter.organizationType === 'Boshqa' && (
+              <div>
+                <label className="block text-xs text-white/50 mb-1.5 font-medium">Tashkilot turini yozing</label>
+                <input className="input-field" placeholder="Masalan: Respublika markazi" value={newCenter.customOrganizationType}
+                  onChange={e => setNewCenter({ ...newCenter, customOrganizationType: e.target.value })} />
+              </div>
+            )}
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Davlat</label>
+              <select className="input-field" value={newCenter.country}
+                onChange={e => setNewCenter({ ...newCenter, country: e.target.value })}>
+                <option value="O'zbekiston">O'zbekiston</option>
+              </select>
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Shahar</label>
-              <input className="input-field" placeholder="Toshkent" value={newCenter.city}
-                onChange={e => setNewCenter({ ...newCenter, city: e.target.value })} />
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Viloyat</label>
+              <select className="input-field" value={newCenter.region}
+                onChange={e => setNewCenter({ ...newCenter, region: e.target.value, district: '' })}>
+                <option value="">Viloyatni tanlang...</option>
+                {UZBEKISTAN_REGIONS.map(region => <option key={region} value={region}>{region}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Tuman/Shahar</label>
+              <select className="input-field" value={newCenter.district}
+                disabled={!newCenter.region}
+                onChange={e => setNewCenter({ ...newCenter, district: e.target.value })}>
+                <option value="">{newCenter.region ? 'Tumanni tanlang...' : 'Avval viloyatni tanlang'}</option>
+                {districtOptions.map(district => <option key={district} value={district}>{district}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Tashkilot/markaz nomi</label>
+              <input className="input-field" placeholder="Masalan: Smart Education" value={newCenter.name}
+                onChange={e => setNewCenter({ ...newCenter, name: e.target.value })} />
             </div>
             <div>
               <label className="block text-xs text-white/50 mb-1.5 font-medium">Yo'naltirilgan fanlar</label>
@@ -491,12 +562,12 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               </div>
             </div>
             <div className="glass rounded-xl p-3 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
-              <Icon name="info" size={14} /> Markaz Platform Admin tomonidan tasdiqlangach faollashadi.
+              <Icon name="info" size={14} /> Tashkilot Platform Admin tomonidan tasdiqlangach faollashadi.
             </div>
             <div className="flex gap-3">
               <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
-              <button onClick={submit} disabled={loading || !newCenter.name || !newCenter.city} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
-                {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Markazni yuborish'}
+              <button onClick={submit} disabled={loading || !newCenterTypeValid || !newCenterLocationValid || !newCenter.name} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+                {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Arizani yuborish'}
               </button>
             </div>
           </div>

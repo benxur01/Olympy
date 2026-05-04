@@ -142,6 +142,20 @@ const request = async (
 // roles approved at the same time. admin > owner > manager > teacher > student.
 const ROLE_PRIORITY = ['student', 'teacher', 'manager', 'owner', 'admin'];
 
+const mapRoleCenter = (center) => ({
+  membershipId: center.membership_id ?? center.membershipId ?? null,
+  status: center.status || 'pending',
+  centerId: center.centerId ?? center.center_id ?? null,
+  centerName: center.centerName || center.center_name || center.name || '',
+  organizationType: center.organizationType || center.organization_type || "O'quv markaz",
+  country: center.country || "O'zbekiston",
+  region: center.region || '',
+  district: center.district || '',
+  city: center.city || center.district || center.region || '',
+  subject: center.subject || '',
+  createdAt: center.created_at || center.createdAt || '',
+});
+
 const mapBackendUser = (user) => {
   const detail = user?.roles_detail && typeof user.roles_detail === 'object'
     ? user.roles_detail
@@ -156,11 +170,18 @@ const mapBackendUser = (user) => {
     Object.keys(detail).forEach(role => {
       const entry = detail[role] || {};
       const cid = entry.centerId ?? entry.center_id;
+      const centers = Array.isArray(entry.centers)
+        ? entry.centers.map(mapRoleCenter)
+        : [];
       roles[role] = {
         status: entry.status || 'pending',
         centerId: cid != null ? String(cid) : null,
         centerName: entry.centerName || entry.center_name || '',
         subject: entry.subject || '',
+        centers: centers.map(center => ({
+          ...center,
+          centerId: center.centerId != null ? String(center.centerId) : null,
+        })),
       };
     });
   }
@@ -242,6 +263,7 @@ export const OlympyApi = {
   getMe: (token) => request('/api/me/', { token }),
   // Centers
   getCenters: () => request('/api/centers/').then(unwrapList),
+  getMyCenters: (token) => request('/api/centers/mine/', { token }).then(unwrapList),
   registerCenter: (payload, token) => request('/api/centers/', { method: 'POST', body: payload, token }),
   joinCenter: (centerId, payload, token) => request(`/api/centers/${centerId}/join/`, { method: 'POST', body: payload, token }),
   getPendingMemberships: (centerId, role, token) => request(`/api/centers/${centerId}/memberships/pending/${role ? '?role=' + role : ''}`, { token }).then(unwrapList),

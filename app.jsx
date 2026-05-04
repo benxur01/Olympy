@@ -92,6 +92,15 @@ const App = () => {
     setPage(ROLE_META[role]?.dest || 'student');
   };
 
+  const updateCurrentUser = (nextUser) => {
+    if (!nextUser?._api) return;
+    setApiUser(nextUser);
+    try {
+      const auth = globalThis.OlympyApi?.loadAuth?.();
+      globalThis.OlympyApi.saveAuth({ token: auth?.token, refresh: auth?.refresh, user: nextUser });
+    } catch {}
+  };
+
   // Auth guard
   const needsAuth = ['student','manager','admin','teacher','owner','test','results','leaderboard','profile','pending-home'];
   useEffect(() => {
@@ -120,6 +129,7 @@ const App = () => {
       const props = {
         user, onNavigate: navigate, onLogout: handleLogout,
         onOpenSwitcher: () => setSwitcherOpen(true),
+        onUserUpdate: updateCurrentUser,
       };
       if (role === 'student') return <StudentDashboard {...props} />;
       if (role === 'manager') return <ManagerDashboard {...props} />;

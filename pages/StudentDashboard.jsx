@@ -86,7 +86,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     { key: 'home', icon: 'home', label: 'Asosiy' },
     { key: 'olympiads', icon: 'trophy', label: 'Olimpiadalar' },
     { key: 'results', icon: 'chart', label: 'Natijalar' },
-    { key: 'centers', icon: 'building', label: 'O\'quv markazlar' },
+    { key: 'centers', icon: 'building', label: 'Tashkilotlar' },
     { key: 'leaderboard', icon: 'star', label: 'Reyting' },
     { key: 'profile', icon: 'eye', label: 'Profil' },
     { divider: true, key: 'd1' },
@@ -135,8 +135,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         {!hasCenter && (
           <div className="glass rounded-2xl p-4 border border-indigo-500/20 max-w-xs">
             <div className="text-xs text-indigo-300 font-medium mb-1">💡 Maslahat</div>
-            <p className="text-xs text-white/50 mb-3">Yaqinda o'quv markazlarda olimpiadalar bo'lib o'tadi</p>
-            <button onClick={() => setPage('centers')} className="btn-primary text-xs px-4 py-2 rounded-xl font-semibold">O'quv markaz topish</button>
+            <p className="text-xs text-white/50 mb-3">Yaqinda tashkilotlarda olimpiadalar bo'lib o'tadi</p>
+            <button onClick={() => setPage('centers')} className="btn-primary text-xs px-4 py-2 rounded-xl font-semibold">Tashkilot topish</button>
           </div>
         )}
       </div>
@@ -163,14 +163,14 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       {studentStatus && studentCenterId && myCenter && (
         <div className={`glass rounded-2xl p-5 border ${studentStatus === 'approved' ? 'border-indigo-500/10' : studentStatus === 'rejected' ? 'border-rose-500/20' : 'border-amber-500/20'}`}>
           <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-semibold text-white">O'quv markaz holati</div>
+            <div className="text-sm font-semibold text-white">Tashkilot/markaz holati</div>
             <Badge status={statusLabel(studentStatus)} />
           </div>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center text-white font-bold">{myCenter.name[0]}</div>
             <div className="flex-1">
               <div className="font-semibold text-white">{myCenter.name}</div>
-              <div className="text-xs text-white/40">{myCenter.city}{user.joined ? ` · A'zo bo'lgan: ${user.joined}` : ''}</div>
+              <div className="text-xs text-white/40">{myCenter.organizationType || "O'quv markaz"} · {formatCenterLocation(myCenter)}{user.joined ? ` · A'zo bo'lgan: ${user.joined}` : ''}</div>
             </div>
           </div>
           {studentStatus === 'pending' && (
@@ -180,7 +180,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           )}
           {studentStatus === 'rejected' && (
             <div className="mt-3 text-xs text-rose-300 flex items-center gap-1.5">
-              <Icon name="info" size={12} /> Ariza rad etildi. Boshqa markaz tanlashingiz mumkin.
+              <Icon name="info" size={12} /> Ariza rad etildi. Boshqa tashkilot tanlashingiz mumkin.
             </div>
           )}
         </div>
@@ -194,7 +194,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         </div>
         {!isCenterApproved && (
           <div className="glass rounded-2xl p-4 border border-amber-500/20 mb-4 text-sm text-amber-300 flex items-center gap-2">
-            <Icon name="info" size={14} /> Olimpiadaga qatnashish uchun o'quv markaz tasdig'i kerak.
+            <Icon name="info" size={14} /> Olimpiadaga qatnashish uchun tashkilot tasdig'i kerak.
           </div>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -271,7 +271,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       </div>
       {!isCenterApproved && (
         <div className="glass rounded-2xl p-4 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
-          <Icon name="info" size={14} /> Olimpiadaga qatnashish uchun o'quv markaz tasdig'i kerak.
+          <Icon name="info" size={14} /> Olimpiadaga qatnashish uchun tashkilot tasdig'i kerak.
         </div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -282,7 +282,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             return true;
           });
           if (filteredOlympiads.length === 0 && isCenterApproved) {
-            return <div className="md:col-span-2 glass rounded-2xl p-8 text-center text-white/40 text-sm">{olympiadFilter === 'Barchasi' ? "Bu markaz uchun olimpiadalar mavjud emas" : `${olympiadFilter} olimpiadalar topilmadi`}</div>;
+            return <div className="md:col-span-2 glass rounded-2xl p-8 text-center text-white/40 text-sm">{olympiadFilter === 'Barchasi' ? "Bu tashkilot uchun olimpiadalar mavjud emas" : `${olympiadFilter} olimpiadalar topilmadi`}</div>;
           }
           return filteredOlympiads.map(o => (
             <OlympiadCard key={o.id} olympiad={o} locked={!isCenterApproved}
@@ -330,22 +330,26 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 
   const renderCenters = () => {
     const liveCenters = (isApi ? (apiCenters || []) : store.centers).filter(c => c.status === 'approved');
-    const cities = [...new Set(liveCenters.map(c => c.city))];
+    const cities = [...new Set(liveCenters.map(c => c.region || c.city).filter(Boolean))];
     const filtered = liveCenters.filter(c =>
-      c.name.toLowerCase().includes(centerSearch.toLowerCase()) &&
-      (!cityFilter || c.city === cityFilter)
+      (
+        c.name.toLowerCase().includes(centerSearch.toLowerCase()) ||
+        String(c.organizationType || '').toLowerCase().includes(centerSearch.toLowerCase()) ||
+        formatCenterLocation(c).toLowerCase().includes(centerSearch.toLowerCase())
+      ) &&
+      (!cityFilter || c.region === cityFilter || c.city === cityFilter)
     );
     return (
       <div className="p-6 space-y-6 animate-in">
-        <h2 className="text-xl font-black text-white">O'quv markazlar</h2>
+        <h2 className="text-xl font-black text-white">Tashkilotlar va markazlar</h2>
         <div className="flex flex-wrap gap-3">
           <div className="relative flex-1 min-w-48">
             <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-            <input className="input-field pl-10 py-2.5" placeholder="Markaz qidirish..." value={centerSearch}
+            <input className="input-field pl-10 py-2.5" placeholder="Nomi, turi, viloyat yoki tuman..." value={centerSearch}
               onChange={e => setCenterSearch(e.target.value)} />
           </div>
           <select className="input-field py-2.5 w-auto" value={cityFilter} onChange={e => setCityFilter(e.target.value)}>
-            <option value="">Barcha shaharlar</option>
+            <option value="">Barcha viloyatlar</option>
             {cities.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
@@ -359,7 +363,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   <div className="w-12 h-12 gradient-bg rounded-2xl flex items-center justify-center text-white font-black text-lg flex-shrink-0">{c.name[0]}</div>
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-white">{c.name}</div>
-                    <div className="text-xs text-white/40">{c.city}</div>
+                    <div className="text-xs text-white/40">{c.organizationType || "O'quv markaz"} · {formatCenterLocation(c)}</div>
                     <div className="flex items-center gap-1 mt-1"><span className="text-amber-400 text-xs">★</span><span className="text-xs text-white/60">{c.rating || '—'}</span></div>
                   </div>
                 </div>
@@ -392,10 +396,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 <div className="w-12 h-12 gradient-bg rounded-xl flex items-center justify-center text-white font-black text-lg">{centerModal.name[0]}</div>
                 <div>
                   <div className="font-bold text-white">{centerModal.name}</div>
-                  <div className="text-sm text-white/40">{centerModal.city} · {centerModal.students} o'quvchi</div>
+                  <div className="text-sm text-white/40">{centerModal.organizationType || "O'quv markaz"} · {formatCenterLocation(centerModal)} · {centerModal.students} o'quvchi</div>
                 </div>
               </div>
-              <p className="text-white/60 text-sm mb-6 leading-relaxed">Ariza yuborilgandan so'ng, markaz manageri sizning arizangizni Telegram orqali ko'rib chiqadi va tasdiqlaydi.</p>
+              <p className="text-white/60 text-sm mb-6 leading-relaxed">Ariza yuborilgandan so'ng, manager sizning arizangizni Telegram orqali ko'rib chiqadi va tasdiqlaydi.</p>
               <div className="glass rounded-xl p-4 mb-6 border border-indigo-500/20">
                 <TelegramMockup studentName={user.name} centerName={centerModal.name} onApprove={() => {}} onReject={() => {}} />
               </div>
@@ -460,7 +464,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 const OlympiadCard = ({ olympiad: o, onStart, locked }) => {
   const isActive = o.status === 'active';
   const disabled = !isActive || locked;
-  const label = locked ? "🔒 Markaz tasdig'i kerak" : (isActive ? '▶ Boshlash' : (o.status === 'draft' ? 'Hali e\'lon qilinmagan' : 'Tugagan'));
+  const label = locked ? "🔒 Tasdiq kerak" : (isActive ? '▶ Boshlash' : (o.status === 'draft' ? 'Hali e\'lon qilinmagan' : 'Tugagan'));
   const time = o.startTime || o.time || '';
   const qCount = (o.questionIds && o.questionIds.length) || o.questions || 0;
   return (
