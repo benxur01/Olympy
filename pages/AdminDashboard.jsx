@@ -147,6 +147,18 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     () => isApi ? OlympyApi.getNotifications(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+  const apiUsersRes = useApiData(
+    () => isApi ? OlympyApi.getAdminUsers(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiOlympiadsRes = useApiData(
+    () => isApi ? OlympyApi.getOlympiads(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiSubjectsRes = useApiData(
+    () => isApi ? OlympyApi.getSubjects(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
 
   const apiCenters = isApi && Array.isArray(apiCentersRes.data)
     ? apiCentersRes.data.map(mapApiCenter)
@@ -155,7 +167,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const centers = rawCenters.filter(c => c.status !== 'rejected');
   const approvedCenters = centers.filter(c => c.status === 'approved');
   const pendingCenters = centers.filter(c => c.status === 'pending');
-  const allUsers = store.users;
+  const apiAllUsers = isApi && Array.isArray(apiUsersRes.data)
+    ? apiUsersRes.data.map(OlympyApi.mapBackendUser)
+    : null;
+  const allUsers = apiAllUsers || store.users;
+  const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data)
+    ? apiOlympiadsRes.data.map(mapApiOlympiad)
+    : null;
+  const subjects = isApi
+    ? (Array.isArray(apiSubjectsRes.data) ? apiSubjectsRes.data : [])
+    : store.subjects;
 
   const notifications = isApi && Array.isArray(apiNotificationsRes.data)
     ? apiNotificationsRes.data.map(mapApiNotification)
@@ -236,6 +257,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   };
 
   const toggleBlock = (row) => {
+    if (isApi) {
+      const numericUserId = row?.backendId ?? (typeof row?.id === 'string' && row.id.startsWith('api:') ? Number(row.id.slice(4)) : null);
+      if (!numericUserId) { showToast("Backend ID topilmadi"); setBlockModal(null); return; }
+      const nextActive = row.status === 'Bloklangan';
+      OlympyApi.adminSetUserActive(numericUserId, nextActive, OlympyApi.getToken())
+        .then(() => { showToast('Foydalanuvchi holati yangilandi'); apiUsersRes.reload(); })
+        .catch(err => { console.warn('adminSetUserActive failed:', err); showToast(OlympyApi.toUserMessage(err)); })
+        .finally(() => setBlockModal(null));
+      return;
+    }
     setBlockedIds(prev => ({ ...prev, [row.id]: !prev[row.id] }));
     setBlockModal(null);
     showToast('Foydalanuvchi holati yangilandi');
@@ -246,14 +277,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     const primary = u.activeRole && approved.includes(u.activeRole) ? u.activeRole : (approved[0] || 'student');
     const centerId = u.roles?.[primary]?.centerId;
     const center = centerId ? centers.find(c => String(c.id) === String(centerId)) : null;
+    const apiBlocked = isApi ? (u.isActive === false) : false;
     return {
       id: u.id,
+      backendId: u.backendId,
       name: u.name,
       phone: u.phone,
       role: ROLE_META[primary]?.label || primary,
-      center: center?.name || '—',
+      center: center?.name || u.roles?.[primary]?.centerName || '—',
       joined: u.joined,
-      status: blockedIds[u.id] ? 'Bloklangan' : 'Faol',
+      status: (isApi ? apiBlocked : !!blockedIds[u.id]) ? 'Bloklangan' : 'Faol',
     };
   });
 
@@ -437,146 +470,107 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     </div>
   );
 
-  const renderHome = () => (
+  const renderHome = () => {
+    const olympiadList = isApi ? (apiOlympiads || []) : store.olympiads;
+    const activeOlympiadCount = olympiadList.filter(o => o.status === 'active').length;
+    const totalOlympiads = olympiadList.length;
+    const activeUsersCount = allUsers.filter(u => u.isActive !== false).length;
+    const studentCount = allUsers.filter(u => {
+      const r = u.roles || {};
+      return r.student?.status === 'approved';
+    }).length;
+    return (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] bg-[#f6f8fc] p-[18px]">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-[20px] font-extrabold leading-tight text-slate-900">Dashboard</h1>
-          <p className="mt-1 text-[12px] font-medium text-slate-500">Overview of your business performance and platform metrics.</p>
-        </div>
-        <div className="flex flex-wrap gap-3">
-          <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-sm">
-            <Icon name="clock" size={14} /> May 20 - Jun 20, 2026 <Icon name="chevronDown" size={13} />
-          </button>
-          <button className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 text-[12px] font-semibold text-slate-600 shadow-sm">
-            <Icon name="upload" size={14} /> Download Report <Icon name="chevronDown" size={13} />
-          </button>
+          <h1 className="text-[20px] font-extrabold leading-tight text-slate-900">Boshqaruv paneli</h1>
+          <p className="mt-1 text-[12px] font-medium text-slate-500">Olympy platformasi ko'rsatkichlari va arizalar holati.</p>
         </div>
       </div>
 
       <div className="grid gap-[12px] md:grid-cols-2 xl:grid-cols-4">
-        <AdminMetricCard label="Total Centers" value={approvedCenters.length.toLocaleString()} delta={pendingCenterReqs.length ? `↑ ${pendingCenterReqs.length} pending` : '✓ all reviewed'} icon={<Icon name="building" size={16} />} tone="indigo" />
-        <AdminMetricCard label="Requests" value={pendingCenterReqs.length.toLocaleString()} delta={pendingCenterReqs.length ? '↑ needs review' : '✓ clear'} icon={<Icon name="bell" size={16} />} tone="emerald" />
-        <AdminMetricCard label="Customers" value={allUsers.length.toLocaleString()} delta="↑ 15.3%" icon={<Icon name="users" size={16} />} tone="amber" />
-        <AdminMetricCard label="Approval Rate" value={`${approvedCenterPct}%`} delta="↑ 2.1%" icon={<Icon name="chart" size={16} />} tone="rose" />
+        <AdminMetricCard label="O'quv markazlar" value={approvedCenters.length.toLocaleString()} delta={pendingCenterReqs.length ? `${pendingCenterReqs.length} ta tasdiqlash kutilmoqda` : 'Barchasi ko\'rib chiqilgan'} icon={<Icon name="building" size={16} />} tone="indigo" />
+        <AdminMetricCard label="Pending arizalar" value={pendingCenterReqs.length.toLocaleString()} delta={pendingCenterReqs.length ? "Ko'rib chiqish kerak" : "Bo'sh"} icon={<Icon name="bell" size={16} />} tone="emerald" />
+        <AdminMetricCard label="Foydalanuvchilar" value={allUsers.length.toLocaleString()} delta={`${activeUsersCount} ta faol`} icon={<Icon name="users" size={16} />} tone="amber" />
+        <AdminMetricCard label="Olimpiadalar" value={totalOlympiads.toLocaleString()} delta={`${activeOlympiadCount} ta faol`} icon={<Icon name="trophy" size={16} />} tone="rose" />
       </div>
 
-      <div className="grid gap-[12px] xl:grid-cols-[1.55fr_1.05fr_.95fr]">
-        <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[13px] font-extrabold text-slate-800">Revenue Overview</h2>
-            <button className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 px-3 text-[11px] font-bold text-slate-500">Daily <Icon name="chevronDown" size={12} /></button>
-          </div>
-          <div className="grid grid-cols-[42px_1fr] gap-2">
-            <div className="flex h-[226px] flex-col justify-between py-2 text-[10px] font-semibold text-slate-400">
-              <span>$15M</span><span>$12M</span><span>$9M</span><span>$6M</span><span>$3M</span><span>$0</span>
-            </div>
-            <AdminLineChart pendingCount={pendingCenterReqs.length} />
-          </div>
-          <div className="ml-[50px] mt-1 grid grid-cols-5 text-[11px] font-semibold text-slate-400">
-            <span>May 20</span><span>May 27</span><span>Jun 3</span><span>Jun 10</span><span>Jun 20</span>
-          </div>
-        </section>
+      <div className="grid gap-[12px] md:grid-cols-3">
+        <AdminMetricCard label="O'quvchilar" value={studentCount.toLocaleString()} delta="Tasdiqlangan" icon={<Icon name="users" size={16} />} tone="indigo" />
+        <AdminMetricCard label="Faol olimpiadalar" value={activeOlympiadCount.toLocaleString()} delta={activeOlympiadCount ? "Hozir o'tmoqda" : "Hech qaysi faol emas"} icon={<Icon name="bolt" size={16} />} tone="emerald" />
+        <AdminMetricCard label="Tasdiqlangan markazlar foizi" value={`${approvedCenterPct}%`} delta="Hammasi ichidan" icon={<Icon name="chart" size={16} />} tone="rose" />
+      </div>
 
+      <div className="grid gap-[12px] xl:grid-cols-[1.55fr_1.45fr]">
         <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[13px] font-extrabold text-slate-800">Top Products</h2>
-            <button onClick={() => setPage('centers')} className="text-[11px] font-bold text-indigo-600">View all</button>
+            <h2 className="text-[13px] font-extrabold text-slate-800">Eng so'nggi markazlar</h2>
+            <button onClick={() => setPage('centers')} className="text-[11px] font-bold text-indigo-600">Hammasi</button>
           </div>
-          <div className="grid grid-cols-[1fr_58px_74px] border-b border-slate-100 pb-2 text-[10px] font-extrabold text-slate-400">
-            <span>Product</span><span className="text-right">Users</span><span className="text-right">Status</span>
+          <div className="grid grid-cols-[1fr_70px_74px] border-b border-slate-100 pb-2 text-[10px] font-extrabold text-slate-400">
+            <span>Markaz</span><span className="text-right">O'quvchi</span><span className="text-right">Holat</span>
           </div>
           <div className="divide-y divide-slate-100">
-            {dashboardCenters.map((center, index) => (
-              <div key={center.id} className="grid grid-cols-[1fr_58px_74px] items-center gap-2 py-3">
+            {dashboardCenters.map(center => (
+              <div key={center.id} className="grid grid-cols-[1fr_70px_74px] items-center gap-2 py-3">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-slate-100 text-xs font-black text-slate-700">{center.name?.[0] || 'O'}</div>
-                  <div className="truncate text-[12px] font-bold text-slate-700">{center.name}</div>
+                  <div className="min-w-0">
+                    <div className="truncate text-[12px] font-bold text-slate-700">{center.name}</div>
+                    <div className="truncate text-[10px] text-slate-400">{center.city}</div>
+                  </div>
                 </div>
-                <div className="text-right text-[11px] font-semibold text-slate-500">{(center.students || index * 4 + 12).toLocaleString()}</div>
+                <div className="text-right text-[11px] font-semibold text-slate-500">{(center.students || 0).toLocaleString()}</div>
                 <div className="text-right"><AdminPill status={center.status} /></div>
               </div>
             ))}
-            {dashboardCenters.length === 0 && <div className="py-10 text-center text-[12px] font-semibold text-slate-400">No products yet</div>}
+            {dashboardCenters.length === 0 && <div className="py-10 text-center text-[12px] font-semibold text-slate-400">Markazlar yo'q</div>}
           </div>
         </section>
 
         <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[13px] font-extrabold text-slate-800">Recent Orders</h2>
-            <button onClick={() => setPage('requests')} className="text-[11px] font-bold text-indigo-600">View all</button>
+            <h2 className="text-[13px] font-extrabold text-slate-800">Pending direktor arizalari</h2>
+            <button onClick={() => setPage('requests')} className="text-[11px] font-bold text-indigo-600">Hammasi</button>
           </div>
           <div className="space-y-3">
-            {dashboardRequests.map(({ req, center, owner }, index) => (
+            {dashboardRequests.map(({ req, center, owner }) => (
               <div key={req.id} className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <div className="text-[12px] font-extrabold text-slate-800">#ORD-{78420 + index}</div>
+                  <div className="text-[12px] font-extrabold text-slate-800 truncate">{center?.name || 'Yangi markaz'}</div>
                   <div className="mt-0.5 truncate text-[11px] font-medium text-slate-500">{owner.name}</div>
-                  <div className="mt-0.5 truncate text-[10px] text-slate-400">{center?.name || 'New center'}</div>
+                  <div className="mt-0.5 truncate text-[10px] text-slate-400">{center?.city || '—'}</div>
                 </div>
                 <div className="shrink-0 text-right">
-                  <AdminPill status="pending">Pending</AdminPill>
+                  <AdminPill status="pending">Kutilmoqda</AdminPill>
                   <div className="mt-1 flex justify-end gap-1">
-                    <button onClick={() => approveCenterReq(req)} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">OK</button>
-                    <button onClick={() => rejectCenterReq(req)} className="rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">No</button>
+                    <button onClick={() => approveCenterReq(req)} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">Qabul</button>
+                    <button onClick={() => rejectCenterReq(req)} className="rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">Rad</button>
                   </div>
                 </div>
               </div>
             ))}
             {dashboardRequests.length === 0 && (
-              [1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="flex items-start justify-between gap-2">
-                  <div>
-                    <div className="text-[12px] font-extrabold text-slate-800">#ORD-{78420 + i}</div>
-                    <div className="mt-0.5 text-[11px] font-medium text-slate-500">No pending request</div>
-                  </div>
-                  <AdminPill status="approved">Completed</AdminPill>
-                </div>
-              ))
+              <div className="py-10 text-center text-[12px] font-semibold text-slate-400">Pending arizalar yo'q</div>
             )}
           </div>
         </section>
       </div>
 
-      <div className="grid gap-[12px] xl:grid-cols-[1fr_1fr_1fr_1fr]">
+      <div className="grid gap-[12px] xl:grid-cols-[1fr_1fr]">
         <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[13px] font-extrabold text-slate-800">User Growth</h2>
-            <button className="inline-flex h-8 items-center gap-1 rounded-md border border-slate-200 px-3 text-[11px] font-bold text-slate-500">Monthly <Icon name="chevronDown" size={12} /></button>
-          </div>
-          <AdminBarChart />
-        </section>
-
-        <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-4 text-[13px] font-extrabold text-slate-800">Traffic Sources</h2>
+          <h2 className="mb-4 text-[13px] font-extrabold text-slate-800">Markazlar holati</h2>
           <AdminDonut segments={[
-            { label: 'Direct', value: 35, color: '#4f63ff' },
-            { label: 'Organic Search', value: 28, color: '#4ade80' },
-            { label: 'Paid Search', value: 20, color: '#facc15' },
-            { label: 'Social Media', value: 11, color: '#a78bfa' },
-            { label: 'Referral', value: 6, color: '#cbd5e1' },
+            { label: 'Tasdiqlangan', value: approvedCenterPct, color: '#4f46e5' },
+            { label: 'Kutilmoqda', value: pendingCenterPct, color: '#f59e0b' },
+            { label: 'Boshqa', value: otherCenterPct, color: '#10b981' },
           ]} />
         </section>
 
         <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="text-[13px] font-extrabold text-slate-800">System Status</h2>
-            <button className="text-[11px] font-bold text-indigo-600">View all</button>
-          </div>
-          {['Web Platform', 'API Gateway', 'Database', 'Payment System', 'Search Service', 'Email Service'].map(row => (
-            <div key={row} className="flex items-center justify-between border-b border-slate-100 py-2.5 last:border-0">
-              <div className="flex items-center gap-2 text-[12px] font-semibold text-slate-600">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> {row}
-              </div>
-              <span className="text-[11px] font-extrabold text-emerald-600">Operational</span>
-            </div>
-          ))}
-        </section>
-
-        <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[13px] font-extrabold text-slate-800">Notifications</h2>
-            <button onClick={() => setPage('requests')} className="text-[11px] font-bold text-indigo-600">View all</button>
+            <h2 className="text-[13px] font-extrabold text-slate-800">Bildirishnomalar</h2>
+            <button onClick={() => setPage('requests')} className="text-[11px] font-bold text-indigo-600">Hammasi</button>
           </div>
           <div className="space-y-4">
             {dashboardNotifications.map(item => (
@@ -586,28 +580,19 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 </div>
                 <div className="min-w-0">
                   <div className="truncate text-[12px] font-extrabold text-slate-800">{item.title}</div>
-                  <div className="mt-0.5 truncate text-[11px] font-medium text-slate-500">{item.time || 'Today, 01:45 AM'}</div>
+                  <div className="mt-0.5 truncate text-[11px] font-medium text-slate-500">{item.time || ''}</div>
                 </div>
               </div>
             ))}
             {dashboardNotifications.length === 0 && (
-              ['System maintenance scheduled', 'New user registered', 'Backup completed successfully', 'No pending alerts'].map((title, index) => (
-                <div key={title} className="flex items-start gap-3">
-                  <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${index === 2 ? 'bg-emerald-50 text-emerald-500' : 'bg-indigo-50 text-indigo-500'}`}>
-                    <Icon name={index === 2 ? 'check' : 'bell'} size={14} />
-                  </div>
-                  <div>
-                    <div className="text-[12px] font-extrabold text-slate-800">{title}</div>
-                    <div className="mt-0.5 text-[11px] font-medium text-slate-500">Today, 01:{45 - index * 10} AM</div>
-                  </div>
-                </div>
-              ))
+              <div className="py-10 text-center text-[12px] font-semibold text-slate-400">Yangi bildirishnomalar yo'q</div>
             )}
           </div>
         </section>
       </div>
     </div>
-  );
+    );
+  };
 
   const renderRequests = () => (
     <div className="space-y-5 p-4 lg:p-6">
@@ -786,20 +771,25 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {store.olympiads.map(o => {
-                const center = centers.find(c => String(c.id) === String(o.centerId));
-                return (
-                  <tr key={o.id} className="text-sm">
-                    <td className="px-5 py-4 font-bold text-slate-900">{o.title}</td>
-                    <td className="px-5 py-4 text-slate-500">{center?.name || '—'}</td>
-                    <td className="px-5 py-4"><span className="rounded-md bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">{o.subject}</span></td>
-                    <td className="px-5 py-4 text-slate-500">{o.startDate}</td>
-                    <td className="px-5 py-4 font-semibold text-slate-700">{o.participants || 0}</td>
-                    <td className="px-5 py-4"><AdminPill status={o.status} /></td>
-                  </tr>
-                );
-              })}
-              {store.olympiads.length === 0 && <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-medium text-slate-500">Hali olimpiadalar yo'q</td></tr>}
+              {(() => {
+                const olympiadList = isApi ? (apiOlympiads || []) : store.olympiads;
+                if (olympiadList.length === 0) {
+                  return <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-medium text-slate-500">Hali olimpiadalar yo'q</td></tr>;
+                }
+                return olympiadList.map(o => {
+                  const center = centers.find(c => String(c.id) === String(o.centerId));
+                  return (
+                    <tr key={o.id} className="text-sm">
+                      <td className="px-5 py-4 font-bold text-slate-900">{o.title}</td>
+                      <td className="px-5 py-4 text-slate-500">{center?.name || '—'}</td>
+                      <td className="px-5 py-4"><span className="rounded-md bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">{o.subject}</span></td>
+                      <td className="px-5 py-4 text-slate-500">{o.startDate || '—'}</td>
+                      <td className="px-5 py-4 font-semibold text-slate-700">{o.participants || 0}</td>
+                      <td className="px-5 py-4"><AdminPill status={o.status} /></td>
+                    </tr>
+                  );
+                });
+              })()}
             </tbody>
           </table>
         </div>
@@ -821,7 +811,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <button onClick={() => {
             const name = newSubjectName.trim();
             if (!name) return;
-            if (store.subjects.includes(name)) { showToast(`"${name}" allaqachon mavjud`); return; }
+            if (subjects.includes(name)) { showToast(`"${name}" allaqachon mavjud`); return; }
+            if (isApi) {
+              OlympyApi.createSubject(name, OlympyApi.getToken())
+                .then(() => { apiSubjectsRes.reload(); setNewSubjectName(''); showToast(`"${name}" qo'shildi`); })
+                .catch(err => { console.warn('createSubject failed:', err); showToast(OlympyApi.toUserMessage(err)); });
+              return;
+            }
             OlympyStore.addSubject(name);
             setNewSubjectName('');
             showToast(`"${name}" qo'shildi`);
@@ -832,7 +828,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       </section>
       <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap gap-2">
-          {store.subjects.map(s => <span key={s} className="rounded-md bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">{s}</span>)}
+          {subjects.map(s => <span key={s} className="rounded-md bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">{s}</span>)}
         </div>
       </section>
     </div>

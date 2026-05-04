@@ -135,7 +135,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     () => isApi ? OlympyApi.getCenters() : Promise.resolve(null),
     [isApi],
   );
+  const apiOlympiadsRes = useApiData(
+    () => isApi ? OlympyApi.getOlympiads(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
   const apiCenters = isApi && Array.isArray(apiCentersRes.data) ? apiCentersRes.data.map(mapApiCenter) : null;
+  const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data) ? apiOlympiadsRes.data.map(mapApiOlympiad) : null;
   const baseCenters = isApi ? (apiCenters || []) : store.centers;
   const center = ownerCenterId ? baseCenters.find(c => String(c.id) === String(ownerCenterId)) : null;
 
@@ -226,7 +231,9 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         ...localApiStaff.filter(m => !apiStaffRows.some(row => row.phone === m.phone)),
       ]
     : mockStaffRows;
-  const centerOlympiads = isApi ? [] : olympiadsForCenter(store, center.id);
+  const centerOlympiads = isApi
+    ? (apiOlympiads || []).filter(o => String(o.centerId) === String(center.id))
+    : olympiadsForCenter(store, center.id);
   const activeOlympiads = centerOlympiads.filter(o => o.status === 'active');
 
   const requestUser = (req) => req?._api

@@ -1,14 +1,10 @@
-"""Telegram notification service — placeholder.
-
-Today: writes a Notification row to the database and logs a Telegram-style
-message string. Tomorrow: a real Telegram bot client will replace the log
-calls below without changing any callers.
-
-TODO(real-telegram): wire python-telegram-bot or aiogram, read TELEGRAM_BOT_TOKEN
-from settings, pull chat_id from a Profile / TelegramLink model, send the
-message via Bot API. Keep the function signatures stable.
-"""
+"""Notification service for in-app rows and Telegram bot fan-out."""
+import json
 import logging
+import urllib.parse
+import urllib.request
+
+from django.conf import settings
 
 from .models import Notification
 
@@ -23,6 +19,56 @@ def _telegram_join_request_text(student_name, center_name):
     )
 
 
+def _telegram_api_post(method, payload):
+    token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+    if not token:
+        logger.info('[telegram-local] method=%s payload=%s', method, payload)
+        return False
+    encoded = {}
+    for key, value in (payload or {}).items():
+        if isinstance(value, (dict, list)):
+            encoded[key] = json.dumps(value)
+        else:
+            encoded[key] = value
+    data = urllib.parse.urlencode(encoded).encode()
+    url = f'https://api.telegram.org/bot{token}/{method}'
+    try:
+        req = urllib.request.Request(url, data=data, method='POST')
+        with urllib.request.urlopen(req, timeout=10):
+            return True
+    except Exception:
+        logger.exception('Telegram %s failed', method)
+        return False
+
+
+def _send_telegram_to_user(user, message, reply_markup=None):
+    chat_id = getattr(user, 'telegram_chat_id', '')
+    if not chat_id:
+        logger.info('[telegram-skip] user=%s has no telegram_chat_id', user.id)
+        return False
+    payload = {'chat_id': chat_id, 'text': message}
+    if reply_markup:
+        payload['reply_markup'] = reply_markup
+    return _telegram_api_post('sendMessage', payload)
+
+
+def _student_join_keyboard(membership):
+    if not membership:
+        return None
+    return {
+        'inline_keyboard': [[
+            {
+                'text': '✅ Tasdiqlash',
+                'callback_data': f'membership:approve:{membership.id}',
+            },
+            {
+                'text': '❌ Rad etish',
+                'callback_data': f'membership:reject:{membership.id}',
+            },
+        ]],
+    }
+
+
 def _telegram_olympiad_published_text(center_name, olympiad):
     return (
         f"{center_name} o'quv markazida yangi olimpiada boshlandi:\n"
@@ -32,7 +78,7 @@ def _telegram_olympiad_published_text(center_name, olympiad):
     )
 
 
-def send_student_join_request_notification(manager, student, center):
+def send_student_join_request_notification(manager, student, center, membership=None):
     """Notify a manager (or owner) that a student wants to join their center."""
     message = _telegram_join_request_text(student.full_name, center.name)
     Notification.objects.create(
@@ -42,9 +88,12 @@ def send_student_join_request_notification(manager, student, center):
         title="Yangi o'quvchi arizasi",
         message=message,
     )
-    logger.info('[telegram-mock] → %s : %s', manager.normalized_phone, message)
-    # TODO(real-telegram): bot.send_message(chat_id=manager.telegram_chat_id, text=message,
-    #                                       reply_markup=approve_reject_keyboard)
+    sent = _send_telegram_to_user(
+        manager,
+        message,
+        reply_markup=_student_join_keyboard(membership),
+    )
+    logger.info('[telegram] → %s sent=%s : %s', manager.normalized_phone, sent, message)
 
 
 def send_center_approval_request_notification(admin, owner, center):
@@ -98,5 +147,58 @@ def send_olympiad_published_notification(student, olympiad, center):
         title="Yangi olimpiada",
         message=message,
     )
-    logger.info('[telegram-mock] → %s : %s', student.normalized_phone, message)
-    # TODO(real-telegram): bot.send_message(chat_id=student.telegram_chat_id, text=message)
+    sent = _send_telegram_to_user(student, message)
+    logger.info('[telegram] → %s sent=%s : %s', student.normalized_phone, sent, message)
+
+
+def send_olympiad_published_bulk(students, olympiad, center):
+    """Bulk variant for fan-out to many approved students at once."""
+    if not students:
+        return
+    message = _telegram_olympiad_published_text(center.name, olympiad)
+    Notification.objects.bulk_create([
+        Notification(
+            user=s,
+            center=center,
+            type=Notification.TYPE_OLYMPIAD_PUBLISHED,
+            title="Yangi olimpiada",
+            message=message,
+        )
+        for s in students
+    ])
+    logger.info('[telegram-mock] olympiad %s → %d students', olympiad.id, len(students))
+
+
+def send_membership_decision_notification(membership, approved):
+    role_type = {
+        'student': (
+            Notification.TYPE_STUDENT_APPROVED if approved else Notification.TYPE_STUDENT_REJECTED
+        ),
+        'teacher': (
+            Notification.TYPE_TEACHER_APPROVED if approved else Notification.TYPE_TEACHER_REJECTED
+        ),
+        'manager': (
+            Notification.TYPE_MANAGER_APPROVED if approved else Notification.TYPE_MANAGER_REJECTED
+        ),
+    }.get(membership.role)
+    if not role_type:
+        return
+    role_label = {
+        'student': "O'quvchi",
+        'teacher': "O'qituvchi",
+        'manager': 'Manager',
+    }.get(membership.role, membership.role)
+    title = f"{role_label} arizasi tasdiqlandi" if approved else f"{role_label} arizasi rad etildi"
+    message = (
+        f"{membership.center.name} markazidagi {role_label.lower()} arizangiz tasdiqlandi."
+        if approved else
+        f"{membership.center.name} markazidagi {role_label.lower()} arizangiz rad etildi."
+    )
+    Notification.objects.create(
+        user=membership.user,
+        center=membership.center,
+        type=role_type,
+        title=title,
+        message=message,
+    )
+    _send_telegram_to_user(membership.user, message)

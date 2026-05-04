@@ -5,6 +5,7 @@ from django.contrib import admin
 from django.urls import include, path
 
 from accounts import views as account_views
+from olympiads.subjects_views import subjects_list_create
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -19,6 +20,7 @@ urlpatterns = [
     path('api/results/', include('attempts.urls_results')),
     path('api/leaderboard/', include('attempts.urls_leaderboard')),
     path('api/notifications/', include('notifications.urls')),
+    path('api/subjects/', subjects_list_create, name='subjects-list-create'),
 ]
 
 if settings.DEBUG:

@@ -44,10 +44,33 @@ def olympiads_list_create(request):
             qs = queryset
         else:
             # Olympiads at any center the user has an approved membership at.
-            center_ids = list(CenterMembership.objects.filter(
-                user=request.user, status=CenterMembership.STATUS_APPROVED,
-            ).values_list('center_id', flat=True))
+            approved_memberships = list(
+                CenterMembership.objects.filter(
+                    user=request.user, status=CenterMembership.STATUS_APPROVED,
+                ).values_list('center_id', 'role')
+            )
+            center_ids = [cid for cid, _ in approved_memberships]
+            staff_center_ids = [
+                cid for cid, role in approved_memberships
+                if role in (
+                    CenterMembership.ROLE_OWNER,
+                    CenterMembership.ROLE_MANAGER,
+                    CenterMembership.ROLE_TEACHER,
+                )
+            ]
             qs = queryset.filter(center_id__in=center_ids)
+            # Pure students never see drafts; staff/owner roles see everything
+            # at their own centers.
+            if not staff_center_ids:
+                qs = qs.exclude(status=Olympiad.STATUS_DRAFT)
+            else:
+                qs = qs.exclude(
+                    status=Olympiad.STATUS_DRAFT,
+                ) | queryset.filter(
+                    center_id__in=staff_center_ids,
+                    status=Olympiad.STATUS_DRAFT,
+                )
+                qs = qs.distinct()
         return Response(OlympiadSerializer(qs, many=True).data)
 
     serializer = OlympiadSerializer(data=request.data)
@@ -75,6 +98,11 @@ def olympiad_detail(request, olympiad_id):
     if not _user_can_manage_center(request.user, olympiad.center):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
+    if olympiad.status != Olympiad.STATUS_DRAFT:
+        return Response(
+            {'detail': "Faqat draft olimpiadani tahrirlash mumkin"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
     serializer = OlympiadSerializer(olympiad, data=request.data, partial=True)
     serializer.is_valid(raise_exception=True)
     questions = serializer.validated_data.pop('questions', None)
@@ -109,15 +137,18 @@ def publish_olympiad(request, olympiad_id):
     olympiad.save(update_fields=['status'])
 
     # Lazy import: avoid circular dependency.
-    from notifications.services import send_olympiad_published_notification
+    from notifications.services import send_olympiad_published_bulk
     approved_students = CenterMembership.objects.filter(
         center=olympiad.center,
         role=CenterMembership.ROLE_STUDENT,
         status=CenterMembership.STATUS_APPROVED,
     ).select_related('user')
     try:
-        for m in approved_students:
-            send_olympiad_published_notification(m.user, olympiad, olympiad.center)
+        send_olympiad_published_bulk(
+            [m.user for m in approved_students],
+            olympiad,
+            olympiad.center,
+        )
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning('Notification send failed: %s', e)

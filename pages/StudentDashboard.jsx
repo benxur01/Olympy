@@ -27,6 +27,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     () => isApi ? OlympyApi.getMyResults(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+  const apiStatsRes = useApiData(
+    () => isApi ? OlympyApi.getMyStats(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
 
   // Live student-role state from store
   const studentRole = user.roles?.student;
@@ -138,12 +142,22 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <StatCard label="Umumiy ball" value="87.3" sub="↑ +5.2" icon={<Icon name="chart" size={20} />} color="from-indigo-500 to-purple-600" glow="glow-blue" />
-        <StatCard label="Reytingdagi o'rn" value="#3" sub="Top 5%" icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />
-        <StatCard label="Olimpiadalar" value={myResults.length} icon={<Icon name="bolt" size={20} />} color="from-cyan-500 to-blue-600" />
-        <StatCard label="Sertifikatlar" value="2" icon={<Icon name="award" size={20} />} color="from-emerald-500 to-teal-600" />
-      </div>
+      {(() => {
+        const statsData = isApi ? apiStatsRes.data : null;
+        const avg = statsData?.average_score
+          ?? (myResults.length ? Math.round(myResults.reduce((s, r) => s + (r.score || 0), 0) / myResults.length * 10) / 10 : 0);
+        const bestRank = statsData?.best_rank
+          ?? (myResults.length ? Math.min(...myResults.map(r => r.rank || 999).filter(r => r < 999)) : null);
+        const total = statsData?.total_attempts ?? myResults.length;
+        return (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <StatCard label="O'rtacha ball" value={avg || '—'} icon={<Icon name="chart" size={20} />} color="from-indigo-500 to-purple-600" glow="glow-blue" />
+            <StatCard label="Reytingdagi o'rn" value={bestRank ? `#${bestRank}` : '—'} icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />
+            <StatCard label="Olimpiadalar" value={total} icon={<Icon name="bolt" size={20} />} color="from-cyan-500 to-blue-600" />
+            <StatCard label="Sertifikatlar" value={(myResults || []).filter(r => r.rank === 1).length} icon={<Icon name="award" size={20} />} color="from-emerald-500 to-teal-600" />
+          </div>
+        );
+      })()}
 
       {/* Center status */}
       {studentStatus && studentCenterId && myCenter && (

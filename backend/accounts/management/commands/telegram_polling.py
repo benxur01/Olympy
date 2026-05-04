@@ -52,7 +52,7 @@ class Command(BaseCommand):
     def _get_updates(self, token, offset, timeout):
         params = {
             'timeout': timeout,
-            'allowed_updates': json.dumps(['message', 'edited_message']),
+            'allowed_updates': json.dumps(['message', 'edited_message', 'callback_query']),
         }
         if offset is not None:
             params['offset'] = offset

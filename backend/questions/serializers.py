@@ -1,3 +1,5 @@
+import json
+
 from rest_framework import serializers
 
 from .models import Question
@@ -10,6 +12,21 @@ class QuestionSerializer(serializers.ModelSerializer):
                   'score', 'difficulty', 'image', 'source', 'created_by',
                   'created_at']
         read_only_fields = ['id', 'created_by', 'created_at']
+
+    def to_internal_value(self, data):
+        # Multipart form-data sends JSON arrays as strings (e.g. when an
+        # image file is attached). Decode 'options' transparently so the
+        # JSONField validates correctly.
+        raw_options = data.get('options') if hasattr(data, 'get') else None
+        if isinstance(raw_options, str):
+            try:
+                parsed = json.loads(raw_options)
+            except (TypeError, ValueError):
+                parsed = None
+            if isinstance(parsed, list):
+                data = data.copy() if hasattr(data, 'copy') else dict(data)
+                data['options'] = parsed
+        return super().to_internal_value(data)
 
     def validate(self, data):
         options = data.get('options', [])

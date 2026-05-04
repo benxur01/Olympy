@@ -54,8 +54,14 @@ references from `Olympy.html`, concatenates them into `src/olympy-entry.jsx`,
 and rewrites `index.html` to load that entry as an ES module. The runtime
 behavior of the page is identical — UI/UX is preserved exactly.
 
-Use Vite (`npm run dev`) for API-connected auth. `Olympy.html` remains the
-legacy source HTML used by the build generator.
+Use Vite (`npm run dev`) for the production-ready dev server.
+
+> **Olympy.html (legacy):** the Babel-standalone HTML at the repo root is
+> read by `scripts/generate-vite-entry.mjs` only to discover which `*.jsx`
+> files compose the page. It is **not** the runtime entry point — every
+> production deploy serves `dist/index.html` (or its source `index.html`).
+> Do not edit `Olympy.html` for new features; edit the JSX modules and
+> let Vite rebuild.
 
 ## Backend setup
 

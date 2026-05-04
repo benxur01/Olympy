@@ -1,5 +1,4 @@
 from django.urls import path
-from rest_framework_simplejwt.views import TokenRefreshView
 
 from . import views
 
@@ -7,8 +6,11 @@ from . import views
 urlpatterns = [
     path('register/', views.register, name='register'),
     path('login/', views.login, name='login'),
-    path('token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
+    path('logout/', views.logout, name='logout'),
+    path('token/refresh/', views.refresh_token, name='token-refresh'),
     path('phone/start-telegram-verification/', views.start_telegram_phone_verification,
          name='start-telegram-phone-verification'),
+    path('telegram/link/start/', views.start_telegram_account_link,
+         name='start-telegram-account-link'),
     path('phone/verify-otp/', views.verify_otp, name='verify-otp'),
 ]

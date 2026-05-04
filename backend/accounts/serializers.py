@@ -6,23 +6,55 @@ from .utils import normalize_phone
 
 class UserSerializer(serializers.ModelSerializer):
     roles_detail = serializers.SerializerMethodField()
+    telegram_linked = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ['id', 'full_name', 'phone', 'normalized_phone', 'roles',
-                  'roles_detail', 'is_platform_admin', 'is_active', 'created_at']
+                  'roles_detail', 'telegram_linked', 'is_platform_admin',
+                  'is_active', 'created_at']
         read_only_fields = ['id', 'normalized_phone', 'roles_detail',
-                            'is_platform_admin', 'is_active', 'created_at']
+                            'telegram_linked', 'is_platform_admin',
+                            'is_active', 'created_at']
+
+    def get_telegram_linked(self, obj):
+        return bool(obj.telegram_chat_id)
 
     def get_roles_detail(self, obj):
         from centers.models import CenterMembership
 
         roles_detail = {}
-        for membership in CenterMembership.objects.filter(user=obj):
+        memberships = (
+            CenterMembership.objects
+            .filter(user=obj)
+            .select_related('center')
+        )
+        # If the same role appears at multiple centers, prefer an approved
+        # membership over pending/rejected so the dashboard lands the user
+        # on the active one.
+        priority = {'approved': 3, 'pending': 2, 'rejected': 1}
+        for membership in memberships:
+            existing = roles_detail.get(membership.role)
+            if existing and priority.get(existing['status'], 0) >= priority.get(membership.status, 0):
+                continue
             roles_detail[membership.role] = {
                 'status': membership.status,
                 'centerId': membership.center_id,
+                'centerName': membership.center.name if membership.center_id else '',
+                'subject': membership.subject or '',
             }
+        # Centerless approved roles (e.g. a student who registered without
+        # picking a center) are tracked in user.roles but have no
+        # CenterMembership row. Surface them explicitly so the frontend
+        # treats the user as approved instead of "no role".
+        for role in (obj.roles or []):
+            if role not in roles_detail:
+                roles_detail[role] = {
+                    'status': 'approved',
+                    'centerId': None,
+                    'centerName': '',
+                    'subject': '',
+                }
         return roles_detail
 
 
@@ -30,6 +62,7 @@ class RegisterSerializer(serializers.Serializer):
     full_name = serializers.CharField(max_length=120)
     phone = serializers.CharField(max_length=20)
     password = serializers.CharField(write_only=True, min_length=6)
+    role = serializers.ChoiceField(choices=['student'], required=False)
 
     def validate_phone(self, value):
         norm = normalize_phone(value)
@@ -40,11 +73,15 @@ class RegisterSerializer(serializers.Serializer):
         return norm
 
     def create(self, validated_data):
-        return User.objects.create_user(
+        role = validated_data.pop('role', None)
+        user = User.objects.create_user(
             phone=validated_data['phone'],
             password=validated_data['password'],
             full_name=validated_data['full_name'],
         )
+        if role == 'student':
+            user.add_role('student')
+        return user
 
 
 class LoginSerializer(serializers.Serializer):

@@ -16,7 +16,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
     try {
       const data = await OlympyApi.login({ phone: form.phone, password: form.password });
       const mappedUser = OlympyApi.mapBackendUser(data.user);
-      OlympyApi.saveAuth({ token: data.token, refresh: data.refresh, user: mappedUser });
+      OlympyApi.saveAuth({ token: data.token, refresh: data.refresh, user: mappedUser, cookieAuth: data.cookie_auth });
       onLogin(mappedUser);
     } catch (err) {
       setError(OlympyApi.toUserMessage(err));
@@ -165,11 +165,13 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
     setLoading(true);
 
     try {
-      const data = await OlympyApi.register({
+      const registerPayload = {
         full_name: form.name,
         phone: form.phone,
         password: form.password,
-      });
+      };
+      if (role === 'student') registerPayload.role = 'student';
+      const data = await OlympyApi.register(registerPayload);
       const token = data.token;
       const refresh = data.refresh;
       let selectedCenterId = centerId;
@@ -203,7 +205,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
 
       const freshUser = await OlympyApi.getMe(token);
       const mappedUser = OlympyApi.mapBackendUser(freshUser);
-      OlympyApi.saveAuth({ token, refresh, user: mappedUser });
+      OlympyApi.saveAuth({ token, refresh, user: mappedUser, cookieAuth: data.cookie_auth });
       setSuccess(true);
       setTimeout(() => onLogin(mappedUser), 1600);
     } catch (err) {

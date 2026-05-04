@@ -45,6 +45,10 @@ class User(AbstractBaseUser, PermissionsMixin):
     # JSON list of role keys: student | teacher | manager | owner | admin
     roles = models.JSONField(default=list, blank=True)
     is_platform_admin = models.BooleanField(default=False)
+    telegram_chat_id = models.CharField(max_length=64, blank=True, db_index=True)
+    telegram_user_id = models.CharField(max_length=64, blank=True, db_index=True)
+    telegram_linked_at = models.DateTimeField(null=True, blank=True)
+    token_version = models.PositiveIntegerField(default=0)
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

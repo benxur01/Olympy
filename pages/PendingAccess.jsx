@@ -74,14 +74,18 @@ const PendingHome = ({ user, onLogout, onNavigate }) => {
               {pending.map(role => {
                 const meta = ROLE_META[role];
                 const data = user.roles[role];
-                const center = data?.centerId ? OlympyStore.findCenter(data.centerId) : null;
+                // API rejimda backend roles_detail.centerName kelti, mock
+                // rejimda OlympyStore.findCenter ishlatamiz.
+                const apiCenterName = data?.centerName;
+                const mockCenter = !user?._api && data?.centerId ? OlympyStore.findCenter(data.centerId) : null;
+                const centerLabel = apiCenterName || mockCenter?.name || (data?.centerId ? '' : 'Markazsiz');
                 return (
                   <div key={role} className="glass rounded-2xl p-4 flex items-center gap-3 border border-amber-500/20">
                     <div className="text-2xl">{meta?.icon}</div>
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-semibold text-white">{meta?.label} arizasi</div>
                       <div className="text-xs text-white/40 truncate">
-                        {center ? center.name : 'Markazsiz'}{data?.subject ? ` · ${data.subject}` : ''}
+                        {centerLabel || '—'}{data?.subject ? ` · ${data.subject}` : ''}
                       </div>
                     </div>
                     <span className="chip badge-pending">Kutilmoqda</span>

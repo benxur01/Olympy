@@ -1,4 +1,8 @@
+import secrets
+
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
@@ -15,6 +19,26 @@ from .serializers import (
     EducationCenterSerializer,
     JoinRequestSerializer,
 )
+from .services import decide_membership, user_can_approve_membership, user_can_manage_center
+
+
+def _annotate_center_counts(queryset):
+    """Annotate students_count + olympiads_count to avoid N+1 in serializer."""
+    return queryset.annotate(
+        students_count=Count(
+            'memberships',
+            filter=Q(
+                memberships__role=CenterMembership.ROLE_STUDENT,
+                memberships__status=CenterMembership.STATUS_APPROVED,
+            ),
+            distinct=True,
+        ),
+        olympiads_count=Count('olympiads', distinct=True),
+    )
+
+
+def _make_approval_code():
+    return secrets.token_hex(3).upper()
 
 
 # ─── Public listing & registration ────────────────────────────────────────────
@@ -26,9 +50,14 @@ def centers_list_create(request):
     POST /api/centers/    — register a new center; status starts pending.
     """
     if request.method == 'GET':
-        queryset = EducationCenter.objects.select_related('owner').order_by('-created_at')
-        qs = queryset.filter(status=EducationCenter.STATUS_APPROVED)
-        return Response(EducationCenterSerializer(qs, many=True).data)
+        queryset = (
+            EducationCenter.objects
+            .select_related('owner')
+            .filter(status=EducationCenter.STATUS_APPROVED)
+            .order_by('-created_at')
+        )
+        queryset = _annotate_center_counts(queryset)
+        return Response(EducationCenterSerializer(queryset, many=True).data)
 
     if not request.user.is_authenticated:
         return Response({'detail': 'Authentication required'},
@@ -49,7 +78,9 @@ def centers_list_create(request):
             role=CenterMembership.ROLE_OWNER,
             status=CenterMembership.STATUS_PENDING,
         )
-        request.user.add_role('owner')
+        # Note: do NOT add 'owner' to user.roles here. The owner role is
+        # promoted only after Platform Admin approves the center
+        # (see admin_approve_center).
         from django.contrib.auth import get_user_model
         from notifications.services import send_center_approval_request_notification
         User = get_user_model()
@@ -81,10 +112,16 @@ def join_center(request, center_id):
         role=role,
         defaults={
             'subject': serializer.validated_data.get('subject', ''),
+            'approval_code': _make_approval_code(),
             'status': CenterMembership.STATUS_PENDING,
         },
     )
-    request.user.add_role(role)
+    if not membership.approval_code:
+        membership.approval_code = _make_approval_code()
+        membership.save(update_fields=['approval_code'])
+    # Do NOT add the role to user.roles for pending memberships. The role
+    # is added in _approve() once the membership is approved. user.roles
+    # remains the source of truth ONLY for approved roles.
     if created and role == CenterMembership.ROLE_STUDENT:
         # Lazy import: avoid circular dependency at module load time.
         from notifications.services import send_student_join_request_notification
@@ -93,9 +130,9 @@ def join_center(request, center_id):
             status=CenterMembership.STATUS_APPROVED,
         ).select_related('user')
         for m in managers:
-            send_student_join_request_notification(m.user, request.user, center)
+            send_student_join_request_notification(m.user, request.user, center, membership)
         if center.owner_id:
-            send_student_join_request_notification(center.owner, request.user, center)
+            send_student_join_request_notification(center.owner, request.user, center, membership)
     return Response(CenterMembershipSerializer(membership).data,
                     status=http_status.HTTP_201_CREATED if created
                     else http_status.HTTP_200_OK)
@@ -104,34 +141,12 @@ def join_center(request, center_id):
 # ─── Approval endpoints ───────────────────────────────────────────────────────
 
 def _user_can_manage_center(user, center):
-    if user.is_platform_admin:
-        return True
-    if center.owner_id == user.id:
-        return center.status == EducationCenter.STATUS_APPROVED
-    return CenterMembership.objects.filter(
-        user=user,
-        center=center,
-        role=CenterMembership.ROLE_MANAGER,
-        status=CenterMembership.STATUS_APPROVED,
-    ).exists()
+    return user_can_manage_center(user, center)
 
 
 def _user_can_approve(user, center, role):
     """Return True if ``user`` may approve a ``role`` request at ``center``."""
-    if user.is_platform_admin:
-        return True
-    if center.owner_id == user.id:
-        # Center owners always have approval authority once admin has approved
-        # the center; their own owner-membership record is informational only.
-        return center.status == EducationCenter.STATUS_APPROVED
-    # Managers only handle student membership at their own center.
-    if role == CenterMembership.ROLE_STUDENT:
-        return CenterMembership.objects.filter(
-            user=user, center=center,
-            role=CenterMembership.ROLE_MANAGER,
-            status=CenterMembership.STATUS_APPROVED,
-        ).exists()
-    return False
+    return user_can_approve_membership(user, center, role)
 
 
 def _approve(request, center_id, role):
@@ -144,6 +159,7 @@ def _approve(request, center_id, role):
         center=center,
         role=role,
     )
+    decision = serializer.validated_data['decision']
     if not _user_can_approve(request.user, center, role):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
@@ -152,16 +168,15 @@ def _approve(request, center_id, role):
             {'detail': "Bu ariza allaqachon ko'rib chiqilgan"},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
-    decision = serializer.validated_data['decision']
-    membership.status = (
-        CenterMembership.STATUS_APPROVED
-        if decision in ('approve', 'approved')
-        else CenterMembership.STATUS_REJECTED
-    )
-    membership.approved_by = request.user
-    membership.save(update_fields=['status', 'approved_by'])
-    if decision in ('approve', 'approved'):
-        membership.user.add_role(role)
+    try:
+        membership = decide_membership(membership, request.user, decision)
+    except PermissionDenied:
+        return Response({'detail': 'Forbidden'},
+                        status=http_status.HTTP_403_FORBIDDEN)
+    except ValidationError as exc:
+        detail = '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc)
+        return Response({'detail': detail},
+                        status=http_status.HTTP_400_BAD_REQUEST)
     return Response(CenterMembershipSerializer(membership).data)
 
 
@@ -184,6 +199,37 @@ def pending_memberships(request, center_id):
         'user': UserSerializer(m.user).data,
         'role': m.role,
         'subject': m.subject,
+        'approval_code': m.approval_code,
+        'created_at': str(m.created_at),
+    } for m in qs]
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def students_memberships(request, center_id):
+    """GET /api/centers/{id}/memberships/students/?status=approved|pending|rejected
+
+    Returns student memberships for a center. Status filter defaults to
+    approved. Manager/Owner/Admin only.
+    """
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    if not _user_can_manage_center(request.user, center):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    status_filter = request.query_params.get('status', CenterMembership.STATUS_APPROVED)
+    qs = CenterMembership.objects.filter(
+        center=center,
+        role=CenterMembership.ROLE_STUDENT,
+        status=status_filter,
+    ).select_related('user').order_by('-created_at')
+    from accounts.serializers import UserSerializer
+    data = [{
+        'membership_id': m.id,
+        'user': UserSerializer(m.user).data,
+        'role': m.role,
+        'subject': m.subject,
+        'approval_code': m.approval_code,
+        'status': m.status,
         'created_at': str(m.created_at),
     } for m in qs]
     return Response(data)
