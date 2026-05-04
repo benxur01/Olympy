@@ -12,6 +12,6 @@ class TestAttemptAdmin(admin.ModelAdmin):
 
 @admin.register(TestSession)
 class TestSessionAdmin(admin.ModelAdmin):
-    list_display = ('user', 'olympiad', 'started_at')
-    list_filter = ('olympiad',)
+    list_display = ('user', 'olympiad', 'status', 'started_at', 'disqualified_at')
+    list_filter = ('olympiad', 'status')
     search_fields = ('user__full_name', 'olympiad__title')

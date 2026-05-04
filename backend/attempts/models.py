@@ -45,6 +45,15 @@ class TestAttempt(models.Model):
 
 class TestSession(models.Model):
     """Server-side test start record and randomized question/option order."""
+    STATUS_ACTIVE = 'active'
+    STATUS_DISQUALIFIED = 'disqualified'
+    STATUS_COMPLETED = 'completed'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Active'),
+        (STATUS_DISQUALIFIED, 'Disqualified'),
+        (STATUS_COMPLETED, 'Completed'),
+    ]
+
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -56,6 +65,9 @@ class TestSession(models.Model):
         related_name='test_sessions',
     )
     started_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
+    disqualified_at = models.DateTimeField(null=True, blank=True)
+    cheating_reason = models.CharField(max_length=120, blank=True)
     question_order = models.JSONField(default=list, blank=True)
     option_orders = models.JSONField(default=dict, blank=True)
 

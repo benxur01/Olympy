@@ -152,6 +152,11 @@ def olympiad_questions(request, olympiad_id):
             status=http_status.HTTP_400_BAD_REQUEST,
         )
     session = get_or_create_test_session(request.user, olympiad)
+    if session.status == getattr(session, 'STATUS_DISQUALIFIED', 'disqualified'):
+        return Response(
+            {'detail': "Siz cheating qildingiz. Olimpiada yakunlandi."},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
     if session_is_expired(session, olympiad):
         return Response(
             {'detail': "Test vaqti tugagan"},

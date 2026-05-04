@@ -202,3 +202,38 @@ def send_membership_decision_notification(membership, approved):
         message=message,
     )
     _send_telegram_to_user(membership.user, message)
+
+
+def send_cheating_detected_notification(student, olympiad, center, reason=''):
+    """Notify center managers/owner that a student left the test surface."""
+    reason_label = reason or 'test oynasidan chiqdi'
+    message = (
+        f"{student.full_name} cheating deb belgilandi.\n"
+        f"Olimpiada: {olympiad.title}\n"
+        f"Sabab: {reason_label}"
+    )
+    from centers.models import CenterMembership
+
+    recipients = []
+    manager_memberships = CenterMembership.objects.filter(
+        center=center,
+        role=CenterMembership.ROLE_MANAGER,
+        status=CenterMembership.STATUS_APPROVED,
+    ).select_related('user')
+    recipients.extend(m.user for m in manager_memberships)
+    if center.owner_id:
+        recipients.append(center.owner)
+
+    seen = set()
+    for user in recipients:
+        if not user or user.id in seen:
+            continue
+        seen.add(user.id)
+        Notification.objects.create(
+            user=user,
+            center=center,
+            type=Notification.TYPE_CHEATING_DETECTED,
+            title='Cheating aniqlandi',
+            message=message,
+        )
+        _send_telegram_to_user(user, message)
