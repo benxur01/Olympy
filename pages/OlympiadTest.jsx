@@ -43,6 +43,9 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [submitted, setSubmitted] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState('');
+  const [cheated, setCheated] = React.useState(false);
+  const [cheatMessage, setCheatMessage] = React.useState('');
+  const cheatReportedRef = React.useRef(false);
 
   React.useEffect(() => {
     if (!user?._api || !liveOlympiad?.backendId || isBeforeStart || isAfterEnd) {
@@ -56,8 +59,15 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       .then(qs => {
         if (!cancelled) setApiQuestions(Array.isArray(qs) ? qs : null);
       })
-      .catch(() => {
-        if (!cancelled) setApiQuestions(null);
+      .catch((err) => {
+        if (!cancelled) {
+          const detail = err?.data?.detail || err?.message || '';
+          if (/cheating/i.test(detail)) {
+            setCheated(true);
+            setCheatMessage("Siz cheating qildingiz. Olimpiada yakunlandi.");
+          }
+          setApiQuestions(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setQuestionsLoading(false);
@@ -75,6 +85,44 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     }, 1000);
     return () => clearInterval(t);
   }, [submitted, isBeforeStart, isAfterEnd, questionsLoading]);
+
+  const reportCheating = React.useCallback((reason) => {
+    if (cheatReportedRef.current || submitted || cheated || !user?._api || !liveOlympiad?.backendId) return;
+    cheatReportedRef.current = true;
+    setCheated(true);
+    setSubmitted(true);
+    setCheatMessage("Siz cheating qildingiz. Olimpiada yakunlandi.");
+    try {
+      globalThis.OlympyApi.reportCheating(
+        { olympiad: liveOlympiad.backendId, reason },
+        globalThis.OlympyApi.getToken(),
+      ).catch(() => {});
+    } catch {}
+  }, [submitted, cheated, user?._api, liveOlympiad?.backendId]);
+
+  React.useEffect(() => {
+    if (!user?._api || !liveOlympiad?.backendId || !apiQuestions || questionsLoading || submitted || cheated) {
+      return undefined;
+    }
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') reportCheating('tab_or_app_left');
+    };
+    const onBlur = () => reportCheating('window_blur');
+    const onPageHide = () => reportCheating('page_hidden');
+    const onFullscreenChange = () => {
+      if (document.fullscreenElement === null) reportCheating('fullscreen_exited');
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, [user?._api, liveOlympiad?.backendId, apiQuestions, questionsLoading, submitted, cheated, reportCheating]);
 
   const formatTime = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const answered = Object.keys(answers).length;
@@ -124,7 +172,6 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           if (numericOlympiadId == null) throw new Error('Missing olympiad id');
           const token = globalThis.OlympyApi?.getToken?.()
             ?? globalThis.OlympyApi?.loadAuth?.()?.token;
-          if (!token) throw new Error('Missing auth token');
           const resp = await globalThis.OlympyApi.submitAttempt(
             { olympiad: numericOlympiadId, answers: formattedAnswers, time_spent: timeSpent },
             token,
@@ -143,6 +190,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           });
         } catch (err) {
           console.warn('submitAttempt failed:', err?.message);
+          const detail = err?.data?.detail || err?.message || '';
+          if (/cheating/i.test(detail)) {
+            setCheated(true);
+            setCheatMessage("Siz cheating qildingiz. Olimpiada yakunlandi.");
+            return;
+          }
           setSubmitError("Javoblar yuborilmadi. Qayta urinib ko'ring.");
           setSubmitted(false);
         }
@@ -193,6 +246,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   if (isAfterEnd) {
     return <PendingAccessCard title="Olimpiada tugagan" status="rejected"
       message="Bu olimpiadaga qatnashish muddati o'tib ketdi."
+      onBack={() => onNavigate('student')} />;
+  }
+  if (cheated) {
+    return <PendingAccessCard title="Cheating aniqlandi" status="rejected"
+      message={cheatMessage || "Siz cheating qildingiz. Olimpiada yakunlandi."}
       onBack={() => onNavigate('student')} />;
   }
   if (questionsLoading) {

@@ -63,7 +63,7 @@ const toUserMessage = (error) => {
 
 const request = async (
   path,
-  { method = 'GET', body, token, headers = {}, retryOnAuth = true } = {},
+  { method = 'GET', body, token, headers = {}, retryOnAuth = true, keepalive = false } = {},
 ) => {
   const requestHeaders = {
     Accept: 'application/json',
@@ -81,6 +81,7 @@ const request = async (
       method,
       headers: requestHeaders,
       credentials: 'include',
+      keepalive,
       body: body === undefined
         ? undefined
         : (isFormData ? body : JSON.stringify(body)),
@@ -284,6 +285,7 @@ export const OlympyApi = {
   },
   // Attempts / results / leaderboard
   submitAttempt: (payload, token) => request('/api/attempts/', { method: 'POST', body: payload, token }),
+  reportCheating: (payload, token) => request('/api/attempts/cheating/', { method: 'POST', body: payload, token, keepalive: true, retryOnAuth: false }),
   getMyResults: (token) => request('/api/results/me/', { token }).then(unwrapList),
   getMyStats: (token) => request('/api/results/me/stats/', { token }),
   getLeaderboard: (olympiadId, token) => request(`/api/leaderboard/${olympiadId ? '?olympiad=' + olympiadId : ''}`, { token }).then(unwrapList),

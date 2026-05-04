@@ -22,6 +22,7 @@ class Notification(models.Model):
     TYPE_CENTER_REJECTED = 'center_rejected'
     TYPE_OLYMPIAD_PUBLISHED = 'olympiad_published'
     TYPE_AI_ROSTER_APPROVAL = 'ai_roster_approval'
+    TYPE_CHEATING_DETECTED = 'cheating_detected'
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

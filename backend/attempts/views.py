@@ -76,6 +76,11 @@ def submit_attempt(request):
                 {'detail': "Avval test savollarini boshlang"},
                 status=http_status.HTTP_400_BAD_REQUEST,
             )
+        if session.status == TestSession.STATUS_DISQUALIFIED:
+            return Response(
+                {'detail': "Siz cheating qildingiz. Olimpiada yakunlandi."},
+                status=http_status.HTTP_403_FORBIDDEN,
+            )
         if session_is_expired(session, olympiad):
             return Response({'detail': 'Test vaqti tugagan'},
                             status=http_status.HTTP_400_BAD_REQUEST)
@@ -120,11 +125,67 @@ def submit_attempt(request):
                 to_update.append(item)
         if to_update:
             TestAttempt.objects.bulk_update(to_update, ['rank'])
+        session.status = TestSession.STATUS_COMPLETED
+        session.save(update_fields=['status'])
 
         attempt.refresh_from_db(fields=['rank'])
         data = TestAttemptSerializer(attempt).data
         data['max_score'] = max_possible
         return Response(data, status=http_status.HTTP_201_CREATED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def report_cheating(request):
+    """POST /api/attempts/cheating/ — disqualify current user's test session."""
+    olympiad_id = request.data.get('olympiad')
+    reason = str(request.data.get('reason') or 'test_window_left')[:120]
+    if not olympiad_id:
+        return Response({'detail': 'olympiad majburiy'}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        olympiad = get_object_or_404(
+            Olympiad.objects.select_for_update().select_related('center', 'center__owner'),
+            pk=olympiad_id,
+        )
+        is_approved_student = CenterMembership.objects.filter(
+            user=request.user,
+            center=olympiad.center,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED,
+        ).exists()
+        if not is_approved_student:
+            return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+        if TestAttempt.objects.filter(user=request.user, olympiad=olympiad).exists():
+            return Response({'disqualified': False, 'detail': 'Attempt already submitted'})
+        session = (
+            TestSession.objects
+            .select_for_update()
+            .filter(user=request.user, olympiad=olympiad)
+            .first()
+        )
+        if not session:
+            return Response({'detail': "Test session topilmadi"}, status=http_status.HTTP_400_BAD_REQUEST)
+        if session.status == TestSession.STATUS_COMPLETED:
+            return Response({'disqualified': False, 'detail': 'Attempt already submitted'})
+        notify = session.status != TestSession.STATUS_DISQUALIFIED
+        session.status = TestSession.STATUS_DISQUALIFIED
+        session.disqualified_at = session.disqualified_at or timezone.now()
+        session.cheating_reason = session.cheating_reason or reason
+        session.save(update_fields=['status', 'disqualified_at', 'cheating_reason'])
+
+    if notify:
+        try:
+            from notifications.services import send_cheating_detected_notification
+
+            send_cheating_detected_notification(request.user, olympiad, olympiad.center, reason)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('cheating notification failed')
+    return Response({
+        'disqualified': True,
+        'detail': "Siz cheating qildingiz. Olimpiada yakunlandi.",
+    })
 
 
 @api_view(['GET'])
