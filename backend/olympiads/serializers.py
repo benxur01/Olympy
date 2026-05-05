@@ -23,7 +23,7 @@ class OlympiadSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Olympiad
-        fields = ['id', 'center', 'event_type', 'title', 'subject', 'start_datetime',
+        fields = ['id', 'center', 'event_type', 'title', 'subject', 'test_level', 'start_datetime',
                   'duration_minutes', 'max_score', 'status', 'created_by',
                   'question_ids', 'participants', 'avg_score', 'created_at']
         read_only_fields = ['id', 'status', 'created_by', 'participants', 'avg_score',

@@ -47,6 +47,7 @@ class Olympiad(models.Model):
     )
     title = models.CharField(max_length=200)
     subject = models.CharField(max_length=80)
+    test_level = models.CharField(max_length=80, blank=True, default='')
     start_datetime = models.DateTimeField(null=True, blank=True)
     duration_minutes = models.PositiveIntegerField(default=60)
     max_score = models.PositiveIntegerField(default=100)

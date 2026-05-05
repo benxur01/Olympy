@@ -522,6 +522,7 @@ const OlympiadCard = ({ olympiad: o, onStart, locked }) => {
       </div>
       <h3 className="font-bold text-white mb-1">{o.title}</h3>
       <div className="flex flex-wrap gap-3 text-xs text-white/40 mb-4">
+        {o.testLevel && <span className="flex items-center gap-1 text-violet-300"><Icon name="star" size={12} /> {o.testLevel}</span>}
         <span className="flex items-center gap-1"><Icon name="clock" size={12} /> {time} · {o.duration} daqiqa</span>
         <span className="flex items-center gap-1"><Icon name="file" size={12} /> {qCount} ta savol</span>
         <span className="flex items-center gap-1"><Icon name="users" size={12} /> {o.participants || 0} ishtirokchi</span>

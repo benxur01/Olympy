@@ -150,7 +150,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300"><Icon name="trophy" size={16} /></div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold text-white">{o.title}</div>
-                  <div className="text-xs text-white/40">{o.subject} · {o.startDate || 'Sana yoq'}</div>
+                  <div className="text-xs text-white/40">{o.subject}{o.testLevel ? ` · ${o.testLevel}` : ''} · {o.startDate || 'Sana yoq'}</div>
                 </div>
                 <Badge status={statusLabel(o.status)} />
               </div>
@@ -184,11 +184,11 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     <div className="p-6 space-y-6 animate-in">
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div>
-          <h2 className="text-xl font-black text-white">Olimpiadalar</h2>
+          <h2 className="text-xl font-black text-white">Tadbirlar</h2>
           <p className="text-white/40 text-sm">{centerName} · {centerType}</p>
         </div>
         <button onClick={() => setCreateModal(true)} className="btn-primary px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
-          <Icon name="plus" size={15} /> Yangi olimpiada
+          <Icon name="plus" size={15} /> Yangi tadbir
         </button>
       </div>
       <div className="grid grid-cols-1 gap-4">
@@ -201,6 +201,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               <div className="font-bold text-white">{o.title}</div>
               <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-white/40">
                 <SubjectBadge subject={o.subject} />
+                {o.testLevel && <span className="rounded-lg bg-violet-500/15 px-2 py-1 font-bold text-violet-300">Daraja: {o.testLevel}</span>}
                 <span>{o.startDate || 'Sana yoq'}</span>
                 <span>{o.duration || 60} min</span>
                 <span>{(o.questionIds || []).length} ta savol</span>

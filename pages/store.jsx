@@ -126,7 +126,7 @@ const OlympyStore = (() => {
     ],
     // Events — olimpiada is public, musobaqa is center-internal.
     olympiads: [
-      { id:'o1', centerId:'c1', eventType:'olympiad', title:'Matematika Olimpiadasi — May 2026', subject:'Matematika', startDate:'2026-05-02', startTime:'10:00', duration:60, questionIds:['q1','q2','q3','q4','q5','q6','q7','q8','q9','q10'], status:'active', createdBy:'u2', createdAt:'2026-04-20', participants:124, maxScore:100 },
+      { id:'o1', centerId:'c1', eventType:'olympiad', title:'Matematika Olimpiadasi — May 2026', subject:'Matematika', testLevel:'Beginner', startDate:'2026-05-02', startTime:'10:00', duration:60, questionIds:['q1','q2','q3','q4','q5','q6','q7','q8','q9','q10'], status:'active', createdBy:'u2', createdAt:'2026-04-20', participants:124, maxScore:100 },
       { id:'o2', centerId:'c1', eventType:'competition', title:'Ingliz tili Bellashuvi', subject:'Ingliz tili', startDate:'2026-05-05', startTime:'14:00', duration:45, questionIds:[], status:'draft', createdBy:'u2', createdAt:'2026-04-22', participants:0, maxScore:100 },
       { id:'o3', centerId:'c1', eventType:'olympiad', title:'Informatika Olimpiadasi', subject:'Informatika', startDate:'2026-04-28', startTime:'09:00', duration:90, questionIds:[], status:'finished', createdBy:'u2', createdAt:'2026-04-10', participants:201, maxScore:100, avgScore:81 },
       { id:'o4', centerId:'c1', eventType:'competition', title:'Fizika Sinovlari', subject:'Fizika', startDate:'2026-05-10', startTime:'11:00', duration:60, questionIds:[], status:'draft', createdBy:'u2', createdAt:'2026-04-25', participants:0, maxScore:100 },
@@ -329,7 +329,7 @@ const OlympyStore = (() => {
         centerId: o.centerId,
         type: 'olympiad_published',
         title: isPublic ? 'Yangi olimpiada' : 'Yangi musobaqa',
-        message: `${center?.name || 'Markaz'}da yangi ${isPublic ? 'olimpiada' : 'musobaqa'} e'lon qilindi:\nFan: ${o.subject}\nSana: ${o.startDate}\nQatnashish uchun platformaga kiring.`,
+        message: `${center?.name || 'Markaz'}da yangi ${isPublic ? 'olimpiada' : 'musobaqa'} e'lon qilindi:\nFan: ${o.subject}\n${o.testLevel ? `Daraja: ${o.testLevel}\n` : ''}Sana: ${o.startDate}\nQatnashish uchun platformaga kiring.`,
       });
     });
   };
@@ -590,6 +590,7 @@ const mapApiOlympiad = (o) => {
     eventType: o.event_type || o.eventType || 'competition',
     title: o.title,
     subject: o.subject,
+    testLevel: o.test_level || o.testLevel || '',
     startDate: localDate,
     startTime: localTime,
     duration: o.duration_minutes ?? o.duration ?? 60,
@@ -704,7 +705,7 @@ const olympiadStartMoment = (olympiad) => {
 const telegramJoinRequestText = (studentName, centerName) =>
   `Yangi o'quvchi ariza yubordi: ${studentName}.\nTashkilot: ${centerName}.\nTasdiqlaysizmi?`;
 const telegramOlympiadPublishedText = (centerName, olympiad) =>
-  `${centerName} tashkilotida yangi ${eventTypeLabel(olympiad.eventType || olympiad.event_type)} boshlandi:\nFan: ${olympiad.subject}\nSana: ${olympiad.startDate}\nQatnashish uchun platformaga kiring.`;
+  `${centerName} tashkilotida yangi ${eventTypeLabel(olympiad.eventType || olympiad.event_type)} boshlandi:\nFan: ${olympiad.subject}\n${olympiad.testLevel || olympiad.test_level ? `Daraja: ${olympiad.testLevel || olympiad.test_level}\n` : ''}Sana: ${olympiad.startDate}\nQatnashish uchun platformaga kiring.`;
 
 Object.assign(window, {
   OlympyStore, useStore,
