@@ -7,6 +7,24 @@
 const OTP_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 
+const goToTelegramLink = (link) => {
+  if (!link) return false;
+  try {
+    window.location.assign(link);
+    return true;
+  } catch (_) {}
+  try {
+    window.location.href = link;
+    return true;
+  } catch (_) {}
+  try {
+    const opened = window.open(link, '_blank', 'noopener,noreferrer');
+    return !!opened;
+  } catch (_) {
+    return false;
+  }
+};
+
 // ─── Verification block ───────────────────────────────────────────────────
 const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
   const [status, setStatus] = React.useState('idle'); // idle | opened
@@ -74,16 +92,6 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
       setError("Server bilan bog‘lanishda xatolik yuz berdi");
       return;
     }
-    let telegramWindow = null;
-    try {
-      telegramWindow = window.open('', '_blank');
-      if (telegramWindow) {
-        telegramWindow.document.title = 'Telegram ochilmoqda';
-        telegramWindow.document.body.innerHTML = '<div style="font-family:system-ui,sans-serif;padding:24px;color:#111">Telegram bot ochilmoqda...</div>';
-      }
-    } catch (_) {
-      telegramWindow = null;
-    }
     setLoading(true);
     setError('');
     setCode('');
@@ -95,7 +103,6 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
       setBotUsername(data.bot_username || '');
       const link = data.telegram_deep_link || '';
       if (!link) {
-        try { if (telegramWindow && !telegramWindow.closed) telegramWindow.close(); } catch (_) {}
         setStatus('idle');
         setExpiresAt(null);
         setError('Telegram bot sozlanmagan');
@@ -104,26 +111,11 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
       setDeepLink(link);
       setStatus('opened');
       setExpiresAt(Date.now() + OTP_TTL_MS);
-      let opened = false;
-      try {
-        if (telegramWindow && !telegramWindow.closed) {
-          telegramWindow.location.href = link;
-          telegramWindow.opener = null;
-          opened = true;
-        }
-      } catch (_) {}
+      const opened = goToTelegramLink(link);
       if (!opened) {
-        try {
-          const fallback = window.open(link, '_blank', 'noopener,noreferrer');
-          opened = !!fallback;
-        } catch (_) {}
-      }
-      if (!opened) {
-        setError("Brauzer yangi oynani blokladi. Telegramga shu sahifada o'tkazilyapti...");
-        window.location.href = link;
+        setError("Brauzer Telegramga o'tishni blokladi. Quyidagi “Telegram botni ochish” tugmasini bosing.");
       }
     } catch (err) {
-      try { if (telegramWindow && !telegramWindow.closed) telegramWindow.close(); } catch (_) {}
       setError(userMessage(err));
     } finally {
       setLoading(false);
@@ -229,4 +221,4 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
   );
 };
 
-Object.assign(window, { TelegramVerifyBlock });
+Object.assign(window, { TelegramVerifyBlock, goToTelegramLink });
