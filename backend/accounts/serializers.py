@@ -117,18 +117,42 @@ class LoginSerializer(serializers.Serializer):
     phone = serializers.CharField()
     password = serializers.CharField(write_only=True)
 
+    # Per-account brute-force himoyasi: bir telefon raqam uchun 5 ta noto'g'ri
+    # parol urinishidan so'ng 15 daqiqa lock. Avvalgi DRF throttle 5/min
+    # global edi va hujumchi 100 ta turli IP yoki telefondan navbat qilib
+    # parol topishi mumkin edi. Endi telefon raqam darajasida tracking.
+    LOCKOUT_THRESHOLD = 5
+    LOCKOUT_TTL_SECONDS = 15 * 60
+
+    @classmethod
+    def _failed_cache_key(cls, normalized_phone):
+        return f'login_failed:{normalized_phone}'
+
     def validate(self, attrs):
+        from django.core.cache import cache
         norm = normalize_phone(attrs.get('phone'))
         if not norm:
             raise serializers.ValidationError("Telefon raqam yoki parol noto'g'ri")
+        cache_key = self._failed_cache_key(norm)
+        current_failed = cache.get(cache_key, 0)
+        if current_failed >= self.LOCKOUT_THRESHOLD:
+            raise serializers.ValidationError(
+                "Juda ko'p noto'g'ri urinish. Iltimos, 15 daqiqadan keyin qayta urinib ko'ring."
+            )
         try:
             user = User.objects.get(normalized_phone=norm)
         except User.DoesNotExist:
+            # Mavjud bo'lmagan telefon uchun ham counter oshiramiz, aks holda
+            # hujumchi telefon raqam mavjudligini timing orqali aniqlay olardi.
+            cache.set(cache_key, current_failed + 1, self.LOCKOUT_TTL_SECONDS)
             raise serializers.ValidationError("Telefon raqam yoki parol noto'g'ri")
         if not user.check_password(attrs.get('password')):
+            cache.set(cache_key, current_failed + 1, self.LOCKOUT_TTL_SECONDS)
             raise serializers.ValidationError("Telefon raqam yoki parol noto'g'ri")
         if not user.is_active:
             raise serializers.ValidationError("Hisob bloklangan")
+        # Muvaffaqiyatli login — counter'ni tozalaymiz.
+        cache.delete(cache_key)
         attrs['user'] = user
         return attrs
 

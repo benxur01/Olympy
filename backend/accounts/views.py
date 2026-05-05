@@ -10,6 +10,7 @@ from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import transaction
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
@@ -113,6 +114,12 @@ def register(request):
     required: this prevents reusing an old verification to register again
     later (e.g. after the original account was deleted or the phone changed
     hands).
+
+    Ixtiyoriy join: agar so'rovda `center_id` va `role` bo'lsa, foydalanuvchi
+    yaratilgach shu markazga pending arizasi ham bir tranzaksiyada
+    yaratiladi. Avval frontend register + joinCenter ni alohida chaqirar va
+    ikkinchisi xato bersa "yetim" hisob qolardi. Endi muvaffaqiyatsiz join
+    butun register'ni rollback qiladi.
     """
     serializer = RegisterSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -122,18 +129,81 @@ def register(request):
             {'detail': 'Telefon raqami tasdiqlanmagan yoki tasdiq muddati tugagan'},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    user = serializer.save()
-    if verified.telegram_chat_id:
-        _link_user_to_telegram(
-            user,
-            verified.telegram_chat_id,
-            verified.telegram_user_id,
-        )
+
+    # Optional join params
+    join_center_id = request.data.get('center_id') or request.data.get('center')
+    join_role = (request.data.get('join_role') or '').strip().lower()
+    join_subject = (request.data.get('join_subject') or request.data.get('subject') or '').strip()
+    membership_data = None
+
+    try:
+        with transaction.atomic():
+            user = serializer.save()
+            if verified.telegram_chat_id:
+                _link_user_to_telegram(
+                    user,
+                    verified.telegram_chat_id,
+                    verified.telegram_user_id,
+                )
+            if join_center_id and join_role:
+                from centers.models import CenterMembership, EducationCenter
+                from centers.serializers import (
+                    CenterMembershipSerializer,
+                    JoinRequestSerializer,
+                )
+                join_serializer = JoinRequestSerializer(data={
+                    'role': join_role,
+                    'subject': join_subject,
+                })
+                join_serializer.is_valid(raise_exception=True)
+                center = get_object_or_404(
+                    EducationCenter,
+                    pk=join_center_id,
+                    status=EducationCenter.STATUS_APPROVED,
+                )
+                membership = CenterMembership.objects.create(
+                    user=user,
+                    center=center,
+                    role=join_serializer.validated_data['role'],
+                    subject=join_serializer.validated_data.get('subject', ''),
+                    approval_code=secrets.token_hex(3).upper(),
+                    status=CenterMembership.STATUS_PENDING,
+                )
+                membership_data = CenterMembershipSerializer(membership).data
+                # Notification fan-out: same logic as join_center view.
+                from notifications.services import (
+                    send_staff_join_request_notification,
+                    send_student_join_request_notification,
+                )
+                if membership.role == CenterMembership.ROLE_STUDENT:
+                    managers = CenterMembership.objects.filter(
+                        center=center, role=CenterMembership.ROLE_MANAGER,
+                        status=CenterMembership.STATUS_APPROVED,
+                    ).select_related('user')
+                    for m in managers:
+                        send_student_join_request_notification(m.user, user, center, membership)
+                    if center.owner_id:
+                        send_student_join_request_notification(center.owner, user, center, membership)
+                elif membership.role in (CenterMembership.ROLE_TEACHER, CenterMembership.ROLE_MANAGER):
+                    if center.owner_id:
+                        send_staff_join_request_notification(
+                            center.owner, user, center,
+                            role=membership.role,
+                            subject=membership.subject or '',
+                            membership=membership,
+                        )
+    except ValidationError as exc:
+        detail = '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc)
+        return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+
     payload = _jwt_payload(user)
-    response = Response({
+    body = {
         **payload,
         'user': UserSerializer(user).data,
-    }, status=status.HTTP_201_CREATED)
+    }
+    if membership_data:
+        body['membership'] = membership_data
+    response = Response(body, status=status.HTTP_201_CREATED)
     return _set_auth_cookies(response, payload)
 
 
@@ -219,6 +289,30 @@ def refresh_token(request):
     )
     if not refresh:
         return Response({'detail': 'Refresh token topilmadi'}, status=status.HTTP_401_UNAUTHORIZED)
+    # Avval bu yerda faqat JWT signature tekshirilardi va bloklangan
+    # foydalanuvchi yoki token_version bumped bo'lgan token ham yangilanardi
+    # — natijada admin user'ni bloklab qo'ysa-da, refresh orqali 7 kun
+    # ichida kirib turaverishi mumkin edi. Endi:
+    #   1) refresh token payload'idan user_id va token_version olamiz
+    #   2) DB'da user mavjud, faol va token_version mos kelishini tekshiramiz
+    # Aks holda 401 qaytaramiz — bu JWT'ning lifetime'ini token_version
+    # mexanizmiga bog'laydi.
+    from rest_framework_simplejwt.tokens import RefreshToken as RT
+    from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
+    try:
+        decoded = RT(refresh)
+    except (TokenError, InvalidToken):
+        return Response({'detail': 'Refresh token yaroqsiz'}, status=status.HTTP_401_UNAUTHORIZED)
+    user_id = decoded.get('user_id')
+    token_version = decoded.get('token_version')
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    user = User.objects.filter(pk=user_id).first()
+    if not user or not user.is_active:
+        return Response({'detail': 'Foydalanuvchi faol emas'}, status=status.HTTP_401_UNAUTHORIZED)
+    if token_version is None or int(token_version) != int(user.token_version or 0):
+        return Response({'detail': 'Token bekor qilingan, qayta kiring'}, status=status.HTTP_401_UNAUTHORIZED)
+
     serializer = TokenRefreshSerializer(data={'refresh': refresh})
     serializer.is_valid(raise_exception=True)
     payload = serializer.validated_data
@@ -238,6 +332,15 @@ refresh_token.cls.throttle_scope = 'auth'
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def logout(request):
+    # Avval logout faqat cookielarni tozalardi va o'g'irlangan access token
+    # 30 daqiqa davomida ishlatib turilishi mumkin edi. Endi authenticated
+    # foydalanuvchi logout qilsa, token_version oshiriladi — bu mavjud
+    # JWT'larni darhol bekor qiladi (OlympyJWTAuthentication tekshiradi).
+    if getattr(request.user, 'is_authenticated', False):
+        try:
+            bump_token_version(request.user)
+        except Exception:
+            logger.exception('logout: bump_token_version failed')
     response = Response({'ok': True})
     return _clear_auth_cookies(response)
 
@@ -245,7 +348,14 @@ def logout(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def me(request):
-    """GET /api/me/ — return the current authenticated user."""
+    """GET /api/me/ — return the current authenticated user.
+
+    is_active=False user uchun 401 qaytaramiz: bloklangan foydalanuvchining
+    JWT'si OlympyJWTAuthentication tomonidan token_version mismatch sababli
+    rad etiladi, lekin xavfsizlik qatlamini ikki marta qo'yamiz.
+    """
+    if not request.user.is_active:
+        return Response({'detail': 'Hisob bloklangan'}, status=status.HTTP_401_UNAUTHORIZED)
     return Response(UserSerializer(request.user).data)
 
 
@@ -256,6 +366,8 @@ def admin_users_list(request):
 
     Returns every platform user with their roles_detail so the admin panel
     can render an authoritative table without falling back to mock data.
+    Pagination majburiy: 10K+ foydalanuvchi bo'lsa to'liq ro'yxat 1+ MB
+    response qaytarib brauzerni bog'lab qo'yardi.
     """
     if not request.user.is_platform_admin:
         return Response({'detail': 'Forbidden'},
@@ -264,6 +376,19 @@ def admin_users_list(request):
 
     User = get_user_model()
     qs = User.objects.all().order_by('-created_at')
+    # Optional search query: phone yoki ism bo'yicha
+    search = request.query_params.get('search', '').strip()
+    if search:
+        from django.db.models import Q
+        qs = qs.filter(
+            Q(full_name__icontains=search)
+            | Q(normalized_phone__icontains=search)
+        )
+    from rest_framework.pagination import PageNumberPagination
+    paginator = PageNumberPagination()
+    page = paginator.paginate_queryset(qs, request)
+    if page is not None:
+        return paginator.get_paginated_response(UserSerializer(page, many=True).data)
     return Response(UserSerializer(qs, many=True).data)
 
 
