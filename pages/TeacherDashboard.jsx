@@ -292,9 +292,8 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               <input type="time" className="input-field" value={newOlympiad.startTime} onChange={e => setNewOlympiad({ ...newOlympiad, startTime: e.target.value })} />
             </div>
           </div>
-          <div>
-            <label className="block text-xs text-white/50 mb-1.5 font-medium">Maksimal ball</label>
-            <input type="number" className="input-field" value={newOlympiad.maxScore} onChange={e => setNewOlympiad({ ...newOlympiad, maxScore: +e.target.value })} />
+          <div className="glass rounded-xl p-3 border border-indigo-500/15 text-xs text-indigo-200">
+            <Icon name="info" size={12} className="inline" /> Maksimal ball olimpiadaga biriktirilgan savollar yig'indisidan avtomatik hisoblanadi.
           </div>
           <div className="flex gap-3 pt-2">
             <button onClick={() => setCreateModal(false)} className="btn-ghost flex-1 py-3 rounded-xl">Bekor qilish</button>

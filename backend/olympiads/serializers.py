@@ -14,6 +14,12 @@ class OlympiadSerializer(serializers.ModelSerializer):
     )
     participants = serializers.SerializerMethodField()
     avg_score = serializers.SerializerMethodField()
+    # max_score model field default 100 edi va frontend uni o'rnatishga harakat
+    # qilardi, lekin server submit_attempt'da uni e'tiborga olmasdi va score
+    # = round(earned/sum(question.score)*100) ko'rinishida hisoblardi. Endi
+    # max_score serializer-derived qiymat: savollarning yig'indi balli.
+    # Olimpiadaga savollar biriktirilmagan paytda fallback 100.
+    max_score = serializers.SerializerMethodField()
 
     class Meta:
         model = Olympiad
@@ -21,7 +27,7 @@ class OlympiadSerializer(serializers.ModelSerializer):
                   'duration_minutes', 'max_score', 'status', 'created_by',
                   'question_ids', 'participants', 'avg_score', 'created_at']
         read_only_fields = ['id', 'status', 'created_by', 'participants', 'avg_score',
-                            'created_at']
+                            'max_score', 'created_at']
 
     def get_participants(self, obj):
         # Real attempt count, not a fake value. Slightly N+1 — fine until
@@ -34,6 +40,10 @@ class OlympiadSerializer(serializers.ModelSerializer):
         if not total:
             return 0
         return round(sum(a.score for a in agg) / total, 1)
+
+    def get_max_score(self, obj):
+        total = sum(q.score or 0 for q in obj.questions.all())
+        return total if total > 0 else 100
 
     def validate(self, attrs):
         center = attrs.get('center') or (self.instance.center if self.instance else None)

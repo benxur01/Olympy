@@ -711,7 +711,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <OwnerMetric label="Xodimlar" value={myStaff.length} hint="Tasdiqlangan manager/o'qituvchi" icon={<Icon name="users" size={18} />} tone="emerald" />
         <OwnerMetric label="Kutilayotgan arizalar" value={pendingCount} hint={pendingCount ? 'Qaror kutilmoqda' : 'Navbat bo\'sh'} icon={<Icon name="bell" size={18} />} tone="amber" />
-        <OwnerMetric label="Olimpiadalar" value={center.olympiads || centerOlympiads.length} hint={`${activeOlympiads.length} ta faol`} icon={<Icon name="trophy" size={18} />} tone="cyan" />
+        <OwnerMetric label="Olimpiadalar" value={centerOlympiads.length} hint={`${activeOlympiads.length} ta faol`} icon={<Icon name="trophy" size={18} />} tone="cyan" />
         <OwnerMetric label="Reyting" value={center.rating || '—'} hint="Tashkilot profili ko'rsatkichi" icon={<Icon name="star" size={18} />} tone="indigo" />
       </div>
 
@@ -748,7 +748,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               ['Profil', 100, '#10b981'],
               ['Xodimlar', Math.min(100, myStaff.length * 25), '#06b6d4'],
               ['Fanlar', Math.min(100, (center.subjects || []).length * 18), '#6366f1'],
-              ['Olimpiadalar', Math.min(100, (center.olympiads || centerOlympiads.length) * 20), '#f59e0b'],
+              ['Olimpiadalar', Math.min(100, (centerOlympiads.length) * 20), '#f59e0b'],
             ].map(row => (
               <div key={row[0]}>
                 <div className="mb-1 flex justify-between text-xs font-bold">
@@ -877,7 +877,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
         <div className="mt-6 grid gap-3 md:grid-cols-4">
           <OwnerMetric label="O'quvchi" value={center.students || 0} icon={<Icon name="users" size={17} />} tone="emerald" />
-          <OwnerMetric label="Olimpiada" value={center.olympiads || centerOlympiads.length} icon={<Icon name="trophy" size={17} />} tone="cyan" />
+          <OwnerMetric label="Olimpiada" value={centerOlympiads.length} icon={<Icon name="trophy" size={17} />} tone="cyan" />
           <OwnerMetric label="Xodim" value={myStaff.length} icon={<Icon name="shield" size={17} />} tone="indigo" />
           <OwnerMetric label="Reyting" value={center.rating || '—'} icon={<Icon name="star" size={17} />} tone="amber" />
         </div>

@@ -58,41 +58,21 @@ const AdminMetricCard = ({ label, value, delta, icon, tone = 'indigo' }) => {
   );
 };
 
-const AdminLineChart = ({ pendingCount = 0 }) => {
-  const points = '0,132 38,116 76,88 114,105 152,70 190,78 228,45 266,62 304,24 342,36 380,14 418,60 450,44';
+const AdminBarChart = ({ values = [], labels = [] }) => {
+  const safe = Array.isArray(values) && values.length > 0 ? values : [0, 0, 0, 0, 0, 0];
+  const safeLabels = (labels && labels.length === safe.length) ? labels : ['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn'].slice(0, safe.length);
+  const maxV = Math.max(1, ...safe);
   return (
-    <svg viewBox="0 0 450 150" className="h-[226px] w-full overflow-visible">
-      {[0, 1, 2, 3, 4].map(i => (
-        <line key={i} x1="0" x2="450" y1={18 + i * 30} y2={18 + i * 30} stroke="#edf1f7" strokeWidth="1" />
+    <div className="flex h-[172px] items-end gap-4 px-2">
+      {safe.map((v, i) => (
+        <div key={i} className="flex flex-1 flex-col items-center gap-3">
+          <div className="w-full max-w-5 rounded-t bg-indigo-500 shadow-sm shadow-indigo-200" style={{ height: `${Math.max((v / maxV) * 130, v > 0 ? 8 : 2)}px` }} />
+          <div className="text-xs font-semibold text-slate-400">{safeLabels[i]}</div>
+        </div>
       ))}
-      <path d={`M${points}`} fill="none" stroke="#5b6ff8" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
-      <path d={`M${points} L450,150 L0,150 Z`} fill="url(#adminChartFill)" opacity="0.28" />
-      <g>
-        <rect x="276" y="22" width="74" height="43" rx="6" fill="white" stroke="#e5eaf1" />
-        <text x="286" y="40" fill="#94a3b8" fontSize="9" fontWeight="600">Bugun</text>
-        <text x="286" y="56" fill="#172033" fontSize="12" fontWeight="800">{pendingCount} ariza</text>
-      </g>
-      <circle cx="304" cy="24" r="4" fill="#5b6ff8" stroke="white" strokeWidth="3" />
-      <defs>
-        <linearGradient id="adminChartFill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#5b6ff8" />
-          <stop offset="100%" stopColor="#ffffff" />
-        </linearGradient>
-      </defs>
-    </svg>
+    </div>
   );
 };
-
-const AdminBarChart = ({ values = [38, 55, 64, 77, 90, 100] }) => (
-  <div className="flex h-[172px] items-end gap-4 px-2">
-    {values.map((v, i) => (
-      <div key={i} className="flex flex-1 flex-col items-center gap-3">
-        <div className="w-full max-w-5 rounded-t bg-indigo-500 shadow-sm shadow-indigo-200" style={{ height: `${Math.max(v, 12) * 1.35}px` }} />
-        <div className="text-xs font-semibold text-slate-400">{['Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn'][i]}</div>
-      </div>
-    ))}
-  </div>
-);
 
 const AdminDonut = ({ segments }) => {
   let offset = 25;
@@ -193,7 +173,6 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       }))
     : store.requests.filter(r => r.type === 'center' && r.status === 'pending');
 
-  const pendingManagerReqs = store.requests.filter(r => r.type === 'manager' && r.status === 'pending');
   const donutTotal = Math.max(rawCenters.length, 1);
   const approvedCenterPct = Math.round((approvedCenters.length / donutTotal) * 100);
   const pendingCenterPct = Math.round((pendingCenters.length / donutTotal) * 100);
@@ -297,6 +276,30 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       status: (isApi ? apiBlocked : !!blockedIds[u.id]) ? 'Bloklangan' : 'Faol',
     };
   });
+
+  // Foydalanuvchi o'sishi: oxirgi 6 oy bo'yicha ro'yxatdan o'tganlar soni.
+  // Avval bu chart hardcoded [38, 55, 64, 77, 90, 100] qiymatlarni ko'rsatardi.
+  const userGrowthChart = (() => {
+    const now = new Date();
+    const months = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+        label: d.toLocaleDateString('uz-UZ', { month: 'short' }),
+        count: 0,
+      });
+    }
+    allUsers.forEach(u => {
+      const joined = (u.joined || '').slice(0, 7);
+      const bucket = months.find(m => m.key === joined);
+      if (bucket) bucket.count += 1;
+    });
+    return {
+      values: months.map(m => m.count),
+      labels: months.map(m => m.label),
+    };
+  })();
 
   const recentActivity = [
     ...pendingCenterReqs.map(req => {
@@ -749,7 +752,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       <div className="grid gap-5 xl:grid-cols-2">
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="mb-5 text-base font-extrabold text-slate-900">Foydalanuvchi o'sishi</h2>
-          <AdminBarChart />
+          <AdminBarChart values={userGrowthChart.values} labels={userGrowthChart.labels} />
         </section>
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="mb-5 text-base font-extrabold text-slate-900">Tashkilotlar holati</h2>

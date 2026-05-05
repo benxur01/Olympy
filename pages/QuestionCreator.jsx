@@ -1,6 +1,11 @@
 // pages/QuestionCreator.jsx
 
-const SUBJECTS = ['Matematika','Ingliz tili','Ona tili','Informatika','Fizika','Kimyo','Biologiya','Tarix','Geografiya'];
+// Avval bu yerda alohida SUBJECTS ro'yxati qattiq kodlangan edi va Auth.jsx
+// dagi SUBJECTS_LIST bilan sinxron emas edi. Endi global ro'yxatdan foydalanib,
+// faqat unga ulanmagan paytda fallback ishlatamiz.
+const SUBJECTS = (globalThis.SUBJECTS_LIST && globalThis.SUBJECTS_LIST.length > 0)
+  ? globalThis.SUBJECTS_LIST
+  : ['Matematika','Ingliz tili','Ona tili','Informatika','Fizika','Kimyo','Biologiya','Tarix','Geografiya'];
 const LEVELS = ['Oson','O\'rta','Qiyin'];
 const TYPES = ['Ko\'p tanlovli','To\'g\'ri/Noto\'g\'ri','Qisqa javob'];
 

@@ -32,7 +32,11 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         if (data?.telegram_deep_link) {
           try { window.open(data.telegram_deep_link, '_blank', 'noopener,noreferrer'); } catch {}
           showToast('Telegram bot ochildi. Telefon raqamingizni yuboring.');
+          // Polling 5s × 60 = 5 daqiqa: avval 1 daqiqa keyin to'xtardi va
+          // foydalanuvchi botda kechikib ulansa, ulanish payqalmasdi. Endi
+          // 5 daqiqa kutadi va keyin Manual refresh kerakligini bildiradi.
           let tries = 0;
+          const MAX_TRIES = 60;
           const token = OlympyApi.getToken();
           const pollId = setInterval(() => {
             tries += 1;
@@ -47,7 +51,10 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 }
               })
               .catch(() => {});
-            if (tries >= 12) clearInterval(pollId);
+            if (tries >= MAX_TRIES) {
+              clearInterval(pollId);
+              showToast('Polling tugadi. Telegramda ulansangiz, sahifani yangilang.');
+            }
           }, 5000);
         } else {
           showToast('Bot username sozlanmagan');
@@ -551,12 +558,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Boshlanish sanasi</label><input type="date" className="input-field" value={newOlympiad.startDate} onChange={e => setNewOlympiad({...newOlympiad, startDate: e.target.value})} /></div>
             <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Boshlanish vaqti</label><input type="time" className="input-field" value={newOlympiad.startTime} onChange={e => setNewOlympiad({...newOlympiad, startTime: e.target.value})} /></div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Davomiyligi (min)</label><input type="number" className="input-field" value={newOlympiad.duration} onChange={e => setNewOlympiad({...newOlympiad, duration: +e.target.value})} /></div>
-            <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Maksimal ball</label><input type="number" className="input-field" value={newOlympiad.maxScore} onChange={e => setNewOlympiad({...newOlympiad, maxScore: +e.target.value})} /></div>
+          <div>
+            <label className="block text-xs text-white/50 mb-1.5 font-medium">Davomiyligi (min)</label>
+            <input type="number" className="input-field" value={newOlympiad.duration} onChange={e => setNewOlympiad({...newOlympiad, duration: +e.target.value})} />
           </div>
           <div className="glass rounded-xl p-3 border border-indigo-500/15 text-xs text-indigo-200">
-            <Icon name="info" size={12} className="inline" /> Olimpiada saqlangach, "Savollar" tugmasi orqali savollar tayinlang. E'lon qilish faqat savollar tayinlangandan so'ng mumkin.
+            <Icon name="info" size={12} className="inline" /> Olimpiada saqlangach, "Savollar" tugmasi orqali savollar tayinlang. Maksimal ball biriktirilgan savollar yig'indisidan avtomatik hisoblanadi.
           </div>
           <div className="flex gap-3 pt-2">
             <button onClick={() => setCreateModal(false)} className="btn-ghost flex-1 py-3 rounded-xl">Bekor qilish</button>
