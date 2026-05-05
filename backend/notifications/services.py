@@ -86,9 +86,12 @@ def _student_join_keyboard(membership):
 
 def _telegram_olympiad_published_text(center, olympiad):
     event_label = 'olimpiada' if getattr(olympiad, 'event_type', '') == 'olympiad' else 'musobaqa'
+    level = getattr(olympiad, 'test_level', '') or ''
+    level_line = f"Daraja: {level}\n" if level else ''
     return (
         f"{center.name} ({_center_type(center)}) da yangi {event_label} boshlandi:\n"
         f"Fan: {olympiad.subject}\n"
+        f"{level_line}"
         f"Sana: {olympiad.start_datetime.date() if olympiad.start_datetime else '—'}\n"
         f"Qatnashish uchun platformaga kiring."
     )

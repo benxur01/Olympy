@@ -49,7 +49,10 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
             <div className="text-5xl md:text-7xl font-black text-white mb-2">{pct}<span className="text-white/30 text-3xl">/100</span></div>
             <div className={`text-2xl font-bold ${grade.color} mb-2`}>{grade.label}</div>
             <div className="text-white/50 text-sm">{r.olympiad?.title || 'Olimpiada'}</div>
-            {r.olympiad?.subject && <SubjectBadge subject={r.olympiad.subject} />}
+            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
+              {r.olympiad?.subject && <SubjectBadge subject={r.olympiad.subject} />}
+              {r.olympiad?.testLevel && <span className="chip bg-violet-500/15 text-violet-300 border border-violet-500/20">{r.olympiad.testLevel}</span>}
+            </div>
           </div>
         </div>
 

@@ -19,6 +19,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [pendingStudents, setPendingStudents] = React.useState([]);
   const [approvedStudents, setApprovedStudents] = React.useState([]);
   const [assignedQuestionIds, setAssignedQuestionIds] = React.useState([]);
+  const [assignmentLevel, setAssignmentLevel] = React.useState('');
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
@@ -121,6 +122,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 
   React.useEffect(() => {
     setAssignedQuestionIds(assignModal?.questionIds || []);
+    setAssignmentLevel(assignModal?.testLevel || '');
   }, [assignModal?.id]);
 
   // ─── API rejimida olimpiada/savol/markazlarni real backend'dan olish ───
@@ -487,7 +489,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold text-white truncate">{o.title}</div>
-                  <div className="text-xs text-white/40">{o.participants || 0} ishtirokchi</div>
+                  <div className="text-xs text-white/40">{o.testLevel ? `${o.testLevel} · ` : ''}{o.participants || 0} ishtirokchi</div>
                 </div>
                 <Badge status={statusLabel(o.status)} />
               </div>
@@ -654,6 +656,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 <div className="flex flex-wrap items-center gap-3 text-xs text-white/40">
                   <SubjectBadge subject={o.subject} />
                   <span className={`rounded-lg px-2 py-1 font-bold ${o.eventType === 'olympiad' ? 'bg-cyan-500/15 text-cyan-300' : 'bg-amber-500/15 text-amber-300'}`}>{eventTypeLabel(o.eventType || 'competition')}</span>
+                  {o.testLevel && <span className="rounded-lg bg-violet-500/15 px-2 py-1 font-bold text-violet-300">Daraja: {o.testLevel}</span>}
                   <span className="inline-flex items-center gap-1"><Icon name="clock" size={12} /> {o.startDate || o.date || 'Sana yo\'q'} {o.startTime || ''}</span>
                   <span>{o.duration} min</span>
                   <span>{assignedCount} ta savol</span>
@@ -730,7 +733,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <h3 className="font-bold text-white mb-4">Tadbir natijalari</h3>
         {olympiads.filter(o => o.status === 'finished').map(o => (
           <div key={o.id} className="flex items-center gap-4 p-4 glass rounded-xl mb-3">
-            <div className="flex-1"><div className="font-semibold text-white">{o.title}</div><div className="text-xs text-white/40">{o.participants || 0} ishtirokchi</div></div>
+            <div className="flex-1"><div className="font-semibold text-white">{o.title}</div><div className="text-xs text-white/40">{o.testLevel ? `${o.testLevel} · ` : ''}{o.participants || 0} ishtirokchi</div></div>
             <DonutChart value={o.avgScore || 0} size={60} />
             <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl">Reyting</button>
           </div>
@@ -886,7 +889,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 </div>
                 <div className="glass rounded-xl p-3">
                   <div className="text-xs text-white/35 mb-1">Test</div>
-                  <div className="font-bold text-white">{questionCount} ta savol · {liveEvent.duration} min</div>
+                  <div className="font-bold text-white">{questionCount} ta savol · {liveEvent.duration} min{liveEvent.testLevel ? ` · ${liveEvent.testLevel}` : ''}</div>
                 </div>
               </div>
               <div className="text-white font-bold">{liveEvent.title}</div>
@@ -912,6 +915,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         {assignModal && (() => {
           const liveOlympiad = (isApi ? olympiads : store.olympiads).find(o => o.id === assignModal.id) || assignModal;
           if (!liveOlympiad) return null;
+          const levelValue = assignmentLevel.trim();
           const subjectQs = centerQuestions.filter(q => q.subject === liveOlympiad.subject);
           const otherQs = centerQuestions.filter(q => q.subject !== liveOlympiad.subject);
           const assigned = new Set(isApi ? assignedQuestionIds : (liveOlympiad.questionIds || []));
@@ -925,6 +929,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           };
           const saveAssignment = () => {
             if (!isApi) {
+              OlympyStore.updateOlympiad(liveOlympiad.id, { testLevel: levelValue });
               setAssignModal(null);
               return;
             }
@@ -934,14 +939,17 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               return question?.backendId ?? id;
             });
             setAssignmentSaving(true);
-            OlympyApi.updateOlympiadQuestions(backendOlympiadId, selectedQuestionIds, OlympyApi.getToken())
+            OlympyApi.updateOlympiad(backendOlympiadId, {
+              question_ids: selectedQuestionIds,
+              test_level: levelValue,
+            }, OlympyApi.getToken())
               .then(() => {
-                showToast('✓ Savollar tayinlandi');
+                showToast(levelValue ? `✓ Savollar va ${levelValue} darajasi saqlandi` : '✓ Savollar tayinlandi');
                 setAssignModal(null);
                 apiOlympiadsRes.reload();
               })
               .catch(err => {
-                console.warn('updateOlympiadQuestions failed:', err);
+                console.warn('update olympiad test failed:', err);
                 showToast("⚠ Savollarni saqlab bo'lmadi");
               })
               .finally(() => setAssignmentSaving(false));
@@ -950,6 +958,30 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             <div className="space-y-3">
               <div className="text-sm text-white/60">{liveOlympiad.title} — {liveOlympiad.subject}</div>
               <div className="text-xs text-white/40">Tayinlangan: <span className="text-white">{assigned.size}</span> / {centerQuestions.length} ta mavjud</div>
+              <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-3">
+                <label className="block text-xs text-violet-200 mb-1.5 font-semibold">Test darajasi <span className="text-white/35">(ixtiyoriy)</span></label>
+                <input className="input-field" list="test-level-options" placeholder="Masalan: Beginner, O'rta, Advanced"
+                  value={assignmentLevel} onChange={e => setAssignmentLevel(e.target.value)} />
+                <datalist id="test-level-options">
+                  <option value="Beginner" />
+                  <option value="O'rta" />
+                  <option value="Advanced" />
+                </datalist>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {['Beginner', "O'rta", 'Advanced'].map(level => (
+                    <button key={level} type="button" onClick={() => setAssignmentLevel(level)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${assignmentLevel === level ? 'bg-violet-500 text-white' : 'bg-white/5 text-white/55 hover:bg-white/10 hover:text-white'}`}>
+                      {level}
+                    </button>
+                  ))}
+                  {assignmentLevel && (
+                    <button type="button" onClick={() => setAssignmentLevel('')}
+                      className="rounded-lg bg-white/5 px-2.5 py-1 text-xs font-bold text-white/45 hover:bg-white/10 hover:text-white">
+                      Tozalash
+                    </button>
+                  )}
+                </div>
+              </div>
               <div className="space-y-2 max-h-80 overflow-y-auto">
                 {subjectQs.length > 0 && <div className="text-xs text-white/40 font-medium uppercase tracking-wider mt-1">Tegishli fan savollari</div>}
                 {subjectQs.map(q => (

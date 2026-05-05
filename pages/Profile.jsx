@@ -220,7 +220,11 @@ const ProfilePage = ({ user, onNavigate, embedded }) => {
                 <div className="w-10 h-10 rounded-xl gradient-bg flex items-center justify-center text-white flex-shrink-0">🏆</div>
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-white truncate">{o.title}</div>
-                  <div className="flex items-center gap-2 mt-0.5"><SubjectBadge subject={o.subject} /><span className="text-xs text-white/30">{o.startDate || o.date}</span></div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <SubjectBadge subject={o.subject} />
+                    {o.testLevel && <span className="chip bg-violet-500/15 text-violet-300 border border-violet-500/20">{o.testLevel}</span>}
+                    <span className="text-xs text-white/30">{o.startDate || o.date}</span>
+                  </div>
                 </div>
                 <Badge status={statusLabel(o.status)} />
               </div>
