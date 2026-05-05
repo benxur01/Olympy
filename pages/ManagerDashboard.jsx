@@ -40,13 +40,37 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       showToast('Real bot server rejimida ulanadi');
       return;
     }
+    let telegramWindow = null;
+    try {
+      telegramWindow = window.open('', '_blank');
+      if (telegramWindow) {
+        telegramWindow.document.title = 'Telegram ochilmoqda';
+        telegramWindow.document.body.innerHTML = '<div style="font-family:system-ui,sans-serif;padding:24px;color:#111">Telegram bot ochilmoqda...</div>';
+      }
+    } catch (_) {
+      telegramWindow = null;
+    }
     setTelegramLinkLoading(true);
     OlympyApi.startTelegramLink(OlympyApi.getToken())
       .then(data => {
         setTelegramLink(data);
         if (data?.telegram_deep_link) {
-          try { window.open(data.telegram_deep_link, '_blank', 'noopener,noreferrer'); } catch {}
-          showToast('Telegram bot ochildi. Telefon raqamingizni yuboring.');
+          let opened = false;
+          try {
+            if (telegramWindow && !telegramWindow.closed) {
+              telegramWindow.location.href = data.telegram_deep_link;
+              telegramWindow.opener = null;
+              opened = true;
+            }
+          } catch {}
+          if (!opened) {
+            try {
+              const fallback = window.open(data.telegram_deep_link, '_blank', 'noopener,noreferrer');
+              opened = !!fallback;
+            } catch {}
+          }
+          if (!opened) window.location.href = data.telegram_deep_link;
+          showToast(opened ? 'Telegram bot ochildi. Telefon raqamingizni yuboring.' : 'Brauzer yangi oynani blokladi. Telegramga shu sahifada o‘tkazilyapti...');
           // Polling 5s × 60 = 5 daqiqa: avval 1 daqiqa keyin to'xtardi va
           // foydalanuvchi botda kechikib ulansa, ulanish payqalmasdi. Endi
           // 5 daqiqa kutadi va keyin Manual refresh kerakligini bildiradi.
@@ -78,10 +102,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           }, 5000);
           telegramPollRef.current = pollId;
         } else {
+          try { if (telegramWindow && !telegramWindow.closed) telegramWindow.close(); } catch {}
           showToast('Bot username sozlanmagan');
         }
       })
       .catch(err => {
+        try { if (telegramWindow && !telegramWindow.closed) telegramWindow.close(); } catch {}
         console.warn('startTelegramLink failed:', err);
         showToast(OlympyApi.toUserMessage(err));
       })
