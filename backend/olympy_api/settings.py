@@ -111,10 +111,20 @@ TEMPLATES = [
 WSGI_APPLICATION = 'olympy_api.wsgi.application'
 
 DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
+# DATABASE_SCHEMA ixtiyoriy: bo'sh bo'lmasa, Django shu PostgreSQL schema'da
+# ishlaydi (search_path orqali). Bu bitta DB'ni boshqa loyiha bilan baham
+# ko'rishda (masalan, Render free tier'da Quiz-bot bilan) table-name
+# to'qnashishlarini oldini oladi. render_build.sh schema'ni yaratadi.
+DATABASE_SCHEMA = os.environ.get('DATABASE_SCHEMA', '').strip()
 if DATABASE_URL:
     parsed_db = urlparse(DATABASE_URL)
     if parsed_db.scheme not in ('postgres', 'postgresql'):
         raise ImproperlyConfigured('DATABASE_URL must use postgres:// or postgresql://')
+    db_options = {}
+    if DATABASE_SCHEMA:
+        # search_path ni schema'ga qo'yamiz, public ham reachable bo'lsin
+        # (masalan extension'lar yoki shared sequence'lar uchun).
+        db_options['options'] = f'-c search_path={DATABASE_SCHEMA},public'
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -123,6 +133,7 @@ if DATABASE_URL:
             'PASSWORD': parsed_db.password or '',
             'HOST': parsed_db.hostname or '',
             'PORT': str(parsed_db.port or 5432),
+            'OPTIONS': db_options,
         }
     }
 elif os.environ.get('OLYMPY_DB_ENGINE', 'sqlite') == 'postgres':
