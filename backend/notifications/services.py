@@ -257,7 +257,16 @@ def send_membership_decision_notification(membership, approved):
 
 
 def send_cheating_detected_notification(student, olympiad, center, reason=''):
-    """Notify center managers/owner that a student left the test surface."""
+    """Notify center managers/owner that a student left the test surface.
+
+    Telegram rate-limit (30 msg/sek per bot) bo'yicha himoya: olimpiada
+    paytida bir necha talaba bir vaqtda diskvalifikatsiya bo'lsa va markazda
+    o'nlab manager bo'lsa, har bir hodisa uchun 10+ telegram xabar burst
+    yuborilardi. Endi push xabarni yuboriladigan oluvchilar soni cheklanadi:
+    owner + eng so'nggi 3 ta manager. Boshqa managerlar in-app notification
+    sifatida ko'radi (panel orqali), telegram push esa eng tegishli
+    odamlarga keladi.
+    """
     reason_label = reason or 'test oynasidan chiqdi'
     message = (
         f"{student.full_name} cheating deb belgilandi.\n"
@@ -266,21 +275,33 @@ def send_cheating_detected_notification(student, olympiad, center, reason=''):
     )
     from centers.models import CenterMembership
 
-    recipients = []
-    manager_memberships = CenterMembership.objects.filter(
-        center=center,
-        role=CenterMembership.ROLE_MANAGER,
-        status=CenterMembership.STATUS_APPROVED,
-    ).select_related('user')
-    recipients.extend(m.user for m in manager_memberships)
-    if center.owner_id:
-        recipients.append(center.owner)
+    PUSH_CAP = 4  # owner + 3 manager max
+    in_app_recipients = []
+    push_recipients = []
 
-    seen = set()
-    for user in recipients:
-        if not user or user.id in seen:
+    manager_memberships = list(
+        CenterMembership.objects.filter(
+            center=center,
+            role=CenterMembership.ROLE_MANAGER,
+            status=CenterMembership.STATUS_APPROVED,
+        ).select_related('user').order_by('-created_at')
+    )
+
+    if center.owner_id:
+        push_recipients.append(center.owner)
+        in_app_recipients.append(center.owner)
+
+    for membership in manager_memberships:
+        in_app_recipients.append(membership.user)
+        if len(push_recipients) < PUSH_CAP:
+            push_recipients.append(membership.user)
+
+    seen_in_app = set()
+    seen_push = {u.id for u in push_recipients if u}
+    for user in in_app_recipients:
+        if not user or user.id in seen_in_app:
             continue
-        seen.add(user.id)
+        seen_in_app.add(user.id)
         Notification.objects.create(
             user=user,
             center=center,
@@ -288,4 +309,6 @@ def send_cheating_detected_notification(student, olympiad, center, reason=''):
             title='Cheating aniqlandi',
             message=message,
         )
-        _send_telegram_to_user(user, message)
+        if user.id in seen_push:
+            _send_telegram_to_user(user, message)
+            seen_push.discard(user.id)

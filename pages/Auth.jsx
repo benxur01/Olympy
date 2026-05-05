@@ -26,6 +26,8 @@ const LoginPage = ({ onNavigate, onLogin }) => {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
   const [showPass, setShowPass] = React.useState(false);
+  const [rememberMe, setRememberMe] = React.useState(true);
+  const [forgotOpen, setForgotOpen] = React.useState(false);
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
@@ -34,7 +36,15 @@ const LoginPage = ({ onNavigate, onLogin }) => {
     try {
       const data = await OlympyApi.login({ phone: form.phone, password: form.password });
       const mappedUser = OlympyApi.mapBackendUser(data.user);
-      OlympyApi.saveAuth({ token: data.token, refresh: data.refresh, user: mappedUser, cookieAuth: data.cookie_auth });
+      OlympyApi.saveAuth({
+        token: data.token,
+        refresh: data.refresh,
+        user: mappedUser,
+        cookieAuth: data.cookie_auth,
+        // "Meni eslab qolish" tasdiqlanmagan bo'lsa, token sessionStorage'da
+        // saqlanadi va brauzer yopilganda tozalanadi.
+        persistent: rememberMe,
+      });
       onLogin(mappedUser);
     } catch (err) {
       setError(OlympyApi.toUserMessage(err));
@@ -99,9 +109,11 @@ const LoginPage = ({ onNavigate, onLogin }) => {
           {error && <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 rounded-xl px-4 py-3"><Icon name="info" size={16} />{error}</div>}
           <div className="flex items-center justify-between text-sm">
             <label className="flex items-center gap-2 text-white/50 cursor-pointer">
-              <input type="checkbox" className="rounded" /> Meni eslab qolish
+              <input type="checkbox" className="rounded"
+                checked={rememberMe}
+                onChange={e => setRememberMe(e.target.checked)} /> Meni eslab qolish
             </label>
-            <button type="button" className="text-indigo-400 hover:text-indigo-300 transition-colors">Parolni unutdingizmi?</button>
+            <button type="button" onClick={() => setForgotOpen(true)} className="text-indigo-400 hover:text-indigo-300 transition-colors">Parolni unutdingizmi?</button>
           </div>
           <button type="submit" disabled={loading}
             className="btn-primary w-full py-3.5 rounded-2xl font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
@@ -114,6 +126,30 @@ const LoginPage = ({ onNavigate, onLogin }) => {
           <button onClick={() => onNavigate('register')} className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Ro'yxatdan o'ting</button>
         </p>
       </div>
+      {forgotOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
+          <div className="glass-strong rounded-3xl p-6 max-w-sm w-full border border-white/10">
+            <div className="text-3xl mb-3">🔐</div>
+            <h3 className="text-xl font-black text-white mb-2">Parolni tiklash</h3>
+            <p className="text-white/60 text-sm leading-relaxed mb-4">
+              Hozircha avtomatik parol tiklash mavjud emas. Parolingizni tiklash uchun
+              tashkilot mas'uli yoki Olympy administratoriga murojaat qiling. Telegram
+              orqali ham yordam olish mumkin.
+            </p>
+            <a
+              href="https://t.me/olympy_support"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block btn-ghost w-full py-3 rounded-2xl text-center font-semibold mb-2"
+            >
+              Telegramdan yozish
+            </a>
+            <button onClick={() => setForgotOpen(false)} className="btn-primary w-full py-3 rounded-2xl font-semibold">
+              Tushunarli
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

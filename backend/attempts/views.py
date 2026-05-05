@@ -108,15 +108,19 @@ def submit_attempt(request):
             rank=None,
         )
 
-        # Re-rank ALL attempts on this olympiad. Lock them all under
-        # select_for_update so concurrent submissions cannot leave stale
-        # ranks. Tie-break: higher score, then less time spent, then earlier
+        # Olympiad ustidagi select_for_update bir vaqtda bir nechta submission
+        # ushbu kod yo'liga kirishni oldini oladi, demak attempts ustida
+        # qo'shimcha select_for_update qulfi shart emas — u faqat boshqa
+        # tranzaksiyalar (leaderboard query, admin paneli) bilan deadlock
+        # xavfini oshirardi. id+rank ni o'qib, faqat o'zgarganlarini bulk
+        # update qilamiz; bu 1000+ attempt'da xotira/IO ni kamaytiradi.
+        # Tie-break: higher score, then less time spent, then earlier
         # submission.
         all_attempts = list(
             TestAttempt.objects
-            .select_for_update()
             .filter(olympiad=olympiad)
             .order_by('-score', 'time_spent', 'submitted_at')
+            .only('id', 'rank')
         )
         to_update = []
         for index, item in enumerate(all_attempts, start=1):

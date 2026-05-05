@@ -10,7 +10,10 @@ const AUTH_TOKEN_KEY = 'olympy_api_token';
 const AUTH_REFRESH_KEY = 'olympy_refresh_token';
 const AUTH_USER_KEY = 'olympy_api_user';
 
-const _authStore = (() => {
+// Default rejimda env var orqali tanlangan store ishlatiladi (local yoki
+// session). "Meni eslab qolish" bayrog'i orqali saveAuth chaqiruvchisi
+// yopilganda token tozalanishi uchun aniq sessionStorage'ni majburlay oladi.
+const _defaultAuthStore = (() => {
   try {
     const env = (import.meta?.env?.VITE_AUTH_STORAGE || '').toLowerCase();
     if (env === 'local' && typeof localStorage !== 'undefined') return localStorage;
@@ -18,9 +21,42 @@ const _authStore = (() => {
   } catch {}
   return typeof localStorage !== 'undefined' ? localStorage : null;
 })();
-const _readAuth = (key) => { try { return _authStore ? _authStore.getItem(key) : null; } catch { return null; } };
-const _writeAuth = (key, value) => { try { _authStore && _authStore.setItem(key, value); } catch {} };
-const _removeAuth = (key) => { try { _authStore && _authStore.removeItem(key); } catch {} };
+const _sessionStore = (() => {
+  try { if (typeof sessionStorage !== 'undefined') return sessionStorage; } catch {}
+  return null;
+})();
+const _localStore = (() => {
+  try { if (typeof localStorage !== 'undefined') return localStorage; } catch {}
+  return null;
+})();
+let _activeAuthStore = _defaultAuthStore;
+const _setActiveStore = (store) => { _activeAuthStore = store || _defaultAuthStore; };
+const _readAuth = (key) => {
+  // Avvalgi sessiyada qaysi store ishlatilganini bilmasligimiz mumkin (masalan,
+  // restore paytida) — shu sababli har ikkalasidan ham qidiramiz.
+  try {
+    const a = _activeAuthStore ? _activeAuthStore.getItem(key) : null;
+    if (a != null) return a;
+  } catch {}
+  try {
+    if (_localStore && _localStore !== _activeAuthStore) {
+      const b = _localStore.getItem(key);
+      if (b != null) return b;
+    }
+  } catch {}
+  try {
+    if (_sessionStore && _sessionStore !== _activeAuthStore) {
+      const c = _sessionStore.getItem(key);
+      if (c != null) return c;
+    }
+  } catch {}
+  return null;
+};
+const _writeAuth = (key, value) => { try { _activeAuthStore && _activeAuthStore.setItem(key, value); } catch {} };
+const _removeAuth = (key) => {
+  try { _localStore && _localStore.removeItem(key); } catch {}
+  try { _sessionStore && _sessionStore.removeItem(key); } catch {}
+};
 
 const unwrapList = (res) => Array.isArray(res) ? res : (res && res.results ? res.results : []);
 
@@ -215,7 +251,17 @@ const mapBackendUser = (user) => {
   };
 };
 
-const saveAuth = ({ token, refresh, user, cookieAuth } = {}) => {
+const saveAuth = ({ token, refresh, user, cookieAuth, persistent } = {}) => {
+  // persistent === false — login formada "Meni eslab qolish" tasdiqlanmagan:
+  // token va user faqat sessionStorage'da yashaydi, brauzer yopilganda
+  // tozalanadi. Default true (avvalgi xatti-harakat).
+  if (persistent === false && _sessionStore) {
+    _setActiveStore(_sessionStore);
+  } else if (persistent === true && _localStore) {
+    _setActiveStore(_localStore);
+  } else {
+    _setActiveStore(_defaultAuthStore);
+  }
   if (cookieAuth) {
     _removeAuth(AUTH_TOKEN_KEY);
     _removeAuth(AUTH_REFRESH_KEY);

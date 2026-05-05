@@ -20,7 +20,13 @@ const mapApiLeaderboard = (entry) => ({
 
 const LeaderboardPage = ({ onNavigate, embedded, user }) => {
   const store = useStore();
-  const isApi = !!user?._api || !!OlympyApi.getToken?.();
+  // Avval `isApi` token mavjud bo'lsa true edi va embedded landing'da
+  // foydalanuvchi yo'q bo'lsa-da API'ga so'rov ketardi. Endi:
+  // - Standalone (embedded=false): token yetarli, login restore bo'lmasa-da
+  //   API'ga urinish mumkin.
+  // - Embedded (landing): faqat aniq API user bilan API rejimiga o'tamiz.
+  //   Aks holda mock leaderboard ko'rsatamiz.
+  const isApi = embedded ? !!user?._api : (!!user?._api || !!OlympyApi.getToken?.());
   const [filterSubject, setFilterSubject] = React.useState('');
   const [filterCity, setFilterCity] = React.useState('');
   const [activeTab, setActiveTab] = React.useState('all');

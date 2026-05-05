@@ -100,6 +100,21 @@ class JoinRequestSerializer(serializers.Serializer):
     )
     subject = serializers.CharField(max_length=80, required=False, allow_blank=True)
 
+    def validate(self, attrs):
+        role = attrs.get('role', CenterMembership.ROLE_STUDENT)
+        subject = str(attrs.get('subject') or '').strip()
+        # Teacher arizalari uchun fan majburiy: aks holda owner panelda fan
+        # ko'rinmaydi va tasdiqlash paytida qaysi fanga biriktirish noma'lum
+        # bo'lardi. Frontend allaqachon bo'sh subject bilan tugmani disable
+        # qiladi; bu yerda ham himoya qatlam qo'shamiz (API to'g'ridan-to'g'ri
+        # chaqirilsa).
+        if role == CenterMembership.ROLE_TEACHER and not subject:
+            raise serializers.ValidationError({
+                'subject': "O'qituvchi arizasi uchun fanni tanlash majburiy",
+            })
+        attrs['subject'] = subject
+        return attrs
+
 
 class ApproveSerializer(serializers.Serializer):
     """Approve/reject an existing membership by id."""

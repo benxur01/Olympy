@@ -199,7 +199,14 @@ SIMPLE_JWT = {
 }
 JWT_ACCESS_COOKIE_NAME = os.environ.get('JWT_ACCESS_COOKIE_NAME', 'olympy_access')
 JWT_REFRESH_COOKIE_NAME = os.environ.get('JWT_REFRESH_COOKIE_NAME', 'olympy_refresh')
-JWT_COOKIE_SAMESITE = os.environ.get('JWT_COOKIE_SAMESITE', 'Lax')
+# SameSite tanlash logikasi: dev rejimda Lax kifoya (frontend ham backend ham
+# localhost). Production rejimida frontend va backend turli domenlarda bo'lishi
+# mumkin (masalan app.olympy.uz va api.olympy.uz) — Lax cookie cross-site GET
+# da yuborilmaydi va auth restore ishlamay qoladi. Shuning uchun production
+# uchun 'None' tanlanadi (brauzer bunday cookie'ni faqat Secure+HTTPS bilan
+# qabul qiladi). Override OLYMPY_JWT_COOKIE_SAMESITE env var orqali mavjud.
+_default_samesite = 'Lax' if DEBUG else 'None'
+JWT_COOKIE_SAMESITE = os.environ.get('OLYMPY_JWT_COOKIE_SAMESITE', _default_samesite)
 
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')

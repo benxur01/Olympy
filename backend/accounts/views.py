@@ -64,8 +64,12 @@ def bump_token_version(user):
 
 
 def _set_auth_cookies(response, payload):
-    secure = not settings.DEBUG
     same_site = getattr(settings, 'JWT_COOKIE_SAMESITE', 'Lax')
+    # SameSite=None faqat Secure cookie bilan ishlaydi — aks holda brauzer
+    # cookie'ni rad etadi. Dev rejimda DEBUG=True va same_site Lax bo'lsa
+    # secure=False qoldirish kifoya. Production rejimida (DEBUG=False) yoki
+    # SameSite=None bo'lsa secure=True kerak.
+    secure = (not settings.DEBUG) or (str(same_site).lower() == 'none')
     response.set_cookie(
         getattr(settings, 'JWT_ACCESS_COOKIE_NAME', 'olympy_access'),
         payload['token'],
@@ -631,6 +635,20 @@ def _handle_ai_roster_message(message, telegram_user_id, chat_id):
         return False
     file_id, file_size, detected_mime = _telegram_image_file_id(message)
     if not text and not file_id:
+        return False
+    # AI quota'ni tejash uchun: faqat rasm yuborilgan bo'lsa yoki matnda
+    # aniq trigger so'z bo'lsa AI'ga uzatamiz. Avval har bir oddiy "Salom"
+    # xabari ham AI'ga yuborilardi va kunlik limitni tezda yo'q qilardi.
+    has_image = bool(file_id)
+    text_lower = text.lower()
+    AI_TRIGGER_KEYWORDS = (
+        "ro'yxat", "ro'yxati", 'roster',
+        "ism", 'ismlar',
+        "o'quvchi", "o'quvchilar",
+        'student', 'students',
+    )
+    has_trigger = any(kw in text_lower for kw in AI_TRIGGER_KEYWORDS)
+    if not has_image and not has_trigger:
         return False
 
     from django.contrib.auth import get_user_model
