@@ -124,13 +124,13 @@ const OlympyStore = (() => {
       { id:'q9', centerId:'c1', subject:'Matematika', text:'sin(90°) = 1 — bu to\'g\'rimi?', options:["To'g'ri","Noto'g'ri"], correctAnswer:0, score:2, difficulty:'Oson', source:'manual', createdBy:'u4' },
       { id:'q10', centerId:'c1', subject:'Matematika', text:"To'g'ri burchakli uchburchakda katetlar 3 va 4 ga teng. Gipotenuza nechaga teng?", options:['5','6','7','8'], correctAnswer:0, score:3, difficulty:'Oson', source:'pdf', createdBy:'u4' },
     ],
-    // Olympiads — each belongs to a center and references its question IDs
+    // Events — olimpiada is public, musobaqa is center-internal.
     olympiads: [
-      { id:'o1', centerId:'c1', title:'Matematika Olimpiadasi — May 2026', subject:'Matematika', startDate:'2026-05-02', startTime:'10:00', duration:60, questionIds:['q1','q2','q3','q4','q5','q6','q7','q8','q9','q10'], status:'active', createdBy:'u2', createdAt:'2026-04-20', participants:124, maxScore:100 },
-      { id:'o2', centerId:'c1', title:'Ingliz tili Bellashuvi', subject:'Ingliz tili', startDate:'2026-05-05', startTime:'14:00', duration:45, questionIds:[], status:'draft', createdBy:'u2', createdAt:'2026-04-22', participants:0, maxScore:100 },
-      { id:'o3', centerId:'c1', title:'Informatika Olimpiadasi', subject:'Informatika', startDate:'2026-04-28', startTime:'09:00', duration:90, questionIds:[], status:'finished', createdBy:'u2', createdAt:'2026-04-10', participants:201, maxScore:100, avgScore:81 },
-      { id:'o4', centerId:'c1', title:'Fizika Sinovlari', subject:'Fizika', startDate:'2026-05-10', startTime:'11:00', duration:60, questionIds:[], status:'draft', createdBy:'u2', createdAt:'2026-04-25', participants:0, maxScore:100 },
-      { id:'o5', centerId:'c2', title:'Ingliz tili Olimpiada — Brilliant', subject:'Ingliz tili', startDate:'2026-05-08', startTime:'10:00', duration:45, questionIds:[], status:'active', createdBy:null, createdAt:'2026-04-22', participants:42, maxScore:100 },
+      { id:'o1', centerId:'c1', eventType:'olympiad', title:'Matematika Olimpiadasi — May 2026', subject:'Matematika', startDate:'2026-05-02', startTime:'10:00', duration:60, questionIds:['q1','q2','q3','q4','q5','q6','q7','q8','q9','q10'], status:'active', createdBy:'u2', createdAt:'2026-04-20', participants:124, maxScore:100 },
+      { id:'o2', centerId:'c1', eventType:'competition', title:'Ingliz tili Bellashuvi', subject:'Ingliz tili', startDate:'2026-05-05', startTime:'14:00', duration:45, questionIds:[], status:'draft', createdBy:'u2', createdAt:'2026-04-22', participants:0, maxScore:100 },
+      { id:'o3', centerId:'c1', eventType:'olympiad', title:'Informatika Olimpiadasi', subject:'Informatika', startDate:'2026-04-28', startTime:'09:00', duration:90, questionIds:[], status:'finished', createdBy:'u2', createdAt:'2026-04-10', participants:201, maxScore:100, avgScore:81 },
+      { id:'o4', centerId:'c1', eventType:'competition', title:'Fizika Sinovlari', subject:'Fizika', startDate:'2026-05-10', startTime:'11:00', duration:60, questionIds:[], status:'draft', createdBy:'u2', createdAt:'2026-04-25', participants:0, maxScore:100 },
+      { id:'o5', centerId:'c2', eventType:'olympiad', title:'Ingliz tili Olimpiada — Brilliant', subject:'Ingliz tili', startDate:'2026-05-08', startTime:'10:00', duration:45, questionIds:[], status:'active', createdBy:null, createdAt:'2026-04-22', participants:42, maxScore:100 },
     ],
     // Test attempts — student submission history
     attempts: [
@@ -302,7 +302,7 @@ const OlympyStore = (() => {
   const createOlympiad = (data) => {
     const id = 'o' + Date.now() + Math.random().toString(36).slice(2,5);
     const o = {
-      id, status: 'draft', questionIds: [], participants: 0, maxScore: 100,
+      id, eventType: 'competition', status: 'draft', questionIds: [], participants: 0, maxScore: 100,
       createdAt: new Date().toISOString().slice(0,10),
       ...data,
     };
@@ -316,18 +316,20 @@ const OlympyStore = (() => {
     const o = state.olympiads.find(x => x.id === id);
     if (!o) return;
     updateOlympiad(id, { status: 'active' });
-    // Notify all approved students of that center
-    const approvedStudents = state.users.filter(u =>
-      u.roles?.student?.status === 'approved' && u.roles.student.centerId === o.centerId
-    );
+    const isPublic = (o.eventType || 'competition') === 'olympiad';
+    const approvedStudents = state.users.filter(u => {
+      const student = u.roles?.student;
+      if (student?.status !== 'approved') return false;
+      return isPublic || student.centerId === o.centerId;
+    });
     const center = state.centers.find(c => c.id === o.centerId);
     approvedStudents.forEach(u => {
       addNotification({
         userId: u.id,
         centerId: o.centerId,
         type: 'olympiad_published',
-        title: 'Yangi olimpiada',
-        message: `${center?.name || 'Markaz'}da yangi olimpiada e'lon qilindi:\nFan: ${o.subject}\nSana: ${o.startDate}\nQatnashish uchun platformaga kiring.`,
+        title: isPublic ? 'Yangi olimpiada' : 'Yangi musobaqa',
+        message: `${center?.name || 'Markaz'}da yangi ${isPublic ? 'olimpiada' : 'musobaqa'} e'lon qilindi:\nFan: ${o.subject}\nSana: ${o.startDate}\nQatnashish uchun platformaga kiring.`,
       });
     });
   };
@@ -480,18 +482,42 @@ const statusLabel = (s) =>
   s === 'approved' ? 'Tasdiqlandi' :
   s === 'rejected' ? 'Rad etildi' :
   s === 'draft' ? 'Draft' :
+  s === 'inactive' ? 'Nofaol' :
   s === 'active' ? 'Faol' :
   s === 'finished' ? 'Tugagan' :
   s || '—';
 
 // ─── Cross-page helpers for derived data ─────────────────────────────────
-// Olympiads visible to a student (only their approved center's published olympiads)
+const eventTypeLabel = (eventType) =>
+  eventType === 'competition' ? 'Musobaqa' : 'Olimpiada';
+
+const eventReadinessIssues = (event) => {
+  const issues = [];
+  if (!String(event?.title || '').trim()) issues.push('Tadbir nomi kiritilmagan');
+  if (!String(event?.subject || '').trim()) issues.push('Fan tanlanmagan');
+  if (!event?.startDate && !event?.start_datetime) issues.push('Boshlanish sanasi belgilanmagan');
+  if (!event?.startTime && !event?.start_datetime) issues.push('Boshlanish vaqti belgilanmagan');
+  const duration = Number(event?.duration ?? event?.duration_minutes);
+  if (!duration || duration <= 0) issues.push('Davomiylik kiritilmagan');
+  if (!Array.isArray(event?.questionIds) || event.questionIds.length === 0) issues.push('Kamida bitta savol tayinlang');
+
+  const start = olympiadStartMoment(event);
+  if (start && start.getTime() < Date.now()) issues.push("Boshlanish vaqti o'tib ketgan");
+  return issues;
+};
+
+// Events visible to a student: public olympiads plus own-center competitions.
 const olympiadsForStudent = (state, user) => {
   const role = user?.roles?.student;
-  if (!role || role.status !== 'approved' || !role.centerId) return [];
-  return state.olympiads.filter(o => o.centerId === role.centerId);
+  const visibleStatuses = new Set(['active', 'finished']);
+  return state.olympiads.filter(o => {
+    if (!visibleStatuses.has(o.status)) return false;
+    const type = o.eventType || 'competition';
+    if (type === 'olympiad') return true;
+    return role?.status === 'approved' && role.centerId && o.centerId === role.centerId;
+  });
 };
-// Olympiads for a manager — their center's olympiads
+// Events for a manager — their center's olympiads/competitions
 const olympiadsForCenter = (state, centerId) =>
   state.olympiads.filter(o => o.centerId === centerId);
 // Attempts of a single user
@@ -561,6 +587,7 @@ const mapApiOlympiad = (o) => {
     id: String(o.id),
     backendId: o.id,
     centerId: o.center != null ? String(o.center) : null,
+    eventType: o.event_type || o.eventType || 'competition',
     title: o.title,
     subject: o.subject,
     startDate: localDate,
@@ -677,12 +704,12 @@ const olympiadStartMoment = (olympiad) => {
 const telegramJoinRequestText = (studentName, centerName) =>
   `Yangi o'quvchi ariza yubordi: ${studentName}.\nTashkilot: ${centerName}.\nTasdiqlaysizmi?`;
 const telegramOlympiadPublishedText = (centerName, olympiad) =>
-  `${centerName} tashkilotida yangi olimpiada boshlandi:\nFan: ${olympiad.subject}\nSana: ${olympiad.startDate}\nQatnashish uchun platformaga kiring.`;
+  `${centerName} tashkilotida yangi ${eventTypeLabel(olympiad.eventType || olympiad.event_type)} boshlandi:\nFan: ${olympiad.subject}\nSana: ${olympiad.startDate}\nQatnashish uchun platformaga kiring.`;
 
 Object.assign(window, {
   OlympyStore, useStore,
   ROLE_META, getApprovedRoles, getPendingRoles, hasApprovedRole, getRoleStatus, roleHomePage, statusLabel,
   olympiadsForStudent, olympiadsForCenter, attemptsForUser, notificationsForUser, leaderboardForOlympiad,
-  formatTime, formatCenterLocation, olympiadStartMoment, telegramJoinRequestText, telegramOlympiadPublishedText,
+  formatTime, formatCenterLocation, eventTypeLabel, eventReadinessIssues, olympiadStartMoment, telegramJoinRequestText, telegramOlympiadPublishedText,
   mapApiOlympiad, mapApiCenter, mapApiNotification, mapApiAttempt, mapApiQuestion,
 });

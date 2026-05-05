@@ -10,6 +10,7 @@ from rest_framework.response import Response
 
 from centers.models import CenterMembership
 from olympiads.models import Olympiad
+from olympiads.services import user_can_participate_in_event
 
 from .models import TestAttempt, TestSession
 from .serializers import SubmitAttemptSerializer, TestAttemptSerializer
@@ -21,9 +22,10 @@ from .session_utils import score_session_answers, session_is_expired
 def submit_attempt(request):
     """POST /api/attempts/ — student submits answers, server scores them.
 
-    Enforces: the user must be an *approved* student of the olympiad's center,
-    the olympiad must be active, and one user can only submit once per
-    olympiad. Score is a weighted percentage based on ``Question.score``.
+    Enforces event access rules: public olympiads accept any authenticated
+    participant, center competitions require an approved student membership
+    at the event center. The event must be active, and one user can only
+    submit once per event.
     """
     serializer = SubmitAttemptSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -54,14 +56,14 @@ def submit_attempt(request):
         if end_time and now > end_time:
             return Response({'detail': 'Olimpiada vaqti tugagan'},
                             status=http_status.HTTP_400_BAD_REQUEST)
-        is_approved_student = CenterMembership.objects.filter(
-            user=request.user, center=olympiad.center,
-            role=CenterMembership.ROLE_STUDENT,
-            status=CenterMembership.STATUS_APPROVED,
-        ).exists()
-        if not is_approved_student:
+        if not user_can_participate_in_event(request.user, olympiad):
+            detail = (
+                "Musobaqaga qatnashish uchun shu o'quv markaz tasdig'i kerak"
+                if olympiad.event_type == Olympiad.EVENT_TYPE_COMPETITION
+                else 'Forbidden'
+            )
             return Response(
-                {'detail': "Olimpiadaga qatnashish uchun o'quv markaz tasdig'i kerak"},
+                {'detail': detail},
                 status=http_status.HTTP_403_FORBIDDEN,
             )
 
@@ -152,13 +154,7 @@ def report_cheating(request):
             Olympiad.objects.select_for_update().select_related('center', 'center__owner'),
             pk=olympiad_id,
         )
-        is_approved_student = CenterMembership.objects.filter(
-            user=request.user,
-            center=olympiad.center,
-            role=CenterMembership.ROLE_STUDENT,
-            status=CenterMembership.STATUS_APPROVED,
-        ).exists()
-        if not is_approved_student:
+        if not user_can_participate_in_event(request.user, olympiad):
             return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
         if TestAttempt.objects.filter(user=request.user, olympiad=olympiad).exists():
             return Response({'disqualified': False, 'detail': 'Attempt already submitted'})
@@ -258,7 +254,8 @@ def leaderboard(request):
     """GET /api/leaderboard/?olympiad=<id>  — ranked attempts.
 
     Without ``olympiad`` query param, returns the top scores within the
-    requesting user's approved centers (per-center isolation).
+    visible events: public olympiads globally, center competitions for the
+    user's approved centers.
     """
     qs = (
         TestAttempt.objects
@@ -268,20 +265,19 @@ def leaderboard(request):
     olympiad_id = request.query_params.get('olympiad')
     if olympiad_id:
         olympiad = get_object_or_404(Olympiad.objects.select_related('center'), pk=olympiad_id)
-        if not request.user.is_platform_admin:
-            allowed = CenterMembership.objects.filter(
-                user=request.user,
-                center=olympiad.center,
-                status=CenterMembership.STATUS_APPROVED,
-            ).exists()
-            if not allowed:
-                return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+        if not user_can_participate_in_event(request.user, olympiad):
+            return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
         qs = qs.filter(olympiad=olympiad)
     if not olympiad_id:
         allowed_center_ids = CenterMembership.objects.filter(
             user=request.user, status=CenterMembership.STATUS_APPROVED,
         ).values_list('center_id', flat=True)
-        qs = qs.filter(olympiad__center_id__in=allowed_center_ids)
+        qs = qs.filter(
+            olympiad__event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+        ) | qs.filter(
+            olympiad__event_type=Olympiad.EVENT_TYPE_COMPETITION,
+            olympiad__center_id__in=allowed_center_ids,
+        )
     qs = qs[:200]
     return Response([
         {

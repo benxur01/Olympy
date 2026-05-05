@@ -528,7 +528,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'home', icon: 'home', label: 'Overview' },
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCount || undefined },
     { key: 'staff', icon: 'users', label: 'Xodimlar' },
-    { key: 'olympiads', icon: 'trophy', label: 'Olimpiadalar' },
+    { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
     { key: 'center', icon: 'building', label: 'Profil' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
   ];
@@ -689,7 +689,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 <span className="text-lg font-black text-amber-600">{pendingCount}</span>
               </div>
               <div className="flex items-center justify-between rounded-lg bg-white p-3 ring-1 ring-slate-200">
-                <span className="text-sm font-bold text-slate-700">Faol olimpiadalar</span>
+                <span className="text-sm font-bold text-slate-700">Faol tadbirlar</span>
                 <span className="text-lg font-black text-cyan-700">{activeOlympiads.length}</span>
               </div>
               <button onClick={() => setPage('requests')} className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700">
@@ -711,7 +711,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <OwnerMetric label="Xodimlar" value={myStaff.length} hint="Tasdiqlangan manager/o'qituvchi" icon={<Icon name="users" size={18} />} tone="emerald" />
         <OwnerMetric label="Kutilayotgan arizalar" value={pendingCount} hint={pendingCount ? 'Qaror kutilmoqda' : 'Navbat bo\'sh'} icon={<Icon name="bell" size={18} />} tone="amber" />
-        <OwnerMetric label="Olimpiadalar" value={centerOlympiads.length} hint={`${activeOlympiads.length} ta faol`} icon={<Icon name="trophy" size={18} />} tone="cyan" />
+        <OwnerMetric label="Tadbirlar" value={centerOlympiads.length} hint={`${activeOlympiads.length} ta faol`} icon={<Icon name="trophy" size={18} />} tone="cyan" />
         <OwnerMetric label="Reyting" value={center.rating || '—'} hint="Tashkilot profili ko'rsatkichi" icon={<Icon name="star" size={18} />} tone="indigo" />
       </div>
 
@@ -831,28 +831,29 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderOlympiads = () => (
     <div className="space-y-5 p-4 lg:p-6">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Olimpiadalar</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">Direktor uchun tashkilotdagi olimpiadalar ko'rinishi.</p>
+        <h1 className="text-2xl font-black tracking-tight text-slate-900">Tadbirlar</h1>
+        <p className="mt-1 text-sm font-semibold text-slate-500">Direktor uchun tashkilotdagi olimpiada va musobaqalar ko'rinishi.</p>
       </div>
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left">
             <thead className="bg-slate-50">
               <tr className="text-xs font-black uppercase text-slate-400">
-                {['Nomi', 'Fan', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
+                {['Nomi', 'Turi', 'Fan', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {centerOlympiads.map(o => (
                 <tr key={o.id} className="text-sm">
                   <td className="px-5 py-4 font-black text-slate-900">{o.title}</td>
+                  <td className="px-5 py-4"><span className={`rounded-md px-2 py-1 text-xs font-black ${o.eventType === 'olympiad' ? 'bg-cyan-50 text-cyan-700' : 'bg-amber-50 text-amber-700'}`}>{eventTypeLabel(o.eventType || 'competition')}</span></td>
                   <td className="px-5 py-4"><span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-black text-emerald-700">{o.subject}</span></td>
                   <td className="px-5 py-4 text-slate-500">{o.startDate || '—'}</td>
                   <td className="px-5 py-4 font-bold text-slate-700">{o.participants || 0}</td>
                   <td className="px-5 py-4"><OwnerStatusPill status={o.status} /></td>
                 </tr>
               ))}
-              {centerOlympiads.length === 0 && <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-bold text-slate-500">Hali olimpiadalar yo'q</td></tr>}
+              {centerOlympiads.length === 0 && <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-bold text-slate-500">Hali tadbirlar yo'q</td></tr>}
             </tbody>
           </table>
         </div>
@@ -877,7 +878,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
         <div className="mt-6 grid gap-3 md:grid-cols-4">
           <OwnerMetric label="O'quvchi" value={center.students || 0} icon={<Icon name="users" size={17} />} tone="emerald" />
-          <OwnerMetric label="Olimpiada" value={centerOlympiads.length} icon={<Icon name="trophy" size={17} />} tone="cyan" />
+          <OwnerMetric label="Tadbir" value={centerOlympiads.length} icon={<Icon name="trophy" size={17} />} tone="cyan" />
           <OwnerMetric label="Xodim" value={myStaff.length} icon={<Icon name="shield" size={17} />} tone="indigo" />
           <OwnerMetric label="Reyting" value={center.rating || '—'} icon={<Icon name="star" size={17} />} tone="amber" />
         </div>

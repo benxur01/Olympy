@@ -5,16 +5,31 @@ from centers.models import EducationCenter
 
 
 class Olympiad(models.Model):
-    """A scheduled olympiad belonging to a single education center.
+    """A scheduled test event created by a single education center.
 
-    Status flow: draft → active (published) → finished. Only approved students
-    of the same center may participate; this is enforced in the attempts app.
+    ``event_type`` controls participation:
+    - olympiad: public platform-wide event, any authenticated user may enter.
+    - competition: internal center event, only approved students of the same
+      center may enter.
+
+    Status flow: draft → active → inactive → active → finished.
+    Draft/inactive events are editable; active events must be deactivated
+    before changing schedule, metadata or questions.
     """
+    EVENT_TYPE_OLYMPIAD = 'olympiad'
+    EVENT_TYPE_COMPETITION = 'competition'
+    EVENT_TYPE_CHOICES = [
+        (EVENT_TYPE_OLYMPIAD, 'Olimpiada'),
+        (EVENT_TYPE_COMPETITION, 'Musobaqa'),
+    ]
+
     STATUS_DRAFT = 'draft'
+    STATUS_INACTIVE = 'inactive'
     STATUS_ACTIVE = 'active'
     STATUS_FINISHED = 'finished'
     STATUS_CHOICES = [
         (STATUS_DRAFT, 'Draft'),
+        (STATUS_INACTIVE, 'Nofaol'),
         (STATUS_ACTIVE, 'Faol'),
         (STATUS_FINISHED, 'Tugagan'),
     ]
@@ -23,6 +38,12 @@ class Olympiad(models.Model):
         EducationCenter,
         on_delete=models.CASCADE,
         related_name='olympiads',
+    )
+    event_type = models.CharField(
+        max_length=20,
+        choices=EVENT_TYPE_CHOICES,
+        default=EVENT_TYPE_COMPETITION,
+        db_index=True,
     )
     title = models.CharField(max_length=200)
     subject = models.CharField(max_length=80)

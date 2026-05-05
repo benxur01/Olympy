@@ -85,8 +85,9 @@ def _student_join_keyboard(membership):
 
 
 def _telegram_olympiad_published_text(center, olympiad):
+    event_label = 'olimpiada' if getattr(olympiad, 'event_type', '') == 'olympiad' else 'musobaqa'
     return (
-        f"{center.name} ({_center_type(center)}) da yangi olimpiada boshlandi:\n"
+        f"{center.name} ({_center_type(center)}) da yangi {event_label} boshlandi:\n"
         f"Fan: {olympiad.subject}\n"
         f"Sana: {olympiad.start_datetime.date() if olympiad.start_datetime else '—'}\n"
         f"Qatnashish uchun platformaga kiring."
@@ -192,11 +193,12 @@ def send_center_decision_notification(owner, center, approved):
 def send_olympiad_published_notification(student, olympiad, center):
     """Notify an approved student that a new olympiad is live at their center."""
     message = _telegram_olympiad_published_text(center, olympiad)
+    title = "Yangi olimpiada" if getattr(olympiad, 'event_type', '') == 'olympiad' else "Yangi musobaqa"
     Notification.objects.create(
         user=student,
         center=center,
         type=Notification.TYPE_OLYMPIAD_PUBLISHED,
-        title="Yangi olimpiada",
+        title=title,
         message=message,
     )
     sent = _send_telegram_to_user(student, message)
@@ -208,12 +210,13 @@ def send_olympiad_published_bulk(students, olympiad, center):
     if not students:
         return
     message = _telegram_olympiad_published_text(center, olympiad)
+    title = "Yangi olimpiada" if getattr(olympiad, 'event_type', '') == 'olympiad' else "Yangi musobaqa"
     Notification.objects.bulk_create([
         Notification(
             user=s,
             center=center,
             type=Notification.TYPE_OLYMPIAD_PUBLISHED,
-            title="Yangi olimpiada",
+            title=title,
             message=message,
         )
         for s in students

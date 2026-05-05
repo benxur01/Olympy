@@ -70,8 +70,8 @@ const Avatar = ({ name = '', size = 36, gradient = 'from-indigo-500 to-purple-60
 const Badge = ({ status }) => {
   const map = {
     'Kutilmoqda': 'badge-pending', 'Tasdiqlandi': 'badge-approved', 'Rad etildi': 'badge-rejected',
-    'Faol': 'badge-active', 'Draft': 'badge-draft', 'Tugagan': 'badge-rejected',
-    'active': 'badge-active', 'pending': 'badge-pending', 'approved': 'badge-approved', 'rejected': 'badge-rejected',
+    'Faol': 'badge-active', 'Draft': 'badge-draft', 'Nofaol': 'badge-pending', 'Tugagan': 'badge-rejected',
+    'active': 'badge-active', 'inactive': 'badge-pending', 'pending': 'badge-pending', 'approved': 'badge-approved', 'rejected': 'badge-rejected',
   };
   return <span className={`chip ${map[status] || 'badge-draft'}`}>{status}</span>;
 };
