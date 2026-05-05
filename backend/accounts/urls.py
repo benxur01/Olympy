@@ -5,6 +5,7 @@ from . import views
 # Mounted under /api/auth/
 urlpatterns = [
     path('register/', views.register, name='register'),
+    path('register-organization/', views.register_organization, name='register-organization'),
     path('login/', views.login, name='login'),
     path('logout/', views.logout, name='logout'),
     path('token/refresh/', views.refresh_token, name='token-refresh'),

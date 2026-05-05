@@ -9,6 +9,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.contrib.auth.hashers import check_password, make_password
+from django.db import transaction
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
@@ -33,8 +34,14 @@ logger = logging.getLogger('accounts.telegram')
 
 
 def _jwt_payload(user):
-    user.token_version = (user.token_version or 0) + 1
-    user.save(update_fields=['token_version'])
+    # Avval har bir login token_version ni 1 ga oshirar va shu sababli
+    # foydalanuvchining boshqa qurilmadagi sessiyasi avtomatik chiqarib
+    # yuborilardi. Endi token_version faqat aniq xavfsizlik hodisalarida
+    # (admin tomonidan bloklash, parol o'zgartirish, majburiy logout)
+    # oshiriladi — login multi-device flow ni buzmaydi.
+    if not user.token_version:
+        user.token_version = 1
+        user.save(update_fields=['token_version'])
     refresh = RefreshToken.for_user(user)
     refresh['token_version'] = user.token_version
     return {
@@ -42,6 +49,18 @@ def _jwt_payload(user):
         'refresh': str(refresh),
         'cookie_auth': True,
     }
+
+
+def bump_token_version(user):
+    """Foydalanuvchining barcha mavjud JWT'larini bekor qilish.
+
+    Admin bloklash, parol o'zgartirish va shunga o'xshash xavfsizlik
+    hodisalarida chaqiriladi. token_version oshgach, eski tokenlar
+    OlympyJWTAuthentication'da rad etiladi.
+    """
+    user.token_version = (user.token_version or 0) + 1
+    user.save(update_fields=['token_version'])
+    return user.token_version
 
 
 def _set_auth_cookies(response, payload):
@@ -72,6 +91,15 @@ def _clear_auth_cookies(response):
     return response
 
 
+def _recent_verified_phone(normalized_phone):
+    recent_window = timezone.now() - timedelta(minutes=10)
+    return PhoneVerification.objects.filter(
+        normalized_phone=normalized_phone,
+        verified_at__isnull=False,
+        verified_at__gte=recent_window,
+    ).order_by('-verified_at').first()
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register(request):
@@ -84,12 +112,7 @@ def register(request):
     """
     serializer = RegisterSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-    recent_window = timezone.now() - timedelta(minutes=10)
-    verified = PhoneVerification.objects.filter(
-        normalized_phone=serializer.validated_data['phone'],
-        verified_at__isnull=False,
-        verified_at__gte=recent_window,
-    ).order_by('-verified_at').first()
+    verified = _recent_verified_phone(serializer.validated_data['phone'])
     if not verified:
         return Response(
             {'detail': 'Telefon raqami tasdiqlanmagan yoki tasdiq muddati tugagan'},
@@ -106,6 +129,59 @@ def register(request):
     response = Response({
         **payload,
         'user': UserSerializer(user).data,
+    }, status=status.HTTP_201_CREATED)
+    return _set_auth_cookies(response, payload)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_organization(request):
+    """POST /api/auth/register-organization/ — create user + pending center.
+
+    The submitted user becomes the center owner/director after Platform Admin
+    approval. The user account, center, and owner membership are created in one
+    transaction so partial organization registration does not leave an orphaned
+    account.
+    """
+    user_serializer = RegisterSerializer(data={
+        'full_name': request.data.get('full_name'),
+        'phone': request.data.get('phone'),
+        'password': request.data.get('password'),
+    })
+    user_serializer.is_valid(raise_exception=True)
+
+    center_payload = request.data.get('center')
+    if not isinstance(center_payload, dict):
+        center_payload = request.data
+    from centers.serializers import CenterRegisterSerializer, EducationCenterSerializer
+
+    center_serializer = CenterRegisterSerializer(data=center_payload)
+    center_serializer.is_valid(raise_exception=True)
+
+    verified = _recent_verified_phone(user_serializer.validated_data['phone'])
+    if not verified:
+        return Response(
+            {'detail': 'Telefon raqami tasdiqlanmagan yoki tasdiq muddati tugagan'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    with transaction.atomic():
+        user = user_serializer.save()
+        if verified.telegram_chat_id:
+            _link_user_to_telegram(
+                user,
+                verified.telegram_chat_id,
+                verified.telegram_user_id,
+            )
+        from centers.services import create_pending_center_for_owner
+
+        center = create_pending_center_for_owner(user, center_serializer.validated_data)
+
+    payload = _jwt_payload(user)
+    response = Response({
+        **payload,
+        'user': UserSerializer(user).data,
+        'center': EducationCenterSerializer(center).data,
     }, status=status.HTTP_201_CREATED)
     return _set_auth_cookies(response, payload)
 
@@ -217,6 +293,11 @@ def admin_set_user_active(request, user_id):
                         status=status.HTTP_400_BAD_REQUEST)
     target.is_active = desired
     target.save(update_fields=['is_active'])
+    # Bloklangan foydalanuvchining mavjud JWT tokenlari avtomatik bekor
+    # bo'lishi uchun token_version ni oshiramiz. Aks holda is_active=False
+    # bo'lsa-da, eski token muddati tugamaguncha API ga kirib turaverardi.
+    if not desired:
+        bump_token_version(target)
     return Response(UserSerializer(target).data)
 
 

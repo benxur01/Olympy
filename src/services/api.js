@@ -255,6 +255,7 @@ export const OlympyApi = {
   // Auth
   login: (payload) => request('/api/auth/login/', { method: 'POST', body: payload }),
   register: (payload) => request('/api/auth/register/', { method: 'POST', body: payload }),
+  registerOrganization: (payload) => request('/api/auth/register-organization/', { method: 'POST', body: payload }),
   refreshToken: (refresh) => request('/api/auth/token/refresh/', { method: 'POST', body: refresh ? { refresh } : undefined, retryOnAuth: false }),
   startTelegramVerification: (payload) => request('/api/auth/phone/start-telegram-verification/', { method: 'POST', body: payload }),
   startTelegramLink: (token) => request('/api/auth/telegram/link/start/', { method: 'POST', token }),

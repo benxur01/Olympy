@@ -111,6 +111,42 @@ def send_student_join_request_notification(manager, student, center, membership=
     logger.info('[telegram] → %s sent=%s : %s', manager.normalized_phone, sent, message)
 
 
+def send_staff_join_request_notification(owner, applicant, center, role, subject='', membership=None):
+    """Owner ga teacher/manager arizasi haqida xabar yuborish.
+
+    Avval faqat student arizalari xabar berardi va owner pending teacher/
+    manager arizalarini hech qachon push tarzda olmasdi; endi har ikki rol
+    uchun ham bot va in-app xabarnomalari yuboriladi.
+    """
+    role_label = "O'qituvchi" if role == 'teacher' else 'Manager'
+    suffix = f"\nFan: {subject}" if subject else ''
+    message = (
+        f"Yangi {role_label.lower()} arizasi: {applicant.full_name}.\n"
+        f"Tashkilot: {center.name}\n"
+        f"Turi: {_center_type(center)}\n"
+        f"Manzil: {_center_location(center)}"
+        f"{suffix}\n"
+        f"Tasdiqlaysizmi?"
+    )
+    notification_type = (
+        Notification.TYPE_TEACHER_JOIN_REQUEST if role == 'teacher'
+        else Notification.TYPE_MANAGER_JOIN_REQUEST
+    )
+    Notification.objects.create(
+        user=owner,
+        center=center,
+        type=notification_type,
+        title=f"Yangi {role_label.lower()} arizasi",
+        message=message,
+    )
+    sent = _send_telegram_to_user(
+        owner,
+        message,
+        reply_markup=_student_join_keyboard(membership),
+    )
+    logger.info('[telegram] → %s sent=%s role=%s', owner.normalized_phone, sent, role)
+
+
 def send_center_approval_request_notification(admin, owner, center):
     """Notify a platform admin that a director registered a new center."""
     owner_name = owner.full_name or owner.normalized_phone

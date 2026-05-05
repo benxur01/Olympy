@@ -11,6 +11,12 @@ class Notification(models.Model):
     *and* later pushed via the Telegram bot service.
     """
     TYPE_STUDENT_JOIN_REQUEST = 'student_join_request'
+    # Owner ga yuboriladigan o'qituvchi/manager ariza xabarnomalari. Avval
+    # bu turlar yo'q edi va owner faqat panel polling orqali pending
+    # arizalarni ko'rar edi; endi push xabarlar (in-app + Telegram) ham
+    # yuboriladi.
+    TYPE_TEACHER_JOIN_REQUEST = 'teacher_join_request'
+    TYPE_MANAGER_JOIN_REQUEST = 'manager_join_request'
     TYPE_STUDENT_APPROVED = 'student_approved'
     TYPE_STUDENT_REJECTED = 'student_rejected'
     TYPE_TEACHER_APPROVED = 'teacher_approved'

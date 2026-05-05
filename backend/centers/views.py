@@ -19,7 +19,12 @@ from .serializers import (
     EducationCenterSerializer,
     JoinRequestSerializer,
 )
-from .services import decide_membership, user_can_approve_membership, user_can_manage_center
+from .services import (
+    create_pending_center_for_owner,
+    decide_membership,
+    user_can_approve_membership,
+    user_can_manage_center,
+)
 
 
 def _annotate_center_counts(queryset):
@@ -65,32 +70,10 @@ def centers_list_create(request):
     serializer = CenterRegisterSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     with transaction.atomic():
-        center = EducationCenter.objects.create(
-            name=serializer.validated_data['name'],
-            organization_type=serializer.validated_data.get('organization_type', "O'quv markaz"),
-            country=serializer.validated_data.get('country', "O'zbekiston"),
-            region=serializer.validated_data.get('region', ''),
-            district=serializer.validated_data.get('district', ''),
-            city=serializer.validated_data['city'],
-            subjects=serializer.validated_data.get('subjects', []),
-            owner=request.user,
-            status=EducationCenter.STATUS_PENDING,
-        )
-        CenterMembership.objects.create(
-            user=request.user,
-            center=center,
-            role=CenterMembership.ROLE_OWNER,
-            status=CenterMembership.STATUS_PENDING,
-        )
+        center = create_pending_center_for_owner(request.user, serializer.validated_data)
         # Note: do NOT add 'owner' to user.roles here. The owner role is
         # promoted only after Platform Admin approves the center
         # (see admin_approve_center).
-        from django.contrib.auth import get_user_model
-        from notifications.services import send_center_approval_request_notification
-        User = get_user_model()
-        admins = User.objects.filter(is_platform_admin=True, is_active=True)
-        for admin in admins:
-            send_center_approval_request_notification(admin, request.user, center)
     return Response(EducationCenterSerializer(center).data,
                     status=http_status.HTTP_201_CREATED)
 
@@ -159,6 +142,21 @@ def join_center(request, center_id):
             send_student_join_request_notification(m.user, request.user, center, membership)
         if center.owner_id:
             send_student_join_request_notification(center.owner, request.user, center, membership)
+    elif created and role in (CenterMembership.ROLE_TEACHER, CenterMembership.ROLE_MANAGER):
+        # O'qituvchi/manager arizalari avval hech kimga xabar yuborilmasdi —
+        # owner faqat panelda polling qilib bilishi mumkin edi. Endi push
+        # xabarnoma yuboriladi va owner inline tugmalar bilan tasdiqlay
+        # oladi.
+        from notifications.services import send_staff_join_request_notification
+        if center.owner_id:
+            send_staff_join_request_notification(
+                center.owner,
+                request.user,
+                center,
+                role=role,
+                subject=membership.subject or '',
+                membership=membership,
+            )
     return Response(CenterMembershipSerializer(membership).data,
                     status=http_status.HTTP_201_CREATED if created
                     else http_status.HTTP_200_OK)
