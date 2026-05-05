@@ -1,0 +1,42 @@
+name: Render Deploy
+
+# Render auto-deploy webhook ba'zan ishlamaydi (account permissions, GitHub
+# integration timeout va h.k.). Bu workflow ishonchli alternativa: har
+# push to main paytida Render API ga to'g'ridan-to'g'ri deploy trigger
+# yuboradi va backend + frontend ikkalasini ham yangilaydi.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger backend deploy (olympy-api)
+        env:
+          RENDER_TOKEN: ${{ secrets.RENDER_API_TOKEN }}
+        run: |
+          if [ -z "$RENDER_TOKEN" ]; then
+            echo "::error::RENDER_API_TOKEN secret yo'q. Settings → Secrets → Actions ga qo'shing."
+            exit 1
+          fi
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $RENDER_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache":"do_not_clear"}' \
+            "https://api.render.com/v1/services/srv-d7t49iq8qa3s73f76qag/deploys" \
+            | tee /tmp/backend_deploy.json
+          echo "Backend deploy id: $(jq -r '.id' < /tmp/backend_deploy.json)"
+
+      - name: Trigger frontend deploy (olympy)
+        env:
+          RENDER_TOKEN: ${{ secrets.RENDER_API_TOKEN }}
+        run: |
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $RENDER_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache":"do_not_clear"}' \
+            "https://api.render.com/v1/services/srv-d7t4avog4nts73edsbr0/deploys" \
+            | tee /tmp/frontend_deploy.json
+          echo "Frontend deploy id: $(jq -r '.id' < /tmp/frontend_deploy.json)"
