@@ -9,6 +9,7 @@
 #      search_path uchun ishlatiladi.
 #   3) Collect static files into STATIC_ROOT (served by WhiteNoise)
 #   4) Apply database migrations (Django avtomatik olympy schema'siga yozadi)
+#   5) If bootstrap admin env vars are set, create/update the platform admin.
 set -o errexit
 
 pip install --upgrade pip
@@ -35,3 +36,4 @@ PY
 
 python manage.py collectstatic --no-input
 python manage.py migrate --no-input
+python manage.py ensure_platform_admin
