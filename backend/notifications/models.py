@@ -49,6 +49,15 @@ class Notification(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        # `my_notifications` har gal user bo'yicha filter va `-created_at`
+        # bo'yicha ordered slicing ishlatadi. Compound indeks qo'shamiz —
+        # 100K+ notification bilan sequential scan'dan saqlaydi.
+        indexes = [
+            models.Index(
+                fields=['user', '-created_at'],
+                name='notification_user_recent_idx',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.user_id}/{self.type}'

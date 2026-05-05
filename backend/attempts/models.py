@@ -38,6 +38,20 @@ class TestAttempt(models.Model):
                 name='unique_user_olympiad',
             ),
         ]
+        # Performance indekslari:
+        # - leaderboard `order_by('-score', 'time_spent')` per-olympiad —
+        #   olympiad+score+time_spent compound indeksi tezroq ishlaydi
+        # - `my_results` user bo'yicha so'nggi attempts ro'yxati
+        indexes = [
+            models.Index(
+                fields=['olympiad', '-score', 'time_spent'],
+                name='attempt_leaderboard_idx',
+            ),
+            models.Index(
+                fields=['user', '-submitted_at'],
+                name='attempt_user_recent_idx',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.user_id}@{self.olympiad_id} = {self.score}'

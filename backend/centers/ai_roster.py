@@ -58,9 +58,19 @@ def _looks_like_name(value):
     return True
 
 
+MAX_TEXT_INPUT_BYTES = 32 * 1024  # 32 KB
+MAX_IMAGE_INPUT_BYTES = 5 * 1024 * 1024  # 5 MB
+
+
 def parse_roster_entries_from_text(text):
     """Conservative line-based parser for typed/pasted roster rows."""
     raw_text = str(text or '').replace('\r', '\n')
+    # DoS himoyasi: regex har bir satrda ishlatiladi va katta input bilan
+    # backtracking xavfli bo'lishi mumkin. 32 KB dan oshig'ini kesib
+    # tashlaymiz — bu real ro'yxatlar uchun yetarlidan ko'p (bir ism ~50
+    # bayt, demak ~600 ism).
+    if len(raw_text) > MAX_TEXT_INPUT_BYTES:
+        raw_text = raw_text[:MAX_TEXT_INPUT_BYTES]
     # Semicolon separated names are common in copied lists; commas are too
     # ambiguous for names, so we only split them when line breaks are absent.
     if '\n' not in raw_text and ';' in raw_text:
@@ -384,6 +394,17 @@ def _ai_extract_names_from_image(image_bytes, mime_type, caption=''):
 def extract_names_from_payload(text='', image_bytes=None, mime_type='image/jpeg'):
     entries = parse_roster_entries_from_text(text)
     if image_bytes:
+        # Defensive size check — caller (telegram handler) allaqachon o'lchaydi,
+        # lekin bu funksiya to'g'ridan-to'g'ri chaqirilishi mumkin. AI API
+        # tomonga juda katta payload yuborib, kvota va xarajatga zarar
+        # bermaymiz.
+        if len(image_bytes) > MAX_IMAGE_INPUT_BYTES:
+            return {
+                'ok': False,
+                'error': f"Rasm juda katta. Limit: {MAX_IMAGE_INPUT_BYTES // (1024 * 1024)} MB.",
+                'entries': entries,
+                'names': [entry['full_name'] for entry in entries],
+            }
         ai_result = _ai_extract_names_from_image(image_bytes, mime_type, caption=text)
         if ai_result['ok']:
             entries = _dedupe_entries([*entries, *(ai_result.get('entries') or [])])
