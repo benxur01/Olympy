@@ -112,6 +112,7 @@ def olympiad_questions(request, olympiad_id):
     from django.utils import timezone
 
     from olympiads.models import Olympiad
+    from olympiads.services import user_can_participate_in_event
 
     olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
     if olympiad.status != Olympiad.STATUS_ACTIVE:
@@ -131,13 +132,7 @@ def olympiad_questions(request, olympiad_id):
                 {'detail': "Olimpiada vaqti tugagan"},
                 status=http_status.HTTP_400_BAD_REQUEST,
             )
-    membership = CenterMembership.objects.filter(
-        user=request.user,
-        center=olympiad.center,
-        status=CenterMembership.STATUS_APPROVED,
-        role=CenterMembership.ROLE_STUDENT,
-    ).first()
-    if not membership and not request.user.is_platform_admin:
+    if not user_can_participate_in_event(request.user, olympiad):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
     from attempts.models import TestAttempt
     from attempts.session_utils import (

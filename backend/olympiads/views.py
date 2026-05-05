@@ -1,37 +1,19 @@
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from centers.models import CenterMembership, EducationCenter
-
 from .models import Olympiad
 from .serializers import OlympiadSerializer
-
-
-def _user_can_manage_center(user, center):
-    """True if user can create/manage olympiads for the center."""
-    if user.is_platform_admin:
-        return True
-    if center.owner_id == user.id:
-        # Once admin has approved the center, the owner has full management
-        # rights regardless of their CenterMembership state — the membership
-        # row is bookkeeping, the center.owner_id is authoritative.
-        return center.status == EducationCenter.STATUS_APPROVED
-    return CenterMembership.objects.filter(
-        user=user, center=center,
-        role__in=[CenterMembership.ROLE_MANAGER, CenterMembership.ROLE_TEACHER],
-        status=CenterMembership.STATUS_APPROVED,
-    ).exists()
+from .services import event_readiness_errors, user_can_manage_center_event, visible_events_filter
 
 
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def olympiads_list_create(request):
-    """GET /api/olympiads/  — visible olympiads (filter to user's centers).
-    POST /api/olympiads/    — create draft olympiad (manager/owner/admin).
+    """GET /api/olympiads/  — visible olympiads/competitions.
+    POST /api/olympiads/    — create draft event (manager/owner/admin).
     """
     if request.method == 'GET':
         queryset = (
@@ -40,45 +22,15 @@ def olympiads_list_create(request):
             .select_related('center')
             .order_by('-created_at')
         )
-        if request.user.is_platform_admin:
-            qs = queryset
-        else:
-            # Olympiads at any center the user has an approved membership at.
-            approved_memberships = list(
-                CenterMembership.objects.filter(
-                    user=request.user, status=CenterMembership.STATUS_APPROVED,
-                ).values_list('center_id', 'role')
-            )
-            center_ids = [cid for cid, _ in approved_memberships]
-            staff_center_ids = [
-                cid for cid, role in approved_memberships
-                if role in (
-                    CenterMembership.ROLE_OWNER,
-                    CenterMembership.ROLE_MANAGER,
-                    CenterMembership.ROLE_TEACHER,
-                )
-            ]
-            qs = queryset.filter(center_id__in=center_ids)
-            # Pure students never see drafts; staff/owner roles see everything
-            # at their own centers.
-            if not staff_center_ids:
-                qs = qs.exclude(status=Olympiad.STATUS_DRAFT)
-            else:
-                qs = qs.exclude(
-                    status=Olympiad.STATUS_DRAFT,
-                ) | queryset.filter(
-                    center_id__in=staff_center_ids,
-                    status=Olympiad.STATUS_DRAFT,
-                )
-                qs = qs.distinct()
+        qs = queryset.filter(visible_events_filter(request.user)).distinct()
         return Response(OlympiadSerializer(qs, many=True).data)
 
     serializer = OlympiadSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     center = serializer.validated_data['center']
     questions = serializer.validated_data.pop('questions', None)
-    if not _user_can_manage_center(request.user, center):
-        return Response({'detail': "Sizda bu markaz uchun olimpiada yaratish huquqi yo'q"},
+    if not user_can_manage_center_event(request.user, center):
+        return Response({'detail': "Sizda bu markaz uchun tadbir yaratish huquqi yo'q"},
                         status=http_status.HTTP_403_FORBIDDEN)
     olympiad = serializer.save(
         created_by=request.user,
@@ -93,14 +45,14 @@ def olympiads_list_create(request):
 @api_view(['PATCH'])
 @permission_classes([IsAuthenticated])
 def olympiad_detail(request, olympiad_id):
-    """PATCH /api/olympiads/{id}/ — update draft olympiad fields/questions."""
+    """PATCH /api/olympiads/{id}/ — update draft/inactive event fields/questions."""
     olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
-    if not _user_can_manage_center(request.user, olympiad.center):
+    if not user_can_manage_center_event(request.user, olympiad.center):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
-    if olympiad.status != Olympiad.STATUS_DRAFT:
+    if olympiad.status not in [Olympiad.STATUS_DRAFT, Olympiad.STATUS_INACTIVE]:
         return Response(
-            {'detail': "Faqat draft olimpiadani tahrirlash mumkin"},
+            {'detail': "Faqat draft yoki nofaol tadbirni tahrirlash mumkin"},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
     serializer = OlympiadSerializer(olympiad, data=request.data, partial=True)
@@ -117,41 +69,41 @@ def olympiad_detail(request, olympiad_id):
 def publish_olympiad(request, olympiad_id):
     """POST /api/olympiads/{id}/publish/ — flip status to active and notify."""
     olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
-    if not _user_can_manage_center(request.user, olympiad.center):
+    if not user_can_manage_center_event(request.user, olympiad.center):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
-    if olympiad.status != Olympiad.STATUS_DRAFT:
+    if olympiad.status not in [Olympiad.STATUS_DRAFT, Olympiad.STATUS_INACTIVE]:
         return Response(
-            {'detail': 'Faqat draft olimpiadani nashr qilish mumkin'},
+            {'detail': 'Faqat draft yoki nofaol tadbirni faollashtirish mumkin'},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
-    if olympiad.start_datetime and olympiad.start_datetime < timezone.now():
+    readiness_errors = event_readiness_errors(olympiad)
+    if readiness_errors:
         return Response(
-            {'detail': "Boshlanish vaqti o'tib ketgan"},
+            {'detail': 'Tadbir hali tayyor emas', 'errors': readiness_errors},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
-    if not olympiad.questions.exists():
-        return Response({'detail': "Avval savollar tayinlang"},
-                        status=http_status.HTTP_400_BAD_REQUEST)
     olympiad.status = Olympiad.STATUS_ACTIVE
     olympiad.save(update_fields=['status'])
 
-    # Lazy import: avoid circular dependency.
-    from notifications.services import send_olympiad_published_bulk
-    approved_students = CenterMembership.objects.filter(
-        center=olympiad.center,
-        role=CenterMembership.ROLE_STUDENT,
-        status=CenterMembership.STATUS_APPROVED,
-    ).select_related('user')
-    try:
-        send_olympiad_published_bulk(
-            [m.user for m in approved_students],
-            olympiad,
-            olympiad.center,
-        )
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning('Notification send failed: %s', e)
+    if olympiad.event_type == Olympiad.EVENT_TYPE_COMPETITION:
+        # Lazy import: avoid circular dependency.
+        from centers.models import CenterMembership
+        from notifications.services import send_olympiad_published_bulk
+        approved_students = CenterMembership.objects.filter(
+            center=olympiad.center,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED,
+        ).select_related('user')
+        try:
+            send_olympiad_published_bulk(
+                [m.user for m in approved_students],
+                olympiad,
+                olympiad.center,
+            )
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning('Notification send failed: %s', e)
     return Response(OlympiadSerializer(olympiad).data)
 
 
@@ -160,12 +112,28 @@ def publish_olympiad(request, olympiad_id):
 def finish_olympiad(request, olympiad_id):
     """POST /api/olympiads/{id}/finish/ — flip status to finished."""
     olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
-    if not _user_can_manage_center(request.user, olympiad.center):
+    if not user_can_manage_center_event(request.user, olympiad.center):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
     if olympiad.status != Olympiad.STATUS_ACTIVE:
-        return Response({'detail': "Faqat faol olimpiadani yakunlash mumkin"},
+        return Response({'detail': "Faqat faol tadbirni yakunlash mumkin"},
                         status=http_status.HTTP_400_BAD_REQUEST)
     olympiad.status = Olympiad.STATUS_FINISHED
+    olympiad.save(update_fields=['status'])
+    return Response(OlympiadSerializer(olympiad).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def deactivate_olympiad(request, olympiad_id):
+    """POST /api/olympiads/{id}/deactivate/ — pause an active event for editing."""
+    olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
+    if not user_can_manage_center_event(request.user, olympiad.center):
+        return Response({'detail': 'Forbidden'},
+                        status=http_status.HTTP_403_FORBIDDEN)
+    if olympiad.status != Olympiad.STATUS_ACTIVE:
+        return Response({'detail': 'Faqat faol tadbirni nofaollashtirish mumkin'},
+                        status=http_status.HTTP_400_BAD_REQUEST)
+    olympiad.status = Olympiad.STATUS_INACTIVE
     olympiad.save(update_fields=['status'])
     return Response(OlympiadSerializer(olympiad).data)

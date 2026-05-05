@@ -56,11 +56,21 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     myRequestByCenter[studentCenterId] = studentStatus;
   }
 
-  // Olympiads visible to this student — only their approved center's olympiads
+  // Public olympiads are visible to everyone; musobaqa is visible only for
+  // approved students of the same center.
   const baseOlympiads = isApi ? (apiOlympiads || []) : store.olympiads;
-  const visibleOlympiads = isCenterApproved
-    ? baseOlympiads.filter(o => String(o.centerId) === String(studentCenterId))
-    : [];
+  const isPublicOlympiad = (event) => (event?.eventType || 'competition') === 'olympiad';
+  const studentVisibleStatuses = new Set(['active', 'finished']);
+  const canAccessEvent = (event) => (
+    isPublicOlympiad(event) ||
+    (isCenterApproved && String(event.centerId) === String(studentCenterId))
+  );
+  const canEnterEvent = (event) => event?.status === 'active' && canAccessEvent(event);
+  const visibleOlympiads = baseOlympiads.filter(o => {
+    if (!studentVisibleStatuses.has(o.status)) return false;
+    if (isPublicOlympiad(o)) return true;
+    return isCenterApproved && String(o.centerId) === String(studentCenterId);
+  });
 
   // Student's attempts and derived results
   const myAttempts = (isApi ? (apiAttempts || []) : store.attempts.filter(a => a.userId === user.id))
@@ -119,7 +129,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 
   const navItems = [
     { key: 'home', icon: 'home', label: 'Asosiy' },
-    { key: 'olympiads', icon: 'trophy', label: 'Olimpiadalar' },
+    { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
     { key: 'results', icon: 'chart', label: 'Natijalar' },
     { key: 'centers', icon: 'building', label: 'Tashkilotlar' },
     { key: 'leaderboard', icon: 'star', label: 'Reyting' },
@@ -170,7 +180,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         {!hasCenter && (
           <div className="glass rounded-2xl p-4 border border-indigo-500/20 max-w-xs">
             <div className="text-xs text-indigo-300 font-medium mb-1">💡 Maslahat</div>
-            <p className="text-xs text-white/50 mb-3">Yaqinda tashkilotlarda olimpiadalar bo'lib o'tadi</p>
+            <p className="text-xs text-white/50 mb-3">Olimpiadalar ochiq, musobaqalar uchun tashkilot tasdig'i kerak</p>
             <button onClick={() => setPage('centers')} className="btn-primary text-xs px-4 py-2 rounded-xl font-semibold">Tashkilot topish</button>
           </div>
         )}
@@ -188,7 +198,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <StatCard label="O'rtacha ball" value={avg || '—'} icon={<Icon name="chart" size={20} />} color="from-indigo-500 to-purple-600" glow="glow-blue" />
             <StatCard label="Reytingdagi o'rn" value={bestRank ? `#${bestRank}` : '—'} icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />
-            <StatCard label="Olimpiadalar" value={total} icon={<Icon name="bolt" size={20} />} color="from-cyan-500 to-blue-600" />
+            <StatCard label="Tadbirlar" value={total} icon={<Icon name="bolt" size={20} />} color="from-cyan-500 to-blue-600" />
             <StatCard label="Sertifikatlar" value={(myResults || []).filter(r => r.rank === 1).length} icon={<Icon name="award" size={20} />} color="from-emerald-500 to-teal-600" />
           </div>
         );
@@ -210,7 +220,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           </div>
           {studentStatus === 'pending' && (
             <div className="mt-3 text-xs text-amber-300 flex items-center gap-1.5">
-              <Icon name="info" size={12} /> Manager tasdig'i kutilmoqda — olimpiadalarda qatnasha olmaysiz
+              <Icon name="info" size={12} /> Manager tasdig'i kutilmoqda — markaz ichki musobaqalarida qatnasha olmaysiz
             </div>
           )}
           {studentStatus === 'rejected' && (
@@ -221,24 +231,24 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         </div>
       )}
 
-      {/* Today's olympiads */}
+      {/* Today's events */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-white">Bugungi olimpiadalar</h3>
+          <h3 className="font-bold text-white">Bugungi tadbirlar</h3>
           <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400 hover:text-indigo-300">Barchasini ko'rish →</button>
         </div>
         {!isCenterApproved && (
           <div className="glass rounded-2xl p-4 border border-amber-500/20 mb-4 text-sm text-amber-300 flex items-center gap-2">
-            <Icon name="info" size={14} /> Olimpiadaga qatnashish uchun tashkilot tasdig'i kerak.
+            <Icon name="info" size={14} /> Olimpiadalar ochiq. Musobaqaga qatnashish uchun tashkilot tasdig'i kerak.
           </div>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {visibleOlympiads.filter(o => o.status === 'active').slice(0, 2).map(o => (
-            <OlympiadCard key={o.id} olympiad={o} locked={!isCenterApproved}
-              onStart={() => { if (!isCenterApproved) return; setActiveOlympiad(o); onNavigate('test', o); }} />
+            <OlympiadCard key={o.id} olympiad={o} locked={!canAccessEvent(o)}
+              onStart={() => { if (!canEnterEvent(o)) return; setActiveOlympiad(o); onNavigate('test', o); }} />
           ))}
-          {visibleOlympiads.filter(o => o.status === 'active').length === 0 && isCenterApproved && (
-            <div className="md:col-span-2 text-center text-white/40 text-sm py-6 glass rounded-2xl">Bugungi faol olimpiadalar yo'q</div>
+          {visibleOlympiads.filter(o => o.status === 'active').length === 0 && (
+            <div className="md:col-span-2 text-center text-white/40 text-sm py-6 glass rounded-2xl">Bugungi faol tadbirlar yo'q</div>
           )}
         </div>
       </div>
@@ -268,7 +278,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <div className="glass rounded-2xl p-5">
           <h3 className="font-bold text-white mb-4">So'nggi natijalar</h3>
           <div className="space-y-3">
-            {myResults.length === 0 && <div className="text-sm text-white/40">Hali olimpiada topshirmagansiz.</div>}
+            {myResults.length === 0 && <div className="text-sm text-white/40">Hali tadbir topshirmagansiz.</div>}
             {myResults.slice(0, 5).map(r => (
               <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
                 onClick={() => onNavigate('results', { ...r.attempt, olympiad: baseOlympiads.find(o => String(o.id) === String(r.attempt.olympiadId)) })}>
@@ -294,7 +304,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const renderOlympiads = () => (
     <div className="p-6 space-y-6 animate-in">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-xl font-black text-white">Olimpiadalar</h2>
+        <h2 className="text-xl font-black text-white">Tadbirlar</h2>
         <div className="flex gap-2">
           {['Barchasi', 'Faol', 'Tugagan'].map(f => (
             <button key={f} onClick={() => setOlympiadFilter(f)}
@@ -304,7 +314,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       </div>
       {!isCenterApproved && (
         <div className="glass rounded-2xl p-4 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
-          <Icon name="info" size={14} /> Olimpiadaga qatnashish uchun tashkilot tasdig'i kerak.
+          <Icon name="info" size={14} /> Olimpiadalar ochiq. Musobaqaga qatnashish uchun tashkilot tasdig'i kerak.
         </div>
       )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -314,12 +324,12 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             if (olympiadFilter === 'Tugagan') return o.status === 'finished';
             return true;
           });
-          if (filteredOlympiads.length === 0 && isCenterApproved) {
-            return <div className="md:col-span-2 glass rounded-2xl p-8 text-center text-white/40 text-sm">{olympiadFilter === 'Barchasi' ? "Bu tashkilot uchun olimpiadalar mavjud emas" : `${olympiadFilter} olimpiadalar topilmadi`}</div>;
+          if (filteredOlympiads.length === 0) {
+            return <div className="md:col-span-2 glass rounded-2xl p-8 text-center text-white/40 text-sm">{olympiadFilter === 'Barchasi' ? "Hozircha tadbirlar mavjud emas" : `${olympiadFilter} tadbirlar topilmadi`}</div>;
           }
           return filteredOlympiads.map(o => (
-            <OlympiadCard key={o.id} olympiad={o} locked={!isCenterApproved}
-              onStart={() => { if (!isCenterApproved) return; onNavigate('test', o); }} />
+            <OlympiadCard key={o.id} olympiad={o} locked={!canAccessEvent(o)}
+              onStart={() => { if (!canEnterEvent(o)) return; onNavigate('test', o); }} />
           ));
         })()}
       </div>
@@ -335,12 +345,12 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <div className="grid grid-cols-3 gap-4">
           <StatCard label="O'rtacha ball" value={avg || '—'} icon={<Icon name="chart" size={18} />} color="from-indigo-500 to-purple-600" />
           <StatCard label="Eng yaxshi o'rin" value={bestRank ? `#${bestRank}` : '—'} icon={<Icon name="trophy" size={18} />} color="from-amber-500 to-orange-500" />
-          <StatCard label="Jami olimpiada" value={myResults.length} icon={<Icon name="bolt" size={18} />} color="from-cyan-500 to-blue-600" />
+          <StatCard label="Jami tadbir" value={myResults.length} icon={<Icon name="bolt" size={18} />} color="from-cyan-500 to-blue-600" />
         </div>
         <div className="glass rounded-2xl overflow-hidden">
           <div className="p-4 border-b border-white/5 font-semibold text-white text-sm">Natijalar tarixi</div>
           {myResults.length === 0 && (
-            <div className="px-4 py-10 text-center text-white/40 text-sm">Hali topshirmagansiz. Faol olimpiadalardan birini tanlab boshlang.</div>
+            <div className="px-4 py-10 text-center text-white/40 text-sm">Hali topshirmagansiz. Faol tadbirlardan birini tanlab boshlang.</div>
           )}
           {myResults.map(r => (
             <div key={r.id} className="table-row flex items-center gap-4 px-4 py-4">
@@ -476,7 +486,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 </button>
               )}
               <button onClick={() => setPage('olympiads')} className="btn-primary text-xs px-4 py-2 rounded-xl font-semibold hidden md:flex items-center gap-1">
-                <Icon name="trophy" size={14} /> Olimpiadalar
+                <Icon name="trophy" size={14} /> Tadbirlar
               </button>
             </div>
           } />
@@ -497,13 +507,17 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 const OlympiadCard = ({ olympiad: o, onStart, locked }) => {
   const isActive = o.status === 'active';
   const disabled = !isActive || locked;
-  const label = locked ? "🔒 Tasdiq kerak" : (isActive ? '▶ Boshlash' : (o.status === 'draft' ? 'Hali e\'lon qilinmagan' : 'Tugagan'));
+  const typeLabel = eventTypeLabel(o.eventType || 'competition');
+  const label = locked ? "🔒 Tashkilot tasdig'i kerak" : (isActive ? '▶ Boshlash' : (o.status === 'inactive' ? 'Nofaol' : (o.status === 'draft' ? 'Hali e\'lon qilinmagan' : 'Tugagan')));
   const time = o.startTime || o.time || '';
   const qCount = (o.questionIds && o.questionIds.length) || o.questions || 0;
   return (
     <div className="glass rounded-2xl p-5 card-hover">
       <div className="flex items-start justify-between mb-3">
-        <SubjectBadge subject={o.subject} />
+        <div className="flex items-center gap-2">
+          <SubjectBadge subject={o.subject} />
+          <span className={`rounded-lg px-2 py-1 text-[10px] font-bold ${o.eventType === 'olympiad' ? 'bg-cyan-500/15 text-cyan-300' : 'bg-amber-500/15 text-amber-300'}`}>{typeLabel}</span>
+        </div>
         <Badge status={statusLabel(o.status)} />
       </div>
       <h3 className="font-bold text-white mb-1">{o.title}</h3>

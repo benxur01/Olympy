@@ -8,8 +8,11 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [telegramLink, setTelegramLink] = React.useState(null);
   const [telegramLinkLoading, setTelegramLinkLoading] = React.useState(false);
   const [telegramLinked, setTelegramLinked] = React.useState(!!user?.telegramLinked);
-  const [newOlympiad, setNewOlympiad] = React.useState({ title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft' });
+  const emptyOlympiadForm = { eventType: 'competition', title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft' };
+  const [newOlympiad, setNewOlympiad] = React.useState(emptyOlympiadForm);
   const [editingOlympiadId, setEditingOlympiadId] = React.useState(null);
+  const [activateConfirm, setActivateConfirm] = React.useState(null);
+  const [eventSaving, setEventSaving] = React.useState(false);
   const [assignModal, setAssignModal] = React.useState(null);
   const [toast, setToast] = React.useState('');
   const [mobileMenu, setMobileMenu] = React.useState(false);
@@ -232,8 +235,203 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const navItems = [
     { key: 'home', icon: 'home', label: 'Asosiy' },
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCount || undefined },
-    { key: 'olympiads', icon: 'trophy', label: 'Olimpiadalar' },
+    { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
   ];
+
+  const formStartIso = (form) => {
+    if (!form.startDate) return null;
+    return `${form.startDate}T${form.startTime || '00:00'}:00`;
+  };
+
+  const eventFormIssues = (form) => {
+    const issues = [];
+    if (!String(form.title || '').trim()) issues.push('Tadbir nomini kiriting');
+    if (!String(form.subject || '').trim()) issues.push('Fanni tanlang');
+    if (!form.startDate) issues.push('Boshlanish sanasini belgilang');
+    if (!form.startTime) issues.push('Boshlanish vaqtini belgilang');
+    if (!Number(form.duration) || Number(form.duration) <= 0) issues.push("Davomiylikni to'g'ri kiriting");
+    const start = form.startDate ? new Date(formStartIso(form)) : null;
+    if (start && start.getTime() < Date.now()) issues.push("Boshlanish vaqti o'tib ketgan");
+    return issues;
+  };
+
+  const openCreateEvent = () => {
+    setEditingOlympiadId(null);
+    setNewOlympiad({ ...emptyOlympiadForm });
+    setCreateModal(true);
+  };
+
+  const openEditEvent = (event) => {
+    if (!event) return;
+    if (!['draft', 'inactive'].includes(event.status)) {
+      showToast(event.status === 'active'
+        ? "⚠ Tahrirlash uchun avval nofaollashtiring"
+        : "⚠ Yakunlangan tadbir tahrirlanmaydi");
+      return;
+    }
+    setEditingOlympiadId(event.id);
+    setNewOlympiad({
+      eventType: event.eventType || 'competition',
+      title: event.title || '',
+      subject: event.subject || store.subjects[0] || 'Matematika',
+      startDate: event.startDate || '',
+      startTime: event.startTime || '10:00',
+      duration: event.duration || event.duration_minutes || 60,
+      maxScore: event.maxScore || 100,
+      status: event.status || 'draft',
+    });
+    setCreateModal(true);
+  };
+
+  const resetEventModal = () => {
+    setCreateModal(false);
+    setEditingOlympiadId(null);
+    setNewOlympiad({ ...emptyOlympiadForm });
+  };
+
+  const closeEventModal = () => {
+    if (eventSaving) return;
+    resetEventModal();
+  };
+
+  const eventErrorMessage = (err) =>
+    err?.data?.errors?.[0] || OlympyApi.toUserMessage(err);
+
+  const saveEvent = () => {
+    const issues = eventFormIssues(newOlympiad);
+    if (issues.length) {
+      showToast(`⚠ ${issues[0]}`);
+      return;
+    }
+    const editingEvent = editingOlympiadId
+      ? olympiads.find(o => String(o.id) === String(editingOlympiadId))
+      : null;
+    const payload = {
+      event_type: newOlympiad.eventType,
+      title: newOlympiad.title.trim(),
+      subject: newOlympiad.subject,
+      start_datetime: formStartIso(newOlympiad),
+      duration_minutes: Number(newOlympiad.duration) || 60,
+    };
+
+    if (isApi) {
+      const token = OlympyApi.getToken();
+      const backendCenterId = center?.backendId ?? centerId;
+      const request = editingEvent
+        ? OlympyApi.updateOlympiad(editingEvent.backendId ?? editingEvent.id, payload, token)
+        : OlympyApi.createOlympiad({ center: backendCenterId, ...payload }, token);
+      setEventSaving(true);
+      request
+        .then(() => {
+          showToast(editingEvent
+            ? `✓ ${eventTypeLabel(newOlympiad.eventType)} yangilandi`
+            : `✓ ${eventTypeLabel(newOlympiad.eventType)} yaratildi`);
+          resetEventModal();
+          apiOlympiadsRes.reload();
+        })
+        .catch(err => {
+          console.warn('save olympiad failed:', err);
+          showToast(`⚠ ${eventErrorMessage(err)}`);
+        })
+        .finally(() => setEventSaving(false));
+      return;
+    }
+
+    const localPatch = {
+      eventType: newOlympiad.eventType,
+      title: newOlympiad.title.trim(),
+      subject: newOlympiad.subject,
+      startDate: newOlympiad.startDate,
+      startTime: newOlympiad.startTime,
+      duration: Number(newOlympiad.duration) || 60,
+      maxScore: newOlympiad.maxScore,
+    };
+    if (editingEvent) {
+      OlympyStore.updateOlympiad(editingEvent.id, localPatch);
+      showToast(`✓ ${eventTypeLabel(newOlympiad.eventType)} yangilandi`);
+    } else {
+      OlympyStore.createOlympiad({
+        centerId,
+        ...localPatch,
+        status: 'draft',
+        createdBy: user.id,
+      });
+      showToast(`✓ ${eventTypeLabel(newOlympiad.eventType)} yaratildi`);
+    }
+    closeEventModal();
+  };
+
+  const requestActivation = (event) => {
+    const issues = eventReadinessIssues(event);
+    if (issues.length) {
+      showToast(`⚠ ${issues[0]}`);
+      return;
+    }
+    setActivateConfirm(event);
+  };
+
+  const confirmActivation = () => {
+    if (!activateConfirm) return;
+    const event = activateConfirm;
+    if (isApi) {
+      setEventSaving(true);
+      OlympyApi.publishOlympiad(event.backendId ?? event.id, OlympyApi.getToken())
+        .then(() => {
+          showToast(`✓ ${eventTypeLabel(event.eventType || 'competition')} faollashtirildi`);
+          setActivateConfirm(null);
+          apiOlympiadsRes.reload();
+        })
+        .catch(err => {
+          console.warn('publishOlympiad failed:', err);
+          showToast(`⚠ ${eventErrorMessage(err)}`);
+        })
+        .finally(() => setEventSaving(false));
+      return;
+    }
+    OlympyStore.publishOlympiad(event.id);
+    showToast(`✓ ${eventTypeLabel(event.eventType || 'competition')} faollashtirildi`);
+    setActivateConfirm(null);
+  };
+
+  const deactivateEvent = (event) => {
+    if (!event || event.status !== 'active') return;
+    if (isApi) {
+      setEventSaving(true);
+      OlympyApi.deactivateOlympiad(event.backendId ?? event.id, OlympyApi.getToken())
+        .then(() => {
+          showToast(`✓ ${eventTypeLabel(event.eventType || 'competition')} nofaollashtirildi`);
+          apiOlympiadsRes.reload();
+        })
+        .catch(err => {
+          console.warn('deactivateOlympiad failed:', err);
+          showToast(`⚠ ${eventErrorMessage(err)}`);
+        })
+        .finally(() => setEventSaving(false));
+      return;
+    }
+    OlympyStore.updateOlympiad(event.id, { status: 'inactive' });
+    showToast(`✓ ${eventTypeLabel(event.eventType || 'competition')} nofaollashtirildi`);
+  };
+
+  const finishEvent = (event) => {
+    if (!event || event.status !== 'active') return;
+    if (isApi) {
+      setEventSaving(true);
+      OlympyApi.finishOlympiad(event.backendId ?? event.id, OlympyApi.getToken())
+        .then(() => {
+          showToast(`✓ ${eventTypeLabel(event.eventType || 'competition')} yakunlandi`);
+          apiOlympiadsRes.reload();
+        })
+        .catch(err => {
+          console.warn('finishOlympiad failed:', err);
+          showToast(`⚠ ${eventErrorMessage(err)}`);
+        })
+        .finally(() => setEventSaving(false));
+      return;
+    }
+    OlympyStore.updateOlympiad(event.id, { status: 'finished' });
+    showToast(`✓ ${eventTypeLabel(event.eventType || 'competition')} yakunlandi`);
+  };
 
   const renderHome = () => (
     <div className="p-6 space-y-6 animate-in">
@@ -242,15 +440,15 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <h2 className="text-2xl font-black text-white">{centerName}</h2>
           <p className="text-white/40 text-sm">{centerType} · Manager paneli · {new Date().toLocaleDateString('uz-UZ')}</p>
         </div>
-        <button onClick={() => setCreateModal(true)} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
-          <Icon name="plus" size={16} /> Olimpiada yaratish
+        <button onClick={openCreateEvent} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
+          <Icon name="plus" size={16} /> Tadbir yaratish
         </button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard label="Kutilayotgan arizalar" value={pendingCount} sub={pendingCount > 0 ? 'Yangi' : ''} icon={<Icon name="bell" size={20} />} color="from-rose-500 to-pink-600" glow="glow-blue" />
-        <StatCard label="Faol olimpiadalar" value={olympiads.filter(o => o.status === 'active').length} icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />
-        <StatCard label="Jami olimpiadalar" value={olympiads.length} icon={<Icon name="bolt" size={20} />} color="from-emerald-500 to-teal-600" />
+        <StatCard label="Faol tadbirlar" value={olympiads.filter(o => o.status === 'active').length} icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />
+        <StatCard label="Jami tadbirlar" value={olympiads.length} icon={<Icon name="bolt" size={20} />} color="from-emerald-500 to-teal-600" />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -278,14 +476,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         </div>
         <div className="glass rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-white">Olimpiadalar</h3>
+            <h3 className="font-bold text-white">Tadbirlar</h3>
             <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400">Ko'rish</button>
           </div>
           <div className="space-y-3">
             {olympiads.slice(0, 3).map(o => (
               <div key={o.id} className="flex items-center gap-3 p-3 rounded-xl glass">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0 ${o.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : o.status === 'draft' ? 'bg-white/10 text-white/40' : 'bg-indigo-500/20 text-indigo-400'}`}>
-                  {o.status === 'active' ? '▶' : o.status === 'draft' ? '✏' : '✓'}
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0 ${o.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : o.status === 'inactive' ? 'bg-amber-500/20 text-amber-300' : o.status === 'draft' ? 'bg-white/10 text-white/40' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                  <Icon name={o.status === 'active' ? 'trophy' : o.status === 'inactive' ? 'clock' : o.status === 'draft' ? 'edit' : 'check'} size={15} />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold text-white truncate">{o.title}</div>
@@ -294,7 +492,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 <Badge status={statusLabel(o.status)} />
               </div>
             ))}
-            {olympiads.length === 0 && <div className="text-sm text-white/40">Hali olimpiada yo'q</div>}
+            {olympiads.length === 0 && <div className="text-sm text-white/40">Hali tadbir yo'q</div>}
           </div>
         </div>
       </div>
@@ -310,7 +508,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       <div className="glass rounded-2xl overflow-hidden">
         <table className="w-full">
           <thead><tr className="border-b border-white/5">
-            {["O'quvchi", 'Telefon', 'Olimpiadalar', "O'rt. ball", 'Holat', 'Amal'].map(h => (
+            {["O'quvchi", 'Telefon', 'Tadbirlar', "O'rt. ball", 'Holat', 'Amal'].map(h => (
               <th key={h} className="text-left px-4 py-3 text-xs text-white/40 font-medium">{h}</th>
             ))}
           </tr></thead>
@@ -415,68 +613,103 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const renderOlympiads = () => (
     <div className="p-6 space-y-6 animate-in">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-black text-white">Olimpiadalar</h2>
-        <button onClick={() => setCreateModal(true)} className="btn-primary px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
-          <Icon name="plus" size={15} /> Yangi olimpiada
+        <h2 className="text-xl font-black text-white">Tadbirlar</h2>
+        <button onClick={openCreateEvent} className="btn-primary px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
+          <Icon name="plus" size={15} /> Yangi tadbir
         </button>
       </div>
       <div className="grid grid-cols-1 gap-4">
         {olympiads.length === 0 && (
-          <EmptyState icon="trophy" title="Olimpiadalar yo'q" desc="Birinchi olimpiadangizni yarating"
-            action={<button onClick={() => setCreateModal(true)} className="btn-primary px-4 py-2 rounded-xl text-sm">Yaratish</button>} />
+          <EmptyState icon="trophy" title="Tadbirlar yo'q" desc="Birinchi olimpiada yoki musobaqangizni yarating"
+            action={<button onClick={openCreateEvent} className="btn-primary px-4 py-2 rounded-xl text-sm">Yaratish</button>} />
         )}
         {olympiads.map(o => {
           const assignedCount = (o.questionIds || []).length;
+          const needsReadiness = ['draft', 'inactive'].includes(o.status);
+          const issues = needsReadiness ? eventReadinessIssues(o) : [];
+          const isReady = issues.length === 0;
+          const canEdit = needsReadiness;
+          const statusTone = o.status === 'active'
+            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/20'
+            : o.status === 'inactive'
+              ? 'bg-amber-500/15 text-amber-300 border-amber-500/20'
+              : o.status === 'draft'
+                ? 'bg-white/5 text-white/45 border-white/10'
+                : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/20';
+          const statusIcon = o.status === 'active'
+            ? 'trophy'
+            : o.status === 'inactive'
+              ? 'clock'
+              : o.status === 'draft'
+                ? 'edit'
+                : 'check';
           return (
-            <div key={o.id} className="glass rounded-2xl p-5 flex items-center gap-4 flex-wrap">
-              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-xl flex-shrink-0 ${o.status === 'active' ? 'bg-emerald-500/15' : o.status === 'draft' ? 'bg-white/5' : 'bg-indigo-500/15'}`}>
-                {o.status === 'active' ? '🏆' : o.status === 'draft' ? '📝' : '✅'}
+            <div key={o.id} className="glass rounded-2xl p-5 border border-white/10">
+              <div className="flex flex-col xl:flex-row xl:items-start gap-4">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 border ${statusTone}`}>
+                <Icon name={statusIcon} size={20} />
               </div>
-              <div className="flex-1 min-w-0">
+              <div className="flex-1 min-w-0 space-y-3">
                 <div className="font-bold text-white mb-1">{o.title}</div>
                 <div className="flex flex-wrap items-center gap-3 text-xs text-white/40">
                   <SubjectBadge subject={o.subject} />
-                  <span>📅 {o.startDate || o.date}</span>
-                  <span>⏱ {o.duration} min</span>
-                  <span>📋 {assignedCount} ta savol</span>
-                  <span>👥 {o.participants || 0} ishtirokchi</span>
+                  <span className={`rounded-lg px-2 py-1 font-bold ${o.eventType === 'olympiad' ? 'bg-cyan-500/15 text-cyan-300' : 'bg-amber-500/15 text-amber-300'}`}>{eventTypeLabel(o.eventType || 'competition')}</span>
+                  <span className="inline-flex items-center gap-1"><Icon name="clock" size={12} /> {o.startDate || o.date || 'Sana yo\'q'} {o.startTime || ''}</span>
+                  <span>{o.duration} min</span>
+                  <span>{assignedCount} ta savol</span>
+                  <span>{o.participants || 0} ishtirokchi</span>
                   {o.avgScore > 0 && <span className="text-emerald-400">Ø {o.avgScore}%</span>}
                 </div>
+                {needsReadiness ? (
+                  <div className={`rounded-xl px-3 py-2 border text-xs ${isReady ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-amber-500/10 border-amber-500/25 text-amber-300'}`}>
+                    <div className="flex items-center gap-2 font-semibold">
+                      <Icon name={isReady ? 'check' : 'info'} size={13} />
+                      {isReady ? 'Faollashtirishga tayyor' : 'Tayyor emas'}
+                    </div>
+                    {!isReady && (
+                      <div className="mt-1 flex flex-wrap gap-1.5">
+                        {issues.slice(0, 3).map(issue => (
+                          <span key={issue} className="rounded-lg bg-black/15 px-2 py-1">{issue}</span>
+                        ))}
+                        {issues.length > 3 && <span className="rounded-lg bg-black/15 px-2 py-1">+{issues.length - 3}</span>}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className={`rounded-xl px-3 py-2 border text-xs ${o.status === 'active' ? 'bg-cyan-500/10 border-cyan-500/25 text-cyan-300' : 'bg-slate-500/10 border-white/10 text-white/45'}`}>
+                    <div className="flex items-center gap-2 font-semibold">
+                      <Icon name={o.status === 'active' ? 'trophy' : 'check'} size={13} />
+                      {o.status === 'active' ? "Hozir faol" : 'Yakunlangan'}
+                    </div>
+                  </div>
+                )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-col sm:flex-row xl:flex-col gap-2 xl:items-stretch">
                 <Badge status={statusLabel(o.status)} />
-                <button onClick={() => setAssignModal(o)} className="btn-ghost text-xs px-3 py-1.5 rounded-xl flex items-center gap-1">
+                <button onClick={() => openEditEvent(o)} disabled={!canEdit}
+                  className="btn-ghost text-xs px-3 py-1.5 rounded-xl flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
+                  <Icon name="edit" size={13} /> Tahrirlash
+                </button>
+                <button onClick={() => canEdit ? setAssignModal(o) : showToast("⚠ Savollarni o'zgartirish uchun avval nofaollashtiring")}
+                  disabled={!canEdit}
+                  className="btn-ghost text-xs px-3 py-1.5 rounded-xl flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
                   <Icon name="book" size={13} /> Savollar ({assignedCount})
                 </button>
-                {o.status === 'draft' && (
-                  <button onClick={() => {
-                    if ((o.questionIds || []).length === 0) { showToast("⚠ Avval savollar tayinlang"); return; }
-                    if (isApi) {
-                      const token = OlympyApi.getToken();
-                      OlympyApi.publishOlympiad(o.backendId ?? o.id, token)
-                        .then(() => { showToast("✓ Olimpiada e'lon qilindi"); apiOlympiadsRes.reload(); })
-                        .catch(err => { console.warn('publishOlympiad failed:', err); showToast("⚠ E'lon qilib bo'lmadi"); });
-                      return;
-                    }
-                    OlympyStore.publishOlympiad(o.id);
-                    showToast("✓ Olimpiada e'lon qilindi va o'quvchilarga xabar yuborildi");
-                  }}
-                    className="btn-primary text-xs px-3 py-1.5 rounded-xl">E'lon qilish</button>
+                {['draft', 'inactive'].includes(o.status) && (
+                  <button onClick={() => requestActivation(o)} disabled={!isReady || eventSaving}
+                    className={`${isReady ? 'btn-primary' : 'btn-ghost opacity-50'} text-xs px-3 py-1.5 rounded-xl disabled:cursor-not-allowed`}>
+                    Faollashtirish
+                  </button>
                 )}
                 {o.status === 'active' && (
-                  <button onClick={() => {
-                    if (isApi) {
-                      const token = OlympyApi.getToken();
-                      OlympyApi.finishOlympiad(o.backendId ?? o.id, token)
-                        .then(() => { showToast('✓ Olimpiada yakunlandi'); apiOlympiadsRes.reload(); })
-                        .catch(err => { console.warn('finishOlympiad failed:', err); showToast("⚠ Yakunlab bo'lmadi"); });
-                      return;
-                    }
-                    OlympyStore.updateOlympiad(o.id, { status: 'finished' });
-                    showToast('✓ Olimpiada yakunlandi');
-                  }}
-                    className="btn-ghost text-xs px-3 py-1.5 rounded-xl">Yakunlash</button>
+                  <>
+                    <button onClick={() => deactivateEvent(o)} disabled={eventSaving}
+                      className="btn-ghost text-xs px-3 py-1.5 rounded-xl disabled:opacity-50">Nofaol qilish</button>
+                    <button onClick={() => finishEvent(o)} disabled={eventSaving}
+                      className="btn-ghost text-xs px-3 py-1.5 rounded-xl disabled:opacity-50">Yakunlash</button>
+                  </>
                 )}
+              </div>
               </div>
             </div>
           );
@@ -494,7 +727,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <StatCard label="Qatnashuvchilar" value="484" icon={<Icon name="users" size={18} />} color="from-cyan-500 to-blue-600" />
       </div>
       <div className="glass rounded-2xl p-5">
-        <h3 className="font-bold text-white mb-4">Olimpiada natijalari</h3>
+        <h3 className="font-bold text-white mb-4">Tadbir natijalari</h3>
         {olympiads.filter(o => o.status === 'finished').map(o => (
           <div key={o.id} className="flex items-center gap-4 p-4 glass rounded-xl mb-3">
             <div className="flex-1"><div className="font-semibold text-white">{o.title}</div><div className="text-xs text-white/40">{o.participants || 0} ishtirokchi</div></div>
@@ -503,7 +736,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           </div>
         ))}
         {olympiads.filter(o => o.status === 'finished').length === 0 && (
-          <div className="text-sm text-white/40 px-3 py-2">Tugatilgan olimpiadalar yo'q</div>
+          <div className="text-sm text-white/40 px-3 py-2">Tugatilgan tadbirlar yo'q</div>
         )}
       </div>
     </div>
@@ -527,8 +760,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   <Icon name="users" size={13} /> Rolni almashtirish
                 </button>
               )}
-              <button onClick={() => setCreateModal(true)} className="btn-primary text-xs px-4 py-2 rounded-xl font-semibold hidden md:flex items-center gap-1">
-                <Icon name="plus" size={14} /> Olimpiada
+              <button onClick={openCreateEvent} className="btn-primary text-xs px-4 py-2 rounded-xl font-semibold hidden md:flex items-center gap-1">
+                <Icon name="plus" size={14} /> Tadbir
               </button>
             </div>
           } />
@@ -538,72 +771,140 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <MobileBottomNav items={navItems} activePage={page} setPage={setPage} />
       </div>
 
-      {/* Create olympiad modal */}
-      <Modal open={createModal} onClose={() => setCreateModal(false)} title="Olimpiada yaratish" width="max-w-xl">
-        <div className="space-y-4">
-          <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Olimpiada nomi</label>
-            <input className="input-field" placeholder="Matematika Olimpiadasi — May 2026" value={newOlympiad.title} onChange={e => setNewOlympiad({...newOlympiad, title: e.target.value})} /></div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Fan kategoriyasi</label>
-              <select className="input-field" value={newOlympiad.subject} onChange={e => setNewOlympiad({...newOlympiad, subject: e.target.value})}>
-                {store.subjects.map(s => <option key={s}>{s}</option>)}
-              </select></div>
-            <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Holat</label>
-              <select className="input-field" value={newOlympiad.status} onChange={e => setNewOlympiad({...newOlympiad, status: e.target.value})}>
-                <option value="draft">Draft</option>
-                <option value="active">Faol</option>
-              </select></div>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Boshlanish sanasi</label><input type="date" className="input-field" value={newOlympiad.startDate} onChange={e => setNewOlympiad({...newOlympiad, startDate: e.target.value})} /></div>
-            <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Boshlanish vaqti</label><input type="time" className="input-field" value={newOlympiad.startTime} onChange={e => setNewOlympiad({...newOlympiad, startTime: e.target.value})} /></div>
-          </div>
-          <div>
-            <label className="block text-xs text-white/50 mb-1.5 font-medium">Davomiyligi (min)</label>
-            <input type="number" className="input-field" value={newOlympiad.duration} onChange={e => setNewOlympiad({...newOlympiad, duration: +e.target.value})} />
-          </div>
-          <div className="glass rounded-xl p-3 border border-indigo-500/15 text-xs text-indigo-200">
-            <Icon name="info" size={12} className="inline" /> Olimpiada saqlangach, "Savollar" tugmasi orqali savollar tayinlang. Maksimal ball biriktirilgan savollar yig'indisidan avtomatik hisoblanadi.
-          </div>
-          <div className="flex gap-3 pt-2">
-            <button onClick={() => setCreateModal(false)} className="btn-ghost flex-1 py-3 rounded-xl">Bekor qilish</button>
-            <button onClick={() => {
-              if (!newOlympiad.title || !newOlympiad.startDate) { showToast('⚠ Nomi va sanani kiriting'); return; }
-              if (isApi) {
-                const token = OlympyApi.getToken();
-                const backendCenterId = center?.backendId ?? centerId;
-                const startIso = `${newOlympiad.startDate}T${newOlympiad.startTime || '00:00'}:00`;
-                OlympyApi.createOlympiad({
-                  center: backendCenterId,
-                  title: newOlympiad.title,
-                  subject: newOlympiad.subject,
-                  start_datetime: startIso,
-                  duration_minutes: newOlympiad.duration,
-                  max_score: newOlympiad.maxScore,
-                }, token)
-                  .then(() => { showToast('✓ Olimpiada yaratildi'); apiOlympiadsRes.reload(); })
-                  .catch(err => { console.warn('createOlympiad failed:', err); showToast("⚠ Yaratib bo'lmadi"); });
-                setNewOlympiad({ title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft' });
-                setCreateModal(false);
-                return;
-              }
-              OlympyStore.createOlympiad({
-                centerId,
-                title: newOlympiad.title,
-                subject: newOlympiad.subject,
-                startDate: newOlympiad.startDate,
-                startTime: newOlympiad.startTime,
-                duration: newOlympiad.duration,
-                maxScore: newOlympiad.maxScore,
-                status: 'draft', // Always start as draft; publish via button
-                createdBy: user.id,
-              });
-              setNewOlympiad({ title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft' });
-              setCreateModal(false);
-              showToast('✓ Olimpiada yaratildi');
-            }} className="btn-primary flex-1 py-3 rounded-xl font-semibold">Saqlash</button>
-          </div>
-        </div>
+      {/* Create/edit event modal */}
+      <Modal open={createModal} onClose={closeEventModal} title={editingOlympiadId ? 'Tadbirni tahrirlash' : 'Tadbir yaratish'} width="max-w-2xl">
+        {(() => {
+          const formIssues = eventFormIssues(newOlympiad);
+          const modeOptions = [
+            { value: 'competition', label: 'Musobaqa', desc: "Faqat shu tashkilot o'quvchilari" },
+            { value: 'olympiad', label: 'Olimpiada', desc: 'Platformadagi barcha foydalanuvchilar' },
+          ];
+          return (
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {modeOptions.map(opt => {
+                  const selected = newOlympiad.eventType === opt.value;
+                  return (
+                    <button key={opt.value} onClick={() => setNewOlympiad({ ...newOlympiad, eventType: opt.value })}
+                      className={`p-4 rounded-2xl text-left border transition-all ${selected ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'border-white/10 bg-white/5 text-white/60 hover:bg-white/10'}`}>
+                      <div className="flex items-center gap-2 font-bold text-sm">
+                        <span className={`w-2.5 h-2.5 rounded-full ${selected ? 'bg-indigo-400' : 'bg-white/20'}`}></span>
+                        {opt.label}
+                      </div>
+                      <div className="text-xs text-white/40 mt-1">{opt.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div>
+                <label className="block text-xs text-white/50 mb-1.5 font-medium">Tadbir nomi</label>
+                <input className="input-field"
+                  placeholder={newOlympiad.eventType === 'olympiad' ? 'Matematika Olimpiadasi — May 2026' : 'Ichki matematika musobaqasi'}
+                  value={newOlympiad.title}
+                  onChange={e => setNewOlympiad({ ...newOlympiad, title: e.target.value })} />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Fan kategoriyasi</label>
+                  <select className="input-field" value={newOlympiad.subject} onChange={e => setNewOlympiad({ ...newOlympiad, subject: e.target.value })}>
+                    {store.subjects.map(s => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Davomiyligi (min)</label>
+                  <input type="number" min="1" className="input-field" value={newOlympiad.duration}
+                    onChange={e => setNewOlympiad({ ...newOlympiad, duration: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Boshlanish sanasi</label>
+                  <input type="date" className="input-field" value={newOlympiad.startDate}
+                    onChange={e => setNewOlympiad({ ...newOlympiad, startDate: e.target.value })} />
+                </div>
+                <div>
+                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Boshlanish vaqti</label>
+                  <input type="time" className="input-field" value={newOlympiad.startTime}
+                    onChange={e => setNewOlympiad({ ...newOlympiad, startTime: e.target.value })} />
+                </div>
+              </div>
+
+              <div className={`rounded-2xl p-4 border text-xs ${formIssues.length ? 'bg-amber-500/10 border-amber-500/25 text-amber-300' : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'}`}>
+                <div className="flex items-center gap-2 font-semibold">
+                  <Icon name={formIssues.length ? 'info' : 'check'} size={14} />
+                  {formIssues.length ? "To'ldirilishi kerak" : "Asosiy ma'lumotlar tayyor"}
+                </div>
+                {formIssues.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {formIssues.map(issue => <span key={issue} className="rounded-lg bg-black/15 px-2 py-1">{issue}</span>)}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button onClick={closeEventModal} disabled={eventSaving} className="btn-ghost flex-1 py-3 rounded-xl disabled:opacity-50">Bekor qilish</button>
+                <button onClick={saveEvent} disabled={eventSaving}
+                  className="btn-primary flex-1 py-3 rounded-xl font-semibold disabled:opacity-50">
+                  {eventSaving ? 'Saqlanmoqda...' : 'Saqlash'}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* Activation confirmation modal */}
+      <Modal open={!!activateConfirm} onClose={() => !eventSaving && setActivateConfirm(null)}
+        title={`${eventTypeLabel(activateConfirm?.eventType || 'competition')}ni faollashtirish`} width="max-w-xl">
+        {activateConfirm && (() => {
+          const liveEvent = olympiads.find(o => String(o.id) === String(activateConfirm.id)) || activateConfirm;
+          const questionCount = (liveEvent.questionIds || []).length;
+          return (
+            <div className="space-y-5">
+              <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm text-emerald-200 flex items-start gap-3">
+                <Icon name="check" size={18} className="mt-0.5 flex-shrink-0" />
+                <div>
+                  <div className="font-bold text-white mb-1">Hamma asosiy ma'lumotlar tayyor</div>
+                  <div className="text-emerald-200/80">Tasdiqlasangiz tadbir faol bo'ladi va o'quvchilar belgilangan vaqtda kirishi mumkin.</div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                <div className="glass rounded-xl p-3">
+                  <div className="text-xs text-white/35 mb-1">Turi</div>
+                  <div className="font-bold text-white">{eventTypeLabel(liveEvent.eventType || 'competition')}</div>
+                </div>
+                <div className="glass rounded-xl p-3">
+                  <div className="text-xs text-white/35 mb-1">Fan</div>
+                  <div className="font-bold text-white">{liveEvent.subject}</div>
+                </div>
+                <div className="glass rounded-xl p-3">
+                  <div className="text-xs text-white/35 mb-1">Boshlanish</div>
+                  <div className="font-bold text-white">{liveEvent.startDate} {liveEvent.startTime || ''}</div>
+                </div>
+                <div className="glass rounded-xl p-3">
+                  <div className="text-xs text-white/35 mb-1">Test</div>
+                  <div className="font-bold text-white">{questionCount} ta savol · {liveEvent.duration} min</div>
+                </div>
+              </div>
+              <div className="text-white font-bold">{liveEvent.title}</div>
+              <div className="flex gap-3 pt-1">
+                <button onClick={() => {
+                  const eventToEdit = liveEvent;
+                  setActivateConfirm(null);
+                  openEditEvent(eventToEdit);
+                }} disabled={eventSaving}
+                  className="btn-ghost flex-1 py-3 rounded-xl disabled:opacity-50">Yo'q, tahrirlash</button>
+                <button onClick={confirmActivation} disabled={eventSaving}
+                  className="btn-primary flex-1 py-3 rounded-xl font-bold disabled:opacity-50">
+                  {eventSaving ? 'Faollashmoqda...' : 'Ha, faollashtirish'}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
 
       {/* Assign-questions modal */}

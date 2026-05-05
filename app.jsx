@@ -223,14 +223,30 @@ const App = () => {
       case 'owner':         return renderDashboard('owner');
       case 'admin':         return renderDashboard('admin');
       case 'test': {
-        // Olympiad start guard: student must be approved at the olympiad's center
-        const studentRole = user?.roles?.student;
-        if (!studentRole || studentRole.status !== 'approved' || !studentRole.centerId) {
+        const eventLabel = eventTypeLabel(activeOlympiad?.eventType || 'competition');
+        if (activeOlympiad?.status !== 'active') {
           return (
             <PendingAccessCard
-              title="Olimpiadaga kirish cheklangan"
+              title={`${eventLabel} faol emas`}
+              status="pending"
+              message={`${eventLabel} faollashtirilgandan keyin kirish mumkin.`}
+              onBack={() => setPage(roleHomePage(user))}
+            />
+          );
+        }
+        // Public olympiads are open to every authenticated user. Center
+        // competitions require approved student membership in the event center.
+        const studentRole = user?.roles?.student;
+        const isPublicOlympiad = (activeOlympiad?.eventType || 'competition') === 'olympiad';
+        const canEnterCompetition = studentRole?.status === 'approved' &&
+          studentRole.centerId &&
+          String(studentRole.centerId) === String(activeOlympiad?.centerId);
+        if (!isPublicOlympiad && !canEnterCompetition) {
+          return (
+            <PendingAccessCard
+              title="Musobaqaga kirish cheklangan"
               status={studentRole?.status === 'rejected' ? 'rejected' : 'pending'}
-              message="Olimpiadaga qatnashish uchun o'quv markaz tasdig'i kerak."
+              message="Musobaqaga qatnashish uchun shu o'quv markaz tasdig'i kerak."
               onBack={() => setPage(roleHomePage(user))}
             />
           );
@@ -239,9 +255,9 @@ const App = () => {
         if (startsAt && startsAt.getTime() > Date.now()) {
           return (
             <PendingAccessCard
-              title="Olimpiada hali boshlanmagan"
+              title={`${eventLabel} hali boshlanmagan`}
               status="pending"
-              message={`Olimpiada ${startsAt.toLocaleString('uz-UZ')} dan boshlanadi. Iltimos, kuting.`}
+              message={`${eventLabel} ${startsAt.toLocaleString('uz-UZ')} dan boshlanadi. Iltimos, kuting.`}
               onBack={() => setPage(roleHomePage(user))}
             />
           );
