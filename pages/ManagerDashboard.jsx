@@ -21,6 +21,16 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [assignedQuestionIds, setAssignedQuestionIds] = React.useState([]);
   const [assignmentLevel, setAssignmentLevel] = React.useState('');
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
+  // Telegram link polling intervalini ref'da saqlaymiz, shunda component
+  // unmount bo'lsa ham tozalanadi (avval polling event handler ichida
+  // boshlanardi va unmount paytida cheksiz davom etardi).
+  const telegramPollRef = React.useRef(null);
+  React.useEffect(() => () => {
+    if (telegramPollRef.current) {
+      clearInterval(telegramPollRef.current);
+      telegramPollRef.current = null;
+    }
+  }, []);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
 
@@ -42,6 +52,9 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           let tries = 0;
           const MAX_TRIES = 60;
           const token = OlympyApi.getToken();
+          // Eskisi bo'lsa tozalaymiz — foydalanuvchi tugmani bir necha bor
+          // bossa, ko'plab interval'lar parallel ishlamaydi.
+          if (telegramPollRef.current) clearInterval(telegramPollRef.current);
           const pollId = setInterval(() => {
             tries += 1;
             OlympyApi.getMe(token)
@@ -52,14 +65,17 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   OlympyApi.saveAuth({ token: auth?.token || token, refresh: auth?.refresh, user: mapped });
                   setTelegramLinked(true);
                   clearInterval(pollId);
+                  telegramPollRef.current = null;
                 }
               })
               .catch(() => {});
             if (tries >= MAX_TRIES) {
               clearInterval(pollId);
+              telegramPollRef.current = null;
               showToast('Polling tugadi. Telegramda ulansangiz, sahifani yangilang.');
             }
           }, 5000);
+          telegramPollRef.current = pollId;
         } else {
           showToast('Bot username sozlanmagan');
         }
