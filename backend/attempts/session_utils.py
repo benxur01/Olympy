@@ -71,10 +71,34 @@ def questions_payload(session, olympiad):
     return data
 
 
+def session_timing_payload(session, olympiad):
+    """Frontend timer'ni server vaqti bilan sinxronlash uchun.
+
+    Avval frontend lokal `DURATION` dan teskari sanardi va savollar yuklash
+    uzoq cho'zilsa server bilan sinxronligi yo'qoladi (server allaqachon
+    `session.started_at + duration_minutes` ni boshlagan, lekin frontend
+    apiQuestions kelgandan so'nggina timerni boshlaydi). Endi server
+    timestamps qaytaradi va frontend `expires_at - now()` ni hisoblaydi.
+    """
+    started_at = session.started_at
+    expires_at = session_end_time(session, olympiad)
+    server_now = timezone.now()
+    return {
+        'started_at': started_at.isoformat() if started_at else None,
+        'expires_at': expires_at.isoformat() if expires_at else None,
+        'server_now': server_now.isoformat(),
+        'duration_seconds': (
+            int((expires_at - started_at).total_seconds())
+            if expires_at and started_at else None
+        ),
+    }
+
+
 def score_session_answers(session, olympiad, answers):
     answers = answers or {}
     option_orders = session.option_orders or {}
     correct = 0
+    answered = 0
     earned_score = 0
     questions = ordered_questions(session, olympiad)
     for question in questions:
@@ -91,18 +115,29 @@ def score_session_answers(session, olympiad, answers):
         order = option_orders.get(str(question.id)) or list(range(len(options)))
         if chosen < 0 or chosen >= len(order):
             continue
+        answered += 1
         original_index = order[chosen]
         if original_index == question.correct_answer:
             correct += 1
             earned_score += question.score
     total = len(questions)
     max_possible = sum(question.score for question in questions)
-    wrong = total - correct
+    # Avval `wrong = total - correct` edi va javob bermagan savollar ham
+    # noto'g'ri sifatida hisoblanardi. Endi:
+    #   - wrong  = javob berilgan, lekin noto'g'ri
+    #   - blank  = umuman javob berilmagan
+    # `total - correct` qiymatini saqlab qolish uchun backward-compat
+    # `wrong_total` ham qaytaramiz (eski klientlar buni "all not correct"
+    # sifatida ishlatishi mumkin).
+    wrong = max(0, answered - correct)
+    blank = max(0, total - answered)
     score = round((earned_score / max_possible) * 100) if max_possible else 0
     return {
         'total': total,
         'correct': correct,
         'wrong': wrong,
+        'blank': blank,
+        'answered': answered,
         'earned_score': earned_score,
         'max_possible': max_possible,
         'score': score,

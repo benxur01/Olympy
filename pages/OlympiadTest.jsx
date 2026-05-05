@@ -20,6 +20,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // FALLBACK_QUESTIONS bilan adashtirmaslik uchun aniq xatolik holatini
   // saqlaymiz.
   const [questionsError, setQuestionsError] = React.useState('');
+  // Server timing — backend session.started_at + duration_minutes asosida.
+  // Frontend lokal sanash o'rniga shu timestamp orqali qoldiq vaqtni
+  // hisoblaydi, demak savollar yuklash kech bo'lsa-da, server bilan drift
+  // bo'lmaydi.
+  const [serverExpiresAt, setServerExpiresAt] = React.useState(null);
+  const [serverClockSkewMs, setServerClockSkewMs] = React.useState(0);
 
   const now = new Date();
   // start_datetime backenddan ISO bo'lib keladi va vaqt mintaqasiga bog'liq
@@ -72,15 +78,28 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     setQuestionsLoading(true);
     setQuestionsError('');
     globalThis.OlympyApi.getOlympiadQuestions(liveOlympiad.backendId, globalThis.OlympyApi.getToken())
-      .then(qs => {
-        if (!cancelled) {
-          if (Array.isArray(qs) && qs.length > 0) {
-            setApiQuestions(qs);
-            setQuestionsError('');
-          } else {
-            setApiQuestions(null);
-            setQuestionsError('Savollar topilmadi. Iltimos, keyinroq urinib ko\'ring.');
+      .then(resp => {
+        if (cancelled) return;
+        // Backend yangi shape qaytaradi: { questions, session }. Eski shape
+        // (array) bilan ham backward-compat ishlasin uchun ikkalasiga ham
+        // tayyormiz.
+        const list = Array.isArray(resp) ? resp : resp?.questions;
+        const sess = !Array.isArray(resp) ? resp?.session : null;
+        if (Array.isArray(list) && list.length > 0) {
+          setApiQuestions(list);
+          setQuestionsError('');
+          if (sess?.expires_at) {
+            setServerExpiresAt(sess.expires_at);
+            // Brauzer soati server soatidan farq qilishi mumkin — drift'ni
+            // o'lchaymiz va remaining hisoblashda hisobga olamiz.
+            if (sess.server_now) {
+              const skew = Date.now() - new Date(sess.server_now).getTime();
+              setServerClockSkewMs(skew);
+            }
           }
+        } else {
+          setApiQuestions(null);
+          setQuestionsError('Savollar topilmadi. Iltimos, keyinroq urinib ko\'ring.');
         }
       })
       .catch((err) => {
@@ -103,14 +122,34 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
   React.useEffect(() => {
     if (submitted || isBeforeStart || isAfterEnd || questionsLoading) return;
-    const t = setInterval(() => {
-      setTimeLeft(prev => {
-        if (prev <= 1) { clearInterval(t); handleSubmit(); return 0; }
-        return prev - 1;
-      });
-    }, 1000);
+    // Agar server expires_at yuborgan bo'lsa, har sekundda undan hisoblaymiz
+    // — bu lokal drift yoki tab sleep'ning vaqtni "ushlab turishini" oldini
+    // oladi va server bilan har doim sinxron bo'ladi.
+    const tick = () => {
+      if (serverExpiresAt) {
+        const expiresMs = new Date(serverExpiresAt).getTime();
+        const adjustedNow = Date.now() - serverClockSkewMs;
+        const remainingSec = Math.max(0, Math.floor((expiresMs - adjustedNow) / 1000));
+        setTimeLeft(prev => {
+          if (remainingSec <= 0 && prev > 0) {
+            clearInterval(t);
+            handleSubmit();
+            return 0;
+          }
+          return remainingSec;
+        });
+      } else {
+        // Mock/dev rejim — eski lokal teskari sanash.
+        setTimeLeft(prev => {
+          if (prev <= 1) { clearInterval(t); handleSubmit(); return 0; }
+          return prev - 1;
+        });
+      }
+    };
+    tick();
+    const t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, [submitted, isBeforeStart, isAfterEnd, questionsLoading]);
+  }, [submitted, isBeforeStart, isAfterEnd, questionsLoading, serverExpiresAt, serverClockSkewMs]);
 
   const reportCheating = React.useCallback((reason) => {
     if (cheatReportedRef.current || submitted || cheated || !user?._api || !liveOlympiad?.backendId) return;
@@ -216,9 +255,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         : null;
       const timeSpent = DURATION - timeLeft;
 
-      // Compute rank within current attempts on this olympiad (mock only)
-      let localRank = 1;
-      if (liveOlympiad) {
+      // Compute rank within current attempts on this olympiad (mock only).
+      // localScore null bo'lsa (API rejim, hasLocalCorrectness=false) rank
+      // hisoblay olmaymiz — backend rank'iga tayanamiz va bu yerda null
+      // qoldiramiz; aks holda barcha holatlarda rank=1 bo'lib chiqardi.
+      let localRank = null;
+      if (liveOlympiad && localScore != null) {
         const others = store.attempts.filter(a => a.olympiadId === liveOlympiad.id);
         localRank = others.filter(a => (a.score || 0) > localScore).length + 1;
       }
@@ -276,7 +318,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           wrongCount: wrong ?? 0,
           totalQuestions: TOTAL,
           timeSpent,
-          rank: localRank,
+          rank: localRank ?? 1,
         });
         onFinish({
           attemptId: attemptRecord?.id,

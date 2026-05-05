@@ -22,7 +22,10 @@ def my_notifications(request):
     except (TypeError, ValueError):
         limit = 200
     limit = max(1, min(limit, 500))
-    qs = Notification.objects.filter(user=request.user)[:limit]
+    # Explicit order_by('-created_at') — Model.Meta.ordering allaqachon shunday,
+    # lekin slicing ishlatilganda implicit ordering xavfsiz emas (kelajakda
+    # Meta o'zgartirilsa bu kod sukut tarzda buziladi).
+    qs = Notification.objects.filter(user=request.user).order_by('-created_at')[:limit]
     return Response(NotificationSerializer(qs, many=True).data)
 
 

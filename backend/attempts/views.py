@@ -137,6 +137,11 @@ def submit_attempt(request):
         attempt.refresh_from_db(fields=['rank'])
         data = TestAttemptSerializer(attempt).data
         data['max_score'] = max_possible
+        # Yangi semantika: blank (javob berilmagan) va answered alohida
+        # qaytariladi. Frontend "Sizning natijangiz" sahifasida 4 ta
+        # sonni alohida ko'rsatishi mumkin: to'g'ri / noto'g'ri / bo'sh.
+        data['blank_count'] = scored.get('blank', 0)
+        data['answered_count'] = scored.get('answered', 0)
         return Response(data, status=http_status.HTTP_201_CREATED)
 
 
@@ -279,9 +284,14 @@ def leaderboard(request):
             olympiad__center_id__in=allowed_center_ids,
         )
     qs = qs[:200]
+    # Avval rank `i+1` orqali enumerate'dan kelardi va serverda saqlangan
+    # a.rank e'tiborga olinmasdi — natijada submit_attempt re-rank logikasi
+    # va leaderboard ko'rsatadigan rank o'zgarishi mumkin edi (ayniqsa
+    # o'zaro bog'liq olimpiadalar bo'yicha cross-rank). Endi a.rank mavjud
+    # bo'lsa shuni ishlatamiz; yo'q bo'lsa enumerate fallback.
     return Response([
         {
-            'rank': i + 1,
+            'rank': a.rank if a.rank is not None else (i + 1),
             'attempt_id': a.id,
             'user_id': a.user_id,
             'name': a.user.full_name,

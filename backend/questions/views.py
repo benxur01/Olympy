@@ -116,7 +116,15 @@ def olympiad_questions(request, olympiad_id):
 
     olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
     if olympiad.status != Olympiad.STATUS_ACTIVE:
-        return Response({'detail': 'Olimpiada faol emas'}, status=http_status.HTTP_403_FORBIDDEN)
+        # Status'ga qarab aniqroq xabar — student "Olimpiada faol emas"
+        # ko'rganida tushunmasdi (yakunlanganmi yoki hali boshlanmaganmi?).
+        if olympiad.status == Olympiad.STATUS_FINISHED:
+            detail = "Olimpiada yakunlangan"
+        elif olympiad.status == Olympiad.STATUS_DRAFT:
+            detail = "Olimpiada hali nashr qilinmagan"
+        else:
+            detail = "Olimpiada faol emas"
+        return Response({'detail': detail}, status=http_status.HTTP_403_FORBIDDEN)
     # Time-window check (timezone-aware): the celery finisher may not have run
     # yet, so don't trust status alone.
     now = timezone.now()
@@ -139,6 +147,7 @@ def olympiad_questions(request, olympiad_id):
         get_or_create_test_session,
         questions_payload,
         session_is_expired,
+        session_timing_payload,
     )
 
     if TestAttempt.objects.filter(user=request.user, olympiad=olympiad).exists():
@@ -157,4 +166,11 @@ def olympiad_questions(request, olympiad_id):
             {'detail': "Test vaqti tugagan"},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
-    return Response(questions_payload(session, olympiad))
+    # Avval bu yerda faqat questions arrayi qaytarilardi va frontend lokal
+    # DURATION dan teskari sanardi. Endi questions ham, server timing'i ham
+    # qaytariladi — bu frontend va server vaqti orasidagi drift'ni yo'qotadi.
+    # Backward-compat: response.questions arrayi avvalgi roli bilan bir xil.
+    return Response({
+        'questions': questions_payload(session, olympiad),
+        'session': session_timing_payload(session, olympiad),
+    })

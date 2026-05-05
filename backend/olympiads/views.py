@@ -23,6 +23,13 @@ def olympiads_list_create(request):
             .order_by('-created_at')
         )
         qs = queryset.filter(visible_events_filter(request.user)).distinct()
+        # Pagination: 500+ olimpiada bo'lishi mumkin, ayniqsa platform admin
+        # uchun. DRF PageNumberPagination orqali default 50/sahifa.
+        from rest_framework.pagination import PageNumberPagination
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(qs, request)
+        if page is not None:
+            return paginator.get_paginated_response(OlympiadSerializer(page, many=True).data)
         return Response(OlympiadSerializer(qs, many=True).data)
 
     serializer = OlympiadSerializer(data=request.data)

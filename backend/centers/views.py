@@ -128,6 +128,20 @@ def join_center(request, center_id):
     if not membership.approval_code:
         membership.approval_code = _make_approval_code()
         membership.save(update_fields=['approval_code'])
+    # Avval rejected ariza qaytarib qaytib chiqarilardi va foydalanuvchi
+    # qayta ariza yubora olmasdi (UX bug). Endi rejected status'i pending'ga
+    # qaytariladi va yangi notification yuboriladi — owner qayta ko'rib
+    # chiqishi mumkin.
+    if not created and membership.status == CenterMembership.STATUS_REJECTED:
+        membership.status = CenterMembership.STATUS_PENDING
+        membership.subject = serializer.validated_data.get('subject', '') or membership.subject
+        membership.approval_code = _make_approval_code()
+        membership.approved_by = None
+        membership.save(update_fields=['status', 'subject', 'approval_code', 'approved_by'])
+        # Re-apply notification yuborish uchun "created" semantikasiga
+        # o'xshash holat — quyidagi created shartiga to'g'ridan-to'g'ri
+        # tushishi uchun bayroq qo'yamiz.
+        created = True
     # Do NOT add the role to user.roles for pending memberships. The role
     # is added in _approve() once the membership is approved. user.roles
     # remains the source of truth ONLY for approved roles.

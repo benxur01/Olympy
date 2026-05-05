@@ -284,27 +284,26 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
       }
 
       if (selectedType === 'student') registerPayload.role = 'student';
+      const selectedCenterId = centerId;
+      // Avval register + joinCenter alohida chaqirilardi va ikkinchisi xato
+      // bersa "yetim" hisob qolardi. Endi join params ni register'ga
+      // qo'shamiz — backend tranzaksiya ichida ikkalasini bajaradi.
+      if (selectedType === 'student' && selectedCenterId) {
+        registerPayload.center_id = selectedCenterId;
+        registerPayload.join_role = 'student';
+        registerPayload.join_subject = selectedSubject || '';
+      } else if (selectedType === 'teacher') {
+        registerPayload.center_id = selectedCenterId;
+        registerPayload.join_role = 'teacher';
+        registerPayload.join_subject = selectedSubject;
+      } else if (selectedType === 'manager') {
+        registerPayload.center_id = selectedCenterId;
+        registerPayload.join_role = 'manager';
+        registerPayload.join_subject = '';
+      }
       const data = await OlympyApi.register(registerPayload);
       const token = data.token;
       const refresh = data.refresh;
-      let selectedCenterId = centerId;
-
-      if (selectedType === 'student' && selectedCenterId) {
-        await OlympyApi.joinCenter(selectedCenterId, {
-          role: 'student',
-          subject: selectedSubject || '',
-        }, token);
-      } else if (selectedType === 'teacher') {
-        await OlympyApi.joinCenter(selectedCenterId, {
-          role: 'teacher',
-          subject: selectedSubject,
-        }, token);
-      } else if (selectedType === 'manager') {
-        await OlympyApi.joinCenter(selectedCenterId, {
-          role: 'manager',
-          subject: '',
-        }, token);
-      }
 
       const freshUser = await OlympyApi.getMe(token);
       const mappedUser = OlympyApi.mapBackendUser(freshUser);
