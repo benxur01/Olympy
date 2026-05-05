@@ -191,8 +191,13 @@ def report_cheating(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def my_results(request):
-    """GET /api/results/me/ — current user's attempt history."""
-    qs = TestAttempt.objects.filter(user=request.user).select_related('olympiad')
+    """GET /api/results/me/ — current user's attempt history.
+
+    Asosiy frontend ko'rinishlari (StudentDashboard, Profile) so'nggi 200
+    tagacha attemptga muhtoj. Limit qo'shilmasa, ko'p yillik foydalanuvchilarda
+    javob hajmi haddan oshib ketardi.
+    """
+    qs = TestAttempt.objects.filter(user=request.user).select_related('olympiad')[:500]
     return Response(TestAttemptSerializer(qs, many=True).data)
 
 

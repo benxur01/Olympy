@@ -2,10 +2,24 @@
 
 const { useState, useEffect } = React;
 
+// /admin'dan tashqari boshqa rollarga ham deep-link path qo'shildi: shunda
+// foydalanuvchi to'g'ridan-to'g'ri /student, /owner va h.k. URL'ga kirsa,
+// loginsiz holatda login sahifasiga, login bilan esa to'g'ridan-to'g'ri
+// kerakli dashboardga tushadi.
+const PAGE_PATHS = {
+  '/admin': 'admin',
+  '/owner': 'owner',
+  '/manager': 'manager',
+  '/teacher': 'teacher',
+  '/student': 'student',
+  '/leaderboard': 'leaderboard',
+  '/profile': 'profile',
+};
+
 const pageFromPath = () => {
   try {
     const path = window.location.pathname.replace(/\/+$/, '');
-    if (path === '/admin') return 'admin';
+    if (PAGE_PATHS[path]) return PAGE_PATHS[path];
   } catch {}
   return null;
 };
@@ -16,6 +30,10 @@ const App = () => {
   const [activeOlympiad, setActiveOlympiad] = React.useState(null);
   const [switcherOpen, setSwitcherOpen] = React.useState(false);
   const [apiUser, setApiUser] = React.useState(null);
+  // restore tugamasidan oldin landing flicker'i ko'rinmasligi uchun bootstrap
+  // bayrog'i: true bo'lsa, butun ekran loaderda turadi va shundan so'nggina
+  // haqiqiy sahifa render bo'ladi.
+  const [bootstrapping, setBootstrapping] = React.useState(true);
 
   const user = apiUser;
 
@@ -29,6 +47,7 @@ const App = () => {
         if (cancelled) return;
         setApiUser(auth.user);
         setPage(requestedPage || roleHomePage(auth.user));
+        setBootstrapping(false);
         return;
       }
       try {
@@ -42,7 +61,11 @@ const App = () => {
       } catch {}
       if (!cancelled && requestedPage) setPage(requestedPage);
     };
-    try { restore(); } catch {}
+    try {
+      restore().finally(() => { if (!cancelled) setBootstrapping(false); });
+    } catch {
+      if (!cancelled) setBootstrapping(false);
+    }
     return () => { cancelled = true; };
   }, []);
 
@@ -256,6 +279,20 @@ const App = () => {
       default: return <LandingPage onNavigate={navigate} />;
     }
   };
+
+  if (bootstrapping) {
+    // Avval restore tugamaguncha "landing" sahifasi ko'rinib, keyin esa
+    // foydalanuvchi dashboardiga sakrar va flicker hosil bo'lardi. Endi
+    // bootstrap davomida loading skeleton ko'rsatamiz.
+    return (
+      <div className="dark min-h-screen flex items-center justify-center" style={{ background: '#060818' }}>
+        <div className="flex flex-col items-center gap-4 text-white/70">
+          <div className="w-12 h-12 rounded-full border-2 border-white/20 border-t-indigo-400 animate-spin" />
+          <div className="text-sm font-semibold tracking-wide">Olympy yuklanmoqda...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div key={page} className="dark">

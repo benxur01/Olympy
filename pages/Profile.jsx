@@ -2,13 +2,35 @@
 
 const ProfilePage = ({ user, onNavigate, embedded }) => {
   const store = useStore();
+  const isApi = !!user?._api;
   const [tab, setTab] = React.useState('results');
   const [isPublic, setIsPublic] = React.useState(false);
 
-  // Live attempts and derived results
-  const myAttempts = user ? store.attempts.filter(a => a.userId === user.id).slice().sort((a,b) => (b.submittedAt||'').localeCompare(a.submittedAt||'')) : [];
+  // API rejimida foydalanuvchi attemptlari mock store'da emas, backend orqali
+  // /api/results/me/ va /api/results/me/stats/ dan keladi. Avval bu sahifa
+  // store.attempts dan filter qilardi va api: prefiksli userId hech qachon
+  // mos kelmasdi — natijada API foydalanuvchi har doim bo'sh natijalar
+  // ko'rardi.
+  const apiResultsRes = useApiData(
+    () => isApi ? OlympyApi.getMyResults(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiStatsRes = useApiData(
+    () => isApi ? OlympyApi.getMyStats(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiAttempts = isApi && Array.isArray(apiResultsRes.data)
+    ? apiResultsRes.data.map(mapApiAttempt)
+    : null;
+
+  const baseOlympiads = isApi ? [] : store.olympiads;
+  const myAttempts = user
+    ? (isApi ? (apiAttempts || []) : store.attempts.filter(a => a.userId === user.id))
+        .slice()
+        .sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''))
+    : [];
   const myResults = myAttempts.map(a => {
-    const o = store.olympiads.find(x => x.id === a.olympiadId);
+    const o = baseOlympiads.find(x => String(x.id) === String(a.olympiadId));
     return {
       id: a.id, attempt: a,
       olympiad: o?.title || 'Olimpiada', subject: o?.subject || '—',
@@ -18,15 +40,62 @@ const ProfilePage = ({ user, onNavigate, embedded }) => {
     };
   });
 
-  const avgScore = myResults.length > 0 ? Math.round(myResults.reduce((s, r) => s + (r.score || 0), 0) / myResults.length * 10) / 10 : 0;
-  const bestRank = myResults.length > 0 ? Math.min(...myResults.map(r => r.rank || 999).filter(r => r < 999)) : null;
+  const apiStats = isApi && apiStatsRes.data ? apiStatsRes.data : null;
+  const avgScore = apiStats?.average_score != null
+    ? apiStats.average_score
+    : (myResults.length > 0 ? Math.round(myResults.reduce((s, r) => s + (r.score || 0), 0) / myResults.length * 10) / 10 : 0);
+  const bestRank = apiStats?.best_rank != null
+    ? apiStats.best_rank
+    : (myResults.length > 0 ? Math.min(...myResults.map(r => r.rank || 999).filter(r => r < 999)) : null);
+  const totalAttempts = apiStats?.total_attempts != null ? apiStats.total_attempts : myResults.length;
 
   const achievements = [
     bestRank === 1 && { icon:'🥇', title:"1-o'rin", desc:"Eng yuqori natija", color:'from-amber-500/20 to-orange-500/10 border-amber-500/20' },
     bestRank === 3 && { icon:'🥉', title:"3-o'rin", desc:'Top 3 natija', color:'from-amber-700/20 to-orange-800/10 border-amber-700/20' },
-    myResults.length >= 3 && { icon:'⭐', title:`${myResults.length} ta olimpiada`, desc:'Faol ishtirokchi', color:'from-indigo-500/20 to-purple-500/10 border-indigo-500/20' },
+    totalAttempts >= 3 && { icon:'⭐', title:`${totalAttempts} ta olimpiada`, desc:'Faol ishtirokchi', color:'from-indigo-500/20 to-purple-500/10 border-indigo-500/20' },
     avgScore >= 90 && { icon:'🎯', title:'90%+ natija', desc:"O'rtacha ball yuqori", color:'from-emerald-500/20 to-teal-500/10 border-emerald-500/20' },
   ].filter(Boolean);
+
+  // Avval bu blok 3 ta hardcoded fan bilan ko'rinardi (Tarix 91 va h.k.).
+  // Endi /api/results/me/stats/ subjects ro'yxatidan yoki lokal myResults
+  // o'rtacha qiymatlaridan haqiqiy fan kesimini olamiz.
+  const SUBJECT_PALETTE = ['#f59e0b', '#6366f1', '#22c55e', '#22d3ee', '#a855f7', '#ef4444'];
+  const subjectStats = (() => {
+    if (Array.isArray(apiStats?.subjects) && apiStats.subjects.length > 0) {
+      return apiStats.subjects.slice(0, 6).map((row, i) => ({
+        s: row.subject || '—',
+        pct: Math.round(row.average_score || 0),
+        color: SUBJECT_PALETTE[i % SUBJECT_PALETTE.length],
+      }));
+    }
+    const buckets = {};
+    myResults.forEach(r => {
+      const key = r.subject || '—';
+      const b = buckets[key] || { s: key, total: 0, count: 0 };
+      b.total += r.score || 0;
+      b.count += 1;
+      buckets[key] = b;
+    });
+    return Object.values(buckets)
+      .map((b, i) => ({
+        s: b.s,
+        pct: b.count ? Math.round(b.total / b.count) : 0,
+        color: SUBJECT_PALETTE[i % SUBJECT_PALETTE.length],
+      }))
+      .sort((a, b) => b.pct - a.pct)
+      .slice(0, 4);
+  })();
+
+  // Sertifikatlar: 1-o'rinlar haqiqiy attempt'lardan olinadi. Hardcoded
+  // "1-o'rin Sertifikati / Faol Ishtirokchi" o'rniga real ma'lumotlar.
+  const certificates = myResults
+    .filter(r => r.rank === 1)
+    .slice(0, 6)
+    .map(r => ({
+      title: `${r.subject} 1-o'rin sertifikati`,
+      olympiad: r.olympiad,
+      date: r.date,
+    }));
 
   const content = (
     <div className="p-6 space-y-6 animate-in">
@@ -90,12 +159,11 @@ const ProfilePage = ({ user, onNavigate, embedded }) => {
         <div className="glass rounded-2xl p-5">
           <h3 className="font-bold text-white mb-4">Fanlar bo'yicha</h3>
           <div className="space-y-3">
-            {[
-              { s:'Tarix', pct:91, color:'#f59e0b' },
-              { s:'Informatika', pct:87, color:'#6366f1' },
-              { s:'Biologiya', pct:72, color:'#22c55e' },
-            ].map((x,i) => (
-              <div key={i}>
+            {subjectStats.length === 0 && (
+              <div className="text-sm text-white/40">Hali fan kesimida natijalar yo'q.</div>
+            )}
+            {subjectStats.map((x, i) => (
+              <div key={`${x.s}-${i}`}>
                 <div className="flex justify-between mb-1"><span className="text-sm text-white/70">{x.s}</span><span className="text-sm font-bold text-white">{x.pct}%</span></div>
                 <div className="progress-bar h-2"><div className="progress-fill" style={{width:`${x.pct}%`,background:x.color}}/></div>
               </div>
@@ -163,10 +231,12 @@ const ProfilePage = ({ user, onNavigate, embedded }) => {
 
       {tab === 'certificates' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {[
-            { title:"1-o'rin Sertifikati", olympiad:'Tarix Bellashuvi', date:'2026-04-05' },
-            { title:'Faol Ishtirokchi', olympiad:'Informatika Olimpiadasi', date:'2026-04-28' },
-          ].map((c,i) => (
+          {certificates.length === 0 && (
+            <div className="md:col-span-2 text-center text-white/40 text-sm py-6 glass rounded-2xl">
+              Hozircha sertifikatlar yo'q. 1-o'rinni egallasangiz, sertifikatlar shu yerda paydo bo'ladi.
+            </div>
+          )}
+          {certificates.map((c, i) => (
             <div key={i} className="glass rounded-2xl p-5 border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/5">
               <div className="text-3xl mb-3">🏅</div>
               <div className="font-bold text-white mb-1">{c.title}</div>

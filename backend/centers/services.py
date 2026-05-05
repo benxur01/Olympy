@@ -9,6 +9,34 @@ from .models import CenterMembership, EducationCenter
 logger = logging.getLogger('centers.approvals')
 
 
+def create_pending_center_for_owner(owner, center_data):
+    center = EducationCenter.objects.create(
+        name=center_data['name'],
+        organization_type=center_data.get('organization_type', "O'quv markaz"),
+        country=center_data.get('country', "O'zbekiston"),
+        region=center_data.get('region', ''),
+        district=center_data.get('district', ''),
+        city=center_data['city'],
+        subjects=center_data.get('subjects', []),
+        owner=owner,
+        status=EducationCenter.STATUS_PENDING,
+    )
+    CenterMembership.objects.create(
+        user=owner,
+        center=center,
+        role=CenterMembership.ROLE_OWNER,
+        status=CenterMembership.STATUS_PENDING,
+    )
+    from django.contrib.auth import get_user_model
+    from notifications.services import send_center_approval_request_notification
+
+    User = get_user_model()
+    admins = User.objects.filter(is_platform_admin=True, is_active=True)
+    for admin in admins:
+        send_center_approval_request_notification(admin, owner, center)
+    return center
+
+
 def user_can_manage_center(user, center):
     if not getattr(user, 'is_authenticated', False):
         return False

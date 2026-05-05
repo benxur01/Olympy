@@ -274,8 +274,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 
   const userRows = allUsers.map(u => {
     const approved = getApprovedRoles(u);
-    const primary = u.activeRole && approved.includes(u.activeRole) ? u.activeRole : (approved[0] || 'student');
-    const centerId = u.roles?.[primary]?.centerId;
+    // Avval foydalanuvchi tasdiqlanmagan rollarda bo'lsa, fallback "student"
+    // qaytarib jadvalda noto'g'ri "O'quvchi" deb ko'rsatardi. Endi tasdiqlangan
+    // rol bo'lmasa boshqa har qanday mavjud rol-ni, u ham bo'lmasa "—" qiyofa
+    // ko'rsatamiz.
+    const anyRole = Object.keys(u.roles || {})[0];
+    const primary = (u.activeRole && approved.includes(u.activeRole))
+      ? u.activeRole
+      : (approved[0] || anyRole || null);
+    const roleLabel = primary ? (ROLE_META[primary]?.label || primary) : '—';
+    const centerId = primary ? u.roles?.[primary]?.centerId : null;
     const center = centerId ? centers.find(c => String(c.id) === String(centerId)) : null;
     const apiBlocked = isApi ? (u.isActive === false) : false;
     return {
@@ -283,8 +291,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       backendId: u.backendId,
       name: u.name,
       phone: u.phone,
-      role: ROLE_META[primary]?.label || primary,
-      center: center?.name || u.roles?.[primary]?.centerName || '—',
+      role: roleLabel,
+      center: center?.name || (primary ? u.roles?.[primary]?.centerName : '') || '—',
       joined: u.joined,
       status: (isApi ? apiBlocked : !!blockedIds[u.id]) ? 'Bloklangan' : 'Faol',
     };
@@ -311,22 +319,20 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     })),
   ].slice(0, 5);
 
+  // Avval sidebar shablon admin paneldan ko'chirilgan va Products / Orders /
+  // Inventory / Payments kabi mavjud bo'lmagan sahifalarga link qo'yardi.
+  // Olympy ehtiyojiga mos sahifalarni qoldiramiz; renderer'i bo'lmagan
+  // tugmalarni olib tashlaymiz.
   const navItems = [
     { key: 'home', icon: 'grid', label: 'Dashboard' },
-    { key: 'users', icon: 'users', label: 'Users' },
-    { key: 'centers', icon: 'building', label: 'Organizations', badge: pendingCenterReqs.length || undefined },
-    { key: 'olympiads', icon: 'trophy', label: 'Products' },
-    { key: 'requests', icon: 'bell', label: 'Orders', badge: pendingCenterReqs.length || undefined },
-    { key: 'inventory', icon: 'book', label: 'Inventory' },
-    { key: 'payments', icon: 'tag', label: 'Payments' },
-    { key: 'reports', icon: 'file', label: 'Reports' },
-    { key: 'analytics', icon: 'chart', label: 'Analytics' },
-    { key: 'marketing', icon: 'send', label: 'Marketing' },
-    { key: 'content', icon: 'edit', label: 'Content' },
-    { key: 'system', icon: 'shield', label: 'System' },
-    { key: 'settings', icon: 'settings', label: 'Settings' },
-    { key: 'logs', icon: 'file', label: 'Logs' },
-    { key: 'support', icon: 'info', label: 'Support' },
+    { key: 'users', icon: 'users', label: 'Foydalanuvchilar' },
+    { key: 'centers', icon: 'building', label: 'Tashkilotlar', badge: pendingCenterReqs.length || undefined },
+    { key: 'olympiads', icon: 'trophy', label: 'Olimpiadalar' },
+    { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCenterReqs.length || undefined },
+    { key: 'reports', icon: 'file', label: 'Hisobotlar' },
+    { key: 'analytics', icon: 'chart', label: 'Tahlil' },
+    { key: 'system', icon: 'shield', label: 'Tizim' },
+    { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
   ];
 
   const dashboardCenters = (approvedCenters.length ? approvedCenters : centers).slice(0, 5);

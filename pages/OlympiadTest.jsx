@@ -16,11 +16,17 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const liveOlympiad = olympiad ? store.olympiads.find(o => o.id === olympiad.id) || olympiad : null;
   const [apiQuestions, setApiQuestions] = React.useState(null);
   const [questionsLoading, setQuestionsLoading] = React.useState(false);
+  // API rejimda backenddan savollar olinmagan paytda foydalanuvchini soxta
+  // FALLBACK_QUESTIONS bilan adashtirmaslik uchun aniq xatolik holatini
+  // saqlaymiz.
+  const [questionsError, setQuestionsError] = React.useState('');
 
   const now = new Date();
-  const startStr = liveOlympiad?.startDate && liveOlympiad?.startTime
-    ? `${liveOlympiad.startDate}T${liveOlympiad.startTime}` : null;
-  const startDt = startStr ? new Date(startStr) : null;
+  // start_datetime backenddan ISO bo'lib keladi va vaqt mintaqasiga bog'liq
+  // emas; mock store esa startDate+startTime ni lokal vaqt sifatida saqlaydi.
+  // olympiadStartMoment ikkalasini ham to'g'ri parse qiladi va vaqt mintaqasi
+  // sababli kun siljishi muammosini bartaraf etadi.
+  const startDt = liveOlympiad ? olympiadStartMoment(liveOlympiad) : null;
   const endDt = startDt ? new Date(startDt.getTime() + (liveOlympiad.duration || 60) * 60000) : null;
   const isBeforeStart = startDt && now < startDt;
   const isAfterEnd = endDt && now > endDt;
@@ -29,8 +35,13 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const assignedQuestions = assignedIds
     .map(qid => store.questions.find(q => q.id === qid))
     .filter(Boolean);
+  // API foydalanuvchisi uchun apiQuestions yagona haqiqiy manba; FALLBACK
+  // faqat mock/dev rejim uchun. Aks holda student soxta savollarga javob
+  // berib qo'yardi va backendga unchaqirilgan submit yuborishi mumkin edi.
   const fallbackQuestions = assignedQuestions.length > 0 ? assignedQuestions : FALLBACK_QUESTIONS;
-  const TEST_QUESTIONS = (user?._api && apiQuestions) ? apiQuestions : fallbackQuestions;
+  const TEST_QUESTIONS = user?._api
+    ? (Array.isArray(apiQuestions) ? apiQuestions : [])
+    : fallbackQuestions;
 
   const TOTAL = TEST_QUESTIONS.length;
   const DURATION = (liveOlympiad?.duration || olympiad?.duration || 30) * 60;
@@ -46,6 +57,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [cheated, setCheated] = React.useState(false);
   const [cheatMessage, setCheatMessage] = React.useState('');
   const cheatReportedRef = React.useRef(false);
+  // Confirm modal yoki submit jarayonida brauzer fokusi tabiiy ravishda
+  // o'zgaradi (modal ochiladi/yopiladi). Shu paytlarda blur/visibility
+  // hodisalarini cheating deb hisoblamaslik uchun bayroq.
+  const cheatGuardActiveRef = React.useRef(true);
 
   React.useEffect(() => {
     if (!user?._api || !liveOlympiad?.backendId || isBeforeStart || isAfterEnd) {
@@ -55,9 +70,18 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     }
     let cancelled = false;
     setQuestionsLoading(true);
+    setQuestionsError('');
     globalThis.OlympyApi.getOlympiadQuestions(liveOlympiad.backendId, globalThis.OlympyApi.getToken())
       .then(qs => {
-        if (!cancelled) setApiQuestions(Array.isArray(qs) ? qs : null);
+        if (!cancelled) {
+          if (Array.isArray(qs) && qs.length > 0) {
+            setApiQuestions(qs);
+            setQuestionsError('');
+          } else {
+            setApiQuestions(null);
+            setQuestionsError('Savollar topilmadi. Iltimos, keyinroq urinib ko\'ring.');
+          }
+        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -65,6 +89,8 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           if (/cheating/i.test(detail)) {
             setCheated(true);
             setCheatMessage("Siz cheating qildingiz. Olimpiada yakunlandi.");
+          } else {
+            setQuestionsError(detail || "Savollarni yuklab bo'lmadi.");
           }
           setApiQuestions(null);
         }
@@ -88,6 +114,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
   const reportCheating = React.useCallback((reason) => {
     if (cheatReportedRef.current || submitted || cheated || !user?._api || !liveOlympiad?.backendId) return;
+    if (!cheatGuardActiveRef.current) return;
     cheatReportedRef.current = true;
     setCheated(true);
     setSubmitted(true);
@@ -104,23 +131,29 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     if (!user?._api || !liveOlympiad?.backendId || !apiQuestions || questionsLoading || submitted || cheated) {
       return undefined;
     }
+    // Tab uzoq vaqt yashirin qolgandagina cheating deb belgilaymiz: brauzer
+    // notification, alert va modal o'zaro ta'sirida visibilitychange qisqa
+    // muddat triggerlanishi mumkin. Real cheating har doim 2 soniyadan ortiq
+    // tashqari oynaga o'tadi.
+    let hiddenTimer = null;
+    const VISIBILITY_GRACE_MS = 2500;
     const onVisibility = () => {
-      if (document.visibilityState === 'hidden') reportCheating('tab_or_app_left');
-    };
-    const onBlur = () => reportCheating('window_blur');
-    const onPageHide = () => reportCheating('page_hidden');
-    const onFullscreenChange = () => {
-      if (document.fullscreenElement === null) reportCheating('fullscreen_exited');
+      if (document.visibilityState === 'hidden') {
+        if (hiddenTimer) clearTimeout(hiddenTimer);
+        hiddenTimer = setTimeout(() => {
+          if (document.visibilityState === 'hidden') {
+            reportCheating('tab_or_app_left');
+          }
+        }, VISIBILITY_GRACE_MS);
+      } else if (hiddenTimer) {
+        clearTimeout(hiddenTimer);
+        hiddenTimer = null;
+      }
     };
     document.addEventListener('visibilitychange', onVisibility);
-    document.addEventListener('fullscreenchange', onFullscreenChange);
-    window.addEventListener('blur', onBlur);
-    window.addEventListener('pagehide', onPageHide);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
-      document.removeEventListener('fullscreenchange', onFullscreenChange);
-      window.removeEventListener('blur', onBlur);
-      window.removeEventListener('pagehide', onPageHide);
+      if (hiddenTimer) clearTimeout(hiddenTimer);
     };
   }, [user?._api, liveOlympiad?.backendId, apiQuestions, questionsLoading, submitted, cheated, reportCheating]);
 
@@ -131,6 +164,19 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
   const handleAnswer = (optIdx) => setAnswers(prev => ({ ...prev, [current]: optIdx }));
   const toggleMark = () => setMarked(prev => ({ ...prev, [current]: !prev[current] }));
+
+  // Confirm modal ochilganda yoki yopilganda fokus o'zgaradi — bu paytda
+  // cheating signalini hisoblamaymiz, aks holda foydalanuvchi yakunlash
+  // tugmasini bossa avtomatik diskvalifikatsiya bo'lardi.
+  React.useEffect(() => {
+    if (confirmModal) {
+      cheatGuardActiveRef.current = false;
+      const reactivate = setTimeout(() => { cheatGuardActiveRef.current = true; }, 1500);
+      return () => clearTimeout(reactivate);
+    }
+    cheatGuardActiveRef.current = true;
+    return undefined;
+  }, [confirmModal]);
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -147,13 +193,27 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       });
 
       // Local score is kept only as a fallback if the API response omits fields.
-      const correct = TEST_QUESTIONS.filter((q, i) => answers[i] === (q.correctAnswer ?? q.correct)).length;
-      const wrong = TOTAL - correct;
-      const earnedScore = TEST_QUESTIONS.reduce((sum, q, i) => {
-        return answers[i] === (q.correctAnswer ?? q.correct) ? sum + (q.score || 3) : sum;
-      }, 0);
+      // API rejimida olingan apiQuestions'da correctAnswer maydoni yo'q
+      // (backend uni server tomondan tekshiradi), shuning uchun ushbu local
+      // hisob faqat mock rejimida ma'no kasb etadi. API rejimida fallback
+      // sifatida null qoldirib, backend qaytarganni avtoritar deb qabul
+      // qilamiz.
+      const hasLocalCorrectness = TEST_QUESTIONS.every(
+        q => q && (q.correctAnswer != null || q.correct != null),
+      );
+      const correct = hasLocalCorrectness
+        ? TEST_QUESTIONS.filter((q, i) => answers[i] === (q.correctAnswer ?? q.correct)).length
+        : null;
+      const wrong = correct == null ? null : TOTAL - correct;
+      const earnedScore = hasLocalCorrectness
+        ? TEST_QUESTIONS.reduce((sum, q, i) => {
+            return answers[i] === (q.correctAnswer ?? q.correct) ? sum + (q.score || 3) : sum;
+          }, 0)
+        : 0;
       const maxPossible = TEST_QUESTIONS.reduce((sum, q) => sum + (q.score || 3), 0);
-      const localScore = maxPossible ? Math.round((earnedScore / maxPossible) * 100) : 0;
+      const localScore = hasLocalCorrectness && maxPossible
+        ? Math.round((earnedScore / maxPossible) * 100)
+        : null;
       const timeSpent = DURATION - timeLeft;
 
       // Compute rank within current attempts on this olympiad (mock only)
@@ -178,9 +238,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           );
           onFinish({
             attemptId: resp?.id,
-            correct: resp?.correct_count ?? correct,
-            wrong: resp?.wrong_count ?? wrong,
-            score: resp?.score ?? localScore,
+            correct: resp?.correct_count ?? (correct ?? 0),
+            wrong: resp?.wrong_count ?? (wrong ?? 0),
+            // API rejimida backend score'i avtoritar; localScore null bo'lsa,
+            // 0 emas, balki backend qiymati ko'rsatiladi.
+            score: resp?.score ?? (localScore ?? 0),
             total: resp?.total_questions ?? TOTAL,
             rank: resp?.rank ?? localRank,
             time: resp?.time_spent ?? timeSpent,
@@ -209,18 +271,18 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           userId: user?.id || 'guest',
           olympiadId: liveOlympiad?.id || olympiad?.id,
           answers: formattedAnswers,
-          score: localScore,
-          correctCount: correct,
-          wrongCount: wrong,
+          score: localScore ?? 0,
+          correctCount: correct ?? 0,
+          wrongCount: wrong ?? 0,
           totalQuestions: TOTAL,
           timeSpent,
           rank: localRank,
         });
         onFinish({
           attemptId: attemptRecord?.id,
-          correct,
-          wrong,
-          score: localScore,
+          correct: correct ?? 0,
+          wrong: wrong ?? 0,
+          score: localScore ?? 0,
           total: TOTAL,
           rank: localRank,
           time: timeSpent,
@@ -239,8 +301,9 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   };
 
   if (isBeforeStart) {
+    const startLabel = startDt ? startDt.toLocaleString('uz-UZ') : '—';
     return <PendingAccessCard title="Olimpiada hali boshlanmagan" status="pending"
-      message={`Boshlanish vaqti: ${liveOlympiad.startDate} ${liveOlympiad.startTime}`}
+      message={`Boshlanish vaqti: ${startLabel}`}
       onBack={() => onNavigate('student')} />;
   }
   if (isAfterEnd) {
@@ -262,6 +325,16 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         </div>
       </div>
     );
+  }
+  // API rejimda haqiqiy savollar bo'lmasa, soxta FALLBACK savollar ko'rsatish
+  // o'rniga aniq xatolik xabari beramiz — aks holda student haqiqiy bo'lmagan
+  // testni topshirib qo'yardi va natija nol bo'lardi.
+  if (user?._api && (!Array.isArray(apiQuestions) || apiQuestions.length === 0)) {
+    return <PendingAccessCard
+      title="Savollar yuklanmadi"
+      status="rejected"
+      message={questionsError || "Olimpiada savollari hozircha mavjud emas. Iltimos, keyinroq urinib ko'ring."}
+      onBack={() => onNavigate('student')} />;
   }
 
   const q = TEST_QUESTIONS[current] || FALLBACK_QUESTIONS[0];

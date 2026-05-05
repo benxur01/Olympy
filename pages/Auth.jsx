@@ -1,4 +1,4 @@
-// pages/Auth.jsx — Login + multi-role Register
+// pages/Auth.jsx — Login + account/organization Register
 
 const SUBJECTS_LIST = ['Matematika','Ingliz tili','Ona tili','Informatika','Fizika','Kimyo','Biologiya','Tarix','Geografiya'];
 const ORGANIZATION_TYPES = ["O'quv markaz", 'Maktab', 'Universitet/Kollej', 'Tashkilot', 'Online academy', 'Boshqa'];
@@ -123,7 +123,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   const store = useStore();
   const [step, setStep] = React.useState(1);
   const [form, setForm] = React.useState({ name: '', phone: '+998', password: '', confirm: '' });
-  const [role, setRole] = React.useState(null); // student|teacher|manager|owner
+  const [registrationType, setRegistrationType] = React.useState(null); // student|teacher|manager|organization
   const [centerId, setCenterId] = React.useState(null);
   const [centerSearch, setCenterSearch] = React.useState('');
   const [subject, setSubject] = React.useState('');
@@ -150,6 +150,17 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   const newCenterTypeValid = !!selectedOrganizationType;
   const districtOptions = UZBEKISTAN_DISTRICTS[newCenter.region] || [];
   const newCenterLocationValid = !!newCenter.country && !!newCenter.region && !!newCenter.district;
+  const registerTypeMeta = {
+    student: { icon: '🎓', title: "O'quvchi sifatida", subtitle: 'Olimpiadalarda qatnashish uchun hisob yarating.' },
+    teacher: { icon: '✏️', title: "O'qituvchi sifatida", subtitle: "Tashkilot tasdig'i bilan savollar yaratish imkonini oling." },
+    manager: { icon: '🏫', title: 'Manager sifatida', subtitle: "Tashkilot tasdig'i bilan o'quvchilarni boshqaring." },
+    organization: { icon: '🏛', title: "Tashkilot ro'yxatdan o'tkazish", subtitle: "Tashkilotni tasdiqqa yuboring, tasdiqlangach direktor paneli ochiladi." },
+  };
+  const currentRegisterMeta = registerTypeMeta[registrationType] || {
+    icon: '🏆',
+    title: "Ro'yxatdan o'tish",
+    subtitle: "O'zingizga mos boshlash turini tanlang.",
+  };
 
   // Reset verification whenever the entered phone changes
   React.useEffect(() => { setPhoneVerified(false); }, [normalizedRegisterPhone]);
@@ -181,16 +192,24 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
     String(c.organizationType || '').toLowerCase().includes(centerSearch.toLowerCase())
   );
 
+  const selectRegistrationType = (type) => {
+    setRegistrationType(type);
+    setCenterId(null);
+    setCenterSearch('');
+    setSubject('');
+    setPhoneError('');
+  };
+
   const goNext = () => {
     if (step === 1) {
+      if (!registrationType) return;
+      setStep(2);
+    } else if (step === 2) {
       if (!form.name || !form.phone || !form.password || !form.confirm) return;
       if (form.password !== form.confirm) return;
       const norm = OlympyStore.normalizePhone(form.phone);
       if (!norm) { setPhoneError("Telefon raqam noto'g'ri"); return; }
       if (!phoneVerified) { setPhoneError("Telefon raqamni Telegram orqali tasdiqlang"); return; }
-      setStep(2);
-    } else if (step === 2) {
-      if (!role) return;
       setStep(3);
     }
   };
@@ -204,37 +223,47 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
         phone: form.phone,
         password: form.password,
       };
-      if (role === 'student') registerPayload.role = 'student';
+      const selectedType = registrationType;
+      const selectedSubject = subject;
+      const organizationPayload = {
+        name: newCenter.name,
+        organization_type: selectedOrganizationType || "O'quv markaz",
+        country: newCenter.country,
+        region: newCenter.region,
+        district: newCenter.district,
+        city: newCenter.district || newCenter.region,
+        subjects: newCenter.subjects,
+      };
+
+      if (selectedType === 'organization') {
+        const data = await OlympyApi.registerOrganization({
+          ...registerPayload,
+          center: organizationPayload,
+        });
+        const mappedUser = OlympyApi.mapBackendUser(data.user);
+        OlympyApi.saveAuth({ token: data.token, refresh: data.refresh, user: mappedUser, cookieAuth: data.cookie_auth });
+        setSuccess(true);
+        setTimeout(() => onLogin(mappedUser), 1600);
+        return;
+      }
+
+      if (selectedType === 'student') registerPayload.role = 'student';
       const data = await OlympyApi.register(registerPayload);
       const token = data.token;
       const refresh = data.refresh;
       let selectedCenterId = centerId;
-      const selectedRole = role;
-      const selectedSubject = subject;
-      const isNewCenter = selectedRole === 'owner';
 
-      if (isNewCenter) {
-        const createdCenter = await OlympyApi.registerCenter({
-          name: newCenter.name,
-          organization_type: selectedOrganizationType || "O'quv markaz",
-          country: newCenter.country,
-          region: newCenter.region,
-          district: newCenter.district,
-          city: newCenter.district || newCenter.region,
-          subjects: newCenter.subjects,
-        }, token);
-        selectedCenterId = createdCenter?.id;
-      } else if (selectedRole === 'student' && selectedCenterId) {
+      if (selectedType === 'student' && selectedCenterId) {
         await OlympyApi.joinCenter(selectedCenterId, {
           role: 'student',
           subject: selectedSubject || '',
         }, token);
-      } else if (selectedRole === 'teacher') {
+      } else if (selectedType === 'teacher') {
         await OlympyApi.joinCenter(selectedCenterId, {
           role: 'teacher',
           subject: selectedSubject,
         }, token);
-      } else if (selectedRole === 'manager') {
+      } else if (selectedType === 'manager') {
         await OlympyApi.joinCenter(selectedCenterId, {
           role: 'manager',
           subject: '',
@@ -253,20 +282,22 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   };
 
   if (success) {
-    const isAuto = role === 'student' && !centerId;
+    const isAuto = registrationType === 'student' && !centerId;
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#060818' }}>
         <div className="text-center animate-in">
           <div className="w-24 h-24 gradient-bg rounded-full flex items-center justify-center mx-auto mb-6 glow-blue">
             <Icon name="check" size={40} />
           </div>
-          <h2 className="text-3xl font-black text-white mb-2">Tabriklaymiz! 🎉</h2>
-          <p className="text-white/50">Hisobingiz muvaffaqiyatli yaratildi</p>
+          <h2 className="text-3xl font-black text-white mb-2">Tabriklaymiz!</h2>
+          <p className="text-white/50">
+            {registrationType === 'organization' ? "Tashkilot arizangiz qabul qilindi" : 'Hisobingiz muvaffaqiyatli yaratildi'}
+          </p>
           {!isAuto && (
             <p className="text-amber-300 text-sm mt-3">
-              {role === 'owner' ? "Tashkilot/markaz arizangiz Platform Adminga yuborildi" :
-               role === 'manager' ? "Manager arizangiz direktorga yuborildi" :
-               role === 'teacher' ? "O'qituvchi arizangiz direktorga yuborildi" :
+              {registrationType === 'organization' ? "Tashkilot/markaz arizangiz Platform Adminga yuborildi" :
+               registrationType === 'manager' ? "Manager arizangiz tashkilot mas'uliga yuborildi" :
+               registrationType === 'teacher' ? "O'qituvchi arizangiz tashkilot mas'uliga yuborildi" :
                'Arizangiz tashkilot manageriga yuborildi'}
             </p>
           )}
@@ -284,19 +315,16 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
         <div className="hero-glow" style={{ background: '#6366f1', bottom: '20%', left: '10%' }} />
         <div className="relative z-10">
           <div className="glass rounded-3xl p-8 max-w-sm">
-            <div className="text-4xl mb-4">{role === 'owner' ? '🏛' : role === 'manager' ? '🏫' : role === 'teacher' ? '✏️' : '🏆'}</div>
+            <div className="text-4xl mb-4">{currentRegisterMeta.icon}</div>
             <h3 className="text-xl font-black text-white mb-3">
-              {role === 'owner' ? 'Direktor sifatida' :
-               role === 'manager' ? 'Manager sifatida' :
-               role === 'teacher' ? "O'qituvchi sifatida" :
-               "O'quvchi sifatida"} qo'shiling
+              {currentRegisterMeta.title}
             </h3>
             <p className="text-white/40 text-sm leading-relaxed mb-6">
-              Olympy — har xil rollar uchun bir hisob. Bir telefon raqam bilan O'quvchi, O'qituvchi yoki Manager bo'lishingiz mumkin.
+              {currentRegisterMeta.subtitle}
             </p>
             <div className="space-y-3">
               {[
-                'Bitta hisob — bir nechta rol',
+                "Tashkilot yoki shaxs sifatida boshlash",
                 'Tasdiqlash arizalari',
                 'Real vaqtda hisobotlar',
                 'Telegram orqali xabarnoma',
@@ -318,7 +346,11 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
             <span className="gradient-text font-black text-xl">Olympy</span>
           </div>
           <h1 className="text-3xl font-black text-white mb-2">Ro'yxatdan o'tish</h1>
-          <p className="text-white/40">Hisobingizni yarating</p>
+          <p className="text-white/40">
+            {step === 1 ? "Avval qanday boshlashingizni tanlang" :
+             registrationType === 'organization' ? "Tashkilot va mas'ul shaxs ma'lumotlari" :
+             'Hisobingizni yarating'}
+          </p>
 
           {/* Steps */}
           <div className="flex items-center gap-2 mt-6">
@@ -331,11 +363,13 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
           </div>
         </div>
 
-        {/* Step 1: credentials */}
-        {step === 1 && (
+        {/* Step 2: credentials */}
+        {step === 2 && (
           <div className="space-y-4 animate-in">
             <div>
-              <label className="block text-sm text-white/60 mb-2 font-medium">Ism familiya</label>
+              <label className="block text-sm text-white/60 mb-2 font-medium">
+                {registrationType === 'organization' ? "Mas'ul shaxs ism familiyasi" : 'Ism familiya'}
+              </label>
               <input className="input-field" placeholder="Ali Valiyev" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             </div>
             <div>
@@ -372,43 +406,46 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               {form.confirm && form.password !== form.confirm &&
                 <div className="text-red-400 text-xs mt-1">Parollar mos kelmaydi</div>}
             </div>
-            <button onClick={goNext}
-              disabled={!form.name || !form.phone || !form.password || form.password !== form.confirm || !!phoneError || !phoneVerified}
-              className="btn-primary w-full py-3.5 rounded-2xl font-bold disabled:opacity-50">
-              Davom etish →
-            </button>
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setStep(1)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
+              <button onClick={goNext}
+                disabled={!form.name || !form.phone || !form.password || form.password !== form.confirm || !!phoneError || !phoneVerified}
+                className="btn-primary flex-1 py-3.5 rounded-2xl font-bold disabled:opacity-50">
+                {registrationType === 'organization' ? "Tashkilotga o'tish →" : 'Davom etish →'}
+              </button>
+            </div>
           </div>
         )}
 
-        {/* Step 2: role choice */}
-        {step === 2 && (
+        {/* Step 1: registration type */}
+        {step === 1 && (
           <div className="space-y-3 animate-in">
-            <div className="text-sm text-white/60 mb-2">Qaysi rolda qo'shilmoqchisiz?</div>
+            <div className="text-sm text-white/60 mb-2">Qanday ro'yxatdan o'tmoqchisiz?</div>
             {[
               { k:'student', icon:'🎓', label:"O'quvchi", desc:'Olimpiadalarda qatnashish' },
               { k:'teacher', icon:'✏️', label:"O'qituvchi", desc:'Savollar yaratish (tashkilot tasdig\'i bilan)' },
               { k:'manager', icon:'🏫', label:'Manager', desc:'O\'quvchilarni boshqarish (tashkilot tasdig\'i bilan)' },
-              { k:'owner',   icon:'🏛', label:'Direktor', desc:"Tashkilot yoki markaz ro'yxatdan o'tkazish" },
+              { k:'organization', icon:'🏛', label:"Tashkilot/o'quv markaz", desc:"Tashkilotni ro'yxatdan o'tkazish" },
             ].map(r => (
-              <button key={r.k} onClick={() => setRole(r.k)}
-                className={`w-full flex items-center gap-3 p-4 rounded-2xl text-left transition-all ${role === r.k ? 'border border-indigo-500 bg-indigo-500/10' : 'glass hover:bg-white/5 border border-transparent'}`}>
+              <button key={r.k} onClick={() => selectRegistrationType(r.k)}
+                className={`w-full flex items-center gap-3 p-4 rounded-2xl text-left transition-all ${registrationType === r.k ? 'border border-indigo-500 bg-indigo-500/10' : 'glass hover:bg-white/5 border border-transparent'}`}>
                 <span className="text-2xl">{r.icon}</span>
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold text-white">{r.label}</div>
                   <div className="text-xs text-white/40">{r.desc}</div>
                 </div>
-                {role === r.k && <Icon name="check" size={16} className="text-indigo-400" />}
+                {registrationType === r.k && <Icon name="check" size={16} className="text-indigo-400" />}
               </button>
             ))}
             <div className="flex gap-3 pt-2">
-              <button onClick={() => setStep(1)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
-              <button onClick={goNext} disabled={!role} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold disabled:opacity-50">Davom etish →</button>
+              <button onClick={() => onNavigate('login')} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">Kirish</button>
+              <button onClick={goNext} disabled={!registrationType} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold disabled:opacity-50">Davom etish →</button>
             </div>
           </div>
         )}
 
-        {/* Step 3: role-specific */}
-        {step === 3 && role === 'student' && (
+        {/* Step 3: selected registration flow */}
+        {step === 3 && registrationType === 'student' && (
           <div className="space-y-4 animate-in">
             <div>
               <label className="block text-sm text-white/60 mb-2 font-medium">Tashkilot yoki markaz tanlash <span className="text-white/30">(ixtiyoriy)</span></label>
@@ -448,7 +485,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
           </div>
         )}
 
-        {step === 3 && role === 'teacher' && (
+        {step === 3 && registrationType === 'teacher' && (
           <div className="space-y-4 animate-in">
             <div>
               <label className="block text-sm text-white/60 mb-2 font-medium">Tashkilot yoki markaz</label>
@@ -465,7 +502,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               </select>
             </div>
             <div className="glass rounded-xl p-3 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
-              <Icon name="info" size={14} /> Ariza direktor/egaga yuboriladi. Tasdiqlangach savol yarata olasiz.
+              <Icon name="info" size={14} /> Ariza tashkilot mas'uliga yuboriladi. Tasdiqlangach savol yarata olasiz.
             </div>
             <div className="flex gap-3">
               <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
@@ -476,7 +513,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
           </div>
         )}
 
-        {step === 3 && role === 'manager' && (
+        {step === 3 && registrationType === 'manager' && (
           <div className="space-y-4 animate-in">
             <div>
               <label className="block text-sm text-white/60 mb-2 font-medium">Tashkilot yoki markaz</label>
@@ -486,7 +523,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               </select>
             </div>
             <div className="glass rounded-xl p-3 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
-              <Icon name="info" size={14} /> Ariza direktor/egaga yuboriladi. Tasdiqlangach Manager paneliga kira olasiz.
+              <Icon name="info" size={14} /> Ariza tashkilot mas'uliga yuboriladi. Tasdiqlangach Manager paneliga kira olasiz.
             </div>
             <div className="flex gap-3">
               <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
@@ -497,7 +534,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
           </div>
         )}
 
-        {step === 3 && role === 'owner' && (
+        {step === 3 && registrationType === 'organization' && (
           <div className="space-y-4 animate-in">
             <div className="text-sm text-white/60">Yangi tashkilot yoki markaz ma'lumotlari</div>
             <div>

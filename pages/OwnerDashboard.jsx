@@ -127,15 +127,23 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   React.useEffect(() => {
     let cancelled = false;
-    loadPendingStaff().catch(err => {
+    const refresh = () => loadPendingStaff().catch(err => {
       if (!cancelled) {
         console.warn('getPendingMemberships failed:', err);
         setPendingTeachers([]);
         setPendingManagers([]);
       }
     });
-    return () => { cancelled = true; };
-  }, [loadPendingStaff]);
+    refresh();
+    // Avval owner pending arizalarni faqat sahifa qayta ochilganda olardi.
+    // Endi ManagerDashboard kabi har 15 soniyada poll qilamiz, shunda yangi
+    // o'qituvchi/manager arizalari real vaqtda chiqadi.
+    const intervalId = (isApi && ownerCenterId) ? setInterval(refresh, 15000) : null;
+    return () => {
+      cancelled = true;
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [loadPendingStaff, isApi, ownerCenterId]);
 
   const loadApiStaff = React.useCallback(() => {
     if (!isApi || !ownerCenterId) {

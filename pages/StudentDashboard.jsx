@@ -74,13 +74,48 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       olympiad: o?.title || 'Olimpiada',
       subject: o?.subject || '—',
       score: a.score,
-      total: a.totalQuestions ? 100 : 100,
+      // Score 0..100 oraliqdagi foiz bo'lib, jami nominal 100. Avval ternary
+      // `a.totalQuestions ? 100 : 100` har doim 100 qaytarardi; aniqlik uchun
+      // bu yerda max 100 ni to'g'ridan-to'g'ri yozdik.
+      total: 100,
       rank: a.rank,
       date: (a.submittedAt || '').slice(0,10),
       correct: a.correctCount,
       wrong: a.wrongCount,
     };
   });
+
+  // "Fanlar bo'yicha natijalar" bloki uchun real apiStats yoki lokal myResults
+  // dan kelib chiqib hisob-kitob qilamiz. Avval bu blok qattiq kodlangan
+  // (Informatika 87%, Tarix 91% ...) raqamlar edi; endi haqiqiy o'rtacha ball
+  // ko'rsatiladi.
+  const SUBJECT_PALETTE = ['#6366f1', '#22d3ee', '#a855f7', '#f59e0b', '#10b981', '#ef4444'];
+  const subjectStats = (() => {
+    const apiSubjects = isApi && apiStatsRes.data?.subjects;
+    if (Array.isArray(apiSubjects) && apiSubjects.length > 0) {
+      return apiSubjects.slice(0, 6).map((row, i) => ({
+        subject: row.subject || '—',
+        score: Math.round(row.average_score || 0),
+        color: SUBJECT_PALETTE[i % SUBJECT_PALETTE.length],
+      }));
+    }
+    const buckets = {};
+    myResults.forEach(r => {
+      const key = r.subject || '—';
+      const b = buckets[key] || { subject: key, total: 0, count: 0 };
+      b.total += r.score || 0;
+      b.count += 1;
+      buckets[key] = b;
+    });
+    return Object.values(buckets)
+      .map((b, i) => ({
+        subject: b.subject,
+        score: b.count ? Math.round(b.total / b.count) : 0,
+        color: SUBJECT_PALETTE[i % SUBJECT_PALETTE.length],
+      }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 6);
+  })();
 
   const navItems = [
     { key: 'home', icon: 'home', label: 'Asosiy' },
@@ -213,13 +248,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <div className="glass rounded-2xl p-5">
           <h3 className="font-bold text-white mb-4">Fanlar bo'yicha natijalar</h3>
           <div className="space-y-3">
-            {[
-              { subject: 'Informatika', score: 87, color: '#6366f1' },
-              { subject: 'Tarix', score: 91, color: '#22d3ee' },
-              { subject: 'Biologiya', score: 72, color: '#a855f7' },
-              { subject: 'Matematika', score: 78, color: '#f59e0b' },
-            ].map((s, i) => (
-              <div key={i}>
+            {subjectStats.length === 0 && (
+              <div className="text-sm text-white/40">Hali fan kesimida natijalar yo'q.</div>
+            )}
+            {subjectStats.map((s, i) => (
+              <div key={`${s.subject}-${i}`}>
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-sm text-white/70">{s.subject}</span>
                   <span className="text-sm font-bold text-white">{s.score}%</span>

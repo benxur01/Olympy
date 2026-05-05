@@ -545,14 +545,26 @@ const formatCenterLocation = (center) => {
 const mapApiOlympiad = (o) => {
   if (!o) return null;
   const start = o.start_datetime ? new Date(o.start_datetime) : null;
+  // startDate/startTime ni lokal vaqt asosida ajratamiz: toISOString UTC kun
+  // qaytaradi, lekin toTimeString lokal soatni qaytaradi — bu ikkalasini
+  // birlashtirsak vaqt mintaqasi siljishidan kun yoki soat noto'g'ri ko'rinishi
+  // mumkin edi. Endi toLocaleDateString('en-CA') va getHours/getMinutes orqali
+  // bir xil lokal time-zone'da hisoblaymiz.
+  const pad = (n) => String(n).padStart(2, '0');
+  const localDate = start
+    ? `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`
+    : '';
+  const localTime = start
+    ? `${pad(start.getHours())}:${pad(start.getMinutes())}`
+    : '';
   return {
     id: String(o.id),
     backendId: o.id,
     centerId: o.center != null ? String(o.center) : null,
     title: o.title,
     subject: o.subject,
-    startDate: start ? start.toISOString().slice(0, 10) : '',
-    startTime: start ? start.toTimeString().slice(0, 5) : '',
+    startDate: localDate,
+    startTime: localTime,
     duration: o.duration_minutes ?? o.duration ?? 60,
     duration_minutes: o.duration_minutes,
     start_datetime: o.start_datetime,
