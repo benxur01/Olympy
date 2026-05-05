@@ -267,6 +267,11 @@ CORS_ALLOWED_ORIGINS = [
 CORS_ALLOW_CREDENTIALS = True
 if not DEBUG and not CORS_ALLOWED_ORIGINS:
     raise ImproperlyConfigured('OLYMPY_CORS_ALLOWED_ORIGINS must be set in production')
+OLYMPY_FRONTEND_URL = (
+    os.environ.get('OLYMPY_FRONTEND_URL', '')
+    or (CORS_ALLOWED_ORIGINS[0] if CORS_ALLOWED_ORIGINS else '')
+    or ('http://localhost:5173' if DEBUG else '')
+).rstrip('/')
 CSRF_TRUSTED_ORIGINS = [
     o.strip() for o in os.environ.get('OLYMPY_CSRF_TRUSTED_ORIGINS', '').split(',')
     if o.strip()

@@ -3,12 +3,17 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
+from django.views.generic import RedirectView
 
 from accounts import views as account_views
 from olympiads.subjects_views import subjects_list_create
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    path('admin/', RedirectView.as_view(
+        url=f'{settings.OLYMPY_FRONTEND_URL}/admin' if settings.OLYMPY_FRONTEND_URL else '/admin',
+        permanent=False,
+    ), name='frontend-admin'),
+    path('django-admin/', admin.site.urls),
     path('api/auth/', include('accounts.urls')),
     path('api/telegram/webhook/', account_views.telegram_webhook, name='telegram-webhook'),
     path('api/', include('accounts.urls_me')),
