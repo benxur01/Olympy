@@ -150,7 +150,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/15 text-amber-300"><Icon name="trophy" size={16} /></div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm font-semibold text-white">{o.title}</div>
-                  <div className="text-xs text-white/40">{o.subject}{o.testLevel ? ` · ${o.testLevel}` : ''} · {o.startDate || 'Sana yoq'}</div>
+                  <div className="text-xs text-white/40">{o.subject}{o.testLevel ? ` · ${o.testLevel}` : ''}{o.testType ? ` · ${testTypeLabel(o.testType)}` : ''} · {o.startDate || 'Sana yoq'}</div>
                 </div>
                 <Badge status={statusLabel(o.status)} />
               </div>
@@ -202,6 +202,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               <div className="mt-1 flex flex-wrap items-center gap-3 text-xs text-white/40">
                 <SubjectBadge subject={o.subject} />
                 {o.testLevel && <span className="rounded-lg bg-violet-500/15 px-2 py-1 font-bold text-violet-300">Daraja: {o.testLevel}</span>}
+                {o.testType && <span className="rounded-lg bg-sky-500/15 px-2 py-1 font-bold text-sky-300">Tur: {testTypeLabel(o.testType)}</span>}
                 <span>{o.startDate || 'Sana yoq'}</span>
                 <span>{o.duration || 60} min</span>
                 <span>{(o.questionIds || []).length} ta savol</span>

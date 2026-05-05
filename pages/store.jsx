@@ -126,7 +126,7 @@ const OlympyStore = (() => {
     ],
     // Events — olimpiada is public, musobaqa is center-internal.
     olympiads: [
-      { id:'o1', centerId:'c1', eventType:'olympiad', title:'Matematika Olimpiadasi — May 2026', subject:'Matematika', testLevel:'Beginner', startDate:'2026-05-02', startTime:'10:00', duration:60, questionIds:['q1','q2','q3','q4','q5','q6','q7','q8','q9','q10'], status:'active', createdBy:'u2', createdAt:'2026-04-20', participants:124, maxScore:100 },
+      { id:'o1', centerId:'c1', eventType:'olympiad', title:'Matematika Olimpiadasi — May 2026', subject:'Matematika', testLevel:'Beginner', testType:'mixed', startDate:'2026-05-02', startTime:'10:00', duration:60, questionIds:['q1','q2','q3','q4','q5','q6','q7','q8','q9','q10'], status:'active', createdBy:'u2', createdAt:'2026-04-20', participants:124, maxScore:100 },
       { id:'o2', centerId:'c1', eventType:'competition', title:'Ingliz tili Bellashuvi', subject:'Ingliz tili', startDate:'2026-05-05', startTime:'14:00', duration:45, questionIds:[], status:'draft', createdBy:'u2', createdAt:'2026-04-22', participants:0, maxScore:100 },
       { id:'o3', centerId:'c1', eventType:'olympiad', title:'Informatika Olimpiadasi', subject:'Informatika', startDate:'2026-04-28', startTime:'09:00', duration:90, questionIds:[], status:'finished', createdBy:'u2', createdAt:'2026-04-10', participants:201, maxScore:100, avgScore:81 },
       { id:'o4', centerId:'c1', eventType:'competition', title:'Fizika Sinovlari', subject:'Fizika', startDate:'2026-05-10', startTime:'11:00', duration:60, questionIds:[], status:'draft', createdBy:'u2', createdAt:'2026-04-25', participants:0, maxScore:100 },
@@ -329,7 +329,7 @@ const OlympyStore = (() => {
         centerId: o.centerId,
         type: 'olympiad_published',
         title: isPublic ? 'Yangi olimpiada' : 'Yangi musobaqa',
-        message: `${center?.name || 'Markaz'}da yangi ${isPublic ? 'olimpiada' : 'musobaqa'} e'lon qilindi:\nFan: ${o.subject}\n${o.testLevel ? `Daraja: ${o.testLevel}\n` : ''}Sana: ${o.startDate}\nQatnashish uchun platformaga kiring.`,
+        message: `${center?.name || 'Markaz'}da yangi ${isPublic ? 'olimpiada' : 'musobaqa'} e'lon qilindi:\nFan: ${o.subject}\n${o.testLevel ? `Daraja: ${o.testLevel}\n` : ''}${o.testType ? `Test turi: ${testTypeLabel(o.testType)}\n` : ''}Sana: ${o.startDate}\nQatnashish uchun platformaga kiring.`,
       });
     });
   };
@@ -491,6 +491,40 @@ const statusLabel = (s) =>
 const eventTypeLabel = (eventType) =>
   eventType === 'competition' ? 'Musobaqa' : 'Olimpiada';
 
+const TEST_TYPE_META = {
+  multiple_choice: { label: 'Multiple choice' },
+  true_false: { label: 'True/False' },
+  short_answer: { label: 'Qisqa javob' },
+  mixed: { label: 'Aralash' },
+};
+
+const testTypeLabel = (testType) => TEST_TYPE_META[testType]?.label || '';
+
+const normaliseQuestionOption = (value) =>
+  String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[‘’`ʼʻ]/g, "'");
+
+const inferQuestionTestType = (question) => {
+  const explicit = String(question?.type || question?.questionType || question?.question_type || '').toLowerCase();
+  if (explicit.includes('true') || explicit.includes("to'g'ri") || explicit.includes("noto'g'ri")) return 'true_false';
+  if (explicit.includes('short') || explicit.includes('qisqa')) return 'short_answer';
+  if (explicit.includes('multiple') || explicit.includes("ko'p")) return 'multiple_choice';
+
+  const options = Array.isArray(question?.options) ? question.options.map(normaliseQuestionOption) : [];
+  if (options.length === 0) return 'short_answer';
+  const positive = new Set(["to'g'ri", "tog'ri", 'togri', 'true', 'rost', 'ha']);
+  const negative = new Set(["noto'g'ri", "notog'ri", 'notogri', 'false', "yolg'on", "yo'q", 'yoq']);
+  if (options.length === 2 && options.some(o => positive.has(o)) && options.some(o => negative.has(o))) {
+    return 'true_false';
+  }
+  return 'multiple_choice';
+};
+
+const questionMatchesTestType = (question, testType) =>
+  !testType || testType === 'mixed' || inferQuestionTestType(question) === testType;
+
 const eventReadinessIssues = (event) => {
   const issues = [];
   if (!String(event?.title || '').trim()) issues.push('Tadbir nomi kiritilmagan');
@@ -591,6 +625,7 @@ const mapApiOlympiad = (o) => {
     title: o.title,
     subject: o.subject,
     testLevel: o.test_level || o.testLevel || '',
+    testType: o.test_type || o.testType || '',
     startDate: localDate,
     startTime: localTime,
     duration: o.duration_minutes ?? o.duration ?? 60,
@@ -705,12 +740,12 @@ const olympiadStartMoment = (olympiad) => {
 const telegramJoinRequestText = (studentName, centerName) =>
   `Yangi o'quvchi ariza yubordi: ${studentName}.\nTashkilot: ${centerName}.\nTasdiqlaysizmi?`;
 const telegramOlympiadPublishedText = (centerName, olympiad) =>
-  `${centerName} tashkilotida yangi ${eventTypeLabel(olympiad.eventType || olympiad.event_type)} boshlandi:\nFan: ${olympiad.subject}\n${olympiad.testLevel || olympiad.test_level ? `Daraja: ${olympiad.testLevel || olympiad.test_level}\n` : ''}Sana: ${olympiad.startDate}\nQatnashish uchun platformaga kiring.`;
+  `${centerName} tashkilotida yangi ${eventTypeLabel(olympiad.eventType || olympiad.event_type)} boshlandi:\nFan: ${olympiad.subject}\n${olympiad.testLevel || olympiad.test_level ? `Daraja: ${olympiad.testLevel || olympiad.test_level}\n` : ''}${olympiad.testType || olympiad.test_type ? `Test turi: ${testTypeLabel(olympiad.testType || olympiad.test_type)}\n` : ''}Sana: ${olympiad.startDate}\nQatnashish uchun platformaga kiring.`;
 
 Object.assign(window, {
   OlympyStore, useStore,
   ROLE_META, getApprovedRoles, getPendingRoles, hasApprovedRole, getRoleStatus, roleHomePage, statusLabel,
   olympiadsForStudent, olympiadsForCenter, attemptsForUser, notificationsForUser, leaderboardForOlympiad,
-  formatTime, formatCenterLocation, eventTypeLabel, eventReadinessIssues, olympiadStartMoment, telegramJoinRequestText, telegramOlympiadPublishedText,
+  formatTime, formatCenterLocation, eventTypeLabel, testTypeLabel, inferQuestionTestType, questionMatchesTestType, eventReadinessIssues, olympiadStartMoment, telegramJoinRequestText, telegramOlympiadPublishedText,
   mapApiOlympiad, mapApiCenter, mapApiNotification, mapApiAttempt, mapApiQuestion,
 });

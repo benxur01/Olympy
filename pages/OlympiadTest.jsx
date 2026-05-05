@@ -392,7 +392,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           <div>
             <div className="text-sm font-bold text-white truncate max-w-48">{olympiad?.title || 'Matematika Olimpiadasi'}</div>
             <div className="text-xs text-white/40">
-              {olympiad?.subject}{liveOlympiad?.testLevel ? ` · ${liveOlympiad.testLevel}` : ''}
+              {olympiad?.subject}{liveOlympiad?.testLevel ? ` · ${liveOlympiad.testLevel}` : ''}{liveOlympiad?.testType ? ` · ${testTypeLabel(liveOlympiad.testType)}` : ''}
             </div>
           </div>
         </div>

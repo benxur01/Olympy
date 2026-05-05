@@ -836,10 +836,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       </div>
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[820px] text-left">
+          <table className="w-full min-w-[920px] text-left">
             <thead className="bg-slate-50">
               <tr className="text-xs font-black uppercase text-slate-400">
-                {['Nomi', 'Turi', 'Fan', 'Daraja', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
+                {['Nomi', 'Turi', 'Fan', 'Daraja', 'Test turi', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -849,12 +849,13 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   <td className="px-5 py-4"><span className={`rounded-md px-2 py-1 text-xs font-black ${o.eventType === 'olympiad' ? 'bg-cyan-50 text-cyan-700' : 'bg-amber-50 text-amber-700'}`}>{eventTypeLabel(o.eventType || 'competition')}</span></td>
                   <td className="px-5 py-4"><span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-black text-emerald-700">{o.subject}</span></td>
                   <td className="px-5 py-4">{o.testLevel ? <span className="rounded-md bg-violet-50 px-2 py-1 text-xs font-black text-violet-700">{o.testLevel}</span> : <span className="text-slate-300">—</span>}</td>
+                  <td className="px-5 py-4">{o.testType ? <span className="rounded-md bg-sky-50 px-2 py-1 text-xs font-black text-sky-700">{testTypeLabel(o.testType)}</span> : <span className="text-slate-300">—</span>}</td>
                   <td className="px-5 py-4 text-slate-500">{o.startDate || '—'}</td>
                   <td className="px-5 py-4 font-bold text-slate-700">{o.participants || 0}</td>
                   <td className="px-5 py-4"><OwnerStatusPill status={o.status} /></td>
                 </tr>
               ))}
-              {centerOlympiads.length === 0 && <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-bold text-slate-500">Hali tadbirlar yo'q</td></tr>}
+              {centerOlympiads.length === 0 && <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-bold text-slate-500">Hali tadbirlar yo'q</td></tr>}
             </tbody>
           </table>
         </div>

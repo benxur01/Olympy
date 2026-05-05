@@ -223,6 +223,7 @@ const ProfilePage = ({ user, onNavigate, embedded }) => {
                   <div className="flex items-center gap-2 mt-0.5">
                     <SubjectBadge subject={o.subject} />
                     {o.testLevel && <span className="chip bg-violet-500/15 text-violet-300 border border-violet-500/20">{o.testLevel}</span>}
+                    {o.testType && <span className="chip bg-sky-500/15 text-sky-300 border border-sky-500/20">{testTypeLabel(o.testType)}</span>}
                     <span className="text-xs text-white/30">{o.startDate || o.date}</span>
                   </div>
                 </div>

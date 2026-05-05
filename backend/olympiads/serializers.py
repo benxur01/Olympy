@@ -5,6 +5,30 @@ from questions.models import Question
 from .models import Olympiad
 
 
+def _normalise_option(value):
+    return (
+        str(value or '')
+        .strip()
+        .lower()
+        .replace('‘', "'")
+        .replace('’', "'")
+        .replace('`', "'")
+        .replace('ʼ', "'")
+        .replace('ʻ', "'")
+    )
+
+
+def _question_test_type(question):
+    options = [_normalise_option(option) for option in (question.options or [])]
+    if not options:
+        return Olympiad.TEST_TYPE_SHORT_ANSWER
+    positive = {"to'g'ri", "tog'ri", 'togri', 'true', 'rost', 'ha'}
+    negative = {"noto'g'ri", "notog'ri", 'notogri', 'false', "yolg'on", "yo'q", 'yoq'}
+    if len(options) == 2 and any(o in positive for o in options) and any(o in negative for o in options):
+        return Olympiad.TEST_TYPE_TRUE_FALSE
+    return Olympiad.TEST_TYPE_MULTIPLE_CHOICE
+
+
 class OlympiadSerializer(serializers.ModelSerializer):
     question_ids = serializers.PrimaryKeyRelatedField(
         many=True,
@@ -23,7 +47,8 @@ class OlympiadSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Olympiad
-        fields = ['id', 'center', 'event_type', 'title', 'subject', 'test_level', 'start_datetime',
+        fields = ['id', 'center', 'event_type', 'title', 'subject', 'test_level',
+                  'test_type', 'start_datetime',
                   'duration_minutes', 'max_score', 'status', 'created_by',
                   'question_ids', 'participants', 'avg_score', 'created_at']
         read_only_fields = ['id', 'status', 'created_by', 'participants', 'avg_score',
@@ -53,5 +78,23 @@ class OlympiadSerializer(serializers.ModelSerializer):
             if foreign:
                 raise serializers.ValidationError({
                     'question_ids': "Olimpiadaga faqat shu markaz savollarini qo'shish mumkin",
+                })
+        test_type = attrs.get(
+            'test_type',
+            self.instance.test_type if self.instance else Olympiad.TEST_TYPE_UNSET,
+        )
+        if test_type and test_type != Olympiad.TEST_TYPE_MIXED:
+            if questions is None and self.instance:
+                questions = list(self.instance.questions.all())
+            mismatched = [
+                q.id for q in (questions or [])
+                if _question_test_type(q) != test_type
+            ]
+            if mismatched:
+                raise serializers.ValidationError({
+                    'test_type': (
+                        f"Tanlangan test turiga {len(mismatched)} ta savol mos emas. "
+                        "Mos savollarni tanlang yoki test turini Aralash qiling."
+                    ),
                 })
         return attrs

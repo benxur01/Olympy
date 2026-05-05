@@ -23,6 +23,19 @@ class Olympiad(models.Model):
         (EVENT_TYPE_COMPETITION, 'Musobaqa'),
     ]
 
+    TEST_TYPE_UNSET = ''
+    TEST_TYPE_MULTIPLE_CHOICE = 'multiple_choice'
+    TEST_TYPE_TRUE_FALSE = 'true_false'
+    TEST_TYPE_SHORT_ANSWER = 'short_answer'
+    TEST_TYPE_MIXED = 'mixed'
+    TEST_TYPE_CHOICES = [
+        (TEST_TYPE_UNSET, 'Belgilanmagan'),
+        (TEST_TYPE_MULTIPLE_CHOICE, 'Multiple choice'),
+        (TEST_TYPE_TRUE_FALSE, 'True/False'),
+        (TEST_TYPE_SHORT_ANSWER, 'Qisqa javob'),
+        (TEST_TYPE_MIXED, 'Aralash'),
+    ]
+
     STATUS_DRAFT = 'draft'
     STATUS_INACTIVE = 'inactive'
     STATUS_ACTIVE = 'active'
@@ -48,6 +61,12 @@ class Olympiad(models.Model):
     title = models.CharField(max_length=200)
     subject = models.CharField(max_length=80)
     test_level = models.CharField(max_length=80, blank=True, default='')
+    test_type = models.CharField(
+        max_length=20,
+        choices=TEST_TYPE_CHOICES,
+        blank=True,
+        default=TEST_TYPE_UNSET,
+    )
     start_datetime = models.DateTimeField(null=True, blank=True)
     duration_minutes = models.PositiveIntegerField(default=60)
     max_score = models.PositiveIntegerField(default=100)
