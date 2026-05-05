@@ -20,6 +20,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [approvedStudents, setApprovedStudents] = React.useState([]);
   const [assignedQuestionIds, setAssignedQuestionIds] = React.useState([]);
   const [assignmentLevel, setAssignmentLevel] = React.useState('');
+  const [assignmentType, setAssignmentType] = React.useState('');
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
   // Telegram link polling intervalini ref'da saqlaymiz, shunda component
   // unmount bo'lsa ham tozalanadi (avval polling event handler ichida
@@ -139,6 +140,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   React.useEffect(() => {
     setAssignedQuestionIds(assignModal?.questionIds || []);
     setAssignmentLevel(assignModal?.testLevel || '');
+    setAssignmentType(assignModal?.testType || '');
   }, [assignModal?.id]);
 
   // ─── API rejimida olimpiada/savol/markazlarni real backend'dan olish ───
@@ -505,7 +507,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-semibold text-white truncate">{o.title}</div>
-                  <div className="text-xs text-white/40">{o.testLevel ? `${o.testLevel} · ` : ''}{o.participants || 0} ishtirokchi</div>
+                  <div className="text-xs text-white/40">{[o.testLevel, testTypeLabel(o.testType)].filter(Boolean).join(' · ')}{(o.testLevel || o.testType) ? ' · ' : ''}{o.participants || 0} ishtirokchi</div>
                 </div>
                 <Badge status={statusLabel(o.status)} />
               </div>
@@ -673,6 +675,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   <SubjectBadge subject={o.subject} />
                   <span className={`rounded-lg px-2 py-1 font-bold ${o.eventType === 'olympiad' ? 'bg-cyan-500/15 text-cyan-300' : 'bg-amber-500/15 text-amber-300'}`}>{eventTypeLabel(o.eventType || 'competition')}</span>
                   {o.testLevel && <span className="rounded-lg bg-violet-500/15 px-2 py-1 font-bold text-violet-300">Daraja: {o.testLevel}</span>}
+                  {o.testType && <span className="rounded-lg bg-sky-500/15 px-2 py-1 font-bold text-sky-300">Tur: {testTypeLabel(o.testType)}</span>}
                   <span className="inline-flex items-center gap-1"><Icon name="clock" size={12} /> {o.startDate || o.date || 'Sana yo\'q'} {o.startTime || ''}</span>
                   <span>{o.duration} min</span>
                   <span>{assignedCount} ta savol</span>
@@ -749,7 +752,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <h3 className="font-bold text-white mb-4">Tadbir natijalari</h3>
         {olympiads.filter(o => o.status === 'finished').map(o => (
           <div key={o.id} className="flex items-center gap-4 p-4 glass rounded-xl mb-3">
-            <div className="flex-1"><div className="font-semibold text-white">{o.title}</div><div className="text-xs text-white/40">{o.testLevel ? `${o.testLevel} · ` : ''}{o.participants || 0} ishtirokchi</div></div>
+            <div className="flex-1"><div className="font-semibold text-white">{o.title}</div><div className="text-xs text-white/40">{[o.testLevel, testTypeLabel(o.testType)].filter(Boolean).join(' · ')}{(o.testLevel || o.testType) ? ' · ' : ''}{o.participants || 0} ishtirokchi</div></div>
             <DonutChart value={o.avgScore || 0} size={60} />
             <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl">Reyting</button>
           </div>
@@ -905,7 +908,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 </div>
                 <div className="glass rounded-xl p-3">
                   <div className="text-xs text-white/35 mb-1">Test</div>
-                  <div className="font-bold text-white">{questionCount} ta savol · {liveEvent.duration} min{liveEvent.testLevel ? ` · ${liveEvent.testLevel}` : ''}</div>
+                  <div className="font-bold text-white">{questionCount} ta savol · {liveEvent.duration} min{liveEvent.testLevel ? ` · ${liveEvent.testLevel}` : ''}{liveEvent.testType ? ` · ${testTypeLabel(liveEvent.testType)}` : ''}</div>
                 </div>
               </div>
               <div className="text-white font-bold">{liveEvent.title}</div>
@@ -935,6 +938,17 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           const subjectQs = centerQuestions.filter(q => q.subject === liveOlympiad.subject);
           const otherQs = centerQuestions.filter(q => q.subject !== liveOlympiad.subject);
           const assigned = new Set(isApi ? assignedQuestionIds : (liveOlympiad.questionIds || []));
+          const selectedQuestions = [...assigned]
+            .map(id => centerQuestions.find(q => String(q.id) === String(id)))
+            .filter(Boolean);
+          const typeMismatches = assignmentType
+            ? selectedQuestions.filter(q => !questionMatchesTestType(q, assignmentType))
+            : [];
+          const selectedTypeCounts = selectedQuestions.reduce((acc, q) => {
+            const key = inferQuestionTestType(q);
+            acc[key] = (acc[key] || 0) + 1;
+            return acc;
+          }, {});
           const toggle = (id) => {
             const next = assigned.has(id) ? [...assigned].filter(x => x !== id) : [...assigned, id];
             if (isApi) {
@@ -944,8 +958,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             }
           };
           const saveAssignment = () => {
+            if (typeMismatches.length > 0) {
+              showToast(`⚠ ${typeMismatches.length} ta savol ${testTypeLabel(assignmentType)} turiga mos emas`);
+              return;
+            }
             if (!isApi) {
-              OlympyStore.updateOlympiad(liveOlympiad.id, { testLevel: levelValue });
+              OlympyStore.updateOlympiad(liveOlympiad.id, { testLevel: levelValue, testType: assignmentType });
               setAssignModal(null);
               return;
             }
@@ -958,9 +976,11 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             OlympyApi.updateOlympiad(backendOlympiadId, {
               question_ids: selectedQuestionIds,
               test_level: levelValue,
+              test_type: assignmentType,
             }, OlympyApi.getToken())
               .then(() => {
-                showToast(levelValue ? `✓ Savollar va ${levelValue} darajasi saqlandi` : '✓ Savollar tayinlandi');
+                const metaText = [levelValue, testTypeLabel(assignmentType)].filter(Boolean).join(' · ');
+                showToast(metaText ? `✓ Savollar va ${metaText} saqlandi` : '✓ Savollar tayinlandi');
                 setAssignModal(null);
                 apiOlympiadsRes.reload();
               })
@@ -974,6 +994,35 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             <div className="space-y-3">
               <div className="text-sm text-white/60">{liveOlympiad.title} — {liveOlympiad.subject}</div>
               <div className="text-xs text-white/40">Tayinlangan: <span className="text-white">{assigned.size}</span> / {centerQuestions.length} ta mavjud</div>
+              <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-3">
+                <label className="block text-xs text-sky-200 mb-2 font-semibold">Test turi <span className="text-white/35">(ixtiyoriy)</span></label>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {[
+                    { value: '', label: 'Belgilanmagan' },
+                    { value: 'mixed', label: 'Aralash' },
+                    { value: 'multiple_choice', label: 'Multiple choice' },
+                    { value: 'true_false', label: 'True/False' },
+                    { value: 'short_answer', label: 'Qisqa javob' },
+                  ].map(type => (
+                    <button key={type.value || 'unset'} type="button" onClick={() => setAssignmentType(type.value)}
+                      className={`rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${assignmentType === type.value ? 'bg-sky-500 text-white' : 'bg-white/5 text-white/55 hover:bg-white/10 hover:text-white'}`}>
+                      {type.label}
+                    </button>
+                  ))}
+                </div>
+                {selectedQuestions.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
+                    {Object.entries(selectedTypeCounts).map(([type, count]) => (
+                      <span key={type} className="rounded-lg bg-black/15 px-2 py-1 text-sky-100">{testTypeLabel(type)}: {count}</span>
+                    ))}
+                  </div>
+                )}
+                {typeMismatches.length > 0 && (
+                  <div className="mt-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                    {typeMismatches.length} ta tanlangan savol {testTypeLabel(assignmentType)} turiga mos emas. Mos savollarni tanlang yoki test turini Aralash qiling.
+                  </div>
+                )}
+              </div>
               <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-3">
                 <label className="block text-xs text-violet-200 mb-1.5 font-semibold">Test darajasi <span className="text-white/35">(ixtiyoriy)</span></label>
                 <input className="input-field" list="test-level-options" placeholder="Masalan: Beginner, O'rta, Advanced"
@@ -1005,7 +1054,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                     <input type="checkbox" checked={assigned.has(q.id)} onChange={() => toggle(q.id)} className="mt-1" />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm text-white">{q.text}</div>
-                      <div className="text-xs text-white/40 mt-1">{q.difficulty} · {q.score} ball · {q.source}</div>
+                      <div className="text-xs text-white/40 mt-1">{testTypeLabel(inferQuestionTestType(q))} · {q.difficulty} · {q.score} ball · {q.source}</div>
                     </div>
                   </label>
                 ))}
@@ -1015,7 +1064,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                     <input type="checkbox" checked={assigned.has(q.id)} onChange={() => toggle(q.id)} className="mt-1" />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm text-white">{q.text}</div>
-                      <div className="text-xs text-white/40 mt-1">{q.subject} · {q.difficulty} · {q.score} ball</div>
+                      <div className="text-xs text-white/40 mt-1">{q.subject} · {testTypeLabel(inferQuestionTestType(q))} · {q.difficulty} · {q.score} ball</div>
                     </div>
                   </label>
                 ))}
@@ -1024,7 +1073,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 )}
               </div>
               <div className="flex gap-3 pt-2">
-                <button onClick={saveAssignment} disabled={assignmentSaving}
+                <button onClick={saveAssignment} disabled={assignmentSaving || typeMismatches.length > 0}
                   className="btn-primary flex-1 py-3 rounded-xl font-semibold disabled:opacity-50">
                   {isApi ? (assignmentSaving ? 'Saqlanmoqda...' : 'Saqlash') : 'Yopish'}
                 </button>

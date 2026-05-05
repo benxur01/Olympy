@@ -628,7 +628,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] text-left">
+          <table className="w-full min-w-[980px] text-left">
             <thead className="bg-slate-50">
               <tr className="text-xs font-bold uppercase text-slate-400">
                 {['Tashkilot', 'Turi', 'Manzil', 'Direktor', 'O\'quvchi', 'Olimpiada', 'Holat', 'Amal'].map(h => (
@@ -777,14 +777,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <table className="w-full min-w-[860px] text-left">
             <thead className="bg-slate-50">
               <tr className="text-xs font-bold uppercase text-slate-400">
-                {['Tadbir', 'Tashkilot', 'Fan', 'Daraja', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
+                {['Tadbir', 'Tashkilot', 'Fan', 'Daraja', 'Test turi', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {(() => {
                 const olympiadList = isApi ? (apiOlympiads || []) : store.olympiads;
                 if (olympiadList.length === 0) {
-                  return <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-medium text-slate-500">Hali tadbirlar yo'q</td></tr>;
+                  return <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-medium text-slate-500">Hali tadbirlar yo'q</td></tr>;
                 }
                 return olympiadList.map(o => {
                   const center = centers.find(c => String(c.id) === String(o.centerId));
@@ -794,6 +794,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                       <td className="px-5 py-4 text-slate-500">{center?.name || '—'}</td>
                       <td className="px-5 py-4"><span className="rounded-md bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">{o.subject}</span></td>
                       <td className="px-5 py-4">{o.testLevel ? <span className="rounded-md bg-violet-50 px-2 py-1 text-xs font-bold text-violet-700">{o.testLevel}</span> : <span className="text-slate-300">—</span>}</td>
+                      <td className="px-5 py-4">{o.testType ? <span className="rounded-md bg-sky-50 px-2 py-1 text-xs font-bold text-sky-700">{testTypeLabel(o.testType)}</span> : <span className="text-slate-300">—</span>}</td>
                       <td className="px-5 py-4 text-slate-500">{o.startDate || '—'}</td>
                       <td className="px-5 py-4 font-semibold text-slate-700">{o.participants || 0}</td>
                       <td className="px-5 py-4"><AdminPill status={o.status} /></td>

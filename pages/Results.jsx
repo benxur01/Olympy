@@ -52,6 +52,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
             <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
               {r.olympiad?.subject && <SubjectBadge subject={r.olympiad.subject} />}
               {r.olympiad?.testLevel && <span className="chip bg-violet-500/15 text-violet-300 border border-violet-500/20">{r.olympiad.testLevel}</span>}
+              {r.olympiad?.testType && <span className="chip bg-sky-500/15 text-sky-300 border border-sky-500/20">{testTypeLabel(r.olympiad.testType)}</span>}
             </div>
           </div>
         </div>
