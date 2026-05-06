@@ -28,6 +28,19 @@ const LoginPage = ({ onNavigate, onLogin }) => {
   const [showPass, setShowPass] = React.useState(false);
   const [rememberMe, setRememberMe] = React.useState(true);
   const [forgotOpen, setForgotOpen] = React.useState(false);
+  const [forgot, setForgot] = React.useState({
+    step: 'phone',
+    phone: '+998',
+    code: '',
+    password: '',
+    confirm: '',
+    deepLink: '',
+    botUsername: '',
+    expiresAt: null,
+    now: Date.now(),
+    loading: false,
+    error: '',
+  });
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
@@ -49,6 +62,123 @@ const LoginPage = ({ onNavigate, onLogin }) => {
     } catch (err) {
       setError(OlympyApi.toUserMessage(err));
       setLoading(false);
+    }
+  };
+  const normalizedForgotPhone = OlympyStore.normalizePhone(forgot.phone);
+  const forgotExpired = !!(forgot.expiresAt && forgot.now > forgot.expiresAt);
+  const forgotRemaining = forgot.expiresAt ? Math.max(0, Math.floor((forgot.expiresAt - forgot.now) / 1000)) : 0;
+  const forgotRemainingLabel = `${String(Math.floor(forgotRemaining / 60)).padStart(2, '0')}:${String(forgotRemaining % 60).padStart(2, '0')}`;
+
+  React.useEffect(() => {
+    if (!forgotOpen || forgot.step !== 'code') return;
+    const timer = setInterval(() => setForgot(prev => ({ ...prev, now: Date.now() })), 1000);
+    return () => clearInterval(timer);
+  }, [forgotOpen, forgot.step]);
+
+  const resetForgotState = (phone = form.phone || '+998') => {
+    setForgot({
+      step: 'phone',
+      phone: formatUzPhoneInput(phone || '+998'),
+      code: '',
+      password: '',
+      confirm: '',
+      deepLink: '',
+      botUsername: '',
+      expiresAt: null,
+      now: Date.now(),
+      loading: false,
+      error: '',
+    });
+  };
+
+  const openForgotModal = () => {
+    resetForgotState(form.phone);
+    setForgotOpen(true);
+  };
+
+  const closeForgotModal = () => {
+    setForgotOpen(false);
+    resetForgotState(form.phone);
+  };
+
+  const openTelegramDeepLink = (link) => {
+    if (!link) return false;
+    if (typeof goToTelegramLink === 'function') return goToTelegramLink(link);
+    try {
+      window.location.assign(link);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const startForgotReset = async () => {
+    if (!normalizedForgotPhone || forgot.loading) return;
+    setForgot(prev => ({ ...prev, loading: true, error: '', code: '', password: '', confirm: '' }));
+    try {
+      const data = await OlympyApi.startPasswordReset({ phone: normalizedForgotPhone });
+      const link = data.telegram_deep_link || '';
+      if (!link) {
+        setForgot(prev => ({ ...prev, loading: false, error: 'Telegram bot sozlanmagan' }));
+        return;
+      }
+      setForgot(prev => ({
+        ...prev,
+        step: 'code',
+        loading: false,
+        deepLink: link,
+        botUsername: data.bot_username || '',
+        expiresAt: Date.now() + (5 * 60 * 1000),
+        now: Date.now(),
+      }));
+      const opened = openTelegramDeepLink(link);
+      if (!opened) {
+        setForgot(prev => ({
+          ...prev,
+          error: "Brauzer Telegramga o'tishni blokladi. “Telegram botni ochish” tugmasini bosing.",
+        }));
+      }
+    } catch (err) {
+      setForgot(prev => ({ ...prev, loading: false, error: OlympyApi.toUserMessage(err) }));
+    }
+  };
+
+  const submitForgotReset = async () => {
+    if (forgot.loading) return;
+    if (forgotExpired) {
+      setForgot(prev => ({ ...prev, error: 'Kod muddati tugagan. Qayta yuboring.' }));
+      return;
+    }
+    if (!forgot.code.trim()) {
+      setForgot(prev => ({ ...prev, error: 'Kodni kiriting' }));
+      return;
+    }
+    if (forgot.password.length < 6) {
+      setForgot(prev => ({ ...prev, error: 'Yangi parol kamida 6 ta belgidan iborat bo‘lsin' }));
+      return;
+    }
+    if (forgot.password !== forgot.confirm) {
+      setForgot(prev => ({ ...prev, error: 'Parollar mos kelmaydi' }));
+      return;
+    }
+    setForgot(prev => ({ ...prev, loading: true, error: '' }));
+    try {
+      const data = await OlympyApi.confirmPasswordReset({
+        phone: normalizedForgotPhone,
+        otp: forgot.code.trim(),
+        password: forgot.password,
+      });
+      const mappedUser = OlympyApi.mapBackendUser(data.user);
+      OlympyApi.saveAuth({
+        token: data.token,
+        refresh: data.refresh,
+        user: mappedUser,
+        cookieAuth: data.cookie_auth,
+        persistent: rememberMe,
+      });
+      onLogin(mappedUser);
+    } catch (err) {
+      setForgot(prev => ({ ...prev, loading: false, error: OlympyApi.toUserMessage(err) }));
     }
   };
 
@@ -113,7 +243,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                 checked={rememberMe}
                 onChange={e => setRememberMe(e.target.checked)} /> Meni eslab qolish
             </label>
-            <button type="button" onClick={() => setForgotOpen(true)} className="text-indigo-400 hover:text-indigo-300 transition-colors">Parolni unutdingizmi?</button>
+            <button type="button" onClick={openForgotModal} className="text-indigo-400 hover:text-indigo-300 transition-colors">Parolni unutdingizmi?</button>
           </div>
           <button type="submit" disabled={loading}
             className="btn-primary w-full py-3.5 rounded-2xl font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
@@ -128,25 +258,139 @@ const LoginPage = ({ onNavigate, onLogin }) => {
       </div>
       {forgotOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
-          <div className="glass-strong rounded-3xl p-6 max-w-sm w-full border border-white/10">
+          <div className="glass-strong rounded-3xl p-6 max-w-md w-full border border-white/10">
             <div className="text-3xl mb-3">🔐</div>
             <h3 className="text-xl font-black text-white mb-2">Parolni tiklash</h3>
-            <p className="text-white/60 text-sm leading-relaxed mb-4">
-              Hozircha avtomatik parol tiklash mavjud emas. Parolingizni tiklash uchun
-              tashkilot mas'uli yoki Olympy administratoriga murojaat qiling. Telegram
-              orqali ham yordam olish mumkin.
-            </p>
-            <a
-              href="https://t.me/olympy_support"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block btn-ghost w-full py-3 rounded-2xl text-center font-semibold mb-2"
-            >
-              Telegramdan yozish
-            </a>
-            <button onClick={() => setForgotOpen(false)} className="btn-primary w-full py-3 rounded-2xl font-semibold">
-              Tushunarli
-            </button>
+            {forgot.step === 'phone' && (
+              <div className="space-y-4">
+                <p className="text-white/60 text-sm leading-relaxed">
+                  Telefon raqamingizni kiriting. Code bot telefoningizni tasdiqlatib, parolni tiklash kodini yuboradi.
+                </p>
+                <div>
+                  <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
+                  <input
+                    className="input-field"
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    maxLength={13}
+                    placeholder="+998901234567"
+                    value={forgot.phone}
+                    onChange={e => setForgot(prev => ({
+                      ...prev,
+                      phone: formatUzPhoneInput(e.target.value),
+                      error: '',
+                    }))}
+                    onFocus={e => setForgot(prev => ({
+                      ...prev,
+                      phone: formatUzPhoneInput(e.target.value),
+                    }))}
+                  />
+                </div>
+                {forgot.error && (
+                  <div className="text-xs text-rose-400 flex items-center gap-1">
+                    <Icon name="info" size={12} /> {forgot.error}
+                  </div>
+                )}
+                <div className="flex gap-3">
+                  <button type="button" onClick={closeForgotModal} className="btn-ghost flex-1 py-3 rounded-2xl font-semibold">
+                    Bekor qilish
+                  </button>
+                  <button
+                    type="button"
+                    onClick={startForgotReset}
+                    disabled={!normalizedForgotPhone || forgot.loading}
+                    className="btn-primary flex-1 py-3 rounded-2xl font-semibold disabled:opacity-50"
+                  >
+                    {forgot.loading ? 'Yuborilmoqda...' : "Botga o'tish"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {forgot.step === 'code' && (
+              <div className="space-y-4">
+                <div className="glass rounded-2xl p-3 border border-indigo-500/20">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-indigo-300">
+                      {forgot.botUsername ? `@${forgot.botUsername}` : 'Code bot'} kontaktni tasdiqlaydi
+                    </span>
+                    {forgot.expiresAt && !forgotExpired && (
+                      <span className="text-white/40 font-mono">{forgotRemainingLabel}</span>
+                    )}
+                  </div>
+                  {forgot.deepLink && (
+                    <a
+                      href={forgot.deepLink}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn-ghost mt-3 text-xs px-3 py-2 rounded-xl flex items-center justify-center gap-1.5 font-semibold"
+                    >
+                      <Icon name="send" size={12} /> Telegram botni ochish
+                    </a>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm text-white/60 mb-2 font-medium">Telegram kodi</label>
+                  <input
+                    value={forgot.code}
+                    onChange={e => setForgot(prev => ({
+                      ...prev,
+                      code: e.target.value.replace(/\D/g, '').slice(0, 6),
+                      error: '',
+                    }))}
+                    className="input-field text-center font-mono tracking-[0.4em]"
+                    placeholder="••••••"
+                    maxLength={6}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-white/60 mb-2 font-medium">Yangi parol</label>
+                  <input
+                    className="input-field"
+                    type="password"
+                    placeholder="Kamida 6 ta belgi"
+                    value={forgot.password}
+                    onChange={e => setForgot(prev => ({ ...prev, password: e.target.value, error: '' }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-white/60 mb-2 font-medium">Yangi parolni tasdiqlang</label>
+                  <input
+                    className="input-field"
+                    type="password"
+                    placeholder="Parolni qaytaring"
+                    value={forgot.confirm}
+                    onChange={e => setForgot(prev => ({ ...prev, confirm: e.target.value, error: '' }))}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitForgotReset(); } }}
+                  />
+                </div>
+                {forgot.error && (
+                  <div className="text-xs text-rose-400 flex items-center gap-1">
+                    <Icon name="info" size={12} /> {forgot.error}
+                  </div>
+                )}
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setForgot(prev => ({ ...prev, step: 'phone', code: '', password: '', confirm: '', error: '' }))}
+                    className="btn-ghost flex-1 py-3 rounded-2xl font-semibold"
+                  >
+                    Qayta
+                  </button>
+                  <button
+                    type="button"
+                    onClick={submitForgotReset}
+                    disabled={!forgot.code || forgot.password.length < 6 || forgot.password !== forgot.confirm || forgot.loading || forgotExpired}
+                    className="btn-primary flex-1 py-3 rounded-2xl font-semibold disabled:opacity-50"
+                  >
+                    {forgot.loading ? 'Tekshirilmoqda...' : 'Parolni yangilash'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

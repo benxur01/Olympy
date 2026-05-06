@@ -46,6 +46,8 @@ and the `OLYMPY_DB_*` env vars (see `olympy_api/settings.py`).
 | POST   | `/api/auth/login/`                            | Returns DRF token + user payload       |
 | POST   | `/api/auth/phone/start-telegram-verification/` | Starts Telegram phone verification     |
 | POST   | `/api/auth/phone/verify-otp/`                 | Verifies Telegram-delivered OTP        |
+| POST   | `/api/auth/password-reset/start/`             | Starts Telegram password reset OTP     |
+| POST   | `/api/auth/password-reset/confirm/`           | Sets a new password after OTP          |
 | POST   | `/api/telegram/webhook/auth/`                 | Auth-code bot webhook                  |
 | POST   | `/api/telegram/webhook/manager/`              | Manager notification bot webhook       |
 | GET    | `/api/me/`                                    | Auth required                          |
@@ -102,6 +104,11 @@ Auth-code flow:
 6. Backend normalizes `contact.phone_number` and compares it with the website phone.
 7. If the numbers match, backend sends an OTP to Telegram and stores only its hash.
 8. Website posts phone + OTP to `/api/auth/phone/verify-otp/`.
+
+Password reset uses the same auth-code bot: the website posts the existing
+phone to `/api/auth/password-reset/start/`, the bot sends a reset OTP after
+contact verification, then the website posts phone + OTP + new password to
+`/api/auth/password-reset/confirm/`. Old JWT sessions are invalidated.
 
 Manager-notification flow uses `/api/auth/telegram/link/start/` to return the
 manager bot deep link, then sends membership notifications and handles inline

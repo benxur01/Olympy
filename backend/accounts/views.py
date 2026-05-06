@@ -22,8 +22,10 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import PhoneVerification
 from .serializers import (
+    ConfirmPasswordResetSerializer,
     LoginSerializer,
     RegisterSerializer,
+    StartPasswordResetSerializer,
     StartTelegramPhoneVerificationSerializer,
     UserSerializer,
     VerifyOtpSerializer,
@@ -100,6 +102,7 @@ def _recent_verified_phone(normalized_phone):
     recent_window = timezone.now() - timedelta(minutes=10)
     return PhoneVerification.objects.filter(
         normalized_phone=normalized_phone,
+        purpose=PhoneVerification.PURPOSE_REGISTRATION,
         verified_at__isnull=False,
         verified_at__gte=recent_window,
     ).order_by('-verified_at').first()
@@ -458,6 +461,19 @@ def _make_otp():
     return f'{secrets.randbelow(1_000_000):06d}'
 
 
+def _prepare_otp(verification):
+    otp = _make_otp()
+    ttl = getattr(settings, 'PHONE_VERIFICATION_OTP_TTL_SECONDS', 300)
+    verification.otp_hash = make_password(otp)
+    verification.otp_expires_at = timezone.now() + timedelta(seconds=ttl)
+    verification.attempts_count = 0
+    verification.max_attempts = getattr(settings, 'PHONE_VERIFICATION_MAX_ATTEMPTS', 5)
+    verification.save(update_fields=[
+        'otp_hash', 'otp_expires_at', 'attempts_count', 'max_attempts', 'updated_at',
+    ])
+    return otp
+
+
 def _telegram_bot_token(bot='auth'):
     if bot == 'manager':
         return (
@@ -514,7 +530,11 @@ def _telegram_api_post(method, payload, bot='auth'):
 
 def _send_telegram_message(chat_id, text, reply_markup=None, bot='auth'):
     if not _telegram_bot_token(bot):
-        safe_text = 'Tasdiqlash kodi: ******' if text.startswith('Tasdiqlash kodi:') else text
+        safe_text = (
+            'Tasdiqlash kodi: ******'
+            if text.startswith(('Tasdiqlash kodi:', 'Parolni tiklash kodi:'))
+            else text
+        )
         logger.info('[telegram-%s-local] chat=%s text=%s', bot, chat_id, safe_text)
         return False
     payload = {'chat_id': chat_id, 'text': text}
@@ -649,6 +669,7 @@ def start_telegram_phone_verification(request):
     ).delete()
     verification = PhoneVerification.objects.create(
         normalized_phone=normalized_phone,
+        purpose=PhoneVerification.PURPOSE_REGISTRATION,
         verify_token=secrets.token_urlsafe(32),
         max_attempts=getattr(settings, 'PHONE_VERIFICATION_MAX_ATTEMPTS', 5),
     )
@@ -665,6 +686,38 @@ start_telegram_phone_verification.cls.throttle_scope = 'auth'
 
 
 @api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([ScopedRateThrottle])
+def start_password_reset(request):
+    """Start Telegram OTP flow for resetting an existing user's password."""
+    serializer = StartPasswordResetSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    normalized_phone = serializer.validated_data['phone']
+    PhoneVerification.objects.filter(
+        normalized_phone=normalized_phone,
+        purpose=PhoneVerification.PURPOSE_PASSWORD_RESET,
+        verified_at__isnull=True,
+        otp_expires_at__lt=timezone.now(),
+    ).delete()
+    verification = PhoneVerification.objects.create(
+        normalized_phone=normalized_phone,
+        purpose=PhoneVerification.PURPOSE_PASSWORD_RESET,
+        verify_token=secrets.token_urlsafe(32),
+        max_attempts=getattr(settings, 'PHONE_VERIFICATION_MAX_ATTEMPTS', 5),
+    )
+    return Response({
+        'verification_id': verification.id,
+        'phone': normalized_phone,
+        'verify_token': verification.verify_token,
+        'telegram_deep_link': _telegram_deep_link(verification.verify_token, bot='auth'),
+        'bot_username': _telegram_bot_username('auth'),
+    }, status=status.HTTP_201_CREATED)
+
+
+start_password_reset.cls.throttle_scope = 'auth'
+
+
+@api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([ScopedRateThrottle])
 def start_telegram_account_link(request):
@@ -677,6 +730,7 @@ def start_telegram_account_link(request):
     ).delete()
     verification = PhoneVerification.objects.create(
         normalized_phone=normalized_phone,
+        purpose=PhoneVerification.PURPOSE_ACCOUNT_LINK,
         verify_token=secrets.token_urlsafe(32),
         max_attempts=1,
     )
@@ -706,6 +760,8 @@ def verify_otp(request):
         normalized_phone=normalized_phone,
         verified_at__isnull=True,
         otp_hash__gt='',
+    ).exclude(
+        purpose=PhoneVerification.PURPOSE_PASSWORD_RESET,
     ).order_by('-created_at').first()
 
     if not verification:
@@ -730,6 +786,77 @@ def verify_otp(request):
 
 
 verify_otp.cls.throttle_scope = 'auth'
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([ScopedRateThrottle])
+def confirm_password_reset(request):
+    """Verify Telegram OTP and replace the user's password."""
+    serializer = ConfirmPasswordResetSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    normalized_phone = serializer.validated_data['phone']
+    otp = serializer.validated_data['otp']
+    new_password = serializer.validated_data['password']
+    verification = PhoneVerification.objects.filter(
+        normalized_phone=normalized_phone,
+        purpose=PhoneVerification.PURPOSE_PASSWORD_RESET,
+        verified_at__isnull=True,
+        otp_hash__gt='',
+    ).order_by('-created_at').first()
+
+    if not verification:
+        return Response({'detail': 'Verification not found'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if verification.attempts_count >= verification.max_attempts:
+        return Response({'detail': 'Too many attempts'},
+                        status=status.HTTP_429_TOO_MANY_REQUESTS)
+    if verification.otp_is_expired:
+        return Response({'detail': 'OTP expired'},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    verification.attempts_count += 1
+    if not check_password(otp, verification.otp_hash):
+        verification.save(update_fields=['attempts_count', 'updated_at'])
+        return Response({'detail': 'OTP noto\'g\'ri'},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    from django.contrib.auth import get_user_model
+    from django.core.cache import cache
+
+    User = get_user_model()
+    user = User.objects.filter(normalized_phone=normalized_phone).first()
+    if not user:
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if not user.is_active:
+        return Response({'detail': 'Hisob bloklangan'},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        user = User.objects.select_for_update().get(pk=user.pk)
+        user.set_password(new_password)
+        user.token_version = (user.token_version or 0) + 1
+        user.save(update_fields=['password', 'token_version'])
+        verification.verified_at = timezone.now()
+        verification.save(update_fields=['attempts_count', 'verified_at', 'updated_at'])
+        PhoneVerification.objects.filter(
+            normalized_phone=normalized_phone,
+            purpose=PhoneVerification.PURPOSE_PASSWORD_RESET,
+            verified_at__isnull=True,
+        ).exclude(pk=verification.pk).delete()
+    cache.delete(LoginSerializer._failed_cache_key(normalized_phone))
+
+    payload = _jwt_payload(user)
+    response = Response({
+        **payload,
+        'user': UserSerializer(user, context={'request': request}).data,
+        'password_reset': True,
+    })
+    return _set_auth_cookies(response, payload)
+
+
+confirm_password_reset.cls.throttle_scope = 'auth'
 
 
 def _message_from_update(update):
@@ -946,11 +1073,28 @@ def handle_telegram_update(update, bot='auth'):
             existing_user = User.objects.filter(normalized_phone=verification.normalized_phone).first()
             if existing_user:
                 _link_user_to_telegram(existing_user, chat_id, telegram_user_id)
+                if verification.purpose == PhoneVerification.PURPOSE_PASSWORD_RESET:
+                    otp = _prepare_otp(verification)
+                    _send_telegram_message(
+                        chat_id,
+                        f'Parolni tiklash kodi: {otp}',
+                        bot=bot,
+                    )
+                    return {'ok': True}
+
                 verification.verified_at = timezone.now()
                 verification.save(update_fields=['verified_at', 'updated_at'])
                 _send_telegram_message(
                     chat_id,
                     "Telegram bot hisobingizga ulandi. Endi arizalarni botdan tasdiqlashingiz mumkin.",
+                    bot=bot,
+                )
+                return {'ok': True}
+
+            if verification.purpose == PhoneVerification.PURPOSE_PASSWORD_RESET:
+                _send_telegram_message(
+                    chat_id,
+                    "Bu telefon raqam bilan hisob topilmadi.",
                     bot=bot,
                 )
                 return {'ok': True}
@@ -963,14 +1107,7 @@ def handle_telegram_update(update, bot='auth'):
                 )
                 return {'ok': True}
 
-            otp = _make_otp()
-            ttl = getattr(settings, 'PHONE_VERIFICATION_OTP_TTL_SECONDS', 300)
-            verification.otp_hash = make_password(otp)
-            verification.otp_expires_at = timezone.now() + timedelta(seconds=ttl)
-            verification.attempts_count = 0
-            verification.save(update_fields=[
-                'otp_hash', 'otp_expires_at', 'attempts_count', 'updated_at',
-            ])
+            otp = _prepare_otp(verification)
             _send_telegram_message(chat_id, f'Tasdiqlash kodi: {otp}', bot=bot)
         else:
             _send_telegram_message(chat_id, 'Telefon raqam mos kelmadi.', bot=bot)

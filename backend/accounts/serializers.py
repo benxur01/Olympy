@@ -178,6 +178,22 @@ class StartTelegramPhoneVerificationSerializer(serializers.Serializer):
         return norm
 
 
+class StartPasswordResetSerializer(serializers.Serializer):
+    phone = serializers.CharField(max_length=20)
+
+    def validate_phone(self, value):
+        norm = normalize_phone(value)
+        if not norm:
+            raise serializers.ValidationError("Telefon raqam noto'g'ri")
+        try:
+            user = User.objects.get(normalized_phone=norm)
+        except User.DoesNotExist:
+            raise serializers.ValidationError("Bu telefon raqam bilan hisob topilmadi")
+        if not user.is_active:
+            raise serializers.ValidationError("Hisob bloklangan")
+        return norm
+
+
 class VerifyOtpSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=20)
     otp = serializers.CharField(min_length=4, max_length=12)
@@ -187,3 +203,7 @@ class VerifyOtpSerializer(serializers.Serializer):
         if not norm:
             raise serializers.ValidationError("Telefon raqam noto'g'ri")
         return norm
+
+
+class ConfirmPasswordResetSerializer(VerifyOtpSerializer):
+    password = serializers.CharField(write_only=True, min_length=6)
