@@ -91,7 +91,22 @@ class PhoneVerification(models.Model):
     ``telegram_chat_id`` is populated only after Telegram sends /start with the
     session verify token.
     """
+    PURPOSE_REGISTRATION = 'registration'
+    PURPOSE_ACCOUNT_LINK = 'account_link'
+    PURPOSE_PASSWORD_RESET = 'password_reset'
+    PURPOSE_CHOICES = [
+        (PURPOSE_REGISTRATION, 'Registration'),
+        (PURPOSE_ACCOUNT_LINK, 'Account link'),
+        (PURPOSE_PASSWORD_RESET, 'Password reset'),
+    ]
+
     normalized_phone = models.CharField(max_length=20, db_index=True)
+    purpose = models.CharField(
+        max_length=32,
+        choices=PURPOSE_CHOICES,
+        default=PURPOSE_REGISTRATION,
+        db_index=True,
+    )
     verify_token = models.CharField(max_length=96, unique=True, db_index=True)
     telegram_chat_id = models.CharField(max_length=64, blank=True)
     telegram_user_id = models.CharField(max_length=64, blank=True)

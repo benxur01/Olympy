@@ -128,6 +128,16 @@ flow:
 POST /api/auth/telegram/link/start/
 ```
 
+Password reset also uses the auth-code bot:
+
+```text
+POST /api/auth/password-reset/start/
+POST /api/auth/password-reset/confirm/
+```
+
+The user confirms their phone in Telegram, receives a reset OTP, then sets a
+new password. Existing sessions are invalidated after the password changes.
+
 The manager bot also accepts PDF/TXT/CSV/image rosters and plain text commands.
 It extracts student names/phones/codes, then the backend approves only matches
 that the linked manager/director is allowed to approve. For free-form manager

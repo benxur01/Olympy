@@ -313,6 +313,8 @@ export const OlympyApi = {
   registerOrganization: (payload) => request('/api/auth/register-organization/', { method: 'POST', body: payload }),
   refreshToken: (refresh) => request('/api/auth/token/refresh/', { method: 'POST', body: refresh ? { refresh } : undefined, retryOnAuth: false }),
   startTelegramVerification: (payload) => request('/api/auth/phone/start-telegram-verification/', { method: 'POST', body: payload }),
+  startPasswordReset: (payload) => request('/api/auth/password-reset/start/', { method: 'POST', body: payload }),
+  confirmPasswordReset: (payload) => request('/api/auth/password-reset/confirm/', { method: 'POST', body: payload }),
   startTelegramLink: (token) => request('/api/auth/telegram/link/start/', { method: 'POST', token }),
   verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload }),
   // Me
