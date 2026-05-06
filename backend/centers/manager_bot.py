@@ -26,6 +26,7 @@ MAX_DOCUMENT_TEXT_CHARS = 80_000
 MAX_CONTEXT_PENDING_ROWS = 20
 DEFAULT_CONVERSATION_TTL_SECONDS = 6 * 60 * 60
 DEFAULT_HISTORY_MESSAGES = 8
+OPENAI_ERROR_CACHE_SECONDS = 30 * 60
 
 APPROVAL_KEYWORDS = (
     'tasdiqla',
@@ -122,13 +123,16 @@ def extract_document_text(document_bytes, mime_type='', filename=''):
 
 def _approval_intent(text, has_file=False):
     lowered = str(text or '').lower()
+    if has_file:
+        return True
     if any(keyword in lowered for keyword in APPROVAL_KEYWORDS):
         return True
-    if any(keyword in lowered for keyword in ROSTER_KEYWORDS):
+    has_roster_word = any(keyword in lowered for keyword in ROSTER_KEYWORDS)
+    has_phone = bool(re.search(r'(?:\+?998)?\d[\d\s().-]{7,}\d', lowered))
+    has_code = bool(re.search(r'\b(?:kod|code)\s*[:#-]?\s*[a-z0-9_-]{3,16}\b', lowered, flags=re.IGNORECASE))
+    if has_roster_word and (has_phone or has_code):
         return True
     if '\n' in str(text or ''):
-        return True
-    if has_file:
         return True
     return False
 
@@ -284,21 +288,72 @@ def _is_memory_clear_request(text):
     return any(keyword in lowered for keyword in MEMORY_CLEAR_KEYWORDS)
 
 
+def _compact_text(text):
+    return re.sub(r'\s+', ' ', str(text or '').strip().lower())
+
+
+def _has_any(text, words):
+    return any(word in text for word in words)
+
+
+def _is_help_request(text):
+    lowered = _compact_text(text)
+    exact = {
+        '/help', 'help', 'yordam', 'komanda', 'komandalar', 'buyruq',
+        'buyruqlar', 'nima qila olasan',
+    }
+    return lowered in exact or lowered.startswith('/help ')
+
+
+def _is_approved_count_request(text):
+    lowered = _compact_text(text)
+    approved_words = ('tasdiqlangan', 'qabul qilingan', 'approved')
+    count_words = ('nechta', 'qancha', 'soni', 'sanog', 'hisob', 'count')
+    return _has_any(lowered, approved_words) and _has_any(lowered, count_words)
+
+
+def _is_pending_summary_request(text):
+    lowered = _compact_text(text)
+    explicit_phrases = (
+        'kutilayotgan arizalar',
+        'pending arizalar',
+        'pending',
+        'arizalar ro',
+        "arizalar ro'",
+        'arizalarni chiqar',
+        "ro'yxatni chiqar",
+        'royxatni chiqar',
+    )
+    count_words = ('nechta', 'qancha', 'soni', 'sanog', 'hisob', 'count', 'bor')
+    show_words = ("ko'rsat", 'korsat', 'chiqar', 'ber', "ro'yxat", 'royxat', 'status', 'holat')
+    if lowered in ('pending', 'status', 'holat', 'arizalar', 'kutilayotganlar'):
+        return True
+    if _has_any(lowered, explicit_phrases) and (_has_any(lowered, count_words) or _has_any(lowered, show_words)):
+        return True
+    return _has_any(lowered, ('kutil', 'ariza')) and _has_any(lowered, count_words)
+
+
+def _is_center_summary_request(text):
+    lowered = _compact_text(text)
+    center_words = ('markaz', 'center', 'tashkilot')
+    show_words = ("ko'rsat", 'korsat', 'qaysi', 'qaysilar', 'roʻyxat', "ro'yxat", 'royxat', 'mening', 'boshqar')
+    return _has_any(lowered, center_words) and _has_any(lowered, show_words)
+
+
 def _deterministic_answer(actor, text, ctx):
-    lowered = str(text or '').lower()
     if _is_memory_clear_request(text):
         _clear_conversation(actor)
         return "Bo'ldi, shu suhbat xotirasini tozaladim. Yangi savoldan davom etamiz."
-    if any(word in lowered for word in ('help', 'yordam', 'nima qila olasan', 'komanda', 'buyruq')):
+    if _is_help_request(text):
         return _help_text()
-    if any(word in lowered for word in ('tasdiqlangan', 'approved')):
+    if _is_approved_count_request(text):
         return (
             f"Hozir tasdiqlangan o'quvchilar: {ctx['approved_students_count']} ta.\n"
             f"Kutilayotgan o'quvchi arizalari: {len(ctx['pending_students'])} ta."
         )
-    if any(word in lowered for word in ('pending', 'kutil', 'ariza', 'nechta', "ro'yxat", 'royxat')):
+    if _is_pending_summary_request(text):
         return _format_pending_summary(ctx)
-    if any(word in lowered for word in ('markaz', 'center', 'tashkilot')):
+    if _is_center_summary_request(text):
         if not ctx['centers']:
             return "Sizda tasdiqlangan manager/direktor markazi topilmadi."
         return '\n'.join([
@@ -314,6 +369,20 @@ def _openai_keys():
     if single:
         keys.append(single)
     return list(dict.fromkeys(key for key in keys if key))
+
+
+def _openai_error_cache_key():
+    return 'manager_bot:openai_last_error'
+
+
+def _remember_openai_error(error_code):
+    if error_code in ('insufficient_quota', 'invalid_key'):
+        cache.set(_openai_error_cache_key(), error_code, timeout=OPENAI_ERROR_CACHE_SECONDS)
+
+
+def _cached_openai_error():
+    cached = cache.get(_openai_error_cache_key())
+    return cached if cached in ('insufficient_quota', 'invalid_key') else ''
 
 
 def _gemini_keys():
@@ -415,6 +484,9 @@ def _openai_answer(actor, text, ctx):
     api_keys = _openai_keys()
     if not api_keys:
         return '', 'missing_key'
+    cached_error = _cached_openai_error()
+    if cached_error:
+        return '', cached_error
     prompt = _manager_ai_prompt(actor, text, ctx)
     payload = {
         'model': getattr(settings, 'AI_MANAGER_BOT_MODEL', 'gpt-4o-mini'),
@@ -467,8 +539,10 @@ def _openai_answer(actor, text, ctx):
                 error_code or '-',
             )
             if status == 429 and (error_code == 'insufficient_quota' or error_type == 'insufficient_quota'):
+                _remember_openai_error('insufficient_quota')
                 return '', 'insufficient_quota'
             if status in (401, 403):
+                _remember_openai_error('invalid_key')
                 return '', 'invalid_key'
             if status not in (401, 403, 408, 409, 429, 500, 502, 503, 504):
                 break
