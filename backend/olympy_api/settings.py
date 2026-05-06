@@ -364,7 +364,12 @@ AI_MANAGER_BOT_GEMINI_MODEL = os.environ.get('AI_MANAGER_BOT_GEMINI_MODEL', AI_R
 
 # AI question generation for manager/teacher/owner panels. Generated questions
 # are only previews until the staff user explicitly saves them.
-AI_QUESTION_OPENAI_API_KEY = os.environ.get('AI_QUESTION_OPENAI_API_KEY', '')
+AI_QUESTION_OPENAI_API_KEY = (
+    os.environ.get('AI_QUESTION_OPENAI_API_KEY')
+    or AI_MANAGER_BOT_OPENAI_API_KEY
+    or AI_ROSTER_OPENAI_API_KEY
+    or os.environ.get('OPENAI_API_KEY', '')
+)
 AI_QUESTION_OPENAI_API_KEYS = [
     key.strip() for key in os.environ.get('AI_QUESTION_OPENAI_API_KEYS', '').split(',')
     if key.strip()
@@ -373,5 +378,21 @@ if AI_QUESTION_OPENAI_API_KEY:
     AI_QUESTION_OPENAI_API_KEYS.append(AI_QUESTION_OPENAI_API_KEY)
 AI_QUESTION_OPENAI_API_KEYS = list(dict.fromkeys(AI_QUESTION_OPENAI_API_KEYS))
 AI_QUESTION_MODEL = os.environ.get('AI_QUESTION_MODEL', 'gpt-4o-mini')
+AI_QUESTION_GEMINI_API_KEY = (
+    os.environ.get('AI_QUESTION_GEMINI_API_KEY')
+    or AI_MANAGER_BOT_GEMINI_API_KEY
+    or AI_ROSTER_GEMINI_API_KEY
+    or os.environ.get('GEMINI_API_KEY', '')
+)
+AI_QUESTION_GEMINI_API_KEYS = [
+    key.strip() for key in os.environ.get('AI_QUESTION_GEMINI_API_KEYS', '').split(',')
+    if key.strip()
+]
+if AI_QUESTION_GEMINI_API_KEY:
+    AI_QUESTION_GEMINI_API_KEYS.append(AI_QUESTION_GEMINI_API_KEY)
+AI_QUESTION_GEMINI_API_KEYS = list(dict.fromkeys(AI_QUESTION_GEMINI_API_KEYS))
+AI_QUESTION_GEMINI_MODEL = os.environ.get('AI_QUESTION_GEMINI_MODEL', AI_MANAGER_BOT_GEMINI_MODEL)
 AI_QUESTION_MAX_COUNT = int(os.environ.get('AI_QUESTION_MAX_COUNT', '30'))
 AI_QUESTION_MAX_OUTPUT_TOKENS = int(os.environ.get('AI_QUESTION_MAX_OUTPUT_TOKENS', '6000'))
+AI_QUESTION_PDF_MAX_BYTES = int(os.environ.get('AI_QUESTION_PDF_MAX_BYTES', str(20 * 1024 * 1024)))
+AI_QUESTION_PDF_MAX_TEXT_CHARS = int(os.environ.get('AI_QUESTION_PDF_MAX_TEXT_CHARS', '120000'))
