@@ -365,10 +365,19 @@ AI_MANAGER_BOT_GEMINI_MODEL = os.environ.get('AI_MANAGER_BOT_GEMINI_MODEL', AI_R
 AI_MANAGER_BOT_GEMINI_FALLBACK_MODELS = [
     model.strip() for model in os.environ.get(
         'AI_MANAGER_BOT_GEMINI_FALLBACK_MODELS',
-        'gemini-2.5-flash-lite,gemini-flash-lite-latest,gemini-flash-latest,gemini-2.0-flash-lite',
+        (
+            'gemini-2.5-flash-lite,gemini-flash-lite-latest,gemini-flash-latest,'
+            'gemini-3-flash-preview,gemini-3-pro-preview,gemini-3.1-pro-preview,'
+            'gemini-3.1-flash-lite-preview,gemini-2.5-pro,gemini-pro-latest,'
+            'gemini-2.0-flash,gemini-2.0-flash-001,gemini-2.0-flash-lite,'
+            'gemini-2.0-flash-lite-001'
+        ),
     ).split(',')
     if model.strip()
 ]
+AI_MANAGER_BOT_GEMINI_AUTO_DISCOVER_MODELS = env_bool('AI_MANAGER_BOT_GEMINI_AUTO_DISCOVER_MODELS', True)
+AI_MANAGER_BOT_GEMINI_MODEL_CACHE_SECONDS = int(os.environ.get('AI_MANAGER_BOT_GEMINI_MODEL_CACHE_SECONDS', str(6 * 60 * 60)))
+AI_MANAGER_BOT_GEMINI_MAX_MODELS = int(os.environ.get('AI_MANAGER_BOT_GEMINI_MAX_MODELS', '40'))
 AI_MANAGER_BOT_MEMORY_ENABLED = env_bool('AI_MANAGER_BOT_MEMORY_ENABLED', True)
 AI_MANAGER_BOT_MEMORY_TTL_SECONDS = int(os.environ.get('AI_MANAGER_BOT_MEMORY_TTL_SECONDS', str(6 * 60 * 60)))
 AI_MANAGER_BOT_HISTORY_MESSAGES = int(os.environ.get('AI_MANAGER_BOT_HISTORY_MESSAGES', '8'))

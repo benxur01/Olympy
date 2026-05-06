@@ -158,7 +158,9 @@ questions, set `AI_MANAGER_BOT_OPENAI_API_KEY`/`OPENAI_API_KEY` or
 work without an AI key. Free-form manager chat uses a warmer Uzbek prompt,
 OpenAI first and Gemini fallback, and a short-lived conversation memory so
 follow-up questions feel natural. Managers can write `xotirani tozala` to clear
-that temporary chat context.
+that temporary chat context. Gemini fallback uses the configured model list and
+also auto-discovers available `generateContent` Gemini text models, so if one
+model is busy, blocked, or out of quota, the bot tries the next compatible model.
 
 Telegram webhook endpoint:
 
