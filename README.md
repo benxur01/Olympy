@@ -138,6 +138,18 @@ POST /api/auth/password-reset/confirm/
 The user confirms their phone in Telegram, receives a reset OTP, then sets a
 new password. Existing sessions are invalidated after the password changes.
 
+Question creator PDF import uses:
+
+```text
+POST /api/questions/pdf-preview/
+```
+
+The backend extracts text from normal PDFs, asks OpenAI for ordered structured
+questions, and falls back to Gemini automatically. For scanned PDFs without
+embedded text, Gemini analyzes the PDF document directly. Answers found in the
+PDF or answer key are attached to the matching question; inferred answers are
+shown in the preview as needing review before saving.
+
 The manager bot also accepts PDF/TXT/CSV/image rosters and plain text commands.
 It extracts student names/phones/codes, then the backend approves only matches
 that the linked manager/director is allowed to approve. For free-form manager

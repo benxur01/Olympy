@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, parser_classes, permission_classes, throttle_classes
@@ -10,6 +11,7 @@ from centers.models import CenterMembership
 
 from .ai_generation import generate_questions
 from .models import Question
+from .pdf_generation import extract_questions_from_pdf
 from .serializers import QuestionSerializer
 
 
@@ -102,6 +104,59 @@ def generate_ai_questions(request):
             status=status_code,
         )
     return Response({'questions': result['questions']})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+@throttle_classes([AiQuestionRateThrottle])
+def preview_pdf_questions(request):
+    """POST /api/questions/pdf-preview/ — extract questions from an uploaded PDF."""
+    center_id = request.data.get('center')
+    if not center_id:
+        return Response(
+            {'detail': 'center majburiy'},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if not _user_can_create_for_center(request.user, center_id):
+        return Response(
+            {'detail': "Savol yaratish uchun o'qituvchi/manager arizangiz tasdiqlanishi kerak"},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+    pdf_file = request.FILES.get('pdf') or request.FILES.get('file') or request.FILES.get('document')
+    if not pdf_file:
+        return Response({'detail': 'PDF fayl yuboring'}, status=http_status.HTTP_400_BAD_REQUEST)
+    filename = str(getattr(pdf_file, 'name', '') or '').lower()
+    content_type = str(getattr(pdf_file, 'content_type', '') or '').lower()
+    if content_type != 'application/pdf' and not filename.endswith('.pdf'):
+        return Response({'detail': 'Faqat PDF fayl qabul qilinadi'}, status=http_status.HTTP_400_BAD_REQUEST)
+    max_bytes = getattr(settings, 'AI_QUESTION_PDF_MAX_BYTES', 20 * 1024 * 1024)
+    if pdf_file.size and pdf_file.size > max_bytes:
+        return Response(
+            {'detail': f"PDF juda katta. Limit: {max_bytes // (1024 * 1024)} MB"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    pdf_bytes = pdf_file.read()
+    if not pdf_bytes:
+        return Response({'detail': "PDF fayl bo'sh"}, status=http_status.HTTP_400_BAD_REQUEST)
+    result = extract_questions_from_pdf(
+        pdf_bytes=pdf_bytes,
+        subject=request.data.get('subject') or '',
+        difficulty=request.data.get('difficulty') or 'medium',
+        question_type=request.data.get('question_type') or 'multiple_choice',
+    )
+    if not result.get('ok'):
+        return Response(
+            {'detail': result.get('error') or "PDFdan savollarni ajratib bo'lmadi"},
+            status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+    return Response({
+        'questions': result.get('questions') or [],
+        'provider': result.get('provider') or '',
+        'pdf_text_chars': result.get('pdf_text_chars', 0),
+        'page_count': result.get('page_count', 0),
+        'used_pdf_vision': bool(result.get('used_pdf_vision')),
+    })
 
 
 @api_view(['GET'])

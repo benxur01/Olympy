@@ -49,6 +49,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [pdfFile, setPdfFile] = React.useState(null);
   const [pdfLoading, setPdfLoading] = React.useState(false);
   const [pdfResult, setPdfResult] = React.useState(null);
+  const [pdfProvider, setPdfProvider] = React.useState('');
+  const [pdfVision, setPdfVision] = React.useState(false);
   const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject:'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0 });
   const [newSubjectModal, setNewSubjectModal] = React.useState(false);
   const [newSubject, setNewSubject] = React.useState('');
@@ -90,6 +92,20 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     options: Array.isArray(q.options) ? q.options : [],
     correctAnswer: q.correct_answer ?? q.correctAnswer ?? 0,
     source: 'ai',
+  });
+
+  const _mapPdfGeneratedQuestion = (q, i) => ({
+    _tmpId: Date.now() + i,
+    text: q.text,
+    subject: q.subject || aiForm.subject,
+    difficulty: _diffFromApi(q.difficulty) || aiForm.level,
+    score: q.score ?? 3,
+    options: Array.isArray(q.options) ? q.options : [],
+    correctAnswer: q.correct_answer ?? q.correctAnswer ?? 0,
+    source: 'pdf',
+    originalNumber: q.original_number || q.order || i + 1,
+    answerSource: q.answer_source || 'missing',
+    needsReview: !!q.needs_review,
   });
 
   const generateAI = async () => {
@@ -134,17 +150,43 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     }, 2500);
   };
 
-  const handlePDF = (e) => {
+  const handlePDF = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
     setPdfFile(f.name);
     setPdfLoading(true);
+    setPdfResult(null);
+    setPdfProvider('');
+    setPdfVision(false);
+    if (isApi) {
+      try {
+        const response = await OlympyApi.extractPdfQuestions(f, {
+          center: myCenter?.backendId ?? myCenterId,
+          subject: aiForm.subject,
+          difficulty: _diffToApi(aiForm.level),
+          question_type: aiForm.type,
+        }, OlympyApi.getToken());
+        const extracted = (response?.questions || []).map(_mapPdfGeneratedQuestion);
+        setPdfResult(extracted);
+        setPdfProvider(response?.provider || '');
+        setPdfVision(!!response?.used_pdf_vision);
+        if (!extracted.length) showApiToast("⚠ PDFdan savol topilmadi");
+      } catch (err) {
+        console.warn('extractPdfQuestions failed:', err);
+        showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "PDF tahlil qilinmadi"}`);
+      } finally {
+        setPdfLoading(false);
+        e.target.value = '';
+      }
+      return;
+    }
     setTimeout(() => {
       setPdfResult(Array.from({length:5}, (_, i) => ({
         _tmpId: Date.now()+i, text:`PDF dan ajratilgan ${i+1}-savol`,
         subject: aiForm.subject || 'Matematika', difficulty:"O'rta", score:3,
-        options:['A','B','C','D'], correctAnswer:0, source:'pdf',
+        options:['A','B','C','D'], correctAnswer:0, source:'pdf', answerSource:'pdf', needsReview:false,
       })));
+      setPdfProvider('demo');
       setPdfLoading(false);
     }, 2000);
   };
@@ -231,7 +273,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     if (!pdfResult || pdfResult.length === 0) return;
     if (isApi) {
       _createApiBulk(pdfResult, 'pdf')
-        .then(() => { apiQuestionsRes.reload(); setPdfResult(null); setPdfFile(null); setMode('list'); })
+        .then(() => { apiQuestionsRes.reload(); setPdfResult(null); setPdfFile(null); setPdfProvider(''); setPdfVision(false); setMode('list'); })
         .catch(err => { console.warn('createQuestion (pdf) failed:', err); showApiToast("⚠ Savollar saqlab bo'lmadi"); });
       return;
     }
@@ -248,6 +290,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     })));
     setPdfResult(null);
     setPdfFile(null);
+    setPdfProvider('');
+    setPdfVision(false);
     setMode('list');
   };
 
@@ -282,7 +326,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             <button onClick={() => setMode('pdf')} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5 border-cyan-500/30 text-cyan-300"><Icon name="upload" size={14} /> PDF dan</button>
           </div>
         )}
-        {mode !== 'list' && <button onClick={() => { setMode('list'); setAiResult(null); setPdfResult(null); }} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5"><Icon name="arrowLeft" size={14} /> Orqaga</button>}
+        {mode !== 'list' && <button onClick={() => { setMode('list'); setAiResult(null); setPdfResult(null); setPdfProvider(''); setPdfVision(false); }} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5"><Icon name="arrowLeft" size={14} /> Orqaga</button>}
       </div>
 
       {/* LIST MODE */}
@@ -464,11 +508,21 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               <div className="w-10 h-10 bg-cyan-500/15 rounded-xl flex items-center justify-center text-cyan-400"><Icon name="file" size={18} /></div>
               <div><div className="font-bold text-white">PDF dan Savol Yaratish</div><div className="text-xs text-white/40">PDF yuklang va avtomatik savollar ajratiladi</div></div>
             </div>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div><label className="block text-xs text-white/50 mb-1.5">Fan</label>
+                <select className="input-field" value={aiForm.subject} onChange={e => setAiForm({...aiForm, subject: e.target.value})}>
+                  {allSubjects.map(s => <option key={s}>{s}</option>)}
+                </select></div>
+              <div><label className="block text-xs text-white/50 mb-1.5">Qiyinlik</label>
+                <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
+                  {LEVELS.map(l => <option key={l}>{l}</option>)}
+                </select></div>
+            </div>
             <label className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-white/10 hover:border-cyan-500/30 transition-all cursor-pointer group">
               <div className="text-4xl mb-3 group-hover:scale-110 transition-transform">📄</div>
               <div className="text-sm font-medium text-white/60 mb-1">{pdfFile || 'PDF faylni shu yerga tashlang'}</div>
               <div className="text-xs text-white/30">yoki bosib tanlang</div>
-              <input type="file" accept=".pdf" className="hidden" onChange={handlePDF} />
+              <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={handlePDF} />
             </label>
             {pdfLoading && (
               <div className="mt-4 space-y-2 ai-shimmer rounded-xl p-4">
@@ -480,12 +534,40 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           {pdfResult && !pdfLoading && (
             <div className="glass rounded-2xl p-5 space-y-3 animate-in">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-bold text-white">{pdfResult.length} ta savol ajratildi</div>
+                <div>
+                  <div className="text-sm font-bold text-white">{pdfResult.length} ta savol ajratildi</div>
+                  <div className="text-xs text-white/35">
+                    {pdfProvider ? `${pdfProvider === 'openai' ? 'OpenAI' : pdfProvider === 'gemini' ? 'Gemini' : 'Demo'} tahlil qildi` : 'AI tahlil qildi'}
+                    {pdfVision ? ' · PDF vision' : ''}
+                  </div>
+                </div>
                 <div className="flex gap-2">
                   <button onClick={savePdfQuestions} className="btn-primary text-xs px-4 py-1.5 rounded-xl font-semibold">Saqlash</button>
                 </div>
               </div>
-              {pdfResult.map((q,i) => <div key={i} className="glass rounded-xl p-3 text-sm text-white/70">{i+1}. {q.text}</div>)}
+              {pdfResult.map((q,i) => (
+                <div key={i} className="glass rounded-xl p-3 text-sm text-white/70 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-cyan-300 font-bold">{i+1}.</span>
+                    <div className="flex-1">
+                      <div>{q.text}</div>
+                      {q.needsReview && (
+                        <div className="mt-1 text-[11px] text-amber-300">Javob AI tomonidan taxmin qilindi, saqlashdan oldin tekshiring</div>
+                      )}
+                    </div>
+                  </div>
+                  {Array.isArray(q.options) && q.options.length > 0 && (
+                    <div className="grid gap-1.5 sm:grid-cols-2">
+                      {q.options.map((option, optionIndex) => (
+                        <div key={optionIndex}
+                          className={`rounded-lg px-2 py-1 text-xs ${optionIndex === q.correctAnswer ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'bg-white/5 text-white/50'}`}>
+                          {String.fromCharCode(65 + optionIndex)}. {option}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>

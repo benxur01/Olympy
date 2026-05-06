@@ -364,6 +364,16 @@ export const OlympyApi = {
   getQuestions: (centerId, token) => request(`/api/questions/?center=${centerId}`, { token }).then(unwrapList),
   createQuestion: (payload, token) => request('/api/questions/', { method: 'POST', body: payload, token }),
   generateAiQuestions: (payload, token) => request('/api/questions/generate-ai/', { method: 'POST', body: payload, token }),
+  extractPdfQuestions: (pdfFile, payload, token) => {
+    const fd = new FormData();
+    fd.append('pdf', pdfFile);
+    Object.keys(payload || {}).forEach(k => {
+      const v = payload[k];
+      if (v == null) return;
+      fd.append(k, String(v));
+    });
+    return request('/api/questions/pdf-preview/', { method: 'POST', body: fd, token });
+  },
   // Question with image — accepts a File via FormData
   createQuestionMultipart: (payload, imageFile, token) => {
     const fd = new FormData();

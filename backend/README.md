@@ -48,6 +48,7 @@ and the `OLYMPY_DB_*` env vars (see `olympy_api/settings.py`).
 | POST   | `/api/auth/phone/verify-otp/`                 | Verifies Telegram-delivered OTP        |
 | POST   | `/api/auth/password-reset/start/`             | Starts Telegram password reset OTP     |
 | POST   | `/api/auth/password-reset/confirm/`           | Sets a new password after OTP          |
+| POST   | `/api/questions/pdf-preview/`                 | Extracts PDF questions with AI preview |
 | POST   | `/api/telegram/webhook/auth/`                 | Auth-code bot webhook                  |
 | POST   | `/api/telegram/webhook/manager/`              | Manager notification bot webhook       |
 | GET    | `/api/me/`                                    | Auth required                          |
@@ -120,6 +121,13 @@ pending student matches for the linked manager/director. Free-form questions use
 `AI_MANAGER_BOT_OPENAI_API_KEY` or `AI_MANAGER_BOT_GEMINI_API_KEY` when
 configured; basic status commands such as "kutilayotgan arizalar nechta?" work
 without an AI key.
+
+Question creator PDF import posts multipart PDF files to
+`/api/questions/pdf-preview/`. The backend extracts embedded PDF text with
+`pypdf`, asks OpenAI for a structured question preview, and automatically falls
+back to Gemini. If embedded text is unavailable, Gemini receives the PDF as a
+document input. The preview preserves PDF order, maps answer keys when present,
+and marks inferred/missing answers for review before saving.
 
 Local development can leave bot tokens blank. In that mode, messages
 are logged instead of sent to Telegram. For a real bot, expose the local backend
