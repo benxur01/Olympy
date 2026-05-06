@@ -43,12 +43,23 @@ const App = () => {
     const restore = async () => {
       const requestedPage = pageFromPath();
       const auth = globalThis.OlympyApi?.loadAuth?.();
-      if (auth?.user) {
-        if (cancelled) return;
-        setApiUser(auth.user);
-        setPage(requestedPage || roleHomePage(auth.user));
-        setBootstrapping(false);
-        return;
+      // localStorage'dagi user obyektiga ko'r-ko'rona ishonmaslik —
+      // token eskirgan bo'lsa dashboard 401 olib bounce loop yaratadi.
+      // Avval getMe bilan validate qilamiz.
+      if (auth?.user && auth?.token) {
+        try {
+          const freshUser = await globalThis.OlympyApi?.getMe?.(auth.token);
+          if (!freshUser || cancelled) throw new Error('Stale token');
+          const mappedUser = globalThis.OlympyApi.mapBackendUser(freshUser);
+          globalThis.OlympyApi.saveAuth({ token: auth.token, refresh: auth.refresh, user: mappedUser });
+          setApiUser(mappedUser);
+          setPage(requestedPage || roleHomePage(mappedUser));
+          setBootstrapping(false);
+          return;
+        } catch {
+          // Token stale — tozalab cookie session sinab ko'ramiz
+          try { globalThis.OlympyApi?.clearAuth?.(); } catch {}
+        }
       }
       try {
         const freshUser = await globalThis.OlympyApi?.getMe?.(null);
@@ -82,7 +93,14 @@ const App = () => {
     setActiveOlympiad(null);
     setSwitcherOpen(false);
     try { globalThis.OlympyApi?.clearAuth?.(); } catch {}
-    setPage('landing');
+    // Race-condition'ni oldini olish: agar foydalanuvchi allaqachon public
+    // sahifada bo'lsa (login/register/landing), sahifani o'zgartirmaymiz.
+    // Aks holda: foydalanuvchi "Kirish"ni bosib login'ga o'tadi, fonda eski
+    // stale token bilan API 401 qaytaradi, 'olympy:logout' fires, va
+    // login'dan landing'ga otib yuboriladi.
+    setPage(currentPage =>
+      ['landing', 'login', 'register'].includes(currentPage) ? currentPage : 'landing'
+    );
   };
 
   // 401 javobi kelganda api.js auth state'ni tozalab 'olympy:logout' yuboradi.
