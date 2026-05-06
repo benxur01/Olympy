@@ -2,6 +2,16 @@
 
 const OlympyStore = (() => {
   const KEY = 'olympy_store_v4';
+  const apiBaseUrl = (
+    import.meta.env?.VITE_API_BASE_URL ||
+    (import.meta.env?.PROD ? (globalThis.location?.origin || '') : 'http://localhost:8000')
+  ).replace(/\/+$/, '');
+  const makeAssetUrl = (url) => {
+    if (!url) return '';
+    const value = String(url);
+    if (/^https?:\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:')) return value;
+    return `${apiBaseUrl}${value.startsWith('/') ? '' : '/'}${value}`;
+  };
 
   // ─── Phone normalization ─────────────────────────────────────────────────
   // "+998 90 123 45 67", "+998901234567", "998901234567", "90 123 45 67"
@@ -656,6 +666,7 @@ const mapApiCenter = (c) => {
     ownerId: c.owner != null ? String(c.owner) : null,
     ownerName: c.owner_full_name || '',
     ownerPhone: c.owner_phone || '',
+    imageUrl: makeAssetUrl(c.image_url || c.imageUrl || ''),
     status: c.status || 'pending',
     subjects: Array.isArray(c.subjects) ? c.subjects : [],
     rating: parseFloat(c.rating) || 0,

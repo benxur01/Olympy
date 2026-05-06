@@ -356,7 +356,31 @@ def me(request):
     """
     if not request.user.is_active:
         return Response({'detail': 'Hisob bloklangan'}, status=status.HTTP_401_UNAUTHORIZED)
-    return Response(UserSerializer(request.user).data)
+    return Response(UserSerializer(request.user, context={'request': request}).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_my_avatar(request):
+    """POST /api/auth/me/avatar/ — upload current user's profile image."""
+    image = (
+        request.FILES.get('avatar')
+        or request.FILES.get('image')
+        or request.FILES.get('photo')
+    )
+    if not image:
+        return Response({'detail': 'Rasm faylini yuboring'}, status=status.HTTP_400_BAD_REQUEST)
+    if image.content_type and not image.content_type.startswith('image/'):
+        return Response({'detail': 'Faqat rasm fayl qabul qilinadi'}, status=status.HTTP_400_BAD_REQUEST)
+    max_bytes = getattr(settings, 'PROFILE_IMAGE_MAX_BYTES', 5 * 1024 * 1024)
+    if image.size and image.size > max_bytes:
+        return Response(
+            {'detail': f"Rasm juda katta. Limit: {max_bytes // (1024 * 1024)} MB"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    request.user.avatar = image
+    request.user.save(update_fields=['avatar'])
+    return Response(UserSerializer(request.user, context={'request': request}).data)
 
 
 @api_view(['GET'])
@@ -434,10 +458,34 @@ def _make_otp():
     return f'{secrets.randbelow(1_000_000):06d}'
 
 
-def _telegram_api_call(method, payload, timeout=10):
-    token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+def _telegram_bot_token(bot='auth'):
+    if bot == 'manager':
+        return (
+            getattr(settings, 'TELEGRAM_MANAGER_BOT_TOKEN', '')
+            or getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+        )
+    return (
+        getattr(settings, 'TELEGRAM_AUTH_BOT_TOKEN', '')
+        or getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+    )
+
+
+def _telegram_bot_username(bot='auth'):
+    if bot == 'manager':
+        return (
+            getattr(settings, 'TELEGRAM_MANAGER_BOT_USERNAME', '')
+            or getattr(settings, 'TELEGRAM_BOT_USERNAME', '')
+        )
+    return (
+        getattr(settings, 'TELEGRAM_AUTH_BOT_USERNAME', '')
+        or getattr(settings, 'TELEGRAM_BOT_USERNAME', '')
+    )
+
+
+def _telegram_api_call(method, payload, timeout=10, bot='auth'):
+    token = _telegram_bot_token(bot)
     if not token:
-        logger.info('[telegram-local] method=%s payload=%s', method, payload)
+        logger.info('[telegram-%s-local] method=%s payload=%s', bot, method, payload)
         return None
     encoded = {}
     for key, value in (payload or {}).items():
@@ -452,40 +500,40 @@ def _telegram_api_call(method, payload, timeout=10):
         with urllib.request.urlopen(req, timeout=timeout) as response:
             result = json.loads(response.read().decode('utf-8'))
         if not result.get('ok'):
-            logger.warning('Telegram %s returned not ok: %s', method, result.get('description'))
+            logger.warning('Telegram %s/%s returned not ok: %s', bot, method, result.get('description'))
             return None
         return result.get('result')
     except Exception:
-        logger.exception('Telegram %s failed', method)
+        logger.exception('Telegram %s/%s failed', bot, method)
         return None
 
 
-def _telegram_api_post(method, payload):
-    return _telegram_api_call(method, payload) is not None
+def _telegram_api_post(method, payload, bot='auth'):
+    return _telegram_api_call(method, payload, bot=bot) is not None
 
 
-def _send_telegram_message(chat_id, text, reply_markup=None):
-    if not getattr(settings, 'TELEGRAM_BOT_TOKEN', ''):
+def _send_telegram_message(chat_id, text, reply_markup=None, bot='auth'):
+    if not _telegram_bot_token(bot):
         safe_text = 'Tasdiqlash kodi: ******' if text.startswith('Tasdiqlash kodi:') else text
-        logger.info('[telegram-local] chat=%s text=%s', chat_id, safe_text)
+        logger.info('[telegram-%s-local] chat=%s text=%s', bot, chat_id, safe_text)
         return False
     payload = {'chat_id': chat_id, 'text': text}
     if reply_markup:
         payload['reply_markup'] = reply_markup
-    return _telegram_api_post('sendMessage', payload)
+    return _telegram_api_post('sendMessage', payload, bot=bot)
 
 
-def _answer_callback_query(callback_query_id, text, show_alert=False):
+def _answer_callback_query(callback_query_id, text, show_alert=False, bot='manager'):
     if not callback_query_id:
         return False
     return _telegram_api_post('answerCallbackQuery', {
         'callback_query_id': callback_query_id,
         'text': text,
         'show_alert': bool(show_alert),
-    })
+    }, bot=bot)
 
 
-def _clear_inline_keyboard(message):
+def _clear_inline_keyboard(message, bot='manager'):
     chat = message.get('chat') or {}
     chat_id = chat.get('id')
     message_id = message.get('message_id')
@@ -495,14 +543,14 @@ def _clear_inline_keyboard(message):
         'chat_id': chat_id,
         'message_id': message_id,
         'reply_markup': {'inline_keyboard': []},
-    })
+    }, bot=bot)
 
 
-def _download_telegram_file(file_id, max_bytes):
-    token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+def _download_telegram_file(file_id, max_bytes, bot='manager', fallback_mime='application/octet-stream'):
+    token = _telegram_bot_token(bot)
     if not token or not file_id:
         return None, '', "Telegram bot token sozlanmagan."
-    file_info = _telegram_api_call('getFile', {'file_id': file_id})
+    file_info = _telegram_api_call('getFile', {'file_id': file_id}, bot=bot)
     if not file_info:
         return None, '', "Telegram fayl ma'lumoti olinmadi."
     file_size = int(file_info.get('file_size') or 0)
@@ -526,7 +574,11 @@ def _download_telegram_file(file_id, max_bytes):
         'webp': 'image/webp',
         'jpg': 'image/jpeg',
         'jpeg': 'image/jpeg',
-    }.get(ext, 'image/jpeg')
+        'pdf': 'application/pdf',
+        'txt': 'text/plain',
+        'csv': 'text/csv',
+        'json': 'application/json',
+    }.get(ext, fallback_mime)
     return data, mime_type, ''
 
 
@@ -549,6 +601,18 @@ def _telegram_image_file_id(message):
     return '', 0, ''
 
 
+def _telegram_document_file(message):
+    document = message.get('document') or {}
+    if not document:
+        return '', 0, '', ''
+    return (
+        document.get('file_id') or '',
+        int(document.get('file_size') or 0),
+        document.get('mime_type') or '',
+        document.get('file_name') or '',
+    )
+
+
 def _link_user_to_telegram(user, chat_id, telegram_user_id):
     if telegram_user_id:
         type(user).objects.exclude(pk=user.pk).filter(
@@ -563,8 +627,8 @@ def _link_user_to_telegram(user, chat_id, telegram_user_id):
     return user
 
 
-def _telegram_deep_link(verify_token):
-    username = getattr(settings, 'TELEGRAM_BOT_USERNAME', '')
+def _telegram_deep_link(verify_token, bot='auth'):
+    username = _telegram_bot_username(bot)
     if not username:
         return ''
     return f'https://t.me/{username}?start={verify_token}'
@@ -592,8 +656,8 @@ def start_telegram_phone_verification(request):
         'verification_id': verification.id,
         'phone': normalized_phone,
         'verify_token': verification.verify_token,
-        'telegram_deep_link': _telegram_deep_link(verification.verify_token),
-        'bot_username': getattr(settings, 'TELEGRAM_BOT_USERNAME', ''),
+        'telegram_deep_link': _telegram_deep_link(verification.verify_token, bot='auth'),
+        'bot_username': _telegram_bot_username('auth'),
     }, status=status.HTTP_201_CREATED)
 
 
@@ -620,8 +684,8 @@ def start_telegram_account_link(request):
         'verification_id': verification.id,
         'phone': normalized_phone,
         'verify_token': verification.verify_token,
-        'telegram_deep_link': _telegram_deep_link(verification.verify_token),
-        'bot_username': getattr(settings, 'TELEGRAM_BOT_USERNAME', ''),
+        'telegram_deep_link': _telegram_deep_link(verification.verify_token, bot='manager'),
+        'bot_username': _telegram_bot_username('manager'),
         'telegram_linked': bool(request.user.telegram_chat_id),
     }, status=status.HTTP_201_CREATED)
 
@@ -676,7 +740,7 @@ def _callback_query_from_update(update):
     return update.get('callback_query') or {}
 
 
-def _handle_telegram_callback(callback):
+def _handle_telegram_callback(callback, bot='manager'):
     callback_id = str(callback.get('id') or '')
     sender = callback.get('from') or {}
     telegram_user_id = str(sender.get('id') or '')
@@ -685,14 +749,14 @@ def _handle_telegram_callback(callback):
 
     parts = data.split(':')
     if len(parts) != 3 or parts[0] != 'membership' or parts[1] not in ('approve', 'reject'):
-        _answer_callback_query(callback_id, "Noma'lum buyruq", show_alert=True)
+        _answer_callback_query(callback_id, "Noma'lum buyruq", show_alert=True, bot=bot)
         return {'ok': True}
 
     decision = 'approved' if parts[1] == 'approve' else 'rejected'
     try:
         membership_id = int(parts[2])
     except (TypeError, ValueError):
-        _answer_callback_query(callback_id, "Ariza topilmadi", show_alert=True)
+        _answer_callback_query(callback_id, "Ariza topilmadi", show_alert=True, bot=bot)
         return {'ok': True}
 
     from django.contrib.auth import get_user_model
@@ -706,6 +770,7 @@ def _handle_telegram_callback(callback):
             callback_id,
             "Avval botni profilingizga ulang.",
             show_alert=True,
+            bot=bot,
         )
         return {'ok': True}
 
@@ -716,25 +781,25 @@ def _handle_telegram_callback(callback):
         .first()
     )
     if not membership:
-        _answer_callback_query(callback_id, "Ariza topilmadi", show_alert=True)
+        _answer_callback_query(callback_id, "Ariza topilmadi", show_alert=True, bot=bot)
         return {'ok': True}
 
     try:
         membership = decide_membership(membership, actor, decision)
     except PermissionDenied:
-        _answer_callback_query(callback_id, "Bu arizani tasdiqlash huquqingiz yo'q", show_alert=True)
+        _answer_callback_query(callback_id, "Bu arizani tasdiqlash huquqingiz yo'q", show_alert=True, bot=bot)
         return {'ok': True}
     except ValidationError as exc:
         detail = '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc)
-        _answer_callback_query(callback_id, detail or "Ariza ko'rib chiqilgan", show_alert=True)
+        _answer_callback_query(callback_id, detail or "Ariza ko'rib chiqilgan", show_alert=True, bot=bot)
         return {'ok': True}
 
-    _clear_inline_keyboard(message)
+    _clear_inline_keyboard(message, bot=bot)
     if decision == 'approved':
         text = f"✅ {membership.user.full_name} tasdiqlandi."
     else:
         text = f"❌ {membership.user.full_name} rad etildi."
-    _answer_callback_query(callback_id, text)
+    _answer_callback_query(callback_id, text, bot=bot)
     chat_id = (message.get('chat') or {}).get('id') or actor.telegram_chat_id
     if chat_id:
         location = ' · '.join(part for part in [
@@ -750,38 +815,22 @@ def _handle_telegram_callback(callback):
                 f"Turi: {membership.center.organization_type}\n"
                 f"Manzil: {location}"
             ),
+            bot=bot,
         )
     return {'ok': True}
 
 
-def _handle_ai_roster_message(message, telegram_user_id, chat_id):
+def _handle_ai_roster_message(message, telegram_user_id, chat_id, bot='manager'):
     text = (message.get('caption') or message.get('text') or '').strip()
     if text.startswith('/'):
         return False
     file_id, file_size, detected_mime = _telegram_image_file_id(message)
-    if not text and not file_id:
-        return False
-    # AI quota'ni tejash uchun: faqat rasm yuborilgan bo'lsa yoki matnda
-    # aniq trigger so'z bo'lsa AI'ga uzatamiz. Avval har bir oddiy "Salom"
-    # xabari ham AI'ga yuborilardi va kunlik limitni tezda yo'q qilardi.
-    has_image = bool(file_id)
-    text_lower = text.lower()
-    AI_TRIGGER_KEYWORDS = (
-        "ro'yxat", "ro'yxati", 'roster',
-        "ism", 'ismlar',
-        "o'quvchi", "o'quvchilar",
-        'student', 'students',
-    )
-    has_trigger = any(kw in text_lower for kw in AI_TRIGGER_KEYWORDS)
-    if not has_image and not has_trigger:
+    document_id, document_size, document_mime, document_name = _telegram_document_file(message)
+    if not text and not file_id and not document_id:
         return False
 
     from django.contrib.auth import get_user_model
-    from centers.ai_roster import (
-        approve_roster_names,
-        extract_names_from_payload,
-        format_approval_summary,
-    )
+    from centers.manager_bot import extract_document_text, handle_manager_message
 
     User = get_user_model()
     actor = User.objects.filter(
@@ -792,45 +841,69 @@ def _handle_ai_roster_message(message, telegram_user_id, chat_id):
         _send_telegram_message(
             chat_id,
             "Avval sayt panelidan Botni ulash tugmasini bosing va telefon raqamingizni yuboring.",
+            bot=bot,
         )
         return True
 
     image_bytes = None
     mime_type = detected_mime or 'image/jpeg'
+    document_text = ''
     if file_id:
         max_bytes = getattr(settings, 'AI_ROSTER_MAX_IMAGE_BYTES', 5 * 1024 * 1024)
         if file_size and file_size > max_bytes:
-            _send_telegram_message(chat_id, f"Rasm juda katta. Limit: {max_bytes // (1024 * 1024)} MB.")
+            _send_telegram_message(chat_id, f"Rasm juda katta. Limit: {max_bytes // (1024 * 1024)} MB.", bot=bot)
             return True
-        image_bytes, mime_type, error = _download_telegram_file(file_id, max_bytes)
+        image_bytes, mime_type, error = _download_telegram_file(
+            file_id,
+            max_bytes,
+            bot=bot,
+            fallback_mime=detected_mime or 'image/jpeg',
+        )
         if error:
-            _send_telegram_message(chat_id, f"⚠ {error}")
+            _send_telegram_message(chat_id, f"⚠ {error}", bot=bot)
             return True
+    elif document_id:
+        max_bytes = getattr(settings, 'AI_MANAGER_BOT_MAX_DOCUMENT_BYTES', 10 * 1024 * 1024)
+        if document_size and document_size > max_bytes:
+            _send_telegram_message(chat_id, f"Fayl juda katta. Limit: {max_bytes // (1024 * 1024)} MB.", bot=bot)
+            return True
+        document_bytes, downloaded_mime, error = _download_telegram_file(
+            document_id,
+            max_bytes,
+            bot=bot,
+            fallback_mime=document_mime or 'application/octet-stream',
+        )
+        if error:
+            _send_telegram_message(chat_id, f"⚠ {error}", bot=bot)
+            return True
+        doc_result = extract_document_text(
+            document_bytes,
+            mime_type=document_mime or downloaded_mime,
+            filename=document_name,
+        )
+        if not doc_result.get('ok'):
+            _send_telegram_message(chat_id, doc_result.get('error') or "Faylni o'qib bo'lmadi.", bot=bot)
+            return True
+        document_text = doc_result.get('text') or ''
 
-    extraction = extract_names_from_payload(
+    reply = handle_manager_message(
+        actor,
         text=text,
         image_bytes=image_bytes,
         mime_type=mime_type,
+        document_text=document_text,
+        source='telegram_manager_bot',
     )
-    if not extraction.get('ok'):
-        _send_telegram_message(chat_id, f"⚠ {extraction.get('error')}")
-        return True
-
-    summary = approve_roster_names(
-        actor,
-        extraction.get('entries') or extraction.get('names') or [],
-        source='telegram_roster',
-    )
-    _send_telegram_message(chat_id, format_approval_summary(summary))
+    _send_telegram_message(chat_id, reply, bot=bot)
     return True
 
 
-def handle_telegram_update(update):
+def handle_telegram_update(update, bot='auth'):
     """Process one Telegram update from either webhook or local polling."""
     update = update if isinstance(update, dict) else {}
     callback = _callback_query_from_update(update)
     if callback:
-        return _handle_telegram_callback(callback)
+        return _handle_telegram_callback(callback, bot='manager')
 
     message = _message_from_update(update)
     chat = message.get('chat') or {}
@@ -854,7 +927,7 @@ def handle_telegram_update(update):
                 'keyboard': [[{'text': 'Telefon raqamni yuborish', 'request_contact': True}]],
                 'resize_keyboard': True,
                 'one_time_keyboard': True,
-            })
+            }, bot=bot)
         return {'ok': True}
 
     contact = message.get('contact') or {}
@@ -878,6 +951,15 @@ def handle_telegram_update(update):
                 _send_telegram_message(
                     chat_id,
                     "Telegram bot hisobingizga ulandi. Endi arizalarni botdan tasdiqlashingiz mumkin.",
+                    bot=bot,
+                )
+                return {'ok': True}
+
+            if bot == 'manager':
+                _send_telegram_message(
+                    chat_id,
+                    "Avval ro'yxatdan o'tish uchun kod botidan foydalaning.",
+                    bot=bot,
                 )
                 return {'ok': True}
 
@@ -889,28 +971,39 @@ def handle_telegram_update(update):
             verification.save(update_fields=[
                 'otp_hash', 'otp_expires_at', 'attempts_count', 'updated_at',
             ])
-            _send_telegram_message(chat_id, f'Tasdiqlash kodi: {otp}')
+            _send_telegram_message(chat_id, f'Tasdiqlash kodi: {otp}', bot=bot)
         else:
-            _send_telegram_message(chat_id, 'Telefon raqam mos kelmadi.')
+            _send_telegram_message(chat_id, 'Telefon raqam mos kelmadi.', bot=bot)
         return {'ok': True}
 
-    if _handle_ai_roster_message(message, telegram_user_id, chat_id):
+    same_bot = _telegram_bot_token('auth') == _telegram_bot_token('manager')
+    if (bot == 'manager' or same_bot) and _handle_ai_roster_message(message, telegram_user_id, chat_id, bot=bot):
         return {'ok': True}
 
     return {'ok': True}
 
 
-@api_view(['POST'])
-@permission_classes([AllowAny])
-def telegram_webhook(request):
+def _telegram_webhook_secret(bot='auth'):
+    if bot == 'manager':
+        return (
+            os.environ.get('TELEGRAM_MANAGER_WEBHOOK_SECRET', '')
+            or os.environ.get('TELEGRAM_WEBHOOK_SECRET', '')
+        )
+    return (
+        os.environ.get('TELEGRAM_AUTH_WEBHOOK_SECRET', '')
+        or os.environ.get('TELEGRAM_WEBHOOK_SECRET', '')
+    )
+
+
+def _telegram_webhook_response(request, bot='auth'):
     """Telegram webhook for /start, contact share, and inline callbacks.
 
-    Production (DEBUG=False) requires TELEGRAM_WEBHOOK_SECRET; without it the
-    endpoint refuses every call so that a misconfigured deploy can't be
-    abused. In dev (DEBUG=True) the secret is optional to keep the local
-    polling/mock flow intact.
+    Production (DEBUG=False) requires a webhook secret; without it the endpoint
+    refuses every call so that a misconfigured deploy can't be abused. In dev
+    (DEBUG=True) the secret is optional to keep the local polling/mock flow
+    intact.
     """
-    secret = os.environ.get('TELEGRAM_WEBHOOK_SECRET', '')
+    secret = _telegram_webhook_secret(bot)
     if not settings.DEBUG and not secret:
         logger.error('TELEGRAM_WEBHOOK_SECRET is required in production')
         return Response({'detail': 'Server misconfigured'},
@@ -924,4 +1017,23 @@ def telegram_webhook(request):
             update = json.loads(request.body.decode('utf-8'))
         except (TypeError, ValueError):
             update = {}
-    return Response(handle_telegram_update(update))
+    return Response(handle_telegram_update(update, bot=bot))
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def telegram_webhook(request):
+    """Backward-compatible auth bot webhook."""
+    return _telegram_webhook_response(request, bot='auth')
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def telegram_auth_webhook(request):
+    return _telegram_webhook_response(request, bot='auth')
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def telegram_manager_webhook(request):
+    return _telegram_webhook_response(request, bot='manager')

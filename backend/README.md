@@ -46,7 +46,8 @@ and the `OLYMPY_DB_*` env vars (see `olympy_api/settings.py`).
 | POST   | `/api/auth/login/`                            | Returns DRF token + user payload       |
 | POST   | `/api/auth/phone/start-telegram-verification/` | Starts Telegram phone verification     |
 | POST   | `/api/auth/phone/verify-otp/`                 | Verifies Telegram-delivered OTP        |
-| POST   | `/api/telegram/webhook/`                      | Telegram bot webhook                   |
+| POST   | `/api/telegram/webhook/auth/`                 | Auth-code bot webhook                  |
+| POST   | `/api/telegram/webhook/manager/`              | Manager notification bot webhook       |
 | GET    | `/api/me/`                                    | Auth required                          |
 | GET    | `/api/centers/`                               | Public — approved centers only         |
 | POST   | `/api/centers/`                               | Auth — creates *pending* center        |
@@ -78,45 +79,64 @@ and the `OLYMPY_DB_*` env vars (see `olympy_api/settings.py`).
 - Teachers / Managers / Owners can create questions only after approval.
 - Olympiad publish notifies *only* approved students of the same center.
 
-## Telegram phone verification
+## Telegram bots
 
 Environment variables:
 
 ```bash
-TELEGRAM_BOT_TOKEN=123456:telegram-bot-token
-TELEGRAM_BOT_USERNAME=your_bot_username
+TELEGRAM_AUTH_BOT_TOKEN=123456:auth-bot-token
+TELEGRAM_AUTH_BOT_USERNAME=your_auth_bot_username
+TELEGRAM_MANAGER_BOT_TOKEN=123456:manager-bot-token
+TELEGRAM_MANAGER_BOT_USERNAME=your_manager_bot_username
 PHONE_VERIFICATION_OTP_TTL_SECONDS=300
 PHONE_VERIFICATION_MAX_ATTEMPTS=5
 ```
 
-Flow:
+Auth-code flow:
 
 1. Website posts phone to `/api/auth/phone/start-telegram-verification/`.
 2. Backend creates a `verify_token` and returns a Telegram deep link.
-3. User opens the bot link; Telegram sends `/start <verify_token>` to `/api/telegram/webhook/`.
+3. User opens the auth bot link; Telegram sends `/start <verify_token>` to `/api/telegram/webhook/auth/`.
 4. Backend binds `telegram_chat_id` only from that `/start <verify_token>` update.
 5. User shares their Telegram contact.
 6. Backend normalizes `contact.phone_number` and compares it with the website phone.
 7. If the numbers match, backend sends an OTP to Telegram and stores only its hash.
 8. Website posts phone + OTP to `/api/auth/phone/verify-otp/`.
 
-Local development can leave `TELEGRAM_BOT_TOKEN` blank. In that mode, messages
+Manager-notification flow uses `/api/auth/telegram/link/start/` to return the
+manager bot deep link, then sends membership notifications and handles inline
+approval callbacks through `/api/telegram/webhook/manager/`.
+
+The manager bot can receive PDF/TXT/CSV/image rosters or plain text commands.
+It extracts names, phones, and approval codes, then approves only backend-verified
+pending student matches for the linked manager/director. Free-form questions use
+`AI_MANAGER_BOT_OPENAI_API_KEY` when configured; basic status commands such as
+"kutilayotgan arizalar nechta?" work without an AI key.
+
+Local development can leave bot tokens blank. In that mode, messages
 are logged instead of sent to Telegram. For a real bot, expose the local backend
-through a tunnel or deploy it, then set the webhook:
+through a tunnel or deploy it, then set both webhooks:
 
 ```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://example.com/api/telegram/webhook/"
+curl "https://api.telegram.org/bot$TELEGRAM_AUTH_BOT_TOKEN/setWebhook?url=https://example.com/api/telegram/webhook/auth/"
+curl "https://api.telegram.org/bot$TELEGRAM_MANAGER_BOT_TOKEN/setWebhook?url=https://example.com/api/telegram/webhook/manager/"
 ```
 
 For local real-bot testing without a public webhook, run polling in a second
 terminal while the Django server is running:
 
 ```bash
-python manage.py telegram_polling
+python manage.py telegram_polling --bot both
 ```
 
 Other in-app notification helpers in `notifications/services.py` still log
 Telegram-style messages for local development.
+
+## Profile media
+
+Users upload avatars through `POST /api/auth/me/avatar/`. Center owners or
+approved managers upload center images through `POST /api/centers/{id}/image/`.
+Both endpoints accept multipart image files and store them under `MEDIA_ROOT`.
 
 ## Auth
 

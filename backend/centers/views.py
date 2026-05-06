@@ -1,5 +1,6 @@
 import secrets
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Count, Q
@@ -62,7 +63,7 @@ def centers_list_create(request):
             .order_by('-created_at')
         )
         queryset = _annotate_center_counts(queryset)
-        return Response(EducationCenterSerializer(queryset, many=True).data)
+        return Response(EducationCenterSerializer(queryset, many=True, context={'request': request}).data)
 
     if not request.user.is_authenticated:
         return Response({'detail': 'Authentication required'},
@@ -74,7 +75,7 @@ def centers_list_create(request):
         # Note: do NOT add 'owner' to user.roles here. The owner role is
         # promoted only after Platform Admin approves the center
         # (see admin_approve_center).
-    return Response(EducationCenterSerializer(center).data,
+    return Response(EducationCenterSerializer(center, context={'request': request}).data,
                     status=http_status.HTTP_201_CREATED)
 
 
@@ -97,7 +98,34 @@ def my_centers(request):
         .order_by('-created_at')
     )
     queryset = _annotate_center_counts(queryset)
-    return Response(EducationCenterSerializer(queryset, many=True).data)
+    return Response(EducationCenterSerializer(queryset, many=True, context={'request': request}).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_center_image(request, center_id):
+    """POST /api/centers/{id}/image/ — owner/manager uploads center image."""
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    if not _user_can_manage_center(request.user, center):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    image = (
+        request.FILES.get('image')
+        or request.FILES.get('logo')
+        or request.FILES.get('photo')
+    )
+    if not image:
+        return Response({'detail': 'Rasm faylini yuboring'}, status=http_status.HTTP_400_BAD_REQUEST)
+    if image.content_type and not image.content_type.startswith('image/'):
+        return Response({'detail': 'Faqat rasm fayl qabul qilinadi'}, status=http_status.HTTP_400_BAD_REQUEST)
+    max_bytes = getattr(settings, 'CENTER_IMAGE_MAX_BYTES', 5 * 1024 * 1024)
+    if image.size and image.size > max_bytes:
+        return Response(
+            {'detail': f"Rasm juda katta. Limit: {max_bytes // (1024 * 1024)} MB"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    center.image = image
+    center.save(update_fields=['image'])
+    return Response(EducationCenterSerializer(center, context={'request': request}).data)
 
 
 # ─── Student / Teacher / Manager join flow ────────────────────────────────────
@@ -234,7 +262,7 @@ def pending_memberships(request, center_id):
     from accounts.serializers import UserSerializer
     data = [{
         'membership_id': m.id,
-        'user': UserSerializer(m.user).data,
+        'user': UserSerializer(m.user, context={'request': request}).data,
         'role': m.role,
         'subject': m.subject,
         'approval_code': m.approval_code,
@@ -263,7 +291,7 @@ def students_memberships(request, center_id):
     from accounts.serializers import UserSerializer
     data = [{
         'membership_id': m.id,
-        'user': UserSerializer(m.user).data,
+        'user': UserSerializer(m.user, context={'request': request}).data,
         'role': m.role,
         'subject': m.subject,
         'approval_code': m.approval_code,
@@ -291,7 +319,7 @@ def staff_memberships(request, center_id):
     from accounts.serializers import UserSerializer
     data = [{
         'membership_id': m.id,
-        'user': UserSerializer(m.user).data,
+        'user': UserSerializer(m.user, context={'request': request}).data,
         'role': m.role,
         'subject': m.subject,
         'status': m.status,
@@ -334,7 +362,7 @@ def create_manager(request, center_id):
     return Response(
         {
             'membership': CenterMembershipSerializer(membership).data,
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
         },
         status=http_status.HTTP_201_CREATED,
     )
@@ -375,7 +403,7 @@ def create_teacher(request, center_id):
     return Response(
         {
             'membership': CenterMembershipSerializer(membership).data,
-            'user': UserSerializer(user).data,
+            'user': UserSerializer(user, context={'request': request}).data,
         },
         status=http_status.HTTP_201_CREATED,
     )

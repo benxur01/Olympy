@@ -6,6 +6,13 @@ const API_BASE_URL = (
   DEFAULT_API_BASE_URL
 ).replace(/\/+$/, '');
 
+const makeAssetUrl = (url) => {
+  if (!url) return '';
+  const value = String(url);
+  if (/^https?:\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:')) return value;
+  return `${API_BASE_URL}${value.startsWith('/') ? '' : '/'}${value}`;
+};
+
 const AUTH_TOKEN_KEY = 'olympy_api_token';
 const AUTH_REFRESH_KEY = 'olympy_refresh_token';
 const AUTH_USER_KEY = 'olympy_api_user';
@@ -188,6 +195,7 @@ const mapRoleCenter = (center) => ({
   region: center.region || '',
   district: center.district || '',
   city: center.city || center.district || center.region || '',
+  imageUrl: makeAssetUrl(center.image_url || center.imageUrl || ''),
   subject: center.subject || '',
   createdAt: center.created_at || center.createdAt || '',
 });
@@ -240,6 +248,7 @@ const mapBackendUser = (user) => {
     backendId: user.id,
     name: user.full_name || user.name || 'Foydalanuvchi',
     phone: user.normalized_phone || user.phone,
+    avatarUrl: makeAssetUrl(user.avatar_url || user.avatarUrl || ''),
     password: '',
     roles,
     activeRole,
@@ -308,10 +317,20 @@ export const OlympyApi = {
   verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload }),
   // Me
   getMe: (token) => request('/api/me/', { token }),
+  uploadMyAvatar: (imageFile, token) => {
+    const fd = new FormData();
+    fd.append('avatar', imageFile);
+    return request('/api/auth/me/avatar/', { method: 'POST', body: fd, token });
+  },
   // Centers
   getCenters: () => request('/api/centers/').then(unwrapList),
   getMyCenters: (token) => request('/api/centers/mine/', { token }).then(unwrapList),
   registerCenter: (payload, token) => request('/api/centers/', { method: 'POST', body: payload, token }),
+  uploadCenterImage: (centerId, imageFile, token) => {
+    const fd = new FormData();
+    fd.append('image', imageFile);
+    return request(`/api/centers/${centerId}/image/`, { method: 'POST', body: fd, token });
+  },
   joinCenter: (centerId, payload, token) => request(`/api/centers/${centerId}/join/`, { method: 'POST', body: payload, token }),
   getPendingMemberships: (centerId, role, token) => request(`/api/centers/${centerId}/memberships/pending/${role ? '?role=' + role : ''}`, { token }).then(unwrapList),
   getStaffMemberships: (centerId, role, token) => request(`/api/centers/${centerId}/memberships/staff/${role ? '?role=' + encodeURIComponent(role) : ''}`, { token }).then(unwrapList),

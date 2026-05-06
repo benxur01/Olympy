@@ -140,7 +140,7 @@ const RoleSwitcherModal = ({ open, user, onClose, onSwitch, onLogout, onNavigate
     <Modal open={open} onClose={onClose} title="Rolni almashtirish" width="max-w-md">
       <div className="space-y-3">
         <div className="flex items-center gap-3 glass rounded-2xl p-3">
-          <Avatar name={user.name} size={36} />
+          <Avatar name={user.name} src={user?.avatarUrl || ''} size={36} />
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-white truncate">{user.name}</div>
             <div className="text-xs text-white/40">{user.phone}</div>

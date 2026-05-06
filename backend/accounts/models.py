@@ -49,6 +49,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     telegram_user_id = models.CharField(max_length=64, blank=True, db_index=True)
     telegram_linked_at = models.DateTimeField(null=True, blank=True)
     token_version = models.PositiveIntegerField(default=0)
+    avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

@@ -7,6 +7,7 @@ from .models import CenterMembership, EducationCenter
 class EducationCenterSerializer(serializers.ModelSerializer):
     owner_full_name = serializers.CharField(source='owner.full_name', read_only=True)
     owner_phone = serializers.CharField(source='owner.normalized_phone', read_only=True)
+    image_url = serializers.SerializerMethodField()
     students = serializers.SerializerMethodField()
     olympiads = serializers.SerializerMethodField()
 
@@ -14,9 +15,16 @@ class EducationCenterSerializer(serializers.ModelSerializer):
         model = EducationCenter
         fields = ['id', 'name', 'organization_type', 'country', 'region', 'district',
                   'city', 'owner', 'status', 'subjects', 'rating', 'created_at',
-                  'owner_full_name', 'owner_phone',
+                  'owner_full_name', 'owner_phone', 'image_url',
                   'students', 'olympiads']
         read_only_fields = ['id', 'owner', 'status', 'rating', 'created_at']
+
+    def get_image_url(self, obj):
+        if not obj.image:
+            return ''
+        url = obj.image.url
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        return request.build_absolute_uri(url) if request else url
 
     def get_students(self, obj):
         # Prefer the annotated count (centers/views._annotate_center_counts)

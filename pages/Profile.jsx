@@ -1,10 +1,30 @@
 // pages/Profile.jsx
 
-const ProfilePage = ({ user, onNavigate, embedded }) => {
+const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
   const [tab, setTab] = React.useState('results');
   const [isPublic, setIsPublic] = React.useState(false);
+  const [avatarLoading, setAvatarLoading] = React.useState(false);
+  const [avatarError, setAvatarError] = React.useState('');
+  const avatarInputRef = React.useRef(null);
+
+  const handleAvatarFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !isApi) return;
+    setAvatarLoading(true);
+    setAvatarError('');
+    try {
+      const data = await OlympyApi.uploadMyAvatar(file, OlympyApi.getToken());
+      const mapped = OlympyApi.mapBackendUser(data);
+      onUserUpdate?.(mapped);
+    } catch (err) {
+      setAvatarError(OlympyApi.toUserMessage?.(err) || "Rasm yuklanmadi");
+    } finally {
+      setAvatarLoading(false);
+      if (e.target) e.target.value = '';
+    }
+  };
 
   // API rejimida foydalanuvchi attemptlari mock store'da emas, backend orqali
   // /api/results/me/ va /api/results/me/stats/ dan keladi. Avval bu sahifa
@@ -104,10 +124,23 @@ const ProfilePage = ({ user, onNavigate, embedded }) => {
         <div className="hero-glow" style={{ background:'#6366f1', top:'-60%', left:'40%', opacity:0.08 }} />
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center gap-5">
           <div className="relative">
-            <Avatar name={user?.name || 'Ali Valiyev'} size={80} gradient="from-indigo-500 to-purple-600" />
+            <Avatar name={user?.name || 'Ali Valiyev'} src={user?.avatarUrl || ''} size={80} gradient="from-indigo-500 to-purple-600" />
             <div className="absolute -bottom-1 -right-1 w-6 h-6 gradient-bg rounded-full flex items-center justify-center">
               <span className="text-white text-xs">✓</span>
             </div>
+            {!isPublic && isApi && (
+              <>
+                <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFile} />
+                <button
+                  onClick={() => avatarInputRef.current?.click()}
+                  disabled={avatarLoading}
+                  className="absolute -bottom-2 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-950 text-white shadow-lg hover:bg-indigo-600 disabled:opacity-60"
+                  title="Profil rasmini yuklash"
+                >
+                  <Icon name="upload" size={14} />
+                </button>
+              </>
+            )}
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-3 flex-wrap">
@@ -128,10 +161,17 @@ const ProfilePage = ({ user, onNavigate, embedded }) => {
               <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="text-lg font-black text-white">{avgScore || '—'}{avgScore ? '%' : ''}</div><div className="text-xs text-white/40">O'rtacha</div></div>
               <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="text-lg font-black text-white">{achievements.length}</div><div className="text-xs text-white/40">Yutuqlar</div></div>
             </div>
+            {avatarError && <div className="mt-2 text-xs font-semibold text-rose-300">{avatarError}</div>}
           </div>
           <div className="flex flex-col gap-2">
             {!isPublic && (
-              <button className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5"><Icon name="edit" size={13} /> Tahrirlash</button>
+              <button
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={!isApi || avatarLoading}
+                className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <Icon name="upload" size={13} /> {avatarLoading ? 'Yuklanmoqda...' : 'Rasm yuklash'}
+              </button>
             )}
             <button onClick={() => setIsPublic(!isPublic)} className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5">
               <Icon name="eye" size={13} /> {isPublic ? 'Shaxsiy ko\'rish' : 'Ommaviy ko\'rish'}
