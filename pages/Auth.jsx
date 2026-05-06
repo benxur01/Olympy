@@ -206,14 +206,14 @@ const LoginPage = ({ onNavigate, onLogin }) => {
       </div>
 
       {/* Right panel */}
-      <div className="flex-1 lg:max-w-md flex flex-col justify-center px-8 py-12">
-        <div className="mb-8">
-          <div className="flex items-center gap-2 mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
+      <div className="flex-1 lg:max-w-md flex flex-col justify-center px-5 md:px-8 py-8 md:py-12">
+        <div className="mb-6 md:mb-8">
+          <div className="flex items-center gap-2 mb-6 md:mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
             <div className="gradient-bg w-8 h-8 rounded-xl flex items-center justify-center"><span className="text-white font-black text-sm">O</span></div>
             <span className="gradient-text font-black text-xl">Olympy</span>
           </div>
-          <h1 className="text-3xl font-black text-white mb-2">Kirish</h1>
-          <p className="text-white/40">Hisobingizga kiring</p>
+          <h1 className="text-2xl md:text-3xl font-black text-white mb-2">Kirish</h1>
+          <p className="text-white/40 text-sm md:text-base">Hisobingizga kiring</p>
         </div>
 
         <form onSubmit={handleLogin} className="space-y-4">
@@ -618,14 +618,14 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
       </div>
 
       {/* Right panel */}
-      <div className="flex-1 lg:max-w-md flex flex-col justify-center px-8 py-12 overflow-y-auto">
-        <div className="mb-8">
-          <div className="flex items-center gap-2 mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
+      <div className="flex-1 lg:max-w-md flex flex-col justify-center px-5 md:px-8 py-8 md:py-12 overflow-y-auto">
+        <div className="mb-6 md:mb-8">
+          <div className="flex items-center gap-2 mb-6 md:mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
             <div className="gradient-bg w-8 h-8 rounded-xl flex items-center justify-center"><span className="text-white font-black text-sm">O</span></div>
             <span className="gradient-text font-black text-xl">Olympy</span>
           </div>
-          <h1 className="text-3xl font-black text-white mb-2">Ro'yxatdan o'tish</h1>
-          <p className="text-white/40">
+          <h1 className="text-2xl md:text-3xl font-black text-white mb-2">Ro'yxatdan o'tish</h1>
+          <p className="text-white/40 text-sm md:text-base">
             {step === 1 ? "Avval qanday boshlashingizni tanlang" :
              registrationType === 'organization' ? "Tashkilot va mas'ul shaxs ma'lumotlari" :
              'Hisobingizni yarating'}

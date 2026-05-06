@@ -82,8 +82,8 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
   const rest = filtered.slice(3);
 
   const content = (
-    <div className="p-6 space-y-6 animate-in">
-      <div className="flex items-center justify-between flex-wrap gap-3">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h2 className="text-xl font-black text-white">Reyting jadvali</h2>
           <p className="text-white/40 text-sm">Matematik Olimpiada · May 2026</p>

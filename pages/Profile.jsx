@@ -118,9 +118,9 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
     }));
 
   const content = (
-    <div className="p-6 space-y-6 animate-in">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in">
       {/* Profile hero */}
-      <div className="glass-strong rounded-3xl p-6 relative overflow-hidden">
+      <div className="glass-strong rounded-3xl p-4 md:p-6 relative overflow-hidden">
         <div className="hero-glow" style={{ background:'#6366f1', top:'-60%', left:'40%', opacity:0.08 }} />
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center gap-5">
           <div className="relative">

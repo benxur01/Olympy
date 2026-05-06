@@ -386,31 +386,44 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   return (
     <div className="min-h-screen flex flex-col" style={{ background: '#060818' }}>
       {/* Header bar */}
-      <div className="glass border-b border-white/5 px-4 md:px-8 py-3 flex items-center justify-between sticky top-0 z-30">
-        <div className="flex items-center gap-3">
-          <div className="gradient-bg w-7 h-7 rounded-lg flex items-center justify-center"><span className="text-white font-black text-xs">O</span></div>
-          <div>
-            <div className="text-sm font-bold text-white truncate max-w-48">{olympiad?.title || 'Matematika Olimpiadasi'}</div>
-            <div className="text-xs text-white/40">
+      <div className="glass border-b border-white/5 px-3 md:px-8 py-2.5 md:py-3 flex items-center justify-between gap-2 sticky top-0 z-30">
+        <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
+          <div className="gradient-bg w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"><span className="text-white font-black text-xs">O</span></div>
+          <div className="min-w-0">
+            <div className="text-[13px] md:text-sm font-bold text-white truncate">{olympiad?.title || 'Matematika Olimpiadasi'}</div>
+            <div className="text-[10px] md:text-xs text-white/40 truncate">
               {olympiad?.subject}{liveOlympiad?.testLevel ? ` · ${liveOlympiad.testLevel}` : ''}{liveOlympiad?.testType ? ` · ${testTypeLabel(liveOlympiad.testType)}` : ''}
             </div>
           </div>
         </div>
 
-        <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl font-mono text-lg font-black transition-all ${isUrgent ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'glass text-white'}`}>
-          <Icon name="clock" size={16} className={isUrgent ? 'text-rose-400' : 'text-white/50'} />
+        <div className={`flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-xl md:rounded-2xl font-mono text-sm md:text-lg font-black transition-all flex-shrink-0 ${isUrgent ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'glass text-white'}`}>
+          <Icon name="clock" size={14} className={isUrgent ? 'text-rose-400' : 'text-white/50'} />
           {formatTime(timeLeft)}
         </div>
 
         <button onClick={() => setConfirmModal(true)} disabled={submitting}
-          className="btn-primary px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
-          Yakunlash
+          className="btn-primary px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-xs md:text-sm font-semibold disabled:opacity-50 flex-shrink-0">
+          <span className="hidden sm:inline">Yakunlash</span>
+          <span className="sm:hidden">Tugatish</span>
         </button>
       </div>
 
       {/* Progress bar */}
       <div className="h-1 bg-white/5">
         <div className="h-full transition-all duration-500" style={{ width: `${progress}%`, background: 'linear-gradient(90deg,#6366f1,#a855f7,#22d3ee)' }} />
+      </div>
+
+      {/* Mobile question strip — horizontal scrollable navigator */}
+      <div className="md:hidden glass border-b border-white/5">
+        <div className="question-strip">
+          {TEST_QUESTIONS.map((_, i) => (
+            <button key={i} onClick={() => setCurrent(i)}
+              className={`question-strip-btn ${i === current ? 'current' : marked[i] ? 'marked' : answers[i] !== undefined ? 'answered' : ''}`}>
+              {i+1}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -440,48 +453,48 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
         {/* Main content */}
         <div className="flex-1 overflow-y-auto flex flex-col">
-          <div className="max-w-2xl mx-auto w-full px-6 py-8 flex-1">
+          <div className="max-w-2xl mx-auto w-full px-4 md:px-6 py-5 md:py-8 flex-1 pb-28 md:pb-8">
             {/* Question counter */}
-            <div className="flex items-center justify-between mb-6">
-              <div className="text-sm text-white/40 font-medium">
+            <div className="flex items-center justify-between mb-4 md:mb-6 gap-2">
+              <div className="text-xs md:text-sm text-white/40 font-medium">
                 Savol <span className="text-white font-bold">{current+1}</span> / {TOTAL}
               </div>
               <button onClick={toggleMark}
-                className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl transition-all ${marked[current] ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'glass text-white/40 hover:text-white/60'}`}>
+                className={`flex items-center gap-1.5 text-[11px] md:text-xs px-2.5 md:px-3 py-1.5 rounded-xl transition-all ${marked[current] ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'glass text-white/40 hover:text-white/60'}`}>
                 <Icon name="star" size={13} /> {marked[current] ? 'Belgilangan' : 'Belgilash'}
               </button>
             </div>
 
             {submitError && (
-              <div className="mb-6 flex items-center gap-2 bg-rose-500/10 text-rose-300 rounded-xl px-4 py-3 text-sm border border-rose-500/20">
+              <div className="mb-4 md:mb-6 flex items-center gap-2 bg-rose-500/10 text-rose-300 rounded-xl px-3 md:px-4 py-3 text-xs md:text-sm border border-rose-500/20">
                 <Icon name="info" size={15} /> {submitError}
               </div>
             )}
 
             {/* Question text */}
-            <div className="glass-strong rounded-2xl p-6 mb-6">
-              <p className="text-white text-lg leading-relaxed font-medium">{q.text}</p>
+            <div className="glass-strong rounded-2xl p-4 md:p-6 mb-5 md:mb-6">
+              <p className="text-white text-base md:text-lg leading-relaxed font-medium">{q.text}</p>
             </div>
 
             {/* Answer options */}
-            <div className="space-y-3 mb-8">
+            <div className="space-y-2.5 md:space-y-3 mb-6 md:mb-8">
               {q.options.map((opt, i) => {
                 const selected = answers[current] === i;
                 return (
                   <button key={i} onClick={() => handleAnswer(i)}
-                    className={`w-full flex items-center gap-4 p-4 rounded-2xl text-left transition-all ${selected ? 'border-indigo-500 bg-indigo-500/15 border glow-blue' : 'glass hover:bg-white/7 border border-transparent hover:border-white/10'}`}>
-                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50'}`}>
+                    className={`w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left transition-all min-h-[56px] ${selected ? 'border-indigo-500 bg-indigo-500/15 border glow-blue' : 'glass hover:bg-white/7 border border-transparent hover:border-white/10'}`}>
+                    <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50'}`}>
                       {isTrueFalse ? (i === 0 ? '✓' : '✗') : String.fromCharCode(65+i)}
                     </div>
-                    <span className={`font-medium ${selected ? 'text-white' : 'text-white/70'}`}>{opt}</span>
-                    {selected && <Icon name="check" size={16} className="ml-auto text-indigo-400" />}
+                    <span className={`font-medium text-sm md:text-base ${selected ? 'text-white' : 'text-white/70'}`}>{opt}</span>
+                    {selected && <Icon name="check" size={16} className="ml-auto text-indigo-400 flex-shrink-0" />}
                   </button>
                 );
               })}
             </div>
 
-            {/* Nav buttons */}
-            <div className="flex items-center justify-between">
+            {/* Desktop nav buttons (inline) */}
+            <div className="hidden md:flex items-center justify-between">
               <button onClick={() => setCurrent(Math.max(0, current-1))} disabled={current === 0}
                 className="btn-ghost px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-30 flex items-center gap-2">
                 <Icon name="arrowLeft" size={15} /> Oldingi
@@ -499,6 +512,27 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Mobile sticky bottom nav */}
+        <div
+          className="md:hidden fixed bottom-0 left-0 right-0 z-40 glass border-t border-white/5 px-3 py-3 flex items-center gap-2"
+          style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+        >
+          <button onClick={() => setCurrent(Math.max(0, current-1))} disabled={current === 0}
+            className="btn-ghost px-3 py-2.5 rounded-xl text-sm font-medium disabled:opacity-30 flex items-center gap-1.5 flex-shrink-0">
+            <Icon name="arrowLeft" size={15} />
+          </button>
+          {current < TOTAL-1 ? (
+            <button onClick={() => setCurrent(current+1)} className="btn-primary flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2">
+              Keyingi savol <Icon name="chevronRight" size={15} />
+            </button>
+          ) : (
+            <button onClick={() => setConfirmModal(true)} disabled={submitting}
+              className="btn-primary flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+              Testni yakunlash
+            </button>
+          )}
         </div>
       </div>
 
