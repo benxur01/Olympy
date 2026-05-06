@@ -326,7 +326,7 @@ if AI_ROSTER_GEMINI_API_KEY:
     AI_ROSTER_GEMINI_API_KEYS.append(AI_ROSTER_GEMINI_API_KEY)
 AI_ROSTER_GEMINI_API_KEYS = list(dict.fromkeys(AI_ROSTER_GEMINI_API_KEYS))
 AI_ROSTER_MODEL = os.environ.get('AI_ROSTER_MODEL', 'gpt-4o-mini')
-AI_ROSTER_GEMINI_MODEL = os.environ.get('AI_ROSTER_GEMINI_MODEL', 'gemini-1.5-flash')
+AI_ROSTER_GEMINI_MODEL = os.environ.get('AI_ROSTER_GEMINI_MODEL', 'gemini-2.5-flash')
 AI_ROSTER_AUTO_APPROVE = env_bool('AI_ROSTER_AUTO_APPROVE', True)
 AI_ROSTER_ALLOW_NAME_ONLY_APPROVAL = env_bool('AI_ROSTER_ALLOW_NAME_ONLY_APPROVAL', True)
 AI_ROSTER_MIN_CONFIDENCE = float(os.environ.get('AI_ROSTER_MIN_CONFIDENCE', '0.98'))
@@ -348,6 +348,19 @@ if AI_MANAGER_BOT_OPENAI_API_KEY:
     AI_MANAGER_BOT_OPENAI_API_KEYS.append(AI_MANAGER_BOT_OPENAI_API_KEY)
 AI_MANAGER_BOT_OPENAI_API_KEYS = list(dict.fromkeys(AI_MANAGER_BOT_OPENAI_API_KEYS))
 AI_MANAGER_BOT_MODEL = os.environ.get('AI_MANAGER_BOT_MODEL', AI_ROSTER_MODEL)
+AI_MANAGER_BOT_GEMINI_API_KEY = (
+    os.environ.get('AI_MANAGER_BOT_GEMINI_API_KEY')
+    or AI_ROSTER_GEMINI_API_KEY
+    or os.environ.get('GEMINI_API_KEY', '')
+)
+AI_MANAGER_BOT_GEMINI_API_KEYS = [
+    key.strip() for key in os.environ.get('AI_MANAGER_BOT_GEMINI_API_KEYS', '').split(',')
+    if key.strip()
+]
+if AI_MANAGER_BOT_GEMINI_API_KEY:
+    AI_MANAGER_BOT_GEMINI_API_KEYS.append(AI_MANAGER_BOT_GEMINI_API_KEY)
+AI_MANAGER_BOT_GEMINI_API_KEYS = list(dict.fromkeys(AI_MANAGER_BOT_GEMINI_API_KEYS))
+AI_MANAGER_BOT_GEMINI_MODEL = os.environ.get('AI_MANAGER_BOT_GEMINI_MODEL', AI_ROSTER_GEMINI_MODEL)
 
 # AI question generation for manager/teacher/owner panels. Generated questions
 # are only previews until the staff user explicitly saves them.
