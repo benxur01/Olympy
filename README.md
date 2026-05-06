@@ -155,7 +155,10 @@ It extracts student names/phones/codes, then the backend approves only matches
 that the linked manager/director is allowed to approve. For free-form manager
 questions, set `AI_MANAGER_BOT_OPENAI_API_KEY`/`OPENAI_API_KEY` or
 `AI_MANAGER_BOT_GEMINI_API_KEY`/`GEMINI_API_KEY`; basic status commands still
-work without an AI key.
+work without an AI key. Free-form manager chat uses a warmer Uzbek prompt,
+OpenAI first and Gemini fallback, and a short-lived conversation memory so
+follow-up questions feel natural. Managers can write `xotirani tozala` to clear
+that temporary chat context.
 
 Telegram webhook endpoint:
 

@@ -528,6 +528,15 @@ def _telegram_api_post(method, payload, bot='auth'):
     return _telegram_api_call(method, payload, bot=bot) is not None
 
 
+def _send_telegram_chat_action(chat_id, action='typing', bot='auth'):
+    if not chat_id:
+        return False
+    return _telegram_api_post('sendChatAction', {
+        'chat_id': chat_id,
+        'action': action,
+    }, bot=bot)
+
+
 def _send_telegram_message(chat_id, text, reply_markup=None, bot='auth'):
     if not _telegram_bot_token(bot):
         safe_text = (
@@ -971,6 +980,8 @@ def _handle_ai_roster_message(message, telegram_user_id, chat_id, bot='manager')
             bot=bot,
         )
         return True
+
+    _send_telegram_chat_action(chat_id, 'typing', bot=bot)
 
     image_bytes = None
     mime_type = detected_mime or 'image/jpeg'
