@@ -100,42 +100,59 @@ Yoki birgalikda (faqat development uchun):
 cd backend && celery -A olympy_api worker --beat --loglevel=info
 ```
 
-## Telegram phone verification
+## Telegram bots
 
 Set these env vars for the backend:
 
 ```bash
-TELEGRAM_BOT_TOKEN=123456:telegram-bot-token
-TELEGRAM_BOT_USERNAME=your_bot_username
+TELEGRAM_AUTH_BOT_TOKEN=123456:auth-bot-token
+TELEGRAM_AUTH_BOT_USERNAME=your_auth_bot_username
+TELEGRAM_MANAGER_BOT_TOKEN=123456:manager-bot-token
+TELEGRAM_MANAGER_BOT_USERNAME=your_manager_bot_username
 PHONE_VERIFICATION_OTP_TTL_SECONDS=300
 PHONE_VERIFICATION_MAX_ATTEMPTS=5
 ```
 
-Local development can leave `TELEGRAM_BOT_TOKEN` blank; the backend logs the
-message it would send instead of calling Telegram. `TELEGRAM_BOT_USERNAME` is
-used to build the deep link returned by:
+Local development can leave bot tokens blank; the backend logs the message it
+would send instead of calling Telegram. `TELEGRAM_AUTH_BOT_USERNAME` is used to
+build the phone-code deep link returned by:
 
 ```text
 POST /api/auth/phone/start-telegram-verification/
 ```
 
+`TELEGRAM_MANAGER_BOT_USERNAME` is used for the already-authenticated "link bot"
+flow:
+
+```text
+POST /api/auth/telegram/link/start/
+```
+
+The manager bot also accepts PDF/TXT/CSV/image rosters and plain text commands.
+It extracts student names/phones/codes, then the backend approves only matches
+that the linked manager/director is allowed to approve. For free-form manager
+questions, set `AI_MANAGER_BOT_OPENAI_API_KEY` or reuse `OPENAI_API_KEY`; basic
+status commands still work without an AI key.
+
 Telegram webhook endpoint:
 
 ```text
-POST /api/telegram/webhook/
+POST /api/telegram/webhook/auth/
+POST /api/telegram/webhook/manager/
 ```
 
-For a real bot, set the webhook to your public backend URL, for example:
+For real bots, set both webhooks to your public backend URL, for example:
 
 ```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook?url=https://example.com/api/telegram/webhook/"
+curl "https://api.telegram.org/bot$TELEGRAM_AUTH_BOT_TOKEN/setWebhook?url=https://example.com/api/telegram/webhook/auth/"
+curl "https://api.telegram.org/bot$TELEGRAM_MANAGER_BOT_TOKEN/setWebhook?url=https://example.com/api/telegram/webhook/manager/"
 ```
 
 For local real-bot testing without a public webhook, run polling in a second
 backend terminal:
 
 ```bash
-python manage.py telegram_polling
+python manage.py telegram_polling --bot both
 ```
 
 > TODO(local-dev-polling): a public HTTPS URL is required to set a webhook.
@@ -159,10 +176,13 @@ python manage.py telegram_polling
   use backend API endpoints through `src/services/api.js`. Centers, olympiads,
   questions, results, leaderboards, and profile data still use the existing
   frontend mock store.
-- **Telegram notifications are still local/mock except phone verification.**
-  Phone verification exposes backend endpoints and logs messages locally when
-  `TELEGRAM_BOT_TOKEN` is blank. In-app olympiad/request notifications still
-  use `backend/notifications/services.py`.
+- **Telegram messages require bot env vars.** Phone verification uses the auth
+  bot. Membership/request notifications use `backend/notifications/services.py`
+  and are sent through the manager bot when configured; otherwise they are
+  logged locally.
+- **Profile media is stored under `MEDIA_ROOT`.** Users can upload avatars and
+  organization owners/managers can upload center images. In production, serve
+  `/media/` from persistent storage or your platform's media/static pipeline.
 - **Auth is DRF Token.** SimpleJWT is in `requirements.txt` for an easy swap;
   see `olympy_api/settings.py`.
 - **`manage.py check --deploy` produces 6 warnings** — all expected for dev

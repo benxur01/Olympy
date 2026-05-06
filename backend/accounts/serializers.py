@@ -7,18 +7,26 @@ from .utils import normalize_phone
 class UserSerializer(serializers.ModelSerializer):
     roles_detail = serializers.SerializerMethodField()
     telegram_linked = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ['id', 'full_name', 'phone', 'normalized_phone', 'roles',
                   'roles_detail', 'telegram_linked', 'is_platform_admin',
-                  'is_active', 'created_at']
+                  'is_active', 'avatar_url', 'created_at']
         read_only_fields = ['id', 'normalized_phone', 'roles_detail',
                             'telegram_linked', 'is_platform_admin',
-                            'is_active', 'created_at']
+                            'is_active', 'avatar_url', 'created_at']
 
     def get_telegram_linked(self, obj):
         return bool(obj.telegram_chat_id)
+
+    def get_avatar_url(self, obj):
+        if not obj.avatar:
+            return ''
+        url = obj.avatar.url
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        return request.build_absolute_uri(url) if request else url
 
     def get_roles_detail(self, obj):
         from centers.models import CenterMembership
@@ -46,6 +54,7 @@ class UserSerializer(serializers.ModelSerializer):
                 'region': center.region if center else '',
                 'district': center.district if center else '',
                 'city': center.city if center else '',
+                'image_url': center.image.url if center and center.image else '',
                 'subject': membership.subject or '',
                 'created_at': membership.created_at.isoformat() if membership.created_at else '',
             }

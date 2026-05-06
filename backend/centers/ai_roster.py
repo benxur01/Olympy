@@ -259,6 +259,128 @@ def _openai_extract_names_from_image(image_bytes, mime_type, caption=''):
     }
 
 
+def _openai_extract_names_from_text(text):
+    api_keys = list(getattr(settings, 'AI_ROSTER_OPENAI_API_KEYS', []) or [])
+    single_key = getattr(settings, 'AI_ROSTER_OPENAI_API_KEY', '')
+    if single_key:
+        api_keys.append(single_key)
+    api_keys = list(dict.fromkeys(key for key in api_keys if key))
+    if not api_keys:
+        return {
+            'ok': False,
+            'error': "OpenAI API kaliti sozlanmagan.",
+            'entries': [],
+            'names': [],
+            'provider': 'openai',
+            'missing_key': True,
+        }
+    schema = {
+        'type': 'object',
+        'additionalProperties': False,
+        'properties': {
+            'students': {
+                'type': 'array',
+                'items': {
+                    'type': 'object',
+                    'additionalProperties': False,
+                    'properties': {
+                        'full_name': {'type': 'string'},
+                        'phone': {'type': 'string'},
+                        'approval_code': {'type': 'string'},
+                    },
+                    'required': ['full_name', 'phone', 'approval_code'],
+                },
+            },
+        },
+        'required': ['students'],
+    }
+    prompt = (
+        "Quyidagi matndan faqat o'quvchilar ro'yxatini ajrat. "
+        "Har bir o'quvchi uchun F.I.Sh., ko'rinsa telefon raqam va kod/id ni qaytar. "
+        "Sarlavha, izoh, fan, sinf, ball va boshqa ustunlarni chiqarmagin. "
+        "Agar o'quvchi topilmasa bo'sh students array qaytar.\n\n"
+        f"Matn:\n{str(text or '')[:24000]}"
+    )
+    payload = {
+        'model': getattr(settings, 'AI_ROSTER_MODEL', 'gpt-4o-mini'),
+        'input': [{
+            'role': 'user',
+            'content': [{'type': 'input_text', 'text': prompt}],
+        }],
+        'text': {
+            'format': {
+                'type': 'json_schema',
+                'name': 'student_roster_text_names',
+                'schema': schema,
+                'strict': True,
+            },
+        },
+        'max_output_tokens': 5000,
+    }
+    body = json.dumps(payload).encode('utf-8')
+    raw = None
+    last_error = ''
+    for index, api_key in enumerate(api_keys, start=1):
+        req = urllib.request.Request(
+            'https://api.openai.com/v1/responses',
+            data=body,
+            method='POST',
+            headers={
+                'Authorization': f'Bearer {api_key}',
+                'Content-Type': 'application/json',
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=35) as response:
+                raw = json.loads(response.read().decode('utf-8'))
+            if index > 1:
+                logger.info('OpenAI text roster extraction succeeded with fallback key #%s', index)
+            break
+        except urllib.error.HTTPError as exc:
+            status = getattr(exc, 'code', 0)
+            last_error = f'HTTP {status}'
+            logger.warning('OpenAI text roster key #%s failed: %s', index, last_error)
+            if status not in (401, 403, 408, 409, 429, 500, 502, 503, 504):
+                break
+        except Exception as exc:
+            last_error = exc.__class__.__name__
+            logger.warning('OpenAI text roster key #%s failed: %s', index, last_error)
+    if raw is None:
+        logger.error('OpenAI text roster extraction failed for all configured keys: %s', last_error)
+        return {'ok': False, 'error': "OpenAI matnni o'qiy olmadi.", 'entries': [], 'names': [], 'provider': 'openai'}
+
+    text_out = raw.get('output_text') or ''
+    if not text_out:
+        chunks = []
+        for item in raw.get('output') or []:
+            for content in item.get('content') or []:
+                if content.get('type') in ('output_text', 'text'):
+                    chunks.append(content.get('text') or '')
+        text_out = ''.join(chunks)
+    try:
+        parsed = _json_from_ai_text(text_out)
+    except (TypeError, ValueError):
+        logger.warning('OpenAI text roster response was not JSON: %s', text_out[:500])
+        return {'ok': False, 'error': "OpenAI javobi tushunarsiz bo'ldi.", 'entries': [], 'names': [], 'provider': 'openai'}
+
+    entries = _dedupe_entries([
+        {
+            'full_name': item.get('full_name', '').strip(),
+            'phone': normalize_phone(item.get('phone', '')),
+            'approval_code': str(item.get('approval_code') or '').strip().upper(),
+        }
+        for item in (parsed.get('students') or [])
+        if isinstance(item, dict) and _looks_like_name(item.get('full_name', ''))
+    ])
+    return {
+        'ok': True,
+        'error': '',
+        'entries': entries,
+        'names': [entry['full_name'] for entry in entries],
+        'provider': 'openai',
+    }
+
+
 def _gemini_extract_names_from_image(image_bytes, mime_type, caption=''):
     api_keys = list(getattr(settings, 'AI_ROSTER_GEMINI_API_KEYS', []) or [])
     single_key = getattr(settings, 'AI_ROSTER_GEMINI_API_KEY', '')
@@ -391,7 +513,7 @@ def _ai_extract_names_from_image(image_bytes, mime_type, caption=''):
     }
 
 
-def extract_names_from_payload(text='', image_bytes=None, mime_type='image/jpeg'):
+def extract_names_from_payload(text='', image_bytes=None, mime_type='image/jpeg', use_ai_text=False):
     entries = parse_roster_entries_from_text(text)
     if image_bytes:
         # Defensive size check — caller (telegram handler) allaqachon o'lchaydi,
@@ -409,6 +531,12 @@ def extract_names_from_payload(text='', image_bytes=None, mime_type='image/jpeg'
         if ai_result['ok']:
             entries = _dedupe_entries([*entries, *(ai_result.get('entries') or [])])
         elif not entries:
+            return ai_result
+    elif use_ai_text and text and not entries:
+        ai_result = _openai_extract_names_from_text(text)
+        if ai_result.get('ok'):
+            entries = _dedupe_entries([*entries, *(ai_result.get('entries') or [])])
+        elif not ai_result.get('missing_key'):
             return ai_result
     return {
         'ok': True,
@@ -584,7 +712,40 @@ def approve_roster_names(actor, names, source='telegram_ai_roster'):
         phone = entry.get('phone') or ''
         approval_code = entry.get('approval_code') or ''
         if not phone and not approval_code:
-            ambiguous.append(name)
+            if not getattr(settings, 'AI_ROSTER_ALLOW_NAME_ONLY_APPROVAL', True):
+                ambiguous.append(name)
+                continue
+            candidates = [
+                (_match_score(name, membership.user.full_name), membership)
+                for membership in pending
+            ]
+            # Name-only approval is useful for manager bot rosters, but it must
+            # stay strict: one clear pending match only, no guessing.
+            candidates = [
+                pair for pair in candidates
+                if pair[0] >= threshold and pair[1].id not in claimed_membership_ids
+            ]
+            candidates.sort(key=lambda pair: pair[0], reverse=True)
+            unique_ids = {membership.id for _, membership in candidates}
+            if len(unique_ids) != 1:
+                if candidates:
+                    ambiguous.append(name)
+                else:
+                    not_found.append(name)
+                continue
+            membership = candidates[0][1]
+            try:
+                membership = decide_membership(membership, actor, 'approved')
+            except (PermissionDenied, ValidationError):
+                logger.exception('AI roster approval skipped membership=%s actor=%s', membership.id, actor.id)
+                ambiguous.append(name)
+                continue
+            claimed_membership_ids.add(membership.id)
+            approved.append({
+                'name': membership.user.full_name,
+                'phone': membership.user.normalized_phone,
+                'membership_id': membership.id,
+            })
             continue
         candidates = []
         for membership in pending:

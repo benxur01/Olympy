@@ -6,6 +6,7 @@ from . import views
 urlpatterns = [
     path('', views.centers_list_create, name='centers-list-create'),
     path('mine/', views.my_centers, name='my-centers'),
+    path('<int:center_id>/image/', views.update_center_image, name='center-image'),
     path('<int:center_id>/join/', views.join_center, name='center-join'),
     path('<int:center_id>/memberships/pending/', views.pending_memberships, name='pending-memberships'),
     path('<int:center_id>/memberships/staff/', views.staff_memberships, name='staff-memberships'),

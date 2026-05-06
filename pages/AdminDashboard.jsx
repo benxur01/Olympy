@@ -270,6 +270,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       backendId: u.backendId,
       name: u.name,
       phone: u.phone,
+      avatarUrl: u.avatarUrl || '',
       role: roleLabel,
       center: center?.name || (primary ? u.roles?.[primary]?.centerName : '') || '—',
       joined: u.joined,
@@ -423,7 +424,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <Icon name="info" size={17} />
         </button>
         <div className="flex items-center gap-2 pl-2">
-          <Avatar name={user?.name || 'Admin'} size={30} gradient="from-slate-700 to-slate-900" />
+            <Avatar name={user?.name || 'Admin'} src={user?.avatarUrl || ''} size={30} gradient="from-slate-700 to-slate-900" />
           <div className="hidden text-right sm:block">
             <div className="text-[12px] font-bold leading-tight text-slate-900">{user?.name || 'Admin'}</div>
             <div className="text-[11px] font-medium leading-tight text-slate-500">Super Admin</div>
@@ -707,7 +708,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             <tbody className="divide-y divide-slate-100">
               {userRows.map(row => (
                 <tr key={row.id} className="text-sm">
-                  <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={row.name} size={34} /><span className="font-bold text-slate-900">{row.name}</span></div></td>
+                  <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={row.name} src={row.avatarUrl || ''} size={34} /><span className="font-bold text-slate-900">{row.name}</span></div></td>
                   <td className="px-5 py-4 font-mono text-xs text-slate-500">{row.phone?.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
                   <td className="px-5 py-4"><span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">{row.role}</span></td>
                   <td className="px-5 py-4 text-slate-500">{row.center}</td>

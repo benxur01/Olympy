@@ -56,8 +56,18 @@ const Icon = ({ name, size = 18, className = '' }) => {
 };
 
 // ─── Avatar ────────────────────────────────────────────────────────────────────
-const Avatar = ({ name = '', size = 36, gradient = 'from-indigo-500 to-purple-600' }) => {
+const Avatar = ({ name = '', size = 36, gradient = 'from-indigo-500 to-purple-600', src = '' }) => {
   const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={name || 'Avatar'}
+        className="rounded-full object-cover flex-shrink-0"
+        style={{ width: size, height: size }}
+      />
+    );
+  }
   return (
     <div className={`bg-gradient-to-br ${gradient} rounded-full flex items-center justify-center font-bold text-white flex-shrink-0`}
       style={{ width: size, height: size, fontSize: size * 0.38 }}>
@@ -122,7 +132,7 @@ const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick,
     {/* User footer */}
     <div className="p-3 border-t border-white/5 flex-shrink-0">
       <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 cursor-pointer">
-        <Avatar name={user?.name || 'U'} size={32} />
+        <Avatar name={user?.name || 'U'} src={user?.avatarUrl || ''} size={32} />
         {!collapsed && (
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-white truncate">{user?.name}</div>

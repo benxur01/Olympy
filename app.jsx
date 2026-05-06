@@ -144,6 +144,7 @@ const App = () => {
           onNavigate={navigate}
           onLogout={handleLogout}
           onOpenSwitcher={() => setSwitcherOpen(true)}
+          onUserUpdate={updateCurrentUser}
         />
       );
     }

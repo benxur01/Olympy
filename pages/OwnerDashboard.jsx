@@ -9,34 +9,37 @@ const ownerFormatDate = (value) => {
 
 const OwnerStatusPill = ({ status, children }) => {
   const map = {
-    approved: 'bg-emerald-50 text-emerald-700 ring-emerald-200',
-    pending: 'bg-amber-50 text-amber-700 ring-amber-200',
-    rejected: 'bg-rose-50 text-rose-700 ring-rose-200',
-    active: 'bg-cyan-50 text-cyan-700 ring-cyan-200',
-    draft: 'bg-slate-100 text-slate-600 ring-slate-200',
+    approved: 'badge-approved',
+    pending: 'badge-pending',
+    rejected: 'badge-rejected',
+    active: 'badge-active',
+    draft: 'badge-draft',
   };
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-extrabold ring-1 ${map[status] || map.draft}`}>
+    <span className={`chip ${map[status] || map.draft}`}>
       {children || statusLabel(status)}
     </span>
   );
 };
 
-const OwnerMetric = ({ label, value, hint, icon, tone = 'emerald' }) => {
+const OwnerMetric = ({ label, value, hint, icon, tone = 'indigo', glow }) => {
   const tones = {
-    emerald: 'bg-emerald-50 text-emerald-700',
-    cyan: 'bg-cyan-50 text-cyan-700',
-    amber: 'bg-amber-50 text-amber-700',
-    indigo: 'bg-indigo-50 text-indigo-700',
+    indigo: { grad: 'from-indigo-500 to-purple-600', glowCls: 'glow-purple' },
+    purple: { grad: 'from-purple-500 to-pink-500', glowCls: 'glow-purple' },
+    cyan: { grad: 'from-cyan-500 to-sky-500', glowCls: 'glow-cyan' },
+    amber: { grad: 'from-amber-500 to-orange-500', glowCls: '' },
+    emerald: { grad: 'from-emerald-500 to-teal-500', glowCls: '' },
+    rose: { grad: 'from-rose-500 to-red-500', glowCls: '' },
   };
+  const t = tones[tone] || tones.indigo;
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <div className="text-[12px] font-extrabold text-slate-500">{label}</div>
-        <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${tones[tone] || tones.emerald}`}>{icon}</div>
+    <div className={`stat-card glass-strong rounded-2xl p-5 card-hover ${glow ? t.glowCls : ''}`}>
+      <div className="flex items-start justify-between mb-4">
+        <div className={`feature-icon bg-gradient-to-br ${t.grad} text-white shadow-lg`}>{icon}</div>
+        {hint && <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">{hint}</span>}
       </div>
-      <div className="text-2xl font-black tracking-tight text-slate-900">{value}</div>
-      {hint && <div className="mt-2 text-[11px] font-semibold text-slate-500">{hint}</div>}
+      <div className="text-3xl font-black text-white mb-1 tracking-tight">{value}</div>
+      <div className="text-xs font-semibold text-white/50">{label}</div>
     </div>
   );
 };
@@ -44,14 +47,24 @@ const OwnerMetric = ({ label, value, hint, icon, tone = 'emerald' }) => {
 const OwnerSidebarItem = ({ item, active, onClick }) => (
   <button
     onClick={onClick}
-    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-[13px] font-bold transition ${
-      active ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-950/20' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-900'
+    className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all ${
+      active
+        ? 'text-white'
+        : 'text-white/55 hover:bg-white/5 hover:text-white'
     }`}
+    style={active ? { background: 'linear-gradient(90deg, rgba(99,102,241,0.18), rgba(168,85,247,0.10))' } : undefined}
   >
-    <Icon name={item.icon} size={16} />
+    {active && <span className="absolute left-0 top-1/2 h-7 w-[3px] -translate-y-1/2 rounded-r-full bg-gradient-to-b from-indigo-400 to-purple-500" />}
+    <span className={active ? 'text-indigo-300' : 'text-white/40 group-hover:text-white/70'}>
+      <Icon name={item.icon} size={17} />
+    </span>
     <span className="flex-1">{item.label}</span>
     {item.badge && (
-      <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${active ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-700'}`}>
+      <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
+        active
+          ? 'bg-white/15 text-white'
+          : 'bg-amber-400/15 text-amber-300 ring-1 ring-amber-400/30'
+      }`}>
         {item.badge}
       </span>
     )}
@@ -85,6 +98,9 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [centerModal, setCenterModal] = React.useState(false);
   const [centerSaving, setCenterSaving] = React.useState(false);
   const [centerForm, setCenterForm] = React.useState(emptyCenterForm);
+  const [centerImageOverrides, setCenterImageOverrides] = React.useState({});
+  const [centerImageLoading, setCenterImageLoading] = React.useState(false);
+  const centerImageInputRef = React.useRef(null);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -174,7 +190,11 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     () => isApi ? OlympyApi.getOlympiads(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
-  const apiCenters = isApi && Array.isArray(apiCentersRes.data) ? apiCentersRes.data.map(mapApiCenter) : null;
+  const applyCenterImageOverride = (c) => {
+    const override = centerImageOverrides[String(c.id)] || centerImageOverrides[String(c.backendId)];
+    return override ? { ...c, imageUrl: override } : c;
+  };
+  const apiCenters = isApi && Array.isArray(apiCentersRes.data) ? apiCentersRes.data.map(mapApiCenter).map(applyCenterImageOverride) : null;
   const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data) ? apiOlympiadsRes.data.map(mapApiOlympiad) : null;
   const roleOwnerCentersAsCenters = ownerRoleCenters.filter(c => c.centerId != null).map(c => ({
     id: String(c.centerId),
@@ -187,6 +207,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     city: c.city || c.district || c.region || '',
     status: c.status || 'pending',
     subjects: [],
+    imageUrl: c.imageUrl || '',
     rating: 0,
     students: 0,
     olympiads: 0,
@@ -215,6 +236,29 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     if (!ownerCenterId) return;
     try { localStorage.setItem(selectedCenterStorageKey, String(ownerCenterId)); } catch {}
   }, [ownerCenterId, selectedCenterStorageKey]);
+
+  const handleCenterImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !center || !isApi) return;
+    setCenterImageLoading(true);
+    try {
+      const token = OlympyApi.getToken();
+      const data = await OlympyApi.uploadCenterImage(center.backendId ?? center.id, file, token);
+      const mapped = mapApiCenter(data);
+      setCenterImageOverrides(prev => ({
+        ...prev,
+        [String(center.id)]: mapped.imageUrl,
+        [String(center.backendId ?? center.id)]: mapped.imageUrl,
+      }));
+      showToast('Tashkilot rasmi yangilandi');
+    } catch (err) {
+      console.warn('uploadCenterImage failed:', err);
+      showToast(OlympyApi.toUserMessage?.(err) || 'Rasm yuklanmadi');
+    } finally {
+      setCenterImageLoading(false);
+      if (e.target) e.target.value = '';
+    }
+  };
 
   if (!center || center.status !== 'approved') {
     const approvedFallback = ownerCenters.find(c => c.status === 'approved');
@@ -292,6 +336,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     centerId: String(center.id),
     name: m.user?.full_name || m.user?.name || '—',
     phone: m.user?.normalized_phone || m.user?.phone || '—',
+    avatarUrl: m.user?.avatar_url || m.user?.avatarUrl || '',
     role: m.role,
     subject: m.subject || '',
     status: m.status || 'approved',
@@ -310,6 +355,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         centerId: center.id,
         name: u.name,
         phone: u.phone,
+        avatarUrl: u.avatarUrl || '',
         role: isManager ? 'manager' : 'teacher',
         subject: u.roles?.teacher?.subject || '',
         status: 'approved',
@@ -330,6 +376,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     ? {
         name: req.user?.full_name || req.user?.name || '—',
         phone: req.user?.normalized_phone || req.user?.phone || '—',
+        avatarUrl: req.user?.avatar_url || req.user?.avatarUrl || '',
       }
     : store.users.find(x => x.id === req.userId);
 
@@ -537,63 +584,96 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const recentRequests = requestRows.filter(r => r.status === 'pending').slice(0, 4);
 
   const Sidebar = () => (
-    <aside className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-[248px] flex-col border-r border-slate-200 bg-white shadow-2xl transition-transform duration-200 lg:static lg:translate-x-0 lg:shadow-none`}>
-      <div className="border-b border-slate-200 px-5 py-5">
-        <button onClick={() => onNavigate('landing')} className="flex items-center gap-3 text-left">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-lg font-black text-white">{center.name[0]}</div>
-          <div className="min-w-0">
-            <div className="truncate text-sm font-black text-slate-900">{center.name}</div>
-            <div className="truncate text-xs font-semibold text-slate-500">{center.organizationType || "O'quv markaz"} · Direktor paneli</div>
+    <aside
+      className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-[268px] flex-col border-r border-white/5 transition-transform duration-200 lg:static lg:translate-x-0`}
+      style={{ background: 'rgba(6,8,24,0.96)', backdropFilter: 'blur(12px)' }}
+    >
+      <div className="border-b border-white/5 px-5 py-5">
+        <button onClick={() => onNavigate('landing')} className="flex w-full items-center gap-3 text-left">
+          <div className="flex h-11 w-11 items-center justify-center rounded-xl gradient-bg text-base font-black text-white shadow-lg shadow-indigo-900/40">
+            {center.name[0]}
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-black text-white">{center.name}</div>
+            <div className="truncate text-[11px] font-semibold text-white/40">
+              {center.organizationType || "O'quv markaz"} · Direktor paneli
+            </div>
           </div>
         </button>
       </div>
+
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
         {navItems.map(item => (
-          <OwnerSidebarItem key={item.key} item={item} active={page === item.key} onClick={() => { setPage(item.key); setMobileMenu(false); }} />
+          <OwnerSidebarItem
+            key={item.key}
+            item={item}
+            active={page === item.key}
+            onClick={() => { setPage(item.key); setMobileMenu(false); }}
+          />
         ))}
       </nav>
-      <div className="border-t border-slate-200 p-4">
+
+      <div className="space-y-2 border-t border-white/5 p-3">
         {ownerCenters.length > 1 && (
-          <label className="mb-3 block">
-            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wide text-slate-400">Tashkilot</span>
+          <label className="block">
+            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-white/35">Tashkilot</span>
             <select
               value={ownerCenterId || ''}
               onChange={e => { setSelectedOwnerCenterId(e.target.value); setPage('home'); }}
-              className="h-10 w-full rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+              className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-2 text-xs font-bold text-white/80 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
+              style={{ background: 'rgba(255,255,255,0.04)' }}
             >
               {ownerCenters.map(c => (
-                <option key={c.id} value={c.id}>{c.name} · {statusLabel(c.status)}</option>
+                <option key={c.id} value={c.id} style={{ background: '#12152e' }}>{c.name} · {statusLabel(c.status)}</option>
               ))}
             </select>
           </label>
         )}
-        <button onClick={openCenterModal} className="mb-3 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">
+        <button
+          onClick={openCenterModal}
+          className="btn-primary flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-black"
+        >
           <Icon name="plus" size={14} /> Yangi tashkilot
         </button>
-        <div className="mb-4 rounded-lg bg-emerald-50 p-3">
-          <div className="mb-1 flex items-center gap-2 text-xs font-black text-emerald-700">
-            <span className="h-2 w-2 rounded-full bg-emerald-500" /> Tashkilot faol
+        <div className="rounded-xl glass p-3">
+          <div className="flex items-center gap-2 text-[11px] font-bold text-emerald-300">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
+            </span>
+            Tashkilot faol
           </div>
-          <div className="text-[11px] font-semibold leading-relaxed text-emerald-700/70">
+          <div className="mt-1 text-[10px] font-medium leading-relaxed text-white/40">
             Faqat {center.name} ma'lumotlari ko'rsatiladi.
           </div>
         </div>
-        <button onClick={onLogout} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm font-bold text-slate-500 hover:bg-slate-100 hover:text-slate-900">
-          <Icon name="logout" size={16} /> Chiqish
+        <button
+          onClick={onLogout}
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-white/55 transition-colors hover:bg-white/5 hover:text-rose-300"
+        >
+          <Icon name="logout" size={14} /> Chiqish
         </button>
       </div>
     </aside>
   );
 
   const Topbar = () => (
-    <header className="sticky top-0 z-30 flex h-[62px] items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur lg:px-6">
+    <header
+      className="sticky top-0 z-30 flex h-[64px] items-center justify-between border-b border-white/5 px-4 lg:px-6"
+      style={{ background: 'rgba(13,15,35,0.75)', backdropFilter: 'blur(16px)' }}
+    >
       <div className="flex items-center gap-3">
-        <button className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 lg:hidden" onClick={() => setMobileMenu(true)}>
+        <button
+          className="rounded-xl p-2 text-white/60 transition-colors hover:bg-white/5 hover:text-white lg:hidden"
+          onClick={() => setMobileMenu(true)}
+        >
           <Icon name="menu" size={20} />
         </button>
         <div>
-          <div className="text-base font-black text-slate-900">{navItems.find(n => n.key === page)?.label || 'Overview'}</div>
-          <div className="text-xs font-semibold text-slate-500">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · {ownerFormatDate(center.createdAt)}</div>
+          <div className="text-[15px] font-black text-white">{navItems.find(n => n.key === page)?.label || 'Overview'}</div>
+          <div className="text-[11px] font-semibold text-white/40">
+            {center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · {ownerFormatDate(center.createdAt)}
+          </div>
         </div>
       </div>
       <div className="flex items-center gap-2">
@@ -601,32 +681,43 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <select
             value={ownerCenterId || ''}
             onChange={e => { setSelectedOwnerCenterId(e.target.value); setPage('home'); }}
-            className="hidden h-9 max-w-[220px] rounded-lg border border-slate-200 bg-white px-2 text-xs font-bold text-slate-700 outline-none hover:bg-slate-50 focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 md:block"
+            className="hidden h-9 max-w-[220px] rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white/80 outline-none transition hover:bg-white/10 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30 md:block"
           >
             {ownerCenters.map(c => (
-              <option key={c.id} value={c.id}>{c.name} · {statusLabel(c.status)}</option>
+              <option key={c.id} value={c.id} style={{ background: '#12152e' }}>{c.name} · {statusLabel(c.status)}</option>
             ))}
           </select>
         )}
-        <button onClick={openCenterModal} className="hidden rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700 md:inline-flex">
+        <button
+          onClick={openCenterModal}
+          className="btn-primary hidden rounded-xl px-3 py-2 text-xs font-black md:inline-flex"
+        >
           Yangi tashkilot
         </button>
         {onOpenSwitcher && (
-          <button onClick={onOpenSwitcher} className="hidden rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 md:inline-flex">
+          <button
+            onClick={onOpenSwitcher}
+            className="btn-ghost hidden rounded-xl px-3 py-2 text-xs font-bold md:inline-flex"
+          >
             Rolni almashtirish
           </button>
         )}
-        <button onClick={() => setPage('requests')} className="relative rounded-lg border border-slate-200 p-2 text-slate-500 hover:bg-slate-50">
+        <button
+          onClick={() => setPage('requests')}
+          className="relative rounded-xl border border-white/10 bg-white/5 p-2 text-white/60 transition hover:bg-white/10 hover:text-white"
+        >
           <Icon name="bell" size={18} />
           {pendingCount > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-black text-white">{pendingCount}</span>
+            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-500 px-1 text-[10px] font-black text-white shadow-lg shadow-amber-900/40">
+              {pendingCount}
+            </span>
           )}
         </button>
         <div className="ml-2 flex items-center gap-2">
-          <Avatar name={user?.name || 'Director'} size={32} gradient="from-emerald-600 to-cyan-600" />
+          <Avatar name={user?.name || 'Director'} src={user?.avatarUrl || ''} size={34} />
           <div className="hidden text-right sm:block">
-            <div className="text-xs font-black text-slate-900">{user?.name || 'Direktor'}</div>
-            <div className="text-[11px] font-semibold text-slate-500">Direktor</div>
+            <div className="text-xs font-black text-white">{user?.name || 'Direktor'}</div>
+            <div className="text-[10px] font-semibold text-white/40">Direktor</div>
           </div>
         </div>
       </div>
@@ -635,24 +726,42 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const RequestCard = ({ req }) => {
     const u = requestUser(req);
+    const isManager = req.type === 'manager';
     return (
-      <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="glass rounded-2xl p-4 transition-all hover:border-white/15 hover:bg-white/[0.06]">
         <div className="flex items-start gap-3">
-          <Avatar name={u?.name || '?'} size={38} gradient={req.type === 'manager' ? 'from-indigo-600 to-cyan-600' : 'from-emerald-600 to-teal-600'} />
+          <Avatar
+            name={u?.name || '?'}
+            src={u?.avatarUrl || ''}
+            size={42}
+            gradient={isManager ? 'from-indigo-500 to-purple-600' : 'from-cyan-500 to-sky-600'}
+          />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="truncate text-sm font-black text-slate-900">{u?.name || 'Noma\'lum'}</div>
+              <div className="truncate text-sm font-black text-white">{u?.name || 'Noma\'lum'}</div>
               <OwnerStatusPill status={req.status} />
             </div>
-            <div className="mt-1 text-xs font-semibold text-slate-500">
-              {req.type === 'manager' ? 'Manager arizasi' : `O'qituvchi arizasi${req.subject ? ` · ${req.subject}` : ''}`}
+            <div className="mt-1 text-xs font-semibold text-white/55">
+              {isManager ? 'Manager arizasi' : `O'qituvchi arizasi${req.subject ? ` · ${req.subject}` : ''}`}
             </div>
-            <div className="mt-1 text-[11px] font-medium text-slate-400">{u?.phone || '—'} · {ownerFormatDate(req.date)}</div>
+            <div className="mt-1 text-[11px] font-medium text-white/35">
+              {u?.phone || '—'} · {ownerFormatDate(req.date)}
+            </div>
           </div>
           {req.status === 'pending' && (
             <div className="flex shrink-0 gap-2">
-              <button onClick={() => approve(req.id)} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-black text-white hover:bg-emerald-700">Qabul</button>
-              <button onClick={() => reject(req.id)} className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-black text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100">Rad</button>
+              <button
+                onClick={() => approve(req.id)}
+                className="btn-success rounded-xl px-3 py-2 text-xs font-black"
+              >
+                Qabul
+              </button>
+              <button
+                onClick={() => reject(req.id)}
+                className="btn-danger rounded-xl px-3 py-2 text-xs font-black"
+              >
+                Rad
+              </button>
             </div>
           )}
         </div>
@@ -661,45 +770,62 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   };
 
   const renderHome = () => (
-    <div className="space-y-5 p-4 lg:p-6">
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="grid gap-0 lg:grid-cols-[1.25fr_.75fr]">
-          <div className="p-6">
+    <div className="space-y-6 p-4 lg:p-6">
+      {/* Hero card */}
+      <section className="relative overflow-hidden rounded-3xl border border-white/8 glass-strong">
+        {/* Decorative glows */}
+        <div className="hero-glow" style={{ background: '#6366f1', top: '-200px', left: '-100px' }} />
+        <div className="hero-glow" style={{ background: '#a855f7', bottom: '-220px', right: '-120px' }} />
+
+        <div className="relative grid gap-0 lg:grid-cols-[1.3fr_.7fr]">
+          <div className="p-6 lg:p-8">
             <div className="mb-5 flex flex-wrap items-center gap-2">
               <OwnerStatusPill status="approved">Tasdiqlangan tashkilot</OwnerStatusPill>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold text-slate-500">{center.region || center.city}</span>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-extrabold text-slate-500">{center.organizationType || "O'quv markaz"}</span>
+              <span className="chip badge-draft">{center.region || center.city}</span>
+              <span className="chip badge-draft">{center.organizationType || "O'quv markaz"}</span>
             </div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-900">{center.name}</h1>
-            <p className="mt-2 max-w-2xl text-sm font-medium leading-relaxed text-slate-500">
+            <h1 className="text-3xl font-black tracking-tight text-white lg:text-4xl">
+              <span className="gradient-text">{center.name}</span>
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm font-medium leading-relaxed text-white/55">
               Direktor paneli faqat shu tashkilotga tegishli xodimlar, arizalar va ko'rsatkichlarni boshqaradi.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
-              {(center.subjects || []).slice(0, 6).map(s => (
-                <span key={s} className="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700 ring-1 ring-emerald-100">{s}</span>
-              ))}
-              {(!center.subjects || center.subjects.length === 0) && <span className="text-xs font-semibold text-slate-400">Fanlar kiritilmagan</span>}
+              {(center.subjects || []).slice(0, 6).map(s => <SubjectBadge key={s} subject={s} />)}
+              {(!center.subjects || center.subjects.length === 0) && (
+                <span className="text-xs font-semibold text-white/35">Fanlar kiritilmagan</span>
+              )}
             </div>
           </div>
-          <div className="border-t border-slate-200 bg-slate-50 p-6 lg:border-l lg:border-t-0">
-            <div className="text-xs font-black uppercase tracking-wide text-slate-400">Bugungi vazifalar</div>
+
+          <div className="border-t border-white/5 p-6 lg:border-l lg:border-t-0 lg:p-8" style={{ background: 'rgba(255,255,255,0.02)' }}>
+            <div className="text-[10px] font-black uppercase tracking-wider text-white/40">Bugungi vazifalar</div>
             <div className="mt-4 space-y-3">
-              <div className="flex items-center justify-between rounded-lg bg-white p-3 ring-1 ring-slate-200">
-                <span className="text-sm font-bold text-slate-700">Xodim arizalari</span>
-                <span className="text-lg font-black text-amber-600">{pendingCount}</span>
+              <div className="flex items-center justify-between rounded-xl glass p-3">
+                <span className="text-sm font-bold text-white/70">Xodim arizalari</span>
+                <span className="text-xl font-black text-amber-300">{pendingCount}</span>
               </div>
-              <div className="flex items-center justify-between rounded-lg bg-white p-3 ring-1 ring-slate-200">
-                <span className="text-sm font-bold text-slate-700">Faol tadbirlar</span>
-                <span className="text-lg font-black text-cyan-700">{activeOlympiads.length}</span>
+              <div className="flex items-center justify-between rounded-xl glass p-3">
+                <span className="text-sm font-bold text-white/70">Faol tadbirlar</span>
+                <span className="text-xl font-black text-cyan-300">{activeOlympiads.length}</span>
               </div>
-              <button onClick={() => setPage('requests')} className="w-full rounded-lg bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700">
+              <button
+                onClick={() => setPage('requests')}
+                className="btn-primary w-full rounded-xl px-4 py-3 text-sm font-black"
+              >
                 Arizalarni ko'rish
               </button>
               <div className="grid gap-2 sm:grid-cols-2">
-                <button onClick={() => openStaffModal('manager')} className="rounded-lg border border-emerald-200 bg-white px-4 py-3 text-sm font-black text-emerald-700 hover:bg-emerald-50">
+                <button
+                  onClick={() => openStaffModal('manager')}
+                  className="btn-ghost rounded-xl px-3 py-3 text-xs font-black"
+                >
                   Menejer yaratish
                 </button>
-                <button onClick={() => openStaffModal('teacher')} className="rounded-lg border border-cyan-200 bg-white px-4 py-3 text-sm font-black text-cyan-700 hover:bg-cyan-50">
+                <button
+                  onClick={() => openStaffModal('teacher')}
+                  className="btn-ghost rounded-xl px-3 py-3 text-xs font-black"
+                >
                   Ustoz yaratish
                 </button>
               </div>
@@ -708,55 +834,88 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
       </section>
 
+      {/* KPI metrics */}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <OwnerMetric label="Xodimlar" value={myStaff.length} hint="Tasdiqlangan manager/o'qituvchi" icon={<Icon name="users" size={18} />} tone="emerald" />
-        <OwnerMetric label="Kutilayotgan arizalar" value={pendingCount} hint={pendingCount ? 'Qaror kutilmoqda' : 'Navbat bo\'sh'} icon={<Icon name="bell" size={18} />} tone="amber" />
-        <OwnerMetric label="Tadbirlar" value={centerOlympiads.length} hint={`${activeOlympiads.length} ta faol`} icon={<Icon name="trophy" size={18} />} tone="cyan" />
-        <OwnerMetric label="Reyting" value={center.rating || '—'} hint="Tashkilot profili ko'rsatkichi" icon={<Icon name="star" size={18} />} tone="indigo" />
+        <OwnerMetric
+          label="Xodimlar"
+          value={myStaff.length}
+          hint="Tasdiqlangan"
+          icon={<Icon name="users" size={20} />}
+          tone="indigo"
+          glow
+        />
+        <OwnerMetric
+          label="Kutilayotgan arizalar"
+          value={pendingCount}
+          hint={pendingCount ? 'Qaror kerak' : "Bo'sh"}
+          icon={<Icon name="bell" size={20} />}
+          tone="amber"
+        />
+        <OwnerMetric
+          label="Tadbirlar"
+          value={centerOlympiads.length}
+          hint={`${activeOlympiads.length} faol`}
+          icon={<Icon name="trophy" size={20} />}
+          tone="cyan"
+        />
+        <OwnerMetric
+          label="Reyting"
+          value={center.rating || '—'}
+          hint="Profil"
+          icon={<Icon name="star" size={20} />}
+          tone="purple"
+        />
       </div>
 
+      {/* Pending requests + status panel */}
       <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
+        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+          <div className="mb-5 flex items-center justify-between">
             <div>
-              <h2 className="text-base font-black text-slate-900">Kutilayotgan xodim arizalari</h2>
-              <p className="mt-1 text-xs font-semibold text-slate-500">Manager va o'qituvchi arizalarini shu yerdan tasdiqlang.</p>
+              <h2 className="text-base font-black text-white">Kutilayotgan xodim arizalari</h2>
+              <p className="mt-1 text-xs font-semibold text-white/45">Manager va o'qituvchi arizalarini shu yerdan tasdiqlang.</p>
             </div>
-            <button onClick={() => setPage('requests')} className="text-xs font-black text-emerald-700">Barchasi</button>
+            <button
+              onClick={() => setPage('requests')}
+              className="text-xs font-black text-indigo-300 transition-colors hover:text-indigo-200"
+            >
+              Barchasi →
+            </button>
           </div>
           <div className="space-y-3">
             {recentRequests.map(r => <RequestCard key={r.id} req={r} />)}
             {recentRequests.length === 0 && (
-              <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-12 text-center">
-                <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
-                  <Icon name="check" size={20} />
-                </div>
-                <div className="text-sm font-black text-slate-700">Hozircha yangi ariza yo'q</div>
-                <div className="mt-1 text-xs font-semibold text-slate-500">Yangi xodim arizalari kelganda shu yerda chiqadi.</div>
-              </div>
+              <EmptyState
+                icon="check"
+                title="Hozircha yangi ariza yo'q"
+                desc="Yangi xodim arizalari kelganda shu yerda chiqadi."
+              />
             )}
           </div>
         </section>
 
-        <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-base font-black text-slate-900">Tashkilot holati</h2>
+        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="text-base font-black text-white">Tashkilot holati</h2>
             <OwnerStatusPill status={center.status} />
           </div>
           <div className="space-y-4">
             {[
-              ['Profil', 100, '#10b981'],
-              ['Xodimlar', Math.min(100, myStaff.length * 25), '#06b6d4'],
-              ['Fanlar', Math.min(100, (center.subjects || []).length * 18), '#6366f1'],
-              ['Olimpiadalar', Math.min(100, (centerOlympiads.length) * 20), '#f59e0b'],
+              { label: 'Profil', pct: 100, color: '#10b981' },
+              { label: 'Xodimlar', pct: Math.min(100, myStaff.length * 25), color: '#22d3ee' },
+              { label: 'Fanlar', pct: Math.min(100, (center.subjects || []).length * 18), color: '#6366f1' },
+              { label: 'Olimpiadalar', pct: Math.min(100, (centerOlympiads.length) * 20), color: '#a855f7' },
             ].map(row => (
-              <div key={row[0]}>
-                <div className="mb-1 flex justify-between text-xs font-bold">
-                  <span className="text-slate-500">{row[0]}</span>
-                  <span style={{ color: row[2] }}>{row[1]}%</span>
+              <div key={row.label}>
+                <div className="mb-1.5 flex justify-between text-xs font-bold">
+                  <span className="text-white/60">{row.label}</span>
+                  <span style={{ color: row.color }}>{row.pct}%</span>
                 </div>
-                <div className="h-2 rounded-full bg-slate-100">
-                  <div className="h-full rounded-full" style={{ width: `${row[1]}%`, background: row[2] }} />
+                <div className="progress-bar h-2">
+                  <div
+                    className="h-full rounded-full transition-[width] duration-700"
+                    style={{ width: `${row.pct}%`, background: `linear-gradient(90deg, ${row.color}, #a855f7)` }}
+                  />
                 </div>
               </div>
             ))}
@@ -770,16 +929,20 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     <div className="space-y-5 p-4 lg:p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900">Xodim arizalari</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500">Bu ro'yxat faqat {center.name} uchun.</p>
+          <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Xodim arizalari</h1>
+          <p className="mt-1 text-sm font-semibold text-white/50">Bu ro'yxat faqat {center.name} uchun.</p>
         </div>
         <OwnerStatusPill status="pending">{pendingCount} ta kutilmoqda</OwnerStatusPill>
       </div>
       <div className="grid gap-3">
         {requestRows.map(r => <RequestCard key={r.id} req={r} />)}
         {requestRows.length === 0 && (
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-16 text-center text-sm font-bold text-slate-500 shadow-sm">
-            Arizalar yo'q
+          <div className="rounded-2xl border border-white/8 glass-strong px-4 py-16 text-center">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full glass text-white/30">
+              <Icon name="bell" size={22} />
+            </div>
+            <div className="text-sm font-black text-white/70">Arizalar yo'q</div>
+            <div className="mt-1 text-xs font-semibold text-white/40">Yangi arizalar kelishi bilan shu yerda paydo bo'ladi.</div>
           </div>
         )}
       </div>
@@ -790,37 +953,64 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     <div className="space-y-5 p-4 lg:p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900">Xodimlar</h1>
-          <p className="mt-1 text-sm font-semibold text-slate-500">Tasdiqlangan manager va o'qituvchilar.</p>
+          <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Xodimlar</h1>
+          <p className="mt-1 text-sm font-semibold text-white/50">Tasdiqlangan manager va o'qituvchilar.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <button onClick={() => openStaffModal('manager')} className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-black text-white shadow-sm hover:bg-emerald-700">
+          <button
+            onClick={() => openStaffModal('manager')}
+            className="btn-primary inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-black"
+          >
             <Icon name="plus" size={16} /> Menejer yaratish
           </button>
-          <button onClick={() => openStaffModal('teacher')} className="inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-600 px-4 py-3 text-sm font-black text-white shadow-sm hover:bg-cyan-700">
+          <button
+            onClick={() => openStaffModal('teacher')}
+            className="btn-ghost inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-black"
+          >
             <Icon name="plus" size={16} /> Ustoz yaratish
           </button>
         </div>
       </div>
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <section className="overflow-hidden rounded-2xl border border-white/8 glass-strong">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left">
-            <thead className="bg-slate-50">
-              <tr className="text-xs font-black uppercase text-slate-400">
-                {['Ism', 'Telefon', 'Rol', 'Fan', 'Holat'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
+            <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
+              <tr className="text-[10px] font-black uppercase tracking-wider text-white/40">
+                {['Ism', 'Telefon', 'Rol', 'Fan', 'Holat'].map(h => (
+                  <th key={h} className="px-5 py-3.5">{h}</th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {myStaff.map(row => (
-                <tr key={row.id} className="text-sm">
-                  <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={row.name} size={34} /><span className="font-black text-slate-900">{row.name}</span></div></td>
-                  <td className="px-5 py-4 font-mono text-xs text-slate-500">{String(row.phone || '').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
-                  <td className="px-5 py-4"><span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-black text-slate-600">{row.role === 'manager' ? 'Manager' : "O'qituvchi"}</span></td>
-                  <td className="px-5 py-4 text-slate-500">{row.subject || '—'}</td>
-                  <td className="px-5 py-4"><OwnerStatusPill status={row.status || 'approved'} /></td>
+                <tr key={row.id} className="table-row text-sm">
+                  <td className="px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <Avatar name={row.name} src={row.avatarUrl || ''} size={36} gradient={row.role === 'manager' ? 'from-indigo-500 to-purple-600' : 'from-cyan-500 to-sky-600'} />
+                      <span className="font-black text-white">{row.name}</span>
+                    </div>
+                  </td>
+                  <td className="px-5 py-4 font-mono text-xs text-white/55">
+                    {String(row.phone || '').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}
+                  </td>
+                  <td className="px-5 py-4">
+                    <span className={`chip ${row.role === 'manager' ? 'badge-active' : 'badge-approved'}`}>
+                      {row.role === 'manager' ? 'Manager' : "O'qituvchi"}
+                    </span>
+                  </td>
+                  <td className="px-5 py-4 text-white/60">{row.subject || '—'}</td>
+                  <td className="px-5 py-4">
+                    <OwnerStatusPill status={row.status || 'approved'} />
+                  </td>
                 </tr>
               ))}
-              {myStaff.length === 0 && <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-bold text-slate-500">Hali tasdiqlangan xodimlar yo'q</td></tr>}
+              {myStaff.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-16 text-center text-sm font-bold text-white/40">
+                    Hali tasdiqlangan xodimlar yo'q
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -831,31 +1021,55 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderOlympiads = () => (
     <div className="space-y-5 p-4 lg:p-6">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Tadbirlar</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">Direktor uchun tashkilotdagi olimpiada va musobaqalar ko'rinishi.</p>
+        <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Tadbirlar</h1>
+        <p className="mt-1 text-sm font-semibold text-white/50">Direktor uchun tashkilotdagi olimpiada va musobaqalar ko'rinishi.</p>
       </div>
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <section className="overflow-hidden rounded-2xl border border-white/8 glass-strong">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[920px] text-left">
-            <thead className="bg-slate-50">
-              <tr className="text-xs font-black uppercase text-slate-400">
-                {['Nomi', 'Turi', 'Fan', 'Daraja', 'Test turi', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
+            <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
+              <tr className="text-[10px] font-black uppercase tracking-wider text-white/40">
+                {['Nomi', 'Turi', 'Fan', 'Daraja', 'Test turi', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => (
+                  <th key={h} className="px-5 py-3.5">{h}</th>
+                ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody>
               {centerOlympiads.map(o => (
-                <tr key={o.id} className="text-sm">
-                  <td className="px-5 py-4 font-black text-slate-900">{o.title}</td>
-                  <td className="px-5 py-4"><span className={`rounded-md px-2 py-1 text-xs font-black ${o.eventType === 'olympiad' ? 'bg-cyan-50 text-cyan-700' : 'bg-amber-50 text-amber-700'}`}>{eventTypeLabel(o.eventType || 'competition')}</span></td>
-                  <td className="px-5 py-4"><span className="rounded-md bg-emerald-50 px-2 py-1 text-xs font-black text-emerald-700">{o.subject}</span></td>
-                  <td className="px-5 py-4">{o.testLevel ? <span className="rounded-md bg-violet-50 px-2 py-1 text-xs font-black text-violet-700">{o.testLevel}</span> : <span className="text-slate-300">—</span>}</td>
-                  <td className="px-5 py-4">{o.testType ? <span className="rounded-md bg-sky-50 px-2 py-1 text-xs font-black text-sky-700">{testTypeLabel(o.testType)}</span> : <span className="text-slate-300">—</span>}</td>
-                  <td className="px-5 py-4 text-slate-500">{o.startDate || '—'}</td>
-                  <td className="px-5 py-4 font-bold text-slate-700">{o.participants || 0}</td>
-                  <td className="px-5 py-4"><OwnerStatusPill status={o.status} /></td>
+                <tr key={o.id} className="table-row text-sm">
+                  <td className="px-5 py-4 font-black text-white">{o.title}</td>
+                  <td className="px-5 py-4">
+                    <span className={`chip ${o.eventType === 'olympiad' ? 'badge-active' : 'badge-pending'}`}>
+                      {eventTypeLabel(o.eventType || 'competition')}
+                    </span>
+                  </td>
+                  <td className="px-5 py-4">
+                    <SubjectBadge subject={o.subject} />
+                  </td>
+                  <td className="px-5 py-4">
+                    {o.testLevel
+                      ? <span className="chip badge-draft">{o.testLevel}</span>
+                      : <span className="text-white/30">—</span>}
+                  </td>
+                  <td className="px-5 py-4">
+                    {o.testType
+                      ? <span className="chip badge-active">{testTypeLabel(o.testType)}</span>
+                      : <span className="text-white/30">—</span>}
+                  </td>
+                  <td className="px-5 py-4 text-white/55">{o.startDate || '—'}</td>
+                  <td className="px-5 py-4 font-bold text-white/75">{o.participants || 0}</td>
+                  <td className="px-5 py-4">
+                    <OwnerStatusPill status={o.status} />
+                  </td>
                 </tr>
               ))}
-              {centerOlympiads.length === 0 && <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-bold text-slate-500">Hali tadbirlar yo'q</td></tr>}
+              {centerOlympiads.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-5 py-16 text-center text-sm font-bold text-white/40">
+                    Hali tadbirlar yo'q
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -871,7 +1085,26 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       </div>
       <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-5 md:flex-row md:items-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600 text-2xl font-black text-white">{center.name[0]}</div>
+          <div className="relative h-16 w-16 flex-shrink-0">
+            {center.imageUrl ? (
+              <img src={center.imageUrl} alt={center.name} className="h-16 w-16 rounded-2xl object-cover" />
+            ) : (
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600 text-2xl font-black text-white">{center.name[0]}</div>
+            )}
+            {isApi && (
+              <>
+                <input ref={centerImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleCenterImageUpload} />
+                <button
+                  onClick={() => centerImageInputRef.current?.click()}
+                  disabled={centerImageLoading}
+                  className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg hover:bg-emerald-600 disabled:opacity-60"
+                  title="Tashkilot rasmini yuklash"
+                >
+                  <Icon name="upload" size={14} />
+                </button>
+              </>
+            )}
+          </div>
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-xl font-black text-slate-900">{center.name}</h2>
             <p className="mt-1 text-sm font-semibold text-slate-500">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · {ownerFormatDate(center.createdAt)}</p>
@@ -898,18 +1131,28 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderSettings = () => (
     <div className="space-y-5 p-4 lg:p-6">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Sozlamalar</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">Direktor paneli sozlamalari.</p>
+        <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Sozlamalar</h1>
+        <p className="mt-1 text-sm font-semibold text-white/50">Direktor paneli sozlamalari.</p>
       </div>
-      <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-lg border border-slate-200 p-4">
-            <div className="text-sm font-black text-slate-900">Scope</div>
-            <div className="mt-2 text-sm font-medium text-slate-500">Direktor faqat o'z tashkiloti ma'lumotlarini ko'radi.</div>
+          <div className="rounded-xl glass p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <div className="feature-icon bg-gradient-to-br from-indigo-500 to-purple-600 text-white" style={{ width: 32, height: 32, borderRadius: 10, fontSize: 14 }}>
+                <Icon name="shield" size={16} />
+              </div>
+              <div className="text-sm font-black text-white">Scope</div>
+            </div>
+            <div className="text-sm font-medium text-white/55">Direktor faqat o'z tashkiloti ma'lumotlarini ko'radi.</div>
           </div>
-          <div className="rounded-lg border border-slate-200 p-4">
-            <div className="text-sm font-black text-slate-900">Xodim tasdig'i</div>
-            <div className="mt-2 text-sm font-medium text-slate-500">Manager va o'qituvchi arizalari direktor qarori bilan yakunlanadi.</div>
+          <div className="rounded-xl glass p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <div className="feature-icon bg-gradient-to-br from-cyan-500 to-sky-500 text-white" style={{ width: 32, height: 32, borderRadius: 10, fontSize: 14 }}>
+                <Icon name="users" size={16} />
+              </div>
+              <div className="text-sm font-black text-white">Xodim tasdig'i</div>
+            </div>
+            <div className="text-sm font-medium text-white/55">Manager va o'qituvchi arizalari direktor qarori bilan yakunlanadi.</div>
           </div>
         </div>
       </section>
@@ -926,8 +1169,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-[#eef3f8] text-slate-900">
-      {mobileMenu && <div className="fixed inset-0 z-40 bg-slate-950/50 lg:hidden" onClick={() => setMobileMenu(false)} />}
+    <div className="h-screen overflow-hidden text-white" style={{ background: '#060818' }}>
+      {mobileMenu && (
+        <div
+          className="fixed inset-0 z-40 lg:hidden"
+          onClick={() => setMobileMenu(false)}
+          style={{ background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(4px)' }}
+        />
+      )}
       <div className="flex h-full">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
@@ -1124,7 +1373,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </form>
         </div>
       )}
-      {toast && <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-xl">{toast}</div>}
+      {toast && (
+        <div
+          className="fixed bottom-6 right-6 z-50 rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white shadow-2xl"
+          style={{ background: 'rgba(13,15,35,0.92)', backdropFilter: 'blur(16px)' }}
+        >
+          {toast}
+        </div>
+      )}
     </div>
   );
 };

@@ -181,6 +181,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         id: `api:${m.membership_id}`,
         name: m.user?.full_name || m.user?.name || '—',
         phone: m.user?.normalized_phone || m.user?.phone || '—',
+        avatarUrl: m.user?.avatar_url || m.user?.avatarUrl || '',
         joined: (m.created_at || '').slice(0, 10),
         subject: m.subject || '—',
         olympiads: 0,
@@ -193,6 +194,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         id: u.id,
         name: u.name,
         phone: u.phone,
+        avatarUrl: u.avatarUrl || '',
         joined: u.joined,
         subject: u.roles?.student?.subject || '—',
         olympiads: u.olympiads || 0,
@@ -207,6 +209,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       id: r.id,
       name: u?.name || '—',
       phone: u?.phone || '—',
+      avatarUrl: u?.avatarUrl || '',
       date: r.date,
       subject: u?.roles?.student?.subject || r.subject || '—',
       approvalCode: '',
@@ -218,6 +221,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     id: `api:student:${m.membership_id}`,
     name: m.user?.full_name || m.user?.name || '—',
     phone: m.user?.normalized_phone || m.user?.phone || '—',
+    avatarUrl: m.user?.avatar_url || m.user?.avatarUrl || '',
     date: (m.created_at || '').slice(0, 10),
     subject: m.subject || '—',
     approvalCode: m.approval_code || '',
@@ -535,7 +539,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <tbody>
             {students.map(s => (
               <tr key={s.id} className="table-row">
-                <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={s.name} size={32} /><div><div className="text-sm font-medium text-white">{s.name}</div><div className="text-xs text-white/40">{s.joined}</div></div></div></td>
+                <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={s.name} src={s.avatarUrl || ''} size={32} /><div><div className="text-sm font-medium text-white">{s.name}</div><div className="text-xs text-white/40">{s.joined}</div></div></div></td>
                 <td className="px-4 py-3 text-sm text-white/60">{s.phone.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
                 <td className="px-4 py-3 text-sm text-white">{s.olympiads}</td>
                 <td className="px-4 py-3"><span className={`font-bold text-sm ${s.avgScore >= 90 ? 'text-emerald-400' : s.avgScore >= 70 ? 'text-indigo-400' : 'text-amber-400'}`}>{s.avgScore || 0}%</span></td>
@@ -605,7 +609,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <tbody>
             {requests.map(r => (
               <tr key={r.id} className="table-row">
-                <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={r.name} size={32} /><span className="text-sm font-medium text-white">{r.name}</span></div></td>
+                <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={r.name} src={r.avatarUrl || ''} size={32} /><span className="text-sm font-medium text-white">{r.name}</span></div></td>
                 <td className="px-4 py-3 text-sm text-white/60">{r.phone.replace ? r.phone.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2') : r.phone}</td>
                 <td className="px-4 py-3 text-sm text-white/60">{r.date}</td>
                 <td className="px-4 py-3">{r.subject && r.subject !== '—' ? <SubjectBadge subject={r.subject} /> : <span className="text-xs text-white/30">—</span>}</td>

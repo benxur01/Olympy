@@ -183,6 +183,8 @@ STORAGES = {
 }
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+PROFILE_IMAGE_MAX_BYTES = int(os.environ.get('PROFILE_IMAGE_MAX_BYTES', str(5 * 1024 * 1024)))
+CENTER_IMAGE_MAX_BYTES = int(os.environ.get('CENTER_IMAGE_MAX_BYTES', str(5 * 1024 * 1024)))
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # DRF
@@ -289,9 +291,15 @@ SECURE_HSTS_PRELOAD = env_bool('OLYMPY_SECURE_HSTS_PRELOAD', False)
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
 
-# Telegram phone verification
+# Telegram bots. `TELEGRAM_BOT_*` stays as the backward-compatible default.
+# Auth bot handles phone verification codes; manager bot handles notifications
+# and inline approval callbacks.
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_BOT_USERNAME = os.environ.get('TELEGRAM_BOT_USERNAME', '')
+TELEGRAM_AUTH_BOT_TOKEN = os.environ.get('TELEGRAM_AUTH_BOT_TOKEN', TELEGRAM_BOT_TOKEN)
+TELEGRAM_AUTH_BOT_USERNAME = os.environ.get('TELEGRAM_AUTH_BOT_USERNAME', TELEGRAM_BOT_USERNAME)
+TELEGRAM_MANAGER_BOT_TOKEN = os.environ.get('TELEGRAM_MANAGER_BOT_TOKEN', TELEGRAM_BOT_TOKEN)
+TELEGRAM_MANAGER_BOT_USERNAME = os.environ.get('TELEGRAM_MANAGER_BOT_USERNAME', TELEGRAM_BOT_USERNAME)
 PHONE_VERIFICATION_OTP_TTL_SECONDS = int(
     os.environ.get('PHONE_VERIFICATION_OTP_TTL_SECONDS', '300')
 )
@@ -320,9 +328,26 @@ AI_ROSTER_GEMINI_API_KEYS = list(dict.fromkeys(AI_ROSTER_GEMINI_API_KEYS))
 AI_ROSTER_MODEL = os.environ.get('AI_ROSTER_MODEL', 'gpt-4o-mini')
 AI_ROSTER_GEMINI_MODEL = os.environ.get('AI_ROSTER_GEMINI_MODEL', 'gemini-1.5-flash')
 AI_ROSTER_AUTO_APPROVE = env_bool('AI_ROSTER_AUTO_APPROVE', True)
+AI_ROSTER_ALLOW_NAME_ONLY_APPROVAL = env_bool('AI_ROSTER_ALLOW_NAME_ONLY_APPROVAL', True)
 AI_ROSTER_MIN_CONFIDENCE = float(os.environ.get('AI_ROSTER_MIN_CONFIDENCE', '0.98'))
 AI_ROSTER_MAX_NAMES = int(os.environ.get('AI_ROSTER_MAX_NAMES', '200'))
 AI_ROSTER_MAX_IMAGE_BYTES = int(os.environ.get('AI_ROSTER_MAX_IMAGE_BYTES', str(5 * 1024 * 1024)))
+AI_MANAGER_BOT_MAX_DOCUMENT_BYTES = int(
+    os.environ.get('AI_MANAGER_BOT_MAX_DOCUMENT_BYTES', str(10 * 1024 * 1024))
+)
+AI_MANAGER_BOT_OPENAI_API_KEY = (
+    os.environ.get('AI_MANAGER_BOT_OPENAI_API_KEY')
+    or AI_ROSTER_OPENAI_API_KEY
+    or os.environ.get('OPENAI_API_KEY', '')
+)
+AI_MANAGER_BOT_OPENAI_API_KEYS = [
+    key.strip() for key in os.environ.get('AI_MANAGER_BOT_OPENAI_API_KEYS', '').split(',')
+    if key.strip()
+]
+if AI_MANAGER_BOT_OPENAI_API_KEY:
+    AI_MANAGER_BOT_OPENAI_API_KEYS.append(AI_MANAGER_BOT_OPENAI_API_KEY)
+AI_MANAGER_BOT_OPENAI_API_KEYS = list(dict.fromkeys(AI_MANAGER_BOT_OPENAI_API_KEYS))
+AI_MANAGER_BOT_MODEL = os.environ.get('AI_MANAGER_BOT_MODEL', AI_ROSTER_MODEL)
 
 # AI question generation for manager/teacher/owner panels. Generated questions
 # are only previews until the staff user explicitly saves them.

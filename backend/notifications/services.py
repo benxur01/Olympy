@@ -11,6 +11,13 @@ from .models import Notification
 logger = logging.getLogger('notifications.telegram')
 
 
+def _manager_bot_token():
+    return (
+        getattr(settings, 'TELEGRAM_MANAGER_BOT_TOKEN', '')
+        or getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+    )
+
+
 def _center_type(center):
     return getattr(center, 'organization_type', '') or "O'quv markaz"
 
@@ -35,9 +42,9 @@ def _telegram_join_request_text(student_name, center):
 
 
 def _telegram_api_post(method, payload):
-    token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+    token = _manager_bot_token()
     if not token:
-        logger.info('[telegram-local] method=%s payload=%s', method, payload)
+        logger.info('[telegram-manager-local] method=%s payload=%s', method, payload)
         return False
     encoded = {}
     for key, value in (payload or {}).items():

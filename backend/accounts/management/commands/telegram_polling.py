@@ -16,27 +16,36 @@ class Command(BaseCommand):
         parser.add_argument('--once', action='store_true', help='Poll once and exit.')
         parser.add_argument('--timeout', type=int, default=25, help='Long-poll timeout in seconds.')
         parser.add_argument('--interval', type=float, default=1.0, help='Delay after errors.')
+        parser.add_argument(
+            '--bot',
+            choices=['auth', 'manager', 'both'],
+            default='auth',
+            help='Which configured Telegram bot to poll.',
+        )
 
     def handle(self, *args, **options):
-        token = getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
-        if not token:
-            raise CommandError('TELEGRAM_BOT_TOKEN is not configured.')
+        bots = ['auth', 'manager'] if options['bot'] == 'both' else [options['bot']]
+        tokens = {bot: self._token_for(bot) for bot in bots}
+        missing = [bot for bot, token in tokens.items() if not token]
+        if missing:
+            raise CommandError(f'Telegram token is not configured for: {", ".join(missing)}')
 
-        offset = None
+        offsets = {bot: None for bot in bots}
         timeout = max(0, options['timeout'])
         once = options['once']
         interval = max(0.1, options['interval'])
-        self.stdout.write(self.style.SUCCESS('Telegram polling started.'))
+        self.stdout.write(self.style.SUCCESS(f'Telegram polling started: {", ".join(bots)}.'))
 
         while True:
             try:
-                updates = self._get_updates(token, offset, timeout)
-                for update in updates:
-                    update_id = update.get('update_id')
-                    if update_id is not None:
-                        offset = update_id + 1
-                    handle_telegram_update(update)
-                    self.stdout.write(f'Processed update {update_id}')
+                for bot in bots:
+                    updates = self._get_updates(tokens[bot], offsets[bot], timeout)
+                    for update in updates:
+                        update_id = update.get('update_id')
+                        if update_id is not None:
+                            offsets[bot] = update_id + 1
+                        handle_telegram_update(update, bot=bot)
+                        self.stdout.write(f'Processed {bot} update {update_id}')
             except KeyboardInterrupt:
                 self.stdout.write(self.style.WARNING('Telegram polling stopped.'))
                 return
@@ -48,6 +57,17 @@ class Command(BaseCommand):
 
             if once:
                 return
+
+    def _token_for(self, bot):
+        if bot == 'manager':
+            return (
+                getattr(settings, 'TELEGRAM_MANAGER_BOT_TOKEN', '')
+                or getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+            )
+        return (
+            getattr(settings, 'TELEGRAM_AUTH_BOT_TOKEN', '')
+            or getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+        )
 
     def _get_updates(self, token, offset, timeout):
         params = {

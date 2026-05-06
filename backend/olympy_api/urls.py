@@ -16,6 +16,8 @@ urlpatterns = [
     path('django-admin/', admin.site.urls),
     path('api/auth/', include('accounts.urls')),
     path('api/telegram/webhook/', account_views.telegram_webhook, name='telegram-webhook'),
+    path('api/telegram/webhook/auth/', account_views.telegram_auth_webhook, name='telegram-auth-webhook'),
+    path('api/telegram/webhook/manager/', account_views.telegram_manager_webhook, name='telegram-manager-webhook'),
     path('api/', include('accounts.urls_me')),
     path('api/centers/', include('centers.urls')),
     path('api/admin/centers/', include('centers.urls_admin')),

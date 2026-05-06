@@ -1,6 +1,6 @@
 // pages/StudentDashboard.jsx
 
-const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
+const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
   const [page, setPage] = React.useState('home');
@@ -212,7 +212,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             <Badge status={statusLabel(studentStatus)} />
           </div>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center text-white font-bold">{myCenter.name[0]}</div>
+            {myCenter.imageUrl ? (
+              <img src={myCenter.imageUrl} alt={myCenter.name} className="h-10 w-10 rounded-xl object-cover" />
+            ) : (
+              <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center text-white font-bold">{myCenter.name[0]}</div>
+            )}
             <div className="flex-1">
               <div className="font-semibold text-white">{myCenter.name}</div>
               <div className="text-xs text-white/40">{myCenter.organizationType || "O'quv markaz"} · {formatCenterLocation(myCenter)}{user.joined ? ` · A'zo bo'lgan: ${user.joined}` : ''}</div>
@@ -403,7 +407,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             return (
               <div key={c.id} className="glass rounded-2xl p-5 card-hover">
                 <div className="flex items-start gap-4 mb-4">
-                  <div className="w-12 h-12 gradient-bg rounded-2xl flex items-center justify-center text-white font-black text-lg flex-shrink-0">{c.name[0]}</div>
+                  {c.imageUrl ? (
+                    <img src={c.imageUrl} alt={c.name} className="h-12 w-12 rounded-2xl object-cover flex-shrink-0" />
+                  ) : (
+                    <div className="w-12 h-12 gradient-bg rounded-2xl flex items-center justify-center text-white font-black text-lg flex-shrink-0">{c.name[0]}</div>
+                  )}
                   <div className="flex-1 min-w-0">
                     <div className="font-bold text-white">{c.name}</div>
                     <div className="text-xs text-white/40">{c.organizationType || "O'quv markaz"} · {formatCenterLocation(c)}</div>
@@ -436,7 +444,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           {centerModal && (
             <div>
               <div className="flex items-center gap-4 glass rounded-xl p-4 mb-6">
-                <div className="w-12 h-12 gradient-bg rounded-xl flex items-center justify-center text-white font-black text-lg">{centerModal.name[0]}</div>
+                {centerModal.imageUrl ? (
+                  <img src={centerModal.imageUrl} alt={centerModal.name} className="h-12 w-12 rounded-xl object-cover" />
+                ) : (
+                  <div className="w-12 h-12 gradient-bg rounded-xl flex items-center justify-center text-white font-black text-lg">{centerModal.name[0]}</div>
+                )}
                 <div>
                   <div className="font-bold text-white">{centerModal.name}</div>
                   <div className="text-sm text-white/40">{centerModal.organizationType || "O'quv markaz"} · {formatCenterLocation(centerModal)} · {centerModal.students} o'quvchi</div>
@@ -492,7 +504,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           } />
         <main className="flex-1 overflow-y-auto">
           {page === 'leaderboard' ? <LeaderboardPage embedded /> :
-           page === 'profile' ? <ProfilePage user={user} embedded /> :
+           page === 'profile' ? <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} /> :
            (pages[page] || renderHome)()}
         </main>
         <MobileBottomNav items={navItems} activePage={page} setPage={setPage} />
