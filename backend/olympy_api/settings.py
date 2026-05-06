@@ -362,6 +362,13 @@ if AI_MANAGER_BOT_GEMINI_API_KEY:
     AI_MANAGER_BOT_GEMINI_API_KEYS.append(AI_MANAGER_BOT_GEMINI_API_KEY)
 AI_MANAGER_BOT_GEMINI_API_KEYS = list(dict.fromkeys(AI_MANAGER_BOT_GEMINI_API_KEYS))
 AI_MANAGER_BOT_GEMINI_MODEL = os.environ.get('AI_MANAGER_BOT_GEMINI_MODEL', AI_ROSTER_GEMINI_MODEL)
+AI_MANAGER_BOT_GEMINI_FALLBACK_MODELS = [
+    model.strip() for model in os.environ.get(
+        'AI_MANAGER_BOT_GEMINI_FALLBACK_MODELS',
+        'gemini-2.5-flash-lite,gemini-flash-lite-latest,gemini-flash-latest,gemini-2.0-flash-lite',
+    ).split(',')
+    if model.strip()
+]
 AI_MANAGER_BOT_MEMORY_ENABLED = env_bool('AI_MANAGER_BOT_MEMORY_ENABLED', True)
 AI_MANAGER_BOT_MEMORY_TTL_SECONDS = int(os.environ.get('AI_MANAGER_BOT_MEMORY_TTL_SECONDS', str(6 * 60 * 60)))
 AI_MANAGER_BOT_HISTORY_MESSAGES = int(os.environ.get('AI_MANAGER_BOT_HISTORY_MESSAGES', '8'))
