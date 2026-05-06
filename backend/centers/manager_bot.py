@@ -323,6 +323,12 @@ def _gemini_keys():
     return list(dict.fromkeys(key for key in keys if key))
 
 
+def _gemini_models():
+    primary = getattr(settings, 'AI_MANAGER_BOT_GEMINI_MODEL', 'gemini-2.5-flash')
+    fallbacks = list(getattr(settings, 'AI_MANAGER_BOT_GEMINI_FALLBACK_MODELS', []) or [])
+    return list(dict.fromkeys(model for model in [primary, *fallbacks] if model))
+
+
 def _manager_ai_prompt(actor, text, ctx):
     context_lines = [
         f"Manager: {actor.full_name}",
@@ -434,53 +440,81 @@ def _gemini_answer(actor, text, ctx):
         },
     }
     body = json.dumps(payload).encode('utf-8')
-    model = getattr(settings, 'AI_MANAGER_BOT_GEMINI_MODEL', 'gemini-2.5-flash')
-    model_path = urllib.parse.quote(model, safe='-_.~/')
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+    models = _gemini_models()
+    quota_seen = False
+    invalid_key_seen = False
+    temporary_seen = False
     for index, api_key in enumerate(api_keys, start=1):
-        req = urllib.request.Request(
-            url,
-            data=body,
-            method='POST',
-            headers={
-                'Content-Type': 'application/json',
-                'x-goog-api-key': api_key,
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as response:
-                raw = json.loads(response.read().decode('utf-8'))
-            parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
-            text_out = ''.join(part.get('text') or '' for part in parts)
-            if text_out.strip():
-                if index > 1:
-                    logger.info('Manager bot Gemini succeeded with fallback key #%s', index)
-                return text_out.strip()[:3500], ''
-        except urllib.error.HTTPError as exc:
-            status = getattr(exc, 'code', 0)
-            error_status = ''
-            error_message = ''
-            try:
-                raw_error = json.loads(exc.read().decode('utf-8'))
-                error = raw_error.get('error') or {}
-                error_status = error.get('status') or ''
-                error_message = error.get('message') or ''
-            except Exception:
-                pass
-            logger.warning(
-                'Manager bot Gemini key #%s failed: HTTP %s status=%s',
-                index,
-                status,
-                error_status or '-',
+        for model_position, model in enumerate(models, start=1):
+            model_path = urllib.parse.quote(model, safe='-_.~/')
+            url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+            req = urllib.request.Request(
+                url,
+                data=body,
+                method='POST',
+                headers={
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': api_key,
+                },
             )
-            if status == 429 or error_status == 'RESOURCE_EXHAUSTED':
-                return '', 'insufficient_quota'
-            if status in (401, 403) or 'API key not valid' in error_message:
-                return '', 'invalid_key'
-            if status not in (400, 408, 409, 429, 500, 502, 503, 504):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    raw = json.loads(response.read().decode('utf-8'))
+                parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
+                text_out = ''.join(part.get('text') or '' for part in parts)
+                if text_out.strip():
+                    if index > 1 or model_position > 1:
+                        logger.info(
+                            'Manager bot Gemini succeeded with key #%s model=%s',
+                            index,
+                            model,
+                        )
+                    return text_out.strip()[:3500], ''
+            except urllib.error.HTTPError as exc:
+                status = getattr(exc, 'code', 0)
+                error_status = ''
+                error_message = ''
+                try:
+                    raw_error = json.loads(exc.read().decode('utf-8'))
+                    error = raw_error.get('error') or {}
+                    error_status = error.get('status') or ''
+                    error_message = error.get('message') or ''
+                except Exception:
+                    pass
+                logger.warning(
+                    'Manager bot Gemini key #%s model=%s failed: HTTP %s status=%s',
+                    index,
+                    model,
+                    status,
+                    error_status or '-',
+                )
+                if status == 429 or error_status == 'RESOURCE_EXHAUSTED':
+                    quota_seen = True
+                    continue
+                if status in (401, 403) or 'API key not valid' in error_message:
+                    invalid_key_seen = True
+                    break
+                if status in (408, 409, 500, 502, 503, 504) or error_status == 'UNAVAILABLE':
+                    temporary_seen = True
+                    continue
+                if status in (400, 404):
+                    continue
                 break
-        except Exception as exc:
-            logger.warning('Manager bot Gemini key #%s failed: %s', index, exc.__class__.__name__)
+            except Exception as exc:
+                logger.warning(
+                    'Manager bot Gemini key #%s model=%s failed: %s',
+                    index,
+                    model,
+                    exc.__class__.__name__,
+                )
+                temporary_seen = True
+                continue
+    if quota_seen:
+        return '', 'insufficient_quota'
+    if invalid_key_seen:
+        return '', 'invalid_key'
+    if temporary_seen:
+        return '', 'temporary_unavailable'
     return '', 'request_failed'
 
 
@@ -512,6 +546,21 @@ def answer_manager_question(actor, text):
             "Gemini kaliti serverda bor, lekin Google uni rad etdi. "
             "Yangi Gemini API kalit qo'yish kerak. 'Kutilayotgan arizalar nechta?' yoki 'yordam' deb yozsangiz, "
             "asosiy holatni chiqaraman."
+        )
+        _remember_exchange(actor, text, reply)
+        return reply
+    if gemini_error == 'temporary_unavailable':
+        reply = (
+            "OpenAI hozir quota sabab javob bermayapti, Gemini esa vaqtincha band yoki javob bermadi. "
+            "Bir ozdan keyin qayta yozing. 'Kutilayotgan arizalar nechta?' yoki 'yordam' deb yozsangiz, "
+            "asosiy holatni chiqaraman."
+        )
+        _remember_exchange(actor, text, reply)
+        return reply
+    if gemini_error == 'request_failed' and ai_error == 'insufficient_quota':
+        reply = (
+            "OpenAI quota sabab javob bermayapti. Gemini ham sinab ko'rildi, lekin hozir javob qaytarmadi. "
+            "Bir ozdan keyin qayta urinib ko'ring yoki Gemini model/kalit sozlamasini tekshiring."
         )
         _remember_exchange(actor, text, reply)
         return reply
