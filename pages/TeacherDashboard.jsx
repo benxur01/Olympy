@@ -123,8 +123,8 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   };
 
   const renderHome = () => (
-    <div className="p-6 space-y-6 animate-in">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h2 className="text-2xl font-black text-white">{centerName}</h2>
           <p className="text-white/40 text-sm">{centerType} · Ustoz paneli · olimpiada va savollar</p>
@@ -181,8 +181,8 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   );
 
   const renderOlympiads = () => (
-    <div className="p-6 space-y-6 animate-in">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h2 className="text-xl font-black text-white">Tadbirlar</h2>
           <p className="text-white/40 text-sm">{centerName} · {centerType}</p>

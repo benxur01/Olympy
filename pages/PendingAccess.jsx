@@ -36,8 +36,8 @@ const PendingAccessInline = ({ icon = 'shield', title, message, status = 'pendin
       ? { ring: 'border-rose-500/30', emoji: '🚫', badge: 'badge-rejected', label: 'Rad etildi' }
       : { ring: 'border-amber-500/30', emoji: '⏳', badge: 'badge-pending',  label: 'Kutilmoqda' };
   return (
-    <div className="p-6 animate-in">
-      <div className={`glass-strong rounded-3xl p-8 max-w-2xl mx-auto text-center border ${tone.ring}`}>
+    <div className="p-3 md:p-6 animate-in">
+      <div className={`glass-strong rounded-3xl p-5 md:p-8 max-w-2xl mx-auto text-center border ${tone.ring}`}>
         <div className="text-5xl mb-4">{tone.emoji}</div>
         <div className="flex items-center justify-center gap-2 mb-3">
           <span className={`chip ${tone.badge}`}>{tone.label}</span>

@@ -312,36 +312,36 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   ];
 
   const content = (
-    <div className="p-6 space-y-6 animate-in">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h2 className="text-xl font-black text-white">Savol yaratuvchi</h2>
-          <p className="text-white/40 text-sm">{questions.length} ta savol · {allSubjects.length} ta fan</p>
+          <h2 className="text-lg md:text-xl font-black text-white">Savol yaratuvchi</h2>
+          <p className="text-white/40 text-xs md:text-sm">{questions.length} ta savol · {allSubjects.length} ta fan</p>
         </div>
         {mode === 'list' && (
-          <div className="flex gap-2 flex-wrap">
-            <button onClick={() => setMode('manual')} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5"><Icon name="edit" size={14} /> Qo'lda yaratish</button>
-            <button onClick={() => setMode('ai')} className="btn-primary text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5"><Icon name="sparkles" size={14} /> AI orqali</button>
-            <button onClick={() => setMode('pdf')} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5 border-cyan-500/30 text-cyan-300"><Icon name="upload" size={14} /> PDF dan</button>
+          <div className="grid grid-cols-3 md:flex md:gap-2 gap-2">
+            <button onClick={() => setMode('manual')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5"><Icon name="edit" size={14} /> <span className="hidden sm:inline">Qo'lda yaratish</span><span className="sm:hidden">Qo'lda</span></button>
+            <button onClick={() => setMode('ai')} className="btn-primary text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5"><Icon name="sparkles" size={14} /> <span className="hidden sm:inline">AI orqali</span><span className="sm:hidden">AI</span></button>
+            <button onClick={() => setMode('pdf')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-cyan-500/30 text-cyan-300"><Icon name="upload" size={14} /> <span className="hidden sm:inline">PDF dan</span><span className="sm:hidden">PDF</span></button>
           </div>
         )}
-        {mode !== 'list' && <button onClick={() => { setMode('list'); setAiResult(null); setPdfResult(null); setPdfProvider(''); setPdfVision(false); }} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5"><Icon name="arrowLeft" size={14} /> Orqaga</button>}
+        {mode !== 'list' && <button onClick={() => { setMode('list'); setAiResult(null); setPdfResult(null); setPdfProvider(''); setPdfVision(false); }} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 w-full md:w-auto"><Icon name="arrowLeft" size={14} /> Orqaga</button>}
       </div>
 
       {/* LIST MODE */}
       {mode === 'list' && (
         <>
-          <div className="flex flex-wrap gap-3">
-            <select className="input-field py-2.5 w-auto flex-1 min-w-32" value={filterSubject} onChange={e => setFilterSubject(e.target.value)}>
+          <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2.5 md:gap-3">
+            <select className="input-field py-2.5 w-full sm:w-auto sm:flex-1 sm:min-w-[10rem]" value={filterSubject} onChange={e => setFilterSubject(e.target.value)}>
               <option value="">Barcha fanlar</option>
               {allSubjects.map(s => <option key={s}>{s}</option>)}
             </select>
-            <select className="input-field py-2.5 w-auto" value={filterLevel} onChange={e => setFilterLevel(e.target.value)}>
+            <select className="input-field py-2.5 w-full sm:w-auto" value={filterLevel} onChange={e => setFilterLevel(e.target.value)}>
               <option value="">Barcha darajalar</option>
               {LEVELS.map(l => <option key={l}>{l}</option>)}
             </select>
-            <button onClick={() => setNewSubjectModal(true)} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center gap-1.5 border-dashed border-white/20 text-white/40">
+            <button onClick={() => setNewSubjectModal(true)} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-dashed border-white/20 text-white/40 w-full sm:w-auto">
               <Icon name="plus" size={14} /> Yangi fan qo'shish
             </button>
           </div>
@@ -349,11 +349,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           <div className="space-y-3">
             {filtered.length === 0 && <EmptyState icon="book" title="Savollar yo'q" desc="Yangi savol yarating" action={<button onClick={() => setMode('manual')} className="btn-primary px-4 py-2 rounded-xl text-sm">Savol yaratish</button>} />}
             {filtered.map(q => (
-              <div key={q.id} className="glass rounded-2xl p-4 flex gap-4 group">
-                <div className={`w-2 rounded-full flex-shrink-0 ${q.difficulty === 'Oson' ? 'bg-emerald-400' : q.difficulty === "O'rta" ? 'bg-amber-400' : 'bg-rose-400'}`} />
+              <div key={q.id} className="glass rounded-2xl p-3 md:p-4 flex gap-3 md:gap-4 group">
+                <div className={`w-1.5 md:w-2 rounded-full flex-shrink-0 ${q.difficulty === 'Oson' ? 'bg-emerald-400' : q.difficulty === "O'rta" ? 'bg-amber-400' : 'bg-rose-400'}`} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-white/90 mb-2 leading-relaxed">{q.text}</p>
-                  <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
                     <SubjectBadge subject={q.subject} />
                     {q.source && <span className="chip glass text-white/50 text-xs">{q.source === 'ai' ? '✨ AI' : q.source === 'pdf' ? '📄 PDF' : '✏️ Qo\'lda'}</span>}
                     <span className={`chip text-xs ${q.difficulty === 'Oson' ? 'bg-emerald-500/10 text-emerald-400' : q.difficulty === "O'rta" ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
@@ -367,9 +367,10 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                     </div>
                   )}
                 </div>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button className="text-white/40 hover:text-indigo-400 transition-colors p-1.5"><Icon name="edit" size={15} /></button>
-                  <button onClick={() => setDeleteId(q.id)} className="text-white/40 hover:text-red-400 transition-colors p-1.5"><Icon name="trash" size={15} /></button>
+                {/* Mobile'da har doim ko'rinadi (hover yo'q), desktop'da hover'da */}
+                <div className="flex gap-0.5 md:gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">
+                  <button className="text-white/40 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-white/5"><Icon name="edit" size={15} /></button>
+                  <button onClick={() => setDeleteId(q.id)} className="text-white/40 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-white/5"><Icon name="trash" size={15} /></button>
                 </div>
               </div>
             ))}
@@ -379,7 +380,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
 
       {/* MANUAL MODE */}
       {mode === 'manual' && (
-        <div className="glass rounded-2xl p-6 space-y-5 animate-in">
+        <div className="glass rounded-2xl p-4 md:p-6 space-y-4 md:space-y-5 animate-in">
           <h3 className="font-bold text-white">Yangi savol yaratish</h3>
           <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Savol matni</label>
             <textarea className="input-field" rows={3} placeholder="Savolingizni kiriting..." value={newQ.text} onChange={e => setNewQ({...newQ, text: e.target.value})} /></div>

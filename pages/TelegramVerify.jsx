@@ -169,44 +169,44 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
   return (
     <div className="glass rounded-xl p-3 border border-indigo-500/20 space-y-2.5">
       {status === 'idle' && (
-        <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
           <div className="flex items-center gap-2 text-xs text-white/60">
             <span className="text-base leading-none">📱</span>
             <span>Telegram orqali tasdiqlash kerak</span>
           </div>
           <button type="button" onClick={startFlow}
             disabled={loading}
-            className="btn-primary text-xs px-3 py-1.5 rounded-lg flex items-center gap-1.5 font-semibold disabled:opacity-50">
-            <Icon name="send" size={12} /> {loading ? 'Yuborilmoqda...' : "Botga o'tish"}
+            className="btn-primary text-xs sm:text-xs px-4 py-2.5 rounded-lg flex items-center justify-center gap-1.5 font-semibold disabled:opacity-50 w-full sm:w-auto">
+            <Icon name="send" size={14} /> {loading ? 'Yuborilmoqda...' : "Botga o'tish"}
           </button>
         </div>
       )}
 
       {status === 'opened' && (
         <>
-          <div className="flex items-center justify-between gap-2 text-xs flex-wrap">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
             <span className="text-indigo-300">Bot kontaktni so'raydi → kod yuboradi</span>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               {expiresAt && !isExpired && (
-                <span className="text-white/40 font-mono text-[11px]"><Icon name="clock" size={10} className="inline" /> {remainingLabel}</span>
+                <span className="text-white/40 font-mono text-[11px] inline-flex items-center gap-1"><Icon name="clock" size={10} /> {remainingLabel}</span>
               )}
-              <button type="button" onClick={restart} className="text-white/40 hover:text-white text-xs">Qayta</button>
+              <button type="button" onClick={restart} className="text-white/40 hover:text-white text-xs underline-offset-2 hover:underline py-1">Qayta</button>
             </div>
           </div>
           {deepLink && (
             <a href={deepLink} target="_blank" rel="noreferrer"
-              className="btn-ghost text-xs px-3 py-2 rounded-xl flex items-center justify-center gap-1.5 font-semibold">
-              <Icon name="send" size={12} /> Telegram botni ochish
+              className="btn-ghost text-xs px-3 py-3 rounded-xl flex items-center justify-center gap-1.5 font-semibold">
+              <Icon name="send" size={14} /> Telegram botni ochish
             </a>
           )}
-          <div className="flex gap-2">
+          <div className="flex flex-col sm:flex-row gap-2">
             <input value={code}
               onChange={e => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); if (error) setError(''); }}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitCode(); } }}
-              className="input-field py-2 text-center font-mono tracking-[0.4em]"
+              className="input-field py-3 text-center font-mono tracking-[0.4em] flex-1"
               placeholder="••••••" maxLength={6} inputMode="numeric" autoComplete="one-time-code" />
             <button type="button" onClick={submitCode} disabled={!code.trim() || verifying || isExpired}
-              className="btn-primary px-4 py-2 rounded-xl text-xs font-semibold disabled:opacity-50 whitespace-nowrap">
+              className="btn-primary px-4 py-3 rounded-xl text-xs font-semibold disabled:opacity-50 whitespace-nowrap w-full sm:w-auto">
               {verifying ? '...' : 'Tasdiqlash'}
             </button>
           </div>
