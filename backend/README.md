@@ -123,7 +123,10 @@ configured; OpenAI is tried first and Gemini is used as fallback. The prompt is
 tuned for natural Uzbek manager chat, and a short-lived conversation memory
 keeps follow-up questions contextual. Basic status commands such as
 "kutilayotgan arizalar nechta?" work without an AI key, and managers can write
-`xotirani tozala` to clear the temporary chat memory.
+`xotirani tozala` to clear the temporary chat memory. Gemini fallback uses the
+configured model list and auto-discovers available `generateContent` Gemini text
+models, then tries them one by one when a model is busy, unavailable, or over
+quota.
 
 Question creator PDF import posts multipart PDF files to
 `/api/questions/pdf-preview/`. The backend extracts embedded PDF text with

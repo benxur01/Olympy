@@ -1,4 +1,5 @@
 """Manager Telegram bot helpers: document roster approval and Q&A."""
+import hashlib
 import io
 import json
 import logging
@@ -323,10 +324,61 @@ def _gemini_keys():
     return list(dict.fromkeys(key for key in keys if key))
 
 
-def _gemini_models():
+def _configured_gemini_models():
     primary = getattr(settings, 'AI_MANAGER_BOT_GEMINI_MODEL', 'gemini-2.5-flash')
     fallbacks = list(getattr(settings, 'AI_MANAGER_BOT_GEMINI_FALLBACK_MODELS', []) or [])
     return list(dict.fromkeys(model for model in [primary, *fallbacks] if model))
+
+
+def _gemini_model_cache_key(api_key):
+    digest = hashlib.sha256(str(api_key or '').encode('utf-8')).hexdigest()[:16]
+    return f'manager_bot:gemini_models:{digest}'
+
+
+def _discover_gemini_models(api_key):
+    if not api_key or not getattr(settings, 'AI_MANAGER_BOT_GEMINI_AUTO_DISCOVER_MODELS', True):
+        return []
+    cached = cache.get(_gemini_model_cache_key(api_key))
+    if isinstance(cached, list):
+        return cached
+    req = urllib.request.Request(
+        'https://generativelanguage.googleapis.com/v1beta/models',
+        method='GET',
+        headers={'x-goog-api-key': api_key},
+    )
+    models = []
+    try:
+        with urllib.request.urlopen(req, timeout=15) as response:
+            raw = json.loads(response.read().decode('utf-8'))
+        for item in raw.get('models') or []:
+            name = str(item.get('name') or '').replace('models/', '').strip()
+            methods = item.get('supportedGenerationMethods') or []
+            if not name.startswith('gemini') or 'generateContent' not in methods:
+                continue
+            # Manager chat is text-only. Skip modality-specific Gemini endpoints
+            # that are not useful for short Telegram Q&A.
+            if any(part in name for part in ('image', 'tts', 'robotics', 'computer-use')):
+                continue
+            models.append(name)
+    except urllib.error.HTTPError as exc:
+        logger.warning('Manager bot Gemini model discovery failed: HTTP %s', getattr(exc, 'code', 0))
+    except Exception as exc:
+        logger.warning('Manager bot Gemini model discovery failed: %s', exc.__class__.__name__)
+    max_models = max(1, int(getattr(settings, 'AI_MANAGER_BOT_GEMINI_MAX_MODELS', 40)))
+    models = list(dict.fromkeys(models))[:max_models]
+    cache.set(
+        _gemini_model_cache_key(api_key),
+        models,
+        timeout=getattr(settings, 'AI_MANAGER_BOT_GEMINI_MODEL_CACHE_SECONDS', 6 * 60 * 60),
+    )
+    return models
+
+
+def _gemini_models(api_key=None):
+    configured = _configured_gemini_models()
+    discovered = _discover_gemini_models(api_key) if api_key else []
+    max_models = max(1, int(getattr(settings, 'AI_MANAGER_BOT_GEMINI_MAX_MODELS', 40)))
+    return list(dict.fromkeys([*configured, *discovered]))[:max_models]
 
 
 def _manager_ai_prompt(actor, text, ctx):
@@ -440,11 +492,11 @@ def _gemini_answer(actor, text, ctx):
         },
     }
     body = json.dumps(payload).encode('utf-8')
-    models = _gemini_models()
     quota_seen = False
     invalid_key_seen = False
     temporary_seen = False
     for index, api_key in enumerate(api_keys, start=1):
+        models = _gemini_models(api_key)
         for model_position, model in enumerate(models, start=1):
             model_path = urllib.parse.quote(model, safe='-_.~/')
             url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
@@ -491,9 +543,11 @@ def _gemini_answer(actor, text, ctx):
                 if status == 429 or error_status == 'RESOURCE_EXHAUSTED':
                     quota_seen = True
                     continue
-                if status in (401, 403) or 'API key not valid' in error_message:
+                if status == 401 or 'API key not valid' in error_message:
                     invalid_key_seen = True
                     break
+                if status == 403:
+                    continue
                 if status in (408, 409, 500, 502, 503, 504) or error_status == 'UNAVAILABLE':
                     temporary_seen = True
                     continue
