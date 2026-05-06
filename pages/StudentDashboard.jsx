@@ -344,9 +344,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     const avg = myResults.length > 0 ? Math.round(myResults.reduce((sum, r) => sum + (r.score || 0), 0) / myResults.length * 10) / 10 : 0;
     const bestRank = myResults.length > 0 ? Math.min(...myResults.map(r => r.rank || 999)) : 0;
     return (
-      <div className="p-6 space-y-6 animate-in">
-        <h2 className="text-xl font-black text-white">Mening natijalarim</h2>
-        <div className="grid grid-cols-3 gap-4">
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+        <h2 className="text-lg md:text-xl font-black text-white">Mening natijalarim</h2>
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
           <StatCard label="O'rtacha ball" value={avg || '—'} icon={<Icon name="chart" size={18} />} color="from-indigo-500 to-purple-600" />
           <StatCard label="Eng yaxshi o'rin" value={bestRank ? `#${bestRank}` : '—'} icon={<Icon name="trophy" size={18} />} color="from-amber-500 to-orange-500" />
           <StatCard label="Jami tadbir" value={myResults.length} icon={<Icon name="bolt" size={18} />} color="from-cyan-500 to-blue-600" />

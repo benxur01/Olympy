@@ -113,19 +113,19 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
         <div className="glass rounded-2xl p-6 text-center text-white/50 text-sm">Reyting yuklanmoqda...</div>
       )}
 
-      {/* Top 3 podium */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Top 3 podium — podium tartibi (silver-gold-bronze) saqlanadi, lekin mobile'da kompakt */}
+      <div className="grid grid-cols-3 gap-1.5 md:gap-3">
         {[top3[1], top3[0], top3[2]].filter(Boolean).map((p, i) => {
           const isFirst = i === 1;
           const cls = isFirst ? 'leaderboard-gold' : i === 0 ? 'leaderboard-silver' : 'leaderboard-bronze';
           return (
-            <div key={p.key || p.rank} className={`rounded-2xl p-4 text-center card-hover ${cls} ${isFirst ? 'mt-0' : 'mt-6'}`}>
-              <div className="text-3xl mb-1">{p.badge}</div>
-              <Avatar name={p.name} size={isFirst?48:40} gradient={isFirst?'from-amber-400 to-orange-500':'from-indigo-500 to-purple-600'} />
-              <div className="text-sm font-bold text-white mt-2 truncate">{p.name.split(' ')[0]}</div>
-              <div className="text-xs text-white/40 truncate mb-2">{p.center} · {p.organizationType}</div>
-              <div className={`text-2xl font-black ${isFirst?'text-amber-400':i===0?'text-slate-300':'text-amber-600'}`}>{p.score}</div>
-              <SubjectBadge subject={p.subject} />
+            <div key={p.key || p.rank} className={`rounded-2xl p-2 md:p-4 text-center card-hover min-w-0 ${cls} ${isFirst ? 'mt-0' : 'mt-3 md:mt-6'}`}>
+              <div className="text-2xl md:text-3xl mb-0.5 md:mb-1">{p.badge}</div>
+              <Avatar name={p.name} size={isFirst?40:32} gradient={isFirst?'from-amber-400 to-orange-500':'from-indigo-500 to-purple-600'} />
+              <div className="text-xs md:text-sm font-bold text-white mt-1.5 md:mt-2 truncate">{p.name.split(' ')[0]}</div>
+              <div className="hidden md:block text-xs text-white/40 truncate mb-2">{p.center} · {p.organizationType}</div>
+              <div className={`text-lg md:text-2xl font-black mt-1 md:mt-0 ${isFirst?'text-amber-400':i===0?'text-slate-300':'text-amber-600'}`}>{p.score}</div>
+              <div className="hidden md:block"><SubjectBadge subject={p.subject} /></div>
             </div>
           );
         })}

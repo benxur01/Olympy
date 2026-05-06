@@ -745,9 +745,9 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   );
 
   const renderResults = () => (
-    <div className="p-6 space-y-6 animate-in">
-      <h2 className="text-xl font-black text-white">Natijalar</h2>
-      <div className="grid grid-cols-3 gap-4">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+      <h2 className="text-lg md:text-xl font-black text-white">Natijalar</h2>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
         <StatCard label="O'rtacha ball" value="78.4%" icon={<Icon name="chart" size={18} />} color="from-indigo-500 to-purple-600" />
         <StatCard label="Eng yuqori" value="96%" icon={<Icon name="trophy" size={18} />} color="from-amber-500 to-orange-500" />
         <StatCard label="Qatnashuvchilar" value="484" icon={<Icon name="users" size={18} />} color="from-cyan-500 to-blue-600" />
