@@ -131,8 +131,9 @@ POST /api/auth/telegram/link/start/
 The manager bot also accepts PDF/TXT/CSV/image rosters and plain text commands.
 It extracts student names/phones/codes, then the backend approves only matches
 that the linked manager/director is allowed to approve. For free-form manager
-questions, set `AI_MANAGER_BOT_OPENAI_API_KEY` or reuse `OPENAI_API_KEY`; basic
-status commands still work without an AI key.
+questions, set `AI_MANAGER_BOT_OPENAI_API_KEY`/`OPENAI_API_KEY` or
+`AI_MANAGER_BOT_GEMINI_API_KEY`/`GEMINI_API_KEY`; basic status commands still
+work without an AI key.
 
 Telegram webhook endpoint:
 

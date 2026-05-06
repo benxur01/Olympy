@@ -110,8 +110,9 @@ approval callbacks through `/api/telegram/webhook/manager/`.
 The manager bot can receive PDF/TXT/CSV/image rosters or plain text commands.
 It extracts names, phones, and approval codes, then approves only backend-verified
 pending student matches for the linked manager/director. Free-form questions use
-`AI_MANAGER_BOT_OPENAI_API_KEY` when configured; basic status commands such as
-"kutilayotgan arizalar nechta?" work without an AI key.
+`AI_MANAGER_BOT_OPENAI_API_KEY` or `AI_MANAGER_BOT_GEMINI_API_KEY` when
+configured; basic status commands such as "kutilayotgan arizalar nechta?" work
+without an AI key.
 
 Local development can leave bot tokens blank. In that mode, messages
 are logged instead of sent to Telegram. For a real bot, expose the local backend
