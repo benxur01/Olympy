@@ -937,7 +937,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <div className="grid gap-3">
         {requestRows.map(r => <RequestCard key={r.id} req={r} />)}
         {requestRows.length === 0 && (
-          <div className="rounded-2xl border border-white/8 glass-strong px-4 py-16 text-center">
+          <div className="rounded-2xl border border-white/8 glass-strong px-4 py-10 md:py-16 text-center">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full glass text-white/30">
               <Icon name="bell" size={22} />
             </div>
@@ -1006,7 +1006,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               ))}
               {myStaff.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-16 text-center text-sm font-bold text-white/40">
+                  <td colSpan={5} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
                     Hali tasdiqlangan xodimlar yo'q
                   </td>
                 </tr>
@@ -1065,7 +1065,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               ))}
               {centerOlympiads.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-16 text-center text-sm font-bold text-white/40">
+                  <td colSpan={8} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
                     Hali tadbirlar yo'q
                   </td>
                 </tr>

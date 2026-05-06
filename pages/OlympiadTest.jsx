@@ -539,10 +539,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       {/* Confirm submit modal */}
       <Modal open={confirmModal} onClose={() => setConfirmModal(false)} title="Testni yakunlash">
         <div className="mb-6 space-y-3">
-          <div className="grid grid-cols-3 gap-3 text-center">
-            <div className="glass rounded-xl p-3"><div className="text-xl font-black text-white">{answered}</div><div className="text-xs text-white/40">Javob berildi</div></div>
-            <div className="glass rounded-xl p-3"><div className="text-xl font-black text-amber-400">{Object.keys(marked).filter(k=>marked[k]).length}</div><div className="text-xs text-white/40">Belgilangan</div></div>
-            <div className="glass rounded-xl p-3"><div className="text-xl font-black text-white/30">{TOTAL - answered}</div><div className="text-xs text-white/40">Javobsiz</div></div>
+          <div className="grid grid-cols-3 gap-2 md:gap-3 text-center">
+            <div className="glass rounded-xl p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-black text-white">{answered}</div><div className="text-[10px] md:text-xs text-white/40 leading-tight">Javob berildi</div></div>
+            <div className="glass rounded-xl p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-black text-amber-400">{Object.keys(marked).filter(k=>marked[k]).length}</div><div className="text-[10px] md:text-xs text-white/40 leading-tight">Belgilangan</div></div>
+            <div className="glass rounded-xl p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-black text-white/30">{TOTAL - answered}</div><div className="text-[10px] md:text-xs text-white/40 leading-tight">Javobsiz</div></div>
           </div>
           {TOTAL - answered > 0 && (
             <div className="flex items-center gap-2 bg-amber-500/10 text-amber-400 rounded-xl px-4 py-3 text-sm border border-amber-500/20">
