@@ -228,7 +228,7 @@ def _openai_keys():
 def _openai_answer(actor, text, ctx):
     api_keys = _openai_keys()
     if not api_keys:
-        return ''
+        return '', 'missing_key'
     context_lines = [
         f"Manager: {actor.full_name}",
         f"Markazlar: {', '.join(center.name for center in ctx['centers']) or '-'}",
@@ -280,12 +280,31 @@ def _openai_answer(actor, text, ctx):
             return text_out.strip()[:3500]
         except urllib.error.HTTPError as exc:
             status = getattr(exc, 'code', 0)
-            logger.warning('Manager bot OpenAI key #%s failed: HTTP %s', index, status)
+            error_code = ''
+            error_type = ''
+            try:
+                raw_error = json.loads(exc.read().decode('utf-8'))
+                error = raw_error.get('error') or {}
+                error_code = error.get('code') or ''
+                error_type = error.get('type') or ''
+            except Exception:
+                pass
+            logger.warning(
+                'Manager bot OpenAI key #%s failed: HTTP %s type=%s code=%s',
+                index,
+                status,
+                error_type or '-',
+                error_code or '-',
+            )
+            if status == 429 and (error_code == 'insufficient_quota' or error_type == 'insufficient_quota'):
+                return '', 'insufficient_quota'
+            if status in (401, 403):
+                return '', 'invalid_key'
             if status not in (401, 403, 408, 409, 429, 500, 502, 503, 504):
                 break
         except Exception as exc:
             logger.warning('Manager bot OpenAI key #%s failed: %s', index, exc.__class__.__name__)
-    return ''
+    return '', 'request_failed'
 
 
 def answer_manager_question(actor, text):
@@ -293,9 +312,21 @@ def answer_manager_question(actor, text):
     deterministic = _deterministic_answer(actor, text, ctx)
     if deterministic:
         return deterministic
-    ai_answer = _openai_answer(actor, text, ctx)
+    ai_answer, ai_error = _openai_answer(actor, text, ctx)
     if ai_answer:
         return ai_answer
+    if ai_error == 'insufficient_quota':
+        return (
+            "OpenAI ulangan, lekin hisobda quota yoki billing yetmayapti. "
+            "OpenAI billing/quota sozlamasini tekshiring yoki ishlaydigan yangi API kalit qo'ying. "
+            "'Kutilayotgan arizalar nechta?' yoki 'yordam' deb yozsangiz, asosiy holatni chiqaraman."
+        )
+    if ai_error == 'invalid_key':
+        return (
+            "OpenAI kaliti serverda bor, lekin OpenAI uni rad etdi. "
+            "Yangi API kalit qo'yish kerak. 'Kutilayotgan arizalar nechta?' yoki 'yordam' deb yozsangiz, "
+            "asosiy holatni chiqaraman."
+        )
     return (
         "Savolingizni tushundim, lekin AI javob uchun OpenAI kaliti sozlanmagan. "
         "'Kutilayotgan arizalar nechta?' yoki 'yordam' deb yozsangiz, asosiy holatni chiqaraman."
