@@ -2,10 +2,47 @@
 
 const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const store = useStore();
+  const isApi = !!user?._api;
+  const [shareToast, setShareToast] = React.useState('');
 
-  // Resolve result: if an attemptId is given, prefer the store-backed attempt (consistent across navigation)
+  // Bo'limlar bo'yicha: backend /api/results/me/stats/ subjects ro'yxati.
+  // Avval bu yerda 4 ta hardcoded bo'lim ("Algebraik tenglamalar 8/10" va h.k.)
+  // har bir foydalanuvchiga bir xil ko'rinardi. Endi haqiqiy fan kesimi.
+  const apiStatsRes = useApiData(
+    () => isApi ? OlympyApi.getMyStats(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const subjectBreakdown = React.useMemo(() => {
+    if (!isApi) return [];
+    const rows = apiStatsRes.data?.subjects;
+    if (!Array.isArray(rows)) return [];
+    return rows.slice(0, 6).map(row => ({
+      name: row.subject || '—',
+      attempts: row.attempts || 0,
+      avg: Math.round(row.average_score || 0),
+    }));
+  }, [isApi, apiStatsRes.data]);
+
+  // Resolve result. Avval doim store.attempts'dan qidirardi va API
+  // rejimda topa olmasdi → score=0, total=0 ko'rinardi. Endi:
+  //  1) caller olympiad ob'ektni to'g'ridan-to'g'ri o'tkazgan bo'lsa, uni
+  //     ishlatamiz (Profile.jsx, OlympiadTest.jsx onFinish payloadi);
+  //  2) attemptId bilan kelsa va store.attempts'da topsak — eski mock yo'l;
+  //  3) raw attempt obyekti bo'lsa — to'g'ridan-to'g'ri u.
   let r = result;
-  if (r && r.attemptId) {
+  if (r && r.olympiad && (r.score !== undefined || r.correct !== undefined)) {
+    // OlympiadTest onFinish to'liq payload yuboradi: { score, correct,
+    // wrong, total, rank, time, olympiad }. Hech qanday lookup kerak emas.
+    r = {
+      correct: r.correct ?? r.correctCount ?? 0,
+      wrong: r.wrong ?? r.wrongCount ?? 0,
+      score: r.score ?? 0,
+      total: r.total ?? r.totalQuestions ?? 0,
+      rank: r.rank ?? null,
+      time: r.time ?? r.timeSpent ?? 0,
+      olympiad: r.olympiad,
+    };
+  } else if (r && r.attemptId) {
     const a = store.attempts.find(x => x.id === r.attemptId);
     if (a) {
       const o = store.olympiads.find(x => x.id === a.olympiadId);
@@ -16,7 +53,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
       };
     }
   } else if (r && r.id && r.olympiadId && r.score !== undefined) {
-    // Already an attempt object passed directly
+    // Already an attempt object passed directly (eski yo'l, mock store)
     const o = store.olympiads.find(x => x.id === r.olympiadId);
     r = {
       correct: r.correctCount, wrong: r.wrongCount,
@@ -96,23 +133,27 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
           </div>
         </div>
 
-        {/* Subject performance */}
+        {/* Subject performance — fan kesimi backenddan */}
         <div className="glass rounded-2xl p-4 md:p-6">
-          <h3 className="font-bold text-white mb-3 md:mb-4 text-sm md:text-base">Bo'limlar bo'yicha</h3>
+          <h3 className="font-bold text-white mb-3 md:mb-4 text-sm md:text-base">Fanlar bo'yicha o'rtacha</h3>
+          {isApi && apiStatsRes.loading && (
+            <div className="text-xs text-white/40">Yuklanmoqda...</div>
+          )}
+          {isApi && !apiStatsRes.loading && subjectBreakdown.length === 0 && (
+            <div className="text-xs text-white/40">Hali fan kesimida natijalar yo'q.</div>
+          )}
+          {!isApi && (
+            <div className="text-xs text-white/40">Fan kesimi faqat akkaunt rejimida ko'rinadi.</div>
+          )}
           <div className="space-y-3">
-            {[
-              { name: 'Algebraik tenglamalar', correct: 8, total: 10 },
-              { name: 'Geometriya', correct: 7, total: 10 },
-              { name: 'Kombinatorika', correct: 6, total: 10 },
-              { name: 'Logarifmlar', correct: 5, total: 10 },
-            ].map((s, i) => (
-              <div key={i}>
+            {subjectBreakdown.map((s, i) => (
+              <div key={`${s.name}-${i}`}>
                 <div className="flex justify-between text-xs mb-1 gap-2">
-                  <span className="text-white/60 truncate">{s.name}</span>
-                  <span className={`font-medium flex-shrink-0 ${(s.correct/s.total)>=0.7?'text-emerald-400':'text-amber-400'}`}>{s.correct}/{s.total}</span>
+                  <span className="text-white/60 truncate">{s.name} <span className="text-white/30">· {s.attempts} ta</span></span>
+                  <span className={`font-medium flex-shrink-0 ${s.avg>=70?'text-emerald-400':s.avg>=50?'text-amber-400':'text-rose-400'}`}>{s.avg}%</span>
                 </div>
                 <div className="progress-bar h-2">
-                  <div className="progress-fill" style={{ width:`${(s.correct/s.total)*100}%`, background: (s.correct/s.total)>=0.7?'#22c55e':'#f59e0b' }} />
+                  <div className="progress-fill" style={{ width:`${s.avg}%`, background: s.avg>=70?'#22c55e':s.avg>=50?'#f59e0b':'#ef4444' }} />
                 </div>
               </div>
             ))}
@@ -123,11 +164,35 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 md:gap-3">
           <button onClick={() => onNavigate('student')} className="btn-primary py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm"><Icon name="home" size={16} /> Profilga o'tish</button>
           <button onClick={() => onNavigate('leaderboard')} className="btn-ghost py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm"><Icon name="trophy" size={16} /> Reytingni ko'rish</button>
-          <button className="btn-ghost py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm"><Icon name="send" size={16} /> Ulashish</button>
+          <button onClick={() => handleShare()} className="btn-ghost py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm"><Icon name="send" size={16} /> Ulashish</button>
         </div>
+
+        {shareToast && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 glass-strong rounded-2xl px-5 py-3 border border-indigo-500/30 text-sm font-medium text-white">
+            {shareToast}
+          </div>
+        )}
       </div>
     </div>
   );
+
+  // Web Share API yoki clipboard fallback. Backend kerak emas.
+  function handleShare() {
+    const text = `${r.olympiad?.title || 'Olimpiada'} natijasi: ${pct}/100${r.rank ? ` · #${r.rank}-o'rin` : ''}`;
+    const url = (typeof window !== 'undefined' && window.location?.href) || '';
+    const showToast = (m) => { setShareToast(m); setTimeout(() => setShareToast(''), 2500); };
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      navigator.share({ title: 'Olympy natija', text, url }).catch(() => {});
+      return;
+    }
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(`${text} ${url}`.trim())
+        .then(() => showToast('Natija nusxalandi'))
+        .catch(() => showToast('Nusxalab bo\'lmadi'));
+      return;
+    }
+    showToast('Brauzer ulashishni qo\'llab-quvvatlamaydi');
+  }
 
   if (embedded) return content;
   return content;

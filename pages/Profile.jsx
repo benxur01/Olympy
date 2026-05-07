@@ -39,11 +39,26 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
     () => isApi ? OlympyApi.getMyStats(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+  // Oylik dinamika: backend /api/results/me/monthly/ — so'nggi 6 oy.
+  const apiMonthlyRes = useApiData(
+    () => isApi ? OlympyApi.getMyMonthlyStats(6, OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  // API rejimida olimpiadalar ro'yxati — "Olimpiadalar" tab'i va natija
+  // kartalaridagi sarlavha uchun. Avval bu store.olympiads dan olinardi va
+  // API foydalanuvchisida hech narsa ko'rinmasdi.
+  const apiOlympiadsRes = useApiData(
+    () => isApi ? OlympyApi.getOlympiads(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data)
+    ? apiOlympiadsRes.data.map(mapApiOlympiad)
+    : null;
   const apiAttempts = isApi && Array.isArray(apiResultsRes.data)
     ? apiResultsRes.data.map(mapApiAttempt)
     : null;
 
-  const baseOlympiads = isApi ? [] : store.olympiads;
+  const baseOlympiads = isApi ? (apiOlympiads || []) : store.olympiads;
   const myAttempts = user
     ? (isApi ? (apiAttempts || []) : store.attempts.filter(a => a.userId === user.id))
         .slice()
@@ -108,6 +123,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
 
   // Sertifikatlar: 1-o'rinlar haqiqiy attempt'lardan olinadi. Hardcoded
   // "1-o'rin Sertifikati / Faol Ishtirokchi" o'rniga real ma'lumotlar.
+  // attemptId — backend GET /api/certificates/{id}/download/ uchun.
   const certificates = myResults
     .filter(r => r.rank === 1)
     .slice(0, 6)
@@ -115,7 +131,33 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
       title: `${r.subject} 1-o'rin sertifikati`,
       olympiad: r.olympiad,
       date: r.date,
+      attemptId: r.attempt?.backendId ?? r.attempt?.id ?? r.id,
     }));
+
+  const [certDownloading, setCertDownloading] = React.useState(null);
+  const [certError, setCertError] = React.useState('');
+  const handleDownloadCert = async (cert) => {
+    if (!isApi) {
+      setCertError("Yuklab olish faqat akkaunt rejimida");
+      setTimeout(() => setCertError(''), 2500);
+      return;
+    }
+    if (!cert?.attemptId) {
+      setCertError("Sertifikat ID topilmadi");
+      setTimeout(() => setCertError(''), 2500);
+      return;
+    }
+    setCertDownloading(cert.attemptId);
+    setCertError('');
+    try {
+      await OlympyApi.downloadCertificate(cert.attemptId, OlympyApi.getToken());
+    } catch (err) {
+      setCertError(OlympyApi.toUserMessage?.(err) || "Yuklab bo'lmadi");
+      setTimeout(() => setCertError(''), 3000);
+    } finally {
+      setCertDownloading(null);
+    }
+  };
 
   const content = (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in">
@@ -150,8 +192,16 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
             {!isPublic && <div className="text-white/40 text-sm mt-0.5">{(user?.phone || '+998901234567').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1 *** $2')}</div>}
             <div className="flex flex-wrap gap-3 mt-3">
               <div className="flex items-center gap-1.5 text-sm text-white/50"><Icon name="building" size={14} />{(() => {
-                const cid = user?.roles?.student?.centerId || user?.roles?.teacher?.centerId || user?.roles?.manager?.centerId;
-                return store.centers.find(c => c.id === cid)?.name || 'Tashkilotsiz';
+                // Avval store.centers dan qidirilardi va API rejimida bo'sh
+                // edi → "Tashkilotsiz" deb ko'rinardi. Endi mapBackendUser
+                // tayyorlagan centerName'ni ishlatamiz, store ga tushib
+                // qoldikgina fallback.
+                const role = user?.roles?.student || user?.roles?.teacher || user?.roles?.manager || user?.roles?.owner;
+                if (role?.centerName) return role.centerName;
+                const cid = role?.centerId;
+                if (!cid) return 'Tashkilotsiz';
+                const fromStore = store.centers.find(c => String(c.id) === String(cid));
+                return fromStore?.name || 'Tashkilotsiz';
               })()}</div>
               <div className="flex items-center gap-1.5 text-sm text-white/50"><Icon name="clock" size={14} />{user?.joined ? `${user.joined} dan` : '—'}</div>
             </div>
@@ -213,10 +263,23 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
 
         <div className="glass rounded-2xl p-5">
           <h3 className="font-bold text-white mb-4">Natijalar dinamikasi</h3>
-          <BarChart data={[
-            {label:'1-oy',value:72},{label:'2-oy',value:81},{label:'3-oy',value:87},
-            {label:'4-oy',value:83},{label:'5-oy',value:91},
-          ]} />
+          {(() => {
+            const months = isApi && Array.isArray(apiMonthlyRes.data?.months)
+              ? apiMonthlyRes.data.months
+              : [];
+            const data = months.map(m => ({
+              label: m.label,
+              value: Math.max(1, Math.round(m.average_score || 0)),
+            }));
+            const hasAny = months.some(m => (m.attempts || 0) > 0);
+            if (isApi && apiMonthlyRes.loading && !apiMonthlyRes.data) {
+              return <div className="text-xs text-white/40">Yuklanmoqda...</div>;
+            }
+            if (!isApi || !hasAny) {
+              return <div className="text-xs text-white/40">Hali oylik natijalar to'planmagan.</div>;
+            }
+            return <BarChart data={data} />;
+          })()}
         </div>
       </div>
 
@@ -234,7 +297,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
           {myResults.length === 0 && <div className="text-center text-white/40 text-sm py-6 glass rounded-2xl">Hali natijalar yo'q</div>}
           {myResults.map(r => (
             <div key={r.id} className="glass rounded-2xl p-4 flex items-center gap-4 cursor-pointer hover:bg-white/5"
-              onClick={() => onNavigate && onNavigate('results', { ...r.attempt, olympiad: store.olympiads.find(o => o.id === r.attempt.olympiadId) })}>
+              onClick={() => onNavigate && onNavigate('results', { ...r.attempt, olympiad: baseOlympiads.find(o => String(o.id) === String(r.attempt.olympiadId)) })}>
               <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black flex-shrink-0 ${r.rank===1?'bg-amber-500/20 text-amber-400':'bg-indigo-500/15 text-indigo-400'}`}>#{r.rank || '—'}</div>
               <div className="flex-1 min-w-0">
                 <div className="font-semibold text-white truncate">{r.olympiad}</div>
@@ -252,8 +315,14 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
       {tab === 'olympiads' && (
         <div className="space-y-3">
           {(() => {
+            // API rejimida olimpiadalar /api/olympiads/ dan, mock rejimda
+            // store.olympiads dan keladi. Avval doim store.olympiads ishlatilardi
+            // va API foydalanuvchisi bo'sh tab ko'rardi.
             const cid = user?.roles?.student?.centerId;
-            const list = cid ? store.olympiads.filter(o => o.centerId === cid).slice(0,5) : store.olympiads.slice(0,3);
+            const allOlympiads = baseOlympiads;
+            const list = cid
+              ? allOlympiads.filter(o => String(o.centerId) === String(cid)).slice(0, 5)
+              : allOlympiads.slice(0, 3);
             if (list.length === 0) return <div className="text-center text-white/40 text-sm py-6 glass rounded-2xl">Olimpiadalar yo'q</div>;
             return list.map(o => (
               <div key={o.id} className="glass rounded-2xl p-4 flex items-center gap-4">
@@ -287,9 +356,17 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
               <div className="font-bold text-white mb-1">{c.title}</div>
               <div className="text-sm text-white/50 mb-1">{c.olympiad}</div>
               <div className="text-xs text-white/30 mb-4">{c.date}</div>
-              <button className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5"><Icon name="copy" size={13} /> Yuklab olish</button>
+              <button
+                onClick={() => handleDownloadCert(c)}
+                disabled={certDownloading === c.attemptId}
+                className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 disabled:opacity-50">
+                <Icon name="copy" size={13} /> {certDownloading === c.attemptId ? "Yuklanmoqda..." : 'Yuklab olish'}
+              </button>
             </div>
           ))}
+          {certError && (
+            <div className="md:col-span-2 text-xs text-rose-300 text-center">{certError}</div>
+          )}
         </div>
       )}
     </div>

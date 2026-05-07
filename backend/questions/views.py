@@ -69,6 +69,39 @@ def questions_list_create(request):
                     status=http_status.HTTP_201_CREATED)
 
 
+@api_view(['GET', 'PATCH', 'PUT', 'DELETE'])
+@permission_classes([IsAuthenticated])
+@parser_classes([JSONParser, MultiPartParser, FormParser])
+def question_detail(request, question_id):
+    """GET/PATCH/PUT/DELETE /api/questions/{id}/
+
+    Edit (qalam) tugmasi avval ulanmagan edi — endi PATCH bilan ishlaydi.
+    DELETE ham qo'shildi: o'sha ruxsatga ega rolllar.
+    """
+    question = get_object_or_404(Question, pk=question_id)
+    if not _user_can_create_for_center(request.user, question.center_id):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if request.method == 'GET':
+        return Response(QuestionSerializer(question).data)
+    if request.method == 'DELETE':
+        question.delete()
+        return Response(status=http_status.HTTP_204_NO_CONTENT)
+    # PATCH / PUT
+    partial = request.method == 'PATCH'
+    data = request.data
+    # center maydonini tahrirlashga ruxsat bermaymiz — savol bir markazga
+    # bog'liq bo'lib qoladi.
+    if hasattr(data, 'copy'):
+        data = data.copy()
+    else:
+        data = dict(data)
+    data.pop('center', None)
+    serializer = QuestionSerializer(question, data=data, partial=partial)
+    serializer.is_valid(raise_exception=True)
+    serializer.save()
+    return Response(QuestionSerializer(question).data)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AiQuestionRateThrottle])

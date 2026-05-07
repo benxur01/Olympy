@@ -1,14 +1,5 @@
 // pages/OlympiadTest.jsx
 
-// Fallback question bank used only if olympiad has no assigned questions
-const FALLBACK_QUESTIONS = [
-  { id:'fq1', text:"2x + 5 = 13 tenglamasida x ning qiymatini toping.", options:["x = 2","x = 3","x = 4","x = 5"], correctAnswer:2 },
-  { id:'fq2', text:"Agar a = 3 va b = 4 bo'lsa, a² + b² qiymatini hisoblang.", options:["20","25","30","35"], correctAnswer:1 },
-  { id:'fq3', text:"Pythagoras teoremasi faqat to'g'ri burchakli uchburchaklarga tatbiq etiladi.", options:["To'g'ri","Noto'g'ri"], correctAnswer:0 },
-  { id:'fq4', text:"100 ning kvadrat ildizini hisoblang.", options:["8","9","10","11"], correctAnswer:2 },
-  { id:'fq5', text:"Aylana yuzasi formulasi qaysi?", options:["πr","2πr","πr²","2πr²"], correctAnswer:2 },
-];
-
 const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const store = useStore();
 
@@ -41,13 +32,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const assignedQuestions = assignedIds
     .map(qid => store.questions.find(q => q.id === qid))
     .filter(Boolean);
-  // API foydalanuvchisi uchun apiQuestions yagona haqiqiy manba; FALLBACK
-  // faqat mock/dev rejim uchun. Aks holda student soxta savollarga javob
-  // berib qo'yardi va backendga unchaqirilgan submit yuborishi mumkin edi.
-  const fallbackQuestions = assignedQuestions.length > 0 ? assignedQuestions : FALLBACK_QUESTIONS;
+  // API foydalanuvchisi uchun apiQuestions yagona haqiqiy manba. Mock/dev
+  // rejimda olimpiada savollari biriktirilgan bo'lsa shulardan, aks holda
+  // bo'sh massiv — soxta hardcoded savollar production'ga sizmasligi uchun.
   const TEST_QUESTIONS = user?._api
     ? (Array.isArray(apiQuestions) ? apiQuestions : [])
-    : fallbackQuestions;
+    : assignedQuestions;
 
   const TOTAL = TEST_QUESTIONS.length;
   const DURATION = (liveOlympiad?.duration || olympiad?.duration || 30) * 60;
@@ -368,10 +358,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       </div>
     );
   }
-  // API rejimda haqiqiy savollar bo'lmasa, soxta FALLBACK savollar ko'rsatish
-  // o'rniga aniq xatolik xabari beramiz — aks holda student haqiqiy bo'lmagan
-  // testni topshirib qo'yardi va natija nol bo'lardi.
-  if (user?._api && (!Array.isArray(apiQuestions) || apiQuestions.length === 0)) {
+  // Haqiqiy savollar bo'lmasa, soxta savollar ko'rsatish o'rniga aniq
+  // xatolik xabari beramiz — aks holda student haqiqiy bo'lmagan testni
+  // topshirib qo'yardi va natija nol bo'lardi.
+  if (TOTAL === 0) {
     return <PendingAccessCard
       title="Savollar yuklanmadi"
       status="rejected"
@@ -379,7 +369,8 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       onBack={() => onNavigate('student')} />;
   }
 
-  const q = TEST_QUESTIONS[current] || FALLBACK_QUESTIONS[0];
+  const q = TEST_QUESTIONS[current];
+  if (!q) return null;
   // Derive a "type" for True/False rendering even though store questions don't carry one
   const isTrueFalse = (q.options || []).length === 2 && (q.options || []).every(o => /to'?g'?ri|no?to'?g'?ri/i.test(o));
 

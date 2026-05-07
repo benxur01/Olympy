@@ -18,6 +18,10 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [pendingStudents, setPendingStudents] = React.useState([]);
   const [approvedStudents, setApprovedStudents] = React.useState([]);
+  const [studentDetailMembership, setStudentDetailMembership] = React.useState(null);
+  const [studentDetail, setStudentDetail] = React.useState(null);
+  const [studentDetailLoading, setStudentDetailLoading] = React.useState(false);
+  const [studentDetailError, setStudentDetailError] = React.useState('');
   const [assignedQuestionIds, setAssignedQuestionIds] = React.useState([]);
   const [assignmentLevel, setAssignmentLevel] = React.useState('');
   const [assignmentType, setAssignmentType] = React.useState('');
@@ -163,6 +167,16 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data) ? apiOlympiadsRes.data.map(mapApiOlympiad) : null;
   const apiQuestions = isApi && Array.isArray(apiQuestionsRes.data) ? apiQuestionsRes.data.map(mapApiQuestion) : null;
 
+  // Manager statistikasi: backend GET /api/manager/stats/ — center bo'yicha
+  // o'rtacha ball, eng yuqori, qatnashuvchilar. Avval bu raqamlar Natijalar
+  // sahifasida hardcoded ("78.4%, 96%, 484") edi.
+  const managerStatsRes = useApiData(
+    () => (isApi && managerCenterId)
+      ? OlympyApi.getManagerStats(managerCenterId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, managerCenterId],
+  );
+
   const baseCenters = isApi ? (apiCenters || []) : store.centers;
   const center = managerCenterId ? baseCenters.find(c => String(c.id) === String(managerCenterId)) : null;
   const centerId = center?.id;
@@ -179,13 +193,16 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const students = isApi
     ? approvedStudents.map(m => ({
         id: `api:${m.membership_id}`,
+        membershipId: m.membership_id,
         name: m.user?.full_name || m.user?.name || '—',
         phone: m.user?.normalized_phone || m.user?.phone || '—',
         avatarUrl: m.user?.avatar_url || m.user?.avatarUrl || '',
         joined: (m.created_at || '').slice(0, 10),
         subject: m.subject || '—',
-        olympiads: 0,
-        avgScore: 0,
+        // Backend students_memberships endpoint endi olympiads_count va
+        // avg_score qaytaradi — avval doim 0 ko'rinardi.
+        olympiads: m.olympiads_count || 0,
+        avgScore: m.avg_score || 0,
         status: 'Tasdiqlandi',
       }))
     : store.users.filter(u =>
@@ -230,6 +247,34 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   }));
   const requests = isApi ? apiRequests : mockRequests;
 
+  const openStudentDetail = (studentRow) => {
+    if (!isApi) {
+      showToast("⚠ O'quvchi profili faqat akkaunt rejimida");
+      return;
+    }
+    if (!studentRow?.membershipId) {
+      showToast("⚠ Membership ID topilmadi");
+      return;
+    }
+    setStudentDetailMembership(studentRow);
+    setStudentDetail(null);
+    setStudentDetailError('');
+    setStudentDetailLoading(true);
+    OlympyApi.getStudentDetail(studentRow.membershipId, OlympyApi.getToken())
+      .then(data => setStudentDetail(data))
+      .catch(err => {
+        console.warn('getStudentDetail failed:', err);
+        setStudentDetailError(OlympyApi.toUserMessage?.(err) || "Ma'lumot yuklanmadi");
+      })
+      .finally(() => setStudentDetailLoading(false));
+  };
+
+  const closeStudentDetail = () => {
+    setStudentDetailMembership(null);
+    setStudentDetail(null);
+    setStudentDetailError('');
+  };
+
   const handleRequest = (id, action, raw) => {
     if (isApi) {
       const token = OlympyApi.getToken();
@@ -260,6 +305,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     { key: 'home', icon: 'home', label: 'Asosiy' },
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCount || undefined },
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
+    { key: 'students', icon: 'users', label: "O'quvchilar" },
+    { key: 'results', icon: 'chart', label: 'Natijalar' },
   ];
 
   const formStartIso = (form) => {
@@ -544,7 +591,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 <td className="px-4 py-3 text-sm text-white">{s.olympiads}</td>
                 <td className="px-4 py-3"><span className={`font-bold text-sm ${s.avgScore >= 90 ? 'text-emerald-400' : s.avgScore >= 70 ? 'text-indigo-400' : 'text-amber-400'}`}>{s.avgScore || 0}%</span></td>
                 <td className="px-4 py-3"><Badge status={s.status} /></td>
-                <td className="px-4 py-3"><button className="btn-ghost text-xs px-3 py-1.5 rounded-xl">Ko'rish</button></td>
+                <td className="px-4 py-3"><button onClick={() => openStudentDetail(s)} className="btn-ghost text-xs px-3 py-1.5 rounded-xl">Ko'rish</button></td>
               </tr>
             ))}
             {students.length === 0 && (
@@ -744,31 +791,63 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     </div>
   );
 
-  const renderResults = () => (
-    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
-      <h2 className="text-lg md:text-xl font-black text-white">Natijalar</h2>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
-        <StatCard label="O'rtacha ball" value="78.4%" icon={<Icon name="chart" size={18} />} color="from-indigo-500 to-purple-600" />
-        <StatCard label="Eng yuqori" value="96%" icon={<Icon name="trophy" size={18} />} color="from-amber-500 to-orange-500" />
-        <StatCard label="Qatnashuvchilar" value="484" icon={<Icon name="users" size={18} />} color="from-cyan-500 to-blue-600" />
-      </div>
-      <div className="glass rounded-2xl p-5">
-        <h3 className="font-bold text-white mb-4">Tadbir natijalari</h3>
-        {olympiads.filter(o => o.status === 'finished').map(o => (
-          <div key={o.id} className="flex items-center gap-4 p-4 glass rounded-xl mb-3">
-            <div className="flex-1"><div className="font-semibold text-white">{o.title}</div><div className="text-xs text-white/40">{[o.testLevel, testTypeLabel(o.testType)].filter(Boolean).join(' · ')}{(o.testLevel || o.testType) ? ' · ' : ''}{o.participants || 0} ishtirokchi</div></div>
-            <DonutChart value={o.avgScore || 0} size={60} />
-            <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl">Reyting</button>
-          </div>
-        ))}
-        {olympiads.filter(o => o.status === 'finished').length === 0 && (
-          <div className="text-sm text-white/40 px-3 py-2">Tugatilgan tadbirlar yo'q</div>
-        )}
-      </div>
-    </div>
-  );
+  const renderResults = () => {
+    // API rejimida real raqamlar; mock rejimda lokal olympiad/attempt fallback.
+    const apiData = isApi ? managerStatsRes.data : null;
+    const apiLoading = isApi && managerStatsRes.loading && !apiData;
+    const localFinished = olympiads.filter(o => o.status === 'finished');
+    const avgVal = apiData
+      ? `${apiData.average_score || 0}%`
+      : localFinished.length
+        ? `${Math.round(localFinished.reduce((s, o) => s + (o.avgScore || 0), 0) / localFinished.length)}%`
+        : '—';
+    const bestVal = apiData
+      ? `${apiData.best_score || 0}%`
+      : (localFinished.length ? `${Math.max(...localFinished.map(o => o.avgScore || 0))}%` : '—');
+    const participantsVal = apiData
+      ? String(apiData.participants || 0)
+      : String(olympiads.reduce((s, o) => s + (o.participants || 0), 0) || 0);
 
-  const pagesMap = { home: renderHome, requests: renderRequests, olympiads: renderOlympiads };
+    const apiEvents = Array.isArray(apiData?.events) ? apiData.events : [];
+
+    return (
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+        <h2 className="text-lg md:text-xl font-black text-white">Natijalar</h2>
+        {apiLoading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+          <StatCard label="O'rtacha ball" value={avgVal} icon={<Icon name="chart" size={18} />} color="from-indigo-500 to-purple-600" />
+          <StatCard label="Eng yuqori" value={bestVal} icon={<Icon name="trophy" size={18} />} color="from-amber-500 to-orange-500" />
+          <StatCard label="Qatnashuvchilar" value={participantsVal} icon={<Icon name="users" size={18} />} color="from-cyan-500 to-blue-600" />
+        </div>
+        <div className="glass rounded-2xl p-5">
+          <h3 className="font-bold text-white mb-4">Tadbir natijalari</h3>
+          {isApi && apiEvents.length > 0 && apiEvents.filter(e => (e.participants || 0) > 0).map(e => (
+            <div key={e.olympiad_id} className="flex items-center gap-4 p-4 glass rounded-xl mb-3">
+              <div className="flex-1">
+                <div className="font-semibold text-white">{e.title}</div>
+                <div className="text-xs text-white/40">{e.subject} · {e.participants} ishtirokchi · eng yuqori {e.best_score}%</div>
+              </div>
+              <DonutChart value={Math.round(e.average_score || 0)} size={60} />
+              <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl">Reyting</button>
+            </div>
+          ))}
+          {!isApi && localFinished.map(o => (
+            <div key={o.id} className="flex items-center gap-4 p-4 glass rounded-xl mb-3">
+              <div className="flex-1"><div className="font-semibold text-white">{o.title}</div><div className="text-xs text-white/40">{[o.testLevel, testTypeLabel(o.testType)].filter(Boolean).join(' · ')}{(o.testLevel || o.testType) ? ' · ' : ''}{o.participants || 0} ishtirokchi</div></div>
+              <DonutChart value={o.avgScore || 0} size={60} />
+              <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl">Reyting</button>
+            </div>
+          ))}
+          {((isApi && apiEvents.filter(e => (e.participants || 0) > 0).length === 0)
+            || (!isApi && localFinished.length === 0)) && (
+            <div className="text-sm text-white/40 px-3 py-2">Hali natijasi bor tadbirlar yo'q</div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const pagesMap = { home: renderHome, requests: renderRequests, olympiads: renderOlympiads, students: renderStudents, results: renderResults };
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -1085,6 +1164,70 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             </div>
           );
         })()}
+      </Modal>
+
+      {/* Student detail modal */}
+      <Modal open={!!studentDetailMembership} onClose={closeStudentDetail} title="O'quvchi profili" width="max-w-2xl">
+        {studentDetailLoading && (
+          <div className="text-sm text-white/50">Yuklanmoqda...</div>
+        )}
+        {studentDetailError && (
+          <div className="text-sm text-rose-300">{studentDetailError}</div>
+        )}
+        {studentDetail && (
+          <div className="space-y-5">
+            <div className="flex items-center gap-3">
+              <Avatar name={studentDetail.user?.full_name || '—'} src={studentDetail.user?.avatar_url || ''} size={56} />
+              <div className="min-w-0 flex-1">
+                <div className="text-base font-bold text-white truncate">{studentDetail.user?.full_name || '—'}</div>
+                <div className="text-xs text-white/50">{(studentDetail.user?.normalized_phone || studentDetail.user?.phone || '').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1 *** $2')}</div>
+                <div className="text-xs text-white/40 mt-0.5">{studentDetail.center?.name} · {studentDetail.subject || '—'} · {(studentDetail.joined_at || '').slice(0,10)}</div>
+              </div>
+              <Badge status={statusLabel(studentDetail.status)} />
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="glass rounded-xl p-3 text-center">
+                <div className="text-lg font-black text-white">{studentDetail.stats?.total_attempts || 0}</div>
+                <div className="text-[11px] text-white/40">Tadbirlar</div>
+              </div>
+              <div className="glass rounded-xl p-3 text-center">
+                <div className="text-lg font-black text-white">{studentDetail.stats?.average_score || 0}%</div>
+                <div className="text-[11px] text-white/40">O'rtacha</div>
+              </div>
+              <div className="glass rounded-xl p-3 text-center">
+                <div className="text-lg font-black text-white">{studentDetail.stats?.best_score || 0}%</div>
+                <div className="text-[11px] text-white/40">Eng yuqori</div>
+              </div>
+              <div className="glass rounded-xl p-3 text-center">
+                <div className="text-lg font-black text-amber-400">{studentDetail.stats?.first_place_count || 0}</div>
+                <div className="text-[11px] text-white/40">1-o'rin</div>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="font-bold text-white mb-2 text-sm">So'nggi natijalar</h4>
+              <div className="max-h-72 overflow-y-auto space-y-2">
+                {(studentDetail.attempts || []).length === 0 && (
+                  <div className="text-sm text-white/40">Hali natijalar yo'q</div>
+                )}
+                {(studentDetail.attempts || []).map(a => (
+                  <div key={a.attempt_id} className="glass rounded-xl p-3 flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-black text-xs flex-shrink-0 ${a.rank === 1 ? 'bg-amber-500/20 text-amber-400' : 'bg-indigo-500/15 text-indigo-400'}`}>#{a.rank || '—'}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-white truncate">{a.olympiad_title}</div>
+                      <div className="text-xs text-white/40">{a.subject} · {(a.submitted_at || '').slice(0,10)}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-base font-black text-white">{a.score}</div>
+                      <div className="text-[11px] text-emerald-400">{a.correct_count}/{a.total_questions}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {toast && (

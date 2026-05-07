@@ -195,7 +195,9 @@ const LoginPage = ({ onNavigate, onLogin }) => {
           <h2 className="text-3xl font-black text-white mb-4">Xush kelibsiz!</h2>
           <p className="text-white/40 max-w-sm mx-auto leading-relaxed mb-10">O'zbekistonning eng zamonaviy olimpiada platformasiga kiring va yutuqlarga erishishni boshlang.</p>
           <div className="grid grid-cols-2 gap-4 max-w-xs mx-auto">
-            {[{ v: '120+', l: 'Tashkilot' }, { v: '15K+', l: "O'quvchi" }, { v: '50K+', l: 'Savollar' }, { v: '98%', l: 'Qoniqish' }].map((s, i) => (
+            {/* Platforma yangi — soxta "120+ tashkilot, 15K+ o'quvchi"
+                raqamlari o'rniga imkoniyatlar. */}
+            {[{ v: 'AI', l: 'Savol generator' }, { v: 'PDF', l: 'Import' }, { v: 'Telegram', l: 'Bot' }, { v: '24/7', l: 'Online' }].map((s, i) => (
               <div key={i} className="glass rounded-2xl p-4 text-center">
                 <div className="text-xl font-black gradient-text">{s.v}</div>
                 <div className="text-xs text-white/40">{s.l}</div>

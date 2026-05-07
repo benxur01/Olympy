@@ -6,4 +6,5 @@ from . import views
 urlpatterns = [
     path('me/', views.my_results, name='my-results'),
     path('me/stats/', views.my_stats, name='my-stats'),
+    path('me/monthly/', views.my_monthly_stats, name='my-monthly-stats'),
 ]

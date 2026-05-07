@@ -9,13 +9,6 @@ const SUBJECTS = (globalThis.SUBJECTS_LIST && globalThis.SUBJECTS_LIST.length > 
 const LEVELS = ['Oson','O\'rta','Qiyin'];
 const TYPES = ['Ko\'p tanlovli','To\'g\'ri/Noto\'g\'ri','Qisqa javob'];
 
-const MOCK_QUESTIONS = [
-  { id:1, text:"2x + 5 = 13 tenglamasini yeching.", type:"Ko'p tanlovli", subject:"Matematika", level:"Oson", score:3, options:["x=2","x=3","x=4","x=5"], correct:2 },
-  { id:2, text:"Pythagoras teoremasi: a²+b²=c² – bu to'g'rimi?", type:"To'g'ri/Noto'g'ri", subject:"Matematika", level:"Oson", score:2, options:["To'g'ri","Noto'g'ri"], correct:0 },
-  { id:3, text:"O'zbekiston mustaqilligini qachon e'lon qildi?", type:"Ko'p tanlovli", subject:"Tarix", level:"O'rta", score:3, options:["1990","1991","1992","1993"], correct:1 },
-  { id:4, text:"\"Algorithm\" so'zini inglizcha yozing.", type:"Qisqa javob", subject:"Informatika", level:"O'rta", score:4, options:[], correct:null },
-];
-
 const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitcher }) => {
   // ─── Teacher access guard ───────────────────────────────────────────────
   // Only enforced when used as a standalone page (not embedded inside another dashboard like manager)
@@ -52,6 +45,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [pdfProvider, setPdfProvider] = React.useState('');
   const [pdfVision, setPdfVision] = React.useState(false);
   const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject:'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0 });
+  const [editingQuestionId, setEditingQuestionId] = React.useState(null);
   const [newSubjectModal, setNewSubjectModal] = React.useState(false);
   const [newSubject, setNewSubject] = React.useState('');
   const [deleteId, setDeleteId] = React.useState(null);
@@ -110,85 +104,67 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
 
   const generateAI = async () => {
     if (!aiForm.topic) return;
-    setAiLoading(true);
-    setAiResult(null);
-    if (isApi) {
-      try {
-        const response = await OlympyApi.generateAiQuestions({
-          center: myCenter?.backendId ?? myCenterId,
-          subject: aiForm.subject,
-          topic: aiForm.topic,
-          count: aiForm.count,
-          difficulty: _diffToApi(aiForm.level),
-          question_type: aiForm.type,
-        }, OlympyApi.getToken());
-        const generated = (response?.questions || []).map(_mapAiGeneratedQuestion);
-        setAiResult(generated);
-      } catch (err) {
-        console.warn('generateAiQuestions failed:', err);
-        showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "AI savol yarata olmadi"}`);
-      } finally {
-        setAiLoading(false);
-      }
+    if (!isApi) {
+      // Mock rejimda real LLM yo'q — soxta "A javob, B javob" savollar
+      // bazaga yozilib qolmasligi uchun aniq xabar beramiz.
+      showApiToast("⚠ AI savol yaratish uchun akkaunt bilan kirish kerak");
       return;
     }
-    setTimeout(() => {
-      const generated = Array.from({length: aiForm.count}, (_, i) => ({
-        // tmp id for preview only — real id assigned on save
-        _tmpId: Date.now() + i,
-        text: `${aiForm.subject} · ${aiForm.topic}: ${i+1}-savol matni bu yerda bo'ladi.`,
+    setAiLoading(true);
+    setAiResult(null);
+    try {
+      const response = await OlympyApi.generateAiQuestions({
+        center: myCenter?.backendId ?? myCenterId,
         subject: aiForm.subject,
-        difficulty: aiForm.level,
-        score: 3,
-        options: aiForm.type === "Ko'p tanlovli" ? ['A javob','B javob','C javob','D javob']
-               : aiForm.type === "To'g'ri/Noto'g'ri" ? ["To'g'ri","Noto'g'ri"] : [],
-        correctAnswer: 0,
-        source: 'ai',
-      }));
+        topic: aiForm.topic,
+        count: aiForm.count,
+        difficulty: _diffToApi(aiForm.level),
+        question_type: aiForm.type,
+      }, OlympyApi.getToken());
+      const generated = (response?.questions || []).map(_mapAiGeneratedQuestion);
       setAiResult(generated);
+    } catch (err) {
+      console.warn('generateAiQuestions failed:', err);
+      showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "AI savol yarata olmadi"}`);
+    } finally {
       setAiLoading(false);
-    }, 2500);
+    }
   };
 
   const handlePDF = async (e) => {
     const f = e.target.files?.[0];
     if (!f) return;
+    if (!isApi) {
+      // Mock rejimda PDF parse qiluvchi server yo'q — soxta "PDF dan
+      // ajratilgan 1-savol" natijalar bazaga sizmasligi uchun chiqaramiz.
+      showApiToast("⚠ PDF tahlil qilish uchun akkaunt bilan kirish kerak");
+      e.target.value = '';
+      return;
+    }
     setPdfFile(f.name);
     setPdfLoading(true);
     setPdfResult(null);
     setPdfProvider('');
     setPdfVision(false);
-    if (isApi) {
-      try {
-        const response = await OlympyApi.extractPdfQuestions(f, {
-          center: myCenter?.backendId ?? myCenterId,
-          subject: aiForm.subject,
-          difficulty: _diffToApi(aiForm.level),
-          question_type: aiForm.type,
-        }, OlympyApi.getToken());
-        const extracted = (response?.questions || []).map(_mapPdfGeneratedQuestion);
-        setPdfResult(extracted);
-        setPdfProvider(response?.provider || '');
-        setPdfVision(!!response?.used_pdf_vision);
-        if (!extracted.length) showApiToast("⚠ PDFdan savol topilmadi");
-      } catch (err) {
-        console.warn('extractPdfQuestions failed:', err);
-        showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "PDF tahlil qilinmadi"}`);
-      } finally {
-        setPdfLoading(false);
-        e.target.value = '';
-      }
-      return;
-    }
-    setTimeout(() => {
-      setPdfResult(Array.from({length:5}, (_, i) => ({
-        _tmpId: Date.now()+i, text:`PDF dan ajratilgan ${i+1}-savol`,
-        subject: aiForm.subject || 'Matematika', difficulty:"O'rta", score:3,
-        options:['A','B','C','D'], correctAnswer:0, source:'pdf', answerSource:'pdf', needsReview:false,
-      })));
-      setPdfProvider('demo');
+    try {
+      const response = await OlympyApi.extractPdfQuestions(f, {
+        center: myCenter?.backendId ?? myCenterId,
+        subject: aiForm.subject,
+        difficulty: _diffToApi(aiForm.level),
+        question_type: aiForm.type,
+      }, OlympyApi.getToken());
+      const extracted = (response?.questions || []).map(_mapPdfGeneratedQuestion);
+      setPdfResult(extracted);
+      setPdfProvider(response?.provider || '');
+      setPdfVision(!!response?.used_pdf_vision);
+      if (!extracted.length) showApiToast("⚠ PDFdan savol topilmadi");
+    } catch (err) {
+      console.warn('extractPdfQuestions failed:', err);
+      showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "PDF tahlil qilinmadi"}`);
+    } finally {
       setPdfLoading(false);
-    }, 2000);
+      e.target.value = '';
+    }
   };
 
   // Backend API uchun frontend savollarning daraja kalitlarini Django
@@ -212,37 +188,79 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     return Promise.all(items.map(q => OlympyApi.createQuestion(_toApiQuestion(q, source), token)));
   };
 
+  const startEditQuestion = (q) => {
+    // mavjud savol ma'lumotlarini formga yuklash. Backend Question turi
+    // (multiple_choice/true_false/short_answer) yo'q — Frontend "type"ni
+    // options soniga qarab xulosa qiladi.
+    const inferredType = (q.options && q.options.length === 2 && q.options.every(o => /to'?g'?ri|noto'?g'?ri/i.test(o)))
+      ? "To'g'ri/Noto'g'ri"
+      : (Array.isArray(q.options) && q.options.length > 0 ? "Ko'p tanlovli" : 'Qisqa javob');
+    setEditingQuestionId(q.backendId ?? q.id);
+    setNewQ({
+      text: q.text || '',
+      type: inferredType,
+      subject: q.subject || (allSubjects[0] || 'Matematika'),
+      level: q.difficulty || "O'rta",
+      score: q.score || 3,
+      options: Array.isArray(q.options) && q.options.length ? q.options.slice() : ['','','',''],
+      correct: typeof q.correctAnswer === 'number' ? q.correctAnswer : 0,
+    });
+    setMode('manual');
+  };
+
   const saveQuestion = () => {
     if (!newQ.text) return;
+    const isEditing = !!editingQuestionId;
     if (isApi) {
       const token = OlympyApi.getToken();
-      OlympyApi.createQuestion({
-        center: myCenter?.backendId ?? myCenterId,
+      const payload = {
         subject: newQ.subject,
         text: newQ.text,
         options: newQ.options,
         correct_answer: newQ.correct,
         score: newQ.score,
         difficulty: _diffToApi(newQ.level),
-        source: 'manual',
-      }, token)
-        .then(() => { apiQuestionsRes.reload(); setMode('list'); })
-        .catch(err => { console.warn('createQuestion failed:', err); showApiToast("⚠ Savol saqlab bo'lmadi"); });
+      };
+      const promise = isEditing
+        ? OlympyApi.updateQuestion(editingQuestionId, payload, token)
+        : OlympyApi.createQuestion({
+            center: myCenter?.backendId ?? myCenterId,
+            ...payload,
+            source: 'manual',
+          }, token);
+      promise
+        .then(() => { apiQuestionsRes.reload(); setMode('list'); setEditingQuestionId(null); })
+        .catch(err => {
+          console.warn('saveQuestion failed:', err);
+          showApiToast(`⚠ ${isEditing ? "Tahrirlab" : "Saqlab"} bo'lmadi`);
+        });
       setNewQ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0 });
       return;
     }
-    OlympyStore.createQuestion({
-      centerId: myCenterId,
-      subject: newQ.subject,
-      text: newQ.text,
-      options: newQ.options,
-      correctAnswer: newQ.correct,
-      score: newQ.score,
-      difficulty: newQ.level,
-      source: 'manual',
-      createdBy: user?.id,
-    });
+    if (isEditing) {
+      OlympyStore.updateQuestion(editingQuestionId, {
+        subject: newQ.subject,
+        text: newQ.text,
+        options: newQ.options,
+        correctAnswer: newQ.correct,
+        score: newQ.score,
+        difficulty: newQ.level,
+      });
+    } else {
+      OlympyStore.createQuestion({
+        centerId: myCenterId,
+        subject: newQ.subject,
+        text: newQ.text,
+        options: newQ.options,
+        correctAnswer: newQ.correct,
+        score: newQ.score,
+        difficulty: newQ.level,
+        source: 'manual',
+        createdBy: user?.id,
+      });
+    }
     setNewQ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0 });
+    setEditingQuestionId(null);
     setMode('list');
   };
 
@@ -326,7 +344,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             <button onClick={() => setMode('pdf')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-cyan-500/30 text-cyan-300"><Icon name="upload" size={14} /> <span className="hidden sm:inline">PDF dan</span><span className="sm:hidden">PDF</span></button>
           </div>
         )}
-        {mode !== 'list' && <button onClick={() => { setMode('list'); setAiResult(null); setPdfResult(null); setPdfProvider(''); setPdfVision(false); }} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 w-full md:w-auto"><Icon name="arrowLeft" size={14} /> Orqaga</button>}
+        {mode !== 'list' && <button onClick={() => { setMode('list'); setAiResult(null); setPdfResult(null); setPdfProvider(''); setPdfVision(false); setEditingQuestionId(null); }} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 w-full md:w-auto"><Icon name="arrowLeft" size={14} /> Orqaga</button>}
       </div>
 
       {/* LIST MODE */}
@@ -369,7 +387,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 </div>
                 {/* Mobile'da har doim ko'rinadi (hover yo'q), desktop'da hover'da */}
                 <div className="flex gap-0.5 md:gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">
-                  <button className="text-white/40 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-white/5"><Icon name="edit" size={15} /></button>
+                  <button onClick={() => startEditQuestion(q)} className="text-white/40 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-white/5"><Icon name="edit" size={15} /></button>
                   <button onClick={() => setDeleteId(q.id)} className="text-white/40 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-white/5"><Icon name="trash" size={15} /></button>
                 </div>
               </div>
@@ -381,7 +399,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       {/* MANUAL MODE */}
       {mode === 'manual' && (
         <div className="glass rounded-2xl p-4 md:p-6 space-y-4 md:space-y-5 animate-in">
-          <h3 className="font-bold text-white">Yangi savol yaratish</h3>
+          <h3 className="font-bold text-white">{editingQuestionId ? "Savolni tahrirlash" : "Yangi savol yaratish"}</h3>
           <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Savol matni</label>
             <textarea className="input-field" rows={3} placeholder="Savolingizni kiriting..." value={newQ.text} onChange={e => setNewQ({...newQ, text: e.target.value})} /></div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -426,8 +444,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             </div>
           )}
           <div className="flex gap-3">
-            <button onClick={() => setMode('list')} className="btn-ghost flex-1 py-3 rounded-xl">Bekor qilish</button>
-            <button onClick={saveQuestion} disabled={!newQ.text} className="btn-primary flex-1 py-3 rounded-xl font-semibold disabled:opacity-50">Saqlash</button>
+            <button onClick={() => { setMode('list'); setEditingQuestionId(null); }} className="btn-ghost flex-1 py-3 rounded-xl">Bekor qilish</button>
+            <button onClick={saveQuestion} disabled={!newQ.text} className="btn-primary flex-1 py-3 rounded-xl font-semibold disabled:opacity-50">{editingQuestionId ? "Saqlash" : "Yaratish"}</button>
           </div>
         </div>
       )}
@@ -581,9 +599,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           <button onClick={() => setDeleteId(null)} className="btn-ghost flex-1 py-3 rounded-xl">Bekor qilish</button>
           <button onClick={() => {
             if (isApi) {
-              // Backend'da DELETE endpointi hali yo'q — TODO: ulansin.
-              showApiToast("⚠ API rejimida o'chirish hozircha mavjud emas");
-              setDeleteId(null);
+              const target = questions.find(q => String(q.id) === String(deleteId));
+              const backendId = target?.backendId ?? deleteId;
+              OlympyApi.deleteQuestion(backendId, OlympyApi.getToken())
+                .then(() => { apiQuestionsRes.reload(); setDeleteId(null); })
+                .catch(err => { console.warn('deleteQuestion failed:', err); showApiToast("⚠ O'chirib bo'lmadi"); setDeleteId(null); });
               return;
             }
             OlympyStore.deleteQuestion(deleteId);

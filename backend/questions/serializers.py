@@ -29,18 +29,29 @@ class QuestionSerializer(serializers.ModelSerializer):
         return super().to_internal_value(data)
 
     def validate(self, data):
-        options = data.get('options', [])
+        # PATCH uchun mavjud instance maydonlari fallback bo'ladi.
+        instance = getattr(self, 'instance', None)
+        options = data.get('options')
+        if options is None and instance is not None:
+            options = instance.options
         if not options or len(options) < 2:
             raise serializers.ValidationError({'options': "Kamida 2 ta variant bo'lishi kerak"})
+
         correct = data.get('correct_answer')
+        if correct is None and instance is not None:
+            correct = instance.correct_answer
         try:
             correct = int(correct)
         except (TypeError, ValueError):
             raise serializers.ValidationError({'correct_answer': "To'g'ri javob indeksi noto'g'ri"})
-        if correct is None or not (0 <= correct < len(options)):
+        if not (0 <= correct < len(options)):
             raise serializers.ValidationError({'correct_answer': "To'g'ri javob indeksi noto'g'ri"})
+
+        score = data.get('score')
+        if score is None and instance is not None:
+            score = instance.score
         try:
-            score = int(data.get('score', 0))
+            score = int(score) if score is not None else 0
         except (TypeError, ValueError):
             raise serializers.ValidationError({'score': "Ball 1 dan 100 gacha bo'lishi kerak"})
         if score < 1 or score > 100:
