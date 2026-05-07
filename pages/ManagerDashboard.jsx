@@ -163,6 +163,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     [isApi, managerCenterId],
   );
 
+  React.useEffect(() => {
+    if (page === 'olympiads' && isApi && managerCenterId) {
+      apiQuestionsRes.reload();
+      apiOlympiadsRes.reload();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, isApi, managerCenterId]);
+
   const apiCenters = isApi && Array.isArray(apiCentersRes.data) ? apiCentersRes.data.map(mapApiCenter) : null;
   const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data) ? apiOlympiadsRes.data.map(mapApiOlympiad) : null;
   const apiQuestions = isApi && Array.isArray(apiQuestionsRes.data) ? apiQuestionsRes.data.map(mapApiQuestion) : null;
@@ -305,6 +313,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     { key: 'home', icon: 'home', label: 'Asosiy' },
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCount || undefined },
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
+    { key: 'questions', icon: 'book', label: 'Savollar' },
     { key: 'students', icon: 'users', label: "O'quvchilar" },
     { key: 'results', icon: 'chart', label: 'Natijalar' },
   ];
@@ -847,7 +856,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     );
   };
 
-  const pagesMap = { home: renderHome, requests: renderRequests, olympiads: renderOlympiads, students: renderStudents, results: renderResults };
+  const pagesMap = {
+    home: renderHome,
+    requests: renderRequests,
+    olympiads: renderOlympiads,
+    questions: () => <QuestionCreatorPage embedded user={user} onOpenSwitcher={onOpenSwitcher} />,
+    students: renderStudents,
+    results: renderResults,
+  };
 
   return (
     <div className="flex h-screen overflow-hidden">
