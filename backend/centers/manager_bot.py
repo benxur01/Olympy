@@ -205,13 +205,12 @@ def _format_pending_summary(ctx):
 
 def _help_text():
     return (
-        "Ha, yordam beraman.\n\n"
-        "Nimalar qila olaman:\n"
-        "- PDF, TXT, CSV, rasm yoki ro'yxat matnidan o'quvchilarni tasdiqlayman.\n"
-        "- Telefon yoki kod bo'lsa aniq tekshiraman; faqat ism bo'lsa faqat bitta mos pending topilganda tasdiqlayman.\n"
-        "- 'Kutilayotgan arizalar nechta?' desangiz, holatni chiqaraman.\n"
-        "- Oddiy savollarga ham javob beraman.\n\n"
-        "Masalan: Ali Valiyev +998901234567 tasdiqla"
+        "Albatta, yordam beraman.\n\n"
+        "Menga PDF, TXT, CSV, rasm yoki oddiy matn ko'rinishida ro'yxat yuborsangiz, "
+        "o'quvchi arizalarini tekshiraman. Telefon yoki kod bo'lsa aniqroq topaman; "
+        "faqat ism bo'lsa, bitta aniq mos pending ariza topilgandagina tasdiqlayman.\n\n"
+        "Masalan: Ali Valiyev +998901234567 tasdiqla\n"
+        "Yoki: Kutilayotgan arizalar nechta?"
     )
 
 
@@ -343,13 +342,14 @@ def _is_center_summary_request(text):
 def _deterministic_answer(actor, text, ctx):
     if _is_memory_clear_request(text):
         _clear_conversation(actor)
-        return "Bo'ldi, shu suhbat xotirasini tozaladim. Yangi savoldan davom etamiz."
+        return "Bo'ldi, suhbat xotirasini tozaladim. Endi yangi savoldan davom etamiz."
     if _is_help_request(text):
         return _help_text()
     if _is_approved_count_request(text):
         return (
-            f"Hozir tasdiqlangan o'quvchilar: {ctx['approved_students_count']} ta.\n"
-            f"Kutilayotgan o'quvchi arizalari: {len(ctx['pending_students'])} ta."
+            f"Hozir tasdiqlangan o'quvchilar {ctx['approved_students_count']} ta. "
+            f"Kutilayotgan o'quvchi arizalari esa {len(ctx['pending_students'])} ta. "
+            "Ro'yxatini ko'rmoqchi bo'lsangiz, 'arizalarni ko'rsat' deb yozing."
         )
     if _is_pending_summary_request(text):
         return _format_pending_summary(ctx)
@@ -357,10 +357,24 @@ def _deterministic_answer(actor, text, ctx):
         if not ctx['centers']:
             return "Sizda tasdiqlangan manager/direktor markazi topilmadi."
         return '\n'.join([
-            'Siz boshqaradigan markazlar:',
+            'Siz boshqaradigan markazlar shu yerda:',
             *[f"- {center.name} ({center.district or center.city or center.region})" for center in ctx['centers']],
         ])
     return ''
+
+
+def _ai_unavailable_reply(reason='temporary'):
+    if reason == 'config':
+        return (
+            "Savolingizni oldim, lekin hozir erkin suhbat qismi server sozlamasi sabab ishlamayapti. "
+            "Shunga qaramay, arizalar bo'yicha yordam bera olaman: 'kutilayotgan arizalar nechta?', "
+            "'arizalarni ko'rsat' yoki 'Ali Valiyev +998901234567 tasdiqla' deb yozing."
+        )
+    return (
+        "Savolingizni oldim. Hozir erkin suhbat qismi barqaror javob bera olmayapti, "
+        "shuning uchun taxmin qilib gapirmayman. Arizalar bo'yicha esa yordam bera olaman: "
+        "'kutilayotgan arizalar nechta?', 'arizalarni ko'rsat' yoki 'Ali Valiyev +998901234567 tasdiqla' deb yozing."
+    )
 
 
 def _openai_keys():
@@ -465,14 +479,16 @@ def _manager_ai_prompt(actor, text, ctx):
     history_block = f"\n\nOxirgi suhbat:\n{history}" if history else ''
     return (
         "Sen Olympy platformasidagi managerlar uchun Telegram yordamchisan. "
-        "Javobing odam bilan xotirjam gaplashayotgandek bo'lsin: tabiiy, samimiy, lo'nda va ishchan. "
-        "Managerga 'siz' deb murojaat qil. Juda rasmiy, quruq yoki robotga o'xshash iboralarni ishlatma. "
-        "Kerak bo'lsa bitta aniq savol bilan aniqlashtir. O'zbek tilida javob ber; manager boshqa tilda yozsa ham "
-        "o'zbekcha qisqa javob qaytar.\n\n"
+        "Suhbatdagi tirik odamdek javob ber: avval manager gapini qisqa tan ol, keyin aniq yordam ber. "
+        "Ohang samimiy, xotirjam va ishchan bo'lsin; shablon, haddan tashqari rasmiy yoki robotcha iboralarni takrorlama. "
+        "Managerga 'siz' deb murojaat qil, lekin gapni sun'iy bezama. O'zbek tilida, tabiiy Telegram uslubida yoz; "
+        "manager boshqa tilda yozsa ham qisqa o'zbekcha javob qaytar. Kerak bo'lsa faqat bitta aniq savol bilan aniqlashtir.\n\n"
+        "Javob uslubi: 2-4 gap yetarli. Avval foydali xulosa, keyin keyingi qadam. "
+        "Ro'yxat faqat haqiqatan kerak bo'lsa ishlatilsin. Emoji kamdan-kam, faqat tabiiy ko'rinsa ishlat.\n\n"
         "Chegaralar: faqat berilgan kontekst va suhbat tarixiga tayan. Ma'lumot yetmasa, ochiq ayt va nima yuborish "
         "kerakligini so'ra. Hech qachon o'zing mustaqil tasdiqlash qildim deb yozma; tasdiqlashni backend alohida bajaradi. "
         "Agar manager kimnidir tasdiqlashni so'rasa, ism, telefon yoki kod kerakligini ayt; noaniq bo'lsa aniqlashtir. "
-        "Javob odatda 2-5 gapdan oshmasin. Emoji ishlatma.\n\n"
+        "OpenAI, Gemini, model, quota, API kalit kabi texnik tafsilotlarni managerga aytma.\n\n"
         "Kontekst:\n"
         f"{chr(10).join(context_lines)}"
         f"{history_block}\n\n"
@@ -662,63 +678,34 @@ def answer_manager_question(actor, text):
         _remember_exchange(actor, text, gemini_answer)
         return gemini_answer
     if gemini_error == 'insufficient_quota':
-        reply = (
-            "Gemini ulangan, lekin Google AI quota yoki rate limit yetmayapti. "
-            "Gemini quota/billing sozlamasini tekshiring yoki ishlaydigan yangi API kalit qo'ying. "
-            "'Kutilayotgan arizalar nechta?' yoki 'yordam' deb yozsangiz, asosiy holatni chiqaraman."
-        )
+        reply = _ai_unavailable_reply()
         _remember_exchange(actor, text, reply)
         return reply
     if gemini_error == 'invalid_key':
-        reply = (
-            "Gemini kaliti serverda bor, lekin Google uni rad etdi. "
-            "Yangi Gemini API kalit qo'yish kerak. 'Kutilayotgan arizalar nechta?' yoki 'yordam' deb yozsangiz, "
-            "asosiy holatni chiqaraman."
-        )
+        reply = _ai_unavailable_reply('config')
         _remember_exchange(actor, text, reply)
         return reply
     if gemini_error == 'temporary_unavailable':
-        reply = (
-            "OpenAI hozir quota sabab javob bermayapti, Gemini esa vaqtincha band yoki javob bermadi. "
-            "Bir ozdan keyin qayta yozing. 'Kutilayotgan arizalar nechta?' yoki 'yordam' deb yozsangiz, "
-            "asosiy holatni chiqaraman."
-        )
+        reply = _ai_unavailable_reply()
         _remember_exchange(actor, text, reply)
         return reply
     if gemini_error == 'request_failed' and ai_error == 'insufficient_quota':
-        reply = (
-            "OpenAI quota sabab javob bermayapti. Gemini ham sinab ko'rildi, lekin hozir javob qaytarmadi. "
-            "Bir ozdan keyin qayta urinib ko'ring yoki Gemini model/kalit sozlamasini tekshiring."
-        )
+        reply = _ai_unavailable_reply()
         _remember_exchange(actor, text, reply)
         return reply
     if ai_error == 'insufficient_quota':
-        reply = (
-            "OpenAI ulangan, lekin hisobda quota yoki billing yetmayapti. "
-            "OpenAI billing/quota sozlamasini tekshiring yoki ishlaydigan yangi API kalit qo'ying. "
-            "'Kutilayotgan arizalar nechta?' yoki 'yordam' deb yozsangiz, asosiy holatni chiqaraman."
-        )
+        reply = _ai_unavailable_reply()
         _remember_exchange(actor, text, reply)
         return reply
     if ai_error == 'invalid_key':
-        reply = (
-            "OpenAI kaliti serverda bor, lekin OpenAI uni rad etdi. "
-            "Yangi API kalit qo'yish kerak. 'Kutilayotgan arizalar nechta?' yoki 'yordam' deb yozsangiz, "
-            "asosiy holatni chiqaraman."
-        )
+        reply = _ai_unavailable_reply('config')
         _remember_exchange(actor, text, reply)
         return reply
     if ai_error == 'missing_key' and gemini_error == 'missing_key':
-        reply = (
-            "Savolingizni tushundim, lekin AI javob uchun OpenAI yoki Gemini kaliti sozlanmagan. "
-            "'Kutilayotgan arizalar nechta?' yoki 'yordam' deb yozsangiz, asosiy holatni chiqaraman."
-        )
+        reply = _ai_unavailable_reply('config')
         _remember_exchange(actor, text, reply)
         return reply
-    reply = (
-        "AI xizmatiga ulanishda vaqtinchalik xato bo'ldi. "
-        "'Kutilayotgan arizalar nechta?' yoki 'yordam' deb yozsangiz, asosiy holatni chiqaraman."
-    )
+    reply = _ai_unavailable_reply()
     _remember_exchange(actor, text, reply)
     return reply
 
