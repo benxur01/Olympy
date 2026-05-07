@@ -21,8 +21,26 @@ const UZBEKISTAN_DISTRICTS = {
 const UZBEKISTAN_REGIONS = Object.keys(UZBEKISTAN_DISTRICTS);
 
 // ─── Login ────────────────────────────────────────────────────────────────
+const usePhoneInput = () => {
+  const ref = React.useRef(null);
+  const handleChange = React.useCallback((e, setVal) => {
+    const raw = e.target.value;
+    const pos = e.target.selectionStart;
+    const formatted = formatUzPhoneInput(raw);
+    setVal(formatted);
+    requestAnimationFrame(() => {
+      if (ref.current) {
+        const newPos = Math.min(pos, formatted.length);
+        ref.current.setSelectionRange(newPos, newPos);
+      }
+    });
+  }, []);
+  return { ref, handleChange };
+};
+
 const LoginPage = ({ onNavigate, onLogin }) => {
   const [form, setForm] = React.useState({ phone: '+998', password: '' });
+  const phoneInputRef = usePhoneInput();
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
   const [showPass, setShowPass] = React.useState(false);
@@ -221,10 +239,10 @@ const LoginPage = ({ onNavigate, onLogin }) => {
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
-            <input className="input-field" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
+            <input ref={phoneInputRef.ref} className="input-field" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
               placeholder="+998901234567" value={form.phone}
-              onChange={e => setForm({ ...form, phone: formatUzPhoneInput(e.target.value) })}
-              onFocus={e => setForm({ ...form, phone: formatUzPhoneInput(e.target.value) })}
+              onChange={e => phoneInputRef.handleChange(e, phone => setForm(f => ({ ...f, phone })))}
+              onFocus={e => setForm(f => ({ ...f, phone: formatUzPhoneInput(e.target.value) }))}
               required />
           </div>
           <div>
@@ -403,6 +421,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
 // ─── Register ─────────────────────────────────────────────────────────────
 const RegisterPage = ({ onNavigate, onLogin }) => {
   const store = useStore();
+  const regPhoneInputRef = usePhoneInput();
   const [step, setStep] = React.useState(1);
   const [form, setForm] = React.useState({ name: '', phone: '+998', password: '', confirm: '' });
   const [registrationType, setRegistrationType] = React.useState(null); // student|teacher|manager|organization
@@ -655,16 +674,15 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
             </div>
             <div>
               <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
-              <input className="input-field" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
+              <input ref={regPhoneInputRef.ref} className="input-field" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
                 placeholder="+998901234567" value={form.phone}
-                onChange={e => {
-                  const phone = formatUzPhoneInput(e.target.value);
-                  setForm({ ...form, phone });
+                onChange={e => regPhoneInputRef.handleChange(e, phone => {
+                  setForm(f => ({ ...f, phone }));
                   validatePhone(phone);
-                }}
+                })}
                 onFocus={e => {
                   const phone = formatUzPhoneInput(e.target.value);
-                  setForm({ ...form, phone });
+                  setForm(f => ({ ...f, phone }));
                   validatePhone(phone);
                 }} />
               {phoneError && <div className="flex items-center gap-1 text-red-400 text-xs mt-1"><Icon name="info" size={12} /> {phoneError}</div>}
@@ -743,10 +761,13 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
                   className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all ${centerId === c.id ? 'border border-indigo-500 bg-indigo-500/10' : 'glass hover:bg-white/5'}`}>
                   <div className="flex items-center gap-3">
                     {c.imageUrl ? (
-                      <img src={c.imageUrl} alt={c.name} className="h-9 w-9 rounded-xl object-cover" />
-                    ) : (
-                      <div className="w-9 h-9 gradient-bg rounded-xl flex items-center justify-center text-white font-bold text-sm">{c.name[0]}</div>
-                    )}
+                      <img src={c.imageUrl} alt={c.name} className="h-9 w-9 rounded-xl object-cover"
+                        onError={e => {
+                          e.currentTarget.style.display = 'none';
+                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                        }} />
+                    ) : null}
+                    <div className={`w-9 h-9 gradient-bg rounded-xl flex items-center justify-center text-white font-bold text-sm ${c.imageUrl ? 'hidden' : ''}`}>{c.name[0]}</div>
                     <div>
                       <div className="text-sm font-semibold text-white">{c.name}</div>
                       <div className="text-xs text-white/40">{c.organizationType || "O'quv markaz"} · {formatCenterLocation(c)} · {c.students} o'quvchi</div>

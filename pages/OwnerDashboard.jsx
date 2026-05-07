@@ -1080,24 +1080,27 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderCenter = () => (
     <div className="space-y-5 p-4 lg:p-6">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-slate-900">Tashkilot profili</h1>
-        <p className="mt-1 text-sm font-semibold text-slate-500">O'z tashkilotingiz bo'yicha asosiy ma'lumotlar.</p>
+        <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Tashkilot profili</h1>
+        <p className="mt-1 text-sm font-semibold text-white/50">O'z tashkilotingiz bo'yicha asosiy ma'lumotlar.</p>
       </div>
-      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
         <div className="flex flex-col gap-5 md:flex-row md:items-center">
           <div className="relative h-16 w-16 flex-shrink-0">
             {center.imageUrl ? (
-              <img src={center.imageUrl} alt={center.name} className="h-16 w-16 rounded-2xl object-cover" />
-            ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600 text-2xl font-black text-white">{center.name[0]}</div>
-            )}
+              <img src={center.imageUrl} alt={center.name} className="h-16 w-16 rounded-2xl object-cover"
+                onError={e => {
+                  e.currentTarget.style.display = 'none';
+                  e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                }} />
+            ) : null}
+            <div className={`flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600 text-2xl font-black text-white ${center.imageUrl ? 'hidden' : ''}`}>{center.name[0]}</div>
             {isApi && (
               <>
                 <input ref={centerImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleCenterImageUpload} />
                 <button
                   onClick={() => centerImageInputRef.current?.click()}
                   disabled={centerImageLoading}
-                  className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-white shadow-lg hover:bg-emerald-600 disabled:opacity-60"
+                  className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white shadow-lg hover:bg-emerald-600 disabled:opacity-60"
                   title="Tashkilot rasmini yuklash"
                 >
                   <Icon name="upload" size={14} />
@@ -1106,8 +1109,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-xl font-black text-slate-900">{center.name}</h2>
-            <p className="mt-1 text-sm font-semibold text-slate-500">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · {ownerFormatDate(center.createdAt)}</p>
+            <h2 className="truncate text-xl font-black text-white">{center.name}</h2>
+            <p className="mt-1 text-sm font-semibold text-white/50">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · {ownerFormatDate(center.createdAt)}</p>
           </div>
           <OwnerStatusPill status={center.status} />
         </div>
@@ -1118,10 +1121,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <OwnerMetric label="Reyting" value={center.rating || '—'} icon={<Icon name="star" size={17} />} tone="amber" />
         </div>
         <div className="mt-6">
-          <div className="mb-2 text-xs font-black uppercase tracking-wide text-slate-400">Yo'naltirilgan fanlar</div>
+          <div className="mb-2 text-xs font-black uppercase tracking-wide text-white/40">Yo'naltirilgan fanlar</div>
           <div className="flex flex-wrap gap-2">
-            {(center.subjects || []).map(s => <span key={s} className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-black text-slate-600">{s}</span>)}
-            {(!center.subjects || center.subjects.length === 0) && <span className="text-sm font-semibold text-slate-400">Fanlar kiritilmagan</span>}
+            {(center.subjects || []).map(s => <span key={s} className="rounded-lg glass px-3 py-2 text-xs font-black text-white/70">{s}</span>)}
+            {(!center.subjects || center.subjects.length === 0) && <span className="text-sm font-semibold text-white/30">Fanlar kiritilmagan</span>}
           </div>
         </div>
       </section>
@@ -1187,35 +1190,35 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
       </div>
       {staffModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-          <form onSubmit={submitStaff} className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <form onSubmit={submitStaff} className="modal w-full max-w-md">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-black text-slate-900">{staffRole === 'teacher' ? 'Ustoz yaratish' : 'Menejer yaratish'}</h2>
-                <div className="mt-1 text-xs font-bold text-slate-500">{center.name}</div>
+                <h2 className="text-lg font-black text-white">{staffRole === 'teacher' ? 'Ustoz yaratish' : 'Menejer yaratish'}</h2>
+                <div className="mt-1 text-xs font-bold text-white/50">{center.name}</div>
               </div>
-              <button type="button" onClick={closeStaffModal} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+              <button type="button" onClick={closeStaffModal} className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white">
                 <Icon name="x" size={18} />
               </button>
             </div>
             <div className="space-y-4">
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Ism familiya</span>
+                <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Ism familiya</span>
                 <input
                   value={staffForm.full_name}
                   onChange={e => updateStaffForm('full_name', e.target.value)}
-                  className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                  className="input-field"
                   placeholder="Masalan, Aziz Karimov"
                   autoFocus
                 />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Telefon login</span>
+                <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Telefon login</span>
                 <input
                   value={staffForm.phone}
                   onChange={e => updateStaffForm('phone', formatUzPhoneInput(e.target.value))}
                   onFocus={e => updateStaffForm('phone', formatUzPhoneInput(e.target.value))}
-                  className="h-11 w-full rounded-lg border border-slate-200 px-3 font-mono text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                  className="input-field font-mono"
                   placeholder="+998901112233"
                   inputMode="numeric"
                   maxLength={13}
@@ -1223,22 +1226,22 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Parol</span>
+                <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Parol</span>
                 <input
                   value={staffForm.password}
                   onChange={e => updateStaffForm('password', e.target.value)}
-                  className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                  className="input-field"
                   placeholder="Kamida 6 belgi"
                   type="text"
                 />
               </label>
               {staffRole === 'teacher' && (
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Fan</span>
+                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Fan</span>
                   <select
                     value={staffForm.subject}
                     onChange={e => updateStaffForm('subject', e.target.value)}
-                    className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                    className="input-field"
                   >
                     <option value="">Fan tanlanmagan</option>
                     {store.subjects.map(subject => <option key={subject} value={subject}>{subject}</option>)}
@@ -1247,7 +1250,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               )}
             </div>
             <div className="mt-6 flex gap-3">
-              <button type="button" onClick={closeStaffModal} className="flex-1 rounded-lg border border-slate-200 px-4 py-3 text-sm font-black text-slate-600 hover:bg-slate-50">
+              <button type="button" onClick={closeStaffModal} className="flex-1 rounded-lg border border-white/10 px-4 py-3 text-sm font-black text-white/60 hover:bg-white/5">
                 Bekor qilish
               </button>
               <button disabled={staffSaving} className="flex-1 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
