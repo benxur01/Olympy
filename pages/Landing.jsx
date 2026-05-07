@@ -66,11 +66,6 @@ const LandingPage = ({ onNavigate }) => {
         <div className="orbit" style={{ width: 900, height: 900, top: '50%', left: '50%', transform: 'translate(-50%, -50%)', animationDuration: '30s', animationDirection: 'reverse' }} />
 
         <div className="max-w-5xl mx-auto px-4 md:px-6 pt-12 md:pt-28 pb-12 md:pb-24 text-center relative">
-          <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-5 md:mb-8 text-xs md:text-sm text-indigo-300 border border-indigo-500/20">
-            <span className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse-slow flex-shrink-0"></span>
-            <span className="truncate">O'zbekistonning #1 olimpiada platformasi</span>
-          </div>
-
           <h1 className="text-3xl sm:text-4xl md:text-6xl font-black text-white leading-tight mb-5 md:mb-6" style={{ textWrap: 'balance' }}>
             Ta'lim tashkilotlari uchun{' '}
             <span className="gradient-text">zamonaviy olimpiada</span>{' '}
