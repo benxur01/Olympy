@@ -278,6 +278,11 @@ def students_memberships(request, center_id):
 
     Returns student memberships for a center. Status filter defaults to
     approved. Manager/Owner/Admin only.
+
+    Approved holatdagi javobda har bir o'quvchi uchun shu markazdagi
+    olimpiadalarda qatnashganlar soni va o'rtacha balli ham qaytariladi —
+    ManagerDashboard'dagi "Tadbirlar" / "O'rt. ball" ustunlari shu yerdan
+    keladi (avval doim 0 ko'rinardi).
     """
     center = get_object_or_404(EducationCenter, pk=center_id)
     if not _user_can_manage_center(request.user, center):
@@ -289,6 +294,26 @@ def students_memberships(request, center_id):
         status=status_filter,
     ).select_related('user').order_by('-created_at')
     from accounts.serializers import UserSerializer
+    from attempts.models import TestAttempt
+    from django.db.models import Avg, Count
+
+    # Bir so'rov bilan barcha o'quvchilarning shu center'dagi attempt
+    # statistikasini yig'amiz — N+1 dan saqlanish uchun.
+    user_ids = [m.user_id for m in qs]
+    stats_map = {}
+    if user_ids:
+        stats_qs = (
+            TestAttempt.objects
+            .filter(user_id__in=user_ids, olympiad__center=center)
+            .values('user_id')
+            .annotate(olympiads_count=Count('id'), avg_score=Avg('score'))
+        )
+        for row in stats_qs:
+            stats_map[row['user_id']] = {
+                'olympiads_count': row['olympiads_count'] or 0,
+                'avg_score': round(row['avg_score'] or 0, 1),
+            }
+
     data = [{
         'membership_id': m.id,
         'user': UserSerializer(m.user, context={'request': request}).data,
@@ -297,8 +322,79 @@ def students_memberships(request, center_id):
         'approval_code': m.approval_code,
         'status': m.status,
         'created_at': str(m.created_at),
+        'olympiads_count': stats_map.get(m.user_id, {}).get('olympiads_count', 0),
+        'avg_score': stats_map.get(m.user_id, {}).get('avg_score', 0),
     } for m in qs]
     return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def student_detail(request, membership_id):
+    """GET /api/centers/students/{membership_id}/ — bitta o'quvchi profili.
+
+    Manager/Owner/Admin uchun: profil maydonlari, attempt natijalari,
+    yutuqlar. Avval ManagerDashboard'dagi "Ko'rish" tugmasi ulanmagan edi.
+    """
+    membership = get_object_or_404(
+        CenterMembership.objects.select_related('user', 'center'),
+        pk=membership_id,
+        role=CenterMembership.ROLE_STUDENT,
+    )
+    if not _user_can_manage_center(request.user, membership.center):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    from accounts.serializers import UserSerializer
+    from attempts.models import TestAttempt
+    from django.db.models import Avg, Count, Max
+
+    user = membership.user
+    attempts_qs = (
+        TestAttempt.objects
+        .filter(user=user, olympiad__center=membership.center)
+        .select_related('olympiad')
+        .order_by('-submitted_at')
+    )
+    agg = attempts_qs.aggregate(
+        total=Count('id'),
+        avg=Avg('score'),
+        best=Max('score'),
+    )
+    attempts_payload = [
+        {
+            'attempt_id': a.id,
+            'olympiad_id': a.olympiad_id,
+            'olympiad_title': a.olympiad.title if a.olympiad_id else '',
+            'subject': a.olympiad.subject if a.olympiad_id else '',
+            'score': a.score,
+            'rank': a.rank,
+            'correct_count': a.correct_count,
+            'wrong_count': a.wrong_count,
+            'total_questions': a.total_questions,
+            'time_spent': a.time_spent,
+            'submitted_at': a.submitted_at.isoformat() if a.submitted_at else '',
+        }
+        for a in attempts_qs[:50]
+    ]
+    return Response({
+        'membership_id': membership.id,
+        'user': UserSerializer(user, context={'request': request}).data,
+        'subject': membership.subject or '',
+        'status': membership.status,
+        'approval_code': membership.approval_code,
+        'joined_at': membership.created_at.isoformat() if membership.created_at else '',
+        'center': {
+            'id': membership.center_id,
+            'name': membership.center.name,
+        },
+        'stats': {
+            'total_attempts': agg['total'] or 0,
+            'average_score': round(agg['avg'] or 0, 1),
+            'best_score': agg['best'] or 0,
+            'first_place_count': attempts_qs.filter(rank=1).count(),
+        },
+        'attempts': attempts_payload,
+    })
 
 
 @api_view(['GET'])
@@ -448,7 +544,11 @@ def admin_list_centers(request):
     status_filter = request.query_params.get('status')
     if status_filter:
         qs = qs.filter(status=status_filter)
-    return Response(EducationCenterSerializer(qs, many=True).data)
+    # students_count + olympiads_count'ni annotate qilamiz — aks holda
+    # AdminDashboard'dagi "O'quvchi" / "Olimpiada" ustunlari N+1 query
+    # bilan to'planardi.
+    qs = _annotate_center_counts(qs)
+    return Response(EducationCenterSerializer(qs, many=True, context={'request': request}).data)
 
 
 @api_view(['POST'])

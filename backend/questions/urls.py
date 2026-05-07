@@ -6,5 +6,6 @@ from . import views
 urlpatterns = [
     path('generate-ai/', views.generate_ai_questions, name='questions-generate-ai'),
     path('pdf-preview/', views.preview_pdf_questions, name='questions-pdf-preview'),
+    path('<int:question_id>/', views.question_detail, name='questions-detail'),
     path('', views.questions_list_create, name='questions-list-create'),
 ]

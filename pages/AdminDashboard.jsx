@@ -113,6 +113,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [blockModal, setBlockModal] = React.useState(null);
   const [blockedIds, setBlockedIds] = React.useState({});
   const [newSubjectName, setNewSubjectName] = React.useState('');
+  // Topbar global qidiruv — foydalanuvchi/tashkilot/olimpiada nomi bo'yicha
+  // joriy ko'rinayotgan jadvalga ta'sir qiladi (avval onChange yo'q edi).
+  const [globalSearch, setGlobalSearch] = React.useState('');
+  // Foydalanuvchilar sahifasi uchun alohida qidiruv input.
+  const [userSearch, setUserSearch] = React.useState('');
 
   const showToast = (msg) => {
     setToast(msg);
@@ -327,15 +332,18 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   // Inventory / Payments kabi mavjud bo'lmagan sahifalarga link qo'yardi.
   // Olympy ehtiyojiga mos sahifalarni qoldiramiz; renderer'i bo'lmagan
   // tugmalarni olib tashlaymiz.
+  // Avval sidebar'da reports/payments/marketing/content/system/logs/support
+  // bo'ladi va hammasi renderAnalytics yoki renderSettings ga redirect
+  // qilardi. Ular hali backend'da yo'q sahifalar — chalkashlik kelmasligi
+  // uchun olib tashladik. Qo'shilgan rea sahifalar qoldi.
   const navItems = [
     { key: 'home', icon: 'grid', label: 'Dashboard' },
     { key: 'users', icon: 'users', label: 'Foydalanuvchilar' },
     { key: 'centers', icon: 'building', label: 'Tashkilotlar', badge: pendingCenterReqs.length || undefined },
     { key: 'olympiads', icon: 'trophy', label: 'Olimpiadalar' },
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCenterReqs.length || undefined },
-    { key: 'reports', icon: 'file', label: 'Hisobotlar' },
+    { key: 'subjects', icon: 'book', label: 'Fanlar' },
     { key: 'analytics', icon: 'chart', label: 'Tahlil' },
-    { key: 'system', icon: 'shield', label: 'Tizim' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
   ];
 
@@ -375,13 +383,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       </nav>
       <div className="border-t border-white/10 px-4 py-5">
         <div className="mb-6">
-          <div className="mb-3 text-[10px] font-extrabold uppercase tracking-wide text-slate-500">System Status</div>
+          <div className="mb-3 text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Tizim holati</div>
           <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-300">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" /> All Systems Operational
+            <span className="h-2 w-2 rounded-full bg-emerald-400" /> Tizim ishlayapti
           </div>
         </div>
         <div className="mb-4 text-[11px] leading-relaxed text-slate-500">
-          © 2026 Olympy Admin<br />v2.4.1
+          © 2026 Olympy Admin
         </div>
         <button onClick={onLogout} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-[12px] font-semibold text-slate-400 hover:bg-white/10 hover:text-white">
           <Icon name="logout" size={14} /> Chiqish
@@ -401,9 +409,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         </button>
         <div className="relative hidden w-[310px] max-w-[35vw] md:block">
           <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="h-8 w-full rounded-md border border-slate-200 bg-white pl-9 pr-14 text-[12px] text-slate-700 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-50"
-            placeholder="Search for users, orders, products..." />
-          <span className="absolute right-2 top-1/2 -translate-y-1/2 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-bold text-slate-400">⌘ K</span>
+          <input
+            value={globalSearch}
+            onChange={e => setGlobalSearch(e.target.value)}
+            className="h-8 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-[12px] text-slate-700 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-50"
+            placeholder="Foydalanuvchilar, tashkilotlar, olimpiadalar..." />
         </div>
       </div>
       <div className="flex items-center gap-3">
@@ -427,7 +437,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             <Avatar name={user?.name || 'Admin'} src={user?.avatarUrl || ''} size={30} gradient="from-slate-700 to-slate-900" />
           <div className="hidden text-right sm:block">
             <div className="text-[12px] font-bold leading-tight text-slate-900">{user?.name || 'Admin'}</div>
-            <div className="text-[11px] font-medium leading-tight text-slate-500">Super Admin</div>
+            <div className="text-[11px] font-medium leading-tight text-slate-500">{(() => {
+              // Avval doim "Super Admin" yozilardi. Endi haqiqiy rol asosida.
+              if (user?.is_platform_admin || user?.roles?.admin) return 'Platform Admin';
+              if (user?.roles?.owner) return 'Tashkilot direktori';
+              if (user?.roles?.manager) return 'Manager';
+              if (user?.roles?.teacher) return "O'qituvchi";
+              return 'Admin';
+            })()}</div>
           </div>
           <Icon name="chevronDown" size={13} className="hidden text-slate-400 sm:block" />
         </div>
@@ -694,7 +711,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         </div>
         <div className="relative w-full md:w-72">
           <Icon name="search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-          <input className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100" placeholder="Qidirish..." />
+          <input
+            value={userSearch}
+            onChange={e => setUserSearch(e.target.value)}
+            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+            placeholder="Ism, telefon, rol bo'yicha qidirish..." />
         </div>
       </div>
       <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -706,7 +727,22 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {userRows.map(row => (
+              {(() => {
+                // Avval qidiruv input'i client-side filter qilmasdi. Endi
+                // ism, telefon, rol va tashkilot nomi bo'yicha filterlanadi.
+                // Topbardagi globalSearch ham ushbu jadvalga ta'sir qiladi.
+                const q = (userSearch || globalSearch || '').trim().toLowerCase();
+                const visible = q
+                  ? userRows.filter(row =>
+                      (row.name || '').toLowerCase().includes(q) ||
+                      (row.phone || '').toLowerCase().includes(q) ||
+                      (row.role || '').toLowerCase().includes(q) ||
+                      (row.center || '').toLowerCase().includes(q))
+                  : userRows;
+                if (visible.length === 0) {
+                  return <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-medium text-slate-500">{q ? 'Qidiruv natijasi topilmadi' : 'Foydalanuvchilar yo\'q'}</td></tr>;
+                }
+                return visible.map(row => (
                 <tr key={row.id} className="text-sm">
                   <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={row.name} src={row.avatarUrl || ''} size={34} /><span className="font-bold text-slate-900">{row.name}</span></div></td>
                   <td className="px-5 py-4 font-mono text-xs text-slate-500">{row.phone?.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
@@ -720,7 +756,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                     </button>
                   </td>
                 </tr>
-              ))}
+                ));
+              })()}
             </tbody>
           </table>
         </div>
@@ -875,14 +912,6 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     users: renderUsers,
     analytics: renderAnalytics,
     olympiads: renderOlympiads,
-    inventory: renderSubjects,
-    payments: renderAnalytics,
-    reports: renderAnalytics,
-    marketing: renderSettings,
-    content: renderSettings,
-    system: renderSettings,
-    logs: renderSettings,
-    support: renderSettings,
     subjects: renderSubjects,
     settings: renderSettings,
   };

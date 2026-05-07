@@ -337,6 +337,7 @@ export const OlympyApi = {
   getPendingMemberships: (centerId, role, token) => request(`/api/centers/${centerId}/memberships/pending/${role ? '?role=' + role : ''}`, { token }).then(unwrapList),
   getStaffMemberships: (centerId, role, token) => request(`/api/centers/${centerId}/memberships/staff/${role ? '?role=' + encodeURIComponent(role) : ''}`, { token }).then(unwrapList),
   getStudentMemberships: (centerId, statusFilter, token) => request(`/api/centers/${centerId}/memberships/students/${statusFilter ? '?status=' + encodeURIComponent(statusFilter) : ''}`, { token }).then(unwrapList),
+  getStudentDetail: (membershipId, token) => request(`/api/centers/students/${membershipId}/`, { token }),
   createManager: (centerId, payload, token) => request(`/api/centers/${centerId}/managers/create/`, { method: 'POST', body: payload, token }),
   createTeacher: (centerId, payload, token) => request(`/api/centers/${centerId}/teachers/create/`, { method: 'POST', body: payload, token }),
   approveStudent: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-student/`, { method: 'POST', body: payload, token }),
@@ -374,6 +375,8 @@ export const OlympyApi = {
     });
     return request('/api/questions/pdf-preview/', { method: 'POST', body: fd, token });
   },
+  updateQuestion: (questionId, payload, token) => request(`/api/questions/${questionId}/`, { method: 'PATCH', body: payload, token }),
+  deleteQuestion: (questionId, token) => request(`/api/questions/${questionId}/`, { method: 'DELETE', token }),
   // Question with image — accepts a File via FormData
   createQuestionMultipart: (payload, imageFile, token) => {
     const fd = new FormData();
@@ -390,7 +393,41 @@ export const OlympyApi = {
   reportCheating: (payload, token) => request('/api/attempts/cheating/', { method: 'POST', body: payload, token, keepalive: true, retryOnAuth: false }),
   getMyResults: (token) => request('/api/results/me/', { token }).then(unwrapList),
   getMyStats: (token) => request('/api/results/me/stats/', { token }),
-  getLeaderboard: (olympiadId, token) => request(`/api/leaderboard/${olympiadId ? '?olympiad=' + olympiadId : ''}`, { token }).then(unwrapList),
+  // Backend yangi shakl: { olympiad: {...}|null, entries: [...] }. Eski koddan
+  // xavotirsiz array kutadigan joylar uchun array fallback ham qo'llab-quvvatlanadi.
+  getLeaderboard: (olympiadId, token) => request(`/api/leaderboard/${olympiadId ? '?olympiad=' + olympiadId : ''}`, { token })
+    .then(res => {
+      if (Array.isArray(res)) return { olympiad: null, entries: res };
+      if (res && Array.isArray(res.entries)) return { olympiad: res.olympiad || null, entries: res.entries };
+      if (res && Array.isArray(res.results)) return { olympiad: null, entries: res.results };
+      return { olympiad: null, entries: [] };
+    }),
+  getManagerStats: (centerId, token) => request(`/api/manager/stats/${centerId ? '?center=' + centerId : ''}`, { token }),
+  getMyMonthlyStats: (months, token) => request(`/api/results/me/monthly/${months ? '?months=' + months : ''}`, { token }),
+  // Sertifikat URL'i — `download` atributi bilan <a> orqali fayl tushadi.
+  certificateDownloadUrl: (attemptId) => `${API_BASE_URL}/api/certificates/${attemptId}/download/`,
+  downloadCertificate: async (attemptId, token) => {
+    const res = await fetch(`${API_BASE_URL}/api/certificates/${attemptId}/download/`, {
+      method: 'GET',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      let msg = "Sertifikatni yuklab bo'lmadi";
+      try { const data = await res.json(); if (data?.detail) msg = data.detail; } catch {}
+      throw new ApiError(msg, { status: res.status });
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `olympy-certificate-${attemptId}.png`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  },
   // Notifications
   getNotifications: (token) => request('/api/notifications/', { token }).then(unwrapList),
   markNotificationRead: (id, token) => request(`/api/notifications/${id}/read/`, { method: 'POST', token }),

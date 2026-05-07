@@ -26,6 +26,8 @@ urlpatterns = [
     path('api/attempts/', include('attempts.urls')),
     path('api/results/', include('attempts.urls_results')),
     path('api/leaderboard/', include('attempts.urls_leaderboard')),
+    path('api/manager/', include('attempts.urls_manager')),
+    path('api/certificates/', include('attempts.urls_certificates')),
     path('api/notifications/', include('notifications.urls')),
     path('api/subjects/', subjects_list_create, name='subjects-list-create'),
 ]

@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 from django.db import transaction
+from django.db.models import Avg, Count, Max
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status as http_status
@@ -8,10 +9,13 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from centers.models import CenterMembership
+from centers.models import CenterMembership, EducationCenter
 from olympiads.models import Olympiad
 from olympiads.services import user_can_participate_in_event
 
+from django.http import HttpResponse
+
+from .certificates import render_certificate_png
 from .models import TestAttempt, TestSession
 from .serializers import SubmitAttemptSerializer, TestAttemptSerializer
 from .session_utils import score_session_answers, session_is_expired
@@ -255,6 +259,180 @@ def my_stats(request):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def download_certificate(request, attempt_id):
+    """GET /api/certificates/{attempt_id}/download/ — PNG sertifikat.
+
+    Sertifikat alohida modelda saqlanmaydi: TestAttempt'dan har safar
+    on-the-fly generatsiya qilinadi. Faqat 1-o'rin emas, har qanday
+    yakunlangan attempt uchun mavjud — kim qatnashganligini tasdiqlovchi
+    hujjat sifatida ham ishlatish mumkin.
+    """
+    attempt = get_object_or_404(
+        TestAttempt.objects.select_related('user', 'olympiad', 'olympiad__center'),
+        pk=attempt_id,
+    )
+    # Faqat o'z attempti yoki center managerlari/admin
+    is_owner = attempt.user_id == request.user.id
+    is_admin = request.user.is_platform_admin
+    can_view = is_owner or is_admin
+    if not can_view and attempt.olympiad.center_id:
+        can_view = CenterMembership.objects.filter(
+            user=request.user,
+            center_id=attempt.olympiad.center_id,
+            role__in=[CenterMembership.ROLE_MANAGER, CenterMembership.ROLE_OWNER],
+            status=CenterMembership.STATUS_APPROVED,
+        ).exists() or attempt.olympiad.center.owner_id == request.user.id
+    if not can_view:
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    try:
+        png_bytes = render_certificate_png(attempt)
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).exception('certificate render failed: %s', exc)
+        return Response(
+            {'detail': "Sertifikatni yaratib bo'lmadi"},
+            status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    response = HttpResponse(png_bytes, content_type='image/png')
+    safe_title = ''.join(ch for ch in attempt.olympiad.title if ch.isalnum() or ch in (' ', '_', '-'))[:60].strip() or 'certificate'
+    response['Content-Disposition'] = f'attachment; filename="olympy-{safe_title}-{attempt.id}.png"'
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def manager_stats(request):
+    """GET /api/manager/stats/?center=<id> — center natijalarini umumlashtiradi.
+
+    Manager/Owner/Admin uchun: o'rtacha ball, eng yuqori ball, qatnashuvchilar
+    soni va tadbirlar bo'yicha breakdown. Hardcoded mock o'rniga real ma'lumot.
+    """
+    center_id = request.query_params.get('center')
+    if not center_id:
+        # Auto-pick: foydalanuvchining birinchi manager/owner centeri
+        membership = (
+            CenterMembership.objects
+            .filter(
+                user=request.user,
+                role__in=[
+                    CenterMembership.ROLE_MANAGER,
+                    CenterMembership.ROLE_OWNER,
+                ],
+                status=CenterMembership.STATUS_APPROVED,
+            )
+            .order_by('-created_at')
+            .first()
+        )
+        if not membership and not request.user.is_platform_admin:
+            return Response(
+                {'detail': "Center aniqlanmadi. ?center=<id> kiriting"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        center_id = membership.center_id if membership else None
+    if not center_id:
+        return Response(
+            {'detail': "Center aniqlanmadi"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    # Auth check: faqat manager/owner/admin
+    is_admin = request.user.is_platform_admin
+    is_owner = center.owner_id == request.user.id
+    is_manager = CenterMembership.objects.filter(
+        user=request.user, center=center,
+        role=CenterMembership.ROLE_MANAGER,
+        status=CenterMembership.STATUS_APPROVED,
+    ).exists()
+    if not (is_admin or is_owner or is_manager):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    qs = TestAttempt.objects.filter(olympiad__center=center)
+    agg = qs.aggregate(
+        avg=Avg('score'),
+        best=Max('score'),
+        participants=Count('user', distinct=True),
+        total_attempts=Count('id'),
+    )
+    # Per-event breakdown — finished + active tadbirlar bo'yicha
+    events = []
+    olympiads_qs = (
+        Olympiad.objects.filter(center=center)
+        .order_by('-created_at')
+    )
+    for o in olympiads_qs[:50]:
+        sub_qs = qs.filter(olympiad=o)
+        sub_agg = sub_qs.aggregate(
+            avg=Avg('score'), best=Max('score'),
+            participants=Count('user', distinct=True),
+        )
+        events.append({
+            'olympiad_id': o.id,
+            'title': o.title,
+            'subject': o.subject,
+            'status': o.status,
+            'event_type': o.event_type,
+            'average_score': round(sub_agg['avg'] or 0, 1),
+            'best_score': sub_agg['best'] or 0,
+            'participants': sub_agg['participants'] or 0,
+        })
+    return Response({
+        'center_id': center.id,
+        'center_name': center.name,
+        'average_score': round(agg['avg'] or 0, 1),
+        'best_score': agg['best'] or 0,
+        'participants': agg['participants'] or 0,
+        'total_attempts': agg['total_attempts'] or 0,
+        'events': events,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_monthly_stats(request):
+    """GET /api/results/me/monthly/?months=6 — so'nggi N oy o'rtacha ballari.
+
+    Profile.jsx dagi "Natijalar dinamikasi" BarChart uchun. Hardcoded
+    [72,81,87,83,91] o'rniga real oylik o'rtacha qiymat.
+    """
+    try:
+        months = int(request.query_params.get('months') or 6)
+    except (TypeError, ValueError):
+        months = 6
+    months = max(1, min(months, 24))
+
+    now = timezone.now()
+    # Hozirgi oyning birinchi kuni
+    current_first = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    buckets = []
+    for i in range(months - 1, -1, -1):
+        # i oyga orqaga: oddiy oy arifmetikasi
+        year = current_first.year
+        month = current_first.month - i
+        while month <= 0:
+            month += 12
+            year -= 1
+        bucket_start = current_first.replace(year=year, month=month)
+        # keyingi oy boshi
+        next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
+        bucket_end = current_first.replace(year=next_year, month=next_month)
+        agg = TestAttempt.objects.filter(
+            user=request.user,
+            submitted_at__gte=bucket_start,
+            submitted_at__lt=bucket_end,
+        ).aggregate(avg=Avg('score'), count=Count('id'))
+        buckets.append({
+            'year': year,
+            'month': month,
+            'label': f'{month}-oy',
+            'average_score': round(agg['avg'] or 0, 1),
+            'attempts': agg['count'] or 0,
+        })
+    return Response({'months': buckets})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def leaderboard(request):
     """GET /api/leaderboard/?olympiad=<id>  — ranked attempts.
 
@@ -289,7 +467,7 @@ def leaderboard(request):
     # va leaderboard ko'rsatadigan rank o'zgarishi mumkin edi (ayniqsa
     # o'zaro bog'liq olimpiadalar bo'yicha cross-rank). Endi a.rank mavjud
     # bo'lsa shuni ishlatamiz; yo'q bo'lsa enumerate fallback.
-    return Response([
+    entries = [
         {
             'rank': a.rank if a.rank is not None else (i + 1),
             'attempt_id': a.id,
@@ -301,8 +479,36 @@ def leaderboard(request):
             'region': a.olympiad.center.region,
             'district': a.olympiad.center.district,
             'subject': a.olympiad.subject,
+            'olympiad_id': a.olympiad_id,
+            'olympiad_title': a.olympiad.title,
+            'olympiad_status': a.olympiad.status,
             'score': a.score,
             'time_spent': a.time_spent,
+            'submitted_at': a.submitted_at.isoformat(),
         }
         for i, a in enumerate(qs)
-    ])
+    ]
+    # Header info: tanlangan olympiad bo'lsa olympiad ma'lumoti, aks holda
+    # eng ko'p kelgan olympiad nomi (frontend subtitle uchun).
+    header = None
+    if olympiad_id:
+        olym = Olympiad.objects.select_related('center').filter(pk=olympiad_id).first()
+        if olym:
+            header = {
+                'olympiad_id': olym.id,
+                'olympiad_title': olym.title,
+                'subject': olym.subject,
+                'status': olym.status,
+                'start_datetime': olym.start_datetime.isoformat() if olym.start_datetime else None,
+            }
+    elif entries:
+        # Eng yaqinda topshirilgan attemptdan olympiad nomini olamiz
+        latest = entries[0]
+        header = {
+            'olympiad_id': latest.get('olympiad_id'),
+            'olympiad_title': latest.get('olympiad_title'),
+            'subject': latest.get('subject'),
+            'status': latest.get('olympiad_status'),
+            'start_datetime': latest.get('submitted_at'),
+        }
+    return Response({'olympiad': header, 'entries': entries})

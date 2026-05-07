@@ -4,6 +4,7 @@
 // attempt_id, user_id, name, center, subject, score, time_spent }.
 const mapApiLeaderboard = (entry) => ({
   key: 'api:' + (entry.attempt_id ?? `${entry.user_id}-${entry.rank}`),
+  attemptId: entry.attempt_id ?? null,
   rank: entry.rank,
   name: entry.name || entry.user?.full_name || "Noma'lum",
   center: entry.center || '—',
@@ -33,13 +34,18 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
 
   // ─── API rejimida real reyting ──────────────────────────────────────────
   // Faqat API user / saqlangan token mavjud bo'lganda chaqiramiz.
+  // Backend yangi shakl: { olympiad: {...}|null, entries: [...] }.
   const apiLbRes = useApiData(
     () => isApi ? OlympyApi.getLeaderboard(null, OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
-  const apiEntries = isApi && Array.isArray(apiLbRes.data)
-    ? apiLbRes.data.map(mapApiLeaderboard)
+  const apiPayload = isApi && apiLbRes.data && typeof apiLbRes.data === 'object'
+    ? apiLbRes.data
     : null;
+  const apiEntries = apiPayload && Array.isArray(apiPayload.entries)
+    ? apiPayload.entries.map(mapApiLeaderboard)
+    : null;
+  const apiOlympiadInfo = apiPayload?.olympiad || null;
 
   // Local fallback is only used when the page is embedded without API auth.
   const liveEntries = (store.attempts || []).map(a => {
@@ -74,7 +80,31 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
   const subjects = [...new Set(merged.map(d => d.subject))].filter(Boolean);
   const cities = [...new Set(merged.map(d => d.city))].filter(Boolean);
 
-  const filtered = merged.filter(d =>
+  // Tab filter: 'center' — foydalanuvchi o'z markazi o'quvchilari;
+  // 'subject' — foydalanuvchi profilidagi fan bo'yicha; 'all' — hammasi.
+  // Avval activeTab faqat ko'rinardi, lekin ro'yxatga ta'sir qilmasdi.
+  const userCenterName = (() => {
+    const role = user?.roles?.student || user?.roles?.teacher || user?.roles?.manager || user?.roles?.owner;
+    return role?.centerName || '';
+  })();
+  const userSubject = (() => {
+    const role = user?.roles?.student || user?.roles?.teacher;
+    return role?.subject || '';
+  })();
+
+  const tabFiltered = merged.filter(d => {
+    if (activeTab === 'center') {
+      if (!userCenterName) return false;
+      return d.center === userCenterName;
+    }
+    if (activeTab === 'subject') {
+      if (!userSubject) return false;
+      return d.subject === userSubject;
+    }
+    return true;
+  });
+
+  const filtered = tabFiltered.filter(d =>
     (!filterSubject || d.subject === filterSubject) &&
     (!filterCity || d.city === filterCity)
   );
@@ -86,7 +116,22 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h2 className="text-xl font-black text-white">Reyting jadvali</h2>
-          <p className="text-white/40 text-sm">Matematik Olimpiada · May 2026</p>
+          <p className="text-white/40 text-sm">{(() => {
+            // Filterlar tanlanganda subtitl ham ularga moslashadi.
+            const parts = [];
+            if (filterSubject) parts.push(filterSubject);
+            else if (apiOlympiadInfo?.subject) parts.push(apiOlympiadInfo.subject);
+            if (apiOlympiadInfo?.olympiad_title) parts.push(apiOlympiadInfo.olympiad_title);
+            if (filterCity) parts.push(filterCity);
+            if (apiOlympiadInfo?.start_datetime) {
+              const dt = new Date(apiOlympiadInfo.start_datetime);
+              if (!Number.isNaN(dt.getTime())) {
+                const months = ['Yanvar','Fevral','Mart','Aprel','May','Iyun','Iyul','Avgust','Sentabr','Oktabr','Noyabr','Dekabr'];
+                parts.push(`${months[dt.getMonth()]} ${dt.getFullYear()}`);
+              }
+            }
+            return parts.length ? parts.join(' · ') : "Barcha tadbirlar bo'yicha";
+          })()}</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <select className="input-field py-2 w-auto text-sm" value={filterSubject} onChange={e => setFilterSubject(e.target.value)}>
@@ -165,7 +210,16 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
             </div>
             <div className="col-span-1 text-right text-xs text-white/30 font-mono">{p.time}</div>
             <div className="col-span-1 text-right">
-              <button className="text-white/30 hover:text-indigo-400 transition-colors"><Icon name="eye" size={14} /></button>
+              {/* Avval bu tugma faqat dekorativ edi — hech narsa qilmasdi.
+                  Endi natijani Results sahifasiga olib o'tadi (attemptId
+                  bo'lgan qatorlar uchun). */}
+              <button
+                onClick={() => p.attemptId && onNavigate && onNavigate('results', { attemptId: p.attemptId })}
+                disabled={!p.attemptId}
+                className="text-white/30 hover:text-indigo-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Natijani ko'rish">
+                <Icon name="eye" size={14} />
+              </button>
             </div>
           </div>
         ))}

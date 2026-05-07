@@ -12,11 +12,13 @@ const LandingPage = ({ onNavigate }) => {
     { icon: '👤', title: 'O\'quvchi profili', desc: 'Har bir o\'quvchining yutuqlari va natijalarini kuzating', color: 'from-violet-500 to-purple-600' },
   ];
 
+  // Platforma yangi ishga tushgan — soxta marketing raqamlari o'rniga
+  // platforma imkoniyatlari ko'rsatkichlari turadi.
   const stats = [
-    { value: '120+', label: 'Tashkilot', icon: '🏫' },
-    { value: '15 000+', label: 'O\'quvchi', icon: '👥' },
-    { value: '50 000+', label: 'Test savollari', icon: '📝' },
-    { value: '98%', label: 'Qoniqish darajasi', icon: '⭐' },
+    { value: 'AI', label: 'Savol generator', icon: '✨' },
+    { value: 'PDF', label: 'Avtomatik import', icon: '📄' },
+    { value: 'Telegram', label: 'Bot integratsiyasi', icon: '💬' },
+    { value: '24/7', label: 'Online platforma', icon: '⚡' },
   ];
 
   const steps = [
@@ -26,10 +28,14 @@ const LandingPage = ({ onNavigate }) => {
     { num: '04', title: 'Natijalarni tahlil qiling', desc: 'Avtomatik hisoblangan natijalar va reytingni ko\'ring', icon: '📈' },
   ];
 
+  // Backend'da subscription/plan modeli hali yo'q — narxlar faqat
+  // ko'rsatma tariqasida turadi, "Boshlash" tugmasi mailto orqali
+  // direktorlar bilan bog'lanish uchun. Real to'lov-modul tayyor bo'lganda
+  // bu blok dynamicga o'zgartiriladi.
   const pricing = [
     { name: 'Boshlang\'ich', price: 'Bepul', desc: 'Kichik tashkilotlar uchun', features: ['5 ta olimpiada/oy', '50 ta o\'quvchi', 'Asosiy hisobotlar', 'Email qo\'llab-quvvatlash'], popular: false },
-    { name: 'Professional', price: '199 000 so\'m', period: '/oy', desc: 'O\'sib borayotgan tashkilotlar uchun', features: ['Cheksiz olimpiada', '500 ta o\'quvchi', 'AI savol yaratish', 'PDF import', 'Telegram bot', 'Batafsil tahlil'], popular: true },
-    { name: 'Enterprise', price: 'Narxlashish', desc: 'Yirik ta\'lim tarmoqlari uchun', features: ['Cheksiz hamma narsa', 'Maxsus integratsiya', 'Shaxsiy menejer', 'API kirish', 'SLA kafolati'], popular: false },
+    { name: 'Professional', price: 'Bog\'laning', desc: 'O\'sib borayotgan tashkilotlar uchun', features: ['Cheksiz olimpiada', '500 ta o\'quvchi', 'AI savol yaratish', 'PDF import', 'Telegram bot', 'Batafsil tahlil'], popular: true },
+    { name: 'Enterprise', price: 'Bog\'laning', desc: 'Yirik ta\'lim tarmoqlari uchun', features: ['Cheksiz hamma narsa', 'Maxsus integratsiya', 'Shaxsiy menejer', 'API kirish', 'SLA kafolati'], popular: false },
   ];
 
   return (
@@ -88,7 +94,9 @@ const LandingPage = ({ onNavigate }) => {
             </button>
           </div>
 
-          {/* Hero dashboard preview */}
+          {/* Hero dashboard preview — bu marketing illyustratsiya. Demo
+              ekanligini bildiruvchi label qo'shdik, shunda real raqamlar
+              deb tushunmaslik uchun. */}
           <div className="relative mx-auto max-w-4xl">
             <div className="glass-strong rounded-3xl p-1 glow-blue" style={{ background: 'rgba(99,102,241,0.05)' }}>
               <div className="rounded-2xl overflow-hidden" style={{ background: '#0d0f23' }}>
@@ -97,6 +105,7 @@ const LandingPage = ({ onNavigate }) => {
                   <div className="w-3 h-3 rounded-full bg-amber-500/60"></div>
                   <div className="w-3 h-3 rounded-full bg-emerald-500/60"></div>
                   <div className="ml-4 flex-1 glass rounded-lg px-3 py-1 text-xs text-white/30">olympy.uz/dashboard</div>
+                  <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">Demo</span>
                 </div>
                 <div className="p-3 md:p-6 grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-4">
                   {[
@@ -207,26 +216,35 @@ const LandingPage = ({ onNavigate }) => {
             <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Qulay narxlar</h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-            {pricing.map((p, i) => (
-              <div key={i} className={`rounded-2xl p-4 md:p-6 flex flex-col ${p.popular ? 'gradient-bg glow-blue' : 'glass'}`}>
-                {p.popular && <div className="text-xs font-bold text-white bg-white/20 rounded-full px-3 py-1 w-fit mb-3 md:mb-4">⭐ Mashhur</div>}
-                <div className={`text-sm font-medium mb-1 ${p.popular ? 'text-white/70' : 'text-white/50'}`}>{p.name}</div>
-                <div className={`text-2xl md:text-3xl font-black mb-1 ${p.popular ? 'text-white' : 'gradient-text'}`}>{p.price}</div>
-                {p.period && <div className={`text-sm mb-2 ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.period}</div>}
-                <div className={`text-xs mb-4 md:mb-6 ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.desc}</div>
-                <ul className="space-y-2 flex-1 mb-6">
-                  {p.features.map((f, j) => (
-                    <li key={j} className={`flex items-center gap-2 text-sm ${p.popular ? 'text-white/80' : 'text-white/60'}`}>
-                      <span className={p.popular ? 'text-white' : 'text-indigo-400'}>✓</span> {f}
-                    </li>
-                  ))}
-                </ul>
-                <button onClick={() => onNavigate('register')}
-                  className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${p.popular ? 'bg-white text-indigo-600 hover:bg-white/90' : 'btn-ghost'}`}>
-                  Boshlash
-                </button>
-              </div>
-            ))}
+            {pricing.map((p, i) => {
+              // Bepul plan to'g'ridan-to'g'ri ro'yxatdan o'tishga, qolgan
+              // ikkita plan esa email orqali bog'lanish uchun.
+              const isFree = p.price === 'Bepul';
+              const handleClick = () => {
+                if (isFree) onNavigate('register');
+                else window.location.href = `mailto:sanjarruzmetov017@gmail.com?subject=Olympy ${p.name} reja haqida`;
+              };
+              return (
+                <div key={i} className={`rounded-2xl p-4 md:p-6 flex flex-col ${p.popular ? 'gradient-bg glow-blue' : 'glass'}`}>
+                  {p.popular && <div className="text-xs font-bold text-white bg-white/20 rounded-full px-3 py-1 w-fit mb-3 md:mb-4">⭐ Mashhur</div>}
+                  <div className={`text-sm font-medium mb-1 ${p.popular ? 'text-white/70' : 'text-white/50'}`}>{p.name}</div>
+                  <div className={`text-2xl md:text-3xl font-black mb-1 ${p.popular ? 'text-white' : 'gradient-text'}`}>{p.price}</div>
+                  {p.period && <div className={`text-sm mb-2 ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.period}</div>}
+                  <div className={`text-xs mb-4 md:mb-6 ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.desc}</div>
+                  <ul className="space-y-2 flex-1 mb-6">
+                    {p.features.map((f, j) => (
+                      <li key={j} className={`flex items-center gap-2 text-sm ${p.popular ? 'text-white/80' : 'text-white/60'}`}>
+                        <span className={p.popular ? 'text-white' : 'text-indigo-400'}>✓</span> {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <button onClick={handleClick}
+                    className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${p.popular ? 'bg-white text-indigo-600 hover:bg-white/90' : 'btn-ghost'}`}>
+                    {isFree ? 'Boshlash' : "Bog'lanish"}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -259,9 +277,12 @@ const LandingPage = ({ onNavigate }) => {
           </div>
           <div className="text-xs md:text-sm text-white/30">© 2026 Olympy. Barcha huquqlar himoyalangan.</div>
           <div className="flex flex-wrap justify-center items-center gap-4 md:gap-6 text-xs md:text-sm text-white/40">
-            <span className="hover:text-white/70 cursor-pointer">Maxfiylik</span>
-            <span className="hover:text-white/70 cursor-pointer">Shartlar</span>
-            <span className="hover:text-white/70 cursor-pointer">Aloqa</span>
+            {/* Maxfiylik / Shartlar uchun alohida sahifa hozircha yo'q —
+                shu sababli ko'rsatilmaydi/disabled. Aloqa esa to'g'ridan
+                mailto orqali ochiladi. */}
+            <span className="cursor-not-allowed opacity-50" title="Tez orada">Maxfiylik</span>
+            <span className="cursor-not-allowed opacity-50" title="Tez orada">Shartlar</span>
+            <a href="mailto:sanjarruzmetov017@gmail.com" className="hover:text-white/70 transition-colors">Aloqa</a>
             <span className="w-px h-4 bg-white/10" aria-hidden="true" />
             <a href="https://t.me/proskilluz" target="_blank" rel="noreferrer noopener"
                className="text-white/40 hover:text-indigo-400 transition-colors flex items-center"
