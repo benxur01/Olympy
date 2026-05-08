@@ -376,10 +376,17 @@ def _question_blocks_from_text(pdf_text):
     text = _clean_extracted_text(pdf_text)
     if not text:
         return []
-    pattern = re.compile(
+    line_pattern = re.compile(
         r'(?im)^\s*(?:(?:savol\s*)?(\d{1,4})\s*(?:[-–]\s*savol)?[\).\:\-]|(\d{1,4})\s*[-–]\s*savol[\).\:\-]?)\s+'
     )
-    matches = list(pattern.finditer(text))
+    matches = list(line_pattern.finditer(text))
+    if len(matches) <= 1:
+        inline_pattern = re.compile(
+            r'(?i)(?<![\w])(?:(?:savol\s*)?(\d{1,4})\s*(?:[-–]\s*savol)?[\).\:\-]|(\d{1,4})\s*[-–]\s*savol[\).\:\-]?)\s+'
+        )
+        inline_matches = list(inline_pattern.finditer(text))
+        if len(inline_matches) > len(matches):
+            matches = inline_matches
     if not matches:
         return [('1', text)] if re.search(r'(?im)^\s*[A-H]\s*[\)\.\:\-]\s+', text) else []
     blocks = []
@@ -393,7 +400,7 @@ def _question_blocks_from_text(pdf_text):
 
 
 def _options_from_block(block):
-    option_pattern = re.compile(r'(?im)(?:^|(?<=\s))([A-H])\s*[\)\.\:\-]\s+')
+    option_pattern = re.compile(r'(?im)(?:^|(?<=\s))([A-H])\s*[\)\.\:\-]\s*')
     matches = list(option_pattern.finditer(block))
     if len(matches) < 2:
         return '', []
@@ -799,6 +806,22 @@ def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
 def extract_questions_from_pdf(pdf_bytes, subject, difficulty='medium', question_type='multiple_choice'):
     pdf_text, page_count = _extract_pdf_text(pdf_bytes)
     text_chunk_count = len(_split_pdf_text_chunks(pdf_text)) if pdf_text else 0
+    parser_questions = _parse_questions_from_text(pdf_text, subject, difficulty, question_type)
+    if parser_questions:
+        return {
+            'ok': True,
+            'provider': 'parser',
+            'questions': parser_questions,
+            'pdf_text_chars': len(pdf_text),
+            'page_count': page_count,
+            'used_pdf_vision': False,
+            'complete': True,
+            'chunks': max(text_chunk_count, 1),
+            'warning': (
+                "PDF savollari matndan tez ajratildi. "
+                "Javoblar topilmagan savollar saqlashdan oldin tekshirilishi kerak."
+            ),
+        }
     openai_result = _openai_from_text(pdf_text, subject, difficulty, question_type)
     if openai_result.get('ok') and text_chunk_count <= 1:
         openai_result['pdf_text_chars'] = len(pdf_text)
@@ -824,22 +847,6 @@ def extract_questions_from_pdf(pdf_bytes, subject, difficulty='medium', question
         gemini_result['complete'] = gemini_result.get('complete', True)
         gemini_result['chunks'] = gemini_result.get('chunks') or max(text_chunk_count, 1)
         return gemini_result
-    parser_questions = _parse_questions_from_text(pdf_text, subject, difficulty, question_type)
-    if parser_questions:
-        return {
-            'ok': True,
-            'provider': 'parser',
-            'questions': parser_questions,
-            'pdf_text_chars': len(pdf_text),
-            'page_count': page_count,
-            'used_pdf_vision': False,
-            'complete': True,
-            'chunks': max(text_chunk_count, 1),
-            'warning': (
-                "AI savollarni ajrata olmadi, shuning uchun PDF matnidan oddiy parser bilan ajratildi. "
-                "Javoblar topilmagan savollar saqlashdan oldin tekshirilishi kerak."
-            ),
-        }
     if openai_result.get('ok'):
         openai_result['pdf_text_chars'] = len(pdf_text)
         openai_result['page_count'] = page_count
@@ -848,16 +855,21 @@ def extract_questions_from_pdf(pdf_bytes, subject, difficulty='medium', question
         openai_result['warning'] = "Katta PDF bo'lgani uchun barcha savollar chiqqanini PDF bilan solishtirib tekshiring."
         openai_result['chunks'] = text_chunk_count
         return openai_result
-    errors = [
-        value for value in [
-            openai_result.get('error') or openai_result.get('provider_error'),
-            gemini_result.get('error') or gemini_result.get('provider_error'),
-        ]
-        if value
-    ]
+    if not pdf_text:
+        detail = (
+            "PDFdan matn ajralmadi. Agar PDF skan/rasm bo'lsa, sifatliroq yoki matnli PDF yuklang. "
+            "Gemini ham PDFdan savol topa olmadi."
+        )
+    else:
+        detail = (
+            "PDF matni o'qildi, lekin savol va variantlar aniq ajratilmadi. "
+            "Savollar 1., 2. va variantlar A), B), C), D) kabi ko'rinishda ekanini tekshiring."
+        )
+        if gemini_result.get('error') or gemini_result.get('provider_error'):
+            detail = f"{detail} / {gemini_result.get('error') or gemini_result.get('provider_error')}"
     return {
         'ok': False,
-        'error': ' / '.join(errors) or "PDFdan savollarni ajratib bo'lmadi.",
+        'error': detail,
         'questions': [],
         'pdf_text_chars': len(pdf_text),
         'page_count': page_count,
