@@ -562,7 +562,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 <div>
                   <div className="text-sm font-bold text-white">{pdfResult.length} ta savol ajratildi</div>
                   <div className="text-xs text-white/35">
-                    {pdfProvider ? `${pdfProvider === 'openai' ? 'OpenAI' : pdfProvider === 'gemini' ? 'Gemini' : 'Demo'} tahlil qildi` : 'AI tahlil qildi'}
+                    {pdfProvider ? `${pdfProvider === 'openai' ? 'OpenAI' : pdfProvider === 'gemini' ? 'Gemini' : pdfProvider === 'parser' ? 'PDF parser' : 'Demo'} tahlil qildi` : 'AI tahlil qildi'}
                     {pdfVision ? ' · PDF vision' : ''}
                     {pdfChunks > 1 ? ` · ${pdfChunks} bo'lak` : ''}
                   </div>
