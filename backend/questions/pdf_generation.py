@@ -326,6 +326,134 @@ def _merge_questions(question_lists):
     return merged
 
 
+def _clean_extracted_text(text):
+    text = re.sub(r'--- PAGE \d+ ---', '\n', str(text or ''), flags=re.IGNORECASE)
+    text = text.replace('\r\n', '\n').replace('\r', '\n')
+    text = re.sub(r'[ \t]+', ' ', text)
+    return re.sub(r'\n{3,}', '\n\n', text).strip()
+
+
+def _clean_question_text(text):
+    text = _clean_extracted_text(text)
+    text = re.sub(
+        r'^\s*(?:(?:savol\s*)?\d{1,4}\s*(?:[-–]\s*savol)?[\).\:\-]|\d{1,4}\s*[-–]\s*savol[\).\:\-]?)\s*',
+        '',
+        text,
+        flags=re.IGNORECASE,
+    )
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def _parse_answer_key(pdf_text):
+    text = _clean_extracted_text(pdf_text)
+    lower = text.casefold()
+    starts = [
+        lower.rfind(keyword)
+        for keyword in ('javoblar', "to'g'ri javob", "to‘g‘ri javob", 'answer key', 'answers')
+    ]
+    start = max(starts)
+    if start < 0:
+        return {}
+    region = text[start:]
+    answers = {}
+    for match in re.finditer(r'(?<!\d)(\d{1,4})\s*[\).\:\-]?\s*([A-H])\b', region, flags=re.IGNORECASE):
+        answers[int(match.group(1))] = ord(match.group(2).upper()) - ord('A')
+    return answers
+
+
+def _block_answer_index(block):
+    match = re.search(
+        r'(?:javob|to\s*[\'‘’`]?g\s*[\'‘’`]?ri\s+javob|answer)\s*[:\-]?\s*([A-H])\b',
+        block,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return ord(match.group(1).upper()) - ord('A')
+
+
+def _question_blocks_from_text(pdf_text):
+    text = _clean_extracted_text(pdf_text)
+    if not text:
+        return []
+    pattern = re.compile(
+        r'(?im)^\s*(?:(?:savol\s*)?(\d{1,4})\s*(?:[-–]\s*savol)?[\).\:\-]|(\d{1,4})\s*[-–]\s*savol[\).\:\-]?)\s+'
+    )
+    matches = list(pattern.finditer(text))
+    if not matches:
+        return [('1', text)] if re.search(r'(?im)^\s*[A-H]\s*[\)\.\:\-]\s+', text) else []
+    blocks = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        number = match.group(1) or match.group(2) or str(index + 1)
+        block = text[match.start():end].strip()
+        if block:
+            blocks.append((number, block))
+    return blocks
+
+
+def _options_from_block(block):
+    option_pattern = re.compile(r'(?im)(?:^|(?<=\s))([A-H])\s*[\)\.\:\-]\s+')
+    matches = list(option_pattern.finditer(block))
+    if len(matches) < 2:
+        return '', []
+    question_text = block[:matches[0].start()]
+    options = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(block)
+        option = block[match.end():end]
+        option = re.split(
+            r'(?i)\b(?:javoblar|to\s*[\'‘’`]?g\s*[\'‘’`]?ri\s+javob|answer key|answers)\b',
+            option,
+        )[0]
+        option = re.sub(r'\s+', ' ', option).strip(' .;,-')
+        if option:
+            options.append(option)
+    return question_text, options
+
+
+def _parse_questions_from_text(pdf_text, subject, difficulty, question_type):
+    answer_key = _parse_answer_key(pdf_text)
+    parsed = []
+    true_false = str(question_type or '').strip().lower() in {
+        "to'g'ri/noto'g'ri",
+        "to‘g‘ri/noto‘g‘ri",
+        'true_false',
+        'true-false',
+    }
+    for fallback_index, (number, block) in enumerate(_question_blocks_from_text(pdf_text), start=1):
+        question_text, options = _options_from_block(block)
+        if len(options) < 2 and true_false:
+            question_text = block
+            options = ["To'g'ri", "Noto'g'ri"]
+        text = _clean_question_text(question_text)
+        if len(text) < 5 or len(options) < 2:
+            continue
+        number_int = None
+        try:
+            number_int = int(number)
+        except (TypeError, ValueError):
+            pass
+        block_answer = _block_answer_index(block)
+        answer_index = answer_key.get(number_int, block_answer) if number_int is not None else block_answer
+        if answer_index is None or answer_index < 0 or answer_index >= len(options):
+            answer_index = 0
+            answer_source = 'missing'
+        else:
+            answer_source = 'pdf'
+        parsed.append({
+            'original_number': str(number or fallback_index),
+            'text': text,
+            'options': options,
+            'correct_answer': answer_index,
+            'answer_source': answer_source,
+            'needs_review': answer_source != 'pdf',
+            'difficulty': difficulty,
+            'score': 3,
+        })
+    return _normalize_questions({'questions': parsed}, subject, difficulty)
+
+
 def _page_units(pdf_text):
     text = str(pdf_text or '').strip()
     if not text:
@@ -696,6 +824,22 @@ def extract_questions_from_pdf(pdf_bytes, subject, difficulty='medium', question
         gemini_result['complete'] = gemini_result.get('complete', True)
         gemini_result['chunks'] = gemini_result.get('chunks') or max(text_chunk_count, 1)
         return gemini_result
+    parser_questions = _parse_questions_from_text(pdf_text, subject, difficulty, question_type)
+    if parser_questions:
+        return {
+            'ok': True,
+            'provider': 'parser',
+            'questions': parser_questions,
+            'pdf_text_chars': len(pdf_text),
+            'page_count': page_count,
+            'used_pdf_vision': False,
+            'complete': True,
+            'chunks': max(text_chunk_count, 1),
+            'warning': (
+                "AI savollarni ajrata olmadi, shuning uchun PDF matnidan oddiy parser bilan ajratildi. "
+                "Javoblar topilmagan savollar saqlashdan oldin tekshirilishi kerak."
+            ),
+        }
     if openai_result.get('ok'):
         openai_result['pdf_text_chars'] = len(pdf_text)
         openai_result['page_count'] = page_count
