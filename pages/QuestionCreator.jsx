@@ -44,6 +44,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [pdfResult, setPdfResult] = React.useState(null);
   const [pdfProvider, setPdfProvider] = React.useState('');
   const [pdfVision, setPdfVision] = React.useState(false);
+  const [pdfWarning, setPdfWarning] = React.useState('');
+  const [pdfChunks, setPdfChunks] = React.useState(1);
   const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject:'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0 });
   const [editingQuestionId, setEditingQuestionId] = React.useState(null);
   const [newSubjectModal, setNewSubjectModal] = React.useState(false);
@@ -146,6 +148,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     setPdfResult(null);
     setPdfProvider('');
     setPdfVision(false);
+    setPdfWarning('');
+    setPdfChunks(1);
     try {
       const response = await OlympyApi.extractPdfQuestions(f, {
         center: myCenter?.backendId ?? myCenterId,
@@ -157,6 +161,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       setPdfResult(extracted);
       setPdfProvider(response?.provider || '');
       setPdfVision(!!response?.used_pdf_vision);
+      setPdfWarning(response?.warning || (response?.complete === false ? "PDF qisman ajratildi. Saqlashdan oldin asl PDF bilan solishtirib tekshiring." : ''));
+      setPdfChunks(response?.chunks || 1);
       if (!extracted.length) showApiToast("⚠ PDFdan savol topilmadi");
     } catch (err) {
       console.warn('extractPdfQuestions failed:', err);
@@ -558,7 +564,9 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   <div className="text-xs text-white/35">
                     {pdfProvider ? `${pdfProvider === 'openai' ? 'OpenAI' : pdfProvider === 'gemini' ? 'Gemini' : 'Demo'} tahlil qildi` : 'AI tahlil qildi'}
                     {pdfVision ? ' · PDF vision' : ''}
+                    {pdfChunks > 1 ? ` · ${pdfChunks} bo'lak` : ''}
                   </div>
+                  {pdfWarning && <div className="mt-1 text-[11px] text-amber-300">{pdfWarning}</div>}
                 </div>
                 <div className="flex gap-2">
                   <button onClick={savePdfQuestions} className="btn-primary text-xs px-4 py-1.5 rounded-xl font-semibold">Saqlash</button>
