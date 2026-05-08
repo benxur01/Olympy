@@ -44,7 +44,7 @@ const LandingPage = ({ onNavigate }) => {
       <nav className="glass border-b border-white/5 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-3 md:py-4 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 md:gap-3 cursor-pointer min-w-0" onClick={() => window.scrollTo(0,0)}>
-            <BrandLogo size="md" />
+            <BrandLogo size="lg" />
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm text-white/60">
             <a href="#features" className="hover:text-white transition-colors cursor-pointer">Xususiyatlar</a>

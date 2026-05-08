@@ -56,24 +56,22 @@ const Icon = ({ name, size = 18, className = '' }) => {
 };
 
 const BRAND_ASSET_BASE = window.location.protocol === 'file:' ? 'public/brand' : '/brand';
-const BRAND_LOGO_SRC = `${BRAND_ASSET_BASE}/olympy-logo-full.png`;
-const BRAND_MARK_SRC = `${BRAND_ASSET_BASE}/olympy-logo-mark.png`;
+const BRAND_LOGO_SRC = `${BRAND_ASSET_BASE}/olympy-brand.png`;
 
 const BrandLogo = ({ compact = false, size = 'md', className = '' }) => {
   const sizes = {
-    xs: { width: 58, height: 42, mark: 28 },
-    sm: { width: 72, height: 53, mark: 32 },
-    md: { width: 88, height: 64, mark: 36 },
-    lg: { width: 104, height: 76, mark: 44 },
-    xl: { width: 132, height: 96, mark: 72 },
+    xs: { width: 48, height: 32, mark: 28 },
+    sm: { width: 84, height: 56, mark: 32 },
+    md: { width: 108, height: 72, mark: 36 },
+    lg: { width: 126, height: 84, mark: 44 },
+    xl: { width: 156, height: 104, mark: 72 },
   };
   const current = sizes[size] || sizes.md;
   const style = compact
     ? {
-        width: Math.round(current.mark * 1.14),
+        width: Math.round(current.mark * 1.5),
         height: current.mark,
-        borderRadius: Math.round(current.mark * 0.28),
-        objectFit: 'cover',
+        objectFit: 'contain',
         boxShadow: '0 10px 24px rgba(14, 165, 233, 0.22)',
       }
     : {
@@ -81,10 +79,10 @@ const BrandLogo = ({ compact = false, size = 'md', className = '' }) => {
         height: current.height,
         objectFit: 'contain',
         filter: 'drop-shadow(0 8px 20px rgba(59, 130, 246, 0.22))',
-      };
+  };
   return (
     <span className={`inline-flex items-center flex-shrink-0 ${className}`}>
-      <img src={compact ? BRAND_MARK_SRC : BRAND_LOGO_SRC} alt="Olympy" className="block" style={style} />
+      <img src={BRAND_LOGO_SRC} alt="Olympy" className="block" style={style} />
     </span>
   );
 };
@@ -137,7 +135,7 @@ const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick,
   <>
     {/* Logo */}
     <div className={`relative flex items-center py-5 border-b border-white/5 cursor-pointer flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'}`} onClick={logoClick}>
-      <BrandLogo compact={collapsed} size="sm" />
+      <BrandLogo compact={collapsed} size={collapsed ? 'sm' : 'md'} />
       {setCollapsed && (
         <button className={`${collapsed ? 'absolute right-1 bottom-1' : 'ml-auto'} text-white/30 hover:text-white/70 transition-colors`} onClick={e => { e.stopPropagation(); setCollapsed(!collapsed); }}>
           <Icon name="menu" size={16} />
