@@ -61,7 +61,7 @@ const PendingHome = ({ user, onLogout, onNavigate }) => {
         <div className="hero-glow" style={{ background: '#6366f1', top: '-50%', left: '30%', opacity: 0.12 }} />
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-6">
-            <div className="gradient-bg w-12 h-12 rounded-2xl flex items-center justify-center"><span className="text-white font-black">O</span></div>
+            <BrandLogo compact size="lg" />
             <div>
               <div className="font-black text-white text-lg">Salom, {user?.name?.split(' ')[0]} 👋</div>
               <div className="text-xs text-white/40">Hisobingiz yaratildi — endi tasdiqni kuting</div>
