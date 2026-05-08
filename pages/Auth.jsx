@@ -229,7 +229,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
       <div className="flex-1 lg:max-w-md flex flex-col justify-center px-5 md:px-8 py-8 md:py-12">
         <div className="mb-6 md:mb-8">
           <div className="flex items-center gap-2 mb-6 md:mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
-            <BrandLogo size="lg" />
+            <BrandLogo size="md" />
           </div>
           <h1 className="text-2xl md:text-3xl font-black text-white mb-2">Kirish</h1>
           <p className="text-white/40 text-sm md:text-base">Hisobingizga kiring</p>
@@ -641,7 +641,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
       <div className="flex-1 lg:max-w-md flex flex-col justify-center px-5 md:px-8 py-8 md:py-12 overflow-y-auto">
         <div className="mb-6 md:mb-8">
           <div className="flex items-center gap-2 mb-6 md:mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
-            <BrandLogo size="lg" />
+            <BrandLogo size="md" />
           </div>
           <h1 className="text-2xl md:text-3xl font-black text-white mb-2">Ro'yxatdan o'tish</h1>
           <p className="text-white/40 text-sm md:text-base">
