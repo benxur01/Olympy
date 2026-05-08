@@ -67,19 +67,26 @@ const BrandLogo = ({ compact = false, size = 'md', className = '' }) => {
     xl: { width: 156, height: 104, mark: 72 },
   };
   const current = sizes[size] || sizes.md;
+  const imageBlend = {
+    mixBlendMode: 'screen',
+    opacity: 0.96,
+    backgroundColor: 'transparent',
+  };
   const style = compact
     ? {
+        ...imageBlend,
         width: Math.round(current.mark * 1.5),
         height: current.mark,
         objectFit: 'contain',
-        boxShadow: '0 10px 24px rgba(14, 165, 233, 0.22)',
+        filter: 'saturate(1.08) contrast(1.02)',
       }
     : {
+        ...imageBlend,
         width: current.width,
         height: current.height,
         objectFit: 'contain',
-        filter: 'drop-shadow(0 8px 20px rgba(59, 130, 246, 0.22))',
-  };
+        filter: 'saturate(1.08) contrast(1.02)',
+      };
   return (
     <span className={`inline-flex items-center flex-shrink-0 ${className}`}>
       <img src={BRAND_LOGO_SRC} alt="Olympy" className="block" style={style} />
