@@ -26,6 +26,18 @@ DIFFICULTY_ALIASES = {
 }
 
 
+def _int_setting(name, default, minimum=None, maximum=None):
+    try:
+        value = int(getattr(settings, name, default) or default)
+    except (TypeError, ValueError):
+        value = default
+    if minimum is not None:
+        value = max(value, minimum)
+    if maximum is not None:
+        value = min(value, maximum)
+    return value
+
+
 def _extract_pdf_text(pdf_bytes):
     if not pdf_bytes:
         return '', 0
@@ -37,7 +49,7 @@ def _extract_pdf_text(pdf_bytes):
     try:
         reader = PdfReader(io.BytesIO(pdf_bytes))
         chunks = []
-        max_chars = getattr(settings, 'AI_QUESTION_PDF_MAX_TEXT_CHARS', 120000)
+        max_chars = _int_setting('AI_QUESTION_PDF_MAX_TEXT_CHARS', 300000, 10000, 800000)
         for page_number, page in enumerate(reader.pages[:1000], start=1):
             text = (page.extract_text() or '').strip()
             if text:
@@ -140,6 +152,7 @@ def _prompt(subject, difficulty, question_type, has_extracted_text):
         f"{source_hint}\n"
         "Vazifa: PDF ichidagi mavjud savollarni tartibini buzmasdan ajrat. "
         "PDFda savollar qanday ketma-ketlikda bo'lsa, JSON array ham shu tartibda bo'lsin. "
+        "Bitta ham aniq ko'ringan savolni tashlab ketma. "
         "Yangi mavzu yoki ortiqcha savol o'ylab topma.\n"
         f"Fallback fan: {subject or '-'}\n"
         f"Fallback qiyinlik: {difficulty or 'medium'}\n"
@@ -156,6 +169,7 @@ def _prompt(subject, difficulty, question_type, has_extracted_text):
         "- score: odatda 3, PDFda ball ko'rsatilgan bo'lsa 1..100 oralig'ida shu ball.\n"
         "Agar PDF oxirida javoblar jadvali/answer key bo'lsa, uni savollarga moslab biriktir. "
         "Agar variantlar To'g'ri/Noto'g'ri bo'lsa options aynan [\"To'g'ri\", \"Noto'g'ri\"] bo'lsin. "
+        "Savollar ko'p bo'lsa ham qisqartirma; har bir savol alohida obyekt bo'lsin. "
         "Natijani faqat JSON schema bo'yicha qaytar."
     )
 
@@ -289,6 +303,108 @@ def _normalize_questions(parsed, subject, difficulty):
     return questions
 
 
+def _question_identity(question):
+    number = re.sub(r'\s+', '', str(question.get('original_number') or '').casefold())
+    text = re.sub(r'\s+', ' ', str(question.get('text') or '').strip().casefold())
+    if number and number not in ('-', '0'):
+        return f'{number}:{text[:140]}'
+    return text[:220]
+
+
+def _merge_questions(question_lists):
+    merged = []
+    seen = set()
+    for questions in question_lists:
+        for question in questions or []:
+            key = _question_identity(question)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            item = dict(question)
+            item['order'] = len(merged) + 1
+            merged.append(item)
+    return merged
+
+
+def _page_units(pdf_text):
+    text = str(pdf_text or '').strip()
+    if not text:
+        return []
+    matches = list(re.finditer(r'(?:^|\n\n)--- PAGE \d+ ---\n', text))
+    if not matches:
+        return []
+    units = []
+    for index, match in enumerate(matches):
+        start = match.start()
+        if text[start:start + 2] == '\n\n':
+            start += 2
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        unit = text[start:end].strip()
+        if unit:
+            units.append(unit)
+    return units
+
+
+def _question_units(pdf_text):
+    text = str(pdf_text or '').strip()
+    if not text:
+        return []
+    units = _page_units(text)
+    if units:
+        return units
+    units = [
+        unit.strip()
+        for unit in re.split(r'(?=\n\s*(?:savol\s*)?\d{1,4}[\).\:-]\s+)', text, flags=re.IGNORECASE)
+        if unit.strip()
+    ]
+    return units if len(units) > 1 else [text]
+
+
+def _split_pdf_text_chunks(pdf_text):
+    text = str(pdf_text or '').strip()
+    if not text:
+        return []
+    chunk_chars = _int_setting('AI_QUESTION_PDF_CHUNK_CHARS', 25000, 8000, 60000)
+    max_chunks = _int_setting('AI_QUESTION_PDF_MAX_CHUNKS', 20, 1, 50)
+    if len(text) <= chunk_chars:
+        return [text]
+
+    chunks = []
+    current = []
+    current_len = 0
+
+    def flush():
+        nonlocal current, current_len
+        if current and len(chunks) < max_chunks:
+            chunks.append('\n\n'.join(current).strip())
+        current = []
+        current_len = 0
+
+    for unit in _question_units(text):
+        unit = unit.strip()
+        if not unit:
+            continue
+        if len(unit) > chunk_chars:
+            flush()
+            for start in range(0, len(unit), chunk_chars):
+                if len(chunks) >= max_chunks:
+                    break
+                chunks.append(unit[start:start + chunk_chars].strip())
+            continue
+        unit_len = len(unit) + 2
+        if current and current_len + unit_len > chunk_chars:
+            flush()
+        current.append(unit)
+        current_len += unit_len
+        if len(chunks) >= max_chunks:
+            break
+    flush()
+
+    if len(chunks) >= max_chunks and sum(len(chunk) for chunk in chunks) < len(text):
+        logger.warning('PDF text chunking stopped at AI_QUESTION_PDF_MAX_CHUNKS=%s', max_chunks)
+    return chunks or [text[:chunk_chars]]
+
+
 def _openai_from_text(pdf_text, subject, difficulty, question_type):
     keys = _openai_keys()
     if not keys:
@@ -346,9 +462,11 @@ def _openai_from_text(pdf_text, subject, difficulty, question_type):
     return {'ok': False, 'error': _openai_pdf_error(last_error), 'provider_error': last_error, 'questions': []}
 
 
-def _gemini_payload(pdf_bytes, pdf_text, subject, difficulty, question_type, include_pdf):
+def _gemini_payload(pdf_bytes, pdf_text, subject, difficulty, question_type, include_pdf, chunk_note=''):
     use_inline_pdf = include_pdf and bool(pdf_bytes)
     prompt = _prompt(subject, difficulty, question_type, not use_inline_pdf)
+    if chunk_note:
+        prompt = f'{prompt}\n\n{chunk_note}'
     parts = [{'text': prompt}]
     if use_inline_pdf:
         if pdf_text:
@@ -361,12 +479,141 @@ def _gemini_payload(pdf_bytes, pdf_text, subject, difficulty, question_type, inc
         })
     else:
         parts.append({'text': f'PDF matni:\n{pdf_text}'})
+    generation_config = {
+        'responseMimeType': 'application/json',
+        'responseSchema': _schema_gemini(),
+    }
+    max_output_tokens = _int_setting('AI_QUESTION_GEMINI_MAX_OUTPUT_TOKENS', 8192, 1024, 65536)
+    if max_output_tokens:
+        generation_config['maxOutputTokens'] = max_output_tokens
     return {
         'contents': [{'role': 'user', 'parts': parts}],
-        'generationConfig': {
-            'responseMimeType': 'application/json',
-            'responseSchema': _schema_gemini(),
-        },
+        'generationConfig': generation_config,
+    }
+
+
+def _gemini_request(payload, subject, difficulty, mode_label, used_pdf_vision=False):
+    keys = _gemini_keys()
+    body = json.dumps(payload).encode('utf-8')
+    last_error = ''
+    saw_empty_questions = False
+    saw_quota_error = False
+    for model in _gemini_models():
+        model_path = urllib.parse.quote(model, safe='-_.~/')
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+        for index, api_key in enumerate(keys, start=1):
+            req = urllib.request.Request(
+                url,
+                data=body,
+                method='POST',
+                headers={
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': api_key,
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=90) as response:
+                    raw = json.loads(response.read().decode('utf-8'))
+                parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
+                text = ''.join(part.get('text') or '' for part in parts)
+                parsed = _json_from_ai_text(text)
+                questions = _normalize_questions(parsed, subject, difficulty)
+                if questions:
+                    if index > 1:
+                        logger.info('PDF question extraction succeeded with Gemini fallback key #%s', index)
+                    logger.info('PDF question extraction succeeded with Gemini model=%s mode=%s', model, mode_label)
+                    return {
+                        'ok': True,
+                        'provider': 'gemini',
+                        'questions': questions,
+                        'used_pdf_vision': used_pdf_vision,
+                    }
+                last_error = 'empty_questions'
+                saw_empty_questions = True
+                logger.warning('Gemini PDF question model=%s mode=%s returned no questions', model, mode_label)
+            except urllib.error.HTTPError as exc:
+                status = getattr(exc, 'code', 0)
+                last_error = f'HTTP {status}'
+                if status == 429:
+                    saw_quota_error = True
+                logger.warning('Gemini PDF question key #%s model=%s mode=%s failed: %s', index, model, mode_label, last_error)
+                if status in (401, 403):
+                    return {
+                        'ok': False,
+                        'error': _gemini_pdf_error(last_error),
+                        'provider_error': last_error,
+                        'questions': [],
+                    }
+                if status not in (400, 408, 409, 429, 500, 502, 503, 504):
+                    break
+            except Exception as exc:
+                last_error = exc.__class__.__name__
+                logger.warning('Gemini PDF question key #%s model=%s mode=%s failed: %s', index, model, mode_label, last_error)
+    if saw_empty_questions and saw_quota_error:
+        last_error = 'empty_questions'
+    return {'ok': False, 'error': _gemini_pdf_error(last_error), 'provider_error': last_error, 'questions': []}
+
+
+def _gemini_extract_text_chunks(pdf_text, subject, difficulty, question_type):
+    chunks = _split_pdf_text_chunks(pdf_text)
+    if len(chunks) <= 1:
+        return None
+
+    collected = []
+    failed_chunks = []
+    chunk_count = len(chunks)
+    for chunk_index, chunk in enumerate(chunks, start=1):
+        chunk_note = (
+            f"Bu PDF matnining {chunk_index}/{chunk_count}-bo'lagi. "
+            "Faqat shu bo'lakda ko'ringan savollarni ajrat. "
+            "Oldingi yoki keyingi bo'lakdagi savollarni o'ylab topma. "
+            "Agar bo'lak ichida savol raqamlari davom etsa, raqamlarni original_number sifatida saqla."
+        )
+        payload = _gemini_payload(
+            None,
+            chunk,
+            subject,
+            difficulty,
+            question_type,
+            False,
+            chunk_note=chunk_note,
+        )
+        result = _gemini_request(
+            payload,
+            subject,
+            difficulty,
+            f'text_chunk_{chunk_index}_of_{chunk_count}',
+            used_pdf_vision=False,
+        )
+        if result.get('ok'):
+            collected.append(result.get('questions') or [])
+            continue
+        failed_chunks.append(chunk_index)
+        if result.get('provider_error') in ('HTTP 401', 'HTTP 403'):
+            break
+
+    merged = _merge_questions(collected)
+    if merged:
+        warning = ''
+        if failed_chunks:
+            warning = (
+                f"PDFning {len(failed_chunks)} ta bo'lagi to'liq ajratilmadi. "
+                "Natijani saqlashdan oldin PDF bilan solishtirib tekshiring."
+            )
+        return {
+            'ok': True,
+            'provider': 'gemini',
+            'questions': merged,
+            'used_pdf_vision': False,
+            'complete': not failed_chunks,
+            'warning': warning,
+            'chunks': chunk_count,
+        }
+    return {
+        'ok': False,
+        'error': "Gemini PDF bo'laklaridan savollar topa olmadi.",
+        'provider_error': 'empty_questions',
+        'questions': [],
     }
 
 
@@ -374,68 +621,48 @@ def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
     keys = _gemini_keys()
     if not keys:
         return {'ok': False, 'missing_key': True, 'error': "Gemini API kaliti sozlanmagan.", 'questions': []}
-    # Text PDFs are cheaper/faster as text, but some PDFs extract noisy text.
-    # Try text first, then the original PDF file as a second pass.
+
+    best_result = None
+    chunked_result = _gemini_extract_text_chunks(pdf_text, subject, difficulty, question_type) if pdf_text else None
+    if chunked_result and chunked_result.get('ok'):
+        if chunked_result.get('complete', True):
+            return chunked_result
+        best_result = chunked_result
+
     modes = [False, True] if pdf_text else [True]
+    failures = []
+    for include_pdf in modes:
+        mode_label = 'inline_pdf' if include_pdf else 'text'
+        result = _gemini_request(
+            _gemini_payload(
+                pdf_bytes,
+                pdf_text,
+                subject,
+                difficulty,
+                question_type,
+                include_pdf,
+            ),
+            subject,
+            difficulty,
+            mode_label,
+            used_pdf_vision=include_pdf,
+        )
+        if result.get('ok'):
+            if best_result and len(best_result.get('questions') or []) >= len(result.get('questions') or []):
+                return best_result
+            return result
+        failures.append(result)
+
+    if best_result:
+        return best_result
     last_error = ''
     saw_empty_questions = False
     saw_quota_error = False
-    for include_pdf in modes:
-        body = json.dumps(_gemini_payload(
-            pdf_bytes,
-            pdf_text,
-            subject,
-            difficulty,
-            question_type,
-            include_pdf,
-        )).encode('utf-8')
-        mode_label = 'inline_pdf' if include_pdf else 'text'
-        for model in _gemini_models():
-            model_path = urllib.parse.quote(model, safe='-_.~/')
-            url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
-            for index, api_key in enumerate(keys, start=1):
-                req = urllib.request.Request(
-                    url,
-                    data=body,
-                    method='POST',
-                    headers={
-                        'Content-Type': 'application/json',
-                        'x-goog-api-key': api_key,
-                    },
-                )
-                try:
-                    with urllib.request.urlopen(req, timeout=90) as response:
-                        raw = json.loads(response.read().decode('utf-8'))
-                    parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
-                    text = ''.join(part.get('text') or '' for part in parts)
-                    parsed = _json_from_ai_text(text)
-                    questions = _normalize_questions(parsed, subject, difficulty)
-                    if questions:
-                        if index > 1:
-                            logger.info('PDF question extraction succeeded with Gemini fallback key #%s', index)
-                        logger.info('PDF question extraction succeeded with Gemini model=%s mode=%s', model, mode_label)
-                        return {'ok': True, 'provider': 'gemini', 'questions': questions}
-                    last_error = 'empty_questions'
-                    saw_empty_questions = True
-                    logger.warning('Gemini PDF question model=%s mode=%s returned no questions', model, mode_label)
-                except urllib.error.HTTPError as exc:
-                    status = getattr(exc, 'code', 0)
-                    last_error = f'HTTP {status}'
-                    if status == 429:
-                        saw_quota_error = True
-                    logger.warning('Gemini PDF question key #%s model=%s mode=%s failed: %s', index, model, mode_label, last_error)
-                    if status in (401, 403):
-                        return {
-                            'ok': False,
-                            'error': _gemini_pdf_error(last_error),
-                            'provider_error': last_error,
-                            'questions': [],
-                        }
-                    if status not in (400, 408, 409, 429, 500, 502, 503, 504):
-                        break
-                except Exception as exc:
-                    last_error = exc.__class__.__name__
-                    logger.warning('Gemini PDF question key #%s model=%s mode=%s failed: %s', index, model, mode_label, last_error)
+    for failure in failures:
+        provider_error = failure.get('provider_error') or ''
+        last_error = provider_error or last_error
+        saw_empty_questions = saw_empty_questions or provider_error == 'empty_questions'
+        saw_quota_error = saw_quota_error or provider_error == 'HTTP 429'
     if saw_empty_questions and saw_quota_error:
         last_error = 'empty_questions'
     return {'ok': False, 'error': _gemini_pdf_error(last_error), 'provider_error': last_error, 'questions': []}
@@ -443,20 +670,40 @@ def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
 
 def extract_questions_from_pdf(pdf_bytes, subject, difficulty='medium', question_type='multiple_choice'):
     pdf_text, page_count = _extract_pdf_text(pdf_bytes)
+    text_chunk_count = len(_split_pdf_text_chunks(pdf_text)) if pdf_text else 0
     openai_result = _openai_from_text(pdf_text, subject, difficulty, question_type)
-    if openai_result.get('ok'):
+    if openai_result.get('ok') and text_chunk_count <= 1:
         openai_result['pdf_text_chars'] = len(pdf_text)
         openai_result['page_count'] = page_count
         openai_result['used_pdf_vision'] = False
+        openai_result['complete'] = True
         return openai_result
     gemini_result = _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type)
     if gemini_result.get('ok'):
+        if openai_result.get('ok') and len(openai_result.get('questions') or []) > len(gemini_result.get('questions') or []):
+            openai_result['pdf_text_chars'] = len(pdf_text)
+            openai_result['page_count'] = page_count
+            openai_result['used_pdf_vision'] = False
+            openai_result['complete'] = False
+            openai_result['warning'] = "Katta PDF bir martada ajratildi. Natijani asl PDF bilan solishtirib tekshiring."
+            openai_result['chunks'] = text_chunk_count
+            return openai_result
         if openai_result.get('provider_error') or openai_result.get('error'):
             logger.info('PDF question extraction used Gemini after OpenAI failed: %s', openai_result.get('provider_error') or openai_result.get('error'))
         gemini_result['pdf_text_chars'] = len(pdf_text)
         gemini_result['page_count'] = page_count
-        gemini_result['used_pdf_vision'] = not bool(pdf_text)
+        gemini_result['used_pdf_vision'] = bool(gemini_result.get('used_pdf_vision'))
+        gemini_result['complete'] = gemini_result.get('complete', True)
+        gemini_result['chunks'] = gemini_result.get('chunks') or max(text_chunk_count, 1)
         return gemini_result
+    if openai_result.get('ok'):
+        openai_result['pdf_text_chars'] = len(pdf_text)
+        openai_result['page_count'] = page_count
+        openai_result['used_pdf_vision'] = False
+        openai_result['complete'] = False
+        openai_result['warning'] = "Katta PDF bo'lgani uchun barcha savollar chiqqanini PDF bilan solishtirib tekshiring."
+        openai_result['chunks'] = text_chunk_count
+        return openai_result
     errors = [
         value for value in [
             openai_result.get('error') or openai_result.get('provider_error'),

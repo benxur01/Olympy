@@ -189,6 +189,9 @@ def preview_pdf_questions(request):
         'pdf_text_chars': result.get('pdf_text_chars', 0),
         'page_count': result.get('page_count', 0),
         'used_pdf_vision': bool(result.get('used_pdf_vision')),
+        'complete': result.get('complete', True),
+        'warning': result.get('warning') or '',
+        'chunks': result.get('chunks', 1),
     })
 
 
