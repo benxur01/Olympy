@@ -178,13 +178,12 @@ def _gemini_keys():
 
 def _gemini_models():
     primary = getattr(settings, 'AI_QUESTION_GEMINI_MODEL', 'gemini-2.5-flash')
-    fallbacks = list(getattr(settings, 'AI_MANAGER_BOT_GEMINI_FALLBACK_MODELS', []) or [])
+    fallbacks = list(getattr(settings, 'AI_QUESTION_GEMINI_FALLBACK_MODELS', []) or [])
     defaults = [
         'gemini-3.1-flash-lite',
         'gemini-3-flash-preview',
         'gemini-2.5-flash',
         'gemini-2.5-pro',
-        'gemini-2.0-flash',
     ]
     return list(dict.fromkeys(model for model in [primary, *fallbacks, *defaults] if model))
 
@@ -379,6 +378,8 @@ def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
     # Try text first, then the original PDF file as a second pass.
     modes = [False, True] if pdf_text else [True]
     last_error = ''
+    saw_empty_questions = False
+    saw_quota_error = False
     for include_pdf in modes:
         body = json.dumps(_gemini_payload(
             pdf_bytes,
@@ -415,10 +416,13 @@ def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
                         logger.info('PDF question extraction succeeded with Gemini model=%s mode=%s', model, mode_label)
                         return {'ok': True, 'provider': 'gemini', 'questions': questions}
                     last_error = 'empty_questions'
+                    saw_empty_questions = True
                     logger.warning('Gemini PDF question model=%s mode=%s returned no questions', model, mode_label)
                 except urllib.error.HTTPError as exc:
                     status = getattr(exc, 'code', 0)
                     last_error = f'HTTP {status}'
+                    if status == 429:
+                        saw_quota_error = True
                     logger.warning('Gemini PDF question key #%s model=%s mode=%s failed: %s', index, model, mode_label, last_error)
                     if status in (401, 403):
                         return {
@@ -432,6 +436,8 @@ def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
                 except Exception as exc:
                     last_error = exc.__class__.__name__
                     logger.warning('Gemini PDF question key #%s model=%s mode=%s failed: %s', index, model, mode_label, last_error)
+    if saw_empty_questions and saw_quota_error:
+        last_error = 'empty_questions'
     return {'ok': False, 'error': _gemini_pdf_error(last_error), 'provider_error': last_error, 'questions': []}
 
 

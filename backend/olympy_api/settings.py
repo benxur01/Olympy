@@ -412,6 +412,13 @@ if AI_QUESTION_GEMINI_API_KEY:
     AI_QUESTION_GEMINI_API_KEYS.append(AI_QUESTION_GEMINI_API_KEY)
 AI_QUESTION_GEMINI_API_KEYS = list(dict.fromkeys(AI_QUESTION_GEMINI_API_KEYS))
 AI_QUESTION_GEMINI_MODEL = os.environ.get('AI_QUESTION_GEMINI_MODEL', AI_MANAGER_BOT_GEMINI_MODEL)
+AI_QUESTION_GEMINI_FALLBACK_MODELS = [
+    model.strip() for model in os.environ.get(
+        'AI_QUESTION_GEMINI_FALLBACK_MODELS',
+        'gemini-3.1-flash-lite,gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-pro',
+    ).split(',')
+    if model.strip()
+]
 AI_QUESTION_MAX_COUNT = int(os.environ.get('AI_QUESTION_MAX_COUNT', '30'))
 AI_QUESTION_MAX_OUTPUT_TOKENS = int(os.environ.get('AI_QUESTION_MAX_OUTPUT_TOKENS', '6000'))
 AI_QUESTION_PDF_MAX_BYTES = int(os.environ.get('AI_QUESTION_PDF_MAX_BYTES', str(20 * 1024 * 1024)))
