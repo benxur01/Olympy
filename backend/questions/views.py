@@ -180,7 +180,12 @@ def preview_pdf_questions(request):
     )
     if not result.get('ok'):
         return Response(
-            {'detail': result.get('error') or "PDFdan savollarni ajratib bo'lmadi"},
+            {
+                'detail': result.get('error') or "PDFdan savollarni ajratib bo'lmadi",
+                'pdf_text_chars': result.get('pdf_text_chars', 0),
+                'page_count': result.get('page_count', 0),
+                'used_pdf_vision': bool(result.get('used_pdf_vision')),
+            },
             status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
         )
     return Response({
