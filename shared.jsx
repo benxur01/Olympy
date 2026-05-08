@@ -55,43 +55,36 @@ const Icon = ({ name, size = 18, className = '' }) => {
   );
 };
 
-const BRAND_LOGO_SRC = window.location.protocol === 'file:'
-  ? 'public/brand/olympy-brand.png'
-  : '/brand/olympy-brand.png';
+const BRAND_ASSET_BASE = window.location.protocol === 'file:' ? 'public/brand' : '/brand';
+const BRAND_LOGO_SRC = `${BRAND_ASSET_BASE}/olympy-logo-full.png`;
+const BRAND_MARK_SRC = `${BRAND_ASSET_BASE}/olympy-logo-mark.png`;
 
 const BrandLogo = ({ compact = false, size = 'md', className = '' }) => {
   const sizes = {
-    xs: { width: 104, height: 27, mark: 28 },
-    sm: { width: 118, height: 31, mark: 32 },
-    md: { width: 136, height: 36, mark: 36 },
-    lg: { width: 154, height: 41, mark: 42 },
-    xl: { width: 190, height: 50, mark: 72 },
+    xs: { width: 58, height: 42, mark: 28 },
+    sm: { width: 72, height: 53, mark: 32 },
+    md: { width: 88, height: 64, mark: 36 },
+    lg: { width: 104, height: 76, mark: 44 },
+    xl: { width: 132, height: 96, mark: 72 },
   };
   const current = sizes[size] || sizes.md;
-  const backgroundImage = `url("${BRAND_LOGO_SRC}")`;
   const style = compact
     ? {
-        width: current.mark,
+        width: Math.round(current.mark * 1.14),
         height: current.mark,
         borderRadius: Math.round(current.mark * 0.28),
-        backgroundImage,
-        backgroundRepeat: 'no-repeat',
-        backgroundSize: `${current.mark * 4.2}px auto`,
-        backgroundPosition: 'center 36%',
+        objectFit: 'cover',
         boxShadow: '0 10px 24px rgba(14, 165, 233, 0.22)',
       }
     : {
         width: current.width,
         height: current.height,
-        backgroundImage,
-        backgroundRepeat: 'no-repeat',
-        backgroundSize: `${current.width * 2.18}px auto`,
-        backgroundPosition: 'center 58%',
+        objectFit: 'contain',
         filter: 'drop-shadow(0 8px 20px rgba(59, 130, 246, 0.22))',
       };
   return (
-    <span className={`inline-flex items-center flex-shrink-0 ${className}`} role="img" aria-label="Olympy">
-      <span className="block" style={style} />
+    <span className={`inline-flex items-center flex-shrink-0 ${className}`}>
+      <img src={compact ? BRAND_MARK_SRC : BRAND_LOGO_SRC} alt="Olympy" className="block" style={style} />
     </span>
   );
 };
@@ -144,7 +137,7 @@ const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick,
   <>
     {/* Logo */}
     <div className={`relative flex items-center py-5 border-b border-white/5 cursor-pointer flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'}`} onClick={logoClick}>
-      <BrandLogo compact={collapsed} size={collapsed ? 'sm' : 'md'} />
+      <BrandLogo compact={collapsed} size="sm" />
       {setCollapsed && (
         <button className={`${collapsed ? 'absolute right-1 bottom-1' : 'ml-auto'} text-white/30 hover:text-white/70 transition-colors`} onClick={e => { e.stopPropagation(); setCollapsed(!collapsed); }}>
           <Icon name="menu" size={16} />
