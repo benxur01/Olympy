@@ -176,6 +176,39 @@ def _gemini_keys():
     return list(dict.fromkeys(key for key in keys if key))
 
 
+def _gemini_models():
+    primary = getattr(settings, 'AI_QUESTION_GEMINI_MODEL', 'gemini-2.5-flash')
+    fallbacks = list(getattr(settings, 'AI_MANAGER_BOT_GEMINI_FALLBACK_MODELS', []) or [])
+    defaults = [
+        'gemini-3.1-flash-lite',
+        'gemini-3-flash-preview',
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
+        'gemini-2.0-flash',
+    ]
+    return list(dict.fromkeys(model for model in [primary, *fallbacks, *defaults] if model))
+
+
+def _openai_pdf_error(last_error):
+    if last_error == 'HTTP 429':
+        return "OpenAI kvotasi tugagan yoki billing limiti yetmagan."
+    if last_error in ('HTTP 401', 'HTTP 403'):
+        return "OpenAI API kaliti ishlamayapti yoki ruxsat yetarli emas."
+    if last_error == 'empty_questions':
+        return "OpenAI PDF matnidan savol topa olmadi."
+    return "OpenAI PDFni tahlil qila olmadi."
+
+
+def _gemini_pdf_error(last_error):
+    if last_error == 'empty_questions':
+        return "Gemini PDFdan savollar topa olmadi. PDFda savol matni va variantlar aniq ko'rinishiga ishonch hosil qiling."
+    if last_error in ('HTTP 401', 'HTTP 403'):
+        return "Gemini API kaliti ishlamayapti yoki ruxsat yetarli emas."
+    if last_error == 'HTTP 429':
+        return "Gemini kvotasi tugagan yoki vaqtincha limitga tushgan."
+    return "Gemini PDFni tahlil qila olmadi."
+
+
 def _normalize_difficulty(value, fallback='medium'):
     normalized = str(value or '').strip().lower()
     return DIFFICULTY_ALIASES.get(normalized) or DIFFICULTY_ALIASES.get(str(fallback or '').lower()) or 'medium'
@@ -311,17 +344,16 @@ def _openai_from_text(pdf_text, subject, difficulty, question_type):
         except Exception as exc:
             last_error = exc.__class__.__name__
             logger.warning('OpenAI PDF question key #%s failed: %s', index, last_error)
-    return {'ok': False, 'error': "OpenAI PDFni tahlil qila olmadi.", 'provider_error': last_error, 'questions': []}
+    return {'ok': False, 'error': _openai_pdf_error(last_error), 'provider_error': last_error, 'questions': []}
 
 
-def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
-    keys = _gemini_keys()
-    if not keys:
-        return {'ok': False, 'missing_key': True, 'error': "Gemini API kaliti sozlanmagan.", 'questions': []}
-    use_inline_pdf = not bool(pdf_text)
+def _gemini_payload(pdf_bytes, pdf_text, subject, difficulty, question_type, include_pdf):
+    use_inline_pdf = include_pdf and bool(pdf_bytes)
     prompt = _prompt(subject, difficulty, question_type, not use_inline_pdf)
     parts = [{'text': prompt}]
     if use_inline_pdf:
+        if pdf_text:
+            parts.append({'text': f'PDFdan ajratilgan matn:\n{pdf_text}'})
         parts.append({
             'inlineData': {
                 'mimeType': 'application/pdf',
@@ -330,50 +362,77 @@ def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
         })
     else:
         parts.append({'text': f'PDF matni:\n{pdf_text}'})
-    payload = {
+    return {
         'contents': [{'role': 'user', 'parts': parts}],
         'generationConfig': {
             'responseMimeType': 'application/json',
             'responseSchema': _schema_gemini(),
         },
     }
-    body = json.dumps(payload).encode('utf-8')
-    model = getattr(settings, 'AI_QUESTION_GEMINI_MODEL', 'gemini-2.5-flash')
-    model_path = urllib.parse.quote(model, safe='-_.~/')
-    url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+
+
+def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
+    keys = _gemini_keys()
+    if not keys:
+        return {'ok': False, 'missing_key': True, 'error': "Gemini API kaliti sozlanmagan.", 'questions': []}
+    # Text PDFs are cheaper/faster as text, but some PDFs extract noisy text.
+    # Try text first, then the original PDF file as a second pass.
+    modes = [False, True] if pdf_text else [True]
     last_error = ''
-    for index, api_key in enumerate(keys, start=1):
-        req = urllib.request.Request(
-            url,
-            data=body,
-            method='POST',
-            headers={
-                'Content-Type': 'application/json',
-                'x-goog-api-key': api_key,
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=90) as response:
-                raw = json.loads(response.read().decode('utf-8'))
-            parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
-            text = ''.join(part.get('text') or '' for part in parts)
-            parsed = _json_from_ai_text(text)
-            questions = _normalize_questions(parsed, subject, difficulty)
-            if questions:
-                if index > 1:
-                    logger.info('PDF question extraction succeeded with Gemini fallback key #%s', index)
-                return {'ok': True, 'provider': 'gemini', 'questions': questions}
-            last_error = 'empty_questions'
-        except urllib.error.HTTPError as exc:
-            status = getattr(exc, 'code', 0)
-            last_error = f'HTTP {status}'
-            logger.warning('Gemini PDF question key #%s failed: %s', index, last_error)
-            if status not in (400, 401, 403, 408, 409, 429, 500, 502, 503, 504):
-                break
-        except Exception as exc:
-            last_error = exc.__class__.__name__
-            logger.warning('Gemini PDF question key #%s failed: %s', index, last_error)
-    return {'ok': False, 'error': "Gemini PDFni tahlil qila olmadi.", 'provider_error': last_error, 'questions': []}
+    for include_pdf in modes:
+        body = json.dumps(_gemini_payload(
+            pdf_bytes,
+            pdf_text,
+            subject,
+            difficulty,
+            question_type,
+            include_pdf,
+        )).encode('utf-8')
+        mode_label = 'inline_pdf' if include_pdf else 'text'
+        for model in _gemini_models():
+            model_path = urllib.parse.quote(model, safe='-_.~/')
+            url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+            for index, api_key in enumerate(keys, start=1):
+                req = urllib.request.Request(
+                    url,
+                    data=body,
+                    method='POST',
+                    headers={
+                        'Content-Type': 'application/json',
+                        'x-goog-api-key': api_key,
+                    },
+                )
+                try:
+                    with urllib.request.urlopen(req, timeout=90) as response:
+                        raw = json.loads(response.read().decode('utf-8'))
+                    parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
+                    text = ''.join(part.get('text') or '' for part in parts)
+                    parsed = _json_from_ai_text(text)
+                    questions = _normalize_questions(parsed, subject, difficulty)
+                    if questions:
+                        if index > 1:
+                            logger.info('PDF question extraction succeeded with Gemini fallback key #%s', index)
+                        logger.info('PDF question extraction succeeded with Gemini model=%s mode=%s', model, mode_label)
+                        return {'ok': True, 'provider': 'gemini', 'questions': questions}
+                    last_error = 'empty_questions'
+                    logger.warning('Gemini PDF question model=%s mode=%s returned no questions', model, mode_label)
+                except urllib.error.HTTPError as exc:
+                    status = getattr(exc, 'code', 0)
+                    last_error = f'HTTP {status}'
+                    logger.warning('Gemini PDF question key #%s model=%s mode=%s failed: %s', index, model, mode_label, last_error)
+                    if status in (401, 403):
+                        return {
+                            'ok': False,
+                            'error': _gemini_pdf_error(last_error),
+                            'provider_error': last_error,
+                            'questions': [],
+                        }
+                    if status not in (400, 408, 409, 429, 500, 502, 503, 504):
+                        break
+                except Exception as exc:
+                    last_error = exc.__class__.__name__
+                    logger.warning('Gemini PDF question key #%s model=%s mode=%s failed: %s', index, model, mode_label, last_error)
+    return {'ok': False, 'error': _gemini_pdf_error(last_error), 'provider_error': last_error, 'questions': []}
 
 
 def extract_questions_from_pdf(pdf_bytes, subject, difficulty='medium', question_type='multiple_choice'):
