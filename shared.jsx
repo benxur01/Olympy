@@ -55,6 +55,47 @@ const Icon = ({ name, size = 18, className = '' }) => {
   );
 };
 
+const BRAND_LOGO_SRC = window.location.protocol === 'file:'
+  ? 'public/brand/olympy-brand.png'
+  : '/brand/olympy-brand.png';
+
+const BrandLogo = ({ compact = false, size = 'md', className = '' }) => {
+  const sizes = {
+    xs: { width: 104, height: 27, mark: 28 },
+    sm: { width: 118, height: 31, mark: 32 },
+    md: { width: 136, height: 36, mark: 36 },
+    lg: { width: 154, height: 41, mark: 42 },
+    xl: { width: 190, height: 50, mark: 72 },
+  };
+  const current = sizes[size] || sizes.md;
+  const backgroundImage = `url("${BRAND_LOGO_SRC}")`;
+  const style = compact
+    ? {
+        width: current.mark,
+        height: current.mark,
+        borderRadius: Math.round(current.mark * 0.28),
+        backgroundImage,
+        backgroundRepeat: 'no-repeat',
+        backgroundSize: `${current.mark * 4.2}px auto`,
+        backgroundPosition: 'center 36%',
+        boxShadow: '0 10px 24px rgba(14, 165, 233, 0.22)',
+      }
+    : {
+        width: current.width,
+        height: current.height,
+        backgroundImage,
+        backgroundRepeat: 'no-repeat',
+        backgroundSize: `${current.width * 2.18}px auto`,
+        backgroundPosition: 'center 58%',
+        filter: 'drop-shadow(0 8px 20px rgba(59, 130, 246, 0.22))',
+      };
+  return (
+    <span className={`inline-flex items-center flex-shrink-0 ${className}`} role="img" aria-label="Olympy">
+      <span className="block" style={style} />
+    </span>
+  );
+};
+
 // ─── Avatar ────────────────────────────────────────────────────────────────────
 const Avatar = ({ name = '', size = 36, gradient = 'from-indigo-500 to-purple-600', src = '' }) => {
   const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
@@ -102,13 +143,10 @@ const StatCard = ({ label, value, sub, icon, color = 'from-indigo-500 to-purple-
 const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick, collapsed, setCollapsed, onItemClick }) => (
   <>
     {/* Logo */}
-    <div className="flex items-center gap-3 px-4 py-5 border-b border-white/5 cursor-pointer flex-shrink-0" onClick={logoClick}>
-      <div className="gradient-bg w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0">
-        <span className="text-white font-black text-sm">O</span>
-      </div>
-      {!collapsed && <span className="gradient-text font-black text-lg tracking-tight">Olympy</span>}
+    <div className={`relative flex items-center py-5 border-b border-white/5 cursor-pointer flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'}`} onClick={logoClick}>
+      <BrandLogo compact={collapsed} size={collapsed ? 'sm' : 'md'} />
       {setCollapsed && (
-        <button className="ml-auto text-white/30 hover:text-white/70 transition-colors" onClick={e => { e.stopPropagation(); setCollapsed(!collapsed); }}>
+        <button className={`${collapsed ? 'absolute right-1 bottom-1' : 'ml-auto'} text-white/30 hover:text-white/70 transition-colors`} onClick={e => { e.stopPropagation(); setCollapsed(!collapsed); }}>
           <Icon name="menu" size={16} />
         </button>
       )}
@@ -305,7 +343,7 @@ const SubjectBadge = ({ subject }) => {
 const TelegramMockup = ({ studentName, centerName, onApprove, onReject }) => (
   <div className="rounded-2xl overflow-hidden shadow-2xl" style={{ background: '#17212b', maxWidth: 340, fontFamily: 'system-ui' }}>
     <div style={{ background: '#2b5278', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div className="w-9 h-9 rounded-full bg-blue-500 flex items-center justify-center text-white font-bold text-sm">O</div>
+      <BrandLogo compact size="sm" />
       <div>
         <div className="text-white font-semibold text-sm">Olympy Bot</div>
         <div className="text-white/50 text-xs">online</div>
@@ -361,4 +399,4 @@ const useApiData = (fetcher, deps = []) => {
 };
 
 // Export all
-Object.assign(window, { Icon, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData });
+Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData });

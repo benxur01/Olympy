@@ -286,10 +286,9 @@ const App = () => {
       case 'results': return (
         <div className="min-h-screen" style={{ background: '#060818' }}>
           <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
-            <div className="gradient-bg w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer" onClick={() => navigate(roleHomePage(user))}>
-              <span className="text-white font-black text-xs">O</span>
-            </div>
-            <span className="gradient-text font-black">Olympy</span>
+            <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={() => navigate(roleHomePage(user))} aria-label="Dashboardga qaytish">
+              <BrandLogo size="sm" />
+            </button>
             <button onClick={() => navigate(roleHomePage(user))} className="ml-auto btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5">
               <Icon name="arrowLeft" size={13} /> Dashboardga qaytish
             </button>
@@ -300,10 +299,9 @@ const App = () => {
       case 'leaderboard': return (
         <div className="min-h-screen" style={{ background: '#060818' }}>
           <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
-            <div className="gradient-bg w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer" onClick={() => navigate(roleHomePage(user))}>
-              <span className="text-white font-black text-xs">O</span>
-            </div>
-            <span className="gradient-text font-black">Olympy</span>
+            <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={() => navigate(roleHomePage(user))} aria-label="Dashboardga qaytish">
+              <BrandLogo size="sm" />
+            </button>
             <button onClick={() => navigate(roleHomePage(user))} className="ml-auto btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5">
               <Icon name="arrowLeft" size={13} /> Orqaga
             </button>
@@ -322,6 +320,7 @@ const App = () => {
     return (
       <div className="dark min-h-screen flex items-center justify-center" style={{ background: '#060818' }}>
         <div className="flex flex-col items-center gap-4 text-white/70">
+          <BrandLogo size="lg" />
           <div className="w-12 h-12 rounded-full border-2 border-white/20 border-t-indigo-400 animate-spin" />
           <div className="text-sm font-semibold tracking-wide">Olympy yuklanmoqda...</div>
         </div>

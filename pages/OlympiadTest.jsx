@@ -379,7 +379,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       {/* Header bar */}
       <div className="glass border-b border-white/5 px-3 md:px-8 py-2.5 md:py-3 flex items-center justify-between gap-2 sticky top-0 z-30">
         <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
-          <div className="gradient-bg w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"><span className="text-white font-black text-xs">O</span></div>
+          <BrandLogo compact size="xs" />
           <div className="min-w-0">
             <div className="text-[13px] md:text-sm font-bold text-white truncate">{olympiad?.title || 'Matematika Olimpiadasi'}</div>
             <div className="text-[10px] md:text-xs text-white/40 truncate">

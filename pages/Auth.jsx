@@ -207,8 +207,8 @@ const LoginPage = ({ onNavigate, onLogin }) => {
         <div className="hero-glow" style={{ background: '#6366f1', top: '20%', left: '20%' }} />
         <div className="hero-glow" style={{ background: '#a855f7', bottom: '20%', right: '10%' }} />
         <div className="relative z-10 text-center">
-          <div className="w-24 h-24 gradient-bg rounded-3xl flex items-center justify-center mx-auto mb-8 glow-blue" style={{ animation: 'float 6s ease-in-out infinite' }}>
-            <span className="text-white font-black text-4xl">O</span>
+          <div className="flex items-center justify-center mx-auto mb-8" style={{ animation: 'float 6s ease-in-out infinite' }}>
+            <BrandLogo compact size="xl" />
           </div>
           <h2 className="text-3xl font-black text-white mb-4">Xush kelibsiz!</h2>
           <p className="text-white/40 max-w-sm mx-auto leading-relaxed mb-10">O'zbekistonning eng zamonaviy olimpiada platformasiga kiring va yutuqlarga erishishni boshlang.</p>
@@ -229,8 +229,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
       <div className="flex-1 lg:max-w-md flex flex-col justify-center px-5 md:px-8 py-8 md:py-12">
         <div className="mb-6 md:mb-8">
           <div className="flex items-center gap-2 mb-6 md:mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
-            <div className="gradient-bg w-8 h-8 rounded-xl flex items-center justify-center"><span className="text-white font-black text-sm">O</span></div>
-            <span className="gradient-text font-black text-xl">Olympy</span>
+            <BrandLogo size="lg" />
           </div>
           <h1 className="text-2xl md:text-3xl font-black text-white mb-2">Kirish</h1>
           <p className="text-white/40 text-sm md:text-base">Hisobingizga kiring</p>
@@ -642,8 +641,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
       <div className="flex-1 lg:max-w-md flex flex-col justify-center px-5 md:px-8 py-8 md:py-12 overflow-y-auto">
         <div className="mb-6 md:mb-8">
           <div className="flex items-center gap-2 mb-6 md:mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
-            <div className="gradient-bg w-8 h-8 rounded-xl flex items-center justify-center"><span className="text-white font-black text-sm">O</span></div>
-            <span className="gradient-text font-black text-xl">Olympy</span>
+            <BrandLogo size="lg" />
           </div>
           <h1 className="text-2xl md:text-3xl font-black text-white mb-2">Ro'yxatdan o'tish</h1>
           <p className="text-white/40 text-sm md:text-base">

@@ -44,10 +44,7 @@ const LandingPage = ({ onNavigate }) => {
       <nav className="glass border-b border-white/5 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-3 md:py-4 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 md:gap-3 cursor-pointer min-w-0" onClick={() => window.scrollTo(0,0)}>
-            <div className="gradient-bg w-8 h-8 md:w-9 md:h-9 rounded-xl flex items-center justify-center flex-shrink-0">
-              <span className="text-white font-black text-sm md:text-base">O</span>
-            </div>
-            <span className="gradient-text font-black text-lg md:text-xl tracking-tight">Olympy</span>
+            <BrandLogo size="lg" />
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm text-white/60">
             <a href="#features" className="hover:text-white transition-colors cursor-pointer">Xususiyatlar</a>
@@ -270,10 +267,7 @@ const LandingPage = ({ onNavigate }) => {
       <footer className="border-t border-white/5 py-8 md:py-10">
         <div className="max-w-7xl mx-auto px-4 md:px-6 flex flex-col md:flex-row items-center justify-between gap-4 text-center md:text-left">
           <div className="flex items-center gap-3">
-            <div className="gradient-bg w-7 h-7 rounded-lg flex items-center justify-center">
-              <span className="text-white font-black text-xs">O</span>
-            </div>
-            <span className="gradient-text font-black">Olympy</span>
+            <BrandLogo size="sm" />
           </div>
           <div className="text-xs md:text-sm text-white/30">© 2026 Olympy. Barcha huquqlar himoyalangan.</div>
           <div className="flex flex-wrap justify-center items-center gap-4 md:gap-6 text-xs md:text-sm text-white/40">
