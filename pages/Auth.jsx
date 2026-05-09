@@ -423,10 +423,9 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   const regPhoneInputRef = usePhoneInput();
   const [step, setStep] = React.useState(1);
   const [form, setForm] = React.useState({ name: '', phone: '+998', password: '', confirm: '' });
-  const [registrationType, setRegistrationType] = React.useState(null); // student|teacher|manager|organization
+  const [registrationType, setRegistrationType] = React.useState(null); // student|organization
   const [centerId, setCenterId] = React.useState(null);
   const [centerSearch, setCenterSearch] = React.useState('');
-  const [subject, setSubject] = React.useState('');
   const [newCenter, setNewCenter] = React.useState({
     name: '',
     organizationType: "O'quv markaz",
@@ -452,8 +451,6 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   const newCenterLocationValid = !!newCenter.country && !!newCenter.region && !!newCenter.district;
   const registerTypeMeta = {
     student: { icon: '🎓', title: "O'quvchi sifatida", subtitle: 'Olimpiadalarda qatnashish uchun hisob yarating.' },
-    teacher: { icon: '✏️', title: "O'qituvchi sifatida", subtitle: "Tashkilot tasdig'i bilan savollar yaratish imkonini oling." },
-    manager: { icon: '🏫', title: 'Manager sifatida', subtitle: "Tashkilot tasdig'i bilan o'quvchilarni boshqaring." },
     organization: { icon: '🏛', title: "Tashkilot ro'yxatdan o'tkazish", subtitle: "Tashkilotni tasdiqqa yuboring, tasdiqlangach direktor paneli ochiladi." },
   };
   const currentRegisterMeta = registerTypeMeta[registrationType] || {
@@ -496,7 +493,6 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
     setRegistrationType(type);
     setCenterId(null);
     setCenterSearch('');
-    setSubject('');
     setPhoneError('');
   };
 
@@ -524,7 +520,6 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
         password: form.password,
       };
       const selectedType = registrationType;
-      const selectedSubject = subject;
       const organizationPayload = {
         name: newCenter.name,
         organization_type: selectedOrganizationType || "O'quv markaz",
@@ -555,14 +550,6 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
       if (selectedType === 'student' && selectedCenterId) {
         registerPayload.center_id = selectedCenterId;
         registerPayload.join_role = 'student';
-        registerPayload.join_subject = selectedSubject || '';
-      } else if (selectedType === 'teacher') {
-        registerPayload.center_id = selectedCenterId;
-        registerPayload.join_role = 'teacher';
-        registerPayload.join_subject = selectedSubject;
-      } else if (selectedType === 'manager') {
-        registerPayload.center_id = selectedCenterId;
-        registerPayload.join_role = 'manager';
         registerPayload.join_subject = '';
       }
       const data = await OlympyApi.register(registerPayload);
@@ -595,8 +582,6 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
           {!isAuto && (
             <p className="text-amber-300 text-sm mt-3">
               {registrationType === 'organization' ? "Tashkilot/markaz arizangiz Platform Adminga yuborildi" :
-               registrationType === 'manager' ? "Manager arizangiz tashkilot mas'uliga yuborildi" :
-               registrationType === 'teacher' ? "O'qituvchi arizangiz tashkilot mas'uliga yuborildi" :
                'Arizangiz tashkilot manageriga yuborildi'}
             </p>
           )}
@@ -720,8 +705,6 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
             <div className="text-sm text-white/60 mb-2">Qanday ro'yxatdan o'tmoqchisiz?</div>
             {[
               { k:'student', icon:'🎓', label:"O'quvchi", desc:'Olimpiadalarda qatnashish' },
-              { k:'teacher', icon:'✏️', label:"O'qituvchi", desc:'Savollar yaratish (tashkilot tasdig\'i bilan)' },
-              { k:'manager', icon:'🏫', label:'Manager', desc:'O\'quvchilarni boshqarish (tashkilot tasdig\'i bilan)' },
               { k:'organization', icon:'🏛', label:"Tashkilot/o'quv markaz", desc:"Tashkilotni ro'yxatdan o'tkazish" },
             ].map(r => (
               <button key={r.k} onClick={() => selectRegistrationType(r.k)}
@@ -784,55 +767,6 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
               <button onClick={submit} disabled={loading} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2">
                 {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : "Ro'yxatdan o'tish"}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && registrationType === 'teacher' && (
-          <div className="space-y-4 animate-in">
-            <div>
-              <label className="block text-sm text-white/60 mb-2 font-medium">Tashkilot yoki markaz</label>
-              <select className="input-field" value={centerId || ''} onChange={e => setCenterId(e.target.value || null)}>
-                <option value="">Tanlang...</option>
-                {approvedCenters.map(c => <option key={c.id} value={c.id}>{c.name} — {c.organizationType || "O'quv markaz"} — {formatCenterLocation(c)}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm text-white/60 mb-2 font-medium">Fan</label>
-              <select className="input-field" value={subject} onChange={e => setSubject(e.target.value)}>
-                <option value="">Tanlang...</option>
-                {SUBJECTS_LIST.map(s => <option key={s}>{s}</option>)}
-              </select>
-            </div>
-            <div className="glass rounded-xl p-3 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
-              <Icon name="info" size={14} /> Ariza tashkilot mas'uliga yuboriladi. Tasdiqlangach savol yarata olasiz.
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
-              <button onClick={submit} disabled={loading || !centerId || !subject} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
-                {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Ariza yuborish'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && registrationType === 'manager' && (
-          <div className="space-y-4 animate-in">
-            <div>
-              <label className="block text-sm text-white/60 mb-2 font-medium">Tashkilot yoki markaz</label>
-              <select className="input-field" value={centerId || ''} onChange={e => setCenterId(e.target.value || null)}>
-                <option value="">Tanlang...</option>
-                {approvedCenters.map(c => <option key={c.id} value={c.id}>{c.name} — {c.organizationType || "O'quv markaz"} — {formatCenterLocation(c)}</option>)}
-              </select>
-            </div>
-            <div className="glass rounded-xl p-3 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
-              <Icon name="info" size={14} /> Ariza tashkilot mas'uliga yuboriladi. Tasdiqlangach Manager paneliga kira olasiz.
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
-              <button onClick={submit} disabled={loading || !centerId} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
-                {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Ariza yuborish'}
               </button>
             </div>
           </div>
