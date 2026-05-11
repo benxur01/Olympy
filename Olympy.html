@@ -51,8 +51,9 @@
     * { box-sizing: border-box; }
     body { font-family: 'Plus Jakarta Sans', sans-serif; background: #060818; color: #fff; margin: 0; overflow-x: hidden; }
     ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-track { background: #0d0f23; } ::-webkit-scrollbar-thumb { background: #4338ca; border-radius: 3px; }
-    .glass { background: rgba(255,255,255,0.04); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.08); }
-    .glass-strong { background: rgba(255,255,255,0.07); backdrop-filter: blur(30px); border: 1px solid rgba(255,255,255,0.12); }
+    /* Telegram WebView'da backdrop-filter sekin ishlaydi. Solid semi-transparent. */
+    .glass { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.10); }
+    .glass-strong { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.15); }
     .glow-blue { box-shadow: 0 0 30px rgba(99,102,241,0.3); }
     .glow-purple { box-shadow: 0 0 30px rgba(168,85,247,0.25); }
     .glow-cyan { box-shadow: 0 0 30px rgba(34,211,238,0.2); }
@@ -78,7 +79,7 @@
     .input-field { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 10px; padding: 12px 16px; width: 100%; transition: all 0.2s; }
     .input-field:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
     .input-field::placeholder { color: rgba(255,255,255,0.3); }
-    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 50; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 50; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
     .modal { background: #12152e; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 32px; max-width: 520px; width: 90%; animation: slideUp 0.3s ease; }
     .stat-card { position: relative; overflow: hidden; }
     .stat-card::before { content: ''; position: absolute; top: -50%; right: -30%; width: 120px; height: 120px; border-radius: 50%; opacity: 0.1; filter: blur(30px); }
@@ -114,12 +115,12 @@
     @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
     /* ── Mobile drawer ───────────────────────────────────────── */
-    .mobile-drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.65); backdrop-filter: blur(4px); z-index: 60; animation: fadeIn 0.2s ease; }
+    .mobile-drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 60; animation: fadeIn 0.2s ease; }
     .mobile-drawer { position: fixed; top: 0; left: 0; bottom: 0; width: 280px; z-index: 61; display: flex; flex-direction: column; background: rgba(6,8,24,0.98); border-right: 1px solid rgba(255,255,255,0.07); animation: drawerIn 0.28s cubic-bezier(0.32,0.72,0,1); overflow-y: auto; }
     @keyframes drawerIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 
     /* ── Mobile bottom nav ───────────────────────────────────── */
-    .mobile-bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; background: rgba(6,8,24,0.97); border-top: 1px solid rgba(255,255,255,0.07); backdrop-filter: blur(20px); display: flex; padding-bottom: env(safe-area-inset-bottom); }
+    .mobile-bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; background: rgba(6,8,24,0.99); border-top: 1px solid rgba(255,255,255,0.07); display: flex; padding-bottom: env(safe-area-inset-bottom); }
     .mobile-bottom-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 4px 10px; gap: 3px; cursor: pointer; border: none; background: transparent; transition: all 0.15s; -webkit-tap-highlight-color: transparent; }
     .mobile-bottom-nav-item span.label { font-size: 10px; font-weight: 600; letter-spacing: 0.01em; }
     .mobile-bottom-nav-item.active { color: #818cf8; }

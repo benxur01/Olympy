@@ -1,7 +1,8 @@
 from datetime import timedelta
 
 from django.db import transaction
-from django.db.models import Avg, Count, Max
+from django.db.models import Avg, Count, Max, Q
+from django.db.models.functions import TruncMonth
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status as http_status
@@ -206,7 +207,7 @@ def my_results(request):
     tagacha attemptga muhtoj. Limit qo'shilmasa, ko'p yillik foydalanuvchilarda
     javob hajmi haddan oshib ketardi.
     """
-    qs = TestAttempt.objects.filter(user=request.user).select_related('olympiad')[:500]
+    qs = TestAttempt.objects.filter(user=request.user).select_related('olympiad')[:200]
     return Response(TestAttemptSerializer(qs, many=True).data)
 
 
@@ -404,29 +405,44 @@ def my_monthly_stats(request):
     # Hozirgi oyning birinchi kuni
     current_first = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
+    # Boshlang'ich oyni hisoblaymiz: months-1 oy orqaga
+    year = current_first.year
+    month = current_first.month - (months - 1)
+    while month <= 0:
+        month += 12
+        year -= 1
+    range_start = current_first.replace(year=year, month=month)
+
+    # Avval har oy uchun alohida aggregate query (N+1) edi. Endi bitta
+    # TruncMonth bilan oylik aggregate olib, Python dict orqali bucket'larga
+    # tarqatamiz.
+    raw = (TestAttempt.objects
+        .filter(user=request.user, submitted_at__gte=range_start)
+        .annotate(month_bucket=TruncMonth('submitted_at'))
+        .values('month_bucket')
+        .annotate(avg=Avg('score'), count=Count('id'))
+        .order_by('month_bucket'))
+    by_key = {}
+    for row in raw:
+        mb = row['month_bucket']
+        if mb is None:
+            continue
+        by_key[(mb.year, mb.month)] = row
+
     buckets = []
     for i in range(months - 1, -1, -1):
-        # i oyga orqaga: oddiy oy arifmetikasi
-        year = current_first.year
-        month = current_first.month - i
-        while month <= 0:
-            month += 12
-            year -= 1
-        bucket_start = current_first.replace(year=year, month=month)
-        # keyingi oy boshi
-        next_year, next_month = (year + 1, 1) if month == 12 else (year, month + 1)
-        bucket_end = current_first.replace(year=next_year, month=next_month)
-        agg = TestAttempt.objects.filter(
-            user=request.user,
-            submitted_at__gte=bucket_start,
-            submitted_at__lt=bucket_end,
-        ).aggregate(avg=Avg('score'), count=Count('id'))
+        y = current_first.year
+        m = current_first.month - i
+        while m <= 0:
+            m += 12
+            y -= 1
+        row = by_key.get((y, m))
         buckets.append({
-            'year': year,
-            'month': month,
-            'label': f'{month}-oy',
-            'average_score': round(agg['avg'] or 0, 1),
-            'attempts': agg['count'] or 0,
+            'year': y,
+            'month': m,
+            'label': f'{m}-oy',
+            'average_score': round((row['avg'] if row else 0) or 0, 1),
+            'attempts': (row['count'] if row else 0) or 0,
         })
     return Response({'months': buckets})
 
@@ -452,14 +468,19 @@ def leaderboard(request):
             return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
         qs = qs.filter(olympiad=olympiad)
     if not olympiad_id:
-        allowed_center_ids = CenterMembership.objects.filter(
+        allowed_center_ids = list(CenterMembership.objects.filter(
             user=request.user, status=CenterMembership.STATUS_APPROVED,
-        ).values_list('center_id', flat=True)
+        ).values_list('center_id', flat=True))
+        # Avval `qs.filter(...) | qs.filter(...)` orqali OR amali bajarilardi —
+        # bu Django'da ikkita JOIN va katta order_by zanjirini hosil qilib,
+        # query plan'ni murakkablashtirar va bir qator versiyalarda dublikat
+        # qator qaytarardi. Yagona Q() bilan yaxshiroq.
         qs = qs.filter(
-            olympiad__event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
-        ) | qs.filter(
-            olympiad__event_type=Olympiad.EVENT_TYPE_COMPETITION,
-            olympiad__center_id__in=allowed_center_ids,
+            Q(olympiad__event_type=Olympiad.EVENT_TYPE_OLYMPIAD)
+            | Q(
+                olympiad__event_type=Olympiad.EVENT_TYPE_COMPETITION,
+                olympiad__center_id__in=allowed_center_ids,
+            )
         )
     qs = qs[:200]
     # Avval rank `i+1` orqali enumerate'dan kelardi va serverda saqlangan

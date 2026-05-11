@@ -27,7 +27,11 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
   //   API'ga urinish mumkin.
   // - Embedded (landing): faqat aniq API user bilan API rejimiga o'tamiz.
   //   Aks holda mock leaderboard ko'rsatamiz.
-  const isApi = embedded ? !!user?._api : (!!user?._api || !!OlympyApi.getToken?.());
+  // Avval token mavjudligini tekshirardik, lekin cookie_auth rejimida
+  // getToken() null bo'lib qolib API rejimini noto'g'ri o'chirib qo'yardi.
+  // user._api bayrog'i — yagona ishonchli signal: u backendda autentifikatsiya
+  // qilingan foydalanuvchi haqida.
+  const isApi = !!user?._api;
   const [filterSubject, setFilterSubject] = React.useState('');
   const [filterCity, setFilterCity] = React.useState('');
   const [activeTab, setActiveTab] = React.useState('all');

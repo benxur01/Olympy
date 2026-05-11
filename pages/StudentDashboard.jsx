@@ -46,15 +46,31 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const myCenter = studentCenterId ? allCenters.find(c => String(c.id) === String(studentCenterId)) : null;
 
   // Map of centerId → join-request status for the current user
-  // API rejimda backend joy-so'rovlar tarixini qaytarmaydi, faqat hozirgi
-  // membership status'i mapBackendUser orqali user.roles ga tushadi.
+  // Avval API rejimda faqat birinchi (eng so'nggi) student membership status'i
+  // mapping'ga tushardi: bu sababli student bir markazga approved bo'lsa,
+  // boshqa markazga rejected/pending statusi ko'rinmasdi va u qayta
+  // "Ariza yuborish" tugmasini ko'rib qolardi. Endi backend qaytaradigan
+  // roles_detail.student.centers ro'yxatini to'liq aylanib chiqamiz.
   const myRequestByCenter = {};
   if (!isApi) {
     store.requests.filter(r => r.userId === user.id && r.type === 'student').forEach(r => {
       myRequestByCenter[r.centerId] = r.status;
     });
-  } else if (studentCenterId && studentStatus) {
-    myRequestByCenter[studentCenterId] = studentStatus;
+  } else {
+    const studentCenters = user?.roles_detail?.student?.centers
+      || user?.rolesDetail?.student?.centers
+      || [];
+    if (Array.isArray(studentCenters) && studentCenters.length) {
+      studentCenters.forEach(c => {
+        const cid = c?.centerId ?? c?.center_id ?? c?.id;
+        if (cid !== undefined && cid !== null) {
+          myRequestByCenter[String(cid)] = c.status;
+        }
+      });
+    } else if (studentCenterId && studentStatus) {
+      // Eski fallback (agar roles_detail to'liq bo'lmasa)
+      myRequestByCenter[String(studentCenterId)] = studentStatus;
+    }
   }
 
   // Public olympiads are visible to everyone; musobaqa is visible only for
@@ -570,7 +586,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         <div className="fixed bottom-6 right-6 z-50 glass-strong rounded-2xl px-5 py-3.5 border border-rose-500/30 animate-in text-sm font-medium text-white">{apiToast}</div>
       )}
       {centerConfirmOlympiad && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
           <div className="glass rounded-2xl p-6 max-w-sm w-full border border-white/10">
             <h3 className="text-white font-semibold text-base mb-2">Markaz tasdiqlash</h3>
             <p className="text-white/70 text-sm mb-6">

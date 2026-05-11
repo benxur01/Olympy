@@ -1,3 +1,4 @@
+from django.db.models import Avg, Count
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
@@ -20,6 +21,10 @@ def olympiads_list_create(request):
             Olympiad.objects
             .prefetch_related('questions')
             .select_related('center')
+            .annotate(
+                participants_count=Count('attempts', distinct=True),
+                avg_score_value=Avg('attempts__score'),
+            )
             .order_by('-created_at')
         )
         qs = queryset.filter(visible_events_filter(request.user)).distinct()
@@ -90,10 +95,14 @@ def publish_olympiad(request, olympiad_id):
             {'detail': 'Tadbir hali tayyor emas', 'errors': readiness_errors},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
+    # Avval xabar har gal publish'da yuborilardi — INACTIVE → ACTIVE qayta
+    # nashr qilinganda ham. Endi faqat DRAFT'dan birinchi marta nashr
+    # qilinayotganda xabar yuboriladi: studentlar ikki marta xabar olmaydi.
+    is_first_publish = olympiad.status == Olympiad.STATUS_DRAFT
     olympiad.status = Olympiad.STATUS_ACTIVE
     olympiad.save(update_fields=['status'])
 
-    if olympiad.event_type == Olympiad.EVENT_TYPE_COMPETITION:
+    if is_first_publish and olympiad.event_type == Olympiad.EVENT_TYPE_COMPETITION:
         # Lazy import: avoid circular dependency.
         from centers.models import CenterMembership
         from notifications.services import send_olympiad_published_bulk
@@ -141,6 +150,16 @@ def deactivate_olympiad(request, olympiad_id):
     if olympiad.status != Olympiad.STATUS_ACTIVE:
         return Response({'detail': 'Faqat faol tadbirni nofaollashtirish mumkin'},
                         status=http_status.HTTP_400_BAD_REQUEST)
+    # Avval olympiad inaktiv qilinganda hali test yechayotgan studentlarning
+    # TestSession'lari STATUS_ACTIVE da qolib ketardi va ular submit qila
+    # olmasdan, vaqtlari ham hisoblanmasdan osilib qolardi. Endi barcha
+    # faol sessiyalarni majburiy COMPLETED holatiga o'tkazamiz — bu Results
+    # sahifasiga chiqishlariga imkon beradi.
+    from attempts.models import TestSession
+    TestSession.objects.filter(
+        olympiad=olympiad,
+        status=TestSession.STATUS_ACTIVE,
+    ).update(status=TestSession.STATUS_COMPLETED)
     olympiad.status = Olympiad.STATUS_INACTIVE
     olympiad.save(update_fields=['status'])
     return Response(OlympiadSerializer(olympiad).data)

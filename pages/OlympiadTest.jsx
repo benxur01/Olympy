@@ -165,7 +165,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     // muddat triggerlanishi mumkin. Real cheating har doim 2 soniyadan ortiq
     // tashqari oynaga o'tadi.
     let hiddenTimer = null;
-    const VISIBILITY_GRACE_MS = 2500;
+    const VISIBILITY_GRACE_MS = 8000;
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
         if (hiddenTimer) clearTimeout(hiddenTimer);

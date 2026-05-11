@@ -1,3 +1,4 @@
+import io
 import secrets
 
 from django.conf import settings
@@ -115,6 +116,14 @@ def update_center(request, center_id):
     allowed = {'name', 'organization_type', 'country', 'region', 'district', 'city', 'subjects'}
     payload = {k: v for k, v in data.items() if k in allowed}
 
+    # Bo'sh payload — hech narsa o'zgartirmasdan butun model save'lashning
+    # foydasi yo'q (signal'lar, timestamps, race) — 400 qaytaramiz.
+    if not payload:
+        return Response(
+            {'detail': "Hech narsa o'zgartirilmadi"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
     if 'name' in payload:
         name = str(payload['name'] or '').strip()
         if not name:
@@ -153,7 +162,9 @@ def update_center(request, center_id):
         if not isinstance(subs, list):
             return Response({'subjects': "Fanlar ro'yxat bo'lishi kerak"},
                             status=http_status.HTTP_400_BAD_REQUEST)
-        payload['subjects'] = [str(s).strip() for s in subs if str(s).strip()]
+        # Har bir fan nomi 80 belgidan oshmasin — DB'da har bir element
+        # JSONField'ga tushadi va frontend chip ko'rinishida ko'rsatadi.
+        payload['subjects'] = [str(s).strip()[:80] for s in subs if str(s).strip()]
 
     for key, value in payload.items():
         setattr(center, key, value)
@@ -188,6 +199,14 @@ def update_center_image(request, center_id):
             {'detail': f"Rasm juda katta. Limit: {max_bytes // (1024 * 1024)} MB"},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
+    # Magic byte tekshiruvi: content_type spoof qilinishi mumkin.
+    try:
+        from PIL import Image as PilImage
+        img = PilImage.open(io.BytesIO(image.read()))
+        img.verify()
+        image.seek(0)
+    except Exception:
+        return Response({'detail': 'Yaroqsiz rasm fayli'}, status=http_status.HTTP_400_BAD_REQUEST)
     center.image = image
     center.save(update_fields=['image'])
     return Response(EducationCenterSerializer(center, context={'request': request}).data)
@@ -245,10 +264,20 @@ def join_center(request, center_id):
             center=center, role=CenterMembership.ROLE_MANAGER,
             status=CenterMembership.STATUS_APPROVED,
         ).select_related('user')
+        # Har bir managerga alohida try/except — biri telegramda xato bersa
+        # qolganlari hali ham xabar olishi kerak. Avval bitta umumiy try
+        # blokida bo'lganligi uchun katta markazda 20+ managerga sinxron
+        # so'rov bloklanardi va birinchi xatolik qolganlarini to'xtatardi.
         for m in managers:
-            send_student_join_request_notification(m.user, request.user, center, membership)
+            try:
+                send_student_join_request_notification(m.user, request.user, center, membership)
+            except Exception:
+                pass
         if center.owner_id:
-            send_student_join_request_notification(center.owner, request.user, center, membership)
+            try:
+                send_student_join_request_notification(center.owner, request.user, center, membership)
+            except Exception:
+                pass
     elif created and role in (CenterMembership.ROLE_TEACHER, CenterMembership.ROLE_MANAGER):
         # O'qituvchi/manager arizalari avval hech kimga xabar yuborilmasdi —
         # owner faqat panelda polling qilib bilishi mumkin edi. Endi push
@@ -256,14 +285,17 @@ def join_center(request, center_id):
         # oladi.
         from notifications.services import send_staff_join_request_notification
         if center.owner_id:
-            send_staff_join_request_notification(
-                center.owner,
-                request.user,
-                center,
-                role=role,
-                subject=membership.subject or '',
-                membership=membership,
-            )
+            try:
+                send_staff_join_request_notification(
+                    center.owner,
+                    request.user,
+                    center,
+                    role=role,
+                    subject=membership.subject or '',
+                    membership=membership,
+                )
+            except Exception:
+                pass
     return Response(CenterMembershipSerializer(membership).data,
                     status=http_status.HTTP_201_CREATED if created
                     else http_status.HTTP_200_OK)
@@ -280,7 +312,12 @@ def _user_can_approve(user, center, role):
     return user_can_approve_membership(user, center, role)
 
 
+@transaction.atomic
 def _approve(request, center_id, role):
+    # transaction.atomic: decide_membership ichida membership status'i
+    # yangilanadi va parallel ravishda notification yuboriladi/role beriladi.
+    # Yarmida xatolik bo'lsa membership "approved" lekin notification yo'q
+    # holati paydo bo'lardi — endi to'liq rollback.
     center = get_object_or_404(EducationCenter, pk=center_id)
     serializer = ApproveSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
