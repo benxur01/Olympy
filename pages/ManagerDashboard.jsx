@@ -8,7 +8,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [telegramLink, setTelegramLink] = React.useState(null);
   const [telegramLinkLoading, setTelegramLinkLoading] = React.useState(false);
   const [telegramLinked, setTelegramLinked] = React.useState(!!user?.telegramLinked);
-  const emptyOlympiadForm = { eventType: 'competition', title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft' };
+  const emptyOlympiadForm = { eventType: 'competition', title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft', testLevel: '', testType: '' };
   const [newOlympiad, setNewOlympiad] = React.useState(emptyOlympiadForm);
   const [editingOlympiadId, setEditingOlympiadId] = React.useState(null);
   const [activateConfirm, setActivateConfirm] = React.useState(null);
@@ -26,6 +26,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [assignmentLevel, setAssignmentLevel] = React.useState('');
   const [assignmentType, setAssignmentType] = React.useState('');
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
+  const [removingMembershipId, setRemovingMembershipId] = React.useState(null);
   // Telegram link polling intervalini ref'da saqlaymiz, shunda component
   // unmount bo'lsa ham tozalanadi (avval polling event handler ichida
   // boshlanardi va unmount paytida cheksiz davom etardi).
@@ -283,6 +284,34 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     setStudentDetailError('');
   };
 
+  const removeStudentMember = (studentRow) => {
+    if (!studentRow) return;
+    if (!isApi) {
+      showToast("⚠ Demo rejimida a'zolikni o'chirib bo'lmaydi");
+      return;
+    }
+    const membershipId = studentRow.membershipId;
+    if (!membershipId) {
+      showToast("⚠ Membership ID topilmadi");
+      return;
+    }
+    if (!window.confirm(`${studentRow.name || 'O\'quvchi'}ni markazdan chiqarishni tasdiqlaysizmi?`)) {
+      return;
+    }
+    const backendCenterId = center?.backendId ?? centerId;
+    setRemovingMembershipId(membershipId);
+    OlympyApi.removeMembership(backendCenterId, membershipId, OlympyApi.getToken())
+      .then(() => {
+        loadApprovedStudents().catch(() => null);
+        showToast("✓ O'quvchi markazdan chiqarildi");
+      })
+      .catch(err => {
+        console.warn('removeMembership failed:', err);
+        showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Chiqarib bo'lmadi"}`);
+      })
+      .finally(() => setRemovingMembershipId(null));
+  };
+
   const handleRequest = (id, action, raw) => {
     if (isApi) {
       const token = OlympyApi.getToken();
@@ -359,6 +388,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       duration: event.duration || event.duration_minutes || 60,
       maxScore: event.maxScore || 100,
       status: event.status || 'draft',
+      testLevel: event.testLevel || '',
+      testType: event.testType || '',
     });
     setCreateModal(true);
   };
@@ -392,6 +423,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       subject: newOlympiad.subject,
       start_datetime: formStartIso(newOlympiad),
       duration_minutes: Number(newOlympiad.duration) || 60,
+      test_level: (newOlympiad.testLevel || '').trim(),
+      test_type: newOlympiad.testType || '',
     };
 
     if (isApi) {
@@ -425,6 +458,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       startTime: newOlympiad.startTime,
       duration: Number(newOlympiad.duration) || 60,
       maxScore: newOlympiad.maxScore,
+      testLevel: (newOlympiad.testLevel || '').trim(),
+      testType: newOlympiad.testType || '',
     };
     if (editingEvent) {
       OlympyStore.updateOlympiad(editingEvent.id, localPatch);
@@ -593,16 +628,33 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             ))}
           </tr></thead>
           <tbody>
-            {students.map(s => (
-              <tr key={s.id} className="table-row">
-                <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={s.name} src={s.avatarUrl || ''} size={32} /><div><div className="text-sm font-medium text-white">{s.name}</div><div className="text-xs text-white/40">{s.joined}</div></div></div></td>
-                <td className="px-4 py-3 text-sm text-white/60">{s.phone.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
-                <td className="px-4 py-3 text-sm text-white">{s.olympiads}</td>
-                <td className="px-4 py-3"><span className={`font-bold text-sm ${s.avgScore >= 90 ? 'text-emerald-400' : s.avgScore >= 70 ? 'text-indigo-400' : 'text-amber-400'}`}>{s.avgScore || 0}%</span></td>
-                <td className="px-4 py-3"><Badge status={s.status} /></td>
-                <td className="px-4 py-3"><button onClick={() => openStudentDetail(s)} className="btn-ghost text-xs px-3 py-1.5 rounded-xl">Ko'rish</button></td>
-              </tr>
-            ))}
+            {students.map(s => {
+              const canRemove = isApi && !!s.membershipId && (s.status || 'approved') === 'approved';
+              const removing = removingMembershipId === s.membershipId;
+              return (
+                <tr key={s.id} className="table-row">
+                  <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={s.name} src={s.avatarUrl || ''} size={32} /><div><div className="text-sm font-medium text-white">{s.name}</div><div className="text-xs text-white/40">{s.joined}</div></div></div></td>
+                  <td className="px-4 py-3 text-sm text-white/60">{s.phone.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
+                  <td className="px-4 py-3 text-sm text-white">{s.olympiads}</td>
+                  <td className="px-4 py-3"><span className={`font-bold text-sm ${s.avgScore >= 90 ? 'text-emerald-400' : s.avgScore >= 70 ? 'text-indigo-400' : 'text-amber-400'}`}>{s.avgScore || 0}%</span></td>
+                  <td className="px-4 py-3"><Badge status={s.status} /></td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => openStudentDetail(s)} className="btn-ghost text-xs px-3 py-1.5 rounded-xl">Ko'rish</button>
+                      {canRemove && (
+                        <button
+                          onClick={() => removeStudentMember(s)}
+                          disabled={removing}
+                          className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
+                        >
+                          {removing ? '...' : 'Chiqarish'}
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             {students.length === 0 && (
               <tr><td colSpan={6} className="px-4 py-10 text-center text-white/40 text-sm">Tasdiqlangan o'quvchilar yo'q</td></tr>
             )}
@@ -950,6 +1002,30 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   <label className="block text-xs text-white/50 mb-1.5 font-medium">Boshlanish vaqti</label>
                   <input type="time" className="input-field" value={newOlympiad.startTime}
                     onChange={e => setNewOlympiad({ ...newOlympiad, startTime: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Daraja <span className="text-white/35">(ixtiyoriy)</span></label>
+                  <select className="input-field" value={newOlympiad.testLevel}
+                    onChange={e => setNewOlympiad({ ...newOlympiad, testLevel: e.target.value })}>
+                    <option value="">— Tanlanmagan —</option>
+                    <option value="Beginner">Beginner</option>
+                    <option value="O'rta">O'rta</option>
+                    <option value="Advanced">Advanced</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Test turi <span className="text-white/35">(ixtiyoriy)</span></label>
+                  <select className="input-field" value={newOlympiad.testType}
+                    onChange={e => setNewOlympiad({ ...newOlympiad, testType: e.target.value })}>
+                    <option value="">— Tanlanmagan —</option>
+                    <option value="multiple_choice">Multiple choice</option>
+                    <option value="true_false">True/False</option>
+                    <option value="short_answer">Qisqa javob</option>
+                    <option value="mixed">Aralash</option>
+                  </select>
                 </div>
               </div>
 

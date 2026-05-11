@@ -23,6 +23,8 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     startTime: '10:00',
     duration: 60,
     maxScore: 100,
+    testLevel: '',
+    testType: '',
   };
   const [newEvent, setNewEvent] = React.useState(emptyEventForm);
 
@@ -137,6 +139,8 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       startTime: event.startTime || '10:00',
       duration: event.duration || event.duration_minutes || 60,
       maxScore: event.maxScore || 100,
+      testLevel: event.testLevel || '',
+      testType: event.testType || '',
     });
     setCreateModal(true);
   };
@@ -163,6 +167,8 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       subject: newEvent.subject,
       start_datetime: formStartIso(newEvent),
       duration_minutes: Number(newEvent.duration) || 60,
+      test_level: (newEvent.testLevel || '').trim(),
+      test_type: newEvent.testType || '',
     };
 
     if (isApi) {
@@ -196,6 +202,8 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       startTime: newEvent.startTime,
       duration: Number(newEvent.duration) || 60,
       maxScore: newEvent.maxScore,
+      testLevel: (newEvent.testLevel || '').trim(),
+      testType: newEvent.testType || '',
     };
     if (editingEvent) {
       OlympyStore.updateOlympiad(editingEvent.id, localPatch);
@@ -536,6 +544,30 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   <label className="block text-xs text-white/50 mb-1.5 font-medium">Boshlanish vaqti</label>
                   <input type="time" className="input-field" value={newEvent.startTime}
                     onChange={e => setNewEvent({ ...newEvent, startTime: e.target.value })} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Daraja <span className="text-white/35">(ixtiyoriy)</span></label>
+                  <select className="input-field" value={newEvent.testLevel}
+                    onChange={e => setNewEvent({ ...newEvent, testLevel: e.target.value })}>
+                    <option value="">— Tanlanmagan —</option>
+                    <option value="Beginner">Beginner</option>
+                    <option value="O'rta">O'rta</option>
+                    <option value="Advanced">Advanced</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Test turi <span className="text-white/35">(ixtiyoriy)</span></label>
+                  <select className="input-field" value={newEvent.testType}
+                    onChange={e => setNewEvent({ ...newEvent, testType: e.target.value })}>
+                    <option value="">— Tanlanmagan —</option>
+                    <option value="multiple_choice">Multiple choice</option>
+                    <option value="true_false">True/False</option>
+                    <option value="short_answer">Qisqa javob</option>
+                    <option value="mixed">Aralash</option>
+                  </select>
                 </div>
               </div>
 

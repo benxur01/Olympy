@@ -39,8 +39,6 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
 
   // Backend verification session state.
   const [verificationId, setVerificationId] = React.useState(null);
-  const [verifyToken, setVerifyToken] = React.useState(null);
-  const [botUsername, setBotUsername] = React.useState('');
 
   // Reset whenever the phone changes
   const lastPhoneRef = React.useRef(phone);
@@ -49,7 +47,7 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
       lastPhoneRef.current = phone;
       setStatus('idle'); setCode(''); setDeepLink('');
       setError(''); setExpiresAt(null); setAttempts(0);
-      setVerificationId(null); setVerifyToken(null); setBotUsername('');
+      setVerificationId(null);
     }
   }, [phone]);
 
@@ -99,8 +97,6 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
     try {
       const data = await authApi.startTelegramVerification({ phone });
       setVerificationId(data.verification_id || null);
-      setVerifyToken(data.verify_token || null);
-      setBotUsername(data.bot_username || '');
       const link = data.telegram_deep_link || '';
       if (!link) {
         setStatus('idle');
@@ -147,10 +143,6 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
         setError("Kod noto‘g‘ri kiritildi");
         return;
       }
-      if (data && data.token && data.user && authApi.mapBackendUser) {
-        const mappedUser = authApi.mapBackendUser(data.user);
-        if (authApi.saveAuth) authApi.saveAuth({ token: data.token, user: mappedUser });
-      }
       onVerified && onVerified(data);
     } catch (err) {
       setAttempts(a => a + 1);
@@ -163,7 +155,7 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
   const restart = () => {
     setStatus('idle'); setCode(''); setDeepLink('');
     setError(''); setExpiresAt(null); setAttempts(0);
-    setVerificationId(null); setVerifyToken(null); setBotUsername('');
+    setVerificationId(null);
   };
 
   return (

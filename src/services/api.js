@@ -328,6 +328,7 @@ export const OlympyApi = {
   getCenters: () => request('/api/centers/').then(unwrapList),
   getMyCenters: (token) => request('/api/centers/mine/', { token }).then(unwrapList),
   registerCenter: (payload, token) => request('/api/centers/', { method: 'POST', body: payload, token }),
+  updateCenter: (centerId, payload, token) => request(`/api/centers/${centerId}/`, { method: 'PATCH', body: payload, token }),
   uploadCenterImage: (centerId, imageFile, token) => {
     const fd = new FormData();
     fd.append('image', imageFile);
@@ -343,6 +344,7 @@ export const OlympyApi = {
   approveStudent: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-student/`, { method: 'POST', body: payload, token }),
   approveTeacher: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-teacher/`, { method: 'POST', body: payload, token }),
   approveManager: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-manager/`, { method: 'POST', body: payload, token }),
+  removeMembership: (centerId, membershipId, token) => request(`/api/centers/${centerId}/memberships/${membershipId}/`, { method: 'DELETE', token }),
   getAdminCenters: (statusFilter, token) => request(`/api/admin/centers/${statusFilter ? '?status=' + statusFilter : ''}`, { token }).then(unwrapList),
   adminApproveCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/approve/`, { method: 'POST', token }),
   adminRejectCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/reject/`, { method: 'POST', token }),
@@ -357,7 +359,6 @@ export const OlympyApi = {
   createOlympiad: (payload, token) => request('/api/olympiads/', { method: 'POST', body: payload, token }),
   getOlympiadQuestions: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/questions/`, { token }),
   updateOlympiad: (olympiadId, payload, token) => request(`/api/olympiads/${olympiadId}/`, { method: 'PATCH', body: payload, token }),
-  updateOlympiadQuestions: (olympiadId, questionIds, token) => request(`/api/olympiads/${olympiadId}/`, { method: 'PATCH', body: { question_ids: questionIds }, token }),
   publishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/publish/`, { method: 'POST', token }),
   deactivateOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/deactivate/`, { method: 'POST', token }),
   finishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/finish/`, { method: 'POST', token }),

@@ -652,6 +652,7 @@ const mapApiOlympiad = (o) => {
     createdAt: (o.created_at || '').slice(0, 10),
     participants: o.participants || 0,
     maxScore: o.max_score ?? 100,
+    avgScore: o.avg_score ?? 0,
     _api: true,
   };
 };
