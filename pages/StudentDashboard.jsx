@@ -9,6 +9,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [cityFilter, setCityFilter] = React.useState('');
   const [activeOlympiad, setActiveOlympiad] = React.useState(null);
   const [joinModal, setJoinModal] = React.useState(false);
+  const [centerConfirmOlympiad, setCenterConfirmOlympiad] = React.useState(null);
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [olympiadFilter, setOlympiadFilter] = React.useState('Barchasi');
   const [apiToast, setApiToast] = React.useState('');
@@ -252,7 +253,17 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {visibleOlympiads.filter(o => o.status === 'active').slice(0, 2).map(o => (
             <OlympiadCard key={o.id} olympiad={o} locked={!canAccessEvent(o)}
-              onStart={() => { if (!canEnterEvent(o)) return; setActiveOlympiad(o); onNavigate('test', o); }} />
+              onStart={() => {
+                if (!canEnterEvent(o)) return;
+                const alreadyMember = String(o.centerId) === String(studentCenterId);
+                if (o.centerId && !alreadyMember) {
+                  const center = allCenters.find(c => String(c.id || c.backendId) === String(o.centerId));
+                  setCenterConfirmOlympiad({ olympiad: o, centerName: center?.name || "O'quv markaz", centerId: o.centerId });
+                } else {
+                  setActiveOlympiad(o);
+                  onNavigate('test', o);
+                }
+              }} />
           ))}
           {visibleOlympiads.filter(o => o.status === 'active').length === 0 && (
             <div className="md:col-span-2 text-center text-white/40 text-sm py-6 glass rounded-2xl">Bugungi faol tadbirlar yo'q</div>
@@ -270,7 +281,17 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {visibleOlympiads.filter(o => o.status === 'inactive').slice(0, 2).map(o => (
               <OlympiadCard key={o.id} olympiad={o} locked={!canAccessEvent(o)}
-                onStart={() => {}} />
+                onStart={() => {
+                  if (!canEnterEvent(o)) return;
+                  const alreadyMember = String(o.centerId) === String(studentCenterId);
+                  if (o.centerId && !alreadyMember) {
+                    const center = allCenters.find(c => String(c.id || c.backendId) === String(o.centerId));
+                    setCenterConfirmOlympiad({ olympiad: o, centerName: center?.name || "O'quv markaz", centerId: o.centerId });
+                  } else {
+                    setActiveOlympiad(o);
+                    onNavigate('test', o);
+                  }
+                }} />
             ))}
           </div>
         </div>
@@ -353,7 +374,17 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           }
           return filteredOlympiads.map(o => (
             <OlympiadCard key={o.id} olympiad={o} locked={!canAccessEvent(o)}
-              onStart={() => { if (!canEnterEvent(o)) return; onNavigate('test', o); }} />
+              onStart={() => {
+                if (!canEnterEvent(o)) return;
+                const alreadyMember = String(o.centerId) === String(studentCenterId);
+                if (o.centerId && !alreadyMember) {
+                  const center = allCenters.find(c => String(c.id || c.backendId) === String(o.centerId));
+                  setCenterConfirmOlympiad({ olympiad: o, centerName: center?.name || "O'quv markaz", centerId: o.centerId });
+                } else {
+                  setActiveOlympiad(o);
+                  onNavigate('test', o);
+                }
+              }} />
           ));
         })()}
       </div>
@@ -537,6 +568,35 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       </div>
       {apiToast && (
         <div className="fixed bottom-6 right-6 z-50 glass-strong rounded-2xl px-5 py-3.5 border border-rose-500/30 animate-in text-sm font-medium text-white">{apiToast}</div>
+      )}
+      {centerConfirmOlympiad && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="glass rounded-2xl p-6 max-w-sm w-full border border-white/10">
+            <h3 className="text-white font-semibold text-base mb-2">Markaz tasdiqlash</h3>
+            <p className="text-white/70 text-sm mb-6">
+              Siz <span className="text-white font-medium">{centerConfirmOlympiad.centerName}</span> o'quv markazining o'quvchisimisiz?
+            </p>
+            <div className="flex gap-3">
+              <button
+                className="flex-1 btn-primary py-2 rounded-xl text-sm font-semibold"
+                onClick={async () => {
+                  const token = OlympyApi.getToken?.();
+                  try {
+                    await OlympyApi.joinCenter(centerConfirmOlympiad.centerId, { role: 'student' }, token);
+                  } catch (e) { /* allaqachon a'zo bo'lsa ham davom etsin */ }
+                  const o = centerConfirmOlympiad.olympiad;
+                  setCenterConfirmOlympiad(null);
+                  setActiveOlympiad(o);
+                  onNavigate('test', o);
+                }}
+              >Ha</button>
+              <button
+                className="flex-1 glass border border-white/10 py-2 rounded-xl text-sm text-white/70 hover:text-white transition-colors"
+                onClick={() => setCenterConfirmOlympiad(null)}
+              >Yo'q</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
