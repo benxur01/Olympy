@@ -148,7 +148,7 @@ def _prompt(subject, difficulty, question_type, has_extracted_text):
         "PDF faylning o'zini ko'rib tahlil qil."
     )
     return (
-        "Sen Olympy platformasi uchun PDFdan test savollarini ajratuvchi yordamchisan.\n"
+        "Sen Pro Olimp platformasi uchun PDFdan test savollarini ajratuvchi yordamchisan.\n"
         f"{source_hint}\n"
         "Vazifa: PDF ichidagi mavjud savollarni tartibini buzmasdan ajrat. "
         "PDFda savollar qanday ketma-ketlikda bo'lsa, JSON array ham shu tartibda bo'lsin. "

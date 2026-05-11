@@ -478,7 +478,7 @@ def _manager_ai_prompt(actor, text, ctx):
     history = _format_history_for_prompt(actor)
     history_block = f"\n\nOxirgi suhbat:\n{history}" if history else ''
     return (
-        "Sen Olympy platformasidagi managerlar uchun Telegram yordamchisan. "
+        "Sen Pro Olimp platformasidagi managerlar uchun Telegram yordamchisan. "
         "Suhbatdagi tirik odamdek javob ber: avval manager gapini qisqa tan ol, keyin aniq yordam ber. "
         "Ohang samimiy, xotirjam va ishchan bo'lsin; shablon, haddan tashqari rasmiy yoki robotcha iboralarni takrorlama. "
         "Managerga 'siz' deb murojaat qil, lekin gapni sun'iy bezama. O'zbek tilida, tabiiy Telegram uslubida yoz; "

@@ -182,7 +182,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
     const url = (typeof window !== 'undefined' && window.location?.href) || '';
     const showToast = (m) => { setShareToast(m); setTimeout(() => setShareToast(''), 2500); };
     if (typeof navigator !== 'undefined' && navigator.share) {
-      navigator.share({ title: 'Olympy natija', text, url }).catch(() => {});
+      navigator.share({ title: 'Pro Olimp natija', text, url }).catch(() => {});
       return;
     }
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {

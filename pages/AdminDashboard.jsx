@@ -389,7 +389,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           </div>
         </div>
         <div className="mb-4 text-[11px] leading-relaxed text-slate-500">
-          © 2026 Olympy Admin
+          © 2026 Pro Olimp Admin
         </div>
         <button onClick={onLogout} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-[12px] font-semibold text-slate-400 hover:bg-white/10 hover:text-white">
           <Icon name="logout" size={14} /> Chiqish
@@ -511,7 +511,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-[20px] font-extrabold leading-tight text-slate-900">Boshqaruv paneli</h1>
-          <p className="mt-1 text-[12px] font-medium text-slate-500">Olympy platformasi ko'rsatkichlari va arizalar holati.</p>
+          <p className="mt-1 text-[12px] font-medium text-slate-500">Pro Olimp platformasi ko'rsatkichlari va arizalar holati.</p>
         </div>
       </div>
 

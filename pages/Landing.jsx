@@ -219,7 +219,7 @@ const LandingPage = ({ onNavigate }) => {
               const isFree = p.price === 'Bepul';
               const handleClick = () => {
                 if (isFree) onNavigate('register');
-                else window.location.href = `mailto:sanjarruzmetov017@gmail.com?subject=Olympy ${p.name} reja haqida`;
+                else window.location.href = `mailto:sanjarruzmetov017@gmail.com?subject=Pro Olimp ${p.name} reja haqida`;
               };
               return (
                 <div key={i} className={`rounded-2xl p-4 md:p-6 flex flex-col ${p.popular ? 'gradient-bg glow-blue' : 'glass'}`}>
@@ -269,7 +269,7 @@ const LandingPage = ({ onNavigate }) => {
           <div className="flex items-center gap-3">
             <BrandLogo size="sm" />
           </div>
-          <div className="text-xs md:text-sm text-white/30">© 2026 Olympy. Barcha huquqlar himoyalangan.</div>
+          <div className="text-xs md:text-sm text-white/30">© 2026 Pro Olimp. Barcha huquqlar himoyalangan.</div>
           <div className="flex flex-wrap justify-center items-center gap-4 md:gap-6 text-xs md:text-sm text-white/40">
             {/* Maxfiylik / Shartlar uchun alohida sahifa hozircha yo'q —
                 shu sababli ko'rsatilmaydi/disabled. Aloqa esa to'g'ridan
