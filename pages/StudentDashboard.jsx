@@ -60,7 +60,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // approved students of the same center.
   const baseOlympiads = isApi ? (apiOlympiads || []) : store.olympiads;
   const isPublicOlympiad = (event) => (event?.eventType || 'competition') === 'olympiad';
-  const studentVisibleStatuses = new Set(['active', 'finished']);
+  const studentVisibleStatuses = new Set(['active', 'inactive', 'finished']);
   const canAccessEvent = (event) => (
     isPublicOlympiad(event) ||
     (isCenterApproved && String(event.centerId) === String(studentCenterId))
@@ -260,6 +260,22 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </div>
       </div>
 
+      {/* Upcoming events */}
+      {visibleOlympiads.filter(o => o.status === 'inactive').length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-white">Yaqinda boshlanadi</h3>
+            <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400 hover:text-indigo-300">Barchasini ko'rish →</button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {visibleOlympiads.filter(o => o.status === 'inactive').slice(0, 2).map(o => (
+              <OlympiadCard key={o.id} olympiad={o} locked={!canAccessEvent(o)}
+                onStart={() => {}} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Subject performance */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="glass rounded-2xl p-5">
@@ -313,7 +329,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-xl font-black text-white">Tadbirlar</h2>
         <div className="flex gap-2">
-          {['Barchasi', 'Faol', 'Tugagan'].map(f => (
+          {['Barchasi', 'Faol', 'Kelayotgan', 'Tugagan'].map(f => (
             <button key={f} onClick={() => setOlympiadFilter(f)}
               className={`text-xs px-3 py-1.5 rounded-xl glass border transition-all ${olympiadFilter === f ? 'border-indigo-500/60 text-white' : 'border-white/10 text-white/60 hover:text-white hover:border-indigo-500/40'}`}>{f}</button>
           ))}
@@ -328,6 +344,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         {(() => {
           const filteredOlympiads = visibleOlympiads.filter(o => {
             if (olympiadFilter === 'Faol') return o.status === 'active';
+            if (olympiadFilter === 'Kelayotgan') return o.status === 'inactive';
             if (olympiadFilter === 'Tugagan') return o.status === 'finished';
             return true;
           });
@@ -527,11 +544,20 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
 const OlympiadCard = ({ olympiad: o, onStart, locked }) => {
   const isActive = o.status === 'active';
+  const isUpcoming = o.status === 'inactive';
   const disabled = !isActive || locked;
   const typeLabel = eventTypeLabel(o.eventType || 'competition');
-  const label = locked ? "🔒 Tashkilot tasdig'i kerak" : (isActive ? '▶ Boshlash' : (o.status === 'inactive' ? 'Nofaol' : (o.status === 'draft' ? 'Hali e\'lon qilinmagan' : 'Tugagan')));
+  const label = locked ? "🔒 Tashkilot tasdig'i kerak" : (isActive ? '▶ Boshlash' : (isUpcoming ? 'Yaqinda boshlanadi' : (o.status === 'draft' ? 'Hali e\'lon qilinmagan' : 'Tugagan')));
   const time = o.startTime || o.time || '';
   const qCount = (o.questionIds && o.questionIds.length) || o.questions || 0;
+  const formattedStartDate = (() => {
+    const raw = o.start_datetime || o.startDate;
+    if (!raw) return '';
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return '';
+    const months = ['yanvar','fevral','mart','aprel','may','iyun','iyul','avgust','sentabr','oktabr','noyabr','dekabr'];
+    return `${d.getDate()}-${months[d.getMonth()]} ${d.getFullYear()}`;
+  })();
   return (
     <div className="glass rounded-2xl p-5 card-hover">
       <div className="flex items-start justify-between mb-3">
@@ -545,6 +571,7 @@ const OlympiadCard = ({ olympiad: o, onStart, locked }) => {
       <div className="flex flex-wrap gap-3 text-xs text-white/40 mb-4">
         {o.testLevel && <span className="flex items-center gap-1 text-violet-300"><Icon name="star" size={12} /> {o.testLevel}</span>}
         {o.testType && <span className="flex items-center gap-1 text-sky-300"><Icon name="file" size={12} /> {testTypeLabel(o.testType)}</span>}
+        {formattedStartDate && <span className="flex items-center gap-1">📅 {formattedStartDate}</span>}
         <span className="flex items-center gap-1"><Icon name="clock" size={12} /> {time} · {o.duration} daqiqa</span>
         <span className="flex items-center gap-1"><Icon name="file" size={12} /> {qCount} ta savol</span>
         <span className="flex items-center gap-1"><Icon name="users" size={12} /> {o.participants || 0} ishtirokchi</span>
