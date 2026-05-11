@@ -84,6 +84,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [staffModal, setStaffModal] = React.useState(false);
   const [staffRole, setStaffRole] = React.useState('manager');
   const [staffSaving, setStaffSaving] = React.useState(false);
+  const [removingMembershipId, setRemovingMembershipId] = React.useState(null);
   const emptyStaffForm = { full_name: '', phone: '+998', password: '', subject: '' };
   const [staffForm, setStaffForm] = React.useState(emptyStaffForm);
   const emptyCenterForm = {
@@ -96,6 +97,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     subjects: [],
   };
   const [centerModal, setCenterModal] = React.useState(false);
+  const [editingCenterId, setEditingCenterId] = React.useState(null);
   const [centerSaving, setCenterSaving] = React.useState(false);
   const [centerForm, setCenterForm] = React.useState(emptyCenterForm);
   const [centerImageOverrides, setCenterImageOverrides] = React.useState({});
@@ -333,6 +335,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const apiStaffRows = apiStaff.map(m => ({
     id: `api:${m.role}:${m.membership_id}`,
+    membershipId: m.membership_id,
     centerId: String(center.id),
     name: m.user?.full_name || m.user?.name || '—',
     phone: m.user?.normalized_phone || m.user?.phone || '—',
@@ -417,6 +420,36 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     showToast('Ariza rad etildi');
   };
 
+  const removeStaffMember = (row) => {
+    if (!row) return;
+    if (!isApi) {
+      showToast("Demo rejimida a'zolikni o'chirib bo'lmaydi");
+      return;
+    }
+    const membershipId = row.membershipId;
+    if (!membershipId) {
+      showToast("A'zolik ma'lumotlari topilmadi");
+      return;
+    }
+    const roleLabel = row.role === 'manager' ? 'menejerni' : "o'qituvchini";
+    if (!window.confirm(`${row.name || 'Foydalanuvchi'} — bu ${roleLabel} markazdan chiqarishni tasdiqlaysizmi?`)) {
+      return;
+    }
+    const backendCenterId = center?.backendId ?? center?.id;
+    const token = OlympyApi.getToken();
+    setRemovingMembershipId(membershipId);
+    OlympyApi.removeMembership(backendCenterId, membershipId, token)
+      .then(() => {
+        loadApiStaff().catch(() => null);
+        showToast("A'zolik bekor qilindi");
+      })
+      .catch(err => {
+        console.warn('removeMembership failed:', err);
+        showToast(OlympyApi.toUserMessage(err) || "A'zolikni o'chirib bo'lmadi");
+      })
+      .finally(() => setRemovingMembershipId(null));
+  };
+
   const openStaffModal = (role = 'manager') => {
     setStaffRole(role);
     setStaffForm(emptyStaffForm);
@@ -498,13 +531,33 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   };
 
   const openCenterModal = () => {
+    setEditingCenterId(null);
     setCenterForm(emptyCenterForm);
+    setCenterModal(true);
+  };
+
+  const openEditCenterModal = () => {
+    if (!center) return;
+    const knownTypes = Array.isArray(centerOrganizationTypes) ? centerOrganizationTypes : [];
+    const currentType = center.organizationType || "O'quv markaz";
+    const isKnown = knownTypes.includes(currentType);
+    setEditingCenterId(center.id);
+    setCenterForm({
+      name: center.name || '',
+      organizationType: isKnown ? currentType : 'Boshqa',
+      customOrganizationType: isKnown ? '' : currentType,
+      country: center.country || "O'zbekiston",
+      region: center.region || '',
+      district: center.district || center.city || '',
+      subjects: Array.isArray(center.subjects) ? [...center.subjects] : [],
+    });
     setCenterModal(true);
   };
 
   const closeCenterModal = () => {
     if (centerSaving) return;
     setCenterModal(false);
+    setEditingCenterId(null);
     setCenterForm(emptyCenterForm);
   };
 
@@ -527,6 +580,56 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       showToast('Turi, manzil va nomini to‘liq kiriting');
       return;
     }
+
+    const isEditing = !!editingCenterId;
+
+    if (isEditing) {
+      if (isApi) {
+        const editTarget = ownerCenters.find(c => String(c.id) === String(editingCenterId));
+        const backendId = editTarget?.backendId ?? editingCenterId;
+        const token = OlympyApi.getToken();
+        setCenterSaving(true);
+        OlympyApi.updateCenter(backendId, payload, token)
+          .then(() => {
+            apiCentersRes.reload();
+            return OlympyApi.getMe(token).then(me => {
+              const mapped = OlympyApi.mapBackendUser(me);
+              onUserUpdate?.(mapped);
+            }).catch(() => null);
+          })
+          .then(() => {
+            setCenterModal(false);
+            setEditingCenterId(null);
+            setCenterForm(emptyCenterForm);
+            showToast('Tashkilot ma\'lumotlari yangilandi');
+          })
+          .catch(err => {
+            console.warn('updateCenter failed:', err);
+            showToast(OlympyApi.toUserMessage(err));
+          })
+          .finally(() => setCenterSaving(false));
+        return;
+      }
+      try {
+        OlympyStore.updateCenter(editingCenterId, {
+          name: payload.name,
+          organizationType: payload.organization_type,
+          country: payload.country,
+          region: payload.region,
+          district: payload.district,
+          city: payload.city,
+          subjects: payload.subjects,
+        });
+        setCenterModal(false);
+        setEditingCenterId(null);
+        setCenterForm(emptyCenterForm);
+        showToast('Tashkilot ma\'lumotlari yangilandi');
+      } catch (err) {
+        showToast(err?.message || "Yangilab bo'lmadi");
+      }
+      return;
+    }
+
     if (isApi) {
       const token = OlympyApi.getToken();
       setCenterSaving(true);
@@ -976,37 +1079,54 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <table className="w-full min-w-[760px] text-left">
             <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
               <tr className="text-[10px] font-black uppercase tracking-wider text-white/40">
-                {['Ism', 'Telefon', 'Rol', 'Fan', 'Holat'].map(h => (
+                {['Ism', 'Telefon', 'Rol', 'Fan', 'Holat', 'Amal'].map(h => (
                   <th key={h} className="px-5 py-3.5">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {myStaff.map(row => (
-                <tr key={row.id} className="table-row text-sm">
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-3">
-                      <Avatar name={row.name} src={row.avatarUrl || ''} size={36} gradient={row.role === 'manager' ? 'from-indigo-500 to-purple-600' : 'from-cyan-500 to-sky-600'} />
-                      <span className="font-black text-white">{row.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-4 font-mono text-xs text-white/55">
-                    {String(row.phone || '').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}
-                  </td>
-                  <td className="px-5 py-4">
-                    <span className={`chip ${row.role === 'manager' ? 'badge-active' : 'badge-approved'}`}>
-                      {row.role === 'manager' ? 'Manager' : "O'qituvchi"}
-                    </span>
-                  </td>
-                  <td className="px-5 py-4 text-white/60">{row.subject || '—'}</td>
-                  <td className="px-5 py-4">
-                    <OwnerStatusPill status={row.status || 'approved'} />
-                  </td>
-                </tr>
-              ))}
+              {myStaff.map(row => {
+                const canRemove = isApi && !!row.membershipId && (row.status || 'approved') === 'approved';
+                const removing = removingMembershipId === row.membershipId;
+                return (
+                  <tr key={row.id} className="table-row text-sm">
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <Avatar name={row.name} src={row.avatarUrl || ''} size={36} gradient={row.role === 'manager' ? 'from-indigo-500 to-purple-600' : 'from-cyan-500 to-sky-600'} />
+                        <span className="font-black text-white">{row.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-5 py-4 font-mono text-xs text-white/55">
+                      {String(row.phone || '').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={`chip ${row.role === 'manager' ? 'badge-active' : 'badge-approved'}`}>
+                        {row.role === 'manager' ? 'Manager' : "O'qituvchi"}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-white/60">{row.subject || '—'}</td>
+                    <td className="px-5 py-4">
+                      <OwnerStatusPill status={row.status || 'approved'} />
+                    </td>
+                    <td className="px-5 py-4">
+                      {canRemove ? (
+                        <button
+                          onClick={() => removeStaffMember(row)}
+                          disabled={removing}
+                          className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
+                        >
+                          {removing ? '...' : 'Chiqarish'}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-white/30">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
               {myStaff.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
+                  <td colSpan={6} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
                     Hali tasdiqlangan xodimlar yo'q
                   </td>
                 </tr>
@@ -1079,9 +1199,17 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const renderCenter = () => (
     <div className="space-y-5 p-4 lg:p-6">
-      <div>
-        <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Tashkilot profili</h1>
-        <p className="mt-1 text-sm font-semibold text-white/50">O'z tashkilotingiz bo'yicha asosiy ma'lumotlar.</p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Tashkilot profili</h1>
+          <p className="mt-1 text-sm font-semibold text-white/50">O'z tashkilotingiz bo'yicha asosiy ma'lumotlar.</p>
+        </div>
+        {center?.status === 'approved' && (
+          <button onClick={openEditCenterModal}
+            className="btn-primary flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold">
+            <Icon name="edit" size={14} /> Tahrirlash
+          </button>
+        )}
       </div>
       <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
         <div className="flex flex-col gap-5 md:flex-row md:items-center">
@@ -1265,8 +1393,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <form onSubmit={submitCenter} className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-black text-slate-900">Yangi tashkilot qo'shish</h2>
-                <div className="mt-1 text-xs font-bold text-slate-500">Ariza Platform Admin tasdig'iga yuboriladi</div>
+                <h2 className="text-lg font-black text-slate-900">{editingCenterId ? 'Tashkilotni tahrirlash' : "Yangi tashkilot qo'shish"}</h2>
+                <div className="mt-1 text-xs font-bold text-slate-500">{editingCenterId ? "Ma'lumotlarni yangilang va saqlang" : "Ariza Platform Admin tasdig'iga yuboriladi"}</div>
               </div>
               <button type="button" onClick={closeCenterModal} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
                 <Icon name="x" size={18} />
@@ -1370,7 +1498,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 Bekor qilish
               </button>
               <button disabled={centerSaving} className="flex-1 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
-                {centerSaving ? 'Yuborilmoqda...' : 'Arizani yuborish'}
+                {centerSaving ? 'Saqlanmoqda...' : (editingCenterId ? 'Saqlash' : 'Arizani yuborish')}
               </button>
             </div>
           </form>

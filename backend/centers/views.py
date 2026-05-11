@@ -101,6 +101,71 @@ def my_centers(request):
     return Response(EducationCenterSerializer(queryset, many=True, context={'request': request}).data)
 
 
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def update_center(request, center_id):
+    """PATCH /api/centers/{id}/ — owner yoki platform admin markaz
+    metadata'sini o'zgartiradi (nom, manzil, fanlar, tashkilot turi)."""
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    is_owner = center.owner_id == request.user.id
+    if not (request.user.is_platform_admin or is_owner):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    data = request.data or {}
+    allowed = {'name', 'organization_type', 'country', 'region', 'district', 'city', 'subjects'}
+    payload = {k: v for k, v in data.items() if k in allowed}
+
+    if 'name' in payload:
+        name = str(payload['name'] or '').strip()
+        if not name:
+            return Response({'name': "Nom bo'sh bo'lishi mumkin emas"},
+                            status=http_status.HTTP_400_BAD_REQUEST)
+        payload['name'] = name[:160]
+
+    if 'organization_type' in payload:
+        ot = str(payload['organization_type'] or '').strip()
+        payload['organization_type'] = ot or "O'quv markaz"
+
+    if 'country' in payload:
+        c = str(payload['country'] or '').strip()
+        payload['country'] = c or "O'zbekiston"
+
+    for key in ('region', 'district'):
+        if key in payload:
+            payload[key] = str(payload[key] or '').strip()
+
+    if 'city' in payload:
+        payload['city'] = str(payload['city'] or '').strip()
+    # Agar city berilmagan, lekin region/district o'zgargan bo'lsa — city
+    # bo'sh bo'lib qolmasligi uchun district/region orqali to'ldiramiz.
+    new_city = payload.get('city', center.city)
+    new_district = payload.get('district', center.district)
+    new_region = payload.get('region', center.region)
+    if not new_city:
+        new_city = new_district or new_region
+    if not new_city:
+        return Response({'district': "Tuman yoki shaharni tanlang"},
+                        status=http_status.HTTP_400_BAD_REQUEST)
+    payload['city'] = new_city
+
+    if 'subjects' in payload:
+        subs = payload['subjects']
+        if not isinstance(subs, list):
+            return Response({'subjects': "Fanlar ro'yxat bo'lishi kerak"},
+                            status=http_status.HTTP_400_BAD_REQUEST)
+        payload['subjects'] = [str(s).strip() for s in subs if str(s).strip()]
+
+    for key, value in payload.items():
+        setattr(center, key, value)
+    center.save(update_fields=list(payload.keys()) or None)
+
+    # Annotated countlar response uchun
+    center = _annotate_center_counts(
+        EducationCenter.objects.filter(pk=center.pk)
+    ).first()
+    return Response(EducationCenterSerializer(center, context={'request': request}).data)
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def update_center_image(request, center_id):
@@ -524,6 +589,72 @@ def approve_teacher(request, center_id):
 def approve_manager(request, center_id):
     """POST /api/centers/{id}/approve-manager/ — owner (or admin) decides."""
     return _approve(request, center_id, CenterMembership.ROLE_MANAGER)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def remove_membership(request, center_id, membership_id):
+    """DELETE /api/centers/{center_id}/memberships/{membership_id}/
+
+    A'zolikni o'chiradi (markazdan chiqarish). Ruxsatlar:
+    - Platform admin har qanday a'zolikni o'chira oladi.
+    - Markaz egasi (owner) har qanday a'zolikni o'chira oladi (o'zinikidan tashqari).
+    - Manager faqat student va teacher a'zoligini o'chira oladi.
+    - Hech kim o'z a'zoligini bu endpoint orqali o'chira olmaydi.
+    """
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    membership = get_object_or_404(
+        CenterMembership.objects.select_related('user'),
+        pk=membership_id,
+        center=center,
+    )
+
+    if membership.user_id == request.user.id:
+        return Response({'detail': "O'z a'zoligingizni o'chira olmaysiz"},
+                        status=http_status.HTTP_400_BAD_REQUEST)
+
+    # Owner a'zoligini bu endpoint orqali o'chirishga ruxsat berilmaydi —
+    # bu center'ning egasini almashtirish bo'lib qoladi.
+    if membership.role == CenterMembership.ROLE_OWNER:
+        return Response({'detail': "Owner a'zoligini bu yerda o'chirib bo'lmaydi"},
+                        status=http_status.HTTP_400_BAD_REQUEST)
+
+    is_admin = request.user.is_platform_admin
+    is_owner = center.owner_id == request.user.id
+    is_manager = CenterMembership.objects.filter(
+        user=request.user, center=center,
+        role=CenterMembership.ROLE_MANAGER,
+        status=CenterMembership.STATUS_APPROVED,
+    ).exists()
+
+    if is_admin or is_owner:
+        allowed = True
+    elif is_manager and membership.role in (
+        CenterMembership.ROLE_STUDENT, CenterMembership.ROLE_TEACHER,
+    ):
+        allowed = True
+    else:
+        allowed = False
+
+    if not allowed:
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    user = membership.user
+    role = membership.role
+    membership.delete()
+
+    # User.roles dan rolni olib tashlash: agar shu user'da boshqa markazda
+    # ham xuddi shu rol bilan approved a'zolik bor bo'lsa — rolni saqlaymiz.
+    try:
+        has_other = CenterMembership.objects.filter(
+            user=user, role=role, status=CenterMembership.STATUS_APPROVED,
+        ).exists()
+        if not has_other and hasattr(user, 'remove_role'):
+            user.remove_role(role)
+    except Exception:
+        pass
+
+    return Response(status=http_status.HTTP_204_NO_CONTENT)
 
 
 # ─── Platform admin: center approval ──────────────────────────────────────────

@@ -83,6 +83,13 @@ class User(AbstractBaseUser, PermissionsMixin):
             self.roles = list(self.roles or []) + [role]
             self.save(update_fields=['roles'])
 
+    def remove_role(self, role):
+        current = list(self.roles or [])
+        if role in current:
+            current.remove(role)
+            self.roles = current
+            self.save(update_fields=['roles'])
+
 
 class PhoneVerification(models.Model):
     """Telegram-backed phone verification session.

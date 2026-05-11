@@ -6,11 +6,13 @@ from . import views
 urlpatterns = [
     path('', views.centers_list_create, name='centers-list-create'),
     path('mine/', views.my_centers, name='my-centers'),
+    path('<int:center_id>/', views.update_center, name='center-update'),
     path('<int:center_id>/image/', views.update_center_image, name='center-image'),
     path('<int:center_id>/join/', views.join_center, name='center-join'),
     path('<int:center_id>/memberships/pending/', views.pending_memberships, name='pending-memberships'),
     path('<int:center_id>/memberships/staff/', views.staff_memberships, name='staff-memberships'),
     path('<int:center_id>/memberships/students/', views.students_memberships, name='students-memberships'),
+    path('<int:center_id>/memberships/<int:membership_id>/', views.remove_membership, name='remove-membership'),
     path('students/<int:membership_id>/', views.student_detail, name='student-detail'),
     path('<int:center_id>/managers/create/', views.create_manager, name='create-manager'),
     path('<int:center_id>/teachers/create/', views.create_teacher, name='create-teacher'),
