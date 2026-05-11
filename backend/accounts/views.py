@@ -1,3 +1,4 @@
+import io
 import json
 import logging
 import os
@@ -138,6 +139,14 @@ def register(request):
     join_role = (request.data.get('join_role') or '').strip().lower()
     join_subject = (request.data.get('join_subject') or request.data.get('subject') or '').strip()
     membership_data = None
+
+    # Xavfsizlik: register orqali faqat 'student' rolida ariza yuborish mumkin.
+    # Manager/teacher uchun ariza alohida (faqat owner tasdiqi yo'li bilan).
+    if join_role and join_role not in ('student',):
+        return Response(
+            {'detail': "join_role faqat 'student' bo'lishi mumkin"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     try:
         with transaction.atomic():
@@ -335,15 +344,23 @@ refresh_token.cls.throttle_scope = 'auth'
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def logout(request):
-    # Avval logout faqat cookielarni tozalardi va o'g'irlangan access token
-    # 30 daqiqa davomida ishlatib turilishi mumkin edi. Endi authenticated
-    # foydalanuvchi logout qilsa, token_version oshiriladi — bu mavjud
-    # JWT'larni darhol bekor qiladi (OlympyJWTAuthentication tekshiradi).
-    if getattr(request.user, 'is_authenticated', False):
+    # Avval logout `bump_token_version` chaqirardi va bu BARCHA qurilmalardan
+    # chiqarib yuborardi (yo'qotgan telefon stsenariysi uchun yaxshi, lekin
+    # oddiy "Chiqish" tugmasi uchun haddan tashqari agressiv).
+    # Endi faqat joriy refresh token blacklist qilinadi — qolgan qurilmalar
+    # ishlashda davom etadi. Token versionini oshirishni `change_password`
+    # va admin bloklash uchun qoldirdik.
+    refresh = (
+        request.data.get('refresh')
+        or request.COOKIES.get(getattr(settings, 'JWT_REFRESH_COOKIE_NAME', 'olympy_refresh'))
+    )
+    if refresh:
         try:
-            bump_token_version(request.user)
+            token = RefreshToken(refresh)
+            token.blacklist()
         except Exception:
-            logger.exception('logout: bump_token_version failed')
+            # Yaroqsiz / muddati o'tgan / allaqachon blacklist — sukutda o'tamiz
+            pass
     response = Response({'ok': True})
     return _clear_auth_cookies(response)
 
@@ -381,6 +398,15 @@ def update_my_avatar(request):
             {'detail': f"Rasm juda katta. Limit: {max_bytes // (1024 * 1024)} MB"},
             status=status.HTTP_400_BAD_REQUEST,
         )
+    # Magic byte tekshiruvi: content_type spoof qilinishi mumkin, shuning uchun
+    # Pillow yordamida fayl haqiqatan ham rasm ekanini tasdiqlaymiz.
+    try:
+        from PIL import Image as PilImage
+        img = PilImage.open(io.BytesIO(image.read()))
+        img.verify()
+        image.seek(0)
+    except Exception:
+        return Response({'detail': 'Yaroqsiz rasm fayli'}, status=status.HTTP_400_BAD_REQUEST)
     request.user.avatar = image
     request.user.save(update_fields=['avatar'])
     return Response(UserSerializer(request.user, context={'request': request}).data)

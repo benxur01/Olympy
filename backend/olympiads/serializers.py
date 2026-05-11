@@ -55,11 +55,16 @@ class OlympiadSerializer(serializers.ModelSerializer):
                             'max_score', 'created_at']
 
     def get_participants(self, obj):
-        # Real attempt count, not a fake value. Slightly N+1 — fine until
-        # the olympiad list grows past a few hundred rows.
+        # Annotate qiymati bo'lsa undan foydalanamiz (N+1 yo'q),
+        # bo'lmasa fallback sifatida count() qilamiz.
+        if hasattr(obj, 'participants_count') and obj.participants_count is not None:
+            return obj.participants_count
         return obj.attempts.count()
 
     def get_avg_score(self, obj):
+        if hasattr(obj, 'avg_score_value'):
+            value = obj.avg_score_value
+            return round(value, 1) if value is not None else 0
         agg = obj.attempts.all()
         total = agg.count()
         if not total:

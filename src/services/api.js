@@ -271,13 +271,13 @@ const saveAuth = ({ token, refresh, user, cookieAuth, persistent } = {}) => {
   } else {
     _setActiveStore(_defaultAuthStore);
   }
-  if (cookieAuth) {
-    _removeAuth(AUTH_TOKEN_KEY);
-    _removeAuth(AUTH_REFRESH_KEY);
-  } else {
-    if (token) _writeAuth(AUTH_TOKEN_KEY, token);
-    if (refresh) _writeAuth(AUTH_REFRESH_KEY, refresh);
-  }
+  // Avval cookie_auth=true bo'lsa token o'chirilardi va shu sababli
+  // getToken() null qaytarardi — bu barcha API so'rovlarni tokensiz qilib
+  // qo'yar va Bearer'siz endpoint'lar 401 berardi. Endi ikkalasi ham yashasin:
+  // cookie va Authorization header birga ishlashi normal (backend Bearer'ni
+  // ustun ko'radi, cookie fallback bo'ladi).
+  if (token) _writeAuth(AUTH_TOKEN_KEY, token);
+  if (refresh) _writeAuth(AUTH_REFRESH_KEY, refresh);
   if (user) _writeAuth(AUTH_USER_KEY, JSON.stringify(user));
 };
 
@@ -355,7 +355,7 @@ export const OlympyApi = {
   getSubjects: (token) => request('/api/subjects/', { token }),
   createSubject: (name, token) => request('/api/subjects/', { method: 'POST', body: { name }, token }),
   // Olympiads
-  getOlympiads: (token) => request('/api/olympiads/', { token }).then(unwrapList),
+  getOlympiads: (token) => request('/api/olympiads/?page_size=200', { token }).then(unwrapList),
   createOlympiad: (payload, token) => request('/api/olympiads/', { method: 'POST', body: payload, token }),
   getOlympiadQuestions: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/questions/`, { token }),
   updateOlympiad: (olympiadId, payload, token) => request(`/api/olympiads/${olympiadId}/`, { method: 'PATCH', body: payload, token }),

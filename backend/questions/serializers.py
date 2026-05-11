@@ -36,6 +36,10 @@ class QuestionSerializer(serializers.ModelSerializer):
             options = instance.options
         if not options or len(options) < 2:
             raise serializers.ValidationError({'options': "Kamida 2 ta variant bo'lishi kerak"})
+        # Bo'sh string variant'lar test paytida studentga bo'sh tugma
+        # ko'rsatadi va correct_answer indeksini noto'g'ri qiladi.
+        if any(not str(o).strip() for o in options):
+            raise serializers.ValidationError({'options': "Variant bo'sh bo'lmasligi kerak"})
 
         correct = data.get('correct_answer')
         if correct is None and instance is not None:

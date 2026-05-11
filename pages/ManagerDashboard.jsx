@@ -135,7 +135,16 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       });
     };
     refresh();
-    const intervalId = isApi && managerCenterId ? setInterval(refresh, 15000) : null;
+    // Faqat tab ko'rinib turganda poll qilamiz — fon tab'da CPU/network
+    // sarflashning hech qanday foydasi yo'q (Telegram WebView'da bu telefon
+    // batareyasini ham yeyadi).
+    const intervalId = isApi && managerCenterId
+      ? setInterval(() => {
+          if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+            refresh();
+          }
+        }, 15000)
+      : null;
     return () => {
       cancelled = true;
       if (intervalId) clearInterval(intervalId);
