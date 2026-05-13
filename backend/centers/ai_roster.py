@@ -584,15 +584,16 @@ def _dedupe_entries(entries):
 
 
 def _manageable_centers(actor):
+    # Markazning platforma admin tomonidan tasdiqlanishi shart emas — manager
+    # sifatida tayinlangan bo'lishi yetarli. STATUS_APPROVED tekshiruvi faqat
+    # membership darajasida qoladi.
     manager_ids = CenterMembership.objects.filter(
         user=actor,
         role=CenterMembership.ROLE_MANAGER,
         status=CenterMembership.STATUS_APPROVED,
-        center__status=EducationCenter.STATUS_APPROVED,
     ).values_list('center_id', flat=True)
     owner_ids = EducationCenter.objects.filter(
         owner=actor,
-        status=EducationCenter.STATUS_APPROVED,
     ).values_list('id', flat=True)
     ids = sorted(set([*manager_ids, *owner_ids]))
     return list(EducationCenter.objects.filter(id__in=ids).order_by('name'))
