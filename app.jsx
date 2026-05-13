@@ -77,7 +77,10 @@ const App = () => {
           const mappedUser = globalThis.OlympyApi.mapBackendUser(freshUser);
           globalThis.OlympyApi.saveAuth({ token: auth.token, refresh: auth.refresh, user: mappedUser });
           setApiUser(mappedUser);
-          setPage(requestedPage || roleHomePage(mappedUser));
+          const publicPages = ['login', 'register', 'landing'];
+          const dest1 = (!requestedPage || publicPages.includes(requestedPage))
+            ? roleHomePage(mappedUser) : requestedPage;
+          setPage(dest1);
           setBootstrapping(false);
           return;
         } catch {
@@ -91,7 +94,10 @@ const App = () => {
         const mappedUser = globalThis.OlympyApi.mapBackendUser(freshUser);
         globalThis.OlympyApi.saveAuth({ user: mappedUser, cookieAuth: true });
         setApiUser(mappedUser);
-        setPage(requestedPage || roleHomePage(mappedUser));
+        const publicPages2 = ['login', 'register', 'landing'];
+        const dest2 = (!requestedPage || publicPages2.includes(requestedPage))
+          ? roleHomePage(mappedUser) : requestedPage;
+        setPage(dest2);
         return;
       } catch {}
       if (!cancelled && requestedPage) setPage(requestedPage);
@@ -108,7 +114,11 @@ const App = () => {
     if (!u?._api) return;
     const requestedPage = pageFromPath();
     setApiUser(u);
-    setPage(requestedPage || roleHomePage(u));
+    const publicPages = ['login', 'register', 'landing'];
+    const dest = (!requestedPage || publicPages.includes(requestedPage))
+      ? roleHomePage(u)
+      : requestedPage;
+    setPage(dest);
   };
 
   const handleLogout = () => {
