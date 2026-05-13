@@ -165,8 +165,12 @@ const request = async (
           }
         } catch {}
       }
-      // Token muddati tugagan yoki tan olinmagan — auth state'ni tozalab,
-      // qatlam yuqorisidagi App'ga signal beramiz.
+      // retryOnAuth=false bo'lsa (login, register kabi public endpoint'lar):
+      // logout qilmaymiz, serverdan kelgan xato xabarini ko'rsatamiz.
+      if (!retryOnAuth) {
+        throw new ApiError(extractErrorMessage(data) || "Telefon yoki parol noto'g'ri", { status: 401, data });
+      }
+      // Autentifikatsiyali so'rovda token muddati tugagan — auth tozalanadi.
       _removeAuth(AUTH_TOKEN_KEY);
       _removeAuth(AUTH_REFRESH_KEY);
       _removeAuth(AUTH_USER_KEY);
