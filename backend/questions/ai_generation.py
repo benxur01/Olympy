@@ -2,6 +2,7 @@ import json
 import logging
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from django.conf import settings
@@ -46,6 +47,26 @@ def _api_keys():
     if single_key:
         keys.append(single_key)
     return list(dict.fromkeys(key for key in keys if key))
+
+
+def _gemini_api_keys():
+    keys = list(getattr(settings, 'AI_QUESTION_GEMINI_API_KEYS', []) or [])
+    single_key = getattr(settings, 'AI_QUESTION_GEMINI_API_KEY', '')
+    if single_key:
+        keys.append(single_key)
+    return list(dict.fromkeys(key for key in keys if key))
+
+
+def _gemini_models():
+    primary = getattr(settings, 'AI_QUESTION_GEMINI_MODEL', 'gemini-2.5-flash')
+    fallbacks = list(getattr(settings, 'AI_QUESTION_GEMINI_FALLBACK_MODELS', []) or [])
+    defaults = [
+        'gemini-3.1-flash-lite',
+        'gemini-3-flash-preview',
+        'gemini-2.5-flash',
+        'gemini-2.5-pro',
+    ]
+    return list(dict.fromkeys(model for model in [primary, *fallbacks, *defaults] if model))
 
 
 def _question_type_label(question_type):
@@ -118,6 +139,30 @@ def _schema():
     }
 
 
+def _gemini_schema():
+    return {
+        'type': 'OBJECT',
+        'properties': {
+            'questions': {
+                'type': 'ARRAY',
+                'items': {
+                    'type': 'OBJECT',
+                    'properties': {
+                        'text': {'type': 'STRING'},
+                        'options': {
+                            'type': 'ARRAY',
+                            'items': {'type': 'STRING'},
+                        },
+                        'correct_answer': {'type': 'INTEGER'},
+                    },
+                    'required': ['text', 'options', 'correct_answer'],
+                },
+            },
+        },
+        'required': ['questions'],
+    }
+
+
 def _normalize_question(item, subject, difficulty, question_type):
     if not isinstance(item, dict):
         return None
@@ -163,30 +208,30 @@ def _normalize_question(item, subject, difficulty, question_type):
     }
 
 
-def generate_questions(subject, topic, count, difficulty='medium', question_type=TYPE_MULTIPLE_CHOICE):
+def _build_questions_from_parsed(parsed, count, subject, difficulty, question_type):
+    questions = []
+    seen_text = set()
+    for item in (parsed or {}).get('questions') or []:
+        question = _normalize_question(item, subject, difficulty, question_type)
+        if not question:
+            continue
+        text_key = question['text'].casefold()
+        if text_key in seen_text:
+            continue
+        seen_text.add(text_key)
+        questions.append(question)
+        if len(questions) >= count:
+            break
+    return questions
+
+
+def _generate_via_openai(subject, topic, count, difficulty, question_type):
     api_keys = _api_keys()
     if not api_keys:
         return {
             'ok': False,
             'missing_key': True,
             'error': "Savol yaratish uchun OpenAI API kaliti sozlanmagan.",
-            'questions': [],
-        }
-
-    max_count = getattr(settings, 'AI_QUESTION_MAX_COUNT', 30)
-    try:
-        count = int(count)
-    except (TypeError, ValueError):
-        count = 10
-    count = max(1, min(count, max_count))
-    subject = str(subject or '').strip()[:80]
-    topic = str(topic or '').strip()[:300]
-    difficulty = difficulty if difficulty in DIFFICULTY_LABELS else 'medium'
-
-    if not subject or not topic:
-        return {
-            'ok': False,
-            'error': "Fan va mavzu majburiy.",
             'questions': [],
         }
 
@@ -223,17 +268,17 @@ def generate_questions(subject, topic, count, difficulty='medium', question_type
             with urllib.request.urlopen(req, timeout=45) as response:
                 raw = json.loads(response.read().decode('utf-8'))
             if index > 1:
-                logger.info('AI question generation succeeded with fallback key #%s', index)
+                logger.info('AI question generation succeeded with OpenAI fallback key #%s', index)
             break
         except urllib.error.HTTPError as exc:
             status = getattr(exc, 'code', 0)
             last_error = f'HTTP {status}'
-            logger.warning('AI question key #%s failed: %s', index, last_error)
+            logger.warning('AI question OpenAI key #%s failed: %s', index, last_error)
             if status not in (401, 403, 408, 409, 429, 500, 502, 503, 504):
                 break
         except Exception as exc:
             last_error = exc.__class__.__name__
-            logger.warning('AI question key #%s failed: %s', index, last_error)
+            logger.warning('AI question OpenAI key #%s failed: %s', index, last_error)
 
     if raw is None:
         return {
@@ -246,35 +291,178 @@ def generate_questions(subject, topic, count, difficulty='medium', question_type
     try:
         parsed = _json_from_ai_text(_extract_output_text(raw))
     except (TypeError, ValueError):
-        logger.warning('AI question response was not JSON')
+        logger.warning('AI question OpenAI response was not JSON')
         return {
             'ok': False,
             'error': "OpenAI javobi tushunarsiz bo'ldi.",
+            'provider_error': 'invalid_json',
             'questions': [],
         }
 
-    questions = []
-    seen_text = set()
-    for item in parsed.get('questions') or []:
-        question = _normalize_question(item, subject, difficulty, question_type)
-        if not question:
-            continue
-        text_key = question['text'].casefold()
-        if text_key in seen_text:
-            continue
-        seen_text.add(text_key)
-        questions.append(question)
-        if len(questions) >= count:
-            break
-
+    questions = _build_questions_from_parsed(parsed, count, subject, difficulty, question_type)
     if not questions:
         return {
             'ok': False,
-            'error': "AI yaroqli savol qaytarmadi.",
+            'error': "OpenAI yaroqli savol qaytarmadi.",
+            'provider_error': 'empty_questions',
             'questions': [],
         }
     return {
         'ok': True,
+        'provider': 'openai',
         'error': '',
         'questions': questions,
+    }
+
+
+def _generate_via_gemini(subject, topic, count, difficulty, question_type):
+    keys = _gemini_api_keys()
+    if not keys:
+        return {
+            'ok': False,
+            'missing_key': True,
+            'error': "Savol yaratish uchun Gemini API kaliti sozlanmagan.",
+            'questions': [],
+        }
+
+    prompt = _prompt(subject, topic, count, difficulty, question_type)
+    max_output_tokens = getattr(settings, 'AI_QUESTION_GEMINI_MAX_OUTPUT_TOKENS', 8192)
+    try:
+        max_output_tokens = int(max_output_tokens)
+    except (TypeError, ValueError):
+        max_output_tokens = 8192
+    max_output_tokens = max(1024, min(max_output_tokens, 65536))
+
+    payload = {
+        'contents': [{
+            'role': 'user',
+            'parts': [{'text': prompt}],
+        }],
+        'generationConfig': {
+            'responseMimeType': 'application/json',
+            'responseSchema': _gemini_schema(),
+            'maxOutputTokens': max_output_tokens,
+        },
+    }
+    body = json.dumps(payload).encode('utf-8')
+
+    last_error = ''
+    for model in _gemini_models():
+        model_path = urllib.parse.quote(model, safe='-_.~/')
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+        for index, api_key in enumerate(keys, start=1):
+            req = urllib.request.Request(
+                url,
+                data=body,
+                method='POST',
+                headers={
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': api_key,
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=60) as response:
+                    raw = json.loads(response.read().decode('utf-8'))
+                parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
+                text = ''.join(part.get('text') or '' for part in parts)
+                try:
+                    parsed = _json_from_ai_text(text)
+                except (TypeError, ValueError):
+                    last_error = 'invalid_json'
+                    logger.warning('AI question Gemini model=%s response was not JSON', model)
+                    continue
+                questions = _build_questions_from_parsed(parsed, count, subject, difficulty, question_type)
+                if questions:
+                    if index > 1:
+                        logger.info('AI question generation succeeded with Gemini fallback key #%s', index)
+                    logger.info('AI question generation succeeded with Gemini model=%s', model)
+                    return {
+                        'ok': True,
+                        'provider': 'gemini',
+                        'error': '',
+                        'questions': questions,
+                    }
+                last_error = 'empty_questions'
+                logger.warning('AI question Gemini model=%s returned no usable questions', model)
+            except urllib.error.HTTPError as exc:
+                status = getattr(exc, 'code', 0)
+                last_error = f'HTTP {status}'
+                logger.warning('AI question Gemini key #%s model=%s failed: %s', index, model, last_error)
+                if status in (401, 403):
+                    return {
+                        'ok': False,
+                        'error': "Gemini API kaliti ishlamayapti yoki ruxsat yetarli emas.",
+                        'provider_error': last_error,
+                        'questions': [],
+                    }
+                if status not in (400, 408, 409, 429, 500, 502, 503, 504):
+                    break
+            except Exception as exc:
+                last_error = exc.__class__.__name__
+                logger.warning('AI question Gemini key #%s model=%s failed: %s', index, model, last_error)
+
+    return {
+        'ok': False,
+        'error': "Gemini savollarni yarata olmadi.",
+        'provider_error': last_error,
+        'questions': [],
+    }
+
+
+def generate_questions(subject, topic, count, difficulty='medium', question_type=TYPE_MULTIPLE_CHOICE):
+    max_count = getattr(settings, 'AI_QUESTION_MAX_COUNT', 30)
+    try:
+        count = int(count)
+    except (TypeError, ValueError):
+        count = 10
+    count = max(1, min(count, max_count))
+    subject = str(subject or '').strip()[:80]
+    topic = str(topic or '').strip()[:300]
+    difficulty = difficulty if difficulty in DIFFICULTY_LABELS else 'medium'
+
+    if not subject or not topic:
+        return {
+            'ok': False,
+            'error': "Fan va mavzu majburiy.",
+            'questions': [],
+        }
+
+    openai_keys = _api_keys()
+    gemini_keys = _gemini_api_keys()
+
+    if not openai_keys and not gemini_keys:
+        return {
+            'ok': False,
+            'missing_key': True,
+            'error': "Savol yaratish uchun OpenAI yoki Gemini API kaliti sozlanmagan.",
+            'questions': [],
+        }
+
+    openai_result = None
+    if openai_keys:
+        openai_result = _generate_via_openai(subject, topic, count, difficulty, question_type)
+        if openai_result.get('ok'):
+            return openai_result
+        logger.info(
+            'AI question generation falling back to Gemini after OpenAI: %s',
+            openai_result.get('provider_error') or openai_result.get('error') or 'unknown',
+        )
+
+    if gemini_keys:
+        gemini_result = _generate_via_gemini(subject, topic, count, difficulty, question_type)
+        if gemini_result.get('ok'):
+            return gemini_result
+        if openai_result is None:
+            return gemini_result
+        return {
+            'ok': False,
+            'error': openai_result.get('error') or gemini_result.get('error') or "AI savol yarata olmadi.",
+            'provider_error': gemini_result.get('provider_error') or openai_result.get('provider_error') or '',
+            'questions': [],
+        }
+
+    return openai_result or {
+        'ok': False,
+        'error': "AI savol yarata olmadi.",
+        'questions': [],
     }
