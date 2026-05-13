@@ -267,7 +267,7 @@ const NotificationsBell = ({ user }) => {
 
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen(!open)} className="relative text-white/50 hover:text-white transition-colors">
+      <button onClick={() => setOpen(!open)} className="relative flex h-10 w-10 items-center justify-center rounded-xl text-white/50 transition-colors hover:bg-white/5 hover:text-white">
         <Icon name="bell" size={20} />
         {unread > 0 && (
           <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] bg-rose-500 rounded-full text-white text-[10px] flex items-center justify-center font-bold px-1">

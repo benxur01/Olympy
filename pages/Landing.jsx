@@ -20,6 +20,11 @@ const LandingPage = ({ onNavigate }) => {
     { value: 'Telegram', label: 'Bot integratsiyasi', icon: '💬' },
     { value: '24/7', label: 'Online platforma', icon: '⚡' },
   ];
+  const demoStats = [
+    { label: 'Faol olimpiadalar', val: '12', valueClass: 'text-indigo-400' },
+    { label: 'Jami o\'quvchilar', val: '348', valueClass: 'text-purple-400' },
+    { label: 'O\'rtacha ball', val: '78.4', valueClass: 'text-cyan-400' },
+  ];
 
   const steps = [
     { num: '01', title: 'Ro\'yxatdan o\'ting', desc: 'Maktab, o\'quv markaz yoki tashkilot sifatida platformaga qo\'shiling', icon: '🚀' },
@@ -105,13 +110,9 @@ const LandingPage = ({ onNavigate }) => {
                   <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">Demo</span>
                 </div>
                 <div className="p-3 md:p-6 grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-4">
-                  {[
-                    { label: 'Faol olimpiadalar', val: '12', color: 'indigo' },
-                    { label: 'Jami o\'quvchilar', val: '348', color: 'purple' },
-                    { label: 'O\'rtacha ball', val: '78.4', color: 'cyan' },
-                  ].map((s, i) => (
+                  {demoStats.map((s, i) => (
                     <div key={i} className="glass rounded-xl p-2.5 md:p-4 min-w-0">
-                      <div className={`text-lg md:text-2xl font-black text-${s.color}-400 mb-0.5 md:mb-1 truncate`}>{s.val}</div>
+                      <div className={`text-lg md:text-2xl font-black ${s.valueClass} mb-0.5 md:mb-1 truncate`}>{s.val}</div>
                       <div className="text-[10px] md:text-xs text-white/40 leading-tight">{s.label}</div>
                     </div>
                   ))}

@@ -238,7 +238,7 @@ const Topbar = ({ title, subtitle, actions, user, onMenuClick }) => {
   return (
     <header className="glass border-b border-white/5 px-6 py-4 flex items-center justify-between sticky top-0 z-30">
       <div className="flex items-center gap-3">
-        <button className="lg:hidden text-white/50 hover:text-white" onClick={onMenuClick}><Icon name="menu" size={20} /></button>
+        <button className="lg:hidden flex h-10 w-10 items-center justify-center rounded-xl text-white/50 hover:bg-white/5 hover:text-white" onClick={onMenuClick}><Icon name="menu" size={20} /></button>
         <div>
           <h1 className="text-lg font-bold text-white">{title}</h1>
           {subtitle && <p className="text-xs text-white/40">{subtitle}</p>}
@@ -247,7 +247,7 @@ const Topbar = ({ title, subtitle, actions, user, onMenuClick }) => {
       <div className="flex items-center gap-3">
         {actions}
         {user && Bell ? <Bell user={user} /> : (
-          <button className="relative text-white/50 hover:text-white transition-colors">
+          <button className="relative flex h-10 w-10 items-center justify-center rounded-xl text-white/50 transition-colors hover:bg-white/5 hover:text-white">
             <Icon name="bell" size={20} />
             <span className="absolute -top-1 -right-1 w-2 h-2 bg-indigo-500 rounded-full"></span>
           </button>
