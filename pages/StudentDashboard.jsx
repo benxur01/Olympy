@@ -423,20 +423,44 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           {myResults.length === 0 && (
             <div className="px-4 py-10 text-center text-white/40 text-sm">Hali topshirmagansiz. Faol tadbirlardan birini tanlab boshlang.</div>
           )}
-          {myResults.map(r => (
-            <div key={r.id} className="table-row flex flex-wrap md:flex-nowrap items-center gap-3 md:gap-4 px-3 md:px-4 py-3 md:py-4">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0 ${r.rank === 1 ? 'bg-amber-500/20 text-amber-400' : 'glass text-white/40'}`}>#{r.rank || '—'}</div>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold text-white truncate">{r.olympiad}</div>
-                <div className="flex items-center flex-wrap gap-2 mt-0.5"><SubjectBadge subject={r.subject} /><span className="text-xs text-white/30">{r.date}</span></div>
+          {myResults.map(r => {
+            const linkedOlympiad = baseOlympiads.find(o => String(o.id) === String(r.attempt.olympiadId));
+            const score = Math.max(0, Math.min(100, Math.round(r.score || 0)));
+            return (
+              <div key={r.id} className="olympy-row px-3 md:px-4 py-3 md:py-4">
+                <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0 ${r.rank === 1 ? 'bg-amber-500/20 text-amber-400' : 'glass text-white/40'}`}>#{r.rank || '—'}</div>
+                    <div className="min-w-0 pt-0.5">
+                      <div className="text-sm md:text-base font-semibold text-white truncate">{r.olympiad}</div>
+                      <div className="flex items-center flex-wrap gap-2 mt-1">
+                        <SubjectBadge subject={r.subject} />
+                        <span className="text-xs text-white/35 whitespace-nowrap">{r.date || '—'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl bg-white/[0.04] border border-white/5 px-3 py-2 md:bg-transparent md:border-transparent md:px-0 md:py-0 md:w-44 md:flex-shrink-0">
+                    <div className="flex items-baseline justify-between md:justify-end gap-2">
+                      <span className="text-xs text-white/40 md:hidden">Ball</span>
+                      <div className="text-lg font-black text-white">{score}<span className="text-white/30 text-sm">/100</span></div>
+                    </div>
+                    <div className="progress-bar h-1.5 mt-1.5">
+                      <div className="progress-fill" style={{ width: `${score}%` }} />
+                    </div>
+                    <div className="text-xs text-white/40 mt-1.5 md:text-right">{r.correct} to'g'ri · {r.wrong} noto'g'ri</div>
+                  </div>
+
+                  <button
+                    onClick={() => onNavigate('results', { ...r.attempt, olympiad: linkedOlympiad })}
+                    className="btn-ghost text-xs px-3 py-2 rounded-xl min-h-[38px] w-full md:w-24 md:flex-shrink-0"
+                  >
+                    Ko'rish
+                  </button>
+                </div>
               </div>
-              <div className="text-right flex-shrink-0">
-                <div className="text-base md:text-lg font-black text-white">{r.score}<span className="text-white/30 text-sm">/100</span></div>
-                <div className="text-xs text-white/40">{r.correct} to'g'ri · {r.wrong} noto'g'ri</div>
-              </div>
-              <button onClick={() => onNavigate('results', { ...r.attempt, olympiad: baseOlympiads.find(o => String(o.id) === String(r.attempt.olympiadId)) })} className="btn-ghost text-xs px-3 py-2 rounded-xl min-h-[36px] w-full md:w-auto">Ko'rish</button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );

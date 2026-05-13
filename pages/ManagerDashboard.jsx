@@ -641,7 +641,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               const canRemove = isApi && !!s.membershipId && (s.status || 'approved') === 'approved';
               const removing = removingMembershipId === s.membershipId;
               return (
-                <tr key={s.id} className="table-row">
+                <tr key={s.id} className="olympy-row">
                   <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={s.name} src={s.avatarUrl || ''} size={32} /><div><div className="text-sm font-medium text-white">{s.name}</div><div className="text-xs text-white/40">{s.joined}</div></div></div></td>
                   <td className="px-4 py-3 text-sm text-white/60">{s.phone.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
                   <td className="px-4 py-3 text-sm text-white">{s.olympiads}</td>
@@ -725,7 +725,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           </tr></thead>
           <tbody>
             {requests.map(r => (
-              <tr key={r.id} className="table-row">
+              <tr key={r.id} className="olympy-row">
                 <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={r.name} src={r.avatarUrl || ''} size={32} /><span className="text-sm font-medium text-white">{r.name}</span></div></td>
                 <td className="px-4 py-3 text-sm text-white/60">{r.phone.replace ? r.phone.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2') : r.phone}</td>
                 <td className="px-4 py-3 text-sm text-white/60">{r.date}</td>

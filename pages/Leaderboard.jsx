@@ -192,7 +192,7 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
           <div className="col-span-1"></div>
         </div>
         {rest.map((p, i) => (
-          <div key={p.key || p.rank} className="table-row grid grid-cols-12 gap-2 px-4 py-3.5 items-center">
+          <div key={p.key || p.rank} className="olympy-row grid grid-cols-12 gap-2 px-4 py-3.5 items-center">
             <div className="col-span-1">
               <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
                 {p.rank}
