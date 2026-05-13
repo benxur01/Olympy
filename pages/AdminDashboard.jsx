@@ -401,10 +401,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const AdminTopbar = () => (
     <header className="sticky top-0 z-30 flex h-[54px] items-center justify-between border-b border-slate-200 bg-white px-4 lg:px-5">
       <div className="flex items-center gap-3">
-        <button className="rounded-md p-2 text-slate-400 hover:bg-slate-50 lg:hidden" onClick={() => setMobileMenu(true)}>
+        <button className="flex h-10 w-10 items-center justify-center rounded-md text-slate-400 hover:bg-slate-50 lg:hidden" onClick={() => setMobileMenu(true)}>
           <Icon name="menu" size={18} />
         </button>
-        <button className="hidden rounded-md p-2 text-slate-400 hover:bg-slate-50 lg:inline-flex">
+        <button className="hidden h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:bg-slate-50 lg:inline-flex">
           <Icon name="menu" size={17} />
         </button>
         <div className="relative hidden w-[310px] max-w-[35vw] md:block">
@@ -422,7 +422,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             Rolni almashtirish
           </button>
         )}
-        <button onClick={() => setPage('requests')} className="relative rounded-md p-2 text-slate-500 hover:bg-slate-50">
+        <button onClick={() => setPage('requests')} className="relative flex h-10 w-10 items-center justify-center rounded-md text-slate-500 hover:bg-slate-50">
           <Icon name="bell" size={17} />
           {pendingCenterReqs.length > 0 && (
             <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white">
@@ -430,7 +430,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             </span>
           )}
         </button>
-        <button className="rounded-md p-2 text-slate-500 hover:bg-slate-50">
+        <button className="flex h-10 w-10 items-center justify-center rounded-md text-slate-500 hover:bg-slate-50">
           <Icon name="info" size={17} />
         </button>
         <div className="flex items-center gap-2 pl-2">
@@ -923,7 +923,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <AdminSidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <AdminTopbar />
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 overflow-x-hidden overflow-y-auto">
             {(pageRenderers[page] || renderHome)()}
           </main>
         </div>

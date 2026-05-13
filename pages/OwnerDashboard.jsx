@@ -773,7 +773,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     >
       <div className="flex items-center gap-3">
         <button
-          className="rounded-xl p-2 text-white/60 transition-colors hover:bg-white/5 hover:text-white lg:hidden"
+          className="flex h-10 w-10 items-center justify-center rounded-xl text-white/60 transition-colors hover:bg-white/5 hover:text-white lg:hidden"
           onClick={() => setMobileMenu(true)}
         >
           <Icon name="menu" size={20} />
@@ -813,7 +813,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         )}
         <button
           onClick={() => setPage('requests')}
-          className="relative rounded-xl border border-white/10 bg-white/5 p-2 text-white/60 transition hover:bg-white/10 hover:text-white"
+          className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
         >
           <Icon name="bell" size={18} />
           {pendingCount > 0 && (
@@ -1318,7 +1318,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar />
-          <main className="flex-1 overflow-y-auto">
+          <main className="flex-1 overflow-x-hidden overflow-y-auto">
             {(pagesMap[page] || renderHome)()}
           </main>
         </div>
