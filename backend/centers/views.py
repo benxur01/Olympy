@@ -258,6 +258,18 @@ def join_center(request, center_id):
     # is added in _approve() once the membership is approved. user.roles
     # remains the source of truth ONLY for approved roles.
     if created and role == CenterMembership.ROLE_STUDENT:
+        # Roster cache'dan avto-tasdiq tekshir — manager oldin PDF yuborgan
+        # bo'lsa, o'quvchini darhol tasdiqlaymiz.
+        try:
+            from .ai_roster import try_auto_approve_from_roster
+            if try_auto_approve_from_roster(center, membership):
+                membership.refresh_from_db()
+                return Response(
+                    CenterMembershipSerializer(membership).data,
+                    status=http_status.HTTP_201_CREATED if created else http_status.HTTP_200_OK,
+                )
+        except Exception:
+            pass
         # Lazy import: avoid circular dependency at module load time.
         from notifications.services import send_student_join_request_notification
         managers = CenterMembership.objects.filter(

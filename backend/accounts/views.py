@@ -1049,6 +1049,17 @@ def _handle_ai_roster_message(message, telegram_user_id, chat_id, bot='manager')
             _send_telegram_message(chat_id, doc_result.get('error') or "Faylni o'qib bo'lmadi.", bot=bot)
             return True
         document_text = doc_result.get('text') or ''
+        vision_entries = doc_result.get('entries') if doc_result.get('via_vision') else None
+        if vision_entries:
+            from centers.ai_roster import approve_roster_names, save_center_roster, _manageable_centers
+            from centers.manager_bot import format_approval_summary
+            centers = _manageable_centers(actor)
+            if len(centers) == 1:
+                save_center_roster(centers[0].id, vision_entries)
+            summary = approve_roster_names(actor, vision_entries, source='telegram_manager_bot')
+            reply = format_approval_summary(summary)
+            _send_telegram_message(chat_id, reply, bot=bot)
+            return True
 
     reply = handle_manager_message(
         actor,

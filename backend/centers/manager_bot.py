@@ -106,9 +106,19 @@ def extract_document_text(document_bytes, mime_type='', filename=''):
             logger.exception('manager bot PDF extraction failed')
             return {'ok': False, 'error': "PDF matnini o'qib bo'lmadi.", 'text': ''}
         if not text:
+            from .ai_roster import _gemini_extract_names_from_pdf_bytes
+            gemini_result = _gemini_extract_names_from_pdf_bytes(document_bytes)
+            if gemini_result.get('ok') and gemini_result.get('entries'):
+                return {
+                    'ok': True,
+                    'error': '',
+                    'text': '',
+                    'entries': gemini_result['entries'],
+                    'via_vision': True,
+                }
             return {
                 'ok': False,
-                'error': "PDFdan matn topilmadi. Skan rasm bo'lsa, PDF o'rniga rasm yuboring.",
+                'error': "PDFdan matn topilmadi. Gemini ham o'qiy olmadi — boshqa formatda yuboring.",
                 'text': '',
             }
         return {'ok': True, 'error': '', 'text': text[:MAX_DOCUMENT_TEXT_CHARS]}
@@ -726,6 +736,11 @@ def handle_manager_message(actor, text='', image_bytes=None, mime_type='image/jp
         )
         entries = extraction.get('entries') or []
         if extraction.get('ok') and entries:
+            # Roster cache'ga saqla — keyingi ariza kelsa avto-tasdiq uchun
+            centers = _manageable_centers(actor)
+            if len(centers) == 1:
+                from .ai_roster import save_center_roster
+                save_center_roster(centers[0].id, entries)
             summary = approve_roster_names(actor, entries, source=source)
             reply = format_approval_summary(summary)
             _remember_exchange(actor, combined_text or '[roster fayl]', reply)
