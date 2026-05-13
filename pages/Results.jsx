@@ -76,7 +76,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const fmtTime = (s) => `${Math.floor((s||0)/60)}m ${(s||0)%60}s`;
 
   const content = (
-    <div className="min-h-screen flex items-center justify-center px-3 md:px-4 py-6 md:py-10" style={embedded ? {} : { background: '#060818' }}>
+    <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-3 md:px-4 py-4 md:py-10 mobile-content-pad`} style={embedded ? {} : { background: '#060818' }}>
       <div className="max-w-2xl w-full space-y-4 md:space-y-6 animate-in">
         {/* Hero result card */}
         <div className={`glass-strong rounded-3xl p-5 md:p-8 text-center bg-gradient-to-br ${grade.bg} border border-white/10 relative overflow-hidden`}>
@@ -85,7 +85,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
             <div className="text-4xl md:text-5xl mb-3 md:mb-4">{pct >= 90 ? '🏆' : pct >= 75 ? '🎉' : pct >= 60 ? '👍' : '💪'}</div>
             <div className="text-5xl md:text-7xl font-black text-white mb-2">{pct}<span className="text-white/30 text-2xl md:text-3xl">/100</span></div>
             <div className={`text-xl md:text-2xl font-bold ${grade.color} mb-2`}>{grade.label}</div>
-            <div className="text-white/50 text-xs md:text-sm">{r.olympiad?.title || 'Olimpiada'}</div>
+            <div className="text-white/50 text-xs md:text-sm break-words px-2">{r.olympiad?.title || 'Olimpiada'}</div>
             <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
               {r.olympiad?.subject && <SubjectBadge subject={r.olympiad.subject} />}
               {r.olympiad?.testLevel && <span className="chip bg-violet-500/15 text-violet-300 border border-violet-500/20">{r.olympiad.testLevel}</span>}
@@ -115,18 +115,18 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
           <h3 className="font-bold text-white mb-3 md:mb-4 text-sm md:text-base">Natija tahlili</h3>
           <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
             {/* Donut row — on mobile horizontally centered & evenly spaced */}
-            <div className="flex items-center justify-around md:justify-start md:gap-4">
-              <DonutChart value={r.correct} max={r.total} color="#22c55e" size={72} label="To'g'ri" />
-              <DonutChart value={r.wrong} max={r.total} color="#ef4444" size={72} label="Noto'g'ri" />
-              <DonutChart value={pct} color="#6366f1" size={72} label="Umumiy %" />
+            <div className="flex items-center justify-around md:justify-start md:gap-4 flex-wrap">
+              <DonutChart value={r.correct} max={r.total} color="#22c55e" size={64} label="To'g'ri" />
+              <DonutChart value={r.wrong} max={r.total} color="#ef4444" size={64} label="Noto'g'ri" />
+              <DonutChart value={pct} color="#6366f1" size={64} label="Umumiy %" />
             </div>
-            <div className="flex-1 space-y-3 w-full">
+            <div className="flex-1 space-y-3 w-full min-w-0">
               <div>
-                <div className="flex justify-between text-xs text-white/50 mb-1"><span>To'g'ri javoblar</span><span className="text-emerald-400">{r.correct}/{r.total}</span></div>
+                <div className="flex justify-between text-xs text-white/50 mb-1 gap-2"><span className="truncate">To'g'ri javoblar</span><span className="text-emerald-400 flex-shrink-0">{r.correct}/{r.total}</span></div>
                 <div className="progress-bar h-2"><div className="progress-fill" style={{ width: r.total ? `${(r.correct/r.total)*100}%` : '0%', background: '#22c55e' }} /></div>
               </div>
               <div>
-                <div className="flex justify-between text-xs text-white/50 mb-1"><span>Noto'g'ri javoblar</span><span className="text-rose-400">{r.wrong}/{r.total}</span></div>
+                <div className="flex justify-between text-xs text-white/50 mb-1 gap-2"><span className="truncate">Noto'g'ri javoblar</span><span className="text-rose-400 flex-shrink-0">{r.wrong}/{r.total}</span></div>
                 <div className="progress-bar h-2"><div className="progress-fill" style={{ width: r.total ? `${(r.wrong/r.total)*100}%` : '0%', background: '#ef4444' }} /></div>
               </div>
             </div>
@@ -149,7 +149,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
             {subjectBreakdown.map((s, i) => (
               <div key={`${s.name}-${i}`}>
                 <div className="flex justify-between text-xs mb-1 gap-2">
-                  <span className="text-white/60 truncate">{s.name} <span className="text-white/30">· {s.attempts} ta</span></span>
+                  <span className="text-white/60 truncate min-w-0"><span className="truncate">{s.name}</span> <span className="text-white/30 whitespace-nowrap">· {s.attempts} ta</span></span>
                   <span className={`font-medium flex-shrink-0 ${s.avg>=70?'text-emerald-400':s.avg>=50?'text-amber-400':'text-rose-400'}`}>{s.avg}%</span>
                 </div>
                 <div className="progress-bar h-2">
@@ -161,14 +161,14 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
         </div>
 
         {/* Actions — stack on mobile, row on desktop */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 md:gap-3">
-          <button onClick={() => onNavigate('student')} className="btn-primary py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm"><Icon name="home" size={16} /> Profilga o'tish</button>
-          <button onClick={() => onNavigate('leaderboard')} className="btn-ghost py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm"><Icon name="trophy" size={16} /> Reytingni ko'rish</button>
-          <button onClick={() => handleShare()} className="btn-ghost py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm"><Icon name="send" size={16} /> Ulashish</button>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 md:gap-3">
+          <button onClick={() => onNavigate('student')} className="btn-primary py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm min-h-[48px]"><Icon name="home" size={16} /> Profilga o'tish</button>
+          <button onClick={() => onNavigate('leaderboard')} className="btn-ghost py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm min-h-[48px]"><Icon name="trophy" size={16} /> Reytingni ko'rish</button>
+          <button onClick={() => handleShare()} className="btn-ghost py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm min-h-[48px]"><Icon name="send" size={16} /> Ulashish</button>
         </div>
 
         {shareToast && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 glass-strong rounded-2xl px-5 py-3 border border-indigo-500/30 text-sm font-medium text-white">
+          <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 glass-strong rounded-2xl px-5 py-3 border border-indigo-500/30 text-sm font-medium text-white max-w-[calc(100%-1.5rem)] text-center">
             {shareToast}
           </div>
         )}
