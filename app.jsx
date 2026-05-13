@@ -2,30 +2,54 @@
 
 const { useState, useEffect } = React;
 
-// /admin'dan tashqari boshqa rollarga ham deep-link path qo'shildi: shunda
-// foydalanuvchi to'g'ridan-to'g'ri /student, /owner va h.k. URL'ga kirsa,
-// loginsiz holatda login sahifasiga, login bilan esa to'g'ridan-to'g'ri
-// kerakli dashboardga tushadi.
-const PAGE_PATHS = {
-  '/admin': 'admin',
-  '/owner': 'owner',
-  '/manager': 'manager',
-  '/teacher': 'teacher',
-  '/student': 'student',
-  '/leaderboard': 'leaderboard',
-  '/profile': 'profile',
+// Page <-> URL mapping. Brauzer manzil satrida sahifa o'zgarishini ko'rsatish
+// va orqaga/oldinga tugmalari ishlashi uchun ishlatiladi.
+//
+// Eslatma: `test` va `results` sahifalari URL o'zgartirmaydi — ular runtime
+// state (testResult, activeOlympiad) bilan boshqariladi va to'g'ridan link
+// ochilsa qayta tiklab bo'lmaydi.
+const PAGE_URLS = {
+  landing: '/',
+  login: '/login',
+  register: '/register',
+  student: '/dashboard',
+  teacher: '/dashboard/teacher',
+  manager: '/manager',
+  owner: '/owner',
+  admin: '/admin',
+  questions: '/dashboard/questions',
+  olympiads: '/dashboard/olympiads',
+  results: '/dashboard/results',
+  leaderboard: '/leaderboard',
+  profile: '/profile',
+  pending: '/pending',
+  'pending-home': '/pending',
 };
+
+// URL → page (teskari mapping). Bir nechta page bitta URL ga ko'rsatsa,
+// birinchi uchragani ishlaydi (Object.fromEntries oxirgisini saqlaydi,
+// shuning uchun pending-home oldinroq turibdi va u pending'ni override
+// qilmasligi kerak — `pending-home` faqat fallback sifatida ishlatiladi).
+const URL_PAGES = (() => {
+  const map = {};
+  for (const [page, url] of Object.entries(PAGE_URLS)) {
+    if (!(url in map)) map[url] = page;
+  }
+  return map;
+})();
 
 const pageFromPath = () => {
   try {
-    const path = window.location.pathname.replace(/\/+$/, '');
-    if (PAGE_PATHS[path]) return PAGE_PATHS[path];
+    const raw = window.location.pathname || '/';
+    const path = raw === '/' ? '/' : raw.replace(/\/+$/, '');
+    if (URL_PAGES[path]) return URL_PAGES[path];
+    if (path === '/' || path === '') return 'landing';
   } catch {}
   return null;
 };
 
 const App = () => {
-  const [page, setPage] = React.useState('landing');
+  const [page, setPage] = React.useState(() => pageFromPath() || 'landing');
   const [testResult, setTestResult] = React.useState(null);
   const [activeOlympiad, setActiveOlympiad] = React.useState(null);
   const [switcherOpen, setSwitcherOpen] = React.useState(false);
@@ -115,6 +139,29 @@ const App = () => {
     if (dest === 'results' && data) { setTestResult(data); setPage('results'); return; }
     setPage(dest);
   };
+
+  // `page` o'zgarganda URL ni mos sinxronlash. PAGE_URLS da bor sahifalargina
+  // pushState chaqiradi; `test` kabi runtime-only sahifalar URL o'zgartirmaydi.
+  // Boshlang'ich render paytida URL allaqachon to'g'ri bo'lishi mumkin (deep
+  // link) — bu holda pushState chaqirilmaydi.
+  useEffect(() => {
+    try {
+      const url = PAGE_URLS[page];
+      if (!url) return;
+      if (window.location.pathname === url) return;
+      window.history.pushState({ page }, '', url);
+    } catch {}
+  }, [page]);
+
+  // Brauzer orqaga/oldinga tugmalari uchun popstate listener.
+  useEffect(() => {
+    const handler = (e) => {
+      const pg = e.state?.page || pageFromPath();
+      if (pg) setPage(pg);
+    };
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
+  }, []);
 
   const handleTestFinish = (result) => {
     setTestResult(result);
