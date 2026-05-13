@@ -62,6 +62,39 @@ def _extract_pdf_text(pdf_bytes):
         return '', 0
 
 
+def _split_pdf_into_page_chunks(pdf_bytes, pages_per_chunk=10):
+    if not pdf_bytes:
+        return []
+    try:
+        from pypdf import PdfReader, PdfWriter
+    except ImportError:
+        logger.warning('pypdf is not installed; cannot split scanned PDF into page chunks')
+        return []
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        total = len(reader.pages)
+        if total <= 0:
+            return []
+        pages_per_chunk = max(1, int(pages_per_chunk or 10))
+        chunks = []
+        for start in range(0, total, pages_per_chunk):
+            writer = PdfWriter()
+            for page in reader.pages[start:start + pages_per_chunk]:
+                writer.add_page(page)
+            buf = io.BytesIO()
+            writer.write(buf)
+            chunks.append({
+                'bytes': buf.getvalue(),
+                'start_page': start + 1,
+                'end_page': min(start + pages_per_chunk, total),
+                'total_pages': total,
+            })
+        return chunks
+    except Exception:
+        logger.exception('failed to split PDF into page chunks')
+        return []
+
+
 def _schema_openai():
     question = {
         'type': 'object',
@@ -752,6 +785,77 @@ def _gemini_extract_text_chunks(pdf_text, subject, difficulty, question_type):
     }
 
 
+def _gemini_vision_chunks(pdf_bytes, pdf_text, subject, difficulty, question_type):
+    pages_per_chunk = _int_setting('AI_QUESTION_PDF_VISION_PAGES_PER_CHUNK', 10, 1, 50)
+    min_pages_for_split = _int_setting('AI_QUESTION_PDF_VISION_MIN_PAGES', 15, 1, 1000)
+    chunks = _split_pdf_into_page_chunks(pdf_bytes, pages_per_chunk=pages_per_chunk)
+    if not chunks:
+        return None
+    total_pages = chunks[0].get('total_pages') or 0
+    if total_pages and total_pages < min_pages_for_split:
+        return None
+    if len(chunks) <= 1:
+        return None
+
+    collected = []
+    failed_chunks = []
+    chunk_count = len(chunks)
+    for chunk_index, chunk in enumerate(chunks, start=1):
+        chunk_note = (
+            f"Bu PDFning {chunk_index}/{chunk_count}-bo'lagi "
+            f"(sahifa {chunk.get('start_page')}–{chunk.get('end_page')}/{chunk.get('total_pages')}). "
+            "Faqat shu bo'lakdagi sahifalarda ko'ringan savollarni ajrat. "
+            "Oldingi yoki keyingi bo'lakdagi savollarni o'ylab topma. "
+            "PDFdagi savol raqamlari davom etsa, ularni original_number sifatida saqla."
+        )
+        payload = _gemini_payload(
+            chunk.get('bytes'),
+            '',
+            subject,
+            difficulty,
+            question_type,
+            True,
+            chunk_note=chunk_note,
+        )
+        result = _gemini_request(
+            payload,
+            subject,
+            difficulty,
+            f'vision_chunk_{chunk_index}_of_{chunk_count}',
+            used_pdf_vision=True,
+        )
+        if result.get('ok'):
+            collected.append(result.get('questions') or [])
+            continue
+        failed_chunks.append(chunk_index)
+        if result.get('provider_error') in ('HTTP 401', 'HTTP 403'):
+            break
+
+    merged = _merge_questions(collected)
+    if merged:
+        warning = ''
+        if failed_chunks:
+            warning = (
+                f"PDFning {len(failed_chunks)} ta sahifa bo'lagi to'liq ajratilmadi. "
+                "Natijani saqlashdan oldin PDF bilan solishtirib tekshiring."
+            )
+        return {
+            'ok': True,
+            'provider': 'gemini',
+            'questions': merged,
+            'used_pdf_vision': True,
+            'complete': not failed_chunks,
+            'warning': warning,
+            'chunks': chunk_count,
+        }
+    return {
+        'ok': False,
+        'error': "Gemini PDF sahifa bo'laklaridan savollar topa olmadi.",
+        'provider_error': 'empty_questions',
+        'questions': [],
+    }
+
+
 def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
     keys = _gemini_keys()
     if not keys:
@@ -763,6 +867,15 @@ def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
         if chunked_result.get('complete', True):
             return chunked_result
         best_result = chunked_result
+
+    # Skan/rasm PDF (yoki matn umuman ajratilmagan) — sahifalar bo'yicha vision rejimi
+    if not pdf_text and pdf_bytes:
+        vision_chunked = _gemini_vision_chunks(pdf_bytes, pdf_text, subject, difficulty, question_type)
+        if vision_chunked and vision_chunked.get('ok'):
+            if vision_chunked.get('complete', True):
+                return vision_chunked
+            if best_result is None or len(vision_chunked.get('questions') or []) > len(best_result.get('questions') or []):
+                best_result = vision_chunked
 
     modes = [False, True] if pdf_text else [True]
     failures = []
