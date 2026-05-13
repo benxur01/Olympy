@@ -18,8 +18,14 @@ class OlympyJWTAuthentication(JWTAuthentication):
         raw_token = request.COOKIES.get(getattr(settings, 'JWT_ACCESS_COOKIE_NAME', 'olympy_access'))
         if raw_token is None:
             return None
-        validated_token = self.get_validated_token(raw_token)
-        return self.get_user(validated_token), validated_token
+        try:
+            validated_token = self.get_validated_token(raw_token)
+            return self.get_user(validated_token), validated_token
+        except Exception:
+            # Cookie eskirgan yoki yaroqsiz — AllowAny endpoint'larni (login,
+            # register) bloklamaslik uchun None qaytaramiz. IsAuthenticated
+            # endpoint'lar anonim so'rovni standart DRF 401 bilan rad etadi.
+            return None
 
     def get_user(self, validated_token):
         user = super().get_user(validated_token)

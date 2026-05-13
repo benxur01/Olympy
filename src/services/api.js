@@ -316,11 +316,11 @@ export const OlympyApi = {
   register: (payload) => request('/api/auth/register/', { method: 'POST', body: payload, retryOnAuth: false }),
   registerOrganization: (payload) => request('/api/auth/register-organization/', { method: 'POST', body: payload, retryOnAuth: false }),
   refreshToken: (refresh) => request('/api/auth/token/refresh/', { method: 'POST', body: refresh ? { refresh } : undefined, retryOnAuth: false }),
-  startTelegramVerification: (payload) => request('/api/auth/phone/start-telegram-verification/', { method: 'POST', body: payload }),
-  startPasswordReset: (payload) => request('/api/auth/password-reset/start/', { method: 'POST', body: payload }),
-  confirmPasswordReset: (payload) => request('/api/auth/password-reset/confirm/', { method: 'POST', body: payload }),
+  startTelegramVerification: (payload) => request('/api/auth/phone/start-telegram-verification/', { method: 'POST', body: payload, retryOnAuth: false }),
+  startPasswordReset: (payload) => request('/api/auth/password-reset/start/', { method: 'POST', body: payload, retryOnAuth: false }),
+  confirmPasswordReset: (payload) => request('/api/auth/password-reset/confirm/', { method: 'POST', body: payload, retryOnAuth: false }),
   startTelegramLink: (token) => request('/api/auth/telegram/link/start/', { method: 'POST', token }),
-  verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload }),
+  verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload, retryOnAuth: false }),
   // Me
   getMe: (token) => request('/api/me/', { token }),
   uploadMyAvatar: (imageFile, token) => {
