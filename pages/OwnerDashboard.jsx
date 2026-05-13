@@ -771,21 +771,21 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       className="sticky top-0 z-30 flex h-[64px] items-center justify-between border-b border-white/5 px-4 lg:px-6"
       style={{ background: 'rgba(13,15,35,0.97)' }}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         <button
-          className="flex h-10 w-10 items-center justify-center rounded-xl text-white/60 transition-colors hover:bg-white/5 hover:text-white lg:hidden"
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-white/60 transition-colors hover:bg-white/5 hover:text-white lg:hidden"
           onClick={() => setMobileMenu(true)}
         >
           <Icon name="menu" size={20} />
         </button>
-        <div>
-          <div className="text-[15px] font-black text-white">{navItems.find(n => n.key === page)?.label || 'Overview'}</div>
-          <div className="text-[11px] font-semibold text-white/40">
+        <div className="min-w-0">
+          <div className="truncate text-[15px] font-black text-white">{navItems.find(n => n.key === page)?.label || 'Overview'}</div>
+          <div className="truncate text-[11px] font-semibold text-white/40">
             {center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · {ownerFormatDate(center.createdAt)}
           </div>
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex flex-shrink-0 items-center gap-2">
         {ownerCenters.length > 1 && (
           <select
             value={ownerCenterId || ''}
@@ -813,7 +813,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         )}
         <button
           onClick={() => setPage('requests')}
-          className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
+          className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
         >
           <Icon name="bell" size={18} />
           {pendingCount > 0 && (
