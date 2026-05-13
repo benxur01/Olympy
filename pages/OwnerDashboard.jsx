@@ -1095,7 +1095,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 const canRemove = isApi && !!row.membershipId && (row.status || 'approved') === 'approved';
                 const removing = removingMembershipId === row.membershipId;
                 return (
-                  <tr key={row.id} className="table-row text-sm">
+                  <tr key={row.id} className="olympy-row text-sm">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <Avatar name={row.name} src={row.avatarUrl || ''} size={36} gradient={row.role === 'manager' ? 'from-indigo-500 to-purple-600' : 'from-cyan-500 to-sky-600'} />
@@ -1162,7 +1162,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </thead>
             <tbody>
               {centerOlympiads.map(o => (
-                <tr key={o.id} className="table-row text-sm">
+                <tr key={o.id} className="olympy-row text-sm">
                   <td className="px-5 py-4 font-black text-white">{o.title}</td>
                   <td className="px-5 py-4">
                     <span className={`chip ${o.eventType === 'olympiad' ? 'badge-active' : 'badge-pending'}`}>
