@@ -947,7 +947,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               </button>
             </div>
           } />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto">
           {(pagesMap[page] || renderHome)()}
         </main>
         <MobileBottomNav items={navItems} activePage={page} setPage={setPage} />

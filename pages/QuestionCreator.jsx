@@ -649,7 +649,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               <Icon name="users" size={13} /> Rolni almashtirish
             </button>
           )} />
-        <main className="flex-1 overflow-y-auto">{content}</main>
+        <main className="flex-1 overflow-x-hidden overflow-y-auto">{content}</main>
       </div>
     </div>
   );
