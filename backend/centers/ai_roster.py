@@ -381,6 +381,159 @@ def _openai_extract_names_from_text(text):
     }
 
 
+def _gemini_extract_names_from_text(text):
+    api_keys = list(getattr(settings, 'AI_ROSTER_GEMINI_API_KEYS', []) or [])
+    single_key = getattr(settings, 'AI_ROSTER_GEMINI_API_KEY', '')
+    if single_key:
+        api_keys.append(single_key)
+    api_keys = list(dict.fromkeys(key for key in api_keys if key))
+    if not api_keys:
+        return {'ok': False, 'error': "Gemini API kaliti sozlanmagan.", 'entries': [], 'names': [], 'provider': 'gemini', 'missing_key': True}
+    prompt = (
+        "Quyidagi matndan faqat o'quvchilar ro'yxatini ajrat. "
+        "Har bir o'quvchi uchun F.I.Sh., ko'rinsa telefon raqam va kod/id ni qaytar. "
+        "Sarlavha, izoh, fan, sinf, ball va boshqa ustunlarni chiqarmagin. "
+        "Agar o'quvchi topilmasa bo'sh students array qaytar.\n\n"
+        f"Matn:\n{str(text or '')[:24000]}"
+    )
+    schema = {
+        'type': 'OBJECT',
+        'properties': {
+            'students': {
+                'type': 'ARRAY',
+                'items': {
+                    'type': 'OBJECT',
+                    'properties': {
+                        'full_name': {'type': 'STRING'},
+                        'phone': {'type': 'STRING'},
+                        'approval_code': {'type': 'STRING'},
+                    },
+                    'required': ['full_name', 'phone', 'approval_code'],
+                },
+            },
+        },
+        'required': ['students'],
+    }
+    payload = {
+        'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
+        'generationConfig': {'responseMimeType': 'application/json', 'responseSchema': schema},
+    }
+    body = json.dumps(payload).encode('utf-8')
+    model = getattr(settings, 'AI_ROSTER_GEMINI_MODEL', 'gemini-2.5-flash')
+    raw = None
+    last_error = ''
+    for index, api_key in enumerate(api_keys, start=1):
+        model_path = urllib.parse.quote(model, safe='-_.~/')
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent?key={urllib.parse.quote(api_key)}'
+        req = urllib.request.Request(url, data=body, method='POST', headers={'Content-Type': 'application/json'})
+        try:
+            with urllib.request.urlopen(req, timeout=35) as response:
+                raw = json.loads(response.read().decode('utf-8'))
+            if index > 1:
+                logger.info('Gemini text roster succeeded with fallback key #%s', index)
+            break
+        except urllib.error.HTTPError as exc:
+            status = getattr(exc, 'code', 0)
+            last_error = f'HTTP {status}'
+            logger.warning('Gemini text roster key #%s failed: %s', index, last_error)
+            if status not in (400, 401, 403, 408, 409, 429, 500, 502, 503, 504):
+                break
+        except Exception as exc:
+            last_error = exc.__class__.__name__
+            logger.warning('Gemini text roster key #%s failed: %s', index, last_error)
+    if raw is None:
+        return {'ok': False, 'error': "Gemini matnni o'qiy olmadi.", 'entries': [], 'names': [], 'provider': 'gemini'}
+    parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
+    text_out = ''.join(part.get('text') or '' for part in parts)
+    try:
+        parsed = _json_from_ai_text(text_out)
+    except (TypeError, ValueError):
+        return {'ok': False, 'error': "Gemini javobi tushunarsiz bo'ldi.", 'entries': [], 'names': [], 'provider': 'gemini'}
+    entries = _dedupe_entries([
+        {'full_name': item.get('full_name', '').strip(), 'phone': normalize_phone(item.get('phone', '')), 'approval_code': str(item.get('approval_code') or '').strip().upper()}
+        for item in (parsed.get('students') or [])
+        if isinstance(item, dict) and _looks_like_name(item.get('full_name', ''))
+    ])
+    return {'ok': True, 'error': '', 'entries': entries, 'names': [e['full_name'] for e in entries], 'provider': 'gemini'}
+
+
+def _gemini_extract_names_from_pdf_bytes(pdf_bytes):
+    """Skan PDF uchun — Gemini vision bilan PDF baytlardan ism olish."""
+    api_keys = list(getattr(settings, 'AI_ROSTER_GEMINI_API_KEYS', []) or [])
+    single_key = getattr(settings, 'AI_ROSTER_GEMINI_API_KEY', '')
+    if single_key:
+        api_keys.append(single_key)
+    api_keys = list(dict.fromkeys(key for key in api_keys if key))
+    if not api_keys:
+        return {'ok': False, 'error': "Gemini API kaliti sozlanmagan.", 'entries': [], 'names': [], 'provider': 'gemini', 'missing_key': True}
+    prompt = (
+        "Bu PDF fayldan faqat o'quvchilar ro'yxatini ajrat. "
+        "Har bir o'quvchi uchun F.I.Sh., ko'rinsa telefon raqam va kod/id ni qaytar. "
+        "Sarlavha, izoh, fan, sinf, ball va boshqa ustunlarni chiqarmagin. "
+        "Agar o'quvchi topilmasa bo'sh students array qaytar."
+    )
+    schema = {
+        'type': 'OBJECT',
+        'properties': {
+            'students': {
+                'type': 'ARRAY',
+                'items': {
+                    'type': 'OBJECT',
+                    'properties': {
+                        'full_name': {'type': 'STRING'},
+                        'phone': {'type': 'STRING'},
+                        'approval_code': {'type': 'STRING'},
+                    },
+                    'required': ['full_name', 'phone', 'approval_code'],
+                },
+            },
+        },
+        'required': ['students'],
+    }
+    payload = {
+        'contents': [{'role': 'user', 'parts': [
+            {'text': prompt},
+            {'inlineData': {'mimeType': 'application/pdf', 'data': base64.b64encode(pdf_bytes).decode('ascii')}},
+        ]}],
+        'generationConfig': {'responseMimeType': 'application/json', 'responseSchema': schema},
+    }
+    body = json.dumps(payload).encode('utf-8')
+    model = getattr(settings, 'AI_ROSTER_GEMINI_MODEL', 'gemini-2.5-flash')
+    raw = None
+    last_error = ''
+    for index, api_key in enumerate(api_keys, start=1):
+        model_path = urllib.parse.quote(model, safe='-_.~/')
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent?key={urllib.parse.quote(api_key)}'
+        req = urllib.request.Request(url, data=body, method='POST', headers={'Content-Type': 'application/json'})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as response:
+                raw = json.loads(response.read().decode('utf-8'))
+            break
+        except urllib.error.HTTPError as exc:
+            status = getattr(exc, 'code', 0)
+            last_error = f'HTTP {status}'
+            logger.warning('Gemini PDF vision roster key #%s failed: %s', index, last_error)
+            if status not in (400, 401, 403, 408, 409, 429, 500, 502, 503, 504):
+                break
+        except Exception as exc:
+            last_error = exc.__class__.__name__
+            logger.warning('Gemini PDF vision roster key #%s failed: %s', index, last_error)
+    if raw is None:
+        return {'ok': False, 'error': "Gemini PDFni o'qiy olmadi.", 'entries': [], 'names': [], 'provider': 'gemini'}
+    parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
+    text_out = ''.join(part.get('text') or '' for part in parts)
+    try:
+        parsed = _json_from_ai_text(text_out)
+    except (TypeError, ValueError):
+        return {'ok': False, 'error': "Gemini PDF javobi tushunarsiz bo'ldi.", 'entries': [], 'names': [], 'provider': 'gemini'}
+    entries = _dedupe_entries([
+        {'full_name': item.get('full_name', '').strip(), 'phone': normalize_phone(item.get('phone', '')), 'approval_code': str(item.get('approval_code') or '').strip().upper()}
+        for item in (parsed.get('students') or [])
+        if isinstance(item, dict) and _looks_like_name(item.get('full_name', ''))
+    ])
+    return {'ok': True, 'error': '', 'entries': entries, 'names': [e['full_name'] for e in entries], 'provider': 'gemini'}
+
+
 def _gemini_extract_names_from_image(image_bytes, mime_type, caption=''):
     api_keys = list(getattr(settings, 'AI_ROSTER_GEMINI_API_KEYS', []) or [])
     single_key = getattr(settings, 'AI_ROSTER_GEMINI_API_KEY', '')
@@ -536,8 +689,13 @@ def extract_names_from_payload(text='', image_bytes=None, mime_type='image/jpeg'
         ai_result = _openai_extract_names_from_text(text)
         if ai_result.get('ok'):
             entries = _dedupe_entries([*entries, *(ai_result.get('entries') or [])])
-        elif not ai_result.get('missing_key'):
-            return ai_result
+        else:
+            gemini_result = _gemini_extract_names_from_text(text)
+            if gemini_result.get('ok'):
+                logger.info('Text roster used Gemini after OpenAI failed: %s', ai_result.get('error'))
+                entries = _dedupe_entries([*entries, *(gemini_result.get('entries') or [])])
+            elif not ai_result.get('missing_key') and not gemini_result.get('missing_key'):
+                return gemini_result
     return {
         'ok': True,
         'error': '',
@@ -826,3 +984,61 @@ def format_approval_summary(summary):
         lines.append("Qo'lda tekshirish kerak:")
         lines.extend(f"- {name}" for name in summary['ambiguous'][:8])
     return '\n'.join(lines)
+
+
+ROSTER_CACHE_TTL = 7 * 24 * 60 * 60  # 7 kun
+
+
+def _roster_cache_key(center_id):
+    return f'center_roster:{center_id}'
+
+
+def save_center_roster(center_id, entries):
+    from django.core.cache import cache
+    if not entries or not center_id:
+        return
+    cache.set(_roster_cache_key(center_id), entries, timeout=ROSTER_CACHE_TTL)
+    logger.info('Saved %d roster entries for center %s', len(entries), center_id)
+
+
+def get_center_roster(center_id):
+    from django.core.cache import cache
+    return cache.get(_roster_cache_key(center_id)) or []
+
+
+def try_auto_approve_from_roster(center, membership):
+    """Roster cache'da o'quvchi topilsa tasdiqlab True qaytaradi."""
+    entries = get_center_roster(center.id)
+    if not entries:
+        return False
+    user = membership.user
+    user_name = str(user.full_name or '')
+    user_phone = str(user.normalized_phone or '')
+    threshold = getattr(settings, 'AI_ROSTER_MIN_CONFIDENCE', 0.98)
+    membership_code = str(membership.approval_code or '').strip().upper()
+    for entry in entries:
+        entry_phone = str(entry.get('phone') or '')
+        entry_code = str(entry.get('approval_code') or '').strip().upper()
+        # Telefon raqam bo'yicha — eng ishonchli
+        if entry_phone and user_phone and entry_phone == user_phone:
+            _do_auto_approve(center, membership)
+            return True
+        # Kod bo'yicha
+        if entry_code and membership_code and entry_code == membership_code:
+            _do_auto_approve(center, membership)
+            return True
+        # Ism bo'yicha — faqat yuqori ishonchlilik
+        score = _match_score(entry.get('full_name', ''), user_name)
+        if score >= threshold:
+            _do_auto_approve(center, membership)
+            return True
+    return False
+
+
+def _do_auto_approve(center, membership):
+    try:
+        actor = center.owner or membership.user
+        decide_membership(membership, actor, 'approved')
+        logger.info('Auto-approved membership %s from roster cache', membership.id)
+    except Exception:
+        logger.exception('Auto-approve from roster failed for membership %s', membership.id)
