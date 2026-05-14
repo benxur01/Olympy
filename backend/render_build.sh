@@ -18,20 +18,34 @@ pip install -r requirements.txt
 python <<'PY'
 import os
 import sys
-import psycopg
 
 url = os.environ.get('DATABASE_URL', '').strip()
 schema = os.environ.get('DATABASE_SCHEMA', 'olympy').strip() or 'olympy'
 if not url:
-    print('DATABASE_URL not set — skipping schema bootstrap', file=sys.stderr)
+    print('[render_build] DATABASE_URL not set — skipping schema bootstrap', file=sys.stderr)
     sys.exit(0)
-# Identifier'ni xavfsiz tarzda quote qilamiz (SQL injection oldini olish).
+
 safe_schema = schema.replace('"', '""')
-with psycopg.connect(url) as conn:
-    with conn.cursor() as cur:
+try:
+    import psycopg
+    with psycopg.connect(url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"')
+        conn.commit()
+    print(f'[render_build] schema "{schema}" ready (psycopg3)')
+except Exception as e:
+    print(f'[render_build] psycopg3 failed: {e}', file=sys.stderr)
+    try:
+        import psycopg2
+        conn = psycopg2.connect(url)
+        conn.autocommit = True
+        cur = conn.cursor()
         cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"')
-    conn.commit()
-print(f'[render_build] schema "{schema}" ready')
+        conn.close()
+        print(f'[render_build] schema "{schema}" ready (psycopg2)')
+    except Exception as e2:
+        print(f'[render_build] WARNING: schema creation failed: {e2}', file=sys.stderr)
+        print('[render_build] Continuing — schema may already exist', file=sys.stderr)
 PY
 
 python manage.py collectstatic --no-input
