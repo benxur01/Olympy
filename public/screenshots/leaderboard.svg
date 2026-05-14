@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">PROLYMP leaderboard screenshot</title>
+  <desc id="desc">Leaderboard page with podium, filters and ranked student list.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#08111f"/>
+      <stop offset="0.56" stop-color="#0b1024"/>
+      <stop offset="1" stop-color="#131722"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="0.55" stop-color="#06b6d4"/>
+      <stop offset="1" stop-color="#10b981"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#000000" flood-opacity="0.34"/>
+    </filter>
+  </defs>
+  <rect width="1440" height="900" fill="url(#bg)"/>
+  <g filter="url(#shadow)" font-family="Inter, Arial, sans-serif">
+    <rect x="76" y="60" width="1288" height="780" rx="34" fill="#071124" stroke="#fff" stroke-opacity="0.11"/>
+    <g transform="translate(126 112)">
+      <text x="0" y="34" fill="#fff" font-size="32" font-weight="850">Reyting jadvali</text>
+      <text x="0" y="64" fill="#94a3b8" font-size="16">Matematika Olimpiadasi • May 2026</text>
+      <rect x="780" y="0" width="160" height="46" rx="14" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.11"/>
+      <text x="808" y="29" fill="#dbeafe" font-size="14" font-weight="800">Barcha fanlar</text>
+      <rect x="956" y="0" width="180" height="46" rx="14" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.11"/>
+      <text x="984" y="29" fill="#dbeafe" font-size="14" font-weight="800">Toshkent shahri</text>
+    </g>
+    <g transform="translate(126 216)">
+      <rect x="0" y="156" width="336" height="174" rx="28" fill="#ffffff" fill-opacity="0.07" stroke="#94a3b8" stroke-opacity="0.26"/>
+      <circle cx="168" cy="118" r="50" fill="#334155"/>
+      <text x="168" y="126" text-anchor="middle" fill="#fff" font-size="27" font-weight="850">SU</text>
+      <text x="168" y="206" text-anchor="middle" fill="#fff" font-size="19" font-weight="850">Sardor Usmonov</text>
+      <text x="168" y="234" text-anchor="middle" fill="#94a3b8" font-size="14">Brilliant Education</text>
+      <text x="168" y="282" text-anchor="middle" fill="#cbd5e1" font-size="40" font-weight="900">91</text>
+      <text x="168" y="22" text-anchor="middle" fill="#cbd5e1" font-size="34" font-weight="900">2</text>
+      <rect x="382" y="92" width="336" height="238" rx="28" fill="#f59e0b" fill-opacity="0.13" stroke="#fbbf24" stroke-opacity="0.36"/>
+      <circle cx="550" cy="58" r="58" fill="url(#gold)"/>
+      <text x="550" y="68" text-anchor="middle" fill="#fff" font-size="30" font-weight="900">MT</text>
+      <text x="550" y="164" text-anchor="middle" fill="#fff" font-size="21" font-weight="850">Malika Toshmatova</text>
+      <text x="550" y="194" text-anchor="middle" fill="#fef3c7" font-size="14">ProSkill Academy</text>
+      <text x="550" y="260" text-anchor="middle" fill="#fbbf24" font-size="52" font-weight="950">96</text>
+      <text x="550" y="22" text-anchor="middle" fill="#fbbf24" font-size="42" font-weight="950">1</text>
+      <rect x="764" y="182" width="336" height="148" rx="28" fill="#ffffff" fill-opacity="0.07" stroke="#b45309" stroke-opacity="0.32"/>
+      <circle cx="932" cy="142" r="46" fill="#92400e"/>
+      <text x="932" y="150" text-anchor="middle" fill="#fff" font-size="24" font-weight="850">AV</text>
+      <text x="932" y="226" text-anchor="middle" fill="#fff" font-size="19" font-weight="850">Ali Valiyev</text>
+      <text x="932" y="252" text-anchor="middle" fill="#94a3b8" font-size="14">ProSkill Academy</text>
+      <text x="932" y="298" text-anchor="middle" fill="#f59e0b" font-size="40" font-weight="900">87</text>
+      <text x="932" y="82" text-anchor="middle" fill="#f59e0b" font-size="34" font-weight="900">3</text>
+    </g>
+    <g transform="translate(126 590)">
+      <rect width="1136" height="176" rx="26" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.1"/>
+      <g fill="#94a3b8" font-size="13" font-weight="800">
+        <text x="32" y="38">#</text>
+        <text x="110" y="38">Oquvchi</text>
+        <text x="420" y="38">Tashkilot</text>
+        <text x="698" y="38">Fan</text>
+        <text x="930" y="38">Ball</text>
+        <text x="1032" y="38">Vaqt</text>
+      </g>
+      <path d="M0 58h1136" stroke="#fff" stroke-opacity="0.08"/>
+      <g transform="translate(0 68)">
+        <rect x="24" y="6" width="36" height="36" rx="12" fill="#ffffff" fill-opacity="0.07"/>
+        <text x="42" y="30" text-anchor="middle" fill="#fff" font-size="14" font-weight="850">4</text>
+        <circle cx="116" cy="24" r="20" fill="url(#brand)"/>
+        <text x="146" y="29" fill="#fff" font-size="15" font-weight="800">Jasur Normatov</text>
+        <text x="420" y="29" fill="#cbd5e1" font-size="14">Leader Academy</text>
+        <rect x="698" y="6" width="118" height="32" rx="10" fill="#2563eb" fill-opacity="0.17"/>
+        <text x="724" y="27" fill="#93c5fd" font-size="13" font-weight="800">Fizika</text>
+        <text x="940" y="29" fill="#22c55e" font-size="16" font-weight="900">84</text>
+        <text x="1032" y="29" fill="#94a3b8" font-size="14">25:14</text>
+      </g>
+      <g transform="translate(0 120)">
+        <rect x="24" y="6" width="36" height="36" rx="12" fill="#ffffff" fill-opacity="0.07"/>
+        <text x="42" y="30" text-anchor="middle" fill="#fff" font-size="14" font-weight="850">5</text>
+        <circle cx="116" cy="24" r="20" fill="#0f766e"/>
+        <text x="146" y="29" fill="#fff" font-size="15" font-weight="800">Nilufar Karimova</text>
+        <text x="420" y="29" fill="#cbd5e1" font-size="14">IT Park Academy</text>
+        <rect x="698" y="6" width="138" height="32" rx="10" fill="#10b981" fill-opacity="0.16"/>
+        <text x="724" y="27" fill="#6ee7b7" font-size="13" font-weight="800">Kimyo</text>
+        <text x="940" y="29" fill="#22c55e" font-size="16" font-weight="900">81</text>
+        <text x="1032" y="29" fill="#94a3b8" font-size="14">28:07</text>
+      </g>
+    </g>
+  </g>
+</svg>

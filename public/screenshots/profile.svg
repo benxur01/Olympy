@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">PROLYMP profile screenshot</title>
+  <desc id="desc">Student profile page with achievements, progress, certificates and activity.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#06111f"/>
+      <stop offset="0.55" stop-color="#10142a"/>
+      <stop offset="1" stop-color="#071a1b"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6366f1"/>
+      <stop offset="0.5" stop-color="#06b6d4"/>
+      <stop offset="1" stop-color="#10b981"/>
+    </linearGradient>
+    <linearGradient id="award" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#000000" flood-opacity="0.36"/>
+    </filter>
+  </defs>
+  <rect width="1440" height="900" fill="url(#bg)"/>
+  <g filter="url(#shadow)" font-family="Inter, Arial, sans-serif">
+    <rect x="76" y="60" width="1288" height="780" rx="34" fill="#071124" stroke="#fff" stroke-opacity="0.11"/>
+    <g transform="translate(126 112)">
+      <circle cx="70" cy="70" r="70" fill="url(#brand)"/>
+      <text x="70" y="82" fill="#fff" text-anchor="middle" font-size="42" font-weight="900">AV</text>
+      <text x="168" y="48" fill="#fff" font-size="32" font-weight="850">Ali Valiyev</text>
+      <text x="168" y="82" fill="#94a3b8" font-size="16">ProSkill Academy • Oquvchi</text>
+      <rect x="168" y="108" width="124" height="38" rx="12" fill="#10b981" fill-opacity="0.16" stroke="#10b981" stroke-opacity="0.28"/>
+      <text x="198" y="132" fill="#34d399" font-size="14" font-weight="850">Faol</text>
+      <rect x="954" y="26" width="154" height="46" rx="14" fill="url(#brand)"/>
+      <text x="992" y="55" fill="#fff" font-size="14" font-weight="850">Profilni sozlash</text>
+    </g>
+    <g transform="translate(126 286)">
+      <rect width="258" height="132" rx="24" fill="#ffffff" fill-opacity="0.075" stroke="#ffffff" stroke-opacity="0.1"/>
+      <text x="28" y="48" fill="#94a3b8" font-size="14" font-weight="700">Ortacha ball</text>
+      <text x="28" y="94" fill="#fff" font-size="42" font-weight="950">87</text>
+      <path d="M176 92c30-45 52-56 76-80" fill="none" stroke="#10b981" stroke-width="8" stroke-linecap="round"/>
+      <rect x="292" width="258" height="132" rx="24" fill="#ffffff" fill-opacity="0.075" stroke="#ffffff" stroke-opacity="0.1"/>
+      <text x="320" y="48" fill="#94a3b8" font-size="14" font-weight="700">Sertifikatlar</text>
+      <text x="320" y="94" fill="#fff" font-size="42" font-weight="950">3</text>
+      <circle cx="488" cy="66" r="34" fill="url(#award)"/>
+      <rect x="584" width="258" height="132" rx="24" fill="#ffffff" fill-opacity="0.075" stroke="#ffffff" stroke-opacity="0.1"/>
+      <text x="612" y="48" fill="#94a3b8" font-size="14" font-weight="700">Top reyting</text>
+      <text x="612" y="94" fill="#fff" font-size="42" font-weight="950">#3</text>
+      <circle cx="780" cy="66" r="34" fill="#6366f1"/>
+      <rect x="876" width="258" height="132" rx="24" fill="#ffffff" fill-opacity="0.075" stroke="#ffffff" stroke-opacity="0.1"/>
+      <text x="904" y="48" fill="#94a3b8" font-size="14" font-weight="700">Tadbirlar</text>
+      <text x="904" y="94" fill="#fff" font-size="42" font-weight="950">12</text>
+      <circle cx="1072" cy="66" r="34" fill="#06b6d4"/>
+    </g>
+    <g transform="translate(126 458)">
+      <rect width="538" height="278" rx="28" fill="#ffffff" fill-opacity="0.075" stroke="#ffffff" stroke-opacity="0.1"/>
+      <text x="30" y="44" fill="#fff" font-size="22" font-weight="850">Yutuqlar</text>
+      <g transform="translate(30 76)">
+        <rect width="478" height="64" rx="18" fill="#0f172a" stroke="#ffffff" stroke-opacity="0.09"/>
+        <circle cx="32" cy="32" r="20" fill="url(#award)"/>
+        <text x="70" y="28" fill="#fff" font-size="15" font-weight="850">Informatika Olimpiadasi</text>
+        <text x="70" y="50" fill="#94a3b8" font-size="13">1-orin • 91 ball</text>
+        <text x="394" y="39" fill="#fbbf24" font-size="13" font-weight="850">Sertifikat</text>
+      </g>
+      <g transform="translate(30 154)">
+        <rect width="478" height="64" rx="18" fill="#0f172a" stroke="#ffffff" stroke-opacity="0.09"/>
+        <circle cx="32" cy="32" r="20" fill="#6366f1"/>
+        <text x="70" y="28" fill="#fff" font-size="15" font-weight="850">Matematika Olimpiadasi</text>
+        <text x="70" y="50" fill="#94a3b8" font-size="13">3-orin • 87 ball</text>
+        <text x="408" y="39" fill="#a5b4fc" font-size="13" font-weight="850">Top 3</text>
+      </g>
+    </g>
+    <g transform="translate(706 458)">
+      <rect width="554" height="278" rx="28" fill="#ffffff" fill-opacity="0.075" stroke="#ffffff" stroke-opacity="0.1"/>
+      <text x="30" y="44" fill="#fff" font-size="22" font-weight="850">Fanlar progressi</text>
+      <g transform="translate(30 84)">
+        <text y="18" fill="#dbeafe" font-size="15" font-weight="800">Matematika</text>
+        <text x="468" y="18" fill="#fff" font-size="15" font-weight="900">87%</text>
+        <rect y="36" width="494" height="12" rx="6" fill="#1e293b"/>
+        <rect y="36" width="430" height="12" rx="6" fill="#6366f1"/>
+      </g>
+      <g transform="translate(30 142)">
+        <text y="18" fill="#dbeafe" font-size="15" font-weight="800">Informatika</text>
+        <text x="468" y="18" fill="#fff" font-size="15" font-weight="900">91%</text>
+        <rect y="36" width="494" height="12" rx="6" fill="#1e293b"/>
+        <rect y="36" width="450" height="12" rx="6" fill="#22d3ee"/>
+      </g>
+      <g transform="translate(30 200)">
+        <text y="18" fill="#dbeafe" font-size="15" font-weight="800">Fizika</text>
+        <text x="468" y="18" fill="#fff" font-size="15" font-weight="900">72%</text>
+        <rect y="36" width="494" height="12" rx="6" fill="#1e293b"/>
+        <rect y="36" width="356" height="12" rx="6" fill="#10b981"/>
+      </g>
+    </g>
+  </g>
+</svg>
