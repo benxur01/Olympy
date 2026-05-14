@@ -264,9 +264,8 @@ def download_certificate(request, attempt_id):
     """GET /api/certificates/{attempt_id}/download/ — PNG sertifikat.
 
     Sertifikat alohida modelda saqlanmaydi: TestAttempt'dan har safar
-    on-the-fly generatsiya qilinadi. Faqat 1-o'rin emas, har qanday
-    yakunlangan attempt uchun mavjud — kim qatnashganligini tasdiqlovchi
-    hujjat sifatida ham ishlatish mumkin.
+    on-the-fly generatsiya qilinadi. Faqat 1-o'rin egasi sertifikat ola
+    oladi — boshqa ishtirokchilar uchun 403.
     """
     attempt = get_object_or_404(
         TestAttempt.objects.select_related('user', 'olympiad', 'olympiad__center'),
@@ -285,6 +284,13 @@ def download_certificate(request, attempt_id):
         ).exists() or attempt.olympiad.center.owner_id == request.user.id
     if not can_view:
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    # Faqat 1-o'rin egasi sertifikat ola oladi. Avval har qanday rank
+    # uchun ruxsat berilardi — bu sertifikatni hammaga tarqatib yuborardi.
+    if attempt.rank != 1:
+        return Response(
+            {'detail': "Sertifikat faqat 1-o'rin egasiga beriladi"},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
     try:
         png_bytes = render_certificate_png(attempt)
     except Exception as exc:

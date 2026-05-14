@@ -281,42 +281,71 @@ def join_center(request, center_id):
             pass
         # Lazy import: avoid circular dependency at module load time.
         from notifications.services import send_student_join_request_notification
-        managers = CenterMembership.objects.filter(
-            center=center, role=CenterMembership.ROLE_MANAGER,
-            status=CenterMembership.STATUS_APPROVED,
-        ).select_related('user')
-        # Har bir managerga alohida try/except — biri telegramda xato bersa
-        # qolganlari hali ham xabar olishi kerak. Avval bitta umumiy try
-        # blokida bo'lganligi uchun katta markazda 20+ managerga sinxron
-        # so'rov bloklanardi va birinchi xatolik qolganlarini to'xtatardi.
-        for m in managers:
-            try:
-                send_student_join_request_notification(m.user, request.user, center, membership)
-            except Exception:
-                pass
-        if center.owner_id:
-            try:
-                send_student_join_request_notification(center.owner, request.user, center, membership)
-            except Exception:
-                pass
+        managers = list(
+            CenterMembership.objects.filter(
+                center=center, role=CenterMembership.ROLE_MANAGER,
+                status=CenterMembership.STATUS_APPROVED,
+            ).select_related('user')
+        )
+        # Telegram API sekin bo'lsa (1-3 soniya har bir so'rov), avval
+        # foydalanuvchi join_center javobini 20+ manager * 2s = 40+ soniya
+        # kutib turardi. Endi xabarlarni daemon thread'ga ko'chiramiz —
+        # foydalanuvchi darhol javob oladi. Celery yo'q, lekin Django
+        # request thread'ini bloklamasligimiz uchun bu yetarli.
+        manager_users = [m.user for m in managers]
+        owner_user = center.owner if center.owner_id else None
+        requester = request.user
+        target_center = center
+        target_membership = membership
+
+        def _send_join_notifications():
+            for manager_user in manager_users:
+                try:
+                    send_student_join_request_notification(
+                        manager_user, requester, target_center, target_membership,
+                    )
+                except Exception:
+                    pass
+            if owner_user is not None:
+                try:
+                    send_student_join_request_notification(
+                        owner_user, requester, target_center, target_membership,
+                    )
+                except Exception:
+                    pass
+
+        import threading
+        threading.Thread(target=_send_join_notifications, daemon=True).start()
     elif created and role in (CenterMembership.ROLE_TEACHER, CenterMembership.ROLE_MANAGER):
         # O'qituvchi/manager arizalari avval hech kimga xabar yuborilmasdi —
         # owner faqat panelda polling qilib bilishi mumkin edi. Endi push
         # xabarnoma yuboriladi va owner inline tugmalar bilan tasdiqlay
-        # oladi.
+        # oladi. Sinxron bo'lsa Telegram API kechikishi join_center javobini
+        # bloklardi — alohida thread'da yuboramiz.
         from notifications.services import send_staff_join_request_notification
         if center.owner_id:
-            try:
-                send_staff_join_request_notification(
-                    center.owner,
-                    request.user,
-                    center,
-                    role=role,
-                    subject=membership.subject or '',
-                    membership=membership,
-                )
-            except Exception:
-                pass
+            owner_user = center.owner
+            requester = request.user
+            target_center = center
+            staff_role = role
+            staff_subject = membership.subject or ''
+            target_membership = membership
+
+            def _send_staff_notification():
+                try:
+                    send_staff_join_request_notification(
+                        owner_user,
+                        requester,
+                        target_center,
+                        role=staff_role,
+                        subject=staff_subject,
+                        membership=target_membership,
+                    )
+                except Exception:
+                    pass
+
+            import threading
+            threading.Thread(target=_send_staff_notification, daemon=True).start()
     return Response(CenterMembershipSerializer(membership).data,
                     status=http_status.HTTP_201_CREATED if created
                     else http_status.HTTP_200_OK)
@@ -782,3 +811,63 @@ def admin_reject_center(request, center_id):
             from notifications.services import send_center_decision_notification
             send_center_decision_notification(center.owner, center, approved=False)
     return Response(AdminEducationCenterSerializer(center, context={'request': request}).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def center_stats(request, center_id):
+    """GET /api/centers/{id}/stats/ — markaz bo'yicha agregat statistika.
+
+    Owner dashboard'da ko'rsatish uchun: nechta o'quvchi tasdiqlangan,
+    nechta o'qituvchi/manager, nechta tadbir, jami attempts, o'rtacha
+    reyting. Faqat owner/manager/teacher (yoki platform admin) ko'ra
+    oladi.
+    """
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    if not (_user_can_manage_center(request.user, center)
+            or request.user.is_platform_admin):
+        return Response({'detail': 'Forbidden'},
+                        status=http_status.HTTP_403_FORBIDDEN)
+
+    from django.db.models import Avg, Count
+    membership_counts = (
+        CenterMembership.objects
+        .filter(center=center, status=CenterMembership.STATUS_APPROVED)
+        .values('role')
+        .annotate(total=Count('id'))
+    )
+    counts_by_role = {row['role']: row['total'] for row in membership_counts}
+    pending_count = CenterMembership.objects.filter(
+        center=center, status=CenterMembership.STATUS_PENDING,
+    ).count()
+
+    from olympiads.models import Olympiad
+    olympiads_qs = Olympiad.objects.filter(center=center)
+    olympiads_total = olympiads_qs.count()
+    olympiads_by_status = {
+        row['status']: row['total']
+        for row in olympiads_qs.values('status').annotate(total=Count('id'))
+    }
+
+    from attempts.models import TestAttempt
+    attempt_aggregates = TestAttempt.objects.filter(
+        olympiad__center=center,
+    ).aggregate(
+        total_attempts=Count('id'),
+        average_score=Avg('score'),
+        unique_participants=Count('user', distinct=True),
+    )
+
+    return Response({
+        'center_id': center.id,
+        'name': center.name,
+        'students_count': counts_by_role.get(CenterMembership.ROLE_STUDENT, 0),
+        'teachers_count': counts_by_role.get(CenterMembership.ROLE_TEACHER, 0),
+        'managers_count': counts_by_role.get(CenterMembership.ROLE_MANAGER, 0),
+        'pending_requests': pending_count,
+        'olympiads_total': olympiads_total,
+        'olympiads_by_status': olympiads_by_status,
+        'total_attempts': attempt_aggregates.get('total_attempts') or 0,
+        'unique_participants': attempt_aggregates.get('unique_participants') or 0,
+        'average_score': round(attempt_aggregates.get('average_score') or 0, 1),
+    })
