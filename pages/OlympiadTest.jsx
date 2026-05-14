@@ -58,6 +58,45 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // hodisalarini cheating deb hisoblamaslik uchun bayroq.
   const cheatGuardActiveRef = React.useRef(true);
 
+  // Brauzer Back / yopish — olimpiada davomida foydalanuvchi tasodifan
+  // sahifani tark etsa progress yo'qoladi. Avval hech qanday ogohlantirish
+  // bo'lmasdi va session "active" qolib ketardi. Endi:
+  // 1) beforeunload — brauzer refresh/yopish paytida confirm dialog.
+  // 2) popstate — Back tugmasi bosilganda tasdiqlash so'raydi va navigatsiyani
+  //    bloklash uchun stack'ga dummy state qaytaramiz.
+  React.useEffect(() => {
+    if (submitted || cheated || isBeforeStart || isAfterEnd || TOTAL === 0) {
+      return undefined;
+    }
+    const onBeforeUnload = (e) => {
+      e.preventDefault();
+      // Modern brauzerlar maxsus matn ko'rsatmaydi, lekin confirm dialog'i
+      // chiqishi uchun returnValue'ga bo'sh bo'lmagan string qo'yiladi.
+      e.returnValue = "Olimpiadani tark etmoqchimisiz? Progress yo'qoladi.";
+      return e.returnValue;
+    };
+    const onPopState = () => {
+      const leave = window.confirm("Olimpiadani tark etmoqchimisiz? Progress yo'qoladi.");
+      if (leave) {
+        // History'da ortga qaytishga ruxsat: hozirgi sahifa allaqachon pop
+        // bo'lgan, foydalanuvchi tabiiy ravishda oldingisiga o'tadi.
+        onNavigate && onNavigate('student');
+      } else {
+        // Navigatsiyani bloklash uchun history stack'iga qaytadan
+        // pushState qilamiz — foydalanuvchi shu sahifada qoladi.
+        window.history.pushState(null, '', window.location.href);
+      }
+    };
+    // popstate listener'i ishlashi uchun avval bir marta state push qilamiz.
+    window.history.pushState(null, '', window.location.href);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('popstate', onPopState);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('popstate', onPopState);
+    };
+  }, [submitted, cheated, isBeforeStart, isAfterEnd, TOTAL, onNavigate]);
+
   React.useEffect(() => {
     if (!user?._api || !liveOlympiad?.backendId || isBeforeStart || isAfterEnd) {
       setApiQuestions(null);

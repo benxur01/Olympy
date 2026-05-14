@@ -4,7 +4,6 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
   const [tab, setTab] = React.useState('results');
-  const [isPublic, setIsPublic] = React.useState(false);
   const [avatarLoading, setAvatarLoading] = React.useState(false);
   const [avatarError, setAvatarError] = React.useState('');
   const avatarInputRef = React.useRef(null);
@@ -170,7 +169,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
             <div className="absolute -bottom-1 -right-1 w-6 h-6 gradient-bg rounded-full flex items-center justify-center">
               <span className="text-white text-xs">✓</span>
             </div>
-            {!isPublic && isApi && (
+            {isApi && (
               <>
                 <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFile} />
                 <button
@@ -187,9 +186,9 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
           <div className="flex-1">
             <div className="flex items-center gap-3 flex-wrap">
               <h2 className="text-2xl font-black text-white">{user?.name || 'Ali Valiyev'}</h2>
-              {!isPublic && <span className="chip badge-active text-xs">A'zo</span>}
+              <span className="chip badge-active text-xs">A'zo</span>
             </div>
-            {!isPublic && <div className="text-white/40 text-sm mt-0.5">{(user?.phone || '+998901234567').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1 *** $2')}</div>}
+            <div className="text-white/40 text-sm mt-0.5">{(user?.phone || '+998901234567').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1 *** $2')}</div>
             <div className="flex flex-wrap gap-3 mt-3">
               <div className="flex items-center gap-1.5 text-sm text-white/50"><Icon name="building" size={14} />{(() => {
                 // Avval store.centers dan qidirilardi va API rejimida bo'sh
@@ -214,17 +213,12 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
             {avatarError && <div className="mt-2 text-xs font-semibold text-rose-300">{avatarError}</div>}
           </div>
           <div className="flex flex-col gap-2">
-            {!isPublic && (
-              <button
-                onClick={() => avatarInputRef.current?.click()}
-                disabled={!isApi || avatarLoading}
-                className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 disabled:opacity-50"
-              >
-                <Icon name="upload" size={13} /> {avatarLoading ? 'Yuklanmoqda...' : 'Rasm yuklash'}
-              </button>
-            )}
-            <button onClick={() => setIsPublic(!isPublic)} className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5">
-              <Icon name="eye" size={13} /> {isPublic ? 'Shaxsiy ko\'rish' : 'Ommaviy ko\'rish'}
+            <button
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={!isApi || avatarLoading}
+              className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <Icon name="upload" size={13} /> {avatarLoading ? 'Yuklanmoqda...' : 'Rasm yuklash'}
             </button>
           </div>
         </div>

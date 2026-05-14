@@ -168,42 +168,47 @@ def register(request):
                     'subject': join_subject,
                 })
                 join_serializer.is_valid(raise_exception=True)
-                center = get_object_or_404(
-                    EducationCenter,
+                # Avval get_object_or_404 ishlatilardi va markaz topilmasa /
+                # rejected bo'lsa butun register tranzaksiyasi rollback bo'lib
+                # foydalanuvchi hisob ocha olmasdi. Endi mavjud bo'lmagan
+                # markaz uchun ariza yaratmasdan davom etamiz — foydalanuvchi
+                # keyin saytdan markazni tanlab qo'shilishi mumkin.
+                center = EducationCenter.objects.filter(
                     pk=join_center_id,
                     status=EducationCenter.STATUS_APPROVED,
-                )
-                membership = CenterMembership.objects.create(
-                    user=user,
-                    center=center,
-                    role=join_serializer.validated_data['role'],
-                    subject=join_serializer.validated_data.get('subject', ''),
-                    approval_code=secrets.token_hex(3).upper(),
-                    status=CenterMembership.STATUS_PENDING,
-                )
-                membership_data = CenterMembershipSerializer(membership).data
-                # Notification fan-out: same logic as join_center view.
-                from notifications.services import (
-                    send_staff_join_request_notification,
-                    send_student_join_request_notification,
-                )
-                if membership.role == CenterMembership.ROLE_STUDENT:
-                    managers = CenterMembership.objects.filter(
-                        center=center, role=CenterMembership.ROLE_MANAGER,
-                        status=CenterMembership.STATUS_APPROVED,
-                    ).select_related('user')
-                    for m in managers:
-                        send_student_join_request_notification(m.user, user, center, membership)
-                    if center.owner_id:
-                        send_student_join_request_notification(center.owner, user, center, membership)
-                elif membership.role in (CenterMembership.ROLE_TEACHER, CenterMembership.ROLE_MANAGER):
-                    if center.owner_id:
-                        send_staff_join_request_notification(
-                            center.owner, user, center,
-                            role=membership.role,
-                            subject=membership.subject or '',
-                            membership=membership,
-                        )
+                ).first()
+                if center is not None:
+                    membership = CenterMembership.objects.create(
+                        user=user,
+                        center=center,
+                        role=join_serializer.validated_data['role'],
+                        subject=join_serializer.validated_data.get('subject', ''),
+                        approval_code=secrets.token_hex(3).upper(),
+                        status=CenterMembership.STATUS_PENDING,
+                    )
+                    membership_data = CenterMembershipSerializer(membership).data
+                    # Notification fan-out: same logic as join_center view.
+                    from notifications.services import (
+                        send_staff_join_request_notification,
+                        send_student_join_request_notification,
+                    )
+                    if membership.role == CenterMembership.ROLE_STUDENT:
+                        managers = CenterMembership.objects.filter(
+                            center=center, role=CenterMembership.ROLE_MANAGER,
+                            status=CenterMembership.STATUS_APPROVED,
+                        ).select_related('user')
+                        for m in managers:
+                            send_student_join_request_notification(m.user, user, center, membership)
+                        if center.owner_id:
+                            send_student_join_request_notification(center.owner, user, center, membership)
+                    elif membership.role in (CenterMembership.ROLE_TEACHER, CenterMembership.ROLE_MANAGER):
+                        if center.owner_id:
+                            send_staff_join_request_notification(
+                                center.owner, user, center,
+                                role=membership.role,
+                                subject=membership.subject or '',
+                                membership=membership,
+                            )
     except ValidationError as exc:
         detail = '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc)
         return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
@@ -697,10 +702,13 @@ def start_telegram_phone_verification(request):
     serializer = StartTelegramPhoneVerificationSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     normalized_phone = serializer.validated_data['phone']
+    # Eski tasdiqlanmagan yozuvlarni butunlay o'chiramiz — har bir yangi
+    # so'rovda yagona aktiv PhoneVerification qoladi. Avval faqat OTP
+    # muddati o'tganlari o'chirilar va bir nechta "open" yozuv yig'ilib
+    # qolardi.
     PhoneVerification.objects.filter(
         normalized_phone=normalized_phone,
         verified_at__isnull=True,
-        otp_expires_at__lt=timezone.now(),
     ).delete()
     verification = PhoneVerification.objects.create(
         normalized_phone=normalized_phone,
@@ -728,11 +736,12 @@ def start_password_reset(request):
     serializer = StartPasswordResetSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     normalized_phone = serializer.validated_data['phone']
+    # Eski tasdiqlanmagan parol-tiklash yozuvlarini butunlay o'chiramiz —
+    # bir vaqtning o'zida yagona aktiv kod qolsin.
     PhoneVerification.objects.filter(
         normalized_phone=normalized_phone,
         purpose=PhoneVerification.PURPOSE_PASSWORD_RESET,
         verified_at__isnull=True,
-        otp_expires_at__lt=timezone.now(),
     ).delete()
     verification = PhoneVerification.objects.create(
         normalized_phone=normalized_phone,

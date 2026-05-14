@@ -1036,9 +1036,18 @@ def try_auto_approve_from_roster(center, membership):
 
 
 def _do_auto_approve(center, membership):
+    # Avval `actor = center.owner or membership.user` ishlatilardi va
+    # owner=None bo'lsa o'quvchining o'zi o'zini tasdiqlay olardi (privilege
+    # escalation). Owner mavjud bo'lmasa — auto-approve butunlay
+    # o'tkazib yuboriladi.
+    if not center.owner_id:
+        logger.info(
+            'Skipping auto-approve for membership %s: center %s has no owner',
+            membership.id, center.id,
+        )
+        return
     try:
-        actor = center.owner or membership.user
-        decide_membership(membership, actor, 'approved')
+        decide_membership(membership, center.owner, 'approved')
         logger.info('Auto-approved membership %s from roster cache', membership.id)
     except Exception:
         logger.exception('Auto-approve from roster failed for membership %s', membership.id)

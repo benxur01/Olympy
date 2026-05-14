@@ -5,8 +5,9 @@ from .models import CenterMembership, EducationCenter
 
 
 class EducationCenterSerializer(serializers.ModelSerializer):
-    owner_full_name = serializers.CharField(source='owner.full_name', read_only=True)
-    owner_phone = serializers.CharField(source='owner.normalized_phone', read_only=True)
+    # Public listing — owner kontaktlari (owner_full_name, owner_phone) shu
+    # serializer'dan olib tashlangan. Bu ma'lumotlar faqat platforma admini
+    # uchun AdminEducationCenterSerializer'da ochiq.
     image_url = serializers.SerializerMethodField()
     students = serializers.SerializerMethodField()
     olympiads = serializers.SerializerMethodField()
@@ -15,8 +16,7 @@ class EducationCenterSerializer(serializers.ModelSerializer):
         model = EducationCenter
         fields = ['id', 'name', 'organization_type', 'country', 'region', 'district',
                   'city', 'owner', 'status', 'subjects', 'rating', 'created_at',
-                  'owner_full_name', 'owner_phone', 'image_url',
-                  'students', 'olympiads']
+                  'image_url', 'students', 'olympiads']
         read_only_fields = ['id', 'owner', 'status', 'rating', 'created_at']
 
     def get_image_url(self, obj):
@@ -42,6 +42,17 @@ class EducationCenterSerializer(serializers.ModelSerializer):
         if annotated is not None:
             return annotated
         return obj.olympiads.count()
+
+
+class AdminEducationCenterSerializer(EducationCenterSerializer):
+    """Platform admin endpointlari uchun: owner kontaktlari ham qaytadi."""
+    owner_full_name = serializers.CharField(source='owner.full_name', read_only=True)
+    owner_phone = serializers.CharField(source='owner.normalized_phone', read_only=True)
+
+    class Meta(EducationCenterSerializer.Meta):
+        fields = EducationCenterSerializer.Meta.fields + [
+            'owner_full_name', 'owner_phone',
+        ]
 
 
 class CenterMembershipSerializer(serializers.ModelSerializer):
