@@ -594,7 +594,7 @@ def _gemini_extract_names_from_image(image_bytes, mime_type, caption=''):
         },
     }
     body = json.dumps(payload).encode('utf-8')
-    model = getattr(settings, 'AI_ROSTER_GEMINI_MODEL', 'gemini-1.5-flash')
+    model = getattr(settings, 'AI_ROSTER_GEMINI_MODEL', 'gemini-2.5-flash')
     raw = None
     last_error = ''
     for index, api_key in enumerate(api_keys, start=1):
