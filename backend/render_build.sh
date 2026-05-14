@@ -11,7 +11,6 @@
 #   4) Apply database migrations (Django avtomatik olympy schema'siga yozadi)
 #   5) If bootstrap admin env vars are set, create/update the platform admin.
 set -o errexit
-set -x
 
 echo "=== STEP 1: pip install ==="
 pip install --upgrade pip

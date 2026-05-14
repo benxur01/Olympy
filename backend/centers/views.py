@@ -13,6 +13,7 @@ from rest_framework.response import Response
 
 from .models import CenterMembership, EducationCenter
 from .serializers import (
+    AdminEducationCenterSerializer,
     ApproveSerializer,
     CenterMembershipSerializer,
     CenterRegisterSerializer,
@@ -64,6 +65,14 @@ def centers_list_create(request):
             .order_by('-created_at')
         )
         queryset = _annotate_center_counts(queryset)
+        # Pagination: katta listlarda butun massivni bir response'da
+        # qaytarmaymiz. DEFAULT_PAGINATION_CLASS settings'da o'rnatilgan.
+        from rest_framework.pagination import PageNumberPagination
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(queryset, request)
+        if page is not None:
+            serializer = EducationCenterSerializer(page, many=True, context={'request': request})
+            return paginator.get_paginated_response(serializer.data)
         return Response(EducationCenterSerializer(queryset, many=True, context={'request': request}).data)
 
     if not request.user.is_authenticated:
@@ -728,7 +737,7 @@ def admin_list_centers(request):
     # AdminDashboard'dagi "O'quvchi" / "Olimpiada" ustunlari N+1 query
     # bilan to'planardi.
     qs = _annotate_center_counts(qs)
-    return Response(EducationCenterSerializer(qs, many=True, context={'request': request}).data)
+    return Response(AdminEducationCenterSerializer(qs, many=True, context={'request': request}).data)
 
 
 @api_view(['POST'])
@@ -751,7 +760,7 @@ def admin_approve_center(request, center_id):
             center.owner.add_role('owner')
             from notifications.services import send_center_decision_notification
             send_center_decision_notification(center.owner, center, approved=True)
-    return Response(EducationCenterSerializer(center).data)
+    return Response(AdminEducationCenterSerializer(center, context={'request': request}).data)
 
 
 @api_view(['POST'])
@@ -772,4 +781,4 @@ def admin_reject_center(request, center_id):
             ).update(status=CenterMembership.STATUS_REJECTED, approved_by=request.user)
             from notifications.services import send_center_decision_notification
             send_center_decision_notification(center.owner, center, approved=False)
-    return Response(EducationCenterSerializer(center).data)
+    return Response(AdminEducationCenterSerializer(center, context={'request': request}).data)

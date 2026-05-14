@@ -415,7 +415,11 @@ AI_QUESTION_GEMINI_MODEL = os.environ.get('AI_QUESTION_GEMINI_MODEL', AI_MANAGER
 AI_QUESTION_GEMINI_FALLBACK_MODELS = [
     model.strip() for model in os.environ.get(
         'AI_QUESTION_GEMINI_FALLBACK_MODELS',
-        'gemini-3.1-flash-lite,gemini-3-flash-preview,gemini-2.5-flash,gemini-2.5-pro',
+        # Mavjud bo'lmagan gemini-3.x modellari o'rniga real publik
+        # modellar. Avvalgi default'da gemini-3.1-flash-lite va
+        # gemini-3-flash-preview yo'q edi va birinchi fallback ham 404
+        # qaytarardi.
+        'gemini-2.5-flash,gemini-2.0-flash,gemini-1.5-flash-latest,gemini-2.5-pro',
     ).split(',')
     if model.strip()
 ]

@@ -20,11 +20,6 @@ const LandingPage = ({ onNavigate }) => {
     { value: 'Telegram', label: 'Bot integratsiyasi', icon: '💬' },
     { value: '24/7', label: 'Online platforma', icon: '⚡' },
   ];
-  const demoStats = [
-    { label: 'Faol olimpiadalar', val: '12', valueClass: 'text-indigo-400' },
-    { label: 'Jami o\'quvchilar', val: '348', valueClass: 'text-purple-400' },
-    { label: 'O\'rtacha ball', val: '78.4', valueClass: 'text-cyan-400' },
-  ];
 
   const steps = [
     { num: '01', title: 'Ro\'yxatdan o\'ting', desc: 'Maktab, o\'quv markaz yoki tashkilot sifatida platformaga qo\'shiling', icon: '🚀' },
@@ -96,43 +91,6 @@ const LandingPage = ({ onNavigate }) => {
             </button>
           </div>
 
-          {/* Hero dashboard preview — bu marketing illyustratsiya. Demo
-              ekanligini bildiruvchi label qo'shdik, shunda real raqamlar
-              deb tushunmaslik uchun. */}
-          <div className="relative mx-auto max-w-4xl">
-            <div className="glass-strong rounded-3xl p-1 glow-blue" style={{ background: 'rgba(99,102,241,0.05)' }}>
-              <div className="rounded-2xl overflow-hidden" style={{ background: '#0d0f23' }}>
-                <div className="flex items-center gap-2 px-4 py-3 border-b border-white/5">
-                  <div className="w-3 h-3 rounded-full bg-rose-500/60"></div>
-                  <div className="w-3 h-3 rounded-full bg-amber-500/60"></div>
-                  <div className="w-3 h-3 rounded-full bg-emerald-500/60"></div>
-                  <div className="ml-4 flex-1 glass rounded-lg px-3 py-1 text-xs text-white/30">olympy.uz/dashboard</div>
-                  <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-300">Demo</span>
-                </div>
-                <div className="p-3 md:p-6 grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-4">
-                  {demoStats.map((s, i) => (
-                    <div key={i} className="glass rounded-xl p-2.5 md:p-4 min-w-0">
-                      <div className={`text-lg md:text-2xl font-black ${s.valueClass} mb-0.5 md:mb-1 truncate`}>{s.val}</div>
-                      <div className="text-[10px] md:text-xs text-white/40 leading-tight">{s.label}</div>
-                    </div>
-                  ))}
-                  <div className="col-span-2 md:col-span-2 glass rounded-xl p-2.5 md:p-4 min-w-0">
-                    <div className="text-[10px] md:text-xs text-white/40 mb-2 md:mb-3">Haftalik natijalar</div>
-                    <div className="flex items-end gap-1 h-10 md:h-12">
-                      {[40, 65, 45, 80, 60, 90, 70].map((h, i) => (
-                        <div key={i} className="flex-1 rounded-sm" style={{ height: `${h}%`, background: 'linear-gradient(180deg, #6366f1, #a855f7)', opacity: 0.6 }} />
-                      ))}
-                    </div>
-                  </div>
-                  <div className="glass rounded-xl p-2.5 md:p-4 min-w-0">
-                    <div className="text-[10px] md:text-xs text-white/40 mb-1 md:mb-2">Top fan</div>
-                    <div className="text-xs md:text-sm font-bold text-white truncate">Matematika</div>
-                    <div className="text-[10px] md:text-xs text-emerald-400 mt-0.5 md:mt-1">↑ +12%</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 

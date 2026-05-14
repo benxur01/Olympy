@@ -47,8 +47,13 @@ class Command(BaseCommand):
         user.is_staff = True
         user.is_superuser = True
         user.is_active = True
-        user.set_password(password)
-        user.token_version = (user.token_version or 0) + 1
+        # token_version'ni har deploy'da oshirsak — barcha admin sessiyalari
+        # majburiy chiqib ketadi. Faqat parol haqiqatan o'zgargan paytda
+        # (yangi user yoki check_password False) bump qilamiz.
+        password_changed = created or not user.check_password(password)
+        if password_changed:
+            user.set_password(password)
+            user.token_version = (user.token_version or 0) + 1
         user.save()
 
         action = 'created' if created else 'updated'
