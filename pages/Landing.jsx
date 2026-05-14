@@ -6,10 +6,16 @@ const LandingPage = ({ onNavigate }) => {
   const [imgErrors, setImgErrors] = React.useState({});
 
   const screens = [
-    { label: 'Dashboard', icon: '📊', img: '/screenshots/dashboard.png', desc: 'Barcha statistika bir joyda' },
-    { label: 'Olimpiada', icon: '🏆', img: '/screenshots/test.png', desc: 'Qulay test interfeysi' },
-    { label: 'Natijalar', icon: '📈', img: '/screenshots/leaderboard.png', desc: 'Real vaqt reytingi' },
-    { label: 'Profil', icon: '👤', img: '/screenshots/profile.png', desc: 'Shaxsiy yutuqlar' },
+    { label: 'Dashboard', icon: 'chart', img: '/screenshots/dashboard.svg', desc: 'Tadbirlar, natijalar va sertifikatlar bir joyda' },
+    { label: 'Olimpiada', icon: 'trophy', img: '/screenshots/test.svg', desc: 'Vaqt, savollar va javoblar uchun qulay test oynasi' },
+    { label: 'Reyting', icon: 'star', img: '/screenshots/leaderboard.svg', desc: 'Top o\'quvchilar va ballar bo\'yicha jonli reyting' },
+    { label: 'Profil', icon: 'award', img: '/screenshots/profile.svg', desc: 'O\'quvchi yutuqlari, progress va sertifikatlar' },
+  ];
+
+  const heroMetrics = [
+    { value: 'AI', label: 'savol yaratish' },
+    { value: 'PDF', label: 'import' },
+    { value: 'Live', label: 'reyting' },
   ];
 
   const features = [
@@ -76,48 +82,92 @@ const LandingPage = ({ onNavigate }) => {
       </nav>
 
       {/* Hero */}
-      <section className="relative overflow-hidden">
-        <div className="hero-glow" style={{ background: '#6366f1', top: '-100px', left: '20%' }} />
-        <div className="hero-glow" style={{ background: '#a855f7', top: '100px', right: '10%' }} />
-        <div className="hero-glow" style={{ background: '#22d3ee', bottom: '-50px', left: '5%', opacity: 0.08 }} />
+      <section
+        className="relative overflow-hidden"
+        style={{
+          minHeight: 'min(700px, calc(100svh - 96px))',
+          backgroundImage: "linear-gradient(90deg, rgba(6,8,24,0.99) 0%, rgba(6,8,24,0.95) 48%, rgba(6,8,24,0.72) 72%, rgba(6,8,24,0.36) 100%), url('/screenshots/dashboard.svg')",
+          backgroundSize: 'cover',
+          backgroundPosition: 'center top',
+        }}
+      >
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(6,8,24,0.1) 0%, rgba(6,8,24,0.9) 100%)' }} />
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-14 md:py-24 relative">
+          <div className="max-w-3xl">
+            <div className="inline-flex items-center gap-2 rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-5 md:mb-6 text-xs md:text-sm text-cyan-100 border border-cyan-300/20" style={{ background: 'rgba(8,145,178,0.16)' }}>
+              <Icon name="shield" size={16} />
+              Online olimpiada, test va natija boshqaruvi
+            </div>
 
-        {/* Orbit rings */}
-        <div className="orbit" style={{ width: 600, height: 600, top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }} />
-        <div className="orbit" style={{ width: 900, height: 900, top: '50%', left: '50%', transform: 'translate(-50%, -50%)', animationDuration: '30s', animationDirection: 'reverse' }} />
+            <h1 className="text-4xl sm:text-5xl md:text-7xl font-black text-white leading-tight mb-5 md:mb-6" style={{ textWrap: 'balance' }}>
+              PROLYMP — online olimpiada platformasi
+            </h1>
 
-        <div className="max-w-5xl mx-auto px-4 md:px-6 pt-12 md:pt-28 pb-12 md:pb-24 text-center relative">
-          <h1 className="text-3xl sm:text-4xl md:text-6xl font-black text-white leading-tight mb-5 md:mb-6" style={{ textWrap: 'balance' }}>
-            Ta'lim tashkilotlari uchun{' '}
-            <span className="gradient-text">zamonaviy olimpiada</span>{' '}
-            platformasi
-          </h1>
+            <p className="text-base md:text-xl text-white/70 mb-7 md:mb-9 max-w-2xl leading-relaxed">
+              Ta'lim markazlari va maktablar uchun test yaratish, olimpiada o'tkazish, reyting yuritish va sertifikatlash jarayonini bitta tizimga jamlaydi.
+            </p>
 
-          <p className="text-base md:text-xl text-white/50 mb-8 md:mb-10 max-w-2xl mx-auto leading-relaxed">
-            Test yarating, olimpiada o'tkazing, o'quvchilarni baholang va natijalarni avtomatik kuzating.
-          </p>
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5 md:gap-4 mb-7 md:mb-9">
+              <button onClick={() => onNavigate('register')} className="btn-primary inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-bold glow-blue">
+                <Icon name="bolt" size={18} />
+                Boshlash
+              </button>
+              <button onClick={() => onNavigate('login')} className="btn-ghost inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-semibold">
+                Kirish
+                <Icon name="chevronRight" size={18} />
+              </button>
+              <button onClick={() => onNavigate('register')} className="btn-ghost inline-flex items-center justify-center gap-2 px-5 md:px-6 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-medium border-cyan-500/30 text-cyan-200">
+                <Icon name="building" size={18} />
+                Tashkilot qo'shish
+              </button>
+            </div>
 
-          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center sm:justify-center gap-2.5 md:gap-4 mb-10 md:mb-16">
-            <button onClick={() => onNavigate('register')} className="btn-primary px-6 md:px-8 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-bold glow-blue">
-              🚀 Boshlash
-            </button>
-            <button onClick={() => onNavigate('login')} className="btn-ghost px-6 md:px-8 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-semibold">
-              Kirish →
-            </button>
-            <button onClick={() => onNavigate('register')} className="btn-ghost px-5 md:px-6 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-medium border-indigo-500/30 text-indigo-300">
-              🏫 Tashkilot qo'shish
-            </button>
+            <div className="grid grid-cols-3 gap-2.5 md:gap-4 max-w-xl">
+              {heroMetrics.map((m) => (
+                <div key={m.label} className="rounded-2xl px-3 md:px-4 py-3 md:py-4 border border-white/10" style={{ background: 'rgba(255,255,255,0.07)' }}>
+                  <div className="text-xl md:text-3xl font-black text-white">{m.value}</div>
+                  <div className="text-[11px] md:text-sm text-white/50 leading-tight">{m.label}</div>
+                </div>
+              ))}
+            </div>
           </div>
-
         </div>
       </section>
 
-      {/* Platforma ko'rinishi — haqiqiy screenshotlar */}
-      <section className="py-12 md:py-24 relative overflow-hidden" style={{ background: 'rgba(99,102,241,0.03)' }}>
+      {/* Platforma ko'rinishi */}
+      <section className="py-12 md:py-24 relative overflow-hidden" style={{ background: 'linear-gradient(180deg, rgba(6,8,24,1) 0%, rgba(13,25,38,0.9) 100%)' }}>
         <div className="max-w-6xl mx-auto px-4 md:px-6">
           <div className="text-center mb-8 md:mb-14">
-            <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-indigo-300 border border-indigo-500/20">🖥️ Platforma ko'rinishi</div>
-            <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Platformani kashf eting</h2>
-            <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Haqiqiy ekranlar — hech qanday namoyishkorona</p>
+            <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-cyan-200 border border-cyan-500/20">
+              <Icon name="eye" size={16} />
+              Loyiha ekranlari
+            </div>
+            <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Mahsulot qanday ko'rinadi?</h2>
+            <p className="text-white/45 max-w-xl mx-auto text-sm md:text-base">Dashboard, test oynasi, reyting va profil ekranlari landing ichida ko'rinadigan qilib joylandi.</p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-7 md:mb-10">
+            {screens.map((s, i) => (
+              <button
+                key={s.label}
+                onClick={() => setActiveScreen(i)}
+                className="group text-left rounded-2xl overflow-hidden border border-white/10 transition-all hover:-translate-y-1"
+                style={{ background: 'rgba(255,255,255,0.06)' }}
+              >
+                <div className="aspect-[16/10] overflow-hidden" style={{ background: '#071124' }}>
+                  <img src={s.img} alt={s.label} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
+                </div>
+                <div className="flex items-center gap-3 px-4 py-3">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl text-cyan-200" style={{ background: 'rgba(34,211,238,0.12)' }}>
+                    <Icon name={s.icon} size={18} />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-white truncate">{s.label}</div>
+                    <div className="text-xs text-white/40 truncate">{s.desc}</div>
+                  </div>
+                </div>
+              </button>
+            ))}
           </div>
 
           {/* Tabs */}
@@ -130,9 +180,9 @@ const LandingPage = ({ onNavigate }) => {
                     key={i}
                     onClick={() => setActiveScreen(i)}
                     className={`flex-shrink-0 flex items-center gap-2 px-4 md:px-5 py-2.5 md:py-3 rounded-xl text-sm md:text-base font-semibold transition-all ${active ? 'text-white glow-blue' : 'glass text-white/60 hover:text-white'}`}
-                    style={active ? { background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)' } : {}}
+                    style={active ? { background: 'linear-gradient(135deg, #2563eb 0%, #0891b2 55%, #10b981 100%)' } : {}}
                   >
-                    <span className="text-base md:text-lg">{s.icon}</span>
+                    <Icon name={s.icon} size={18} />
                     <span>{s.label}</span>
                   </button>
                 );
@@ -158,7 +208,7 @@ const LandingPage = ({ onNavigate }) => {
             </div>
 
             {/* Screen content */}
-            <div className="relative" style={{ minHeight: '280px' }}>
+            <div className="relative" style={{ minHeight: '260px' }}>
               <div
                 key={activeScreen}
                 className="screen-fade"
@@ -183,8 +233,9 @@ const LandingPage = ({ onNavigate }) => {
                     onError={() => setImgErrors(prev => ({ ...prev, [activeScreen]: true }))}
                     className="w-full block"
                     style={{
-                      objectFit: 'cover',
-                      maxHeight: '620px',
+                      aspectRatio: '16 / 10',
+                      objectFit: 'contain',
+                      background: '#071124',
                       boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
                     }}
                   />
@@ -276,7 +327,10 @@ const LandingPage = ({ onNavigate }) => {
             <h2 className="text-xl md:text-3xl font-black text-white mb-3 md:mb-4">Bir tugma bilan tasdiqlash</h2>
             <p className="text-white/40 leading-relaxed mb-5 md:mb-6 text-sm md:text-base">O'quvchi ariza yuborganida, manager Telegram botida bildirishnoma oladi va bir tugma bosish bilan tasdiqlaydi.</p>
             <div className="flex gap-3 justify-center md:justify-start">
-              <button onClick={() => onNavigate('register')} className="btn-primary px-6 py-2.5 rounded-xl text-sm font-semibold">Sinab ko'ring</button>
+              <button onClick={() => onNavigate('register')} className="btn-primary inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold">
+                <Icon name="send" size={16} />
+                Sinab ko'ring
+              </button>
             </div>
           </div>
           <div className="flex-shrink-0">
@@ -333,11 +387,13 @@ const LandingPage = ({ onNavigate }) => {
           <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4 relative">Bugun boshlang</h2>
           <p className="text-white/40 mb-6 md:mb-8 relative text-sm md:text-base">Tashkilotingizni raqamli olimpiada platformasiga ulang</p>
           <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center sm:justify-center gap-3 md:gap-4 relative">
-            <button onClick={() => onNavigate('register')} className="btn-primary px-6 md:px-8 py-3 md:py-4 rounded-2xl text-sm md:text-base font-bold glow-blue">
-              🚀 Bepul boshlash
+            <button onClick={() => onNavigate('register')} className="btn-primary inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-4 rounded-2xl text-sm md:text-base font-bold glow-blue">
+              <Icon name="bolt" size={18} />
+              Bepul boshlash
             </button>
-            <button onClick={() => onNavigate('login')} className="btn-ghost px-6 md:px-8 py-3 md:py-4 rounded-2xl text-sm md:text-base font-semibold">
-              Kirish →
+            <button onClick={() => onNavigate('login')} className="btn-ghost inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-4 rounded-2xl text-sm md:text-base font-semibold">
+              Kirish
+              <Icon name="chevronRight" size={18} />
             </button>
           </div>
         </div>
