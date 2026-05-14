@@ -366,6 +366,33 @@ export const OlympyApi = {
   publishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/publish/`, { method: 'POST', token }),
   deactivateOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/deactivate/`, { method: 'POST', token }),
   finishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/finish/`, { method: 'POST', token }),
+  // Olimpiada statistikasi va natijalar eksporti (CSV).
+  getOlympiadStats: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/stats/`, { token }),
+  exportOlympiadResultsUrl: (olympiadId) => `${API_BASE_URL}/api/olympiads/${olympiadId}/export/`,
+  exportOlympiadResults: async (olympiadId, token) => {
+    const res = await fetch(`${API_BASE_URL}/api/olympiads/${olympiadId}/export/`, {
+      method: 'GET',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      let msg = "Natijalarni eksport qilib bo'lmadi";
+      try { const data = await res.json(); if (data?.detail) msg = data.detail; } catch {}
+      throw new ApiError(msg, { status: res.status });
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `olympy-results-${olympiadId}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  },
+  // Markaz statistikasi (Owner/Manager dashboard).
+  getCenterStats: (centerId, token) => request(`/api/centers/${centerId}/stats/`, { token }),
   // Questions
   getQuestions: (centerId, token) => request(`/api/questions/?center=${centerId}`, { token }).then(unwrapList),
   createQuestion: (payload, token) => request('/api/questions/', { method: 'POST', body: payload, token }),

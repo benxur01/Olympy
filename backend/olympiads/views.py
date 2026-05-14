@@ -1,4 +1,7 @@
-from django.db.models import Avg, Count
+import csv
+
+from django.db.models import Avg, Count, Max, Min
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
@@ -29,9 +32,13 @@ def olympiads_list_create(request):
         )
         qs = queryset.filter(visible_events_filter(request.user)).distinct()
         # Pagination: 500+ olimpiada bo'lishi mumkin, ayniqsa platform admin
-        # uchun. DRF PageNumberPagination orqali default 50/sahifa.
-        from rest_framework.pagination import PageNumberPagination
-        paginator = PageNumberPagination()
+        # uchun. Frontend grid'da hammasini bir martada ko'rsatish uchun
+        # `?page_size=200` yuboradi — Default PageNumberPagination uni
+        # e'tiborga olmasdi va 50 ta bilan chegaralanardi. LargePageNumberPagination
+        # `page_size_query_param='page_size'` va `max_page_size=200` bilan
+        # frontend so'rovini hurmat qiladi.
+        from olympy_api.pagination import LargePageNumberPagination
+        paginator = LargePageNumberPagination()
         page = paginator.paginate_queryset(qs, request)
         if page is not None:
             return paginator.get_paginated_response(OlympiadSerializer(page, many=True).data)
@@ -163,3 +170,118 @@ def deactivate_olympiad(request, olympiad_id):
     olympiad.status = Olympiad.STATUS_INACTIVE
     olympiad.save(update_fields=['status'])
     return Response(OlympiadSerializer(olympiad).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def export_results(request, olympiad_id):
+    """GET /api/olympiads/{id}/export/ — CSV format natijalar fayli.
+
+    Faqat center owner/manager/teacher va platform admin uchun.
+    Frontend "Natijalarni yuklab olish" tugmasi shu endpoint'ga ulanadi.
+    """
+    olympiad = get_object_or_404(
+        Olympiad.objects.select_related('center'),
+        pk=olympiad_id,
+    )
+    if not user_can_manage_center_event(request.user, olympiad.center):
+        return Response({'detail': 'Forbidden'},
+                        status=http_status.HTTP_403_FORBIDDEN)
+
+    # Avval attempts'larni rank tartibida olamiz. `select_related('user')`
+    # — har bir qator uchun alohida SQL urinishidan saqlaydi.
+    from attempts.models import TestAttempt
+    attempts = (
+        TestAttempt.objects
+        .filter(olympiad=olympiad)
+        .select_related('user')
+        .order_by('rank', '-score', 'time_spent')
+    )
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    safe_title = ''.join(
+        ch for ch in (olympiad.title or 'olimpiada')
+        if ch.isalnum() or ch in (' ', '_', '-')
+    )[:60].strip() or 'olimpiada'
+    safe_title = safe_title.replace(' ', '_')
+    response['Content-Disposition'] = (
+        f'attachment; filename="olympy-{safe_title}-{olympiad.id}-results.csv"'
+    )
+    # UTF-8 BOM — Excel CSV ni avtomatik UTF-8 sifatida tan oladi.
+    response.write('﻿')
+
+    writer = csv.writer(response)
+    writer.writerow([
+        "O'rin",
+        'Ism',
+        'Telefon',
+        'Ball',
+        "To'g'ri javoblar",
+        "Noto'g'ri javoblar",
+        'Jami savollar',
+        'Vaqt (soniya)',
+        'Yuborilgan vaqt',
+    ])
+    for a in attempts:
+        writer.writerow([
+            a.rank or '',
+            getattr(a.user, 'full_name', '') or '',
+            getattr(a.user, 'normalized_phone', '') or getattr(a.user, 'phone', '') or '',
+            a.score,
+            a.correct_count,
+            a.wrong_count,
+            a.total_questions,
+            a.time_spent,
+            a.submitted_at.strftime('%Y-%m-%d %H:%M:%S') if a.submitted_at else '',
+        ])
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def olympiad_stats(request, olympiad_id):
+    """GET /api/olympiads/{id}/stats/ — agregat statistika.
+
+    Owner/Manager dashboard'da ishlatiladi: ishtirokchilar soni, o'rtacha
+    ball, eng yuqori/eng past ball, to'liq yechganlar foizi, o'rtacha
+    sarflangan vaqt.
+    """
+    olympiad = get_object_or_404(
+        Olympiad.objects.select_related('center'),
+        pk=olympiad_id,
+    )
+    if not user_can_manage_center_event(request.user, olympiad.center):
+        return Response({'detail': 'Forbidden'},
+                        status=http_status.HTTP_403_FORBIDDEN)
+
+    from attempts.models import TestAttempt
+    aggregates = TestAttempt.objects.filter(olympiad=olympiad).aggregate(
+        participants=Count('id'),
+        avg_score=Avg('score'),
+        max_score=Max('score'),
+        min_score=Min('score'),
+        avg_time=Avg('time_spent'),
+        avg_correct=Avg('correct_count'),
+    )
+    participants = aggregates.get('participants') or 0
+    # To'liq yechganlar = score == max_score yoki score >= 90 emas; aniq
+    # ta'rif: barcha savollarga javob bergan attempts soni.
+    full_complete = TestAttempt.objects.filter(
+        olympiad=olympiad,
+        total_questions__gt=0,
+    ).extra(where=['correct_count + wrong_count >= total_questions']).count() if participants else 0
+    full_complete_pct = (
+        round((full_complete / participants) * 100, 1) if participants else 0.0
+    )
+    return Response({
+        'olympiad_id': olympiad.id,
+        'title': olympiad.title,
+        'participants': participants,
+        'average_score': round(aggregates.get('avg_score') or 0, 1),
+        'max_score': aggregates.get('max_score') or 0,
+        'min_score': aggregates.get('min_score') or 0,
+        'average_time_seconds': round(aggregates.get('avg_time') or 0, 1),
+        'average_correct': round(aggregates.get('avg_correct') or 0, 1),
+        'full_complete_count': full_complete,
+        'full_complete_percent': full_complete_pct,
+    })

@@ -1152,10 +1152,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       </div>
       <section className="overflow-hidden rounded-2xl border border-white/8 glass-strong">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[920px] text-left">
+          <table className="w-full min-w-[1020px] text-left">
             <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
               <tr className="text-[10px] font-black uppercase tracking-wider text-white/40">
-                {['Nomi', 'Turi', 'Fan', 'Daraja', 'Test turi', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => (
+                {['Nomi', 'Turi', 'Fan', 'Daraja', 'Test turi', 'Sana', 'Ishtirokchilar', 'Holat', 'Amal'].map(h => (
                   <th key={h} className="px-5 py-3.5">{h}</th>
                 ))}
               </tr>
@@ -1187,11 +1187,28 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   <td className="px-5 py-4">
                     <OwnerStatusPill status={o.status} />
                   </td>
+                  <td className="px-5 py-4">
+                    {isApi ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          OlympyApi.exportOlympiadResults(o.id, OlympyApi.getToken())
+                            .catch(err => console.warn('export failed', err));
+                        }}
+                        className="btn-ghost text-xs px-3 py-1.5 rounded-xl inline-flex items-center gap-1"
+                        title="Natijalarni CSV faylga eksport qilish"
+                      >
+                        <Icon name="download" size={12} /> CSV
+                      </button>
+                    ) : (
+                      <span className="text-white/30 text-xs">—</span>
+                    )}
+                  </td>
                 </tr>
               ))}
               {centerOlympiads.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
+                  <td colSpan={9} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
                     Hali tadbirlar yo'q
                   </td>
                 </tr>

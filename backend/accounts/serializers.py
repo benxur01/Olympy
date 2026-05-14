@@ -1,3 +1,5 @@
+from django.contrib.auth.password_validation import validate_password as django_validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .models import User
@@ -110,6 +112,16 @@ class RegisterSerializer(serializers.Serializer):
             raise serializers.ValidationError("Bu telefon raqam avval ro'yxatdan o'tgan")
         return norm
 
+    def validate_password(self, value):
+        # Django'ning standart parol validatorlari (uzunlik, oddiy parollar,
+        # raqamli-only, foydalanuvchi atributlariga o'xshashlik) — avval
+        # chaqirilmas edi va "123456" kabi parollar qabul qilinardi.
+        try:
+            django_validate_password(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value
+
     def create(self, validated_data):
         role = validated_data.pop('role', None)
         user = User.objects.create_user(
@@ -207,3 +219,13 @@ class VerifyOtpSerializer(serializers.Serializer):
 
 class ConfirmPasswordResetSerializer(VerifyOtpSerializer):
     password = serializers.CharField(write_only=True, min_length=6)
+
+    def validate_password(self, value):
+        # Parol reset paytida ham bir xil kuchli parol talablari amal
+        # qilishi kerak — aks holda foydalanuvchi reset orqali zaif
+        # parolga o'tib oladi.
+        try:
+            django_validate_password(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value

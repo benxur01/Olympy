@@ -600,7 +600,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             </div>
           } />
         <main className="flex-1 overflow-x-hidden overflow-y-auto">
-          {page === 'leaderboard' ? <LeaderboardPage embedded /> :
+          {page === 'leaderboard' ? <LeaderboardPage embedded user={user} /> :
            page === 'profile' ? <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} /> :
            (pages[page] || renderHome)()}
         </main>

@@ -27,6 +27,10 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [assignmentType, setAssignmentType] = React.useState('');
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
   const [removingMembershipId, setRemovingMembershipId] = React.useState(null);
+  // Studentlar ro'yxati uchun qidiruv: ism yoki telefon raqamga ko'ra
+  // filter. Avval input value/onChange'siz mavjud edi — foydalanuvchi
+  // yozardi lekin natija filterlanmasdi.
+  const [studentSearch, setStudentSearch] = React.useState('');
   // Telegram link polling intervalini ref'da saqlaymiz, shunda component
   // unmount bo'lsa ham tozalanadi (avval polling event handler ichida
   // boshlanardi va unmount paytida cheksiz davom etardi).
@@ -623,11 +627,21 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     </div>
   );
 
-  const renderStudents = () => (
+  const renderStudents = () => {
+    const searchQuery = (studentSearch || '').trim().toLowerCase();
+    const filteredStudents = searchQuery
+      ? students.filter(s => {
+          const name = String(s.name || '').toLowerCase();
+          const phone = String(s.phone || '').toLowerCase();
+          const subject = String(s.subject || '').toLowerCase();
+          return name.includes(searchQuery) || phone.includes(searchQuery) || subject.includes(searchQuery);
+        })
+      : students;
+    return (
     <div className="p-6 space-y-6 animate-in">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-black text-white">O'quvchilar ({students.length})</h2>
-        <div className="relative"><Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" /><input className="input-field pl-10 py-2" placeholder="Qidirish..." /></div>
+        <h2 className="text-xl font-black text-white">O'quvchilar ({filteredStudents.length}{searchQuery && filteredStudents.length !== students.length ? `/${students.length}` : ''})</h2>
+        <div className="relative"><Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" /><input className="input-field pl-10 py-2" placeholder="Qidirish..." value={studentSearch} onChange={e => setStudentSearch(e.target.value)} /></div>
       </div>
       <div className="glass rounded-2xl overflow-hidden">
         <table className="w-full">
@@ -637,7 +651,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             ))}
           </tr></thead>
           <tbody>
-            {students.map(s => {
+            {filteredStudents.map(s => {
               const canRemove = isApi && !!s.membershipId && (s.status || 'approved') === 'approved';
               const removing = removingMembershipId === s.membershipId;
               return (
@@ -664,14 +678,17 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 </tr>
               );
             })}
-            {students.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-white/40 text-sm">Tasdiqlangan o'quvchilar yo'q</td></tr>
+            {filteredStudents.length === 0 && (
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-white/40 text-sm">
+                {searchQuery ? "Qidiruv bo'yicha o'quvchi topilmadi" : "Tasdiqlangan o'quvchilar yo'q"}
+              </td></tr>
             )}
           </tbody>
         </table>
       </div>
     </div>
-  );
+    );
+  };
 
   const renderRequests = () => (
     <div className="p-6 space-y-6 animate-in">

@@ -340,19 +340,6 @@ const App = () => {
         }
         return <OlympiadTestPage olympiad={activeOlympiad} user={user} onFinish={handleTestFinish} onNavigate={navigate} />;
       }
-      case 'results': return (
-        <div className="min-h-screen" style={{ background: '#060818' }}>
-          <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
-            <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={() => navigate(roleHomePage(user))} aria-label="Dashboardga qaytish">
-              <BrandLogo size="sm" />
-            </button>
-            <button onClick={() => navigate(roleHomePage(user))} className="ml-auto btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5">
-              <Icon name="arrowLeft" size={13} /> Dashboardga qaytish
-            </button>
-          </div>
-          <ResultsPage result={testResult} user={user} onNavigate={navigate} />
-        </div>
-      );
       case 'leaderboard': return (
         <div className="min-h-screen" style={{ background: '#060818' }}>
           <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
@@ -363,9 +350,47 @@ const App = () => {
               <Icon name="arrowLeft" size={13} /> Orqaga
             </button>
           </div>
-          <LeaderboardPage onNavigate={navigate} />
+          <LeaderboardPage onNavigate={navigate} user={user} />
         </div>
       );
+      case 'profile': return (
+        <div className="min-h-screen" style={{ background: '#060818' }}>
+          <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
+            <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={() => navigate(roleHomePage(user))} aria-label="Dashboardga qaytish">
+              <BrandLogo size="sm" />
+            </button>
+            <button onClick={() => navigate(roleHomePage(user))} className="ml-auto btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5">
+              <Icon name="arrowLeft" size={13} /> Orqaga
+            </button>
+          </div>
+          <ProfilePage user={user} onUserUpdate={updateCurrentUser} onNavigate={navigate} />
+        </div>
+      );
+      // /dashboard/questions, /dashboard/olympiads, /dashboard/results deep
+      // linklari ilgari renderPage switch'iga tushmasdi va LandingPage
+      // ko'rinardi. Endi role home dashboard'iga yo'naltiramiz — u dashboard
+      // ichidagi sub-tab orqali kerakli sahifani ochishi mumkin.
+      case 'questions':
+      case 'olympiads':
+      case 'results':
+        if (page === 'results' && testResult) {
+          return (
+            <div className="min-h-screen" style={{ background: '#060818' }}>
+              <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
+                <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={() => navigate(roleHomePage(user))} aria-label="Dashboardga qaytish">
+                  <BrandLogo size="sm" />
+                </button>
+                <button onClick={() => navigate(roleHomePage(user))} className="ml-auto btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5">
+                  <Icon name="arrowLeft" size={13} /> Dashboardga qaytish
+                </button>
+              </div>
+              <ResultsPage result={testResult} user={user} onNavigate={navigate} />
+            </div>
+          );
+        }
+        return renderDashboard(user?.activeRole || (user?.roles ? Object.keys(user.roles)[0] : 'student') || 'student');
+      case 'pending':
+        return <PendingHome user={user} onLogout={handleLogout} onNavigate={navigate} />;
       default: return <LandingPage onNavigate={navigate} />;
     }
   };
