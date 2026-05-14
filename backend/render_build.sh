@@ -11,9 +11,12 @@
 #   4) Apply database migrations (Django avtomatik olympy schema'siga yozadi)
 #   5) If bootstrap admin env vars are set, create/update the platform admin.
 set -o errexit
+set -x
 
+echo "=== STEP 1: pip install ==="
 pip install --upgrade pip
 pip install -r requirements.txt
+echo "=== pip install OK ==="
 
 python <<'PY'
 import os
@@ -48,6 +51,14 @@ except Exception as e:
         print('[render_build] Continuing — schema may already exist', file=sys.stderr)
 PY
 
+echo "=== STEP 3: collectstatic ==="
 python manage.py collectstatic --no-input
+echo "=== collectstatic OK ==="
+
+echo "=== STEP 4: migrate ==="
 python manage.py migrate --no-input
+echo "=== migrate OK ==="
+
+echo "=== STEP 5: ensure_platform_admin ==="
 python manage.py ensure_platform_admin
+echo "=== BUILD COMPLETE ==="
