@@ -50,10 +50,18 @@ const LandingPage = ({ onNavigate }) => {
   return (
     <div className="min-h-screen" style={{ background: '#060818' }}>
       {/* Navbar */}
-      <nav className="glass border-b border-white/5 sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-3 md:py-4 flex items-center justify-between gap-2">
+      <nav
+        className="sticky top-0 z-50"
+        style={{
+          background: 'rgba(6,8,24,0.92)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
+          borderBottom: '1px solid rgba(255,255,255,0.06)',
+        }}
+      >
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-2 md:py-2.5 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 md:gap-3 cursor-pointer min-w-0" onClick={() => window.scrollTo(0,0)}>
-            <BrandLogo size="lg" />
+            <BrandLogo size="md" />
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm text-white/60">
             <a href="#features" className="hover:text-white transition-colors cursor-pointer">Xususiyatlar</a>
@@ -61,8 +69,8 @@ const LandingPage = ({ onNavigate }) => {
             <a href="#pricing" className="hover:text-white transition-colors cursor-pointer">Narxlar</a>
           </div>
           <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
-            <button onClick={() => onNavigate('login')} className="hidden md:block btn-ghost px-4 py-2 rounded-xl text-sm font-medium">Kirish</button>
-            <button onClick={() => onNavigate('register')} className="btn-primary px-3 md:px-4 py-2 rounded-xl text-xs md:text-sm font-semibold">Boshlash</button>
+            <button onClick={() => onNavigate('login')} className="hidden md:block btn-ghost px-4 py-1.5 rounded-xl text-sm font-medium">Kirish</button>
+            <button onClick={() => onNavigate('register')} className="btn-primary px-3 md:px-4 py-1.5 rounded-xl text-xs md:text-sm font-semibold">Boshlash</button>
           </div>
         </div>
       </nav>
