@@ -27,6 +27,7 @@ MAX_CONTEXT_PENDING_ROWS = 20
 DEFAULT_CONVERSATION_TTL_SECONDS = 6 * 60 * 60
 DEFAULT_HISTORY_MESSAGES = 8
 OPENAI_ERROR_CACHE_SECONDS = 30 * 60
+GEMINI_ERROR_CACHE_SECONDS = 30 * 60
 
 APPROVAL_KEYWORDS = (
     'tasdiqla',
@@ -141,8 +142,6 @@ def _approval_intent(text, has_file=False):
     has_phone = bool(re.search(r'(?:\+?998)?\d[\d\s().-]{7,}\d', lowered))
     has_code = bool(re.search(r'\b(?:kod|code)\s*[:#-]?\s*[a-z0-9_-]{3,16}\b', lowered, flags=re.IGNORECASE))
     if has_roster_word and (has_phone or has_code):
-        return True
-    if '\n' in str(text or ''):
         return True
     return False
 
@@ -417,6 +416,20 @@ def _gemini_keys():
     return list(dict.fromkeys(key for key in keys if key))
 
 
+def _gemini_error_cache_key():
+    return 'manager_bot:gemini_last_error'
+
+
+def _remember_gemini_error(error_code):
+    if error_code in ('insufficient_quota', 'invalid_key'):
+        cache.set(_gemini_error_cache_key(), error_code, timeout=GEMINI_ERROR_CACHE_SECONDS)
+
+
+def _cached_gemini_error():
+    cached = cache.get(_gemini_error_cache_key())
+    return cached if cached in ('insufficient_quota', 'invalid_key') else ''
+
+
 def _configured_gemini_models():
     primary = getattr(settings, 'AI_MANAGER_BOT_GEMINI_MODEL', 'gemini-2.5-flash')
     fallbacks = list(getattr(settings, 'AI_MANAGER_BOT_GEMINI_FALLBACK_MODELS', []) or [])
@@ -457,20 +470,21 @@ def _discover_gemini_models(api_key):
         logger.warning('Manager bot Gemini model discovery failed: HTTP %s', getattr(exc, 'code', 0))
     except Exception as exc:
         logger.warning('Manager bot Gemini model discovery failed: %s', exc.__class__.__name__)
-    max_models = max(1, int(getattr(settings, 'AI_MANAGER_BOT_GEMINI_MAX_MODELS', 40)))
+    max_models = max(1, int(getattr(settings, 'AI_MANAGER_BOT_GEMINI_MAX_MODELS', 6)))
     models = list(dict.fromkeys(models))[:max_models]
-    cache.set(
-        _gemini_model_cache_key(api_key),
-        models,
-        timeout=getattr(settings, 'AI_MANAGER_BOT_GEMINI_MODEL_CACHE_SECONDS', 6 * 60 * 60),
-    )
+    if models:
+        cache.set(
+            _gemini_model_cache_key(api_key),
+            models,
+            timeout=getattr(settings, 'AI_MANAGER_BOT_GEMINI_MODEL_CACHE_SECONDS', 6 * 60 * 60),
+        )
     return models
 
 
 def _gemini_models(api_key=None):
     configured = _configured_gemini_models()
     discovered = _discover_gemini_models(api_key) if api_key else []
-    max_models = max(1, int(getattr(settings, 'AI_MANAGER_BOT_GEMINI_MAX_MODELS', 40)))
+    max_models = max(1, int(getattr(settings, 'AI_MANAGER_BOT_GEMINI_MAX_MODELS', 6)))
     return list(dict.fromkeys([*configured, *discovered]))[:max_models]
 
 
@@ -545,7 +559,7 @@ def _openai_answer(actor, text, ctx):
                         if content.get('type') in ('output_text', 'text'):
                             chunks.append(content.get('text') or '')
                 text_out = ''.join(chunks)
-            return text_out.strip()[:3500]
+            return text_out.strip()[:3500], ''
         except urllib.error.HTTPError as exc:
             status = getattr(exc, 'code', 0)
             error_code = ''
@@ -581,6 +595,9 @@ def _gemini_answer(actor, text, ctx):
     api_keys = _gemini_keys()
     if not api_keys:
         return '', 'missing_key'
+    cached_error = _cached_gemini_error()
+    if cached_error:
+        return '', cached_error
     prompt = _manager_ai_prompt(actor, text, ctx)
     payload = {
         'contents': [{
@@ -642,7 +659,7 @@ def _gemini_answer(actor, text, ctx):
                 )
                 if status == 429 or error_status == 'RESOURCE_EXHAUSTED':
                     quota_seen = True
-                    continue
+                    break
                 if status == 401 or 'API key not valid' in error_message:
                     invalid_key_seen = True
                     break
@@ -663,9 +680,13 @@ def _gemini_answer(actor, text, ctx):
                 )
                 temporary_seen = True
                 continue
+        if quota_seen or invalid_key_seen:
+            break
     if quota_seen:
+        _remember_gemini_error('insufficient_quota')
         return '', 'insufficient_quota'
     if invalid_key_seen:
+        _remember_gemini_error('invalid_key')
         return '', 'invalid_key'
     if temporary_seen:
         return '', 'temporary_unavailable'
