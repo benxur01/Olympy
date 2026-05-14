@@ -2,6 +2,15 @@
 
 const LandingPage = ({ onNavigate }) => {
   const [mobileMenu, setMobileMenu] = React.useState(false);
+  const [activeScreen, setActiveScreen] = React.useState(0);
+  const [imgErrors, setImgErrors] = React.useState({});
+
+  const screens = [
+    { label: 'Dashboard', icon: '📊', img: '/screenshots/dashboard.png', desc: 'Barcha statistika bir joyda' },
+    { label: 'Olimpiada', icon: '🏆', img: '/screenshots/test.png', desc: 'Qulay test interfeysi' },
+    { label: 'Natijalar', icon: '📈', img: '/screenshots/leaderboard.png', desc: 'Real vaqt reytingi' },
+    { label: 'Profil', icon: '👤', img: '/screenshots/profile.png', desc: 'Shaxsiy yutuqlar' },
+  ];
 
   const features = [
     { icon: '✨', title: 'AI orqali savol yaratish', desc: 'Sun\'iy intellekt yordamida sekundlar ichida yuzlab savol yarating', color: 'from-indigo-500 to-purple-600' },
@@ -92,6 +101,110 @@ const LandingPage = ({ onNavigate }) => {
           </div>
 
         </div>
+      </section>
+
+      {/* Platforma ko'rinishi — haqiqiy screenshotlar */}
+      <section className="py-12 md:py-24 relative overflow-hidden" style={{ background: 'rgba(99,102,241,0.03)' }}>
+        <div className="max-w-6xl mx-auto px-4 md:px-6">
+          <div className="text-center mb-8 md:mb-14">
+            <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-indigo-300 border border-indigo-500/20">🖥️ Platforma ko'rinishi</div>
+            <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Platformani kashf eting</h2>
+            <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Haqiqiy ekranlar — hech qanday namoyishkorona</p>
+          </div>
+
+          {/* Tabs */}
+          <div className="mb-6 md:mb-8 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="flex gap-2 md:gap-3 md:justify-center min-w-min">
+              {screens.map((s, i) => {
+                const active = activeScreen === i;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => setActiveScreen(i)}
+                    className={`flex-shrink-0 flex items-center gap-2 px-4 md:px-5 py-2.5 md:py-3 rounded-xl text-sm md:text-base font-semibold transition-all ${active ? 'text-white glow-blue' : 'glass text-white/60 hover:text-white'}`}
+                    style={active ? { background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)' } : {}}
+                  >
+                    <span className="text-base md:text-lg">{s.icon}</span>
+                    <span>{s.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Browser window mockup */}
+          <div className="glass rounded-2xl overflow-hidden border border-white/10" style={{ background: '#0a0d1f' }}>
+            {/* Browser chrome */}
+            <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5" style={{ background: 'rgba(255,255,255,0.02)' }}>
+              <div className="flex gap-1.5 md:gap-2 flex-shrink-0">
+                <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" style={{ background: '#ff5f57' }} />
+                <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" style={{ background: '#febc2e' }} />
+                <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" style={{ background: '#28c840' }} />
+              </div>
+              <div className="flex-1 mx-2 md:mx-4 px-3 py-1 md:py-1.5 rounded-md text-xs text-white/40 truncate" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                prolymp.uz/{screens[activeScreen].label.toLowerCase()}
+              </div>
+              <div className="hidden md:flex gap-1 text-white/20 text-xs flex-shrink-0">
+                <span>⟲</span>
+              </div>
+            </div>
+
+            {/* Screen content */}
+            <div className="relative" style={{ minHeight: '280px' }}>
+              <div
+                key={activeScreen}
+                className="screen-fade"
+                style={{ animation: 'screenFade 0.4s ease-out' }}
+              >
+                {imgErrors[activeScreen] ? (
+                  <div
+                    className="flex flex-col items-center justify-center text-center px-6 py-16 md:py-24"
+                    style={{
+                      background: 'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(168,85,247,0.08) 50%, rgba(34,211,238,0.06) 100%)',
+                      minHeight: '320px',
+                    }}
+                  >
+                    <div className="text-5xl md:text-6xl mb-4 spinner-icon" style={{ animation: 'spin 2s linear infinite', display: 'inline-block' }}>⏳</div>
+                    <div className="text-lg md:text-xl font-bold text-white/80 mb-2">Tez orada</div>
+                    <div className="text-sm text-white/40">Rasm yuklanmoqda...</div>
+                  </div>
+                ) : (
+                  <img
+                    src={screens[activeScreen].img}
+                    alt={screens[activeScreen].label}
+                    onError={() => setImgErrors(prev => ({ ...prev, [activeScreen]: true }))}
+                    className="w-full block"
+                    style={{
+                      objectFit: 'cover',
+                      maxHeight: '620px',
+                      boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
+                    }}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Caption */}
+          <div className="text-center mt-5 md:mt-6">
+            <div className="text-sm md:text-base text-white/60">
+              <span className="text-white/90 font-semibold">{screens[activeScreen].label}</span>
+              <span className="mx-2 text-white/20">·</span>
+              <span>{screens[activeScreen].desc}</span>
+            </div>
+          </div>
+        </div>
+
+        <style>{`
+          @keyframes screenFade {
+            from { opacity: 0; }
+            to { opacity: 1; }
+          }
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
       </section>
 
       {/* Stats */}
