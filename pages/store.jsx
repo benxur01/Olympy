@@ -491,11 +491,13 @@ const roleHomePage = (user) => {
 };
 
 // Status label localization
+// Avval 'draft' inglizcha qoldirilardi — endi 'Qoralama' qilindi. Boshqa
+// barcha statuslar o'zbek tilida.
 const statusLabel = (s) =>
   s === 'pending' ? 'Kutilmoqda' :
   s === 'approved' ? 'Tasdiqlandi' :
   s === 'rejected' ? 'Rad etildi' :
-  s === 'draft' ? 'Draft' :
+  s === 'draft' ? 'Qoralama' :
   s === 'inactive' ? 'Nofaol' :
   s === 'active' ? 'Faol' :
   s === 'finished' ? 'Tugagan' :

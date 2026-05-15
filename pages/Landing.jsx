@@ -55,13 +55,12 @@ const LandingPage = ({ onNavigate }) => {
 
   return (
     <div className="min-h-screen" style={{ background: '#060818' }}>
-      {/* Navbar */}
+      {/* Navbar — Telegram WebView'da backdrop-filter sekin ishlaydi, shu sababli
+          backdropFilter olib tashlangan va solid background ishlatilgan. */}
       <nav
         className="sticky top-0 z-50"
         style={{
-          background: 'rgba(6,8,24,0.92)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
+          background: 'rgba(15, 23, 42, 0.95)',
           borderBottom: '1px solid rgba(255,255,255,0.06)',
         }}
       >
@@ -339,12 +338,17 @@ const LandingPage = ({ onNavigate }) => {
         </div>
       </section>
 
-      {/* Pricing */}
+      {/* Pricing
+          TODO: backend'da subscription/plan modeli hali yo'q. Bu blok faqat
+          ko'rsatma. To'lov-modul tayyor bo'lganda dynamic ga o'zgartiriladi. */}
       <section id="pricing" className="py-12 md:py-24" style={{ background: 'rgba(99,102,241,0.03)' }}>
         <div className="max-w-5xl mx-auto px-4 md:px-6">
           <div className="text-center mb-8 md:mb-16">
             <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-indigo-300 border border-indigo-500/20">💎 Narxlar</div>
             <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Qulay narxlar</h2>
+            <p className="text-sm text-white/50 max-w-xl mx-auto">
+              Hozircha platforma erkin foydalanish bosqichida. Yakuniy rejalar va to'lov modullari tez orada e'lon qilinadi — batafsil ma'lumot uchun bog'laning.
+            </p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             {pricing.map((p, i) => {

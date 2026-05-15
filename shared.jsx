@@ -117,11 +117,17 @@ const Avatar = ({ name = '', size = 36, gradient = 'from-indigo-500 to-purple-60
 };
 
 // ─── Badge ─────────────────────────────────────────────────────────────────────
+// Avval 'Tugagan' va 'Tugadi' qizil (badge-rejected) ko'rinardi — finished
+// olympiad'lar xato xolatga o'xshab ko'rinardi. Endi tugagan tadbirlar uchun
+// alohida ko'k 'badge-finished' rangi ishlatiladi.
 const Badge = ({ status }) => {
   const map = {
     'Kutilmoqda': 'badge-pending', 'Tasdiqlandi': 'badge-approved', 'Rad etildi': 'badge-rejected',
-    'Faol': 'badge-active', 'Draft': 'badge-draft', 'Nofaol': 'badge-pending', 'Tugagan': 'badge-rejected',
-    'active': 'badge-active', 'inactive': 'badge-pending', 'pending': 'badge-pending', 'approved': 'badge-approved', 'rejected': 'badge-rejected',
+    'Faol': 'badge-active', 'Qoralama': 'badge-draft', 'Nofaol': 'badge-pending',
+    'Tugagan': 'badge-finished', 'Tugadi': 'badge-finished',
+    'active': 'badge-active', 'inactive': 'badge-pending', 'pending': 'badge-pending',
+    'approved': 'badge-approved', 'rejected': 'badge-rejected', 'finished': 'badge-finished',
+    'draft': 'badge-draft',
   };
   return <span className={`chip ${map[status] || 'badge-draft'}`}>{status}</span>;
 };

@@ -423,6 +423,9 @@ export const OlympyApi = {
   // Attempts / results / leaderboard
   submitAttempt: (payload, token) => request('/api/attempts/', { method: 'POST', body: payload, token }),
   reportCheating: (payload, token) => request('/api/attempts/cheating/', { method: 'POST', body: payload, token, keepalive: true, retryOnAuth: false }),
+  // Bitta attemptni olib kelish — Leaderboard "Ko'rish" tugmasi va Results
+  // sahifasi uchun. Backend olympiad detail'ni ham qo'shib qaytaradi.
+  getAttempt: (attemptId, token) => request(`/api/attempts/${attemptId}/`, { token }),
   getMyResults: (token) => request('/api/results/me/', { token }).then(unwrapList),
   getMyStats: (token) => request('/api/results/me/stats/', { token }),
   // Backend yangi shakl: { olympiad: {...}|null, entries: [...] }. Eski koddan

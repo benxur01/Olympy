@@ -51,15 +51,18 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // boshqa markazga rejected/pending statusi ko'rinmasdi va u qayta
   // "Ariza yuborish" tugmasini ko'rib qolardi. Endi backend qaytaradigan
   // roles_detail.student.centers ro'yxatini to'liq aylanib chiqamiz.
+  // mapBackendUser bu ro'yxatni roles.student.centers ga yozadi.
   const myRequestByCenter = {};
   if (!isApi) {
     store.requests.filter(r => r.userId === user.id && r.type === 'student').forEach(r => {
       myRequestByCenter[r.centerId] = r.status;
     });
   } else {
-    const studentCenters = user?.roles_detail?.student?.centers
-      || user?.rolesDetail?.student?.centers
-      || [];
+    const studentCenters = (studentRole && Array.isArray(studentRole.centers))
+      ? studentRole.centers
+      : (user?.roles_detail?.student?.centers
+          || user?.rolesDetail?.student?.centers
+          || []);
     if (Array.isArray(studentCenters) && studentCenters.length) {
       studentCenters.forEach(c => {
         const cid = c?.centerId ?? c?.center_id ?? c?.id;
@@ -68,7 +71,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         }
       });
     } else if (studentCenterId && studentStatus) {
-      // Eski fallback (agar roles_detail to'liq bo'lmasa)
+      // Eski fallback (agar centers ro'yxati to'liq bo'lmasa)
       myRequestByCenter[String(studentCenterId)] = studentStatus;
     }
   }

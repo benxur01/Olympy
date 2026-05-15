@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 
 from django.db import transaction
 from django.db.models import Avg, Count, Max, Q
@@ -13,6 +14,24 @@ from rest_framework.response import Response
 from centers.models import CenterMembership, EducationCenter
 from olympiads.models import Olympiad
 from olympiads.services import user_can_participate_in_event
+
+
+def _recompute_center_rating(center):
+    """Markazning rating maydonini barcha attemptlar o'rtacha balliga qaytib hisoblaydi.
+
+    Rating 0-5 shkalasida (DecimalField max_digits=3, decimal_places=1).
+    100 ball → 5.0, 0 ball → 0.0. Avval bu maydon hech qachon yangilanmas edi
+    va doim 0.0 ko'rinardi. Endi har submit_attempt'dan keyin qayta hisoblanadi.
+    """
+    if not center:
+        return
+    agg = TestAttempt.objects.filter(olympiad__center=center).aggregate(avg=Avg('score'))
+    avg = agg['avg'] or 0
+    rating = round(min(5.0, max(0.0, float(avg) / 20.0)), 1)
+    new_value = Decimal(str(rating))
+    if center.rating != new_value:
+        center.rating = new_value
+        center.save(update_fields=['rating'])
 
 from django.http import HttpResponse
 
@@ -140,6 +159,18 @@ def submit_attempt(request):
         session.save(update_fields=['status'])
 
         attempt.refresh_from_db(fields=['rank'])
+
+        # Markaz rating'ini avtomatik yangilash. Avval bu maydon hech qachon
+        # hisoblanmas edi va doim 0.0 ko'rinardi. Endi har attemptdan keyin
+        # qayta hisoblanadi (0-5 shkala, ball/20.0).
+        if olympiad.center_id:
+            try:
+                _recompute_center_rating(olympiad.center)
+            except Exception:
+                # Rating xato submit muvaffaqiyatini buzmasligi kerak.
+                import logging
+                logging.getLogger(__name__).exception('center rating recompute failed')
+
         data = TestAttemptSerializer(attempt).data
         data['max_score'] = max_possible
         # Yangi semantika: blank (javob berilmagan) va answered alohida
@@ -196,6 +227,57 @@ def report_cheating(request):
         'disqualified': True,
         'detail': "Siz cheating qildingiz. Olimpiada yakunlandi.",
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def attempt_detail(request, attempt_id):
+    """GET /api/attempts/{attempt_id}/ — bitta attempt natijasi.
+
+    Leaderboard "Ko'rish" tugmasi va shunga o'xshash sahifalar uchun.
+    Ruxsatlar:
+      - Attempt egasi (foydalanuvchining o'zi)
+      - Platform admin
+      - Olympiad markaziga tegishli owner/manager
+    Boshqa hollarda 403 qaytariladi.
+    """
+    attempt = get_object_or_404(
+        TestAttempt.objects.select_related('user', 'olympiad', 'olympiad__center'),
+        pk=attempt_id,
+    )
+    is_owner = attempt.user_id == request.user.id
+    is_admin = request.user.is_platform_admin
+    can_view = is_owner or is_admin
+    if not can_view and attempt.olympiad.center_id:
+        can_view = (
+            attempt.olympiad.center.owner_id == request.user.id
+            or CenterMembership.objects.filter(
+                user=request.user,
+                center_id=attempt.olympiad.center_id,
+                role__in=[CenterMembership.ROLE_MANAGER, CenterMembership.ROLE_OWNER],
+                status=CenterMembership.STATUS_APPROVED,
+            ).exists()
+        )
+    if not can_view:
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    data = TestAttemptSerializer(attempt).data
+    # Olimpiada ma'lumotini ham qo'shamiz — frontend bittagina so'rov bilan
+    # to'liq sahifani chizishi mumkin.
+    olympiad = attempt.olympiad
+    data['olympiad_detail'] = {
+        'id': olympiad.id,
+        'title': olympiad.title,
+        'subject': olympiad.subject,
+        'event_type': olympiad.event_type,
+        'test_level': olympiad.test_level,
+        'test_type': olympiad.test_type,
+        'duration_minutes': olympiad.duration_minutes,
+        'start_datetime': olympiad.start_datetime.isoformat() if olympiad.start_datetime else None,
+        'center_id': olympiad.center_id,
+        'center_name': olympiad.center.name if olympiad.center_id else '',
+    }
+    return Response(data)
 
 
 @api_view(['GET'])

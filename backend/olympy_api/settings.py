@@ -207,6 +207,10 @@ REST_FRAMEWORK = {
         'anon': '20/min',
         'user': '100/min',
         'auth': '5/min',
+        # Register endpoint'lari uchun alohida cheklov. Avval bu endpoint'larda
+        # rate limit yo'q edi va hujumchi soatiga 1000+ ta hisob yarata olardi
+        # — endi IP bo'yicha soatiga 5 ta ro'yxatdan o'tish.
+        'register': '5/hour',
         'ai_question': '20/hour',
     },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',

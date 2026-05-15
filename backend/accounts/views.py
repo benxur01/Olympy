@@ -111,6 +111,7 @@ def _recent_verified_phone(normalized_phone):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([ScopedRateThrottle])
 def register(request):
     """POST /api/auth/register/ — create a new user account.
 
@@ -224,8 +225,12 @@ def register(request):
     return _set_auth_cookies(response, payload)
 
 
+register.cls.throttle_scope = 'register'
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([ScopedRateThrottle])
 def register_organization(request):
     """POST /api/auth/register-organization/ — create user + pending center.
 
@@ -275,6 +280,9 @@ def register_organization(request):
         'center': EducationCenterSerializer(center).data,
     }, status=status.HTTP_201_CREATED)
     return _set_auth_cookies(response, payload)
+
+
+register_organization.cls.throttle_scope = 'register'
 
 
 @api_view(['POST'])
