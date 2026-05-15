@@ -1412,20 +1412,23 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
       )}
       {centerModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 p-4">
-          <form onSubmit={submitCenter} className="w-full max-w-lg rounded-xl border border-slate-200 bg-white p-5 shadow-2xl">
+        // Owner dashboard markaz qo'shish/tahrirlash modali. Avval bu modal
+        // light theme'da (bg-white, slate-200 border) ko'rinardi va qolgan dark
+        // dashboard'dan ajralib turardi. Endi dark theme'ga moslashtirilgan.
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-4">
+          <form onSubmit={submitCenter} className="w-full max-w-lg rounded-xl border border-white/10 bg-slate-900 p-5 shadow-2xl">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-black text-slate-900">{editingCenterId ? 'Tashkilotni tahrirlash' : "Yangi tashkilot qo'shish"}</h2>
-                <div className="mt-1 text-xs font-bold text-slate-500">{editingCenterId ? "Ma'lumotlarni yangilang va saqlang" : "Ariza Platform Admin tasdig'iga yuboriladi"}</div>
+                <h2 className="text-lg font-black text-white">{editingCenterId ? 'Tashkilotni tahrirlash' : "Yangi tashkilot qo'shish"}</h2>
+                <div className="mt-1 text-xs font-bold text-white/50">{editingCenterId ? "Ma'lumotlarni yangilang va saqlang" : "Ariza Platform Admin tasdig'iga yuboriladi"}</div>
               </div>
-              <button type="button" onClick={closeCenterModal} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+              <button type="button" onClick={closeCenterModal} className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white">
                 <Icon name="x" size={18} />
               </button>
             </div>
             <div className="space-y-4">
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Tashkilot turi</span>
+                <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tashkilot turi</span>
                 <select
                   value={centerForm.organizationType}
                   onChange={e => setCenterForm(prev => ({
@@ -1433,69 +1436,69 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     organizationType: e.target.value,
                     customOrganizationType: e.target.value === 'Boshqa' ? prev.customOrganizationType : '',
                   }))}
-                  className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                  className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
                 >
-                  {centerOrganizationTypes.map(type => <option key={type} value={type}>{type}</option>)}
+                  {centerOrganizationTypes.map(type => <option key={type} value={type} style={{ background: '#12152e' }}>{type}</option>)}
                 </select>
               </label>
               {centerForm.organizationType === 'Boshqa' && (
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Tashkilot turini yozing</span>
+                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tashkilot turini yozing</span>
                   <input
                     value={centerForm.customOrganizationType}
                     onChange={e => updateCenterForm('customOrganizationType', e.target.value)}
-                    className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                    className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
                     placeholder="Masalan, Respublika markazi"
                   />
                 </label>
               )}
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Davlat</span>
+                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Davlat</span>
                   <select
                     value={centerForm.country}
                     onChange={e => updateCenterForm('country', e.target.value)}
-                    className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                    className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
                   >
-                    <option value="O'zbekiston">O'zbekiston</option>
+                    <option value="O'zbekiston" style={{ background: '#12152e' }}>O'zbekiston</option>
                   </select>
                 </label>
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Viloyat</span>
+                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Viloyat</span>
                   <select
                     value={centerForm.region}
                     onChange={e => setCenterForm(prev => ({ ...prev, region: e.target.value, district: '' }))}
-                    className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                    className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
                   >
-                    <option value="">Viloyatni tanlang</option>
-                    {centerRegions.map(region => <option key={region} value={region}>{region}</option>)}
+                    <option value="" style={{ background: '#12152e' }}>Viloyatni tanlang</option>
+                    {centerRegions.map(region => <option key={region} value={region} style={{ background: '#12152e' }}>{region}</option>)}
                   </select>
                 </label>
               </div>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Tuman/Shahar</span>
+                <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tuman/Shahar</span>
                 <select
                   value={centerForm.district}
                   disabled={!centerForm.region}
                   onChange={e => updateCenterForm('district', e.target.value)}
-                  className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100 disabled:bg-slate-50 disabled:text-slate-400"
+                  className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30 disabled:opacity-50"
                 >
-                  <option value="">{centerForm.region ? 'Tumanni tanlang' : 'Avval viloyatni tanlang'}</option>
-                  {centerDistrictOptions.map(district => <option key={district} value={district}>{district}</option>)}
+                  <option value="" style={{ background: '#12152e' }}>{centerForm.region ? 'Tumanni tanlang' : 'Avval viloyatni tanlang'}</option>
+                  {centerDistrictOptions.map(district => <option key={district} value={district} style={{ background: '#12152e' }}>{district}</option>)}
                 </select>
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black uppercase text-slate-400">Tashkilot nomi</span>
+                <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tashkilot nomi</span>
                 <input
                   value={centerForm.name}
                   onChange={e => updateCenterForm('name', e.target.value)}
-                  className="h-11 w-full rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-800 outline-none focus:border-emerald-400 focus:ring-4 focus:ring-emerald-100"
+                  className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
                   placeholder="Masalan, ProSkill Language"
                   autoFocus
                 />
               </label>
               <div>
-                <span className="mb-2 block text-xs font-black uppercase text-slate-400">Yo'naltirilgan fanlar</span>
+                <span className="mb-2 block text-xs font-black uppercase text-white/40">Yo'naltirilgan fanlar</span>
                 <div className="flex flex-wrap gap-2">
                   {store.subjects.map(subject => {
                     const active = centerForm.subjects.includes(subject);
@@ -1507,7 +1510,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                           ...prev,
                           subjects: active ? prev.subjects.filter(s => s !== subject) : [...prev.subjects, subject],
                         }))}
-                        className={`rounded-lg px-3 py-1.5 text-xs font-black ring-1 transition ${active ? 'bg-emerald-600 text-white ring-emerald-600' : 'bg-slate-50 text-slate-600 ring-slate-200 hover:bg-slate-100'}`}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-black ring-1 transition ${active ? 'bg-indigo-600 text-white ring-indigo-500' : 'bg-white/5 text-white/70 ring-white/10 hover:bg-white/10'}`}
                       >
                         {subject}
                       </button>
@@ -1517,10 +1520,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </div>
             </div>
             <div className="mt-6 flex gap-3">
-              <button type="button" onClick={closeCenterModal} className="flex-1 rounded-lg border border-slate-200 px-4 py-3 text-sm font-black text-slate-600 hover:bg-slate-50">
+              <button type="button" onClick={closeCenterModal} className="flex-1 rounded-lg border border-white/10 px-4 py-3 text-sm font-black text-white/70 hover:bg-white/5">
                 Bekor qilish
               </button>
-              <button disabled={centerSaving} className="flex-1 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
+              <button disabled={centerSaving} className="flex-1 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
                 {centerSaving ? 'Saqlanmoqda...' : (editingCenterId ? 'Saqlash' : 'Arizani yuborish')}
               </button>
             </div>

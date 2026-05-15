@@ -273,6 +273,34 @@ def send_membership_decision_notification(membership, approved):
     _send_telegram_to_user(membership.user, message)
 
 
+def send_membership_removed_notification(user, center, role):
+    """Foydalanuvchi markazdan chiqarib yuborilganda xabar yuborish.
+
+    Avval `remove_membership` faqat DB yozuvini o'chirardi va chiqarilgan
+    foydalanuvchiga hech qanday xabarnoma yetib bormasdi. Endi in-app
+    Notification yaratiladi va telegram ulangan bo'lsa, push ham yuboriladi.
+    """
+    role_label = {
+        'student': "o'quvchi",
+        'teacher': "o'qituvchi",
+        'manager': 'manager',
+    }.get(role, role or 'a\'zo')
+    title = "Markazdan chiqarildingiz"
+    message = (
+        f"{center.name} ({_center_type(center)}) tashkilotidan {role_label} sifatida "
+        f"a'zoligingiz bekor qilindi."
+    )
+    Notification.objects.create(
+        user=user,
+        center=center,
+        type=Notification.TYPE_MEMBERSHIP_REMOVED,
+        title=title,
+        message=message,
+    )
+    sent = _send_telegram_to_user(user, message)
+    logger.info('[telegram] → %s sent=%s membership-removed role=%s', user.normalized_phone, sent, role)
+
+
 def send_cheating_detected_notification(student, olympiad, center, reason=''):
     """Notify center managers/owner that a student left the test surface.
 

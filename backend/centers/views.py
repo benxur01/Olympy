@@ -741,6 +741,15 @@ def remove_membership(request, center_id, membership_id):
     except Exception:
         pass
 
+    # Chiqarilgan foydalanuvchiga xabar (in-app + telegram). Avval bu yo'q
+    # edi va foydalanuvchi qayerga ariza yuborganini bilolmay qolardi.
+    try:
+        from notifications.services import send_membership_removed_notification
+        send_membership_removed_notification(user, center, role)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('membership-removed notification failed')
+
     return Response(status=http_status.HTTP_204_NO_CONTENT)
 
 

@@ -166,9 +166,14 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center gap-5">
           <div className="relative">
             <Avatar name={user?.name || 'Ali Valiyev'} src={user?.avatarUrl || ''} size={80} gradient="from-indigo-500 to-purple-600" />
-            <div className="absolute -bottom-1 -right-1 w-6 h-6 gradient-bg rounded-full flex items-center justify-center">
-              <span className="text-white text-xs">✓</span>
-            </div>
+            {/* Tasdiq belgisi faqat haqiqatan ham telegram ulangan akkauntlarda
+                ko'rsatiladi. Avval bu belgi har bir foydalanuvchida fake
+                100% "tasdiqlangan profil" ko'rinishini yaratardi. */}
+            {user?.telegramLinked && (
+              <div className="absolute -bottom-1 -right-1 w-6 h-6 gradient-bg rounded-full flex items-center justify-center" title="Telegram tasdiqlangan">
+                <span className="text-white text-xs">✓</span>
+              </div>
+            )}
             {isApi && (
               <>
                 <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFile} />
@@ -186,7 +191,15 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
           <div className="flex-1">
             <div className="flex items-center gap-3 flex-wrap">
               <h2 className="text-2xl font-black text-white">{user?.name || 'Ali Valiyev'}</h2>
-              <span className="chip badge-active text-xs">A'zo</span>
+              {/* A'zo chip — faqat haqiqatan ham biror rol approved bo'lsa.
+                  Avval har bir foydalanuvchida ko'rinardi va anglashilmasdi. */}
+              {(() => {
+                const roleEntries = Object.values(user?.roles || {});
+                const isMember = roleEntries.some(r => r?.status === 'approved');
+                return isMember
+                  ? <span className="chip badge-active text-xs">A'zo</span>
+                  : <span className="chip badge-draft text-xs">Yangi foydalanuvchi</span>;
+              })()}
             </div>
             <div className="text-white/40 text-sm mt-0.5">{(user?.phone || '+998901234567').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1 *** $2')}</div>
             <div className="flex flex-wrap gap-3 mt-3">

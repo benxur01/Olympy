@@ -40,7 +40,10 @@ const collectTopLevelNames = (source) => {
 
 let entry = `import * as React from 'react';\n`;
 entry += `import * as ReactDOM from 'react-dom/client';\n\n`;
-entry += `import { OlympyApi } from './services/api.js';\n\n`;
+entry += `import { OlympyApi } from './services/api.js';\n`;
+// Tailwind + global CSS — avval index.html ichida CDN va inline <style> orqali
+// keldi. Endi PostCSS plugin bundle paytida CSS generatsiya qiladi.
+entry += `import './index.css';\n\n`;
 entry += `globalThis.React = React;\n`;
 entry += `globalThis.ReactDOM = ReactDOM;\n\n`;
 entry += `globalThis.OlympyApi = OlympyApi;\n\n`;

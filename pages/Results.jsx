@@ -4,6 +4,26 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const store = useStore();
   const isApi = !!user?._api;
   const [shareToast, setShareToast] = React.useState('');
+  // Leaderboard yoki boshqa sahifadan attemptId bilan kelganda, backend'dan
+  // attemptni olib kelamiz. Avval mock store'dan qidirilardi va API rejimida
+  // topa olmasdi.
+  const [fetchedAttempt, setFetchedAttempt] = React.useState(null);
+  const [fetchError, setFetchError] = React.useState('');
+  const needsFetch = !!(isApi && result?.attemptId
+    && !(result.olympiad && (result.score !== undefined || result.correct !== undefined))
+    && !(result.id && result.olympiadId && result.score !== undefined));
+  React.useEffect(() => {
+    if (!needsFetch) { setFetchedAttempt(null); setFetchError(''); return; }
+    let cancelled = false;
+    setFetchError('');
+    OlympyApi.getAttempt(result.attemptId, OlympyApi.getToken())
+      .then(data => { if (!cancelled) setFetchedAttempt(data); })
+      .catch(err => {
+        if (cancelled) return;
+        setFetchError(OlympyApi.toUserMessage?.(err) || "Natijani yuklab bo'lmadi");
+      });
+    return () => { cancelled = true; };
+  }, [needsFetch, result?.attemptId]);
 
   // Bo'limlar bo'yicha: backend /api/results/me/stats/ subjects ro'yxati.
   // Avval bu yerda 4 ta hardcoded bo'lim ("Algebraik tenglamalar 8/10" va h.k.)
@@ -28,7 +48,9 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   //  1) caller olympiad ob'ektni to'g'ridan-to'g'ri o'tkazgan bo'lsa, uni
   //     ishlatamiz (Profile.jsx, OlympiadTest.jsx onFinish payloadi);
   //  2) attemptId bilan kelsa va store.attempts'da topsak — eski mock yo'l;
-  //  3) raw attempt obyekti bo'lsa — to'g'ridan-to'g'ri u.
+  //  3) API rejimida attemptId bilan kelsa — /api/attempts/{id}/ orqali
+  //     backend'dan olib kelamiz (fetchedAttempt);
+  //  4) raw attempt obyekti bo'lsa — to'g'ridan-to'g'ri u.
   let r = result;
   if (r && r.olympiad && (r.score !== undefined || r.correct !== undefined)) {
     // OlympiadTest onFinish to'liq payload yuboradi: { score, correct,
@@ -41,6 +63,25 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
       rank: r.rank ?? null,
       time: r.time ?? r.timeSpent ?? 0,
       olympiad: r.olympiad,
+    };
+  } else if (r && r.attemptId && fetchedAttempt) {
+    // API rejimida backend'dan olib kelingan attempt
+    const od = fetchedAttempt.olympiad_detail || {};
+    r = {
+      correct: fetchedAttempt.correct_count ?? 0,
+      wrong: fetchedAttempt.wrong_count ?? 0,
+      score: fetchedAttempt.score ?? 0,
+      total: fetchedAttempt.total_questions ?? 0,
+      rank: fetchedAttempt.rank ?? null,
+      time: fetchedAttempt.time_spent ?? 0,
+      olympiad: od.id ? {
+        id: String(od.id),
+        title: od.title,
+        subject: od.subject,
+        eventType: od.event_type,
+        testLevel: od.test_level,
+        testType: od.test_type,
+      } : null,
     };
   } else if (r && r.attemptId) {
     const a = store.attempts.find(x => x.id === r.attemptId);
@@ -64,6 +105,9 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   if (!r) {
     r = { correct: 0, wrong: 0, score: 0, total: 0, rank: 0, time: 0, olympiad: null };
   }
+  // API'dan attempt yuklanmoqda bo'lsa, oraliq holatda 0 ko'rsatmaslik uchun
+  // alohida loading sahifasi.
+  const isLoadingAttempt = needsFetch && !fetchedAttempt && !fetchError;
 
   // Consistent percentage: prefer score (already in 0-100), else derive from correct/total
   const pct = (r.score !== undefined && r.score !== null)
@@ -74,6 +118,24 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
     : pct >= 60 ? { label: 'Qoniqarli', color: 'text-amber-400', bg: 'from-amber-500/20 to-orange-500/10' }
     : { label: 'Qoniqarsiz', color: 'text-rose-400', bg: 'from-rose-500/20 to-pink-500/10' };
   const fmtTime = (s) => `${Math.floor((s||0)/60)}m ${(s||0)%60}s`;
+
+  if (isLoadingAttempt) {
+    return (
+      <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-4 py-10`} style={embedded ? {} : { background: '#060818' }}>
+        <div className="glass rounded-2xl px-6 py-4 text-sm text-white/60">Natija yuklanmoqda...</div>
+      </div>
+    );
+  }
+  if (fetchError) {
+    return (
+      <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-4 py-10`} style={embedded ? {} : { background: '#060818' }}>
+        <div className="glass rounded-2xl px-6 py-5 text-center max-w-sm">
+          <div className="text-rose-300 font-semibold text-sm mb-2">{fetchError}</div>
+          <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-4 py-2 rounded-xl">Reytingga qaytish</button>
+        </div>
+      </div>
+    );
+  }
 
   const content = (
     <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-3 md:px-4 py-4 md:py-10 mobile-content-pad`} style={embedded ? {} : { background: '#060818' }}>

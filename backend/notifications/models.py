@@ -29,6 +29,10 @@ class Notification(models.Model):
     TYPE_OLYMPIAD_PUBLISHED = 'olympiad_published'
     TYPE_AI_ROSTER_APPROVAL = 'ai_roster_approval'
     TYPE_CHEATING_DETECTED = 'cheating_detected'
+    # Foydalanuvchi markazdan chiqarib yuborilganda yuboriladi. Avval bu
+    # holatda hech qanday xabar yuborilmas edi va foydalanuvchi nima
+    # bo'lganini bilmasdan qolib ketardi.
+    TYPE_MEMBERSHIP_REMOVED = 'membership_removed'
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
