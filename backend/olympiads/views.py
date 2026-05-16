@@ -1,6 +1,6 @@
 import csv
 
-from django.db.models import Avg, Count, Max, Min
+from django.db.models import Avg, Count, F, Max, Min
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
@@ -162,11 +162,40 @@ def deactivate_olympiad(request, olympiad_id):
     # olmasdan, vaqtlari ham hisoblanmasdan osilib qolardi. Endi barcha
     # faol sessiyalarni majburiy COMPLETED holatiga o'tkazamiz — bu Results
     # sahifasiga chiqishlariga imkon beradi.
-    from attempts.models import TestSession
+    from attempts.models import TestAttempt, TestSession
+    active_sessions = list(TestSession.objects.filter(
+        olympiad=olympiad,
+        status=TestSession.STATUS_ACTIVE,
+    ).select_related('user'))
     TestSession.objects.filter(
         olympiad=olympiad,
         status=TestSession.STATUS_ACTIVE,
     ).update(status=TestSession.STATUS_COMPLETED)
+    # Faol sessiyalarning egalari uchun mavjud bo'lmagan attempt'larni
+    # bo'sh natija bilan to'ldiramiz — aks holda foydalanuvchi statistikasida
+    # bu olimpiada umuman yo'q ko'rinardi. Mavjud attempt'lar tegmaydi.
+    if active_sessions:
+        existing_user_ids = set(TestAttempt.objects.filter(
+            olympiad=olympiad,
+            user_id__in=[s.user_id for s in active_sessions],
+        ).values_list('user_id', flat=True))
+        to_create = [
+            TestAttempt(
+                user=s.user,
+                olympiad=olympiad,
+                answers={},
+                score=0,
+                correct_count=0,
+                wrong_count=0,
+                total_questions=0,
+                time_spent=0,
+                rank=None,
+            )
+            for s in active_sessions
+            if s.user_id not in existing_user_ids
+        ]
+        if to_create:
+            TestAttempt.objects.bulk_create(to_create)
     olympiad.status = Olympiad.STATUS_INACTIVE
     olympiad.save(update_fields=['status'])
     return Response(OlympiadSerializer(olympiad).data)
@@ -266,10 +295,16 @@ def olympiad_stats(request, olympiad_id):
     participants = aggregates.get('participants') or 0
     # To'liq yechganlar = score == max_score yoki score >= 90 emas; aniq
     # ta'rif: barcha savollarga javob bergan attempts soni.
-    full_complete = TestAttempt.objects.filter(
-        olympiad=olympiad,
-        total_questions__gt=0,
-    ).extra(where=['correct_count + wrong_count >= total_questions']).count() if participants else 0
+    full_complete = (
+        TestAttempt.objects.filter(
+            olympiad=olympiad,
+            total_questions__gt=0,
+        )
+        .annotate(answered=F('correct_count') + F('wrong_count'))
+        .filter(answered__gte=F('total_questions'))
+        .count()
+        if participants else 0
+    )
     full_complete_pct = (
         round((full_complete / participants) * 100, 1) if participants else 0.0
     )

@@ -487,12 +487,13 @@ def admin_set_user_active(request, user_id):
         return Response({'detail': "is_active bool bo'lishi kerak"},
                         status=status.HTTP_400_BAD_REQUEST)
     target.is_active = desired
-    target.save(update_fields=['is_active'])
-    # Bloklangan foydalanuvchining mavjud JWT tokenlari avtomatik bekor
-    # bo'lishi uchun token_version ni oshiramiz. Aks holda is_active=False
-    # bo'lsa-da, eski token muddati tugamaguncha API ga kirib turaverardi.
-    if not desired:
-        bump_token_version(target)
+    # Bloklash ham, qayta tiklash ham mavjud JWT tokenlarni darhol
+    # bekor qiladi. Block paytida bu majburiy (bloklangan user eski token
+    # bilan kirmasin), unblock paytida ham xavfsizlik nuqtai nazaridan
+    # foydali — admin to'g'irlash uchun bloklab keyin tiklagan bo'lsa,
+    # avvalgi tokenlar qayta ishlashi kerak emas.
+    target.token_version = (target.token_version or 0) + 1
+    target.save(update_fields=['is_active', 'token_version'])
     return Response(UserSerializer(target).data)
 
 

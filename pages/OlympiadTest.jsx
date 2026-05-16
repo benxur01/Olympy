@@ -205,10 +205,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     }
     // Tab uzoq vaqt yashirin qolgandagina cheating deb belgilaymiz: brauzer
     // notification, alert va modal o'zaro ta'sirida visibilitychange qisqa
-    // muddat triggerlanishi mumkin. Real cheating har doim 2 soniyadan ortiq
-    // tashqari oynaga o'tadi.
+    // muddat triggerlanishi mumkin. iOS Safari va Telegram WebView'da push
+    // notification kelganda ham tab "hidden" bo'lib qoladi — false-positive
+    // kamaytirish uchun grace period 30 sekund. Real cheating har doim
+    // bundan uzoq tashqari oynaga o'tadi.
     let hiddenTimer = null;
-    const VISIBILITY_GRACE_MS = 15000;
+    const VISIBILITY_GRACE_MS = 30000;
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
         if (hiddenTimer) clearTimeout(hiddenTimer);

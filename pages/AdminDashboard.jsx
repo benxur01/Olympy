@@ -916,6 +916,15 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     settings: renderSettings,
   };
 
+  // Mobile bottom nav uchun eng muhim 4 ta sahifa. To'liq navItems (8 ta)
+  // mobile ekranga sig'maydi, shuning uchun qisqartirib olamiz.
+  const mobileNavItems = [
+    navItems.find(n => n.key === 'home'),
+    navItems.find(n => n.key === 'users'),
+    navItems.find(n => n.key === 'centers'),
+    navItems.find(n => n.key === 'requests'),
+  ].filter(Boolean);
+
   return (
     <div className="h-screen overflow-hidden bg-[#f6f8fc] text-slate-900">
       {mobileMenu && <div className="fixed inset-0 z-40 bg-slate-950/50 lg:hidden" onClick={() => setMobileMenu(false)} />}
@@ -923,9 +932,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <AdminSidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <AdminTopbar />
-          <main className="flex-1 overflow-x-hidden overflow-y-auto">
+          <main className="flex-1 overflow-x-hidden overflow-y-auto mobile-content-pad">
             {(pageRenderers[page] || renderHome)()}
           </main>
+          <MobileBottomNav items={mobileNavItems} activePage={page} setPage={setPage} />
         </div>
       </div>
       {toast && (
