@@ -53,6 +53,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [cheated, setCheated] = React.useState(false);
   const [cheatMessage, setCheatMessage] = React.useState('');
   const cheatReportedRef = React.useRef(false);
+  const historyGuardRef = React.useRef(false);
   // Confirm modal yoki submit jarayonida brauzer fokusi tabiiy ravishda
   // o'zgaradi (modal ochiladi/yopiladi). Shu paytlarda blur/visibility
   // hodisalarini cheating deb hisoblamaslik uchun bayroq.
@@ -87,8 +88,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         window.history.pushState(null, '', window.location.href);
       }
     };
-    // popstate listener'i ishlashi uchun avval bir marta state push qilamiz.
-    window.history.pushState(null, '', window.location.href);
+    // pushState faqat bir marta — effect qayta ishlaganda takrorlanmasligi uchun.
+    if (!historyGuardRef.current) {
+      window.history.pushState(null, '', window.location.href);
+      historyGuardRef.current = true;
+    }
     window.addEventListener('beforeunload', onBeforeUnload);
     window.addEventListener('popstate', onPopState);
     return () => {
