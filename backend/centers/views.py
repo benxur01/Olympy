@@ -299,6 +299,8 @@ def join_center(request, center_id):
         target_membership = membership
 
         def _send_join_notifications():
+            from django.db import close_old_connections
+            close_old_connections()
             for manager_user in manager_users:
                 try:
                     send_student_join_request_notification(
@@ -332,6 +334,8 @@ def join_center(request, center_id):
             target_membership = membership
 
             def _send_staff_notification():
+                from django.db import close_old_connections
+                close_old_connections()
                 try:
                     send_staff_join_request_notification(
                         owner_user,
