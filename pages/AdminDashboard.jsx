@@ -418,8 +418,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       </div>
       <div className="flex items-center gap-3">
         {onOpenSwitcher && (
-          <button onClick={onOpenSwitcher} className="hidden rounded-md border border-slate-200 px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 md:inline-flex">
-            Rolni almashtirish
+          <button onClick={onOpenSwitcher} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 md:px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
+            <Icon name="users" size={12} /><span className="hidden md:inline">Rolni almashtirish</span>
           </button>
         )}
         <button onClick={() => setPage('requests')} className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-50">

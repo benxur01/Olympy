@@ -806,9 +806,9 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         {onOpenSwitcher && (
           <button
             onClick={onOpenSwitcher}
-            className="btn-ghost hidden rounded-xl px-3 py-2 text-xs font-bold md:inline-flex"
+            className="btn-ghost inline-flex items-center gap-1.5 rounded-xl px-2 md:px-3 py-2 text-xs font-bold"
           >
-            Rolni almashtirish
+            <Icon name="users" size={13} /><span className="hidden md:inline">Rolni almashtirish</span>
           </button>
         )}
         <button
