@@ -74,8 +74,8 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
 
   // Production uses API results only.
   const merged = apiEntries
-    ? apiEntries.slice().sort((a, b) => b.score - a.score)
-        .map((d, i) => ({ ...d, rank: i + 1, badge: i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '' }))
+    ? apiEntries.slice().sort((a, b) => (a.rank || 999) - (b.rank || 999))
+        .map((d) => ({ ...d, badge: d.rank === 1 ? '🥇' : d.rank === 2 ? '🥈' : d.rank === 3 ? '🥉' : '' }))
     : (isApi ? [] : liveEntries)
         .sort((a, b) => b.score - a.score)
         .map((d, i) => ({ ...d, rank: i + 1, badge: i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '' }));

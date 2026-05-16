@@ -224,7 +224,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
 
         {/* Actions — stack on mobile, row on desktop */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 md:gap-3">
-          <button onClick={() => onNavigate('student')} className="btn-primary py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm min-h-[48px]"><Icon name="home" size={16} /> Profilga o'tish</button>
+          <button onClick={() => { const role = user?.role; onNavigate(role === 'manager' || role === 'teacher' ? 'manager' : role === 'owner' ? 'owner' : role === 'admin' ? 'admin' : 'student'); }} className="btn-primary py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm min-h-[48px]"><Icon name="home" size={16} /> Profilga o'tish</button>
           <button onClick={() => onNavigate('leaderboard')} className="btn-ghost py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm min-h-[48px]"><Icon name="trophy" size={16} /> Reytingni ko'rish</button>
           <button onClick={() => handleShare()} className="btn-ghost py-3.5 rounded-2xl font-semibold flex items-center justify-center gap-2 text-sm min-h-[48px]"><Icon name="send" size={16} /> Ulashish</button>
         </div>

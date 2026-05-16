@@ -276,7 +276,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               onStart={() => {
                 if (!canEnterEvent(o)) return;
                 const alreadyMember = String(o.centerId) === String(studentCenterId);
-                if (o.centerId && !alreadyMember) {
+                if (o.eventType === 'competition' && o.centerId && !alreadyMember) {
                   const center = allCenters.find(c => String(c.id || c.backendId) === String(o.centerId));
                   setCenterConfirmOlympiad({ olympiad: o, centerName: center?.name || "O'quv markaz", centerId: o.centerId });
                 } else {
@@ -397,7 +397,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               onStart={() => {
                 if (!canEnterEvent(o)) return;
                 const alreadyMember = String(o.centerId) === String(studentCenterId);
-                if (o.centerId && !alreadyMember) {
+                if (o.eventType === 'competition' && o.centerId && !alreadyMember) {
                   const center = allCenters.find(c => String(c.id || c.backendId) === String(o.centerId));
                   setCenterConfirmOlympiad({ olympiad: o, centerName: center?.name || "O'quv markaz", centerId: o.centerId });
                 } else {

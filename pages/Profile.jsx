@@ -80,7 +80,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
     : (myResults.length > 0 ? Math.round(myResults.reduce((s, r) => s + (r.score || 0), 0) / myResults.length * 10) / 10 : 0);
   const bestRank = apiStats?.best_rank != null
     ? apiStats.best_rank
-    : (myResults.length > 0 ? Math.min(...myResults.map(r => r.rank || 999).filter(r => r < 999)) : null);
+    : (() => { const ranks = myResults.map(r => r.rank || 999).filter(r => r < 999); return ranks.length ? Math.min(...ranks) : null; })();
   const totalAttempts = apiStats?.total_attempts != null ? apiStats.total_attempts : myResults.length;
 
   const achievements = [
