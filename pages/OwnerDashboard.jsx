@@ -893,7 +893,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               <span className="chip badge-draft">{center.region || center.city}</span>
               <span className="chip badge-draft">{center.organizationType || "O'quv markaz"}</span>
             </div>
-            <h1 className="text-3xl font-black tracking-tight text-white lg:text-4xl">
+            <h1 className="text-3xl font-black tracking-tight text-white lg:text-4xl break-words">
               <span className="gradient-text">{center.name}</span>
             </h1>
             <p className="mt-3 max-w-2xl text-sm font-medium leading-relaxed text-white/55">

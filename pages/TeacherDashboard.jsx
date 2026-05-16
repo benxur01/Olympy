@@ -382,7 +382,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                     <span className={`rounded-lg px-2 py-1 font-bold ${o.eventType === 'olympiad' ? 'bg-cyan-500/15 text-cyan-300' : 'bg-amber-500/15 text-amber-300'}`}>{eventTypeLabel(o.eventType || 'competition')}</span>
                     {o.testLevel && <span className="rounded-lg bg-violet-500/15 px-2 py-1 font-bold text-violet-300">Daraja: {o.testLevel}</span>}
                     {o.testType && <span className="rounded-lg bg-sky-500/15 px-2 py-1 font-bold text-sky-300">Tur: {testTypeLabel(o.testType)}</span>}
-                    <span>{o.startDate || 'Sana yoq'} {o.startTime || ''}</span>
+                    <span>{o.startDate || "Sana yo'q"} {o.startTime || ''}</span>
                     <span>{o.duration || 60} min</span>
                     <span>{assignedCount} ta savol</span>
                   </div>

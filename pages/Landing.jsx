@@ -144,7 +144,7 @@ const LandingPage = ({ onNavigate }) => {
               Online olimpiada, test va natija boshqaruvi
             </div>
 
-            <h1 className="text-4xl sm:text-5xl md:text-7xl font-black text-white leading-tight mb-5 md:mb-6" style={{ textWrap: 'balance' }}>
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black text-white leading-tight mb-5 md:mb-6" style={{ textWrap: 'balance' }}>
               PROLYMP — online olimpiada platformasi
             </h1>
 

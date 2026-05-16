@@ -192,15 +192,15 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
           <div className="col-span-1"></div>
         </div>
         {rest.map((p, i) => (
-          <div key={p.key || p.rank} className="olympy-row grid grid-cols-12 gap-2 px-4 py-3.5 items-center">
-            <div className="col-span-1">
+          <div key={p.key || p.rank} className="olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5">
+            <div className="md:col-span-1 flex-shrink-0">
               <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
                 {p.rank}
               </div>
             </div>
-            <div className="col-span-3 flex items-center gap-2 min-w-0">
+            <div className="md:col-span-3 flex-1 flex items-center gap-2 min-w-0">
               <Avatar name={p.name} size={32} />
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium text-white truncate">{p.name}</div>
                 <div className="text-xs text-white/30 truncate md:hidden">{p.center}</div>
               </div>
@@ -209,11 +209,11 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
               <span className="text-sm text-white/50 truncate">{p.center}</span>
             </div>
             <div className="col-span-2 hidden md:block"><SubjectBadge subject={p.subject} /></div>
-            <div className="col-span-1 text-right">
+            <div className="md:col-span-1 text-right flex-shrink-0">
               <span className={`text-sm font-black ${p.score>=90?'text-emerald-400':p.score>=75?'text-indigo-400':'text-amber-400'}`}>{p.score}</span>
             </div>
-            <div className="col-span-1 text-right text-xs text-white/30 font-mono">{p.time}</div>
-            <div className="col-span-1 text-right">
+            <div className="md:col-span-1 text-right text-xs text-white/30 font-mono flex-shrink-0">{p.time}</div>
+            <div className="md:col-span-1 text-right flex-shrink-0">
               {/* Avval bu tugma faqat dekorativ edi — hech narsa qilmasdi.
                   Endi natijani Results sahifasiga olib o'tadi (attemptId
                   bo'lgan qatorlar uchun). */}
