@@ -226,7 +226,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
       </div>
 
       {/* Right panel */}
-      <div className="flex-1 lg:max-w-md flex flex-col justify-center px-5 md:px-8 py-8 md:py-12">
+      <div className="flex-1 lg:max-w-md flex flex-col justify-start md:justify-center px-5 md:px-8 py-8 md:py-12">
         <div className="mb-6 md:mb-8">
           <div className="flex items-center gap-2 mb-6 md:mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
             <BrandLogo size="lg" />
@@ -623,7 +623,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
       </div>
 
       {/* Right panel */}
-      <div className="flex-1 lg:max-w-md flex flex-col justify-center px-5 md:px-8 py-8 md:py-12 overflow-y-auto">
+      <div className="flex-1 lg:max-w-md flex flex-col justify-start md:justify-center px-5 md:px-8 py-8 md:py-12 overflow-y-auto">
         <div className="mb-6 md:mb-8">
           <div className="flex items-center gap-2 mb-6 md:mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
             <BrandLogo size="lg" />

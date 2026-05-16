@@ -594,8 +594,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           actions={
             <div className="flex items-center gap-2">
               {onOpenSwitcher && (
-                <button onClick={onOpenSwitcher} className="btn-ghost text-xs px-3 py-2 rounded-xl hidden md:flex items-center gap-1.5">
-                  <Icon name="users" size={13} /> Rolni almashtirish
+                <button onClick={onOpenSwitcher} className="btn-ghost text-xs px-2 md:px-3 py-2 rounded-xl flex items-center gap-1.5">
+                  <Icon name="users" size={13} /><span className="hidden md:inline">Rolni almashtirish</span>
                 </button>
               )}
               <button onClick={() => setPage('olympiads')} className="btn-primary text-xs px-4 py-2 rounded-xl font-semibold hidden md:flex items-center gap-1">
