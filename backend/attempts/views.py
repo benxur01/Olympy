@@ -142,19 +142,25 @@ def submit_attempt(request):
         # update qilamiz; bu 1000+ attempt'da xotira/IO ni kamaytiradi.
         # Tie-break: higher score, then less time spent, then earlier
         # submission.
-        all_attempts = list(
-            TestAttempt.objects
-            .filter(olympiad=olympiad)
-            .order_by('-score', 'time_spent', 'submitted_at')
-            .only('id', 'rank')
-        )
-        to_update = []
-        for index, item in enumerate(all_attempts, start=1):
-            if item.rank != index:
-                item.rank = index
-                to_update.append(item)
-        if to_update:
-            TestAttempt.objects.bulk_update(to_update, ['rank'])
+        from django.db import connection as db_connection
+        with db_connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE attempts_testattempt AS a
+                SET rank = sub.new_rank
+                FROM (
+                    SELECT id,
+                           RANK() OVER (
+                               ORDER BY score DESC, time_spent ASC, submitted_at ASC
+                           ) AS new_rank
+                    FROM attempts_testattempt
+                    WHERE olympiad_id = %s
+                ) AS sub
+                WHERE a.id = sub.id
+                  AND (a.rank IS DISTINCT FROM sub.new_rank)
+                """,
+                [olympiad.id],
+            )
         session.status = TestSession.STATUS_COMPLETED
         session.save(update_fields=['status'])
 
