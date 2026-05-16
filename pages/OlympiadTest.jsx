@@ -503,7 +503,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
             {/* Question text */}
             <div className="glass-strong rounded-2xl p-4 md:p-6 mb-5 md:mb-6">
-              <p className="text-white text-base md:text-lg leading-relaxed font-medium">{q.text}</p>
+              <p className="text-white text-base md:text-lg leading-relaxed font-medium break-words">{q.text}</p>
             </div>
 
             {/* Answer options */}
@@ -516,7 +516,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
                     <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50'}`}>
                       {isTrueFalse ? (i === 0 ? '✓' : '✗') : String.fromCharCode(65+i)}
                     </div>
-                    <span className={`font-medium text-sm md:text-base ${selected ? 'text-white' : 'text-white/70'}`}>{opt}</span>
+                    <span className={`font-medium text-sm md:text-base break-words min-w-0 ${selected ? 'text-white' : 'text-white/70'}`}>{opt}</span>
                     {selected && <Icon name="check" size={16} className="ml-auto text-indigo-400 flex-shrink-0" />}
                   </button>
                 );
@@ -570,9 +570,9 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       <Modal open={confirmModal} onClose={() => setConfirmModal(false)} title="Testni yakunlash">
         <div className="mb-6 space-y-3">
           <div className="grid grid-cols-3 gap-2 md:gap-3 text-center">
-            <div className="glass rounded-xl p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-black text-white">{answered}</div><div className="text-[10px] md:text-xs text-white/40 leading-tight">Javob berildi</div></div>
-            <div className="glass rounded-xl p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-black text-amber-400">{Object.keys(marked).filter(k=>marked[k]).length}</div><div className="text-[10px] md:text-xs text-white/40 leading-tight">Belgilangan</div></div>
-            <div className="glass rounded-xl p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-black text-white/30">{TOTAL - answered}</div><div className="text-[10px] md:text-xs text-white/40 leading-tight">Javobsiz</div></div>
+            <div className="glass rounded-xl p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-black text-white">{answered}</div><div className="text-[10px] md:text-xs text-white/40 leading-tight">Javob</div></div>
+            <div className="glass rounded-xl p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-black text-amber-400">{Object.keys(marked).filter(k=>marked[k]).length}</div><div className="text-[10px] md:text-xs text-white/40 leading-tight">Belgi</div></div>
+            <div className="glass rounded-xl p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-black text-white/30">{TOTAL - answered}</div><div className="text-[10px] md:text-xs text-white/40 leading-tight">Bo'sh</div></div>
           </div>
           {TOTAL - answered > 0 && (
             <div className="flex items-center gap-2 bg-amber-500/10 text-amber-400 rounded-xl px-4 py-3 text-sm border border-amber-500/20">

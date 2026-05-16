@@ -562,8 +562,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   };
 
   const renderHome = () => (
-    <div className="p-6 space-y-6 animate-in">
-      <div className="flex items-center justify-between">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h2 className="text-2xl font-black text-white">{centerName}</h2>
           <p className="text-white/40 text-sm">{centerType} · Manager paneli · {new Date().toLocaleDateString('uz-UZ')}</p>
@@ -638,13 +638,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         })
       : students;
     return (
-    <div className="p-6 space-y-6 animate-in">
-      <div className="flex items-center justify-between">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <h2 className="text-xl font-black text-white">O'quvchilar ({filteredStudents.length}{searchQuery && filteredStudents.length !== students.length ? `/${students.length}` : ''})</h2>
-        <div className="relative"><Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" /><input className="input-field pl-10 py-2" placeholder="Qidirish..." value={studentSearch} onChange={e => setStudentSearch(e.target.value)} /></div>
+        <div className="relative w-full sm:w-72"><Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" /><input className="input-field pl-10 py-2 w-full" placeholder="Qidirish..." value={studentSearch} onChange={e => setStudentSearch(e.target.value)} /></div>
       </div>
       <div className="glass rounded-2xl overflow-hidden">
-        <table className="w-full">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px]">
           <thead><tr className="border-b border-white/5">
             {["O'quvchi", 'Telefon', 'Tadbirlar', "O'rt. ball", 'Holat', 'Amal'].map(h => (
               <th key={h} className="text-left px-4 py-3 text-xs text-white/40 font-medium">{h}</th>
@@ -685,14 +686,15 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
     );
   };
 
   const renderRequests = () => (
-    <div className="p-6 space-y-6 animate-in">
-      <div className="flex items-center justify-between">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <h2 className="text-xl font-black text-white">Arizalar</h2>
         <div className="flex items-center gap-2 text-sm text-white/40">
           <span className="w-2 h-2 rounded-full bg-amber-400"></span>
@@ -734,7 +736,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       </div>
 
       <div className="glass rounded-2xl overflow-hidden">
-        <table className="w-full">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px]">
           <thead><tr className="border-b border-white/5">
             {['O\'quvchi', 'Telefon', 'Ariza sanasi', 'Fan', 'Kod', 'Holat', 'Amal'].map(h => (
               <th key={h} className="text-left px-4 py-3 text-xs text-white/40 font-medium">{h}</th>
@@ -764,13 +767,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
 
   const renderOlympiads = () => (
-    <div className="p-6 space-y-6 animate-in">
-      <div className="flex items-center justify-between">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <h2 className="text-xl font-black text-white">Tadbirlar</h2>
         <button onClick={openCreateEvent} className="btn-primary px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
           <Icon name="plus" size={15} /> Yangi tadbir

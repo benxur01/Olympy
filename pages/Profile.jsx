@@ -190,7 +190,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="text-2xl font-black text-white">{user?.name || 'Ali Valiyev'}</h2>
+              <h2 className="text-2xl font-black text-white break-words">{user?.name || 'Ali Valiyev'}</h2>
               {/* A'zo chip — faqat haqiqatan ham biror rol approved bo'lsa.
                   Avval har bir foydalanuvchida ko'rinardi va anglashilmasdi. */}
               {(() => {

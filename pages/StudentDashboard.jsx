@@ -242,7 +242,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             <div className={`w-10 h-10 gradient-bg rounded-xl flex items-center justify-center text-white font-bold flex-shrink-0 ${myCenter.imageUrl ? 'hidden' : ''}`}>{myCenter.name[0]}</div>
             <div className="flex-1 min-w-0">
               <div className="font-semibold text-white truncate">{myCenter.name}</div>
-              <div className="text-xs text-white/40 truncate">{myCenter.organizationType || "O'quv markaz"} · {formatCenterLocation(myCenter)}{user.joined ? ` · A'zo bo'lgan: ${user.joined}` : ''}</div>
+              <div className="text-xs text-white/40 truncate">{myCenter.organizationType || "O'quv markaz"} · {formatCenterLocation(myCenter)}</div>
+              <div className="text-xs text-white/30 truncate">{user.joined ? `A'zo bo'lgan: ${user.joined}` : ''}</div>
             </div>
           </div>
           {studentStatus === 'pending' && (

@@ -740,18 +740,18 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
                 <div key={c.id}
                   onClick={() => setCenterId(centerId === c.id ? null : c.id)}
                   className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all ${centerId === c.id ? 'border border-indigo-500 bg-indigo-500/10' : 'glass hover:bg-white/5'}`}>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     {c.imageUrl ? (
-                      <img src={c.imageUrl} alt={c.name} className="h-9 w-9 rounded-xl object-cover"
+                      <img src={c.imageUrl} alt={c.name} className="h-9 w-9 rounded-xl object-cover flex-shrink-0"
                         onError={e => {
                           e.currentTarget.style.display = 'none';
                           e.currentTarget.nextElementSibling?.classList.remove('hidden');
                         }} />
                     ) : null}
-                    <div className={`w-9 h-9 gradient-bg rounded-xl flex items-center justify-center text-white font-bold text-sm ${c.imageUrl ? 'hidden' : ''}`}>{c.name[0]}</div>
-                    <div>
-                      <div className="text-sm font-semibold text-white">{c.name}</div>
-                      <div className="text-xs text-white/40">{c.organizationType || "O'quv markaz"} · {formatCenterLocation(c)} · {c.students} o'quvchi</div>
+                    <div className={`w-9 h-9 gradient-bg rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${c.imageUrl ? 'hidden' : ''}`}>{c.name[0]}</div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-semibold text-white truncate">{c.name}</div>
+                      <div className="text-xs text-white/40 truncate">{c.organizationType || "O'quv markaz"} · {formatCenterLocation(c)} · {c.students} o'quvchi</div>
                     </div>
                   </div>
                   {centerId === c.id && <Icon name="check" size={16} className="text-indigo-400" />}

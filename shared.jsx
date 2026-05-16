@@ -179,7 +179,7 @@ const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick,
         {!collapsed && (
           <div className="flex-1 min-w-0">
             <div className="text-sm font-semibold text-white truncate">{user?.name}</div>
-            <div className="text-xs text-white/40">{user?.role}</div>
+            <div className="text-xs text-white/40 truncate">{user?.role}</div>
           </div>
         )}
         {!collapsed && (
@@ -229,7 +229,7 @@ const MobileBottomNav = ({ items, activePage, setPage }) => {
         <button key={item.key} onClick={() => setPage(item.key)}
           className={`mobile-bottom-nav-item ${activePage === item.key ? 'active' : ''}`}>
           <Icon name={item.icon} size={20} />
-          <span className="label">{item.label}</span>
+          <span className="label truncate w-full text-center block">{item.label}</span>
           {item.badge && activePage !== item.key && (
             <span className="absolute top-1.5 right-1/4 w-4 h-4 bg-indigo-500 rounded-full text-white text-[9px] flex items-center justify-center font-bold">{item.badge}</span>
           )}
@@ -346,7 +346,7 @@ const SubjectBadge = ({ subject }) => {
 
 // ─── TelegramMockup ───────────────────────────────────────────────────────────
 const TelegramMockup = ({ studentName, centerName, onApprove, onReject }) => (
-  <div className="rounded-2xl overflow-hidden shadow-2xl" style={{ background: '#17212b', maxWidth: 340, fontFamily: 'system-ui' }}>
+  <div className="rounded-2xl overflow-hidden shadow-2xl" style={{ background: '#17212b', maxWidth: 340, width: '100%', fontFamily: 'system-ui' }}>
     <div style={{ background: '#2b5278', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
       <BrandLogo compact size="sm" />
       <div>
