@@ -55,8 +55,12 @@ def submit_attempt(request):
     serializer.is_valid(raise_exception=True)
 
     with transaction.atomic():
+        # Olimpiad qatorini lock qilmaymiz — bu butun olimpiada bo'yicha
+        # submit'larni navbatga qo'yardi (100+ student bir vaqtda submit
+        # qilsa katta latency). Yagona-attempt cheklovi va sessiya
+        # tutqichi (TestSession.select_for_update) yetarli.
         olympiad = get_object_or_404(
-            Olympiad.objects.select_for_update(),
+            Olympiad.objects,
             pk=serializer.validated_data['olympiad'],
         )
 
@@ -134,14 +138,11 @@ def submit_attempt(request):
             rank=None,
         )
 
-        # Olympiad ustidagi select_for_update bir vaqtda bir nechta submission
-        # ushbu kod yo'liga kirishni oldini oladi, demak attempts ustida
-        # qo'shimcha select_for_update qulfi shart emas — u faqat boshqa
-        # tranzaksiyalar (leaderboard query, admin paneli) bilan deadlock
-        # xavfini oshirardi. id+rank ni o'qib, faqat o'zgarganlarini bulk
-        # update qilamiz; bu 1000+ attempt'da xotira/IO ni kamaytiradi.
-        # Tie-break: higher score, then less time spent, then earlier
-        # submission.
+        # Re-rank: yagona SQL bilan barcha attemptlarning rank qiymatini
+        # yangilaymiz. Olympiad qatorini lock qilmaganligimiz uchun bir
+        # vaqtda bir nechta submit ushbu UPDATE'ni qayta-qayta bajarishi
+        # mumkin, lekin RANK() OVER deterministic — yakuniy holat doim
+        # to'g'ri. Tie-break: yuqori ball → kam vaqt → erta topshirish.
         from django.db import connection as db_connection
         with db_connection.cursor() as cursor:
             cursor.execute(
@@ -575,6 +576,11 @@ def leaderboard(request):
                 olympiad__event_type=Olympiad.EVENT_TYPE_COMPETITION,
                 olympiad__center_id__in=allowed_center_ids,
             )
+        )
+        # Draft/inactive olimpiadalar global leaderboard'da ko'rinmasin —
+        # faqat active yoki finished holatdagi tadbirlar ishtirokchilari.
+        qs = qs.filter(
+            olympiad__status__in=[Olympiad.STATUS_ACTIVE, Olympiad.STATUS_FINISHED]
         )
     qs = qs[:200]
     # Avval rank `i+1` orqali enumerate'dan kelardi va serverda saqlangan

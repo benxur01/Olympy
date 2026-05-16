@@ -1,3 +1,5 @@
+from django.contrib.auth.password_validation import validate_password as django_validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from accounts.utils import normalize_phone
@@ -156,6 +158,16 @@ class CreateManagerSerializer(serializers.Serializer):
         if get_user_model().objects.filter(normalized_phone=norm).exists():
             raise serializers.ValidationError("Bu telefon raqam avval ro'yxatdan o'tgan")
         return norm
+
+    def validate_password(self, value):
+        # Django'ning standart parol validatorlari avval chaqirilmas edi —
+        # "123456" kabi oddiy parollar qabul qilinardi. RegisterSerializer
+        # bilan bir xil tartibda tekshiramiz.
+        try:
+            django_validate_password(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value
 
 
 class CreateTeacherSerializer(CreateManagerSerializer):

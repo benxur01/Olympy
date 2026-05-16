@@ -1322,6 +1322,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     settings: renderSettings,
   };
 
+  // Mobile bottom navigation uchun eng muhim 4 ta sahifa.
+  const mobileNavItems = [
+    navItems.find(n => n.key === 'home'),
+    navItems.find(n => n.key === 'requests'),
+    navItems.find(n => n.key === 'staff'),
+    navItems.find(n => n.key === 'olympiads'),
+  ].filter(Boolean);
+
   return (
     <div className="h-screen overflow-hidden text-white" style={{ background: '#060818' }}>
       {mobileMenu && (
@@ -1335,9 +1343,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar />
-          <main className="flex-1 overflow-x-hidden overflow-y-auto">
+          <main className="flex-1 overflow-x-hidden overflow-y-auto mobile-content-pad">
             {(pagesMap[page] || renderHome)()}
           </main>
+          <MobileBottomNav items={mobileNavItems} activePage={page} setPage={setPage} />
         </div>
       </div>
       {staffModal && (
