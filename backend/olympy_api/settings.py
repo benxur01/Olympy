@@ -204,7 +204,7 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.UserRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '20/min',
+        'anon': '60/min',
         'user': '100/min',
         'auth': '5/min',
         # Register endpoint'lari uchun alohida cheklov. Avval bu endpoint'larda

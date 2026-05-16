@@ -176,7 +176,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       }
     };
     tick();
-    const t = setInterval(tick, 1000);
+    let t = setInterval(tick, 1000);
     return () => clearInterval(t);
   }, [submitted, isBeforeStart, isAfterEnd, questionsLoading, serverExpiresAt, serverClockSkewMs]);
 
@@ -204,7 +204,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     // muddat triggerlanishi mumkin. Real cheating har doim 2 soniyadan ortiq
     // tashqari oynaga o'tadi.
     let hiddenTimer = null;
-    const VISIBILITY_GRACE_MS = 8000;
+    const VISIBILITY_GRACE_MS = 15000;
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') {
         if (hiddenTimer) clearTimeout(hiddenTimer);
