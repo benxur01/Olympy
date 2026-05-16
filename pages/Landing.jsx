@@ -409,7 +409,7 @@ const LandingPage = ({ onNavigate }) => {
           <div className="flex items-center gap-3">
             <BrandLogo size="sm" />
           </div>
-          <div className="text-xs md:text-sm text-white/30">© 2026 PROLYMP. Barcha huquqlar himoyalangan.</div>
+          <div className="text-xs md:text-sm text-white/30">© {new Date().getFullYear()} PROLYMP. Barcha huquqlar himoyalangan.</div>
           <div className="flex flex-wrap justify-center items-center gap-4 md:gap-6 text-xs md:text-sm text-white/40">
             {/* Maxfiylik / Shartlar uchun alohida sahifa hozircha yo'q —
                 shu sababli ko'rsatilmaydi/disabled. Aloqa esa to'g'ridan
