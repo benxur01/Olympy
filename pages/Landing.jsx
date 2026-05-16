@@ -13,42 +13,46 @@ const formatLandingDate = () => {
   return `${day} ${month} ${year}`.trim();
 };
 
+const escapeSvgText = (value) => String(value || '')
+  .replace(/&/g, '&amp;')
+  .replace(/</g, '&lt;')
+  .replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;')
+  .replace(/'/g, '&apos;');
+
 const LandingPage = ({ onNavigate }) => {
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [activeScreen, setActiveScreen] = React.useState(0);
   const [imgErrors, setImgErrors] = React.useState({});
   const [todayLabel, setTodayLabel] = React.useState(formatLandingDate);
+  const [dashboardSvg, setDashboardSvg] = React.useState('');
 
   React.useEffect(() => {
     const timer = setInterval(() => setTodayLabel(formatLandingDate()), 60 * 1000);
     return () => clearInterval(timer);
   }, []);
 
-  const renderDashboardDate = (variant = 'regular') => {
-    const compact = variant === 'compact';
-    return (
-      <div
-        className="absolute z-10 flex items-center justify-center rounded-xl border border-white/10 text-white/70"
-        style={{
-          top: compact ? '12%' : '8.7%',
-          right: compact ? '6%' : '7%',
-          minWidth: compact ? 80 : 132,
-          height: compact ? 24 : 44,
-          padding: compact ? '0 9px' : '0 18px',
-          background: 'rgba(15, 23, 42, 0.96)',
-          fontSize: compact ? 9 : 14,
-          fontWeight: 800,
-          boxShadow: '0 10px 30px rgba(0,0,0,0.24)',
-          pointerEvents: 'none',
-        }}
-      >
-        {todayLabel}
-      </div>
+  React.useEffect(() => {
+    let cancelled = false;
+    const src = window.location.protocol === 'file:' ? 'public/screenshots/dashboard.svg' : '/screenshots/dashboard.svg';
+    fetch(src)
+      .then(res => res.ok ? res.text() : '')
+      .then(svg => { if (!cancelled && svg) setDashboardSvg(svg); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const dashboardImgSrc = React.useMemo(() => {
+    if (!dashboardSvg) return '/screenshots/dashboard.svg';
+    const svg = dashboardSvg.replace(
+      /(<text id="landing-date"[^>]*>)[^<]*(<\/text>)/,
+      `$1${escapeSvgText(todayLabel)}$2`,
     );
-  };
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+  }, [dashboardSvg, todayLabel]);
 
   const screens = [
-    { label: 'Dashboard', icon: 'chart', img: '/screenshots/dashboard.svg', desc: 'Tadbirlar, natijalar va sertifikatlar bir joyda' },
+    { label: 'Dashboard', icon: 'chart', img: dashboardImgSrc, desc: 'Tadbirlar, natijalar va sertifikatlar bir joyda' },
     { label: 'Olimpiada', icon: 'trophy', img: '/screenshots/test.svg', desc: 'Vaqt, savollar va javoblar uchun qulay test oynasi' },
     { label: 'Reyting', icon: 'star', img: '/screenshots/leaderboard.svg', desc: 'Top o\'quvchilar va ballar bo\'yicha jonli reyting' },
     { label: 'Profil', icon: 'award', img: '/screenshots/profile.svg', desc: 'O\'quvchi yutuqlari, progress va sertifikatlar' },
@@ -127,28 +131,12 @@ const LandingPage = ({ onNavigate }) => {
         className="relative overflow-hidden"
         style={{
           minHeight: 'min(700px, calc(100svh - 96px))',
-          backgroundImage: "linear-gradient(90deg, rgba(6,8,24,0.99) 0%, rgba(6,8,24,0.95) 48%, rgba(6,8,24,0.72) 72%, rgba(6,8,24,0.36) 100%), url('/screenshots/dashboard.svg')",
+          backgroundImage: `linear-gradient(90deg, rgba(6,8,24,0.99) 0%, rgba(6,8,24,0.95) 48%, rgba(6,8,24,0.72) 72%, rgba(6,8,24,0.36) 100%), url("${dashboardImgSrc}")`,
           backgroundSize: 'cover',
           backgroundPosition: 'center top',
         }}
       >
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(6,8,24,0.1) 0%, rgba(6,8,24,0.9) 100%)' }} />
-        <div
-          className="hidden lg:flex absolute z-10 items-center justify-center rounded-2xl border border-white/10 text-white/70"
-          style={{
-            top: 96,
-            right: '9.5%',
-            minWidth: 132,
-            height: 44,
-            padding: '0 18px',
-            background: 'rgba(15, 23, 42, 0.96)',
-            fontSize: 14,
-            fontWeight: 800,
-            boxShadow: '0 14px 36px rgba(0,0,0,0.25)',
-          }}
-        >
-          {todayLabel}
-        </div>
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-14 md:py-24 relative">
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-5 md:mb-6 text-xs md:text-sm text-cyan-100 border border-cyan-300/20" style={{ background: 'rgba(8,145,178,0.16)' }}>
@@ -211,9 +199,8 @@ const LandingPage = ({ onNavigate }) => {
                 className="group text-left rounded-2xl overflow-hidden border border-white/10 transition-all hover:-translate-y-1"
                 style={{ background: 'rgba(255,255,255,0.06)' }}
               >
-                <div className="relative aspect-[16/10] overflow-hidden" style={{ background: '#071124' }}>
+                <div className="aspect-[16/10] overflow-hidden" style={{ background: '#071124' }}>
                   <img src={s.img} alt={s.label} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
-                  {s.label === 'Dashboard' && renderDashboardDate('compact')}
                 </div>
                 <div className="flex items-center gap-3 px-4 py-3">
                   <span className="flex h-9 w-9 items-center justify-center rounded-xl text-cyan-200" style={{ background: 'rgba(34,211,238,0.12)' }}>
@@ -285,21 +272,18 @@ const LandingPage = ({ onNavigate }) => {
                     <div className="text-sm text-white/40">Rasm yuklanmoqda...</div>
                   </div>
                 ) : (
-                  <div className="relative">
-                    <img
-                      src={screens[activeScreen].img}
-                      alt={screens[activeScreen].label}
-                      onError={() => setImgErrors(prev => ({ ...prev, [activeScreen]: true }))}
-                      className="w-full block"
-                      style={{
-                        aspectRatio: '16 / 10',
-                        objectFit: 'contain',
-                        background: '#071124',
-                        boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
-                      }}
-                    />
-                    {screens[activeScreen].label === 'Dashboard' && renderDashboardDate()}
-                  </div>
+                  <img
+                    src={screens[activeScreen].img}
+                    alt={screens[activeScreen].label}
+                    onError={() => setImgErrors(prev => ({ ...prev, [activeScreen]: true }))}
+                    className="w-full block"
+                    style={{
+                      aspectRatio: '16 / 10',
+                      objectFit: 'contain',
+                      background: '#071124',
+                      boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
+                    }}
+                  />
                 )}
               </div>
             </div>
