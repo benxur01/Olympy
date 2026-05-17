@@ -683,16 +683,60 @@ def _telegram_document_file(message):
 
 
 def _link_user_to_telegram(user, chat_id, telegram_user_id):
-    if telegram_user_id:
-        type(user).objects.exclude(pk=user.pk).filter(
-            telegram_user_id=str(telegram_user_id),
-        ).update(telegram_chat_id='', telegram_user_id='', telegram_linked_at=None)
-    user.telegram_chat_id = str(chat_id or '')
-    user.telegram_user_id = str(telegram_user_id or '')
-    user.telegram_linked_at = timezone.now()
-    user.save(update_fields=[
-        'telegram_chat_id', 'telegram_user_id', 'telegram_linked_at',
-    ])
+    """Link the given user to a telegram_user_id atomically.
+
+    Race condition'lardan himoyalanish uchun transaction.atomic() ichida
+    bajariladi. Agar bitta telegram_user_id allaqachon boshqa foydalanuvchiga
+    bog'langan bo'lsa — eski egaga xabar yuboriladi va uning ulanishi
+    bekor qilinadi (account takeover scenario'siga ogohlantirish).
+    """
+    with transaction.atomic():
+        UserModel = type(user)
+        # select_for_update orqali shu telegram_user_id'ga bog'liq boshqa
+        # qatorlarni lock qilamiz — bir vaqtda ikkita link so'rovi bo'lsa
+        # navbatga turadi.
+        previous_owners = []
+        if telegram_user_id:
+            previous_owners = list(
+                UserModel.objects
+                .select_for_update()
+                .exclude(pk=user.pk)
+                .filter(telegram_user_id=str(telegram_user_id))
+            )
+            if previous_owners:
+                # Eski egalardan chat_id'larni saqlab qolib, link'ni uzamiz.
+                # Keyin transaction tashqarisida xabar yuboramiz.
+                UserModel.objects.filter(
+                    pk__in=[u.pk for u in previous_owners]
+                ).update(
+                    telegram_chat_id='',
+                    telegram_user_id='',
+                    telegram_linked_at=None,
+                )
+        user.telegram_chat_id = str(chat_id or '')
+        user.telegram_user_id = str(telegram_user_id or '')
+        user.telegram_linked_at = timezone.now()
+        user.save(update_fields=[
+            'telegram_chat_id', 'telegram_user_id', 'telegram_linked_at',
+        ])
+
+    # Eski egalarga ogohlantirish — atomic blok tashqarisida, xato bo'lsa
+    # link jarayonini buzmaslik uchun.
+    for prev in previous_owners:
+        prev_chat_id = (prev.telegram_chat_id or '').strip()
+        if not prev_chat_id:
+            continue
+        try:
+            _send_telegram_message(
+                prev_chat_id,
+                "Diqqat: sizning Olympy akkauntingiz boshqa qurilmaga ulandi. "
+                "Agar bu siz bo'lmasangiz, darhol parolingizni o'zgartiring.",
+                bot='auth',
+            )
+        except Exception:
+            logger.warning(
+                'failed to notify previous telegram owner user_id=%s', prev.pk,
+            )
     return user
 
 

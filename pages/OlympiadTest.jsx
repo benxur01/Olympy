@@ -52,6 +52,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [submitError, setSubmitError] = React.useState('');
   const [cheated, setCheated] = React.useState(false);
   const [cheatMessage, setCheatMessage] = React.useState('');
+  // Tab birinchi marta yashirilganda — disqualifikatsiya o'rniga
+  // ogohlantirish ko'rsatamiz. Ikkinchi marta yoki 60s o'tsa — DQ.
+  const [cheatWarning, setCheatWarning] = React.useState('');
+  const visibilityHiddenCountRef = React.useRef(0);
   const cheatReportedRef = React.useRef(false);
   const historyGuardRef = React.useRef(false);
   // Confirm modal yoki submit jarayonida brauzer fokusi tabiiy ravishda
@@ -203,25 +207,42 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     if (!user?._api || !liveOlympiad?.backendId || !apiQuestions || questionsLoading || submitted || cheated) {
       return undefined;
     }
-    // Tab uzoq vaqt yashirin qolgandagina cheating deb belgilaymiz: brauzer
-    // notification, alert va modal o'zaro ta'sirida visibilitychange qisqa
-    // muddat triggerlanishi mumkin. iOS Safari va Telegram WebView'da push
-    // notification kelganda ham tab "hidden" bo'lib qoladi — false-positive
-    // kamaytirish uchun grace period 30 sekund. Real cheating har doim
-    // bundan uzoq tashqari oynaga o'tadi.
+    // Cheating siyosati ikki bosqichli:
+    //  1) Tab birinchi marta yashirin bo'lsa — ogohlantirish ko'rsatamiz va
+    //     foydalanuvchi qaytsa, taymerni bekor qilamiz.
+    //  2) Ikkinchi marta yashirilsa YOKI 60 sekund tashqarida qolsa — DQ.
+    // Grace period 30s dan 60s ga oshirildi: Telegram WebView va iOS Safari
+    // push notification bilan tez tabni almashtirsa, false-positive bo'lmasin.
     let hiddenTimer = null;
-    const VISIBILITY_GRACE_MS = 30000;
+    const VISIBILITY_GRACE_MS = 60000;
+    const WARNING_TEXT = (
+      "Diqqat! Testdan tashqariga chiqdingiz. "
+      + "Qaytmasangiz olimpiada yakunlanadi va natija saqlanmaydi."
+    );
     const onVisibility = () => {
+      if (!cheatGuardActiveRef.current) return;
       if (document.visibilityState === 'hidden') {
+        visibilityHiddenCountRef.current += 1;
+        // 2-marta tashqariga chiqsa darhol DQ.
+        if (visibilityHiddenCountRef.current >= 2) {
+          reportCheating('tab_or_app_left');
+          return;
+        }
+        // Birinchi marta — warning va 60s grace period.
+        setCheatWarning(WARNING_TEXT);
         if (hiddenTimer) clearTimeout(hiddenTimer);
         hiddenTimer = setTimeout(() => {
           if (document.visibilityState === 'hidden') {
             reportCheating('tab_or_app_left');
           }
         }, VISIBILITY_GRACE_MS);
-      } else if (hiddenTimer) {
-        clearTimeout(hiddenTimer);
-        hiddenTimer = null;
+      } else {
+        // Foydalanuvchi qaytdi: taymerni bekor qilamiz, warning'ni o'chiramiz.
+        if (hiddenTimer) {
+          clearTimeout(hiddenTimer);
+          hiddenTimer = null;
+        }
+        setCheatWarning('');
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
@@ -449,6 +470,16 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       <div className="h-1 bg-white/5">
         <div className="h-full transition-all duration-500" style={{ width: `${progress}%`, background: 'linear-gradient(90deg,#6366f1,#a855f7,#22d3ee)' }} />
       </div>
+
+      {/* Visibility-cheating ogohlantirish banner. Tab birinchi marta yashirin
+          bo'lganida ko'rsatiladi; qaytsa avto-yo'qoladi. Ikkinchi marta yoki
+          60s o'tsa disqualifikatsiya yuz beradi. */}
+      {cheatWarning && (
+        <div className="bg-amber-500/15 border-b border-amber-500/30 px-3 md:px-8 py-2 text-amber-200 text-xs md:text-sm font-semibold flex items-center gap-2">
+          <Icon name="info" size={14} className="text-amber-300 flex-shrink-0" />
+          <span>{cheatWarning}</span>
+        </div>
+      )}
 
       {/* Mobile question strip — horizontal scrollable navigator */}
       <div className="md:hidden glass border-b border-white/5">

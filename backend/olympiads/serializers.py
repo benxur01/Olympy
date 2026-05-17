@@ -44,6 +44,11 @@ class OlympiadSerializer(serializers.ModelSerializer):
     # max_score serializer-derived qiymat: savollarning yig'indi balli.
     # Olimpiadaga savollar biriktirilmagan paytda fallback 100.
     max_score = serializers.SerializerMethodField()
+    # duration_minutes — kamida 1 minut, ko'pi bilan 24 soat (1440 min).
+    # Avval cheklash yo'q edi va frontend juda katta qiymat yuborsa
+    # (masalan 999999), test vaqti hech qachon tugamasdi va leaderboard'da
+    # time_spent qatori juda katta bo'lib ko'rinardi.
+    duration_minutes = serializers.IntegerField(min_value=1, max_value=1440)
 
     class Meta:
         model = Olympiad
