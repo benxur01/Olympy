@@ -1,9 +1,9 @@
 from datetime import timedelta
 from decimal import Decimal
 
-from django.db import transaction
-from django.db.models import Avg, Count, Max, Q
-from django.db.models.functions import TruncMonth
+from django.db import IntegrityError, transaction
+from django.db.models import Avg, Count, F, Max, Q, Window
+from django.db.models.functions import Rank, TruncMonth
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status as http_status
@@ -13,7 +13,7 @@ from rest_framework.response import Response
 
 from centers.models import CenterMembership, EducationCenter
 from olympiads.models import Olympiad
-from olympiads.services import user_can_participate_in_event
+from olympiads.services import user_can_manage_center_event, user_can_participate_in_event
 
 
 def _recompute_center_rating(center):
@@ -126,42 +126,73 @@ def submit_attempt(request):
         if olympiad.duration_minutes:
             time_spent = min(time_spent, olympiad.duration_minutes * 60)
 
-        attempt = TestAttempt.objects.create(
-            user=request.user,
-            olympiad=olympiad,
-            answers=answers,
-            score=score,
-            correct_count=correct,
-            wrong_count=wrong,
-            total_questions=total,
-            time_spent=time_spent,
-            rank=None,
-        )
+        # Savepoint (nested atomic) — outer transaction'ni abort qilmasdan
+        # IntegrityError'ni catch qilamiz. Aks holda Django outer block'da
+        # TransactionManagementError otadi va keyingi DB so'rovlari ishlamaydi.
+        duplicate_existing = None
+        try:
+            with transaction.atomic():
+                attempt = TestAttempt.objects.create(
+                    user=request.user,
+                    olympiad=olympiad,
+                    answers=answers,
+                    score=score,
+                    correct_count=correct,
+                    wrong_count=wrong,
+                    total_questions=total,
+                    time_spent=time_spent,
+                    rank=None,
+                )
+        except IntegrityError:
+            # Race condition: bir vaqtda ikkita so'rov yuborilsa yoki bir
+            # foydalanuvchi tezda ikki marta bossa unique constraint
+            # (user, olympiad) ishga tushadi. Mavjud attempt'ni qaytaramiz.
+            duplicate_existing = TestAttempt.objects.filter(
+                user=request.user, olympiad=olympiad,
+            ).first()
+            attempt = None
 
-        # Re-rank: yagona SQL bilan barcha attemptlarning rank qiymatini
-        # yangilaymiz. Olympiad qatorini lock qilmaganligimiz uchun bir
-        # vaqtda bir nechta submit ushbu UPDATE'ni qayta-qayta bajarishi
-        # mumkin, lekin RANK() OVER deterministic — yakuniy holat doim
-        # to'g'ri. Tie-break: yuqori ball → kam vaqt → erta topshirish.
-        from django.db import connection as db_connection
-        with db_connection.cursor() as cursor:
-            cursor.execute(
-                """
-                UPDATE attempts_testattempt AS a
-                SET rank = sub.new_rank
-                FROM (
-                    SELECT id,
-                           RANK() OVER (
-                               ORDER BY score DESC, time_spent ASC, submitted_at ASC
-                           ) AS new_rank
-                    FROM attempts_testattempt
-                    WHERE olympiad_id = %s
-                ) AS sub
-                WHERE a.id = sub.id
-                  AND (a.rank IS DISTINCT FROM sub.new_rank)
-                """,
-                [olympiad.id],
+        if duplicate_existing is not None:
+            data = TestAttemptSerializer(duplicate_existing).data
+            data['max_score'] = max_possible
+            data['blank_count'] = scored.get('blank', 0)
+            data['answered_count'] = scored.get('answered', 0)
+            data['detail'] = 'Siz allaqachon topshirgansiz'
+            return Response(data, status=http_status.HTTP_200_OK)
+        if attempt is None:
+            return Response(
+                {'detail': "Siz bu olimpiadaga allaqachon qatnashgansiz"},
+                status=http_status.HTTP_409_CONFLICT,
             )
+
+        # Re-rank: barcha attemptlarning rank qiymatini ORM Window expression
+        # bilan yangilaymiz. RANK() OVER deterministic — yakuniy holat doim
+        # to'g'ri. Tie-break: yuqori ball → kam vaqt → erta topshirish.
+        ranked = (
+            TestAttempt.objects
+            .filter(olympiad=olympiad)
+            .annotate(new_rank=Window(
+                expression=Rank(),
+                order_by=[F('score').desc(), F('time_spent').asc(), F('submitted_at').asc()],
+            ))
+            .values('id', 'new_rank')
+        )
+        # Window expression'larni to'g'ridan-to'g'ri UPDATE bilan ishlatib
+        # bo'lmaydi (Django cheklovi) — natijani materialize qilib bulk
+        # update qilamiz.
+        new_ranks = {row['id']: row['new_rank'] for row in ranked}
+        if new_ranks:
+            existing = TestAttempt.objects.filter(
+                olympiad=olympiad, id__in=new_ranks.keys(),
+            ).only('id', 'rank')
+            to_update = []
+            for a in existing:
+                nr = new_ranks.get(a.id)
+                if nr is not None and a.rank != nr:
+                    a.rank = nr
+                    to_update.append(a)
+            if to_update:
+                TestAttempt.objects.bulk_update(to_update, ['rank'])
         session.status = TestSession.STATUS_COMPLETED
         session.save(update_fields=['status'])
 
@@ -561,6 +592,15 @@ def leaderboard(request):
         olympiad = get_object_or_404(Olympiad.objects.select_related('center'), pk=olympiad_id)
         if not user_can_participate_in_event(request.user, olympiad):
             return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+        # Draft/inactive olimpiada leaderboard'i faqat manager/owner/admin
+        # uchun ko'rinadi. Oddiy ishtirokchi DRAFT yoki INACTIVE tadbir
+        # natijalarini ko'ra olmaydi — bu sizdirib qo'yiladigan ma'lumot.
+        if olympiad.status not in (Olympiad.STATUS_ACTIVE, Olympiad.STATUS_FINISHED):
+            if not user_can_manage_center_event(request.user, olympiad.center):
+                return Response(
+                    {'detail': 'Bu olimpiada leaderboard\'i hali ochilmagan'},
+                    status=http_status.HTTP_403_FORBIDDEN,
+                )
         qs = qs.filter(olympiad=olympiad)
     if not olympiad_id:
         allowed_center_ids = list(CenterMembership.objects.filter(
@@ -582,7 +622,14 @@ def leaderboard(request):
         qs = qs.filter(
             olympiad__status__in=[Olympiad.STATUS_ACTIVE, Olympiad.STATUS_FINISHED]
         )
-    qs = qs[:200]
+    # Limit query param orqali boshqariladi: default 200, maksimum 500.
+    # Avval hardcoded 200 edi va frontend katta tablo ko'rsata olmasdi.
+    try:
+        limit = int(request.query_params.get('limit') or 200)
+    except (TypeError, ValueError):
+        limit = 200
+    limit = max(1, min(limit, 500))
+    qs = qs[:limit]
     # Avval rank `i+1` orqali enumerate'dan kelardi va serverda saqlangan
     # a.rank e'tiborga olinmasdi — natijada submit_attempt re-rank logikasi
     # va leaderboard ko'rsatadigan rank o'zgarishi mumkin edi (ayniqsa

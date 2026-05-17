@@ -42,10 +42,19 @@ def questions_list_create(request):
     POST /api/questions/                 — create one (approved teacher/manager/owner only).
     """
     if request.method == 'GET':
-        center_id = request.query_params.get('center')
-        if not center_id:
+        raw_center = request.query_params.get('center')
+        if not raw_center:
             return Response(
                 {'detail': 'center query parametri majburiy'},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        # `?center=abc` kabi noto'g'ri qiymat berilsa, avval bu joyda
+        # DB darajasida ValueError otilardi va 500 qaytarardi. Endi 400.
+        try:
+            center_id = int(raw_center)
+        except (TypeError, ValueError):
+            return Response(
+                {'detail': "center parametri son bo'lishi kerak"},
                 status=http_status.HTTP_400_BAD_REQUEST,
             )
         if not _user_can_create_for_center(request.user, center_id):

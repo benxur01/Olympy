@@ -13,7 +13,7 @@ following environment variables:
 from datetime import timedelta
 import os
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -129,8 +129,11 @@ if DATABASE_URL:
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
             'NAME': parsed_db.path.lstrip('/'),
-            'USER': parsed_db.username or '',
-            'PASSWORD': parsed_db.password or '',
+            # URL-encoded user/password (masalan, `%40` → `@`, `%23` → `#`)
+            # ni unquote orqali decode qilamiz. Aks holda Render kabi
+            # avtomatik DATABASE_URL'da maxsus belgi bo'lsa auth fail bo'lardi.
+            'USER': unquote(parsed_db.username or ''),
+            'PASSWORD': unquote(parsed_db.password or ''),
             'HOST': parsed_db.hostname or '',
             'PORT': str(parsed_db.port or 5432),
             'OPTIONS': db_options,
@@ -194,7 +197,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticatedOrReadOnly',
+        'rest_framework.permissions.IsAuthenticated',
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
@@ -239,6 +242,30 @@ JWT_COOKIE_SAMESITE = os.environ.get('OLYMPY_JWT_COOKIE_SAMESITE', _default_same
 
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+
+# Cache — REDIS_URL bo'lsa Redis ishlatamiz, aks holda CELERY_BROKER_URL'dan
+# yoki local fallback'dan. Bu rate limit, AI model discovery cache va boshqa
+# joylarda ishlatiladi.
+_redis_url_for_cache = (
+    os.environ.get('REDIS_URL', '').strip()
+    or os.environ.get('CELERY_BROKER_URL', '').strip()
+    or 'redis://localhost:6379/0'
+)
+if _redis_url_for_cache.startswith('redis'):
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+            'LOCATION': _redis_url_for_cache,
+        }
+    }
+else:
+    # Test rejim yoki Redis yo'q joylar uchun local memory fallback.
+    CACHES = {
+        'default': {
+            'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+            'LOCATION': 'olympy-default',
+        }
+    }
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -267,7 +294,10 @@ _cors_origins = os.environ.get(
     'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500' if DEBUG else '',
 )
 CORS_ALLOWED_ORIGINS = [
-    o.strip() for o in _cors_origins.split(',')
+    # Trailing slash bo'lsa CORS middleware origin'ni nomos deb hisoblaydi
+    # va so'rovni rad etadi. `.strip('/')` har bir origin'dan slash'ni
+    # tozalaydi (masalan `https://app.olympy.uz/` → `https://app.olympy.uz`).
+    o.strip().rstrip('/') for o in _cors_origins.split(',')
     if o.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True
