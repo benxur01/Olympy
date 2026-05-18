@@ -77,6 +77,12 @@ class OlympiadSerializer(serializers.ModelSerializer):
         return round(sum(a.score for a in agg) / total, 1)
 
     def get_max_score(self, obj):
+        # List endpoint'da annotate qilingan `total_score` mavjud bo'lsa
+        # (Sum('questions__score')), questions'lar Python'da iteratsiya
+        # qilinmasdan undan foydalanamiz. Detail/single-object holatda
+        # annotatsiya yo'q va eski fallback ishlatiladi.
+        if hasattr(obj, 'total_score') and obj.total_score is not None:
+            return obj.total_score if obj.total_score > 0 else 100
         total = sum(q.score or 0 for q in obj.questions.all())
         return total if total > 0 else 100
 

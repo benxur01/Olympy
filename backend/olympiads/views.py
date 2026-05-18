@@ -20,13 +20,30 @@ def olympiads_list_create(request):
     POST /api/olympiads/    — create draft event (manager/owner/admin).
     """
     if request.method == 'GET':
+        # Avval `prefetch_related('questions')` to'liq Question modelidagi
+        # barcha maydonlarni yuklab olardi (text, options, image, va h.k.).
+        # List javobida faqat `question_ids` (id'lar massivi) va `max_score`
+        # (questions__score yig'indisi) kerak. Shu sababli:
+        #  1) `total_score` ni annotate orqali aggregate qilamiz — har bir
+        #     olimpiada uchun questions'larni Python'da iteratsiya qilmasdan
+        #     bitta SQL aggregate'da olinadi (max_score serializer'i shundan
+        #     foydalanadi).
+        #  2) Prefetch'ni `only('id')` bilan cheklab, faqat ID'larni olamiz —
+        #     question_ids field uchun yetarli, lekin behuda kolonkalar
+        #     yuklanmaydi.
+        from django.db.models import Sum
+        from django.db.models import Prefetch
+        from questions.models import Question
         queryset = (
             Olympiad.objects
-            .prefetch_related('questions')
+            .prefetch_related(
+                Prefetch('questions', queryset=Question.objects.only('id')),
+            )
             .select_related('center')
             .annotate(
                 participants_count=Count('attempts', distinct=True),
                 avg_score_value=Avg('attempts__score'),
+                total_score=Sum('questions__score'),
             )
             .order_by('-created_at')
         )
@@ -109,10 +126,17 @@ def publish_olympiad(request, olympiad_id):
     olympiad.status = Olympiad.STATUS_ACTIVE
     olympiad.save(update_fields=['status'])
 
-    if is_first_publish and olympiad.event_type == Olympiad.EVENT_TYPE_COMPETITION:
+    if is_first_publish and olympiad.event_type in (
+        Olympiad.EVENT_TYPE_COMPETITION,
+        Olympiad.EVENT_TYPE_OLYMPIAD,
+    ):
         # Lazy import: avoid circular dependency.
         from centers.models import CenterMembership
         from notifications.services import send_olympiad_published_bulk
+        # Olimpiada (public) bo'lsa-da, push spam'ni oldini olish uchun
+        # xabar faqat shu markazning approved studentlariga yuboriladi —
+        # boshqa markaz a'zolari va platforma userlari uchun olimpiada
+        # baribir feed/listda paydo bo'ladi.
         approved_students = CenterMembership.objects.filter(
             center=olympiad.center,
             role=CenterMembership.ROLE_STUDENT,
@@ -157,12 +181,29 @@ def deactivate_olympiad(request, olympiad_id):
     if olympiad.status != Olympiad.STATUS_ACTIVE:
         return Response({'detail': 'Faqat faol tadbirni nofaollashtirish mumkin'},
                         status=http_status.HTTP_400_BAD_REQUEST)
-    # Avval olympiad inaktiv qilinganda hali test yechayotgan studentlarning
-    # TestSession'lari STATUS_ACTIVE da qolib ketardi va ular submit qila
-    # olmasdan, vaqtlari ham hisoblanmasdan osilib qolardi. Endi barcha
-    # faol sessiyalarni majburiy COMPLETED holatiga o'tkazamiz — bu Results
-    # sahifasiga chiqishlariga imkon beradi.
     from attempts.models import TestAttempt, TestSession
+    # Avval olympiad inaktiv qilinganda hali test yechayotgan studentlarning
+    # javoblari yo'qolar va bo'sh attempt bilan to'ldirilardi. Endi admin
+    # oldindan ogohlantiriladi: hech bo'lmaganda bitta faol session bo'lsa
+    # va `force=true` yuborilmagan bo'lsa, 400 qaytariladi. Force bilan
+    # yuborilsa avvalgi xulq saqlanadi (aktiv sessionlar COMPLETED ga
+    # o'tadi va bo'sh attempt yaratiladi).
+    force = str(request.data.get('force') or '').lower() in ('1', 'true', 'yes')
+    has_active_sessions = TestSession.objects.filter(
+        olympiad=olympiad,
+        status=TestSession.STATUS_ACTIVE,
+    ).exists()
+    if has_active_sessions and not force:
+        return Response(
+            {
+                'detail': (
+                    "Faol ishtirokchilar bor — olimpiadani to'xtatib bo'lmaydi. "
+                    "Baribir to'xtatish uchun {\"force\": true} bilan qayta yuboring."
+                ),
+                'active_sessions': True,
+            },
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
     active_sessions = list(TestSession.objects.filter(
         olympiad=olympiad,
         status=TestSession.STATUS_ACTIVE,

@@ -145,7 +145,7 @@ const LandingPage = ({ onNavigate }) => {
             </div>
 
             <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black text-white leading-tight mb-5 md:mb-6" style={{ textWrap: 'balance' }}>
-              PROLYMP — online olimpiada platformasi
+              Olympy — online olimpiada platformasi
             </h1>
 
             <p className="text-base md:text-xl text-white/70 mb-7 md:mb-9 max-w-2xl leading-relaxed">
@@ -245,7 +245,7 @@ const LandingPage = ({ onNavigate }) => {
                 <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" style={{ background: '#28c840' }} />
               </div>
               <div className="flex-1 mx-2 md:mx-4 px-3 py-1 md:py-1.5 rounded-md text-xs text-white/40 truncate" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                prolymp.uz/{screens[activeScreen].label.toLowerCase()}
+                olympy.uz/{screens[activeScreen].label.toLowerCase()}
               </div>
               <div className="hidden md:flex gap-1 text-white/20 text-xs flex-shrink-0">
                 <span>⟲</span>
@@ -403,7 +403,7 @@ const LandingPage = ({ onNavigate }) => {
               const isFree = p.price === 'Bepul';
               const handleClick = () => {
                 if (isFree) onNavigate('register');
-                else window.location.href = `mailto:sanjarruzmetov017@gmail.com?subject=PROLYMP ${p.name} reja haqida`;
+                else window.location.href = `mailto:sanjarruzmetov017@gmail.com?subject=Olympy ${p.name} reja haqida`;
               };
               return (
                 <div key={i} className={`rounded-2xl p-4 md:p-6 flex flex-col ${p.popular ? 'gradient-bg glow-blue' : 'glass'}`}>
@@ -455,7 +455,7 @@ const LandingPage = ({ onNavigate }) => {
           <div className="flex items-center gap-3">
             <BrandLogo size="sm" />
           </div>
-          <div className="text-xs md:text-sm text-white/30">© {new Date().getFullYear()} PROLYMP. Barcha huquqlar himoyalangan.</div>
+          <div className="text-xs md:text-sm text-white/30">© {new Date().getFullYear()} Olympy. Barcha huquqlar himoyalangan.</div>
           <div className="flex flex-wrap justify-center items-center gap-4 md:gap-6 text-xs md:text-sm text-white/40">
             {/* Maxfiylik / Shartlar uchun alohida sahifa hozircha yo'q —
                 shu sababli ko'rsatilmaydi/disabled. Aloqa esa to'g'ridan

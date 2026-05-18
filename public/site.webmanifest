@@ -1,6 +1,6 @@
 {
-  "name": "PROLYMP",
-  "short_name": "PROLYMP",
+  "name": "Olympy",
+  "short_name": "Olympy",
   "description": "Online olimpiada platformasi",
   "start_url": "/",
   "scope": "/",

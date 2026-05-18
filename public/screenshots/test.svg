@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
-  <title id="title">PROLYMP test interface screenshot</title>
+  <title id="title">Olympy test interface screenshot</title>
   <desc id="desc">Online olympiad test screen with timer, question, answer choices and question navigator.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -25,7 +25,7 @@
     <rect x="72" y="60" width="1296" height="780" rx="34" fill="#071124" stroke="#fff" stroke-opacity="0.11"/>
     <g transform="translate(118 104)" font-family="Inter, Arial, sans-serif">
       <rect width="52" height="38" rx="12" fill="url(#brand)"/>
-      <text x="68" y="26" fill="#fff" font-size="23" font-weight="850">PROLYMP</text>
+      <text x="68" y="26" fill="#fff" font-size="23" font-weight="850">Olympy</text>
       <rect x="934" y="-2" width="150" height="44" rx="14" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.11"/>
       <circle cx="959" cy="20" r="8" fill="#f97316"/>
       <text x="980" y="26" fill="#fed7aa" font-size="15" font-weight="800">42:18</text>

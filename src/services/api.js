@@ -170,6 +170,20 @@ const request = async (
       if (!retryOnAuth) {
         throw new ApiError(extractErrorMessage(data) || "Telefon yoki parol noto'g'ri", { status: 401, data });
       }
+      // Submit/cheating endpoint'lari uchun MAJBURIY logout qilmaymiz —
+      // foydalanuvchi olimpiada vaqtida tasodifan hisobdan chiqarilmasin
+      // va javoblari yo'qolmasin. Submit'da token muddati tugagan bo'lsa
+      // frontend dialog ko'rsatib qayta login so'raydi.
+      const isExamWritePath = (
+        path.includes('/attempts/')
+        || path.startsWith('/api/attempts')
+      );
+      if (isExamWritePath) {
+        throw new ApiError('Session expired', {
+          status: 401,
+          data: { ...(typeof data === 'object' && data ? data : {}), code: 'session_expired' },
+        });
+      }
       // Autentifikatsiyali so'rovda token muddati tugagan — auth tozalanadi.
       _removeAuth(AUTH_TOKEN_KEY);
       _removeAuth(AUTH_REFRESH_KEY);

@@ -1,7 +1,7 @@
 import random
 from datetime import timedelta
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from questions.models import Question
@@ -22,25 +22,34 @@ def session_is_expired(session, olympiad):
 
 def get_or_create_test_session(user, olympiad):
     rng = random.SystemRandom()
-    with transaction.atomic():
-        session, created = (
-            TestSession.objects
-            .select_for_update()
-            .get_or_create(user=user, olympiad=olympiad)
-        )
-        if created or not session.question_order:
-            questions = list(olympiad.questions.all().order_by('id'))
-            question_ids = [q.id for q in questions]
-            rng.shuffle(question_ids)
-            option_orders = {}
-            for question in questions:
-                order = list(range(len(question.options or [])))
-                rng.shuffle(order)
-                option_orders[str(question.id)] = order
-            session.question_order = question_ids
-            session.option_orders = option_orders
-            session.save(update_fields=['question_order', 'option_orders'])
-        return session
+    # `select_for_update().get_or_create(...)` Django'da race condition'dan
+    # to'liq himoyalamaydi: tezda ikki marta "Boshlash" bosilsa bir vaqtning
+    # o'zida ikki tranzaksiya unique constraint'ga urilib, biri IntegrityError
+    # otadi va student 500 xato ko'radi. Buni alohida try/except bilan
+    # tutamiz va mavjud yozuvni qaytaramiz.
+    try:
+        with transaction.atomic():
+            session, created = (
+                TestSession.objects
+                .select_for_update()
+                .get_or_create(user=user, olympiad=olympiad)
+            )
+            if created or not session.question_order:
+                questions = list(olympiad.questions.all().order_by('id'))
+                question_ids = [q.id for q in questions]
+                rng.shuffle(question_ids)
+                option_orders = {}
+                for question in questions:
+                    order = list(range(len(question.options or [])))
+                    rng.shuffle(order)
+                    option_orders[str(question.id)] = order
+                session.question_order = question_ids
+                session.option_orders = option_orders
+                session.save(update_fields=['question_order', 'option_orders'])
+            return session
+    except IntegrityError:
+        # Boshqa so'rov bir vaqtda sessiya yaratdi — mavjudini qaytaramiz.
+        return TestSession.objects.get(user=user, olympiad=olympiad)
 
 
 def ordered_questions(session, olympiad):
