@@ -245,7 +245,7 @@ const LandingPage = ({ onNavigate }) => {
                 <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" style={{ background: '#28c840' }} />
               </div>
               <div className="flex-1 mx-2 md:mx-4 px-3 py-1 md:py-1.5 rounded-md text-xs text-white/40 truncate" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                olympy.uz/{screens[activeScreen].label.toLowerCase()}
+                prolymp.uz/{screens[activeScreen].label.toLowerCase()}
               </div>
               <div className="hidden md:flex gap-1 text-white/20 text-xs flex-shrink-0">
                 <span>⟲</span>
