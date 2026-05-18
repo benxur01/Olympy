@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.db.models import Q
 from django.utils import timezone
 
@@ -83,6 +85,35 @@ def visible_events_filter(user):
         center_id__in=staff_center_ids,
     )
     return public_events | center_competitions | staff_events
+
+
+def maybe_finish_expired_olympiad(olympiad):
+    """Celery worker yo'q muhitda lazy trigger.
+
+    Render free tier'da alohida Celery worker ishlamaydi, shu sababli
+    `finish_expired_olympiads` periodik task hech qachon bajarilmaydi.
+    Buning o'rniga har bir submit/questions so'rovida olimpiada muddati
+    o'tganmi tekshirib, o'tgan bo'lsa shu yerda yopib qo'yamiz.
+
+    Bu funksiya atomic transaction ICHIDA chaqirilmasligi kerak —
+    aks holda boshqa olimpiadalarni yopish ham bir tranzaksiya ichida
+    ushlab qoladi va lock muammosi tug'ilishi mumkin.
+    """
+    if not olympiad or olympiad.status != Olympiad.STATUS_ACTIVE:
+        return
+    if not olympiad.start_datetime or not olympiad.duration_minutes:
+        return
+    end_time = olympiad.start_datetime + timedelta(minutes=olympiad.duration_minutes)
+    if timezone.now() <= end_time:
+        return
+    try:
+        # Celery task'ni decorator orqali emas, oddiy funksiya sifatida
+        # chaqiramiz — `.delay()` ishlatmaymiz, broker bo'lmasligi mumkin.
+        from olympiads.tasks import finish_expired_olympiads
+        finish_expired_olympiads()
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('maybe_finish_expired_olympiad failed')
 
 
 def event_readiness_errors(olympiad):

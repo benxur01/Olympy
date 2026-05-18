@@ -1,4 +1,5 @@
 import io
+import logging
 import secrets
 
 from django.conf import settings
@@ -28,6 +29,9 @@ from .services import (
     user_can_approve_membership,
     user_can_manage_center,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def _annotate_center_counts(queryset):
@@ -277,8 +281,11 @@ def join_center(request, center_id):
                     CenterMembershipSerializer(membership).data,
                     status=http_status.HTTP_201_CREATED if created else http_status.HTTP_200_OK,
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            # Avval bu joyda `except: pass` edi va auto-approve xatoligi
+            # diagnostika qilib bo'lmasdi. Endi xato log qilinadi, lekin
+            # join_center javobini buzmaslik uchun reraise qilinmaydi.
+            logger.warning("auto_approve_from_roster failed: %s", exc)
         # Lazy import: avoid circular dependency at module load time.
         from notifications.services import send_student_join_request_notification
         managers = list(
@@ -317,7 +324,10 @@ def join_center(request, center_id):
                     pass
 
         import threading
-        threading.Thread(target=_send_join_notifications, daemon=True).start()
+        # daemon=False — gunicorn worker exit qilsa thread yo'qolmaslik
+        # uchun. Bu request thread'ini telegram fan-out tugaguncha biroz
+        # kutib turadi, ammo notification yo'qolish ehtimoli ancha kamroq.
+        threading.Thread(target=_send_join_notifications, daemon=False).start()
     elif created and role in (CenterMembership.ROLE_TEACHER, CenterMembership.ROLE_MANAGER):
         # O'qituvchi/manager arizalari avval hech kimga xabar yuborilmasdi —
         # owner faqat panelda polling qilib bilishi mumkin edi. Endi push
@@ -349,7 +359,8 @@ def join_center(request, center_id):
                     pass
 
             import threading
-            threading.Thread(target=_send_staff_notification, daemon=True).start()
+            # daemon=False — gunicorn exit paytida xabar yo'qolmasin.
+            threading.Thread(target=_send_staff_notification, daemon=False).start()
     return Response(CenterMembershipSerializer(membership).data,
                     status=http_status.HTTP_201_CREATED if created
                     else http_status.HTTP_200_OK)

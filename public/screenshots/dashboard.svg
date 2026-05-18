@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
-  <title id="title">PROLYMP dashboard screenshot</title>
+  <title id="title">Olympy dashboard screenshot</title>
   <desc id="desc">Dark education dashboard with olympiad statistics, event cards and recent results.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
@@ -36,7 +36,7 @@
     <path d="M310 58v784" stroke="#ffffff" stroke-opacity="0.08"/>
     <g transform="translate(96 94)">
       <rect width="56" height="40" rx="12" fill="url(#brand)"/>
-      <text x="70" y="27" fill="#fff" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800">PROLYMP</text>
+      <text x="70" y="27" fill="#fff" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800">Olympy</text>
     </g>
     <g transform="translate(96 178)" fill="none" font-family="Inter, Arial, sans-serif">
       <rect width="166" height="48" rx="14" fill="#4f46e5" fill-opacity="0.18" stroke="#6366f1" stroke-opacity="0.45"/>

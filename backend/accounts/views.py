@@ -820,10 +820,14 @@ start_password_reset.cls.throttle_scope = 'auth'
 def start_telegram_account_link(request):
     """Start Telegram linking for an already authenticated account."""
     normalized_phone = request.user.normalized_phone
+    # Eski tasdiqlanmagan ACCOUNT_LINK yozuvlarini butunlay tozalaymiz —
+    # boshqa endpoint'lar bilan moslashtirish uchun. Avval faqat
+    # `otp_expires_at__lt=now()` shartida tozalanardi va shu sababli
+    # bir nechta open verification qator yig'ilib qolardi.
     PhoneVerification.objects.filter(
         normalized_phone=normalized_phone,
+        purpose=PhoneVerification.PURPOSE_ACCOUNT_LINK,
         verified_at__isnull=True,
-        otp_expires_at__lt=timezone.now(),
     ).delete()
     verification = PhoneVerification.objects.create(
         normalized_phone=normalized_phone,
@@ -1157,9 +1161,18 @@ def handle_telegram_update(update, bot='auth'):
             verified_at__isnull=True,
         ).first()
         if verification and chat_id:
+            # Avval `verification.save()` orqali ob'yektga yozardi va bu
+            # concurrent telegram update'larida (foydalanuvchi tezda
+            # /start ni 2 marta yuborsa) race condition keltirib chiqarardi.
+            # `update()` atomic SQL UPDATE — boshqa thread/process'dagi
+            # yangilanishlarni bosib o'tmaydi va lock kutmaydi.
+            PhoneVerification.objects.filter(pk=verification.pk).update(
+                telegram_chat_id=chat_id,
+                telegram_user_id=telegram_user_id,
+                updated_at=timezone.now(),
+            )
             verification.telegram_chat_id = chat_id
             verification.telegram_user_id = telegram_user_id
-            verification.save(update_fields=['telegram_chat_id', 'telegram_user_id', 'updated_at'])
             _send_telegram_message(chat_id, 'Telefon raqamingizni yuboring.', {
                 'keyboard': [[{'text': 'Telefon raqamni yuborish', 'request_contact': True}]],
                 'resize_keyboard': True,

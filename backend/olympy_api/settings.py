@@ -215,6 +215,11 @@ REST_FRAMEWORK = {
         # — endi IP bo'yicha soatiga 5 ta ro'yxatdan o'tish.
         'register': '5/hour',
         'ai_question': '20/hour',
+        # Submit endpoint uchun alohida cheklov: olimpiada paytida bir
+        # foydalanuvchi tezda ko'p marta submit'ni urinmasin (duplicate,
+        # race condition'ni keltirib chiqaradi). 30/min — normal foydalanuvchi
+        # uchun yetarli, ammo abuse'ga qarshi himoyalaydi.
+        'submit': '30/min',
     },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,

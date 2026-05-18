@@ -86,7 +86,7 @@ def render_certificate_png(attempt):
     center_text(770, f"O'rin: {rank_label}", body_font)
 
     center_text(900, f"Sana: {date_str}", footer_font, (100, 100, 120))
-    center_text(940, "PROLYMP platformasi tomonidan tasdiqlandi", footer_font, (100, 100, 120))
+    center_text(940, "Olympy platformasi tomonidan tasdiqlandi", footer_font, (100, 100, 120))
 
     buf = BytesIO()
     img.save(buf, format='PNG', optimize=True)

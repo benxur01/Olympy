@@ -42,11 +42,30 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const TOTAL = TEST_QUESTIONS.length;
   const DURATION = (liveOlympiad?.duration || olympiad?.duration || 30) * 60;
 
+  // Refresh yoki crashdan keyin javoblarni yo'qotmaslik uchun localStorage
+  // backup. iOS Safari private modeda yoki Telegram WebView'da saqlash
+  // muvaffaqiyatsiz bo'lishi mumkin — try/catch bilan o'rab qo'yamiz.
+  const persistedOlympiadId = liveOlympiad?.id || olympiad?.id || liveOlympiad?.backendId || 'unknown';
+  const answersStorageKey = `olympy_answers_${persistedOlympiadId}`;
+  const markedStorageKey = `olympy_marked_${persistedOlympiadId}`;
+  const readPersisted = (key) => {
+    try {
+      const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch { return null; }
+  };
+
   const [current, setCurrent] = React.useState(0);
-  const [answers, setAnswers] = React.useState({});
-  const [marked, setMarked] = React.useState({});
+  const [answers, setAnswers] = React.useState(() => readPersisted(answersStorageKey) || {});
+  const [marked, setMarked] = React.useState(() => readPersisted(markedStorageKey) || {});
   const [timeLeft, setTimeLeft] = React.useState(DURATION);
   const [confirmModal, setConfirmModal] = React.useState(false);
+  // Back tugmasi bosilganda native window.confirm o'rniga maxsus modal —
+  // iOS Safari va Telegram WebView'da window.confirm ishonchsiz va ba'zida
+  // umuman ko'rinmaydi. Custom Modal har joyda bir xil ishlaydi.
+  const [leaveConfirmModal, setLeaveConfirmModal] = React.useState(false);
   const [submitted, setSubmitted] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState('');
@@ -55,7 +74,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // Tab birinchi marta yashirilganda — disqualifikatsiya o'rniga
   // ogohlantirish ko'rsatamiz. Ikkinchi marta yoki 60s o'tsa — DQ.
   const [cheatWarning, setCheatWarning] = React.useState('');
-  const visibilityHiddenCountRef = React.useRef(0);
+  // Yangi siyosat: 2 marta tabni almashtirish o'rniga JAMI tashqarida
+  // o'tkazilgan vaqtni hisoblaymiz. Telegram WebView'da keyboard yoki
+  // push notification ochilsa ham `visibilityState === 'hidden'` bo'ladi
+  // — 2 marta cheklov nohaq DQ keltirardi.
+  const totalHiddenTimeRef = React.useRef(0);
+  const hiddenStartRef = React.useRef(null);
   const cheatReportedRef = React.useRef(false);
   const historyGuardRef = React.useRef(false);
   // Confirm modal yoki submit jarayonida brauzer fokusi tabiiy ravishda
@@ -81,16 +105,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       return e.returnValue;
     };
     const onPopState = () => {
-      const leave = window.confirm("Olimpiadani tark etmoqchimisiz? Progress yo'qoladi.");
-      if (leave) {
-        // History'da ortga qaytishga ruxsat: hozirgi sahifa allaqachon pop
-        // bo'lgan, foydalanuvchi tabiiy ravishda oldingisiga o'tadi.
-        onNavigate && onNavigate('student');
-      } else {
-        // Navigatsiyani bloklash uchun history stack'iga qaytadan
-        // pushState qilamiz — foydalanuvchi shu sahifada qoladi.
-        window.history.pushState(null, '', window.location.href);
-      }
+      // window.confirm — iOS Safari va Telegram WebView'da ishonchsiz.
+      // Native dialog o'rniga custom modal ko'rsatamiz va navigatsiyani
+      // darhol bloklab qo'yamiz; foydalanuvchi modalda tasdiqlaganidan
+      // keyin onNavigate chaqiriladi.
+      window.history.pushState(null, '', window.location.href);
+      setLeaveConfirmModal(true);
     };
     // pushState faqat bir marta — effect qayta ishlaganda takrorlanmasligi uchun.
     if (!historyGuardRef.current) {
@@ -194,55 +214,93 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     cheatReportedRef.current = true;
     setCheated(true);
     setSubmitted(true);
-    setCheatMessage("Siz cheating qildingiz. Olimpiada yakunlandi.");
+    setCheatMessage(
+      reason === 'tab_or_app_left'
+        ? "Siz 2 daqiqadan ortiq olimpiada oynasidan tashqarida bo'ldingiz. Olimpiada yakunlandi."
+        : "Siz cheating qildingiz. Olimpiada yakunlandi."
+    );
     try {
       globalThis.OlympyApi.reportCheating(
         { olympiad: liveOlympiad.backendId, reason },
         globalThis.OlympyApi.getToken(),
       ).catch(() => {});
     } catch {}
-  }, [submitted, cheated, user?._api, liveOlympiad?.backendId]);
+    // Diskvalifikatsiyadan keyin saqlangan javoblar kerak emas.
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem(answersStorageKey);
+        localStorage.removeItem(markedStorageKey);
+      }
+    } catch {}
+  }, [submitted, cheated, user?._api, liveOlympiad?.backendId, answersStorageKey, markedStorageKey]);
 
   React.useEffect(() => {
     if (!user?._api || !liveOlympiad?.backendId || !apiQuestions || questionsLoading || submitted || cheated) {
       return undefined;
     }
-    // Cheating siyosati ikki bosqichli:
-    //  1) Tab birinchi marta yashirin bo'lsa — ogohlantirish ko'rsatamiz va
-    //     foydalanuvchi qaytsa, taymerni bekor qilamiz.
-    //  2) Ikkinchi marta yashirilsa YOKI 60 sekund tashqarida qolsa — DQ.
-    // Grace period 30s dan 60s ga oshirildi: Telegram WebView va iOS Safari
-    // push notification bilan tez tabni almashtirsa, false-positive bo'lmasin.
-    let hiddenTimer = null;
-    const VISIBILITY_GRACE_MS = 60000;
+    // Cheating siyosati: tashqarida jami 120 soniyadan ko'p o'tirsa DQ.
+    // Telegram WebView'da klaviatura ochilsa, push notification kelsa
+    // yoki iOS Safari avtomatik tabni yashirsa — kichik tanaffuslar
+    // jamlanadi. 120 sekundlik limit yetarli darajada keng (kichik
+    // chalg'ish kechiriladi), lekin uzoq tashqariga chiqishni qoplaydi.
+    const TOTAL_HIDDEN_LIMIT_MS = 120000; // 2 daqiqa
+    const WARNING_THRESHOLD_MS = 60000; // 1 daqiqa — ogohlantirish
     const WARNING_TEXT = (
       "Diqqat! Testdan tashqariga chiqdingiz. "
-      + "Qaytmasangiz olimpiada yakunlanadi va natija saqlanmaydi."
+      + "Jami 2 daqiqadan ko'p tashqarida qolsangiz olimpiada yakunlanadi."
     );
+    let hiddenTimer = null;
+    const checkOverLimit = () => {
+      const ongoing = hiddenStartRef.current
+        ? (Date.now() - hiddenStartRef.current)
+        : 0;
+      const total = totalHiddenTimeRef.current + ongoing;
+      if (total > TOTAL_HIDDEN_LIMIT_MS) {
+        reportCheating('tab_or_app_left');
+        return true;
+      }
+      return false;
+    };
     const onVisibility = () => {
       if (!cheatGuardActiveRef.current) return;
       if (document.visibilityState === 'hidden') {
-        visibilityHiddenCountRef.current += 1;
-        // 2-marta tashqariga chiqsa darhol DQ.
-        if (visibilityHiddenCountRef.current >= 2) {
-          reportCheating('tab_or_app_left');
-          return;
-        }
-        // Birinchi marta — warning va 60s grace period.
-        setCheatWarning(WARNING_TEXT);
+        hiddenStartRef.current = Date.now();
+        // Tab yashirin paytida tekshirib turish uchun timer.
         if (hiddenTimer) clearTimeout(hiddenTimer);
+        // Limitgacha qolgan vaqtdan keyin tekshirish.
+        const remaining = Math.max(
+          1000,
+          TOTAL_HIDDEN_LIMIT_MS - totalHiddenTimeRef.current,
+        );
         hiddenTimer = setTimeout(() => {
-          if (document.visibilityState === 'hidden') {
-            reportCheating('tab_or_app_left');
-          }
-        }, VISIBILITY_GRACE_MS);
+          if (document.visibilityState === 'hidden') checkOverLimit();
+        }, remaining);
+        // Ogohlantirish — agar jami 1 daqiqadan oshgan bo'lsa darhol,
+        // aks holda 1 daqiqa to'lganda paydo bo'lsin.
+        if (totalHiddenTimeRef.current >= WARNING_THRESHOLD_MS) {
+          setCheatWarning(WARNING_TEXT);
+        }
       } else {
-        // Foydalanuvchi qaytdi: taymerni bekor qilamiz, warning'ni o'chiramiz.
+        // Foydalanuvchi qaytdi: jamg'arilgan vaqtni qo'shamiz.
+        if (hiddenStartRef.current) {
+          totalHiddenTimeRef.current += Date.now() - hiddenStartRef.current;
+          hiddenStartRef.current = null;
+        }
         if (hiddenTimer) {
           clearTimeout(hiddenTimer);
           hiddenTimer = null;
         }
-        setCheatWarning('');
+        // Limitdan oshgan bo'lsa — qaytib kelganda ham DQ.
+        if (totalHiddenTimeRef.current > TOTAL_HIDDEN_LIMIT_MS) {
+          reportCheating('tab_or_app_left');
+          return;
+        }
+        // Yetarlicha vaqt tashqarida bo'lgan bo'lsa warning ko'rsatamiz.
+        if (totalHiddenTimeRef.current >= WARNING_THRESHOLD_MS) {
+          setCheatWarning(WARNING_TEXT);
+        } else {
+          setCheatWarning('');
+        }
       }
     };
     document.addEventListener('visibilitychange', onVisibility);
@@ -251,6 +309,30 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       if (hiddenTimer) clearTimeout(hiddenTimer);
     };
   }, [user?._api, liveOlympiad?.backendId, apiQuestions, questionsLoading, submitted, cheated, reportCheating]);
+
+  // Har `answers`/`marked` o'zgarganda lokal saqlash. Submit/cheating
+  // paytida tozalash uchun pastdagi cleanup logikasi mavjud.
+  React.useEffect(() => {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.setItem(answersStorageKey, JSON.stringify(answers || {}));
+    } catch {}
+  }, [answers, answersStorageKey]);
+
+  React.useEffect(() => {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.setItem(markedStorageKey, JSON.stringify(marked || {}));
+    } catch {}
+  }, [marked, markedStorageKey]);
+
+  const clearPersistedAnswers = React.useCallback(() => {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.removeItem(answersStorageKey);
+      localStorage.removeItem(markedStorageKey);
+    } catch {}
+  }, [answersStorageKey, markedStorageKey]);
 
   const formatTime = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const answered = Object.keys(answers).length;
@@ -334,6 +416,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             { olympiad: numericOlympiadId, answers: formattedAnswers, time_spent: timeSpent },
             token,
           );
+          clearPersistedAnswers();
           onFinish({
             attemptId: resp?.id,
             correct: resp?.correct_count ?? (correct ?? 0),
@@ -356,6 +439,17 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             setCheatMessage("Siz cheating qildingiz. Olimpiada yakunlandi.");
             return;
           }
+          // Token muddati tugagan bo'lsa — javoblar localStorage'da qoldi,
+          // foydalanuvchini logout qilmasdan qayta login qilishi uchun
+          // aniq xabar ko'rsatamiz.
+          if (err?.status === 401 || err?.data?.code === 'session_expired') {
+            setSubmitError(
+              "Sessiya tugadi. Iltimos, qayta kiring va Yuborish tugmasini qayta bosing. "
+              + "Javoblaringiz brauzerda saqlangan."
+            );
+            setSubmitted(false);
+            return;
+          }
           setSubmitError("Javoblar yuborilmadi. Qayta urinib ko'ring.");
           setSubmitted(false);
         }
@@ -376,6 +470,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           timeSpent,
           rank: localRank ?? 1,
         });
+        clearPersistedAnswers();
         onFinish({
           attemptId: attemptRecord?.id,
           correct: correct ?? 0,
@@ -602,6 +697,34 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           )}
         </div>
       </div>
+
+      {/* Leave/Back confirmation modal — Back tugmasi yoki swipe'ga
+          javoban window.confirm o'rniga. iOS/Telegram WebView'da
+          ishonchli ko'rinadi. */}
+      <Modal open={leaveConfirmModal} onClose={() => setLeaveConfirmModal(false)} title="Olimpiadadan chiqmoqchimisiz?">
+        <div className="mb-6 space-y-3">
+          <p className="text-white/70 text-sm">
+            Hozirgacha kiritilgan javoblaringiz yo'qoladi va olimpiadaga qayta qatnasholmaysiz.
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setLeaveConfirmModal(false)}
+            className="btn-ghost flex-1 py-3 rounded-xl"
+          >
+            Davom etish
+          </button>
+          <button
+            onClick={() => {
+              setLeaveConfirmModal(false);
+              onNavigate && onNavigate('student');
+            }}
+            className="btn-primary flex-1 py-3 rounded-xl font-bold"
+          >
+            Chiqish
+          </button>
+        </div>
+      </Modal>
 
       {/* Confirm submit modal */}
       <Modal open={confirmModal} onClose={() => setConfirmModal(false)} title="Testni yakunlash">

@@ -217,9 +217,19 @@ def olympiad_questions(request, olympiad_id):
     from django.utils import timezone
 
     from olympiads.models import Olympiad
-    from olympiads.services import user_can_participate_in_event
+    from olympiads.services import (
+        maybe_finish_expired_olympiad,
+        user_can_participate_in_event,
+    )
 
     olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
+    # Celery worker bo'lmagan muhitda muddati o'tgan olimpiadani lazy yopish.
+    # Status o'zgargan bo'lsa pastdagi tekshiruvlar to'g'ri ishlaydi.
+    try:
+        maybe_finish_expired_olympiad(olympiad)
+        olympiad.refresh_from_db()
+    except Exception:
+        pass
     if olympiad.status != Olympiad.STATUS_ACTIVE:
         # Status'ga qarab aniqroq xabar — student "Olimpiada faol emas"
         # ko'rganida tushunmasdi (yakunlanganmi yoki hali boshlanmaganmi?).

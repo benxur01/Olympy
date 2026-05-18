@@ -2,18 +2,23 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.db import IntegrityError, transaction
-from django.db.models import Avg, Count, F, Max, Q, Window
-from django.db.models.functions import Rank, TruncMonth
+from django.db.models import Avg, Count, Max, Q
+from django.db.models.functions import TruncMonth
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status as http_status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 
 from centers.models import CenterMembership, EducationCenter
 from olympiads.models import Olympiad
-from olympiads.services import user_can_manage_center_event, user_can_participate_in_event
+from olympiads.services import (
+    maybe_finish_expired_olympiad,
+    user_can_manage_center_event,
+    user_can_participate_in_event,
+)
 
 
 def _recompute_center_rating(center):
@@ -43,6 +48,7 @@ from .session_utils import score_session_answers, session_is_expired
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
 def submit_attempt(request):
     """POST /api/attempts/ — student submits answers, server scores them.
 
@@ -53,6 +59,18 @@ def submit_attempt(request):
     """
     serializer = SubmitAttemptSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
+
+    # Celery worker Render free tier'da ishlamasligi mumkin — lazy ravishda
+    # muddati o'tgan olimpiadalarni yopib qo'yamiz. Bu atomic transaction
+    # dan TASHQARIDA bo'lishi kerak, aks holda ichkarida olingan olimpiad
+    # qatori bilan to'qnashuv yuzaga keladi.
+    try:
+        _peek_olympiad = Olympiad.objects.filter(
+            pk=serializer.validated_data['olympiad'],
+        ).first()
+        maybe_finish_expired_olympiad(_peek_olympiad)
+    except Exception:
+        pass
 
     with transaction.atomic():
         # Olimpiad qatorini lock qilmaymiz — bu butun olimpiada bo'yicha
@@ -153,6 +171,12 @@ def submit_attempt(request):
             attempt = None
 
         if duplicate_existing is not None:
+            # Sessionni ham COMPLETED ga o'tkazish kerak — aks holda
+            # session_is_expired tekshiruvi keyingi marta bo'sh natija
+            # qaytaradi va frontend "Test vaqti tugagan" xato ko'rsatardi.
+            if session.status != TestSession.STATUS_COMPLETED:
+                session.status = TestSession.STATUS_COMPLETED
+                session.save(update_fields=['status'])
             data = TestAttemptSerializer(duplicate_existing).data
             data['max_score'] = max_possible
             data['blank_count'] = scored.get('blank', 0)
@@ -165,49 +189,20 @@ def submit_attempt(request):
                 status=http_status.HTTP_409_CONFLICT,
             )
 
-        # Re-rank: barcha attemptlarning rank qiymatini ORM Window expression
-        # bilan yangilaymiz. RANK() OVER deterministic — yakuniy holat doim
-        # to'g'ri. Tie-break: yuqori ball → kam vaqt → erta topshirish.
-        ranked = (
-            TestAttempt.objects
-            .filter(olympiad=olympiad)
-            .annotate(new_rank=Window(
-                expression=Rank(),
-                order_by=[F('score').desc(), F('time_spent').asc(), F('submitted_at').asc()],
-            ))
-            .values('id', 'new_rank')
-        )
-        # Window expression'larni to'g'ridan-to'g'ri UPDATE bilan ishlatib
-        # bo'lmaydi (Django cheklovi) — natijani materialize qilib bulk
-        # update qilamiz.
-        new_ranks = {row['id']: row['new_rank'] for row in ranked}
-        if new_ranks:
-            existing = TestAttempt.objects.filter(
-                olympiad=olympiad, id__in=new_ranks.keys(),
-            ).only('id', 'rank')
-            to_update = []
-            for a in existing:
-                nr = new_ranks.get(a.id)
-                if nr is not None and a.rank != nr:
-                    a.rank = nr
-                    to_update.append(a)
-            if to_update:
-                TestAttempt.objects.bulk_update(to_update, ['rank'])
+        # Re-rank submit paytida QILMAYMIZ — bu butun jadvalni bulk_update
+        # qiladi va katta olimpiadalarda DB yukini ko'paytiradi (100+
+        # student bir vaqtda topshirsa har biri butun jadvalni qayta
+        # hisoblardi). Leaderboard endpoint o'zi `order_by('-score',
+        # 'time_spent')` orqali tartiblab `i+1` ranklarini hisoblaydi —
+        # bu yetarli. `rank` DB maydoni keyinroq foydali bo'lishi mumkin,
+        # shu sababli o'chirilmaydi, faqat submit'da yangilanmaydi.
         session.status = TestSession.STATUS_COMPLETED
         session.save(update_fields=['status'])
 
-        attempt.refresh_from_db(fields=['rank'])
-
-        # Markaz rating'ini avtomatik yangilash. Avval bu maydon hech qachon
-        # hisoblanmas edi va doim 0.0 ko'rinardi. Endi har attemptdan keyin
-        # qayta hisoblanadi (0-5 shkala, ball/20.0).
-        if olympiad.center_id:
-            try:
-                _recompute_center_rating(olympiad.center)
-            except Exception:
-                # Rating xato submit muvaffaqiyatini buzmasligi kerak.
-                import logging
-                logging.getLogger(__name__).exception('center rating recompute failed')
+        # Center rating recompute ham submit ichidan olib tashlandi —
+        # bu N ta attempt bo'yicha katta AVG aggregate qilardi va submit
+        # latency'ni oshirardi. Funksiyaning o'zi mavjud, kerak bo'lsa
+        # cron yoki manager dashboard'ida chaqiriladi.
 
         data = TestAttemptSerializer(attempt).data
         data['max_score'] = max_possible
@@ -217,6 +212,9 @@ def submit_attempt(request):
         data['blank_count'] = scored.get('blank', 0)
         data['answered_count'] = scored.get('answered', 0)
         return Response(data, status=http_status.HTTP_201_CREATED)
+
+
+submit_attempt.cls.throttle_scope = 'submit'
 
 
 @api_view(['POST'])
@@ -480,27 +478,41 @@ def manager_stats(request):
         participants=Count('user', distinct=True),
         total_attempts=Count('id'),
     )
-    # Per-event breakdown — finished + active tadbirlar bo'yicha
-    events = []
-    olympiads_qs = (
+    # Per-event breakdown — finished + active tadbirlar bo'yicha.
+    # Avval har bir olimpiada uchun alohida aggregate query ishga tushar
+    # (50 ta olimpiada bo'lsa 50 ta SQL). Endi bitta GROUP BY query orqali
+    # barcha olimpiadalarning agregati olinadi, keyin Python'da olimpiada
+    # meta-ma'lumotlari bilan birlashtiriladi.
+    olympiads_qs = list(
         Olympiad.objects.filter(center=center)
-        .order_by('-created_at')
+        .order_by('-created_at')[:50]
     )
-    for o in olympiads_qs[:50]:
-        sub_qs = qs.filter(olympiad=o)
-        sub_agg = sub_qs.aggregate(
-            avg=Avg('score'), best=Max('score'),
-            participants=Count('user', distinct=True),
+    olympiad_ids = [o.id for o in olympiads_qs]
+    per_event_aggs = {}
+    if olympiad_ids:
+        rows = (
+            TestAttempt.objects
+            .filter(olympiad_id__in=olympiad_ids)
+            .values('olympiad_id')
+            .annotate(
+                avg=Avg('score'),
+                best=Max('score'),
+                participants=Count('user', distinct=True),
+            )
         )
+        per_event_aggs = {row['olympiad_id']: row for row in rows}
+    events = []
+    for o in olympiads_qs:
+        sub_agg = per_event_aggs.get(o.id, {})
         events.append({
             'olympiad_id': o.id,
             'title': o.title,
             'subject': o.subject,
             'status': o.status,
             'event_type': o.event_type,
-            'average_score': round(sub_agg['avg'] or 0, 1),
-            'best_score': sub_agg['best'] or 0,
-            'participants': sub_agg['participants'] or 0,
+            'average_score': round(sub_agg.get('avg') or 0, 1),
+            'best_score': sub_agg.get('best') or 0,
+            'participants': sub_agg.get('participants') or 0,
         })
     return Response({
         'center_id': center.id,
@@ -585,7 +597,7 @@ def leaderboard(request):
     qs = (
         TestAttempt.objects
         .select_related('user', 'olympiad', 'olympiad__center')
-        .order_by('-score', 'time_spent')
+        .order_by('-score', 'time_spent', 'submitted_at')
     )
     olympiad_id = request.query_params.get('olympiad')
     if olympiad_id:
@@ -622,22 +634,34 @@ def leaderboard(request):
         qs = qs.filter(
             olympiad__status__in=[Olympiad.STATUS_ACTIVE, Olympiad.STATUS_FINISHED]
         )
-    # Limit query param orqali boshqariladi: default 200, maksimum 500.
-    # Avval hardcoded 200 edi va frontend katta tablo ko'rsata olmasdi.
+    # Pagination: `?page=` va `?page_size=` query parametrlari qo'llab-
+    # quvvatlanadi. Default page_size=100, maksimum 500. Eski `?limit=`
+    # parametri ham backward-compat uchun qabul qilinadi.
     try:
-        limit = int(request.query_params.get('limit') or 200)
+        page = int(request.query_params.get('page') or 1)
     except (TypeError, ValueError):
-        limit = 200
-    limit = max(1, min(limit, 500))
-    qs = qs[:limit]
-    # Avval rank `i+1` orqali enumerate'dan kelardi va serverda saqlangan
-    # a.rank e'tiborga olinmasdi — natijada submit_attempt re-rank logikasi
-    # va leaderboard ko'rsatadigan rank o'zgarishi mumkin edi (ayniqsa
-    # o'zaro bog'liq olimpiadalar bo'yicha cross-rank). Endi a.rank mavjud
-    # bo'lsa shuni ishlatamiz; yo'q bo'lsa enumerate fallback.
+        page = 1
+    page = max(1, page)
+    try:
+        page_size = int(
+            request.query_params.get('page_size')
+            or request.query_params.get('limit')
+            or 100
+        )
+    except (TypeError, ValueError):
+        page_size = 100
+    page_size = max(1, min(page_size, 500))
+    total_count = qs.count()
+    offset = (page - 1) * page_size
+    qs = qs[offset:offset + page_size]
+    # Rank submit ichida yangilanmaydi (DB yukini kamaytirish uchun). Shu
+    # sababli leaderboard'da har doim joriy tartiblash (`-score`,
+    # `time_spent`, `submitted_at`) bo'yicha `i+1` o'rin beriladi. Bu
+    # filter (masalan, faqat bitta olimpiada) uchun ham to'g'ri natija
+    # qaytaradi, chunki tartiblash querysetda allaqachon qo'llanilgan.
     entries = [
         {
-            'rank': a.rank if a.rank is not None else (i + 1),
+            'rank': offset + i + 1,
             'attempt_id': a.id,
             'user_id': a.user_id,
             'name': a.user.full_name,
@@ -656,6 +680,12 @@ def leaderboard(request):
         }
         for i, a in enumerate(qs)
     ]
+    pagination_meta = {
+        'page': page,
+        'page_size': page_size,
+        'total': total_count,
+        'has_next': offset + len(entries) < total_count,
+    }
     # Header info: tanlangan olympiad bo'lsa olympiad ma'lumoti, aks holda
     # eng ko'p kelgan olympiad nomi (frontend subtitle uchun).
     header = None
@@ -679,4 +709,8 @@ def leaderboard(request):
             'status': latest.get('olympiad_status'),
             'start_datetime': latest.get('submitted_at'),
         }
-    return Response({'olympiad': header, 'entries': entries})
+    return Response({
+        'olympiad': header,
+        'entries': entries,
+        'pagination': pagination_meta,
+    })
