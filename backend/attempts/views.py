@@ -1,5 +1,4 @@
 from datetime import timedelta
-from decimal import Decimal
 
 from django.db import IntegrityError, transaction
 from django.db.models import Avg, Count, Max, Q
@@ -21,22 +20,10 @@ from olympiads.services import (
 )
 
 
-def _recompute_center_rating(center):
-    """Markazning rating maydonini barcha attemptlar o'rtacha balliga qaytib hisoblaydi.
-
-    Rating 0-5 shkalasida (DecimalField max_digits=3, decimal_places=1).
-    100 ball → 5.0, 0 ball → 0.0. Avval bu maydon hech qachon yangilanmas edi
-    va doim 0.0 ko'rinardi. Endi har submit_attempt'dan keyin qayta hisoblanadi.
-    """
-    if not center:
-        return
-    agg = TestAttempt.objects.filter(olympiad__center=center).aggregate(avg=Avg('score'))
-    avg = agg['avg'] or 0
-    rating = round(min(5.0, max(0.0, float(avg) / 20.0)), 1)
-    new_value = Decimal(str(rating))
-    if center.rating != new_value:
-        center.rating = new_value
-        center.save(update_fields=['rating'])
+# O10: `_recompute_center_rating` olib tashlandi — submit_attempt'da
+# chaqirilmasdi (DB yukini kamaytirish uchun) va hech qaerda ham
+# foydalanilmasdi. Markaz reytingi keyinroq cron orqali tiklash kerak
+# bo'lsa, alohida `services.py` faylida qayta yoziladi.
 
 from django.http import HttpResponse
 
@@ -211,6 +198,24 @@ def submit_attempt(request):
         # sonni alohida ko'rsatishi mumkin: to'g'ri / noto'g'ri / bo'sh.
         data['blank_count'] = scored.get('blank', 0)
         data['answered_count'] = scored.get('answered', 0)
+        # Y11: rank DB maydoni submit paytida yangilanmaydi (DB yukini
+        # kamaytirish), shu sababli frontend'da '—' ko'rinardi. Hozirgi
+        # joyni bitta COUNT query orqali hisoblab `position` field bilan
+        # qaytaramiz. `disqualified=False` filtri bilan diskval bo'lganlarni
+        # chetlaymiz.
+        better_count = TestAttempt.objects.filter(
+            olympiad=olympiad,
+            disqualified=False,
+        ).filter(
+            Q(score__gt=score)
+            | Q(score=score, time_spent__lt=time_spent),
+        ).exclude(pk=attempt.pk).count()
+        data['position'] = better_count + 1
+        # Backward-compat: agar rank field hali None bo'lsa, position
+        # qiymatini rank sifatida ham qaytaramiz — eski frontend kodlari
+        # rank field'iga tayanadi.
+        if data.get('rank') is None:
+            data['rank'] = better_count + 1
         return Response(data, status=http_status.HTTP_201_CREATED)
 
 
@@ -250,6 +255,32 @@ def report_cheating(request):
         session.disqualified_at = session.disqualified_at or timezone.now()
         session.cheating_reason = session.cheating_reason or reason
         session.save(update_fields=['status', 'disqualified_at', 'cheating_reason'])
+
+        # Diskvalifikatsiya bo'lgan student uchun ham attempt yaratamiz —
+        # aks holda na leaderboard'da, na manager paneli statistikasida
+        # ko'rinmasdi. score=0, disqualified=True bilan iz qoldiramiz.
+        # Session boshlanganidan hozirgacha bo'lgan vaqtni time_spent qilamiz.
+        time_spent = max(0, int(
+            (timezone.now() - session.started_at).total_seconds()
+        )) if session.started_at else 0
+        if olympiad.duration_minutes:
+            time_spent = min(time_spent, olympiad.duration_minutes * 60)
+        try:
+            TestAttempt.objects.create(
+                user=request.user,
+                olympiad=olympiad,
+                answers={},
+                score=0,
+                correct_count=0,
+                wrong_count=0,
+                total_questions=0,
+                time_spent=time_spent,
+                rank=None,
+                disqualified=True,
+            )
+        except IntegrityError:
+            # Race: bir vaqtda submit bilan kelishi mumkin. E'tibor bermaymiz.
+            pass
 
     if notify:
         try:
@@ -321,12 +352,41 @@ def attempt_detail(request, attempt_id):
 def my_results(request):
     """GET /api/results/me/ — current user's attempt history.
 
-    Asosiy frontend ko'rinishlari (StudentDashboard, Profile) so'nggi 200
-    tagacha attemptga muhtoj. Limit qo'shilmasa, ko'p yillik foydalanuvchilarda
-    javob hajmi haddan oshib ketardi.
+    Pagination qo'llab-quvvatlanadi: `?page=`, `?page_size=` (default 50,
+    max 200). Eski klientlar ham ishlashda davom etadi — birinchi page
+    avtomatik qaytariladi. Avval qattiq `[:200]` cheklov edi va keyingi
+    attempt'lar yashirin bo'lib qolardi.
     """
-    qs = TestAttempt.objects.filter(user=request.user).select_related('olympiad')[:200]
-    return Response(TestAttemptSerializer(qs, many=True).data)
+    qs = TestAttempt.objects.filter(user=request.user).select_related('olympiad')
+    try:
+        page = int(request.query_params.get('page') or 1)
+    except (TypeError, ValueError):
+        page = 1
+    page = max(1, page)
+    try:
+        page_size = int(request.query_params.get('page_size') or 50)
+    except (TypeError, ValueError):
+        page_size = 50
+    page_size = max(1, min(page_size, 200))
+    total = qs.count()
+    offset = (page - 1) * page_size
+    rows = qs[offset:offset + page_size]
+    data = TestAttemptSerializer(rows, many=True).data
+    # Backward-compat: agar klient `?page=` yubormagan va `?page_size=` ham
+    # yubormagan bo'lsa, javobni list ko'rinishida qaytaramiz (eski
+    # StudentDashboard kodi shu formatga tayanadi). Aks holda standart
+    # pagination dict.
+    if not request.query_params.get('page') and not request.query_params.get('page_size'):
+        return Response(data)
+    return Response({
+        'results': data,
+        'pagination': {
+            'page': page,
+            'page_size': page_size,
+            'total': total,
+            'has_next': offset + len(data) < total,
+        },
+    })
 
 
 @api_view(['GET'])
@@ -472,20 +532,43 @@ def manager_stats(request):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
 
     qs = TestAttempt.objects.filter(olympiad__center=center)
-    agg = qs.aggregate(
+    # Diskvalifitsiya bo'lganlar agregatga kirmaydi — aks holda o'rtacha
+    # ball nohaq pasayardi. Lekin alohida hisob sifatida `disqualified_count`
+    # ham qaytariladi.
+    qs_valid = qs.filter(disqualified=False)
+    agg = qs_valid.aggregate(
         avg=Avg('score'),
         best=Max('score'),
         participants=Count('user', distinct=True),
         total_attempts=Count('id'),
     )
+    disqualified_count = qs.filter(disqualified=True).count()
     # Per-event breakdown — finished + active tadbirlar bo'yicha.
     # Avval har bir olimpiada uchun alohida aggregate query ishga tushar
     # (50 ta olimpiada bo'lsa 50 ta SQL). Endi bitta GROUP BY query orqali
     # barcha olimpiadalarning agregati olinadi, keyin Python'da olimpiada
     # meta-ma'lumotlari bilan birlashtiriladi.
+    # Y9: pagination — `?page=`, `?page_size=` (default 50, max 200).
+    # Jami events soni `events_total` orqali qaytariladi, agregat esa
+    # butun markaz bo'yicha hisoblanadi (50 limit bilan emas) — bu
+    # foydalanuvchi uchun aniqroq.
+    olympiads_full_qs = Olympiad.objects.filter(center=center)
+    events_total = olympiads_full_qs.count()
+    try:
+        events_page = int(request.query_params.get('page') or 1)
+    except (TypeError, ValueError):
+        events_page = 1
+    events_page = max(1, events_page)
+    try:
+        events_page_size = int(request.query_params.get('page_size') or 50)
+    except (TypeError, ValueError):
+        events_page_size = 50
+    events_page_size = max(1, min(events_page_size, 200))
+    events_offset = (events_page - 1) * events_page_size
     olympiads_qs = list(
-        Olympiad.objects.filter(center=center)
-        .order_by('-created_at')[:50]
+        olympiads_full_qs
+        .order_by('-created_at')
+        [events_offset:events_offset + events_page_size]
     )
     olympiad_ids = [o.id for o in olympiads_qs]
     per_event_aggs = {}
@@ -521,7 +604,11 @@ def manager_stats(request):
         'best_score': agg['best'] or 0,
         'participants': agg['participants'] or 0,
         'total_attempts': agg['total_attempts'] or 0,
+        'disqualified_count': disqualified_count,
         'events': events,
+        'events_total': events_total,
+        'events_page': events_page,
+        'events_page_size': events_page_size,
     })
 
 
@@ -594,8 +681,12 @@ def leaderboard(request):
     visible events: public olympiads globally, center competitions for the
     user's approved centers.
     """
+    # Diskvalifitsiya bo'lgan attempt'lar leaderboard'da ko'rinmaydi —
+    # ular faqat manager statistikasi uchun yoziladi. Aks holda 0 balli
+    # ko'p qator rank'ni chalkash qilardi.
     qs = (
         TestAttempt.objects
+        .filter(disqualified=False)
         .select_related('user', 'olympiad', 'olympiad__center')
         .order_by('-score', 'time_spent', 'submitted_at')
     )

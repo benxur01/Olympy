@@ -450,8 +450,13 @@ def admin_users_list(request):
             Q(full_name__icontains=search)
             | Q(normalized_phone__icontains=search)
         )
-    from rest_framework.pagination import PageNumberPagination
-    paginator = PageNumberPagination()
+    # O9: admin paneli uchun katta paginator — default 100 elem, ?page_size=
+    # bilan max 200. Avval 50 limit bilan admin har sahifani alohida
+    # varaqlardi va katta tashkilotlarda 1000+ foydalanuvchini ko'rish
+    # noqulay edi.
+    from olympy_api.pagination import LargePageNumberPagination
+    paginator = LargePageNumberPagination()
+    paginator.page_size = 100
     page = paginator.paginate_queryset(qs, request)
     if page is not None:
         return paginator.get_paginated_response(UserSerializer(page, many=True).data)
@@ -1156,6 +1161,18 @@ def handle_telegram_update(update, bot='auth'):
     if text.startswith('/start'):
         parts = text.split(maxsplit=1)
         verify_token = parts[1].strip() if len(parts) > 1 else ''
+        # O1: avval bo'sh `verify_token` bilan `filter(verify_token='')`
+        # qilinardi va eng eski bo'sh-token yozuv tasodifan qaytarilishi
+        # mumkin edi (yoki bir nechta yozuv mos kelishi). Bo'sh tokenda
+        # erta qaytamiz — start tugmasi ravon ishlaydi.
+        if not verify_token:
+            if chat_id:
+                _send_telegram_message(
+                    chat_id,
+                    'Salom! Telefon raqamni tasdiqlash uchun web-saytdan keling.',
+                    bot=bot,
+                )
+            return {'ok': True}
         verification = PhoneVerification.objects.filter(
             verify_token=verify_token,
             verified_at__isnull=True,

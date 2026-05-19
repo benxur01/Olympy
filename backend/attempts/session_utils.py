@@ -56,7 +56,14 @@ def ordered_questions(session, olympiad):
     question_ids = [int(qid) for qid in (session.question_order or [])]
     if not question_ids:
         question_ids = list(olympiad.questions.values_list('id', flat=True))
-    by_id = Question.objects.in_bulk(question_ids)
+    # Faqat shu olimpiada savollarini olamiz — avval id bo'yicha global
+    # `in_bulk` qilinardi va savol boshqa olimpiadaga ko'chirilgan yoki
+    # o'chirilgan bo'lsa eski savol ko'rsatilishi mumkin edi. Endi
+    # olimpiada bog'liqligi cheklovi qo'shildi.
+    by_id = Question.objects.filter(
+        id__in=question_ids,
+        olympiads=olympiad,
+    ).in_bulk()
     return [by_id[qid] for qid in question_ids if qid in by_id]
 
 

@@ -28,6 +28,12 @@ class TestAttempt(models.Model):
     total_questions = models.PositiveIntegerField(default=0)
     time_spent = models.PositiveIntegerField(default=0)  # seconds
     rank = models.PositiveIntegerField(null=True, blank=True)
+    # Cheating sababli diskvalifikatsiya qilingan attempt'lar. Avval cheating
+    # bo'lganda attempt umuman yaratilmasdi va student na leaderboard'da,
+    # na manager statistikasida ko'rinmasdi. Endi disqualified=True bilan
+    # attempt yaratiladi va manager paneli "diskvalifitsiya bo'lgan" deb
+    # ko'rsata oladi.
+    disqualified = models.BooleanField(default=False)
     submitted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

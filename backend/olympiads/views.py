@@ -3,6 +3,7 @@ import csv
 from django.db.models import Avg, Count, F, Max, Min
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -10,7 +11,12 @@ from rest_framework.response import Response
 
 from .models import Olympiad
 from .serializers import OlympiadSerializer
-from .services import event_readiness_errors, user_can_manage_center_event, visible_events_filter
+from .services import (
+    event_readiness_errors,
+    recompute_olympiad_ranks,
+    user_can_manage_center_event,
+    visible_events_filter,
+)
 
 
 @api_view(['GET', 'POST'])
@@ -31,9 +37,23 @@ def olympiads_list_create(request):
         #  2) Prefetch'ni `only('id')` bilan cheklab, faqat ID'larni olamiz —
         #     question_ids field uchun yetarli, lekin behuda kolonkalar
         #     yuklanmaydi.
-        from django.db.models import Sum
-        from django.db.models import Prefetch
+        from django.db.models import OuterRef, Prefetch, Subquery, Sum, IntegerField
+        from django.db.models.functions import Coalesce
         from questions.models import Question
+        # Y10: avval `Sum('questions__score')` to'g'ridan-to'g'ri annotate
+        # qilinardi va bu boshqa annotate'lar (Count('attempts'),
+        # Avg('attempts__score')) bilan JOIN multipication hosil qilardi —
+        # natija nohaq (questions × attempts marta) bo'lishi mumkin edi.
+        # Endi Subquery orqali hisoblanadi va annotate'lar bir-biriga
+        # ta'sir qilmaydi. Prefetch hali ham kerak — `question_ids`
+        # serializer'i `obj.questions.all()` chaqiradi.
+        total_score_sq = (
+            Question.objects
+            .filter(olympiads=OuterRef('pk'))
+            .values('olympiads')
+            .annotate(s=Sum('score'))
+            .values('s')
+        )
         queryset = (
             Olympiad.objects
             .prefetch_related(
@@ -43,7 +63,10 @@ def olympiads_list_create(request):
             .annotate(
                 participants_count=Count('attempts', distinct=True),
                 avg_score_value=Avg('attempts__score'),
-                total_score=Sum('questions__score'),
+                total_score=Coalesce(
+                    Subquery(total_score_sq, output_field=IntegerField()),
+                    0,
+                ),
             )
             .order_by('-created_at')
         )
@@ -68,12 +91,17 @@ def olympiads_list_create(request):
     if not user_can_manage_center_event(request.user, center):
         return Response({'detail': "Sizda bu markaz uchun tadbir yaratish huquqi yo'q"},
                         status=http_status.HTTP_403_FORBIDDEN)
-    olympiad = serializer.save(
-        created_by=request.user,
-        status=Olympiad.STATUS_DRAFT,
-    )
-    if questions is not None:
-        olympiad.questions.set(questions)
+    # O4: olimpiada yaratish va savollar biriktirish bitta transaction'da —
+    # `serializer.save()` muvaffaqiyatli bo'lib, `questions.set()` xato bersa
+    # (masalan, savol ID xato), olimpiada savollarsiz qolib ketardi.
+    from django.db import transaction
+    with transaction.atomic():
+        olympiad = serializer.save(
+            created_by=request.user,
+            status=Olympiad.STATUS_DRAFT,
+        )
+        if questions is not None:
+            olympiad.questions.set(questions)
     return Response(OlympiadSerializer(olympiad).data,
                     status=http_status.HTTP_201_CREATED)
 
@@ -94,9 +122,12 @@ def olympiad_detail(request, olympiad_id):
     serializer = OlympiadSerializer(olympiad, data=request.data, partial=True)
     serializer.is_valid(raise_exception=True)
     questions = serializer.validated_data.pop('questions', None)
-    olympiad = serializer.save()
-    if questions is not None:
-        olympiad.questions.set(questions)
+    # O4: PATCH ham atomic — savollar tugamasdan qisman saqlanish bo'lmasin.
+    from django.db import transaction
+    with transaction.atomic():
+        olympiad = serializer.save()
+        if questions is not None:
+            olympiad.questions.set(questions)
     return Response(OlympiadSerializer(olympiad).data)
 
 
@@ -165,8 +196,14 @@ def finish_olympiad(request, olympiad_id):
     if olympiad.status != Olympiad.STATUS_ACTIVE:
         return Response({'detail': "Faqat faol tadbirni yakunlash mumkin"},
                         status=http_status.HTTP_400_BAD_REQUEST)
-    olympiad.status = Olympiad.STATUS_FINISHED
-    olympiad.save(update_fields=['status'])
+    from django.db import transaction
+    with transaction.atomic():
+        olympiad.status = Olympiad.STATUS_FINISHED
+        olympiad.save(update_fields=['status'])
+        # Rank'larni manualda yakunlashda ham qayta hisoblaymiz — submit
+        # paytida yangilanmaydi (DB yukini kamaytirish), shu sababli
+        # yakunlash paytida bir martalik bulk update kifoya.
+        recompute_olympiad_ranks(olympiad)
     return Response(OlympiadSerializer(olympiad).data)
 
 
@@ -181,13 +218,15 @@ def deactivate_olympiad(request, olympiad_id):
     if olympiad.status != Olympiad.STATUS_ACTIVE:
         return Response({'detail': 'Faqat faol tadbirni nofaollashtirish mumkin'},
                         status=http_status.HTTP_400_BAD_REQUEST)
+    from django.db import transaction
     from attempts.models import TestAttempt, TestSession
+    from attempts.session_utils import score_session_answers
     # Avval olympiad inaktiv qilinganda hali test yechayotgan studentlarning
     # javoblari yo'qolar va bo'sh attempt bilan to'ldirilardi. Endi admin
     # oldindan ogohlantiriladi: hech bo'lmaganda bitta faol session bo'lsa
     # va `force=true` yuborilmagan bo'lsa, 400 qaytariladi. Force bilan
-    # yuborilsa avvalgi xulq saqlanadi (aktiv sessionlar COMPLETED ga
-    # o'tadi va bo'sh attempt yaratiladi).
+    # yuborilsa session'dagi mavjud javoblar bo'yicha ball hisoblanadi
+    # (bo'sh attempt o'rniga) — student haqiqiy javoblarini yo'qotmaydi.
     force = str(request.data.get('force') or '').lower() in ('1', 'true', 'yes')
     has_active_sessions = TestSession.objects.filter(
         olympiad=olympiad,
@@ -204,41 +243,57 @@ def deactivate_olympiad(request, olympiad_id):
             },
             status=http_status.HTTP_400_BAD_REQUEST,
         )
-    active_sessions = list(TestSession.objects.filter(
-        olympiad=olympiad,
-        status=TestSession.STATUS_ACTIVE,
-    ).select_related('user'))
-    TestSession.objects.filter(
-        olympiad=olympiad,
-        status=TestSession.STATUS_ACTIVE,
-    ).update(status=TestSession.STATUS_COMPLETED)
-    # Faol sessiyalarning egalari uchun mavjud bo'lmagan attempt'larni
-    # bo'sh natija bilan to'ldiramiz — aks holda foydalanuvchi statistikasida
-    # bu olimpiada umuman yo'q ko'rinardi. Mavjud attempt'lar tegmaydi.
-    if active_sessions:
-        existing_user_ids = set(TestAttempt.objects.filter(
+    # Butun deaktivatsiya bloki atomic — yarmida xatolik bo'lsa session
+    # COMPLETED bo'lib qoladi, lekin attempt yaratilmaydi degan
+    # nomuvofiqlikni oldini olamiz.
+    with transaction.atomic():
+        active_sessions = list(TestSession.objects.filter(
             olympiad=olympiad,
-            user_id__in=[s.user_id for s in active_sessions],
-        ).values_list('user_id', flat=True))
-        to_create = [
-            TestAttempt(
-                user=s.user,
+            status=TestSession.STATUS_ACTIVE,
+        ).select_related('user'))
+        TestSession.objects.filter(
+            olympiad=olympiad,
+            status=TestSession.STATUS_ACTIVE,
+        ).update(status=TestSession.STATUS_COMPLETED)
+        # Faol sessiyalarning egalari uchun mavjud bo'lmagan attempt'larni
+        # session'dagi javoblar bo'yicha hisoblangan natija bilan yaratamiz.
+        # Sessionda javoblar saqlanmaydi (faqat question_order/option_orders),
+        # shu sababli answers={} bilan keladi — bu holatda blank qoladi.
+        # Lekin agar kelajakda sessionga answers qo'shilsa, shu kod
+        # avtomatik foydalanadi.
+        if active_sessions:
+            existing_user_ids = set(TestAttempt.objects.filter(
                 olympiad=olympiad,
-                answers={},
-                score=0,
-                correct_count=0,
-                wrong_count=0,
-                total_questions=0,
-                time_spent=0,
-                rank=None,
-            )
-            for s in active_sessions
-            if s.user_id not in existing_user_ids
-        ]
-        if to_create:
-            TestAttempt.objects.bulk_create(to_create)
-    olympiad.status = Olympiad.STATUS_INACTIVE
-    olympiad.save(update_fields=['status'])
+                user_id__in=[s.user_id for s in active_sessions],
+            ).values_list('user_id', flat=True))
+            to_create = []
+            for s in active_sessions:
+                if s.user_id in existing_user_ids:
+                    continue
+                # Sessionda saqlangan javoblar yo'q — frontend localStorage'da
+                # saqlaydi va submit'da yuboradi. Force deactivate'da bu javoblar
+                # backend'ga yetib bormaydi, shu sababli boshlangan vaqtdan
+                # hozirgacha bo'lgan time_spent ham yozamiz — student keyin
+                # statistikada "qatnashgan" deb ko'rinadi.
+                scored = score_session_answers(s, olympiad, {})
+                time_spent = max(0, int(
+                    (timezone.now() - s.started_at).total_seconds()
+                )) if s.started_at else 0
+                to_create.append(TestAttempt(
+                    user=s.user,
+                    olympiad=olympiad,
+                    answers={},
+                    score=scored.get('score', 0),
+                    correct_count=scored.get('correct', 0),
+                    wrong_count=scored.get('wrong', 0),
+                    total_questions=scored.get('total', 0),
+                    time_spent=time_spent,
+                    rank=None,
+                ))
+            if to_create:
+                TestAttempt.objects.bulk_create(to_create)
+        olympiad.status = Olympiad.STATUS_INACTIVE
+        olympiad.save(update_fields=['status'])
     return Response(OlympiadSerializer(olympiad).data)
 
 
