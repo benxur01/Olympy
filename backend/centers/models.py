@@ -95,6 +95,9 @@ class CenterMembership(models.Model):
         related_name='approved_memberships',
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # Y7: status o'zgargan paytni bilish uchun — rejected ariza qachon
+    # rad etilgani aniqlanadi va cooldown shu vaqtdan boshlab hisoblanadi.
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-created_at']

@@ -10,9 +10,13 @@ class EducationCenterSerializer(serializers.ModelSerializer):
     # Public listing — owner kontaktlari (owner_full_name, owner_phone) shu
     # serializer'dan olib tashlangan. Bu ma'lumotlar faqat platforma admini
     # uchun AdminEducationCenterSerializer'da ochiq.
+    # Y12: `owner` (user ID) public response'da faqat owner/admin uchun
+    # ko'rinadi. Boshqa foydalanuvchilarga `null` qaytariladi — user ID
+    # enumeration va social engineering xavfini kamaytirish uchun.
     image_url = serializers.SerializerMethodField()
     students = serializers.SerializerMethodField()
     olympiads = serializers.SerializerMethodField()
+    owner = serializers.SerializerMethodField()
 
     class Meta:
         model = EducationCenter
@@ -20,6 +24,16 @@ class EducationCenterSerializer(serializers.ModelSerializer):
                   'city', 'owner', 'status', 'subjects', 'rating', 'created_at',
                   'image_url', 'students', 'olympiads']
         read_only_fields = ['id', 'owner', 'status', 'rating', 'created_at']
+
+    def get_owner(self, obj):
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        viewer = getattr(request, 'user', None) if request else None
+        if not viewer or not getattr(viewer, 'is_authenticated', False):
+            return None
+        # Faqat egasi yoki platforma admini owner ID ni ko'radi.
+        if getattr(viewer, 'is_platform_admin', False) or obj.owner_id == viewer.id:
+            return obj.owner_id
+        return None
 
     def get_image_url(self, obj):
         if not obj.image:

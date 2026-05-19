@@ -56,7 +56,11 @@ def _telegram_api_post(method, payload):
     url = f'https://api.telegram.org/bot{token}/{method}'
     try:
         req = urllib.request.Request(url, data=data, method='POST')
-        with urllib.request.urlopen(req, timeout=10):
+        # Avval timeout=10 — Telegram javob bermay qolsa har bir worker
+        # thread 10 sekund kutardi. 50 student join qilsa 50×10 = worker
+        # band. 3 sekund — yetarli, lekin slowloris uchun katta xavf yo'q
+        # (background thread).
+        with urllib.request.urlopen(req, timeout=3):
             return True
     except Exception:
         logger.exception('Telegram %s failed', method)

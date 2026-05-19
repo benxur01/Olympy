@@ -186,6 +186,22 @@ STORAGES = {
 }
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+# Y5/P2: Render free tier'da disk persistent emas — har deploy'da media
+# fayllar yo'qoladi. Production'da CLOUDINARY_URL yoki AWS_STORAGE_BUCKET_NAME
+# o'rnatilmagan bo'lsa, ogohlantirish chiqaramiz. Hozircha kod bilan
+# avtomatik o'tib ketish yo'q (zavisimosti talab qiladi), lekin warning
+# bilan admin xabardor bo'ladi.
+if not DEBUG:
+    _has_cloudinary = bool(os.environ.get('CLOUDINARY_URL'))
+    _has_s3 = bool(os.environ.get('AWS_STORAGE_BUCKET_NAME'))
+    if not (_has_cloudinary or _has_s3):
+        import sys as _sys
+        print(
+            'WARNING: Production muhitda CLOUDINARY_URL yoki '
+            'AWS_STORAGE_BUCKET_NAME o\'rnatilmagan — yuklangan rasmlar '
+            'har deploy\'da yo\'qoladi. Persistent storage sozlang.',
+            file=_sys.stderr,
+        )
 PROFILE_IMAGE_MAX_BYTES = int(os.environ.get('PROFILE_IMAGE_MAX_BYTES', str(5 * 1024 * 1024)))
 CENTER_IMAGE_MAX_BYTES = int(os.environ.get('CENTER_IMAGE_MAX_BYTES', str(5 * 1024 * 1024)))
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -209,7 +225,11 @@ REST_FRAMEWORK = {
     'DEFAULT_THROTTLE_RATES': {
         'anon': '60/min',
         'user': '100/min',
-        'auth': '5/min',
+        # Avval '5/min' edi — maktab/o'quv markazda 30+ talaba bitta IP
+        # orqali (NAT) kirsa 25 tasi 429 olardi. Per-account brute-force
+        # himoyasi LoginSerializer ichida bor (15 daqiqa lock per phone),
+        # shu sababli IP-level limitni 60/min ga oshirish xavfsiz.
+        'auth': '60/min',
         # Register endpoint'lari uchun alohida cheklov. Avval bu endpoint'larda
         # rate limit yo'q edi va hujumchi soatiga 1000+ ta hisob yarata olardi
         # — endi IP bo'yicha soatiga 5 ta ro'yxatdan o'tish.
@@ -254,9 +274,8 @@ CELERY_RESULT_BACKEND = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6
 _redis_url_for_cache = (
     os.environ.get('REDIS_URL', '').strip()
     or os.environ.get('CELERY_BROKER_URL', '').strip()
-    or 'redis://localhost:6379/0'
 )
-if _redis_url_for_cache.startswith('redis'):
+if _redis_url_for_cache and _redis_url_for_cache.startswith('redis'):
     CACHES = {
         'default': {
             'BACKEND': 'django.core.cache.backends.redis.RedisCache',
@@ -317,6 +336,11 @@ CSRF_TRUSTED_ORIGINS = [
     o.strip() for o in os.environ.get('OLYMPY_CSRF_TRUSTED_ORIGINS', '').split(',')
     if o.strip()
 ]
+# P1: production domenlari uchun default — env bo'sh bo'lsa ham CSRF
+# tasdiqlash ishlasin. Custom domen ishlatuvchilar OLYMPY_CSRF_TRUSTED_ORIGINS
+# orqali override qilishi mumkin.
+if not CSRF_TRUSTED_ORIGINS and not DEBUG:
+    CSRF_TRUSTED_ORIGINS = ['https://prolymp.uz', 'https://www.prolymp.uz']
 
 # Production security flags. Enable OLYMPY_SECURE_SSL_REDIRECT only after HTTPS
 # is correctly terminated by your hosting platform or reverse proxy.

@@ -92,11 +92,19 @@ def decide_membership(membership, actor, decision):
     if is_approved:
         membership.user.add_role(membership.role)
 
-    try:
-        from notifications.services import send_membership_decision_notification
+    # Y6: Telegram API transaction ichida emas, transaction.on_commit orqali
+    # yuboriladi. Avval atomic blok ichida sinxron Telegram chaqirilardi —
+    # API 3s kutsa DB lock'lar uzoq vaqt ushlanib qolardi. Endi commit'dan
+    # keyin yangi (auto-commit) connection'da yuboriladi.
+    captured_membership = membership
+    captured_approved = is_approved
 
-        send_membership_decision_notification(membership, is_approved)
-    except Exception:
-        logger.exception('membership decision notification failed')
+    def _send_notification():
+        try:
+            from notifications.services import send_membership_decision_notification
+            send_membership_decision_notification(captured_membership, captured_approved)
+        except Exception:
+            logger.exception('membership decision notification failed')
 
+    transaction.on_commit(_send_notification)
     return membership

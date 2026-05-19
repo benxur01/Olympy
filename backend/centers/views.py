@@ -240,6 +240,27 @@ def join_center(request, center_id):
     serializer = JoinRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     role = serializer.validated_data['role']
+    # O5: bir foydalanuvchi bir vaqtning o'zida faqat bitta markazga
+    # student sifatida tasdiqlangan bo'lishi mumkin. Aks holda manager
+    # dashboard'larda "asosiy markaz" tushunarsiz bo'lardi va center
+    # competition ruxsatlari noaniq.
+    if role == CenterMembership.ROLE_STUDENT:
+        existing_approved = CenterMembership.objects.filter(
+            user=request.user,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED,
+        ).exclude(center=center).select_related('center').first()
+        if existing_approved:
+            return Response(
+                {
+                    'detail': (
+                        f"Siz allaqachon \"{existing_approved.center.name}\" markaziga "
+                        "o'quvchi sifatida a'zosiz. Boshqa markazga a'zo bo'lish uchun "
+                        "avval mavjud a'zolikni bekor qiling."
+                    ),
+                },
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
     membership, created = CenterMembership.objects.get_or_create(
         user=request.user,
         center=center,
@@ -253,11 +274,23 @@ def join_center(request, center_id):
     if not membership.approval_code:
         membership.approval_code = _make_approval_code()
         membership.save(update_fields=['approval_code'])
-    # Avval rejected ariza qaytarib qaytib chiqarilardi va foydalanuvchi
-    # qayta ariza yubora olmasdi (UX bug). Endi rejected status'i pending'ga
-    # qaytariladi va yangi notification yuboriladi — owner qayta ko'rib
-    # chiqishi mumkin.
+    # Y7: rad etilgan ariza uchun 24 soat cooldown — aks holda foydalanuvchi
+    # cheksiz qayta ariza yuborib spam qilishi mumkin edi. Avval rejected
+    # status'i pending'ga avtomatik qaytarilardi va manager har soatda yangi
+    # arizalarni ko'rardi.
     if not created and membership.status == CenterMembership.STATUS_REJECTED:
+        from datetime import timedelta
+        from django.utils import timezone
+        cooldown_until = (membership.updated_at or membership.created_at)
+        if cooldown_until and timezone.now() < cooldown_until + timedelta(hours=24):
+            wait_hours = max(1, int((
+                (cooldown_until + timedelta(hours=24) - timezone.now())
+                .total_seconds()
+            ) // 3600))
+            return Response(
+                {'detail': f"Ariza yaqinda rad etilgan. {wait_hours} soatdan keyin qayta urinib ko'ring."},
+                status=http_status.HTTP_429_TOO_MANY_REQUESTS,
+            )
         membership.status = CenterMembership.STATUS_PENDING
         membership.subject = serializer.validated_data.get('subject', '') or membership.subject
         membership.approval_code = _make_approval_code()
@@ -324,10 +357,12 @@ def join_center(request, center_id):
                     pass
 
         import threading
-        # daemon=False — gunicorn worker exit qilsa thread yo'qolmaslik
-        # uchun. Bu request thread'ini telegram fan-out tugaguncha biroz
-        # kutib turadi, ammo notification yo'qolish ehtimoli ancha kamroq.
-        threading.Thread(target=_send_join_notifications, daemon=False).start()
+        # daemon=True — gunicorn worker shutdown'da thread yo'qoladi, lekin
+        # bu request thread'ini bloklamaydi. daemon=False bo'lsa worker
+        # graceful shutdown'da har bir thread tugashini kutardi va 50 ta
+        # join × 3s = worker freeze. Telegram'da xabar yo'qotsa ham
+        # in-app Notification baribir DB'ga yozilgan.
+        threading.Thread(target=_send_join_notifications, daemon=True).start()
     elif created and role in (CenterMembership.ROLE_TEACHER, CenterMembership.ROLE_MANAGER):
         # O'qituvchi/manager arizalari avval hech kimga xabar yuborilmasdi —
         # owner faqat panelda polling qilib bilishi mumkin edi. Endi push
@@ -359,8 +394,9 @@ def join_center(request, center_id):
                     pass
 
             import threading
-            # daemon=False — gunicorn exit paytida xabar yo'qolmasin.
-            threading.Thread(target=_send_staff_notification, daemon=False).start()
+            # daemon=True — worker shutdown'da bloklamaslik uchun.
+            # In-app Notification baribir DB'ga yozilgan (yuqorida).
+            threading.Thread(target=_send_staff_notification, daemon=True).start()
     return Response(CenterMembershipSerializer(membership).data,
                     status=http_status.HTTP_201_CREATED if created
                     else http_status.HTTP_200_OK)

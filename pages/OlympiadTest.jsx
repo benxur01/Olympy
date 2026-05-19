@@ -425,7 +425,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             // 0 emas, balki backend qiymati ko'rsatiladi.
             score: resp?.score ?? (localScore ?? 0),
             total: resp?.total_questions ?? TOTAL,
-            rank: resp?.rank ?? localRank,
+            // Y11: backend yangi `position` field ham qaytaradi — rank
+            // submit paytida DB'da yangilanmasligi sababli `rank` None
+            // bo'lishi mumkin. position joriy attempt'ning shu olimpiada
+            // bo'yicha tartibini qaytaradi.
+            rank: resp?.rank ?? resp?.position ?? localRank,
             time: resp?.time_spent ?? timeSpent,
             maxScore: resp?.max_score ?? maxPossible,
             olympiad: liveOlympiad || olympiad,
@@ -439,10 +443,24 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             setCheatMessage("Siz cheating qildingiz. Olimpiada yakunlandi.");
             return;
           }
+          // O2: backend "allaqachon qatnashgansiz" qaytarsa shu xabarni
+          // foydalanuvchiga aniq ko'rsatamiz — "Javoblar yuborilmadi"
+          // umumiy matn chalkash bo'lardi.
+          if (/allaqachon/i.test(detail)) {
+            setSubmitError(detail);
+            setSubmitted(false);
+            return;
+          }
           // Token muddati tugagan bo'lsa — javoblar localStorage'da qoldi,
           // foydalanuvchini logout qilmasdan qayta login qilishi uchun
-          // aniq xabar ko'rsatamiz.
+          // aniq xabar ko'rsatamiz. Login muvaffaqiyatidan keyin avtomatik
+          // shu olimpiada test sahifasiga qaytariladi (App.tryResumePendingOlympiad).
           if (err?.status === 401 || err?.data?.code === 'session_expired') {
+            try {
+              if (numericOlympiadId != null) {
+                localStorage.setItem('olympy:pendingOlympiadReturn', String(numericOlympiadId));
+              }
+            } catch {}
             setSubmitError(
               "Sessiya tugadi. Iltimos, qayta kiring va Yuborish tugmasini qayta bosing. "
               + "Javoblaringiz brauzerda saqlangan."

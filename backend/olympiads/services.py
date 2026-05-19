@@ -1,5 +1,6 @@
 from datetime import timedelta
 
+from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -53,6 +54,14 @@ def user_can_participate_in_event(user, olympiad):
         return False
     if user.is_platform_admin:
         return True
+    # O3: olimpiada faol bo'lmasa qatnashish ham mumkin emas. Avval faqat
+    # event_type va membership tekshirilardi va DRAFT/INACTIVE olimpiada
+    # uchun ham True qaytardi — submit_attempt'ning ikkinchi qatlamida
+    # status alohida tekshirilardi, lekin leaderboard kabi joylarda
+    # (eslatma: leaderboard endpoint o'zi STATUS_ACTIVE/FINISHED filter
+    # qiladi) status tekshirilmasdi. Bu yerda darhol rad etish to'g'riroq.
+    if olympiad.status not in (Olympiad.STATUS_ACTIVE, Olympiad.STATUS_FINISHED):
+        return False
     if olympiad.event_type == Olympiad.EVENT_TYPE_OLYMPIAD:
         return True
     return CenterMembership.objects.filter(
@@ -87,17 +96,79 @@ def visible_events_filter(user):
     return public_events | center_competitions | staff_events
 
 
+def recompute_olympiad_ranks(olympiad):
+    """Olimpiada attempt'lariga rank beradi (score DESC, time_spent ASC).
+
+    Eng yuqori ball + eng kam vaqt = rank 1. Sertifikat va leaderboard
+    UI shu maydonga tayanadi (sertifikat ruxsati `attempt.rank == 1` ga
+    bog'liq). Avval `submit` paytida hech qachon yangilanmasdi, natijada
+    rank=None qolardi va sertifikatlar 403 qaytarardi.
+
+    Diskvalifikatsiya qilingan attempt'lar (disqualified=True) ranking'ga
+    kirmaydi va rank=None bilan qoldiriladi.
+    """
+    if not olympiad:
+        return 0
+    from attempts.models import TestAttempt
+    attempts = list(
+        TestAttempt.objects
+        .filter(olympiad=olympiad, disqualified=False)
+        .order_by('-score', 'time_spent', 'submitted_at')
+        .only('id', 'rank')
+    )
+    to_update = []
+    for index, attempt in enumerate(attempts, start=1):
+        if attempt.rank != index:
+            attempt.rank = index
+            to_update.append(attempt)
+    if to_update:
+        TestAttempt.objects.bulk_update(to_update, ['rank'])
+    # Disqualified attempt'larning rank'ini doim None'ga tushiramiz —
+    # admin avval qo'lda submit qilgan, keyin diskval bo'lgan holatda
+    # eski rank qolib ketmasin.
+    TestAttempt.objects.filter(
+        olympiad=olympiad,
+        disqualified=True,
+        rank__isnull=False,
+    ).update(rank=None)
+    return len(attempts)
+
+
+def _do_finish_olympiad(olympiad):
+    """Olympiadani FINISHED ga o'tkazadi va rank'larni qayta hisoblaydi.
+
+    Bitta transaction ichida bajariladi — status va rank yangilanishlari
+    atomic bo'lishi kerak. Qisqa bo'lishi uchun `select_for_update` ham
+    qo'yamiz: bir vaqtda ikki marta chaqirilsa ikkilanmasdan.
+    """
+    with transaction.atomic():
+        locked = (
+            Olympiad.objects
+            .select_for_update()
+            .filter(pk=olympiad.pk)
+            .first()
+        )
+        if not locked or locked.status == Olympiad.STATUS_FINISHED:
+            return
+        locked.status = Olympiad.STATUS_FINISHED
+        locked.save(update_fields=['status'])
+        recompute_olympiad_ranks(locked)
+
+
 def maybe_finish_expired_olympiad(olympiad):
-    """Celery worker yo'q muhitda lazy trigger.
+    """Celery worker yo'q muhitda lazy trigger — faqat SHU olimpiada.
 
     Render free tier'da alohida Celery worker ishlamaydi, shu sababli
     `finish_expired_olympiads` periodik task hech qachon bajarilmaydi.
     Buning o'rniga har bir submit/questions so'rovida olimpiada muddati
     o'tganmi tekshirib, o'tgan bo'lsa shu yerda yopib qo'yamiz.
 
+    Avval butun `finish_expired_olympiads` chaqirilardi — har submit'da
+    barcha ACTIVE olimpiadalar jadvalini aylanardi va N+1 yuk hosil
+    qilardi. Endi faqat parametrda berilgan olimpiada tekshiriladi.
+
     Bu funksiya atomic transaction ICHIDA chaqirilmasligi kerak —
-    aks holda boshqa olimpiadalarni yopish ham bir tranzaksiya ichida
-    ushlab qoladi va lock muammosi tug'ilishi mumkin.
+    aks holda lock muammosi tug'ilishi mumkin.
     """
     if not olympiad or olympiad.status != Olympiad.STATUS_ACTIVE:
         return
@@ -107,10 +178,7 @@ def maybe_finish_expired_olympiad(olympiad):
     if timezone.now() <= end_time:
         return
     try:
-        # Celery task'ni decorator orqali emas, oddiy funksiya sifatida
-        # chaqiramiz — `.delay()` ishlatmaymiz, broker bo'lmasligi mumkin.
-        from olympiads.tasks import finish_expired_olympiads
-        finish_expired_olympiads()
+        _do_finish_olympiad(olympiad)
     except Exception:
         import logging
         logging.getLogger(__name__).exception('maybe_finish_expired_olympiad failed')
@@ -125,7 +193,11 @@ def event_readiness_errors(olympiad):
     if not olympiad.start_datetime:
         errors.append('Boshlanish sanasi va vaqtini kiriting')
     elif olympiad.start_datetime < timezone.now():
-        errors.append("Boshlanish vaqti o'tib ketgan")
+        # Y4: aniq ko'rsatma — admin nima qilishi kerakligini bilsin.
+        errors.append(
+            "Boshlanish vaqti o'tib ketgan. Iltimos, vaqtni yangilang "
+            "(kelajakdagi sana/vaqt kiriting)."
+        )
     if not olympiad.duration_minutes or olympiad.duration_minutes <= 0:
         errors.append('Davomiylikni kiriting')
     if not olympiad.questions.exists():

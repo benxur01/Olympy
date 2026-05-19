@@ -8,8 +8,8 @@ class TestAttemptSerializer(serializers.ModelSerializer):
         model = TestAttempt
         fields = ['id', 'user', 'olympiad', 'answers', 'score', 'correct_count',
                   'wrong_count', 'total_questions', 'time_spent', 'rank',
-                  'submitted_at']
-        read_only_fields = ['id', 'user', 'rank', 'submitted_at']
+                  'disqualified', 'submitted_at']
+        read_only_fields = ['id', 'user', 'rank', 'disqualified', 'submitted_at']
 
 
 class SubmitAttemptSerializer(serializers.Serializer):

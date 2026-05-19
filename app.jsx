@@ -61,6 +61,36 @@ const App = () => {
 
   const user = apiUser;
 
+  // K5: Submit paytida 401 olib token muddati tugagan bo'lsa, foydalanuvchi
+  // saqlangan olimpiada test sahifasiga avtomatik qaytishi kerak. Aks
+  // holda javoblar localStorage'da qoladi-yu, lekin foydalanuvchi
+  // dashboard'ga otib ketadi va qayta submit qilolmaydi.
+  const tryResumePendingOlympiad = (u) => {
+    if (!u?._api) return;
+    try {
+      const pendingId = localStorage.getItem('olympy:pendingOlympiadReturn');
+      if (!pendingId || !globalThis.OlympyApi?.getOlympiads) return;
+      const token = globalThis.OlympyApi?.getToken?.()
+        ?? globalThis.OlympyApi?.loadAuth?.()?.token;
+      globalThis.OlympyApi.getOlympiads(token).then((list) => {
+        const target = (list || []).find(o => String(o.id) === String(pendingId));
+        if (!target) {
+          localStorage.removeItem('olympy:pendingOlympiadReturn');
+          return;
+        }
+        const mapped = mapApiOlympiad(target);
+        if (mapped?.status === 'active') {
+          setActiveOlympiad(mapped);
+          setPage('test');
+        }
+        localStorage.removeItem('olympy:pendingOlympiadReturn');
+      }).catch(() => {
+        // Tarmoq xatosi — pending'ni saqlab qoldiramiz, foydalanuvchi
+        // qayta urinib ko'rishi mumkin.
+      });
+    } catch {}
+  };
+
   // Persist backend JWT session only.
   useEffect(() => {
     let cancelled = false;
@@ -82,6 +112,7 @@ const App = () => {
             ? roleHomePage(mappedUser) : requestedPage;
           setPage(dest1);
           setBootstrapping(false);
+          tryResumePendingOlympiad(mappedUser);
           return;
         } catch {
           // Token stale — tozalab cookie session sinab ko'ramiz
@@ -98,6 +129,7 @@ const App = () => {
         const dest2 = (!requestedPage || publicPages2.includes(requestedPage))
           ? roleHomePage(mappedUser) : requestedPage;
         setPage(dest2);
+        tryResumePendingOlympiad(mappedUser);
         return;
       } catch {}
       if (!cancelled && requestedPage) setPage(requestedPage);
@@ -119,6 +151,7 @@ const App = () => {
       ? roleHomePage(u)
       : requestedPage;
     setPage(dest);
+    tryResumePendingOlympiad(u);
   };
 
   const handleLogout = () => {
