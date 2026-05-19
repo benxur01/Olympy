@@ -59,6 +59,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
   const [current, setCurrent] = React.useState(0);
   const [answers, setAnswers] = React.useState(() => readPersisted(answersStorageKey) || {});
+  // Timer useEffect closure stale answers ushlab qolmasligi uchun ref —
+  // har render'da yangilanadi va handleSubmit uni o'qiydi.
+  const answersRef = React.useRef(answers);
+  React.useEffect(() => { answersRef.current = answers; }, [answers]);
   const [marked, setMarked] = React.useState(() => readPersisted(markedStorageKey) || {});
   const [timeLeft, setTimeLeft] = React.useState(DURATION);
   const [confirmModal, setConfirmModal] = React.useState(false);
@@ -363,8 +367,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     setSubmitted(true);
 
     try {
+      // answersRef.current — har doim oxirgi holat (stale closure muammoidan xalos).
+      const currentAnswers = answersRef.current || answers;
       const formattedAnswers = {};
-      Object.entries(answers).forEach(([idx, optIdx]) => {
+      Object.entries(currentAnswers).forEach(([idx, optIdx]) => {
         const q = TEST_QUESTIONS[parseInt(idx, 10)];
         if (q) formattedAnswers[q.id] = optIdx;
       });
@@ -379,12 +385,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         q => q && (q.correctAnswer != null || q.correct != null),
       );
       const correct = hasLocalCorrectness
-        ? TEST_QUESTIONS.filter((q, i) => answers[i] === (q.correctAnswer ?? q.correct)).length
+        ? TEST_QUESTIONS.filter((q, i) => currentAnswers[i] === (q.correctAnswer ?? q.correct)).length
         : null;
       const wrong = correct == null ? null : TOTAL - correct;
       const earnedScore = hasLocalCorrectness
         ? TEST_QUESTIONS.reduce((sum, q, i) => {
-            return answers[i] === (q.correctAnswer ?? q.correct) ? sum + (q.score || 3) : sum;
+            return currentAnswers[i] === (q.correctAnswer ?? q.correct) ? sum + (q.score || 3) : sum;
           }, 0)
         : 0;
       const maxPossible = TEST_QUESTIONS.reduce((sum, q) => sum + (q.score || 3), 0);
