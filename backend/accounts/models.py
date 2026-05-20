@@ -40,6 +40,15 @@ class UserManager(BaseUserManager):
 
 class User(AbstractBaseUser, PermissionsMixin):
     full_name = models.CharField(max_length=120)
+    first_name = models.CharField(max_length=60, blank=True)
+    last_name = models.CharField(max_length=60, blank=True)
+    # Optional unique username for display / mention. Validatsiya
+    # serializer'da: 3+ belgi, faqat harf/raqam/_/.
+    # NULL ruxsat etiladi (mavjud foydalanuvchilarda bo'sh bo'lishi mumkin) —
+    # username majburiy emas. Lekin bo'sh emas bo'lganda unique.
+    username = models.CharField(
+        max_length=32, unique=True, blank=True, null=True, db_index=True,
+    )
     phone = models.CharField(max_length=20, unique=True)
     normalized_phone = models.CharField(max_length=20, unique=True, db_index=True)
     # JSON list of role keys: student | teacher | manager | owner | admin
@@ -70,6 +79,18 @@ class User(AbstractBaseUser, PermissionsMixin):
             raise ValueError("Telefon raqam noto'g'ri")
         self.phone = norm
         self.normalized_phone = norm
+        # first_name/last_name dan full_name'ni avtomatik to'ldiramiz, agar
+        # ikkalasidan biri kelgan bo'lsa va full_name bo'sh / eski qiymat
+        # bilan kelmagan bo'lsa. Bu profil tahririda full_name'ni qo'lda
+        # yangilab o'tirishni yo'qotadi.
+        if (self.first_name or self.last_name):
+            combined = f"{(self.first_name or '').strip()} {(self.last_name or '').strip()}".strip()
+            if combined:
+                self.full_name = combined
+        # Bo'sh string username'larni NULL ga aylantiramiz (unique constraint
+        # bo'sh string'larni o'ziga xos deb hisoblaydi va to'qnashuv beradi).
+        if self.username is not None and not str(self.username).strip():
+            self.username = None
         super().save(*args, **kwargs)
 
     def __str__(self):

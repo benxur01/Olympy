@@ -23,11 +23,13 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import PhoneVerification
 from .serializers import (
+    ChangePasswordSerializer,
     ConfirmPasswordResetSerializer,
     LoginSerializer,
     RegisterSerializer,
     StartPasswordResetSerializer,
     StartTelegramPhoneVerificationSerializer,
+    UpdateProfileSerializer,
     UserSerializer,
     VerifyOtpSerializer,
 )
@@ -378,18 +380,100 @@ def logout(request):
     return _clear_auth_cookies(response)
 
 
-@api_view(['GET'])
+@api_view(['GET', 'PATCH'])
 @permission_classes([IsAuthenticated])
 def me(request):
-    """GET /api/me/ — return the current authenticated user.
+    """GET/PATCH /api/me/ — current authenticated user.
 
+    GET: foydalanuvchi ma'lumotlarini qaytaradi.
+    PATCH: first_name / last_name / username'ni yangilashga ruxsat beradi.
     is_active=False user uchun 401 qaytaramiz: bloklangan foydalanuvchining
     JWT'si OlympyJWTAuthentication tomonidan token_version mismatch sababli
     rad etiladi, lekin xavfsizlik qatlamini ikki marta qo'yamiz.
     """
     if not request.user.is_active:
         return Response({'detail': 'Hisob bloklangan'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    if request.method == 'PATCH':
+        serializer = UpdateProfileSerializer(
+            data=request.data,
+            context={'user': request.user, 'request': request},
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        user = request.user
+        update_fields = []
+        if 'first_name' in data:
+            user.first_name = (data.get('first_name') or '').strip()
+            update_fields.append('first_name')
+        if 'last_name' in data:
+            user.last_name = (data.get('last_name') or '').strip()
+            update_fields.append('last_name')
+        if 'username' in data:
+            new_username = data.get('username')
+            # Serializer validate_username bo'sh string'ni '' qilib qaytaradi
+            # — bu yerda NULL'ga aylantiramiz (save()'da ham backstop bor).
+            user.username = (new_username or None) or None
+            if isinstance(new_username, str) and new_username.strip() == '':
+                user.username = None
+            update_fields.append('username')
+        # first/last yangilangan bo'lsa save() ichida full_name avtomatik
+        # qayta hisoblanadi — shu sababli update_fields ga full_name'ni ham
+        # qo'shamiz, aks holda save(update_fields=...) uni DB'ga yozmaydi.
+        if 'first_name' in data or 'last_name' in data:
+            update_fields.append('full_name')
+        if update_fields:
+            # save() ichidagi normalize/auto-full_name logikasi ishlashi
+            # uchun update_fields'ga normalized_phone va phone qo'shilmaydi
+            # (mavjud qiymatlar saqlanadi).
+            user.save(update_fields=list(set(update_fields)))
+        return Response(UserSerializer(user, context={'request': request}).data)
+
     return Response(UserSerializer(request.user, context={'request': request}).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_my_password(request):
+    """POST /api/auth/me/change-password/ — eski parol bilan yangisini almashtirish.
+
+    Muvaffaqiyatli o'zgartirilgandan keyin token_version oshiriladi (boshqa
+    qurilmalardagi sessiyalar bekor bo'ladi) va shu so'rov uchun yangi
+    JWT cookie'lar o'rnatiladi.
+    """
+    if not request.user.is_active:
+        return Response({'detail': 'Hisob bloklangan'}, status=status.HTTP_401_UNAUTHORIZED)
+    serializer = ChangePasswordSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    old_password = serializer.validated_data['old_password']
+    new_password = serializer.validated_data['new_password']
+
+    user = request.user
+    if not check_password(old_password, user.password):
+        return Response({'detail': "Eski parol noto'g'ri"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if old_password == new_password:
+        return Response({'detail': "Yangi parol eski paroldan farq qilishi kerak"},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    with transaction.atomic():
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        locked = User.objects.select_for_update().get(pk=user.pk)
+        locked.set_password(new_password)
+        locked.save(update_fields=['password'])
+        # Bump token_version => boshqa qurilmalardagi JWT'lar bekor bo'ladi.
+        bump_token_version(locked)
+        user = locked
+
+    payload = _jwt_payload(user)
+    response = Response({
+        **payload,
+        'user': UserSerializer(user, context={'request': request}).data,
+        'password_changed': True,
+    })
+    return _set_auth_cookies(response, payload)
 
 
 @api_view(['POST'])
