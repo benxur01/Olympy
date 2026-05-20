@@ -1,3 +1,5 @@
+import re
+
 from django.contrib.auth.password_validation import validate_password as django_validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
@@ -13,7 +15,8 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['id', 'full_name', 'phone', 'normalized_phone', 'roles',
+        fields = ['id', 'full_name', 'first_name', 'last_name', 'username',
+                  'phone', 'normalized_phone', 'roles',
                   'roles_detail', 'telegram_linked', 'is_platform_admin',
                   'is_active', 'avatar_url', 'created_at']
         read_only_fields = ['id', 'normalized_phone', 'roles_detail',
@@ -215,6 +218,56 @@ class VerifyOtpSerializer(serializers.Serializer):
         if not norm:
             raise serializers.ValidationError("Telefon raqam noto'g'ri")
         return norm
+
+
+class UpdateProfileSerializer(serializers.Serializer):
+    """PATCH /api/me/ — current user'ning ism/familiya/username'ini yangilash.
+
+    Barcha maydonlar ixtiyoriy; faqat kelganlari tegishli o'zgartiriladi.
+    `username` butun loyiha bo'ylab unique va format cheklovi bilan
+    validatsiya qilinadi.
+    """
+
+    USERNAME_RE = re.compile(r'^[A-Za-z0-9._]{3,32}$')
+
+    first_name = serializers.CharField(max_length=60, required=False, allow_blank=True)
+    last_name = serializers.CharField(max_length=60, required=False, allow_blank=True)
+    username = serializers.CharField(max_length=32, required=False, allow_blank=True)
+
+    def validate_username(self, value):
+        if value is None:
+            return value
+        value = value.strip()
+        if value == '':
+            # Bo'sh string => username'ni o'chirish (NULL'ga aylantirish).
+            return ''
+        if not self.USERNAME_RE.match(value):
+            raise serializers.ValidationError(
+                "Username faqat harf, raqam, '_' va '.' belgilaridan iborat bo'lib, "
+                "kamida 3 belgidan iborat bo'lishi kerak"
+            )
+        # Unique check — boshqa user allaqachon olgan bo'lmasin.
+        qs = User.objects.filter(username__iexact=value)
+        current_user = self.context.get('user') if hasattr(self, 'context') else None
+        if current_user is not None:
+            qs = qs.exclude(pk=current_user.pk)
+        if qs.exists():
+            raise serializers.ValidationError("Bu username band")
+        return value
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """POST /api/auth/me/change-password/ — eski parol bilan yangisini almashtirish."""
+
+    old_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=6)
+
+    def validate_new_password(self, value):
+        try:
+            django_validate_password(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value
 
 
 class ConfirmPasswordResetSerializer(VerifyOtpSerializer):

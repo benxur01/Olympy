@@ -8,6 +8,97 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
   const [avatarError, setAvatarError] = React.useState('');
   const avatarInputRef = React.useRef(null);
 
+  // Profil ma'lumotlarini tahrirlash holati
+  const [profileForm, setProfileForm] = React.useState({
+    firstName: user?.firstName || '',
+    lastName: user?.lastName || '',
+    username: user?.username || '',
+  });
+  const [profileSaving, setProfileSaving] = React.useState(false);
+  const [profileMsg, setProfileMsg] = React.useState({ type: '', text: '' });
+  // user prop yangilanganda formni sinxronlash — boshqa joyda update bo'lsa.
+  React.useEffect(() => {
+    setProfileForm({
+      firstName: user?.firstName || '',
+      lastName: user?.lastName || '',
+      username: user?.username || '',
+    });
+  }, [user?.firstName, user?.lastName, user?.username]);
+
+  const handleProfileSubmit = async (e) => {
+    e?.preventDefault?.();
+    if (!isApi) return;
+    setProfileSaving(true);
+    setProfileMsg({ type: '', text: '' });
+    try {
+      const payload = {
+        first_name: profileForm.firstName.trim(),
+        last_name: profileForm.lastName.trim(),
+        username: profileForm.username.trim(),
+      };
+      const data = await OlympyApi.updateProfile(payload, OlympyApi.getToken());
+      const mapped = OlympyApi.mapBackendUser(data);
+      onUserUpdate?.(mapped);
+      setProfileMsg({ type: 'ok', text: 'Saqlandi' });
+    } catch (err) {
+      setProfileMsg({ type: 'err', text: OlympyApi.toUserMessage?.(err) || "Saqlab bo'lmadi" });
+    } finally {
+      setProfileSaving(false);
+      setTimeout(() => setProfileMsg({ type: '', text: '' }), 3000);
+    }
+  };
+
+  // Parol o'zgartirish holati
+  const [pwForm, setPwForm] = React.useState({ oldPassword: '', newPassword: '', confirmPassword: '' });
+  const [pwSaving, setPwSaving] = React.useState(false);
+  const [pwMsg, setPwMsg] = React.useState({ type: '', text: '' });
+
+  const handlePasswordSubmit = async (e) => {
+    e?.preventDefault?.();
+    if (!isApi) return;
+    setPwMsg({ type: '', text: '' });
+    if (!pwForm.oldPassword || !pwForm.newPassword || !pwForm.confirmPassword) {
+      setPwMsg({ type: 'err', text: "Barcha maydonlarni to'ldiring" });
+      return;
+    }
+    if (pwForm.newPassword !== pwForm.confirmPassword) {
+      setPwMsg({ type: 'err', text: 'Yangi parol va tasdiqlash mos kelmadi' });
+      return;
+    }
+    if (pwForm.newPassword.length < 6) {
+      setPwMsg({ type: 'err', text: "Parol kamida 6 belgi bo'lishi kerak" });
+      return;
+    }
+    setPwSaving(true);
+    try {
+      const data = await OlympyApi.changePassword(
+        { old_password: pwForm.oldPassword, new_password: pwForm.newPassword },
+        OlympyApi.getToken(),
+      );
+      // Yangi tokenlarni saqlash — boshqa qurilmalardagi sessiyalar bekor
+      // bo'ldi, lekin shu so'rovdagi token cookie + saqlangan token yangilanadi.
+      if (data?.token || data?.refresh) {
+        OlympyApi.saveAuth({
+          token: data.token,
+          refresh: data.refresh,
+          user: data.user,
+          cookieAuth: !!data.cookie_auth,
+        });
+      }
+      if (data?.user) {
+        const mapped = OlympyApi.mapBackendUser(data.user);
+        onUserUpdate?.(mapped);
+      }
+      setPwForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
+      setPwMsg({ type: 'ok', text: "Parol o'zgartirildi" });
+    } catch (err) {
+      setPwMsg({ type: 'err', text: OlympyApi.toUserMessage?.(err) || "Parolni o'zgartirib bo'lmadi" });
+    } finally {
+      setPwSaving(false);
+      setTimeout(() => setPwMsg({ type: '', text: '' }), 4000);
+    }
+  };
+
   const handleAvatarFile = async (e) => {
     const file = e.target.files?.[0];
     if (!file || !isApi) return;
@@ -292,9 +383,9 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
 
       {/* Tabs */}
       <div className="nav-tabs flex">
-        {['results','olympiads','certificates'].map(t => (
+        {['results','olympiads','certificates','settings'].map(t => (
           <button key={t} onClick={() => setTab(t)} className={`nav-tab ${tab===t?'active':''}`}>
-            {t==='results'?'Natijalar':t==='olympiads'?"Olimpiadalar":'Sertifikatlar'}
+            {t==='results'?'Natijalar':t==='olympiads'?"Olimpiadalar":t==='certificates'?'Sertifikatlar':'Sozlamalar'}
           </button>
         ))}
       </div>
@@ -374,6 +465,124 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
           {certError && (
             <div className="md:col-span-2 text-xs text-rose-300 text-center">{certError}</div>
           )}
+        </div>
+      )}
+
+      {tab === 'settings' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Profil ma'lumotlari */}
+          <form onSubmit={handleProfileSubmit} className="glass rounded-2xl p-5 space-y-3">
+            <h3 className="font-bold text-white mb-1">Profil ma'lumotlari</h3>
+            {!isApi && (
+              <div className="text-xs text-amber-300">Tahrirlash faqat akkaunt rejimida mavjud.</div>
+            )}
+            <div>
+              <label className="block text-xs text-white/50 mb-1">Ism</label>
+              <input
+                type="text"
+                value={profileForm.firstName}
+                onChange={(e) => setProfileForm(f => ({ ...f, firstName: e.target.value }))}
+                disabled={!isApi || profileSaving}
+                maxLength={60}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+                placeholder="Ali"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1">Familiya</label>
+              <input
+                type="text"
+                value={profileForm.lastName}
+                onChange={(e) => setProfileForm(f => ({ ...f, lastName: e.target.value }))}
+                disabled={!isApi || profileSaving}
+                maxLength={60}
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+                placeholder="Valiyev"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1">Username</label>
+              <input
+                type="text"
+                value={profileForm.username}
+                onChange={(e) => setProfileForm(f => ({ ...f, username: e.target.value }))}
+                disabled={!isApi || profileSaving}
+                maxLength={32}
+                autoComplete="off"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+                placeholder="ali.valiyev"
+              />
+              <div className="text-[10px] text-white/30 mt-1">Faqat harf, raqam, "_" va "." — kamida 3 belgi.</div>
+            </div>
+            {profileMsg.text && (
+              <div className={`text-xs font-semibold ${profileMsg.type === 'ok' ? 'text-emerald-300' : 'text-rose-300'}`}>
+                {profileMsg.text}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={!isApi || profileSaving}
+              className="w-full gradient-bg text-white font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50"
+            >
+              {profileSaving ? 'Saqlanmoqda...' : 'Saqlash'}
+            </button>
+          </form>
+
+          {/* Parol o'zgartirish */}
+          <form onSubmit={handlePasswordSubmit} className="glass rounded-2xl p-5 space-y-3">
+            <h3 className="font-bold text-white mb-1">Parolni o'zgartirish</h3>
+            {!isApi && (
+              <div className="text-xs text-amber-300">Parol almashtirish faqat akkaunt rejimida mavjud.</div>
+            )}
+            <div>
+              <label className="block text-xs text-white/50 mb-1">Eski parol</label>
+              <input
+                type="password"
+                value={pwForm.oldPassword}
+                onChange={(e) => setPwForm(f => ({ ...f, oldPassword: e.target.value }))}
+                disabled={!isApi || pwSaving}
+                autoComplete="current-password"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1">Yangi parol</label>
+              <input
+                type="password"
+                value={pwForm.newPassword}
+                onChange={(e) => setPwForm(f => ({ ...f, newPassword: e.target.value }))}
+                disabled={!isApi || pwSaving}
+                autoComplete="new-password"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1">Yangi parolni tasdiqlash</label>
+              <input
+                type="password"
+                value={pwForm.confirmPassword}
+                onChange={(e) => setPwForm(f => ({ ...f, confirmPassword: e.target.value }))}
+                disabled={!isApi || pwSaving}
+                autoComplete="new-password"
+                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+              />
+            </div>
+            {pwMsg.text && (
+              <div className={`text-xs font-semibold ${pwMsg.type === 'ok' ? 'text-emerald-300' : 'text-rose-300'}`}>
+                {pwMsg.text}
+              </div>
+            )}
+            <div className="text-[10px] text-white/30">
+              Parol o'zgartirilgandan keyin boshqa qurilmalardagi sessiyalar yopiladi.
+            </div>
+            <button
+              type="submit"
+              disabled={!isApi || pwSaving}
+              className="w-full gradient-bg text-white font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50"
+            >
+              {pwSaving ? "O'zgartirilmoqda..." : "Parolni o'zgartirish"}
+            </button>
+          </form>
         </div>
       )}
     </div>

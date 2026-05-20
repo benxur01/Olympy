@@ -265,6 +265,9 @@ const mapBackendUser = (user) => {
     id: `api:${user.id}`,
     backendId: user.id,
     name: user.full_name || user.name || 'Foydalanuvchi',
+    firstName: user.first_name || user.firstName || '',
+    lastName: user.last_name || user.lastName || '',
+    username: user.username || '',
     phone: user.normalized_phone || user.phone,
     avatarUrl: makeAssetUrl(user.avatar_url || user.avatarUrl || ''),
     password: '',
@@ -337,6 +340,8 @@ export const OlympyApi = {
   verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload, retryOnAuth: false }),
   // Me
   getMe: (token) => request('/api/me/', { token }),
+  updateProfile: (payload, token) => request('/api/me/', { method: 'PATCH', body: payload, token }),
+  changePassword: (payload, token) => request('/api/auth/me/change-password/', { method: 'POST', body: payload, token }),
   uploadMyAvatar: (imageFile, token) => {
     const fd = new FormData();
     fd.append('avatar', imageFile);
