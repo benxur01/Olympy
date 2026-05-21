@@ -9,52 +9,87 @@ const formatAdminDate = (value) => {
 
 const adminStatusMeta = (status) => {
   const map = {
-    approved: { label: 'Tasdiqlandi', cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200' },
-    pending: { label: 'Kutilmoqda', cls: 'bg-amber-50 text-amber-700 ring-amber-200' },
-    rejected: { label: 'Rad etildi', cls: 'bg-rose-50 text-rose-700 ring-rose-200' },
-    active: { label: 'Faol', cls: 'bg-sky-50 text-sky-700 ring-sky-200' },
-    draft: { label: 'Draft', cls: 'bg-slate-50 text-slate-600 ring-slate-200' },
-    finished: { label: 'Tugagan', cls: 'bg-slate-100 text-slate-600 ring-slate-200' },
+    approved: { label: 'Tasdiqlandi', cls: 'admin-badge-active' },
+    pending: { label: 'Kutilmoqda', cls: 'admin-badge-pending' },
+    rejected: { label: 'Rad etildi', cls: 'admin-badge-rejected' },
+    active: { label: 'Faol', cls: 'admin-badge-active' },
+    draft: { label: 'Draft', cls: 'admin-badge-draft' },
+    finished: { label: 'Tugagan', cls: 'admin-badge-draft' },
   };
   return map[status] || map.draft;
+};
+
+const GlowCard = ({ children, className = '', style = {}, ...props }) => {
+  const ref = React.useRef(null);
+  const [coords, setCoords] = React.useState({ x: 0, y: 0 });
+
+  const handleMouseMove = (e) => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    setCoords({ x, y });
+  };
+
+  return (
+    <div
+      ref={ref}
+      onMouseMove={handleMouseMove}
+      className={`glow-card ${className}`}
+      style={{
+        ...style,
+        '--mouse-x': `${coords.x}px`,
+        '--mouse-y': `${coords.y}px`,
+      }}
+      {...props}
+    >
+      {children}
+    </div>
+  );
 };
 
 const AdminPill = ({ status, children }) => {
   const meta = adminStatusMeta(status);
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ${meta.cls}`}>
+    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold tracking-wider uppercase ${meta.cls}`}>
       {children || meta.label}
     </span>
   );
 };
 
-const AdminInitial = ({ name, color = 'bg-indigo-600' }) => (
-  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${color} text-sm font-bold text-white`}>
+const AdminInitial = ({ name, color = 'bg-indigo-600/30 text-indigo-400 border border-indigo-500/20' }) => (
+  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${color} text-sm font-bold shadow-[0_0_10px_rgba(99,102,241,0.05)]`}>
     {(name || '?').trim()[0]?.toUpperCase() || '?'}
   </div>
 );
 
 const AdminMetricCard = ({ label, value, delta, icon, tone = 'indigo' }) => {
   const tones = {
-    indigo: 'bg-indigo-50 text-indigo-600',
-    emerald: 'bg-emerald-50 text-emerald-600',
-    amber: 'bg-amber-50 text-amber-600',
-    rose: 'bg-violet-50 text-violet-600',
-    sky: 'bg-sky-50 text-sky-600',
+    indigo: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.05)]',
+    emerald: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]',
+    amber: 'text-amber-400 bg-amber-500/10 border-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.05)]',
+    rose: 'text-purple-400 bg-purple-500/10 border-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.05)]',
+    sky: 'text-sky-400 bg-sky-500/10 border-sky-500/20 shadow-[0_0_15px_rgba(56,189,248,0.05)]',
   };
   return (
-    <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+    <GlowCard className="admin-card p-4 relative overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:-translate-y-0.5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-[11px] font-bold text-slate-500">{label}</div>
-          <div className="mt-4 text-[21px] font-extrabold leading-none tracking-tight text-slate-900">{value}</div>
-          {delta && <div className="mt-3 text-[11px] font-semibold text-slate-500">{delta}</div>}
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">{label}</div>
+          <div className="mt-3 text-2xl font-black leading-none tracking-tight text-white">{value}</div>
+          {delta && (
+            <div className="mt-2.5 text-[10px] font-semibold text-slate-400 flex items-center gap-1.5">
+              <span className="inline-block h-1 w-1 rounded-full bg-indigo-400 shadow-[0_0_4px_#6366f1]" />
+              {delta}
+            </div>
+          )}
         </div>
-        <div className={`flex h-8 w-8 items-center justify-center rounded-full ${tones[tone] || tones.indigo}`}>
+        <div className={`flex h-9 w-9 items-center justify-center rounded-lg border ${tones[tone] || tones.indigo}`}>
           {icon}
         </div>
       </div>
-    </div>
+    </GlowCard>
   );
 };
 
@@ -65,9 +100,16 @@ const AdminBarChart = ({ values = [], labels = [] }) => {
   return (
     <div className="flex h-[172px] items-end gap-4 px-2">
       {safe.map((v, i) => (
-        <div key={i} className="flex flex-1 flex-col items-center gap-3">
-          <div className="w-full max-w-5 rounded-t bg-indigo-500 shadow-sm shadow-indigo-200" style={{ height: `${Math.max((v / maxV) * 130, v > 0 ? 8 : 2)}px` }} />
-          <div className="text-xs font-semibold text-slate-400">{safeLabels[i]}</div>
+        <div key={i} className="flex flex-1 flex-col items-center gap-2 group">
+          <div className="relative w-full flex justify-center">
+            {/* Tooltip on hover */}
+            <div className="absolute -top-7 scale-0 group-hover:scale-100 transition-all duration-200 bg-slate-900 border border-white/10 text-white text-[10px] px-2 py-0.5 rounded font-bold pointer-events-none z-20">
+              {v}
+            </div>
+            <div className="w-full max-w-5 rounded-t-md bg-gradient-to-t from-indigo-600 to-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.2)] transition-all duration-500 ease-out hover:from-purple-500 hover:to-indigo-400" 
+              style={{ height: `${Math.max((v / maxV) * 120, v > 0 ? 8 : 2)}px` }} />
+          </div>
+          <div className="text-[11px] font-bold text-slate-400 mt-1">{safeLabels[i]}</div>
         </div>
       ))}
     </div>
@@ -79,30 +121,39 @@ const AdminDonut = ({ segments }) => {
   const circles = segments.map((s, i) => {
     const dash = `${s.value} ${100 - s.value}`;
     const circle = (
-      <circle key={s.label} cx="18" cy="18" r="15.9" fill="none" stroke={s.color} strokeWidth="4"
-        strokeDasharray={dash} strokeDashoffset={offset} />
+      <circle key={s.label} cx="18" cy="18" r="15.9" fill="none" stroke={s.color} strokeWidth="3"
+        strokeDasharray={dash} strokeDashoffset={offset} className="transition-all duration-500 hover:stroke-[4]" />
     );
     offset -= s.value;
     return circle;
   });
   return (
-    <div className="flex items-center gap-5">
-      <svg viewBox="0 0 36 36" className="h-32 w-32 -rotate-90">
-        <circle cx="18" cy="18" r="15.9" fill="none" stroke="#eef2f7" strokeWidth="4" />
-        {circles}
-      </svg>
-      <div className="space-y-3">
+    <div className="flex flex-col sm:flex-row items-center gap-8">
+      <div className="relative flex items-center justify-center">
+        <svg viewBox="0 0 36 36" className="h-32 w-32 -rotate-90">
+          <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="3" />
+          {circles}
+        </svg>
+        <div className="absolute flex flex-col items-center">
+          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Jami</span>
+          <span className="text-lg font-black text-white">100%</span>
+        </div>
+      </div>
+      <div className="space-y-2 flex-1 w-full">
         {segments.map(s => (
-          <div key={s.label} className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: s.color }} />
-            <span className="min-w-24">{s.label}</span>
-            <span className="text-slate-400">{s.value}%</span>
+          <div key={s.label} className="flex items-center justify-between gap-3 text-xs font-bold text-slate-300 p-2 rounded-lg bg-white/5 border border-white/5 hover:border-white/10 transition">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full shadow-[0_0_8px_currentColor]" style={{ background: s.color, color: s.color }} />
+              <span className="text-slate-400 font-semibold">{s.label}</span>
+            </div>
+            <span className="text-white font-mono">{s.value}%</span>
           </div>
         ))}
       </div>
     </div>
   );
 };
+
 
 const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const store = useStore();
@@ -355,90 +406,95 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   });
   const dashboardNotifications = recentActivity.slice(0, 4);
   const AdminSidebar = () => (
-    <aside className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-[184px] flex-col bg-[#142235] text-slate-300 shadow-2xl transition-transform duration-200 lg:static lg:translate-x-0 lg:shadow-none`}>
-      <div className="flex h-[54px] items-center gap-2 border-b border-white/10 px-4">
+    <aside className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-[184px] flex-col admin-sidebar text-slate-300 shadow-2xl transition-transform duration-200 lg:static lg:translate-x-0 lg:shadow-none`}>
+      <div className="flex h-[54px] items-center gap-2 border-b border-white/5 px-4 bg-white/[0.01]">
         <button onClick={() => onNavigate('landing')} className="flex items-center gap-2">
-          <div className="relative flex h-7 w-7 items-center justify-center rounded-md bg-white text-base font-black text-[#142235]">
+          <div className="relative flex h-7 w-7 items-center justify-center rounded-md bg-white text-base font-black text-[#0b0f19]">
             O
-            <span className="absolute -bottom-1 left-1 h-1 w-5 rounded-full bg-[#ff9900]" />
+            <span className="absolute -bottom-1 left-1 h-1 w-5 rounded-full bg-gradient-to-r from-amber-500 to-indigo-500" />
           </div>
           <div className="text-left">
-            <div className="text-[16px] font-extrabold leading-none text-white">olympy <span className="font-medium text-slate-400">admin</span></div>
+            <div className="text-[14px] font-black leading-none text-white tracking-wide">olympy <span className="font-medium text-indigo-400 text-[10px]">admin</span></div>
           </div>
         </button>
       </div>
-      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3">
-        {navItems.map(item => (
-          <button key={item.key}
-            onClick={() => { setPage(item.key); setMobileMenu(false); }}
-            className={`flex w-full items-center gap-3 rounded-[5px] px-3 py-[8px] text-left text-[12px] font-semibold transition ${page === item.key ? 'bg-[#4f63ff] text-white shadow-lg shadow-indigo-950/20' : 'text-slate-400 hover:bg-white/10 hover:text-white'}`}>
-            <Icon name={item.icon} size={15} />
-            <span className="flex-1">{item.label}</span>
-            {item.badge && (
-              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${page === item.key ? 'bg-white/20 text-white' : 'bg-rose-500 text-white'}`}>{item.badge}</span>
-            )}
-            {!item.badge && item.key !== 'home' && <Icon name="chevronRight" size={12} className="text-slate-500" />}
-          </button>
-        ))}
+      <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-4 admin-scroll">
+        {navItems.map(item => {
+          const isActive = page === item.key;
+          return (
+            <button key={item.key}
+              onClick={() => { setPage(item.key); setMobileMenu(false); }}
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-[9px] text-left text-[11px] font-bold transition-all duration-200 ${isActive ? 'bg-indigo-600/15 text-indigo-400 border-l-2 border-indigo-500 shadow-[inset_0_0_8px_rgba(99,102,241,0.08)]' : 'text-slate-400 hover:bg-white/[0.04] hover:text-white'}`}>
+              <Icon name={item.icon} size={14} className={isActive ? 'text-indigo-400' : 'text-slate-500'} />
+              <span className="flex-1">{item.label}</span>
+              {item.badge && (
+                <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-extrabold ${isActive ? 'bg-indigo-500/20 text-indigo-300' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}`}>{item.badge}</span>
+              )}
+            </button>
+          );
+        })}
       </nav>
-      <div className="border-t border-white/10 px-4 py-5">
+      <div className="border-t border-white/5 px-4 py-5 bg-white/[0.01]">
         <div className="mb-6">
-          <div className="mb-3 text-[10px] font-extrabold uppercase tracking-wide text-slate-500">Tizim holati</div>
-          <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-300">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" /> Tizim ishlayapti
+          <div className="mb-2 text-[9px] font-extrabold uppercase tracking-widest text-slate-500">Tizim holati</div>
+          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-300">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            Tizim faol
           </div>
         </div>
-        <div className="mb-4 text-[11px] leading-relaxed text-slate-500">
+        <div className="mb-4 text-[10px] leading-relaxed text-slate-600 font-semibold">
           © 2026 Olympy Admin
         </div>
-        <button onClick={onLogout} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-[12px] font-semibold text-slate-400 hover:bg-white/10 hover:text-white">
-          <Icon name="logout" size={14} /> Chiqish
+        <button onClick={onLogout} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-[11px] font-bold text-slate-400 hover:bg-white/5 hover:text-white transition">
+          <Icon name="logout" size={13} className="text-slate-500" /> Chiqish
         </button>
       </div>
     </aside>
   );
 
   const AdminTopbar = () => (
-    <header className="sticky top-0 z-30 flex h-[54px] items-center justify-between border-b border-slate-200 bg-white px-4 lg:px-5">
+    <header className="sticky top-0 z-30 flex h-[54px] items-center justify-between border-b border-white/5 bg-[#0b0f19]/80 backdrop-blur-md px-4 lg:px-5">
       <div className="flex items-center gap-3">
-        <button className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md text-slate-400 hover:bg-slate-50 lg:hidden" onClick={() => setMobileMenu(true)}>
+        <button className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 lg:hidden" onClick={() => setMobileMenu(true)}>
           <Icon name="menu" size={18} />
         </button>
-        <button className="hidden h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:bg-slate-50 lg:inline-flex">
-          <Icon name="menu" size={17} />
+        <button className="hidden h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 lg:inline-flex">
+          <Icon name="menu" size={16} />
         </button>
         <div className="relative hidden w-[310px] max-w-[35vw] md:block">
-          <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             value={globalSearch}
             onChange={e => setGlobalSearch(e.target.value)}
-            className="h-8 w-full rounded-md border border-slate-200 bg-white pl-9 pr-3 text-[12px] text-slate-700 outline-none focus:border-indigo-300 focus:ring-4 focus:ring-indigo-50"
+            className="h-8 w-full admin-input pl-9 pr-3 text-[11px] outline-none"
             placeholder="Foydalanuvchilar, tashkilotlar, olimpiadalar..." />
         </div>
       </div>
       <div className="flex items-center gap-3">
         {onOpenSwitcher && (
-          <button onClick={onOpenSwitcher} className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 md:px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50">
-            <Icon name="users" size={12} /><span className="hidden md:inline">Rolni almashtirish</span>
+          <button onClick={onOpenSwitcher} className="inline-flex items-center gap-1.5 rounded-lg border border-white/5 px-2 md:px-3 py-1.5 text-[10px] font-bold text-slate-300 hover:bg-white/5 transition">
+            <Icon name="users" size={11} /><span className="hidden md:inline">Rolni almashtirish</span>
           </button>
         )}
-        <button onClick={() => setPage('requests')} className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-50">
-          <Icon name="bell" size={17} />
+        <button onClick={() => setPage('requests')} className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 transition">
+          <Icon name="bell" size={15} />
           {pendingCenterReqs.length > 0 && (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white">
+            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white shadow-[0_0_8px_rgba(239,68,68,0.4)]">
               {pendingCenterReqs.length}
             </span>
           )}
         </button>
-        <button className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md text-slate-500 hover:bg-slate-50">
-          <Icon name="info" size={17} />
+        <button className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 transition">
+          <Icon name="info" size={15} />
         </button>
-        <div className="flex items-center gap-2 pl-2">
-            <Avatar name={user?.name || 'Admin'} src={user?.avatarUrl || ''} size={30} gradient="from-slate-700 to-slate-900" />
+        <div className="flex items-center gap-2 pl-2 border-l border-white/5">
+          <Avatar name={user?.name || 'Admin'} src={user?.avatarUrl || ''} size={28} gradient="from-indigo-600 to-purple-600" />
           <div className="hidden text-right sm:block">
-            <div className="text-[12px] font-bold leading-tight text-slate-900">{user?.name || 'Admin'}</div>
-            <div className="text-[11px] font-medium leading-tight text-slate-500">{(() => {
-              // Avval doim "Super Admin" yozilardi. Endi haqiqiy rol asosida.
+            <div className="text-[11px] font-black leading-tight text-white">{user?.name || 'Admin'}</div>
+            <div className="text-[9px] font-bold leading-tight text-indigo-400 mt-0.5">{(() => {
               if (user?.is_platform_admin || user?.roles?.admin) return 'Platform Admin';
               if (user?.roles?.owner) return 'Tashkilot direktori';
               if (user?.roles?.manager) return 'Manager';
@@ -446,7 +502,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               return 'Admin';
             })()}</div>
           </div>
-          <Icon name="chevronDown" size={13} className="hidden text-slate-400 sm:block" />
+          <Icon name="chevronDown" size={12} className="hidden text-slate-500 sm:block" />
         </div>
       </div>
     </header>
@@ -459,29 +515,29 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         const owner = getOwnerInfo(center, req);
         if (!center) return null;
         return (
-          <div key={req.id} className="rounded-lg border border-amber-200 bg-amber-50/40 p-4">
+          <div key={req.id} className="rounded-lg border border-white/5 bg-white/[0.02] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.15)]">
             <div className="flex flex-col gap-4 md:flex-row md:items-center">
               <div className="flex flex-1 items-center gap-3">
-                <AdminInitial name={center.name} color="bg-amber-500" />
+                <AdminInitial name={center.name} color="bg-amber-500/20 text-amber-400 border border-amber-500/30" />
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-extrabold text-slate-900">{center.name}</div>
-                  <div className="mt-1 text-xs font-medium text-slate-500">
-                    {center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · Direktor: {owner.name}{owner.phone ? ` · ${owner.phone}` : ''}
+                  <div className="truncate text-sm font-extrabold text-white">{center.name}</div>
+                  <div className="mt-1 text-xs font-semibold text-slate-400">
+                    {center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · Direktor: <span className="text-slate-300 font-bold">{owner.name}</span>{owner.phone ? ` · ${owner.phone}` : ''}
                   </div>
                   {!compact && (center.subjects || []).length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {center.subjects.slice(0, 5).map(s => (
-                        <span key={s} className="rounded-md bg-white px-2 py-1 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200">{s}</span>
+                        <span key={s} className="rounded bg-white/5 border border-white/5 px-2 py-0.5 text-[10px] font-bold text-slate-400">{s}</span>
                       ))}
                     </div>
                   )}
                 </div>
               </div>
               <div className="flex shrink-0 gap-2">
-                <button onClick={() => approveCenterReq(req)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">
+                <button onClick={() => approveCenterReq(req)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-2 text-xs font-bold text-white transition shadow-[0_0_15px_rgba(16,185,129,0.15)]">
                   <Icon name="check" size={14} /> Qabul qilish
                 </button>
-                <button onClick={() => rejectCenterReq(req)} className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3 py-2 text-xs font-bold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-50">
+                <button onClick={() => rejectCenterReq(req)} className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-2 text-xs font-bold text-rose-400 border border-rose-500/20 hover:bg-rose-500/10 transition">
                   <Icon name="x" size={14} /> Rad etish
                 </button>
               </div>
@@ -490,7 +546,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         );
       })}
       {pendingCenterReqs.length === 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white px-4 py-10 text-center text-sm font-medium text-slate-500">
+        <div className="rounded-lg border border-white/5 bg-white/[0.02] px-4 py-10 text-center text-sm font-semibold text-slate-400">
           Hozircha tasdiqlash kutilayotgan direktor arizasi yo'q
         </div>
       )}
@@ -507,11 +563,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       return r.student?.status === 'approved';
     }).length;
     return (
-    <div className="min-h-[calc(100vh-54px)] space-y-[14px] bg-[#f6f8fc] p-[18px]">
+    <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-[20px] font-extrabold leading-tight text-slate-900">Boshqaruv paneli</h1>
-          <p className="mt-1 text-[12px] font-medium text-slate-500">Olympy platformasi ko'rsatkichlari va arizalar holati.</p>
+          <h1 className="text-[20px] font-black leading-tight text-white">Boshqaruv paneli</h1>
+          <p className="mt-1 text-[11px] font-bold text-slate-400">Olympy platformasi ko'rsatkichlari va arizalar holati.</p>
         </div>
       </div>
 
@@ -529,90 +585,90 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       </div>
 
       <div className="grid gap-[12px] xl:grid-cols-[1.55fr_1.45fr]">
-        <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[13px] font-extrabold text-slate-800">Eng so'nggi tashkilotlar</h2>
-            <button onClick={() => setPage('centers')} className="text-[11px] font-bold text-indigo-600">Hammasi</button>
+        <section className="admin-card p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-[12px] font-black uppercase tracking-wider text-slate-300">Eng so'nggi tashkilotlar</h2>
+            <button onClick={() => setPage('centers')} className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 transition">Hammasi</button>
           </div>
-          <div className="grid grid-cols-[1fr_70px_74px] border-b border-slate-100 pb-2 text-[10px] font-extrabold text-slate-400">
+          <div className="grid grid-cols-[1fr_70px_74px] border-b border-white/5 pb-2 text-[9px] font-black uppercase tracking-widest text-slate-500">
             <span>Tashkilot</span><span className="text-right">O'quvchi</span><span className="text-right">Holat</span>
           </div>
-          <div className="divide-y divide-slate-100">
+          <div className="divide-y divide-white/5">
             {dashboardCenters.map(center => (
-              <div key={center.id} className="grid grid-cols-[1fr_70px_74px] items-center gap-2 py-3">
+              <div key={center.id} className="grid grid-cols-[1fr_70px_74px] items-center gap-2 py-3 admin-table-row">
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-slate-100 text-xs font-black text-slate-700">{center.name?.[0] || 'O'}</div>
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/5 bg-white/5 text-xs font-black text-white">{center.name?.[0] || 'O'}</div>
                   <div className="min-w-0">
-                    <div className="truncate text-[12px] font-bold text-slate-700">{center.name}</div>
-                    <div className="truncate text-[10px] text-slate-400">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)}</div>
+                    <div className="truncate text-[12px] font-bold text-slate-200">{center.name}</div>
+                    <div className="truncate text-[10px] text-slate-500 font-semibold">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)}</div>
                   </div>
                 </div>
-                <div className="text-right text-[11px] font-semibold text-slate-500">{(center.students || 0).toLocaleString()}</div>
+                <div className="text-right text-[11px] font-bold text-slate-400">{(center.students || 0).toLocaleString()}</div>
                 <div className="text-right"><AdminPill status={center.status} /></div>
               </div>
             ))}
-            {dashboardCenters.length === 0 && <div className="py-10 text-center text-[12px] font-semibold text-slate-400">Tashkilotlar yo'q</div>}
+            {dashboardCenters.length === 0 && <div className="py-10 text-center text-[12px] font-semibold text-slate-500">Tashkilotlar yo'q</div>}
           </div>
         </section>
 
-        <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[13px] font-extrabold text-slate-800">Pending direktor arizalari</h2>
-            <button onClick={() => setPage('requests')} className="text-[11px] font-bold text-indigo-600">Hammasi</button>
+        <section className="admin-card p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-[12px] font-black uppercase tracking-wider text-slate-300">Pending direktor arizalari</h2>
+            <button onClick={() => setPage('requests')} className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 transition">Hammasi</button>
           </div>
           <div className="space-y-3">
             {dashboardRequests.map(({ req, center, owner }) => (
-              <div key={req.id} className="flex items-start justify-between gap-2">
+              <div key={req.id} className="flex items-start justify-between gap-2 p-2 rounded-lg bg-white/[0.01] border border-white/5 hover:border-white/10 transition duration-200">
                 <div className="min-w-0">
-                  <div className="text-[12px] font-extrabold text-slate-800 truncate">{center?.name || 'Yangi tashkilot'}</div>
-                  <div className="mt-0.5 truncate text-[11px] font-medium text-slate-500">{owner.name}</div>
-                  <div className="mt-0.5 truncate text-[10px] text-slate-400">{center?.organizationType || "O'quv markaz"} · {formatCenterLocation(center)}</div>
+                  <div className="text-[12px] font-bold text-slate-200 truncate">{center?.name || 'Yangi tashkilot'}</div>
+                  <div className="mt-0.5 truncate text-[11px] font-bold text-slate-400">{owner.name}</div>
+                  <div className="mt-0.5 truncate text-[10px] text-slate-500 font-semibold">{center?.organizationType || "O'quv markaz"} · {formatCenterLocation(center)}</div>
                 </div>
                 <div className="shrink-0 text-right">
                   <AdminPill status="pending">Kutilmoqda</AdminPill>
-                  <div className="mt-1 flex justify-end gap-1">
-                    <button onClick={() => approveCenterReq(req)} className="rounded bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">Qabul</button>
-                    <button onClick={() => rejectCenterReq(req)} className="rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-700">Rad</button>
+                  <div className="mt-2 flex justify-end gap-1.5">
+                    <button onClick={() => approveCenterReq(req)} className="rounded bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-1 text-[10px] font-bold text-emerald-400 border border-emerald-500/20 transition">Qabul</button>
+                    <button onClick={() => rejectCenterReq(req)} className="rounded bg-rose-500/10 hover:bg-rose-500/20 px-2 py-1 text-[10px] font-bold text-rose-400 border border-rose-500/20 transition">Rad</button>
                   </div>
                 </div>
               </div>
             ))}
             {dashboardRequests.length === 0 && (
-              <div className="py-10 text-center text-[12px] font-semibold text-slate-400">Pending arizalar yo'q</div>
+              <div className="py-10 text-center text-[12px] font-semibold text-slate-500">Pending arizalar yo'q</div>
             )}
           </div>
         </section>
       </div>
 
       <div className="grid gap-[12px] xl:grid-cols-[1fr_1fr]">
-        <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <h2 className="mb-4 text-[13px] font-extrabold text-slate-800">Tashkilotlar holati</h2>
+        <section className="admin-card p-5">
+          <h2 className="mb-4 text-[12px] font-black uppercase tracking-wider text-slate-300">Tashkilotlar holati</h2>
           <AdminDonut segments={[
-            { label: 'Tasdiqlangan', value: approvedCenterPct, color: '#4f46e5' },
+            { label: 'Tasdiqlangan', value: approvedCenterPct, color: '#6366f1' },
             { label: 'Kutilmoqda', value: pendingCenterPct, color: '#f59e0b' },
             { label: 'Boshqa', value: otherCenterPct, color: '#10b981' },
           ]} />
         </section>
 
-        <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-[13px] font-extrabold text-slate-800">Bildirishnomalar</h2>
-            <button onClick={() => setPage('requests')} className="text-[11px] font-bold text-indigo-600">Hammasi</button>
+        <section className="admin-card p-5">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-[12px] font-black uppercase tracking-wider text-slate-300">Bildirishnomalar</h2>
+            <button onClick={() => setPage('requests')} className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 transition">Hammasi</button>
           </div>
           <div className="space-y-4">
             {dashboardNotifications.map(item => (
-              <div key={item.id} className="flex items-start gap-3">
-                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${item.tone === 'rose' ? 'bg-rose-50 text-rose-500' : item.tone === 'amber' ? 'bg-amber-50 text-amber-500' : item.tone === 'emerald' ? 'bg-emerald-50 text-emerald-500' : 'bg-indigo-50 text-indigo-500'}`}>
+              <div key={item.id} className="flex items-start gap-3 p-1">
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${item.tone === 'rose' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]' : item.tone === 'emerald' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 shadow-[0_0_10px_rgba(99,102,241,0.1)]'}`}>
                   <Icon name={item.tone === 'rose' ? 'info' : item.tone === 'emerald' ? 'check' : 'bell'} size={14} />
                 </div>
                 <div className="min-w-0">
-                  <div className="truncate text-[12px] font-extrabold text-slate-800">{item.title}</div>
-                  <div className="mt-0.5 truncate text-[11px] font-medium text-slate-500">{item.time || ''}</div>
+                  <div className="truncate text-[12px] font-bold text-slate-200">{item.title}</div>
+                  <div className="mt-0.5 truncate text-[10px] text-slate-500 font-bold">{item.time || ''}</div>
                 </div>
               </div>
             ))}
             {dashboardNotifications.length === 0 && (
-              <div className="py-10 text-center text-[12px] font-semibold text-slate-400">Yangi bildirishnomalar yo'q</div>
+              <div className="py-10 text-center text-[12px] font-semibold text-slate-500">Yangi bildirishnomalar yo'q</div>
             )}
           </div>
         </section>
@@ -622,21 +678,21 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   };
 
   const renderRequests = () => (
-    <div className="space-y-5 p-4 lg:p-6">
+    <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Direktor arizalari</h1>
-        <p className="mt-1 text-sm font-medium text-slate-500">Direktor tashkilot yoki markaz ro'yxatdan o'tkazsa shu yerda xabar chiqadi.</p>
+        <h1 className="text-[20px] font-black leading-tight text-white">Direktor arizalari</h1>
+        <p className="mt-1 text-[11px] font-bold text-slate-400">Direktor tashkilot yoki markaz ro'yxatdan o'tkazish uchun yuborgan arizalari.</p>
       </div>
       <CenterApprovalList />
     </div>
   );
 
   const renderCenters = () => (
-    <div className="space-y-5 p-4 lg:p-6">
+    <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Tashkilotlar va markazlar</h1>
-          <p className="mt-1 text-sm font-medium text-slate-500">Faqat qabul qilingan tashkilotlar public ro'yxatda ko'rinadi.</p>
+          <h1 className="text-[20px] font-black leading-tight text-white">Tashkilotlar va markazlar</h1>
+          <p className="mt-1 text-[11px] font-bold text-slate-400">Faqat qabul qilingan tashkilotlar o'quvchilar va mehmonlarga ko'rinadi.</p>
         </div>
         <div className="flex gap-2">
           <AdminPill status="approved">{approvedCenters.length} tasdiqlangan</AdminPill>
@@ -644,47 +700,47 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         </div>
       </div>
 
-      <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
+      <section className="overflow-hidden admin-card">
+        <div className="overflow-x-auto admin-scroll">
           <table className="w-full min-w-[980px] text-left">
-            <thead className="bg-slate-50">
-              <tr className="text-xs font-bold uppercase text-slate-400">
+            <thead className="admin-table-hdr">
+              <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
                 {['Tashkilot', 'Turi', 'Manzil', 'Direktor', 'O\'quvchi', 'Olimpiada', 'Holat', 'Amal'].map(h => (
-                  <th key={h} className="px-5 py-3">{h}</th>
+                  <th key={h} className="px-5 py-3.5">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-white/5">
               {centers.map(center => {
                 const owner = getOwnerInfo(center);
                 return (
-                  <tr key={center.id} className="text-sm">
+                  <tr key={center.id} className="text-xs admin-table-row text-slate-300">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <AdminInitial name={center.name} />
                         <div>
-                          <div className="font-extrabold text-slate-900">{center.name}</div>
-                          <div className="text-xs font-medium text-slate-400">{formatAdminDate(center.createdAt)}</div>
+                          <div className="font-bold text-white">{center.name}</div>
+                          <div className="text-[10px] font-semibold text-slate-500">{formatAdminDate(center.createdAt)}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-4 font-medium text-slate-600">{center.organizationType || "O'quv markaz"}</td>
-                    <td className="px-5 py-4 font-medium text-slate-600">{formatCenterLocation(center)}</td>
+                    <td className="px-5 py-4 font-semibold text-slate-400">{center.organizationType || "O'quv markaz"}</td>
+                    <td className="px-5 py-4 font-semibold text-slate-400">{formatCenterLocation(center)}</td>
                     <td className="px-5 py-4">
-                      <div className="font-semibold text-slate-700">{owner.name}</div>
-                      {owner.phone && <div className="text-xs text-slate-400">{owner.phone}</div>}
+                      <div className="font-semibold text-slate-300">{owner.name}</div>
+                      {owner.phone && <div className="text-[10px] text-slate-500 font-semibold">{owner.phone}</div>}
                     </td>
-                    <td className="px-5 py-4 font-semibold text-slate-700">{center.students || 0}</td>
-                    <td className="px-5 py-4 font-semibold text-slate-700">{center.olympiads || 0}</td>
+                    <td className="px-5 py-4 font-bold text-slate-300">{center.students || 0}</td>
+                    <td className="px-5 py-4 font-bold text-slate-300">{center.olympiads || 0}</td>
                     <td className="px-5 py-4"><AdminPill status={center.status} /></td>
                     <td className="px-5 py-4">
                       {center.status === 'pending' ? (
                         <div className="flex gap-2">
-                          <button onClick={() => approveCenterDirect(center)} className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white hover:bg-emerald-700">Qabul</button>
-                          <button onClick={() => rejectCenterDirect(center)} className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-bold text-rose-600 ring-1 ring-rose-200 hover:bg-rose-100">Rad</button>
+                          <button onClick={() => approveCenterDirect(center)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)] transition">Qabul</button>
+                          <button onClick={() => rejectCenterDirect(center)} className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-[11px] font-bold text-rose-400 ring-1 ring-rose-500/20 hover:bg-rose-500/20 transition">Rad</button>
                         </div>
                       ) : (
-                        <button onClick={() => rejectCenterDirect(center)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50">
+                        <button onClick={() => rejectCenterDirect(center)} className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 hover:bg-white/10 hover:text-white transition">
                           Ro'yxatdan olish
                         </button>
                       )}
@@ -693,7 +749,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 );
               })}
               {centers.length === 0 && (
-                <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-medium text-slate-500">Tashkilotlar yo'q</td></tr>
+                <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Tashkilotlar yo'q</td></tr>
               )}
             </tbody>
           </table>
@@ -703,34 +759,31 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   );
 
   const renderUsers = () => (
-    <div className="space-y-5 p-4 lg:p-6">
+    <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Foydalanuvchilar</h1>
-          <p className="mt-1 text-sm font-medium text-slate-500">Platformadagi foydalanuvchi rollari va holati.</p>
+          <h1 className="text-[20px] font-black leading-tight text-white">Foydalanuvchilar</h1>
+          <p className="mt-1 text-[11px] font-bold text-slate-400">Platformadagi foydalanuvchi rollari va holati.</p>
         </div>
         <div className="relative w-full md:w-72">
-          <Icon name="search" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
           <input
             value={userSearch}
             onChange={e => setUserSearch(e.target.value)}
-            className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-9 pr-3 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+            className="h-9 w-full admin-input pl-9 pr-3 text-xs outline-none"
             placeholder="Ism, telefon, rol bo'yicha qidirish..." />
         </div>
       </div>
-      <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
+      <section className="overflow-hidden admin-card">
+        <div className="overflow-x-auto admin-scroll">
           <table className="w-full min-w-[760px] text-left">
-            <thead className="bg-slate-50">
-              <tr className="text-xs font-bold uppercase text-slate-400">
-                {['Foydalanuvchi', 'Telefon', 'Rol', 'Tashkilot', 'Qo\'shilgan', 'Holat', 'Amal'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
+            <thead className="admin-table-hdr">
+              <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                {['Foydalanuvchi', 'Telefon', 'Rol', 'Tashkilot', 'Qo\'shilgan', 'Holat', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-white/5">
               {(() => {
-                // Avval qidiruv input'i client-side filter qilmasdi. Endi
-                // ism, telefon, rol va tashkilot nomi bo'yicha filterlanadi.
-                // Topbardagi globalSearch ham ushbu jadvalga ta'sir qiladi.
                 const q = (userSearch || globalSearch || '').trim().toLowerCase();
                 const visible = q
                   ? userRows.filter(row =>
@@ -740,18 +793,18 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                       (row.center || '').toLowerCase().includes(q))
                   : userRows;
                 if (visible.length === 0) {
-                  return <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-medium text-slate-500">{q ? 'Qidiruv natijasi topilmadi' : 'Foydalanuvchilar yo\'q'}</td></tr>;
+                  return <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">{q ? 'Qidiruv natijasi topilmadi' : 'Foydalanuvchilar yo\'q'}</td></tr>;
                 }
                 return visible.map(row => (
-                <tr key={row.id} className="text-sm">
-                  <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={row.name} src={row.avatarUrl || ''} size={34} /><span className="font-bold text-slate-900">{row.name}</span></div></td>
-                  <td className="px-5 py-4 font-mono text-xs text-slate-500">{row.phone?.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
-                  <td className="px-5 py-4"><span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">{row.role}</span></td>
-                  <td className="px-5 py-4 text-slate-500">{row.center}</td>
-                  <td className="px-5 py-4 text-slate-500">{row.joined}</td>
+                <tr key={row.id} className="text-xs admin-table-row text-slate-300">
+                  <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={row.name} src={row.avatarUrl || ''} size={34} /><span className="font-bold text-white">{row.name}</span></div></td>
+                  <td className="px-5 py-4 font-mono text-[11px] text-slate-400">{row.phone?.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
+                  <td className="px-5 py-4"><span className="rounded-md bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-400">{row.role}</span></td>
+                  <td className="px-5 py-4 font-semibold text-slate-400">{row.center}</td>
+                  <td className="px-5 py-4 font-semibold text-slate-400">{row.joined}</td>
                   <td className="px-5 py-4"><AdminPill status={row.status === 'Faol' ? 'approved' : 'rejected'}>{row.status}</AdminPill></td>
                   <td className="px-5 py-4">
-                    <button onClick={() => setBlockModal(row)} className={`rounded-lg px-3 py-2 text-xs font-bold ring-1 ${row.status === 'Bloklangan' ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-rose-50 text-rose-700 ring-rose-200'}`}>
+                    <button onClick={() => setBlockModal(row)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${row.status === 'Bloklangan' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'}`}>
                       {row.status === 'Bloklangan' ? 'Ochish' : 'Bloklash'}
                     </button>
                   </td>
@@ -772,8 +825,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <p className="text-sm text-white/60">{blockModal?.status === 'Bloklangan' ? 'Bu foydalanuvchining blokini ochasizmi?' : 'Bu foydalanuvchini bloklamoqchimisiz?'}</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => setBlockModal(null)} className="btn-ghost flex-1 rounded-xl py-3">Bekor qilish</button>
-          <button onClick={() => toggleBlock(blockModal)} className={`flex-1 rounded-xl py-3 font-semibold ${blockModal?.status === 'Bloklangan' ? 'btn-success' : 'btn-danger'}`}>
+          <button onClick={() => setBlockModal(null)} className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold">Bekor qilish</button>
+          <button onClick={() => toggleBlock(blockModal)} className={`flex-1 rounded-xl py-3 font-semibold text-xs font-bold ${blockModal?.status === 'Bloklangan' ? 'btn-success' : 'btn-danger'}`}>
             {blockModal?.status === 'Bloklangan' ? 'Blokni ochish' : 'Bloklash'}
           </button>
         </div>
@@ -782,20 +835,20 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   );
 
   const renderAnalytics = () => (
-    <div className="space-y-5 p-4 lg:p-6">
+    <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Tahlil</h1>
-        <p className="mt-1 text-sm font-medium text-slate-500">Platforma statistikasi.</p>
+        <h1 className="text-[20px] font-black leading-tight text-white">Tahlil</h1>
+        <p className="mt-1 text-[11px] font-bold text-slate-400">Platforma statistikasi.</p>
       </div>
       <div className="grid gap-5 xl:grid-cols-2">
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-5 text-base font-extrabold text-slate-900">Foydalanuvchi o'sishi</h2>
+        <section className="admin-card p-5">
+          <h2 className="mb-5 text-[11px] font-black tracking-wider uppercase text-slate-300">Foydalanuvchi o'sishi</h2>
           <AdminBarChart values={userGrowthChart.values} labels={userGrowthChart.labels} />
         </section>
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="mb-5 text-base font-extrabold text-slate-900">Tashkilotlar holati</h2>
+        <section className="admin-card p-5">
+          <h2 className="mb-5 text-[11px] font-black tracking-wider uppercase text-slate-300">Tashkilotlar holati</h2>
           <AdminDonut segments={[
-            { label: 'Tasdiqlangan', value: approvedCenterPct, color: '#4f46e5' },
+            { label: 'Tasdiqlangan', value: approvedCenterPct, color: '#6366f1' },
             { label: 'Kutilmoqda', value: pendingCenterPct, color: '#f59e0b' },
             { label: 'Boshqa', value: otherCenterPct, color: '#10b981' },
           ]} />
@@ -805,36 +858,36 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   );
 
   const renderOlympiads = () => (
-    <div className="space-y-5 p-4 lg:p-6">
+    <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Tadbirlar</h1>
-        <p className="mt-1 text-sm font-medium text-slate-500">Platformadagi olimpiada va musobaqalar ro'yxati.</p>
+        <h1 className="text-[20px] font-black leading-tight text-white">Tadbirlar</h1>
+        <p className="mt-1 text-[11px] font-bold text-slate-400">Platformadagi olimpiada va musobaqalar ro'yxati.</p>
       </div>
-      <section className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="overflow-x-auto">
+      <section className="overflow-hidden admin-card">
+        <div className="overflow-x-auto admin-scroll">
           <table className="w-full min-w-[860px] text-left">
-            <thead className="bg-slate-50">
-              <tr className="text-xs font-bold uppercase text-slate-400">
-                {['Tadbir', 'Tashkilot', 'Fan', 'Daraja', 'Test turi', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => <th key={h} className="px-5 py-3">{h}</th>)}
+            <thead className="admin-table-hdr">
+              <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                {['Tadbir', 'Tashkilot', 'Fan', 'Daraja', 'Test turi', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
+            <tbody className="divide-y divide-white/5">
               {(() => {
                 const olympiadList = isApi ? (apiOlympiads || []) : store.olympiads;
                 if (olympiadList.length === 0) {
-                  return <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-medium text-slate-500">Hali tadbirlar yo'q</td></tr>;
+                  return <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Hali tadbirlar yo'q</td></tr>;
                 }
                 return olympiadList.map(o => {
                   const center = centers.find(c => String(c.id) === String(o.centerId));
                   return (
-                    <tr key={o.id} className="text-sm">
-                      <td className="px-5 py-4 font-bold text-slate-900">{o.title}</td>
-                      <td className="px-5 py-4 text-slate-500">{center?.name || '—'}</td>
-                      <td className="px-5 py-4"><span className="rounded-md bg-indigo-50 px-2 py-1 text-xs font-bold text-indigo-700">{o.subject}</span></td>
-                      <td className="px-5 py-4">{o.testLevel ? <span className="rounded-md bg-violet-50 px-2 py-1 text-xs font-bold text-violet-700">{o.testLevel}</span> : <span className="text-slate-300">—</span>}</td>
-                      <td className="px-5 py-4">{o.testType ? <span className="rounded-md bg-sky-50 px-2 py-1 text-xs font-bold text-sky-700">{testTypeLabel(o.testType)}</span> : <span className="text-slate-300">—</span>}</td>
-                      <td className="px-5 py-4 text-slate-500">{o.startDate || '—'}</td>
-                      <td className="px-5 py-4 font-semibold text-slate-700">{o.participants || 0}</td>
+                    <tr key={o.id} className="text-xs admin-table-row text-slate-300">
+                      <td className="px-5 py-4 font-bold text-white">{o.title}</td>
+                      <td className="px-5 py-4 font-semibold text-slate-400">{center?.name || '—'}</td>
+                      <td className="px-5 py-4"><span className="rounded-md bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-400">{o.subject}</span></td>
+                      <td className="px-5 py-4">{o.testLevel ? <span className="rounded-md bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 text-[10px] font-bold text-violet-400">{o.testLevel}</span> : <span className="text-slate-500">—</span>}</td>
+                      <td className="px-5 py-4">{o.testType ? <span className="rounded-md bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 text-[10px] font-bold text-sky-400">{testTypeLabel(o.testType)}</span> : <span className="text-slate-500">—</span>}</td>
+                      <td className="px-5 py-4 font-semibold text-slate-400">{o.startDate || '—'}</td>
+                      <td className="px-5 py-4 font-bold text-slate-300">{o.participants || 0}</td>
                       <td className="px-5 py-4"><AdminPill status={o.status} /></td>
                     </tr>
                   );
@@ -848,15 +901,15 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   );
 
   const renderSubjects = () => (
-    <div className="space-y-5 p-4 lg:p-6">
+    <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Fanlar</h1>
-        <p className="mt-1 text-sm font-medium text-slate-500">Platformada ishlatiladigan fan kategoriyalari.</p>
+        <h1 className="text-[20px] font-black leading-tight text-white">Fanlar</h1>
+        <p className="mt-1 text-[11px] font-bold text-slate-400">Platformada ishlatiladigan fan kategoriyalari.</p>
       </div>
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="mb-3 text-sm font-extrabold text-slate-900">Yangi fan qo'shish</div>
+      <section className="admin-card p-5">
+        <div className="mb-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Yangi fan qo'shish</div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <input className="h-11 flex-1 rounded-lg border border-slate-200 px-3 text-sm text-slate-700 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+          <input className="h-10 flex-1 admin-input px-3 text-xs outline-none"
             placeholder="Fan nomi" value={newSubjectName} onChange={e => setNewSubjectName(e.target.value)} />
           <button onClick={() => {
             const name = newSubjectName.trim();
@@ -871,34 +924,38 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             OlympyStore.addSubject(name);
             setNewSubjectName('');
             showToast(`"${name}" qo'shildi`);
-          }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-bold text-white hover:bg-indigo-700">
-            <Icon name="plus" size={15} /> Qo'shish
+          }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)] transition">
+            <Icon name="plus" size={14} /> Qo'shish
           </button>
         </div>
       </section>
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="admin-card p-5">
         <div className="flex flex-wrap gap-2">
-          {subjects.map(s => <span key={s} className="rounded-md bg-slate-100 px-3 py-2 text-xs font-bold text-slate-600">{s}</span>)}
+          {subjects.map(s => (
+            <span key={s} className="rounded-md bg-indigo-500/10 border border-indigo-500/20 px-3 py-2 text-xs font-bold text-indigo-400">
+              {s}
+            </span>
+          ))}
         </div>
       </section>
     </div>
   );
 
   const renderSettings = () => (
-    <div className="space-y-5 p-4 lg:p-6">
+    <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div>
-        <h1 className="text-2xl font-extrabold tracking-tight text-slate-900">Sozlamalar</h1>
-        <p className="mt-1 text-sm font-medium text-slate-500">Admin panel sozlamalari.</p>
+        <h1 className="text-[20px] font-black leading-tight text-white">Sozlamalar</h1>
+        <p className="mt-1 text-[11px] font-bold text-slate-400">Admin panel sozlamalari.</p>
       </div>
-      <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="admin-card p-5">
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-lg border border-slate-200 p-4">
-            <div className="text-sm font-extrabold text-slate-900">Public listing qoidasi</div>
-            <div className="mt-2 text-sm text-slate-500">Faqat tasdiqlangan tashkilotlar o'quvchilar va mehmonlarga ko'rinadi.</div>
+          <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+            <div className="text-xs font-extrabold uppercase tracking-wider text-slate-300">Public listing qoidasi</div>
+            <div className="mt-1 text-[11px] font-semibold text-slate-500 leading-relaxed">Faqat tasdiqlangan tashkilotlar o'quvchilar va mehmonlarga ko'rinadi.</div>
           </div>
-          <div className="rounded-lg border border-slate-200 p-4">
-            <div className="text-sm font-extrabold text-slate-900">Ariza oqimi</div>
-            <div className="mt-2 text-sm text-slate-500">Direktor arizasi admin qaroridan keyin yakunlanadi.</div>
+          <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
+            <div className="text-xs font-extrabold uppercase tracking-wider text-slate-300">Ariza oqimi</div>
+            <div className="mt-1 text-[11px] font-semibold text-slate-500 leading-relaxed">Direktor arizasi admin qaroridan keyin yakunlanadi.</div>
           </div>
         </div>
       </section>
@@ -916,8 +973,6 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     settings: renderSettings,
   };
 
-  // Mobile bottom nav uchun eng muhim 4 ta sahifa. To'liq navItems (8 ta)
-  // mobile ekranga sig'maydi, shuning uchun qisqartirib olamiz.
   const mobileNavItems = [
     navItems.find(n => n.key === 'home'),
     navItems.find(n => n.key === 'users'),
@@ -926,20 +981,20 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   ].filter(Boolean);
 
   return (
-    <div className="h-screen overflow-hidden bg-[#f6f8fc] text-slate-900">
-      {mobileMenu && <div className="fixed inset-0 z-40 bg-slate-950/50 lg:hidden" onClick={() => setMobileMenu(false)} />}
+    <div className="h-screen overflow-hidden admin-bg text-slate-100">
+      {mobileMenu && <div className="fixed inset-0 z-40 bg-slate-950/60 lg:hidden" onClick={() => setMobileMenu(false)} />}
       <div className="flex h-full">
         <AdminSidebar />
         <div className="flex min-w-0 flex-1 flex-col">
           <AdminTopbar />
-          <main className="flex-1 overflow-x-hidden overflow-y-auto mobile-content-pad">
+          <main className="flex-1 overflow-x-hidden overflow-y-auto mobile-content-pad admin-scroll">
             {(pageRenderers[page] || renderHome)()}
           </main>
           <MobileBottomNav items={mobileNavItems} activePage={page} setPage={setPage} />
         </div>
       </div>
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-slate-900 px-4 py-3 text-sm font-bold text-white shadow-xl">
+        <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-slate-900 px-4 py-3 text-xs font-bold text-white shadow-xl border border-white/5">
           {toast}
         </div>
       )}
