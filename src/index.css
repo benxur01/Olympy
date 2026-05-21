@@ -16,8 +16,16 @@ body {
 ::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.35); border-radius: 3px; }
 
 /* Telegram WebView'da backdrop-filter sekin ishlaydi. Solid semi-transparent. */
-.glass { background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.10); }
-.glass-strong { background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.15); }
+.glass { 
+  background: rgba(255,255,255,0.07); 
+  border: 1px solid rgba(255,255,255,0.10); 
+  transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+}
+.glass-strong { 
+  background: rgba(255,255,255,0.12); 
+  border: 1px solid rgba(255,255,255,0.15); 
+  transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+}
 .glow-blue { box-shadow: 0 0 30px rgba(99,102,241,0.3); }
 .glow-purple { box-shadow: 0 0 30px rgba(168,85,247,0.25); }
 .glow-cyan { box-shadow: 0 0 30px rgba(34,211,238,0.2); }
@@ -32,8 +40,12 @@ body {
   background-size: 200% 200%;
   animation: gradient 8s ease infinite;
 }
-.card-hover { transition: all 0.3s ease; }
-.card-hover:hover { transform: translateY(-3px); box-shadow: 0 20px 60px rgba(99,102,241,0.2); }
+.card-hover { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease; }
+.card-hover:hover { 
+  transform: translateY(-5px); 
+  box-shadow: 0 20px 40px rgba(99,102,241,0.15), 0 0 25px rgba(168,85,247,0.1); 
+  border-color: rgba(99,102,241,0.35);
+}
 .sidebar-item { transition: all 0.2s ease; }
 .sidebar-item.active { background: rgba(99,102,241,0.15); border-left: 2px solid #6366f1; }
 .sidebar-item:hover { background: rgba(255,255,255,0.06); }
@@ -152,3 +164,201 @@ textarea.input-field { resize: vertical; min-height: 100px; }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes gradient { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+
+
+/* ─── 3D Perspective and Tilt System ───────────────────────────────────── */
+.perspective-1000 {
+  perspective: 1000px;
+}
+
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+.tilt-card {
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.tilt-inner {
+  transform: translateZ(40px);
+}
+
+.tilt-glow {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle 250px at var(--mouse-x, 50%) var(--mouse-y, 50%),
+    rgba(255, 255, 255, 0.12) 0%,
+    rgba(255, 255, 255, 0) 60%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 10;
+}
+
+.tilt-card:hover .tilt-glow {
+  opacity: 1;
+}
+
+/* ─── Scroll Reveal Engine ─────────────────────────────────────────────── */
+.scroll-reveal {
+  opacity: 0;
+  transform: translateY(35px) scale(0.97);
+  filter: blur(4px);
+  transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+              filter 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, opacity, filter;
+}
+
+.scroll-reveal.active {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  filter: blur(0);
+}
+
+.scroll-reveal-delay-1 { transition-delay: 100ms; }
+.scroll-reveal-delay-2 { transition-delay: 200ms; }
+.scroll-reveal-delay-3 { transition-delay: 300ms; }
+.scroll-reveal-delay-4 { transition-delay: 400ms; }
+
+/* Interactive glowing buttons */
+.btn-primary.glow-blue {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-primary.glow-blue::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.2), transparent 60%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.btn-primary.glow-blue:hover::after {
+  opacity: 1;
+}
+
+/* Premium 3D float keyframes */
+.float-3d {
+  animation: float3D 6s ease-in-out infinite;
+}
+
+@keyframes float3D {
+  0%, 100% {
+    transform: translateY(0px) rotateX(0deg) rotateY(0deg);
+  }
+  50% {
+    transform: translateY(-10px) rotateX(2deg) rotateY(-2deg);
+  }
+}
+
+/* ─── Premium 3D/Interactive Elements ────────────────────────────────── */
+
+.particles-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.glow-card {
+  position: relative;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  overflow: hidden;
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease, border-color 0.4s ease;
+}
+
+.glow-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    400px circle at var(--mouse-x, 0px) var(--mouse-y, 0px),
+    rgba(99, 102, 241, 0.07),
+    transparent 80%
+  );
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* Custom border-glow effect using mask */
+.glow-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    300px circle at var(--mouse-x, 0px) var(--mouse-y, 0px),
+    rgba(99, 102, 241, 0.4),
+    rgba(168, 85, 247, 0.3) 50%,
+    transparent 80%
+  );
+  z-index: 0;
+  pointer-events: none;
+  border-radius: inherit;
+  padding: 1.5px;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+.glow-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(99, 102, 241, 0.12), 0 0 20px rgba(168, 85, 247, 0.08);
+}
+
+.magnetic-item {
+  transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+  will-change: transform;
+}
+
+/* Floating 3D Badge items */
+.float-badge-1 {
+  animation: floatBadge1 6s ease-in-out infinite;
+}
+
+.float-badge-2 {
+  animation: floatBadge2 7s ease-in-out infinite 0.5s;
+}
+
+.float-badge-3 {
+  animation: floatBadge3 8s ease-in-out infinite 1s;
+}
+
+@keyframes floatBadge1 {
+  0%, 100% {
+    transform: translateY(0) rotate(2deg) translateZ(30px);
+  }
+  50% {
+    transform: translateY(-8px) rotate(-1deg) translateZ(30px);
+  }
+}
+
+@keyframes floatBadge2 {
+  0%, 100% {
+    transform: translateY(0) rotate(-2deg) translateZ(40px);
+  }
+  50% {
+    transform: translateY(-12px) rotate(1deg) translateZ(40px);
+  }
+}
+
+@keyframes floatBadge3 {
+  0%, 100% {
+    transform: translateY(0) rotate(1deg) translateZ(25px);
+  }
+  50% {
+    transform: translateY(-6px) rotate(-2deg) translateZ(25px);
+  }
+}
+
