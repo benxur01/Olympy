@@ -919,6 +919,53 @@ def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
 def extract_questions_from_pdf(pdf_bytes, subject, difficulty='medium', question_type='multiple_choice'):
     pdf_text, page_count = _extract_pdf_text(pdf_bytes)
     text_chunk_count = len(_split_pdf_text_chunks(pdf_text)) if pdf_text else 0
+    # Check if AI keys are configured
+    has_openai = bool(_openai_keys())
+    has_gemini = bool(_gemini_keys())
+    
+    openai_result = {'ok': False}
+    gemini_result = {'ok': False}
+    
+    if has_openai or has_gemini:
+        if has_openai:
+            openai_result = _openai_from_text(pdf_text, subject, difficulty, question_type)
+            if openai_result.get('ok') and text_chunk_count <= 1:
+                openai_result['pdf_text_chars'] = len(pdf_text)
+                openai_result['page_count'] = page_count
+                openai_result['used_pdf_vision'] = False
+                openai_result['complete'] = True
+                return openai_result
+        
+        if has_gemini:
+            gemini_result = _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type)
+            if gemini_result.get('ok'):
+                if openai_result.get('ok') and len(openai_result.get('questions') or []) > len(gemini_result.get('questions') or []):
+                    openai_result['pdf_text_chars'] = len(pdf_text)
+                    openai_result['page_count'] = page_count
+                    openai_result['used_pdf_vision'] = False
+                    openai_result['complete'] = False
+                    openai_result['warning'] = "Katta PDF bir martada ajratildi. Natijani asl PDF bilan solishtirib tekshiring."
+                    openai_result['chunks'] = text_chunk_count
+                    return openai_result
+                if openai_result.get('provider_error') or openai_result.get('error'):
+                    logger.info('PDF question extraction used Gemini after OpenAI failed: %s', openai_result.get('provider_error') or openai_result.get('error'))
+                gemini_result['pdf_text_chars'] = len(pdf_text)
+                gemini_result['page_count'] = page_count
+                gemini_result['used_pdf_vision'] = bool(gemini_result.get('used_pdf_vision'))
+                gemini_result['complete'] = gemini_result.get('complete', True)
+                gemini_result['chunks'] = gemini_result.get('chunks') or max(text_chunk_count, 1)
+                return gemini_result
+                
+        if openai_result.get('ok'):
+            openai_result['pdf_text_chars'] = len(pdf_text)
+            openai_result['page_count'] = page_count
+            openai_result['used_pdf_vision'] = False
+            openai_result['complete'] = False
+            openai_result['warning'] = "Katta PDF bo'lgani uchun barcha savollar chiqqanini PDF bilan solishtirib tekshiring."
+            openai_result['chunks'] = text_chunk_count
+            return openai_result
+
+    # Fallback to local regex-based parser
     parser_questions = _parse_questions_from_text(pdf_text, subject, difficulty, question_type)
     if parser_questions:
         return {
@@ -935,39 +982,7 @@ def extract_questions_from_pdf(pdf_bytes, subject, difficulty='medium', question
                 "Javoblar topilmagan savollar saqlashdan oldin tekshirilishi kerak."
             ),
         }
-    openai_result = _openai_from_text(pdf_text, subject, difficulty, question_type)
-    if openai_result.get('ok') and text_chunk_count <= 1:
-        openai_result['pdf_text_chars'] = len(pdf_text)
-        openai_result['page_count'] = page_count
-        openai_result['used_pdf_vision'] = False
-        openai_result['complete'] = True
-        return openai_result
-    gemini_result = _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type)
-    if gemini_result.get('ok'):
-        if openai_result.get('ok') and len(openai_result.get('questions') or []) > len(gemini_result.get('questions') or []):
-            openai_result['pdf_text_chars'] = len(pdf_text)
-            openai_result['page_count'] = page_count
-            openai_result['used_pdf_vision'] = False
-            openai_result['complete'] = False
-            openai_result['warning'] = "Katta PDF bir martada ajratildi. Natijani asl PDF bilan solishtirib tekshiring."
-            openai_result['chunks'] = text_chunk_count
-            return openai_result
-        if openai_result.get('provider_error') or openai_result.get('error'):
-            logger.info('PDF question extraction used Gemini after OpenAI failed: %s', openai_result.get('provider_error') or openai_result.get('error'))
-        gemini_result['pdf_text_chars'] = len(pdf_text)
-        gemini_result['page_count'] = page_count
-        gemini_result['used_pdf_vision'] = bool(gemini_result.get('used_pdf_vision'))
-        gemini_result['complete'] = gemini_result.get('complete', True)
-        gemini_result['chunks'] = gemini_result.get('chunks') or max(text_chunk_count, 1)
-        return gemini_result
-    if openai_result.get('ok'):
-        openai_result['pdf_text_chars'] = len(pdf_text)
-        openai_result['page_count'] = page_count
-        openai_result['used_pdf_vision'] = False
-        openai_result['complete'] = False
-        openai_result['warning'] = "Katta PDF bo'lgani uchun barcha savollar chiqqanini PDF bilan solishtirib tekshiring."
-        openai_result['chunks'] = text_chunk_count
-        return openai_result
+        
     if not pdf_text:
         detail = (
             "PDFdan matn ajralmadi. Agar PDF skan/rasm bo'lsa, sifatliroq yoki matnli PDF yuklang. "
@@ -980,6 +995,9 @@ def extract_questions_from_pdf(pdf_bytes, subject, difficulty='medium', question
         )
         if gemini_result.get('error') or gemini_result.get('provider_error'):
             detail = f"{detail} / {gemini_result.get('error') or gemini_result.get('provider_error')}"
+        elif openai_result.get('error') or openai_result.get('provider_error'):
+            detail = f"{detail} / {openai_result.get('error') or openai_result.get('provider_error')}"
+            
     return {
         'ok': False,
         'error': detail,
