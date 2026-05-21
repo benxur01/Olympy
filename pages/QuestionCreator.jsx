@@ -629,15 +629,18 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       {/* Delete all confirm */}
       <Modal open={deleteAllConfirm} onClose={() => setDeleteAllConfirm(false)} title="Barcha savollarni o'chirish">
         <div className="space-y-4">
-          <p className="text-white/65 text-sm leading-relaxed">
-            Siz haqiqatan ham ushbu markazga tegishli **barcha {questions.length} ta savolni** o'chirib tashlamoqchimisiz?
+          <p className="text-white/80 text-sm font-semibold leading-relaxed">
+            Hamma savollar o'chirilsinmi?
+          </p>
+          <p className="text-white/60 text-xs leading-relaxed">
+            Ushbu markazga tegishli **barcha {questions.length} ta savol** o'chirib tashlanadi.
           </p>
           <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs leading-relaxed">
-            ⚠️ <strong>DIQQAT:</strong> Ushbu amalni ortga qaytarib bo'lmaydi va barcha savollar bazadan butunlay o'chib ketadi!
+            ⚠️ <strong>DIQQAT:</strong> Ushbu amalni ortga qaytarib bo'lmaydi!
           </div>
           <div className="flex gap-3 pt-2">
             <button onClick={() => setDeleteAllConfirm(false)} className="btn-ghost flex-1 py-3 rounded-xl">
-              Bekor qilish
+              Yo'q
             </button>
             <button
               onClick={async () => {
@@ -658,7 +661,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               }}
               className="btn-danger flex-1 py-3 rounded-xl font-semibold"
             >
-              Tasdiqlash
+              Ha
             </button>
           </div>
         </div>
