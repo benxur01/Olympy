@@ -428,7 +428,10 @@ export const OlympyApi = {
   },
   updateQuestion: (questionId, payload, token) => request(`/api/questions/${questionId}/`, { method: 'PATCH', body: payload, token }),
   deleteQuestion: (questionId, token) => request(`/api/questions/${questionId}/`, { method: 'DELETE', token }),
-  deleteAllQuestions: (centerId, token) => request(`/api/questions/delete-all/?center=${centerId}`, { method: 'DELETE', token }),
+  deleteAllQuestions: (centerId, token, ids) => {
+    const url = `/api/questions/delete-all/?center=${centerId}${ids && ids.length ? `&ids=${ids.join(',')}` : ''}`;
+    return request(url, { method: 'DELETE', token });
+  },
   // Question with image — accepts a File via FormData
   createQuestionMultipart: (payload, imageFile, token) => {
     const fd = new FormData();
