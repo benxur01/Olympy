@@ -267,7 +267,7 @@ const Topbar = ({ title, subtitle, actions, user, onMenuClick }) => {
 // ─── Modal ─────────────────────────────────────────────────────────────────────
 const Modal = ({ open, onClose, title, children, width = 'max-w-lg' }) => {
   if (!open) return null;
-  return (
+  return ReactDOM.createPortal(
     <div className="overlay" onClick={onClose}>
       <div className={`modal ${width}`} onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-6">
@@ -276,7 +276,8 @@ const Modal = ({ open, onClose, title, children, width = 'max-w-lg' }) => {
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
