@@ -51,6 +51,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [newSubjectModal, setNewSubjectModal] = React.useState(false);
   const [newSubject, setNewSubject] = React.useState('');
   const [deleteId, setDeleteId] = React.useState(null);
+  const [deleteAllConfirm, setDeleteAllConfirm] = React.useState(false);
 
   // Determine which center this user creates questions for
   // Teacher → their teacher center; Manager (embedded) → their manager center
@@ -368,6 +369,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             <button onClick={() => setNewSubjectModal(true)} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-dashed border-white/20 text-white/40 w-full sm:w-auto">
               <Icon name="plus" size={14} /> Yangi fan qo'shish
             </button>
+            {questions.length > 0 && (
+              <button onClick={() => setDeleteAllConfirm(true)} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 transition-colors w-full sm:w-auto sm:ml-auto">
+                <Icon name="trash" size={14} /> Barchasini o'chirish
+              </button>
+            )}
           </div>
 
           <div className="space-y-3">
@@ -617,6 +623,44 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             OlympyStore.deleteQuestion(deleteId);
             setDeleteId(null);
           }} className="btn-danger flex-1 py-3 rounded-xl font-semibold">O'chirish</button>
+        </div>
+      </Modal>
+
+      {/* Delete all confirm */}
+      <Modal open={deleteAllConfirm} onClose={() => setDeleteAllConfirm(false)} title="Barcha savollarni o'chirish">
+        <div className="space-y-4">
+          <p className="text-white/65 text-sm leading-relaxed">
+            Siz haqiqatan ham ushbu markazga tegishli **barcha {questions.length} ta savolni** o'chirib tashlamoqchimisiz?
+          </p>
+          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs leading-relaxed">
+            ⚠️ <strong>DIQQAT:</strong> Ushbu amalni ortga qaytarib bo'lmaydi va barcha savollar bazadan butunlay o'chib ketadi!
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button onClick={() => setDeleteAllConfirm(false)} className="btn-ghost flex-1 py-3 rounded-xl">
+              Bekor qilish
+            </button>
+            <button
+              onClick={async () => {
+                if (isApi) {
+                  try {
+                    await OlympyApi.deleteAllQuestions(myCenterId, OlympyApi.getToken());
+                    showApiToast("✅ Barcha savollar muvaffaqiyatli o'chirildi");
+                    apiQuestionsRes.reload();
+                  } catch (err) {
+                    console.warn('deleteAllQuestions failed:', err);
+                    showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Savollarni o'chirishda xatolik yuz berdi"}`);
+                  }
+                } else {
+                  OlympyStore.deleteAllQuestions(myCenterId);
+                  showApiToast("✅ Barcha savollar muvaffaqiyatli o'chirildi (Mock)");
+                }
+                setDeleteAllConfirm(false);
+              }}
+              className="btn-danger flex-1 py-3 rounded-xl font-semibold"
+            >
+              Tasdiqlash
+            </button>
+          </div>
         </div>
       </Modal>
 

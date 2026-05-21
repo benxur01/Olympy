@@ -311,6 +311,9 @@ const OlympyStore = (() => {
   const deleteQuestion = (id) => {
     set(s => ({ ...s, questions: s.questions.filter(q => q.id !== id) }));
   };
+  const deleteAllQuestions = (centerId) => {
+    set(s => ({ ...s, questions: s.questions.filter(q => String(q.centerId) !== String(centerId)) }));
+  };
 
   // ─── Olympiads ───────────────────────────────────────────────────────────
   const createOlympiad = (data) => {
@@ -444,7 +447,7 @@ const OlympyStore = (() => {
     // Subjects
     addSubject,
     // Questions
-    createQuestion, createQuestionsBulk, updateQuestion, deleteQuestion,
+    createQuestion, createQuestionsBulk, updateQuestion, deleteQuestion, deleteAllQuestions,
     // Olympiads
     createOlympiad, updateOlympiad, publishOlympiad,
     // Attempts
