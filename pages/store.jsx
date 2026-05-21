@@ -311,8 +311,15 @@ const OlympyStore = (() => {
   const deleteQuestion = (id) => {
     set(s => ({ ...s, questions: s.questions.filter(q => q.id !== id) }));
   };
-  const deleteAllQuestions = (centerId) => {
-    set(s => ({ ...s, questions: s.questions.filter(q => String(q.centerId) !== String(centerId)) }));
+  const deleteAllQuestions = (centerId, ids = null) => {
+    set(s => ({
+      ...s,
+      questions: s.questions.filter(q => {
+        if (String(q.centerId) !== String(centerId)) return true;
+        if (ids && ids.length) return !ids.includes(q.id) && !ids.includes(q.backendId);
+        return false;
+      })
+    }));
   };
 
   // ─── Olympiads ───────────────────────────────────────────────────────────

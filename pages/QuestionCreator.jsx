@@ -52,6 +52,29 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [newSubject, setNewSubject] = React.useState('');
   const [deleteId, setDeleteId] = React.useState(null);
   const [deleteAllConfirm, setDeleteAllConfirm] = React.useState(false);
+  const [selectedIds, setSelectedIds] = React.useState([]);
+
+  const toggleSelectQuestion = (id) => {
+    setSelectedIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    const filteredIds = filtered.map(q => q.id);
+    const allSelected = filteredIds.length > 0 && filteredIds.every(id => selectedIds.includes(id));
+    if (allSelected) {
+      setSelectedIds(prev => prev.filter(id => !filteredIds.includes(id)));
+    } else {
+      setSelectedIds(prev => {
+        const next = [...prev];
+        filteredIds.forEach(id => {
+          if (!next.includes(id)) next.push(id);
+        });
+        return next;
+      });
+    }
+  };
 
   // Determine which center this user creates questions for
   // Teacher → their teacher center; Manager (embedded) → their manager center
@@ -370,17 +393,46 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               <Icon name="plus" size={14} /> Yangi fan qo'shish
             </button>
             {questions.length > 0 && (
-              <button onClick={() => setDeleteAllConfirm(true)} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 transition-colors w-full sm:w-auto sm:ml-auto">
-                <Icon name="trash" size={14} /> Barchasini o'chirish
-              </button>
+              selectedIds.length > 0 ? (
+                <button onClick={() => setDeleteAllConfirm(true)} className="btn-danger text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors w-full sm:w-auto sm:ml-auto">
+                  <Icon name="trash" size={14} /> Tanlanganlarni o'chirish ({selectedIds.length})
+                </button>
+              ) : (
+                <button onClick={() => setDeleteAllConfirm(true)} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 transition-colors w-full sm:w-auto sm:ml-auto">
+                  <Icon name="trash" size={14} /> Barchasini o'chirish
+                </button>
+              )
             )}
           </div>
+
+          {filtered.length > 0 && (
+            <div className="flex items-center gap-2 px-3 py-1.5 glass rounded-xl text-white/50 text-xs w-fit select-none animate-in">
+              <input
+                type="checkbox"
+                id="select-all-checkbox"
+                className="w-3.5 h-3.5 rounded border-white/15 bg-white/5 text-rose-500 focus:ring-rose-500/30 cursor-pointer"
+                checked={filtered.length > 0 && filtered.every(q => selectedIds.includes(q.id))}
+                onChange={toggleSelectAll}
+              />
+              <label htmlFor="select-all-checkbox" className="cursor-pointer font-medium">
+                {filtered.every(q => selectedIds.includes(q.id)) ? "Tanlovni bekor qilish" : "Barchasini tanlash"}
+              </label>
+            </div>
+          )}
 
           <div className="space-y-3">
             {filtered.length === 0 && <EmptyState icon="book" title="Savollar yo'q" desc="Yangi savol yarating" action={<button onClick={() => setMode('manual')} className="btn-primary px-4 py-2 rounded-xl text-sm">Savol yaratish</button>} />}
             {filtered.map(q => (
               <div key={q.id} className="glass rounded-2xl p-3 md:p-4 flex gap-3 md:gap-4 group">
                 <div className={`w-1.5 md:w-2 rounded-full flex-shrink-0 ${q.difficulty === 'Oson' ? 'bg-emerald-400' : q.difficulty === "O'rta" ? 'bg-amber-400' : 'bg-rose-400'}`} />
+                <div className="flex-shrink-0 flex items-center pr-1 select-none">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded border-white/15 bg-white/5 text-rose-500 focus:ring-rose-500/30 cursor-pointer"
+                    checked={selectedIds.includes(q.id)}
+                    onChange={() => toggleSelectQuestion(q.id)}
+                  />
+                </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm text-white/90 mb-2 leading-relaxed">{q.text}</p>
                   <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
@@ -627,13 +679,15 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       </Modal>
 
       {/* Delete all confirm */}
-      <Modal open={deleteAllConfirm} onClose={() => setDeleteAllConfirm(false)} title="Barcha savollarni o'chirish">
+      <Modal open={deleteAllConfirm} onClose={() => setDeleteAllConfirm(false)} title={selectedIds.length > 0 ? "Tanlangan savollarni o'chirish" : "Barcha savollarni o'chirish"}>
         <div className="space-y-4">
           <p className="text-white/80 text-sm font-semibold leading-relaxed">
-            Hamma savollar o'chirilsinmi?
+            {selectedIds.length > 0 ? `${selectedIds.length} ta tanlangan savol o'chirilsinmi?` : "Hamma savollar o'chirilsinmi?"}
           </p>
           <p className="text-white/60 text-xs leading-relaxed">
-            Ushbu markazga tegishli **barcha {questions.length} ta savol** o'chirib tashlanadi.
+            {selectedIds.length > 0
+              ? `Ushbu markazga tegishli **tanlangan ${selectedIds.length} ta savol** o'chirib tashlanadi.`
+              : `Ushbu markazga tegishli **barcha ${questions.length} ta savol** o'chirib tashlanadi.`}
           </p>
           <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs leading-relaxed">
             ⚠️ <strong>DIQQAT:</strong> Ushbu amalni ortga qaytarib bo'lmaydi!
@@ -644,18 +698,29 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             </button>
             <button
               onClick={async () => {
+                const targetIds = selectedIds.length > 0 ? selectedIds : null;
                 if (isApi) {
                   try {
-                    await OlympyApi.deleteAllQuestions(myCenterId, OlympyApi.getToken());
-                    showApiToast("✅ Barcha savollar muvaffaqiyatli o'chirildi");
+                    await OlympyApi.deleteAllQuestions(myCenterId, OlympyApi.getToken(), targetIds);
+                    showApiToast(
+                      targetIds
+                        ? `✅ Tanlangan ${targetIds.length} ta savol muvaffaqiyatli o'chirildi`
+                        : "✅ Barcha savollar muvaffaqiyatli o'chirildi"
+                    );
+                    setSelectedIds([]);
                     apiQuestionsRes.reload();
                   } catch (err) {
                     console.warn('deleteAllQuestions failed:', err);
                     showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Savollarni o'chirishda xatolik yuz berdi"}`);
                   }
                 } else {
-                  OlympyStore.deleteAllQuestions(myCenterId);
-                  showApiToast("✅ Barcha savollar muvaffaqiyatli o'chirildi (Mock)");
+                  OlympyStore.deleteAllQuestions(myCenterId, targetIds);
+                  showApiToast(
+                    targetIds
+                      ? `✅ Tanlangan ${targetIds.length} ta savol muvaffaqiyatli o'chirildi (Mock)`
+                      : "✅ Barcha savollar muvaffaqiyatli o'chirildi (Mock)"
+                  );
+                  setSelectedIds([]);
                 }
                 setDeleteAllConfirm(false);
               }}

@@ -135,7 +135,18 @@ def delete_all_questions(request):
             {'detail': 'Forbidden'},
             status=http_status.HTTP_403_FORBIDDEN,
         )
-    deleted_count, _ = Question.objects.filter(center_id=center_id).delete()
+    ids_raw = request.query_params.get('ids')
+    if ids_raw:
+        try:
+            ids = [int(x) for x in ids_raw.split(',') if x.strip()]
+        except (ValueError, TypeError):
+            return Response(
+                {'detail': "ids parametri butun sonlar ro'yxati bo'lishi kerak"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        deleted_count, _ = Question.objects.filter(center_id=center_id, id__in=ids).delete()
+    else:
+        deleted_count, _ = Question.objects.filter(center_id=center_id).delete()
     return Response(
         {'detail': f"{deleted_count} ta savol muvaffaqiyatli o'chirildi", 'deleted_count': deleted_count},
         status=http_status.HTTP_200_OK,
