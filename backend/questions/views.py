@@ -111,6 +111,37 @@ def question_detail(request, question_id):
     return Response(QuestionSerializer(question).data)
 
 
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_all_questions(request):
+    """DELETE /api/questions/delete-all/?center=<id>
+    Delete all questions for a center (approved teacher/manager/owner only).
+    """
+    raw_center = request.query_params.get('center')
+    if not raw_center:
+        return Response(
+            {'detail': 'center query parametri majburiy'},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        center_id = int(raw_center)
+    except (TypeError, ValueError):
+        return Response(
+            {'detail': "center parametri son bo'lishi kerak"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if not _user_can_create_for_center(request.user, center_id):
+        return Response(
+            {'detail': 'Forbidden'},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+    deleted_count, _ = Question.objects.filter(center_id=center_id).delete()
+    return Response(
+        {'detail': f"{deleted_count} ta savol muvaffaqiyatli o'chirildi", 'deleted_count': deleted_count},
+        status=http_status.HTTP_200_OK,
+    )
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([AiQuestionRateThrottle])
