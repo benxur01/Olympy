@@ -20,6 +20,255 @@ const escapeSvgText = (value) => String(value || '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&apos;');
 
+const use3DTilt = (maxRotate = 10, scale = 1.02) => {
+  const ref = React.useRef(null);
+  const [style, setStyle] = React.useState({});
+
+  const handleMouseMove = (e) => {
+    const el = ref.current;
+    if (!el) return;
+    if (window.matchMedia('(pointer: coarse)').matches) return;
+
+    const rect = el.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    const w = rect.width;
+    const h = rect.height;
+
+    const xc = (x / w) - 0.5;
+    const yc = (y / h) - 0.5;
+
+    const rotateX = -yc * maxRotate;
+    const rotateY = xc * maxRotate;
+
+    const mouseXPercent = (x / w) * 100;
+    const mouseYPercent = (y / h) * 100;
+
+    setStyle({
+      transform: `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(${scale}, ${scale}, ${scale})`,
+      '--mouse-x': `${mouseXPercent}%`,
+      '--mouse-y': `${mouseYPercent}%`,
+    });
+  };
+
+  const handleMouseLeave = () => {
+    setStyle({
+      transform: `perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)`,
+    });
+  };
+
+  return { ref, style, handleMouseMove, handleMouseLeave };
+};
+
+const InteractiveParticles = () => {
+  const canvasRef = React.useRef(null);
+
+  React.useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    let animationFrameId;
+    let width = (canvas.width = canvas.offsetWidth);
+    let height = (canvas.height = canvas.offsetHeight);
+
+    const handleResize = () => {
+      if (!canvas) return;
+      width = canvas.width = canvas.offsetWidth;
+      height = canvas.height = canvas.offsetHeight;
+    };
+    window.addEventListener('resize', handleResize);
+
+    const particles = [];
+    const particleCount = Math.min(60, Math.floor((width * height) / 25000));
+    
+    const mouse = { x: null, y: null, radius: 150 };
+
+    const handleMouseMove = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = e.clientX - rect.left;
+      mouse.y = e.clientY - rect.top;
+    };
+
+    const handleMouseLeave = () => {
+      mouse.x = null;
+      mouse.y = null;
+    };
+
+    const parentEl = canvas.parentElement;
+    if (parentEl) {
+      parentEl.addEventListener('mousemove', handleMouseMove);
+      parentEl.addEventListener('mouseleave', handleMouseLeave);
+    }
+
+    class Particle {
+      constructor() {
+        this.x = Math.random() * width;
+        this.y = Math.random() * height;
+        this.vx = (Math.random() - 0.5) * 0.4;
+        this.vy = (Math.random() - 0.5) * 0.4;
+        this.radius = Math.random() * 2 + 1;
+      }
+
+      update() {
+        this.x += this.vx;
+        this.y += this.vy;
+
+        if (this.x < 0 || this.x > width) this.vx *= -1;
+        if (this.y < 0 || this.y > height) this.vy *= -1;
+
+        // Mouse interaction (attraction)
+        if (mouse.x !== null && mouse.y !== null) {
+          const dx = mouse.x - this.x;
+          const dy = mouse.y - this.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < mouse.radius) {
+            const force = (mouse.radius - dist) / mouse.radius;
+            this.vx += (dx / dist) * force * 0.02;
+            this.vy += (dy / dist) * force * 0.02;
+            const speed = Math.hypot(this.vx, this.vy);
+            if (speed > 1.2) {
+              this.vx = (this.vx / speed) * 1.2;
+              this.vy = (this.vy / speed) * 1.2;
+            }
+          }
+        }
+      }
+
+      draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(99, 102, 241, 0.45)';
+        ctx.fill();
+      }
+    }
+
+    for (let i = 0; i < particleCount; i++) {
+      particles.push(new Particle());
+    }
+
+    const animate = () => {
+      ctx.clearRect(0, 0, width, height);
+
+      for (let i = 0; i < particles.length; i++) {
+        const p1 = particles[i];
+        p1.update();
+        p1.draw();
+
+        for (let j = i + 1; j < particles.length; j++) {
+          const p2 = particles[j];
+          const dx = p1.x - p2.x;
+          const dy = p1.y - p2.y;
+          const dist = Math.hypot(dx, dy);
+
+          if (dist < 100) {
+            const alpha = ((100 - dist) / 100) * 0.15;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(p2.x, p2.y);
+            ctx.strokeStyle = `rgba(99, 102, 241, ${alpha})`;
+            ctx.lineWidth = 0.8;
+            ctx.stroke();
+          }
+        }
+
+        if (mouse.x !== null && mouse.y !== null) {
+          const dx = p1.x - mouse.x;
+          const dy = p1.y - mouse.y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < mouse.radius) {
+            const alpha = ((mouse.radius - dist) / mouse.radius) * 0.25;
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            ctx.lineTo(mouse.x, mouse.y);
+            ctx.strokeStyle = `rgba(168, 85, 247, ${alpha})`;
+            ctx.lineWidth = 0.8;
+            ctx.stroke();
+          }
+        }
+      }
+
+      animationFrameId = requestAnimationFrame(animate);
+    };
+
+    animate();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      if (parentEl) {
+        parentEl.removeEventListener('mousemove', handleMouseMove);
+        parentEl.removeEventListener('mouseleave', handleMouseLeave);
+      }
+      cancelAnimationFrame(animationFrameId);
+    };
+  }, []);
+
+  return <canvas ref={canvasRef} className="particles-canvas" />;
+};
+
+const Magnetic = ({ children }) => {
+  const ref = React.useRef(null);
+  const [position, setPosition] = React.useState({ x: 0, y: 0 });
+
+  const handleMouseMove = (e) => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = e.clientX - (rect.left + rect.width / 2);
+    const y = e.clientY - (rect.top + rect.height / 2);
+    setPosition({ x: x * 0.35, y: y * 0.35 });
+  };
+
+  const handleMouseLeave = () => {
+    setPosition({ x: 0, y: 0 });
+  };
+
+  return (
+    <div
+      ref={ref}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      className="magnetic-item"
+      style={{
+        transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
+      }}
+    >
+      {children}
+    </div>
+  );
+};
+
+const GlowCard = ({ children, className = '', style = {}, ...props }) => {
+  const ref = React.useRef(null);
+  const [coords, setCoords] = React.useState({ x: 0, y: 0 });
+
+  const handleMouseMove = (e) => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    setCoords({ x, y });
+  };
+
+  return (
+    <div
+      ref={ref}
+      onMouseMove={handleMouseMove}
+      className={`glow-card ${className}`}
+      style={{
+        ...style,
+        '--mouse-x': `${coords.x}px`,
+        '--mouse-y': `${coords.y}px`,
+      }}
+      {...props}
+    >
+      {children}
+    </div>
+  );
+};
+
 const LandingPage = ({ onNavigate }) => {
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [activeScreen, setActiveScreen] = React.useState(0);
@@ -27,9 +276,38 @@ const LandingPage = ({ onNavigate }) => {
   const [todayLabel, setTodayLabel] = React.useState(formatLandingDate);
   const [dashboardSvg, setDashboardSvg] = React.useState('');
 
+  const mainMockupTilt = use3DTilt(5, 1.01);
+
   React.useEffect(() => {
     const timer = setInterval(() => setTodayLabel(formatLandingDate()), 60 * 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  React.useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('active');
+          }
+        });
+      },
+      { threshold: 0.08, rootMargin: '0px 0px -40px 0px' }
+    );
+
+    const elements = document.querySelectorAll('.scroll-reveal');
+    elements.forEach(el => observer.observe(el));
+
+    // Force hero elements to animate in
+    setTimeout(() => {
+      const heroElements = document.querySelectorAll('.hero-reveal');
+      heroElements.forEach(el => el.classList.add('active'));
+    }, 50);
+
+    return () => {
+      elements.forEach(el => observer.unobserve(el));
+    };
   }, []);
 
   React.useEffect(() => {
@@ -136,8 +414,37 @@ const LandingPage = ({ onNavigate }) => {
           backgroundPosition: 'center top',
         }}
       >
+        <InteractiveParticles />
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(6,8,24,0.1) 0%, rgba(6,8,24,0.9) 100%)' }} />
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-14 md:py-24 relative">
+        
+        {/* Floating 3D badges on the right (desktop only) */}
+        <div className="hidden lg:block absolute right-16 top-1/4 w-[400px] h-[300px] pointer-events-none z-10 preserve-3d" style={{ perspective: '1000px' }}>
+          <div className="absolute right-0 top-0 glass rounded-2xl p-4 border border-white/10 float-badge-1 flex items-center gap-3 backdrop-blur-md" style={{ background: 'rgba(10, 15, 30, 0.7)' }}>
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-300 font-bold text-xl">✨</span>
+            <div>
+              <div className="text-sm font-bold text-white">AI Savollar</div>
+              <div className="text-xs text-white/55">Sekundiga 100+ test</div>
+            </div>
+          </div>
+          
+          <div className="absolute right-28 top-32 glass rounded-2xl p-4 border border-white/10 float-badge-2 flex items-center gap-3 backdrop-blur-md" style={{ background: 'rgba(10, 15, 30, 0.7)' }}>
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-300 font-bold text-xl">📱</span>
+            <div>
+              <div className="text-sm font-bold text-white">Telegram Tasdiqlash</div>
+              <div className="text-xs text-white/55">Oson va xavfsiz</div>
+            </div>
+          </div>
+
+          <div className="absolute right-8 top-64 glass rounded-2xl p-4 border border-white/10 float-badge-3 flex items-center gap-3 backdrop-blur-md" style={{ background: 'rgba(10, 15, 30, 0.7)' }}>
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 font-bold text-xl">🏆</span>
+            <div>
+              <div className="text-sm font-bold text-white">Jonli Reyting</div>
+              <div className="text-xs text-white/55">Avtomatik hisob-kitob</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-14 md:py-24 relative z-10">
           <div className="max-w-3xl">
             <div className="inline-flex items-center gap-2 rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-5 md:mb-6 text-xs md:text-sm text-cyan-100 border border-cyan-300/20" style={{ background: 'rgba(8,145,178,0.16)' }}>
               <Icon name="shield" size={16} />
@@ -153,18 +460,24 @@ const LandingPage = ({ onNavigate }) => {
             </p>
 
             <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5 md:gap-4 mb-7 md:mb-9">
-              <button onClick={() => onNavigate('register')} className="btn-primary inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-bold glow-blue">
-                <Icon name="bolt" size={18} />
-                Boshlash
-              </button>
-              <button onClick={() => onNavigate('login')} className="btn-ghost inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-semibold">
-                Kirish
-                <Icon name="chevronRight" size={18} />
-              </button>
-              <button onClick={() => onNavigate('register')} className="btn-ghost inline-flex items-center justify-center gap-2 px-5 md:px-6 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-medium border-cyan-500/30 text-cyan-200">
-                <Icon name="building" size={18} />
-                Tashkilot qo'shish
-              </button>
+              <Magnetic>
+                <button onClick={() => onNavigate('register')} className="btn-primary inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-bold glow-blue w-full sm:w-auto">
+                  <Icon name="bolt" size={18} />
+                  Boshlash
+                </button>
+              </Magnetic>
+              <Magnetic>
+                <button onClick={() => onNavigate('login')} className="btn-ghost inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-semibold w-full sm:w-auto">
+                  Kirish
+                  <Icon name="chevronRight" size={18} />
+                </button>
+              </Magnetic>
+              <Magnetic>
+                <button onClick={() => onNavigate('register')} className="btn-ghost inline-flex items-center justify-center gap-2 px-5 md:px-6 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-medium border-cyan-500/30 text-cyan-200 w-full sm:w-auto">
+                  <Icon name="building" size={18} />
+                  Tashkilot qo'shish
+                </button>
+              </Magnetic>
             </div>
 
             <div className="grid grid-cols-3 gap-2.5 md:gap-4 max-w-xl">
@@ -182,7 +495,7 @@ const LandingPage = ({ onNavigate }) => {
       {/* Platforma ko'rinishi */}
       <section className="py-12 md:py-24 relative overflow-hidden" style={{ background: 'linear-gradient(180deg, rgba(6,8,24,1) 0%, rgba(13,25,38,0.9) 100%)' }}>
         <div className="max-w-6xl mx-auto px-4 md:px-6">
-          <div className="text-center mb-8 md:mb-14">
+          <div className="text-center mb-8 md:mb-14 scroll-reveal">
             <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-cyan-200 border border-cyan-500/20">
               <Icon name="eye" size={16} />
               Loyiha ekranlari
@@ -196,7 +509,7 @@ const LandingPage = ({ onNavigate }) => {
               <button
                 key={s.label}
                 onClick={() => setActiveScreen(i)}
-                className="group text-left rounded-2xl overflow-hidden border border-white/10 transition-all hover:-translate-y-1"
+                className={`group text-left rounded-2xl overflow-hidden border border-white/10 transition-all hover:-translate-y-1 scroll-reveal scroll-reveal-delay-${(i % 4) + 1}`}
                 style={{ background: 'rgba(255,255,255,0.06)' }}
               >
                 <div className="aspect-[16/10] overflow-hidden" style={{ background: '#071124' }}>
@@ -236,24 +549,32 @@ const LandingPage = ({ onNavigate }) => {
           </div>
 
           {/* Browser window mockup */}
-          <div className="glass rounded-2xl overflow-hidden border border-white/10" style={{ background: '#0a0d1f' }}>
-            {/* Browser chrome */}
-            <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5" style={{ background: 'rgba(255,255,255,0.02)' }}>
-              <div className="flex gap-1.5 md:gap-2 flex-shrink-0">
-                <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" style={{ background: '#ff5f57' }} />
-                <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" style={{ background: '#febc2e' }} />
-                <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" style={{ background: '#28c840' }} />
+          <div className="perspective-1000 scroll-reveal scroll-reveal-delay-2">
+            <div
+              ref={mainMockupTilt.ref}
+              onMouseMove={mainMockupTilt.handleMouseMove}
+              onMouseLeave={mainMockupTilt.handleMouseLeave}
+              className="tilt-card glass rounded-2xl overflow-hidden border border-white/10"
+              style={{ ...mainMockupTilt.style, background: '#0a0d1f' }}
+            >
+              <div className="tilt-glow" />
+              {/* Browser chrome */}
+              <div className="flex items-center gap-3 px-4 py-3 border-b border-white/5" style={{ background: 'rgba(255,255,255,0.02)' }}>
+                <div className="flex gap-1.5 md:gap-2 flex-shrink-0">
+                  <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" style={{ background: '#ff5f57' }} />
+                  <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" style={{ background: '#febc2e' }} />
+                  <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" style={{ background: '#28c840' }} />
+                </div>
+                <div className="flex-1 mx-2 md:mx-4 px-3 py-1 md:py-1.5 rounded-md text-xs text-white/40 truncate" style={{ background: 'rgba(255,255,255,0.04)' }}>
+                  prolymp.uz/{screens[activeScreen].label.toLowerCase()}
+                </div>
+                <div className="hidden md:flex gap-1 text-white/20 text-xs flex-shrink-0">
+                  <span>⟲</span>
+                </div>
               </div>
-              <div className="flex-1 mx-2 md:mx-4 px-3 py-1 md:py-1.5 rounded-md text-xs text-white/40 truncate" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                prolymp.uz/{screens[activeScreen].label.toLowerCase()}
-              </div>
-              <div className="hidden md:flex gap-1 text-white/20 text-xs flex-shrink-0">
-                <span>⟲</span>
-              </div>
-            </div>
 
-            {/* Screen content */}
-            <div className="relative" style={{ minHeight: '260px' }}>
+              {/* Screen content */}
+              <div className="relative tilt-inner" style={{ minHeight: '260px' }}>
               <div
                 key={activeScreen}
                 className="screen-fade"
@@ -286,8 +607,9 @@ const LandingPage = ({ onNavigate }) => {
                   />
                 )}
               </div>
-            </div>
           </div>
+        </div>
+      </div>
 
           {/* Caption */}
           <div className="text-center mt-5 md:mt-6">
@@ -315,7 +637,7 @@ const LandingPage = ({ onNavigate }) => {
       <section className="py-10 md:py-16 border-y border-white/5" style={{ background: 'rgba(99,102,241,0.03)' }}>
         <div className="max-w-5xl mx-auto px-4 md:px-6 grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8">
           {stats.map((s, i) => (
-            <div key={i} className="text-center min-w-0">
+            <div key={i} className={`text-center min-w-0 scroll-reveal scroll-reveal-delay-${(i % 4) + 1}`}>
               <div className="text-2xl md:text-3xl mb-1.5 md:mb-2">{s.icon}</div>
               <div className="text-2xl md:text-4xl font-black gradient-text mb-0.5 md:mb-1 truncate">{s.value}</div>
               <div className="text-xs md:text-sm text-white/40 leading-tight">{s.label}</div>
@@ -326,18 +648,18 @@ const LandingPage = ({ onNavigate }) => {
 
       {/* Features */}
       <section id="features" className="py-12 md:py-24 max-w-7xl mx-auto px-4 md:px-6">
-        <div className="text-center mb-8 md:mb-16">
+        <div className="text-center mb-8 md:mb-16 scroll-reveal">
           <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-purple-300 border border-purple-500/20">✨ Xususiyatlar</div>
           <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Hammasi bir joyda</h2>
           <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Tashkilotingizni raqamlashtirishning eng zamonaviy yechimi</p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
           {features.map((f, i) => (
-            <div key={i} className="glass rounded-2xl p-4 md:p-6 card-hover group">
-              <div className={`feature-icon bg-gradient-to-br ${f.color} mb-3 md:mb-4 text-2xl`}>{f.icon}</div>
-              <h3 className="text-base md:text-lg font-bold text-white mb-1.5 md:mb-2">{f.title}</h3>
-              <p className="text-sm text-white/40 leading-relaxed">{f.desc}</p>
-            </div>
+            <GlowCard key={i} className={`p-4 md:p-6 group scroll-reveal scroll-reveal-delay-${(i % 3) + 1}`}>
+              <div className={`feature-icon bg-gradient-to-br ${f.color} mb-3 md:mb-4 text-2xl relative z-10`}>{f.icon}</div>
+              <h3 className="text-base md:text-lg font-bold text-white mb-1.5 md:mb-2 relative z-10">{f.title}</h3>
+              <p className="text-sm text-white/40 leading-relaxed relative z-10">{f.desc}</p>
+            </GlowCard>
           ))}
         </div>
       </section>
@@ -345,13 +667,13 @@ const LandingPage = ({ onNavigate }) => {
       {/* How it works */}
       <section id="how" className="py-12 md:py-24" style={{ background: 'rgba(99,102,241,0.03)' }}>
         <div className="max-w-5xl mx-auto px-4 md:px-6">
-          <div className="text-center mb-8 md:mb-16">
+          <div className="text-center mb-8 md:mb-16 scroll-reveal">
             <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-cyan-300 border border-cyan-500/20">🔄 Qanday ishlaydi</div>
             <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">4 ta oson qadam</h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
             {steps.map((s, i) => (
-              <div key={i} className="glass rounded-2xl p-4 md:p-6 card-hover flex gap-3 md:gap-4">
+              <div key={i} className={`glass rounded-2xl p-4 md:p-6 card-hover flex gap-3 md:gap-4 scroll-reveal scroll-reveal-delay-${(i % 2) + 1}`}>
                 <div className="gradient-text font-black text-3xl md:text-4xl opacity-30 flex-shrink-0">{s.num}</div>
                 <div className="min-w-0">
                   <div className="text-xl mb-1.5 md:mb-2">{s.icon}</div>
@@ -365,7 +687,7 @@ const LandingPage = ({ onNavigate }) => {
       </section>
 
       {/* Telegram flow */}
-      <section className="py-12 md:py-24 max-w-5xl mx-auto px-4 md:px-6">
+      <section className="py-12 md:py-24 max-w-5xl mx-auto px-4 md:px-6 scroll-reveal">
         <div className="glass rounded-3xl p-5 md:p-12 flex flex-col md:flex-row items-center gap-6 md:gap-10">
           <div className="flex-1 min-w-0 text-center md:text-left">
             <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-emerald-300 border border-emerald-500/20">📱 Telegram integratsiya</div>
@@ -389,7 +711,7 @@ const LandingPage = ({ onNavigate }) => {
           ko'rsatma. To'lov-modul tayyor bo'lganda dynamic ga o'zgartiriladi. */}
       <section id="pricing" className="py-12 md:py-24" style={{ background: 'rgba(99,102,241,0.03)' }}>
         <div className="max-w-5xl mx-auto px-4 md:px-6">
-          <div className="text-center mb-8 md:mb-16">
+          <div className="text-center mb-8 md:mb-16 scroll-reveal">
             <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-indigo-300 border border-indigo-500/20">💎 Narxlar</div>
             <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Qulay narxlar</h2>
             <p className="text-sm text-white/50 max-w-xl mx-auto">
@@ -398,6 +720,7 @@ const LandingPage = ({ onNavigate }) => {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             {pricing.map((p, i) => {
+              const delayClass = `scroll-reveal scroll-reveal-delay-${(i % 3) + 1}`;
               // Bepul plan to'g'ridan-to'g'ri ro'yxatdan o'tishga, qolgan
               // ikkita plan esa email orqali bog'lanish uchun.
               const isFree = p.price === 'Bepul';
@@ -406,24 +729,28 @@ const LandingPage = ({ onNavigate }) => {
                 else window.location.href = `mailto:sanjarruzmetov017@gmail.com?subject=Olympy ${p.name} reja haqida`;
               };
               return (
-                <div key={i} className={`rounded-2xl p-4 md:p-6 flex flex-col ${p.popular ? 'gradient-bg glow-blue' : 'glass'}`}>
-                  {p.popular && <div className="text-xs font-bold text-white bg-white/20 rounded-full px-3 py-1 w-fit mb-3 md:mb-4">⭐ Mashhur</div>}
-                  <div className={`text-sm font-medium mb-1 ${p.popular ? 'text-white/70' : 'text-white/50'}`}>{p.name}</div>
-                  <div className={`text-2xl md:text-3xl font-black mb-1 ${p.popular ? 'text-white' : 'gradient-text'}`}>{p.price}</div>
-                  {p.period && <div className={`text-sm mb-2 ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.period}</div>}
-                  <div className={`text-xs mb-4 md:mb-6 ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.desc}</div>
-                  <ul className="space-y-2 flex-1 mb-6">
-                    {p.features.map((f, j) => (
-                      <li key={j} className={`flex items-center gap-2 text-sm ${p.popular ? 'text-white/80' : 'text-white/60'}`}>
-                        <span className={p.popular ? 'text-white' : 'text-indigo-400'}>✓</span> {f}
-                      </li>
-                    ))}
-                  </ul>
-                  <button onClick={handleClick}
-                    className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${p.popular ? 'bg-white text-indigo-600 hover:bg-white/90' : 'btn-ghost'}`}>
-                    {isFree ? 'Boshlash' : "Bog'lanish"}
-                  </button>
-                </div>
+                <GlowCard key={i} className={`p-4 md:p-6 flex flex-col ${delayClass} ${p.popular ? 'gradient-bg glow-blue' : ''}`}>
+                  <div className="relative z-10 flex flex-col h-full">
+                    {p.popular && <div className="text-xs font-bold text-white bg-white/20 rounded-full px-3 py-1 w-fit mb-3 md:mb-4">⭐ Mashhur</div>}
+                    <div className={`text-sm font-medium mb-1 ${p.popular ? 'text-white/70' : 'text-white/50'}`}>{p.name}</div>
+                    <div className={`text-2xl md:text-3xl font-black mb-1 ${p.popular ? 'text-white' : 'gradient-text'}`}>{p.price}</div>
+                    {p.period && <div className={`text-sm mb-2 ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.period}</div>}
+                    <div className={`text-xs mb-4 md:mb-6 ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.desc}</div>
+                    <ul className="space-y-2 flex-1 mb-6">
+                      {p.features.map((f, j) => (
+                        <li key={j} className={`flex items-center gap-2 text-sm ${p.popular ? 'text-white/80' : 'text-white/60'}`}>
+                          <span className={p.popular ? 'text-white' : 'text-indigo-400'}>✓</span> {f}
+                        </li>
+                      ))}
+                    </ul>
+                    <Magnetic>
+                      <button onClick={handleClick}
+                        className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${p.popular ? 'bg-white text-indigo-600 hover:bg-white/90' : 'btn-ghost'}`}>
+                        {isFree ? 'Boshlash' : "Bog'lanish"}
+                      </button>
+                    </Magnetic>
+                  </div>
+                </GlowCard>
               );
             })}
           </div>
@@ -431,7 +758,7 @@ const LandingPage = ({ onNavigate }) => {
       </section>
 
       {/* CTA */}
-      <section className="py-12 md:py-24 max-w-4xl mx-auto px-4 md:px-6 text-center">
+      <section className="py-12 md:py-24 max-w-4xl mx-auto px-4 md:px-6 text-center scroll-reveal">
         <div className="glass rounded-3xl p-6 md:p-12 relative overflow-hidden">
           <div className="hero-glow" style={{ background: '#6366f1', top: '-50%', left: '30%', opacity: 0.12 }} />
           <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4 relative">Bugun boshlang</h2>
