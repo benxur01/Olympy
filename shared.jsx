@@ -98,13 +98,20 @@ const BrandLogo = ({ compact = false, size = 'md', className = '' }) => {
 // ─── Avatar ────────────────────────────────────────────────────────────────────
 const Avatar = ({ name = '', size = 36, gradient = 'from-indigo-500 to-purple-600', src = '' }) => {
   const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
-  if (src) {
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [src]);
+
+  if (src && !hasError) {
     return (
       <img
         src={src}
         alt={name || 'Avatar'}
         className="rounded-full object-cover flex-shrink-0"
         style={{ width: size, height: size }}
+        onError={() => setHasError(true)}
       />
     );
   }
