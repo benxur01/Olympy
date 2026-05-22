@@ -116,6 +116,22 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
     }
   };
 
+  const handleDeleteAvatar = async () => {
+    if (!isApi) return;
+    if (!window.confirm("Profil rasmini o'chirishni xohlaysizmi?")) return;
+    setAvatarLoading(true);
+    setAvatarError('');
+    try {
+      const data = await OlympyApi.deleteMyAvatar(OlympyApi.getToken());
+      const mapped = OlympyApi.mapBackendUser(data);
+      onUserUpdate?.(mapped);
+    } catch (err) {
+      setAvatarError(OlympyApi.toUserMessage?.(err) || "Rasm o'chirilmadi");
+    } finally {
+      setAvatarLoading(false);
+    }
+  };
+
   // API rejimida foydalanuvchi attemptlari mock store'da emas, backend orqali
   // /api/results/me/ va /api/results/me/stats/ dan keladi. Avval bu sahifa
   // store.attempts dan filter qilardi va api: prefiksli userId hech qachon
@@ -324,6 +340,15 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
             >
               <Icon name="upload" size={13} /> {avatarLoading ? 'Yuklanmoqda...' : 'Rasm yuklash'}
             </button>
+            {isApi && user?.avatarUrl && (
+              <button
+                onClick={handleDeleteAvatar}
+                disabled={avatarLoading}
+                className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 text-rose-300 hover:text-rose-200 disabled:opacity-50"
+              >
+                <Icon name="trash" size={13} /> Rasmni o'chirish
+              </button>
+            )}
           </div>
         </div>
       </div>
