@@ -17,12 +17,18 @@ logger = logging.getLogger('questions.pdf_generation')
 DIFFICULTY_ALIASES = {
     'easy': 'easy',
     'oson': 'easy',
+    'beginner': 'easy',
+    'elementary': 'easy',
     "o'rta": 'medium',
     "o‘rta": 'medium',
     'orta': 'medium',
     'medium': 'medium',
+    'pre-intermediate': 'medium',
+    'intermediate': 'medium',
     'hard': 'hard',
     'qiyin': 'hard',
+    'upper-intermediate': 'hard',
+    'advanced': 'hard',
 }
 
 
