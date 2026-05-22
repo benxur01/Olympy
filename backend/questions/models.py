@@ -23,10 +23,25 @@ class Question(models.Model):
     DIFFICULTY_EASY = 'easy'
     DIFFICULTY_MEDIUM = 'medium'
     DIFFICULTY_HARD = 'hard'
+
+    # CEFR Levels for English
+    DIFFICULTY_BEGINNER = 'beginner'
+    DIFFICULTY_ELEMENTARY = 'elementary'
+    DIFFICULTY_PRE_INTERMEDIATE = 'pre-int'
+    DIFFICULTY_INTERMEDIATE = 'int'
+    DIFFICULTY_UPPER_INTERMEDIATE = 'upper-int'
+    DIFFICULTY_ADVANCED = 'advanced'
+
     DIFFICULTY_CHOICES = [
         (DIFFICULTY_EASY, 'Oson'),
         (DIFFICULTY_MEDIUM, "O'rta"),
         (DIFFICULTY_HARD, 'Qiyin'),
+        (DIFFICULTY_BEGINNER, 'Beginner'),
+        (DIFFICULTY_ELEMENTARY, 'Elementary'),
+        (DIFFICULTY_PRE_INTERMEDIATE, 'Pre-Intermediate'),
+        (DIFFICULTY_INTERMEDIATE, 'Intermediate'),
+        (DIFFICULTY_UPPER_INTERMEDIATE, 'Upper-Intermediate'),
+        (DIFFICULTY_ADVANCED, 'Advanced'),
     ]
 
     center = models.ForeignKey(
