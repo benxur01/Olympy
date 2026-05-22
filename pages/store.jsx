@@ -735,6 +735,10 @@ const mapApiAttempt = (a) => {
 const mapApiQuestion = (q) => {
   if (!q) return null;
   const DIFFICULTY_MAP = { easy: 'Oson', medium: "O'rta", hard: 'Qiyin' };
+  const ENG_DIFFICULTY_MAP = { easy: 'Beginner', medium: 'Intermediate', hard: 'Advanced' };
+  const mappedDifficulty = q.subject === 'Ingliz tili'
+    ? (ENG_DIFFICULTY_MAP[q.difficulty] || q.difficulty)
+    : (DIFFICULTY_MAP[q.difficulty] || q.difficulty);
   return {
     id: String(q.id),
     backendId: q.id,
@@ -744,7 +748,7 @@ const mapApiQuestion = (q) => {
     options: Array.isArray(q.options) ? q.options : [],
     correctAnswer: q.correct_answer ?? 0,
     score: q.score ?? 3,
-    difficulty: DIFFICULTY_MAP[q.difficulty] || q.difficulty,
+    difficulty: mappedDifficulty,
     source: q.source || 'manual',
     _api: true,
   };

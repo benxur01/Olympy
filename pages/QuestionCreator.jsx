@@ -7,7 +7,19 @@ const SUBJECTS = (globalThis.SUBJECTS_LIST && globalThis.SUBJECTS_LIST.length > 
   ? globalThis.SUBJECTS_LIST
   : ['Matematika','Ingliz tili','Ona tili','Informatika','Fizika','Kimyo','Biologiya','Tarix','Geografiya'];
 const LEVELS = ['Oson','O\'rta','Qiyin'];
+const ENGLISH_LEVELS = ['Beginner', 'Elementary', 'Pre-Intermediate', 'Intermediate', 'Upper-Intermediate', 'Advanced'];
 const TYPES = ['Ko\'p tanlovli','To\'g\'ri/Noto\'g\'ri','Qisqa javob'];
+
+const getLevelColorClass = (lvl) => {
+  const l = (lvl || '').toLowerCase();
+  if (l === 'oson' || l === 'easy' || l === 'beginner' || l === 'elementary') {
+    return 'emerald';
+  }
+  if (l === "o'rta" || l === 'medium' || l === 'pre-intermediate' || l === 'intermediate') {
+    return 'amber';
+  }
+  return 'rose';
+};
 
 const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitcher }) => {
   // ─── Teacher access guard ───────────────────────────────────────────────
@@ -100,33 +112,43 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     (!filterSubject || q.subject === filterSubject) && (!filterLevel || q.difficulty === filterLevel)
   );
 
-  const _diffFromApi = (level) =>
-    level === 'easy' ? 'Oson' : level === 'hard' ? 'Qiyin' : "O'rta";
+  const _diffFromApi = (level, subject) => {
+    if (subject === 'Ingliz tili') {
+      return level === 'easy' ? 'Beginner' : level === 'hard' ? 'Advanced' : 'Intermediate';
+    }
+    return level === 'easy' ? 'Oson' : level === 'hard' ? 'Qiyin' : "O'rta";
+  };
 
-  const _mapAiGeneratedQuestion = (q, i) => ({
-    _tmpId: Date.now() + i,
-    text: q.text,
-    subject: q.subject || aiForm.subject,
-    difficulty: _diffFromApi(q.difficulty) || aiForm.level,
-    score: q.score ?? 3,
-    options: Array.isArray(q.options) ? q.options : [],
-    correctAnswer: q.correct_answer ?? q.correctAnswer ?? 0,
-    source: 'ai',
-  });
+  const _mapAiGeneratedQuestion = (q, i) => {
+    const subj = q.subject || aiForm.subject;
+    return {
+      _tmpId: Date.now() + i,
+      text: q.text,
+      subject: subj,
+      difficulty: _diffFromApi(q.difficulty, subj) || aiForm.level,
+      score: q.score ?? 3,
+      options: Array.isArray(q.options) ? q.options : [],
+      correctAnswer: q.correct_answer ?? q.correctAnswer ?? 0,
+      source: 'ai',
+    };
+  };
 
-  const _mapPdfGeneratedQuestion = (q, i) => ({
-    _tmpId: Date.now() + i,
-    text: q.text,
-    subject: q.subject || aiForm.subject,
-    difficulty: _diffFromApi(q.difficulty) || aiForm.level,
-    score: q.score ?? 3,
-    options: Array.isArray(q.options) ? q.options : [],
-    correctAnswer: q.correct_answer ?? q.correctAnswer ?? 0,
-    source: 'pdf',
-    originalNumber: q.original_number || q.order || i + 1,
-    answerSource: q.answer_source || 'missing',
-    needsReview: !!q.needs_review,
-  });
+  const _mapPdfGeneratedQuestion = (q, i) => {
+    const subj = q.subject || aiForm.subject;
+    return {
+      _tmpId: Date.now() + i,
+      text: q.text,
+      subject: subj,
+      difficulty: _diffFromApi(q.difficulty, subj) || aiForm.level,
+      score: q.score ?? 3,
+      options: Array.isArray(q.options) ? q.options : [],
+      correctAnswer: q.correct_answer ?? q.correctAnswer ?? 0,
+      source: 'pdf',
+      originalNumber: q.original_number || q.order || i + 1,
+      answerSource: q.answer_source || 'missing',
+      needsReview: !!q.needs_review,
+    };
+  };
 
   const generateAI = async () => {
     if (!aiForm.topic) return;
@@ -197,10 +219,12 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     }
   };
 
-  // Backend API uchun frontend savollarning daraja kalitlarini Django
-  // Question.DIFFICULTY_CHOICES ga moslashtiradi.
-  const _diffToApi = (level) =>
-    level === 'Oson' ? 'easy' : level === 'Qiyin' ? 'hard' : 'medium';
+  const _diffToApi = (level) => {
+    const lvl = (level || '').trim().toLowerCase();
+    if (lvl === 'oson' || lvl === 'easy' || lvl === 'beginner' || lvl === 'elementary') return 'easy';
+    if (lvl === 'qiyin' || lvl === 'hard' || lvl === 'advanced' || lvl === 'upper-intermediate') return 'hard';
+    return 'medium';
+  };
 
   const _toApiQuestion = (q, source) => ({
     center: myCenter?.backendId ?? myCenterId,
@@ -230,7 +254,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       text: q.text || '',
       type: inferredType,
       subject: q.subject || (allSubjects[0] || 'Matematika'),
-      level: q.difficulty || "O'rta",
+      level: q.subject === 'Ingliz tili'
+        ? (['Beginner', 'Elementary', 'Pre-Intermediate', 'Intermediate', 'Upper-Intermediate', 'Advanced'].includes(q.difficulty)
+           ? q.difficulty
+           : (q.difficulty === 'Oson' || q.difficulty === 'easy' ? 'Beginner' : q.difficulty === 'Qiyin' || q.difficulty === 'hard' ? 'Advanced' : 'Intermediate'))
+        : (q.difficulty || "O'rta"),
       score: q.score || 3,
       options: Array.isArray(q.options) && q.options.length ? q.options.slice() : ['','','',''],
       correct: typeof q.correctAnswer === 'number' ? q.correctAnswer : 0,
@@ -381,13 +409,25 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       {mode === 'list' && (
         <>
           <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2.5 md:gap-3">
-            <select className="input-field py-2.5 w-full sm:w-auto sm:flex-1 sm:min-w-[10rem]" value={filterSubject} onChange={e => setFilterSubject(e.target.value)}>
+            <select className="input-field py-2.5 w-full sm:w-auto sm:flex-1 sm:min-w-[10rem]" value={filterSubject} onChange={e => {
+              const newSubj = e.target.value;
+              setFilterSubject(newSubj);
+              if (newSubj === 'Ingliz tili') {
+                if (filterLevel && !ENGLISH_LEVELS.includes(filterLevel)) {
+                  setFilterLevel('');
+                }
+              } else {
+                if (filterLevel && !LEVELS.includes(filterLevel)) {
+                  setFilterLevel('');
+                }
+              }
+            }}>
               <option value="">Barcha fanlar</option>
               {allSubjects.map(s => <option key={s}>{s}</option>)}
             </select>
             <select className="input-field py-2.5 w-full sm:w-auto" value={filterLevel} onChange={e => setFilterLevel(e.target.value)}>
               <option value="">Barcha darajalar</option>
-              {LEVELS.map(l => <option key={l}>{l}</option>)}
+              {(filterSubject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
             </select>
             <button onClick={() => setNewSubjectModal(true)} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-dashed border-white/20 text-white/40 w-full sm:w-auto">
               <Icon name="plus" size={14} /> Yangi fan qo'shish
@@ -424,7 +464,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             {filtered.length === 0 && <EmptyState icon="book" title="Savollar yo'q" desc="Yangi savol yarating" action={<button onClick={() => setMode('manual')} className="btn-primary px-4 py-2 rounded-xl text-sm">Savol yaratish</button>} />}
             {filtered.map(q => (
               <div key={q.id} className="glass rounded-2xl p-3 md:p-4 flex gap-3 md:gap-4 group">
-                <div className={`w-1.5 md:w-2 rounded-full flex-shrink-0 ${q.difficulty === 'Oson' ? 'bg-emerald-400' : q.difficulty === "O'rta" ? 'bg-amber-400' : 'bg-rose-400'}`} />
+                <div className={`w-1.5 md:w-2 rounded-full flex-shrink-0 ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-400' : 'bg-rose-400'}`} />
                 <div className="flex-shrink-0 flex items-center pr-1 select-none">
                   <input
                     type="checkbox"
@@ -438,7 +478,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
                     <SubjectBadge subject={q.subject} />
                     {q.source && <span className="chip glass text-white/50 text-xs">{q.source === 'ai' ? '✨ AI' : q.source === 'pdf' ? '📄 PDF' : '✏️ Qo\'lda'}</span>}
-                    <span className={`chip text-xs ${q.difficulty === 'Oson' ? 'bg-emerald-500/10 text-emerald-400' : q.difficulty === "O'rta" ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
+                    <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
                     <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
                   </div>
                   {(q.options || []).length > 0 && (
@@ -472,12 +512,25 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 {TYPES.map(t => <option key={t}>{t}</option>)}
               </select></div>
             <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Fan</label>
-              <select className="input-field" value={newQ.subject} onChange={e => setNewQ({...newQ, subject: e.target.value})}>
+              <select className="input-field" value={newQ.subject} onChange={e => {
+                const newSubj = e.target.value;
+                let newLevel = newQ.level;
+                if (newSubj === 'Ingliz tili') {
+                  if (!ENGLISH_LEVELS.includes(newLevel)) {
+                    newLevel = 'Beginner';
+                  }
+                } else {
+                  if (!LEVELS.includes(newLevel)) {
+                    newLevel = "O'rta";
+                  }
+                }
+                setNewQ({...newQ, subject: newSubj, level: newLevel});
+              }}>
                 {allSubjects.map(s => <option key={s}>{s}</option>)}
               </select></div>
             <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Daraja</label>
               <select className="input-field" value={newQ.level} onChange={e => setNewQ({...newQ, level: e.target.value})}>
-                {LEVELS.map(l => <option key={l}>{l}</option>)}
+                {(newQ.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
               </select></div>
             <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Ball</label>
               <input type="number" className="input-field" value={newQ.score} onChange={e => setNewQ({...newQ, score: +e.target.value})} /></div>
@@ -524,7 +577,20 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="block text-xs text-white/50 mb-1.5">Fan</label>
-                <select className="input-field" value={aiForm.subject} onChange={e => setAiForm({...aiForm, subject: e.target.value})}>
+                <select className="input-field" value={aiForm.subject} onChange={e => {
+                  const newSubj = e.target.value;
+                  let newLevel = aiForm.level;
+                  if (newSubj === 'Ingliz tili') {
+                    if (!ENGLISH_LEVELS.includes(newLevel)) {
+                      newLevel = 'Beginner';
+                    }
+                  } else {
+                    if (!LEVELS.includes(newLevel)) {
+                      newLevel = "O'rta";
+                    }
+                  }
+                  setAiForm({...aiForm, subject: newSubj, level: newLevel});
+                }}>
                   {allSubjects.map(s => <option key={s}>{s}</option>)}
                 </select></div>
               <div><label className="block text-xs text-white/50 mb-1.5">Savollar soni</label>
@@ -535,7 +601,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             <div className="grid grid-cols-2 gap-3">
               <div><label className="block text-xs text-white/50 mb-1.5">Qiyinlik darajasi</label>
                 <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
-                  {LEVELS.map(l => <option key={l}>{l}</option>)}
+                  {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
                 </select></div>
               <div><label className="block text-xs text-white/50 mb-1.5">Test turi</label>
                 <select className="input-field" value={aiForm.type} onChange={e => setAiForm({...aiForm, type: e.target.value})}>
@@ -593,12 +659,25 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             </div>
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div><label className="block text-xs text-white/50 mb-1.5">Fan</label>
-                <select className="input-field" value={aiForm.subject} onChange={e => setAiForm({...aiForm, subject: e.target.value})}>
+                <select className="input-field" value={aiForm.subject} onChange={e => {
+                  const newSubj = e.target.value;
+                  let newLevel = aiForm.level;
+                  if (newSubj === 'Ingliz tili') {
+                    if (!ENGLISH_LEVELS.includes(newLevel)) {
+                      newLevel = 'Beginner';
+                    }
+                  } else {
+                    if (!LEVELS.includes(newLevel)) {
+                      newLevel = "O'rta";
+                    }
+                  }
+                  setAiForm({...aiForm, subject: newSubj, level: newLevel});
+                }}>
                   {allSubjects.map(s => <option key={s}>{s}</option>)}
                 </select></div>
               <div><label className="block text-xs text-white/50 mb-1.5">Qiyinlik</label>
                 <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
-                  {LEVELS.map(l => <option key={l}>{l}</option>)}
+                  {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
                 </select></div>
             </div>
             <label className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-white/10 hover:border-cyan-500/30 transition-all cursor-pointer group">
