@@ -336,6 +336,9 @@ const OlympyStore = (() => {
   const updateOlympiad = (id, patch) => {
     set(s => ({ ...s, olympiads: s.olympiads.map(o => o.id === id ? { ...o, ...patch } : o) }));
   };
+  const deleteOlympiad = (id) => {
+    set(s => ({ ...s, olympiads: s.olympiads.filter(o => o.id !== id) }));
+  };
   const publishOlympiad = (id) => {
     const o = state.olympiads.find(x => x.id === id);
     if (!o) return;
@@ -456,7 +459,7 @@ const OlympyStore = (() => {
     // Questions
     createQuestion, createQuestionsBulk, updateQuestion, deleteQuestion, deleteAllQuestions,
     // Olympiads
-    createOlympiad, updateOlympiad, publishOlympiad,
+    createOlympiad, updateOlympiad, publishOlympiad, deleteOlympiad,
     // Attempts
     recordAttempt,
     // Notifications
