@@ -15,6 +15,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [eventSaving, setEventSaving] = React.useState(false);
   const [deleteEventId, setDeleteEventId] = React.useState(null);
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
+  const [onlyUnused, setOnlyUnused] = React.useState(false);
   const [toast, setToast] = React.useState('');
   const emptyEventForm = {
     eventType: 'competition',
@@ -64,6 +65,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     setAssignedQuestionIds(assignModal?.questionIds || []);
     setAssignmentLevel(assignModal?.testLevel || '');
     setAssignmentType(assignModal?.testType || '');
+    setOnlyUnused(false);
   }, [assignModal?.id]);
 
   const apiCenters = isApi && Array.isArray(apiCentersRes.data) ? apiCentersRes.data.map(mapApiCenter) : null;
@@ -718,10 +720,26 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           const liveEvent = (isApi ? olympiads : store.olympiads).find(o => String(o.id) === String(assignModal.id)) || assignModal;
           if (!liveEvent) return null;
           const levelValue = assignmentLevel.trim();
+          const otherOlympiads = olympiads.filter(o => String(o.id) !== String(liveEvent.id));
+          const otherOlympiadQuestionIds = new Set();
+          otherOlympiads.forEach(o => {
+            (o.questionIds || []).forEach(id => otherOlympiadQuestionIds.add(String(id)));
+          });
           const matchesLevel = (q) => {
             if (!assignmentLevel) return true;
             const lvl = assignmentLevel.trim().toLowerCase();
             const diff = (q.difficulty || '').toLowerCase();
+            const isEnglish = (liveEvent.subject === 'Ingliz tili');
+            if (isEnglish) {
+              const normalizeCefr = (s) => {
+                const clean = s.trim().toLowerCase();
+                if (clean === 'pre-int' || clean === 'pre-intermediate') return 'pre-intermediate';
+                if (clean === 'upper-int' || clean === 'upper-intermediate') return 'upper-intermediate';
+                if (clean === 'int' || clean === 'intermediate') return 'intermediate';
+                return clean;
+              };
+              return normalizeCefr(lvl) === normalizeCefr(diff);
+            }
             if (lvl === 'beginner' || lvl === 'elementary' || lvl === 'oson' || lvl === 'easy') {
               return diff === 'oson' || diff === 'easy' || diff === 'beginner' || diff === 'elementary';
             }
@@ -733,8 +751,12 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             }
             return diff.includes(lvl) || lvl.includes(diff);
           };
-          const subjectQs = questions.filter(q => q.subject === liveEvent.subject && matchesLevel(q));
-          const otherQs = questions.filter(q => q.subject !== liveEvent.subject && matchesLevel(q));
+          const matchesUnused = (q) => {
+            if (!onlyUnused) return true;
+            return !otherOlympiadQuestionIds.has(String(q.id));
+          };
+          const subjectQs = questions.filter(q => q.subject === liveEvent.subject && matchesLevel(q) && matchesUnused(q));
+          const otherQs = questions.filter(q => q.subject !== liveEvent.subject && matchesLevel(q) && matchesUnused(q));
           const filteredCount = subjectQs.length + otherQs.length;
           const assigned = new Set(isApi ? assignedQuestionIds : (liveEvent.questionIds || []));
           const selectedQuestions = [...assigned]
@@ -828,6 +850,12 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 </div>
               </div>
 
+              <label className="flex items-center gap-2.5 p-3 rounded-2xl border border-white/5 bg-white/5 cursor-pointer hover:bg-white/10 transition-all select-none">
+                <input type="checkbox" checked={onlyUnused} onChange={(e) => setOnlyUnused(e.target.checked)}
+                  className="rounded border-white/20 bg-black/20 text-violet-500 focus:ring-violet-500/20" />
+                <span className="text-xs text-white/80 font-semibold">Faqat boshqa tadbirlarga ulanmagan savollarni ko'rsatish</span>
+              </label>
+
               <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-3.5 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-sky-200 font-semibold">Tadbir test turi (Test Type)</span>
@@ -864,7 +892,12 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                     <input type="checkbox" checked={assigned.has(q.id)} onChange={() => toggle(q.id)} className="mt-1" />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm text-white">{q.text}</div>
-                      <div className="text-xs text-white/40 mt-1">{testTypeLabel(inferQuestionTestType(q))} · {q.difficulty} · {q.score} ball · {q.source}</div>
+                      <div className="text-xs text-white/40 mt-1">
+                        {testTypeLabel(inferQuestionTestType(q))} · {q.difficulty} · {q.score} ball · {q.source}
+                        {otherOlympiadQuestionIds.has(String(q.id)) && (
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-medium font-sans">Boshqa tadbirda</span>
+                        )}
+                      </div>
                     </div>
                   </label>
                 ))}
@@ -874,7 +907,12 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                     <input type="checkbox" checked={assigned.has(q.id)} onChange={() => toggle(q.id)} className="mt-1" />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm text-white">{q.text}</div>
-                      <div className="text-xs text-white/40 mt-1">{q.subject} · {testTypeLabel(inferQuestionTestType(q))} · {q.difficulty} · {q.score} ball</div>
+                      <div className="text-xs text-white/40 mt-1">
+                        {q.subject} · {testTypeLabel(inferQuestionTestType(q))} · {q.difficulty} · {q.score} ball
+                        {otherOlympiadQuestionIds.has(String(q.id)) && (
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-medium font-sans">Boshqa tadbirda</span>
+                        )}
+                      </div>
                     </div>
                   </label>
                 ))}
