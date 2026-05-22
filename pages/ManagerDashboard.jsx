@@ -1291,17 +1291,27 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 )}
               </div>
               <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-3.5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-violet-200 font-semibold">Tadbir darajasi (Test Level)</span>
-                  <span className={`text-xs px-2.5 py-0.5 rounded-lg font-bold ${
-                    assignmentLevel ? 'bg-violet-500 text-white' : 'bg-white/10 text-white/60'
-                  }`}>
-                    {assignmentLevel || 'Belgilanmagan'}
-                  </span>
+                <label className="block text-xs text-violet-200 mb-1 font-semibold">Tadbir darajasi (Test Level) <span className="text-white/35">(ixtiyoriy)</span></label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(liveOlympiad.subject === 'Ingliz tili'
+                    ? ['Beginner', 'Elementary', 'Pre-Intermediate', 'Intermediate', 'Upper-Intermediate', 'Advanced']
+                    : ['Beginner', "O'rta", 'Advanced']
+                  ).map(level => (
+                    <button key={level} type="button" onClick={() => setAssignmentLevel(level)}
+                      className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${assignmentLevel === level ? 'bg-violet-500 text-white' : 'bg-white/5 text-white/55 hover:bg-white/10 hover:text-white'}`}>
+                      {level}
+                    </button>
+                  ))}
+                  {assignmentLevel && (
+                    <button type="button" onClick={() => setAssignmentLevel('')}
+                      className="rounded-lg bg-white/5 px-2.5 py-1 text-xs font-bold text-white/45 hover:bg-white/10 hover:text-white">
+                      Tozalash (Barchasi)
+                    </button>
+                  )}
                 </div>
-                <div className="text-xs text-white/50">
+                <div className="text-xs text-white/50 pt-1">
                   {assignmentLevel ? (
-                    <span>Ushbu tadbir darajasiga mos keladigan ({assignmentLevel}) savollar ko'rsatilmoqda. Tadbir darajasini o'zgartirish uchun uni tahrirlash bo'limidan foydalaning.</span>
+                    <span>Tanlangan <strong>{assignmentLevel}</strong> darajasiga mos keluvchi savollar ko'rsatilmoqda. Saqlash bosilganda tadbir darajasi ham shunga yangilanadi.</span>
                   ) : (
                     <span>Tadbir darajasi belgilanmagan. Barcha darajadagi savollar ko'rsatilmoqda.</span>
                   )}
