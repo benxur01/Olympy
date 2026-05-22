@@ -288,6 +288,226 @@ const Modal = ({ open, onClose, title, children, width = 'max-w-lg' }) => {
   );
 };
 
+// ─── AvatarCropModal ───────────────────────────────────────────────────────────
+const AvatarCropModal = ({ open, onClose, imageSrc, onCropComplete }) => {
+  if (!open || !imageSrc) return null;
+  const V = 260; // Viewport size
+  const C = 400; // Output Canvas size
+
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [imgDimensions, setImgDimensions] = useState(null);
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStart = useRef({ x: 0, y: 0 });
+  const imageElementRef = useRef(null);
+
+  // Load image dimensions
+  useEffect(() => {
+    if (!imageSrc) return;
+    setImgLoaded(false);
+    setImgDimensions(null);
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.src = imageSrc;
+    img.onload = () => {
+      const scaleFactor = Math.max(V / img.naturalWidth, V / img.naturalHeight);
+      const baseWidth = img.naturalWidth * scaleFactor;
+      const baseHeight = img.naturalHeight * scaleFactor;
+      setImgDimensions({
+        naturalWidth: img.naturalWidth,
+        naturalHeight: img.naturalHeight,
+        baseWidth,
+        baseHeight
+      });
+      setImgLoaded(true);
+      setScale(1);
+      setOffset({ x: 0, y: 0 });
+    };
+  }, [imageSrc]);
+
+  const clampOffset = (x, y, currentScale, baseW, baseH, viewportSize) => {
+    const W_scaled = baseW * currentScale;
+    const H_scaled = baseH * currentScale;
+    const limitX = Math.max(0, (W_scaled - viewportSize) / 2);
+    const limitY = Math.max(0, (H_scaled - viewportSize) / 2);
+    return {
+      x: Math.max(-limitX, Math.min(limitX, x)),
+      y: Math.max(-limitY, Math.min(limitY, y))
+    };
+  };
+
+  // Restrict offset when scale changes
+  const handleScaleChange = (newScale) => {
+    setScale(newScale);
+    if (imgDimensions) {
+      setOffset(prev => clampOffset(prev.x, prev.y, newScale, imgDimensions.baseWidth, imgDimensions.baseHeight, V));
+    }
+  };
+
+  const handlePointerDown = (e) => {
+    e.preventDefault();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    setIsDragging(true);
+    dragStart.current = { x: clientX - offset.x, y: clientY - offset.y };
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleGlobalMove = (e) => {
+      const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+      const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+      const rawX = clientX - dragStart.current.x;
+      const rawY = clientY - dragStart.current.y;
+      if (imgDimensions) {
+        const clamped = clampOffset(rawX, rawY, scale, imgDimensions.baseWidth, imgDimensions.baseHeight, V);
+        setOffset(clamped);
+      }
+    };
+
+    const handleGlobalUp = () => {
+      setIsDragging(false);
+    };
+
+    window.addEventListener('mousemove', handleGlobalMove);
+    window.addEventListener('mouseup', handleGlobalUp);
+    window.addEventListener('touchmove', handleGlobalMove, { passive: false });
+    window.addEventListener('touchend', handleGlobalUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleGlobalMove);
+      window.removeEventListener('mouseup', handleGlobalUp);
+      window.removeEventListener('touchmove', handleGlobalMove);
+      window.removeEventListener('touchend', handleGlobalUp);
+    };
+  }, [isDragging, imgDimensions, scale]);
+
+  const handleSave = () => {
+    if (!imgDimensions || !imageElementRef.current) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = C;
+    canvas.height = C;
+    const ctx = canvas.getContext('2d');
+
+    const canvasScale = C / V;
+    const W_scaled = imgDimensions.baseWidth * scale;
+    const H_scaled = imgDimensions.baseHeight * scale;
+    const left_edge = (V / 2 + offset.x) - W_scaled / 2;
+    const top_edge = (V / 2 + offset.y) - H_scaled / 2;
+
+    ctx.drawImage(
+      imageElementRef.current,
+      left_edge * canvasScale,
+      top_edge * canvasScale,
+      W_scaled * canvasScale,
+      H_scaled * canvasScale
+    );
+
+    canvas.toBlob((blob) => {
+      if (blob) {
+        onCropComplete(blob);
+      }
+    }, 'image/jpeg', 0.9);
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="Rasm joylashuvini sozlang" width="max-w-md">
+      <div className="flex flex-col items-center gap-6">
+        {/* The cropper viewport */}
+        <div
+          className="relative overflow-hidden bg-slate-950 rounded-2xl cursor-grab active:cursor-grabbing touch-none border border-white/10"
+          style={{ width: V, height: V, touchAction: 'none' }}
+          onMouseDown={handlePointerDown}
+          onTouchStart={handlePointerDown}
+        >
+          {imgLoaded && imgDimensions && (
+            <img
+              ref={imageElementRef}
+              src={imageSrc}
+              alt="Crop preview"
+              className="absolute select-none pointer-events-none"
+              style={{
+                left: '50%',
+                top: '50%',
+                transform: `translate(-50%, -50%) translate(${offset.x}px, ${offset.y}px) scale(${scale})`,
+                width: imgDimensions.baseWidth,
+                height: imgDimensions.baseHeight,
+                maxWidth: 'none',
+                maxHeight: 'none',
+              }}
+            />
+          )}
+          
+          {/* SVG circular overlay */}
+          <svg className="absolute inset-0 pointer-events-none w-full h-full z-10">
+            <defs>
+              <mask id="cropMask">
+                <rect width="100%" height="100%" fill="white" />
+                <circle cx="50%" cy="50%" r="48%" fill="black" />
+              </mask>
+            </defs>
+            <rect width="100%" height="100%" fill="rgba(6, 8, 24, 0.7)" mask="url(#cropMask)" />
+            <circle cx="50%" cy="50%" r="48%" fill="none" stroke="#6366f1" strokeWidth="2" strokeDasharray="4 4" />
+          </svg>
+        </div>
+
+        {/* Slider Controls */}
+        <div className="w-full max-w-xs space-y-2">
+          <div className="flex items-center justify-between text-xs text-white/50">
+            <span>Kattalashtirish</span>
+            <span>{Math.round(scale * 100)}%</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <button 
+              type="button" 
+              onClick={() => handleScaleChange(Math.max(1, scale - 0.2))} 
+              className="text-white/40 hover:text-white transition-colors"
+            >
+              <Icon name="search" size={16} />
+            </button>
+            <input
+              type="range"
+              min="1"
+              max="3"
+              step="0.01"
+              value={scale}
+              onChange={(e) => handleScaleChange(parseFloat(e.target.value))}
+              className="flex-1 accent-indigo-500 bg-white/10 h-1.5 rounded-lg appearance-none cursor-pointer"
+            />
+            <button 
+              type="button" 
+              onClick={() => handleScaleChange(Math.min(3, scale + 0.2))} 
+              className="text-white/40 hover:text-white transition-colors"
+            >
+              <Icon name="plus" size={16} />
+            </button>
+          </div>
+        </div>
+
+        {/* Buttons */}
+        <div className="flex items-center gap-3 w-full mt-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="btn-ghost flex-1 py-2.5 rounded-xl text-sm"
+          >
+            Bekor qilish
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            className="btn-primary flex-1 py-2.5 rounded-xl text-sm font-semibold"
+          >
+            Saqlash
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
 // ─── Empty State ───────────────────────────────────────────────────────────────
 const EmptyState = ({ icon, title, desc, action }) => (
   <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
@@ -412,4 +632,4 @@ const useApiData = (fetcher, deps = []) => {
 };
 
 // Export all
-Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData });
+Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal });

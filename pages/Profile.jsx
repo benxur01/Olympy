@@ -8,6 +8,9 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
   const [avatarError, setAvatarError] = React.useState('');
   const avatarInputRef = React.useRef(null);
 
+  const [cropImageSrc, setCropImageSrc] = React.useState('');
+  const [cropModalOpen, setCropModalOpen] = React.useState(false);
+
   // Profil ma'lumotlarini tahrirlash holati
   const [profileForm, setProfileForm] = React.useState({
     firstName: user?.firstName || '',
@@ -99,12 +102,26 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
     }
   };
 
-  const handleAvatarFile = async (e) => {
+  const handleAvatarFile = (e) => {
     const file = e.target.files?.[0];
     if (!file || !isApi) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCropImageSrc(reader.result);
+      setCropModalOpen(true);
+    };
+    reader.readAsDataURL(file);
+    if (e.target) e.target.value = '';
+  };
+
+  const handleCropComplete = async (croppedBlob) => {
+    setCropModalOpen(false);
+    setCropImageSrc('');
     setAvatarLoading(true);
     setAvatarError('');
     try {
+      const file = new File([croppedBlob], 'avatar.jpeg', { type: 'image/jpeg' });
       const data = await OlympyApi.uploadMyAvatar(file, OlympyApi.getToken());
       const mapped = OlympyApi.mapBackendUser(data);
       onUserUpdate?.(mapped);
@@ -112,7 +129,6 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
       setAvatarError(OlympyApi.toUserMessage?.(err) || "Rasm yuklanmadi");
     } finally {
       setAvatarLoading(false);
-      if (e.target) e.target.value = '';
     }
   };
 
@@ -613,7 +629,17 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
     </div>
   );
 
-  return content;
+  return (
+    <>
+      {content}
+      <AvatarCropModal
+        open={cropModalOpen}
+        onClose={() => { setCropModalOpen(false); setCropImageSrc(''); }}
+        imageSrc={cropImageSrc}
+        onCropComplete={handleCropComplete}
+      />
+    </>
+  );
 };
 
 Object.assign(window, { ProfilePage });
