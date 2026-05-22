@@ -65,6 +65,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [deleteId, setDeleteId] = React.useState(null);
   const [deleteAllConfirm, setDeleteAllConfirm] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState([]);
+  const [bulkSaving, setBulkSaving] = React.useState(false);
 
   const toggleSelectQuestion = (id) => {
     setSelectedIds(prev =>
@@ -331,9 +332,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const saveAiQuestions = () => {
     if (!aiResult || aiResult.length === 0) return;
     if (isApi) {
+      setBulkSaving(true);
       _createApiBulk(aiResult, 'ai')
         .then(() => { apiQuestionsRes.reload(); setAiResult(null); setMode('list'); })
-        .catch(err => { console.warn('createQuestion (ai) failed:', err); showApiToast("⚠ Savollar saqlab bo'lmadi"); });
+        .catch(err => { console.warn('createQuestion (ai) failed:', err); showApiToast("⚠ Savollar saqlab bo'lmadi"); })
+        .finally(() => setBulkSaving(false));
       return;
     }
     OlympyStore.createQuestionsBulk(aiResult.map(q => ({
@@ -354,9 +357,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const savePdfQuestions = () => {
     if (!pdfResult || pdfResult.length === 0) return;
     if (isApi) {
+      setBulkSaving(true);
       _createApiBulk(pdfResult, 'pdf')
         .then(() => { apiQuestionsRes.reload(); setPdfResult(null); setPdfFile(null); setPdfProvider(''); setPdfVision(false); setMode('list'); })
-        .catch(err => { console.warn('createQuestion (pdf) failed:', err); showApiToast("⚠ Savollar saqlab bo'lmadi"); });
+        .catch(err => { console.warn('createQuestion (pdf) failed:', err); showApiToast("⚠ Savollar saqlab bo'lmadi"); })
+        .finally(() => setBulkSaving(false));
       return;
     }
     OlympyStore.createQuestionsBulk(pdfResult.map(q => ({
@@ -641,7 +646,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 <div className="text-sm font-bold text-white">{aiResult.length} ta savol yaratildi ✨</div>
                 <div className="flex gap-2">
                   <button onClick={() => setAiResult(null)} className="btn-ghost text-xs px-3 py-1.5 rounded-xl">Tozalash</button>
-                  <button onClick={saveAiQuestions} className="btn-primary text-xs px-4 py-1.5 rounded-xl font-semibold">Hammasini saqlash</button>
+                  <button onClick={saveAiQuestions} disabled={bulkSaving} className="btn-primary text-xs px-4 py-1.5 rounded-xl font-semibold disabled:opacity-50">Hammasini saqlash</button>
                 </div>
               </div>
               <div className="space-y-2.5 max-h-[25rem] overflow-y-auto pr-1">
@@ -733,7 +738,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   {pdfWarning && <div className="mt-1 text-[11px] text-amber-300">{pdfWarning}</div>}
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={savePdfQuestions} className="btn-primary text-xs px-4 py-1.5 rounded-xl font-semibold">Saqlash</button>
+                  <button onClick={savePdfQuestions} disabled={bulkSaving} className="btn-primary text-xs px-4 py-1.5 rounded-xl font-semibold disabled:opacity-50">Saqlash</button>
                 </div>
               </div>
               {pdfResult.map((q,i) => (
@@ -842,6 +847,23 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           </div>
         </div>
       </Modal>
+
+      {bulkSaving && (
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+          <div className="glass-strong border border-white/10 rounded-2xl p-6 flex flex-col items-center gap-4 max-w-xs text-center shadow-2xl">
+            <div className="relative flex items-center justify-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-2 border-indigo-500/20 border-t-indigo-500 border-r-indigo-500"></div>
+              <div className="absolute animate-pulse text-indigo-400">
+                <Icon name="sparkles" size={20} />
+              </div>
+            </div>
+            <div className="space-y-1">
+              <h3 className="text-sm font-bold text-white">Savollar saqlanmoqda</h3>
+              <p className="text-xs text-white/40">Iltimos kuting, savollar ma'lumotlar bazasiga yozilmoqda...</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {apiToast && (
         <div className="fixed bottom-20 md:bottom-6 right-3 md:right-6 left-3 md:left-auto z-50 glass-strong rounded-2xl px-5 py-3.5 border border-rose-500/30 animate-in text-sm font-medium text-white md:max-w-sm">{apiToast}</div>
