@@ -1051,7 +1051,22 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs text-white/50 mb-1.5 font-medium">Fan kategoriyasi</label>
-                  <select className="input-field" value={newOlympiad.subject} onChange={e => setNewOlympiad({ ...newOlympiad, subject: e.target.value })}>
+                  <select className="input-field" value={newOlympiad.subject} onChange={e => {
+                    const newSubj = e.target.value;
+                    let newLevel = newOlympiad.testLevel;
+                    if (newSubj === 'Ingliz tili') {
+                      const validEngLevels = ['Beginner', 'Elementary', 'Pre-Intermediate', 'Intermediate', 'Upper-Intermediate', 'Advanced'];
+                      if (newLevel && !validEngLevels.includes(newLevel)) {
+                        newLevel = '';
+                      }
+                    } else {
+                      const validDefaultLevels = ['Beginner', "O'rta", 'Advanced'];
+                      if (newLevel && !validDefaultLevels.includes(newLevel)) {
+                        newLevel = '';
+                      }
+                    }
+                    setNewOlympiad({ ...newOlympiad, subject: newSubj, testLevel: newLevel });
+                  }}>
                     {store.subjects.map(s => <option key={s}>{s}</option>)}
                   </select>
                 </div>
@@ -1081,9 +1096,22 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   <select className="input-field" value={newOlympiad.testLevel}
                     onChange={e => setNewOlympiad({ ...newOlympiad, testLevel: e.target.value })}>
                     <option value="">— Tanlanmagan —</option>
-                    <option value="Beginner">Beginner</option>
-                    <option value="O'rta">O'rta</option>
-                    <option value="Advanced">Advanced</option>
+                    {newOlympiad.subject === 'Ingliz tili' ? (
+                      <>
+                        <option value="Beginner">Beginner</option>
+                        <option value="Elementary">Elementary</option>
+                        <option value="Pre-Intermediate">Pre-Intermediate</option>
+                        <option value="Intermediate">Intermediate</option>
+                        <option value="Upper-Intermediate">Upper-Intermediate</option>
+                        <option value="Advanced">Advanced</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="Beginner">Beginner</option>
+                        <option value="O'rta">O'rta</option>
+                        <option value="Advanced">Advanced</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 <div>
@@ -1184,14 +1212,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             if (!assignmentLevel) return true;
             const lvl = assignmentLevel.trim().toLowerCase();
             const diff = (q.difficulty || '').toLowerCase();
-            if (lvl === 'beginner' || lvl === 'oson' || lvl === 'easy') {
-              return diff === 'oson' || diff === 'easy' || diff === 'beginner';
+            if (lvl === 'beginner' || lvl === 'elementary' || lvl === 'oson' || lvl === 'easy') {
+              return diff === 'oson' || diff === 'easy' || diff === 'beginner' || diff === 'elementary';
             }
-            if (lvl === "o'rta" || lvl === 'medium') {
-              return diff === "o'rta" || diff === 'medium';
+            if (lvl === "o'rta" || lvl === 'medium' || lvl === 'pre-intermediate' || lvl === 'intermediate') {
+              return diff === "o'rta" || diff === 'medium' || diff === 'pre-intermediate' || diff === 'intermediate';
             }
-            if (lvl === 'advanced' || lvl === 'qiyin' || lvl === 'hard') {
-              return diff === 'qiyin' || diff === 'hard' || diff === 'advanced';
+            if (lvl === 'advanced' || lvl === 'upper-intermediate' || lvl === 'qiyin' || lvl === 'hard') {
+              return diff === 'qiyin' || diff === 'hard' || diff === 'advanced' || diff === 'upper-intermediate';
             }
             return diff.includes(lvl) || lvl.includes(diff);
           };
