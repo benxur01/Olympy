@@ -219,7 +219,7 @@ def register(request):
     payload = _jwt_payload(user)
     body = {
         **payload,
-        'user': UserSerializer(user).data,
+        'user': UserSerializer(user, context={'request': request}).data,
     }
     if membership_data:
         body['membership'] = membership_data
@@ -278,7 +278,7 @@ def register_organization(request):
     payload = _jwt_payload(user)
     response = Response({
         **payload,
-        'user': UserSerializer(user).data,
+        'user': UserSerializer(user, context={'request': request}).data,
         'center': EducationCenterSerializer(center).data,
     }, status=status.HTTP_201_CREATED)
     return _set_auth_cookies(response, payload)
@@ -298,7 +298,7 @@ def login(request):
     payload = _jwt_payload(user)
     response = Response({
         **payload,
-        'user': UserSerializer(user).data,
+        'user': UserSerializer(user, context={'request': request}).data,
     })
     return _set_auth_cookies(response, payload)
 
@@ -552,8 +552,8 @@ def admin_users_list(request):
     paginator.page_size = 100
     page = paginator.paginate_queryset(qs, request)
     if page is not None:
-        return paginator.get_paginated_response(UserSerializer(page, many=True).data)
-    return Response(UserSerializer(qs, many=True).data)
+        return paginator.get_paginated_response(UserSerializer(page, many=True, context={'request': request}).data)
+    return Response(UserSerializer(qs, many=True, context={'request': request}).data)
 
 
 @api_view(['POST'])
@@ -592,7 +592,7 @@ def admin_set_user_active(request, user_id):
     # avvalgi tokenlar qayta ishlashi kerak emas.
     target.token_version = (target.token_version or 0) + 1
     target.save(update_fields=['is_active', 'token_version'])
-    return Response(UserSerializer(target).data)
+    return Response(UserSerializer(target, context={'request': request}).data)
 
 
 def _make_otp():
