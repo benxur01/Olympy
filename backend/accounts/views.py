@@ -476,10 +476,19 @@ def change_my_password(request):
     return _set_auth_cookies(response, payload)
 
 
-@api_view(['POST'])
+@api_view(['POST', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def update_my_avatar(request):
-    """POST /api/auth/me/avatar/ — upload current user's profile image."""
+    """POST /api/auth/me/avatar/ — upload current user's profile image.
+    DELETE /api/auth/me/avatar/ — delete current user's profile image.
+    """
+    if request.method == 'DELETE':
+        if request.user.avatar:
+            request.user.avatar.delete(save=False)
+        request.user.avatar = None
+        request.user.save(update_fields=['avatar'])
+        return Response(UserSerializer(request.user, context={'request': request}).data)
+
     image = (
         request.FILES.get('avatar')
         or request.FILES.get('image')

@@ -347,6 +347,9 @@ export const OlympyApi = {
     fd.append('avatar', imageFile);
     return request('/api/auth/me/avatar/', { method: 'POST', body: fd, token });
   },
+  deleteMyAvatar: (token) => {
+    return request('/api/auth/me/avatar/', { method: 'DELETE', token });
+  },
   // Centers
   getCenters: () => request('/api/centers/').then(unwrapList),
   getMyCenters: (token) => request('/api/centers/mine/', { token }).then(unwrapList),
