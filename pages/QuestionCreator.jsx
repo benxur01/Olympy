@@ -112,9 +112,15 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     (!filterSubject || q.subject === filterSubject) && (!filterLevel || q.difficulty === filterLevel)
   );
 
-  const _diffFromApi = (level, subject) => {
+  const _diffFromApi = (level, subject, chosenLevel) => {
     if (subject === 'Ingliz tili') {
+      if (chosenLevel && _diffToApi(chosenLevel) === _diffToApi(level)) {
+        return chosenLevel;
+      }
       return level === 'easy' ? 'Beginner' : level === 'hard' ? 'Advanced' : 'Intermediate';
+    }
+    if (chosenLevel && _diffToApi(chosenLevel) === _diffToApi(level)) {
+      return chosenLevel;
     }
     return level === 'easy' ? 'Oson' : level === 'hard' ? 'Qiyin' : "O'rta";
   };
@@ -125,7 +131,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       _tmpId: Date.now() + i,
       text: q.text,
       subject: subj,
-      difficulty: _diffFromApi(q.difficulty, subj) || aiForm.level,
+      difficulty: _diffFromApi(q.difficulty, subj, aiForm.level) || aiForm.level,
       score: q.score ?? 3,
       options: Array.isArray(q.options) ? q.options : [],
       correctAnswer: q.correct_answer ?? q.correctAnswer ?? 0,
@@ -139,7 +145,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       _tmpId: Date.now() + i,
       text: q.text,
       subject: subj,
-      difficulty: _diffFromApi(q.difficulty, subj) || aiForm.level,
+      difficulty: _diffFromApi(q.difficulty, subj, aiForm.level) || aiForm.level,
       score: q.score ?? 3,
       options: Array.isArray(q.options) ? q.options : [],
       correctAnswer: q.correct_answer ?? q.correctAnswer ?? 0,
@@ -638,11 +644,32 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   <button onClick={saveAiQuestions} className="btn-primary text-xs px-4 py-1.5 rounded-xl font-semibold">Hammasini saqlash</button>
                 </div>
               </div>
-              <div className="space-y-2 max-h-80 overflow-y-auto">
-                {aiResult.slice(0,5).map((q,i) => (
-                  <div key={i} className="glass rounded-xl p-3 text-sm text-white/70">{i+1}. {q.text}</div>
+              <div className="space-y-2.5 max-h-[25rem] overflow-y-auto pr-1">
+                {aiResult.map((q,i) => (
+                  <div key={i} className="glass rounded-xl p-3 text-sm text-white/70 space-y-2">
+                    <div className="flex items-start gap-2">
+                      <span className="text-indigo-300 font-bold">{i+1}.</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="leading-relaxed">{q.text}</div>
+                        <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mt-2">
+                          <SubjectBadge subject={q.subject} />
+                          <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
+                          <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
+                        </div>
+                      </div>
+                    </div>
+                    {Array.isArray(q.options) && q.options.length > 0 && (
+                      <div className="grid gap-1.5 sm:grid-cols-2 mt-1">
+                        {q.options.map((option, optionIndex) => (
+                          <div key={optionIndex}
+                            className={`rounded-lg px-2 py-1 text-xs ${optionIndex === q.correctAnswer ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'bg-white/5 text-white/50'}`}>
+                            {String.fromCharCode(65 + optionIndex)}. {option}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ))}
-                {aiResult.length > 5 && <div className="text-xs text-white/30 text-center">+ {aiResult.length - 5} ta savol ko'rsatilmagan</div>}
               </div>
             </div>
           )}
@@ -713,11 +740,16 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 <div key={i} className="glass rounded-xl p-3 text-sm text-white/70 space-y-2">
                   <div className="flex items-start gap-2">
                     <span className="text-cyan-300 font-bold">{i+1}.</span>
-                    <div className="flex-1">
-                      <div>{q.text}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="leading-relaxed">{q.text}</div>
                       {q.needsReview && (
                         <div className="mt-1 text-[11px] text-amber-300">Javob AI tomonidan taxmin qilindi, saqlashdan oldin tekshiring</div>
                       )}
+                      <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mt-2">
+                        <SubjectBadge subject={q.subject} />
+                        <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
+                        <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
+                      </div>
                     </div>
                   </div>
                   {Array.isArray(q.options) && q.options.length > 0 && (
