@@ -106,19 +106,33 @@ def olympiads_list_create(request):
                     status=http_status.HTTP_201_CREATED)
 
 
-@api_view(['PATCH'])
+@api_view(['PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def olympiad_detail(request, olympiad_id):
-    """PATCH /api/olympiads/{id}/ — update draft/inactive event fields/questions."""
+    """PATCH /api/olympiads/{id}/ — update draft/inactive event fields/questions.
+    DELETE /api/olympiads/{id}/ — delete draft/inactive event.
+    """
     olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
     if not user_can_manage_center_event(request.user, olympiad.center):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
+    
     if olympiad.status not in [Olympiad.STATUS_DRAFT, Olympiad.STATUS_INACTIVE]:
+        action_verb = "tahrirlash" if request.method == 'PATCH' else "o'chirish"
         return Response(
-            {'detail': "Faqat draft yoki nofaol tadbirni tahrirlash mumkin"},
+            {'detail': f"Faqat draft yoki nofaol tadbirni {action_verb} mumkin"},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
+
+    if request.method == 'DELETE':
+        if olympiad.attempts.exists() or olympiad.test_sessions.exists():
+            return Response(
+                {'detail': "Ushbu tadbirda ishtirokchilar urinishlari bor, uni o'chirib bo'lmaydi"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        olympiad.delete()
+        return Response({'detail': "Tadbir muvaffaqiyatli o'chirildi"}, status=http_status.HTTP_200_OK)
+
     serializer = OlympiadSerializer(olympiad, data=request.data, partial=True)
     serializer.is_valid(raise_exception=True)
     questions = serializer.validated_data.pop('questions', None)

@@ -27,6 +27,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [assignmentType, setAssignmentType] = React.useState('');
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
   const [removingMembershipId, setRemovingMembershipId] = React.useState(null);
+  const [deleteEventId, setDeleteEventId] = React.useState(null);
   // Studentlar ro'yxati uchun qidiruv: ism yoki telefon raqamga ko'ra
   // filter. Avval input value/onChange'siz mavjud edi — foydalanuvchi
   // yozardi lekin natija filterlanmasdi.
@@ -561,6 +562,39 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     showToast(`✓ ${eventTypeLabel(event.eventType || 'competition')} yakunlandi`);
   };
 
+  const deleteEvent = () => {
+    if (!deleteEventId) return;
+    const event = olympiads.find(o => String(o.id) === String(deleteEventId));
+    if (!event) return;
+    
+    if (isApi) {
+      setEventSaving(true);
+      OlympyApi.deleteOlympiad(event.backendId ?? event.id, OlympyApi.getToken())
+        .then(() => {
+          showToast(`✓ ${eventTypeLabel(event.eventType || 'competition')} muvaffaqiyatli o'chirildi`);
+          setDeleteEventId(null);
+          apiOlympiadsRes.reload();
+        })
+        .catch(err => {
+          console.warn('deleteOlympiad failed:', err);
+          showToast(`⚠ ${eventErrorMessage(err)}`);
+        })
+        .finally(() => setEventSaving(false));
+      return;
+    }
+    
+    const hasAttempts = store.attempts.some(a => String(a.olympiadId) === String(event.id)) || event.participants > 0;
+    if (hasAttempts) {
+      showToast("Ushbu tadbirda ishtirokchilar urinishlari bor, uni o'chirib bo'lmaydi");
+      setDeleteEventId(null);
+      return;
+    }
+    
+    OlympyStore.deleteOlympiad(event.id);
+    showToast(`✓ ${eventTypeLabel(event.eventType || 'competition')} muvaffaqiyatli o'chirildi`);
+    setDeleteEventId(null);
+  };
+
   const renderHome = () => (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -854,6 +888,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   className="btn-ghost text-xs px-3 py-1.5 rounded-xl flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
                   <Icon name="edit" size={13} /> Tahrirlash
                 </button>
+                {canEdit && (
+                  <button onClick={() => setDeleteEventId(o.id)} disabled={eventSaving}
+                    className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50 flex items-center justify-center gap-1">
+                    <Icon name="trash" size={13} /> O'chirish
+                  </button>
+                )}
                 <button onClick={() => canEdit ? setAssignModal(o) : showToast("⚠ Savollarni o'zgartirish uchun avval nofaollashtiring")}
                   disabled={!canEdit}
                   className="btn-ghost text-xs px-3 py-1.5 rounded-xl flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
@@ -1350,6 +1390,34 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Delete confirmation modal */}
+      <Modal open={!!deleteEventId} onClose={() => !eventSaving && setDeleteEventId(null)}
+        title="Tadbirni o'chirish" width="max-w-md">
+        {deleteEventId && (() => {
+          const event = olympiads.find(o => String(o.id) === String(deleteEventId));
+          if (!event) return null;
+          return (
+            <div className="space-y-4">
+              <div className="text-sm text-white/70">
+                Ushbu tadbirni o'chirishni tasdiqlaysizmi? Bu amalni ortga qaytarib bo'lmaydi.
+              </div>
+              <div className="glass rounded-xl p-3 border border-white/5">
+                <div className="text-xs text-white/35 mb-0.5">Tadbir nomi</div>
+                <div className="font-bold text-white text-sm truncate">{event.title}</div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button onClick={() => setDeleteEventId(null)} disabled={eventSaving}
+                  className="btn-ghost flex-1 py-2.5 rounded-xl text-xs font-semibold disabled:opacity-50">Yo'q</button>
+                <button onClick={deleteEvent} disabled={eventSaving}
+                  className="rounded-xl bg-rose-500 text-white hover:bg-rose-600 flex-1 py-2.5 text-xs font-bold disabled:opacity-50 transition-colors">
+                  {eventSaving ? "O'chirilmoqda..." : "Ha, o'chirish"}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
       </Modal>
 
       {toast && (
