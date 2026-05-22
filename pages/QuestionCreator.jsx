@@ -113,6 +113,13 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     (!filterSubject || q.subject === filterSubject) && (!filterLevel || q.difficulty === filterLevel)
   );
 
+  const _diffToCategory = (level) => {
+    const lvl = (level || '').trim().toLowerCase();
+    if (lvl === 'oson' || lvl === 'easy' || lvl === 'beginner' || lvl === 'elementary') return 'easy';
+    if (lvl === 'qiyin' || lvl === 'hard' || lvl === 'advanced' || lvl === 'upper-intermediate' || lvl === 'upper-int') return 'hard';
+    return 'medium';
+  };
+
   const _diffFromApi = (level, subject, chosenLevel) => {
     const lvl = (level || '').trim().toLowerCase();
     if (lvl === 'beginner') return 'Beginner';
@@ -123,12 +130,12 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     if (lvl === 'advanced') return 'Advanced';
 
     if (subject === 'Ingliz tili') {
-      if (chosenLevel && _diffToApi(chosenLevel, subject) === _diffToApi(level, subject)) {
+      if (chosenLevel && _diffToCategory(chosenLevel) === _diffToCategory(level)) {
         return chosenLevel;
       }
       return level === 'easy' ? 'Beginner' : level === 'hard' ? 'Advanced' : 'Intermediate';
     }
-    if (chosenLevel && _diffToApi(chosenLevel, subject) === _diffToApi(level, subject)) {
+    if (chosenLevel && _diffToCategory(chosenLevel) === _diffToCategory(level)) {
       return chosenLevel;
     }
     return level === 'easy' ? 'Oson' : level === 'hard' ? 'Qiyin' : "O'rta";
