@@ -1180,8 +1180,24 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           const liveOlympiad = (isApi ? olympiads : store.olympiads).find(o => o.id === assignModal.id) || assignModal;
           if (!liveOlympiad) return null;
           const levelValue = assignmentLevel.trim();
-          const subjectQs = centerQuestions.filter(q => q.subject === liveOlympiad.subject);
-          const otherQs = centerQuestions.filter(q => q.subject !== liveOlympiad.subject);
+          const matchesLevel = (q) => {
+            if (!assignmentLevel) return true;
+            const lvl = assignmentLevel.trim().toLowerCase();
+            const diff = (q.difficulty || '').toLowerCase();
+            if (lvl === 'beginner' || lvl === 'oson' || lvl === 'easy') {
+              return diff === 'oson' || diff === 'easy' || diff === 'beginner';
+            }
+            if (lvl === "o'rta" || lvl === 'medium') {
+              return diff === "o'rta" || diff === 'medium';
+            }
+            if (lvl === 'advanced' || lvl === 'qiyin' || lvl === 'hard') {
+              return diff === 'qiyin' || diff === 'hard' || diff === 'advanced';
+            }
+            return diff.includes(lvl) || lvl.includes(diff);
+          };
+          const subjectQs = centerQuestions.filter(q => q.subject === liveOlympiad.subject && matchesLevel(q));
+          const otherQs = centerQuestions.filter(q => q.subject !== liveOlympiad.subject && matchesLevel(q));
+          const filteredCount = subjectQs.length + otherQs.length;
           const assigned = new Set(isApi ? assignedQuestionIds : (liveOlympiad.questionIds || []));
           const selectedQuestions = [...assigned]
             .map(id => centerQuestions.find(q => String(q.id) === String(id)))
@@ -1238,22 +1254,47 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           return (
             <div className="space-y-3">
               <div className="text-sm text-white/60">{liveOlympiad.title} — {liveOlympiad.subject}</div>
-              <div className="text-xs text-white/40">Tayinlangan: <span className="text-white">{assigned.size}</span> / {centerQuestions.length} ta mavjud</div>
-              <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-3">
-                <label className="block text-xs text-sky-200 mb-2 font-semibold">Test turi <span className="text-white/35">(ixtiyoriy)</span></label>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {[
-                    { value: '', label: 'Belgilanmagan' },
-                    { value: 'mixed', label: 'Aralash' },
-                    { value: 'multiple_choice', label: 'Multiple choice' },
-                    { value: 'true_false', label: 'True/False' },
-                    { value: 'short_answer', label: 'Qisqa javob' },
-                  ].map(type => (
-                    <button key={type.value || 'unset'} type="button" onClick={() => setAssignmentType(type.value)}
-                      className={`rounded-xl px-2.5 py-2 text-xs font-bold transition-all ${assignmentType === type.value ? 'bg-sky-500 text-white' : 'bg-white/5 text-white/55 hover:bg-white/10 hover:text-white'}`}>
-                      {type.label}
-                    </button>
-                  ))}
+              <div className="text-xs text-white/40">
+                Tayinlangan: <span className="text-white">{assigned.size}</span>
+                {assignmentLevel ? (
+                  <span> / {filteredCount} ta mos savol ({centerQuestions.length} tadan)</span>
+                ) : (
+                  <span> / {centerQuestions.length} ta mavjud</span>
+                )}
+              </div>
+              <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-violet-200 font-semibold">Tadbir darajasi (Test Level)</span>
+                  <span className={`text-xs px-2.5 py-0.5 rounded-lg font-bold ${
+                    assignmentLevel ? 'bg-violet-500 text-white' : 'bg-white/10 text-white/60'
+                  }`}>
+                    {assignmentLevel || 'Belgilanmagan'}
+                  </span>
+                </div>
+                <div className="text-xs text-white/50">
+                  {assignmentLevel ? (
+                    <span>Ushbu tadbir darajasiga mos keladigan ({assignmentLevel}) savollar ko'rsatilmoqda. Tadbir darajasini o'zgartirish uchun uni tahrirlash bo'limidan foydalaning.</span>
+                  ) : (
+                    <span>Tadbir darajasi belgilanmagan. Barcha darajadagi savollar ko'rsatilmoqda.</span>
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-3.5 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-sky-200 font-semibold">Tadbir test turi (Test Type)</span>
+                  <span className={`text-xs px-2.5 py-0.5 rounded-lg font-bold ${
+                    assignmentType ? 'bg-sky-500 text-white' : 'bg-white/10 text-white/60'
+                  }`}>
+                    {testTypeLabel(assignmentType) || 'Belgilanmagan'}
+                  </span>
+                </div>
+                <div className="text-xs text-white/50">
+                  {assignmentType ? (
+                    <span>Tanlangan savollar {testTypeLabel(assignmentType)} turiga mos kelishi kerak. Test turini o'zgartirish uchun tadbirni tahrirlang.</span>
+                  ) : (
+                    <span>Tadbir test turi belgilanmagan.</span>
+                  )}
                 </div>
                 {selectedQuestions.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
@@ -1264,33 +1305,9 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 )}
                 {typeMismatches.length > 0 && (
                   <div className="mt-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-                    {typeMismatches.length} ta tanlangan savol {testTypeLabel(assignmentType)} turiga mos emas. Mos savollarni tanlang yoki test turini Aralash qiling.
+                    {typeMismatches.length} ta tanlangan savol {testTypeLabel(assignmentType)} turiga mos emas. Mos savollarni tanlang yoki tadbir test turini Aralash qiling.
                   </div>
                 )}
-              </div>
-              <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-3">
-                <label className="block text-xs text-violet-200 mb-1.5 font-semibold">Test darajasi <span className="text-white/35">(ixtiyoriy)</span></label>
-                <input className="input-field" list="test-level-options" placeholder="Masalan: Beginner, O'rta, Advanced"
-                  value={assignmentLevel} onChange={e => setAssignmentLevel(e.target.value)} />
-                <datalist id="test-level-options">
-                  <option value="Beginner" />
-                  <option value="O'rta" />
-                  <option value="Advanced" />
-                </datalist>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {['Beginner', "O'rta", 'Advanced'].map(level => (
-                    <button key={level} type="button" onClick={() => setAssignmentLevel(level)}
-                      className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${assignmentLevel === level ? 'bg-violet-500 text-white' : 'bg-white/5 text-white/55 hover:bg-white/10 hover:text-white'}`}>
-                      {level}
-                    </button>
-                  ))}
-                  {assignmentLevel && (
-                    <button type="button" onClick={() => setAssignmentLevel('')}
-                      className="rounded-lg bg-white/5 px-2.5 py-1 text-xs font-bold text-white/45 hover:bg-white/10 hover:text-white">
-                      Tozalash
-                    </button>
-                  )}
-                </div>
               </div>
               <div className="space-y-2 max-h-80 overflow-y-auto">
                 {subjectQs.length > 0 && <div className="text-xs text-white/40 font-medium uppercase tracking-wider mt-1">Tegishli fan savollari</div>}
@@ -1313,6 +1330,9 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                     </div>
                   </label>
                 ))}
+                {centerQuestions.length > 0 && subjectQs.length === 0 && otherQs.length === 0 && (
+                  <div className="text-sm text-white/40 text-center py-6">Tanlangan darajaga mos savollar topilmadi.</div>
+                )}
                 {centerQuestions.length === 0 && (
                   <div className="text-sm text-white/40 text-center py-6">Bu markaz uchun savollar yaratilmagan. <br/>Savollar bo'limidan boshlang.</div>
                 )}
