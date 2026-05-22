@@ -70,7 +70,7 @@ def olympiads_list_create(request):
             )
             .order_by('-created_at')
         )
-        qs = queryset.filter(visible_events_filter(request.user)).distinct()
+        qs = queryset.filter(visible_events_filter(request.user), is_deleted=False).distinct()
         # Pagination: 500+ olimpiada bo'lishi mumkin, ayniqsa platform admin
         # uchun. Frontend grid'da hammasini bir martada ko'rsatish uchun
         # `?page_size=200` yuboradi — Default PageNumberPagination uni
@@ -125,12 +125,8 @@ def olympiad_detail(request, olympiad_id):
         )
 
     if request.method == 'DELETE':
-        if olympiad.attempts.exists() or olympiad.test_sessions.exists():
-            return Response(
-                {'detail': "Ushbu tadbirda ishtirokchilar urinishlari bor, uni o'chirib bo'lmaydi"},
-                status=http_status.HTTP_400_BAD_REQUEST,
-            )
-        olympiad.delete()
+        olympiad.is_deleted = True
+        olympiad.save(update_fields=['is_deleted'])
         return Response({'detail': "Tadbir muvaffaqiyatli o'chirildi"}, status=http_status.HTTP_200_OK)
 
     serializer = OlympiadSerializer(olympiad, data=request.data, partial=True)

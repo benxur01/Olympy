@@ -902,7 +902,7 @@ def center_stats(request, center_id):
     ).count()
 
     from olympiads.models import Olympiad
-    olympiads_qs = Olympiad.objects.filter(center=center)
+    olympiads_qs = Olympiad.objects.filter(center=center, is_deleted=False)
     olympiads_total = olympiads_qs.count()
     olympiads_by_status = {
         row['status']: row['total']
@@ -912,6 +912,7 @@ def center_stats(request, center_id):
     from attempts.models import TestAttempt
     attempt_aggregates = TestAttempt.objects.filter(
         olympiad__center=center,
+        olympiad__is_deleted=False,
     ).aggregate(
         total_attempts=Count('id'),
         average_score=Avg('score'),

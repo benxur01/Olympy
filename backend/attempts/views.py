@@ -531,7 +531,7 @@ def manager_stats(request):
     if not (is_admin or is_owner or is_manager):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
 
-    qs = TestAttempt.objects.filter(olympiad__center=center)
+    qs = TestAttempt.objects.filter(olympiad__center=center, olympiad__is_deleted=False)
     # Diskvalifitsiya bo'lganlar agregatga kirmaydi — aks holda o'rtacha
     # ball nohaq pasayardi. Lekin alohida hisob sifatida `disqualified_count`
     # ham qaytariladi.
@@ -552,7 +552,7 @@ def manager_stats(request):
     # Jami events soni `events_total` orqali qaytariladi, agregat esa
     # butun markaz bo'yicha hisoblanadi (50 limit bilan emas) — bu
     # foydalanuvchi uchun aniqroq.
-    olympiads_full_qs = Olympiad.objects.filter(center=center)
+    olympiads_full_qs = Olympiad.objects.filter(center=center, is_deleted=False)
     events_total = olympiads_full_qs.count()
     try:
         events_page = int(request.query_params.get('page') or 1)
