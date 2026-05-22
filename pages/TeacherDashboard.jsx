@@ -725,11 +725,11 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             if (lvl === 'beginner' || lvl === 'elementary' || lvl === 'oson' || lvl === 'easy') {
               return diff === 'oson' || diff === 'easy' || diff === 'beginner' || diff === 'elementary';
             }
-            if (lvl === "o'rta" || lvl === 'medium' || lvl === 'pre-intermediate' || lvl === 'intermediate') {
-              return diff === "o'rta" || diff === 'medium' || diff === 'pre-intermediate' || diff === 'intermediate';
+            if (lvl === "o'rta" || lvl === 'medium' || lvl === 'pre-intermediate' || lvl === 'pre-int' || lvl === 'intermediate' || lvl === 'int') {
+              return diff === "o'rta" || diff === 'medium' || diff === 'pre-intermediate' || diff === 'pre-int' || diff === 'intermediate' || diff === 'int';
             }
-            if (lvl === 'advanced' || lvl === 'upper-intermediate' || lvl === 'qiyin' || lvl === 'hard') {
-              return diff === 'qiyin' || diff === 'hard' || diff === 'advanced' || diff === 'upper-intermediate';
+            if (lvl === 'advanced' || lvl === 'upper-intermediate' || lvl === 'upper-int' || lvl === 'qiyin' || lvl === 'hard') {
+              return diff === 'qiyin' || diff === 'hard' || diff === 'advanced' || diff === 'upper-intermediate' || diff === 'upper-int';
             }
             return diff.includes(lvl) || lvl.includes(diff);
           };

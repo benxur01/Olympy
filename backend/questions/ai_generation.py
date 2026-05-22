@@ -14,6 +14,12 @@ DIFFICULTY_LABELS = {
     'easy': 'Oson',
     'medium': "O'rta",
     'hard': 'Qiyin',
+    'beginner': 'Beginner',
+    'elementary': 'Elementary',
+    'pre-int': 'Pre-Intermediate',
+    'int': 'Intermediate',
+    'upper-int': 'Upper-Intermediate',
+    'advanced': 'Advanced',
 }
 
 TYPE_MULTIPLE_CHOICE = "Ko'p tanlovli"

@@ -114,13 +114,21 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   );
 
   const _diffFromApi = (level, subject, chosenLevel) => {
+    const lvl = (level || '').trim().toLowerCase();
+    if (lvl === 'beginner') return 'Beginner';
+    if (lvl === 'elementary') return 'Elementary';
+    if (lvl === 'pre-int' || lvl === 'pre-intermediate') return 'Pre-Intermediate';
+    if (lvl === 'int' || lvl === 'intermediate') return 'Intermediate';
+    if (lvl === 'upper-int' || lvl === 'upper-intermediate') return 'Upper-Intermediate';
+    if (lvl === 'advanced') return 'Advanced';
+
     if (subject === 'Ingliz tili') {
-      if (chosenLevel && _diffToApi(chosenLevel) === _diffToApi(level)) {
+      if (chosenLevel && _diffToApi(chosenLevel, subject) === _diffToApi(level, subject)) {
         return chosenLevel;
       }
       return level === 'easy' ? 'Beginner' : level === 'hard' ? 'Advanced' : 'Intermediate';
     }
-    if (chosenLevel && _diffToApi(chosenLevel) === _diffToApi(level)) {
+    if (chosenLevel && _diffToApi(chosenLevel, subject) === _diffToApi(level, subject)) {
       return chosenLevel;
     }
     return level === 'easy' ? 'Oson' : level === 'hard' ? 'Qiyin' : "O'rta";
@@ -173,7 +181,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
         subject: aiForm.subject,
         topic: aiForm.topic,
         count: aiForm.count,
-        difficulty: _diffToApi(aiForm.level),
+        difficulty: _diffToApi(aiForm.level, aiForm.subject),
         question_type: aiForm.type,
       }, OlympyApi.getToken());
       const generated = (response?.questions || []).map(_mapAiGeneratedQuestion);
@@ -207,7 +215,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       const response = await OlympyApi.extractPdfQuestions(f, {
         center: myCenter?.backendId ?? myCenterId,
         subject: aiForm.subject,
-        difficulty: _diffToApi(aiForm.level),
+        difficulty: _diffToApi(aiForm.level, aiForm.subject),
         question_type: aiForm.type,
       }, OlympyApi.getToken());
       const extracted = (response?.questions || []).map(_mapPdfGeneratedQuestion);
@@ -226,10 +234,23 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     }
   };
 
-  const _diffToApi = (level) => {
+  const _diffToApi = (level, subject) => {
     const lvl = (level || '').trim().toLowerCase();
-    if (lvl === 'oson' || lvl === 'easy' || lvl === 'beginner' || lvl === 'elementary') return 'easy';
-    if (lvl === 'qiyin' || lvl === 'hard' || lvl === 'advanced' || lvl === 'upper-intermediate') return 'hard';
+    if (lvl === 'beginner' || lvl === 'beg') return 'beginner';
+    if (lvl === 'elementary' || lvl === 'elem') return 'elementary';
+    if (lvl === 'pre-intermediate' || lvl === 'pre-int') return 'pre-int';
+    if (lvl === 'intermediate' || lvl === 'int') return 'int';
+    if (lvl === 'upper-intermediate' || lvl === 'upper-int') return 'upper-int';
+    if (lvl === 'advanced' || lvl === 'adv') return 'advanced';
+
+    if (subject === 'Ingliz tili') {
+      if (lvl === 'oson' || lvl === 'easy') return 'beginner';
+      if (lvl === 'qiyin' || lvl === 'hard') return 'advanced';
+      return 'int';
+    }
+
+    if (lvl === 'oson' || lvl === 'easy') return 'easy';
+    if (lvl === 'qiyin' || lvl === 'hard') return 'hard';
     return 'medium';
   };
 
@@ -240,7 +261,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     options: q.options || [],
     correct_answer: q.correctAnswer ?? q.correct ?? 0,
     score: q.score ?? 3,
-    difficulty: _diffToApi(q.difficulty || q.level),
+    difficulty: _diffToApi(q.difficulty || q.level, q.subject || aiForm.subject),
     source: source || q.source || 'manual',
   });
 
@@ -284,7 +305,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
         options: newQ.options,
         correct_answer: newQ.correct,
         score: newQ.score,
-        difficulty: _diffToApi(newQ.level),
+        difficulty: _diffToApi(newQ.level, newQ.subject),
       };
       const promise = isEditing
         ? OlympyApi.updateQuestion(editingQuestionId, payload, token)
