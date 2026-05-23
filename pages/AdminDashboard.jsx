@@ -64,6 +64,31 @@ const AdminInitial = ({ name, color = 'bg-indigo-600/30 text-indigo-400 border b
   </div>
 );
 
+const AdminCenterLogo = ({ name, src, color = 'bg-indigo-600/30 text-indigo-400 border border-indigo-500/20' }) => {
+  const [hasError, setHasError] = React.useState(false);
+
+  React.useEffect(() => {
+    setHasError(false);
+  }, [src]);
+
+  if (src && !hasError) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        className="h-9 w-9 shrink-0 rounded-lg object-cover border border-white/10 shadow-[0_0_10px_rgba(255,255,255,0.05)]"
+        onError={() => setHasError(true)}
+      />
+    );
+  }
+
+  return (
+    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${color} text-sm font-bold shadow-[0_0_10px_rgba(99,102,241,0.05)]`}>
+      {(name || '?').trim()[0]?.toUpperCase() || '?'}
+    </div>
+  );
+};
+
 const AdminMetricCard = ({ label, value, delta, icon, tone = 'indigo' }) => {
   const tones = {
     indigo: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.05)]',
@@ -613,7 +638,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <div key={req.id} className="rounded-lg border border-white/5 bg-white/[0.02] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.15)]">
             <div className="flex flex-col gap-4 md:flex-row md:items-center">
               <div className="flex flex-1 items-center gap-3">
-                <AdminInitial name={center.name} color="bg-amber-500/20 text-amber-400 border border-amber-500/30" />
+                <AdminCenterLogo name={center.name} src={center.imageUrl} color="bg-amber-500/20 text-amber-400 border border-amber-500/30" />
                 <div className="min-w-0">
                   <div className="truncate text-sm font-extrabold text-white">{center.name}</div>
                   <div className="mt-1 text-xs font-semibold text-slate-400">
@@ -812,7 +837,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   <tr key={center.id} className="text-xs admin-table-row text-slate-300">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
-                        <AdminInitial name={center.name} />
+                        <AdminCenterLogo name={center.name} src={center.imageUrl} />
                         <div>
                           <div className="font-bold text-white">{center.name}</div>
                           <div className="text-[10px] font-semibold text-slate-500">{formatAdminDate(center.createdAt)}</div>
