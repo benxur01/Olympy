@@ -590,12 +590,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             <h2 className="text-[12px] font-black uppercase tracking-wider text-slate-300">Eng so'nggi tashkilotlar</h2>
             <button onClick={() => setPage('centers')} className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 transition">Hammasi</button>
           </div>
-          <div className="grid grid-cols-[1fr_70px_74px] border-b border-white/5 pb-2 text-[9px] font-black uppercase tracking-widest text-slate-500">
+          <div className="grid grid-cols-[1fr_70px_100px] border-b border-white/5 pb-2 text-[9px] font-black uppercase tracking-widest text-slate-500">
             <span>Tashkilot</span><span className="text-right">O'quvchi</span><span className="text-right">Holat</span>
           </div>
           <div className="divide-y divide-white/5">
             {dashboardCenters.map(center => (
-              <div key={center.id} className="grid grid-cols-[1fr_70px_74px] items-center gap-2 py-3 admin-table-row">
+              <div key={center.id} className="grid grid-cols-[1fr_70px_100px] items-center gap-2 py-3 admin-table-row">
                 <div className="flex min-w-0 items-center gap-3">
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/5 bg-white/5 text-xs font-black text-white">{center.name?.[0] || 'O'}</div>
                   <div className="min-w-0">
