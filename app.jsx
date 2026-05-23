@@ -360,17 +360,6 @@ const App = () => {
             />
           );
         }
-        const startsAt = olympiadStartMoment(activeOlympiad);
-        if (startsAt && startsAt.getTime() > Date.now()) {
-          return (
-            <PendingAccessCard
-              title={`${eventLabel} hali boshlanmagan`}
-              status="pending"
-              message={`${eventLabel} ${startsAt.toLocaleString('uz-UZ')} dan boshlanadi. Iltimos, kuting.`}
-              onBack={() => setPage(roleHomePage(user))}
-            />
-          );
-        }
         return <OlympiadTestPage olympiad={activeOlympiad} user={user} onFinish={handleTestFinish} onNavigate={navigate} />;
       }
       case 'leaderboard': return (
