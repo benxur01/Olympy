@@ -428,11 +428,23 @@ def me(request):
         # qo'shamiz, aks holda save(update_fields=...) uni DB'ga yozmaydi.
         if 'first_name' in data or 'last_name' in data:
             update_fields.append('full_name')
+
+        credentials_changed = ('username' in data) or ('phone' in data)
+        if credentials_changed:
+            user.token_version = (user.token_version or 0) + 1
+            update_fields.append('token_version')
+
         if update_fields:
             # save() ichidagi normalize/auto-full_name logikasi ishlashi
             # uchun update_fields'ga normalized_phone va phone qo'shilmaydi
             # (mavjud qiymatlar saqlanadi).
             user.save(update_fields=list(set(update_fields)))
+
+        if credentials_changed:
+            payload = _jwt_payload(user)
+            response = Response(UserSerializer(user, context={'request': request}).data)
+            return _set_auth_cookies(response, payload)
+
         return Response(UserSerializer(user, context={'request': request}).data)
 
     return Response(UserSerializer(request.user, context={'request': request}).data)
