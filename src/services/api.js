@@ -23,10 +23,10 @@ const AUTH_USER_KEY = 'olympy_api_user';
 const _defaultAuthStore = (() => {
   try {
     const env = (import.meta?.env?.VITE_AUTH_STORAGE || '').toLowerCase();
-    if (env === 'local' && typeof localStorage !== 'undefined') return localStorage;
-    if (typeof sessionStorage !== 'undefined') return sessionStorage;
+    if (env === 'session' && typeof sessionStorage !== 'undefined') return sessionStorage;
+    if (typeof localStorage !== 'undefined') return localStorage;
   } catch {}
-  return typeof localStorage !== 'undefined' ? localStorage : null;
+  return typeof sessionStorage !== 'undefined' ? sessionStorage : null;
 })();
 const _sessionStore = (() => {
   try { if (typeof sessionStorage !== 'undefined') return sessionStorage; } catch {}
