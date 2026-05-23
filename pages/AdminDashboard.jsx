@@ -170,6 +170,101 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   // Foydalanuvchilar sahifasi uchun alohida qidiruv input.
   const [userSearch, setUserSearch] = React.useState('');
 
+  // Profile settings state
+  const [editFirstName, setEditFirstName] = React.useState('');
+  const [editLastName, setEditLastName] = React.useState('');
+  const [editUsername, setEditUsername] = React.useState('');
+  const [editPhone, setEditPhone] = React.useState('');
+  const [savingProfile, setSavingProfile] = React.useState(false);
+
+  // Password settings state
+  const [oldPassword, setOldPassword] = React.useState('');
+  const [newPassword, setNewPassword] = React.useState('');
+  const [confirmPassword, setConfirmPassword] = React.useState('');
+  const [savingPassword, setSavingPassword] = React.useState(false);
+
+  React.useEffect(() => {
+    if (user) {
+      setEditFirstName(user.first_name || '');
+      setEditLastName(user.last_name || '');
+      setEditUsername(user.username || '');
+      setEditPhone(user.phone || '');
+    }
+  }, [user]);
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    if (!editPhone.trim()) {
+      showToast("Telefon raqami bo'sh bo'lishi mumkin emas!");
+      return;
+    }
+    setSavingProfile(true);
+    try {
+      if (isApi) {
+        const token = OlympyApi.getToken();
+        const payload = {
+          first_name: editFirstName,
+          last_name: editLastName,
+          username: editUsername,
+          phone: editPhone
+        };
+        const updated = await OlympyApi.updateProfile(payload, token);
+        showToast("Profil ma'lumotlari muvaffaqiyatli saqlandi!");
+        if (updated && updated.phone) {
+          // Update localized user state dynamically if needed
+          user.first_name = updated.first_name;
+          user.last_name = updated.last_name;
+          user.username = updated.username;
+          user.phone = updated.phone;
+          user.full_name = updated.full_name;
+        }
+      } else {
+        showToast("Profil ma'lumotlari yangilandi (Mock)!");
+      }
+    } catch (err) {
+      const errMsg = err?.message || err?.detail || "Xatolik yuz berdi";
+      showToast(`Xatolik: ${errMsg}`);
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleUpdatePassword = async (e) => {
+    e.preventDefault();
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      showToast("Barcha parollarni kiriting!");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      showToast("Yangi parollar bir-biriga mos kelmadi!");
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      if (isApi) {
+        const token = OlympyApi.getToken();
+        await OlympyApi.changePassword({
+          old_password: oldPassword,
+          new_password: newPassword
+        }, token);
+        showToast("Parol muvaffaqiyatli o'zgartirildi!");
+        setOldPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      } else {
+        showToast("Parol o'zgartirildi (Mock)!");
+        setOldPassword('');
+        setNewPassword('');
+        setConfirmPassword('');
+      }
+    } catch (err) {
+      const errMsg = err?.message || err?.detail || "Xatolik yuz berdi";
+      showToast(`Xatolik: ${errMsg}`);
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(''), 3000);
@@ -945,20 +1040,114 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div>
         <h1 className="text-[20px] font-black leading-tight text-white">Sozlamalar</h1>
-        <p className="mt-1 text-[11px] font-bold text-slate-400">Admin panel sozlamalari.</p>
+        <p className="mt-1 text-[11px] font-bold text-slate-400">Profil ma'lumotlari va parolni o'zgartirish.</p>
       </div>
-      <section className="admin-card p-5">
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
-            <div className="text-xs font-extrabold uppercase tracking-wider text-slate-300">Public listing qoidasi</div>
-            <div className="mt-1 text-[11px] font-semibold text-slate-500 leading-relaxed">Faqat tasdiqlangan tashkilotlar o'quvchilar va mehmonlarga ko'rinadi.</div>
-          </div>
-          <div className="rounded-lg border border-white/5 bg-white/[0.02] p-4">
-            <div className="text-xs font-extrabold uppercase tracking-wider text-slate-300">Ariza oqimi</div>
-            <div className="mt-1 text-[11px] font-semibold text-slate-500 leading-relaxed">Direktor arizasi admin qaroridan keyin yakunlanadi.</div>
-          </div>
-        </div>
-      </section>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {/* Profil Sozlamalari */}
+        <section className="admin-card p-5 space-y-4">
+          <h2 className="text-xs font-black tracking-wider uppercase text-slate-300 mb-2 flex items-center gap-2">
+            <Icon name="edit" size={14} className="text-indigo-400" />
+            Profil Sozlamalari
+          </h2>
+          <form onSubmit={handleUpdateProfile} className="space-y-4">
+            <div>
+              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Ism</label>
+              <input
+                type="text"
+                value={editFirstName}
+                onChange={e => setEditFirstName(e.target.value)}
+                className="h-9 w-full admin-input px-3 text-xs outline-none"
+                placeholder="Ismingizni kiriting"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Familiya</label>
+              <input
+                type="text"
+                value={editLastName}
+                onChange={e => setEditLastName(e.target.value)}
+                className="h-9 w-full admin-input px-3 text-xs outline-none"
+                placeholder="Familiyangizni kiriting"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Username</label>
+              <input
+                type="text"
+                value={editUsername}
+                onChange={e => setEditUsername(e.target.value)}
+                className="h-9 w-full admin-input px-3 text-xs outline-none"
+                placeholder="Username kiriting"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Telefon Raqami</label>
+              <input
+                type="text"
+                value={editPhone}
+                onChange={e => setEditPhone(e.target.value)}
+                className="h-9 w-full admin-input px-3 text-xs outline-none"
+                placeholder="+998901234567"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={savingProfile}
+              className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 py-3 text-xs font-bold transition disabled:opacity-50"
+            >
+              {savingProfile ? "Saqlanmoqda..." : "Saqlash"}
+            </button>
+          </form>
+        </section>
+
+        {/* Parolni Yangilash */}
+        <section className="admin-card p-5 space-y-4">
+          <h2 className="text-xs font-black tracking-wider uppercase text-slate-300 mb-2 flex items-center gap-2">
+            <Icon name="shield" size={14} className="text-emerald-400" />
+            Parolni O'zgartirish
+          </h2>
+          <form onSubmit={handleUpdatePassword} className="space-y-4">
+            <div>
+              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Joriy Parol</label>
+              <input
+                type="password"
+                value={oldPassword}
+                onChange={e => setOldPassword(e.target.value)}
+                className="h-9 w-full admin-input px-3 text-xs outline-none"
+                placeholder="Joriy parolingizni kiriting"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Yangi Parol</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                className="h-9 w-full admin-input px-3 text-xs outline-none"
+                placeholder="Yangi parol kiriting"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Yangi Parolni Tasdiqlash</label>
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                className="h-9 w-full admin-input px-3 text-xs outline-none"
+                placeholder="Yangi parolni qayta kiriting"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={savingPassword}
+              className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-500 py-3 text-xs font-bold transition disabled:opacity-50"
+            >
+              {savingPassword ? "Yangilanmoqda..." : "Parolni Yangilash"}
+            </button>
+          </form>
+        </section>
+      </div>
     </div>
   );
 

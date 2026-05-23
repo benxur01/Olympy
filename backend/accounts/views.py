@@ -418,6 +418,11 @@ def me(request):
             if isinstance(new_username, str) and new_username.strip() == '':
                 user.username = None
             update_fields.append('username')
+        if 'phone' in data:
+            user.phone = data.get('phone')
+            user.normalized_phone = data.get('phone')
+            update_fields.append('phone')
+            update_fields.append('normalized_phone')
         # first/last yangilangan bo'lsa save() ichida full_name avtomatik
         # qayta hisoblanadi — shu sababli update_fields ga full_name'ni ham
         # qo'shamiz, aks holda save(update_fields=...) uni DB'ga yozmaydi.
