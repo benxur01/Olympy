@@ -18,15 +18,24 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [serverExpiresAt, setServerExpiresAt] = React.useState(null);
   const [serverClockSkewMs, setServerClockSkewMs] = React.useState(0);
 
-  const now = new Date();
+  const [currentTime, setCurrentTime] = React.useState(() => new Date());
+
   // start_datetime backenddan ISO bo'lib keladi va vaqt mintaqasiga bog'liq
   // emas; mock store esa startDate+startTime ni lokal vaqt sifatida saqlaydi.
   // olympiadStartMoment ikkalasini ham to'g'ri parse qiladi va vaqt mintaqasi
   // sababli kun siljishi muammosini bartaraf etadi.
   const startDt = liveOlympiad ? olympiadStartMoment(liveOlympiad) : null;
   const endDt = startDt ? new Date(startDt.getTime() + (liveOlympiad.duration || 60) * 60000) : null;
-  const isBeforeStart = startDt && now < startDt;
-  const isAfterEnd = endDt && now > endDt;
+  const isBeforeStart = startDt && currentTime < startDt;
+  const isAfterEnd = endDt && currentTime > endDt;
+
+  React.useEffect(() => {
+    if (!isBeforeStart) return undefined;
+    const t = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(t);
+  }, [isBeforeStart]);
 
   const assignedIds = liveOlympiad?.questionIds || [];
   const assignedQuestions = assignedIds
@@ -519,9 +528,42 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
   if (isBeforeStart) {
     const startLabel = startDt ? startDt.toLocaleString('uz-UZ') : '—';
-    return <PendingAccessCard title="Olimpiada hali boshlanmagan" status="pending"
-      message={`Boshlanish vaqti: ${startLabel}`}
-      onBack={() => onNavigate('student')} />;
+    const totalSec = startDt ? Math.max(0, Math.floor((startDt.getTime() - currentTime.getTime()) / 1000)) : 0;
+    const hours = Math.floor(totalSec / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+    const seconds = totalSec % 60;
+
+    const countdownEl = (
+      <div className="mt-6 space-y-4">
+        <div className="text-xs text-white/40 uppercase tracking-widest font-extrabold">Boshlanishigacha qoldi</div>
+        <div className="flex justify-center gap-2">
+          {hours > 0 && (
+            <div className="glass rounded-2xl p-3 min-w-[70px] border border-white/5 shadow-lg">
+              <div className="text-3xl font-black text-white font-mono leading-none">{String(hours).padStart(2, '0')}</div>
+              <div className="text-[8px] text-white/40 uppercase font-bold tracking-wider mt-1.5 leading-none">Soat</div>
+            </div>
+          )}
+          <div className="glass rounded-2xl p-3 min-w-[70px] border border-white/5 shadow-lg">
+            <div className="text-3xl font-black text-white font-mono leading-none">{String(minutes).padStart(2, '0')}</div>
+            <div className="text-[8px] text-white/40 uppercase font-bold tracking-wider mt-1.5 leading-none">Daqiqa</div>
+          </div>
+          <div className="glass rounded-2xl p-3 min-w-[70px] border border-white/5 shadow-lg">
+            <div className="text-3xl font-black text-indigo-400 font-mono leading-none animate-pulse">{String(seconds).padStart(2, '0')}</div>
+            <div className="text-[8px] text-white/40 uppercase font-bold tracking-wider mt-1.5 leading-none">Soniya</div>
+          </div>
+        </div>
+      </div>
+    );
+
+    return (
+      <PendingAccessCard
+        title="Olimpiada hali boshlanmagan"
+        status="pending"
+        message={`Olimpiada ${startLabel} dan boshlanadi. Iltimos, kuting.`}
+        extra={countdownEl}
+        onBack={() => onNavigate('student')}
+      />
+    );
   }
   if (isAfterEnd) {
     return <PendingAccessCard title="Olimpiada tugagan" status="rejected"
