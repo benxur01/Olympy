@@ -121,6 +121,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   };
 
   const _diffFromApi = (level, subject, chosenLevel) => {
+    if (chosenLevel) return chosenLevel;
     const lvl = (level || '').trim().toLowerCase();
     if (lvl === 'beginner') return 'Beginner';
     if (lvl === 'elementary') return 'Elementary';
@@ -130,13 +131,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     if (lvl === 'advanced') return 'Advanced';
 
     if (subject === 'Ingliz tili') {
-      if (chosenLevel && _diffToCategory(chosenLevel) === _diffToCategory(level)) {
-        return chosenLevel;
-      }
       return level === 'easy' ? 'Beginner' : level === 'hard' ? 'Advanced' : 'Intermediate';
-    }
-    if (chosenLevel && _diffToCategory(chosenLevel) === _diffToCategory(level)) {
-      return chosenLevel;
     }
     return level === 'easy' ? 'Oson' : level === 'hard' ? 'Qiyin' : "O'rta";
   };
