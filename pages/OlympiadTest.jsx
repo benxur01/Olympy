@@ -555,11 +555,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       </div>
     );
 
+    const eventLabel = eventTypeLabel(liveOlympiad?.eventType || 'competition');
     return (
       <PendingAccessCard
-        title="Olimpiada hali boshlanmagan"
+        title={`${eventLabel} hali boshlanmagan`}
         status="pending"
-        message={`Olimpiada ${startLabel} dan boshlanadi. Iltimos, kuting.`}
+        message={`${eventLabel} ${startLabel} dan boshlanadi. Iltimos, kuting.`}
         extra={countdownEl}
         onBack={() => onNavigate('student')}
       />
