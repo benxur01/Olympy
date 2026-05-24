@@ -351,15 +351,6 @@ const LandingPage = ({ onNavigate }) => {
     { icon: '👤', title: 'O\'quvchi profili', desc: 'Har bir o\'quvchining yutuqlari va natijalarini kuzating', color: 'from-violet-500 to-purple-600' },
   ];
 
-  // Platforma yangi ishga tushgan — soxta marketing raqamlari o'rniga
-  // platforma imkoniyatlari ko'rsatkichlari turadi.
-  const stats = [
-    { value: 'AI', label: 'Savol generator', icon: '✨' },
-    { value: 'PDF', label: 'Avtomatik import', icon: '📄' },
-    { value: 'Telegram', label: 'Bot integratsiyasi', icon: '💬' },
-    { value: '24/7', label: 'Online platforma', icon: '⚡' },
-  ];
-
   const steps = [
     { num: '01', title: 'Ro\'yxatdan o\'ting', desc: 'Maktab, o\'quv markaz yoki tashkilot sifatida platformaga qo\'shiling', icon: '🚀' },
     { num: '02', title: 'Savollar yarating', desc: 'AI, PDF yoki qo\'lda savollar bazasini to\'ldiring', icon: '✏️' },
@@ -372,7 +363,7 @@ const LandingPage = ({ onNavigate }) => {
   // direktorlar bilan bog'lanish uchun. Real to'lov-modul tayyor bo'lganda
   // bu blok dynamicga o'zgartiriladi.
   const pricing = [
-    { name: 'Boshlang\'ich', price: 'Bepul', desc: 'Kichik tashkilotlar uchun', features: ['5 ta olimpiada/oy', '50 ta o\'quvchi', 'Asosiy hisobotlar', 'Email qo\'llab-quvvatlash'], popular: false },
+    { name: 'Boshlang\'ich', price: 'Hozir bepul', desc: 'Barcha imkoniyatlar ochiq, to\'lov moduli tez orada', features: ['Asosiy hisobotlar', 'Email qo\'llab-quvvatlash'], popular: false },
     { name: 'Professional', price: 'Bog\'laning', desc: 'O\'sib borayotgan tashkilotlar uchun', features: ['Cheksiz olimpiada', '500 ta o\'quvchi', 'AI savol yaratish', 'PDF import', 'Telegram bot', 'Batafsil tahlil'], popular: true },
     { name: 'Enterprise', price: 'Bog\'laning', desc: 'Yirik ta\'lim tarmoqlari uchun', features: ['Cheksiz hamma narsa', 'Maxsus integratsiya', 'Shaxsiy menejer', 'API kirish', 'SLA kafolati'], popular: false },
   ];
@@ -400,8 +391,70 @@ const LandingPage = ({ onNavigate }) => {
           <div className="flex items-center gap-2 md:gap-3 flex-shrink-0">
             <button onClick={() => onNavigate('login')} className="hidden md:block btn-ghost px-4 py-1.5 rounded-xl text-sm font-medium">Kirish</button>
             <button onClick={() => onNavigate('register')} className="btn-primary px-3 md:px-4 py-1.5 rounded-xl text-xs md:text-sm font-semibold">Boshlash</button>
+            <button
+              onClick={() => setMobileMenu(v => !v)}
+              className="md:hidden btn-ghost inline-flex items-center justify-center w-9 h-9 rounded-xl text-white/80"
+              aria-label="Menyu"
+              aria-expanded={mobileMenu}
+            >
+              {mobileMenu ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
+              )}
+            </button>
           </div>
         </div>
+        {mobileMenu && (
+          <div
+            className="md:hidden fixed inset-0 z-40"
+            onClick={() => setMobileMenu(false)}
+            style={{ top: '52px', background: 'rgba(6, 8, 24, 0.85)' }}
+          >
+            <div
+              className="absolute left-0 right-0 top-0 border-b border-white/10"
+              style={{ background: 'rgba(15, 23, 42, 0.98)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col gap-1 text-sm">
+                <a
+                  href="#features"
+                  onClick={() => setMobileMenu(false)}
+                  className="px-3 py-3 rounded-xl text-white/80 hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  Xususiyatlar
+                </a>
+                <a
+                  href="#how"
+                  onClick={() => setMobileMenu(false)}
+                  className="px-3 py-3 rounded-xl text-white/80 hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  Qanday ishlaydi
+                </a>
+                <a
+                  href="#pricing"
+                  onClick={() => setMobileMenu(false)}
+                  className="px-3 py-3 rounded-xl text-white/80 hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  Narxlar
+                </a>
+                <button
+                  onClick={() => { setMobileMenu(false); onNavigate('login'); }}
+                  className="btn-ghost mt-2 px-4 py-2.5 rounded-xl text-sm font-medium text-left"
+                >
+                  Kirish
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </nav>
 
       {/* Hero */}
@@ -472,12 +525,6 @@ const LandingPage = ({ onNavigate }) => {
                   <Icon name="chevronRight" size={18} />
                 </button>
               </Magnetic>
-              <Magnetic>
-                <button onClick={() => onNavigate('register')} className="btn-ghost inline-flex items-center justify-center gap-2 px-5 md:px-6 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-medium border-cyan-500/30 text-cyan-200 w-full sm:w-auto">
-                  <Icon name="building" size={18} />
-                  Tashkilot qo'shish
-                </button>
-              </Magnetic>
             </div>
 
             <div className="grid grid-cols-3 gap-2.5 md:gap-4 max-w-xl">
@@ -502,30 +549,6 @@ const LandingPage = ({ onNavigate }) => {
             </div>
             <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Mahsulot qanday ko'rinadi?</h2>
             <p className="text-white/45 max-w-xl mx-auto text-sm md:text-base">Dashboard, test oynasi, reyting va profil ekranlari landing ichida ko'rinadigan qilib joylandi.</p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4 mb-7 md:mb-10">
-            {screens.map((s, i) => (
-              <button
-                key={s.label}
-                onClick={() => setActiveScreen(i)}
-                className={`group text-left rounded-2xl overflow-hidden border border-white/10 transition-all hover:-translate-y-1 scroll-reveal scroll-reveal-delay-${(i % 4) + 1}`}
-                style={{ background: 'rgba(255,255,255,0.06)' }}
-              >
-                <div className="aspect-[16/10] overflow-hidden" style={{ background: '#071124' }}>
-                  <img src={s.img} alt={s.label} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]" />
-                </div>
-                <div className="flex items-center gap-3 px-4 py-3">
-                  <span className="flex h-9 w-9 items-center justify-center rounded-xl text-cyan-200" style={{ background: 'rgba(34,211,238,0.12)' }}>
-                    <Icon name={s.icon} size={18} />
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold text-white truncate">{s.label}</div>
-                    <div className="text-xs text-white/40 truncate">{s.desc}</div>
-                  </div>
-                </div>
-              </button>
-            ))}
           </div>
 
           {/* Tabs */}
@@ -633,19 +656,6 @@ const LandingPage = ({ onNavigate }) => {
         `}</style>
       </section>
 
-      {/* Stats */}
-      <section className="py-10 md:py-16 border-y border-white/5" style={{ background: 'rgba(99,102,241,0.03)' }}>
-        <div className="max-w-5xl mx-auto px-4 md:px-6 grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8">
-          {stats.map((s, i) => (
-            <div key={i} className={`text-center min-w-0 scroll-reveal scroll-reveal-delay-${(i % 4) + 1}`}>
-              <div className="text-2xl md:text-3xl mb-1.5 md:mb-2">{s.icon}</div>
-              <div className="text-2xl md:text-4xl font-black gradient-text mb-0.5 md:mb-1 truncate">{s.value}</div>
-              <div className="text-xs md:text-sm text-white/40 leading-tight">{s.label}</div>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* Features */}
       <section id="features" className="py-12 md:py-24 max-w-7xl mx-auto px-4 md:px-6">
         <div className="text-center mb-8 md:mb-16 scroll-reveal">
@@ -723,7 +733,7 @@ const LandingPage = ({ onNavigate }) => {
               const delayClass = `scroll-reveal scroll-reveal-delay-${(i % 3) + 1}`;
               // Bepul plan to'g'ridan-to'g'ri ro'yxatdan o'tishga, qolgan
               // ikkita plan esa email orqali bog'lanish uchun.
-              const isFree = p.price === 'Bepul';
+              const isFree = typeof p.price === 'string' && p.price.toLowerCase().includes('bepul');
               const handleClick = () => {
                 if (isFree) onNavigate('register');
                 else window.location.href = `mailto:sanjarruzmetov017@gmail.com?subject=Olympy ${p.name} reja haqida`;
@@ -784,11 +794,6 @@ const LandingPage = ({ onNavigate }) => {
           </div>
           <div className="text-xs md:text-sm text-white/30">© {new Date().getFullYear()} Olympy. Barcha huquqlar himoyalangan.</div>
           <div className="flex flex-wrap justify-center items-center gap-4 md:gap-6 text-xs md:text-sm text-white/40">
-            {/* Maxfiylik / Shartlar uchun alohida sahifa hozircha yo'q —
-                shu sababli ko'rsatilmaydi/disabled. Aloqa esa to'g'ridan
-                mailto orqali ochiladi. */}
-            <span className="cursor-not-allowed opacity-50" title="Tez orada">Maxfiylik</span>
-            <span className="cursor-not-allowed opacity-50" title="Tez orada">Shartlar</span>
             <a href="mailto:sanjarruzmetov017@gmail.com" className="hover:text-white/70 transition-colors">Aloqa</a>
             <span className="w-px h-4 bg-white/10" aria-hidden="true" />
             <a href="https://t.me/proskilluz" target="_blank" rel="noreferrer noopener"
