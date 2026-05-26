@@ -5,4 +5,6 @@ from . import views
 # Mounted under /api/manager/
 urlpatterns = [
     path('stats/', views.manager_stats, name='manager-stats'),
+    path('question-difficulty-stats/', views.question_difficulty_stats, name='question-difficulty-stats'),
+    path('olympiads/<int:olympiad_id>/export/', views.export_olympiad_results_xlsx, name='export-results'),
 ]

@@ -66,6 +66,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [deleteAllConfirm, setDeleteAllConfirm] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState([]);
   const [bulkSaving, setBulkSaving] = React.useState(false);
+  // Excel/CSV import state'lari
+  const [importLoading, setImportLoading] = React.useState(false);
+  const [importResult, setImportResult] = React.useState(null);
+  const [importErrorsOpen, setImportErrorsOpen] = React.useState(false);
+  const importInputRef = React.useRef(null);
 
   const toggleSelectQuestion = (id) => {
     setSelectedIds(prev =>
@@ -234,6 +239,56 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       setPdfLoading(false);
       e.target.value = '';
     }
+  };
+
+  // Excel/CSV import handler
+  const handleImport = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!isApi) {
+      showApiToast("⚠ Import faqat akkaunt bilan kirgan rejimda ishlaydi");
+      e.target.value = '';
+      return;
+    }
+    if (!myCenterId) {
+      showApiToast("⚠ Markaz aniqlanmadi");
+      e.target.value = '';
+      return;
+    }
+    setImportLoading(true);
+    setImportResult(null);
+    setImportErrorsOpen(false);
+    try {
+      const backendCenterId = myCenter?.backendId ?? myCenterId;
+      const res = await OlympyApi.importQuestionsExcel(backendCenterId, f, OlympyApi.getToken());
+      setImportResult(res);
+      // Savollar ro'yxatini qayta yuklash
+      if (apiQuestionsRes.reload) apiQuestionsRes.reload();
+      const msg = `${res.created || 0} ta savol qo'shildi`;
+      const errCount = res.error_count || (res.errors || []).length;
+      showApiToast(errCount ? `${msg}. ${errCount} ta xatolik bor.` : msg);
+    } catch (err) {
+      showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Import bo'lmadi"}`);
+    } finally {
+      setImportLoading(false);
+      e.target.value = '';
+    }
+  };
+
+  // Namuna CSV template yuklab berish
+  const downloadImportTemplate = () => {
+    const header = "savol,variant_a,variant_b,variant_c,variant_d,togri_javob,qiyinlik,fan";
+    const sample = "2+2 nechaga teng?,3,4,5,6,B,easy,Matematika";
+    const csv = `﻿${header}\n${sample}\n`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'olympy-savollar-namuna.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const _diffToApi = (level, subject) => {
@@ -430,14 +485,74 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           <p className="text-white/40 text-xs md:text-sm">{questions.length} ta savol · {allSubjects.length} ta fan</p>
         </div>
         {mode === 'list' && (
-          <div className="grid grid-cols-3 md:flex md:gap-2 gap-2">
+          <div className="grid grid-cols-2 md:flex md:flex-wrap md:gap-2 gap-2">
             <button onClick={() => setMode('manual')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5"><Icon name="edit" size={14} /> <span className="hidden sm:inline">Qo'lda yaratish</span><span className="sm:hidden">Qo'lda</span></button>
             <button onClick={() => setMode('ai')} className="btn-primary text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5"><Icon name="sparkles" size={14} /> <span className="hidden sm:inline">AI orqali</span><span className="sm:hidden">AI</span></button>
             <button onClick={() => setMode('pdf')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-cyan-500/30 text-cyan-300"><Icon name="upload" size={14} /> <span className="hidden sm:inline">PDF dan</span><span className="sm:hidden">PDF</span></button>
+            <button
+              onClick={() => importInputRef.current?.click()}
+              disabled={importLoading}
+              className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-emerald-500/30 text-emerald-300 disabled:opacity-50"
+            >
+              <Icon name="upload" size={14} />
+              <span className="hidden sm:inline">{importLoading ? 'Yuklanmoqda...' : 'Excel/CSV import'}</span>
+              <span className="sm:hidden">{importLoading ? '...' : 'Excel'}</span>
+            </button>
+            <button
+              onClick={downloadImportTemplate}
+              className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-white/10 text-white/60"
+              title="Namuna CSV yuklab olish"
+            >
+              <Icon name="download" size={14} />
+              <span className="hidden sm:inline">Namuna</span>
+              <span className="sm:hidden">CSV</span>
+            </button>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".xlsx,.xlsm,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+              className="hidden"
+              onChange={handleImport}
+            />
           </div>
         )}
         {mode !== 'list' && <button onClick={() => { setMode('list'); setAiResult(null); setPdfResult(null); setPdfProvider(''); setPdfVision(false); setEditingQuestionId(null); }} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 w-full md:w-auto"><Icon name="arrowLeft" size={14} /> Orqaga</button>}
       </div>
+
+      {/* Import natijasi banner */}
+      {mode === 'list' && importResult && (
+        <div className={`glass rounded-2xl p-3 md:p-4 border ${(importResult.error_count || 0) > 0 ? 'border-amber-500/30' : 'border-emerald-500/30'}`}>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div className="text-sm">
+              <span className="text-white font-semibold">{importResult.created || 0} ta savol qo'shildi</span>
+              {(importResult.error_count || 0) > 0 && (
+                <span className="text-amber-300 ml-2">{importResult.error_count} ta xato bor</span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {(importResult.errors || []).length > 0 && (
+                <button
+                  onClick={() => setImportErrorsOpen(v => !v)}
+                  className="btn-ghost text-xs px-3 py-1.5 rounded-xl"
+                >{importErrorsOpen ? 'Yopish' : "Xatolarni ko'rish"}</button>
+              )}
+              <button
+                onClick={() => { setImportResult(null); setImportErrorsOpen(false); }}
+                className="text-white/40 hover:text-white"
+              ><Icon name="x" size={16} /></button>
+            </div>
+          </div>
+          {importErrorsOpen && (importResult.errors || []).length > 0 && (
+            <div className="mt-3 max-h-48 overflow-y-auto space-y-1 text-xs">
+              {(importResult.errors || []).map((err, i) => (
+                <div key={i} className="rounded-lg bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 text-rose-200">
+                  <span className="font-bold mr-2">Qator {err.row}:</span>{err.detail}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* LIST MODE */}
       {mode === 'list' && (

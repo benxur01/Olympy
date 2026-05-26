@@ -305,6 +305,64 @@ def send_membership_removed_notification(user, center, role):
     logger.info('[telegram] → %s sent=%s membership-removed role=%s', user.normalized_phone, sent, role)
 
 
+def send_attempt_result_to_parents(attempt):
+    """O'quvchi olimpiada natijasini topshirganda barcha ulangan ota-onalarga
+    Telegram orqali xabar yuboradi.
+
+    `ParentStudentLink` modelidan `student=attempt.user` bo'lgan barcha
+    parent'larni topib, har biriga `telegram_chat_id` mavjud bo'lsa xabar
+    yuboriladi. Xato bo'lsa log yoziladi, asosiy jarayonga ta'sir qilmaydi.
+    """
+    try:
+        from accounts.models import ParentStudentLink
+    except Exception:
+        logger.exception('ParentStudentLink import failed')
+        return
+
+    student = attempt.user
+    olympiad = attempt.olympiad
+    student_name = (student.full_name or student.normalized_phone or 'O\'quvchi').strip()
+    olympiad_title = getattr(olympiad, 'title', '') or '—'
+    score = attempt.score or 0
+    correct = attempt.correct_count or 0
+    total = attempt.total_questions or 0
+    message = (
+        f"📊 {student_name} olimpiadani tugatdi!\n"
+        f"🏆 Olimpiada: {olympiad_title}\n"
+        f"⭐ Ball: {score}%\n"
+        f"✅ To'g'ri: {correct}/{total}"
+    )
+
+    try:
+        parent_links = list(
+            ParentStudentLink.objects
+            .filter(student=student)
+            .select_related('parent')
+        )
+    except Exception:
+        logger.exception('ParentStudentLink lookup failed for student=%s', student.id)
+        return
+
+    for link in parent_links:
+        parent_user = link.parent
+        if not parent_user:
+            continue
+        chat_id = getattr(parent_user, 'telegram_chat_id', '')
+        if not chat_id:
+            logger.info(
+                '[telegram-skip] parent=%s has no telegram_chat_id (student=%s)',
+                parent_user.id, student.id,
+            )
+            continue
+        try:
+            _send_telegram_to_user(parent_user, message)
+        except Exception:
+            logger.exception(
+                'send_attempt_result_to_parents failed parent=%s student=%s',
+                parent_user.id, student.id,
+            )
+
+
 def send_cheating_detected_notification(student, olympiad, center, reason=''):
     """Notify center managers/owner that a student left the test surface.
 

@@ -33,6 +33,125 @@ from .serializers import SubmitAttemptSerializer, TestAttemptSerializer
 from .session_utils import score_session_answers, session_is_expired
 
 
+def _user_can_manage_olympiad(user, olympiad):
+    """Olympiad uchun manager/owner/teacher/admin huquqi tekshiruvi."""
+    if user.is_platform_admin:
+        return True
+    center = olympiad.center
+    if not center:
+        return False
+    if center.owner_id == user.id:
+        return True
+    return CenterMembership.objects.filter(
+        user=user,
+        center=center,
+        role__in=[
+            CenterMembership.ROLE_MANAGER,
+            CenterMembership.ROLE_OWNER,
+            CenterMembership.ROLE_TEACHER,
+        ],
+        status=CenterMembership.STATUS_APPROVED,
+    ).exists()
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def export_olympiad_results_xlsx(request, olympiad_id):
+    """GET /api/manager/olympiads/<id>/export/ — natijalarni .xlsx faylga eksport.
+
+    Ustunlar: O'rin, O'quvchi ismi, Telefon, Ball (%), To'g'ri, Noto'g'ri,
+    Vaqt (daqiqa), Sana. Faqat shu markaz manager/owner/teacher/admin uchun.
+    """
+    olympiad = get_object_or_404(
+        Olympiad.objects.select_related('center'),
+        pk=olympiad_id,
+    )
+    if not _user_can_manage_olympiad(request.user, olympiad):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ImportError:
+        return Response(
+            {'detail': "openpyxl o'rnatilmagan"},
+            status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    attempts = list(
+        TestAttempt.objects
+        .filter(olympiad=olympiad, disqualified=False)
+        .select_related('user')
+        .order_by('-score', 'time_spent', 'submitted_at')
+    )
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Natijalar"
+
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+    header_fill = PatternFill(start_color='4F46E5', end_color='4F46E5', fill_type='solid')
+    center_align = Alignment(horizontal='center', vertical='center')
+    headers = [
+        "O'rin",
+        "O'quvchi ismi",
+        'Telefon',
+        'Ball (%)',
+        "To'g'ri",
+        "Noto'g'ri",
+        'Vaqt (daqiqa)',
+        'Sana',
+    ]
+    for col_idx, header in enumerate(headers, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center_align
+
+    for idx, attempt in enumerate(attempts, start=1):
+        user = attempt.user
+        full_name = getattr(user, 'full_name', '') or '—'
+        phone = getattr(user, 'normalized_phone', '') or getattr(user, 'phone', '') or '—'
+        time_minutes = round((attempt.time_spent or 0) / 60.0, 1)
+        submitted_date = (
+            attempt.submitted_at.strftime('%Y-%m-%d %H:%M')
+            if attempt.submitted_at else ''
+        )
+        row_idx = idx + 1
+        ws.cell(row=row_idx, column=1, value=idx).alignment = center_align
+        ws.cell(row=row_idx, column=2, value=full_name)
+        ws.cell(row=row_idx, column=3, value=phone)
+        ws.cell(row=row_idx, column=4, value=attempt.score).alignment = center_align
+        ws.cell(row=row_idx, column=5, value=attempt.correct_count).alignment = center_align
+        ws.cell(row=row_idx, column=6, value=attempt.wrong_count).alignment = center_align
+        ws.cell(row=row_idx, column=7, value=time_minutes).alignment = center_align
+        ws.cell(row=row_idx, column=8, value=submitted_date).alignment = center_align
+
+    column_widths = [8, 30, 18, 12, 10, 12, 14, 18]
+    for i, width in enumerate(column_widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = width
+    ws.freeze_panes = 'A2'
+
+    from io import BytesIO
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    response = HttpResponse(
+        buf.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    safe_title = ''.join(
+        ch for ch in (olympiad.title or 'olimpiada')
+        if ch.isalnum() or ch in (' ', '_', '-')
+    )[:60].strip() or 'olimpiada'
+    safe_title = safe_title.replace(' ', '_')
+    response['Content-Disposition'] = (
+        f'attachment; filename="olympy-{safe_title}-{olympiad.id}-results.xlsx"'
+    )
+    return response
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([ScopedRateThrottle])
@@ -191,6 +310,33 @@ def submit_attempt(request):
         # latency'ni oshirardi. Funksiyaning o'zi mavjud, kerak bo'lsa
         # cron yoki manager dashboard'ida chaqiriladi.
 
+        # Ota-onalarga Telegram xabari. Sinxron API call'ni request thread'ini
+        # bloklamasligi uchun alohida daemon thread'da yuboramiz. Xato bo'lsa
+        # asosiy submit jarayoniga ta'sir qilmaydi (try/except ichida).
+        try:
+            from notifications.services import send_attempt_result_to_parents
+            import threading
+            attempt_for_parents = attempt
+
+            def _notify_parents():
+                from django.db import close_old_connections
+                close_old_connections()
+                try:
+                    send_attempt_result_to_parents(attempt_for_parents)
+                except Exception:
+                    import logging
+                    logging.getLogger(__name__).exception(
+                        'parent notification failed for attempt=%s',
+                        attempt_for_parents.id,
+                    )
+
+            threading.Thread(target=_notify_parents, daemon=True).start()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'failed to start parent notification thread'
+            )
+
         data = TestAttemptSerializer(attempt).data
         data['max_score'] = max_possible
         # Yangi semantika: blank (javob berilmagan) va answered alohida
@@ -344,6 +490,34 @@ def attempt_detail(request, attempt_id):
         'center_id': olympiad.center_id,
         'center_name': olympiad.center.name if olympiad.center_id else '',
     }
+    # Review mode: faqat attempt egasi (yoki manager/admin) savollarni
+    # ko'rishi mumkin. Bu javoblarni tahlil qilish uchun ishlatiladi —
+    # foydalanuvchi qaysi savolda xato qilganini ko'rsata oladi.
+    if is_owner or is_admin or (not is_owner and can_view):
+        questions_review = []
+        # answers dict kalitlari string yoki integer bo'lishi mumkin.
+        answers = attempt.answers or {}
+        for q in olympiad.questions.all().order_by('id'):
+            chosen = answers.get(str(q.id))
+            if chosen is None:
+                chosen = answers.get(q.id)
+            try:
+                chosen_idx = int(chosen) if chosen is not None else None
+            except (TypeError, ValueError):
+                chosen_idx = None
+            is_correct = (chosen_idx is not None and chosen_idx == q.correct_answer)
+            questions_review.append({
+                'id': q.id,
+                'text': q.text,
+                'options': q.options or [],
+                'correct_answer': q.correct_answer,
+                'chosen_answer': chosen_idx,
+                'is_correct': is_correct,
+                'difficulty': q.difficulty,
+                'score': q.score,
+                'subject': q.subject,
+            })
+        data['questions_review'] = questions_review
     return Response(data)
 
 
@@ -609,6 +783,145 @@ def manager_stats(request):
         'events_total': events_total,
         'events_page': events_page,
         'events_page_size': events_page_size,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def question_difficulty_stats(request):
+    """GET /api/manager/question-difficulty-stats/?center=<id>
+
+    Markaz savollar bankidagi savollarning qiyinlik bo'yicha taqsimoti va
+    har bir qiyinlik darajasi uchun o'rtacha to'g'rilik foizi.
+    Avg correct rate hisoblash: har bir savol uchun qatnashganlar orasidan
+    nechta to'g'ri javob — yig'indi olib o'rtacha qiymat chiqaramiz.
+    """
+    from questions.models import Question
+
+    center_id = request.query_params.get('center')
+    if not center_id:
+        return Response(
+            {'detail': 'center query parametri majburiy'},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        center_id = int(center_id)
+    except (TypeError, ValueError):
+        return Response(
+            {'detail': "center parametri son bo'lishi kerak"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    # Auth: faqat manager/owner/teacher/admin shu markaz uchun.
+    is_admin = request.user.is_platform_admin
+    is_owner = center.owner_id == request.user.id
+    is_staff = CenterMembership.objects.filter(
+        user=request.user, center=center,
+        role__in=[
+            CenterMembership.ROLE_MANAGER,
+            CenterMembership.ROLE_TEACHER,
+            CenterMembership.ROLE_OWNER,
+        ],
+        status=CenterMembership.STATUS_APPROVED,
+    ).exists()
+    if not (is_admin or is_owner or is_staff):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    DIFFICULTY_LABELS = {
+        'easy': 'Oson',
+        'medium': "O'rta",
+        'hard': 'Qiyin',
+        'beginner': 'Beginner',
+        'elementary': 'Elementary',
+        'pre-int': 'Pre-Intermediate',
+        'int': 'Intermediate',
+        'upper-int': 'Upper-Intermediate',
+        'advanced': 'Advanced',
+    }
+
+    questions = list(Question.objects.filter(center_id=center_id).only(
+        'id', 'difficulty', 'correct_answer',
+    ))
+    total = len(questions)
+    if total == 0:
+        return Response({'total_questions': 0, 'by_difficulty': []})
+
+    # Markaz tegishli barcha attempts'larni olib, savol bo'yicha
+    # to'g'ri/jami javob hisoblaymiz. Bu markaz olimpiadalarida qatnashgan
+    # attempts dan kelib chiqadi. Diskvalifikatsiyalar chiqarib tashlanadi.
+    attempts = list(
+        TestAttempt.objects
+        .filter(olympiad__center_id=center_id, disqualified=False)
+        .values_list('answers', flat=True)
+    )
+
+    # Per-question: to'g'ri va jami javob soni.
+    qmap = {q.id: q for q in questions}
+    correct_count = {q.id: 0 for q in questions}
+    answered_count = {q.id: 0 for q in questions}
+
+    for ans in attempts:
+        if not isinstance(ans, dict):
+            continue
+        for k, v in ans.items():
+            try:
+                qid = int(k)
+            except (TypeError, ValueError):
+                continue
+            q = qmap.get(qid)
+            if not q:
+                continue
+            answered_count[qid] = answered_count.get(qid, 0) + 1
+            try:
+                if int(v) == q.correct_answer:
+                    correct_count[qid] = correct_count.get(qid, 0) + 1
+            except (TypeError, ValueError):
+                pass
+
+    # Difficulty bo'yicha bucket'lar.
+    buckets = {}
+    for q in questions:
+        diff = q.difficulty or 'medium'
+        b = buckets.setdefault(diff, {
+            'difficulty': diff,
+            'label': DIFFICULTY_LABELS.get(diff, diff.title()),
+            'count': 0,
+            'rates_sum': 0.0,
+            'rates_n': 0,
+        })
+        b['count'] += 1
+        ac = answered_count.get(q.id, 0)
+        cc = correct_count.get(q.id, 0)
+        if ac > 0:
+            b['rates_sum'] += (cc / ac) * 100.0
+            b['rates_n'] += 1
+
+    by_difficulty = []
+    # Tartib: oddiy → qiyin.
+    order = ['easy', 'medium', 'hard', 'beginner', 'elementary', 'pre-int', 'int', 'upper-int', 'advanced']
+    for diff in order:
+        if diff in buckets:
+            b = buckets.pop(diff)
+            avg_rate = round(b['rates_sum'] / b['rates_n'], 1) if b['rates_n'] else 0.0
+            by_difficulty.append({
+                'difficulty': b['difficulty'],
+                'label': b['label'],
+                'count': b['count'],
+                'avg_correct_rate': avg_rate,
+            })
+    # Boshqa custom difficulty qiymatlari qolgan bo'lsa qo'shamiz.
+    for b in buckets.values():
+        avg_rate = round(b['rates_sum'] / b['rates_n'], 1) if b['rates_n'] else 0.0
+        by_difficulty.append({
+            'difficulty': b['difficulty'],
+            'label': b['label'],
+            'count': b['count'],
+            'avg_correct_rate': avg_rate,
+        })
+
+    return Response({
+        'total_questions': total,
+        'by_difficulty': by_difficulty,
     })
 
 

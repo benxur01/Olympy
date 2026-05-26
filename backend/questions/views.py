@@ -190,6 +190,194 @@ def generate_ai_questions(request):
     return Response({'questions': result['questions']})
 
 
+def _normalize_correct_answer(value):
+    """A/B/C/D yoki 0/1/2/3 → indeks (0-based). Noma'lum qiymatda None."""
+    if value is None:
+        return None
+    s = str(value).strip().upper()
+    if not s:
+        return None
+    letter_map = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5}
+    if s in letter_map:
+        return letter_map[s]
+    try:
+        i = int(s)
+        if 0 <= i <= 9:
+            return i
+    except (TypeError, ValueError):
+        pass
+    return None
+
+
+def _normalize_difficulty(value):
+    if not value:
+        return Question.DIFFICULTY_MEDIUM
+    s = str(value).strip().lower()
+    aliases = {
+        'oson': 'easy', 'easy': 'easy', 'beginner': 'beginner', 'elementary': 'elementary',
+        "o'rta": 'medium', "orta": 'medium', "o`rta": 'medium', 'medium': 'medium', 'int': 'int', 'intermediate': 'int',
+        'qiyin': 'hard', 'hard': 'hard', 'advanced': 'advanced',
+        'pre-int': 'pre-int', 'pre-intermediate': 'pre-int', 'upper-int': 'upper-int', 'upper-intermediate': 'upper-int',
+    }
+    return aliases.get(s, Question.DIFFICULTY_MEDIUM)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+def import_questions_excel(request):
+    """POST /api/questions/import/?center=<id>
+
+    Excel (.xlsx) yoki CSV (.csv) faylidan savollar import qiladi.
+    Format (birinchi qator — sarlavha, e'tiborga olinmaydi):
+        savol | variant_a | variant_b | variant_c | variant_d | togri_javob | qiyinlik | fan
+    `togri_javob`: A/B/C/D yoki 0/1/2/3.
+    `qiyinlik`: easy/medium/hard yoki o'zbek nomlari (Oson/O'rta/Qiyin).
+    `fan` bo'sh bo'lsa, ?subject= query parametri yoki "Umumiy" ishlatiladi.
+    """
+    raw_center = request.query_params.get('center') or request.data.get('center')
+    if not raw_center:
+        return Response(
+            {'detail': 'center query parametri majburiy'},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        center_id = int(raw_center)
+    except (TypeError, ValueError):
+        return Response(
+            {'detail': "center parametri son bo'lishi kerak"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if not _user_can_create_for_center(request.user, center_id):
+        return Response(
+            {'detail': "Savol yaratish uchun o'qituvchi/manager arizangiz tasdiqlanishi kerak"},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+
+    upload = request.FILES.get('file') or request.FILES.get('upload') or request.FILES.get('excel')
+    if not upload:
+        return Response({'detail': 'Fayl yuboring (form key: file)'}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    filename = (getattr(upload, 'name', '') or '').lower()
+    fallback_subject = (request.query_params.get('subject') or request.data.get('subject') or 'Umumiy').strip() or 'Umumiy'
+
+    rows = []
+    errors = []
+    try:
+        if filename.endswith('.csv'):
+            import csv
+            import io
+            raw = upload.read()
+            # BOM va encoding fallback
+            for enc in ('utf-8-sig', 'utf-8', 'cp1251', 'latin-1'):
+                try:
+                    text = raw.decode(enc)
+                    break
+                except UnicodeDecodeError:
+                    text = None
+                    continue
+            if text is None:
+                return Response({'detail': "CSV fayl encoding'i aniqlanmadi"}, status=http_status.HTTP_400_BAD_REQUEST)
+            # Avval ; bilan urinib ko'ramiz, agar bo'sh chiqsa , ga o'tamiz.
+            try:
+                dialect = csv.Sniffer().sniff(text[:2000], delimiters=',;\t|')
+                reader = csv.reader(io.StringIO(text), dialect)
+            except Exception:
+                reader = csv.reader(io.StringIO(text))
+            for r in reader:
+                rows.append(r)
+        elif filename.endswith('.xlsx') or filename.endswith('.xlsm'):
+            try:
+                from openpyxl import load_workbook
+            except ImportError:
+                return Response(
+                    {'detail': "openpyxl o'rnatilmagan. Iltimos administratorga xabar bering."},
+                    status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+            wb = load_workbook(upload, read_only=True, data_only=True)
+            ws = wb.active
+            for row in ws.iter_rows(values_only=True):
+                rows.append(list(row))
+        else:
+            return Response(
+                {'detail': "Faqat .xlsx yoki .csv fayl qabul qilinadi"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+    except Exception as exc:
+        return Response(
+            {'detail': f"Faylni o'qib bo'lmadi: {exc}"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not rows:
+        return Response({'detail': "Faylda satr topilmadi"}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    # Birinchi qatorni heuristic'da header deb tashlaymiz: agar 6-ustun A-F
+    # harf yoki 0-9 raqamga emas, balki matnga o'xshasa.
+    first = rows[0]
+
+    def _is_header(row):
+        if not row or len(row) < 6:
+            return False
+        s5 = str(row[5] or '').strip().upper()
+        if not s5:
+            return True
+        if s5 in ('A', 'B', 'C', 'D', 'E', 'F', '0', '1', '2', '3', '4', '5'):
+            return False
+        return True
+
+    data_rows = rows[1:] if _is_header(first) else rows
+
+    created = 0
+    for idx, raw_row in enumerate(data_rows, start=2 if _is_header(first) else 1):
+        if not raw_row:
+            continue
+        # Bo'sh qatorlarni o'tkazib yuboramiz.
+        normalized = [('' if v is None else str(v).strip()) for v in raw_row]
+        if not any(normalized):
+            continue
+        if len(normalized) < 6:
+            errors.append({'row': idx, 'detail': "Yetarli ustun yo'q (kamida 6 ta kerak)"})
+            continue
+        text = normalized[0]
+        if not text:
+            errors.append({'row': idx, 'detail': "Savol matni bo'sh"})
+            continue
+        # variantlar: A, B, C, D (D ixtiyoriy bo'lsa ham — kamida 2 ta variant)
+        options_raw = [normalized[1], normalized[2], normalized[3], normalized[4] if len(normalized) > 4 else '']
+        options = [o for o in options_raw if o]
+        if len(options) < 2:
+            errors.append({'row': idx, 'detail': "Kamida 2 ta javob varianti kerak"})
+            continue
+        correct_idx = _normalize_correct_answer(normalized[5])
+        if correct_idx is None or correct_idx >= len(options):
+            errors.append({'row': idx, 'detail': f"To'g'ri javob ko'rsatkichi noto'g'ri: {normalized[5]}"})
+            continue
+        difficulty = _normalize_difficulty(normalized[6] if len(normalized) > 6 else '')
+        subject = (normalized[7] if len(normalized) > 7 else '').strip() or fallback_subject
+        try:
+            Question.objects.create(
+                center_id=center_id,
+                subject=subject[:80],
+                text=text,
+                options=options,
+                correct_answer=correct_idx,
+                score=3,
+                difficulty=difficulty,
+                source=Question.SOURCE_MANUAL,
+                created_by=request.user,
+            )
+            created += 1
+        except Exception as exc:
+            errors.append({'row': idx, 'detail': f"DB xatosi: {exc}"})
+
+    return Response({
+        'created': created,
+        'errors': errors[:50],  # Frontend'da ko'p xato ko'rsatmaslik uchun cheklov
+        'error_count': len(errors),
+    })
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
@@ -249,6 +437,101 @@ def preview_pdf_questions(request):
         'warning': result.get('warning') or '',
         'chunks': result.get('chunks', 1),
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def question_analytics(request):
+    """GET /api/questions/analytics/?center=<id>
+    Markazdagi savollar bo'yicha noto'g'ri javob statistikasi.
+
+    Har bir savol uchun: question_id, text (qisqartirilgan, 80 belgi),
+    subject, total_attempts, wrong_count, wrong_rate (%).
+    Faqat wrong_rate >= 30% va total_attempts >= 3 bo'lganlar.
+    wrong_rate kamayish tartibida, max 50 ta.
+    """
+    raw_center = request.query_params.get('center')
+    if not raw_center:
+        return Response(
+            {'detail': 'center query parametri majburiy'},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        center_id = int(raw_center)
+    except (TypeError, ValueError):
+        return Response(
+            {'detail': "center parametri son bo'lishi kerak"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if not _user_can_create_for_center(request.user, center_id):
+        return Response(
+            {'detail': 'Forbidden'},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+
+    from attempts.models import TestAttempt
+
+    questions = list(
+        Question.objects.filter(center_id=center_id)
+        .only('id', 'text', 'subject', 'correct_answer')
+    )
+    if not questions:
+        return Response([])
+
+    qmap = {q.id: q for q in questions}
+    total_count = {q.id: 0 for q in questions}
+    wrong_count = {q.id: 0 for q in questions}
+
+    answers_iter = (
+        TestAttempt.objects
+        .filter(olympiad__center_id=center_id, disqualified=False)
+        .values_list('answers', flat=True)
+    )
+
+    for ans in answers_iter:
+        if not isinstance(ans, dict):
+            continue
+        for k, v in ans.items():
+            try:
+                qid = int(k)
+            except (TypeError, ValueError):
+                continue
+            q = qmap.get(qid)
+            if not q:
+                continue
+            total_count[qid] = total_count.get(qid, 0) + 1
+            try:
+                chosen = int(v)
+            except (TypeError, ValueError):
+                # Javob berilmagan/noto'g'ri formatda — noto'g'ri deb hisoblaymiz.
+                wrong_count[qid] = wrong_count.get(qid, 0) + 1
+                continue
+            if chosen != q.correct_answer:
+                wrong_count[qid] = wrong_count.get(qid, 0) + 1
+
+    rows = []
+    for q in questions:
+        total = total_count.get(q.id, 0)
+        wrong = wrong_count.get(q.id, 0)
+        if total < 3:
+            continue
+        rate = round((wrong / total) * 100.0, 1) if total else 0.0
+        if rate < 30.0:
+            continue
+        text_short = (q.text or '')[:80]
+        if q.text and len(q.text) > 80:
+            text_short = text_short.rstrip() + '…'
+        rows.append({
+            'question_id': q.id,
+            'text': text_short,
+            'subject': q.subject or '',
+            'total_attempts': total,
+            'wrong_count': wrong,
+            'wrong_rate': rate,
+        })
+
+    rows.sort(key=lambda r: -r['wrong_rate'])
+    return Response(rows[:50])
 
 
 @api_view(['GET'])

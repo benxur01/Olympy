@@ -59,9 +59,11 @@ body {
 .badge-finished { background: rgba(99,102,241,0.15); color: #818cf8; border: 1px solid rgba(99,102,241,0.3); }
 
 .btn-primary { background: linear-gradient(135deg, #6366f1, #a855f7); color: white; border: none; cursor: pointer; transition: all 0.3s; }
-.btn-primary:hover { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 10px 30px rgba(99,102,241,0.4); }
+.btn-primary:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 10px 30px rgba(99,102,241,0.4); }
+.btn-primary:disabled { background: rgba(255, 255, 255, 0.04) !important; border: 1px solid rgba(255, 255, 255, 0.08) !important; color: rgba(255, 255, 255, 0.2) !important; cursor: not-allowed; box-shadow: none !important; transform: none !important; }
 .btn-ghost { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.8); border: 1px solid rgba(255,255,255,0.1); cursor: pointer; transition: all 0.2s; }
-.btn-ghost:hover { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+.btn-ghost:hover:not(:disabled) { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+.btn-ghost:disabled { opacity: 0.3; cursor: not-allowed; }
 .btn-danger { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); cursor: pointer; transition: all 0.2s; }
 .btn-danger:hover { background: rgba(239,68,68,0.25); }
 .btn-success { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); cursor: pointer; transition: all 0.2s; }

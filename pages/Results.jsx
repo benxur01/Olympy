@@ -4,6 +4,9 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const store = useStore();
   const isApi = !!user?._api;
   const [shareToast, setShareToast] = React.useState('');
+  // Javoblarni ko'rish bo'limini ochish/yopish flagi. fetchedAttempt.questions_review
+  // mavjud bo'lganda chiqadi (faqat backend rejimida).
+  const [reviewOpen, setReviewOpen] = React.useState(false);
   // Leaderboard yoki boshqa sahifadan attemptId bilan kelganda, backend'dan
   // attemptni olib kelamiz. Avval mock store'dan qidirilardi va API rejimida
   // topa olmasdi.
@@ -12,18 +15,30 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const needsFetch = !!(isApi && result?.attemptId
     && !(result.olympiad && (result.score !== undefined || result.correct !== undefined))
     && !(result.id && result.olympiadId && result.score !== undefined));
+  // Review fetch — backend rejimida attemptId yoki id mavjud bo'lsa,
+  // savollar tahlilini ham yuklab kelamiz. Bu needsFetch'dan alohida ishlaydi:
+  // OlympiadTest finish'dan keyin to'liq payload kelganda ham review uchun
+  // qo'shimcha so'rov yuborilsin.
+  const reviewAttemptId = isApi
+    ? (result?.attemptId || result?.id || result?.backendId)
+    : null;
   React.useEffect(() => {
-    if (!needsFetch) { setFetchedAttempt(null); setFetchError(''); return; }
+    if (!isApi || !reviewAttemptId) { setFetchedAttempt(null); setFetchError(''); return; }
     let cancelled = false;
     setFetchError('');
-    OlympyApi.getAttempt(result.attemptId, OlympyApi.getToken())
+    OlympyApi.getAttempt(reviewAttemptId, OlympyApi.getToken())
       .then(data => { if (!cancelled) setFetchedAttempt(data); })
       .catch(err => {
         if (cancelled) return;
-        setFetchError(OlympyApi.toUserMessage?.(err) || "Natijani yuklab bo'lmadi");
+        // needsFetch holatida (faqat attemptId bilan kelgan) — fetchError
+        // muhim. Aks holda (to'liq payload bor) — review uchun fetch xatosini
+        // jim yutamiz, asosiy sahifa baribir ishlaydi.
+        if (needsFetch) {
+          setFetchError(OlympyApi.toUserMessage?.(err) || "Natijani yuklab bo'lmadi");
+        }
       });
     return () => { cancelled = true; };
-  }, [needsFetch, result?.attemptId]);
+  }, [isApi, reviewAttemptId, needsFetch]);
 
   // Bo'limlar bo'yicha: backend /api/results/me/stats/ subjects ro'yxati.
   // Avval bu yerda 4 ta hardcoded bo'lim ("Algebraik tenglamalar 8/10" va h.k.)
@@ -221,6 +236,66 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
             ))}
           </div>
         </div>
+
+        {/* Javoblarni ko'rish — faqat backend rejimida va savollar mavjud bo'lsa */}
+        {isApi && Array.isArray(fetchedAttempt?.questions_review) && fetchedAttempt.questions_review.length > 0 && (
+          <div className="glass rounded-2xl p-4 md:p-6">
+            <div className="flex items-center justify-between gap-2 mb-3">
+              <h3 className="font-bold text-white text-sm md:text-base">Javoblar tahlili</h3>
+              <button
+                onClick={() => setReviewOpen(v => !v)}
+                className="btn-ghost text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5"
+              >
+                <Icon name={reviewOpen ? 'chevronDown' : 'chevronRight'} size={12} />
+                {reviewOpen ? 'Yopish' : "Javoblarni ko'rish"}
+              </button>
+            </div>
+            {reviewOpen && (
+              <div className="space-y-4 mt-3">
+                {fetchedAttempt.questions_review.map((q, idx) => {
+                  const difficultyLabel = (() => {
+                    const map = { easy: 'Oson', medium: "O'rta", hard: 'Qiyin', beginner: 'Beginner', elementary: 'Elementary', 'pre-int': 'Pre-Int', int: 'Intermediate', 'upper-int': 'Upper-Int', advanced: 'Advanced' };
+                    return map[q.difficulty] || q.difficulty || '';
+                  })();
+                  return (
+                    <div key={q.id} className={`rounded-2xl p-3 md:p-4 border ${q.is_correct ? 'border-emerald-500/30 bg-emerald-500/5' : (q.chosen_answer == null ? 'border-amber-500/30 bg-amber-500/5' : 'border-rose-500/30 bg-rose-500/5')}`}>
+                      <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-white/40 text-xs font-bold">#{idx + 1}</span>
+                          {difficultyLabel && (
+                            <span className="chip bg-white/5 text-white/60 border border-white/10 text-[10px]">{difficultyLabel}</span>
+                          )}
+                          <span className="chip bg-white/5 text-white/50 border border-white/10 text-[10px]">{q.score || 0} ball</span>
+                        </div>
+                        <span className={`chip text-[10px] ${q.is_correct ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : (q.chosen_answer == null ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30')}`}>
+                          {q.is_correct ? "✓ To'g'ri" : (q.chosen_answer == null ? "Bo'sh" : "✗ Noto'g'ri")}
+                        </span>
+                      </div>
+                      <div className="text-white text-sm font-medium mb-3 break-words">{q.text}</div>
+                      <div className="space-y-1.5">
+                        {(q.options || []).map((opt, oi) => {
+                          const isCorrect = oi === q.correct_answer;
+                          const isChosen = oi === q.chosen_answer;
+                          let cls = 'bg-white/5 text-white/60 border-white/10';
+                          if (isCorrect) cls = 'bg-emerald-500/15 text-emerald-200 border-emerald-500/40';
+                          else if (isChosen && !isCorrect) cls = 'bg-rose-500/15 text-rose-200 border-rose-500/40';
+                          return (
+                            <div key={oi} className={`rounded-xl px-3 py-2 text-xs md:text-sm border flex items-center gap-2 ${cls}`}>
+                              <span className="text-white/40 font-bold flex-shrink-0">{String.fromCharCode(65 + oi)}.</span>
+                              <span className="flex-1 break-words">{String(opt)}</span>
+                              {isCorrect && <Icon name="check" size={12} className="text-emerald-400 flex-shrink-0" />}
+                              {isChosen && !isCorrect && <Icon name="x" size={12} className="text-rose-400 flex-shrink-0" />}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Actions — stack on mobile, row on desktop */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 md:gap-3">

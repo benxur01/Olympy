@@ -1,0 +1,259 @@
+// pages/ParentDashboard.jsx — Ota-ona / Kuzatuvchi paneli
+
+const ParentDashboard = ({ user, onNavigate, onLogout }) => {
+  const [page, setPage] = React.useState('home');
+  const [mobileMenu, setMobileMenu] = React.useState(false);
+  const [phoneInput, setPhoneInput] = React.useState('+998');
+  const [linkError, setLinkError] = React.useState('');
+  const [linkSuccess, setLinkSuccess] = React.useState('');
+  const [selectedChild, setSelectedChild] = React.useState(null);
+
+  const isApi = !!user?._api;
+  const token = isApi ? OlympyApi.getToken() : null;
+
+  const childrenRes = useApiData(
+    () => isApi ? OlympyApi.getChildren(token) : Promise.resolve([]),
+    [isApi],
+  );
+  const children = childrenRes.data || [];
+
+  const handleLink = async () => {
+    setLinkError('');
+    setLinkSuccess('');
+    const phone = (phoneInput || '').trim();
+    if (!phone || phone.length < 10) {
+      setLinkError("Telefon raqamni to'liq kiriting");
+      return;
+    }
+    try {
+      await OlympyApi.linkChild(phone, token);
+      setLinkSuccess("Farzand qo'shildi!");
+      setPhoneInput('+998');
+      childrenRes.reload();
+      setTimeout(() => setLinkSuccess(''), 3000);
+    } catch (err) {
+      setLinkError(OlympyApi.toUserMessage?.(err) || "Qo'shib bo'lmadi");
+    }
+  };
+
+  const handleUnlink = async (studentId) => {
+    if (!confirm("Farzandni olib tashlashni tasdiqlaysizmi?")) return;
+    try {
+      await OlympyApi.unlinkChild(studentId, token);
+      childrenRes.reload();
+    } catch (err) {
+      alert(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi");
+    }
+  };
+
+  const navItems = [
+    { key: 'home', icon: 'home', label: 'Uy' },
+    { key: 'children', icon: 'users', label: 'Farzandlarim' },
+    { key: 'profile', icon: 'eye', label: 'Profil' },
+  ];
+
+  const renderHome = () => (
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad">
+      <div>
+        <h2 className="text-xl md:text-2xl font-black text-white">Salom, {user.name?.split(' ')[0] || 'Ota-ona'}! 👋</h2>
+        <p className="text-white/40 text-xs md:text-sm mt-1">Farzandingizning o'qish jarayonini kuzating</p>
+      </div>
+
+      {childrenRes.loading && (
+        <div className="text-white/40 text-sm">Yuklanmoqda...</div>
+      )}
+      {!childrenRes.loading && children.length === 0 && (
+        <EmptyState
+          icon="users"
+          title="Farzand qo'shilmagan"
+          desc="Farzandingiz telefon raqami orqali uni ro'yxatga oling"
+          action={
+            <button onClick={() => setPage('children')} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold">
+              Farzand qo'shish
+            </button>
+          }
+        />
+      )}
+
+      {children.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {children.map(child => {
+            const latest = (child.attempts || [])[0];
+            const avg = (child.attempts || []).length
+              ? Math.round((child.attempts.reduce((s, a) => s + (a.score || 0), 0) / child.attempts.length))
+              : 0;
+            return (
+              <div key={child.student_id} className="glass rounded-2xl p-4 md:p-5 card-hover">
+                <div className="flex items-start gap-3 mb-3">
+                  <Avatar name={child.full_name} src={child.avatar_url} size={48} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-white truncate">{child.full_name}</div>
+                    <div className="text-xs text-white/40 truncate">{child.phone}</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center mb-3">
+                  <div className="glass rounded-xl py-2">
+                    <div className="text-xs text-white/40">Tadbirlar</div>
+                    <div className="text-lg font-bold text-white">{(child.attempts || []).length}</div>
+                  </div>
+                  <div className="glass rounded-xl py-2">
+                    <div className="text-xs text-white/40">O'rt. ball</div>
+                    <div className={`text-lg font-bold ${avg >= 70 ? 'text-emerald-400' : avg >= 50 ? 'text-amber-400' : 'text-white/50'}`}>{avg || '—'}</div>
+                  </div>
+                  <div className="glass rounded-xl py-2">
+                    <div className="text-xs text-white/40">Eng yaxshi</div>
+                    <div className="text-lg font-bold text-amber-300">
+                      {(child.attempts || []).reduce((m, a) => a.score > m ? a.score : m, 0) || '—'}
+                    </div>
+                  </div>
+                </div>
+                {latest && (
+                  <div className="rounded-xl bg-white/5 p-3 mb-3 border border-white/10">
+                    <div className="text-[10px] text-white/40 uppercase mb-1">So'nggi natija</div>
+                    <div className="text-sm font-medium text-white truncate">{latest.olympiad_title}</div>
+                    <div className="flex items-center justify-between mt-1 text-xs">
+                      <span className="text-white/60">{latest.subject}</span>
+                      <span className={`font-bold ${latest.score >= 70 ? 'text-emerald-400' : latest.score >= 50 ? 'text-amber-400' : 'text-rose-400'}`}>
+                        {latest.score} ball
+                      </span>
+                    </div>
+                  </div>
+                )}
+                <button
+                  onClick={() => setSelectedChild(child)}
+                  className="w-full btn-ghost py-2.5 rounded-xl text-sm font-semibold"
+                >Batafsil</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  const renderChildren = () => (
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad">
+      <div className="glass rounded-2xl p-4 md:p-6">
+        <h3 className="font-bold text-white text-sm md:text-base mb-3">Yangi farzand qo'shish</h3>
+        <p className="text-xs text-white/40 mb-4">Farzandingiz allaqachon Olympy'da ro'yxatdan o'tgan bo'lishi kerak. Uning telefon raqamini kiriting.</p>
+        <div className="flex gap-2 flex-wrap">
+          <input
+            type="tel"
+            value={phoneInput}
+            onChange={e => setPhoneInput(formatUzPhoneInput ? formatUzPhoneInput(e.target.value) : e.target.value)}
+            placeholder="+998 90 123 45 67"
+            className="glass border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white bg-transparent flex-1 min-w-[200px]"
+          />
+          <button onClick={handleLink} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold">
+            Qo'shish
+          </button>
+        </div>
+        {linkError && <div className="text-xs text-rose-400 mt-2">{linkError}</div>}
+        {linkSuccess && <div className="text-xs text-emerald-400 mt-2">{linkSuccess}</div>}
+      </div>
+
+      <div className="glass rounded-2xl p-4 md:p-6">
+        <h3 className="font-bold text-white text-sm md:text-base mb-3">Mening farzandlarim</h3>
+        {childrenRes.loading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+        {!childrenRes.loading && children.length === 0 && (
+          <div className="text-xs text-white/40">Hozircha farzand qo'shilmagan.</div>
+        )}
+        {children.length > 0 && (
+          <div className="space-y-3">
+            {children.map(child => (
+              <div key={child.student_id} className="flex items-center gap-3 p-3 rounded-xl glass">
+                <Avatar name={child.full_name} src={child.avatar_url} size={40} />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-white truncate">{child.full_name}</div>
+                  <div className="text-xs text-white/40 truncate">{child.phone}</div>
+                </div>
+                <button
+                  onClick={() => handleUnlink(child.student_id)}
+                  className="text-xs text-rose-300 hover:text-rose-200 px-3 py-1.5 rounded-lg border border-rose-500/20 hover:border-rose-500/40"
+                >Olib tashlash</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const renderProfile = () => (
+    <div className="p-3 md:p-6 mobile-content-pad">
+      <div className="glass rounded-2xl p-5">
+        <div className="flex items-center gap-4 mb-4">
+          <Avatar name={user.name} src={user.avatarUrl} size={56} />
+          <div className="flex-1 min-w-0">
+            <div className="text-white font-bold truncate">{user.name}</div>
+            <div className="text-xs text-white/40 truncate">{user.phone}</div>
+            <div className="text-xs text-indigo-300 mt-1">Ota-ona / Kuzatuvchi</div>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <button onClick={() => onNavigate('profile')} className="w-full btn-ghost text-sm py-2.5 rounded-xl">Asosiy profilni ochish</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="flex h-screen overflow-hidden">
+      <Sidebar
+        items={navItems}
+        activePage={page}
+        setPage={setPage}
+        user={{ ...user, role: 'Ota-ona' }}
+        onLogout={onLogout}
+        logoClick={() => onNavigate('landing')}
+        mobileOpen={mobileMenu}
+        onMobileClose={() => setMobileMenu(false)}
+      />
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Topbar
+          title={navItems.find(n => n.key === page)?.label || 'Ota-ona paneli'}
+          subtitle={`Farzandlar: ${children.length}`}
+          user={user}
+          onMenuClick={() => setMobileMenu(true)}
+        />
+        <main className="flex-1 overflow-x-hidden overflow-y-auto">
+          {page === 'home' && renderHome()}
+          {page === 'children' && renderChildren()}
+          {page === 'profile' && renderProfile()}
+        </main>
+        <MobileBottomNav items={navItems} activePage={page} setPage={setPage} />
+      </div>
+
+      {/* Tafsilotlar modali */}
+      <Modal open={!!selectedChild} onClose={() => setSelectedChild(null)} title={selectedChild?.full_name || ''} width="max-w-2xl">
+        {selectedChild && (
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            {(selectedChild.attempts || []).length === 0 && (
+              <div className="text-xs text-white/40 text-center py-4">Natijalar yo'q</div>
+            )}
+            {(selectedChild.attempts || []).map(a => (
+              <div key={a.attempt_id} className="rounded-xl bg-white/5 p-3 border border-white/10">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-white font-medium text-sm truncate">{a.olympiad_title}</div>
+                    <div className="text-xs text-white/40">{a.subject}</div>
+                  </div>
+                  <div className={`text-base font-bold flex-shrink-0 ${a.score >= 70 ? 'text-emerald-400' : a.score >= 50 ? 'text-amber-400' : 'text-rose-400'}`}>
+                    {a.score}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 text-[10px] text-white/40">
+                  <span>To'g'ri: {a.correct_count}/{a.total_questions}</span>
+                  {a.rank && <span>O'rin: #{a.rank}</span>}
+                  <span className="ml-auto">{(a.submitted_at || '').slice(0, 10)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+};
+
+Object.assign(window, { ParentDashboard });

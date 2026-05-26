@@ -202,6 +202,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     [isApi, managerCenterId],
   );
 
+  // Savollar analitikasi (eng ko'p noto'g'ri savollar).
+  const questionAnalyticsRes = useApiData(
+    () => (isApi && managerCenterId)
+      ? OlympyApi.getQuestionAnalytics(managerCenterId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, managerCenterId],
+  );
+
   const baseCenters = isApi ? (apiCenters || []) : store.centers;
   const center = managerCenterId ? baseCenters.find(c => String(c.id) === String(managerCenterId)) : null;
   const centerId = center?.id;
@@ -361,7 +369,16 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     { key: 'questions', icon: 'book', label: 'Savollar' },
     { key: 'students', icon: 'users', label: "O'quvchilar" },
     { key: 'results', icon: 'chart', label: 'Natijalar' },
+    { key: 'qanalytics', icon: 'info', label: 'Savollar analitikasi' },
+    { key: 'analytics', icon: 'chart', label: 'Analitika' },
   ];
+
+  // Sidebar/Mobile nav uchun "analytics" tugmasini bosganda app-level
+  // sahifaga o'tkazamiz (alohida sahifa).
+  const setPageOrSpecial = (key) => {
+    if (key === 'analytics') { onNavigate('analytics'); return; }
+    setPage(key);
+  };
 
   const formStartIso = (form) => {
     if (!form.startDate) return null;
@@ -962,6 +979,20 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               </div>
               <DonutChart value={Math.round(e.average_score || 0)} size={60} />
               <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl">Reyting</button>
+              <button
+                onClick={() => {
+                  OlympyApi.exportOlympiadResultsXlsx(e.olympiad_id, OlympyApi.getToken())
+                    .then(() => showToast('✓ Excel fayl yuklandi'))
+                    .catch(err => {
+                      console.warn('xlsx export failed:', err);
+                      showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Excel yuklab bo'lmadi"}`);
+                    });
+                }}
+                className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
+                title="Natijalarni Excel (.xlsx) faylga eksport qilish"
+              >
+                <Icon name="download" size={12} /> Excel
+              </button>
             </div>
           ))}
           {!isApi && localFinished.map(o => (
@@ -980,6 +1011,64 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     );
   };
 
+  const renderQAnalytics = () => {
+    const rows = isApi && Array.isArray(questionAnalyticsRes.data) ? questionAnalyticsRes.data : [];
+    const loading = isApi && questionAnalyticsRes.loading && !questionAnalyticsRes.data;
+    return (
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black text-white">Savollar analitikasi</h2>
+            <p className="text-xs text-white/40 mt-1">Eng ko'p noto'g'ri javob berilgan savollar (kamida 3 ta urinish, ≥30% xato).</p>
+          </div>
+          <button
+            onClick={() => questionAnalyticsRes.reload?.()}
+            className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
+          >
+            <Icon name="bolt" size={13} /> Yangilash
+          </button>
+        </div>
+        {loading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+        {!loading && rows.length === 0 && (
+          <div className="glass rounded-2xl p-8 text-center text-sm text-white/40">
+            Hozircha tahlilga yaroqli savollar yo'q. O'quvchilar tadbirlarda qatnashgach, bu yerda ko'rinadi.
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {rows.map(r => {
+            const rate = Number(r.wrong_rate || 0);
+            const tone = rate >= 70
+              ? { bar: 'bg-rose-500', text: 'text-rose-300', border: 'border-rose-500/30', bg: 'bg-rose-500/10' }
+              : rate >= 50
+                ? { bar: 'bg-amber-500', text: 'text-amber-300', border: 'border-amber-500/25', bg: 'bg-amber-500/10' }
+                : { bar: 'bg-sky-500', text: 'text-sky-300', border: 'border-sky-500/25', bg: 'bg-sky-500/10' };
+            return (
+              <div key={r.question_id} className={`glass rounded-2xl p-4 border ${tone.border}`}>
+                <div className="flex items-start gap-3">
+                  <div className={`flex-shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-xl ${tone.bg} ${tone.text} font-black text-xs`}>
+                    {rate}%
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm text-white font-semibold leading-snug">{r.text || '—'}</div>
+                    <div className="text-[11px] text-white/45 mt-1">
+                      {r.subject || 'Umumiy'} · {r.total_attempts} urinish · {r.wrong_count} xato
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                  <div
+                    className={`h-full ${tone.bar} transition-all`}
+                    style={{ width: `${Math.min(100, Math.max(0, rate))}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const pagesMap = {
     home: renderHome,
     requests: renderRequests,
@@ -987,11 +1076,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     questions: () => <QuestionCreatorPage embedded user={user} onOpenSwitcher={onOpenSwitcher} />,
     students: renderStudents,
     results: renderResults,
+    qanalytics: renderQAnalytics,
   };
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar items={navItems} activePage={page} setPage={setPage}
+      <Sidebar items={navItems} activePage={page} setPage={setPageOrSpecial}
         user={{ ...user, role: 'Manager' }} onLogout={onLogout}
         logoClick={() => onNavigate('landing')}
         mobileOpen={mobileMenu} onMobileClose={() => setMobileMenu(false)} />
@@ -1013,7 +1103,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <main className="flex-1 overflow-x-hidden overflow-y-auto">
           {(pagesMap[page] || renderHome)()}
         </main>
-        <MobileBottomNav items={navItems} activePage={page} setPage={setPage} />
+        <MobileBottomNav items={navItems} activePage={page} setPage={setPageOrSpecial} />
       </div>
 
       {/* Create/edit event modal */}
