@@ -175,6 +175,26 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   }, [submitted, cheated, isBeforeStart, isAfterEnd, TOTAL, onNavigate]);
 
   React.useEffect(() => {
+    if (submitted || cheated || isBeforeStart || isAfterEnd || TOTAL === 0) {
+      return undefined;
+    }
+    const blockActions = (e) => {
+      e.preventDefault();
+    };
+    document.addEventListener('contextmenu', blockActions);
+    document.addEventListener('copy', blockActions);
+    document.addEventListener('cut', blockActions);
+    document.addEventListener('paste', blockActions);
+    
+    return () => {
+      document.removeEventListener('contextmenu', blockActions);
+      document.removeEventListener('copy', blockActions);
+      document.removeEventListener('cut', blockActions);
+      document.removeEventListener('paste', blockActions);
+    };
+  }, [submitted, cheated, isBeforeStart, isAfterEnd, TOTAL]);
+
+  React.useEffect(() => {
     if (!user?._api || !liveOlympiad?.backendId || isBeforeStart || isAfterEnd) {
       setApiQuestions(null);
       setQuestionsLoading(false);
@@ -355,13 +375,14 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           setCheatWarning('');
         }
       }
+      sendPing();
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
       if (hiddenTimer) clearTimeout(hiddenTimer);
     };
-  }, [user?._api, liveOlympiad?.backendId, apiQuestions, questionsLoading, submitted, cheated, reportCheating]);
+  }, [user?._api, liveOlympiad?.backendId, apiQuestions, questionsLoading, submitted, cheated, reportCheating, sendPing]);
 
   // Har `answers`/`marked` o'zgarganda lokal saqlash. Submit/cheating
   // paytida tozalash uchun pastdagi cleanup logikasi mavjud.
@@ -386,6 +407,40 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       localStorage.removeItem(markedStorageKey);
     } catch {}
   }, [answersStorageKey, markedStorageKey]);
+
+  const sendPing = React.useCallback(async () => {
+    if (!user?._api || !liveOlympiad?.backendId || submitted || cheated) return;
+    const answeredCount = Object.keys(answersRef.current || {}).length;
+    const ongoing = hiddenStartRef.current
+      ? (Date.now() - hiddenStartRef.current)
+      : 0;
+    const escapes = Math.round((totalHiddenTimeRef.current + ongoing) / 1000);
+    try {
+      const token = globalThis.OlympyApi?.getToken?.()
+        ?? globalThis.OlympyApi?.loadAuth?.()?.token;
+      await globalThis.OlympyApi.pingTestSession(
+        liveOlympiad.backendId,
+        answeredCount,
+        escapes,
+        token
+      );
+    } catch (err) {
+      console.warn('pingTestSession failed:', err?.message);
+    }
+  }, [user?._api, liveOlympiad?.backendId, submitted, cheated]);
+
+  React.useEffect(() => {
+    if (!user?._api || !liveOlympiad?.backendId || submitted || cheated || questionsLoading) return undefined;
+    sendPing();
+    const interval = setInterval(sendPing, 15000);
+    return () => clearInterval(interval);
+  }, [user?._api, liveOlympiad?.backendId, submitted, cheated, questionsLoading, sendPing]);
+
+  React.useEffect(() => {
+    if (Object.keys(answers).length > 0) {
+      sendPing();
+    }
+  }, [answers, sendPing]);
 
   const formatTime = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
   const answered = Object.keys(answers).length;
@@ -645,7 +700,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const isTrueFalse = (q.options || []).length === 2 && (q.options || []).every(o => /to'?g'?ri|no?to'?g'?ri/i.test(o));
 
   return (
-    <div className="min-h-screen flex flex-col" style={{ background: '#060818' }}>
+    <div className="min-h-screen flex flex-col select-none" style={{ background: '#060818', userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}>
       {/* Header bar */}
       <div className="glass border-b border-white/5 px-3 md:px-8 py-2.5 md:py-3 flex items-center justify-between gap-2 sticky top-0 z-30">
         <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">

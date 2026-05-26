@@ -323,6 +323,11 @@ def submit_attempt(request):
         attempt.rank = better_count_for_rank + 1
         attempt.save(update_fields=['rank'])
 
+        try:
+            request.user.update_streak()
+        except Exception:
+            pass
+
         session.status = TestSession.STATUS_COMPLETED
         session.save(update_fields=['status'])
 
@@ -365,6 +370,7 @@ def submit_attempt(request):
         # sonni alohida ko'rsatishi mumkin: to'g'ri / noto'g'ri / bo'sh.
         data['blank_count'] = scored.get('blank', 0)
         data['answered_count'] = scored.get('answered', 0)
+        data['streak_count'] = request.user.streak_count
         # Rank submit paytida yuqorida `attempt.rank` ga yozildi — bu
         # qiymatni ham `position` field sifatida qaytaramiz (frontend
         # eski kod position'ga tayanishi mumkin).
@@ -1156,8 +1162,133 @@ def leaderboard(request):
             'status': latest.get('olympiad_status'),
             'start_datetime': latest.get('submitted_at'),
         }
+
     return Response({
-        'olympiad': header,
-        'entries': entries,
+        'results': entries,
         'pagination': pagination_meta,
+        'header': header,
     })
+
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def test_session_ping(request):
+    """POST /api/attempts/ping/
+
+    Body: {"olympiad": <id>, "answered_count": <int>, "tab_escapes": <int>}
+    o'quvchining joriy holatini cache'da yangilab borish uchun ping.
+    """
+    from django.core.cache import cache
+    from django.utils import timezone
+
+    data = request.data or {}
+    try:
+        olympiad_id = int(data.get('olympiad'))
+    except (TypeError, ValueError):
+        return Response({'detail': "olympiad majburiy"}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    try:
+        answered_count = int(data.get('answered_count', 0))
+        tab_escapes = int(data.get('tab_escapes', 0))
+    except (TypeError, ValueError):
+        answered_count = 0
+        tab_escapes = 0
+
+    # TestSession faolligini tekshirish
+    session_exists = TestSession.objects.filter(user=request.user, olympiad_id=olympiad_id).exists()
+    if not session_exists:
+        return Response({'detail': "Test sessiya topilmadi"}, status=http_status.HTTP_404_NOT_FOUND)
+
+    # Cacheni yangilash (timeout 60 soniya, agar 60s ichida ping kelmasa oflayn hisoblanadi)
+    cache_key = f"test_session_ping:{olympiad_id}:{request.user.id}"
+    cache.set(cache_key, {
+        'answered_count': answered_count,
+        'tab_escapes': tab_escapes,
+        'last_ping': timezone.now().isoformat(),
+    }, timeout=60)
+
+    return Response({'ok': True})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def olympiad_live_proctoring(request, olympiad_id):
+    """GET /api/manager/olympiads/<id>/live/
+
+    Manager uchun faol o'quvchilar ro'yxati va real vaqtda holatlari.
+    """
+    from django.core.cache import cache
+    from django.utils import timezone
+    from datetime import datetime
+
+    olympiad = get_object_or_404(Olympiad.objects.select_related('center'), pk=olympiad_id)
+    if not _user_can_manage_olympiad(request.user, olympiad):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    sessions = list(
+        TestSession.objects
+        .filter(olympiad=olympiad)
+        .select_related('user')
+        .order_by('-started_at')
+    )
+
+    attempts = {
+        a.user_id: a
+        for a in TestAttempt.objects.filter(olympiad=olympiad)
+    }
+
+    now = timezone.now()
+    results = []
+
+    for s in sessions:
+        user = s.user
+        attempt = attempts.get(user.id)
+
+        # Cache'dan joriy ping ma'lumotlarini o'qish
+        cache_key = f"test_session_ping:{olympiad_id}:{user.id}"
+        ping_data = cache.get(cache_key)
+
+        # O'quvchi onlaynmi yoki yo'qligini tekshirish
+        is_online = False
+        answered = 0
+        escapes = 0
+
+        if ping_data:
+            last_ping_str = ping_data.get('last_ping')
+            try:
+                last_ping = datetime.fromisoformat(last_ping_str)
+                # 45 soniyadan kam vaqt ichida ping kelgan bo'lsa onlayn deb olamiz
+                if (now - last_ping).total_seconds() < 45:
+                    is_online = True
+            except Exception:
+                pass
+            answered = ping_data.get('answered_count', 0)
+            escapes = ping_data.get('tab_escapes', 0)
+
+        status = 'active'
+        if attempt:
+            status = 'disqualified' if attempt.disqualified else 'completed'
+            is_online = False
+            answered = attempt.total_questions
+        elif s.status == TestSession.STATUS_DISQUALIFIED:
+            status = 'disqualified'
+            is_online = False
+
+        results.append({
+            'student_id': user.id,
+            'student_name': user.full_name or user.phone or 'O\'quvchi',
+            'phone': user.normalized_phone or user.phone or '—',
+            'started_at': s.started_at.isoformat(),
+            'status': status,
+            'cheating_reason': s.cheating_reason,
+            'answered_count': answered,
+            'total_questions': len(s.question_order) or olympiad.questions or 0,
+            'tab_escapes': escapes,
+            'is_online': is_online,
+            'score': attempt.score if attempt else None,
+            'time_spent': attempt.time_spent if attempt else None,
+        })
+
+    return Response(results)
+

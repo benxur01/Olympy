@@ -33,6 +33,11 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   // filter. Avval input value/onChange'siz mavjud edi — foydalanuvchi
   // yozardi lekin natija filterlanmasdi.
   const [studentSearch, setStudentSearch] = React.useState('');
+  const [liveOlympiadId, setLiveOlympiadId] = React.useState(null);
+  const [proctoringData, setProctoringData] = React.useState([]);
+  const [proctoringLoading, setProctoringLoading] = React.useState(false);
+  const [proctoringError, setProctoringError] = React.useState('');
+  const [proctoringSearch, setProctoringSearch] = React.useState('');
   // Telegram link polling intervalini ref'da saqlaymiz, shunda component
   // unmount bo'lsa ham tozalanadi (avval polling event handler ichida
   // boshlanardi va unmount paytida cheksiz davom etardi).
@@ -156,6 +161,36 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       if (intervalId) clearInterval(intervalId);
     };
   }, [isApi, managerCenterId, loadPendingStudents, loadApprovedStudents]);
+
+  const loadProctoring = React.useCallback(() => {
+    if (!isApi || !liveOlympiadId) {
+      setProctoringData([]);
+      return Promise.resolve();
+    }
+    return OlympyApi.getOlympiadLiveProctoring(liveOlympiadId, OlympyApi.getToken())
+      .then(res => {
+        setProctoringData(Array.isArray(res) ? res : []);
+        setProctoringError('');
+      })
+      .catch(err => {
+        console.warn('getOlympiadLiveProctoring failed:', err);
+        setProctoringError("Jonli nazorat ma'lumotlarini yuklab bo'lmadi.");
+      });
+  }, [isApi, liveOlympiadId]);
+
+  React.useEffect(() => {
+    if (page !== 'proctoring' || !liveOlympiadId) return undefined;
+    setProctoringLoading(true);
+    loadProctoring().finally(() => setProctoringLoading(false));
+
+    const interval = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        loadProctoring();
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [page, liveOlympiadId, loadProctoring]);
 
   React.useEffect(() => {
     setAssignedQuestionIds(assignModal?.questionIds || []);
@@ -670,7 +705,15 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   <div className="text-sm font-semibold text-white truncate">{o.title}</div>
                   <div className="text-xs text-white/40">{[o.testLevel, testTypeLabel(o.testType)].filter(Boolean).join(' · ')}{(o.testLevel || o.testType) ? ' · ' : ''}{o.participants || 0} ishtirokchi</div>
                 </div>
-                <Badge status={statusLabel(o.status)} />
+                <div className="flex items-center gap-2">
+                  {o.status === 'active' && (
+                    <button onClick={() => { setLiveOlympiadId(o.id); setPage('proctoring'); }}
+                      className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold text-emerald-300 hover:bg-emerald-500/20">
+                      Jonli
+                    </button>
+                  )}
+                  <Badge status={statusLabel(o.status)} />
+                </div>
               </div>
             ))}
             {olympiads.length === 0 && <div className="text-sm text-white/40">Hali tadbir yo'q</div>}
@@ -926,6 +969,10 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 )}
                 {o.status === 'active' && (
                   <>
+                    <button onClick={() => { setLiveOlympiadId(o.id); setPage('proctoring'); }}
+                      className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 flex items-center justify-center gap-1">
+                      👁️ Jonli nazorat
+                    </button>
                     <button onClick={() => deactivateEvent(o)} disabled={eventSaving}
                       className="btn-ghost text-xs px-3 py-1.5 rounded-xl disabled:opacity-50">Nofaol qilish</button>
                     <button onClick={() => finishEvent(o)} disabled={eventSaving}
@@ -1069,6 +1116,271 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     );
   };
 
+  const renderProctoring = () => {
+    const activeOlym = olympiads.find(o => String(o.id) === String(liveOlympiadId));
+    const searchQuery = (proctoringSearch || '').trim().toLowerCase();
+    
+    const filteredProctoring = searchQuery
+      ? proctoringData.filter(p => {
+          const name = String(p.student_name || '').toLowerCase();
+          const phone = String(p.phone || '').toLowerCase();
+          const reason = String(p.cheating_reason || '').toLowerCase();
+          return name.includes(searchQuery) || phone.includes(searchQuery) || reason.includes(searchQuery);
+        })
+      : proctoringData;
+
+    // Stats
+    const totalCount = proctoringData.length;
+    const onlineCount = proctoringData.filter(p => p.is_online).length;
+    const completedCount = proctoringData.filter(p => p.status === 'completed').length;
+    const disqualifiedCount = proctoringData.filter(p => p.status === 'disqualified').length;
+
+    return (
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
+        {/* Back and title */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { setPage('olympiads'); setLiveOlympiadId(null); }}
+              className="btn-ghost p-2 rounded-xl"
+              title="Orqaga"
+            >
+              <Icon name="arrowLeft" size={16} />
+            </button>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-black text-white">Jonli nazorat paneli</h2>
+                <span className="flex h-2.5 w-2.5 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                </span>
+                <span className="text-[10px] uppercase tracking-wider font-extrabold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md">LIVE</span>
+              </div>
+              <p className="text-white/40 text-xs mt-0.5">{activeOlym?.title || 'Tadbir'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadProctoring}
+              disabled={proctoringLoading}
+              className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1.5"
+            >
+              <Icon name="bolt" size={13} /> {proctoringLoading ? 'Yangilanmoqda...' : 'Yangilash'}
+            </button>
+          </div>
+        </div>
+
+        {/* Stats summary cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="glass rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <div className="text-xs text-white/40 font-medium">Jami faol</div>
+              <div className="text-2xl font-black text-white mt-1">{totalCount}</div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+              <Icon name="users" size={18} />
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <div className="text-xs text-white/40 font-medium font-bold text-emerald-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                Onlayn
+              </div>
+              <div className="text-2xl font-black text-white mt-1">{onlineCount}</div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+              <Icon name="check" size={18} />
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <div className="text-xs text-white/40 font-medium text-slate-300">Tugatganlar</div>
+              <div className="text-2xl font-black text-white mt-1">{completedCount}</div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/45">
+              <Icon name="trophy" size={18} />
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <div className="text-xs text-white/40 font-medium text-rose-400">Diskvalifikatsiya</div>
+              <div className="text-2xl font-black text-rose-400 mt-1">{disqualifiedCount}</div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-400">
+              <Icon name="info" size={18} />
+            </div>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="flex justify-between items-center gap-3">
+          <div className="relative w-full sm:w-80">
+            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+            <input
+              className="input-field pl-10 py-2 w-full text-sm"
+              placeholder="Ism yoki telefon bo'yicha qidirish..."
+              value={proctoringSearch}
+              onChange={e => setProctoringSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Proctoring table */}
+        <div className="glass rounded-2xl overflow-hidden border border-white/5">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[800px]">
+              <thead>
+                <tr className="border-b border-white/5 bg-white/2">
+                  {["Ism / Telefon", 'Boshlash vaqti', 'Holati', 'Javoblar', 'Tab almashish', 'Natija / Sarflangan vaqt'].map(h => (
+                    <th key={h} className="text-left px-5 py-4 text-xs text-white/40 font-bold uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {filteredProctoring.map(p => {
+                  const percent = p.total_questions > 0 ? Math.round((p.answered_count / p.total_questions) * 100) : 0;
+                  
+                  // Status and online rendering
+                  let statusBadge = null;
+                  let onlineIndicator = null;
+                  
+                  if (p.status === 'disqualified') {
+                    statusBadge = (
+                      <span className="rounded-lg bg-rose-500/15 border border-rose-500/30 px-2 py-1 text-xs font-bold text-rose-400 inline-flex items-center gap-1">
+                        ⚠️ Diskvalifikatsiya
+                      </span>
+                    );
+                    onlineIndicator = (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-rose-400">
+                        <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                        Qizil chiroq
+                      </span>
+                    );
+                  } else if (p.status === 'completed') {
+                    statusBadge = (
+                      <span className="rounded-lg bg-indigo-500/15 border border-indigo-500/30 px-2 py-1 text-xs font-bold text-indigo-300 inline-flex items-center gap-1">
+                        ✓ Yakunlandi
+                      </span>
+                    );
+                    onlineIndicator = (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-white/30">
+                        <span className="w-2 h-2 rounded-full bg-white/20"></span>
+                        Oflayn
+                      </span>
+                    );
+                  } else {
+                    // active
+                    statusBadge = (
+                      <span className="rounded-lg bg-cyan-500/10 border border-cyan-500/25 px-2 py-1 text-xs font-bold text-cyan-300">
+                        Faol topshirmoqda
+                      </span>
+                    );
+                    if (p.is_online) {
+                      onlineIndicator = (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                          Yashil chiroq (Onlayn)
+                        </span>
+                      );
+                    } else {
+                      onlineIndicator = (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-white/40">
+                          <span className="w-2 h-2 rounded-full bg-white/30"></span>
+                          Oflayn (Aloqa yo'q)
+                        </span>
+                      );
+                    }
+                  }
+
+                  // Warnings highlighting
+                  const hasEscapes = p.tab_escapes > 0;
+                  const escapeTone = hasEscapes
+                    ? (p.tab_escapes >= 60
+                        ? 'text-rose-400 bg-rose-500/10 border border-rose-500/20'
+                        : 'text-amber-400 bg-amber-500/10 border border-amber-500/20')
+                    : 'text-white/40 bg-white/5';
+
+                  const formattedStart = p.started_at
+                    ? new Date(p.started_at).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                    : '—';
+
+                  const formattedTimeSpent = p.time_spent != null
+                    ? `${Math.floor(p.time_spent / 60)} daqiqa`
+                    : '—';
+
+                  return (
+                    <tr key={p.student_id} className="olympy-row hover:bg-white/1.5 transition-colors">
+                      <td className="px-5 py-4">
+                        <div className="font-semibold text-white text-sm">{p.student_name}</div>
+                        <div className="text-xs text-white/40 mt-0.5">{p.phone}</div>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-white/60">
+                        {formattedStart}
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="space-y-1">
+                          <div>{statusBadge}</div>
+                          <div>{onlineIndicator}</div>
+                          {p.cheating_reason && (
+                            <div className="text-[10px] text-rose-300/80 bg-rose-950/20 px-2 py-0.5 rounded border border-rose-900/30 max-w-[200px] truncate" title={p.cheating_reason}>
+                              Sabab: {p.cheating_reason}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 min-w-[150px]">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-bold text-white/80">{p.answered_count} / {p.total_questions}</span>
+                          <span className="text-[10px] text-white/40 font-medium">({percent}%)</span>
+                        </div>
+                        <div className="w-32 h-1.5 bg-white/5 rounded-full mt-1.5 overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400 rounded-full transition-all duration-300"
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold font-mono inline-flex items-center gap-1 ${escapeTone}`}>
+                          <Icon name="info" size={11} /> {p.tab_escapes} soniya
+                        </span>
+                        {hasEscapes && (
+                          <div className="text-[9px] text-amber-300 mt-1 font-semibold">
+                            ⚠️ Tashqarida bo'lgan
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-5 py-4 text-sm">
+                        {p.status === 'completed' ? (
+                          <div>
+                            <span className="font-extrabold text-emerald-400 text-base">{p.score}%</span>
+                            <div className="text-[10px] text-white/40 mt-0.5">Sarflandi: {formattedTimeSpent}</div>
+                          </div>
+                        ) : p.status === 'disqualified' ? (
+                          <span className="font-bold text-rose-400 text-xs">Natija bekor qilingan</span>
+                        ) : (
+                          <span className="text-white/30 text-xs">Test topshirilmoqda...</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filteredProctoring.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-16 text-center text-white/40 text-sm">
+                      {searchQuery ? "Mos keladigan ishtirokchilar topilmadi" : "Ushbu tadbirda faol ishtirokchilar hozircha mavjud emas"}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const pagesMap = {
     home: renderHome,
     requests: renderRequests,
@@ -1077,6 +1389,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     students: renderStudents,
     results: renderResults,
     qanalytics: renderQAnalytics,
+    proctoring: renderProctoring,
   };
 
   return (
