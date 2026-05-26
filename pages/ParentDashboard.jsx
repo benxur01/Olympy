@@ -7,6 +7,7 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
   const [linkError, setLinkError] = React.useState('');
   const [linkSuccess, setLinkSuccess] = React.useState('');
   const [selectedChild, setSelectedChild] = React.useState(null);
+  const [downloadingReportId, setDownloadingReportId] = React.useState(null);
 
   const isApi = !!user?._api;
   const token = isApi ? OlympyApi.getToken() : null;
@@ -43,6 +44,26 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
       childrenRes.reload();
     } catch (err) {
       alert(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi");
+    }
+  };
+
+  const handleDownloadReport = async (studentId, studentName) => {
+    setDownloadingReportId(studentId);
+    try {
+      const blob = await OlympyApi.downloadChildReport(studentId, token);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const cleanedName = (studentName || 'o_quvchi').replace(/\s+/g, '_');
+      a.download = `hisobot-${cleanedName}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(OlympyApi.toUserMessage?.(err) || "Hisobotni yuklab bo'lmadi");
+    } finally {
+      setDownloadingReportId(null);
     }
   };
 
@@ -87,7 +108,14 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
                 <div className="flex items-start gap-3 mb-3">
                   <Avatar name={child.full_name} src={child.avatar_url} size={48} />
                   <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-white truncate">{child.full_name}</div>
+                    <div className="font-semibold text-white flex items-center gap-1.5 truncate">
+                      {child.full_name}
+                      {!!child.streak_count && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/25 px-1.5 py-0.5 rounded-lg animate-pulse" title="Ketma-ket faol kunlari">
+                          🔥 {child.streak_count} kun
+                        </span>
+                      )}
+                    </div>
                     <div className="text-xs text-white/40 truncate">{child.phone}</div>
                   </div>
                 </div>
@@ -119,10 +147,29 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
                     </div>
                   </div>
                 )}
-                <button
-                  onClick={() => setSelectedChild(child)}
-                  className="w-full btn-ghost py-2.5 rounded-xl text-sm font-semibold"
-                >Batafsil</button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleDownloadReport(child.student_id, child.full_name)}
+                    disabled={downloadingReportId === child.student_id}
+                    className="flex-1 btn-primary py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 min-h-[40px] disabled:opacity-50"
+                  >
+                    {downloadingReportId === child.student_id ? (
+                      <>
+                        <span className="w-3.5 h-3.5 rounded-full border border-white/20 border-t-white animate-spin" />
+                        Yuklanmoqda...
+                      </>
+                    ) : (
+                      <>
+                        <Icon name="download" size={13} />
+                        Hisobot
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setSelectedChild(child)}
+                    className="flex-1 btn-ghost py-2.5 rounded-xl text-xs font-semibold"
+                  >Batafsil</button>
+                </div>
               </div>
             );
           })}
@@ -228,6 +275,23 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
       <Modal open={!!selectedChild} onClose={() => setSelectedChild(null)} title={selectedChild?.full_name || ''} width="max-w-2xl">
         {selectedChild && (
           <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            {selectedChild.badges && selectedChild.badges.length > 0 && (
+              <div className="pb-3 border-b border-white/5">
+                <div className="text-[10px] text-white/40 uppercase mb-1.5 font-bold tracking-wider">Erishilgan nishonlar</div>
+                <div className="flex flex-wrap gap-2">
+                  {selectedChild.badges.map(b => (
+                    <span
+                      key={b.id}
+                      className={`inline-flex items-center gap-1.5 text-[10px] md:text-xs font-bold text-white bg-gradient-to-r ${b.color || 'from-indigo-500 to-purple-500'} px-2.5 py-1.5 rounded-xl shadow-[0_4px_12px_rgba(99,102,241,0.2)]`}
+                      title={b.description}
+                    >
+                      <span>{b.icon}</span>
+                      <span>{b.title}</span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
             {(selectedChild.attempts || []).length === 0 && (
               <div className="text-xs text-white/40 text-center py-4">Natijalar yo'q</div>
             )}

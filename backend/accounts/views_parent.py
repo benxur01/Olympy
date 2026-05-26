@@ -42,6 +42,8 @@ def _serialize_child(student, attempts_qs):
         'username': student.username or '',
         'phone': student.normalized_phone,
         'avatar_url': avatar_url,
+        'streak_count': student.streak_count,
+        'badges': student.get_badges(),
         'attempts': attempts,
     }
 
@@ -131,3 +133,50 @@ def unlink_child(request, student_id):
         except Exception:
             pass
     return Response(status=http_status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def child_report_pdf(request, student_id):
+    """GET /api/me/parent/children/<student_id>/report/ — farzandning oylik hisobotini PDF formatida yuklash."""
+    from django.http import HttpResponse
+    from django.contrib.auth import get_user_model
+    from .reports import generate_monthly_report_pdf
+    
+    # Check if the child belongs to this parent
+    link_exists = ParentStudentLink.objects.filter(parent=request.user, student_id=student_id).exists()
+    if not link_exists:
+        return Response({'detail': "Ruxsat berilmagan yoki farzand bog'lanmagan"}, status=http_status.HTTP_403_FORBIDDEN)
+        
+    User = get_user_model()
+    student = get_object_or_404(User, pk=student_id)
+    
+    try:
+        pdf_bytes = generate_monthly_report_pdf(student)
+        # Ota-onaning Telegrami bog'langan bo'lsa, hisobotni bot orqali ham avtomatik yuboramiz
+        chat_id = getattr(request.user, 'telegram_chat_id', '')
+        if chat_id:
+            from notifications.services import send_pdf_to_telegram
+            cleaned_name = (student.full_name or 'o_quvchi').replace(' ', '_')
+            filename_tg = f"hisobot-{cleaned_name}.pdf"
+            caption_tg = f"📊 Farzandingiz {student.full_name or ''} ning oylik rivojlanish hisoboti."
+            import threading
+            def _send():
+                try:
+                    send_pdf_to_telegram(chat_id, pdf_bytes, filename_tg, caption_tg)
+                except Exception:
+                    pass
+            threading.Thread(target=_send, daemon=True).start()
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception("Report generation failed for student %s", student_id)
+        return Response({'detail': f"Hisobot yaratib bo'lmadi: {str(e)}"}, status=http_status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    filename = f"hisobot-{student_id}.pdf"
+    if student.full_name:
+        cleaned_name = "".join(c for c in student.full_name if c.isalnum() or c in (' ', '-', '_')).strip().replace(' ', '_')
+        filename = f"hisobot-{cleaned_name}.pdf"
+        
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response

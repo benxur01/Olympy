@@ -12,16 +12,22 @@ class UserSerializer(serializers.ModelSerializer):
     roles_detail = serializers.SerializerMethodField()
     telegram_linked = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
+    badges = serializers.SerializerMethodField()
 
     class Meta:
         model = User
         fields = ['id', 'full_name', 'first_name', 'last_name', 'username',
                   'phone', 'normalized_phone', 'roles',
                   'roles_detail', 'telegram_linked', 'is_platform_admin',
-                  'is_active', 'avatar_url', 'created_at']
+                  'is_active', 'avatar_url', 'created_at',
+                  'streak_count', 'last_active_date', 'badges']
         read_only_fields = ['id', 'normalized_phone', 'roles_detail',
                             'telegram_linked', 'is_platform_admin',
-                            'is_active', 'avatar_url', 'created_at']
+                            'is_active', 'avatar_url', 'created_at',
+                            'streak_count', 'last_active_date', 'badges']
+
+    def get_badges(self, obj):
+        return obj.get_badges()
 
     def get_telegram_linked(self, obj):
         return bool(obj.telegram_chat_id)

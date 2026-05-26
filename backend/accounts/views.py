@@ -1429,3 +1429,26 @@ def telegram_auth_webhook(request):
 @permission_classes([AllowAny])
 def telegram_manager_webhook(request):
     return _telegram_webhook_response(request, bot='manager')
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def activity_leaderboard(request):
+    """GET /api/accounts/activity-leaderboard/ — Ketma-ket faollik kunlari bo'yicha haftalik eng faol o'quvchilar reytingi."""
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    
+    # Filter for active users with student role and streak_count > 0
+    qs = User.objects.filter(is_active=True, streak_count__gt=0).order_by('-streak_count', '-last_active_date')[:15]
+    
+    entries = []
+    for i, u in enumerate(qs):
+        entries.append({
+            'rank': i + 1,
+            'user_id': u.id,
+            'name': u.full_name or u.phone or 'O\'quvchi',
+            'streak_count': u.streak_count,
+            'badges': u.get_badges()[:2] # Expose up to 2 badges
+        })
+        
+    return Response(entries)

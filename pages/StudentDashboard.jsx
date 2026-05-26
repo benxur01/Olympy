@@ -1,5 +1,23 @@
 // pages/StudentDashboard.jsx
 
+const BadgeList = ({ badges }) => {
+  if (!badges || badges.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2 mt-2">
+      {badges.map(b => (
+        <span
+          key={b.id}
+          className={`inline-flex items-center gap-1.5 text-[10px] md:text-xs font-bold text-white bg-gradient-to-r ${b.color || 'from-indigo-500 to-purple-500'} px-2.5 py-1.5 rounded-xl shadow-[0_4px_12px_rgba(99,102,241,0.2)]`}
+          title={b.description}
+        >
+          <span>{b.icon}</span>
+          <span>{b.title}</span>
+        </span>
+      ))}
+    </div>
+  );
+};
+
 const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
@@ -32,6 +50,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     () => isApi ? OlympyApi.getMyStats(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+  const apiActivityLeaderboardRes = useApiData(
+    () => isApi ? OlympyApi.getActivityLeaderboard(OlympyApi.getToken()) : Promise.resolve([]),
+    [isApi],
+  );
 
   // Live student-role state from store
   const studentRole = user.roles?.student;
@@ -41,6 +63,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const apiCenters = isApi && Array.isArray(apiCentersRes.data) ? apiCentersRes.data.map(mapApiCenter) : null;
   const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data) ? apiOlympiadsRes.data.map(mapApiOlympiad) : null;
   const apiAttempts = isApi && Array.isArray(apiResultsRes.data) ? apiResultsRes.data.map(mapApiAttempt) : null;
+  const activityLeaderboard = apiActivityLeaderboardRes.data || [];
 
   const allCenters = isApi ? (apiCenters || []) : store.centers;
   const myCenter = studentCenterId ? allCenters.find(c => String(c.id) === String(studentCenterId)) : null;
@@ -196,8 +219,16 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {/* Welcome */}
       <div className="flex items-start justify-between flex-wrap gap-3 md:gap-4">
         <div className="min-w-0 flex-1">
-          <h2 className="text-xl md:text-2xl font-black text-white truncate">Salom, {user.name.split(' ')[0]}! 👋</h2>
+          <h2 className="text-xl md:text-2xl font-black text-white flex items-center gap-2 truncate">
+            Salom, {user.name.split(' ')[0]}! 👋
+            {!!user?.streakCount && (
+              <span className="inline-flex items-center gap-1 text-sm font-black text-orange-400 bg-orange-500/10 border border-orange-500/25 px-2 py-0.5 rounded-lg animate-pulse" title="Ketma-ket faol kunlaringiz">
+                🔥 {user.streakCount} kun
+              </span>
+            )}
+          </h2>
           <p className="text-white/40 text-xs md:text-sm mt-1">{new Date().toLocaleDateString('uz-UZ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          <BadgeList badges={user.badges} />
         </div>
         {!hasCenter && (
           <div className="glass rounded-2xl p-4 border border-indigo-500/20 w-full sm:max-w-xs">
@@ -364,6 +395,45 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           </div>
         </div>
       </div>
+
+      {/* Activity Leaderboard */}
+      {isApi && activityLeaderboard.length > 0 && (
+        <div className="glass rounded-2xl p-4 md:p-5">
+          <div className="flex items-center justify-between mb-3 md:mb-4 gap-2">
+            <h3 className="font-bold text-white text-sm md:text-base flex items-center gap-1.5">
+              <span>🔥</span> Haftalik eng faol o'quvchilar
+            </h3>
+            <span className="text-[10px] text-indigo-300 font-bold uppercase tracking-wider bg-indigo-500/10 border border-indigo-500/25 px-2 py-0.5 rounded-lg animate-pulse">Streak bo'yicha</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {activityLeaderboard.slice(0, 9).map((entry, idx) => {
+              const colors = ['bg-amber-500/20 text-amber-400 border border-amber-500/30', 'bg-slate-300/20 text-slate-300 border border-slate-300/30', 'bg-amber-700/20 text-amber-600 border border-amber-700/30'];
+              const badgeClass = idx < 3 ? colors[idx] : 'glass text-white/40 border border-white/5';
+              return (
+                <div key={entry.user_id} className="flex items-center gap-3 p-2.5 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 hover:bg-white/10 transition-all">
+                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black flex-shrink-0 ${badgeClass}`}>
+                    {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${entry.rank}`}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs md:text-sm font-medium text-white truncate">{entry.name}</div>
+                    {/* Render badge indicator */}
+                    {entry.badges && entry.badges.length > 0 && (
+                      <div className="flex gap-1 mt-0.5">
+                        {entry.badges.map(b => (
+                          <span key={b.id} className="text-[9px]" title={b.title}>{b.icon}</span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <span className="text-xs font-bold text-orange-400">🔥 {entry.streak_count} kun</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -623,6 +693,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                onClose={() => setPage('home')}
                onNavigateToCenters={() => setPage('centers')}
                pageMode
+               onUserUpdate={onUserUpdate}
              />
            ) :
            (pages[page] || renderHome)()}
@@ -667,7 +738,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 };
 
 // Practice / Mashq oqimi — fan tanlash → savol tanlash → savollar → natija
-const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters, pageMode = false }) => {
+const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters, pageMode = false, onUserUpdate }) => {
   const isApi = !!user?._api;
   const token = isApi ? OlympyApi.getToken() : null;
   const [step, setStep] = React.useState('setup'); // setup | quiz | result
@@ -758,6 +829,9 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
       }, token);
       setResult(res);
       setStep('result');
+      if (res && res.streak_count !== undefined && onUserUpdate) {
+        onUserUpdate({ ...user, streakCount: res.streak_count });
+      }
     } catch (err) {
       setErrorMsg(OlympyApi.toUserMessage?.(err) || "Natijani yuborib bo'lmadi");
     } finally {
@@ -975,6 +1049,19 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
           {/* Result step */}
           {step === 'result' && result && (
             <div className="space-y-5">
+              {/* Streak Celebration Banner */}
+              {!!user?.streakCount && (
+                <div className="glass-strong rounded-2xl p-4 bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-orange-500/10 border border-orange-500/30 flex items-center justify-between gap-3 shadow-[0_8px_32px_rgba(249,115,22,0.08)] animate-in">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl animate-bounce">🔥</span>
+                    <div className="text-left">
+                      <div className="text-sm font-black text-white">Ketma-ket {user.streakCount} kun faollik!</div>
+                      <div className="text-[10px] text-white/50">Kundalik marrani bajardingiz, davom eting!</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-3 gap-3">
                 <div className="glass border-white/5 rounded-2xl p-4 text-center relative overflow-hidden flex flex-col justify-center min-h-[110px]">
                   <div className="text-white/40 text-[10px] md:text-xs font-semibold uppercase tracking-wider mb-1">To'g'ri</div>

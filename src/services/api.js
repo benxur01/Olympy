@@ -277,6 +277,9 @@ const mapBackendUser = (user) => {
     isPlatformAdmin: !!user.is_platform_admin,
     isActive: user.is_active !== false,
     telegramLinked: !!user.telegram_linked,
+    streakCount: user.streak_count || 0,
+    lastActiveDate: user.last_active_date || null,
+    badges: user.badges || [],
     _api: true,
   };
 };
@@ -338,8 +341,8 @@ export const OlympyApi = {
   confirmPasswordReset: (payload) => request('/api/auth/password-reset/confirm/', { method: 'POST', body: payload, retryOnAuth: false }),
   startTelegramLink: (token) => request('/api/auth/telegram/link/start/', { method: 'POST', token }),
   verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload, retryOnAuth: false }),
-  // Me
   getMe: (token) => request('/api/me/', { token }),
+  getActivityLeaderboard: (token) => request('/api/me/activity-leaderboard/', { token }),
   updateProfile: (payload, token) => request('/api/me/', { method: 'PATCH', body: payload, token }),
   changePassword: (payload, token) => request('/api/auth/me/change-password/', { method: 'POST', body: payload, token }),
   uploadMyAvatar: (imageFile, token) => {
@@ -458,6 +461,8 @@ export const OlympyApi = {
   // Attempts / results / leaderboard
   submitAttempt: (payload, token) => request('/api/attempts/', { method: 'POST', body: payload, token }),
   reportCheating: (payload, token) => request('/api/attempts/cheating/', { method: 'POST', body: payload, token, keepalive: true, retryOnAuth: false }),
+  pingTestSession: (olympiadId, answeredCount, tabEscapes, token) => request('/api/attempts/ping/', { method: 'POST', body: { olympiad: olympiadId, answered_count: answeredCount, tab_escapes: tabEscapes }, token }),
+  getOlympiadLiveProctoring: (olympiadId, token) => request(`/api/manager/olympiads/${olympiadId}/live/`, { token }),
   // Bitta attemptni olib kelish — Leaderboard "Ko'rish" tugmasi va Results
   // sahifasi uchun. Backend olympiad detail'ni ham qo'shib qaytaradi.
   getAttempt: (attemptId, token) => request(`/api/attempts/${attemptId}/`, { token }),
@@ -489,10 +494,27 @@ export const OlympyApi = {
   submitPractice: (body, token) => request('/api/practice/submit/', { method: 'POST', body, token }),
   getWrongAnswerSubjects: (token) => request('/api/practice/wrong-answers/', { token }),
   startWrongAnswerPractice: (body, token) => request('/api/practice/wrong-answers/start/', { method: 'POST', body, token }),
+  explainQuestion: (questionId, token) => request(`/api/questions/${questionId}/explain/`, { method: 'POST', token }),
   // Parent / Ota-ona
   linkChild: (studentPhone, token) => request('/api/me/parent/link/', { method: 'POST', body: { student_phone: studentPhone }, token }),
   getChildren: (token) => request('/api/me/parent/children/', { token }),
   unlinkChild: (studentId, token) => request(`/api/me/parent/link/${studentId}/`, { method: 'DELETE', token }),
+  childReportDownloadUrl: (studentId) => `${API_BASE_URL}/api/me/parent/children/${studentId}/report/`,
+  downloadChildReport: async (studentId, token) => {
+    const res = await fetch(`${API_BASE_URL}/api/me/parent/children/${studentId}/report/`, {
+      method: 'GET',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      const err = new Error(errData.detail || "Hisobot yuklab bo'lmadi");
+      err.status = res.status;
+      err.data = errData;
+      throw err;
+    }
+    return res.blob();
+  },
   // Sertifikat URL'i — `download` atributi bilan <a> orqali fayl tushadi.
   certificateDownloadUrl: (attemptId) => `${API_BASE_URL}/api/certificates/${attemptId}/download/`,
   downloadCertificate: async (attemptId, token) => {

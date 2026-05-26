@@ -59,6 +59,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     telegram_linked_at = models.DateTimeField(null=True, blank=True)
     token_version = models.PositiveIntegerField(default=0)
     avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
+    streak_count = models.PositiveIntegerField(default=0)
+    last_active_date = models.DateField(null=True, blank=True)
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
@@ -98,6 +100,96 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def has_role(self, role):
         return role in (self.roles or [])
+
+    def update_streak(self):
+        """ Ketma-ket faollik kunlarini (streak) yangilash logikasi """
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        today = timezone.now().date()
+        if not self.last_active_date:
+            self.streak_count = 1
+            self.last_active_date = today
+            self.save(update_fields=['streak_count', 'last_active_date'])
+            return True
+            
+        diff = today - self.last_active_date
+        if diff.days == 1:
+            self.streak_count += 1
+            self.last_active_date = today
+            self.save(update_fields=['streak_count', 'last_active_date'])
+            return True
+        elif diff.days > 1:
+            self.streak_count = 1
+            self.last_active_date = today
+            self.save(update_fields=['streak_count', 'last_active_date'])
+            return True
+        return False
+
+    def get_badges(self):
+        """ Foydalanuvchining nishonlari (Badges) ro'yxatini qaytaradi """
+        try:
+            from attempts.models import TestAttempt
+            badges = []
+            
+            # 1. Tirishqoq
+            if (self.streak_count or 0) >= 7:
+                badges.append({
+                    'id': 'persistent',
+                    'title': 'Tirishqoq',
+                    'description': "7 kundan ortiq faol streak",
+                    'icon': '🔥',
+                    'color': 'from-orange-500 to-amber-500'
+                })
+            elif (self.streak_count or 0) >= 3:
+                badges.append({
+                    'id': 'active_starter',
+                    'title': 'Intiluvchan',
+                    'description': "3 kundan ortiq faol streak",
+                    'icon': '⚡',
+                    'color': 'from-amber-400 to-yellow-500'
+                })
+                
+            # 2. Matematika qiroli (10 marta 100% ball yoki 3 marta 100% ball)
+            attempts_100 = TestAttempt.objects.filter(user=self, score=100, disqualified=False).count()
+            if attempts_100 >= 10:
+                badges.append({
+                    'id': 'math_king',
+                    'title': 'Matematika Qiroli',
+                    'description': "10 marta 100% natija",
+                    'icon': '👑',
+                    'color': 'from-yellow-500 via-amber-500 to-yellow-600'
+                })
+            elif attempts_100 >= 3:
+                badges.append({
+                    'id': 'perfect_score',
+                    'title': 'Mukammal Natija',
+                    'description': "3 marta 100% natija",
+                    'icon': '🏆',
+                    'color': 'from-indigo-500 to-purple-500'
+                })
+                
+            # 3. Faol Ishtirokchi (Kamida 10 ta urinish)
+            total_attempts = TestAttempt.objects.filter(user=self, disqualified=False).count()
+            if total_attempts >= 10:
+                badges.append({
+                    'id': 'veteran',
+                    'title': 'Tajribali',
+                    'description': "10 tadan ortiq imtihonda qatnashgan",
+                    'icon': '🎖️',
+                    'color': 'from-cyan-500 to-blue-500'
+                })
+            elif total_attempts >= 1:
+                badges.append({
+                    'id': 'rookie',
+                    'title': 'Birinchi Qadam',
+                    'description': "Birinchi imtihon topshirildi",
+                    'icon': '🌱',
+                    'color': 'from-emerald-400 to-teal-500'
+                })
+            return badges
+        except Exception:
+            return []
 
     def add_role(self, role):
         if role not in (self.roles or []):

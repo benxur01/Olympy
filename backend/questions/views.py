@@ -9,7 +9,7 @@ from rest_framework.throttling import UserRateThrottle
 
 from centers.models import CenterMembership
 
-from .ai_generation import generate_questions
+from .ai_generation import generate_questions, explain_question_ai
 from .models import Question
 from .pdf_generation import extract_questions_from_pdf
 from .serializers import QuestionSerializer
@@ -614,3 +614,29 @@ def olympiad_questions(request, olympiad_id):
         'questions': questions_payload(session, olympiad),
         'session': session_timing_payload(session, olympiad),
     })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def explain_question(request, question_id):
+    """POST /api/questions/<id>/explain/
+
+    Savol uchun yechim tushuntirishini qaytaradi. Agar tushuntirish bazada
+    saqlanmagan bo'lsa, Gemini AI yordamida generatsiya qilinadi va keshlanadi.
+    """
+    question = get_object_or_404(Question, pk=question_id)
+    if question.explanation and question.explanation.strip():
+        return Response({'explanation': question.explanation})
+
+    explanation_text = explain_question_ai(
+        question_text=question.text,
+        options=question.options or [],
+        correct_idx=question.correct_answer,
+        subject=question.subject or '',
+    )
+
+    if explanation_text and "generatsiya qilinmadi" not in explanation_text:
+        question.explanation = explanation_text
+        question.save(update_fields=['explanation'])
+
+    return Response({'explanation': explanation_text})

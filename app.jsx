@@ -211,6 +211,15 @@ const App = () => {
   const handleTestFinish = (result) => {
     setTestResult(result);
     setPage('results');
+    const auth = globalThis.OlympyApi?.loadAuth?.();
+    if (auth?.token && globalThis.OlympyApi?.getMe) {
+      globalThis.OlympyApi.getMe(auth.token)
+        .then(fresh => {
+          const mapped = globalThis.OlympyApi.mapBackendUser(fresh);
+          updateCurrentUser(mapped);
+        })
+        .catch(() => {});
+    }
   };
 
   const switchRole = (role) => {

@@ -9,6 +9,7 @@ urlpatterns = [
     path('import/', views.import_questions_excel, name='questions-import'),
     path('delete-all/', views.delete_all_questions, name='questions-delete-all'),
     path('analytics/', views.question_analytics, name='questions-analytics'),
+    path('<int:question_id>/explain/', views.explain_question, name='questions-explain'),
     path('<int:question_id>/', views.question_detail, name='questions-detail'),
     path('', views.questions_list_create, name='questions-list-create'),
 ]

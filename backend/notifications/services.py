@@ -419,3 +419,56 @@ def send_cheating_detected_notification(student, olympiad, center, reason=''):
         if user.id in seen_push:
             _send_telegram_to_user(user, message)
             seen_push.discard(user.id)
+
+
+def send_pdf_to_telegram(chat_id, pdf_bytes, filename, caption):
+    """ Ota-onaga PDF hisobotini telegram orqali yuborish """
+    import urllib.request
+    import urllib.parse
+    token = _manager_bot_token()
+    if not token or not chat_id:
+        logger.info("[telegram-skip] bot token yoki chat_id yo'q, pdf yuborilmadi")
+        return False
+        
+    url = f'https://api.telegram.org/bot{token}/sendDocument'
+    
+    boundary = '----TelegramBotBoundaryReportPDF'
+    body = []
+    
+    # chat_id field
+    body.append(f'--{boundary}')
+    body.append('Content-Disposition: form-data; name="chat_id"\r\n')
+    body.append(str(chat_id))
+    
+    # caption field
+    body.append(f'--{boundary}')
+    body.append('Content-Disposition: form-data; name="caption"\r\n')
+    body.append(caption)
+    
+    # document file field
+    body.append(f'--{boundary}')
+    body.append(f'Content-Disposition: form-data; name="document"; filename="{filename}"')
+    body.append('Content-Type: application/pdf\r\n')
+    
+    raw_body = b''
+    for item in body:
+        if isinstance(item, str):
+            raw_body += item.encode('utf-8') + b'\r\n'
+        else:
+            raw_body += item + b'\r\n'
+            
+    raw_body += pdf_bytes + b'\r\n'
+    raw_body += f'--{boundary}--\r\n'.encode('utf-8')
+    
+    headers = {
+        'Content-Type': f'multipart/form-data; boundary={boundary}',
+        'Content-Length': str(len(raw_body))
+    }
+    
+    try:
+        req = urllib.request.Request(url, raw_body, headers, method='POST')
+        with urllib.request.urlopen(req, timeout=10):
+            return True
+    except Exception:
+        logger.exception('sendDocument to Telegram failed')
+        return False

@@ -7,6 +7,34 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   // Javoblarni ko'rish bo'limini ochish/yopish flagi. fetchedAttempt.questions_review
   // mavjud bo'lganda chiqadi (faqat backend rejimida).
   const [reviewOpen, setReviewOpen] = React.useState(false);
+  const [explanations, setExplanations] = React.useState({}); // { [qid]: string }
+  const [explaining, setExplaining] = React.useState({});     // { [qid]: boolean }
+
+  const handleExplain = async (qid) => {
+    if (explanations[qid]) return;
+    setExplaining(prev => ({ ...prev, [qid]: true }));
+    try {
+      const res = await OlympyApi.explainQuestion(qid, OlympyApi.getToken());
+      setExplanations(prev => ({ ...prev, [qid]: res?.explanation || "Tushuntirish yuklanmadi." }));
+    } catch (err) {
+      setExplanations(prev => ({ ...prev, [qid]: OlympyApi.toUserMessage?.(err) || "Tushuntirish yuklab bo'lmadi." }));
+    } finally {
+      setExplaining(prev => ({ ...prev, [qid]: false }));
+    }
+  };
+
+  const renderMarkdown = (text) => {
+    if (!text) return '';
+    return text.split('\n').map((line, i) => {
+      let content = line;
+      content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
+        const stripped = content.trim().substring(2);
+        return <li key={i} className="ml-4 list-disc" dangerouslySetInnerHTML={{ __html: stripped }} />;
+      }
+      return <p key={i} className="mb-1.5" dangerouslySetInnerHTML={{ __html: content }} />;
+    });
+  };
   // Leaderboard yoki boshqa sahifadan attemptId bilan kelganda, backend'dan
   // attemptni olib kelamiz. Avval mock store'dan qidirilardi va API rejimida
   // topa olmasdi.
@@ -155,6 +183,22 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const content = (
     <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-3 md:px-4 py-4 md:py-10 mobile-content-pad`} style={embedded ? {} : { background: '#060818' }}>
       <div className="max-w-2xl w-full space-y-4 md:space-y-6 animate-in">
+        {/* Streak Celebration Banner */}
+        {!!user?.streakCount && (
+          <div className="glass-strong rounded-2xl p-4 bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-orange-500/10 border border-orange-500/30 flex items-center justify-between gap-3 shadow-[0_8px_32px_rgba(249,115,22,0.08)] animate-in">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl animate-bounce">🔥</span>
+              <div className="text-left">
+                <div className="text-sm font-black text-white">Ketma-ket {user.streakCount} kun faollik!</div>
+                <div className="text-[10px] text-white/50">Faollik alangangizni o'chirmaslik uchun har kuni mashq yoki olimpiada yeching.</div>
+              </div>
+            </div>
+            <div className="hidden sm:block text-xs font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2.5 py-1 rounded-xl">
+              Super!
+            </div>
+          </div>
+        )}
+
         {/* Hero result card */}
         <div className={`glass-strong rounded-3xl p-5 md:p-8 text-center bg-gradient-to-br ${grade.bg} border border-white/10 relative overflow-hidden`}>
           <div className="hero-glow" style={{ background: '#6366f1', top: '-60%', left: '30%', opacity: 0.1 }} />
@@ -288,6 +332,39 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                             </div>
                           );
                         })}
+                      </div>
+
+                      {/* AI Explanation Button & Content */}
+                      <div className="mt-4 pt-3 border-t border-white/5 space-y-2">
+                        {explanations[q.id] ? (
+                          <div className="rounded-xl bg-[#0e1126] border border-indigo-500/20 p-3 text-xs text-white/80 leading-relaxed animate-in">
+                            <div className="flex items-center gap-1.5 text-indigo-400 font-bold mb-2">
+                              <Icon name="bolt" size={13} className="text-indigo-400 animate-pulse" />
+                              <span>AI Yechim Tushuntirishi</span>
+                            </div>
+                            <div className="whitespace-pre-line text-[11px] md:text-xs">
+                              {renderMarkdown(explanations[q.id])}
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleExplain(q.id)}
+                            disabled={explaining[q.id]}
+                            className="btn-ghost text-[11px] px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5 text-indigo-300 hover:text-indigo-200"
+                          >
+                            {explaining[q.id] ? (
+                              <>
+                                <span className="w-3 h-3 rounded-full border border-indigo-400/20 border-t-indigo-400 animate-spin" />
+                                Tushuntirish tayyorlanmoqda...
+                              </>
+                            ) : (
+                              <>
+                                <Icon name="bolt" size={12} />
+                                AI Yechim Tushuntirishi
+                              </>
+                            )}
+                          </button>
+                        )}
                       </div>
                     </div>
                   );

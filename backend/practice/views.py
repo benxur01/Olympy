@@ -200,6 +200,11 @@ def practice_submit(request):
     total = len(review)
     score_pct = round((correct_count / total) * 100) if total else 0
 
+    try:
+        request.user.update_streak()
+    except Exception:
+        pass
+
     # Submit qilingach session'ni o'chiramiz — qayta yuborishning oldini olish.
     cache.delete(f'{PRACTICE_CACHE_PREFIX}{practice_id}')
 
@@ -211,6 +216,7 @@ def practice_submit(request):
         'wrong_count': wrong_count,
         'total': total,
         'review': review,
+        'streak_count': request.user.streak_count,
     })
 
 

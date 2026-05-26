@@ -472,3 +472,58 @@ def generate_questions(subject, topic, count, difficulty='medium', question_type
         'error': "AI savol yarata olmadi.",
         'questions': [],
     }
+
+
+def explain_question_ai(question_text, options, correct_idx, subject=''):
+    keys = _gemini_api_keys()
+    if not keys:
+        return "Tushuntirish olish uchun Gemini API kaliti sozlanmagan."
+
+    options_str = "\n".join(f"{chr(65+i)}) {opt}" for i, opt in enumerate(options))
+    correct_option = chr(65 + correct_idx) if correct_idx < len(options) else str(correct_idx)
+
+    prompt = (
+        f"Quyidagi test savoli va uning javoblari uchun o'zbek tilida qisqa, tushunarli va chiroyli yechim tushuntirishini yozib ber. "
+        f"Matn oxirida to'g'ri javob nega to'g'ri ekanligini qisqacha izohla.\n\n"
+        f"Fan: {subject}\n"
+        f"Savol: {question_text}\n"
+        f"Variantlar:\n{options_str}\n"
+        f"To'g'ri javob: {correct_option}) {options[correct_idx] if correct_idx < len(options) else ''}\n\n"
+        f"Javobni faqat o'zbek tilida va formatlashda Markdown (masalan, muhim joylarini qalin qilish, ro'yxat ko'rinishida yozish) ishlatib yoz."
+    )
+
+    payload = {
+        'contents': [{
+            'role': 'user',
+            'parts': [{'text': prompt}],
+        }],
+        'generationConfig': {
+            'maxOutputTokens': 2048,
+        },
+    }
+    body = json.dumps(payload).encode('utf-8')
+
+    for model in _gemini_models():
+        model_path = urllib.parse.quote(model, safe='-_.~/')
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+        for api_key in keys:
+            req = urllib.request.Request(
+                url,
+                data=body,
+                method='POST',
+                headers={
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': api_key,
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=45) as response:
+                    raw = json.loads(response.read().decode('utf-8'))
+                parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
+                text = ''.join(part.get('text') or '' for part in parts)
+                if text.strip():
+                    return text.strip()
+            except Exception as exc:
+                logger.warning('Gemini explanation failed with model=%s: %s', model, exc)
+    return "AI yordamida tushuntirish generatsiya qilinmadi. Iltimos keyinroq urinib ko'ring."
+
