@@ -150,9 +150,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const navItems = [
     { key: 'home', icon: 'home', label: 'Asosiy' },
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
+    { key: 'practice', icon: 'bolt', label: 'Mashq' },
     { key: 'results', icon: 'chart', label: 'Natijalar' },
     { key: 'centers', icon: 'building', label: 'Tashkilotlar' },
     { key: 'leaderboard', icon: 'star', label: 'Reyting' },
+    { key: 'analytics', icon: 'chart', label: 'Analitika' },
     { key: 'profile', icon: 'eye', label: 'Profil' },
     { divider: true, key: 'd1' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
@@ -582,9 +584,16 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const pages = { home: renderHome, olympiads: renderOlympiads, results: renderResults, centers: renderCenters };
 
+  // Sahifa tugmasi `practice` yoki `analytics` bosilsa, ularni alohida
+  // handle qilamiz — `setPage` o'rniga modal yoki app-level navigatsiya.
+  const setPageOrSpecial = (key) => {
+    if (key === 'analytics') { onNavigate('analytics'); return; }
+    setPage(key);
+  };
+
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar items={navItems} activePage={page} setPage={setPage}
+      <Sidebar items={navItems} activePage={page} setPage={setPageOrSpecial}
         user={{ ...user, role: "O'quvchi" }} onLogout={onLogout}
         logoClick={() => onNavigate('landing')}
         mobileOpen={mobileMenu} onMobileClose={() => setMobileMenu(false)} />
@@ -606,13 +615,24 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         <main className="flex-1 overflow-x-hidden overflow-y-auto">
           {page === 'leaderboard' ? <LeaderboardPage embedded user={user} /> :
            page === 'profile' ? <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} /> :
+           page === 'practice' ? (
+             <PracticeFlow
+               user={user}
+               centerId={studentCenterId}
+               isApproved={isCenterApproved}
+               onClose={() => setPage('home')}
+               onNavigateToCenters={() => setPage('centers')}
+               pageMode
+             />
+           ) :
            (pages[page] || renderHome)()}
         </main>
-        <MobileBottomNav items={navItems} activePage={page} setPage={setPage} />
+        <MobileBottomNav items={navItems} activePage={page} setPage={setPageOrSpecial} />
       </div>
       {apiToast && (
         <div className="fixed bottom-20 md:bottom-6 right-3 md:right-6 left-3 md:left-auto z-50 glass-strong rounded-2xl px-5 py-3.5 border border-rose-500/30 animate-in text-sm font-medium text-white md:max-w-sm">{apiToast}</div>
       )}
+
       {centerConfirmOlympiad && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 md:p-4">
           <div className="glass rounded-2xl p-5 md:p-6 max-w-sm w-full border border-white/10">
@@ -642,6 +662,442 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// Practice / Mashq oqimi — fan tanlash → savol tanlash → savollar → natija
+const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters, pageMode = false }) => {
+  const isApi = !!user?._api;
+  const token = isApi ? OlympyApi.getToken() : null;
+  const [step, setStep] = React.useState('setup'); // setup | quiz | result
+  const [practiceMode, setPracticeMode] = React.useState('bank'); // bank | wrong
+  const [subjects, setSubjects] = React.useState([]);
+  const [subjectsLoading, setSubjectsLoading] = React.useState(false);
+  const [wrongSubjects, setWrongSubjects] = React.useState([]);
+  const [wrongSubjectsLoading, setWrongSubjectsLoading] = React.useState(false);
+  const [selectedSubject, setSelectedSubject] = React.useState('');
+  const [questionCount, setQuestionCount] = React.useState(10);
+  const [questions, setQuestions] = React.useState([]);
+  const [practiceId, setPracticeId] = React.useState('');
+  const [answers, setAnswers] = React.useState({});
+  const [currentIdx, setCurrentIdx] = React.useState(0);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [result, setResult] = React.useState(null);
+  const [errorMsg, setErrorMsg] = React.useState('');
+
+  const allowed = practiceMode === 'wrong' ? true : (isApi ? isApproved : !!centerId);
+  const activeSubjects = practiceMode === 'wrong' ? wrongSubjects : subjects;
+  const activeSubjectsLoading = practiceMode === 'wrong' ? wrongSubjectsLoading : subjectsLoading;
+
+  React.useEffect(() => {
+    if (practiceMode !== 'bank') return;
+    if (!centerId) return;
+    if (isApi && !isApproved) return;
+    setSubjectsLoading(true);
+    OlympyApi.getPracticeSubjects(centerId, token)
+      .then(rows => { setSubjects(Array.isArray(rows) ? rows : []); })
+      .catch(err => setErrorMsg(OlympyApi.toUserMessage?.(err) || "Fanlarni yuklab bo'lmadi"))
+      .finally(() => setSubjectsLoading(false));
+  }, [practiceMode, centerId, isApi, isApproved]);
+
+  React.useEffect(() => {
+    if (practiceMode !== 'wrong') return;
+    if (!isApi) { setWrongSubjects([]); return; }
+    setWrongSubjectsLoading(true);
+    OlympyApi.getWrongAnswerSubjects(token)
+      .then(rows => { setWrongSubjects(Array.isArray(rows) ? rows : []); })
+      .catch(err => setErrorMsg(OlympyApi.toUserMessage?.(err) || "Xato savollarni yuklab bo'lmadi"))
+      .finally(() => setWrongSubjectsLoading(false));
+  }, [practiceMode, isApi]);
+
+  React.useEffect(() => {
+    // Tab almashganda tanlangan fanni tozalaymiz va xato xabarini olib tashlaymiz.
+    setSelectedSubject('');
+    setErrorMsg('');
+  }, [practiceMode]);
+
+  const startPractice = async () => {
+    if (!selectedSubject) { setErrorMsg("Fan tanlang"); return; }
+    setErrorMsg('');
+    setSubmitting(true);
+    try {
+      const res = practiceMode === 'wrong'
+        ? await OlympyApi.startWrongAnswerPractice({
+            subject: selectedSubject,
+            question_count: questionCount,
+          }, token)
+        : await OlympyApi.startPractice({
+            center_id: centerId,
+            subject: selectedSubject,
+            question_count: questionCount,
+          }, token);
+      setPracticeId(res?.practice_id || '');
+      setQuestions(res?.questions || []);
+      setAnswers({});
+      setCurrentIdx(0);
+      setStep('quiz');
+    } catch (err) {
+      setErrorMsg(OlympyApi.toUserMessage?.(err) || "Mashqni boshlab bo'lmadi");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const chooseAnswer = (qid, idx) => {
+    setAnswers(prev => ({ ...prev, [qid]: idx }));
+  };
+
+  const finishPractice = async () => {
+    setSubmitting(true);
+    setErrorMsg('');
+    try {
+      const res = await OlympyApi.submitPractice({
+        practice_id: practiceId,
+        answers,
+      }, token);
+      setResult(res);
+      setStep('result');
+    } catch (err) {
+      setErrorMsg(OlympyApi.toUserMessage?.(err) || "Natijani yuborib bo'lmadi");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const restart = () => {
+    setStep('setup');
+    setQuestions([]);
+    setAnswers({});
+    setResult(null);
+    setPracticeId('');
+    setCurrentIdx(0);
+  };
+
+  const q = questions[currentIdx];
+  const total = questions.length;
+  const answered = Object.keys(answers).length;
+
+  return (
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+      <div className="glass rounded-2xl w-full max-w-3xl mx-auto overflow-hidden flex flex-col border border-white/10">
+        {/* Header */}
+        <div className="flex items-center justify-between gap-2 px-4 md:px-6 py-3.5 border-b border-white/10">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl gradient-bg flex items-center justify-center flex-shrink-0 shadow-[0_0_15px_rgba(99,102,241,0.25)]">
+              <Icon name="bolt" size={16} className="text-white" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-white font-bold text-sm md:text-base truncate">
+                {step === 'setup' && 'Mashq rejimi'}
+                {step === 'quiz' && `Savol ${currentIdx + 1}/${total}`}
+                {step === 'result' && 'Mashq natijasi'}
+              </div>
+              <div className="text-[10px] text-white/40 truncate">
+                {step === 'setup' && 'Bilimingizni mashq qiling'}
+                {step === 'quiz' && (selectedSubject || '')}
+                {step === 'result' && (selectedSubject || '')}
+              </div>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-white/40 hover:text-white p-1 flex-shrink-0 transition-colors">
+            <Icon name="x" size={18} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-4 md:px-6 py-5">
+          {errorMsg && (
+            <div className="mb-4 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-200 text-xs px-3 py-2.5">
+              {errorMsg}
+            </div>
+          )}
+
+          {/* Setup step */}
+          {step === 'setup' && (
+            <div className="space-y-4">
+              {/* Tab tanlash: Savol banki / Xatolarim */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => setPracticeMode('bank')}
+                  className={`rounded-xl py-2.5 text-xs md:text-sm font-bold border transition-all duration-200 flex items-center justify-center gap-2 ${practiceMode === 'bank' ? 'bg-indigo-500/15 border-indigo-500/50 text-white shadow-[0_0_12px_rgba(99,102,241,0.12)]' : 'glass border-white/5 text-white/60 hover:text-white hover:border-white/10'}`}
+                >
+                  <Icon name="book" size={14} /> Savol banki
+                </button>
+                <button
+                  onClick={() => setPracticeMode('wrong')}
+                  className={`rounded-xl py-2.5 text-xs md:text-sm font-bold border transition-all duration-200 flex items-center justify-center gap-2 ${practiceMode === 'wrong' ? 'bg-rose-500/15 border-rose-500/50 text-white shadow-[0_0_12px_rgba(244,63,94,0.12)]' : 'glass border-white/5 text-white/60 hover:text-white hover:border-white/10'}`}
+                >
+                  <Icon name="x" size={14} /> Xatolarim
+                </button>
+              </div>
+
+              {practiceMode === 'bank' && !allowed ? (
+                <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-5 animate-pulse">
+                    <Icon name="info" size={32} />
+                  </div>
+                  <h3 className="text-white font-bold text-lg mb-2">Tashkilot tasdig'i kutilmoqda</h3>
+                  <p className="text-white/50 text-sm max-w-sm mb-6 leading-relaxed">
+                    Mashq rejimidan foydalanish uchun o'quv markazingiz tomonidan arizangiz tasdiqlangan bo'lishi lozim.
+                  </p>
+                  <button
+                    onClick={onNavigateToCenters}
+                    className="btn-primary px-6 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2"
+                  >
+                    <Icon name="search" size={16} /> Tashkilotlar bo'limiga o'tish
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <div className="text-xs text-white/60 font-semibold mb-2">Fan tanlang</div>
+                    {activeSubjectsLoading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+                    {!activeSubjectsLoading && activeSubjects.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-8 text-center">
+                        <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-white/20 mb-3">
+                          <Icon name={practiceMode === 'wrong' ? 'check' : 'book'} size={24} />
+                        </div>
+                        <div className="text-white/60 text-sm font-semibold mb-1">
+                          {practiceMode === 'wrong' ? "Xato savollar yo'q" : 'Savollar mavjud emas'}
+                        </div>
+                        <p className="text-white/30 text-xs max-w-xs leading-relaxed">
+                          {practiceMode === 'wrong'
+                            ? "Siz hali biror olimpiadada noto'g'ri javob bermagansiz. Olimpiadalarda qatnashib boring."
+                            : "Siz a'zo bo'lgan o'quv markazida hali mashq qilish uchun savollar yuklanmagan."}
+                        </p>
+                      </div>
+                    )}
+                    {activeSubjects.length > 0 && (
+                      <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
+                        {activeSubjects.map(s => {
+                          const isSelected = selectedSubject === s.subject;
+                          const accent = practiceMode === 'wrong'
+                            ? (isSelected ? 'bg-rose-500/15 border-rose-500/50 text-white shadow-[0_0_15px_rgba(244,63,94,0.15)]' : 'glass border-white/5 text-white/60 hover:text-white hover:border-white/10')
+                            : (isSelected ? 'bg-indigo-500/15 border-indigo-500/50 text-white shadow-[0_0_15px_rgba(99,102,241,0.15)]' : 'glass border-white/5 text-white/60 hover:text-white hover:border-white/10');
+                          const countAccent = practiceMode === 'wrong'
+                            ? (isSelected ? 'text-rose-300' : 'text-white/30')
+                            : (isSelected ? 'text-indigo-300' : 'text-white/30');
+                          return (
+                            <button
+                              key={s.subject}
+                              onClick={() => setSelectedSubject(s.subject)}
+                              className={`rounded-xl p-3 text-left border transition-all duration-200 flex flex-col justify-between min-h-[76px] ${accent}`}
+                            >
+                              <div className="font-semibold text-xs md:text-sm truncate w-full">{s.subject}</div>
+                              <div className={`text-[10px] mt-1.5 font-medium ${countAccent}`}>
+                                {practiceMode === 'wrong' ? `${s.question_count} ta xato savol` : `${s.question_count} ta savol`}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  {activeSubjects.length > 0 && (
+                    <div>
+                      <div className="text-xs text-white/60 font-semibold mb-2">Savol soni</div>
+                      <div className="flex gap-2">
+                        {[10, 20, 30].map(n => {
+                          const isSelected = questionCount === n;
+                          const cls = practiceMode === 'wrong'
+                            ? (isSelected ? 'bg-rose-500/15 border-rose-500/50 text-white shadow-[0_0_12px_rgba(244,63,94,0.12)]' : 'glass border-white/5 text-white/60 hover:text-white hover:border-white/10')
+                            : (isSelected ? 'bg-indigo-500/15 border-indigo-500/50 text-white shadow-[0_0_12px_rgba(99,102,241,0.12)]' : 'glass border-white/5 text-white/60 hover:text-white hover:border-white/10');
+                          return (
+                            <button
+                              key={n}
+                              onClick={() => setQuestionCount(n)}
+                              className={`flex-1 rounded-xl py-2.5 text-xs md:text-sm font-bold border transition-all duration-200 ${cls}`}
+                            >{n} ta</button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Quiz step */}
+          {step === 'quiz' && q && (
+            <div className="space-y-4">
+              {/* Question Navigation Strip */}
+              <div className="flex gap-1.5 overflow-x-auto py-1 px-0.5 justify-start scrollbar-none">
+                {questions.map((_, idx) => {
+                  const isCurrent = idx === currentIdx;
+                  const isAns = answers[questions[idx].id] !== undefined;
+                  return (
+                    <button
+                      key={idx}
+                      onClick={() => setCurrentIdx(idx)}
+                      className={`w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-bold transition-all border ${isCurrent ? 'bg-indigo-500 border-indigo-400 text-white' : (isAns ? 'bg-indigo-500/20 border-indigo-500/30 text-indigo-300' : 'glass border-white/5 text-white/40 hover:text-white hover:border-white/10')}`}
+                    >
+                      {idx + 1}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="glass border-white/5 rounded-2xl p-4 md:p-5">
+                <div className="text-[10px] text-indigo-300 font-bold uppercase tracking-wider mb-1.5">Savol {currentIdx + 1} / {total}</div>
+                <div className="text-white text-base font-semibold leading-relaxed break-words">{q.text}</div>
+              </div>
+
+              <div className="space-y-2">
+                {(q.options || []).map((opt, oi) => {
+                  const isChosen = answers[q.id] === oi;
+                  return (
+                    <button
+                      key={oi}
+                      onClick={() => chooseAnswer(q.id, oi)}
+                      className={`w-full text-left rounded-2xl px-4 py-3 border flex items-center gap-4 text-sm transition-all duration-200 ${isChosen ? 'bg-indigo-500/10 border-indigo-500/50 text-white shadow-[0_4px_20px_rgba(99,102,241,0.1)]' : 'glass border-white/5 text-white/80 hover:text-white hover:border-white/10 hover:translate-x-1'}`}
+                    >
+                      <span className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs flex-shrink-0 transition-colors duration-200 ${isChosen ? 'bg-indigo-500 text-white shadow-[0_0_10px_rgba(99,102,241,0.5)]' : 'bg-white/5 text-white/40'}`}>
+                        {String.fromCharCode(65 + oi)}
+                      </span>
+                      <span className="flex-1 break-words">{String(opt)}</span>
+                      {isChosen && <Icon name="check" size={14} className="text-indigo-300 flex-shrink-0 animate-pulse" />}
+                    </button>
+                  );
+                })}
+              </div>
+              
+              <div className="space-y-1.5 mt-4">
+                <div className="progress-bar h-2">
+                  <div className="progress-fill" style={{ width: `${(answered / total) * 100}%`, background: 'linear-gradient(90deg, #6366f1, #a855f7)' }} />
+                </div>
+                <div className="text-[10px] text-white/40 text-center font-medium">Javob berildi: {answered}/{total} ({Math.round((answered/total)*100)}%)</div>
+              </div>
+            </div>
+          )}
+
+          {/* Result step */}
+          {step === 'result' && result && (
+            <div className="space-y-5">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="glass border-white/5 rounded-2xl p-4 text-center relative overflow-hidden flex flex-col justify-center min-h-[110px]">
+                  <div className="text-white/40 text-[10px] md:text-xs font-semibold uppercase tracking-wider mb-1">To'g'ri</div>
+                  <div className="text-emerald-400 text-2xl md:text-3xl font-black">{result.correct_count}</div>
+                  <div className="text-[10px] text-white/30 mt-1">savol</div>
+                  <div className="absolute top-0 right-0 w-8 h-8 bg-emerald-500/5 rounded-bl-full flex items-center justify-center"><Icon name="check" size={10} className="text-emerald-400/40" /></div>
+                </div>
+                <div className="glass border-white/5 rounded-2xl p-4 text-center relative overflow-hidden flex flex-col justify-center min-h-[110px]">
+                  <div className="text-white/40 text-[10px] md:text-xs font-semibold uppercase tracking-wider mb-1">Noto'g'ri</div>
+                  <div className="text-rose-400 text-2xl md:text-3xl font-black">{result.wrong_count}</div>
+                  <div className="text-[10px] text-white/30 mt-1">savol</div>
+                  <div className="absolute top-0 right-0 w-8 h-8 bg-rose-500/5 rounded-bl-full flex items-center justify-center"><Icon name="x" size={10} className="text-rose-400/40" /></div>
+                </div>
+                <div className="glass border-white/5 rounded-2xl p-4 text-center relative overflow-hidden flex flex-col justify-center min-h-[110px]">
+                  <div className="text-white/40 text-[10px] md:text-xs font-semibold uppercase tracking-wider mb-1">Natija</div>
+                  <div className="text-indigo-400 text-2xl md:text-3xl font-black">{result.score}%</div>
+                  <div className="text-[10px] text-white/30 mt-1">{result.correct_count}/{result.total} ball</div>
+                  <div className="absolute top-0 right-0 w-8 h-8 bg-indigo-500/5 rounded-bl-full flex items-center justify-center"><Icon name="bolt" size={10} className="text-indigo-400/40" /></div>
+                </div>
+              </div>
+
+              <div className="space-y-3 max-h-80 overflow-y-auto pr-1 admin-scroll">
+                {(result.review || []).map((r, idx) => {
+                  const statusClass = r.is_correct 
+                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
+                    : (r.chosen_answer == null 
+                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
+                        : 'bg-rose-500/10 text-rose-400 border border-rose-500/20');
+                  const statusText = r.is_correct 
+                    ? "To'g'ri" 
+                    : (r.chosen_answer == null ? "Yechilmagan" : "Noto'g'ri");
+                  
+                  return (
+                    <div key={r.id} className="glass border-white/5 rounded-2xl p-4 space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-white/40 font-bold">#{idx + 1}-savol</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${statusClass}`}>
+                          {statusText}
+                        </span>
+                      </div>
+                      <div className="text-white text-sm font-medium leading-relaxed break-words">{r.text}</div>
+                      <div className="space-y-1.5">
+                        {(r.options || []).map((opt, oi) => {
+                          const isCorrect = oi === r.correct_answer;
+                          const isChosen = oi === r.chosen_answer;
+                          
+                          let optionClass = 'glass border-white/5 text-white/50';
+                          let iconEl = null;
+
+                          if (isCorrect) {
+                            optionClass = 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200 font-medium';
+                            iconEl = <Icon name="check" size={14} className="text-emerald-400 flex-shrink-0" />;
+                          } else if (isChosen) {
+                            optionClass = 'bg-rose-500/10 border-rose-500/30 text-rose-200 font-medium';
+                            iconEl = <Icon name="x" size={14} className="text-rose-400 flex-shrink-0" />;
+                          }
+
+                          return (
+                            <div key={oi} className={`rounded-xl px-3 py-2 text-xs border flex items-center gap-3 transition-colors ${optionClass}`}>
+                              <span className={`w-5 h-5 rounded-md flex items-center justify-center font-bold text-[10px] flex-shrink-0 ${isCorrect ? 'bg-emerald-500/20 text-emerald-300' : (isChosen ? 'bg-rose-500/20 text-rose-300' : 'bg-white/5 text-white/30')}`}>
+                                {String.fromCharCode(65 + oi)}
+                              </span>
+                              <span className="flex-1 break-words">{String(opt)}</span>
+                              {iconEl}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer actions */}
+        <div className="px-4 md:px-6 py-3.5 border-t border-white/10 flex gap-3">
+          {step === 'setup' && (
+            <>
+              {!allowed || activeSubjects.length === 0 ? (
+                <button onClick={onClose} className="btn-ghost px-4 py-2.5 rounded-xl text-sm flex-1">Yopish</button>
+              ) : (
+                <>
+                  <button onClick={onClose} className="btn-ghost px-4 py-2.5 rounded-xl text-sm flex-1">Bekor qilish</button>
+                  <button
+                    onClick={startPractice}
+                    disabled={submitting || !selectedSubject}
+                    className="btn-primary px-4 py-2.5 rounded-xl text-sm font-semibold flex-1"
+                  >{submitting ? 'Boshlanmoqda...' : 'Boshlash'}</button>
+                </>
+              )}
+            </>
+          )}
+          {step === 'quiz' && (
+            <>
+              <button
+                onClick={() => setCurrentIdx(i => Math.max(0, i - 1))}
+                disabled={currentIdx === 0}
+                className="btn-ghost px-4 py-2.5 rounded-xl text-sm disabled:opacity-30"
+              >Oldingi</button>
+              {currentIdx < total - 1 ? (
+                <button
+                  onClick={() => setCurrentIdx(i => Math.min(total - 1, i + 1))}
+                  className="btn-primary px-4 py-2.5 rounded-xl text-sm font-semibold flex-1"
+                >Keyingi</button>
+              ) : (
+                <button
+                  onClick={finishPractice}
+                  disabled={submitting}
+                  className="btn-primary px-4 py-2.5 rounded-xl text-sm font-semibold flex-1"
+                >{submitting ? 'Yuborilmoqda...' : 'Tugatish'}</button>
+              )}
+            </>
+          )}
+          {step === 'result' && (
+            <>
+              <button onClick={onClose} className="btn-ghost px-4 py-2.5 rounded-xl text-sm flex-1">Yopish</button>
+              <button onClick={restart} className="btn-primary px-4 py-2.5 rounded-xl text-sm font-semibold flex-1">Qayta urinish</button>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 };

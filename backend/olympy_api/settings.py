@@ -75,6 +75,7 @@ INSTALLED_APPS = [
     'questions',
     'attempts',
     'notifications',
+    'practice',
 ]
 
 MIDDLEWARE = [
@@ -315,7 +316,7 @@ CELERY_BEAT_SCHEDULE = {
 CORS_ALLOW_ALL_ORIGINS = False
 _cors_origins = os.environ.get(
     'OLYMPY_CORS_ALLOWED_ORIGINS',
-    'http://localhost:5173,http://localhost:3000,http://127.0.0.1:5500' if DEBUG else '',
+    'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:5500' if DEBUG else '',
 )
 CORS_ALLOWED_ORIGINS = [
     # Trailing slash bo'lsa CORS middleware origin'ni nomos deb hisoblaydi

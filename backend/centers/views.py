@@ -875,6 +875,179 @@ def admin_reject_center(request, center_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def center_ratings(request):
+    """GET /api/centers/ratings/ — markazlarni o'rtacha ball bo'yicha reytinglash.
+
+    Filter: ?region=, ?subject=, ?limit= (default 20, max 100).
+    Hisoblash: markaz o'quvchilarining barcha attempts'idan Avg(score).
+    Rating: average_score / 20 (0..5 oraliqda). EducationCenter.rating
+    maydoni bulk_update orqali yangilanadi — keyingi list endpoint'da
+    so'rov qilmasdan ko'rinadi.
+    """
+    from django.db.models import Avg, Count
+    from attempts.models import TestAttempt
+    from olympiads.models import Olympiad
+
+    region = (request.query_params.get('region') or '').strip()
+    subject = (request.query_params.get('subject') or '').strip()
+    try:
+        limit = int(request.query_params.get('limit') or 20)
+    except (TypeError, ValueError):
+        limit = 20
+    limit = max(1, min(limit, 100))
+
+    centers_qs = EducationCenter.objects.filter(status=EducationCenter.STATUS_APPROVED)
+    if region:
+        centers_qs = centers_qs.filter(region__icontains=region)
+
+    # Attempts aggregate: faqat valid (diskvalifikatsiya bo'lmagan) attempts.
+    attempts_qs = TestAttempt.objects.filter(
+        disqualified=False,
+        olympiad__is_deleted=False,
+    )
+    if subject:
+        attempts_qs = attempts_qs.filter(olympiad__subject__iexact=subject)
+
+    # Per-center aggregate — bitta query bilan.
+    agg_rows = (
+        attempts_qs
+        .values('olympiad__center_id')
+        .annotate(
+            avg_score=Avg('score'),
+            total_attempts=Count('id'),
+        )
+    )
+    agg_map = {row['olympiad__center_id']: row for row in agg_rows if row['olympiad__center_id']}
+
+    # Olympiad soni — markaz bo'yicha alohida aggregate.
+    olympiads_count_rows = (
+        Olympiad.objects.filter(is_deleted=False)
+        .values('center_id')
+        .annotate(total=Count('id'))
+    )
+    olympiads_count_map = {row['center_id']: row['total'] for row in olympiads_count_rows if row['center_id']}
+
+    centers = list(centers_qs)
+    enriched = []
+    centers_to_update = []
+    for c in centers:
+        row = agg_map.get(c.id)
+        if not row or not row.get('total_attempts'):
+            # subject filter mavjud bo'lsa, qatnashmagan markazlarni o'tkazib yuboramiz.
+            if subject:
+                continue
+            avg_score = 0
+            total_attempts = 0
+        else:
+            avg_score = round(row.get('avg_score') or 0, 1)
+            total_attempts = row.get('total_attempts') or 0
+        # Rating: 0..100 ballni 0..5 reytingga o'tkazamiz, max 5.0.
+        new_rating = round(min(5.0, (avg_score / 20.0)), 1) if avg_score else 0.0
+        # EducationCenter.rating Decimal field — qiymat o'zgargan bo'lsa
+        # update qilamiz (bulk_update keyin).
+        if subject:
+            # subject filterda barcha markazlarning rating'ini ishonchli
+            # yangilab bo'lmaydi (faqat shu fan bo'yicha) — skip qilamiz.
+            pass
+        else:
+            try:
+                from decimal import Decimal
+                if Decimal(str(new_rating)) != Decimal(str(c.rating or 0)):
+                    c.rating = new_rating
+                    centers_to_update.append(c)
+            except Exception:
+                pass
+        enriched.append({
+            'center_id': c.id,
+            'center_name': c.name,
+            'city': c.city,
+            'region': c.region,
+            'organization_type': c.organization_type,
+            'average_score': avg_score,
+            'total_attempts': total_attempts,
+            'total_olympiads': olympiads_count_map.get(c.id, 0),
+            'rating': new_rating,
+        })
+
+    # Bulk update rating maydonini — N+1 query yo'q.
+    if centers_to_update:
+        try:
+            EducationCenter.objects.bulk_update(centers_to_update, ['rating'])
+        except Exception:
+            pass
+
+    # Sort: avg_score desc, total_attempts desc (tie-breaker).
+    enriched.sort(key=lambda x: (-x['average_score'], -x['total_attempts']))
+    enriched = enriched[:limit]
+    for i, row in enumerate(enriched):
+        row['rank'] = i + 1
+    return Response(enriched)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def center_ranking(request):
+    """GET /api/centers/ranking/ — barcha tasdiqlangan markazlar reytingi.
+
+    Har bir markaz uchun: center_id, center_name, total_attempts,
+    average_score, top_score, student_count. Sortlash: average_score desc,
+    keyin total_attempts desc tie-break.
+    """
+    from django.db.models import Avg, Count, Max
+    from attempts.models import TestAttempt
+
+    centers_qs = EducationCenter.objects.filter(status=EducationCenter.STATUS_APPROVED)
+
+    # Per-center attempt agregati (faqat validlar).
+    attempt_agg = (
+        TestAttempt.objects
+        .filter(disqualified=False, olympiad__is_deleted=False)
+        .values('olympiad__center_id')
+        .annotate(
+            total_attempts=Count('id'),
+            average_score=Avg('score'),
+            top_score=Max('score'),
+        )
+    )
+    attempt_map = {
+        row['olympiad__center_id']: row
+        for row in attempt_agg
+        if row['olympiad__center_id']
+    }
+
+    # Per-center tasdiqlangan o'quvchilar soni.
+    student_agg = (
+        CenterMembership.objects
+        .filter(role=CenterMembership.ROLE_STUDENT, status=CenterMembership.STATUS_APPROVED)
+        .values('center_id')
+        .annotate(total=Count('id'))
+    )
+    student_map = {row['center_id']: row['total'] for row in student_agg}
+
+    rows = []
+    for center in centers_qs:
+        agg = attempt_map.get(center.id, {})
+        avg = float(agg.get('average_score') or 0)
+        rows.append({
+            'center_id': center.id,
+            'center_name': center.name,
+            'organization_type': center.organization_type or '',
+            'region': center.region or '',
+            'district': center.district or '',
+            'total_attempts': agg.get('total_attempts') or 0,
+            'average_score': round(avg, 1),
+            'top_score': agg.get('top_score') or 0,
+            'student_count': student_map.get(center.id, 0),
+        })
+
+    rows.sort(key=lambda r: (-r['average_score'], -r['total_attempts']))
+    for i, row in enumerate(rows):
+        row['rank'] = i + 1
+    return Response(rows)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def center_stats(request, center_id):
     """GET /api/centers/{id}/stats/ — markaz bo'yicha agregat statistika.
 

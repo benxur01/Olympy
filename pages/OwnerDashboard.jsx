@@ -198,6 +198,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     () => isApi ? OlympyApi.getOlympiads(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+  const apiRankingRes = useApiData(
+    () => isApi ? OlympyApi.getCenterRanking(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
   const applyCenterImageOverride = (c) => {
     const override = centerImageOverrides[String(c.id)] || centerImageOverrides[String(c.backendId)];
     return override ? { ...c, imageUrl: override } : c;
@@ -685,9 +689,17 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCount || undefined },
     { key: 'staff', icon: 'users', label: 'Xodimlar' },
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
+    { key: 'ranking', icon: 'star', label: 'Reyting' },
+    { key: 'analytics', icon: 'chart', label: 'Analitika' },
     { key: 'center', icon: 'building', label: 'Profil' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
   ];
+
+  // Analytics tugmasini sahifa darajasiga yo'naltirish.
+  const setPageOrSpecial = (key) => {
+    if (key === 'analytics') { onNavigate('analytics'); return; }
+    setPage(key);
+  };
 
   const requestRows = centerRequests.filter(r => r.type === 'manager' || r.type === 'teacher');
   const recentRequests = requestRows.filter(r => r.status === 'pending').slice(0, 4);
@@ -717,7 +729,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             key={item.key}
             item={item}
             active={page === item.key}
-            onClick={() => { setPage(item.key); setMobileMenu(false); }}
+            onClick={() => { setPageOrSpecial(item.key); setMobileMenu(false); }}
           />
         ))}
       </nav>
@@ -1220,6 +1232,85 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     </div>
   );
 
+  const renderRanking = () => {
+    const rankingData = isApi && Array.isArray(apiRankingRes.data) ? apiRankingRes.data : [];
+    const rankingLoading = isApi && apiRankingRes.loading && !apiRankingRes.data;
+    const myCenterIds = new Set(ownerCenters.map(c => String(c.backendId ?? c.id)));
+    return (
+      <div className="space-y-5 p-4 lg:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Markazlar reytingi</h1>
+            <p className="mt-1 text-sm font-semibold text-white/50">Platformadagi barcha tasdiqlangan tashkilotlar o'rtacha ball bo'yicha.</p>
+          </div>
+          <button
+            onClick={() => apiRankingRes.reload?.()}
+            className="btn-ghost inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold"
+          >
+            <Icon name="bolt" size={13} /> Yangilash
+          </button>
+        </div>
+        {rankingLoading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+        <section className="overflow-hidden rounded-2xl border border-white/8 glass-strong">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-left">
+              <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
+                <tr className="text-[10px] font-black uppercase tracking-wider text-white/40">
+                  {["O'rin", 'Markaz nomi', "O'quvchilar", 'Urinishlar', "O'rt. ball", 'Eng yuqori'].map(h => (
+                    <th key={h} className="px-5 py-3.5">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rankingData.map(row => {
+                  const isMine = myCenterIds.has(String(row.center_id));
+                  return (
+                    <tr
+                      key={row.center_id}
+                      className={`olympy-row text-sm ${isMine ? 'bg-indigo-500/10' : ''}`}
+                    >
+                      <td className="px-5 py-4 font-black text-white">
+                        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-xs font-black ${
+                          row.rank === 1 ? 'bg-amber-500/25 text-amber-300' :
+                          row.rank === 2 ? 'bg-slate-400/25 text-slate-200' :
+                          row.rank === 3 ? 'bg-orange-500/25 text-orange-300' :
+                          'bg-white/5 text-white/55'
+                        }`}>{row.rank}</span>
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="font-black text-white">{row.center_name}</div>
+                        <div className="text-[11px] font-semibold text-white/40">
+                          {row.organization_type || "Tashkilot"}{row.region ? ` · ${row.region}` : ''}{isMine ? " · Sizning markazingiz" : ''}
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 font-bold text-white/75">{row.student_count}</td>
+                      <td className="px-5 py-4 text-white/60">{row.total_attempts}</td>
+                      <td className="px-5 py-4">
+                        <span className={`font-black ${
+                          row.average_score >= 80 ? 'text-emerald-400' :
+                          row.average_score >= 60 ? 'text-cyan-400' :
+                          row.average_score >= 40 ? 'text-amber-400' : 'text-white/45'
+                        }`}>{row.average_score}%</span>
+                      </td>
+                      <td className="px-5 py-4 text-white/80 font-bold">{row.top_score}%</td>
+                    </tr>
+                  );
+                })}
+                {rankingData.length === 0 && !rankingLoading && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
+                      Reyting ma'lumotlari mavjud emas
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    );
+  };
+
   const renderCenter = () => (
     <div className="space-y-5 p-4 lg:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1318,6 +1409,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     requests: renderRequests,
     staff: renderStaff,
     olympiads: renderOlympiads,
+    ranking: renderRanking,
     center: renderCenter,
     settings: renderSettings,
   };
@@ -1346,7 +1438,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <main className="flex-1 overflow-x-hidden overflow-y-auto mobile-content-pad">
             {(pagesMap[page] || renderHome)()}
           </main>
-          <MobileBottomNav items={mobileNavItems} activePage={page} setPage={setPage} />
+          <MobileBottomNav items={mobileNavItems} activePage={page} setPage={setPageOrSpecial} />
         </div>
       </div>
       {staffModal && (

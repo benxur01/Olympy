@@ -24,6 +24,8 @@ const PAGE_URLS = {
   profile: '/profile',
   pending: '/pending',
   'pending-home': '/pending',
+  analytics: '/analytics',
+  parent: '/dashboard/parent',
 };
 
 // URL → page (teskari mapping). Bir nechta page bitta URL ga ko'rsatsa,
@@ -233,7 +235,7 @@ const App = () => {
   };
 
   // Auth guard
-  const needsAuth = ['student','manager','admin','teacher','owner','test','results','leaderboard','profile','pending-home'];
+  const needsAuth = ['student','manager','admin','teacher','owner','test','results','leaderboard','profile','pending-home','analytics','parent'];
   useEffect(() => {
     if (needsAuth.includes(page) && !user) setPage('login');
   }, [page, user]);
@@ -413,6 +415,10 @@ const App = () => {
         return renderDashboard(user?.activeRole || (user?.roles ? Object.keys(user.roles)[0] : 'student') || 'student');
       case 'pending':
         return <PendingHome user={user} onLogout={handleLogout} onNavigate={navigate} />;
+      case 'analytics':
+        return <AnalyticsPage user={apiUser || user} onNavigate={navigate} />;
+      case 'parent':
+        return <ParentDashboard user={apiUser || user} onNavigate={navigate} onLogout={handleLogout} />;
       default: return <LandingPage onNavigate={navigate} />;
     }
   };

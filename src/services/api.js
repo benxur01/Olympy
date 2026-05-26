@@ -201,7 +201,7 @@ const request = async (
 
 // Higher index wins. Used to pick activeRole when a user has multiple
 // roles approved at the same time. admin > owner > manager > teacher > student.
-const ROLE_PRIORITY = ['student', 'teacher', 'manager', 'owner', 'admin'];
+const ROLE_PRIORITY = ['student', 'teacher', 'manager', 'owner', 'admin', 'parent'];
 
 const mapRoleCenter = (center) => ({
   membershipId: center.membership_id ?? center.membershipId ?? null,
@@ -352,6 +352,14 @@ export const OlympyApi = {
   },
   // Centers
   getCenters: () => request('/api/centers/').then(unwrapList),
+  getCenterRatings: (params, token) => {
+    const qs = params && Object.keys(params).length
+      ? '?' + new URLSearchParams(
+          Object.entries(params).filter(([, v]) => v != null && v !== '').reduce((a, [k, v]) => (a[k] = String(v), a), {})
+        ).toString()
+      : '';
+    return request(`/api/centers/ratings/${qs}`, { token });
+  },
   getMyCenters: (token) => request('/api/centers/mine/', { token }).then(unwrapList),
   registerCenter: (payload, token) => request('/api/centers/', { method: 'POST', body: payload, token }),
   updateCenter: (centerId, payload, token) => request(`/api/centers/${centerId}/`, { method: 'PATCH', body: payload, token }),
@@ -465,7 +473,26 @@ export const OlympyApi = {
       return { olympiad: null, entries: [] };
     }),
   getManagerStats: (centerId, token) => request(`/api/manager/stats/${centerId ? '?center=' + centerId : ''}`, { token }),
+  getQuestionDifficultyStats: (centerId, token) => request(`/api/manager/question-difficulty-stats/?center=${centerId}`, { token }),
   getMyMonthlyStats: (months, token) => request(`/api/results/me/monthly/${months ? '?months=' + months : ''}`, { token }),
+  // Excel/CSV savol import
+  importQuestionsExcel: (centerId, file, token, subject) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const qs = new URLSearchParams({ center: String(centerId) });
+    if (subject) qs.set('subject', String(subject));
+    return request(`/api/questions/import/?${qs.toString()}`, { method: 'POST', body: fd, token });
+  },
+  // Practice / Mashq rejimi
+  getPracticeSubjects: (centerId, token) => request(`/api/practice/subjects/?center=${centerId}`, { token }),
+  startPractice: (body, token) => request('/api/practice/start/', { method: 'POST', body, token }),
+  submitPractice: (body, token) => request('/api/practice/submit/', { method: 'POST', body, token }),
+  getWrongAnswerSubjects: (token) => request('/api/practice/wrong-answers/', { token }),
+  startWrongAnswerPractice: (body, token) => request('/api/practice/wrong-answers/start/', { method: 'POST', body, token }),
+  // Parent / Ota-ona
+  linkChild: (studentPhone, token) => request('/api/me/parent/link/', { method: 'POST', body: { student_phone: studentPhone }, token }),
+  getChildren: (token) => request('/api/me/parent/children/', { token }),
+  unlinkChild: (studentId, token) => request(`/api/me/parent/link/${studentId}/`, { method: 'DELETE', token }),
   // Sertifikat URL'i — `download` atributi bilan <a> orqali fayl tushadi.
   certificateDownloadUrl: (attemptId) => `${API_BASE_URL}/api/certificates/${attemptId}/download/`,
   downloadCertificate: async (attemptId, token) => {
@@ -494,6 +521,33 @@ export const OlympyApi = {
   getNotifications: (token) => request('/api/notifications/', { token }).then(unwrapList),
   markNotificationRead: (id, token) => request(`/api/notifications/${id}/read/`, { method: 'POST', token }),
   markAllNotificationsRead: (token) => request('/api/notifications/read-all/', { method: 'POST', token }),
+  // Manager Excel eksport (xlsx) — alohida endpoint, manager URL'da.
+  exportOlympiadResultsXlsx: async (olympiadId, token) => {
+    const res = await fetch(`${API_BASE_URL}/api/manager/olympiads/${olympiadId}/export/`, {
+      method: 'GET',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      let msg = "Excel faylni yuklab bo'lmadi";
+      try { const data = await res.json(); if (data?.detail) msg = data.detail; } catch {}
+      throw new ApiError(msg, { status: res.status });
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `olympy-results-${olympiadId}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  },
+  // Markazlar reytingi (Owner uchun yangi endpoint).
+  getCenterRanking: (token) => request('/api/centers/ranking/', { token }),
+  // O'qituvchi/Manager analitikasi — eng ko'p noto'g'ri savollar.
+  getQuestionAnalytics: (centerId, token) => request(`/api/questions/analytics/?center=${centerId}`, { token }),
 };
 
 Object.assign(globalThis, { OlympyApi });

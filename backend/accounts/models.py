@@ -112,6 +112,38 @@ class User(AbstractBaseUser, PermissionsMixin):
             self.save(update_fields=['roles'])
 
 
+class ParentStudentLink(models.Model):
+    """Ota-ona va o'quvchi orasidagi kuzatuv aloqasi.
+
+    Bir parent bir nechta farzandni kuzata oladi; bir student bir nechta
+    parent'ga bog'lanishi mumkin (ona+ota). Unique constraint duplicate
+    link'larning oldini oladi.
+    """
+    parent = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='children_links',
+    )
+    student = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='parent_links',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['parent', 'student'],
+                name='unique_parent_student',
+            ),
+        ]
+
+    def __str__(self):
+        return f'parent:{self.parent_id} → student:{self.student_id}'
+
+
 class PhoneVerification(models.Model):
     """Telegram-backed phone verification session.
 

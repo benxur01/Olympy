@@ -483,6 +483,7 @@ const ROLE_META = {
   manager: { label: 'Manager',       icon: '🏫', dest: 'manager' },
   owner:   { label: 'Direktor',      icon: '👑', dest: 'owner'   },
   admin:   { label: 'Admin',         icon: '🛡', dest: 'admin'   },
+  parent:  { label: 'Ota-ona',       icon: '👨‍👩‍👧', dest: 'parent' },
 };
 
 const getApprovedRoles = (user) =>

@@ -5,6 +5,8 @@ from . import views
 # Mounted under /api/centers/
 urlpatterns = [
     path('', views.centers_list_create, name='centers-list-create'),
+    path('ratings/', views.center_ratings, name='center-ratings'),
+    path('ranking/', views.center_ranking, name='center-ranking'),
     path('mine/', views.my_centers, name='my-centers'),
     path('<int:center_id>/', views.update_center, name='center-update'),
     path('<int:center_id>/image/', views.update_center_image, name='center-image'),
