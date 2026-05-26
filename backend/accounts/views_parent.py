@@ -15,7 +15,7 @@ from .models import ParentStudentLink
 from .utils import normalize_phone
 
 
-def _serialize_child(student, attempts_qs):
+def _serialize_child(student, attempts_qs, weekly_digest_enabled=True):
     avatar_url = ''
     try:
         if student.avatar:
@@ -45,7 +45,9 @@ def _serialize_child(student, attempts_qs):
         'streak_count': student.streak_count,
         'badges': student.get_badges(),
         'attempts': attempts,
+        'weekly_digest_enabled': weekly_digest_enabled,
     }
+
 
 
 @api_view(['POST'])
@@ -112,7 +114,7 @@ def list_children(request):
     payload = []
     for link in links:
         student = link.student
-        payload.append(_serialize_child(student, attempts_by_user.get(student.id, [])))
+        payload.append(_serialize_child(student, attempts_by_user.get(student.id, []), link.weekly_digest_enabled))
     return Response(payload)
 
 
@@ -180,3 +182,94 @@ def child_report_pdf(request, student_id):
         
     response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def predict_child_success(request, student_id):
+    """GET /api/me/parent/children/<student_id>/predictions/
+    Ota-ona uchun farzandining AI muvaffaqiyat bashoratlarini qaytaradi.
+    """
+    from .models import ParentStudentLink
+    from django.contrib.auth import get_user_model
+    
+    # Check link
+    link_exists = ParentStudentLink.objects.filter(parent=request.user, student_id=student_id).exists()
+    if not link_exists:
+        return Response({'detail': "Ruxsat berilmagan yoki farzand bog'lanmagan"}, status=http_status.HTTP_403_FORBIDDEN)
+        
+    User = get_user_model()
+    student = get_object_or_404(User, pk=student_id)
+    
+    from .views import calculate_predictions_for_user
+    res = calculate_predictions_for_user(student)
+    return Response(res)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def toggle_weekly_digest(request, student_id):
+    """POST /api/me/parent/children/<student_id>/toggle-digest/
+    Farzand uchun haftalik Telegram xabarlarini yoqish yoki o'chirish.
+    """
+    link = get_object_or_404(ParentStudentLink, parent=request.user, student_id=student_id)
+    enabled = request.data.get('enabled', True)
+    link.weekly_digest_enabled = bool(enabled)
+    link.save(update_fields=['weekly_digest_enabled'])
+    return Response({'ok': True, 'weekly_digest_enabled': link.weekly_digest_enabled})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def send_test_weekly_digest(request, student_id):
+    """POST /api/me/parent/children/<student_id>/test-digest/
+    Haftalik Telegram hisobotini ota-onaga test tariqasida darhol yuboradi.
+    """
+    link = get_object_or_404(ParentStudentLink, parent=request.user, student_id=student_id)
+    chat_id = getattr(request.user, 'telegram_chat_id', '')
+    if not chat_id:
+        return Response({'detail': "Sizning Telegram profilingiz platforma bilan bog'lanmagan. Iltimos, Telegram orqali tizimga kiring."}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    student = link.student
+
+    # Gather data
+    from attempts.models import TestAttempt
+    from django.db.models import Avg
+    attempts = TestAttempt.objects.filter(user=student, disqualified=False)
+    attempts_count = attempts.count()
+    avg_score = attempts.aggregate(Avg('score'))['score__avg'] or 0
+    avg_score = round(avg_score, 1)
+
+    presidential_school = min(99, max(10, int(avg_score * 0.9 + (attempts_count * 0.5))))
+    al_xorazmiy = min(99, max(10, int(avg_score * 0.85 + (attempts_count * 0.5))))
+    dtm = min(99, max(10, int(avg_score * 1.05)))
+
+    badges_list = ", ".join(b.get('title') for b in student.get_badges()) or "Yo'q"
+
+    # Construct the message
+    msg = (
+        f"📊 *{student.full_name or 'Farzandingiz'} ning haftalik hisoboti* \n\n"
+        f"🔥 *Streak (Faollik):* {student.streak_count} kun\n"
+        f"🪙 *Olympy Coins (Tangalar):* {student.coins} ta\n"
+        f"🌱 *Erishilgan nishonlar:* {badges_list}\n\n"
+        f"📈 *O'rtacha imtihon ko'rsatkichi:* {avg_score}%\n"
+        f"📝 *Jami topshirilgan testlar:* {attempts_count} ta\n\n"
+        f"🎯 *AI Muvaffaqiyat Prognostikasi:* \n"
+        f"├─ Prezident maktabi: *{presidential_school}%*\n"
+        f"├─ Al-Xorazmiy olimpiadasi: *{al_xorazmiy}%*\n"
+        f"└─ DTM testlari: *{dtm}%*\n\n"
+        f"💡 _Tavsiya:_ Farzandingiz ushbu haftada ajoyib natijalar ko'rsatdi! Platforma obunasi orqali uning bilimini yanada oshirishda davom eting."
+    )
+
+    from notifications.services import send_telegram_markdown
+    import threading
+    def _send():
+        try:
+            send_telegram_markdown(chat_id, msg)
+        except Exception:
+            pass
+    threading.Thread(target=_send, daemon=True).start()
+
+    return Response({'ok': True, 'detail': "Haftalik hisobot Telegram profilingizga jo'natildi!"})
+
+

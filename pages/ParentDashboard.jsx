@@ -18,6 +18,57 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
   );
   const children = childrenRes.data || [];
 
+  const [predictionsMap, setPredictionsMap] = React.useState({});
+  const [predictionsLoading, setPredictionsLoading] = React.useState(false);
+  const [digestTogglingId, setDigestTogglingId] = React.useState(null);
+  const [sendingDigestId, setSendingDigestId] = React.useState(null);
+
+  const fetchPredictions = React.useCallback(async (studentId) => {
+    if (!studentId || predictionsMap[studentId]) return;
+    setPredictionsLoading(true);
+    try {
+      const resp = await OlympyApi.getChildPredictions(studentId, token);
+      if (resp) {
+        setPredictionsMap(prev => ({ ...prev, [studentId]: resp }));
+      }
+    } catch {}
+    setPredictionsLoading(false);
+  }, [token, predictionsMap]);
+
+  React.useEffect(() => {
+    if (selectedChild) {
+      fetchPredictions(selectedChild.student_id);
+    }
+  }, [selectedChild, fetchPredictions]);
+
+  const handleToggleDigest = async (studentId, currentVal) => {
+    setDigestTogglingId(studentId);
+    try {
+      const nextVal = !currentVal;
+      await OlympyApi.toggleWeeklyDigest(studentId, nextVal, token);
+      childrenRes.reload();
+      if (selectedChild && selectedChild.student_id === studentId) {
+        setSelectedChild(prev => ({ ...prev, weekly_digest_enabled: nextVal }));
+      }
+    } catch (err) {
+      alert("Haftalik hisobot rejimini o'zgartirib bo'lmadi");
+    } finally {
+      setDigestTogglingId(null);
+    }
+  };
+
+  const handleSendTestDigest = async (studentId) => {
+    setSendingDigestId(studentId);
+    try {
+      const resp = await OlympyApi.sendTestWeeklyDigest(studentId, token);
+      alert(resp?.detail || "Haftalik hisobot Telegram orqali jo'natildi!");
+    } catch (err) {
+      alert(err.message || "Telegramga xabar yuborib bo'lmadi. Telegram profil bog'langanligini tekshiring.");
+    } finally {
+      setSendingDigestId(null);
+    }
+  };
+
   const handleLink = async () => {
     setLinkError('');
     setLinkSuccess('');
@@ -292,6 +343,77 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
                 </div>
               </div>
             )}
+
+            {/* Telegram settings */}
+            <div className="pb-3 border-b border-white/5 space-y-3">
+              <div className="text-[10px] text-white/40 uppercase font-bold tracking-wider">Haftalik Telegram Hisoboti</div>
+              <div className="flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5">
+                <div className="min-w-0 flex-1 pr-3">
+                  <div className="text-xs font-bold text-white">Telegram xabarnoma</div>
+                  <p className="text-[10px] text-white/40 mt-0.5 leading-relaxed font-medium">Har yakshanba farzandingizning haftalik faoliyati bo'yicha hisobot ota-ona Telegramiga yuboriladi.</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => handleSendTestDigest(selectedChild.student_id)}
+                    disabled={sendingDigestId === selectedChild.student_id}
+                    className="btn-ghost text-[10px] px-2.5 py-1.5 rounded-lg border border-white/10 hover:bg-white/10 transition-colors"
+                  >
+                    {sendingDigestId === selectedChild.student_id ? "Yuborilmoqda..." : "Sinash (Test)"}
+                  </button>
+                  <button
+                    onClick={() => handleToggleDigest(selectedChild.student_id, selectedChild.weekly_digest_enabled)}
+                    disabled={digestTogglingId === selectedChild.student_id}
+                    className={`text-[10px] px-3 py-1.5 rounded-lg font-bold transition-all ${
+                      selectedChild.weekly_digest_enabled
+                        ? 'bg-indigo-500 text-white'
+                        : 'bg-white/5 text-white/40'
+                    }`}
+                  >
+                    {selectedChild.weekly_digest_enabled ? "Yoqilgan" : "O'chirilgan"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* AI Success Predictor */}
+            <div className="pb-3 border-b border-white/5">
+              <div className="text-[10px] text-white/40 uppercase mb-2 font-bold tracking-wider">AI Muvaffaqiyat Prognostikasi</div>
+              {predictionsLoading ? (
+                <div className="text-xs text-white/40 py-2">Prognostika yuklanmoqda...</div>
+              ) : predictionsMap[selectedChild.student_id] ? (
+                (() => {
+                  const pData = predictionsMap[selectedChild.student_id];
+                  return (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-3 gap-2 text-center">
+                        <div className="glass rounded-xl p-2.5 border border-white/5">
+                          <div className="text-[9px] text-white/40 truncate">Prezident Maktabi</div>
+                          <div className="text-sm font-black text-indigo-400 mt-1">{pData.predictions?.presidential_school}%</div>
+                        </div>
+                        <div className="glass rounded-xl p-2.5 border border-white/5">
+                          <div className="text-[9px] text-white/40 truncate">Al-Xorazmiy</div>
+                          <div className="text-sm font-black text-purple-400 mt-1">{pData.predictions?.al_xorazmiy}%</div>
+                        </div>
+                        <div className="glass rounded-xl p-2.5 border border-white/5">
+                          <div className="text-[9px] text-white/40 truncate">DTM (Kirish)</div>
+                          <div className="text-sm font-black text-emerald-400 mt-1">{pData.predictions?.dtm}%</div>
+                        </div>
+                      </div>
+                      <div className="glass rounded-xl p-3 text-xs text-white/70 leading-relaxed whitespace-pre-line border border-indigo-500/10">
+                        <div className="font-bold text-white mb-1.5 flex items-center gap-1">
+                          <span>💡</span> AI Ekspert Tavsiyalari:
+                        </div>
+                        {pData.ai_analysis}
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="text-xs text-white/30 py-2">Imtihon topshirmagan o'quvchi uchun tahlil mavjud emas.</div>
+              )}
+            </div>
+
+            <div className="text-[10px] text-white/40 uppercase mb-1.5 font-bold tracking-wider">Imtihonlar tarixi</div>
             {(selectedChild.attempts || []).length === 0 && (
               <div className="text-xs text-white/40 text-center py-4">Natijalar yo'q</div>
             )}

@@ -324,7 +324,11 @@ def submit_attempt(request):
         attempt.save(update_fields=['rank'])
 
         try:
-            request.user.update_streak()
+            user = request.user
+            earned_coins = (correct * 10) + 20
+            user.coins += earned_coins
+            user.save(update_fields=['coins'])
+            user.update_streak()
         except Exception:
             pass
 
@@ -1291,4 +1295,100 @@ def olympiad_live_proctoring(request, olympiad_id):
         })
 
     return Response(results)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_mistakes_list(request):
+    """GET /api/attempts/mistakes/
+    O'quvchining barcha o'tgan imtihonlardagi noto'g'ri berilgan javoblarini savollar kesimida yig'ib qaytaradi.
+    """
+    from questions.models import Question
+    from .models import TestAttempt
+
+    attempts = TestAttempt.objects.filter(user=request.user, disqualified=False)
+    mistakes = []
+    seen_question_ids = set()
+
+    for a in attempts:
+        answers = a.answers or {}
+        for q_id_str, chosen_idx in answers.items():
+            try:
+                q_id = int(q_id_str)
+                chosen_idx = int(chosen_idx)
+            except (ValueError, TypeError):
+                continue
+                
+            if q_id in seen_question_ids:
+                continue
+                
+            question = Question.objects.filter(pk=q_id).first()
+            if not question:
+                continue
+                
+            if chosen_idx != question.correct_answer:
+                seen_question_ids.add(q_id)
+                mistakes.append({
+                    'question_id': question.id,
+                    'subject': question.subject,
+                    'text': question.text,
+                    'options': question.options,
+                    'correct_answer': question.correct_answer,
+                    'chosen_answer': chosen_idx,
+                    'explanation': question.explanation or '',
+                })
+    return Response(mistakes)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def explain_all_mistakes(request):
+    """POST /api/attempts/mistakes/explain/
+    O'quvchining xatolari asosida Gemini AI orqali umumiy tavsiyalar generatsiya qiladi.
+    """
+    from questions.models import Question
+    from questions.ai_generation import explain_mistakes_ai
+    from .models import TestAttempt
+
+    attempts = TestAttempt.objects.filter(user=request.user, disqualified=False)
+    mistakes = []
+    seen_question_ids = set()
+
+    for a in attempts:
+        answers = a.answers or {}
+        for q_id_str, chosen_idx in answers.items():
+            try:
+                q_id = int(q_id_str)
+                chosen_idx = int(chosen_idx)
+            except (ValueError, TypeError):
+                continue
+                
+            if q_id in seen_question_ids:
+                continue
+                
+            question = Question.objects.filter(pk=q_id).first()
+            if not question:
+                continue
+                
+            if chosen_idx != question.correct_answer:
+                seen_question_ids.add(q_id)
+                mistakes.append({
+                    'question_id': question.id,
+                    'subject': question.subject,
+                    'text': question.text,
+                    'options': question.options,
+                    'correct_answer': question.correct_answer,
+                    'chosen_answer': chosen_idx,
+                })
+                if len(mistakes) >= 8:
+                    break
+        if len(mistakes) >= 8:
+            break
+
+    if not mistakes:
+        return Response({'explanation': "Sizda hozircha xatolar aniqlanmadi. Barakalla!"})
+
+    explanation_text = explain_mistakes_ai(mistakes)
+    return Response({'explanation': explanation_text})
+
 

@@ -472,3 +472,14 @@ def send_pdf_to_telegram(chat_id, pdf_bytes, filename, caption):
     except Exception:
         logger.exception('sendDocument to Telegram failed')
         return False
+
+
+def send_telegram_markdown(chat_id, text):
+    """ Ota-onaga Markdown formatida Telegram xabar yuborish """
+    payload = {
+        'chat_id': chat_id,
+        'text': text,
+        'parse_mode': 'Markdown'
+    }
+    return _telegram_api_post('sendMessage', payload)
+

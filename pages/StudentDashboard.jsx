@@ -54,6 +54,18 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     () => isApi ? OlympyApi.getActivityLeaderboard(OlympyApi.getToken()) : Promise.resolve([]),
     [isApi],
   );
+  const apiMistakesRes = useApiData(
+    () => isApi ? OlympyApi.getMistakes(OlympyApi.getToken()) : Promise.resolve([]),
+    [isApi, page === 'mistakes'],
+  );
+  const apiRewardsRes = useApiData(
+    () => isApi ? OlympyApi.getRewards(OlympyApi.getToken()) : Promise.resolve({ coins: 0, products: [] }),
+    [isApi, page === 'rewards'],
+  );
+  const apiPredictionsRes = useApiData(
+    () => isApi ? OlympyApi.getMyPredictions(OlympyApi.getToken()) : Promise.resolve({}),
+    [isApi, page === 'home' || page === 'predictions'],
+  );
 
   // Live student-role state from store
   const studentRole = user.roles?.student;
@@ -178,6 +190,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     { key: 'centers', icon: 'building', label: 'Tashkilotlar' },
     { key: 'leaderboard', icon: 'star', label: 'Reyting' },
     { key: 'analytics', icon: 'chart', label: 'Analitika' },
+    { key: 'mistakes', icon: 'file', label: "Xatolar Sandig'i" },
+    { key: 'rewards', icon: 'award', label: 'Do\'kon' },
     { key: 'profile', icon: 'eye', label: 'Profil' },
     { divider: true, key: 'd1' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
@@ -395,6 +409,57 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           </div>
         </div>
       </div>
+
+      {/* AI Success Predictor */}
+      {(() => {
+        const predData = apiPredictionsRes.data;
+        if (!predData || !predData.predictions) return null;
+        const preds = predData.predictions;
+        return (
+          <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
+                <Icon name="sparkles" size={16} />
+              </div>
+              <div>
+                <h3 className="font-bold text-white text-sm md:text-base leading-none">AI Muvaffaqiyat Prognostikasi</h3>
+                <span className="text-[9px] text-white/40 mt-1 block">Sizning natijalaringiz tahlili va imtihon bashoratlari</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+              <div className="glass rounded-xl p-3 flex items-center justify-between border border-white/5 card-hover">
+                <div className="min-w-0">
+                  <div className="text-xs text-white/50 truncate">Prezident Maktabi</div>
+                  <div className="text-xs text-white/30 mt-0.5">Tayyorgarlik darajasi</div>
+                </div>
+                <div className="text-lg font-black text-indigo-400">{preds.presidential_school}%</div>
+              </div>
+              <div className="glass rounded-xl p-3 flex items-center justify-between border border-white/5 card-hover">
+                <div className="min-w-0">
+                  <div className="text-xs text-white/50 truncate">Al-Xorazmiy</div>
+                  <div className="text-xs text-white/30 mt-0.5">Olimpiada o'tish ehtimoli</div>
+                </div>
+                <div className="text-lg font-black text-purple-400">{preds.al_xorazmiy}%</div>
+              </div>
+              <div className="glass rounded-xl p-3 flex items-center justify-between border border-white/5 card-hover">
+                <div className="min-w-0">
+                  <div className="text-xs text-white/50 truncate">DTM (Kirish)</div>
+                  <div className="text-xs text-white/30 mt-0.5">O'tish ehtimoli</div>
+                </div>
+                <div className="text-lg font-black text-emerald-400">{preds.dtm}%</div>
+              </div>
+            </div>
+
+            <div className="glass rounded-xl p-3 text-xs md:text-sm text-white/70 leading-relaxed whitespace-pre-line border border-indigo-500/10">
+              <div className="font-bold text-white mb-1.5 flex items-center gap-1">
+                <span>💡</span> AI Ekspert Tavsiyalari:
+              </div>
+              {predData.ai_analysis}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Activity Leaderboard */}
       {isApi && activityLeaderboard.length > 0 && (
@@ -652,7 +717,303 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     );
   };
 
-  const pages = { home: renderHome, olympiads: renderOlympiads, results: renderResults, centers: renderCenters };
+  const renderMistakes = () => {
+    const mistakes = apiMistakesRes.data || [];
+    const loading = apiMistakesRes.loading;
+    const [analyzing, setAnalyzing] = React.useState(false);
+    const [overallAnalysis, setOverallAnalysis] = React.useState('');
+    const [selectedQuestion, setSelectedQuestion] = React.useState(null);
+    const [explainingId, setExplainingId] = React.useState(null);
+    const [explanationMap, setExplanationMap] = React.useState({});
+
+    const handleExplainMistake = async (item) => {
+      if (explanationMap[item.question_id]) {
+        setSelectedQuestion({ ...item, explanation: explanationMap[item.question_id] });
+        return;
+      }
+      setExplainingId(item.question_id);
+      try {
+        const resp = await OlympyApi.explainQuestion(item.question_id, OlympyApi.getToken());
+        if (resp?.explanation) {
+          setExplanationMap(prev => ({ ...prev, [item.question_id]: resp.explanation }));
+          setSelectedQuestion({ ...item, explanation: resp.explanation });
+        } else {
+          showApiToast("Tushuntirish olib bo'lmadi.");
+        }
+      } catch (err) {
+        showApiToast(err.message || "Xatolik yuz berdi");
+      } finally {
+        setExplainingId(null);
+      }
+    };
+
+    const handleOverallAnalysis = async () => {
+      setAnalyzing(true);
+      try {
+        const resp = await OlympyApi.explainAllMistakes(OlympyApi.getToken());
+        if (resp?.explanation) {
+          setOverallAnalysis(resp.explanation);
+        } else {
+          showApiToast("Tahlil olib bo'lmadi.");
+        }
+      } catch (err) {
+        showApiToast(err.message || "Xatolik yuz berdi");
+      } finally {
+        setAnalyzing(false);
+      }
+    };
+
+    return (
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg md:text-xl font-black text-white">Xatolar Sandig'i</h2>
+            <p className="text-white/40 text-xs mt-0.5">Imtihonlarda yo'l qo'ygan xatolaringiz ustida ishlang va bilimingizni mustahkamlang.</p>
+          </div>
+          {mistakes.length > 0 && (
+            <button
+              onClick={handleOverallAnalysis}
+              disabled={analyzing}
+              className="btn-primary text-xs px-4 py-2.5 rounded-xl font-semibold flex items-center gap-1.5 min-h-[40px]"
+            >
+              <Icon name="sparkles" size={14} /> {analyzing ? 'Tahlil qilinmoqda...' : "AI Umumiy Tahlil"}
+            </button>
+          )}
+        </div>
+
+        {overallAnalysis && (
+          <div className="glass-strong rounded-2xl p-4 md:p-5 border border-indigo-500/30 animate-in">
+            <div className="flex items-center gap-2 mb-3">
+              <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
+                <Icon name="sparkles" size={16} />
+              </div>
+              <div className="font-bold text-white text-sm">AI Umumiy Tavsiyalari</div>
+            </div>
+            <div className="text-xs md:text-sm text-white/70 leading-relaxed whitespace-pre-line border-t border-white/10 pt-3">
+              {overallAnalysis}
+            </div>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-center py-12 text-white/40 text-sm">Xatolar yuklanmoqda...</div>
+        ) : mistakes.length === 0 ? (
+          <div className="glass rounded-2xl p-8 text-center text-white/40 text-sm">
+            🎉 Tabriklaymiz! Sizda hech qanday xato aniqlanmagan. O'qishda davom eting!
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4">
+            {mistakes.map((item, idx) => (
+              <div key={idx} className="glass rounded-2xl p-4 md:p-5 flex flex-col md:flex-row md:items-start justify-between gap-4 card-hover">
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] tracking-wider uppercase font-extrabold text-indigo-400 bg-indigo-500/10 px-2.5 py-0.5 rounded-md">
+                      {item.subject || 'Boshqa'}
+                    </span>
+                    <span className="text-xs text-white/40">Savol ID: #{item.question_id}</span>
+                  </div>
+                  <div className="text-sm font-bold text-white leading-relaxed">{item.text}</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                    {(item.options || []).map((opt, oIdx) => {
+                      const isCorrect = oIdx === item.correct_answer;
+                      const isChosen = oIdx === item.chosen_answer;
+                      let bgClass = 'bg-white/5 text-white/60';
+                      if (isCorrect) bgClass = 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-medium';
+                      else if (isChosen) bgClass = 'bg-rose-500/10 border border-rose-500/30 text-rose-400';
+                      return (
+                        <div key={oIdx} className={`px-3 py-2 rounded-xl text-xs flex items-center justify-between ${bgClass}`}>
+                          <span>{opt}</span>
+                          {isCorrect && <span className="text-[10px] bg-emerald-500/20 px-1.5 py-0.5 rounded">To'g'ri</span>}
+                          {isChosen && <span className="text-[10px] bg-rose-500/20 px-1.5 py-0.5 rounded">Sizning javobingiz</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="flex flex-row md:flex-col gap-2 justify-end self-end md:self-auto">
+                  <button
+                    onClick={() => handleExplainMistake(item)}
+                    disabled={explainingId === item.question_id}
+                    className="btn-ghost text-xs px-3 py-2 rounded-xl flex items-center gap-1.5"
+                  >
+                    <Icon name="sparkles" size={13} /> {explainingId === item.question_id ? 'Yuklanmoqda...' : 'Tushuntirish (AI)'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Modal open={!!selectedQuestion} onClose={() => setSelectedQuestion(null)} title="AI Savol Tushuntirishi">
+          {selectedQuestion && (
+            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+              <div className="glass rounded-xl p-3 md:p-4">
+                <div className="text-xs text-indigo-400 font-extrabold uppercase mb-1">{selectedQuestion.subject}</div>
+                <div className="font-bold text-white text-sm leading-relaxed">{selectedQuestion.text}</div>
+              </div>
+              <div className="text-xs md:text-sm text-white/80 leading-relaxed whitespace-pre-line border-t border-white/10 pt-3">
+                {selectedQuestion.explanation}
+              </div>
+              <button onClick={() => setSelectedQuestion(null)} className="btn-primary w-full py-2.5 rounded-xl text-sm font-semibold">Tushundim</button>
+            </div>
+          )}
+        </Modal>
+      </div>
+    );
+  };
+
+  const renderRewards = () => {
+    const rewardsData = apiRewardsRes.data || { coins: 0, products: [] };
+    const coins = rewardsData.coins;
+    const products = rewardsData.products || [];
+    const loading = apiRewardsRes.loading;
+
+    const [redemptions, setRedemptions] = React.useState([]);
+    const [redemptionsLoading, setRedemptionsLoading] = React.useState(false);
+    const [buyingId, setBuyingId] = React.useState(null);
+
+    const loadRedemptions = React.useCallback(async () => {
+      setRedemptionsLoading(true);
+      try {
+        const resp = await OlympyApi.getMyRedemptions(OlympyApi.getToken());
+        setRedemptions(resp || []);
+      } catch {}
+      setRedemptionsLoading(false);
+    }, []);
+
+    React.useEffect(() => {
+      if (page === 'rewards') {
+        loadRedemptions();
+      }
+    }, [page, loadRedemptions]);
+
+    const handleBuy = async (prod) => {
+      if (coins < prod.coin_cost) {
+        showApiToast("Tangalar yetarli emas!");
+        return;
+      }
+      setBuyingId(prod.id);
+      try {
+        const resp = await OlympyApi.redeemReward(prod.id, OlympyApi.getToken());
+        showApiToast(resp.detail || "Muvaffaqiyatli buyurtma qilindi!");
+        apiRewardsRes.reload();
+        loadRedemptions();
+        if (onUserUpdate && typeof resp.coins === 'number') {
+          onUserUpdate({ coins: resp.coins });
+        }
+      } catch (err) {
+        showApiToast(err.message || "Xarid qilishda xato");
+      } finally {
+        setBuyingId(null);
+      }
+    };
+
+    return (
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass rounded-2xl p-4 md:p-6 border border-amber-500/20 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
+          <div>
+            <h2 className="text-lg md:text-xl font-black text-white flex items-center gap-2">
+              <span>Mukofotlar Do'koni</span>
+              <span className="text-[10px] uppercase tracking-wider font-extrabold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md">STORE</span>
+            </h2>
+            <p className="text-white/40 text-xs mt-0.5">Testlarda to'g'ri javob berib tangalar yiging va ularni ajoyib sovg'alarga almashtiring.</p>
+          </div>
+          <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-4 py-2.5 rounded-2xl self-start sm:self-auto shadow-[0_4px_12px_rgba(245,158,11,0.1)]">
+            <span className="text-lg">🪙</span>
+            <div className="min-w-0">
+              <div className="text-[10px] text-amber-400 uppercase tracking-widest font-black leading-none">Mening balansim</div>
+              <div className="text-lg font-black text-amber-300 leading-none mt-1">{coins} tanga</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-4">
+            <h3 className="text-sm font-black text-white/50 uppercase tracking-wider">Mavjud sovg'alar</h3>
+            {loading ? (
+              <div className="text-center py-12 text-white/40 text-sm">Mukofotlar yuklanmoqda...</div>
+            ) : products.length === 0 ? (
+              <div className="glass rounded-2xl p-8 text-center text-white/40 text-sm">Do'kon hozircha bo'sh.</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {products.map(p => {
+                  const cantAfford = coins < p.coin_cost;
+                  return (
+                    <div key={p.id} className="glass rounded-2xl p-4 md:p-5 flex flex-col justify-between gap-4 card-hover">
+                      <div className="space-y-2">
+                        <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-2xl shadow-inner">{p.icon || '🎁'}</div>
+                        <div className="font-bold text-white text-base leading-snug">{p.title}</div>
+                        <p className="text-white/40 text-xs leading-relaxed">{p.description || "O'quv markazi tomonidan premium sovg'a."}</p>
+                      </div>
+                      <div className="flex items-center justify-between border-t border-white/5 pt-3 mt-1">
+                        <div className="flex items-center gap-1">
+                          <span className="text-sm">🪙</span>
+                          <span className="text-sm font-black text-amber-300">{p.coin_cost}</span>
+                        </div>
+                        <button
+                          onClick={() => handleBuy(p)}
+                          disabled={buyingId === p.id}
+                          className={`text-xs font-bold px-4 py-2 rounded-xl transition-all ${
+                            cantAfford 
+                              ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                              : 'bg-amber-500 hover:bg-amber-600 text-slate-900 shadow-[0_4px_12px_rgba(245,158,11,0.2)]'
+                          }`}
+                        >
+                          {buyingId === p.id ? 'Sotib olinmoqda...' : 'Sotib olish'}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <h3 className="text-sm font-black text-white/50 uppercase tracking-wider">Buyurtmalar tarixi</h3>
+            {redemptionsLoading ? (
+              <div className="text-center py-6 text-white/40 text-xs">Yuklanmoqda...</div>
+            ) : redemptions.length === 0 ? (
+              <div className="glass rounded-2xl p-6 text-center text-white/40 text-xs">
+                Siz hali sovg'a buyurtma qilmagansiz.
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {redemptions.map(r => {
+                  const isPending = r.status === 'pending';
+                  return (
+                    <div key={r.id} className="glass rounded-xl p-3 flex items-center gap-3 justify-between">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-9 h-9 bg-white/5 rounded-xl flex items-center justify-center text-lg">{r.product_icon || '🎁'}</div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-white truncate">{r.product_title}</div>
+                          <div className="text-[10px] text-white/40 mt-0.5">{new Date(r.redeemed_at).toLocaleDateString()}</div>
+                        </div>
+                      </div>
+                      <span className={`text-[9px] uppercase tracking-wider font-extrabold px-2 py-1 rounded-md ${
+                        isPending ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'
+                      }`}>
+                        {r.status_display}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const pages = { 
+    home: renderHome, 
+    olympiads: renderOlympiads, 
+    results: renderResults, 
+    centers: renderCenters,
+    mistakes: renderMistakes,
+    rewards: renderRewards
+  };
 
   // Sahifa tugmasi `practice` yoki `analytics` bosilsa, ularni alohida
   // handle qilamiz — `setPage` o'rniga modal yoki app-level navigatsiya.

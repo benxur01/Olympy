@@ -515,6 +515,19 @@ export const OlympyApi = {
     }
     return res.blob();
   },
+  // Mistakes Vault
+  getMistakes: (token) => request('/api/attempts/mistakes/', { token }),
+  explainAllMistakes: (token) => request('/api/attempts/mistakes/explain/', { method: 'POST', token }),
+  // Reward Shop
+  getRewards: (token) => request('/api/me/rewards/', { token }),
+  redeemReward: (productId, token) => request('/api/me/rewards/redeem/', { method: 'POST', body: { product_id: productId }, token }),
+  getMyRedemptions: (token) => request('/api/me/rewards/my-redemptions/', { token }),
+  // Predictions
+  getMyPredictions: (token) => request('/api/me/predictions/', { token }),
+  getChildPredictions: (studentId, token) => request(`/api/me/parent/children/${studentId}/predictions/`, { token }),
+  // Weekly Digest Toggle & Test Send
+  toggleWeeklyDigest: (studentId, enabled, token) => request(`/api/me/parent/children/${studentId}/toggle-digest/`, { method: 'POST', body: { enabled }, token }),
+  sendTestWeeklyDigest: (studentId, token) => request(`/api/me/parent/children/${studentId}/test-digest/`, { method: 'POST', token }),
   // Sertifikat URL'i — `download` atributi bilan <a> orqali fayl tushadi.
   certificateDownloadUrl: (attemptId) => `${API_BASE_URL}/api/certificates/${attemptId}/download/`,
   downloadCertificate: async (attemptId, token) => {

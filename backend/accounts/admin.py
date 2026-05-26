@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
-from .models import PhoneVerification, User
+from .models import PhoneVerification, User, RewardProduct, RewardRedemption
 
 
 @admin.register(User)
@@ -39,3 +39,19 @@ class PhoneVerificationAdmin(admin.ModelAdmin):
     search_fields = ('normalized_phone', 'telegram_chat_id', 'telegram_user_id', 'verify_token')
     readonly_fields = ('otp_hash', 'created_at', 'updated_at', 'verified_at')
     ordering = ('-created_at',)
+
+
+@admin.register(RewardProduct)
+class RewardProductAdmin(admin.ModelAdmin):
+    list_display = ('title', 'coin_cost', 'stock', 'created_at')
+    search_fields = ('title', 'description')
+    ordering = ('-created_at',)
+
+
+@admin.register(RewardRedemption)
+class RewardRedemptionAdmin(admin.ModelAdmin):
+    list_display = ('user', 'product', 'status', 'redeemed_at')
+    list_filter = ('status',)
+    search_fields = ('user__full_name', 'user__normalized_phone', 'product__title')
+    ordering = ('-redeemed_at',)
+
