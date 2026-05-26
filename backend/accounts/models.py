@@ -60,6 +60,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     token_version = models.PositiveIntegerField(default=0)
     avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
     streak_count = models.PositiveIntegerField(default=0)
+    coins = models.PositiveIntegerField(default=0)
     last_active_date = models.DateField(null=True, blank=True)
 
     is_active = models.BooleanField(default=True)
@@ -222,6 +223,7 @@ class ParentStudentLink(models.Model):
         related_name='parent_links',
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    weekly_digest_enabled = models.BooleanField(default=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -234,6 +236,53 @@ class ParentStudentLink(models.Model):
 
     def __str__(self):
         return f'parent:{self.parent_id} → student:{self.student_id}'
+
+
+class RewardProduct(models.Model):
+    title = models.CharField(max_length=120)
+    description = models.TextField(blank=True)
+    coin_cost = models.PositiveIntegerField()
+    icon = models.CharField(max_length=10, default='🎁')
+    stock = models.PositiveIntegerField(default=10)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.title} ({self.coin_cost} coins)"
+
+
+class RewardRedemption(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_DELIVERED = 'delivered'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Kutilmoqda'),
+        (STATUS_DELIVERED, 'Topshirildi'),
+    ]
+
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='redemptions',
+    )
+    product = models.ForeignKey(
+        RewardProduct,
+        on_delete=models.CASCADE,
+        related_name='redemptions',
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+    )
+    redeemed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-redeemed_at']
+
+    def __str__(self):
+        return f"{self.user.full_name} redeemed {self.product.title}"
 
 
 class PhoneVerification(models.Model):

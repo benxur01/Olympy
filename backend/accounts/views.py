@@ -1452,3 +1452,163 @@ def activity_leaderboard(request):
         })
         
     return Response(entries)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_rewards(request):
+    """GET /api/me/rewards/
+    Mukofot do'konidagi mahsulotlarni va o'quvchining joriy tangalarini qaytaradi.
+    """
+    from .models import RewardProduct
+    products = RewardProduct.objects.filter(stock__gt=0)
+    data = []
+    for p in products:
+        data.append({
+            'id': p.id,
+            'title': p.title,
+            'description': p.description,
+            'coin_cost': p.coin_cost,
+            'icon': p.icon,
+            'stock': p.stock,
+        })
+    return Response({
+        'coins': request.user.coins,
+        'products': data
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def redeem_reward(request):
+    """POST /api/me/rewards/redeem/
+    Body: {"product_id": <int>}
+    O'quvchining tangalarini yechib mukofotni buyurtma qiladi.
+    """
+    from .models import RewardProduct, RewardRedemption
+    product_id = request.data.get('product_id')
+    if not product_id:
+        return Response({'detail': "Maxsulot ID majburiy"}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    try:
+        product = RewardProduct.objects.get(pk=product_id)
+    except RewardProduct.DoesNotExist:
+        return Response({'detail': "Mukofot topilmadi"}, status=http_status.HTTP_404_NOT_FOUND)
+
+    if product.stock <= 0:
+        return Response({'detail': "Bu mukofot tugagan"}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    user = request.user
+    if user.coins < product.coin_cost:
+        return Response({'detail': "Tangalar yetarli emas"}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    # Atomic block to prevent race conditions on stock
+    from django.db import transaction
+    try:
+        with transaction.atomic():
+            product = RewardProduct.objects.select_for_update().get(pk=product_id)
+            if product.stock <= 0:
+                return Response({'detail': "Bu mukofot tugagan"}, status=http_status.HTTP_400_BAD_REQUEST)
+            
+            user.coins -= product.coin_cost
+            user.save(update_fields=['coins'])
+
+            product.stock -= 1
+            product.save(update_fields=['stock'])
+
+            redemption = RewardRedemption.objects.create(
+                user=user,
+                product=product,
+                status=RewardRedemption.STATUS_PENDING
+            )
+    except Exception as e:
+        return Response({'detail': f"Xatolik yuz berdi: {str(e)}"}, status=http_status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return Response({
+        'detail': "Mukofot muvaffaqiyatli buyurtma qilindi!",
+        'coins': user.coins,
+        'redemption_id': redemption.id
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_redemptions(request):
+    """GET /api/me/rewards/my-redemptions/
+    O'quvchining buyurtmalari tarixini qaytaradi.
+    """
+    from .models import RewardRedemption
+    redemptions = RewardRedemption.objects.filter(user=request.user).select_related('product')
+    data = []
+    for r in redemptions:
+        data.append({
+            'id': r.id,
+            'product_title': r.product.title,
+            'product_icon': r.product.icon,
+            'coin_cost': r.product.coin_cost,
+            'status': r.status,
+            'status_display': r.get_status_display(),
+            'redeemed_at': r.redeemed_at.isoformat(),
+        })
+    return Response(data)
+
+
+def calculate_predictions_for_user(user):
+    from attempts.models import TestAttempt
+    from django.db.models import Avg
+    attempts = TestAttempt.objects.filter(user=user, disqualified=False).select_related('olympiad')
+    attempts_count = attempts.count()
+    
+    if attempts_count == 0:
+        return {
+            'avg_score': 0,
+            'attempts_count': 0,
+            'subject_performance': {},
+            'predictions': {
+                'presidential_school': 10,
+                'al_xorazmiy': 10,
+                'dtm': 10,
+            },
+            'ai_analysis': "Sizda hali topshirilgan imtihonlar mavjud emas. AI bashorat qilishi uchun kamida bitta imtihon topshiring!"
+        }
+
+    avg_score = attempts.aggregate(Avg('score'))['score__avg'] or 0
+    avg_score = round(avg_score, 1)
+
+    subject_performance = {}
+    subjects = attempts.values('olympiad__subject').annotate(Avg('score'))
+    for s in subjects:
+        sub = s.get('olympiad__subject') or 'Boshqa'
+        score = s.get('score__avg') or 0
+        subject_performance[sub] = round(score, 1)
+
+    presidential_school = min(99, max(10, int(avg_score * 0.9 + (attempts_count * 0.5))))
+    al_xorazmiy = min(99, max(10, int(avg_score * 0.85 + (attempts_count * 0.5))))
+    dtm = min(99, max(10, int(avg_score * 1.05)))
+
+    from .utils import predict_success_ai
+    ai_analysis = predict_success_ai(user.full_name or user.phone, avg_score, attempts_count, subject_performance)
+
+    return {
+        'avg_score': avg_score,
+        'attempts_count': attempts_count,
+        'subject_performance': subject_performance,
+        'predictions': {
+            'presidential_school': presidential_school,
+            'al_xorazmiy': al_xorazmiy,
+            'dtm': dtm,
+        },
+        'ai_analysis': ai_analysis
+    }
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_my_predictions(request):
+    """GET /api/me/predictions/
+    O'quvchining o'z natijalari bo'yicha AI muvaffaqiyat bashoratlarini qaytaradi.
+    """
+    res = calculate_predictions_for_user(request.user)
+    return Response(res)
+
+

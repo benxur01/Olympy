@@ -527,3 +527,60 @@ def explain_question_ai(question_text, options, correct_idx, subject=''):
                 logger.warning('Gemini explanation failed with model=%s: %s', model, exc)
     return "AI yordamida tushuntirish generatsiya qilinmadi. Iltimos keyinroq urinib ko'ring."
 
+
+def explain_mistakes_ai(mistakes_list):
+    """
+    Analyzes a list of student mistakes and generates an Uzbek study recommendation.
+    """
+    keys = _gemini_api_keys()
+    if not keys:
+        return "Tahlil olish uchun Gemini API kaliti sozlanmagan."
+
+    mistakes_str = ""
+    for i, m in enumerate(mistakes_list[:8]): # limit to 8 mistakes to avoid context token blowup
+        mistakes_str += f"{i+1}. Fan: {m.get('subject')}\nSavol: {m.get('text')}\nVariantlar: {m.get('options')}\nTo'g'ri javob indeksi: {m.get('correct_answer')}\nO'quvchi tanlagan noto'g'ri javob indeksi: {m.get('chosen_answer')}\n\n"
+
+    prompt = (
+        f"Siz professional repetitorsiz. O'quvchi quyidagi savollarda xato qildi:\n\n"
+        f"{mistakes_str}"
+        f"Ushbu xatolar asosida o'quvchining qaysi fan va mavzularda kamchiliklari borligini tahlil qiling. "
+        f"O'quvchiga o'z ustida ishlashi uchun o'zbek tilida motivatsion ruhdagi batafsil tahlil va tavsiyalar (qadam-baqadam yo'llanma) yozib bering.\n\n"
+        f"Javobni faqat o'zbek tilida va formatlashda Markdown (masalan, ro'yxatlar, sarlavhalar, muhim qismlarini qalin qilish) ishlatib yozing."
+    )
+
+    payload = {
+        'contents': [{
+            'role': 'user',
+            'parts': [{'text': prompt}],
+        }],
+        'generationConfig': {
+            'maxOutputTokens': 2048,
+        },
+    }
+    body = json.dumps(payload).encode('utf-8')
+
+    for model in _gemini_models():
+        model_path = urllib.parse.quote(model, safe='-_.~/')
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+        for api_key in keys:
+            req = urllib.request.Request(
+                url,
+                data=body,
+                method='POST',
+                headers={
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': api_key,
+                },
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=45) as response:
+                    raw = json.loads(response.read().decode('utf-8'))
+                parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
+                text = ''.join(part.get('text') or '' for part in parts)
+                if text.strip():
+                    return text.strip()
+            except Exception as exc:
+                logger.warning('Gemini mistakes analysis failed with model=%s: %s', model, exc)
+    return "AI yordamida xatolar tahlili generatsiya qilinmadi. Iltimos keyinroq urinib ko'ring."
+
+
