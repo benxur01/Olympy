@@ -241,6 +241,11 @@ REST_FRAMEWORK = {
         # race condition'ni keltirib chiqaradi). 30/min — normal foydalanuvchi
         # uchun yetarli, ammo abuse'ga qarshi himoyalaydi.
         'submit': '30/min',
+        # Cheating signal endpoint: visibilitychange yoki blur kelganda
+        # frontend yuboradigan signalni cheklash. Normal foydalanuvchi
+        # daqiqada 1-2 ta signal yuborishi mumkin (tab almashtirish), 5/min
+        # yetarli darajada keng, ammo skript-based DoS'ni to'sadi.
+        'cheating': '5/min',
     },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,

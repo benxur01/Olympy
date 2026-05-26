@@ -523,10 +523,15 @@ def update_my_avatar(request):
         )
     # Magic byte tekshiruvi: content_type spoof qilinishi mumkin, shuning uchun
     # Pillow yordamida fayl haqiqatan ham rasm ekanini tasdiqlaymiz.
+    # Decompression bomb himoyasi: Pillow default MAX_IMAGE_PIXELS=89M, lekin
+    # avatar uchun 50MP yetarli — qattiqroq cheklov DoS'ni to'sadi. `verify()`
+    # faqat header'ni tekshiradi, `load()` esa to'liq dekompressiyani urinib,
+    # bomb'ni shu yerda ushlab qoladi (DecompressionBombError).
     try:
         from PIL import Image as PilImage
+        PilImage.MAX_IMAGE_PIXELS = 50 * 1024 * 1024  # 50 MP limit
         img = PilImage.open(io.BytesIO(image.read()))
-        img.verify()
+        img.load()
         image.seek(0)
     except Exception:
         return Response({'detail': 'Yaroqsiz rasm fayli'}, status=status.HTTP_400_BAD_REQUEST)

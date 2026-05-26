@@ -213,10 +213,15 @@ def update_center_image(request, center_id):
             status=http_status.HTTP_400_BAD_REQUEST,
         )
     # Magic byte tekshiruvi: content_type spoof qilinishi mumkin.
+    # Decompression bomb himoyasi: Pillow default MAX_IMAGE_PIXELS juda
+    # keng — markaz logosi uchun 50MP yetarli. `verify()` faqat header'ni
+    # tekshiradi, to'liq dekompressiyaga `load()` ishlaydi va shu yerda
+    # bomb DecompressionBombError otadi.
     try:
         from PIL import Image as PilImage
+        PilImage.MAX_IMAGE_PIXELS = 50 * 1024 * 1024  # 50 MP limit
         img = PilImage.open(io.BytesIO(image.read()))
-        img.verify()
+        img.load()
         image.seek(0)
     except Exception:
         return Response({'detail': 'Yaroqsiz rasm fayli'}, status=http_status.HTTP_400_BAD_REQUEST)

@@ -576,7 +576,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   );
 
   const AdminTopbar = () => (
-    <header className="sticky top-0 z-30 flex h-[54px] items-center justify-between border-b border-white/5 bg-[#0b0f19]/80 backdrop-blur-md px-4 lg:px-5">
+    <header className="sticky top-0 z-30 flex h-[54px] items-center justify-between border-b border-white/5 bg-[#0b0f19]/95 px-4 lg:px-5">
       <div className="flex items-center gap-3">
         <button className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 lg:hidden" onClick={() => setMobileMenu(true)}>
           <Icon name="menu" size={18} />

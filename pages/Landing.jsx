@@ -472,7 +472,7 @@ const LandingPage = ({ onNavigate }) => {
         
         {/* Floating 3D badges on the right (desktop only) */}
         <div className="hidden lg:block absolute right-16 top-1/4 w-[400px] h-[300px] pointer-events-none z-10 preserve-3d" style={{ perspective: '1000px' }}>
-          <div className="absolute right-0 top-0 glass rounded-2xl p-4 border border-white/10 float-badge-1 flex items-center gap-3 backdrop-blur-md" style={{ background: 'rgba(10, 15, 30, 0.7)' }}>
+          <div className="absolute right-0 top-0 glass rounded-2xl p-4 border border-white/10 float-badge-1 flex items-center gap-3" style={{ background: 'rgba(10, 15, 30, 0.88)' }}>
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-300 font-bold text-xl">✨</span>
             <div>
               <div className="text-sm font-bold text-white">AI Savollar</div>
@@ -480,7 +480,7 @@ const LandingPage = ({ onNavigate }) => {
             </div>
           </div>
           
-          <div className="absolute right-28 top-32 glass rounded-2xl p-4 border border-white/10 float-badge-2 flex items-center gap-3 backdrop-blur-md" style={{ background: 'rgba(10, 15, 30, 0.7)' }}>
+          <div className="absolute right-28 top-32 glass rounded-2xl p-4 border border-white/10 float-badge-2 flex items-center gap-3" style={{ background: 'rgba(10, 15, 30, 0.88)' }}>
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-300 font-bold text-xl">📱</span>
             <div>
               <div className="text-sm font-bold text-white">Telegram Tasdiqlash</div>
@@ -488,7 +488,7 @@ const LandingPage = ({ onNavigate }) => {
             </div>
           </div>
 
-          <div className="absolute right-8 top-64 glass rounded-2xl p-4 border border-white/10 float-badge-3 flex items-center gap-3 backdrop-blur-md" style={{ background: 'rgba(10, 15, 30, 0.7)' }}>
+          <div className="absolute right-8 top-64 glass rounded-2xl p-4 border border-white/10 float-badge-3 flex items-center gap-3" style={{ background: 'rgba(10, 15, 30, 0.88)' }}>
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 font-bold text-xl">🏆</span>
             <div>
               <div className="text-sm font-bold text-white">Jonli Reyting</div>

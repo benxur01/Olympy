@@ -987,7 +987,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       </Modal>
 
       {bulkSaving && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-slate-950/95 animate-in fade-in">
           <div className="glass-strong border border-white/10 rounded-2xl p-6 flex flex-col items-center gap-4 max-w-xs text-center shadow-2xl">
             <div className="relative flex items-center justify-center">
               <div className="animate-spin rounded-full h-12 w-12 border-2 border-indigo-500/20 border-t-indigo-500 border-r-indigo-500"></div>
