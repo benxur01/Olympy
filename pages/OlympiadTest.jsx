@@ -91,8 +91,32 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // o'tkazilgan vaqtni hisoblaymiz. Telegram WebView'da keyboard yoki
   // push notification ochilsa ham `visibilityState === 'hidden'` bo'ladi
   // — 2 marta cheklov nohaq DQ keltirardi.
-  const totalHiddenTimeRef = React.useRef(0);
+  // Refresh-resilience: jami tashqarida o'tirgan vaqt localStorage'ga
+  // backup qilinadi. Aks holda foydalanuvchi F5 bosib timer'ni nolga
+  // qaytarib, cheklovni aylanib o'tishi mumkin edi.
+  const cheatingHiddenStorageKey = `cheating_hidden_${persistedOlympiadId}_${user?.id || 'guest'}`;
+  const readPersistedHidden = () => {
+    try {
+      if (typeof localStorage === 'undefined') return 0;
+      const raw = localStorage.getItem(cheatingHiddenStorageKey);
+      const n = raw ? parseInt(raw, 10) : 0;
+      return Number.isFinite(n) && n >= 0 ? n : 0;
+    } catch { return 0; }
+  };
+  const totalHiddenTimeRef = React.useRef(readPersistedHidden());
   const hiddenStartRef = React.useRef(null);
+  const persistTotalHidden = React.useCallback((value) => {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.setItem(cheatingHiddenStorageKey, String(value));
+    } catch {}
+  }, [cheatingHiddenStorageKey]);
+  const clearPersistedHidden = React.useCallback(() => {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.removeItem(cheatingHiddenStorageKey);
+    } catch {}
+  }, [cheatingHiddenStorageKey]);
   const cheatReportedRef = React.useRef(false);
   const historyGuardRef = React.useRef(false);
   // Confirm modal yoki submit jarayonida brauzer fokusi tabiiy ravishda
@@ -111,6 +135,18 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       return undefined;
     }
     const onBeforeUnload = (e) => {
+      // Refresh/yopish paytida — agar foydalanuvchi shu paytda "hidden"
+      // holatida bo'lsa, kechiktirilgan vaqtni ham jamg'arib persist
+      // qilamiz. Aks holda F5 paytida bosqichdagi sanash yo'qoladi va
+      // foydalanuvchi cheklovni aylanib o'tishi mumkin edi.
+      try {
+        if (hiddenStartRef.current) {
+          const accumulated = totalHiddenTimeRef.current + (Date.now() - hiddenStartRef.current);
+          persistTotalHidden(accumulated);
+        } else {
+          persistTotalHidden(totalHiddenTimeRef.current);
+        }
+      } catch {}
       e.preventDefault();
       // Modern brauzerlar maxsus matn ko'rsatmaydi, lekin confirm dialog'i
       // chiqishi uchun returnValue'ga bo'sh bo'lmagan string qo'yiladi.
@@ -245,7 +281,8 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         localStorage.removeItem(markedStorageKey);
       }
     } catch {}
-  }, [submitted, cheated, user?._api, liveOlympiad?.backendId, answersStorageKey, markedStorageKey]);
+    clearPersistedHidden();
+  }, [submitted, cheated, user?._api, liveOlympiad?.backendId, answersStorageKey, markedStorageKey, clearPersistedHidden]);
 
   React.useEffect(() => {
     if (!user?._api || !liveOlympiad?.backendId || !apiQuestions || questionsLoading || submitted || cheated) {
@@ -298,6 +335,9 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         if (hiddenStartRef.current) {
           totalHiddenTimeRef.current += Date.now() - hiddenStartRef.current;
           hiddenStartRef.current = null;
+          // Refresh-resilience: yangilangan jami vaqtni localStorage'ga
+          // yozamiz — F5 bosilsa keyingi mount'da shu qiymatdan boshlanadi.
+          persistTotalHidden(totalHiddenTimeRef.current);
         }
         if (hiddenTimer) {
           clearTimeout(hiddenTimer);
@@ -432,6 +472,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             token,
           );
           clearPersistedAnswers();
+          clearPersistedHidden();
           onFinish({
             attemptId: resp?.id,
             correct: resp?.correct_count ?? (correct ?? 0),
@@ -504,6 +545,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           rank: localRank ?? 1,
         });
         clearPersistedAnswers();
+        clearPersistedHidden();
         onFinish({
           attemptId: attemptRecord?.id,
           correct: correct ?? 0,

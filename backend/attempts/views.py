@@ -188,6 +188,16 @@ def submit_attempt(request):
             pk=serializer.validated_data['olympiad'],
         )
 
+        # Soft-delete qilingan olimpiadaga submit qabul qilinmaydi —
+        # frontend'da ko'rinmasligi kerak, ammo URL'ni bilgan abuser
+        # to'g'ridan-to'g'ri API'ga POST yuborishi mumkin. 404 — chunki
+        # foydalanuvchi nuqtai nazaridan olimpiada mavjud emas.
+        if olympiad.is_deleted:
+            return Response(
+                {'detail': 'Olimpiada topilmadi.'},
+                status=http_status.HTTP_404_NOT_FOUND,
+            )
+
         if TestAttempt.objects.filter(user=request.user, olympiad=olympiad).exists():
             return Response(
                 {'detail': "Siz bu olimpiadaga allaqachon qatnashgansiz"},
@@ -295,13 +305,24 @@ def submit_attempt(request):
                 status=http_status.HTTP_409_CONFLICT,
             )
 
-        # Re-rank submit paytida QILMAYMIZ — bu butun jadvalni bulk_update
-        # qiladi va katta olimpiadalarda DB yukini ko'paytiradi (100+
-        # student bir vaqtda topshirsa har biri butun jadvalni qayta
-        # hisoblardi). Leaderboard endpoint o'zi `order_by('-score',
-        # 'time_spent')` orqali tartiblab `i+1` ranklarini hisoblaydi —
-        # bu yetarli. `rank` DB maydoni keyinroq foydali bo'lishi mumkin,
-        # shu sababli o'chirilmaydi, faqat submit'da yangilanmaydi.
+        # Re-rank butun jadvalni emas, faqat shu foydalanuvchining
+        # rank'ini bitta COUNT query orqali hisoblaymiz va shu attempt'ga
+        # yozamiz. Bu submit DB yukini minimal saqlaydi (boshqa
+        # attempts'lar update qilinmaydi), lekin sertifikat endpoint'da
+        # `rank==1` tekshiruvi to'g'ri ishlashi uchun saqlangan rank
+        # qiymati zarur. Boshqa qatnashchilarning rank'lari leaderboard
+        # `order_by` orqali jonli tartiblanadi yoki olimpiada yopilganda
+        # `recompute_olympiad_ranks` orqali yangilanadi.
+        better_count_for_rank = TestAttempt.objects.filter(
+            olympiad=olympiad,
+            disqualified=False,
+        ).filter(
+            Q(score__gt=score)
+            | Q(score=score, time_spent__lt=time_spent),
+        ).exclude(pk=attempt.pk).count()
+        attempt.rank = better_count_for_rank + 1
+        attempt.save(update_fields=['rank'])
+
         session.status = TestSession.STATUS_COMPLETED
         session.save(update_fields=['status'])
 
@@ -344,24 +365,14 @@ def submit_attempt(request):
         # sonni alohida ko'rsatishi mumkin: to'g'ri / noto'g'ri / bo'sh.
         data['blank_count'] = scored.get('blank', 0)
         data['answered_count'] = scored.get('answered', 0)
-        # Y11: rank DB maydoni submit paytida yangilanmaydi (DB yukini
-        # kamaytirish), shu sababli frontend'da '—' ko'rinardi. Hozirgi
-        # joyni bitta COUNT query orqali hisoblab `position` field bilan
-        # qaytaramiz. `disqualified=False` filtri bilan diskval bo'lganlarni
-        # chetlaymiz.
-        better_count = TestAttempt.objects.filter(
-            olympiad=olympiad,
-            disqualified=False,
-        ).filter(
-            Q(score__gt=score)
-            | Q(score=score, time_spent__lt=time_spent),
-        ).exclude(pk=attempt.pk).count()
-        data['position'] = better_count + 1
-        # Backward-compat: agar rank field hali None bo'lsa, position
-        # qiymatini rank sifatida ham qaytaramiz — eski frontend kodlari
-        # rank field'iga tayanadi.
+        # Rank submit paytida yuqorida `attempt.rank` ga yozildi — bu
+        # qiymatni ham `position` field sifatida qaytaramiz (frontend
+        # eski kod position'ga tayanishi mumkin).
+        data['position'] = attempt.rank or (better_count_for_rank + 1)
+        # Backward-compat: agar TestAttemptSerializer rank'ni qaytarmasa
+        # (eski serializer), shu yerda qo'shamiz.
         if data.get('rank') is None:
-            data['rank'] = better_count + 1
+            data['rank'] = attempt.rank or (better_count_for_rank + 1)
         return Response(data, status=http_status.HTTP_201_CREATED)
 
 
@@ -370,8 +381,14 @@ submit_attempt.cls.throttle_scope = 'submit'
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
 def report_cheating(request):
-    """POST /api/attempts/cheating/ — disqualify current user's test session."""
+    """POST /api/attempts/cheating/ — disqualify current user's test session.
+
+    Throttle: foydalanuvchi bir daqiqada 5 martadan ortiq cheating signal
+    yubora olmaydi — aks holda olimpiada paytida frontend bug yoki yomon
+    niyatli skript orqali DB'ga bosim kelishi mumkin.
+    """
     olympiad_id = request.data.get('olympiad')
     reason = str(request.data.get('reason') or 'test_window_left')[:120]
     if not olympiad_id:
@@ -442,6 +459,9 @@ def report_cheating(request):
     })
 
 
+report_cheating.cls.throttle_scope = 'cheating'
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def attempt_detail(request, attempt_id):
@@ -455,7 +475,9 @@ def attempt_detail(request, attempt_id):
     Boshqa hollarda 403 qaytariladi.
     """
     attempt = get_object_or_404(
-        TestAttempt.objects.select_related('user', 'olympiad', 'olympiad__center'),
+        TestAttempt.objects
+        .filter(olympiad__is_deleted=False)
+        .select_related('user', 'olympiad', 'olympiad__center'),
         pk=attempt_id,
     )
     is_owner = attempt.user_id == request.user.id
@@ -531,7 +553,14 @@ def my_results(request):
     avtomatik qaytariladi. Avval qattiq `[:200]` cheklov edi va keyingi
     attempt'lar yashirin bo'lib qolardi.
     """
-    qs = TestAttempt.objects.filter(user=request.user).select_related('olympiad')
+    # Soft-delete qilingan olimpiadalar foydalanuvchining tarixida
+    # ko'rinmasin — manager o'chirgan tadbir egasi nuqtai nazaridan
+    # ham yo'q deb hisoblanadi.
+    qs = (
+        TestAttempt.objects
+        .filter(user=request.user, olympiad__is_deleted=False)
+        .select_related('olympiad')
+    )
     try:
         page = int(request.query_params.get('page') or 1)
     except (TypeError, ValueError):
@@ -636,6 +665,20 @@ def download_certificate(request, attempt_id):
         ).exists() or attempt.olympiad.center.owner_id == request.user.id
     if not can_view:
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    # Eski attempt'larda `rank` NULL bo'lishi mumkin (submit paytida
+    # rank yangilanmagan eski siyosat). Bunday hollarda jonli pozitsiyani
+    # bitta COUNT query orqali hisoblab, DB'da rank field'ni yangilab
+    # qo'yamiz — keyingi safarda qayta hisoblanmaydi.
+    if attempt.rank is None:
+        live_better = TestAttempt.objects.filter(
+            olympiad=attempt.olympiad,
+            disqualified=False,
+        ).filter(
+            Q(score__gt=attempt.score)
+            | Q(score=attempt.score, time_spent__lt=attempt.time_spent),
+        ).exclude(pk=attempt.pk).count()
+        attempt.rank = live_better + 1
+        attempt.save(update_fields=['rank'])
     # Faqat 1-o'rin egasi sertifikat ola oladi. Avval har qanday rank
     # uchun ruxsat berilardi — bu sertifikatni hammaga tarqatib yuborardi.
     if attempt.rank != 1:
@@ -999,7 +1042,7 @@ def leaderboard(request):
     # ko'p qator rank'ni chalkash qilardi.
     qs = (
         TestAttempt.objects
-        .filter(disqualified=False)
+        .filter(disqualified=False, olympiad__is_deleted=False)
         .select_related('user', 'olympiad', 'olympiad__center')
         .order_by('-score', 'time_spent', 'submitted_at')
     )
