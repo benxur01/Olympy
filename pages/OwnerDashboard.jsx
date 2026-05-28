@@ -980,7 +980,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const Topbar = () => (
     <header
       className="sticky top-0 z-30 flex h-[64px] items-center justify-between border-b border-white/5 px-4 lg:px-6"
-      style={{ background: 'rgba(13,15,35,0.97)' }}
+      style={{ background: 'rgba(13, 14, 18, 0.97)' }}
     >
       <div className="flex min-w-0 items-center gap-3">
         <button
@@ -2372,7 +2372,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       {toast && (
         <div
           className="fixed bottom-6 right-6 z-50 rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white shadow-2xl"
-          style={{ background: 'rgba(13,15,35,0.98)' }}
+          style={{ background: 'rgba(13, 14, 18, 0.98)' }}
         >
           {toast}
         </div>
