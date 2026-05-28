@@ -354,7 +354,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                           >
                             {explaining[q.id] ? (
                               <>
-                                <span className="w-3 h-3 rounded-full border border-indigo-400/20 border-t-indigo-400 animate-spin" />
+                                <span className="w-3 h-3 rounded-full border border-white/20 border-t-white animate-spin" />
                                 Tushuntirish tayyorlanmoqda...
                               </>
                             ) : (
