@@ -132,6 +132,11 @@ def update_center(request, center_id):
     allowed = {'name', 'organization_type', 'country', 'region', 'district', 'city', 'subjects'}
     payload = {k: v for k, v in data.items() if k in allowed}
 
+    # is_premium faqat platforma admini boshqaradi — oddiy owner uni
+    # o'zgartira olmasligi uchun payload'ga faqat admin uchun qo'shamiz.
+    if 'is_premium' in data and request.user.is_platform_admin:
+        payload['is_premium'] = bool(data['is_premium'])
+
     # Bo'sh payload — hech narsa o'zgartirmasdan butun model save'lashning
     # foydasi yo'q (signal'lar, timestamps, race) — 400 qaytaramiz.
     if not payload:

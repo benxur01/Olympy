@@ -21,9 +21,12 @@ class EducationCenterSerializer(serializers.ModelSerializer):
     class Meta:
         model = EducationCenter
         fields = ['id', 'name', 'organization_type', 'country', 'region', 'district',
-                  'city', 'owner', 'status', 'subjects', 'rating', 'created_at',
-                  'image_url', 'students', 'olympiads']
-        read_only_fields = ['id', 'owner', 'status', 'rating', 'created_at']
+                  'city', 'owner', 'status', 'is_premium', 'subjects', 'rating',
+                  'created_at', 'image_url', 'students', 'olympiads']
+        # is_premium read-only serializer darajasida — yozish faqat
+        # update_center view'ida is_platform_admin tekshiruvidan keyin amalga
+        # oshiriladi (oddiy owner uni o'zgartira olmaydi).
+        read_only_fields = ['id', 'owner', 'status', 'is_premium', 'rating', 'created_at']
 
     def get_owner(self, obj):
         request = self.context.get('request') if hasattr(self, 'context') else None

@@ -34,6 +34,8 @@ class EducationCenter(models.Model):
         related_name='owned_centers',
     )
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    # Premium tashkilot bayrog'i — faqat platforma admini boshqaradi.
+    is_premium = models.BooleanField(default=False, db_index=True)
     subjects = models.JSONField(default=list, blank=True)
     image = models.ImageField(upload_to='centers/', blank=True, null=True)
     rating = models.DecimalField(max_digits=3, decimal_places=1, default=0)
