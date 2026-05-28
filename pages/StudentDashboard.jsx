@@ -66,6 +66,22 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     () => isApi ? OlympyApi.getMyPredictions(OlympyApi.getToken()) : Promise.resolve({}),
     [isApi, page === 'home' || page === 'predictions'],
   );
+  // Premium: tarixiy tahlil grafigi, raqobatchi tahlili, zaiflik xaritasi.
+  const apiHistoryChartRes = useApiData(
+    () => isApi ? OlympyApi.getHistoryChart(OlympyApi.getToken()) : Promise.resolve([]),
+    [isApi, page === 'history'],
+  );
+  const apiCompetitorRes = useApiData(
+    () => isApi ? OlympyApi.getCompetitorAnalysis(null, OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, page === 'history'],
+  );
+  const apiWeaknessRes = useApiData(
+    () => isApi ? OlympyApi.getSubjectWeakness(OlympyApi.getToken()) : Promise.resolve([]),
+    [isApi, page === 'history'],
+  );
+  // Olimpiadaga tayyorlik badge'lari — Tadbirlar sahifasi ochilganda
+  // ko'rinadigan olimpiadalar uchun yuklanadi.
+  const [readinessMap, setReadinessMap] = React.useState({});
 
   // Live student-role state from store
   const studentRole = user.roles?.student;
@@ -127,6 +143,33 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     return isCenterApproved && String(o.centerId) === String(studentCenterId);
   });
 
+  // Olimpiadaga tayyorlik (4-funksiya): Tadbirlar sahifasi ochilganda
+  // ko'rinadigan faol/yaqinlashayotgan olimpiadalar uchun tayyorlik foizini
+  // yuklaymiz. Yuklanganlar `readinessMap`da keshlanadi.
+  React.useEffect(() => {
+    if (!isApi || page !== 'olympiads') return;
+    const token = OlympyApi.getToken();
+    const targets = visibleOlympiads
+      .filter(o => (o.status === 'active' || o.status === 'inactive') && o.backendId && readinessMap[o.backendId] === undefined)
+      .slice(0, 12);
+    if (!targets.length) return;
+    let cancelled = false;
+    Promise.all(targets.map(o =>
+      OlympyApi.getReadiness(o.backendId, token)
+        .then(res => [o.backendId, res?.readiness_pct ?? null])
+        .catch(() => [o.backendId, null])
+    )).then(pairs => {
+      if (cancelled) return;
+      setReadinessMap(prev => {
+        const next = { ...prev };
+        pairs.forEach(([id, pct]) => { next[id] = pct; });
+        return next;
+      });
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isApi, page, apiOlympiadsRes.data]);
+
   // Student's attempts and derived results
   const myAttempts = (isApi ? (apiAttempts || []) : store.attempts.filter(a => a.userId === user.id))
     .slice()
@@ -187,6 +230,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
     { key: 'practice', icon: 'bolt', label: 'Mashq' },
     { key: 'results', icon: 'chart', label: 'Natijalar' },
+    { key: 'history', icon: 'chart', label: 'Tarixim' },
     { key: 'centers', icon: 'building', label: 'Tashkilotlar' },
     { key: 'leaderboard', icon: 'star', label: 'Reyting' },
     { key: 'analytics', icon: 'chart', label: 'Analitika' },
@@ -531,6 +575,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           }
           return filteredOlympiads.map(o => (
             <OlympiadCard key={o.id} olympiad={o} locked={!canAccessEvent(o)}
+              readinessPct={(o.status === 'active' || o.status === 'inactive') ? (readinessMap[o.backendId] ?? null) : null}
               onStart={() => {
                 if (!canEnterEvent(o)) return;
                 const alreadyMember = String(o.centerId) === String(studentCenterId);
@@ -862,6 +907,142 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     );
   };
 
+  const renderHistory = () => {
+    const history = Array.isArray(apiHistoryChartRes.data) ? apiHistoryChartRes.data : [];
+    const competitor = apiCompetitorRes.data;
+    const weakness = Array.isArray(apiWeaknessRes.data) ? apiWeaknessRes.data : [];
+    const chartPoints = history.map(h => ({
+      label: (h.olympiad_name || '').slice(0, 8),
+      value: h.pct || 0,
+      title: `${h.olympiad_name} · ${h.score}/${h.max_score} (${h.pct}%)${h.rank ? ' · #' + h.rank : ''} · ${h.date}`,
+    }));
+    const weaknessColor = (pct) => pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+
+    return (
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+        <h2 className="text-lg md:text-xl font-black text-white">Tarixim va tahlil</h2>
+
+        {/* 1. Tarixiy tahlil grafigi */}
+        <div className="glass rounded-2xl p-4 md:p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
+              <Icon name="chart" size={16} />
+            </div>
+            <div>
+              <h3 className="font-bold text-white text-sm md:text-base leading-none">Olimpiada tarixi</h3>
+              <span className="text-[9px] text-white/40 mt-1 block">Oxirgi {history.length} ta tadbirdagi ball foizi</span>
+            </div>
+          </div>
+          {apiHistoryChartRes.loading
+            ? <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+            : <SvgLineChart points={chartPoints} />}
+        </div>
+
+        {/* 2. Reytingdagi o'rnim */}
+        {competitor && competitor.my_rank && (
+          <div className="glass rounded-2xl p-4 md:p-5 border border-amber-500/20 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-lg">🏅</span>
+              <h3 className="font-bold text-white text-sm md:text-base">Reytingdagi o'rnim</h3>
+            </div>
+            <div className="text-sm text-white/80 leading-relaxed">
+              <span className="text-white/50">{competitor.olympiad_name}</span> tadbirida siz{' '}
+              <span className="font-black text-amber-400">{competitor.my_rank}-o'rindasiz</span>
+              {competitor.total ? <span className="text-white/40"> ({competitor.total} ishtirokchidan)</span> : null}.
+              {competitor.above_me ? (
+                <span> {competitor.above_me.diff > 0
+                  ? <> {competitor.my_rank - 1}-o'ringa o'tish uchun <span className="font-bold text-emerald-400">+{competitor.above_me.diff} ball</span> kerak.</>
+                  : <> Siz yuqori o'rinlardasiz!</>}</span>
+              ) : <span> Siz birinchi o'rindasiz! 🎉</span>}
+            </div>
+            {competitor.percentile != null && (
+              <div className="mt-2 text-xs text-white/50">
+                Siz ishtirokchilarning <span className="font-bold text-indigo-300">{competitor.percentile}%</span> dan oldindasiz.
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 3. Mavzu bo'yicha zaiflik xaritasi */}
+        <div className="glass rounded-2xl p-4 md:p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 bg-rose-500/20 rounded-xl flex items-center justify-center text-rose-400">
+              <Icon name="bolt" size={16} />
+            </div>
+            <h3 className="font-bold text-white text-sm md:text-base">Fan bo'yicha zaiflik xaritasi</h3>
+          </div>
+          {apiWeaknessRes.loading ? (
+            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+          ) : weakness.length === 0 ? (
+            <div className="text-center text-white/40 text-sm py-8">Hali ma'lumot yo'q</div>
+          ) : (
+            <div className="space-y-3">
+              {weakness.map((w, i) => (
+                <div key={i}>
+                  <div className="flex items-center justify-between mb-1 text-xs md:text-sm">
+                    <span className="text-white/80 font-medium">{w.subject}</span>
+                    <span className="text-white/50">{w.correct}/{w.total} · <span className="font-bold" style={{ color: weaknessColor(w.pct) }}>{w.pct}%</span></span>
+                  </div>
+                  <div className="h-2.5 rounded-full bg-white/5 overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${w.pct}%`, background: weaknessColor(w.pct) }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 5. AI o'quv rejasi */}
+        <StudyPlanCard />
+      </div>
+    );
+  };
+
+  // AI o'quv rejasi kartochkasi (5-funksiya). Alohida komponent — o'z lokal
+  // holatiga (loading, plan) ega bo'lishi uchun.
+  const StudyPlanCard = () => {
+    const [loading, setLoading] = React.useState(false);
+    const [plan, setPlan] = React.useState(null);
+    const [error, setError] = React.useState('');
+    const handleGetPlan = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const resp = await OlympyApi.getStudyPlan(OlympyApi.getToken());
+        setPlan(resp?.plan || []);
+        if ((!resp?.plan || resp.plan.length === 0) && resp?.detail) setError(resp.detail);
+      } catch (e) {
+        setError(OlympyApi.toUserMessage?.(e) || "Rejani olib bo'lmadi");
+      }
+      setLoading(false);
+    };
+    return (
+      <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
+            <Icon name="sparkles" size={16} />
+          </div>
+          <div>
+            <h3 className="font-bold text-white text-sm md:text-base leading-none">AI o'quv rejasi</h3>
+            <span className="text-[9px] text-white/40 mt-1 block">Zaif fanlaringizga moslangan haftalik reja</span>
+          </div>
+        </div>
+        {Array.isArray(plan) && plan.length > 0 ? (
+          <div className="space-y-2 mb-3">
+            {plan.map((item, i) => (
+              <div key={i} className="glass rounded-xl p-3 text-xs md:text-sm text-white/80 leading-relaxed border border-indigo-500/10">{item}</div>
+            ))}
+          </div>
+        ) : null}
+        {error && <div className="text-xs text-amber-300 mb-3">{error}</div>}
+        <button onClick={handleGetPlan} disabled={loading}
+          className="btn-primary text-xs px-4 py-2.5 rounded-xl font-semibold min-h-[40px] disabled:opacity-50">
+          {loading ? 'Tayyorlanmoqda...' : (Array.isArray(plan) && plan.length > 0 ? 'Yangilash' : 'Rejani olish')}
+        </button>
+      </div>
+    );
+  };
+
   const renderRewards = () => {
     const rewardsData = apiRewardsRes.data || { coins: 0, products: [] };
     const coins = rewardsData.coins;
@@ -1006,10 +1187,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     );
   };
 
-  const pages = { 
-    home: renderHome, 
-    olympiads: renderOlympiads, 
-    results: renderResults, 
+  const pages = {
+    home: renderHome,
+    olympiads: renderOlympiads,
+    results: renderResults,
+    history: renderHistory,
     centers: renderCenters,
     mistakes: renderMistakes,
     rewards: renderRewards
@@ -1550,7 +1732,7 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
   );
 };
 
-const OlympiadCard = ({ olympiad: o, onStart, locked }) => {
+const OlympiadCard = ({ olympiad: o, onStart, locked, readinessPct }) => {
   const isActive = o.status === 'active';
   const isUpcoming = o.status === 'inactive';
   const disabled = !isActive || locked;
@@ -1573,7 +1755,14 @@ const OlympiadCard = ({ olympiad: o, onStart, locked }) => {
           <SubjectBadge subject={o.subject} />
           <span className={`rounded-lg px-2 py-1 text-[10px] font-bold flex-shrink-0 ${o.eventType === 'olympiad' ? 'bg-cyan-500/15 text-cyan-300' : 'bg-amber-500/15 text-amber-300'}`}>{typeLabel}</span>
         </div>
-        <Badge status={statusLabel(o.status)} />
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {readinessPct != null && (
+            <span className={`rounded-lg px-2 py-1 text-[10px] font-bold ${readinessPct >= 80 ? 'bg-emerald-500/15 text-emerald-300' : readinessPct >= 50 ? 'bg-amber-500/15 text-amber-300' : 'bg-rose-500/15 text-rose-300'}`} title="Sizning shu fandagi tayyorlik darajangiz">
+              {readinessPct}% tayyor
+            </span>
+          )}
+          <Badge status={statusLabel(o.status)} />
+        </div>
       </div>
       <h3 className="font-bold text-white mb-1 break-words">{o.title}</h3>
       <div className="flex flex-wrap gap-2 md:gap-3 text-xs text-white/40 mb-3 md:mb-4">

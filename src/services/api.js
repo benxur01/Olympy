@@ -531,6 +531,19 @@ export const OlympyApi = {
   getRewards: (token) => request('/api/me/rewards/', { token }),
   redeemReward: (productId, token) => request('/api/me/rewards/redeem/', { method: 'POST', body: { product_id: productId }, token }),
   getMyRedemptions: (token) => request('/api/me/rewards/my-redemptions/', { token }),
+  // Premium o'quvchi analitikasi
+  getHistoryChart: (token) => request('/api/me/history-chart/', { token }),
+  getCompetitorAnalysis: (olympiadId, token) => request(`/api/me/competitor-analysis/${olympiadId ? '?olympiad_id=' + encodeURIComponent(olympiadId) : ''}`, { token }),
+  getSubjectWeakness: (token) => request('/api/me/subject-weakness/', { token }),
+  getReadiness: (olympiadId, token) => request(`/api/me/readiness/?olympiad_id=${encodeURIComponent(olympiadId)}`, { token }),
+  getStudyPlan: (token) => request('/api/me/study-plan/', { method: 'POST', token }),
+  // Premium markaz funksiyalari
+  getStudentDynamics: (centerId, token) => request(`/api/centers/${centerId}/student-dynamics/`, { token }),
+  getTopStudents: (centerId, token) => request(`/api/centers/${centerId}/top-students/`, { token }),
+  getCenterQuestionBank: (centerId, token) => request(`/api/centers/${centerId}/question-bank/`, { token }),
+  addCenterQuestion: (centerId, payload, token) => request(`/api/centers/${centerId}/question-bank/`, { method: 'POST', body: payload, token }),
+  deleteCenterQuestion: (centerId, qId, token) => request(`/api/centers/${centerId}/question-bank/${qId}/`, { method: 'DELETE', token }),
+  setMemberGroupTag: (centerId, membershipId, groupTag, token) => request(`/api/centers/${centerId}/members/${membershipId}/group-tag/`, { method: 'POST', body: { group_tag: groupTag }, token }),
   // Predictions
   getMyPredictions: (token) => request('/api/me/predictions/', { token }),
   getChildPredictions: (studentId, token) => request(`/api/me/parent/children/${studentId}/predictions/`, { token }),

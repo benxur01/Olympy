@@ -29,6 +29,31 @@ def user_can_manage_center_event(user, center):
     ).exists()
 
 
+def center_olympiad_limit_exceeded(center):
+    """True agar bepul markaz joriy oyda olimpiada yaratish limitiga yetgan.
+
+    Limit `settings.FREE_OLYMPIAD_MONTHLY_LIMIT` (default 2) dan olinadi.
+    Soft-delete qilingan (is_deleted) olimpiadalar ham hisobga olinadi —
+    aks holda yaratib-o'chirib limitni aylanib o'tish mumkin bo'lardi.
+    Premium markazlar uchun (kelajakda flag bilan) limit qo'llanilmaydi.
+    """
+    from django.conf import settings
+    from django.utils import timezone
+
+    # Premium markaz tushunchasi hozircha yo'q — barchasi bepul. Kelajakda
+    # `getattr(center, 'is_premium', False)` shu yerda tekshiriladi.
+    if getattr(center, 'is_premium', False):
+        return False
+    limit = getattr(settings, 'FREE_OLYMPIAD_MONTHLY_LIMIT', 2)
+    now = timezone.now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    created_this_month = Olympiad.objects.filter(
+        center=center,
+        created_at__gte=month_start,
+    ).count()
+    return created_this_month >= limit
+
+
 def approved_membership_rows(user):
     return list(
         CenterMembership.objects.filter(
@@ -62,14 +87,28 @@ def user_can_participate_in_event(user, olympiad):
     # qiladi) status tekshirilmasdi. Bu yerda darhol rad etish to'g'riroq.
     if olympiad.status not in (Olympiad.STATUS_ACTIVE, Olympiad.STATUS_FINISHED):
         return False
+    group_filter = (olympiad.group_filter or '').strip()
     if olympiad.event_type == Olympiad.EVENT_TYPE_OLYMPIAD:
-        return True
-    return CenterMembership.objects.filter(
+        # Public olimpiada bo'lsa-da, guruh filtri qo'yilgan bo'lsa faqat
+        # shu markazda mos `group_tag` ga ega o'quvchi qatnasha oladi.
+        if not group_filter:
+            return True
+        return CenterMembership.objects.filter(
+            user=user,
+            center=olympiad.center,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED,
+            group_tag=group_filter,
+        ).exists()
+    membership_qs = CenterMembership.objects.filter(
         user=user,
         center=olympiad.center,
         role=CenterMembership.ROLE_STUDENT,
         status=CenterMembership.STATUS_APPROVED,
-    ).exists()
+    )
+    if group_filter:
+        membership_qs = membership_qs.filter(group_tag=group_filter)
+    return membership_qs.exists()
 
 
 def visible_events_filter(user):

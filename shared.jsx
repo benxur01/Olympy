@@ -555,6 +555,61 @@ const BarChart = ({ data }) => {
   );
 };
 
+// ─── SvgLineChart ─────────────────────────────────────────────────────────────
+// Kutubxonasiz oddiy SVG line chart. `points` = [{ label, value (0..100), title }].
+// Har bir nuqtaga hover'da `<title>` orqali tooltip ko'rinadi.
+const SvgLineChart = ({ points = [], height = 160, stroke = '#6366f1' }) => {
+  if (!points.length) {
+    return <div className="text-center text-white/40 text-sm py-8">Hozircha ma'lumot yo'q</div>;
+  }
+  const W = 320, H = height, padX = 14, padTop = 14, padBottom = 22;
+  const innerW = W - padX * 2;
+  const innerH = H - padTop - padBottom;
+  const n = points.length;
+  const xAt = (i) => n === 1 ? W / 2 : padX + (innerW * i) / (n - 1);
+  const yAt = (v) => padTop + innerH - (innerH * Math.max(0, Math.min(100, v))) / 100;
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xAt(i).toFixed(1)},${yAt(p.value).toFixed(1)}`).join(' ');
+  const areaPath = `${linePath} L${xAt(n - 1).toFixed(1)},${(padTop + innerH).toFixed(1)} L${xAt(0).toFixed(1)},${(padTop + innerH).toFixed(1)} Z`;
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }} preserveAspectRatio="none">
+      {[0, 25, 50, 75, 100].map(g => (
+        <line key={g} x1={padX} x2={W - padX} y1={yAt(g)} y2={yAt(g)} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+      ))}
+      <path d={areaPath} fill={stroke} opacity="0.12" />
+      <path d={linePath} fill="none" stroke={stroke} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      {points.map((p, i) => (
+        <g key={i}>
+          <circle cx={xAt(i)} cy={yAt(p.value)} r="4" fill={stroke} stroke="#0b0b14" strokeWidth="1.5">
+            <title>{p.title || `${p.label}: ${p.value}%`}</title>
+          </circle>
+          <text x={xAt(i)} y={H - 6} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize="9">{p.label}</text>
+        </g>
+      ))}
+    </svg>
+  );
+};
+
+// ─── MonthBarChart ────────────────────────────────────────────────────────────
+// `data` = [{ label, value }]. Ustun tepasida son ko'rsatiladi (dinamika).
+const MonthBarChart = ({ data = [] }) => {
+  if (!data.length) {
+    return <div className="text-center text-white/40 text-sm py-8">Hozircha ma'lumot yo'q</div>;
+  }
+  const max = Math.max(1, ...data.map(d => d.value || 0));
+  return (
+    <div className="flex items-end gap-2 md:gap-3 h-40 px-1">
+      {data.map((d, i) => (
+        <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1 h-full min-w-0">
+          <span className="text-[10px] md:text-xs font-bold text-white">{d.value}</span>
+          <div className="w-full rounded-t-lg transition-all duration-500"
+            style={{ height: `${Math.max(4, (d.value / max) * 100)}%`, background: 'linear-gradient(180deg, #6366f1, #a855f7)' }} />
+          <span className="text-[9px] md:text-[10px] text-white/40 truncate w-full text-center">{d.label}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // ─── SubjectBadge ─────────────────────────────────────────────────────────────
 const subjectColors = {
   'Matematika': 'from-blue-500/20 to-indigo-500/20 text-blue-300 border-blue-500/20',
@@ -632,4 +687,4 @@ const useApiData = (fetcher, deps = []) => {
 };
 
 // Export all
-Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal });
+Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal });

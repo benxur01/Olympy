@@ -12,7 +12,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
-from .models import CenterMembership, EducationCenter
+from .models import CenterMembership, CenterQuestion, EducationCenter
 from .serializers import (
     AdminEducationCenterSerializer,
     ApproveSerializer,
@@ -532,11 +532,30 @@ def students_memberships(request, center_id):
         'subject': m.subject,
         'approval_code': m.approval_code,
         'status': m.status,
+        'group_tag': m.group_tag or '',
         'created_at': str(m.created_at),
         'olympiads_count': stats_map.get(m.user_id, {}).get('olympiads_count', 0),
         'avg_score': stats_map.get(m.user_id, {}).get('avg_score', 0),
     } for m in qs]
     return Response(data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def set_member_group_tag(request, center_id, membership_id):
+    """POST /api/centers/{id}/members/{membership_id}/group-tag/
+
+    O'quvchining guruh/sinf tegini o'rnatadi yoki tozalaydi. Faqat
+    owner/manager (yoki platform admin). Body: {"group_tag": "9-A"}.
+    """
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    if not _user_can_manage_center(request.user, center):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    membership = get_object_or_404(CenterMembership, pk=membership_id, center=center)
+    group_tag = (request.data.get('group_tag') or '').strip()[:50]
+    membership.group_tag = group_tag
+    membership.save(update_fields=['group_tag', 'updated_at'])
+    return Response({'membership_id': membership.id, 'group_tag': membership.group_tag})
 
 
 @api_view(['GET'])
@@ -1128,3 +1147,199 @@ def center_stats(request, center_id):
         'unique_participants': attempt_aggregates.get('unique_participants') or 0,
         'average_score': round(attempt_aggregates.get('average_score') or 0, 1),
     })
+
+
+# ─── Premium: o'quvchilar dinamikasi va top o'quvchilar ─────────────────────
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def student_dynamics(request, center_id):
+    """GET /api/centers/{id}/student-dynamics/ — oxirgi 6 oy a'zo dinamikasi.
+
+    Har oy uchun shu oyda qo'shilgan o'quvchilar (joined) va o'sha oy
+    oxiriga qadar jami tasdiqlangan o'quvchilar (total).
+    Javob: [{"month": "2025-12", "joined": 12, "total": 87}, ...]
+    """
+    from datetime import datetime
+
+    from django.utils import timezone as dj_timezone
+
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    if not _user_can_manage_center(request.user, center):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    student_qs = CenterMembership.objects.filter(
+        center=center,
+        role=CenterMembership.ROLE_STUDENT,
+        status=CenterMembership.STATUS_APPROVED,
+    )
+
+    now = dj_timezone.now()
+    # Oxirgi 6 oy uchun (joriy oy oxirgi bo'lib) oy chegaralarini tuzamiz.
+    months = []
+    year, month = now.year, now.month
+    for _ in range(6):
+        months.append((year, month))
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+    months.reverse()
+
+    data = []
+    for (y, m) in months:
+        if m == 12:
+            next_y, next_m = y + 1, 1
+        else:
+            next_y, next_m = y, m + 1
+        month_start = dj_timezone.make_aware(datetime(y, m, 1)) if dj_timezone.is_naive(
+            datetime(y, m, 1)) else datetime(y, m, 1)
+        next_start = dj_timezone.make_aware(datetime(next_y, next_m, 1)) if dj_timezone.is_naive(
+            datetime(next_y, next_m, 1)) else datetime(next_y, next_m, 1)
+        joined = student_qs.filter(
+            created_at__gte=month_start,
+            created_at__lt=next_start,
+        ).count()
+        total = student_qs.filter(created_at__lt=next_start).count()
+        data.append({
+            'month': f'{y:04d}-{m:02d}',
+            'joined': joined,
+            'total': total,
+        })
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def top_students(request, center_id):
+    """GET /api/centers/{id}/top-students/ — top 10 o'quvchi (o'rtacha ball).
+
+    Faqat shu markazning olimpiadalaridagi attempt'lar hisobga olinadi.
+    Javob: [{"rank": 1, "name": "...", "avg_score": 91, "attempts": 5}]
+    """
+    from django.db.models import Avg, Count
+
+    from attempts.models import TestAttempt
+
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    if not _user_can_manage_center(request.user, center):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    rows = (
+        TestAttempt.objects
+        .filter(
+            olympiad__center=center,
+            olympiad__is_deleted=False,
+            disqualified=False,
+        )
+        .values('user_id')
+        .annotate(avg_score=Avg('score'), attempts=Count('id'))
+        .order_by('-avg_score', '-attempts')[:10]
+    )
+    rows = list(rows)
+    from accounts.models import User
+    user_ids = [r['user_id'] for r in rows]
+    name_map = {
+        u.id: (u.full_name or u.normalized_phone or u.phone or '—')
+        for u in User.objects.filter(id__in=user_ids)
+    }
+    data = []
+    for i, r in enumerate(rows, start=1):
+        data.append({
+            'rank': i,
+            'name': name_map.get(r['user_id'], '—'),
+            'avg_score': round(r['avg_score'] or 0, 1),
+            'attempts': r['attempts'] or 0,
+        })
+    return Response(data)
+
+
+# ─── Premium: markaz savol banki ───────────────────────────────────────────
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def center_question_bank(request, center_id):
+    """GET/POST /api/centers/{id}/question-bank/ — markaz savol banki.
+
+    GET: markazning saqlangan savollari ro'yxati.
+    POST: yangi savol qo'shish — {text, options:[{text,correct}], subject, difficulty}.
+    """
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    if not _user_can_manage_center(request.user, center):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    if request.method == 'GET':
+        qs = CenterQuestion.objects.filter(center=center).order_by('-created_at')
+        return Response([_serialize_center_question(q) for q in qs])
+
+    text = (request.data.get('text') or '').strip()
+    options = request.data.get('options') or []
+    subject = (request.data.get('subject') or '').strip()
+    difficulty = (request.data.get('difficulty') or CenterQuestion.DIFFICULTY_MEDIUM).strip()
+
+    if not text:
+        return Response({'detail': 'Savol matni majburiy'},
+                        status=http_status.HTTP_400_BAD_REQUEST)
+    if not isinstance(options, list) or len(options) < 2:
+        return Response({'detail': 'Kamida 2 ta variant kiriting'},
+                        status=http_status.HTTP_400_BAD_REQUEST)
+    # Variantlarni normallashtirish + kamida bitta to'g'ri javob tekshiruvi.
+    normalized = []
+    has_correct = False
+    for opt in options:
+        if isinstance(opt, dict):
+            opt_text = (opt.get('text') or '').strip()
+            opt_correct = bool(opt.get('correct'))
+        else:
+            opt_text = str(opt or '').strip()
+            opt_correct = False
+        if not opt_text:
+            continue
+        if opt_correct:
+            has_correct = True
+        normalized.append({'text': opt_text, 'correct': opt_correct})
+    if len(normalized) < 2:
+        return Response({'detail': 'Kamida 2 ta to\'ldirilgan variant kiriting'},
+                        status=http_status.HTTP_400_BAD_REQUEST)
+    if not has_correct:
+        return Response({'detail': 'Kamida bitta to\'g\'ri variantni belgilang'},
+                        status=http_status.HTTP_400_BAD_REQUEST)
+    valid_difficulties = {c[0] for c in CenterQuestion.DIFFICULTY_CHOICES}
+    if difficulty not in valid_difficulties:
+        difficulty = CenterQuestion.DIFFICULTY_MEDIUM
+
+    question = CenterQuestion.objects.create(
+        center=center,
+        text=text,
+        options=normalized,
+        subject=subject,
+        difficulty=difficulty,
+        created_by=request.user,
+    )
+    return Response(_serialize_center_question(question),
+                    status=http_status.HTTP_201_CREATED)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def center_question_bank_delete(request, center_id, q_id):
+    """DELETE /api/centers/{id}/question-bank/{q_id}/ — savolni bankdan o'chirish."""
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    if not _user_can_manage_center(request.user, center):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    question = get_object_or_404(CenterQuestion, pk=q_id, center=center)
+    question.delete()
+    return Response({'detail': "Savol o'chirildi"}, status=http_status.HTTP_200_OK)
+
+
+def _serialize_center_question(q):
+    return {
+        'id': q.id,
+        'text': q.text,
+        'options': q.options or [],
+        'subject': q.subject,
+        'difficulty': q.difficulty,
+        'created_at': str(q.created_at),
+    }

@@ -116,6 +116,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [studentStatusFilter, setStudentStatusFilter] = React.useState('all');
   const [studentSearch, setStudentSearch] = React.useState('');
   const [studentActionId, setStudentActionId] = React.useState(null);
+  // Guruh tegi tahrirlash holati: { membershipId, value }.
+  const [groupTagEdit, setGroupTagEdit] = React.useState(null);
 
   // Live Proctoring states
   const [proctoringData, setProctoringData] = React.useState([]);
@@ -595,6 +597,24 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         showToast(OlympyApi.toUserMessage?.(err) || "Chiqarib bo'lmadi");
       })
       .finally(() => setStudentActionId(null));
+  };
+
+  // Guruh tegini saqlash (10-funksiya) — group olimpiadalar uchun.
+  const saveGroupTag = (row, value) => {
+    if (!row || !isApi || !row.membershipId) { setGroupTagEdit(null); return; }
+    const backendCenterId = center?.backendId ?? center?.id;
+    const token = OlympyApi.getToken();
+    const trimmed = (value || '').trim();
+    if (trimmed === (row.groupTag || '')) { setGroupTagEdit(null); return; }
+    setStudentActionId(row.membershipId);
+    OlympyApi.setMemberGroupTag(backendCenterId, row.membershipId, trimmed, token)
+      .then(() => loadStudents())
+      .then(() => showToast('Guruh tegi yangilandi'))
+      .catch(err => {
+        console.warn('setMemberGroupTag failed:', err);
+        showToast(OlympyApi.toUserMessage?.(err) || "Guruhni saqlab bo'lmadi");
+      })
+      .finally(() => { setStudentActionId(null); setGroupTagEdit(null); });
   };
 
   const openRoleModal = (row) => {
@@ -1382,6 +1402,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       joined: (m.created_at || '').slice(0, 10),
       role: m.role || 'student',
       status: m.status || 'approved',
+      groupTag: m.group_tag || '',
     }));
     const query = (studentSearch || '').trim().toLowerCase();
     const filteredStudents = query
@@ -1448,7 +1469,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             <table className="w-full min-w-[760px] text-left">
               <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
                 <tr className="text-[10px] font-black uppercase tracking-wider text-white/40">
-                  {['Ism', 'Telefon', "Qo'shilgan sana", 'Holat', 'Amal'].map(h => (
+                  {['Ism', 'Telefon', 'Guruh', "Qo'shilgan sana", 'Holat', 'Amal'].map(h => (
                     <th key={h} className="px-5 py-3.5">{h}</th>
                   ))}
                 </tr>
@@ -1456,7 +1477,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               <tbody>
                 {studentsLoading && filteredStudents.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
+                    <td colSpan={6} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
                       Yuklanmoqda...
                     </td>
                   </tr>
@@ -1525,7 +1546,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 })}
                 {!studentsLoading && filteredStudents.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
+                    <td colSpan={6} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
                       {query ? "Mos keladigan o'quvchilar topilmadi" : "O'quvchilar yo'q"}
                     </td>
                   </tr>
