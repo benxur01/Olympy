@@ -3,6 +3,8 @@
 const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
+  // Premium o'quvchi vizual belgisi (⭐ + avatar atrofida oltin halqa).
+  const isPremium = !!(user?.isPremium ?? user?.is_premium);
   const [tab, setTab] = React.useState('results');
   const [avatarLoading, setAvatarLoading] = React.useState(false);
   const [avatarError, setAvatarError] = React.useState('');
@@ -288,7 +290,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
         <div className="hero-glow" style={{ background:'#6366f1', top:'-60%', left:'40%', opacity:0.08 }} />
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center gap-5">
           <div className="relative">
-            <Avatar name={user?.name || 'Ali Valiyev'} src={user?.avatarUrl || ''} size={80} gradient="from-indigo-500 to-purple-600" />
+            <Avatar name={user?.name || 'Ali Valiyev'} src={user?.avatarUrl || ''} size={80} gradient="from-indigo-500 to-purple-600" premium={isPremium} />
             {/* Tasdiq belgisi faqat haqiqatan ham telegram ulangan akkauntlarda
                 ko'rsatiladi. Avval bu belgi har bir foydalanuvchida fake
                 100% "tasdiqlangan profil" ko'rinishini yaratardi. */}
@@ -313,7 +315,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-3 flex-wrap">
-              <h2 className="text-2xl font-black text-white break-words">{user?.name || 'Ali Valiyev'}</h2>
+              <h2 className="text-2xl font-black text-white break-words">{isPremium && <span title="Premium o'quvchi">⭐ </span>}{user?.name || 'Ali Valiyev'}</h2>
               {/* A'zo chip — faqat haqiqatan ham biror rol approved bo'lsa.
                   Avval har bir foydalanuvchida ko'rinardi va anglashilmasdi. */}
               {(() => {
