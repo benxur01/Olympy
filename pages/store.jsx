@@ -690,6 +690,7 @@ const mapApiCenter = (c) => {
     ownerPhone: c.owner_phone || '',
     imageUrl: makeAssetUrl(c.image_url || c.imageUrl || ''),
     status: c.status || 'pending',
+    isPremium: !!(c.is_premium ?? c.isPremium),
     subjects: Array.isArray(c.subjects) ? c.subjects : [],
     rating: parseFloat(c.rating) || 0,
     students: c.students || 0,

@@ -401,6 +401,22 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     showToast('Tashkilot rad etildi va ro\'yxatlardan olib tashlandi');
   };
 
+  const togglePremium = (center) => {
+    if (!isApi) {
+      showToast('Premium faqat API rejimida boshqariladi');
+      return;
+    }
+    const backendCenterId = center?.backendId;
+    if (!backendCenterId) { showToast('Tashkilot ID topilmadi'); return; }
+    const next = !center.isPremium;
+    OlympyApi.updateCenter(backendCenterId, { is_premium: next }, OlympyApi.getToken())
+      .then(() => {
+        showToast(next ? 'Premium berildi' : 'Premium bekor qilindi');
+        apiCentersRes.reload();
+      })
+      .catch(err => { console.warn('togglePremium failed:', err); showToast(OlympyApi.toUserMessage(err)); });
+  };
+
   const approveCenterReq = (req) => {
     const center = resolveCenterFromRequest(req);
     if (center) approveCenterDirect(center);
@@ -822,10 +838,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
 
       <section className="overflow-hidden admin-card">
         <div className="overflow-x-auto admin-scroll">
-          <table className="w-full min-w-[980px] text-left">
+          <table className="w-full min-w-[1120px] text-left">
             <thead className="admin-table-hdr">
               <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                {['Tashkilot', 'Turi', 'Manzil', 'Direktor', 'O\'quvchi', 'Olimpiada', 'Holat', 'Amal'].map(h => (
+                {['Tashkilot', 'Turi', 'Manzil', 'Direktor', 'O\'quvchi', 'Olimpiada', 'Holat', 'Premium', 'Amal'].map(h => (
                   <th key={h} className="px-5 py-3.5">{h}</th>
                 ))}
               </tr>
@@ -854,6 +870,18 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                     <td className="px-5 py-4 font-bold text-slate-300">{center.olympiads || 0}</td>
                     <td className="px-5 py-4"><AdminPill status={center.status} /></td>
                     <td className="px-5 py-4">
+                      {center.isPremium ? (
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">
+                            <Icon name="check" size={11} /> Premium
+                          </span>
+                          <button onClick={() => togglePremium(center)} className="rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] font-bold text-rose-400 ring-1 ring-rose-500/20 hover:bg-rose-500/10 transition">Bekor qilish</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => togglePremium(center)} className="rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-400 ring-1 ring-amber-500/20 hover:bg-amber-500/20 transition">Premium berish</button>
+                      )}
+                    </td>
+                    <td className="px-5 py-4">
                       {center.status === 'pending' ? (
                         <div className="flex gap-2">
                           <button onClick={() => approveCenterDirect(center)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)] transition">Qabul</button>
@@ -869,7 +897,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 );
               })}
               {centers.length === 0 && (
-                <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Tashkilotlar yo'q</td></tr>
+                <tr><td colSpan={9} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Tashkilotlar yo'q</td></tr>
               )}
             </tbody>
           </table>

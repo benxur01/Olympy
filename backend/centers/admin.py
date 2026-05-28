@@ -7,9 +7,10 @@ from .models import CenterMembership, EducationCenter
 class EducationCenterAdmin(admin.ModelAdmin):
     list_display = (
         'name', 'organization_type', 'country', 'region', 'district',
-        'city', 'status', 'owner', 'created_at',
+        'city', 'status', 'is_premium', 'owner', 'created_at',
     )
-    list_filter = ('status', 'organization_type', 'country', 'region', 'district', 'city')
+    list_filter = ('status', 'is_premium', 'organization_type', 'country', 'region', 'district', 'city')
+    list_editable = ('is_premium',)
     search_fields = ('name', 'organization_type', 'country', 'region', 'district', 'city')
 
 
