@@ -302,6 +302,41 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     return () => clearInterval(t);
   }, [submitted, isBeforeStart, isAfterEnd, initialQuestionsLoading, serverExpiresAt, serverClockSkewMs]);
 
+  const sendPing = React.useCallback(async () => {
+    if (!user?._api || !liveOlympiad?.backendId || submitted || cheated) return;
+    const answeredCount = Object.keys(answersRef.current || {}).length;
+    const escapes = tabSwitchCountRef.current;
+    try {
+      const token = globalThis.OlympyApi?.getToken?.()
+        ?? globalThis.OlympyApi?.loadAuth?.()?.token;
+      await globalThis.OlympyApi.pingTestSession(
+        liveOlympiad.backendId,
+        answeredCount,
+        escapes,
+        token,
+        deviceIdRef.current,
+      );
+    } catch (err) {
+      // 409 — boshqa qurilmadan parallel sessiya aniqlandi. reportCheating'ni
+      // qayta chaqirmasdan to'g'ridan-to'g'ri diskvalifikatsiya holatini
+      // ko'rsatamiz (backend allaqachon session'ni DQ qildi).
+      if (err?.status === 409) {
+        cheatReportedRef.current = true;
+        setSubmitted(true);
+        setCheated(true);
+        setCheatMessage("Boshqa qurilmadan kirilgani aniqlandi. Olimpiada yakunlandi.");
+        try {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.removeItem(answersStorageKey);
+            localStorage.removeItem(markedStorageKey);
+          }
+        } catch {}
+        return;
+      }
+      console.warn('pingTestSession failed:', err?.message);
+    }
+  }, [user?._api, liveOlympiad?.backendId, submitted, cheated, answersStorageKey, markedStorageKey]);
+
   const reportCheating = React.useCallback((reason) => {
     if (cheatReportedRef.current || submitted || cheated || !user?._api || !liveOlympiad?.backendId) return;
     if (!cheatGuardActiveRef.current) return;
@@ -398,41 +433,6 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       localStorage.removeItem(markedStorageKey);
     } catch {}
   }, [answersStorageKey, markedStorageKey]);
-
-  const sendPing = React.useCallback(async () => {
-    if (!user?._api || !liveOlympiad?.backendId || submitted || cheated) return;
-    const answeredCount = Object.keys(answersRef.current || {}).length;
-    const escapes = tabSwitchCountRef.current;
-    try {
-      const token = globalThis.OlympyApi?.getToken?.()
-        ?? globalThis.OlympyApi?.loadAuth?.()?.token;
-      await globalThis.OlympyApi.pingTestSession(
-        liveOlympiad.backendId,
-        answeredCount,
-        escapes,
-        token,
-        deviceIdRef.current,
-      );
-    } catch (err) {
-      // 409 — boshqa qurilmadan parallel sessiya aniqlandi. reportCheating'ni
-      // qayta chaqirmasdan to'g'ridan-to'g'ri diskvalifikatsiya holatini
-      // ko'rsatamiz (backend allaqachon session'ni DQ qildi).
-      if (err?.status === 409) {
-        cheatReportedRef.current = true;
-        setSubmitted(true);
-        setCheated(true);
-        setCheatMessage("Boshqa qurilmadan kirilgani aniqlandi. Olimpiada yakunlandi.");
-        try {
-          if (typeof localStorage !== 'undefined') {
-            localStorage.removeItem(answersStorageKey);
-            localStorage.removeItem(markedStorageKey);
-          }
-        } catch {}
-        return;
-      }
-      console.warn('pingTestSession failed:', err?.message);
-    }
-  }, [user?._api, liveOlympiad?.backendId, submitted, cheated, answersStorageKey, markedStorageKey]);
 
   React.useEffect(() => {
     // apiTotal===0 — hali birinchi savol yuklanmagan; mock rejimda apiTotal
