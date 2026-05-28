@@ -1180,9 +1180,16 @@ def leaderboard(request):
 def test_session_ping(request):
     """POST /api/attempts/ping/
 
-    Body: {"olympiad": <id>, "answered_count": <int>, "tab_escapes": <int>}
+    Body: {"olympiad": <id>, "answered_count": <int>, "tab_escapes": <int>,
+           "device_id": <str>}
     o'quvchining joriy holatini cache'da yangilab borish uchun ping.
+
+    Parallel sessiya tekshiruvi: agar oxirgi ping boshqa device_id'dan kelgan
+    bo'lsa va orada 30 soniyadan kam vaqt o'tgan bo'lsa (ya'ni ikkala qurilma
+    ham faol) — session DQ qilinadi va 409 qaytariladi.
     """
+    from datetime import timedelta
+
     from django.core.cache import cache
     from django.utils import timezone
 
@@ -1199,17 +1206,52 @@ def test_session_ping(request):
         answered_count = 0
         tab_escapes = 0
 
+    # device_id body yoki header'dan olinadi (frontend yuboradi).
+    device_id = str(
+        data.get('device_id')
+        or request.META.get('HTTP_X_DEVICE_ID')
+        or ''
+    )[:64]
+
     # TestSession faolligini tekshirish
-    session_exists = TestSession.objects.filter(user=request.user, olympiad_id=olympiad_id).exists()
-    if not session_exists:
+    session = TestSession.objects.filter(user=request.user, olympiad_id=olympiad_id).first()
+    if not session:
         return Response({'detail': "Test sessiya topilmadi"}, status=http_status.HTTP_404_NOT_FOUND)
+
+    now = timezone.now()
+
+    # Parallel sessiya tekshiruvi — device_id berilgan bo'lsa.
+    if device_id:
+        if (
+            session.last_device_id
+            and session.last_device_id != device_id
+            and session.last_ping_at
+            and (now - session.last_ping_at) < timedelta(seconds=30)
+        ):
+            # Boshqa qurilma 30 soniya ichida faol — bir vaqtda ikki kirish.
+            if session.status != TestSession.STATUS_DISQUALIFIED:
+                session.status = TestSession.STATUS_DISQUALIFIED
+                session.disqualified_at = session.disqualified_at or now
+                session.cheating_reason = session.cheating_reason or 'concurrent_session'
+                session.save(update_fields=['status', 'disqualified_at', 'cheating_reason'])
+            return Response(
+                {
+                    'disqualified': True,
+                    'detail': "Boshqa qurilmadan kirilgani aniqlandi. Olimpiada yakunlandi.",
+                },
+                status=http_status.HTTP_409_CONFLICT,
+            )
+        # Aks holda joriy qurilmani egasi deb belgilaymiz.
+        session.last_device_id = device_id
+        session.last_ping_at = now
+        session.save(update_fields=['last_device_id', 'last_ping_at'])
 
     # Cacheni yangilash (timeout 60 soniya, agar 60s ichida ping kelmasa oflayn hisoblanadi)
     cache_key = f"test_session_ping:{olympiad_id}:{request.user.id}"
     cache.set(cache_key, {
         'answered_count': answered_count,
         'tab_escapes': tab_escapes,
-        'last_ping': timezone.now().isoformat(),
+        'last_ping': now.isoformat(),
     }, timeout=60)
 
     return Response({'ok': True})

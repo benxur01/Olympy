@@ -610,8 +610,34 @@ def olympiad_questions(request, olympiad_id):
     # DURATION dan teskari sanardi. Endi questions ham, server timing'i ham
     # qaytariladi — bu frontend va server vaqti orasidagi drift'ni yo'qotadi.
     # Backward-compat: response.questions arrayi avvalgi roli bilan bir xil.
+    all_questions = questions_payload(session, olympiad)
+
+    # Cheating-himoya: savollarni bitta-bitta yuklash. `q` param berilsa,
+    # faqat o'sha indeksdagi savol qaytariladi — shu tariqa bir vaqtda
+    # barcha savollarni ko'chirib olish (scrape) qiyinlashadi.
+    q_param = request.query_params.get('q')
+    if q_param is not None:
+        try:
+            q_index = int(q_param)
+        except (TypeError, ValueError):
+            return Response(
+                {'detail': "Noto'g'ri savol indeksi"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        if q_index < 0 or q_index >= len(all_questions):
+            return Response(
+                {'detail': "Savol indeksi diapazondan tashqarida"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        return Response({
+            'questions': [all_questions[q_index]],
+            'question_index': q_index,
+            'total_questions': len(all_questions),
+            'session': session_timing_payload(session, olympiad),
+        })
+
     return Response({
-        'questions': questions_payload(session, olympiad),
+        'questions': all_questions,
         'session': session_timing_payload(session, olympiad),
     })
 

@@ -395,7 +395,15 @@ export const OlympyApi = {
   // Olympiads
   getOlympiads: (token) => request('/api/olympiads/?page_size=200', { token }).then(unwrapList),
   createOlympiad: (payload, token) => request('/api/olympiads/', { method: 'POST', body: payload, token }),
-  getOlympiadQuestions: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/questions/`, { token }),
+  // questionIndex berilsa backend faqat o'sha indeksdagi savolni qaytaradi
+  // (savollarni bitta-bitta yuklash — cheating-himoya). Berilmasa barcha
+  // savollar (eski xulq).
+  getOlympiadQuestions: (olympiadId, token, questionIndex) => {
+    const qs = (questionIndex !== undefined && questionIndex !== null)
+      ? `?q=${encodeURIComponent(questionIndex)}`
+      : '';
+    return request(`/api/olympiads/${olympiadId}/questions/${qs}`, { token });
+  },
   updateOlympiad: (olympiadId, payload, token) => request(`/api/olympiads/${olympiadId}/`, { method: 'PATCH', body: payload, token }),
   deleteOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/`, { method: 'DELETE', token }),
   publishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/publish/`, { method: 'POST', token }),
@@ -462,7 +470,7 @@ export const OlympyApi = {
   // Attempts / results / leaderboard
   submitAttempt: (payload, token) => request('/api/attempts/', { method: 'POST', body: payload, token }),
   reportCheating: (payload, token) => request('/api/attempts/cheating/', { method: 'POST', body: payload, token, keepalive: true, retryOnAuth: false }),
-  pingTestSession: (olympiadId, answeredCount, tabEscapes, token) => request('/api/attempts/ping/', { method: 'POST', body: { olympiad: olympiadId, answered_count: answeredCount, tab_escapes: tabEscapes }, token }),
+  pingTestSession: (olympiadId, answeredCount, tabEscapes, token, deviceId) => request('/api/attempts/ping/', { method: 'POST', body: { olympiad: olympiadId, answered_count: answeredCount, tab_escapes: tabEscapes, device_id: deviceId }, token }),
   getOlympiadLiveProctoring: (olympiadId, token) => request(`/api/manager/olympiads/${olympiadId}/live/`, { token }),
   // Bitta attemptni olib kelish — Leaderboard "Ko'rish" tugmasi va Results
   // sahifasi uchun. Backend olympiad detail'ni ham qo'shib qaytaradi.
