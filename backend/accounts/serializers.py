@@ -19,11 +19,11 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'full_name', 'first_name', 'last_name', 'username',
                   'phone', 'normalized_phone', 'roles',
                   'roles_detail', 'telegram_linked', 'is_platform_admin',
-                  'is_active', 'avatar_url', 'created_at',
+                  'is_premium', 'is_active', 'avatar_url', 'created_at',
                   'streak_count', 'last_active_date', 'badges']
         read_only_fields = ['id', 'normalized_phone', 'roles_detail',
                             'telegram_linked', 'is_platform_admin',
-                            'is_active', 'avatar_url', 'created_at',
+                            'is_premium', 'is_active', 'avatar_url', 'created_at',
                             'streak_count', 'last_active_date', 'badges']
 
     def get_badges(self, obj):

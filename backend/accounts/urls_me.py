@@ -26,5 +26,7 @@ urlpatterns = [
     path('admin/users/', views.admin_users_list, name='admin-users-list'),
     path('admin/users/<int:user_id>/set-active/', views.admin_set_user_active,
          name='admin-set-user-active'),
+    path('admin/users/<int:user_id>/toggle-premium/', views.admin_toggle_user_premium,
+         name='admin-toggle-user-premium'),
 ]
 

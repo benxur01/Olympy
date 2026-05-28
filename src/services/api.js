@@ -275,6 +275,7 @@ const mapBackendUser = (user) => {
     activeRole,
     joined: (user.created_at || '').slice(0, 10),
     isPlatformAdmin: !!user.is_platform_admin,
+    isPremium: user.is_premium || false,
     isActive: user.is_active !== false,
     telegramLinked: !!user.telegram_linked,
     streakCount: user.streak_count || 0,
@@ -389,6 +390,7 @@ export const OlympyApi = {
   // Admin users
   getAdminUsers: (token) => request('/api/admin/users/', { token }).then(unwrapList),
   adminSetUserActive: (userId, isActive, token) => request(`/api/admin/users/${userId}/set-active/`, { method: 'POST', body: { is_active: !!isActive }, token }),
+  adminToggleUserPremium: (userId, token) => request(`/api/admin/users/${userId}/toggle-premium/`, { method: 'POST', token }),
   // Subjects
   getSubjects: (token) => request('/api/subjects/', { token }),
   createSubject: (name, token) => request('/api/subjects/', { method: 'POST', body: { name }, token }),

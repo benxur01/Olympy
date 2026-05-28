@@ -18,9 +18,33 @@ const BadgeList = ({ badges }) => {
   );
 };
 
+// Premium funksiya o'rniga ko'rsatiladigan qulf ekrani.
+const PremiumLock = ({ title = 'Bu funksiya premium o\'quvchilar uchun' }) => (
+  <div className="glass rounded-2xl p-6 md:p-10 text-center flex flex-col items-center gap-4">
+    <div className="w-16 h-16 rounded-2xl bg-amber-500/15 flex items-center justify-center text-3xl">
+      ⭐
+    </div>
+    <div>
+      <h3 className="font-black text-white text-base md:text-lg">{title}</h3>
+      <p className="text-white/50 text-xs md:text-sm mt-2 max-w-sm mx-auto leading-relaxed">
+        Markaz adminingizga murojaat qiling. Premium bilan tarixiy tahlil,
+        raqobatchi tahlili, fan bo'yicha zaiflik xaritasi, AI o'quv rejasi va
+        tayyorlik darajasi ochiladi.
+      </p>
+    </div>
+    <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-400 bg-amber-500/10 ring-1 ring-amber-500/20 px-3 py-1.5 rounded-xl">
+      🔒 Premium
+    </span>
+  </div>
+);
+
 const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
+  // Premium o'quvchi funksiyalari (tarixiy tahlil, raqobatchi tahlili, zaiflik
+  // xaritasi, AI o'quv rejasi, tayyorlik %) faqat premium o'quvchilarga ochiq.
+  // Mock rejimda barchasi ochiq qoladi (test qulayligi uchun).
+  const isPremium = isApi ? !!(user?.isPremium ?? user?.is_premium) : true;
   const [page, setPage] = React.useState('home');
   const [centerModal, setCenterModal] = React.useState(null);
   const [centerSearch, setCenterSearch] = React.useState('');
@@ -67,17 +91,18 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     [isApi, page === 'home' || page === 'predictions'],
   );
   // Premium: tarixiy tahlil grafigi, raqobatchi tahlili, zaiflik xaritasi.
+  // Premium bo'lmagan o'quvchida so'rov yuborilmaydi (backend 403 qaytaradi).
   const apiHistoryChartRes = useApiData(
-    () => isApi ? OlympyApi.getHistoryChart(OlympyApi.getToken()) : Promise.resolve([]),
-    [isApi, page === 'history'],
+    () => (isApi && isPremium) ? OlympyApi.getHistoryChart(OlympyApi.getToken()) : Promise.resolve([]),
+    [isApi, isPremium, page === 'history'],
   );
   const apiCompetitorRes = useApiData(
-    () => isApi ? OlympyApi.getCompetitorAnalysis(null, OlympyApi.getToken()) : Promise.resolve(null),
-    [isApi, page === 'history'],
+    () => (isApi && isPremium) ? OlympyApi.getCompetitorAnalysis(null, OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, isPremium, page === 'history'],
   );
   const apiWeaknessRes = useApiData(
-    () => isApi ? OlympyApi.getSubjectWeakness(OlympyApi.getToken()) : Promise.resolve([]),
-    [isApi, page === 'history'],
+    () => (isApi && isPremium) ? OlympyApi.getSubjectWeakness(OlympyApi.getToken()) : Promise.resolve([]),
+    [isApi, isPremium, page === 'history'],
   );
   // Olimpiadaga tayyorlik badge'lari — Tadbirlar sahifasi ochilganda
   // ko'rinadigan olimpiadalar uchun yuklanadi.
@@ -147,7 +172,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // ko'rinadigan faol/yaqinlashayotgan olimpiadalar uchun tayyorlik foizini
   // yuklaymiz. Yuklanganlar `readinessMap`da keshlanadi.
   React.useEffect(() => {
-    if (!isApi || page !== 'olympiads') return;
+    if (!isApi || !isPremium || page !== 'olympiads') return;
     const token = OlympyApi.getToken();
     const targets = visibleOlympiads
       .filter(o => (o.status === 'active' || o.status === 'inactive') && o.backendId && readinessMap[o.backendId] === undefined)
@@ -908,6 +933,14 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   };
 
   const renderHistory = () => {
+    if (!isPremium) {
+      return (
+        <div className="p-3 md:p-6 animate-in mobile-content-pad">
+          <h2 className="text-lg md:text-xl font-black text-white mb-4">Tarixim va tahlil</h2>
+          <PremiumLock />
+        </div>
+      );
+    }
     const history = Array.isArray(apiHistoryChartRes.data) ? apiHistoryChartRes.data : [];
     const competitor = apiCompetitorRes.data;
     const weakness = Array.isArray(apiWeaknessRes.data) ? apiWeaknessRes.data : [];

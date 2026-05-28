@@ -443,6 +443,21 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     showToast('Foydalanuvchi holati yangilandi');
   };
 
+  const toggleUserPremium = (row) => {
+    if (!isApi) {
+      showToast('Premium faqat API rejimida boshqariladi');
+      return;
+    }
+    const numericUserId = row?.backendId ?? (typeof row?.id === 'string' && row.id.startsWith('api:') ? Number(row.id.slice(4)) : null);
+    if (!numericUserId) { showToast('Backend ID topilmadi'); return; }
+    OlympyApi.adminToggleUserPremium(numericUserId, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.is_premium ? 'Premium berildi' : 'Premium bekor qilindi');
+        apiUsersRes.reload();
+      })
+      .catch(err => { console.warn('adminToggleUserPremium failed:', err); showToast(OlympyApi.toUserMessage(err)); });
+  };
+
   const userRows = allUsers.map(u => {
     const approved = getApprovedRoles(u);
     // Avval foydalanuvchi tasdiqlanmagan rollarda bo'lsa, fallback "student"
@@ -467,6 +482,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       center: center?.name || (primary ? u.roles?.[primary]?.centerName : '') || '—',
       joined: u.joined,
       status: (isApi ? apiBlocked : !!blockedIds[u.id]) ? 'Bloklangan' : 'Faol',
+      isPremium: !!(u.isPremium ?? u.is_premium),
+      isStudent: approved.includes('student') || primary === 'student',
     };
   });
 
@@ -927,7 +944,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <table className="w-full min-w-[760px] text-left">
             <thead className="admin-table-hdr">
               <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
-                {['Foydalanuvchi', 'Telefon', 'Rol', 'Tashkilot', 'Qo\'shilgan', 'Holat', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
+                {['Foydalanuvchi', 'Telefon', 'Rol', 'Tashkilot', 'Qo\'shilgan', 'Holat', 'Premium', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
@@ -941,7 +958,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                       (row.center || '').toLowerCase().includes(q))
                   : userRows;
                 if (visible.length === 0) {
-                  return <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">{q ? 'Qidiruv natijasi topilmadi' : 'Foydalanuvchilar yo\'q'}</td></tr>;
+                  return <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">{q ? 'Qidiruv natijasi topilmadi' : 'Foydalanuvchilar yo\'q'}</td></tr>;
                 }
                 return visible.map(row => (
                 <tr key={row.id} className="text-xs admin-table-row text-slate-300">
@@ -951,6 +968,17 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   <td className="px-5 py-4 font-semibold text-slate-400">{row.center}</td>
                   <td className="px-5 py-4 font-semibold text-slate-400">{row.joined}</td>
                   <td className="px-5 py-4"><AdminPill status={row.status === 'Faol' ? 'approved' : 'rejected'}>{row.status}</AdminPill></td>
+                  <td className="px-5 py-4">
+                    {row.isStudent ? (
+                      row.isPremium ? (
+                        <button onClick={() => toggleUserPremium(row)} className="rounded-lg bg-amber-500/15 px-3 py-1.5 text-[11px] font-bold text-amber-400 ring-1 ring-amber-500/30 hover:bg-amber-500/25 transition">⭐ Premium ✓</button>
+                      ) : (
+                        <button onClick={() => toggleUserPremium(row)} className="rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 ring-1 ring-white/10 hover:bg-amber-500/10 hover:text-amber-400 transition">Premium berish</button>
+                      )
+                    ) : (
+                      <span className="text-[11px] font-semibold text-slate-600">—</span>
+                    )}
+                  </td>
                   <td className="px-5 py-4">
                     <button onClick={() => setBlockModal(row)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${row.status === 'Bloklangan' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'}`}>
                       {row.status === 'Bloklangan' ? 'Ochish' : 'Bloklash'}

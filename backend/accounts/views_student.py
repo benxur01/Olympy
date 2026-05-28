@@ -14,6 +14,18 @@ from attempts.models import TestAttempt
 from olympiads.models import Olympiad
 
 
+def _premium_required_response():
+    """Premium bo'lmagan o'quvchi uchun 403 javobi."""
+    return Response(
+        {
+            'detail': "Bu funksiya premium o'quvchilar uchun. "
+                      "Premium olish uchun markaz adminiga murojaat qiling.",
+            'upgrade_required': True,
+        },
+        status=http_status.HTTP_403_FORBIDDEN,
+    )
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def history_chart(request):
@@ -23,6 +35,8 @@ def history_chart(request):
     Eng yangi 10 ta olinadi, lekin grafik o'sish tartibida bo'lishi uchun
     eskidan yangiga qarab qaytariladi.
     """
+    if not request.user.is_premium:
+        return _premium_required_response()
     attempts = list(
         TestAttempt.objects
         .filter(user=request.user, olympiad__is_deleted=False)
@@ -54,6 +68,8 @@ def competitor_analysis(request):
     Berilgan olimpiadada (yoki so'nggi qatnashilganda) foydalanuvchining
     o'rni, yuqorisidagi raqib bilan farqi va percentile.
     """
+    if not request.user.is_premium:
+        return _premium_required_response()
     olympiad_id = request.query_params.get('olympiad_id')
     my_attempt = None
     if olympiad_id:
@@ -126,6 +142,8 @@ def subject_weakness(request):
     Har bir olimpiada fani bo'yicha to'g'ri/jami javoblar yig'iladi.
     Javob: [{subject, correct, total, pct}]
     """
+    if not request.user.is_premium:
+        return _premium_required_response()
     attempts = (
         TestAttempt.objects
         .filter(user=request.user, olympiad__is_deleted=False)
@@ -163,6 +181,8 @@ def readiness(request):
     foizi hisoblanadi. Zaif/kuchli fanlar umumiy subject-performance'dan
     olinadi.
     """
+    if not request.user.is_premium:
+        return _premium_required_response()
     olympiad_id = request.query_params.get('olympiad_id')
     if not olympiad_id:
         return Response({'detail': 'olympiad_id majburiy'},
@@ -209,6 +229,8 @@ def study_plan(request):
     Zaiflik xaritasidan zaif fanlar olinadi va Gemini'ga haftalik reja
     so'rovi yuboriladi. Javob: {"plan": ["1. ...", "2. ..."]}.
     """
+    if not request.user.is_premium:
+        return _premium_required_response()
     perf = _subject_performance(request.user)
     if not perf:
         return Response({

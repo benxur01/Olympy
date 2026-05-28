@@ -617,6 +617,28 @@ def admin_set_user_active(request, user_id):
     return Response(UserSerializer(target, context={'request': request}).data)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def admin_toggle_user_premium(request, user_id):
+    """POST /api/admin/users/{id}/toggle-premium/ — premium holatini almashtirish.
+
+    Faqat Platform Admin uchun. `is_premium` qiymatini toggle qiladi.
+    """
+    if not request.user.is_platform_admin:
+        return Response({'detail': 'Forbidden'},
+                        status=status.HTTP_403_FORBIDDEN)
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    target.is_premium = not target.is_premium
+    target.save(update_fields=['is_premium'])
+    return Response(UserSerializer(target, context={'request': request}).data)
+
+
 def _make_otp():
     return f'{secrets.randbelow(1_000_000):06d}'
 
