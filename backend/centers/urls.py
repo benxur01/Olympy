@@ -15,6 +15,7 @@ urlpatterns = [
     path('<int:center_id>/memberships/staff/', views.staff_memberships, name='staff-memberships'),
     path('<int:center_id>/memberships/students/', views.students_memberships, name='students-memberships'),
     path('<int:center_id>/memberships/<int:membership_id>/', views.remove_membership, name='remove-membership'),
+    path('<int:center_id>/members/<int:membership_id>/change-role/', views.change_member_role, name='change-member-role'),
     path('students/<int:membership_id>/', views.student_detail, name='student-detail'),
     path('<int:center_id>/managers/create/', views.create_manager, name='create-manager'),
     path('<int:center_id>/teachers/create/', views.create_teacher, name='create-teacher'),

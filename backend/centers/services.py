@@ -69,6 +69,97 @@ def user_can_approve_membership(user, center, role):
     return False
 
 
+class RoleChangeError(Exception):
+    """change_membership_role validatsiya xatosi. ``http_status`` bilan birga
+    keladi — view shu kodni HTTP javobiga aylantiradi."""
+
+    def __init__(self, message, http_status=400):
+        super().__init__(message)
+        self.message = message
+        self.http_status = http_status
+
+
+@transaction.atomic
+def change_membership_role(center, membership_id, new_role, actor):
+    """Mavjud a'zolikning rolini boshqasiga o'zgartiradi.
+
+    Eski membership o'chiriladi va yangi (approved) membership yaratiladi —
+    `unique_user_center_role` constraint sababli bir xil (user, center, role)
+    juftligi takrorlanmasligi kerak. user.roles ham mos ravishda yangilanadi.
+
+    Xatoliklarda RoleChangeError otadi (view uni HTTP javobga aylantiradi).
+    """
+    valid_roles = {
+        CenterMembership.ROLE_STUDENT,
+        CenterMembership.ROLE_TEACHER,
+        CenterMembership.ROLE_MANAGER,
+    }
+    if new_role not in valid_roles:
+        raise RoleChangeError("Noto'g'ri rol tanlandi", http_status=400)
+
+    membership = (
+        CenterMembership.objects
+        .select_for_update()
+        .select_related('user')
+        .filter(pk=membership_id, center=center)
+        .first()
+    )
+    if membership is None:
+        raise RoleChangeError("A'zolik topilmadi", http_status=404)
+
+    old_role = membership.role
+
+    # Owner a'zoligini o'zgartirib bo'lmaydi — bu markazning egasini
+    # almashtirish bo'lib qoladi.
+    if old_role == CenterMembership.ROLE_OWNER:
+        raise RoleChangeError(
+            "Owner a'zoligining rolini o'zgartirib bo'lmaydi",
+            http_status=400,
+        )
+
+    if old_role == new_role:
+        raise RoleChangeError("Yangi rol joriy rol bilan bir xil", http_status=400)
+
+    user = membership.user
+
+    # Yangi rol uchun shu (user, center, role) allaqachon mavjud bo'lsa —
+    # 409 (konflikt). Aks holda eski membership'ni o'chirib yangisini
+    # yaratganimizda unique constraint xato berardi.
+    conflict = CenterMembership.objects.filter(
+        user=user, center=center, role=new_role,
+    ).exclude(pk=membership.pk).exists()
+    if conflict:
+        raise RoleChangeError(
+            "Foydalanuvchida bu markazda ushbu rol allaqachon mavjud",
+            http_status=409,
+        )
+
+    old_subject = membership.subject
+    membership.delete()
+
+    new_membership = CenterMembership.objects.create(
+        user=user,
+        center=center,
+        role=new_role,
+        # Fan faqat o'qituvchi roli uchun mantiqiy — boshqa rollarda tozalaymiz.
+        subject=old_subject if new_role == CenterMembership.ROLE_TEACHER else '',
+        status=CenterMembership.STATUS_APPROVED,
+        approved_by=actor,
+    )
+
+    # user.roles ni yangilash: eski rolni faqat boshqa markazda ham shu rol
+    # bilan approved a'zolik bo'lmasagina olib tashlaymiz.
+    has_other_old = CenterMembership.objects.filter(
+        user=user, role=old_role, status=CenterMembership.STATUS_APPROVED,
+    ).exists()
+    if not has_other_old and hasattr(user, 'remove_role'):
+        user.remove_role(old_role)
+    if hasattr(user, 'add_role'):
+        user.add_role(new_role)
+
+    return new_membership
+
+
 @transaction.atomic
 def decide_membership(membership, actor, decision):
     membership = (

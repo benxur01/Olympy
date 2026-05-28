@@ -16,6 +16,7 @@ from .models import CenterMembership, EducationCenter
 from .serializers import (
     AdminEducationCenterSerializer,
     ApproveSerializer,
+    ChangeRoleSerializer,
     CenterMembershipSerializer,
     CenterRegisterSerializer,
     CreateManagerSerializer,
@@ -24,6 +25,8 @@ from .serializers import (
     JoinRequestSerializer,
 )
 from .services import (
+    RoleChangeError,
+    change_membership_role,
     create_pending_center_for_owner,
     decide_membership,
     user_can_approve_membership,
@@ -807,6 +810,33 @@ def remove_membership(request, center_id, membership_id):
         logging.getLogger(__name__).exception('membership-removed notification failed')
 
     return Response(status=http_status.HTTP_204_NO_CONTENT)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_member_role(request, center_id, membership_id):
+    """POST /api/centers/{id}/members/{membership_id}/change-role/
+
+    Mavjud a'zolikning rolini (student/teacher/manager) o'zgartiradi.
+    Faqat owner yoki platform admin chaqira oladi. Eski membership o'chiriladi,
+    yangi approved membership yaratiladi va user.roles mos ravishda yangilanadi.
+    """
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    if not (request.user.is_platform_admin or center.owner_id == request.user.id):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    serializer = ChangeRoleSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    new_role = serializer.validated_data['role']
+
+    try:
+        membership = change_membership_role(
+            center, membership_id, new_role, request.user,
+        )
+    except RoleChangeError as exc:
+        return Response({'detail': exc.message}, status=exc.http_status)
+
+    return Response(CenterMembershipSerializer(membership).data)
 
 
 # ─── Platform admin: center approval ──────────────────────────────────────────
