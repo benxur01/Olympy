@@ -126,6 +126,13 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [proctoringSearch, setProctoringSearch] = React.useState('');
   const [liveOlympiadId, setLiveOlympiadId] = React.useState(null);
 
+  // Savol banki (9-funksiya) holatlari.
+  const [questionBank, setQuestionBank] = React.useState([]);
+  const [questionBankLoading, setQuestionBankLoading] = React.useState(false);
+  const [qbSaving, setQbSaving] = React.useState(false);
+  const emptyQbForm = { text: '', subject: '', difficulty: 'medium', options: [{ text: '', correct: true }, { text: '', correct: false }] };
+  const [qbForm, setQbForm] = React.useState(emptyQbForm);
+
 
   const showToast = (msg) => {
     setToast(msg);
@@ -287,6 +294,15 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const apiRankingRes = useApiData(
     () => isApi ? OlympyApi.getCenterRanking(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
+  );
+  // Premium markaz statistikasi: o'quvchilar dinamikasi va top o'quvchilar.
+  const apiDynamicsRes = useApiData(
+    () => (isApi && ownerCenterId && page === 'statistics') ? OlympyApi.getStudentDynamics(ownerCenterId, OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, ownerCenterId, page === 'statistics'],
+  );
+  const apiTopStudentsRes = useApiData(
+    () => (isApi && ownerCenterId && page === 'statistics') ? OlympyApi.getTopStudents(ownerCenterId, OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, ownerCenterId, page === 'statistics'],
   );
   const applyCenterImageOverride = (c) => {
     const override = centerImageOverrides[String(c.id)] || centerImageOverrides[String(c.backendId)];
@@ -617,6 +633,52 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .finally(() => { setStudentActionId(null); setGroupTagEdit(null); });
   };
 
+  // Savol banki: yuklash, qo'shish, o'chirish.
+  const loadQuestionBank = React.useCallback(() => {
+    if (!isApi || !ownerCenterId) { setQuestionBank([]); return Promise.resolve(); }
+    return OlympyApi.getCenterQuestionBank(ownerCenterId, OlympyApi.getToken())
+      .then(rows => { setQuestionBank(Array.isArray(rows) ? rows : []); });
+  }, [isApi, ownerCenterId]);
+
+  React.useEffect(() => {
+    if (page !== 'questionbank') return undefined;
+    let cancelled = false;
+    setQuestionBankLoading(true);
+    loadQuestionBank()
+      .catch(() => { if (!cancelled) setQuestionBank([]); })
+      .finally(() => { if (!cancelled) setQuestionBankLoading(false); });
+    return () => { cancelled = true; };
+  }, [page, loadQuestionBank]);
+
+  const addQbQuestion = () => {
+    if (!isApi || !ownerCenterId) { showToast("Demo rejimida ishlamaydi"); return; }
+    const text = (qbForm.text || '').trim();
+    const options = (qbForm.options || []).filter(o => (o.text || '').trim());
+    if (!text) { showToast('Savol matnini kiriting'); return; }
+    if (options.length < 2) { showToast('Kamida 2 ta variant kiriting'); return; }
+    if (!options.some(o => o.correct)) { showToast("To'g'ri variantni belgilang"); return; }
+    setQbSaving(true);
+    OlympyApi.addCenterQuestion(ownerCenterId, {
+      text,
+      subject: (qbForm.subject || '').trim(),
+      difficulty: qbForm.difficulty || 'medium',
+      options: options.map(o => ({ text: o.text.trim(), correct: !!o.correct })),
+    }, OlympyApi.getToken())
+      .then(() => { setQbForm(emptyQbForm); return loadQuestionBank(); })
+      .then(() => showToast('Savol bankka qo\'shildi'))
+      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "Saqlab bo'lmadi"))
+      .finally(() => setQbSaving(false));
+  };
+
+  const deleteQbQuestion = (qId) => {
+    if (!isApi || !ownerCenterId) return;
+    if (!window.confirm("Savolni bankdan o'chirasizmi?")) return;
+    OlympyApi.deleteCenterQuestion(ownerCenterId, qId, OlympyApi.getToken())
+      .then(() => loadQuestionBank())
+      .then(() => showToast("Savol o'chirildi"))
+      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi"));
+  };
+
   const openRoleModal = (row) => {
     if (!row) return;
     if (!isApi) {
@@ -900,6 +962,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'staff', icon: 'users', label: 'Xodimlar' },
     { key: 'students', icon: 'users', label: "O'quvchilar" },
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
+    { key: 'questionbank', icon: 'file', label: 'Savol banki' },
+    { key: 'statistics', icon: 'chart', label: 'Statistika' },
     { key: 'ranking', icon: 'star', label: 'Reyting' },
     { key: 'analytics', icon: 'chart', label: 'Analitika' },
     { key: 'center', icon: 'building', label: 'Profil' },
@@ -1497,6 +1561,28 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       <td className="px-5 py-4 font-mono text-xs text-white/55">
                         {String(row.phone || '').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}
                       </td>
+                      <td className="px-5 py-4">
+                        {groupTagEdit && groupTagEdit.membershipId === row.membershipId ? (
+                          <input
+                            autoFocus
+                            className="input-field w-24 py-1 text-xs"
+                            value={groupTagEdit.value}
+                            placeholder="9-A"
+                            maxLength={50}
+                            onChange={e => setGroupTagEdit({ membershipId: row.membershipId, value: e.target.value })}
+                            onBlur={() => saveGroupTag(row, groupTagEdit.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') saveGroupTag(row, groupTagEdit.value); if (e.key === 'Escape') setGroupTagEdit(null); }}
+                          />
+                        ) : (
+                          <button
+                            onClick={() => isApi && row.membershipId && setGroupTagEdit({ membershipId: row.membershipId, value: row.groupTag || '' })}
+                            className={`rounded-lg px-2 py-1 text-xs font-bold transition-colors ${row.groupTag ? 'bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25' : 'border border-dashed border-white/15 text-white/35 hover:text-white/60'}`}
+                            title="Guruh/sinf tegini tahrirlash"
+                          >
+                            {row.groupTag || '+ guruh'}
+                          </button>
+                        )}
+                      </td>
                       <td className="px-5 py-4 text-white/55">{row.joined ? ownerFormatDate(row.joined) : '—'}</td>
                       <td className="px-5 py-4">
                         <OwnerStatusPill status={row.status || 'approved'} />
@@ -2092,6 +2178,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     staff: renderStaff,
     students: renderStudents,
     olympiads: renderOlympiads,
+    questionbank: renderQuestionBank,
+    statistics: renderStatistics,
     ranking: renderRanking,
     center: renderCenter,
     settings: renderSettings,
