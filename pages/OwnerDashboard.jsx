@@ -901,7 +901,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       style={{ background: 'rgba(6,8,24,0.99)' }}
     >
       <div className="border-b border-white/5 px-5 py-5">
-        <button onClick={() => onNavigate('landing')} className="flex w-full items-center gap-3 text-left">
+        <button onClick={() => setPage('home')} className="flex w-full items-center gap-3 text-left">
           {center.imageUrl ? (
             <img
               src={center.imageUrl}
