@@ -3,9 +3,9 @@
   <desc id="desc">Student profile page with achievements, progress, certificates and activity.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#06111f"/>
-      <stop offset="0.55" stop-color="#10142a"/>
-      <stop offset="1" stop-color="#071a1b"/>
+      <stop offset="0" stop-color="#050508"/>
+      <stop offset="0.55" stop-color="#090a0f"/>
+      <stop offset="1" stop-color="#050508"/>
     </linearGradient>
     <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#6366f1"/>
@@ -22,7 +22,7 @@
   </defs>
   <rect width="1440" height="900" fill="url(#bg)"/>
   <g filter="url(#shadow)" font-family="Inter, Arial, sans-serif">
-    <rect x="76" y="60" width="1288" height="780" rx="34" fill="#071124" stroke="#fff" stroke-opacity="0.11"/>
+    <rect x="76" y="60" width="1288" height="780" rx="34" fill="#050508" stroke="#fff" stroke-opacity="0.11"/>
     <g transform="translate(126 112)">
       <circle cx="70" cy="70" r="70" fill="url(#brand)"/>
       <text x="70" y="82" fill="#fff" text-anchor="middle" font-size="42" font-weight="900">AV</text>
@@ -55,14 +55,14 @@
       <rect width="538" height="278" rx="28" fill="#ffffff" fill-opacity="0.075" stroke="#ffffff" stroke-opacity="0.1"/>
       <text x="30" y="44" fill="#fff" font-size="22" font-weight="850">Yutuqlar</text>
       <g transform="translate(30 76)">
-        <rect width="478" height="64" rx="18" fill="#0f172a" stroke="#ffffff" stroke-opacity="0.09"/>
+        <rect width="478" height="64" rx="18" fill="#12141a" stroke="#ffffff" stroke-opacity="0.09"/>
         <circle cx="32" cy="32" r="20" fill="url(#award)"/>
         <text x="70" y="28" fill="#fff" font-size="15" font-weight="850">Informatika Olimpiadasi</text>
         <text x="70" y="50" fill="#94a3b8" font-size="13">1-orin • 91 ball</text>
         <text x="394" y="39" fill="#fbbf24" font-size="13" font-weight="850">Sertifikat</text>
       </g>
       <g transform="translate(30 154)">
-        <rect width="478" height="64" rx="18" fill="#0f172a" stroke="#ffffff" stroke-opacity="0.09"/>
+        <rect width="478" height="64" rx="18" fill="#12141a" stroke="#ffffff" stroke-opacity="0.09"/>
         <circle cx="32" cy="32" r="20" fill="#6366f1"/>
         <text x="70" y="28" fill="#fff" font-size="15" font-weight="850">Matematika Olimpiadasi</text>
         <text x="70" y="50" fill="#94a3b8" font-size="13">3-orin • 87 ball</text>
