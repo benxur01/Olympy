@@ -66,6 +66,16 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // Joriy savol hali yuklanmaganmi (navigatsiyadagi inline spinner uchun).
   const currentQuestionLoading = questionsLoading && !initialQuestionsLoading;
 
+  // To'q qora spinnerda cheksiz qolib ketmaslik uchun timeout. isBeforeStart
+  // noto'g'ri false bo'lib qolgan holatlarda savol so'rovi 400 qaytaradi —
+  // 4 soniyadan keyin foydalanuvchiga aniq xabar ko'rsatamiz.
+  const [loadingTimeout, setLoadingTimeout] = React.useState(false);
+  React.useEffect(() => {
+    if (!initialQuestionsLoading) { setLoadingTimeout(false); return undefined; }
+    const t = setTimeout(() => setLoadingTimeout(true), 4000);
+    return () => clearTimeout(t);
+  }, [initialQuestionsLoading]);
+
   // Refresh yoki crashdan keyin javoblarni yo'qotmaslik uchun localStorage
   // backup. iOS Safari private modeda yoki Telegram WebView'da saqlash
   // muvaffaqiyatsiz bo'lishi mumkin — try/catch bilan o'rab qo'yamiz.
@@ -260,6 +270,8 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           if (/cheating/i.test(detail)) {
             setCheated(true);
             setCheatMessage("Siz cheating qildingiz. Olimpiada yakunlandi.");
+          } else if (/boshlanmagan|faol emas|not.*start|not.*active/i.test(detail)) {
+            setQuestionsError('__not_started__');
           } else {
             setQuestionsError(detail || "Savollarni yuklab bo'lmadi.");
           }
@@ -684,6 +696,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // navigatsiyada inline spinner bilan ko'rsatiladi (pastda), test holatini
   // (header, timer, navigator) bo'shatmaslik uchun.
   if (initialQuestionsLoading) {
+    if (loadingTimeout) {
+      return <PendingAccessCard title="Yuklanishda muammo" status="pending"
+        message="Savollarni yuklashda muammo yuz berdi. Sahifani yangilang yoki keyinroq urinib ko'ring."
+        onBack={() => onNavigate('student')} />;
+    }
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#050508' }}>
         <div className="flex flex-col items-center gap-4 text-white/70">
@@ -691,6 +708,19 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           <div className="text-sm font-semibold">Savollar yuklanmoqda...</div>
         </div>
       </div>
+    );
+  }
+  // Backend "boshlanmagan/faol emas" qaytargan bo'lsa — qora ekran o'rniga
+  // aniq holat kartasi. isBeforeStart noto'g'ri false bo'lib qolgan holatlarni
+  // ham shu yerda ushlaymiz.
+  if (questionsError === '__not_started__') {
+    return (
+      <PendingAccessCard
+        title="Olimpiada hali boshlanmagan"
+        status="pending"
+        message="Bu olimpiada hali boshlanmagan yoki faol emas. Boshlanish vaqtini kuting."
+        onBack={() => onNavigate('student')}
+      />
     );
   }
   // Haqiqiy savollar bo'lmasa, soxta savollar ko'rsatish o'rniga aniq
