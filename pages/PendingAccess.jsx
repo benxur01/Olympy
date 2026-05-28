@@ -4,12 +4,12 @@
 const PendingAccessCard = ({ icon = 'shield', title, message, status = 'pending', onBack, extra }) => {
   const tone =
     status === 'rejected'
-      ? { ring: 'border-rose-500/30', glow: 'glow-purple', emoji: '🚫', badge: 'badge-rejected', label: 'Rad etildi' }
-      : { ring: 'border-amber-500/30', glow: 'glow-blue',   emoji: '⏳', badge: 'badge-pending',  label: 'Kutilmoqda' };
+      ? { ring: 'border-rose-500/30', glow: 'glow-rose', emoji: '🚫', badge: 'badge-rejected', label: 'Rad etildi' }
+      : { ring: 'border-amber-500/30', glow: 'glow-amber',   emoji: '⏳', badge: 'badge-pending',  label: 'Kutilmoqda' };
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10" style={{ background: '#050508' }}>
       <div className={`glass-strong rounded-3xl p-8 md:p-10 max-w-lg w-full text-center border ${tone.ring} ${tone.glow} animate-in relative overflow-hidden`}>
-        <div className="hero-glow" style={{ background: '#6366f1', top: '-50%', left: '30%', opacity: 0.12 }} />
+        <div className="hero-glow" style={{ background: status === 'rejected' ? '#f43f5e' : '#f59e0b', top: '-50%', left: '30%', opacity: 0.05 }} />
         <div className="relative z-10">
           <div className="text-5xl mb-4">{tone.emoji}</div>
           <div className="flex items-center justify-center gap-2 mb-3">
@@ -57,8 +57,8 @@ const PendingHome = ({ user, onLogout, onNavigate }) => {
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10" style={{ background: '#050508' }}>
-      <div className="glass-strong rounded-3xl p-8 md:p-10 max-w-xl w-full border border-indigo-500/20 animate-in relative overflow-hidden">
-        <div className="hero-glow" style={{ background: '#6366f1', top: '-50%', left: '30%', opacity: 0.12 }} />
+      <div className="glass-strong rounded-3xl p-8 md:p-10 max-w-xl w-full border border-white/10 animate-in relative overflow-hidden">
+        <div className="hero-glow" style={{ background: '#ffffff', top: '-50%', left: '30%', opacity: 0.04 }} />
         <div className="relative z-10">
           <div className="flex items-center gap-3 mb-6">
             <BrandLogo compact size="lg" />

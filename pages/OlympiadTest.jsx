@@ -687,7 +687,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#050508' }}>
         <div className="flex flex-col items-center gap-4 text-white/70">
-          <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-indigo-400 animate-spin" />
+          <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-white animate-spin" />
           <div className="text-sm font-semibold">Savollar yuklanmoqda...</div>
         </div>
       </div>
@@ -813,7 +813,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             {/* Joriy savol yuklanmoqda — inline spinner. */}
             {questionPending ? (
               <div className="glass-strong rounded-2xl p-8 md:p-10 mb-5 md:mb-6 flex flex-col items-center justify-center gap-4 text-white/60">
-                <div className="w-9 h-9 rounded-full border-2 border-white/20 border-t-indigo-400 animate-spin" />
+                <div className="w-9 h-9 rounded-full border-2 border-white/20 border-t-white animate-spin" />
                 <div className="text-sm font-semibold">Savol yuklanmoqda...</div>
               </div>
             ) : (
