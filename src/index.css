@@ -12,7 +12,7 @@ body {
   overflow-x: hidden;
 }
 ::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #0d0f23; }
+::-webkit-scrollbar-track { background: #0d0e12; }
 ::-webkit-scrollbar-thumb { background: rgba(99,102,241,0.35); border-radius: 3px; }
 
 /* Telegram WebView'da backdrop-filter sekin ishlaydi. Solid semi-transparent. */
@@ -74,7 +74,7 @@ body {
 .input-field::placeholder { color: rgba(255,255,255,0.3); }
 
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 50; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
-.modal { background: #12152e; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 32px; max-width: 520px; width: 90%; animation: slideUp 0.3s ease; }
+.modal { background: #12141a; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 32px; max-width: 520px; width: 90%; animation: slideUp 0.3s ease; }
 .stat-card { position: relative; overflow: hidden; }
 .stat-card::before { content: ''; position: absolute; top: -50%; right: -30%; width: 120px; height: 120px; border-radius: 50%; opacity: 0.1; filter: blur(30px); }
 .olympy-row { border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.15s; }
@@ -89,7 +89,7 @@ body {
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .hero-glow { position: absolute; width: 600px; height: 600px; border-radius: 50%; filter: blur(120px); opacity: 0.15; pointer-events: none; }
 .feature-icon { width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
-select.input-field option { background: #12152e; }
+select.input-field option { background: #12141a; }
 .question-nav-btn { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); transition: all 0.2s; }
 .question-nav-btn.answered { background: rgba(99,102,241,0.3); border-color: #6366f1; color: white; }
 .question-nav-btn.marked { background: rgba(251,191,36,0.2); border-color: #fbbf24; color: #fbbf24; }
@@ -110,11 +110,11 @@ textarea.input-field { resize: vertical; min-height: 100px; }
 
 /* ── Mobile drawer ───────────────────────────────────────── */
 .mobile-drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 60; animation: fadeIn 0.2s ease; }
-.mobile-drawer { position: fixed; top: 0; left: 0; bottom: 0; width: 280px; z-index: 61; display: flex; flex-direction: column; background: rgba(6,8,24,0.98); border-right: 1px solid rgba(255,255,255,0.07); animation: drawerIn 0.28s cubic-bezier(0.32,0.72,0,1); overflow-y: auto; }
+.mobile-drawer { position: fixed; top: 0; left: 0; bottom: 0; width: 280px; z-index: 61; display: flex; flex-direction: column; background: rgba(5,5,8,0.98); border-right: 1px solid rgba(255,255,255,0.07); animation: drawerIn 0.28s cubic-bezier(0.32,0.72,0,1); overflow-y: auto; }
 @keyframes drawerIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 
 /* ── Mobile bottom nav ───────────────────────────────────── */
-.mobile-bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; background: rgba(6,8,24,0.99); border-top: 1px solid rgba(255,255,255,0.07); display: flex; padding-bottom: env(safe-area-inset-bottom); }
+.mobile-bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; background: rgba(5,5,8,0.99); border-top: 1px solid rgba(255,255,255,0.07); display: flex; padding-bottom: env(safe-area-inset-bottom); }
 .mobile-bottom-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 4px 10px; gap: 3px; cursor: pointer; border: none; background: transparent; transition: all 0.15s; -webkit-tap-highlight-color: transparent; }
 .mobile-bottom-nav-item span.label { font-size: 10px; font-weight: 600; letter-spacing: 0.01em; }
 .mobile-bottom-nav-item.active { color: #818cf8; }

@@ -277,7 +277,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
       </div>
       {forgotOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.75)' }}>
-          <div className="rounded-3xl p-6 max-w-md w-full border border-white/15" style={{ background: '#0f1129' }}>
+          <div className="rounded-3xl p-6 max-w-md w-full border border-white/15" style={{ background: '#12141a' }}>
             <div className="text-3xl mb-3">🔐</div>
             <h3 className="text-xl font-black text-white mb-2">Parolni tiklash</h3>
             {forgot.step === 'phone' && (

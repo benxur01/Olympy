@@ -375,7 +375,7 @@ const LandingPage = ({ onNavigate }) => {
       <nav
         className="sticky top-0 z-50"
         style={{
-          background: 'rgba(15, 23, 42, 0.95)',
+          background: 'rgba(13, 14, 18, 0.95)',
           borderBottom: '1px solid rgba(255,255,255,0.06)',
         }}
       >
@@ -420,7 +420,7 @@ const LandingPage = ({ onNavigate }) => {
           >
             <div
               className="absolute left-0 right-0 top-0 border-b border-white/10"
-              style={{ background: 'rgba(15, 23, 42, 0.98)' }}
+              style={{ background: 'rgba(13, 14, 18, 0.98)' }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col gap-1 text-sm">
@@ -472,7 +472,7 @@ const LandingPage = ({ onNavigate }) => {
         
         {/* Floating 3D badges on the right (desktop only) */}
         <div className="hidden lg:block absolute right-16 top-1/4 w-[400px] h-[300px] pointer-events-none z-10 preserve-3d" style={{ perspective: '1000px' }}>
-          <div className="absolute right-0 top-0 glass rounded-2xl p-4 border border-white/10 float-badge-1 flex items-center gap-3" style={{ background: 'rgba(10, 15, 30, 0.88)' }}>
+          <div className="absolute right-0 top-0 glass rounded-2xl p-4 border border-white/10 float-badge-1 flex items-center gap-3" style={{ background: 'rgba(13, 14, 18, 0.88)' }}>
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/20 text-indigo-300 font-bold text-xl">✨</span>
             <div>
               <div className="text-sm font-bold text-white">AI Savollar</div>
@@ -480,7 +480,7 @@ const LandingPage = ({ onNavigate }) => {
             </div>
           </div>
           
-          <div className="absolute right-28 top-32 glass rounded-2xl p-4 border border-white/10 float-badge-2 flex items-center gap-3" style={{ background: 'rgba(10, 15, 30, 0.88)' }}>
+          <div className="absolute right-28 top-32 glass rounded-2xl p-4 border border-white/10 float-badge-2 flex items-center gap-3" style={{ background: 'rgba(13, 14, 18, 0.88)' }}>
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-300 font-bold text-xl">📱</span>
             <div>
               <div className="text-sm font-bold text-white">Telegram Tasdiqlash</div>
@@ -488,7 +488,7 @@ const LandingPage = ({ onNavigate }) => {
             </div>
           </div>
 
-          <div className="absolute right-8 top-64 glass rounded-2xl p-4 border border-white/10 float-badge-3 flex items-center gap-3" style={{ background: 'rgba(10, 15, 30, 0.88)' }}>
+          <div className="absolute right-8 top-64 glass rounded-2xl p-4 border border-white/10 float-badge-3 flex items-center gap-3" style={{ background: 'rgba(13, 14, 18, 0.88)' }}>
             <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 font-bold text-xl">🏆</span>
             <div>
               <div className="text-sm font-bold text-white">Jonli Reyting</div>
@@ -540,7 +540,7 @@ const LandingPage = ({ onNavigate }) => {
       </section>
 
       {/* Platforma ko'rinishi */}
-      <section className="py-12 md:py-24 relative overflow-hidden" style={{ background: 'linear-gradient(180deg, rgba(5,5,8,1) 0%, rgba(13,25,38,0.9) 100%)' }}>
+      <section className="py-12 md:py-24 relative overflow-hidden" style={{ background: 'linear-gradient(180deg, rgba(5,5,8,1) 0%, rgba(20,22,28,0.9) 100%)' }}>
         <div className="max-w-6xl mx-auto px-4 md:px-6">
           <div className="text-center mb-8 md:mb-14 scroll-reveal">
             <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-cyan-200 border border-cyan-500/20">
@@ -578,7 +578,7 @@ const LandingPage = ({ onNavigate }) => {
               onMouseMove={mainMockupTilt.handleMouseMove}
               onMouseLeave={mainMockupTilt.handleMouseLeave}
               className="tilt-card glass rounded-2xl overflow-hidden border border-white/10"
-              style={{ ...mainMockupTilt.style, background: '#0a0d1f' }}
+              style={{ ...mainMockupTilt.style, background: '#0d0e12' }}
             >
               <div className="tilt-glow" />
               {/* Browser chrome */}
@@ -624,7 +624,7 @@ const LandingPage = ({ onNavigate }) => {
                     style={{
                       aspectRatio: '16 / 10',
                       objectFit: 'contain',
-                      background: '#071124',
+                      background: '#050508',
                       boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
                     }}
                   />

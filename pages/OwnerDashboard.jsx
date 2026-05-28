@@ -944,7 +944,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               style={{ background: 'rgba(255,255,255,0.04)' }}
             >
               {ownerCenters.map(c => (
-                <option key={c.id} value={c.id} style={{ background: '#12152e' }}>{c.name} · {statusLabel(c.status)}</option>
+                <option key={c.id} value={c.id} style={{ background: '#12141a' }}>{c.name} · {statusLabel(c.status)}</option>
               ))}
             </select>
           </label>
@@ -1004,7 +1004,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             className="hidden h-9 max-w-[220px] rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white/80 outline-none transition hover:bg-white/10 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30 md:block"
           >
             {ownerCenters.map(c => (
-              <option key={c.id} value={c.id} style={{ background: '#12152e' }}>{c.name} · {statusLabel(c.status)}</option>
+              <option key={c.id} value={c.id} style={{ background: '#12141a' }}>{c.name} · {statusLabel(c.status)}</option>
             ))}
           </select>
         )}
@@ -2277,7 +2277,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   }))}
                   className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
                 >
-                  {centerOrganizationTypes.map(type => <option key={type} value={type} style={{ background: '#12152e' }}>{type}</option>)}
+                  {centerOrganizationTypes.map(type => <option key={type} value={type} style={{ background: '#12141a' }}>{type}</option>)}
                 </select>
               </label>
               {centerForm.organizationType === 'Boshqa' && (
@@ -2299,7 +2299,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     onChange={e => updateCenterForm('country', e.target.value)}
                     className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
                   >
-                    <option value="O'zbekiston" style={{ background: '#12152e' }}>O'zbekiston</option>
+                    <option value="O'zbekiston" style={{ background: '#12141a' }}>O'zbekiston</option>
                   </select>
                 </label>
                 <label className="block">
@@ -2309,8 +2309,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     onChange={e => setCenterForm(prev => ({ ...prev, region: e.target.value, district: '' }))}
                     className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
                   >
-                    <option value="" style={{ background: '#12152e' }}>Viloyatni tanlang</option>
-                    {centerRegions.map(region => <option key={region} value={region} style={{ background: '#12152e' }}>{region}</option>)}
+                    <option value="" style={{ background: '#12141a' }}>Viloyatni tanlang</option>
+                    {centerRegions.map(region => <option key={region} value={region} style={{ background: '#12141a' }}>{region}</option>)}
                   </select>
                 </label>
               </div>
@@ -2322,8 +2322,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   onChange={e => updateCenterForm('district', e.target.value)}
                   className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30 disabled:opacity-50"
                 >
-                  <option value="" style={{ background: '#12152e' }}>{centerForm.region ? 'Tumanni tanlang' : 'Avval viloyatni tanlang'}</option>
-                  {centerDistrictOptions.map(district => <option key={district} value={district} style={{ background: '#12152e' }}>{district}</option>)}
+                  <option value="" style={{ background: '#12141a' }}>{centerForm.region ? 'Tumanni tanlang' : 'Avval viloyatni tanlang'}</option>
+                  {centerDistrictOptions.map(district => <option key={district} value={district} style={{ background: '#12141a' }}>{district}</option>)}
                 </select>
               </label>
               <label className="block">
