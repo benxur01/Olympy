@@ -109,6 +109,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [centerImageLoading, setCenterImageLoading] = React.useState(false);
   const centerImageInputRef = React.useRef(null);
 
+  // O'quvchilar bo'limi holatlari.
+  const [students, setStudents] = React.useState([]);
+  const [studentsLoading, setStudentsLoading] = React.useState(false);
+  const [studentsError, setStudentsError] = React.useState('');
+  const [studentStatusFilter, setStudentStatusFilter] = React.useState('all');
+  const [studentSearch, setStudentSearch] = React.useState('');
+  const [studentActionId, setStudentActionId] = React.useState(null);
+
   // Live Proctoring states
   const [proctoringData, setProctoringData] = React.useState([]);
   const [proctoringLoading, setProctoringLoading] = React.useState(false);
@@ -233,6 +241,38 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     });
     return () => { cancelled = true; };
   }, [loadApiStaff]);
+
+  // O'quvchilar ro'yxatini status filteri bo'yicha yuklaydi. "all" tanlanganda
+  // statusFilter bo'sh yuboriladi va backend barcha statuslarni qaytaradi.
+  const loadStudents = React.useCallback(() => {
+    if (!isApi || !ownerCenterId) {
+      setStudents([]);
+      return Promise.resolve();
+    }
+    const token = OlympyApi.getToken();
+    const statusFilter = studentStatusFilter === 'all' ? '' : studentStatusFilter;
+    return OlympyApi.getStudentMemberships(ownerCenterId, statusFilter, token)
+      .then(rows => {
+        setStudents(Array.isArray(rows) ? rows : []);
+        setStudentsError('');
+      });
+  }, [isApi, ownerCenterId, studentStatusFilter]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    setStudentsLoading(true);
+    setStudentsError('');
+    loadStudents()
+      .catch(err => {
+        if (!cancelled) {
+          console.warn('getStudentMemberships failed:', err);
+          setStudents([]);
+          setStudentsError("O'quvchilar ro'yxatini yuklab bo'lmadi.");
+        }
+      })
+      .finally(() => { if (!cancelled) setStudentsLoading(false); });
+    return () => { cancelled = true; };
+  }, [loadStudents]);
 
   const apiCentersRes = useApiData(
     () => isApi ? OlympyApi.getMyCenters(OlympyApi.getToken()) : Promise.resolve(null),
@@ -504,6 +544,59 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .finally(() => setRemovingMembershipId(null));
   };
 
+  // O'quvchini tasdiqlash yoki rad etish (approveStudent decision payload).
+  const decideStudent = (row, decision) => {
+    if (!row) return;
+    if (!isApi) {
+      showToast("Demo rejimida o'quvchini boshqarib bo'lmaydi");
+      return;
+    }
+    const membershipId = row.membershipId;
+    if (!membershipId) {
+      showToast("A'zolik ma'lumotlari topilmadi");
+      return;
+    }
+    const backendCenterId = center?.backendId ?? center?.id;
+    const token = OlympyApi.getToken();
+    setStudentActionId(membershipId);
+    OlympyApi.approveStudent(backendCenterId, { membership_id: membershipId, decision }, token)
+      .then(() => loadStudents())
+      .then(() => showToast(decision === 'approved' ? "O'quvchi tasdiqlandi" : 'Ariza rad etildi'))
+      .catch(err => {
+        console.warn('approveStudent failed:', err);
+        showToast(OlympyApi.toUserMessage?.(err) || "Amalni bajarib bo'lmadi");
+      })
+      .finally(() => setStudentActionId(null));
+  };
+
+  // O'quvchini markazdan chiqarish — removeMembership chaqiradi.
+  const removeStudentMember = (row) => {
+    if (!row) return;
+    if (!isApi) {
+      showToast("Demo rejimida a'zolikni o'chirib bo'lmaydi");
+      return;
+    }
+    const membershipId = row.membershipId;
+    if (!membershipId) {
+      showToast("A'zolik ma'lumotlari topilmadi");
+      return;
+    }
+    if (!window.confirm(`${row.name || "O'quvchi"}ni markazdan chiqarishni tasdiqlaysizmi?`)) {
+      return;
+    }
+    const backendCenterId = center?.backendId ?? center?.id;
+    const token = OlympyApi.getToken();
+    setStudentActionId(membershipId);
+    OlympyApi.removeMembership(backendCenterId, membershipId, token)
+      .then(() => loadStudents())
+      .then(() => showToast("O'quvchi markazdan chiqarildi"))
+      .catch(err => {
+        console.warn('removeMembership failed:', err);
+        showToast(OlympyApi.toUserMessage?.(err) || "Chiqarib bo'lmadi");
+      })
+      .finally(() => setStudentActionId(null));
+  };
+
   const openRoleModal = (row) => {
     if (!row) return;
     if (!isApi) {
@@ -547,6 +640,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .then(() => {
         setRoleModalRow(null);
         loadApiStaff().catch(() => null);
+        loadStudents().catch(() => null);
         showToast("Rol muvaffaqiyatli o'zgartirildi");
       })
       .catch(err => {
@@ -784,6 +878,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'home', icon: 'home', label: 'Overview' },
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCount || undefined },
     { key: 'staff', icon: 'users', label: 'Xodimlar' },
+    { key: 'students', icon: 'users', label: "O'quvchilar" },
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
     { key: 'ranking', icon: 'star', label: 'Reyting' },
     { key: 'analytics', icon: 'chart', label: 'Analitika' },
@@ -1268,6 +1363,172 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       </section>
     </div>
   );
+
+  const renderStudents = () => {
+    const studentRows = students.map(m => ({
+      id: `api:student:${m.membership_id}`,
+      membershipId: m.membership_id,
+      name: m.user?.full_name || m.user?.name || '—',
+      phone: m.user?.normalized_phone || m.user?.phone || '—',
+      avatarUrl: m.user?.avatar_url || m.user?.avatarUrl || '',
+      joined: (m.created_at || '').slice(0, 10),
+      role: m.role || 'student',
+      status: m.status || 'approved',
+    }));
+    const query = (studentSearch || '').trim().toLowerCase();
+    const filteredStudents = query
+      ? studentRows.filter(s =>
+          String(s.name).toLowerCase().includes(query) ||
+          String(s.phone).toLowerCase().includes(query))
+      : studentRows;
+    const statusTabs = [
+      { key: 'all', label: 'Barchasi' },
+      { key: 'approved', label: 'Tasdiqlangan' },
+      { key: 'pending', label: 'Kutilmoqda' },
+    ];
+    return (
+      <div className="space-y-5 p-4 lg:p-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">O'quvchilar</h1>
+            <p className="mt-1 text-sm font-semibold text-white/50">{center.name} ga a'zo o'quvchilar ro'yxati.</p>
+          </div>
+          <button
+            onClick={() => { setStudentsLoading(true); loadStudents().finally(() => setStudentsLoading(false)); }}
+            disabled={studentsLoading}
+            className="btn-ghost inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold"
+          >
+            <Icon name="bolt" size={14} /> {studentsLoading ? 'Yangilanmoqda...' : 'Yangilash'}
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {statusTabs.map(tab => (
+              <button
+                key={tab.key}
+                onClick={() => setStudentStatusFilter(tab.key)}
+                className={`rounded-xl px-4 py-2 text-xs font-black transition-colors ${
+                  studentStatusFilter === tab.key
+                    ? 'bg-indigo-600 text-white'
+                    : 'border border-white/10 bg-white/5 text-white/60 hover:bg-white/10'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="relative w-full sm:w-72">
+            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+            <input
+              className="input-field w-full py-2 pl-10 text-sm"
+              placeholder="Ism yoki telefon bo'yicha qidirish..."
+              value={studentSearch}
+              onChange={e => setStudentSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {studentsError && (
+          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-bold text-rose-300">
+            {studentsError}
+          </div>
+        )}
+
+        <section className="overflow-hidden rounded-2xl border border-white/8 glass-strong">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left">
+              <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
+                <tr className="text-[10px] font-black uppercase tracking-wider text-white/40">
+                  {['Ism', 'Telefon', "Qo'shilgan sana", 'Holat', 'Amal'].map(h => (
+                    <th key={h} className="px-5 py-3.5">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {studentsLoading && filteredStudents.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
+                      Yuklanmoqda...
+                    </td>
+                  </tr>
+                )}
+                {!studentsLoading && filteredStudents.map(row => {
+                  const busy = studentActionId === row.membershipId;
+                  const isPending = (row.status || 'approved') === 'pending';
+                  const canChangeRole = isApi && !!row.membershipId && (row.status || 'approved') === 'approved';
+                  return (
+                    <tr key={row.id} className="olympy-row text-sm">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <Avatar name={row.name} src={row.avatarUrl || ''} size={36} gradient="from-emerald-500 to-teal-600" />
+                          <span className="font-black text-white">{row.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 font-mono text-xs text-white/55">
+                        {String(row.phone || '').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}
+                      </td>
+                      <td className="px-5 py-4 text-white/55">{row.joined ? ownerFormatDate(row.joined) : '—'}</td>
+                      <td className="px-5 py-4">
+                        <OwnerStatusPill status={row.status || 'approved'} />
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          {isPending && (
+                            <>
+                              <button
+                                onClick={() => decideStudent(row, 'approved')}
+                                disabled={busy}
+                                className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+                              >
+                                {busy ? '...' : 'Tasdiqlash'}
+                              </button>
+                              <button
+                                onClick={() => decideStudent(row, 'rejected')}
+                                disabled={busy}
+                                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
+                              >
+                                Rad etish
+                              </button>
+                            </>
+                          )}
+                          {canChangeRole && (
+                            <button
+                              onClick={() => openRoleModal(row)}
+                              disabled={busy}
+                              className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-bold text-indigo-300 hover:bg-indigo-500/20 disabled:opacity-50"
+                            >
+                              Rolni o'zgartir
+                            </button>
+                          )}
+                          {isApi && !!row.membershipId && (
+                            <button
+                              onClick={() => removeStudentMember(row)}
+                              disabled={busy}
+                              className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
+                            >
+                              {busy ? '...' : 'Chiqarib yuborish'}
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {!studentsLoading && filteredStudents.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
+                      {query ? "Mos keladigan o'quvchilar topilmadi" : "O'quvchilar yo'q"}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    );
+  };
 
   const renderOlympiads = () => (
     <div className="space-y-5 p-4 lg:p-6">
@@ -1800,6 +2061,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     home: renderHome,
     requests: renderRequests,
     staff: renderStaff,
+    students: renderStudents,
     olympiads: renderOlympiads,
     ranking: renderRanking,
     center: renderCenter,
