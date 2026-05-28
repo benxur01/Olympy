@@ -209,7 +209,7 @@ const Sidebar = ({ items, activePage, setPage, user, onLogout, logoClick, mobile
       {/* Desktop sidebar — hidden below lg */}
       <aside
         className={`sidebar-desktop flex flex-col border-r border-white/5 h-screen sticky top-0 flex-shrink-0 transition-all duration-300 ${collapsed ? 'w-16' : 'w-60'}`}
-        style={{ background: 'rgba(6,8,24,0.95)' }}>
+        style={{ background: 'rgba(5,5,8,0.95)' }}>
         <SidebarContent {...sharedProps} collapsed={collapsed} setCollapsed={setCollapsed} />
       </aside>
 
@@ -448,7 +448,7 @@ const AvatarCropModal = ({ open, onClose, imageSrc, onCropComplete }) => {
                 <circle cx="50%" cy="50%" r="48%" fill="black" />
               </mask>
             </defs>
-            <rect width="100%" height="100%" fill="rgba(6, 8, 24, 0.7)" mask="url(#cropMask)" />
+            <rect width="100%" height="100%" fill="rgba(5, 5, 8, 0.7)" mask="url(#cropMask)" />
             <circle cx="50%" cy="50%" r="48%" fill="none" stroke="#6366f1" strokeWidth="2" strokeDasharray="4 4" />
           </svg>
         </div>
