@@ -1122,6 +1122,7 @@ def leaderboard(request):
             'attempt_id': a.id,
             'user_id': a.user_id,
             'name': a.user.full_name,
+            'is_premium': a.user.is_premium,
             'center': a.olympiad.center.name,
             'organization_type': a.olympiad.center.organization_type,
             'country': a.olympiad.center.country,

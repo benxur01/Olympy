@@ -1467,6 +1467,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       role: m.role || 'student',
       status: m.status || 'approved',
       groupTag: m.group_tag || '',
+      isPremium: !!(m.user?.is_premium ?? m.user?.isPremium),
     }));
     const query = (studentSearch || '').trim().toLowerCase();
     const filteredStudents = query
@@ -1554,8 +1555,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     <tr key={row.id} className="olympy-row text-sm">
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
-                          <Avatar name={row.name} src={row.avatarUrl || ''} size={36} gradient="from-emerald-500 to-teal-600" />
-                          <span className="font-black text-white">{row.name}</span>
+                          <Avatar name={row.name} src={row.avatarUrl || ''} size={36} gradient="from-emerald-500 to-teal-600" premium={!!row.isPremium} />
+                          <span className="font-black text-white">{row.isPremium && <span title="Premium o'quvchi">⭐ </span>}{row.name}</span>
                         </div>
                       </td>
                       <td className="px-5 py-4 font-mono text-xs text-white/55">

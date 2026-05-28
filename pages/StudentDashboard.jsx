@@ -45,6 +45,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // xaritasi, AI o'quv rejasi, tayyorlik %) faqat premium o'quvchilarga ochiq.
   // Mock rejimda barchasi ochiq qoladi (test qulayligi uchun).
   const isPremium = isApi ? !!(user?.isPremium ?? user?.is_premium) : true;
+  // Vizual premium belgisi (⭐ + oltin halqa) faqat haqiqiy premium o'quvchida
+  // ko'rinadi. Mock/demo rejimida `isPremium` doim true bo'lgani uchun bu yerda
+  // alohida bayroq ishlatamiz, aks holda hamma o'quvchiga belgi chiqib qolardi.
+  const showPremiumBadge = !!(user?.isPremium ?? user?.is_premium);
   const [page, setPage] = React.useState('home');
   const [centerModal, setCenterModal] = React.useState(null);
   const [centerSearch, setCenterSearch] = React.useState('');
@@ -303,6 +307,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       <div className="flex items-start justify-between flex-wrap gap-3 md:gap-4">
         <div className="min-w-0 flex-1">
           <h2 className="text-xl md:text-2xl font-black text-white flex items-center gap-2 truncate">
+            {showPremiumBadge && <span title="Premium o'quvchi">⭐</span>}
             Salom, {user.name.split(' ')[0]}! 👋
             {!!user?.streakCount && (
               <span className="inline-flex items-center gap-1 text-sm font-black text-orange-400 bg-orange-500/10 border border-orange-500/25 px-2 py-0.5 rounded-lg animate-pulse" title="Ketma-ket faol kunlaringiz">

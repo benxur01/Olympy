@@ -275,6 +275,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         olympiads: m.olympiads_count || 0,
         avgScore: m.avg_score || 0,
         groupTag: m.group_tag || '',
+        isPremium: !!(m.user?.is_premium ?? m.user?.isPremium),
         status: 'Tasdiqlandi',
       }))
     : store.users.filter(u =>
@@ -742,7 +743,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             {filteredStudents.map(s => {
               return (
                 <tr key={s.id} className="olympy-row">
-                  <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={s.name} src={s.avatarUrl || ''} size={32} /><div><div className="text-sm font-medium text-white">{s.name}</div><div className="text-xs text-white/40">{s.joined}</div></div></div></td>
+                  <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={s.name} src={s.avatarUrl || ''} size={32} premium={!!s.isPremium} /><div><div className="text-sm font-medium text-white">{s.isPremium && <span title="Premium o'quvchi">⭐ </span>}{s.name}</div><div className="text-xs text-white/40">{s.joined}</div></div></div></td>
                   <td className="px-4 py-3 text-sm text-white/60">{s.phone.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
                   <td className="px-4 py-3">
                     {groupTagEdit && groupTagEdit.membershipId === s.membershipId ? (
