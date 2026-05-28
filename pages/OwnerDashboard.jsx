@@ -898,7 +898,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const Sidebar = () => (
     <aside
       className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-[268px] flex-col border-r border-white/5 transition-transform duration-200 lg:static lg:translate-x-0`}
-      style={{ background: 'rgba(6,8,24,0.99)' }}
+      style={{ background: 'rgba(5,5,8,0.99)' }}
     >
       <div className="border-b border-white/5 px-5 py-5">
         <button onClick={() => setPage('home')} className="flex w-full items-center gap-3 text-left">
