@@ -2086,7 +2086,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   ].filter(Boolean);
 
   return (
-    <div className="h-screen overflow-hidden text-white" style={{ background: '#060818' }}>
+    <div className="h-screen overflow-hidden text-white" style={{ background: '#050508' }}>
       {mobileMenu && (
         <div
           className="fixed inset-0 z-40 lg:hidden"

@@ -201,7 +201,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex" style={{ background: '#060818' }}>
+    <div className="min-h-screen flex" style={{ background: '#050508' }}>
       {/* Left panel */}
       <div className="hidden lg:flex flex-1 flex-col justify-center items-center p-12 relative overflow-hidden">
         <div className="hero-glow" style={{ background: '#6366f1', top: '20%', left: '20%' }} />
@@ -570,7 +570,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   if (success) {
     const isAuto = registrationType === 'student' && !centerId;
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#060818' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#050508' }}>
         <div className="text-center animate-in">
           <div className="w-24 h-24 gradient-bg rounded-full flex items-center justify-center mx-auto mb-6 glow-blue">
             <Icon name="check" size={40} />
@@ -592,7 +592,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
 
   // ─── Render steps ───────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex" style={{ background: '#060818' }}>
+    <div className="min-h-screen flex" style={{ background: '#050508' }}>
       {/* Left panel */}
       <div className="hidden lg:flex flex-1 flex-col justify-center items-center p-12 relative overflow-hidden">
         <div className="hero-glow" style={{ background: '#22d3ee', top: '20%', right: '20%' }} />

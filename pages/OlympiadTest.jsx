@@ -685,7 +685,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // (header, timer, navigator) bo'shatmaslik uchun.
   if (initialQuestionsLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#060818' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#050508' }}>
         <div className="flex flex-col items-center gap-4 text-white/70">
           <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-indigo-400 animate-spin" />
           <div className="text-sm font-semibold">Savollar yuklanmoqda...</div>
@@ -713,7 +713,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const isTrueFalse = q ? (q.options || []).length === 2 && (q.options || []).every(o => /to'?g'?ri|no?to'?g'?ri/i.test(o)) : false;
 
   return (
-    <div className="min-h-screen flex flex-col select-none" style={{ background: '#060818', userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}>
+    <div className="min-h-screen flex flex-col select-none" style={{ background: '#050508', userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}>
       {/* Header bar */}
       <div className="glass border-b border-white/5 px-3 md:px-8 py-2.5 md:py-3 flex items-center justify-between gap-2 sticky top-0 z-30">
         <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">

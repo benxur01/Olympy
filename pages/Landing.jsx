@@ -369,7 +369,7 @@ const LandingPage = ({ onNavigate }) => {
   ];
 
   return (
-    <div className="min-h-screen" style={{ background: '#060818' }}>
+    <div className="min-h-screen" style={{ background: '#050508' }}>
       {/* Navbar — Telegram WebView'da backdrop-filter sekin ishlaydi, shu sababli
           backdropFilter olib tashlangan va solid background ishlatilgan. */}
       <nav
@@ -416,7 +416,7 @@ const LandingPage = ({ onNavigate }) => {
           <div
             className="md:hidden fixed inset-0 z-40"
             onClick={() => setMobileMenu(false)}
-            style={{ top: '52px', background: 'rgba(6, 8, 24, 0.85)' }}
+            style={{ top: '52px', background: 'rgba(5, 5, 8, 0.85)' }}
           >
             <div
               className="absolute left-0 right-0 top-0 border-b border-white/10"
@@ -462,13 +462,13 @@ const LandingPage = ({ onNavigate }) => {
         className="relative overflow-hidden"
         style={{
           minHeight: 'min(700px, calc(100svh - 96px))',
-          backgroundImage: `linear-gradient(90deg, rgba(6,8,24,0.99) 0%, rgba(6,8,24,0.95) 48%, rgba(6,8,24,0.72) 72%, rgba(6,8,24,0.36) 100%), url("${dashboardImgSrc}")`,
+          backgroundImage: `linear-gradient(90deg, rgba(5,5,8,0.99) 0%, rgba(5,5,8,0.95) 48%, rgba(5,5,8,0.72) 72%, rgba(5,5,8,0.36) 100%), url("${dashboardImgSrc}")`,
           backgroundSize: 'cover',
           backgroundPosition: 'center top',
         }}
       >
         <InteractiveParticles />
-        <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(6,8,24,0.1) 0%, rgba(6,8,24,0.9) 100%)' }} />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(5,5,8,0.1) 0%, rgba(5,5,8,0.9) 100%)' }} />
         
         {/* Floating 3D badges on the right (desktop only) */}
         <div className="hidden lg:block absolute right-16 top-1/4 w-[400px] h-[300px] pointer-events-none z-10 preserve-3d" style={{ perspective: '1000px' }}>
@@ -540,7 +540,7 @@ const LandingPage = ({ onNavigate }) => {
       </section>
 
       {/* Platforma ko'rinishi */}
-      <section className="py-12 md:py-24 relative overflow-hidden" style={{ background: 'linear-gradient(180deg, rgba(6,8,24,1) 0%, rgba(13,25,38,0.9) 100%)' }}>
+      <section className="py-12 md:py-24 relative overflow-hidden" style={{ background: 'linear-gradient(180deg, rgba(5,5,8,1) 0%, rgba(13,25,38,0.9) 100%)' }}>
         <div className="max-w-6xl mx-auto px-4 md:px-6">
           <div className="text-center mb-8 md:mb-14 scroll-reveal">
             <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-cyan-200 border border-cyan-500/20">

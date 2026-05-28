@@ -374,7 +374,7 @@ const App = () => {
         return <OlympiadTestPage olympiad={activeOlympiad} user={user} onFinish={handleTestFinish} onNavigate={navigate} />;
       }
       case 'leaderboard': return (
-        <div className="min-h-screen" style={{ background: '#060818' }}>
+        <div className="min-h-screen" style={{ background: '#050508' }}>
           <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
             <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={() => navigate(roleHomePage(user))} aria-label="Dashboardga qaytish">
               <BrandLogo size="sm" />
@@ -387,7 +387,7 @@ const App = () => {
         </div>
       );
       case 'profile': return (
-        <div className="min-h-screen" style={{ background: '#060818' }}>
+        <div className="min-h-screen" style={{ background: '#050508' }}>
           <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
             <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={() => navigate(roleHomePage(user))} aria-label="Dashboardga qaytish">
               <BrandLogo size="sm" />
@@ -408,7 +408,7 @@ const App = () => {
       case 'results':
         if (page === 'results' && testResult) {
           return (
-            <div className="min-h-screen" style={{ background: '#060818' }}>
+            <div className="min-h-screen" style={{ background: '#050508' }}>
               <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
                 <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={() => navigate(roleHomePage(user))} aria-label="Dashboardga qaytish">
                   <BrandLogo size="sm" />
@@ -437,7 +437,7 @@ const App = () => {
     // foydalanuvchi dashboardiga sakrar va flicker hosil bo'lardi. Endi
     // bootstrap davomida loading skeleton ko'rsatamiz.
     return (
-      <div className="dark min-h-screen flex items-center justify-center" style={{ background: '#060818' }}>
+      <div className="dark min-h-screen flex items-center justify-center" style={{ background: '#050508' }}>
         <div className="flex flex-col items-center gap-4 text-white/70">
           <BrandLogo size="lg" />
           <div className="w-12 h-12 rounded-full border-2 border-white/20 border-t-indigo-400 animate-spin" />
