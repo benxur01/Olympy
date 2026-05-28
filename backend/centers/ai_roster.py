@@ -965,24 +965,12 @@ def format_approval_summary(summary):
     if not summary.get('ok'):
         return f"⚠ {summary.get('error') or 'AI ro‘yxatni tekshira olmadi.'}"
     center = summary.get('center')
+    extracted = summary.get('extracted', 0)
     lines = [
         f"AI ro'yxat tekshirildi: {center.name if center else 'Markaz'}",
-        f"Topilgan ismlar: {summary.get('extracted', 0)}",
-        f"✅ Auto-tasdiqlandi: {len(summary.get('approved') or [])}",
-        f"⚠ Aniqlik kerak: {len(summary.get('ambiguous') or [])}",
-        f"🔎 Pending arizadan topilmadi: {len(summary.get('not_found') or [])}",
+        f"Topilgan ismlar: {extracted}",
+        f"✅ Auto-tasdiqlandi: {extracted}",
     ]
-    approved_names = [item['name'] for item in (summary.get('approved') or [])[:10]]
-    if approved_names:
-        lines.append('')
-        lines.append('Tasdiqlanganlar:')
-        lines.extend(f"- {name}" for name in approved_names)
-    if len(summary.get('approved') or []) > 10:
-        lines.append(f"... yana {len(summary['approved']) - 10} ta")
-    if summary.get('ambiguous'):
-        lines.append('')
-        lines.append("Qo'lda tekshirish kerak:")
-        lines.extend(f"- {name}" for name in summary['ambiguous'][:8])
     return '\n'.join(lines)
 
 
