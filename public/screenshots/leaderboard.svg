@@ -38,21 +38,21 @@
       <text x="168" y="206" text-anchor="middle" fill="#fff" font-size="19" font-weight="850">Sardor Usmonov</text>
       <text x="168" y="234" text-anchor="middle" fill="#94a3b8" font-size="14">Brilliant Education</text>
       <text x="168" y="282" text-anchor="middle" fill="#cbd5e1" font-size="40" font-weight="900">91</text>
-      <text x="168" y="22" text-anchor="middle" fill="#cbd5e1" font-size="34" font-weight="900">2</text>
+      <text x="168" y="56" text-anchor="middle" fill="#cbd5e1" font-size="34" font-weight="900">2</text>
       <rect x="382" y="92" width="336" height="238" rx="28" fill="#f59e0b" fill-opacity="0.13" stroke="#fbbf24" stroke-opacity="0.36"/>
       <circle cx="550" cy="58" r="58" fill="url(#gold)"/>
       <text x="550" y="68" text-anchor="middle" fill="#fff" font-size="30" font-weight="900">MT</text>
       <text x="550" y="164" text-anchor="middle" fill="#fff" font-size="21" font-weight="850">Malika Toshmatova</text>
       <text x="550" y="194" text-anchor="middle" fill="#fef3c7" font-size="14">ProSkill Academy</text>
       <text x="550" y="260" text-anchor="middle" fill="#fbbf24" font-size="52" font-weight="950">96</text>
-      <text x="550" y="22" text-anchor="middle" fill="#fbbf24" font-size="42" font-weight="950">1</text>
+      <text x="550" y="-12" text-anchor="middle" fill="#fbbf24" font-size="42" font-weight="950">1</text>
       <rect x="764" y="182" width="336" height="148" rx="28" fill="#ffffff" fill-opacity="0.07" stroke="#b45309" stroke-opacity="0.32"/>
       <circle cx="932" cy="142" r="46" fill="#92400e"/>
       <text x="932" y="150" text-anchor="middle" fill="#fff" font-size="24" font-weight="850">AV</text>
       <text x="932" y="226" text-anchor="middle" fill="#fff" font-size="19" font-weight="850">Ali Valiyev</text>
       <text x="932" y="252" text-anchor="middle" fill="#94a3b8" font-size="14">ProSkill Academy</text>
       <text x="932" y="298" text-anchor="middle" fill="#f59e0b" font-size="40" font-weight="900">87</text>
-      <text x="932" y="82" text-anchor="middle" fill="#f59e0b" font-size="34" font-weight="900">3</text>
+      <text x="932" y="84" text-anchor="middle" fill="#f59e0b" font-size="34" font-weight="900">3</text>
     </g>
     <g transform="translate(126 590)">
       <rect width="1136" height="176" rx="26" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.1"/>
