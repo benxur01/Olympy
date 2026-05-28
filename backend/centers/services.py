@@ -147,13 +147,32 @@ def change_membership_role(center, membership_id, new_role, actor):
         approved_by=actor,
     )
 
-    # user.roles ni yangilash: eski rolni faqat boshqa markazda ham shu rol
-    # bilan approved a'zolik bo'lmasagina olib tashlaymiz.
-    has_other_old = CenterMembership.objects.filter(
-        user=user, role=old_role, status=CenterMembership.STATUS_APPROVED,
-    ).exists()
-    if not has_other_old and hasattr(user, 'remove_role'):
-        user.remove_role(old_role)
+    # O'quvchining shu markazdagi boshqa barcha membershiplarini o'chiramiz —
+    # faqat yangi yaratilgan membership va owner rolini qoldirib. Bu eski
+    # student/teacher a'zoliklari ortda qolib ketmasligini ta'minlaydi.
+    stale_qs = (
+        CenterMembership.objects
+        .filter(user=user, center=center)
+        .exclude(pk=new_membership.pk)
+        .exclude(role=CenterMembership.ROLE_OWNER)
+    )
+    # O'chiriladigan rollarni oldindan to'playmiz (eski rolni ham qamrab oladi),
+    # keyin user.roles dan tozalashda foydalanamiz.
+    removed_roles = set(stale_qs.values_list('role', flat=True))
+    removed_roles.add(old_role)
+    stale_qs.delete()
+
+    # user.roles ni yangilash: o'chirilgan har bir rolni faqat boshqa markazda
+    # ham shu rol bilan approved a'zolik bo'lmasagina olib tashlaymiz. Yangi rol
+    # hech qachon olib tashlanmaydi.
+    removed_roles.discard(new_role)
+    if hasattr(user, 'remove_role'):
+        for role in removed_roles:
+            still_has = CenterMembership.objects.filter(
+                user=user, role=role, status=CenterMembership.STATUS_APPROVED,
+            ).exists()
+            if not still_has:
+                user.remove_role(role)
     if hasattr(user, 'add_role'):
         user.add_role(new_role)
 
