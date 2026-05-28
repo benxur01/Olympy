@@ -608,13 +608,6 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       return;
     }
     
-    const hasAttempts = store.attempts.some(a => String(a.olympiadId) === String(event.id)) || event.participants > 0;
-    if (hasAttempts) {
-      showToast("Ushbu tadbirda ishtirokchilar urinishlari bor, uni o'chirib bo'lmaydi");
-      setDeleteEventId(null);
-      return;
-    }
-    
     OlympyStore.deleteOlympiad(event.id);
     showToast(`✓ ${eventTypeLabel(event.eventType || 'competition')} muvaffaqiyatli o'chirildi`);
     setDeleteEventId(null);
@@ -910,7 +903,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   className="btn-ghost text-xs px-3 py-1.5 rounded-xl flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed">
                   <Icon name="edit" size={13} /> Tahrirlash
                 </button>
-                {canEdit && (
+                {(canEdit || o.status === 'finished') && (
                   <button onClick={() => setDeleteEventId(o.id)} disabled={eventSaving}
                     className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50 flex items-center justify-center gap-1">
                     <Icon name="trash" size={13} /> O'chirish

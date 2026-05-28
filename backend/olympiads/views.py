@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from .models import Olympiad
 from .serializers import OlympiadSerializer
 from .services import (
+    center_olympiad_limit_exceeded,
     event_readiness_errors,
     recompute_olympiad_ranks,
     user_can_manage_center_event,
@@ -91,6 +92,21 @@ def olympiads_list_create(request):
     if not user_can_manage_center_event(request.user, center):
         return Response({'detail': "Sizda bu markaz uchun tadbir yaratish huquqi yo'q"},
                         status=http_status.HTTP_403_FORBIDDEN)
+    # Bepul markaz limiti: joriy oyda max FREE_OLYMPIAD_MONTHLY_LIMIT ta.
+    # Platform admin uchun limit qo'llanilmaydi.
+    if not request.user.is_platform_admin and center_olympiad_limit_exceeded(center):
+        from django.conf import settings
+        limit = getattr(settings, 'FREE_OLYMPIAD_MONTHLY_LIMIT', 2)
+        return Response(
+            {
+                'detail': (
+                    f'Bepul rejimda oyiga {limit} ta olimpiada yaratish mumkin. '
+                    'Cheksiz yaratish uchun premium oling.'
+                ),
+                'upgrade_required': True,
+            },
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
     # O4: olimpiada yaratish va savollar biriktirish bitta transaction'da —
     # `serializer.save()` muvaffaqiyatli bo'lib, `questions.set()` xato bersa
     # (masalan, savol ID xato), olimpiada savollarsiz qolib ketardi.
@@ -116,18 +132,21 @@ def olympiad_detail(request, olympiad_id):
     if not user_can_manage_center_event(request.user, olympiad.center):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
-    
-    if olympiad.status not in [Olympiad.STATUS_DRAFT, Olympiad.STATUS_INACTIVE]:
-        action_verb = "tahrirlash" if request.method == 'PATCH' else "o'chirish"
-        return Response(
-            {'detail': f"Faqat draft yoki nofaol tadbirni {action_verb} mumkin"},
-            status=http_status.HTTP_400_BAD_REQUEST,
-        )
-
     if request.method == 'DELETE':
+        if olympiad.status == Olympiad.STATUS_ACTIVE:
+            return Response(
+                {'detail': "Faol tadbirni o'chirish mumkin emas. Avval uni nofaol qiling."},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
         olympiad.is_deleted = True
         olympiad.save(update_fields=['is_deleted'])
         return Response({'detail': "Tadbir muvaffaqiyatli o'chirildi"}, status=http_status.HTTP_200_OK)
+
+    if olympiad.status not in [Olympiad.STATUS_DRAFT, Olympiad.STATUS_INACTIVE]:
+        return Response(
+            {'detail': "Faqat draft yoki nofaol tadbirni tahrirlash mumkin"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
 
     serializer = OlympiadSerializer(olympiad, data=request.data, partial=True)
     serializer.is_valid(raise_exception=True)
