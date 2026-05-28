@@ -16,6 +16,7 @@ urlpatterns = [
     path('<int:center_id>/memberships/students/', views.students_memberships, name='students-memberships'),
     path('<int:center_id>/memberships/<int:membership_id>/', views.remove_membership, name='remove-membership'),
     path('<int:center_id>/members/<int:membership_id>/change-role/', views.change_member_role, name='change-member-role'),
+    path('<int:center_id>/members/<int:membership_id>/group-tag/', views.set_member_group_tag, name='set-member-group-tag'),
     path('students/<int:membership_id>/', views.student_detail, name='student-detail'),
     path('<int:center_id>/managers/create/', views.create_manager, name='create-manager'),
     path('<int:center_id>/teachers/create/', views.create_teacher, name='create-teacher'),
@@ -23,4 +24,8 @@ urlpatterns = [
     path('<int:center_id>/approve-teacher/', views.approve_teacher, name='approve-teacher'),
     path('<int:center_id>/approve-manager/', views.approve_manager, name='approve-manager'),
     path('<int:center_id>/stats/', views.center_stats, name='center-stats'),
+    path('<int:center_id>/student-dynamics/', views.student_dynamics, name='center-student-dynamics'),
+    path('<int:center_id>/top-students/', views.top_students, name='center-top-students'),
+    path('<int:center_id>/question-bank/', views.center_question_bank, name='center-question-bank'),
+    path('<int:center_id>/question-bank/<int:q_id>/', views.center_question_bank_delete, name='center-question-bank-delete'),
 ]

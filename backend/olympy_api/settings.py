@@ -499,3 +499,7 @@ AI_QUESTION_PDF_MAX_BYTES = int(os.environ.get('AI_QUESTION_PDF_MAX_BYTES', str(
 AI_QUESTION_PDF_MAX_TEXT_CHARS = int(os.environ.get('AI_QUESTION_PDF_MAX_TEXT_CHARS', '300000'))
 AI_QUESTION_PDF_CHUNK_CHARS = int(os.environ.get('AI_QUESTION_PDF_CHUNK_CHARS', '25000'))
 AI_QUESTION_PDF_MAX_CHUNKS = int(os.environ.get('AI_QUESTION_PDF_MAX_CHUNKS', '20'))
+
+# Bepul rejimda markaz oyiga maksimal nechta olimpiada yarata oladi. Premium
+# markazlar uchun limit yo'q (kelajakda flag orqali ochiladi).
+FREE_OLYMPIAD_MONTHLY_LIMIT = int(os.environ.get('FREE_OLYMPIAD_MONTHLY_LIMIT', '2'))

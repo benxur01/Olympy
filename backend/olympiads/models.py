@@ -76,6 +76,9 @@ class Olympiad(models.Model):
         blank=True,
     )
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_DRAFT)
+    # Guruh olimpiadasi filtri — to'ldirilgan bo'lsa, faqat shu markazda
+    # mos `CenterMembership.group_tag` ga ega o'quvchilar qatnasha oladi.
+    group_filter = models.CharField(max_length=50, blank=True, default='')
     is_deleted = models.BooleanField(default=False, db_index=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

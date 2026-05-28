@@ -86,6 +86,9 @@ class CenterMembership(models.Model):
     )
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
     subject = models.CharField(max_length=80, blank=True)
+    # Guruh/sinf tegi — guruh olimpiadasi (Olympiad.group_filter) shu tegga
+    # qarab kim qatnasha olishini cheklaydi. Bo'sh bo'lsa guruhsiz a'zo.
+    group_tag = models.CharField(max_length=50, blank=True, default='', db_index=True)
     approval_code = models.CharField(max_length=16, blank=True, db_index=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
     approved_by = models.ForeignKey(
@@ -110,3 +113,46 @@ class CenterMembership(models.Model):
 
     def __str__(self):
         return f'{self.user_id}/{self.center_id}/{self.role} [{self.status}]'
+
+
+class CenterQuestion(models.Model):
+    """Markazning shaxsiy savol banki.
+
+    Bu modelda saqlangan savollar olimpiadalarga to'g'ridan-to'g'ri
+    biriktirilmaydi — ular markazning "qoralama"/qayta ishlatish uchun
+    saqlangan zaxirasi. ``options`` JSON ko'rinishida saqlanadi:
+    ``[{"text": "...", "correct": true}, ...]``.
+    """
+    DIFFICULTY_EASY = 'easy'
+    DIFFICULTY_MEDIUM = 'medium'
+    DIFFICULTY_HARD = 'hard'
+    DIFFICULTY_CHOICES = [
+        (DIFFICULTY_EASY, 'Oson'),
+        (DIFFICULTY_MEDIUM, "O'rta"),
+        (DIFFICULTY_HARD, 'Qiyin'),
+    ]
+
+    center = models.ForeignKey(
+        EducationCenter,
+        on_delete=models.CASCADE,
+        related_name='question_bank',
+    )
+    text = models.TextField()
+    options = models.JSONField(default=list)
+    subject = models.CharField(max_length=80, blank=True, default='')
+    difficulty = models.CharField(
+        max_length=10, choices=DIFFICULTY_CHOICES, default=DIFFICULTY_MEDIUM,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='created_center_questions',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.text[:60]
