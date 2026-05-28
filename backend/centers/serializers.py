@@ -157,6 +157,17 @@ class ApproveSerializer(serializers.Serializer):
     decision = serializers.ChoiceField(choices=['approve', 'reject', 'approved', 'rejected'])
 
 
+class ChangeRoleSerializer(serializers.Serializer):
+    """POST /api/centers/{id}/members/{membership_id}/change-role/."""
+    role = serializers.ChoiceField(
+        choices=[
+            CenterMembership.ROLE_STUDENT,
+            CenterMembership.ROLE_TEACHER,
+            CenterMembership.ROLE_MANAGER,
+        ],
+    )
+
+
 class CreateManagerSerializer(serializers.Serializer):
     """Owner-created manager account for an approved education center."""
     full_name = serializers.CharField(max_length=120)

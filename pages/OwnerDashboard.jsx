@@ -85,6 +85,11 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [staffRole, setStaffRole] = React.useState('manager');
   const [staffSaving, setStaffSaving] = React.useState(false);
   const [removingMembershipId, setRemovingMembershipId] = React.useState(null);
+  // Rolni o'zgartirish modali: tanlangan a'zolik, yangi rol, holatlar.
+  const [roleModalRow, setRoleModalRow] = React.useState(null);
+  const [roleModalNewRole, setRoleModalNewRole] = React.useState('manager');
+  const [roleModalSaving, setRoleModalSaving] = React.useState(false);
+  const [roleModalError, setRoleModalError] = React.useState('');
   const emptyStaffForm = { full_name: '', phone: '+998', password: '', subject: '' };
   const [staffForm, setStaffForm] = React.useState(emptyStaffForm);
   const emptyCenterForm = {
@@ -497,6 +502,58 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         showToast(OlympyApi.toUserMessage(err) || "A'zolikni o'chirib bo'lmadi");
       })
       .finally(() => setRemovingMembershipId(null));
+  };
+
+  const openRoleModal = (row) => {
+    if (!row) return;
+    if (!isApi) {
+      showToast("Demo rejimida rolni o'zgartirib bo'lmaydi");
+      return;
+    }
+    if (!row.membershipId) {
+      showToast("A'zolik ma'lumotlari topilmadi");
+      return;
+    }
+    // Boshlang'ich tanlov: hozirgi roldan farqli birinchi variant.
+    const firstOther = ['student', 'teacher', 'manager'].find(r => r !== row.role) || 'manager';
+    setRoleModalRow(row);
+    setRoleModalNewRole(firstOther);
+    setRoleModalError('');
+    setRoleModalSaving(false);
+  };
+
+  const closeRoleModal = () => {
+    if (roleModalSaving) return;
+    setRoleModalRow(null);
+    setRoleModalError('');
+  };
+
+  const submitRoleChange = () => {
+    if (!roleModalRow || roleModalSaving) return;
+    const membershipId = roleModalRow.membershipId;
+    if (!membershipId) {
+      setRoleModalError("A'zolik ma'lumotlari topilmadi");
+      return;
+    }
+    if (roleModalNewRole === roleModalRow.role) {
+      setRoleModalError("Yangi rol joriy rol bilan bir xil");
+      return;
+    }
+    const backendCenterId = center?.backendId ?? center?.id;
+    const token = OlympyApi.getToken();
+    setRoleModalSaving(true);
+    setRoleModalError('');
+    OlympyApi.changeMemberRole(backendCenterId, membershipId, roleModalNewRole, token)
+      .then(() => {
+        setRoleModalRow(null);
+        loadApiStaff().catch(() => null);
+        showToast("Rol muvaffaqiyatli o'zgartirildi");
+      })
+      .catch(err => {
+        console.warn('changeMemberRole failed:', err);
+        setRoleModalError(OlympyApi.toUserMessage(err) || "Rolni o'zgartirib bo'lmadi");
+      })
+      .finally(() => setRoleModalSaving(false));
   };
 
   const openStaffModal = (role = 'manager') => {
@@ -1145,6 +1202,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               {myStaff.map(row => {
                 const canRemove = isApi && !!row.membershipId && (row.status || 'approved') === 'approved';
                 const removing = removingMembershipId === row.membershipId;
+                // Owner a'zoligi uchun rol o'zgartirish tugmasi ko'rsatilmaydi.
+                const canChangeRole = isApi && !!row.membershipId
+                  && (row.status || 'approved') === 'approved'
+                  && row.role !== 'owner';
                 return (
                   <tr key={row.id} className="olympy-row text-sm">
                     <td className="px-5 py-4">
@@ -1166,14 +1227,27 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       <OwnerStatusPill status={row.status || 'approved'} />
                     </td>
                     <td className="px-5 py-4">
-                      {canRemove ? (
-                        <button
-                          onClick={() => removeStaffMember(row)}
-                          disabled={removing}
-                          className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
-                        >
-                          {removing ? '...' : 'Chiqarish'}
-                        </button>
+                      {(canRemove || canChangeRole) ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {canChangeRole && (
+                            <button
+                              onClick={() => openRoleModal(row)}
+                              disabled={removing}
+                              className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-bold text-indigo-300 hover:bg-indigo-500/20 disabled:opacity-50"
+                            >
+                              Rolni o'zgartir
+                            </button>
+                          )}
+                          {canRemove && (
+                            <button
+                              onClick={() => removeStaffMember(row)}
+                              disabled={removing}
+                              className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
+                            >
+                              {removing ? '...' : 'Chiqarish'}
+                            </button>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-xs text-white/30">—</span>
                       )}
@@ -1829,6 +1903,81 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </button>
             </div>
           </form>
+        </div>
+      )}
+      {roleModalRow && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+          <div className="modal w-full max-w-md">
+            <div className="mb-5 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-black text-white">Rolni o'zgartirish</h2>
+                <div className="mt-1 text-xs font-bold text-white/50">{roleModalRow.name || 'Foydalanuvchi'}</div>
+              </div>
+              <button
+                type="button"
+                onClick={closeRoleModal}
+                disabled={roleModalSaving}
+                className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white disabled:opacity-50"
+              >
+                <Icon name="x" size={18} />
+              </button>
+            </div>
+            <div className="space-y-3">
+              <span className="block text-xs font-black uppercase text-white/40">Yangi rol</span>
+              <div className="grid grid-cols-1 gap-2">
+                {[
+                  { value: 'student', label: "O'quvchi" },
+                  { value: 'teacher', label: "O'qituvchi" },
+                  { value: 'manager', label: 'Menejer' },
+                ].map(opt => {
+                  const isCurrent = opt.value === roleModalRow.role;
+                  const isSelected = opt.value === roleModalNewRole;
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      disabled={isCurrent || roleModalSaving}
+                      onClick={() => { setRoleModalNewRole(opt.value); setRoleModalError(''); }}
+                      className={`flex items-center justify-between rounded-lg border px-4 py-3 text-sm font-bold transition-colors ${
+                        isCurrent
+                          ? 'cursor-not-allowed border-white/10 bg-white/5 text-white/30'
+                          : isSelected
+                            ? 'border-indigo-500/50 bg-indigo-500/15 text-white'
+                            : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10'
+                      }`}
+                    >
+                      <span>{opt.label}</span>
+                      {isCurrent && <span className="text-[10px] uppercase text-white/30">Joriy rol</span>}
+                      {!isCurrent && isSelected && <Icon name="check" size={16} />}
+                    </button>
+                  );
+                })}
+              </div>
+              {roleModalError && (
+                <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300">
+                  {roleModalError}
+                </div>
+              )}
+            </div>
+            <div className="mt-6 flex gap-3">
+              <button
+                type="button"
+                onClick={closeRoleModal}
+                disabled={roleModalSaving}
+                className="flex-1 rounded-lg border border-white/10 px-4 py-3 text-sm font-black text-white/60 hover:bg-white/5 disabled:opacity-50"
+              >
+                Bekor qilish
+              </button>
+              <button
+                type="button"
+                onClick={submitRoleChange}
+                disabled={roleModalSaving || roleModalNewRole === roleModalRow.role}
+                className="flex-1 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {roleModalSaving ? "O'zgartirilmoqda..." : "O'zgartirish"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {centerModal && (
