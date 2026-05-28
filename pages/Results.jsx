@@ -337,7 +337,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                       {/* AI Explanation Button & Content */}
                       <div className="mt-4 pt-3 border-t border-white/5 space-y-2">
                         {explanations[q.id] ? (
-                          <div className="rounded-xl bg-[#0e1126] border border-indigo-500/20 p-3 text-xs text-white/80 leading-relaxed animate-in">
+                          <div className="rounded-xl bg-[#12141a] border border-indigo-500/20 p-3 text-xs text-white/80 leading-relaxed animate-in">
                             <div className="flex items-center gap-1.5 text-indigo-400 font-bold mb-2">
                               <Icon name="bolt" size={13} className="text-indigo-400 animate-pulse" />
                               <span>AI Yechim Tushuntirishi</span>
