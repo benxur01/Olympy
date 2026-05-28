@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">Olympy mistakes screenshot</title>
+  <desc id="desc">Dark education mistakes vault dashboard with AI analysis and weakness feedback.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#050508"/>
+      <stop offset="0.55" stop-color="#090a0f"/>
+      <stop offset="1" stop-color="#050508"/>
+    </linearGradient>
+    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="0.52" stop-color="#0891b2"/>
+      <stop offset="1" stop-color="#10b981"/>
+    </linearGradient>
+    <linearGradient id="warm" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f59e0b"/>
+      <stop offset="1" stop-color="#ef4444"/>
+    </linearGradient>
+    <linearGradient id="cool" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22d3ee"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#000000" flood-opacity="0.36"/>
+    </filter>
+  </defs>
+  <rect width="1440" height="900" fill="url(#bg)"/>
+  <path d="M0 0h1440v900H0z" fill="none"/>
+  <g opacity="0.28">
+    <path d="M0 690c160-90 330-112 520-64 232 59 357 37 542-73 143-85 268-116 378-94v441H0z" fill="#0f766e"/>
+    <path d="M0 756c194-76 376-75 545 3 189 88 370 83 543-16 123-70 241-86 352-48v205H0z" fill="#172554"/>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="64" y="58" width="1312" height="784" rx="34" fill="#050508" stroke="#ffffff" stroke-opacity="0.11"/>
+    <rect x="64" y="58" width="246" height="784" rx="34" fill="#0d0e12"/>
+    <path d="M310 58v784" stroke="#ffffff" stroke-opacity="0.08"/>
+    <g transform="translate(96 94)">
+      <rect width="56" height="40" rx="12" fill="url(#brand)"/>
+      <text x="70" y="27" fill="#fff" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800">Olympy</text>
+    </g>
+    <g transform="translate(96 164)" fill="none" font-family="Inter, Arial, sans-serif">
+      <rect width="166" height="40" rx="12" fill="#4f46e5" fill-opacity="0.18" stroke="#6366f1" stroke-opacity="0.45" y="254"/>
+      <g opacity="0.65">
+        <circle cx="25" cy="24" r="7" fill="#818cf8"/>
+        <text x="46" y="29" fill="#dbeafe" font-size="13" font-weight="600">Asosiy</text>
+        <circle cx="25" cy="74" r="7" fill="#22d3ee"/>
+        <text x="46" y="79" fill="#dbeafe" font-size="13" font-weight="600">Tadbirlar</text>
+        <circle cx="25" cy="124" r="7" fill="#a855f7"/>
+        <text x="46" y="129" fill="#dbeafe" font-size="13" font-weight="600">Mashq</text>
+        <circle cx="25" cy="174" r="7" fill="#10b981"/>
+        <text x="46" y="179" fill="#dbeafe" font-size="13" font-weight="600">Natijalar</text>
+        <circle cx="25" cy="224" r="7" fill="#f59e0b"/>
+        <text x="46" y="229" fill="#dbeafe" font-size="13" font-weight="600">Reyting</text>
+      </g>
+      <circle cx="25" cy="274" r="7" fill="#ef4444"/>
+      <text x="46" y="279" fill="#fff" font-size="13" font-weight="700">Xatolar Sandig'i</text>
+      <g opacity="0.65">
+        <circle cx="25" cy="324" r="7" fill="#fb7185"/>
+        <text x="46" y="329" fill="#dbeafe" font-size="13" font-weight="600">Do'kon</text>
+        <circle cx="25" cy="374" r="7" fill="#94a3b8"/>
+        <text x="46" y="379" fill="#dbeafe" font-size="13" font-weight="600">Profil</text>
+      </g>
+    </g>
+    <g transform="translate(96 720)">
+      <circle cx="24" cy="24" r="24" fill="url(#cool)"/>
+      <text x="64" y="20" fill="#fff" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800">Ali Valiyev</text>
+      <text x="64" y="42" fill="#94a3b8" font-family="Inter, Arial, sans-serif" font-size="13">Oquvchi</text>
+    </g>
+    <g transform="translate(358 96)" font-family="Inter, Arial, sans-serif">
+      <text x="0" y="30" fill="#fff" font-size="28" font-weight="850">AI Xatolar Sandig'i</text>
+      <text x="0" y="58" fill="#94a3b8" font-size="15">Olimpiada va testlarda yo'l qo'yilgan xatolar hamda sun'iy intellekt tahlillari</text>
+    </g>
+    <g transform="translate(358 188)" font-family="Inter, Arial, sans-serif">
+      <g>
+        <rect width="602" height="380" rx="26" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.1"/>
+        <text x="28" y="42" fill="#fff" font-size="21" font-weight="850">Oxirgi xatolar ro'yxati</text>
+        <g transform="translate(28 78)">
+          <rect width="546" height="76" rx="18" fill="#12141a" stroke="#ffffff" stroke-opacity="0.09"/>
+          <text x="20" y="32" fill="#fff" font-size="15" font-weight="800">Matematika • Algebraik ifodalar</text>
+          <text x="20" y="56" fill="#94a3b8" font-size="13">Noto'g'ri javob: C • To'g'ri javob: A</text>
+          <rect x="420" y="22" width="106" height="32" rx="10" fill="#4f46e5" fill-opacity="0.22"/>
+          <text x="438" y="43" fill="#a5b4fc" font-size="13" font-weight="800">Yechim (AI)</text>
+        </g>
+        <g transform="translate(28 170)">
+          <rect width="546" height="76" rx="18" fill="#12141a" stroke="#ffffff" stroke-opacity="0.09"/>
+          <text x="20" y="32" fill="#fff" font-size="15" font-weight="800">Informatika • Python massivlari</text>
+          <text x="20" y="56" fill="#94a3b8" font-size="13">Noto'g'ri javob: B • To'g'ri javob: D</text>
+          <rect x="420" y="22" width="106" height="32" rx="10" fill="#4f46e5" fill-opacity="0.22"/>
+          <text x="438" y="43" fill="#a5b4fc" font-size="13" font-weight="800">Yechim (AI)</text>
+        </g>
+        <g transform="translate(28 262)">
+          <rect width="546" height="76" rx="18" fill="#12141a" stroke="#ffffff" stroke-opacity="0.09"/>
+          <text x="20" y="32" fill="#fff" font-size="15" font-weight="800">Fizika • Nyuton 2-qonuni</text>
+          <text x="20" y="56" fill="#94a3b8" font-size="13">Noto'g'ri javob: A • To'g'ri javob: C</text>
+          <rect x="420" y="22" width="106" height="32" rx="10" fill="#4f46e5" fill-opacity="0.22"/>
+          <text x="438" y="43" fill="#a5b4fc" font-size="13" font-weight="800">Yechim (AI)</text>
+        </g>
+      </g>
+      <g transform="translate(630 0)">
+        <rect width="328" height="380" rx="26" fill="url(#cool)" fill-opacity="0.08" stroke="#6366f1" stroke-opacity="0.22"/>
+        <text x="28" y="42" fill="#fff" font-size="20" font-weight="850">Gemini AI Tavsiyasi</text>
+        <text x="28" y="80" fill="#dbeafe" font-size="14" font-weight="700">Tahlil natijasi:</text>
+        <text x="28" y="112" fill="#e2e8f0" font-size="13">Sizda algebraik amallar va fizikadan</text>
+        <text x="28" y="132" fill="#e2e8f0" font-size="13">dinamika bo'limlarida zaiflik bor.</text>
+        <text x="28" y="180" fill="#dbeafe" font-size="14" font-weight="700">Tavsiya etilgan reja:</text>
+        <text x="28" y="212" fill="#e2e8f0" font-size="13">1. Mashq bo'limida Algebra testini</text>
+        <text x="28" y="232" fill="#e2e8f0" font-size="13">kuniga 10 tadan yeching.</text>
+        <text x="28" y="252" fill="#e2e8f0" font-size="13">2. Har bir xato savolning izohini</text>
+        <text x="28" y="272" fill="#e2e8f0" font-size="13">AI tahlili orqali ko'rib chiqing.</text>
+        <text x="28" y="324" fill="#10b981" font-size="15" font-weight="850">O'sish prognozi: +15%</text>
+      </g>
+    </g>
+    <g transform="translate(358 596)" font-family="Inter, Arial, sans-serif">
+      <rect width="958" height="110" rx="22" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.1"/>
+      <rect x="24" y="24" width="62" height="62" rx="16" fill="#10b981" fill-opacity="0.12"/>
+      <text x="55" y="66" text-anchor="middle" fill="#10b981" font-size="34">💡</text>
+      <text x="110" y="44" fill="#fff" font-size="18" font-weight="800">Qayta yechish orqali natijani yaxshilang</text>
+      <text x="110" y="70" fill="#94a3b8" font-size="14">Siz bu xatolar ustida ishlab, ularni qayta yechish imkoniyatiga egasiz. Bu bilimingizni sezilarli oshiradi.</text>
+    </g>
+  </g>
+</svg>

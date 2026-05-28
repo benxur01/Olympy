@@ -38,19 +38,25 @@
       <rect width="56" height="40" rx="12" fill="url(#brand)"/>
       <text x="70" y="27" fill="#fff" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800">Olympy</text>
     </g>
-    <g transform="translate(96 178)" fill="none" font-family="Inter, Arial, sans-serif">
-      <rect width="166" height="48" rx="14" fill="#4f46e5" fill-opacity="0.18" stroke="#6366f1" stroke-opacity="0.45"/>
-      <circle cx="25" cy="24" r="8" fill="#818cf8"/>
-      <text x="48" y="30" fill="#fff" font-size="15" font-weight="700">Asosiy</text>
-      <g opacity="0.58">
-        <circle cx="25" cy="89" r="8" fill="#22d3ee"/>
-        <text x="48" y="95" fill="#dbeafe" font-size="15" font-weight="600">Tadbirlar</text>
-        <circle cx="25" cy="153" r="8" fill="#10b981"/>
-        <text x="48" y="159" fill="#dbeafe" font-size="15" font-weight="600">Natijalar</text>
-        <circle cx="25" cy="217" r="8" fill="#f59e0b"/>
-        <text x="48" y="223" fill="#dbeafe" font-size="15" font-weight="600">Reyting</text>
-        <circle cx="25" cy="281" r="8" fill="#94a3b8"/>
-        <text x="48" y="287" fill="#dbeafe" font-size="15" font-weight="600">Profil</text>
+    <g transform="translate(96 164)" fill="none" font-family="Inter, Arial, sans-serif">
+      <rect width="166" height="40" rx="12" fill="#4f46e5" fill-opacity="0.18" stroke="#6366f1" stroke-opacity="0.45" y="4"/>
+      <circle cx="25" cy="24" r="7" fill="#818cf8"/>
+      <text x="46" y="29" fill="#fff" font-size="13" font-weight="700">Asosiy</text>
+      <g opacity="0.65">
+        <circle cx="25" cy="74" r="7" fill="#22d3ee"/>
+        <text x="46" y="79" fill="#dbeafe" font-size="13" font-weight="600">Tadbirlar</text>
+        <circle cx="25" cy="124" r="7" fill="#a855f7"/>
+        <text x="46" y="129" fill="#dbeafe" font-size="13" font-weight="600">Mashq</text>
+        <circle cx="25" cy="174" r="7" fill="#10b981"/>
+        <text x="46" y="179" fill="#dbeafe" font-size="13" font-weight="600">Natijalar</text>
+        <circle cx="25" cy="224" r="7" fill="#f59e0b"/>
+        <text x="46" y="229" fill="#dbeafe" font-size="13" font-weight="600">Reyting</text>
+        <circle cx="25" cy="274" r="7" fill="#ef4444"/>
+        <text x="46" y="279" fill="#dbeafe" font-size="13" font-weight="600">Xatolar Sandig'i</text>
+        <circle cx="25" cy="324" r="7" fill="#fb7185"/>
+        <text x="46" y="329" fill="#dbeafe" font-size="13" font-weight="600">Do'kon</text>
+        <circle cx="25" cy="374" r="7" fill="#94a3b8"/>
+        <text x="46" y="379" fill="#dbeafe" font-size="13" font-weight="600">Profil</text>
       </g>
     </g>
     <g transform="translate(96 720)">
