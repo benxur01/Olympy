@@ -43,12 +43,22 @@ class UserSerializer(serializers.ModelSerializer):
         from centers.models import CenterMembership
 
         roles_detail = {}
-        memberships = (
-            CenterMembership.objects
-            .filter(user=obj)
-            .select_related('center')
-            .order_by('-created_at')
-        )
+        # Ko'p foydalanuvchi serialize qilinadigan joylarda (admin paneli)
+        # 'memberships' select_related('center') bilan prefetch qilingan bo'lishi
+        # mumkin — N+1'ni oldini olish uchun prefetch cache'idan o'qiymiz.
+        # Aks holda eski (alohida) so'rovga qaytamiz.
+        if (
+            hasattr(obj, '_prefetched_objects_cache')
+            and 'memberships' in obj._prefetched_objects_cache
+        ):
+            memberships = list(obj.memberships.all())
+        else:
+            memberships = (
+                CenterMembership.objects
+                .filter(user=obj)
+                .select_related('center')
+                .order_by('-created_at')
+            )
         # If the same role appears at multiple centers, prefer an approved
         # membership over pending/rejected so the dashboard lands the user
         # on the active one.

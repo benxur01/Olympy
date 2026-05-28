@@ -246,6 +246,11 @@ REST_FRAMEWORK = {
         # daqiqada 1-2 ta signal yuborishi mumkin (tab almashtirish), 5/min
         # yetarli darajada keng, ammo skript-based DoS'ni to'sadi.
         'cheating': '5/min',
+        # Test sessiya ping endpoint: olimpiada paytida frontend muntazam
+        # (har bir necha soniyada) parallel sessiyani tekshirish uchun ping
+        # yuboradi. 60/min normal foydalanuvchi uchun yetarli keng, ammo
+        # skript-based DoS'ni to'sadi.
+        'ping': '60/min',
     },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,
@@ -499,6 +504,44 @@ AI_QUESTION_PDF_MAX_BYTES = int(os.environ.get('AI_QUESTION_PDF_MAX_BYTES', str(
 AI_QUESTION_PDF_MAX_TEXT_CHARS = int(os.environ.get('AI_QUESTION_PDF_MAX_TEXT_CHARS', '300000'))
 AI_QUESTION_PDF_CHUNK_CHARS = int(os.environ.get('AI_QUESTION_PDF_CHUNK_CHARS', '25000'))
 AI_QUESTION_PDF_MAX_CHUNKS = int(os.environ.get('AI_QUESTION_PDF_MAX_CHUNKS', '20'))
+
+# Logging: WARNING va undan yuqori darajadagi xabarlar console'ga (stderr)
+# chiqadi — Render kabi platformalar stdout/stderr'ni avtomatik yig'adi.
+# Production'da django.request logger ERROR darajasida (5xx javoblar,
+# unhandled exception'lar). DEBUG rejimda biroz tafsilotliroq.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'standard': {
+            'format': '[{asctime}] {levelname} {name}: {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'standard',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'WARNING',
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO' if DEBUG else 'WARNING',
+            'propagate': False,
+        },
+        # 5xx va so'rov ishlovidagi xatolar production'da ERROR darajasida.
+        'django.request': {
+            'handlers': ['console'],
+            'level': 'WARNING' if DEBUG else 'ERROR',
+            'propagate': False,
+        },
+    },
+}
 
 # Bepul rejimda markaz oyiga maksimal nechta olimpiada yarata oladi. Premium
 # markazlar uchun limit yo'q (kelajakda flag orqali ochiladi).

@@ -556,7 +556,35 @@ def admin_users_list(request):
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
-    qs = User.objects.all().order_by('-created_at')
+    from django.db.models import Count, Prefetch, Q as DQ
+    from centers.models import CenterMembership
+    # N+1'ni oldini olamiz:
+    #  - badges uchun har user'ga 2 ta TestAttempt count so'rovi o'rniga
+    #    queryset darajasida annotate (UserSerializer.get_badges shularni o'qiydi);
+    #  - roles_detail uchun har user'ga CenterMembership so'rovi o'rniga
+    #    select_related('center') bilan prefetch.
+    qs = (
+        User.objects.all()
+        .annotate(
+            attempts_100_count=Count(
+                'attempts',
+                filter=DQ(attempts__score=100, attempts__disqualified=False),
+                distinct=True,
+            ),
+            total_attempts_count=Count(
+                'attempts',
+                filter=DQ(attempts__disqualified=False),
+                distinct=True,
+            ),
+        )
+        .prefetch_related(
+            Prefetch(
+                'memberships',
+                queryset=CenterMembership.objects.select_related('center').order_by('-created_at'),
+            )
+        )
+        .order_by('-created_at')
+    )
     # Optional search query: phone yoki ism bo'yicha
     search = request.query_params.get('search', '').strip()
     if search:
@@ -1510,28 +1538,34 @@ def redeem_reward(request):
     from .models import RewardProduct, RewardRedemption
     product_id = request.data.get('product_id')
     if not product_id:
-        return Response({'detail': "Maxsulot ID majburiy"}, status=http_status.HTTP_400_BAD_REQUEST)
+        return Response({'detail': "Maxsulot ID majburiy"}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
         product = RewardProduct.objects.get(pk=product_id)
     except RewardProduct.DoesNotExist:
-        return Response({'detail': "Mukofot topilmadi"}, status=http_status.HTTP_404_NOT_FOUND)
+        return Response({'detail': "Mukofot topilmadi"}, status=status.HTTP_404_NOT_FOUND)
 
     if product.stock <= 0:
-        return Response({'detail': "Bu mukofot tugagan"}, status=http_status.HTTP_400_BAD_REQUEST)
+        return Response({'detail': "Bu mukofot tugagan"}, status=status.HTTP_400_BAD_REQUEST)
 
-    user = request.user
-    if user.coins < product.coin_cost:
-        return Response({'detail': "Tangalar yetarli emas"}, status=http_status.HTTP_400_BAD_REQUEST)
+    if request.user.coins < product.coin_cost:
+        return Response({'detail': "Tangalar yetarli emas"}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Atomic block to prevent race conditions on stock
+    # Atomic block to prevent race conditions on stock va coins
     from django.db import transaction
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
     try:
         with transaction.atomic():
             product = RewardProduct.objects.select_for_update().get(pk=product_id)
             if product.stock <= 0:
-                return Response({'detail': "Bu mukofot tugagan"}, status=http_status.HTTP_400_BAD_REQUEST)
-            
+                return Response({'detail': "Bu mukofot tugagan"}, status=status.HTTP_400_BAD_REQUEST)
+
+            # Foydalanuvchini qulflab, yangi (stale bo'lmagan) nusxani olamiz
+            user = User.objects.select_for_update().get(pk=request.user.pk)
+            if user.coins < product.coin_cost:
+                return Response({'detail': "Tangalar yetarli emas"}, status=status.HTTP_400_BAD_REQUEST)
+
             user.coins -= product.coin_cost
             user.save(update_fields=['coins'])
 
@@ -1544,7 +1578,7 @@ def redeem_reward(request):
                 status=RewardRedemption.STATUS_PENDING
             )
     except Exception as e:
-        return Response({'detail': f"Xatolik yuz berdi: {str(e)}"}, status=http_status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({'detail': f"Xatolik yuz berdi: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     return Response({
         'detail': "Mukofot muvaffaqiyatli buyurtma qilindi!",
@@ -1560,10 +1594,15 @@ def my_redemptions(request):
     O'quvchining buyurtmalari tarixini qaytaradi.
     """
     from .models import RewardRedemption
-    redemptions = RewardRedemption.objects.filter(user=request.user).select_related('product')
-    data = []
-    for r in redemptions:
-        data.append({
+    redemptions = (
+        RewardRedemption.objects
+        .filter(user=request.user)
+        .select_related('product')
+        .order_by('-redeemed_at')
+    )
+
+    def _serialize(r):
+        return {
             'id': r.id,
             'product_title': r.product.title,
             'product_icon': r.product.icon,
@@ -1571,8 +1610,16 @@ def my_redemptions(request):
             'status': r.status,
             'status_display': r.get_status_display(),
             'redeemed_at': r.redeemed_at.isoformat(),
-        })
-    return Response(data)
+        }
+
+    # Pagination: buyurtmalar tarixi vaqt o'tishi bilan o'sib boradi —
+    # DEFAULT_PAGINATION_CLASS (PageNumberPagination, PAGE_SIZE=50) qo'llaymiz.
+    from rest_framework.pagination import PageNumberPagination
+    paginator = PageNumberPagination()
+    page = paginator.paginate_queryset(redemptions, request)
+    if page is not None:
+        return paginator.get_paginated_response([_serialize(r) for r in page])
+    return Response([_serialize(r) for r in redemptions])
 
 
 def calculate_predictions_for_user(user):

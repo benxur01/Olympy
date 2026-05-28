@@ -532,7 +532,7 @@ export const OlympyApi = {
   // Reward Shop
   getRewards: (token) => request('/api/me/rewards/', { token }),
   redeemReward: (productId, token) => request('/api/me/rewards/redeem/', { method: 'POST', body: { product_id: productId }, token }),
-  getMyRedemptions: (token) => request('/api/me/rewards/my-redemptions/', { token }),
+  getMyRedemptions: (token) => request('/api/me/rewards/my-redemptions/', { token }).then(unwrapList),
   // Premium o'quvchi analitikasi
   getHistoryChart: (token) => request('/api/me/history-chart/', { token }),
   getCompetitorAnalysis: (olympiadId, token) => request(`/api/me/competitor-analysis/${olympiadId ? '?olympiad_id=' + encodeURIComponent(olympiadId) : ''}`, { token }),
@@ -604,7 +604,7 @@ export const OlympyApi = {
     return true;
   },
   // Markazlar reytingi (Owner uchun yangi endpoint).
-  getCenterRanking: (token) => request('/api/centers/ranking/', { token }),
+  getCenterRanking: (token) => request('/api/centers/ranking/', { token }).then(unwrapList),
   // O'qituvchi/Manager analitikasi — eng ko'p noto'g'ri savollar.
   getQuestionAnalytics: (centerId, token) => request(`/api/questions/analytics/?center=${centerId}`, { token }),
 };

@@ -129,11 +129,21 @@ class User(AbstractBaseUser, PermissionsMixin):
         return False
 
     def get_badges(self):
-        """ Foydalanuvchining nishonlari (Badges) ro'yxatini qaytaradi """
+        """ Foydalanuvchining nishonlari (Badges) ro'yxatini qaytaradi.
+
+        Ko'p foydalanuvchi serialize qilinadigan joylarda (admin paneli)
+        N+1'ni oldini olish uchun queryset darajasida hisoblangan
+        `attempts_100_count` va `total_attempts_count` annotatsiyalari
+        mavjud bo'lsa shulardan foydalanamiz — bo'lmasa eski count()
+        so'rovlariga qaytamiz (xulq o'zgarmaydi).
+        """
         try:
             from attempts.models import TestAttempt
             badges = []
-            
+
+            annotated_100 = getattr(self, 'attempts_100_count', None)
+            annotated_total = getattr(self, 'total_attempts_count', None)
+
             # 1. Tirishqoq
             if (self.streak_count or 0) >= 7:
                 badges.append({
@@ -153,7 +163,10 @@ class User(AbstractBaseUser, PermissionsMixin):
                 })
                 
             # 2. Matematika qiroli (10 marta 100% ball yoki 3 marta 100% ball)
-            attempts_100 = TestAttempt.objects.filter(user=self, score=100, disqualified=False).count()
+            if annotated_100 is not None:
+                attempts_100 = annotated_100
+            else:
+                attempts_100 = TestAttempt.objects.filter(user=self, score=100, disqualified=False).count()
             if attempts_100 >= 10:
                 badges.append({
                     'id': 'math_king',
@@ -172,7 +185,10 @@ class User(AbstractBaseUser, PermissionsMixin):
                 })
                 
             # 3. Faol Ishtirokchi (Kamida 10 ta urinish)
-            total_attempts = TestAttempt.objects.filter(user=self, disqualified=False).count()
+            if annotated_total is not None:
+                total_attempts = annotated_total
+            else:
+                total_attempts = TestAttempt.objects.filter(user=self, disqualified=False).count()
             if total_attempts >= 10:
                 badges.append({
                     'id': 'veteran',

@@ -203,7 +203,7 @@ def update_center(request, center_id):
 def update_center_image(request, center_id):
     """POST /api/centers/{id}/image/ — owner/manager uploads center image."""
     center = get_object_or_404(EducationCenter, pk=center_id)
-    if not _user_can_manage_center(request.user, center):
+    if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
     image = (
         request.FILES.get('image')
@@ -417,10 +417,6 @@ def join_center(request, center_id):
 
 # ─── Approval endpoints ───────────────────────────────────────────────────────
 
-def _user_can_manage_center(user, center):
-    return user_can_manage_center(user, center)
-
-
 def _user_can_approve(user, center, role):
     """Return True if ``user`` may approve a ``role`` request at ``center``."""
     return user_can_approve_membership(user, center, role)
@@ -466,7 +462,7 @@ def _approve(request, center_id, role):
 @permission_classes([IsAuthenticated])
 def pending_memberships(request, center_id):
     center = get_object_or_404(EducationCenter, pk=center_id)
-    if not _user_can_manage_center(request.user, center):
+    if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
     role = request.query_params.get('role')
     qs = CenterMembership.objects.filter(
@@ -501,7 +497,7 @@ def students_memberships(request, center_id):
     keladi (avval doim 0 ko'rinardi).
     """
     center = get_object_or_404(EducationCenter, pk=center_id)
-    if not _user_can_manage_center(request.user, center):
+    if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
     status_filter = request.query_params.get('status', CenterMembership.STATUS_APPROVED)
     qs = CenterMembership.objects.filter(
@@ -554,7 +550,7 @@ def set_member_group_tag(request, center_id, membership_id):
     owner/manager (yoki platform admin). Body: {"group_tag": "9-A"}.
     """
     center = get_object_or_404(EducationCenter, pk=center_id)
-    if not _user_can_manage_center(request.user, center):
+    if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
     membership = get_object_or_404(CenterMembership, pk=membership_id, center=center)
     group_tag = (request.data.get('group_tag') or '').strip()[:50]
@@ -576,7 +572,7 @@ def student_detail(request, membership_id):
         pk=membership_id,
         role=CenterMembership.ROLE_STUDENT,
     )
-    if not _user_can_manage_center(request.user, membership.center):
+    if not user_can_manage_center(request.user, membership.center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
 
     from accounts.serializers import UserSerializer
@@ -637,7 +633,7 @@ def student_detail(request, membership_id):
 def staff_memberships(request, center_id):
     """GET approved managers/teachers for one center."""
     center = get_object_or_404(EducationCenter, pk=center_id)
-    if not _user_can_manage_center(request.user, center):
+    if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
     role = request.query_params.get('role')
     qs = CenterMembership.objects.filter(
@@ -789,16 +785,29 @@ def remove_membership(request, center_id, membership_id):
         return Response({'detail': "Owner a'zoligini bu yerda o'chirib bo'lmaydi"},
                         status=http_status.HTTP_400_BAD_REQUEST)
 
+    role = membership.role
     is_admin = request.user.is_platform_admin
     is_owner = center.owner_id == request.user.id
+    is_manager = CenterMembership.objects.filter(
+        user=request.user,
+        center=center,
+        role=CenterMembership.ROLE_MANAGER,
+        status=CenterMembership.STATUS_APPROVED,
+    ).exists()
 
-    allowed = is_admin or is_owner
+    # Manager faqat student va teacher a'zoligini o'chira oladi — owner va
+    # boshqa manager a'zoligiga tega olmaydi. Admin/owner har qanday rolni
+    # (owner'dan tashqari, yuqorida bloklangan) o'chira oladi.
+    allowed = (
+        is_admin
+        or is_owner
+        or (is_manager and role in [CenterMembership.ROLE_STUDENT, CenterMembership.ROLE_TEACHER])
+    )
 
     if not allowed:
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
 
     user = membership.user
-    role = membership.role
     membership.delete()
 
     # User.roles dan rolni olib tashlash: agar shu user'da boshqa markazda
@@ -1039,58 +1048,85 @@ def center_ranking(request):
     Har bir markaz uchun: center_id, center_name, total_attempts,
     average_score, top_score, student_count. Sortlash: average_score desc,
     keyin total_attempts desc tie-break.
+
+    Saralash DB darajasida (order_by) bajariladi va natija sahifalanadi
+    (Paginator). Avval butun ro'yxat Python loop ichida rows.sort() bilan
+    saralanardi — markazlar soni o'sgan sayin sekinlashardi va response
+    cheksiz katta bo'lib ketardi.
     """
-    from django.db.models import Avg, Count, Max
-    from attempts.models import TestAttempt
+    from django.db.models import Avg, Count, Max, Q
+    from django.core.paginator import Paginator
 
-    centers_qs = EducationCenter.objects.filter(status=EducationCenter.STATUS_APPROVED)
-
-    # Per-center attempt agregati (faqat validlar).
-    attempt_agg = (
-        TestAttempt.objects
-        .filter(disqualified=False, olympiad__is_deleted=False)
-        .values('olympiad__center_id')
+    centers_qs = (
+        EducationCenter.objects
+        .filter(status=EducationCenter.STATUS_APPROVED)
+        # Attempt agregati: faqat valid (diskvalifikatsiya bo'lmagan,
+        # o'chirilmagan olimpiada) urinishlar. olympiads__attempts reverse
+        # bog'lanish orqali — distinct emas, chunki har attempt yagona.
         .annotate(
-            total_attempts=Count('id'),
-            average_score=Avg('score'),
-            top_score=Max('score'),
+            total_attempts=Count(
+                'olympiads__attempts',
+                filter=Q(
+                    olympiads__attempts__disqualified=False,
+                    olympiads__is_deleted=False,
+                ),
+            ),
+            average_score=Avg(
+                'olympiads__attempts__score',
+                filter=Q(
+                    olympiads__attempts__disqualified=False,
+                    olympiads__is_deleted=False,
+                ),
+            ),
+            top_score=Max(
+                'olympiads__attempts__score',
+                filter=Q(
+                    olympiads__attempts__disqualified=False,
+                    olympiads__is_deleted=False,
+                ),
+            ),
+            student_count=Count(
+                'memberships',
+                filter=Q(
+                    memberships__role=CenterMembership.ROLE_STUDENT,
+                    memberships__status=CenterMembership.STATUS_APPROVED,
+                ),
+                distinct=True,
+            ),
         )
+        .order_by('-average_score', '-total_attempts', 'id')
     )
-    attempt_map = {
-        row['olympiad__center_id']: row
-        for row in attempt_agg
-        if row['olympiad__center_id']
-    }
 
-    # Per-center tasdiqlangan o'quvchilar soni.
-    student_agg = (
-        CenterMembership.objects
-        .filter(role=CenterMembership.ROLE_STUDENT, status=CenterMembership.STATUS_APPROVED)
-        .values('center_id')
-        .annotate(total=Count('id'))
-    )
-    student_map = {row['center_id']: row['total'] for row in student_agg}
+    paginator = Paginator(centers_qs, 50)
+    page_number = request.query_params.get('page') or 1
+    try:
+        page = paginator.page(page_number)
+    except Exception:
+        page = paginator.page(1)
 
+    # rank — global o'rin (sahifadan qat'i nazar): (page-1)*per_page + index.
+    start_rank = (page.number - 1) * paginator.per_page
     rows = []
-    for center in centers_qs:
-        agg = attempt_map.get(center.id, {})
-        avg = float(agg.get('average_score') or 0)
+    for offset, center in enumerate(page.object_list):
         rows.append({
             'center_id': center.id,
             'center_name': center.name,
             'organization_type': center.organization_type or '',
             'region': center.region or '',
             'district': center.district or '',
-            'total_attempts': agg.get('total_attempts') or 0,
-            'average_score': round(avg, 1),
-            'top_score': agg.get('top_score') or 0,
-            'student_count': student_map.get(center.id, 0),
+            'total_attempts': center.total_attempts or 0,
+            'average_score': round(float(center.average_score or 0), 1),
+            'top_score': center.top_score or 0,
+            'student_count': center.student_count or 0,
+            'rank': start_rank + offset + 1,
         })
 
-    rows.sort(key=lambda r: (-r['average_score'], -r['total_attempts']))
-    for i, row in enumerate(rows):
-        row['rank'] = i + 1
-    return Response(rows)
+    return Response({
+        'count': paginator.count,
+        'num_pages': paginator.num_pages,
+        'page': page.number,
+        'results': rows,
+    })
 
 
 @api_view(['GET'])
@@ -1104,7 +1140,7 @@ def center_stats(request, center_id):
     oladi.
     """
     center = get_object_or_404(EducationCenter, pk=center_id)
-    if not (_user_can_manage_center(request.user, center)
+    if not (user_can_manage_center(request.user, center)
             or request.user.is_platform_admin):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
@@ -1171,7 +1207,7 @@ def student_dynamics(request, center_id):
     from django.utils import timezone as dj_timezone
 
     center = get_object_or_404(EducationCenter, pk=center_id)
-    if not _user_can_manage_center(request.user, center):
+    if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
 
     student_qs = CenterMembership.objects.filter(
@@ -1228,7 +1264,7 @@ def top_students(request, center_id):
     from attempts.models import TestAttempt
 
     center = get_object_or_404(EducationCenter, pk=center_id)
-    if not _user_can_manage_center(request.user, center):
+    if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
 
     rows = (
@@ -1272,7 +1308,7 @@ def center_question_bank(request, center_id):
     POST: yangi savol qo'shish — {text, options:[{text,correct}], subject, difficulty}.
     """
     center = get_object_or_404(EducationCenter, pk=center_id)
-    if not _user_can_manage_center(request.user, center):
+    if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
 
     if request.method == 'GET':
@@ -1332,7 +1368,7 @@ def center_question_bank(request, center_id):
 def center_question_bank_delete(request, center_id, q_id):
     """DELETE /api/centers/{id}/question-bank/{q_id}/ — savolni bankdan o'chirish."""
     center = get_object_or_404(EducationCenter, pk=center_id)
-    if not _user_can_manage_center(request.user, center):
+    if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
     question = get_object_or_404(CenterQuestion, pk=q_id, center=center)
     question.delete()

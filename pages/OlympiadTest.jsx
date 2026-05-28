@@ -181,25 +181,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     };
   }, [submitted, cheated, isBeforeStart, isAfterEnd, TOTAL, onNavigate]);
 
-  React.useEffect(() => {
-    if (submitted || cheated || isBeforeStart || isAfterEnd || TOTAL === 0) {
-      return undefined;
-    }
-    const blockActions = (e) => {
-      e.preventDefault();
-    };
-    document.addEventListener('contextmenu', blockActions);
-    document.addEventListener('copy', blockActions);
-    document.addEventListener('cut', blockActions);
-    document.addEventListener('paste', blockActions);
-    
-    return () => {
-      document.removeEventListener('contextmenu', blockActions);
-      document.removeEventListener('copy', blockActions);
-      document.removeEventListener('cut', blockActions);
-      document.removeEventListener('paste', blockActions);
-    };
-  }, [submitted, cheated, isBeforeStart, isAfterEnd, TOTAL]);
+  // Eslatma: avval butun `document` darajasida contextmenu/copy/cut/paste
+  // hodisalari bloklanardi. Bu real himoya bermasdi (matn allaqachon
+  // `select-none` bilan tanlanmaydi) va butun sahifada o'ng-tugma/nusxalashni
+  // buzib UX'ni yomonlashtirardi. Savol matni va variantlar matn tanlashdan
+  // CSS (`select-none` / `userSelect: none`) orqali himoyalangan — global
+  // event blok olib tashlandi.
 
   // Cheating-himoya: savollar bitta-bitta yuklanadi. Joriy `current` indeksdagi
   // savol serverdan olinadi va cachedQuestionsRef'da keshlanadi — keyin shu
