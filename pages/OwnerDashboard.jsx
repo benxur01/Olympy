@@ -902,9 +902,17 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     >
       <div className="border-b border-white/5 px-5 py-5">
         <button onClick={() => onNavigate('landing')} className="flex w-full items-center gap-3 text-left">
-          <div className="flex h-11 w-11 items-center justify-center rounded-xl gradient-bg text-base font-black text-white shadow-lg shadow-indigo-900/40">
-            {center.name[0]}
-          </div>
+          {center.imageUrl ? (
+            <img
+              src={center.imageUrl}
+              alt={center.name}
+              className="h-11 w-11 rounded-xl object-cover shadow-lg shadow-indigo-900/40"
+            />
+          ) : (
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl gradient-bg text-base font-black text-white shadow-lg shadow-indigo-900/40">
+              {center.name[0]}
+            </div>
+          )}
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-black text-white">{center.name}</div>
             <div className="truncate text-[11px] font-semibold text-white/40">
