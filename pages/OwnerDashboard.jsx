@@ -2172,6 +2172,191 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     </div>
   );
 
+  // ─── Statistika: o'quvchilar dinamikasi + top o'quvchilar ───────────────
+  const renderStatistics = () => {
+    const dynamics = Array.isArray(apiDynamicsRes.data) ? apiDynamicsRes.data : [];
+    const topStudents = Array.isArray(apiTopStudentsRes.data) ? apiTopStudentsRes.data : [];
+    const barData = dynamics.map(d => {
+      const [, m] = (d.month || '').split('-');
+      const monthNames = ['', 'Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyl', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
+      return { label: monthNames[parseInt(m, 10)] || d.month, value: d.joined || 0 };
+    });
+    const medalClass = (rank) =>
+      rank === 1 ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+        : rank === 2 ? 'bg-slate-300/15 text-slate-200 border border-slate-300/30'
+          : rank === 3 ? 'bg-amber-700/15 text-amber-500 border border-amber-700/30'
+            : 'glass text-white/40 border border-white/5';
+    return (
+      <div className="space-y-5 p-4 lg:p-6">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Statistika</h1>
+          <p className="mt-1 text-sm font-semibold text-white/50">{center.name} bo'yicha o'sish va eng yaxshi o'quvchilar.</p>
+        </div>
+
+        {/* 6. O'quvchilar dinamikasi grafigi */}
+        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-base font-black text-white">O'quvchilar dinamikasi</h2>
+            <span className="text-xs font-semibold text-white/45">Oxirgi 6 oyda qo'shilganlar</span>
+          </div>
+          {apiDynamicsRes.loading
+            ? <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+            : <MonthBarChart data={barData} />}
+          {dynamics.length > 0 && (
+            <div className="mt-3 text-xs font-semibold text-white/45">
+              Jami tasdiqlangan o'quvchilar: <span className="text-white font-black">{dynamics[dynamics.length - 1]?.total || 0}</span>
+            </div>
+          )}
+        </section>
+
+        {/* 7. Top-10 o'quvchi karti */}
+        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+          <div className="mb-4 flex items-center justify-between">
+            <h2 className="text-base font-black text-white">Top o'quvchilar</h2>
+            <span className="text-xs font-semibold text-white/45">O'rtacha ball bo'yicha</span>
+          </div>
+          {apiTopStudentsRes.loading ? (
+            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+          ) : topStudents.length === 0 ? (
+            <EmptyState icon="trophy" title="Hali natijalar yo'q" desc="O'quvchilar olimpiadalarda qatnashgach shu yerda chiqadi." />
+          ) : (
+            <div className="space-y-2.5">
+              {topStudents.map(s => (
+                <div key={s.rank} className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/5 p-3">
+                  <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-sm font-black ${medalClass(s.rank)}`}>
+                    {s.rank === 1 ? '🥇' : s.rank === 2 ? '🥈' : s.rank === 3 ? '🥉' : `#${s.rank}`}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-black text-white">{s.name}</div>
+                    <div className="text-[11px] font-semibold text-white/40">{s.attempts} ta tadbir</div>
+                  </div>
+                  <div className="flex-shrink-0 text-right">
+                    <div className="text-base font-black text-indigo-300">{s.avg_score}</div>
+                    <div className="text-[10px] font-semibold text-white/40">o'rt. ball</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  };
+
+  // ─── Savol banki (9-funksiya) ───────────────────────────────────────────
+  const renderQuestionBank = () => {
+    const setOpt = (idx, patch) => setQbForm(f => ({
+      ...f,
+      options: f.options.map((o, i) => i === idx ? { ...o, ...patch } : o),
+    }));
+    const addOpt = () => setQbForm(f => ({ ...f, options: [...f.options, { text: '', correct: false }] }));
+    const removeOpt = (idx) => setQbForm(f => ({ ...f, options: f.options.filter((_, i) => i !== idx) }));
+    const setCorrect = (idx) => setQbForm(f => ({ ...f, options: f.options.map((o, i) => ({ ...o, correct: i === idx })) }));
+    const difficultyLabel = { easy: 'Oson', medium: "O'rta", hard: 'Qiyin' };
+    return (
+      <div className="space-y-5 p-4 lg:p-6">
+        <div>
+          <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Savol banki</h1>
+          <p className="mt-1 text-sm font-semibold text-white/50">{center.name} ning shaxsiy savollar zaxirasi.</p>
+        </div>
+
+        {/* Savol qo'shish forma */}
+        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6 space-y-3">
+          <h2 className="text-base font-black text-white">Yangi savol</h2>
+          <textarea
+            className="input-field w-full py-2.5 text-sm"
+            rows={2}
+            placeholder="Savol matni..."
+            value={qbForm.text}
+            onChange={e => setQbForm(f => ({ ...f, text: e.target.value }))}
+          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <input
+              className="input-field w-full py-2 text-sm"
+              placeholder="Fan (masalan: Matematika)"
+              value={qbForm.subject}
+              onChange={e => setQbForm(f => ({ ...f, subject: e.target.value }))}
+            />
+            <select
+              className="input-field w-full py-2 text-sm"
+              value={qbForm.difficulty}
+              onChange={e => setQbForm(f => ({ ...f, difficulty: e.target.value }))}
+            >
+              <option value="easy">Oson</option>
+              <option value="medium">O'rta</option>
+              <option value="hard">Qiyin</option>
+            </select>
+          </div>
+          <div className="space-y-2">
+            {qbForm.options.map((o, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setCorrect(i)}
+                  className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-xs font-black ${o.correct ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'border border-white/15 text-white/40'}`}
+                  title="To'g'ri variant"
+                >
+                  {o.correct ? '✓' : ''}
+                </button>
+                <input
+                  className="input-field w-full py-1.5 text-sm"
+                  placeholder={`${i + 1}-variant`}
+                  value={o.text}
+                  onChange={e => setOpt(i, { text: e.target.value })}
+                />
+                {qbForm.options.length > 2 && (
+                  <button type="button" onClick={() => removeOpt(i)} className="flex-shrink-0 text-rose-300 hover:text-rose-200">
+                    <Icon name="x" size={16} />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button type="button" onClick={addOpt} className="btn-ghost rounded-lg px-3 py-1.5 text-xs font-bold">+ Variant qo'shish</button>
+          </div>
+          <button onClick={addQbQuestion} disabled={qbSaving} className="btn-primary rounded-xl px-5 py-2.5 text-sm font-black disabled:opacity-50">
+            {qbSaving ? 'Saqlanmoqda...' : 'Bankka qo\'shish'}
+          </button>
+        </section>
+
+        {/* Saqlangan savollar */}
+        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+          <h2 className="mb-4 text-base font-black text-white">Saqlangan savollar ({questionBank.length})</h2>
+          {questionBankLoading ? (
+            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+          ) : questionBank.length === 0 ? (
+            <EmptyState icon="file" title="Bank bo'sh" desc="Yuqoridagi forma orqali savol qo'shing." />
+          ) : (
+            <div className="space-y-3">
+              {questionBank.map(q => (
+                <div key={q.id} className="rounded-xl bg-white/5 border border-white/5 p-3.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-bold text-white break-words">{q.text}</div>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {(q.options || []).map((o, i) => (
+                          <span key={i} className={`rounded-lg px-2 py-1 text-[11px] font-semibold ${o.correct ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/5 text-white/50'}`}>
+                            {o.correct ? '✓ ' : ''}{o.text}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-semibold text-white/35">
+                        {q.subject && <span>{q.subject}</span>}
+                        <span>{difficultyLabel[q.difficulty] || q.difficulty}</span>
+                      </div>
+                    </div>
+                    <button onClick={() => deleteQbQuestion(q.id)} className="flex-shrink-0 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20">
+                      O'chirish
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  };
+
   const pagesMap = {
     home: renderHome,
     requests: renderRequests,

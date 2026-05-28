@@ -8,8 +8,10 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [telegramLink, setTelegramLink] = React.useState(null);
   const [telegramLinkLoading, setTelegramLinkLoading] = React.useState(false);
   const [telegramLinked, setTelegramLinked] = React.useState(!!user?.telegramLinked);
-  const emptyOlympiadForm = { eventType: 'competition', title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft', testLevel: '', testType: '' };
+  const emptyOlympiadForm = { eventType: 'competition', title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft', testLevel: '', testType: '', groupFilter: '' };
   const [newOlympiad, setNewOlympiad] = React.useState(emptyOlympiadForm);
+  // Premium kerak bo'lganda ko'rinadigan modal (8-funksiya — limit oshganda).
+  const [premiumModal, setPremiumModal] = React.useState('');
   const [editingOlympiadId, setEditingOlympiadId] = React.useState(null);
   const [activateConfirm, setActivateConfirm] = React.useState(null);
   const [eventSaving, setEventSaving] = React.useState(false);
@@ -32,6 +34,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   // filter. Avval input value/onChange'siz mavjud edi — foydalanuvchi
   // yozardi lekin natija filterlanmasdi.
   const [studentSearch, setStudentSearch] = React.useState('');
+  // Guruh tegi tahrirlash holati (10-funksiya).
+  const [groupTagEdit, setGroupTagEdit] = React.useState(null);
   const [liveOlympiadId, setLiveOlympiadId] = React.useState(null);
   const [proctoringData, setProctoringData] = React.useState([]);
   const [proctoringLoading, setProctoringLoading] = React.useState(false);
@@ -270,6 +274,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         // avg_score qaytaradi — avval doim 0 ko'rinardi.
         olympiads: m.olympiads_count || 0,
         avgScore: m.avg_score || 0,
+        groupTag: m.group_tag || '',
         status: 'Tasdiqlandi',
       }))
     : store.users.filter(u =>
@@ -334,6 +339,18 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         setStudentDetailError(OlympyApi.toUserMessage?.(err) || "Ma'lumot yuklanmadi");
       })
       .finally(() => setStudentDetailLoading(false));
+  };
+
+  // Guruh tegini saqlash (10-funksiya).
+  const saveGroupTag = (row, value) => {
+    if (!row || !isApi || !row.membershipId) { setGroupTagEdit(null); return; }
+    const trimmed = (value || '').trim();
+    if (trimmed === (row.groupTag || '')) { setGroupTagEdit(null); return; }
+    OlympyApi.setMemberGroupTag(managerCenterId, row.membershipId, trimmed, OlympyApi.getToken())
+      .then(() => loadApprovedStudents())
+      .then(() => showToast('Guruh tegi yangilandi'))
+      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "Guruhni saqlab bo'lmadi"))
+      .finally(() => setGroupTagEdit(null));
   };
 
   const closeStudentDetail = () => {
@@ -429,6 +446,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       status: event.status || 'draft',
       testLevel: event.testLevel || '',
       testType: event.testType || '',
+      groupFilter: event.groupFilter || '',
     });
     setCreateModal(true);
   };
@@ -464,6 +482,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       duration_minutes: Number(newOlympiad.duration) || 60,
       test_level: (newOlympiad.testLevel || '').trim(),
       test_type: newOlympiad.testType || '',
+      group_filter: (newOlympiad.groupFilter || '').trim(),
     };
 
     if (isApi) {
@@ -483,7 +502,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         })
         .catch(err => {
           console.warn('save olympiad failed:', err);
-          showToast(`⚠ ${eventErrorMessage(err)}`);
+          // 8-funksiya: bepul markaz limiti oshganda backend
+          // {upgrade_required:true} bilan 403 qaytaradi — premium modal.
+          if (err?.status === 403 && err?.data?.upgrade_required) {
+            resetEventModal();
+            setPremiumModal(err.data.detail || 'Bepul rejimda olimpiada limiti tugadi.');
+          } else {
+            showToast(`⚠ ${eventErrorMessage(err)}`);
+          }
         })
         .finally(() => setEventSaving(false));
       return;
@@ -499,6 +525,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       maxScore: newOlympiad.maxScore,
       testLevel: (newOlympiad.testLevel || '').trim(),
       testType: newOlympiad.testType || '',
+      groupFilter: (newOlympiad.groupFilter || '').trim(),
     };
     if (editingEvent) {
       OlympyStore.updateOlympiad(editingEvent.id, localPatch);
@@ -707,7 +734,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px]">
           <thead><tr className="border-b border-white/5">
-            {["O'quvchi", 'Telefon', 'Tadbirlar', "O'rt. ball", 'Holat', 'Amal'].map(h => (
+            {["O'quvchi", 'Telefon', 'Guruh', 'Tadbirlar', "O'rt. ball", 'Holat', 'Amal'].map(h => (
               <th key={h} className="text-left px-4 py-3 text-xs text-white/40 font-medium">{h}</th>
             ))}
           </tr></thead>
@@ -717,6 +744,28 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 <tr key={s.id} className="olympy-row">
                   <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={s.name} src={s.avatarUrl || ''} size={32} /><div><div className="text-sm font-medium text-white">{s.name}</div><div className="text-xs text-white/40">{s.joined}</div></div></div></td>
                   <td className="px-4 py-3 text-sm text-white/60">{s.phone.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
+                  <td className="px-4 py-3">
+                    {groupTagEdit && groupTagEdit.membershipId === s.membershipId ? (
+                      <input
+                        autoFocus
+                        className="input-field w-24 py-1 text-xs"
+                        value={groupTagEdit.value}
+                        placeholder="9-A"
+                        maxLength={50}
+                        onChange={e => setGroupTagEdit({ membershipId: s.membershipId, value: e.target.value })}
+                        onBlur={() => saveGroupTag(s, groupTagEdit.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') saveGroupTag(s, groupTagEdit.value); if (e.key === 'Escape') setGroupTagEdit(null); }}
+                      />
+                    ) : (
+                      <button
+                        onClick={() => isApi && s.membershipId && setGroupTagEdit({ membershipId: s.membershipId, value: s.groupTag || '' })}
+                        className={`rounded-lg px-2 py-1 text-xs font-bold transition-colors ${s.groupTag ? 'bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25' : 'border border-dashed border-white/15 text-white/35 hover:text-white/60'}`}
+                        title="Guruh/sinf tegini tahrirlash"
+                      >
+                        {s.groupTag || '+ guruh'}
+                      </button>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-sm text-white">{s.olympiads}</td>
                   <td className="px-4 py-3"><span className={`font-bold text-sm ${s.avgScore >= 90 ? 'text-emerald-400' : s.avgScore >= 70 ? 'text-indigo-400' : 'text-amber-400'}`}>{s.avgScore || 0}%</span></td>
                   <td className="px-4 py-3"><Badge status={s.status} /></td>
@@ -729,7 +778,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               );
             })}
             {filteredStudents.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-white/40 text-sm">
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-white/40 text-sm">
                 {searchQuery ? "Qidiruv bo'yicha o'quvchi topilmadi" : "Tasdiqlangan o'quvchilar yo'q"}
               </td></tr>
             )}
@@ -1485,6 +1534,15 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-xs text-white/50 mb-1.5 font-medium">Guruh filtri <span className="text-white/35">(ixtiyoriy)</span></label>
+                <input className="input-field" placeholder="Masalan: 9-A — faqat shu guruh kiradi"
+                  maxLength={50}
+                  value={newOlympiad.groupFilter}
+                  onChange={e => setNewOlympiad({ ...newOlympiad, groupFilter: e.target.value })} />
+                <p className="mt-1.5 text-[11px] text-white/35">To'ldirilsa, faqat shu guruh tegiga ega o'quvchilar tadbirga kira oladi.</p>
+              </div>
+
               <div className={`rounded-2xl p-4 border text-xs ${formIssues.length ? 'bg-amber-500/10 border-amber-500/25 text-amber-300' : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'}`}>
                 <div className="flex items-center gap-2 font-semibold">
                   <Icon name={formIssues.length ? 'info' : 'check'} size={14} />
@@ -1507,6 +1565,18 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             </div>
           );
         })()}
+      </Modal>
+
+      {/* Premium kerak modali (8-funksiya) */}
+      <Modal open={!!premiumModal} onClose={() => setPremiumModal('')} title="Premium kerak" width="max-w-md">
+        <div className="space-y-5 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white text-2xl">⭐</div>
+          <p className="text-sm text-white/75 leading-relaxed">{premiumModal}</p>
+          <div className="flex gap-3">
+            <button onClick={() => setPremiumModal('')} className="btn-ghost flex-1 py-3 rounded-xl">Yopish</button>
+            <button className="btn-primary flex-1 py-3 rounded-xl font-semibold" title="Tez orada">Premium oling</button>
+          </div>
+        </div>
       </Modal>
 
       {/* Activation confirmation modal */}
