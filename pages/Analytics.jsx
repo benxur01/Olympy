@@ -67,7 +67,7 @@ const AnalyticsPage = ({ user, onNavigate }) => {
   );
 
   return (
-    <div className="min-h-screen" style={{ background: '#060818' }}>
+    <div className="min-h-screen" style={{ background: '#050508' }}>
       <div className="glass border-b border-white/5 px-4 md:px-6 py-3 flex items-center gap-3">
         <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={() => onNavigate(roleHomePage(user))} aria-label="Dashboardga qaytish">
           <BrandLogo size="sm" />

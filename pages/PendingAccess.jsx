@@ -7,7 +7,7 @@ const PendingAccessCard = ({ icon = 'shield', title, message, status = 'pending'
       ? { ring: 'border-rose-500/30', glow: 'glow-purple', emoji: '🚫', badge: 'badge-rejected', label: 'Rad etildi' }
       : { ring: 'border-amber-500/30', glow: 'glow-blue',   emoji: '⏳', badge: 'badge-pending',  label: 'Kutilmoqda' };
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-10" style={{ background: '#060818' }}>
+    <div className="min-h-screen flex items-center justify-center px-4 py-10" style={{ background: '#050508' }}>
       <div className={`glass-strong rounded-3xl p-8 md:p-10 max-w-lg w-full text-center border ${tone.ring} ${tone.glow} animate-in relative overflow-hidden`}>
         <div className="hero-glow" style={{ background: '#6366f1', top: '-50%', left: '30%', opacity: 0.12 }} />
         <div className="relative z-10">
@@ -56,7 +56,7 @@ const PendingHome = ({ user, onLogout, onNavigate }) => {
   const rejected = (user?.roles ? Object.entries(user.roles) : []).filter(([, v]) => v?.status === 'rejected').map(([k]) => k);
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-10" style={{ background: '#060818' }}>
+    <div className="min-h-screen flex items-center justify-center px-4 py-10" style={{ background: '#050508' }}>
       <div className="glass-strong rounded-3xl p-8 md:p-10 max-w-xl w-full border border-indigo-500/20 animate-in relative overflow-hidden">
         <div className="hero-glow" style={{ background: '#6366f1', top: '-50%', left: '30%', opacity: 0.12 }} />
         <div className="relative z-10">

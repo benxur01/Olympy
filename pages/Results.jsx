@@ -164,14 +164,14 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
 
   if (isLoadingAttempt) {
     return (
-      <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-4 py-10`} style={embedded ? {} : { background: '#060818' }}>
+      <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-4 py-10`} style={embedded ? {} : { background: '#050508' }}>
         <div className="glass rounded-2xl px-6 py-4 text-sm text-white/60">Natija yuklanmoqda...</div>
       </div>
     );
   }
   if (fetchError) {
     return (
-      <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-4 py-10`} style={embedded ? {} : { background: '#060818' }}>
+      <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-4 py-10`} style={embedded ? {} : { background: '#050508' }}>
         <div className="glass rounded-2xl px-6 py-5 text-center max-w-sm">
           <div className="text-rose-300 font-semibold text-sm mb-2">{fetchError}</div>
           <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-4 py-2 rounded-xl">Reytingga qaytish</button>
@@ -181,7 +181,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   }
 
   const content = (
-    <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-3 md:px-4 py-4 md:py-10 mobile-content-pad`} style={embedded ? {} : { background: '#060818' }}>
+    <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-3 md:px-4 py-4 md:py-10 mobile-content-pad`} style={embedded ? {} : { background: '#050508' }}>
       <div className="max-w-2xl w-full space-y-4 md:space-y-6 animate-in">
         {/* Streak Celebration Banner */}
         {!!user?.streakCount && (
