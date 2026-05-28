@@ -206,8 +206,8 @@ const AnalyticsPage = ({ user, onNavigate }) => {
                     onChange={e => setRegionFilter(e.target.value)}
                     className="glass border border-white/10 rounded-xl px-3 py-2 text-xs text-white bg-transparent"
                   >
-                    <option value="" className="bg-[#1a1d2e]">Barcha viloyatlar</option>
-                    {allRegions.map(r => <option key={r} value={r} className="bg-[#1a1d2e]">{r}</option>)}
+                    <option value="" className="bg-[#12141a]">Barcha viloyatlar</option>
+                    {allRegions.map(r => <option key={r} value={r} className="bg-[#12141a]">{r}</option>)}
                   </select>
                 </div>
               </div>

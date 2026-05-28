@@ -529,7 +529,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     <aside className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-[184px] flex-col admin-sidebar text-slate-300 shadow-2xl transition-transform duration-200 lg:static lg:translate-x-0 lg:shadow-none`}>
       <div className="flex h-[54px] items-center gap-2 border-b border-white/5 px-4 bg-white/[0.01]">
         <button onClick={() => onNavigate('landing')} className="flex items-center gap-2">
-          <div className="relative flex h-7 w-7 items-center justify-center rounded-md bg-white text-base font-black text-[#0b0f19]">
+          <div className="relative flex h-7 w-7 items-center justify-center rounded-md bg-white text-base font-black text-[#050508]">
             O
             <span className="absolute -bottom-1 left-1 h-1 w-5 rounded-full bg-gradient-to-r from-amber-500 to-indigo-500" />
           </div>
@@ -576,7 +576,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   );
 
   const AdminTopbar = () => (
-    <header className="sticky top-0 z-30 flex h-[54px] items-center justify-between border-b border-white/5 bg-[#0b0f19]/95 px-4 lg:px-5">
+    <header className="sticky top-0 z-30 flex h-[54px] items-center justify-between border-b border-white/5 bg-[#050508]/95 px-4 lg:px-5">
       <div className="flex items-center gap-3">
         <button className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 lg:hidden" onClick={() => setMobileMenu(true)}>
           <Icon name="menu" size={18} />
