@@ -388,7 +388,25 @@ export const OlympyApi = {
   adminApproveCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/approve/`, { method: 'POST', token }),
   adminRejectCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/reject/`, { method: 'POST', token }),
   // Admin users
-  getAdminUsers: (token) => request('/api/admin/users/', { token }).then(unwrapList),
+  // Raw paginated response qaytaramiz — count/next ma'lumotlari admin
+  // panelida pagination uchun kerak. unwrapList ularni yo'qotardi.
+  // Backend page'ni ?page= / ?search= bilan qabul qiladi.
+  getAdminUsers: (token, { page, search } = {}) => {
+    const params = new URLSearchParams();
+    if (page) params.set('page', page);
+    if (search) params.set('search', search);
+    const qs = params.toString();
+    return request(`/api/admin/users/${qs ? '?' + qs : ''}`, { token })
+      .then((res) => {
+        if (Array.isArray(res)) return { results: res, count: res.length, next: null, previous: null };
+        return {
+          results: (res && res.results) || [],
+          count: (res && res.count) || 0,
+          next: (res && res.next) || null,
+          previous: (res && res.previous) || null,
+        };
+      });
+  },
   adminSetUserActive: (userId, isActive, token) => request(`/api/admin/users/${userId}/set-active/`, { method: 'POST', body: { is_active: !!isActive }, token }),
   adminToggleUserPremium: (userId, token) => request(`/api/admin/users/${userId}/toggle-premium/`, { method: 'POST', token }),
   // Subjects

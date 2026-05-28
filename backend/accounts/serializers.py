@@ -237,11 +237,17 @@ class VerifyOtpSerializer(serializers.Serializer):
 
 
 class UpdateProfileSerializer(serializers.Serializer):
-    """PATCH /api/me/ — current user'ning ism/familiya/username/phone'ini yangilash.
+    """PATCH /api/me/ — current user'ning ism/familiya/username'ini yangilash.
 
     Barcha maydonlar ixtiyoriy; faqat kelganlari tegishli o'zgartiriladi.
     `username` butun loyiha bo'ylab unique va format cheklovi bilan
     validatsiya qilinadi.
+
+    Telefon raqam bu endpoint orqali O'ZGARTIRILMAYDI. Telefon — hisobni
+    tasdiqlash (Telegram OTP) bilan bog'liq xavfsizlik maydoni; uni oddiy
+    profil PATCH'ida tasdiqsiz almashtirish hisobni o'g'irlash xavfini
+    tug'diradi. Telefonni almashtirish kelajakda alohida tasdiqlangan flow
+    (OTP) orqali amalga oshiriladi.
     """
 
     USERNAME_RE = re.compile(r'^[A-Za-z0-9._]{3,32}$')
@@ -249,22 +255,6 @@ class UpdateProfileSerializer(serializers.Serializer):
     first_name = serializers.CharField(max_length=60, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=60, required=False, allow_blank=True)
     username = serializers.CharField(max_length=32, required=False, allow_blank=True)
-    phone = serializers.CharField(max_length=20, required=False)
-
-    def validate_phone(self, value):
-        if not value:
-            return value
-        norm = normalize_phone(value)
-        if not norm:
-            raise serializers.ValidationError("Telefon raqam noto'g'ri")
-        # Unique check — boshqa user allaqachon olgan bo'lmasin.
-        qs = User.objects.filter(normalized_phone=norm)
-        current_user = self.context.get('user') if hasattr(self, 'context') else None
-        if current_user is not None:
-            qs = qs.exclude(pk=current_user.pk)
-        if qs.exists():
-            raise serializers.ValidationError("Bu telefon raqam avval ro'yxatdan o'tgan")
-        return norm
 
     def validate_username(self, value):
         if value is None:

@@ -1054,37 +1054,41 @@ def center_ranking(request):
     saralanardi — markazlar soni o'sgan sayin sekinlashardi va response
     cheksiz katta bo'lib ketardi.
     """
-    from django.db.models import Avg, Count, Max, Q
+    from django.db.models import Avg, Count, Max, OuterRef, Q, Subquery
+    from django.db.models.functions import Coalesce
     from django.core.paginator import Paginator
+    from attempts.models import TestAttempt
+
+    # Attempt agregatlarini Subquery orqali olamiz — student_count (memberships)
+    # bilan bir vaqtda relation JOIN qilinsa cross-join hosil bo'lib Avg/Count
+    # ko'paytirilib noto'g'ri chiqardi. Subquery har bir markaz uchun mustaqil
+    # hisoblaydi va shu muammoni butunlay yo'q qiladi.
+    valid_attempts = TestAttempt.objects.filter(
+        olympiad__center=OuterRef('pk'),
+        disqualified=False,
+        olympiad__is_deleted=False,
+    )
+    attempt_total_sq = (
+        valid_attempts.values('olympiad__center')
+        .annotate(c=Count('id')).values('c')
+    )
+    attempt_avg_sq = (
+        valid_attempts.values('olympiad__center')
+        .annotate(a=Avg('score')).values('a')
+    )
+    attempt_top_sq = (
+        valid_attempts.values('olympiad__center')
+        .annotate(m=Max('score')).values('m')
+    )
 
     centers_qs = (
         EducationCenter.objects
         .filter(status=EducationCenter.STATUS_APPROVED)
-        # Attempt agregati: faqat valid (diskvalifikatsiya bo'lmagan,
-        # o'chirilmagan olimpiada) urinishlar. olympiads__attempts reverse
-        # bog'lanish orqali — distinct emas, chunki har attempt yagona.
         .annotate(
-            total_attempts=Count(
-                'olympiads__attempts',
-                filter=Q(
-                    olympiads__attempts__disqualified=False,
-                    olympiads__is_deleted=False,
-                ),
-            ),
-            average_score=Avg(
-                'olympiads__attempts__score',
-                filter=Q(
-                    olympiads__attempts__disqualified=False,
-                    olympiads__is_deleted=False,
-                ),
-            ),
-            top_score=Max(
-                'olympiads__attempts__score',
-                filter=Q(
-                    olympiads__attempts__disqualified=False,
-                    olympiads__is_deleted=False,
-                ),
-            ),
+            total_attempts=Coalesce(Subquery(attempt_total_sq), 0),
+            average_score=Coalesce(Subquery(attempt_avg_sq), 0.0),
+            top_score=Coalesce(Subquery(attempt_top_sq), 0),
+            # student_count — yagona relation Count, JOIN multiplication yo'q.
             student_count=Count(
                 'memberships',
                 filter=Q(
