@@ -27,7 +27,6 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [assignmentType, setAssignmentType] = React.useState('');
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
   const [onlyUnused, setOnlyUnused] = React.useState(false);
-  const [removingMembershipId, setRemovingMembershipId] = React.useState(null);
   const [deleteEventId, setDeleteEventId] = React.useState(null);
   // Studentlar ro'yxati uchun qidiruv: ism yoki telefon raqamga ko'ra
   // filter. Avval input value/onChange'siz mavjud edi — foydalanuvchi
@@ -341,34 +340,6 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     setStudentDetailMembership(null);
     setStudentDetail(null);
     setStudentDetailError('');
-  };
-
-  const removeStudentMember = (studentRow) => {
-    if (!studentRow) return;
-    if (!isApi) {
-      showToast("⚠ Demo rejimida a'zolikni o'chirib bo'lmaydi");
-      return;
-    }
-    const membershipId = studentRow.membershipId;
-    if (!membershipId) {
-      showToast("⚠ Membership ID topilmadi");
-      return;
-    }
-    if (!window.confirm(`${studentRow.name || 'O\'quvchi'}ni markazdan chiqarishni tasdiqlaysizmi?`)) {
-      return;
-    }
-    const backendCenterId = center?.backendId ?? centerId;
-    setRemovingMembershipId(membershipId);
-    OlympyApi.removeMembership(backendCenterId, membershipId, OlympyApi.getToken())
-      .then(() => {
-        loadApprovedStudents().catch(() => null);
-        showToast("✓ O'quvchi markazdan chiqarildi");
-      })
-      .catch(err => {
-        console.warn('removeMembership failed:', err);
-        showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Chiqarib bo'lmadi"}`);
-      })
-      .finally(() => setRemovingMembershipId(null));
   };
 
   const handleRequest = (id, action, raw) => {
@@ -749,8 +720,6 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           </tr></thead>
           <tbody>
             {filteredStudents.map(s => {
-              const canRemove = isApi && !!s.membershipId && (s.status || 'approved') === 'approved';
-              const removing = removingMembershipId === s.membershipId;
               return (
                 <tr key={s.id} className="olympy-row">
                   <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={s.name} src={s.avatarUrl || ''} size={32} /><div><div className="text-sm font-medium text-white">{s.name}</div><div className="text-xs text-white/40">{s.joined}</div></div></div></td>
@@ -761,15 +730,6 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <button onClick={() => openStudentDetail(s)} className="btn-ghost text-xs px-3 py-1.5 rounded-xl">Ko'rish</button>
-                      {canRemove && (
-                        <button
-                          onClick={() => removeStudentMember(s)}
-                          disabled={removing}
-                          className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
-                        >
-                          {removing ? '...' : 'Chiqarish'}
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>

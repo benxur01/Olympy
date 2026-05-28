@@ -90,6 +90,11 @@ class TestSession(models.Model):
     cheating_reason = models.CharField(max_length=120, blank=True)
     question_order = models.JSONField(default=list, blank=True)
     option_orders = models.JSONField(default=dict, blank=True)
+    # Parallel sessiya tekshiruvi uchun: oxirgi ping kelgan qurilma identifikatori
+    # va ping vaqti. Agar 30 soniyadan kam vaqt ichida boshqa device_id'dan ping
+    # kelsa — bir vaqtda ikki qurilmadan kirilgan deb hisoblanadi va session DQ.
+    last_device_id = models.CharField(max_length=64, blank=True, default='')
+    last_ping_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-started_at']

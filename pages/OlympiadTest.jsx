@@ -6,6 +6,9 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // Resolve the question list: prefer store-backed olympiad.questionIds → store.questions
   const liveOlympiad = olympiad ? store.olympiads.find(o => o.id === olympiad.id) || olympiad : null;
   const [apiQuestions, setApiQuestions] = React.useState(null);
+  // API rejimda savollarning umumiy soni — serverdan keladi va navigatordagi
+  // tugmalar sonini, progress va counter'larni hisoblashda ishlatiladi.
+  const [apiTotal, setApiTotal] = React.useState(0);
   const [questionsLoading, setQuestionsLoading] = React.useState(false);
   // API rejimda backenddan savollar olinmagan paytda foydalanuvchini soxta
   // FALLBACK_QUESTIONS bilan adashtirmaslik uchun aniq xatolik holatini
@@ -41,15 +44,27 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const assignedQuestions = assignedIds
     .map(qid => store.questions.find(q => q.id === qid))
     .filter(Boolean);
-  // API foydalanuvchisi uchun apiQuestions yagona haqiqiy manba. Mock/dev
-  // rejimda olimpiada savollari biriktirilgan bo'lsa shulardan, aks holda
-  // bo'sh massiv — soxta hardcoded savollar production'ga sizmasligi uchun.
+  // API foydalanuvchisi uchun apiQuestions yagona haqiqiy manba. Cheating-himoya
+  // sababli savollar bitta-bitta yuklanadi, shuning uchun apiQuestions — index
+  // bo'yicha to'ldiriladigan siyrak (sparse) massiv: faqat ko'rilgan savollar
+  // mavjud bo'ladi. Savollar umumiy soni apiTotal'da alohida saqlanadi.
+  // Mock/dev rejimda esa biriktirilgan savollar (yoki bo'sh).
   const TEST_QUESTIONS = user?._api
     ? (Array.isArray(apiQuestions) ? apiQuestions : [])
     : assignedQuestions;
 
-  const TOTAL = TEST_QUESTIONS.length;
+  // API rejimda umumiy savollar soni serverdan keladi (apiTotal). Mock rejimda
+  // esa biriktirilgan savollar uzunligi.
+  const TOTAL = user?._api ? apiTotal : TEST_QUESTIONS.length;
   const DURATION = (liveOlympiad?.duration || olympiad?.duration || 30) * 60;
+
+  // Birinchi yuklash — hali hech qaysi savol kelmagan (apiTotal===0). Faqat shu
+  // paytda butun ekranli spinner ko'rsatamiz; keyingi savollar yuklanayotganda
+  // (savol almashtirilganda) timer/proktoring effektlari uzilmasligi va butun
+  // sahifa bo'shamasligi uchun inline spinner ishlatiladi.
+  const initialQuestionsLoading = questionsLoading && (user?._api ? apiTotal === 0 : false);
+  // Joriy savol hali yuklanmaganmi (navigatsiyadagi inline spinner uchun).
+  const currentQuestionLoading = questionsLoading && !initialQuestionsLoading;
 
   // Refresh yoki crashdan keyin javoblarni yo'qotmaslik uchun localStorage
   // backup. iOS Safari private modeda yoki Telegram WebView'da saqlash
@@ -85,40 +100,34 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [cheated, setCheated] = React.useState(false);
   const [cheatMessage, setCheatMessage] = React.useState('');
   // Tab birinchi marta yashirilganda — disqualifikatsiya o'rniga
-  // ogohlantirish ko'rsatamiz. Ikkinchi marta yoki 60s o'tsa — DQ.
+  // ogohlantirish ko'rsatamiz. Ikkinchi marta chiqishda — DQ.
   const [cheatWarning, setCheatWarning] = React.useState('');
-  // Yangi siyosat: 2 marta tabni almashtirish o'rniga JAMI tashqarida
-  // o'tkazilgan vaqtni hisoblaymiz. Telegram WebView'da keyboard yoki
-  // push notification ochilsa ham `visibilityState === 'hidden'` bo'ladi
-  // — 2 marta cheklov nohaq DQ keltirardi.
-  // Refresh-resilience: jami tashqarida o'tirgan vaqt localStorage'ga
-  // backup qilinadi. Aks holda foydalanuvchi F5 bosib timer'ni nolga
-  // qaytarib, cheklovni aylanib o'tishi mumkin edi.
-  const cheatingHiddenStorageKey = `cheating_hidden_${persistedOlympiadId}_${user?.id || 'guest'}`;
-  const readPersistedHidden = () => {
-    try {
-      if (typeof localStorage === 'undefined') return 0;
-      const raw = localStorage.getItem(cheatingHiddenStorageKey);
-      const n = raw ? parseInt(raw, 10) : 0;
-      return Number.isFinite(n) && n >= 0 ? n : 0;
-    } catch { return 0; }
-  };
-  const totalHiddenTimeRef = React.useRef(readPersistedHidden());
-  const hiddenStartRef = React.useRef(null);
-  const persistTotalHidden = React.useCallback((value) => {
-    try {
-      if (typeof localStorage === 'undefined') return;
-      localStorage.setItem(cheatingHiddenStorageKey, String(value));
-    } catch {}
-  }, [cheatingHiddenStorageKey]);
-  const clearPersistedHidden = React.useCallback(() => {
-    try {
-      if (typeof localStorage === 'undefined') return;
-      localStorage.removeItem(cheatingHiddenStorageKey);
-    } catch {}
-  }, [cheatingHiddenStorageKey]);
+  // Yangi siyosat: son asosida. Tashqarida o'tkazilgan vaqtni emas,
+  // balki tab/ilovani tark etish SONINI hisoblaymiz. 1-marta chiqishda
+  // ogohlantirish, 2-marta chiqishda darhol disqualifikatsiya.
+  const tabSwitchCountRef = React.useRef(0);
   const cheatReportedRef = React.useRef(false);
   const historyGuardRef = React.useRef(false);
+  // blur va visibilitychange ko'pincha birga otiladi (tab almashtirilganda
+  // ikkalasi ham "hidden"). Ikki marta hisoblamaslik uchun: hidden hodisa
+  // bir marta otilganda true, qaytib kelganda (visible/focus) false.
+  const hiddenEventFiredRef = React.useRef(false);
+  // Parallel sessiya tekshiruvi uchun qurilma identifikatori. Sahifa
+  // yuklanganda localStorage'dan o'qiladi yoki yangidan generatsiya qilinadi.
+  const deviceIdRef = React.useRef(null);
+  if (deviceIdRef.current === null) {
+    let did = null;
+    try { did = localStorage.getItem('olympy_device_id'); } catch {}
+    if (!did) {
+      did = (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `dev_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    }
+    deviceIdRef.current = did;
+    try { localStorage.setItem('olympy_device_id', did); } catch {}
+  }
+  // Bitta-bitta yuklangan savollarni keshlash — qayta so'rov ketmasligi uchun.
+  const cachedQuestionsRef = React.useRef({});
   // Confirm modal yoki submit jarayonida brauzer fokusi tabiiy ravishda
   // o'zgaradi (modal ochiladi/yopiladi). Shu paytlarda blur/visibility
   // hodisalarini cheating deb hisoblamaslik uchun bayroq.
@@ -135,18 +144,6 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       return undefined;
     }
     const onBeforeUnload = (e) => {
-      // Refresh/yopish paytida — agar foydalanuvchi shu paytda "hidden"
-      // holatida bo'lsa, kechiktirilgan vaqtni ham jamg'arib persist
-      // qilamiz. Aks holda F5 paytida bosqichdagi sanash yo'qoladi va
-      // foydalanuvchi cheklovni aylanib o'tishi mumkin edi.
-      try {
-        if (hiddenStartRef.current) {
-          const accumulated = totalHiddenTimeRef.current + (Date.now() - hiddenStartRef.current);
-          persistTotalHidden(accumulated);
-        } else {
-          persistTotalHidden(totalHiddenTimeRef.current);
-        }
-      } catch {}
       e.preventDefault();
       // Modern brauzerlar maxsus matn ko'rsatmaydi, lekin confirm dialog'i
       // chiqishi uchun returnValue'ga bo'sh bo'lmagan string qo'yiladi.
@@ -194,25 +191,55 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     };
   }, [submitted, cheated, isBeforeStart, isAfterEnd, TOTAL]);
 
+  // Cheating-himoya: savollar bitta-bitta yuklanadi. Joriy `current` indeksdagi
+  // savol serverdan olinadi va cachedQuestionsRef'da keshlanadi — keyin shu
+  // savolga qaytilganda qayta so'rov ketmaydi. Birinchi yuklashda server
+  // umumiy savollar soni (total_questions) va timing'ni ham qaytaradi.
   React.useEffect(() => {
     if (!user?._api || !liveOlympiad?.backendId || isBeforeStart || isAfterEnd) {
       setApiQuestions(null);
+      setApiTotal(0);
       setQuestionsLoading(false);
       return undefined;
     }
+    if (submitted || cheated) return undefined;
+
+    const idx = current;
+    // Keshda bo'lsa — qayta so'rov yo'q.
+    const cached = cachedQuestionsRef.current[idx];
+    if (cached) {
+      setApiQuestions(prev => {
+        const next = Array.isArray(prev) ? prev.slice() : [];
+        next[idx] = cached;
+        return next;
+      });
+      setQuestionsLoading(false);
+      return undefined;
+    }
+
     let cancelled = false;
     setQuestionsLoading(true);
     setQuestionsError('');
-    globalThis.OlympyApi.getOlympiadQuestions(liveOlympiad.backendId, globalThis.OlympyApi.getToken())
+    globalThis.OlympyApi.getOlympiadQuestions(liveOlympiad.backendId, globalThis.OlympyApi.getToken(), idx)
       .then(resp => {
         if (cancelled) return;
-        // Backend yangi shape qaytaradi: { questions, session }. Eski shape
-        // (array) bilan ham backward-compat ishlasin uchun ikkalasiga ham
-        // tayyormiz.
+        // Backend yangi shape qaytaradi: { questions:[oneQuestion], question_index,
+        // total_questions, session }. Eski shape (array) bilan ham backward-compat.
         const list = Array.isArray(resp) ? resp : resp?.questions;
         const sess = !Array.isArray(resp) ? resp?.session : null;
+        const total = !Array.isArray(resp) && typeof resp?.total_questions === 'number'
+          ? resp.total_questions
+          : null;
         if (Array.isArray(list) && list.length > 0) {
-          setApiQuestions(list);
+          const question = list[0];
+          cachedQuestionsRef.current[idx] = question;
+          setApiQuestions(prev => {
+            const next = Array.isArray(prev) ? prev.slice() : [];
+            next[idx] = question;
+            return next;
+          });
+          if (total != null) setApiTotal(total);
+          else setApiTotal(prev => Math.max(prev, idx + 1));
           setQuestionsError('');
           if (sess?.expires_at) {
             setServerExpiresAt(sess.expires_at);
@@ -224,7 +251,6 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             }
           }
         } else {
-          setApiQuestions(null);
           setQuestionsError('Savollar topilmadi. Iltimos, keyinroq urinib ko\'ring.');
         }
       })
@@ -237,17 +263,16 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           } else {
             setQuestionsError(detail || "Savollarni yuklab bo'lmadi.");
           }
-          setApiQuestions(null);
         }
       })
       .finally(() => {
         if (!cancelled) setQuestionsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [user?._api, liveOlympiad?.backendId, isBeforeStart, isAfterEnd]);
+  }, [user?._api, liveOlympiad?.backendId, isBeforeStart, isAfterEnd, current, submitted, cheated]);
 
   React.useEffect(() => {
-    if (submitted || isBeforeStart || isAfterEnd || questionsLoading) return;
+    if (submitted || isBeforeStart || isAfterEnd || initialQuestionsLoading) return;
     // Agar server expires_at yuborgan bo'lsa, har sekundda undan hisoblaymiz
     // — bu lokal drift yoki tab sleep'ning vaqtni "ushlab turishini" oldini
     // oladi va server bilan har doim sinxron bo'ladi.
@@ -275,7 +300,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     tick();
     let t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, [submitted, isBeforeStart, isAfterEnd, questionsLoading, serverExpiresAt, serverClockSkewMs]);
+  }, [submitted, isBeforeStart, isAfterEnd, initialQuestionsLoading, serverExpiresAt, serverClockSkewMs]);
 
   const reportCheating = React.useCallback((reason) => {
     if (cheatReportedRef.current || submitted || cheated || !user?._api || !liveOlympiad?.backendId) return;
@@ -285,7 +310,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     setSubmitted(true);
     setCheatMessage(
       reason === 'tab_or_app_left'
-        ? "Siz 2 daqiqadan ortiq olimpiada oynasidan tashqarida bo'ldingiz. Olimpiada yakunlandi."
+        ? "Siz olimpiada vaqtida tabni bir necha marta almashtirdingiz. Olimpiada yakunlandi."
         : "Siz cheating qildingiz. Olimpiada yakunlandi."
     );
     try {
@@ -301,88 +326,54 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         localStorage.removeItem(markedStorageKey);
       }
     } catch {}
-    clearPersistedHidden();
-  }, [submitted, cheated, user?._api, liveOlympiad?.backendId, answersStorageKey, markedStorageKey, clearPersistedHidden]);
+  }, [submitted, cheated, user?._api, liveOlympiad?.backendId, answersStorageKey, markedStorageKey]);
 
   React.useEffect(() => {
-    if (!user?._api || !liveOlympiad?.backendId || !apiQuestions || questionsLoading || submitted || cheated) {
+    if (!user?._api || !liveOlympiad?.backendId || apiTotal === 0 || submitted || cheated) {
       return undefined;
     }
-    // Cheating siyosati: tashqarida jami 120 soniyadan ko'p o'tirsa DQ.
-    // Telegram WebView'da klaviatura ochilsa, push notification kelsa
-    // yoki iOS Safari avtomatik tabni yashirsa — kichik tanaffuslar
-    // jamlanadi. 120 sekundlik limit yetarli darajada keng (kichik
-    // chalg'ish kechiriladi), lekin uzoq tashqariga chiqishni qoplaydi.
-    const TOTAL_HIDDEN_LIMIT_MS = 120000; // 2 daqiqa
-    const WARNING_THRESHOLD_MS = 60000; // 1 daqiqa — ogohlantirish
-    const WARNING_TEXT = (
-      "Diqqat! Testdan tashqariga chiqdingiz. "
-      + "Jami 2 daqiqadan ko'p tashqarida qolsangiz olimpiada yakunlanadi."
-    );
-    let hiddenTimer = null;
-    const checkOverLimit = () => {
-      const ongoing = hiddenStartRef.current
-        ? (Date.now() - hiddenStartRef.current)
-        : 0;
-      const total = totalHiddenTimeRef.current + ongoing;
-      if (total > TOTAL_HIDDEN_LIMIT_MS) {
-        reportCheating('tab_or_app_left');
-        return true;
-      }
-      return false;
-    };
-    const onVisibility = () => {
+    // Cheating siyosati: son asosida. Tab/ilovani tark etish soni
+    // hisoblanadi. 1-marta chiqishda ogohlantirish, 2-marta chiqishda
+    // darhol disqualifikatsiya. Ogohlantirish foydalanuvchi qaytib
+    // kelganda ham qoladi — tozalanmaydi.
+    //
+    // Hodisani bir marta hisoblash: blur va visibilitychange ko'pincha birga
+    // otiladi (tab almashtirilganda ikkalasi ham "hidden" holatga keladi).
+    // hiddenEventFiredRef bayrog'i orqali bitta tark etishni faqat bir marta
+    // sanaymiz.
+    const onHidden = () => {
       if (!cheatGuardActiveRef.current) return;
-      if (document.visibilityState === 'hidden') {
-        hiddenStartRef.current = Date.now();
-        // Tab yashirin paytida tekshirib turish uchun timer.
-        if (hiddenTimer) clearTimeout(hiddenTimer);
-        // Limitgacha qolgan vaqtdan keyin tekshirish.
-        const remaining = Math.max(
-          1000,
-          TOTAL_HIDDEN_LIMIT_MS - totalHiddenTimeRef.current,
-        );
-        hiddenTimer = setTimeout(() => {
-          if (document.visibilityState === 'hidden') checkOverLimit();
-        }, remaining);
-        // Ogohlantirish — agar jami 1 daqiqadan oshgan bo'lsa darhol,
-        // aks holda 1 daqiqa to'lganda paydo bo'lsin.
-        if (totalHiddenTimeRef.current >= WARNING_THRESHOLD_MS) {
-          setCheatWarning(WARNING_TEXT);
-        }
+      if (hiddenEventFiredRef.current) return; // allaqachon hisoblangan
+      hiddenEventFiredRef.current = true;
+      tabSwitchCountRef.current += 1;
+      if (tabSwitchCountRef.current >= 2) {
+        reportCheating('tab_or_app_left');
       } else {
-        // Foydalanuvchi qaytdi: jamg'arilgan vaqtni qo'shamiz.
-        if (hiddenStartRef.current) {
-          totalHiddenTimeRef.current += Date.now() - hiddenStartRef.current;
-          hiddenStartRef.current = null;
-          // Refresh-resilience: yangilangan jami vaqtni localStorage'ga
-          // yozamiz — F5 bosilsa keyingi mount'da shu qiymatdan boshlanadi.
-          persistTotalHidden(totalHiddenTimeRef.current);
-        }
-        if (hiddenTimer) {
-          clearTimeout(hiddenTimer);
-          hiddenTimer = null;
-        }
-        // Limitdan oshgan bo'lsa — qaytib kelganda ham DQ.
-        if (totalHiddenTimeRef.current > TOTAL_HIDDEN_LIMIT_MS) {
-          reportCheating('tab_or_app_left');
-          return;
-        }
-        // Yetarlicha vaqt tashqarida bo'lgan bo'lsa warning ko'rsatamiz.
-        if (totalHiddenTimeRef.current >= WARNING_THRESHOLD_MS) {
-          setCheatWarning(WARNING_TEXT);
-        } else {
-          setCheatWarning('');
-        }
+        setCheatWarning(
+          "Diqqat! Olimpiada vaqtida tabni almashtirdingiz. "
+          + "Keyingi marta disqualifikatsiya qilinasiz."
+        );
       }
       sendPing();
     };
+    const onVisible = () => {
+      hiddenEventFiredRef.current = false;
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') onHidden();
+      else if (document.visibilityState === 'visible') onVisible();
+    };
+    const onBlur = () => onHidden();
+    const onFocus = () => onVisible();
     document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('blur', onBlur);
+    window.addEventListener('focus', onFocus);
     return () => {
       document.removeEventListener('visibilitychange', onVisibility);
-      if (hiddenTimer) clearTimeout(hiddenTimer);
+      window.removeEventListener('blur', onBlur);
+      window.removeEventListener('focus', onFocus);
     };
-  }, [user?._api, liveOlympiad?.backendId, apiQuestions, questionsLoading, submitted, cheated, reportCheating, sendPing]);
+  }, [user?._api, liveOlympiad?.backendId, apiTotal, submitted, cheated, reportCheating, sendPing]);
 
   // Har `answers`/`marked` o'zgarganda lokal saqlash. Submit/cheating
   // paytida tozalash uchun pastdagi cleanup logikasi mavjud.
@@ -411,10 +402,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const sendPing = React.useCallback(async () => {
     if (!user?._api || !liveOlympiad?.backendId || submitted || cheated) return;
     const answeredCount = Object.keys(answersRef.current || {}).length;
-    const ongoing = hiddenStartRef.current
-      ? (Date.now() - hiddenStartRef.current)
-      : 0;
-    const escapes = Math.round((totalHiddenTimeRef.current + ongoing) / 1000);
+    const escapes = tabSwitchCountRef.current;
     try {
       const token = globalThis.OlympyApi?.getToken?.()
         ?? globalThis.OlympyApi?.loadAuth?.()?.token;
@@ -422,19 +410,38 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         liveOlympiad.backendId,
         answeredCount,
         escapes,
-        token
+        token,
+        deviceIdRef.current,
       );
     } catch (err) {
+      // 409 — boshqa qurilmadan parallel sessiya aniqlandi. reportCheating'ni
+      // qayta chaqirmasdan to'g'ridan-to'g'ri diskvalifikatsiya holatini
+      // ko'rsatamiz (backend allaqachon session'ni DQ qildi).
+      if (err?.status === 409) {
+        cheatReportedRef.current = true;
+        setSubmitted(true);
+        setCheated(true);
+        setCheatMessage("Boshqa qurilmadan kirilgani aniqlandi. Olimpiada yakunlandi.");
+        try {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.removeItem(answersStorageKey);
+            localStorage.removeItem(markedStorageKey);
+          }
+        } catch {}
+        return;
+      }
       console.warn('pingTestSession failed:', err?.message);
     }
-  }, [user?._api, liveOlympiad?.backendId, submitted, cheated]);
+  }, [user?._api, liveOlympiad?.backendId, submitted, cheated, answersStorageKey, markedStorageKey]);
 
   React.useEffect(() => {
-    if (!user?._api || !liveOlympiad?.backendId || submitted || cheated || questionsLoading) return undefined;
+    // apiTotal===0 — hali birinchi savol yuklanmagan; mock rejimda apiTotal
+    // doim 0, lekin u yerda ping baribir ishlamaydi (user?._api guard).
+    if (!user?._api || !liveOlympiad?.backendId || submitted || cheated || apiTotal === 0) return undefined;
     sendPing();
     const interval = setInterval(sendPing, 15000);
     return () => clearInterval(interval);
-  }, [user?._api, liveOlympiad?.backendId, submitted, cheated, questionsLoading, sendPing]);
+  }, [user?._api, liveOlympiad?.backendId, submitted, cheated, apiTotal, sendPing]);
 
   React.useEffect(() => {
     if (Object.keys(answers).length > 0) {
@@ -475,7 +482,9 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       const currentAnswers = answersRef.current || answers;
       const formattedAnswers = {};
       Object.entries(currentAnswers).forEach(([idx, optIdx]) => {
-        const q = TEST_QUESTIONS[parseInt(idx, 10)];
+        const i = parseInt(idx, 10);
+        // Per-question yuklashda savol siyrak massivda; keshdan ham qidiramiz.
+        const q = TEST_QUESTIONS[i] || cachedQuestionsRef.current[i];
         if (q) formattedAnswers[q.id] = optIdx;
       });
 
@@ -527,7 +536,6 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             token,
           );
           clearPersistedAnswers();
-          clearPersistedHidden();
           onFinish({
             attemptId: resp?.id,
             correct: resp?.correct_count ?? (correct ?? 0),
@@ -600,7 +608,6 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           rank: localRank ?? 1,
         });
         clearPersistedAnswers();
-        clearPersistedHidden();
         onFinish({
           attemptId: attemptRecord?.id,
           correct: correct ?? 0,
@@ -673,7 +680,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       message={cheatMessage || "Siz cheating qildingiz. Olimpiada yakunlandi."}
       onBack={() => onNavigate('student')} />;
   }
-  if (questionsLoading) {
+  // Faqat birinchi yuklash — butun ekranli spinner. Keyingi savollar
+  // navigatsiyada inline spinner bilan ko'rsatiladi (pastda), test holatini
+  // (header, timer, navigator) bo'shatmaslik uchun.
+  if (initialQuestionsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: '#060818' }}>
         <div className="flex flex-col items-center gap-4 text-white/70">
@@ -695,9 +705,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   }
 
   const q = TEST_QUESTIONS[current];
-  if (!q) return null;
+  // Per-question yuklash: q hali kelmagan bo'lishi mumkin (navigatsiyada).
+  // Bu holatda butun sahifani null qaytarmasdan, savol kartasi o'rnida inline
+  // spinner ko'rsatamiz (header, timer, navigator joyida qoladi).
+  const questionPending = !q || currentQuestionLoading;
   // Derive a "type" for True/False rendering even though store questions don't carry one
-  const isTrueFalse = (q.options || []).length === 2 && (q.options || []).every(o => /to'?g'?ri|no?to'?g'?ri/i.test(o));
+  const isTrueFalse = q ? (q.options || []).length === 2 && (q.options || []).every(o => /to'?g'?ri|no?to'?g'?ri/i.test(o)) : false;
 
   return (
     <div className="min-h-screen flex flex-col select-none" style={{ background: '#060818', userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}>
@@ -730,9 +743,9 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         <div className="h-full transition-all duration-500" style={{ width: `${progress}%`, background: 'linear-gradient(90deg,#6366f1,#a855f7,#22d3ee)' }} />
       </div>
 
-      {/* Visibility-cheating ogohlantirish banner. Tab birinchi marta yashirin
-          bo'lganida ko'rsatiladi; qaytsa avto-yo'qoladi. Ikkinchi marta yoki
-          60s o'tsa disqualifikatsiya yuz beradi. */}
+      {/* Visibility-cheating ogohlantirish banner. Tab birinchi marta tark
+          etilganda ko'rsatiladi va foydalanuvchi qaytsa ham qoladi.
+          Ikkinchi marta tark etishda disqualifikatsiya yuz beradi. */}
       {cheatWarning && (
         <div className="bg-amber-500/15 border-b border-amber-500/30 px-3 md:px-8 py-2 text-amber-200 text-xs md:text-sm font-semibold flex items-center gap-2">
           <Icon name="info" size={14} className="text-amber-300 flex-shrink-0" />
@@ -743,7 +756,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       {/* Mobile question strip — horizontal scrollable navigator */}
       <div className="md:hidden glass border-b border-white/5">
         <div className="question-strip">
-          {TEST_QUESTIONS.map((_, i) => (
+          {Array.from({ length: TOTAL }).map((_, i) => (
             <button key={i} onClick={() => setCurrent(i)}
               className={`question-strip-btn ${i === current ? 'current' : marked[i] ? 'marked' : answers[i] !== undefined ? 'answered' : ''}`}>
               {i+1}
@@ -757,7 +770,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         <div className="hidden md:flex flex-col glass border-r border-white/5 w-52 p-4 overflow-y-auto">
           <div className="text-xs text-white/40 font-medium mb-3">Savollar ({answered}/{TOTAL})</div>
           <div className="grid grid-cols-4 gap-1.5 mb-4">
-            {TEST_QUESTIONS.map((_, i) => (
+            {Array.from({ length: TOTAL }).map((_, i) => (
               <button key={i} onClick={() => setCurrent(i)}
                 className={`question-nav-btn ${i === current ? 'current' : marked[i] ? 'marked' : answers[i] !== undefined ? 'answered' : ''}`}>
                 {i+1}
@@ -797,27 +810,37 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
               </div>
             )}
 
-            {/* Question text */}
-            <div className="glass-strong rounded-2xl p-4 md:p-6 mb-5 md:mb-6">
-              <p className="text-white text-base md:text-lg leading-relaxed font-medium break-words">{q.text}</p>
-            </div>
+            {/* Joriy savol yuklanmoqda — inline spinner. */}
+            {questionPending ? (
+              <div className="glass-strong rounded-2xl p-8 md:p-10 mb-5 md:mb-6 flex flex-col items-center justify-center gap-4 text-white/60">
+                <div className="w-9 h-9 rounded-full border-2 border-white/20 border-t-indigo-400 animate-spin" />
+                <div className="text-sm font-semibold">Savol yuklanmoqda...</div>
+              </div>
+            ) : (
+              <>
+                {/* Question text */}
+                <div className="glass-strong rounded-2xl p-4 md:p-6 mb-5 md:mb-6">
+                  <p className="text-white text-base md:text-lg leading-relaxed font-medium break-words">{q.text}</p>
+                </div>
 
-            {/* Answer options */}
-            <div className="space-y-2.5 md:space-y-3 mb-6 md:mb-8">
-              {q.options.map((opt, i) => {
-                const selected = answers[current] === i;
-                return (
-                  <button key={i} onClick={() => handleAnswer(i)}
-                    className={`w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left transition-all min-h-[56px] ${selected ? 'border-indigo-500 bg-indigo-500/15 border glow-blue' : 'glass hover:bg-white/7 border border-transparent hover:border-white/10'}`}>
-                    <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50'}`}>
-                      {isTrueFalse ? (i === 0 ? '✓' : '✗') : String.fromCharCode(65+i)}
-                    </div>
-                    <span className={`font-medium text-sm md:text-base break-words min-w-0 ${selected ? 'text-white' : 'text-white/70'}`}>{opt}</span>
-                    {selected && <Icon name="check" size={16} className="ml-auto text-indigo-400 flex-shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
+                {/* Answer options */}
+                <div className="space-y-2.5 md:space-y-3 mb-6 md:mb-8">
+                  {q.options.map((opt, i) => {
+                    const selected = answers[current] === i;
+                    return (
+                      <button key={i} onClick={() => handleAnswer(i)}
+                        className={`w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left transition-all min-h-[56px] ${selected ? 'border-indigo-500 bg-indigo-500/15 border glow-blue' : 'glass hover:bg-white/7 border border-transparent hover:border-white/10'}`}>
+                        <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50'}`}>
+                          {isTrueFalse ? (i === 0 ? '✓' : '✗') : String.fromCharCode(65+i)}
+                        </div>
+                        <span className={`font-medium text-sm md:text-base break-words min-w-0 ${selected ? 'text-white' : 'text-white/70'}`}>{opt}</span>
+                        {selected && <Icon name="check" size={16} className="ml-auto text-indigo-400 flex-shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
 
             {/* Desktop nav buttons (inline) */}
             <div className="hidden md:flex items-center justify-between">
