@@ -323,8 +323,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const centers = rawCenters.filter(c => c.status !== 'rejected');
   const approvedCenters = centers.filter(c => c.status === 'approved');
   const pendingCenters = centers.filter(c => c.status === 'pending');
-  const apiAllUsers = isApi && Array.isArray(apiUsersRes.data)
-    ? apiUsersRes.data.map(OlympyApi.mapBackendUser)
+  // getAdminUsers endi {results, count, next} qaytaradi (pagination
+  // ma'lumotlari saqlanishi uchun). results massivni map qilamiz.
+  const apiUsersList = isApi && apiUsersRes.data && Array.isArray(apiUsersRes.data.results)
+    ? apiUsersRes.data.results
+    : (isApi && Array.isArray(apiUsersRes.data) ? apiUsersRes.data : null);
+  const apiAllUsers = apiUsersList
+    ? apiUsersList.map(OlympyApi.mapBackendUser)
     : null;
   const allUsers = apiAllUsers || store.users;
   const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data)

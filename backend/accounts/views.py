@@ -418,18 +418,17 @@ def me(request):
             if isinstance(new_username, str) and new_username.strip() == '':
                 user.username = None
             update_fields.append('username')
-        if 'phone' in data:
-            user.phone = data.get('phone')
-            user.normalized_phone = data.get('phone')
-            update_fields.append('phone')
-            update_fields.append('normalized_phone')
+        # Eslatma: telefon raqam bu endpoint orqali o'zgartirilmaydi —
+        # UpdateProfileSerializer 'phone' maydonini qabul qilmaydi (tasdiqsiz
+        # almashtirish hisobni o'g'irlash xavfini tug'diradi). Telefonni
+        # almashtirish kelajakda alohida OTP-tasdiqlangan endpoint orqali.
         # first/last yangilangan bo'lsa save() ichida full_name avtomatik
         # qayta hisoblanadi — shu sababli update_fields ga full_name'ni ham
         # qo'shamiz, aks holda save(update_fields=...) uni DB'ga yozmaydi.
         if 'first_name' in data or 'last_name' in data:
             update_fields.append('full_name')
 
-        credentials_changed = ('username' in data) or ('phone' in data)
+        credentials_changed = ('username' in data)
         if credentials_changed:
             user.token_version = (user.token_version or 0) + 1
             update_fields.append('token_version')

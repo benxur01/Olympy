@@ -79,10 +79,15 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // Refresh yoki crashdan keyin javoblarni yo'qotmaslik uchun localStorage
   // backup. iOS Safari private modeda yoki Telegram WebView'da saqlash
   // muvaffaqiyatsiz bo'lishi mumkin — try/catch bilan o'rab qo'yamiz.
-  const persistedOlympiadId = liveOlympiad?.id || olympiad?.id || liveOlympiad?.backendId || 'unknown';
-  const answersStorageKey = `olympy_answers_${persistedOlympiadId}`;
-  const markedStorageKey = `olympy_marked_${persistedOlympiadId}`;
+  // ID aniq bo'lmasa 'unknown' qo'ymaymiz — aks holda barcha olimpiadalar
+  // bitta `olympy_answers_unknown` kalitini ulashib, javoblar bir-biriga
+  // aralashib ketardi. ID yo'q bo'lsa null qoldiramiz va saqlashni o'tkazib
+  // yuboramiz (pastdagi useEffect'lar tekshiradi).
+  const persistedOlympiadId = liveOlympiad?.id || olympiad?.id || liveOlympiad?.backendId || null;
+  const answersStorageKey = persistedOlympiadId ? `olympy_answers_${persistedOlympiadId}` : null;
+  const markedStorageKey = persistedOlympiadId ? `olympy_marked_${persistedOlympiadId}` : null;
   const readPersisted = (key) => {
+    if (!key) return null;
     try {
       const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(key) : null;
       if (!raw) return null;
@@ -413,14 +418,14 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // paytida tozalash uchun pastdagi cleanup logikasi mavjud.
   React.useEffect(() => {
     try {
-      if (typeof localStorage === 'undefined') return;
+      if (typeof localStorage === 'undefined' || !answersStorageKey) return;
       localStorage.setItem(answersStorageKey, JSON.stringify(answers || {}));
     } catch {}
   }, [answers, answersStorageKey]);
 
   React.useEffect(() => {
     try {
-      if (typeof localStorage === 'undefined') return;
+      if (typeof localStorage === 'undefined' || !markedStorageKey) return;
       localStorage.setItem(markedStorageKey, JSON.stringify(marked || {}));
     } catch {}
   }, [marked, markedStorageKey]);
@@ -428,8 +433,8 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const clearPersistedAnswers = React.useCallback(() => {
     try {
       if (typeof localStorage === 'undefined') return;
-      localStorage.removeItem(answersStorageKey);
-      localStorage.removeItem(markedStorageKey);
+      if (answersStorageKey) localStorage.removeItem(answersStorageKey);
+      if (markedStorageKey) localStorage.removeItem(markedStorageKey);
     } catch {}
   }, [answersStorageKey, markedStorageKey]);
 
