@@ -767,20 +767,8 @@ def remove_membership(request, center_id, membership_id):
 
     is_admin = request.user.is_platform_admin
     is_owner = center.owner_id == request.user.id
-    is_manager = CenterMembership.objects.filter(
-        user=request.user, center=center,
-        role=CenterMembership.ROLE_MANAGER,
-        status=CenterMembership.STATUS_APPROVED,
-    ).exists()
 
-    if is_admin or is_owner:
-        allowed = True
-    elif is_manager and membership.role in (
-        CenterMembership.ROLE_STUDENT, CenterMembership.ROLE_TEACHER,
-    ):
-        allowed = True
-    else:
-        allowed = False
+    allowed = is_admin or is_owner
 
     if not allowed:
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
