@@ -383,25 +383,21 @@ textarea.input-field { resize: vertical; min-height: 100px; }
 }
 
 .admin-card {
-  background: rgba(20, 20, 25, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  /* backdrop-filter: blur() olib tashlandi (sekin render, ayniqsa mobil/WebView).
+     blur o'rniga solid semi-transparent background ishlatamiz. */
+  background: rgba(20, 20, 25, 0.92);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
 }
 
 .admin-sidebar {
-  background: rgba(10, 10, 12, 0.95);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: rgba(10, 10, 12, 0.98);
   border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .admin-topbar {
-  background: rgba(10, 10, 12, 0.90);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(10, 10, 12, 0.97);
   border-b: 1px solid rgba(255, 255, 255, 0.06);
 }
 

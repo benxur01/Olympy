@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 from django.db import IntegrityError, transaction
-from django.db.models import Avg, Count, Max, Q
+from django.db.models import Avg, Count, Max, Min, Q
 from django.db.models.functions import TruncMonth
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -613,9 +613,16 @@ def my_stats(request):
         subjects: [{subject, attempts, average_score}, ...]
       }
     """
-    qs = TestAttempt.objects.filter(user=request.user).select_related('olympiad')
-    attempts = list(qs)
-    total = len(attempts)
+    qs = TestAttempt.objects.filter(user=request.user)
+
+    # Umumiy statistikani DB darajasida hisoblaymiz (attempt'larni xotiraga
+    # yuklamasdan). best_rank uchun faqat NULL bo'lmagan ranklar hisobga olinadi.
+    overall = qs.aggregate(
+        total=Count('id'),
+        avg=Avg('score'),
+        best_rank=Min('rank'),
+    )
+    total = overall['total'] or 0
     if total == 0:
         return Response({
             'total_attempts': 0,
@@ -623,23 +630,21 @@ def my_stats(request):
             'best_rank': None,
             'subjects': [],
         })
-    avg = round(sum(a.score for a in attempts) / total, 1)
-    ranks = [a.rank for a in attempts if a.rank]
-    best_rank = min(ranks) if ranks else None
-    subject_buckets = {}
-    for a in attempts:
-        subj = a.olympiad.subject if a.olympiad else '—'
-        bucket = subject_buckets.setdefault(subj, {'subject': subj, 'attempts': 0, 'total': 0})
-        bucket['attempts'] += 1
-        bucket['total'] += a.score
-    subjects = [
-        {
-            'subject': b['subject'],
-            'attempts': b['attempts'],
-            'average_score': round(b['total'] / b['attempts'], 1) if b['attempts'] else 0,
-        }
-        for b in subject_buckets.values()
-    ]
+    avg = round(overall['avg'] or 0, 1)
+    best_rank = overall['best_rank']
+
+    # Fan kesimida o'rtacha ball — DB'da GROUP BY orqali.
+    subjects = []
+    subject_rows = (
+        qs.values('olympiad__subject')
+        .annotate(attempts=Count('id'), avg_score=Avg('score'))
+    )
+    for row in subject_rows:
+        subjects.append({
+            'subject': row['olympiad__subject'] or '—',
+            'attempts': row['attempts'],
+            'average_score': round(row['avg_score'] or 0, 1),
+        })
     subjects.sort(key=lambda x: -x['average_score'])
     return Response({
         'total_attempts': total,
@@ -1178,6 +1183,7 @@ def leaderboard(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
 def test_session_ping(request):
     """POST /api/attempts/ping/
 
@@ -1258,6 +1264,9 @@ def test_session_ping(request):
     return Response({'ok': True})
 
 
+test_session_ping.cls.throttle_scope = 'ping'
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def olympiad_live_proctoring(request, olympiad_id):
@@ -1284,6 +1293,9 @@ def olympiad_live_proctoring(request, olympiad_id):
         a.user_id: a
         for a in TestAttempt.objects.filter(olympiad=olympiad)
     }
+
+    # Loop ichida har iteratsiyada count() qilmaslik uchun bir marta hisoblaymiz
+    olympiad_question_count = olympiad.questions.count()
 
     now = timezone.now()
     results = []
@@ -1330,7 +1342,7 @@ def olympiad_live_proctoring(request, olympiad_id):
             'status': status,
             'cheating_reason': s.cheating_reason,
             'answered_count': answered,
-            'total_questions': len(s.question_order) or olympiad.questions or 0,
+            'total_questions': len(s.question_order) or olympiad_question_count or 0,
             'tab_escapes': escapes,
             'is_online': is_online,
             'score': attempt.score if attempt else None,
@@ -1350,9 +1362,10 @@ def get_mistakes_list(request):
     from .models import TestAttempt
 
     attempts = TestAttempt.objects.filter(user=request.user, disqualified=False)
-    mistakes = []
-    seen_question_ids = set()
 
+    # Avval har bir savol uchun (birinchi ko'rilgan) tanlangan javobni yig'amiz,
+    # keyin barcha savollarni bitta so'rov bilan olamiz (N+1'ni oldini olish uchun).
+    chosen_by_question = {}
     for a in attempts:
         answers = a.answers or {}
         for q_id_str, chosen_idx in answers.items():
@@ -1361,25 +1374,30 @@ def get_mistakes_list(request):
                 chosen_idx = int(chosen_idx)
             except (ValueError, TypeError):
                 continue
-                
-            if q_id in seen_question_ids:
+            if q_id in chosen_by_question:
                 continue
-                
-            question = Question.objects.filter(pk=q_id).first()
-            if not question:
-                continue
-                
-            if chosen_idx != question.correct_answer:
-                seen_question_ids.add(q_id)
-                mistakes.append({
-                    'question_id': question.id,
-                    'subject': question.subject,
-                    'text': question.text,
-                    'options': question.options,
-                    'correct_answer': question.correct_answer,
-                    'chosen_answer': chosen_idx,
-                    'explanation': question.explanation or '',
-                })
+            chosen_by_question[q_id] = chosen_idx
+
+    questions_by_id = {
+        q.id: q
+        for q in Question.objects.filter(pk__in=chosen_by_question.keys())
+    }
+
+    mistakes = []
+    for q_id, chosen_idx in chosen_by_question.items():
+        question = questions_by_id.get(q_id)
+        if not question:
+            continue
+        if chosen_idx != question.correct_answer:
+            mistakes.append({
+                'question_id': question.id,
+                'subject': question.subject,
+                'text': question.text,
+                'options': question.options,
+                'correct_answer': question.correct_answer,
+                'chosen_answer': chosen_idx,
+                'explanation': question.explanation or '',
+            })
     return Response(mistakes)
 
 
@@ -1394,9 +1412,11 @@ def explain_all_mistakes(request):
     from .models import TestAttempt
 
     attempts = TestAttempt.objects.filter(user=request.user, disqualified=False)
-    mistakes = []
-    seen_question_ids = set()
 
+    # Avval har bir savol uchun (birinchi ko'rilgan) tanlangan javobni yig'amiz,
+    # tartibni saqlagan holda (dict insertion order). Keyin barcha savollarni
+    # bitta so'rov bilan olamiz (N+1'ni oldini olish uchun).
+    chosen_by_question = {}
     for a in attempts:
         answers = a.answers or {}
         for q_id_str, chosen_idx in answers.items():
@@ -1405,28 +1425,31 @@ def explain_all_mistakes(request):
                 chosen_idx = int(chosen_idx)
             except (ValueError, TypeError):
                 continue
-                
-            if q_id in seen_question_ids:
+            if q_id in chosen_by_question:
                 continue
-                
-            question = Question.objects.filter(pk=q_id).first()
-            if not question:
-                continue
-                
-            if chosen_idx != question.correct_answer:
-                seen_question_ids.add(q_id)
-                mistakes.append({
-                    'question_id': question.id,
-                    'subject': question.subject,
-                    'text': question.text,
-                    'options': question.options,
-                    'correct_answer': question.correct_answer,
-                    'chosen_answer': chosen_idx,
-                })
-                if len(mistakes) >= 8:
-                    break
-        if len(mistakes) >= 8:
-            break
+            chosen_by_question[q_id] = chosen_idx
+
+    questions_by_id = {
+        q.id: q
+        for q in Question.objects.filter(pk__in=chosen_by_question.keys())
+    }
+
+    mistakes = []
+    for q_id, chosen_idx in chosen_by_question.items():
+        question = questions_by_id.get(q_id)
+        if not question:
+            continue
+        if chosen_idx != question.correct_answer:
+            mistakes.append({
+                'question_id': question.id,
+                'subject': question.subject,
+                'text': question.text,
+                'options': question.options,
+                'correct_answer': question.correct_answer,
+                'chosen_answer': chosen_idx,
+            })
+            if len(mistakes) >= 8:
+                break
 
     if not mistakes:
         return Response({'explanation': "Sizda hozircha xatolar aniqlanmadi. Barakalla!"})

@@ -40,6 +40,11 @@ const URL_PAGES = (() => {
   return map;
 })();
 
+// Auth talab qiladigan sahifalar. Component tashqarisida `const` sifatida —
+// har render'da qayta yaratilmasligi va useEffect bog'liqliklarini bekorga
+// o'zgartirmasligi uchun.
+const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','results','leaderboard','profile','pending-home','analytics','parent'];
+
 const pageFromPath = () => {
   try {
     const raw = window.location.pathname || '/';
@@ -244,9 +249,8 @@ const App = () => {
   };
 
   // Auth guard
-  const needsAuth = ['student','manager','admin','teacher','owner','test','results','leaderboard','profile','pending-home','analytics','parent'];
   useEffect(() => {
-    if (needsAuth.includes(page) && !user) setPage('login');
+    if (NEEDS_AUTH_PAGES.includes(page) && !user) setPage('login');
   }, [page, user]);
 
   // ─── Role-gated dashboard renderer ────────────────────────────────────────

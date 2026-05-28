@@ -33,8 +33,9 @@ def center_olympiad_limit_exceeded(center):
     """True agar bepul markaz joriy oyda olimpiada yaratish limitiga yetgan.
 
     Limit `settings.FREE_OLYMPIAD_MONTHLY_LIMIT` (default 2) dan olinadi.
-    Soft-delete qilingan (is_deleted) olimpiadalar ham hisobga olinadi —
-    aks holda yaratib-o'chirib limitni aylanib o'tish mumkin bo'lardi.
+    Faqat AKTIV (soft-delete qilinmagan, is_deleted=False) olimpiadalar
+    hisoblanadi — o'chirilgan olimpiada markazga limitni "egallamasligi"
+    kerak, aks holda admin xato olimpiadani o'chirib qayta yarata olmaydi.
     Premium markazlar uchun (kelajakda flag bilan) limit qo'llanilmaydi.
     """
     from django.conf import settings
@@ -49,6 +50,7 @@ def center_olympiad_limit_exceeded(center):
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     created_this_month = Olympiad.objects.filter(
         center=center,
+        is_deleted=False,
         created_at__gte=month_start,
     ).count()
     return created_this_month >= limit
