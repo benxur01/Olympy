@@ -4,10 +4,28 @@ from . import views
 from . import views_duel
 from . import views_me_premium
 from . import views_parent
+from . import views_retention
 from . import views_student
 
 urlpatterns = [
     path('me/', views.me, name='me'),
+    # Retention funksiyalar (Onboarding / Daily hooks / Long-term)
+    path('me/complete-onboarding/', views_retention.complete_onboarding, name='me-complete-onboarding'),
+    path('me/peer-comparison/', views_retention.peer_comparison, name='me-peer-comparison'),
+    path('me/suggested-olympiad/', views_retention.suggested_olympiad, name='me-suggested-olympiad'),
+    path('me/rival-activity/', views_retention.rival_activity, name='me-rival-activity'),
+    path('me/streak-warning/', views_retention.streak_warning, name='me-streak-warning'),
+    path('me/roadmap/', views_retention.roadmap, name='me-roadmap'),
+    path('me/progress-comparison/', views_retention.progress_comparison, name='me-progress-comparison'),
+    path('me/classmates-leaderboard/', views_retention.classmates_leaderboard, name='me-classmates-leaderboard'),
+    path('onboarding/mini-test/', views_retention.onboarding_mini_test, name='onboarding-mini-test'),
+    path('onboarding/mini-test/submit/', views_retention.onboarding_mini_test_submit, name='onboarding-mini-test-submit'),
+    path('daily-questions/', views_retention.daily_questions, name='daily-questions'),
+    path('daily-questions/stats/', views_retention.daily_questions_stats, name='daily-questions-stats'),
+    path('daily-questions/<int:daily_id>/answer/', views_retention.daily_question_answer, name='daily-question-answer'),
+    path('weekly-contest/', views_retention.weekly_contest, name='weekly-contest'),
+    path('weekly-contest/history/', views_retention.weekly_contest_history, name='weekly-contest-history'),
+    path('olympiad-calendar/', views_retention.olympiad_calendar, name='olympiad-calendar'),
     # Yangi premium funksiyalar (O1–O7)
     path('me/streak/', views_me_premium.my_streak, name='me-streak'),
     path('me/rivals/', views_me_premium.rivals, name='me-rivals'),

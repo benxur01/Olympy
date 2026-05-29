@@ -548,9 +548,37 @@ const App = () => {
     );
   }
 
+  // OB1: Onboarding sehrgar — faqat tizimga kirgan o'quvchi uchun va
+  // onboarding tugatilmagan bo'lsa. Test/auth sahifalarida ko'rsatmaymiz
+  // (test jarayonini buzmaslik uchun). Wizard butun ekranni egallaydi.
+  const studentStatus = user?.roles?.student?.status;
+  const showOnboarding = (
+    !!user &&
+    user.onboardingCompleted === false &&
+    !!studentStatus &&
+    !['test', 'login', 'register', 'landing'].includes(page)
+  );
+
   return (
     <div key={page} className="dark">
       {renderPage()}
+      {showOnboarding && (
+        <OnboardingWizard
+          user={user}
+          onUserUpdate={updateCurrentUser}
+          onComplete={() => {
+            // user obyekti onUserUpdate orqali allaqachon yangilangan
+            // (onboardingCompleted=true) — wizard avtomatik yopiladi.
+            // Qo'shimcha kafolat: backend'dan yangi user'ni tortib olamiz.
+            const auth = globalThis.OlympyApi?.loadAuth?.();
+            if (globalThis.OlympyApi?.getMe) {
+              globalThis.OlympyApi.getMe(auth?.token)
+                .then(fresh => updateCurrentUser(globalThis.OlympyApi.mapBackendUser(fresh)))
+                .catch(() => {});
+            }
+          }}
+        />
+      )}
       <RoleSwitcherModal
         open={switcherOpen}
         user={user}

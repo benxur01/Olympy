@@ -281,6 +281,13 @@ const mapBackendUser = (user) => {
     streakCount: user.streak_count || 0,
     lastActiveDate: user.last_active_date || null,
     badges: user.badges || [],
+    // Retention onboarding (OB1). Eski foydalanuvchilarda maydon yo'q bo'lsa
+    // (undefined) wizard'ni ko'rsatmaslik uchun default true — faqat backend
+    // aniq `false` qaytarganda wizard ochiladi.
+    onboardingCompleted: user.onboarding_completed !== false,
+    onboardingGrade: user.onboarding_grade || null,
+    onboardingSubjects: Array.isArray(user.onboarding_subjects) ? user.onboarding_subjects : [],
+    onboardingGoal: user.onboarding_goal || null,
     _api: true,
   };
 };
@@ -557,6 +564,30 @@ export const OlympyApi = {
   getSubjectWeakness: (token) => request('/api/me/subject-weakness/', { token }),
   getReadiness: (olympiadId, token) => request(`/api/me/readiness/?olympiad_id=${encodeURIComponent(olympiadId)}`, { token }),
   getStudyPlan: (token) => request('/api/me/study-plan/', { method: 'POST', token }),
+  // ─── Retention (Onboarding / Daily hooks / Long-term) ───
+  completeOnboarding: (payload, token) => request('/api/me/complete-onboarding/', { method: 'POST', body: payload, token }),
+  getOnboardingMiniTest: (token) => request('/api/onboarding/mini-test/', { token }),
+  submitOnboardingMiniTest: (answers, token) => request('/api/onboarding/mini-test/submit/', { method: 'POST', body: { answers }, token }),
+  getPeerComparison: (token) => request('/api/me/peer-comparison/', { token }),
+  getSuggestedOlympiad: (token) => request('/api/me/suggested-olympiad/', { token }),
+  getDailyQuestions: (token) => request('/api/daily-questions/', { token }),
+  answerDailyQuestion: (dailyId, selectedOption, token) => request(`/api/daily-questions/${dailyId}/answer/`, { method: 'POST', body: { selected_option: selectedOption }, token }),
+  getDailyQuestionsStats: (token) => request('/api/daily-questions/stats/', { token }),
+  getRivalActivity: (token) => request('/api/me/rival-activity/', { token }),
+  getStreakWarning: (token) => request('/api/me/streak-warning/', { token }),
+  getWeeklyContest: (token) => request('/api/weekly-contest/', { token }),
+  getWeeklyContestHistory: (token) => request('/api/weekly-contest/history/', { token }),
+  getOlympiadCalendar: (params, token) => {
+    const qs = params && Object.keys(params).length
+      ? '?' + new URLSearchParams(
+          Object.entries(params).filter(([, v]) => v != null && v !== '').reduce((a, [k, v]) => (a[k] = String(v), a), {})
+        ).toString()
+      : '';
+    return request(`/api/olympiad-calendar/${qs}`, { token });
+  },
+  getRoadmap: (token) => request('/api/me/roadmap/', { token }),
+  getProgressComparison: (token) => request('/api/me/progress-comparison/', { token }),
+  getClassmatesLeaderboard: (token) => request('/api/me/classmates-leaderboard/', { token }),
   // Premium markaz funksiyalari
   getStudentDynamics: (centerId, token) => request(`/api/centers/${centerId}/student-dynamics/`, { token }),
   getTopStudents: (centerId, token) => request(`/api/centers/${centerId}/top-students/`, { token }),
