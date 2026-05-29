@@ -107,3 +107,35 @@ class TestSession(models.Model):
 
     def __str__(self):
         return f'session:{self.user_id}@{self.olympiad_id}'
+
+
+class AttemptAIAnalysis(models.Model):
+    """O4: Attempt uchun avtomatik AI tahlili.
+
+    Premium o'quvchi test topshirganda AI tahlili generatsiya qilinib shu
+    yerda saqlanadi. `status` — pending/ready/failed. Har attempt uchun bitta
+    tahlil (OneToOne). Tayyor bo'lmasa endpoint {status: "pending"} qaytaradi.
+    """
+    STATUS_PENDING = 'pending'
+    STATUS_READY = 'ready'
+    STATUS_FAILED = 'failed'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Kutilmoqda'),
+        (STATUS_READY, 'Tayyor'),
+        (STATUS_FAILED, 'Xatolik'),
+    ]
+
+    attempt = models.OneToOneField(
+        TestAttempt,
+        on_delete=models.CASCADE,
+        related_name='ai_analysis',
+    )
+    analysis_text = models.TextField(blank=True, default='')
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'ai-analysis:{self.attempt_id} [{self.status}]'

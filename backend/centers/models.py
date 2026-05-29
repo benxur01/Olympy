@@ -158,3 +158,34 @@ class CenterQuestion(models.Model):
 
     def __str__(self):
         return self.text[:60]
+
+
+class CenterRatingHistory(models.Model):
+    """T7: Markaz reyting dinamikasi tarixi.
+
+    Har hafta (management command orqali) markazning o'sha kundagi reyting
+    o'rni (rank) va o'rtacha balli (score) shu yerga yoziladi. Keyin
+    rating-history endpoint orqali oxirgi N oydagi dinamika grafigi tuziladi.
+    Har (center, date) juftligi yagona — bir kunda ikki marta yozilmaydi.
+    """
+    center = models.ForeignKey(
+        EducationCenter,
+        on_delete=models.CASCADE,
+        related_name='rating_history',
+    )
+    date = models.DateField(db_index=True)
+    rank = models.PositiveIntegerField(null=True, blank=True)
+    score = models.DecimalField(max_digits=5, decimal_places=1, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['center', 'date'],
+                name='unique_center_rating_date',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.center_id}@{self.date}: rank={self.rank} score={self.score}'
