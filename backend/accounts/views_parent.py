@@ -40,7 +40,9 @@ def _serialize_child(student, attempts_qs, weekly_digest_enabled=True):
         'student_id': student.id,
         'full_name': student.full_name,
         'username': student.username or '',
-        'phone': student.normalized_phone,
+        # `phone` ataylab qaytarilmaydi — ota-ona farzandning telefon raqamini
+        # ko'rishi shart emas (PII). Bog'lanish telefon orqali yaratiladi,
+        # ammo natijada raqamni qaytarib bermaymiz.
         'avatar_url': avatar_url,
         'streak_count': student.streak_count,
         'badges': student.get_badges(),
@@ -73,7 +75,11 @@ def link_child(request):
             status=http_status.HTTP_400_BAD_REQUEST,
         )
     try:
-        ParentStudentLink.objects.create(parent=request.user, student=student)
+        # is_confirmed=False — student tasdiqlamaguncha link "kutilmoqda"
+        # holatida bo'ladi va get_children/list_children'da ko'rinmaydi.
+        ParentStudentLink.objects.create(
+            parent=request.user, student=student, is_confirmed=False,
+        )
     except IntegrityError:
         return Response(
             {'detail': "Bu farzand allaqachon qo'shilgan"},
@@ -89,7 +95,8 @@ def link_child(request):
     return Response({
         'student_id': student.id,
         'full_name': student.full_name,
-        'phone': student.normalized_phone,
+        'is_confirmed': False,
+        'detail': "So'rov yuborildi. Farzand tasdiqlagach ma'lumotlari ko'rinadi.",
     }, status=http_status.HTTP_201_CREATED)
 
 
@@ -99,7 +106,14 @@ def list_children(request):
     """GET /api/me/parent/children/ — farzandlar ro'yxati + so'nggi natijalar."""
     from attempts.models import TestAttempt
 
-    links = ParentStudentLink.objects.filter(parent=request.user).select_related('student').order_by('-created_at')
+    # Faqat student tasdiqlagan (is_confirmed=True) bog'lanishlar ko'rinadi —
+    # student roziligisiz ota-ona uning ma'lumotlarini ko'ra olmaydi.
+    links = (
+        ParentStudentLink.objects
+        .filter(parent=request.user, is_confirmed=True)
+        .select_related('student')
+        .order_by('-created_at')
+    )
     student_ids = [l.student_id for l in links]
     attempts_by_user = {}
     if student_ids:
@@ -145,14 +159,16 @@ def child_report_pdf(request, student_id):
     from django.contrib.auth import get_user_model
     from .reports import generate_monthly_report_pdf
     
-    # Check if the child belongs to this parent
-    link_exists = ParentStudentLink.objects.filter(parent=request.user, student_id=student_id).exists()
+    # Check if the child belongs to this parent va student tasdiqlagan.
+    link_exists = ParentStudentLink.objects.filter(
+        parent=request.user, student_id=student_id, is_confirmed=True,
+    ).exists()
     if not link_exists:
         return Response({'detail': "Ruxsat berilmagan yoki farzand bog'lanmagan"}, status=http_status.HTTP_403_FORBIDDEN)
-        
+
     User = get_user_model()
     student = get_object_or_404(User, pk=student_id)
-    
+
     try:
         pdf_bytes = generate_monthly_report_pdf(student)
         # Ota-onaning Telegrami bog'langan bo'lsa, hisobotni bot orqali ham avtomatik yuboramiz
@@ -193,14 +209,16 @@ def predict_child_success(request, student_id):
     from .models import ParentStudentLink
     from django.contrib.auth import get_user_model
     
-    # Check link
-    link_exists = ParentStudentLink.objects.filter(parent=request.user, student_id=student_id).exists()
+    # Check link — faqat student tasdiqlagan bog'lanish uchun.
+    link_exists = ParentStudentLink.objects.filter(
+        parent=request.user, student_id=student_id, is_confirmed=True,
+    ).exists()
     if not link_exists:
         return Response({'detail': "Ruxsat berilmagan yoki farzand bog'lanmagan"}, status=http_status.HTTP_403_FORBIDDEN)
-        
+
     User = get_user_model()
     student = get_object_or_404(User, pk=student_id)
-    
+
     from .views import calculate_predictions_for_user
     res = calculate_predictions_for_user(student)
     return Response(res)
@@ -212,7 +230,10 @@ def toggle_weekly_digest(request, student_id):
     """POST /api/me/parent/children/<student_id>/toggle-digest/
     Farzand uchun haftalik Telegram xabarlarini yoqish yoki o'chirish.
     """
-    link = get_object_or_404(ParentStudentLink, parent=request.user, student_id=student_id)
+    link = get_object_or_404(
+        ParentStudentLink, parent=request.user, student_id=student_id,
+        is_confirmed=True,
+    )
     enabled = request.data.get('enabled', True)
     link.weekly_digest_enabled = bool(enabled)
     link.save(update_fields=['weekly_digest_enabled'])
@@ -225,7 +246,10 @@ def send_test_weekly_digest(request, student_id):
     """POST /api/me/parent/children/<student_id>/test-digest/
     Haftalik Telegram hisobotini ota-onaga test tariqasida darhol yuboradi.
     """
-    link = get_object_or_404(ParentStudentLink, parent=request.user, student_id=student_id)
+    link = get_object_or_404(
+        ParentStudentLink, parent=request.user, student_id=student_id,
+        is_confirmed=True,
+    )
     chat_id = getattr(request.user, 'telegram_chat_id', '')
     if not chat_id:
         return Response({'detail': "Sizning Telegram profilingiz platforma bilan bog'lanmagan. Iltimos, Telegram orqali tizimga kiring."}, status=http_status.HTTP_400_BAD_REQUEST)
@@ -271,5 +295,109 @@ def send_test_weekly_digest(request, student_id):
     threading.Thread(target=_send, daemon=True).start()
 
     return Response({'ok': True, 'detail': "Haftalik hisobot Telegram profilingizga jo'natildi!"})
+
+
+# ─── Student tomoni: ota-ona bog'lanish so'rovlarini boshqarish ───────────────
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def list_parent_requests(request):
+    """GET /api/me/parent-requests/ — menga kelgan kutilayotgan ota-ona so'rovlari.
+
+    Student o'ziga "farzand" sifatida qo'shmoqchi bo'lgan ota-onalarning
+    tasdiqlanmagan (is_confirmed=False) so'rovlarini ko'radi.
+    """
+    links = (
+        ParentStudentLink.objects
+        .filter(student=request.user, is_confirmed=False)
+        .select_related('parent')
+        .order_by('-created_at')
+    )
+    payload = []
+    for link in links:
+        parent = link.parent
+        avatar_url = ''
+        try:
+            if parent.avatar:
+                avatar_url = parent.avatar.url
+        except Exception:
+            pass
+        payload.append({
+            'link_id': link.id,
+            'parent_id': parent.id,
+            'parent_name': parent.full_name or '',
+            'parent_username': parent.username or '',
+            'avatar_url': avatar_url,
+            'created_at': link.created_at.isoformat() if link.created_at else '',
+        })
+    return Response(payload)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def confirm_parent(request):
+    """POST /api/me/confirm-parent/ — body: {"link_id": <id>} yoki {"parent_id": <id>}, ixtiyoriy {"accept": true|false}
+
+    Student o'ziga kelgan ota-ona bog'lanish so'rovini tasdiqlaydi (yoki rad
+    etadi). Bu `respond_parent_request`'ning qulay, link_id'ni URL'ga
+    qo'ymaydigan muqobili — frontend `link_id` yoki `parent_id` orqali
+    chaqirishi mumkin. accept=False bo'lsa so'rov o'chiriladi.
+    """
+    data = request.data or {}
+    link_id = data.get('link_id')
+    parent_id = data.get('parent_id')
+    qs = ParentStudentLink.objects.filter(student=request.user, is_confirmed=False)
+    if link_id:
+        link = qs.filter(pk=link_id).first()
+    elif parent_id:
+        link = qs.filter(parent_id=parent_id).order_by('-created_at').first()
+    else:
+        return Response(
+            {'detail': "link_id yoki parent_id majburiy"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if not link:
+        return Response(
+            {'detail': "So'rov topilmadi yoki allaqachon ko'rib chiqilgan"},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+    accept = bool(data.get('accept', True))
+    if not accept:
+        link.delete()
+        return Response({'ok': True, 'accepted': False})
+    from django.utils import timezone
+    link.is_confirmed = True
+    link.confirmed_at = timezone.now()
+    link.save(update_fields=['is_confirmed', 'confirmed_at'])
+    return Response({'ok': True, 'accepted': True})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def respond_parent_request(request, link_id):
+    """POST /api/me/parent-requests/<link_id>/respond/ — body: {"accept": true|false}
+
+    Student o'ziga kelgan ota-ona bog'lanish so'rovini tasdiqlaydi yoki rad
+    etadi. Tasdiqlanganda is_confirmed=True bo'ladi va ota-ona farzand
+    ma'lumotlarini ko'ra oladi. Rad etilganda link o'chiriladi.
+    """
+    link = ParentStudentLink.objects.filter(
+        pk=link_id, student=request.user, is_confirmed=False,
+    ).first()
+    if not link:
+        return Response(
+            {'detail': "So'rov topilmadi yoki allaqachon ko'rib chiqilgan"},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+    accept = bool((request.data or {}).get('accept', False))
+    if not accept:
+        link.delete()
+        return Response({'ok': True, 'accepted': False})
+    from django.utils import timezone
+    link.is_confirmed = True
+    link.confirmed_at = timezone.now()
+    link.save(update_fields=['is_confirmed', 'confirmed_at'])
+    return Response({'ok': True, 'accepted': True})
 
 

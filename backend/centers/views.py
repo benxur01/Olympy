@@ -189,7 +189,13 @@ def update_center(request, center_id):
 
     for key, value in payload.items():
         setattr(center, key, value)
-    center.save(update_fields=list(payload.keys()) or None)
+    # `update_fields=list(payload.keys()) or None` xato edi: agar payload bo'sh
+    # bo'lsa `or None` butun jadvalni qayta yozardi (update_fields=None Django'da
+    # "barcha maydonlarni saqla" degani). Endi faqat o'zgargan maydonlar bo'lsa
+    # save() chaqiramiz — bo'sh bo'lsa keraksiz DB yozuvini o'tkazib yuboramiz.
+    changed_fields = list(payload.keys())
+    if changed_fields:
+        center.save(update_fields=changed_fields)
 
     # Annotated countlar response uchun
     center = _annotate_center_counts(
@@ -882,6 +888,17 @@ def admin_list_centers(request):
     # AdminDashboard'dagi "O'quvchi" / "Olimpiada" ustunlari N+1 query
     # bilan to'planardi.
     qs = _annotate_center_counts(qs)
+    # Pagination: markazlar soni o'sgan sayin butun ro'yxatni bitta
+    # response'da qaytarish brauzerni sekinlashtiradi. ?page= / ?page_size=
+    # bilan sahifalanadi (max 200).
+    from olympy_api.pagination import LargePageNumberPagination
+    paginator = LargePageNumberPagination()
+    paginator.page_size = 100
+    page = paginator.paginate_queryset(qs, request)
+    if page is not None:
+        return paginator.get_paginated_response(
+            AdminEducationCenterSerializer(page, many=True, context={'request': request}).data
+        )
     return Response(AdminEducationCenterSerializer(qs, many=True, context={'request': request}).data)
 
 
@@ -1208,11 +1225,18 @@ def student_dynamics(request, center_id):
     """
     from datetime import datetime
 
+    from django.db.models import Count
+    from django.db.models.functions import TruncMonth
     from django.utils import timezone as dj_timezone
 
     center = get_object_or_404(EducationCenter, pk=center_id)
     if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if not center.is_premium:
+        return Response(
+            {'detail': "Bu funksiya premium markazlar uchun.", 'upgrade_required': True},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
 
     student_qs = CenterMembership.objects.filter(
         center=center,
@@ -1232,25 +1256,42 @@ def student_dynamics(request, center_id):
             year -= 1
     months.reverse()
 
+    # Avval har oy uchun 2 ta (joined + total) alohida COUNT so'rovi otilardi —
+    # 6 oy × 2 = 12 ta query. Endi:
+    #   1) Oyma-oy qo'shilganlar bitta TruncMonth GROUP BY query bilan.
+    #   2) Oyna boshidan oldingi jami a'zolar bitta COUNT query bilan.
+    # Keyin `total` qiymatini Python'da kumulyativ yig'amiz — qo'shimcha
+    # so'rovsiz. Jami 2 ta DB so'rovi.
+    first_year, first_month = months[0]
+    window_start = datetime(first_year, first_month, 1)
+    if dj_timezone.is_naive(window_start):
+        window_start = dj_timezone.make_aware(window_start)
+
+    monthly_joined = (
+        student_qs
+        .filter(created_at__gte=window_start)
+        .annotate(month_bucket=TruncMonth('created_at'))
+        .values('month_bucket')
+        .annotate(joined=Count('id'))
+    )
+    joined_by_key = {}
+    for row in monthly_joined:
+        mb = row['month_bucket']
+        if mb is None:
+            continue
+        joined_by_key[(mb.year, mb.month)] = row['joined']
+
+    # Oyna boshidan oldin (window_start dan oldin) tasdiqlangan a'zolar bazasi.
+    running_total = student_qs.filter(created_at__lt=window_start).count()
+
     data = []
     for (y, m) in months:
-        if m == 12:
-            next_y, next_m = y + 1, 1
-        else:
-            next_y, next_m = y, m + 1
-        month_start = dj_timezone.make_aware(datetime(y, m, 1)) if dj_timezone.is_naive(
-            datetime(y, m, 1)) else datetime(y, m, 1)
-        next_start = dj_timezone.make_aware(datetime(next_y, next_m, 1)) if dj_timezone.is_naive(
-            datetime(next_y, next_m, 1)) else datetime(next_y, next_m, 1)
-        joined = student_qs.filter(
-            created_at__gte=month_start,
-            created_at__lt=next_start,
-        ).count()
-        total = student_qs.filter(created_at__lt=next_start).count()
+        joined = joined_by_key.get((y, m), 0)
+        running_total += joined
         data.append({
             'month': f'{y:04d}-{m:02d}',
             'joined': joined,
-            'total': total,
+            'total': running_total,
         })
     return Response(data)
 
@@ -1270,6 +1311,11 @@ def top_students(request, center_id):
     center = get_object_or_404(EducationCenter, pk=center_id)
     if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if not center.is_premium:
+        return Response(
+            {'detail': "Bu funksiya premium markazlar uchun.", 'upgrade_required': True},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
 
     rows = (
         TestAttempt.objects
@@ -1314,6 +1360,11 @@ def center_question_bank(request, center_id):
     center = get_object_or_404(EducationCenter, pk=center_id)
     if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if not center.is_premium:
+        return Response(
+            {'detail': "Bu funksiya premium markazlar uchun.", 'upgrade_required': True},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
 
     if request.method == 'GET':
         qs = CenterQuestion.objects.filter(center=center).order_by('-created_at')
@@ -1374,6 +1425,11 @@ def center_question_bank_delete(request, center_id, q_id):
     center = get_object_or_404(EducationCenter, pk=center_id)
     if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if not center.is_premium:
+        return Response(
+            {'detail': "Bu funksiya premium markazlar uchun.", 'upgrade_required': True},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
     question = get_object_or_404(CenterQuestion, pk=q_id, center=center)
     question.delete()
     return Response({'detail': "Savol o'chirildi"}, status=http_status.HTTP_200_OK)

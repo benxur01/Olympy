@@ -241,6 +241,11 @@ class ParentStudentLink(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     weekly_digest_enabled = models.BooleanField(default=True)
+    # Student roziligi: ota-ona link yaratganida False bo'ladi va student
+    # tasdiqlaguncha (is_confirmed=True) link "kutilmoqda" holatida turadi.
+    # Tasdiqlanmagan link list_children'da ko'rinmaydi.
+    is_confirmed = models.BooleanField(default=False)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']

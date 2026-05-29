@@ -1,3 +1,4 @@
+import logging
 import re
 
 from django.contrib.auth.password_validation import validate_password as django_validate_password
@@ -5,7 +6,14 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
 from .models import User
+from .utils import mask_phone as _mask_phone_for_log
 from .utils import normalize_phone
+
+
+# Xavfsizlik audit loggeri — muvaffaqiyatsiz login urinishlari shu yerda
+# yoziladi (LOGGING konfiguratsiyasidagi 'security' logger). Parol HECH
+# QACHON loglanmaydi.
+security_logger = logging.getLogger('security')
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -21,7 +29,18 @@ class UserSerializer(serializers.ModelSerializer):
                   'roles_detail', 'telegram_linked', 'is_platform_admin',
                   'is_premium', 'is_active', 'avatar_url', 'created_at',
                   'streak_count', 'last_active_date', 'badges']
-        read_only_fields = ['id', 'normalized_phone', 'roles_detail',
+        # Xavfsizlik (privilege escalation / IDOR himoyasi): `roles`,
+        # `is_platform_admin`, `is_premium`, `is_active` — bular foydalanuvchi
+        # tomonidan O'ZGARTIRILMASLIGI kerak. Aks holda kimdir bu serializer'ni
+        # PATCH uchun ishlatsa (`data=request.data` bilan), o'ziga `owner`,
+        # `admin`, `manager` rollarini yoki premium/platform-admin holatini
+        # bera olardi. Hozir UserSerializer faqat OUTPUT uchun ishlatiladi,
+        # lekin read_only ro'yxatini to'liq qilib qo'yamiz — kelajakda
+        # tasodifan write endpoint'ga ulansa ham eskalatsiya bo'lmaydi.
+        # Rollar faqat CenterMembership tasdiqlash oqimi (owner/admin) yoki
+        # admin CLI orqali o'zgaradi; premium esa admin_toggle_user_premium
+        # (is_platform_admin tekshiruvi bilan) orqali.
+        read_only_fields = ['id', 'roles', 'normalized_phone', 'roles_detail',
                             'telegram_linked', 'is_platform_admin',
                             'is_premium', 'is_active', 'avatar_url', 'created_at',
                             'streak_count', 'last_active_date', 'badges']
@@ -120,7 +139,7 @@ class UserSerializer(serializers.ModelSerializer):
 class RegisterSerializer(serializers.Serializer):
     full_name = serializers.CharField(max_length=120)
     phone = serializers.CharField(max_length=20)
-    password = serializers.CharField(write_only=True, min_length=6)
+    password = serializers.CharField(write_only=True, min_length=8)
     role = serializers.ChoiceField(choices=['student'], required=False)
 
     def validate_phone(self, value):
@@ -173,9 +192,14 @@ class LoginSerializer(serializers.Serializer):
         norm = normalize_phone(attrs.get('phone'))
         if not norm:
             raise serializers.ValidationError("Telefon raqam yoki parol noto'g'ri")
+        masked = _mask_phone_for_log(norm)
         cache_key = self._failed_cache_key(norm)
         current_failed = cache.get(cache_key, 0)
         if current_failed >= self.LOCKOUT_THRESHOLD:
+            security_logger.warning(
+                'login blocked (lockout) phone=%s failed_count=%s',
+                masked, current_failed,
+            )
             raise serializers.ValidationError(
                 "Juda ko'p noto'g'ri urinish. Iltimos, 15 daqiqadan keyin qayta urinib ko'ring."
             )
@@ -185,11 +209,23 @@ class LoginSerializer(serializers.Serializer):
             # Mavjud bo'lmagan telefon uchun ham counter oshiramiz, aks holda
             # hujumchi telefon raqam mavjudligini timing orqali aniqlay olardi.
             cache.set(cache_key, current_failed + 1, self.LOCKOUT_TTL_SECONDS)
+            security_logger.warning(
+                'login failed (unknown phone) phone=%s attempt=%s',
+                masked, current_failed + 1,
+            )
             raise serializers.ValidationError("Telefon raqam yoki parol noto'g'ri")
         if not user.check_password(attrs.get('password')):
             cache.set(cache_key, current_failed + 1, self.LOCKOUT_TTL_SECONDS)
+            security_logger.warning(
+                'login failed (wrong password) phone=%s user_id=%s attempt=%s',
+                masked, user.pk, current_failed + 1,
+            )
             raise serializers.ValidationError("Telefon raqam yoki parol noto'g'ri")
         if not user.is_active:
+            security_logger.warning(
+                'login blocked (inactive account) phone=%s user_id=%s',
+                masked, user.pk,
+            )
             raise serializers.ValidationError("Hisob bloklangan")
         # Muvaffaqiyatli login — counter'ni tozalaymiz.
         cache.delete(cache_key)
@@ -227,7 +263,14 @@ class StartPasswordResetSerializer(serializers.Serializer):
 
 class VerifyOtpSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=20)
-    otp = serializers.CharField(min_length=4, max_length=12)
+    # OTP server tomonida aniq 6 xonali raqam bo'lishi shart. Generatsiya
+    # qilingan kod doim 6 xonali (_make_otp). Avval 4-12 belgi qabul qilinardi
+    # va harf/belgi ham o'tib ketardi — endi faqat 6 ta raqam, aks holda
+    # brute-force urinishlarini ham erta rad etamiz (DB'ga tegmasdan).
+    otp = serializers.RegexField(
+        r'^\d{6}$',
+        error_messages={'invalid': 'OTP 6 xonali raqamdan iborat bo\'lishi kerak'},
+    )
 
     def validate_phone(self, value):
         norm = normalize_phone(value)
@@ -282,7 +325,7 @@ class ChangePasswordSerializer(serializers.Serializer):
     """POST /api/auth/me/change-password/ — eski parol bilan yangisini almashtirish."""
 
     old_password = serializers.CharField(write_only=True)
-    new_password = serializers.CharField(write_only=True, min_length=6)
+    new_password = serializers.CharField(write_only=True, min_length=8)
 
     def validate_new_password(self, value):
         try:
@@ -293,7 +336,7 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 
 class ConfirmPasswordResetSerializer(VerifyOtpSerializer):
-    password = serializers.CharField(write_only=True, min_length=6)
+    password = serializers.CharField(write_only=True, min_length=8)
 
     def validate_password(self, value):
         # Parol reset paytida ham bir xil kuchli parol talablari amal

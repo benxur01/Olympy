@@ -6,9 +6,10 @@ faqat autentifikatsiyalangan foydalanuvchining O'Z ma'lumotlarini qaytaradi.
 from collections import OrderedDict
 
 from rest_framework import status as http_status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 
 from attempts.models import TestAttempt
 from olympiads.models import Olympiad
@@ -37,10 +38,13 @@ def history_chart(request):
     """
     if not request.user.is_premium:
         return _premium_required_response()
+    # prefetch_related('olympiad__questions') — _olympiad_max_score har
+    # attempt uchun olympiad.questions.all() yangi so'rov otmasligi uchun.
     attempts = list(
         TestAttempt.objects
         .filter(user=request.user, olympiad__is_deleted=False)
         .select_related('olympiad')
+        .prefetch_related('olympiad__questions')
         .order_by('-submitted_at')[:10]
     )
     attempts.reverse()  # eskidan yangiga
@@ -223,6 +227,7 @@ def readiness(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
 def study_plan(request):
     """POST /api/me/study-plan/ — AI shaxsiy o'quv rejasi.
 
@@ -251,6 +256,9 @@ def study_plan(request):
         perf,
     )
     return Response({'plan': plan, 'weak_subjects': weak_subjects[:5]})
+
+
+study_plan.cls.throttle_scope = 'ai'
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────

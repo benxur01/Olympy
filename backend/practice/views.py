@@ -200,10 +200,21 @@ def practice_submit(request):
     total = len(review)
     score_pct = round((correct_count / total) * 100) if total else 0
 
+    # Streak'ni locked user ustida yangilaymiz — parallel submit'larda
+    # lost update bo'lmasligi uchun (race condition himoyasi).
     try:
-        request.user.update_streak()
+        from django.contrib.auth import get_user_model
+        from django.db import transaction
+        User = get_user_model()
+        with transaction.atomic():
+            locked_user = User.objects.select_for_update().get(pk=request.user.pk)
+            locked_user.update_streak()
+            request.user.streak_count = locked_user.streak_count
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception(
+            'practice streak update failed for user=%s', request.user.pk,
+        )
 
     # Submit qilingach session'ni o'chiramiz — qayta yuborishning oldini olish.
     cache.delete(f'{PRACTICE_CACHE_PREFIX}{practice_id}')
