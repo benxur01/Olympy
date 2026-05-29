@@ -1,6 +1,7 @@
 from django.urls import path
 
 from . import views
+from . import views_duel
 from . import views_me_premium
 from . import views_parent
 from . import views_student
@@ -15,6 +16,13 @@ urlpatterns = [
     path('me/achievements/', views_me_premium.my_achievements, name='me-achievements'),
     path('me/weekly-summary/', views_me_premium.weekly_summary, name='me-weekly-summary'),
     path('me/recommended-olympiads/', views_me_premium.recommended_olympiads, name='me-recommended-olympiads'),
+    # Yangi 12-funksiya spec (O'quvchilar: O1–O6)
+    path('me/error-notebook/', views_me_premium.error_notebook, name='me-error-notebook'),
+    path('me/daily-goal/', views_me_premium.daily_goal, name='me-daily-goal'),
+    path('me/strength-card/', views_me_premium.strength_card, name='me-strength-card'),
+    path('me/olympiad-prep-plan/', views_me_premium.olympiad_prep_plan, name='me-olympiad-prep-plan'),
+    path('me/ai-audio-analysis/', views_me_premium.ai_audio_analysis, name='me-ai-audio-analysis'),
+    path('me/duels/', views_duel.my_duels, name='me-duels'),
     path('me/history-chart/', views_student.history_chart, name='me-history-chart'),
     path('me/competitor-analysis/', views_student.competitor_analysis, name='me-competitor-analysis'),
     path('me/subject-weakness/', views_student.subject_weakness, name='me-subject-weakness'),

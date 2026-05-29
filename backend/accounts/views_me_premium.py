@@ -7,13 +7,15 @@ Ba'zilari `is_premium` tekshiruvini talab qiladi (O7).
 from django.contrib.auth import get_user_model
 from django.db.models import Avg, Count, Max, Sum
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status as http_status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 
 from attempts.models import TestAttempt
-from .models import Achievement, ParentStudentLink, Rival
+from .models import Achievement, DailyGoal, ParentStudentLink, Rival
 
 MAX_RIVALS = 3
 
@@ -330,3 +332,510 @@ def recommended_olympiads(request):
     if len(recommended) < 10:
         recommended.extend(fallback[: 10 - len(recommended)])
     return Response(recommended)
+
+
+# ─── O1. Xato daftari (Error Notebook) ───────────────────────────────────────
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def error_notebook(request):
+    """GET /api/me/error-notebook/?subject=&page=
+
+    O'quvchining barcha urinishlaridagi noto'g'ri javob berilgan savollar.
+    Premium uchun. Pagination: sahifada 20 ta. Filtr: ?subject=.
+    Javob: {count, page, page_size, results: [{question_id, question_text,
+            subject, wrong_answer, correct_answer, attempt_date, olympiad_name}]}
+    """
+    from questions.models import Question
+
+    if not getattr(request.user, 'is_premium', False):
+        return _premium_required()
+
+    subject = (request.query_params.get('subject') or '').strip()
+
+    # Barcha (diskvalifikatsiya bo'lmagan) urinishlarni olimpiada bilan birga
+    # olamiz — N+1 yo'q.
+    attempts = list(
+        TestAttempt.objects
+        .filter(user=request.user, disqualified=False, olympiad__is_deleted=False)
+        .select_related('olympiad')
+        .order_by('-submitted_at')
+    )
+
+    # Har attemptdagi savol id'larini yig'ib, bitta so'rovda savollarni olamiz.
+    all_qids = set()
+    for a in attempts:
+        for k in (a.answers or {}).keys():
+            try:
+                all_qids.add(int(k))
+            except (TypeError, ValueError):
+                continue
+    questions_qs = Question.objects.filter(pk__in=all_qids)
+    if subject:
+        questions_qs = questions_qs.filter(subject__iexact=subject)
+    qmap = {q.id: q for q in questions_qs}
+
+    rows = []
+    seen = set()  # bir savol bir marta (eng so'nggi urinish bo'yicha)
+    for a in attempts:
+        olympiad_name = a.olympiad.title if a.olympiad else '—'
+        attempt_date = a.submitted_at.isoformat() if a.submitted_at else None
+        for k, v in (a.answers or {}).items():
+            try:
+                qid = int(k)
+                chosen = int(v)
+            except (TypeError, ValueError):
+                continue
+            q = qmap.get(qid)
+            if not q or qid in seen:
+                continue
+            if chosen == q.correct_answer:
+                continue
+            seen.add(qid)
+            options = q.options or []
+
+            def _opt(idx):
+                if isinstance(options, list) and 0 <= idx < len(options):
+                    return options[idx]
+                return None
+
+            rows.append({
+                'question_id': q.id,
+                'question_text': q.text,
+                'subject': q.subject or '',
+                'wrong_answer': chosen,
+                'wrong_answer_text': _opt(chosen),
+                'correct_answer': q.correct_answer,
+                'correct_answer_text': _opt(q.correct_answer),
+                'attempt_date': attempt_date,
+                'olympiad_name': olympiad_name,
+            })
+
+    # Pagination — sahifada 20 ta.
+    page_size = 20
+    try:
+        page = max(1, int(request.query_params.get('page') or 1))
+    except (TypeError, ValueError):
+        page = 1
+    total = len(rows)
+    start = (page - 1) * page_size
+    end = start + page_size
+    return Response({
+        'count': total,
+        'page': page,
+        'page_size': page_size,
+        'results': rows[start:end],
+    })
+
+
+# ─── O2. Kunlik maqsad (Daily Goal) ──────────────────────────────────────────
+
+
+def _serialize_goal(goal):
+    remaining = max(0, (goal.target_questions or 0) - (goal.completed_questions or 0))
+    return {
+        'date': goal.date.isoformat() if goal.date else None,
+        'target_questions': goal.target_questions,
+        'completed_questions': goal.completed_questions,
+        'remaining': remaining,
+        'is_achieved': goal.is_achieved,
+        'xp_bonus': goal.xp_bonus,
+    }
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def daily_goal(request):
+    """GET/POST /api/me/daily-goal/
+
+    GET: bugungi maqsad holati (yo'q bo'lsa target=0 bilan bo'sh holat).
+    POST: bugungi maqsadni belgilash {target_questions: 20}. Har kuni yangi.
+    """
+    today = timezone.now().date()
+
+    if request.method == 'POST':
+        try:
+            target = int((request.data or {}).get('target_questions') or 0)
+        except (TypeError, ValueError):
+            return Response(
+                {'detail': "target_questions son bo'lishi kerak"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        if target < 1:
+            return Response(
+                {'detail': "target_questions kamida 1 bo'lishi kerak"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        target = min(target, 500)
+        goal, _created = DailyGoal.objects.get_or_create(
+            user=request.user, date=today,
+            defaults={'target_questions': target},
+        )
+        if not _created:
+            # Maqsadni yangilash — agar allaqachon bajarilgan bo'lsa, qayta
+            # bajarilmagan holatga tushishi mumkin (yangi target kattaroq bo'lsa).
+            goal.target_questions = target
+            goal.is_achieved = goal.completed_questions >= target
+            goal.save(update_fields=['target_questions', 'is_achieved'])
+        return Response(_serialize_goal(goal), status=http_status.HTTP_200_OK)
+
+    # GET — bugungi holat.
+    goal = DailyGoal.objects.filter(user=request.user, date=today).first()
+    if goal is None:
+        return Response({
+            'date': today.isoformat(),
+            'target_questions': 0,
+            'completed_questions': 0,
+            'remaining': 0,
+            'is_achieved': False,
+            'xp_bonus': 0,
+        })
+    return Response(_serialize_goal(goal))
+
+
+# ─── O5. "Kuchli tomonlarim" karta ───────────────────────────────────────────
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def strength_card(request):
+    """GET /api/me/strength-card/ — eng yuqori avg_score bo'lgan 3 ta fan.
+
+    Barcha userlar uchun (premium emas ham). Javob:
+    {user, top_subjects: [{subject, avg_score, attempts}], share_text}
+    """
+    rows = (
+        TestAttempt.objects
+        .filter(user=request.user, disqualified=False, olympiad__is_deleted=False)
+        .values('olympiad__subject')
+        .annotate(avg=Avg('score'), attempts=Count('id'))
+    )
+    subjects = []
+    for r in rows:
+        subject = (r['olympiad__subject'] or '').strip()
+        if not subject:
+            continue
+        subjects.append({
+            'subject': subject,
+            'avg_score': round(r['avg'] or 0),
+            'attempts': r['attempts'] or 0,
+        })
+    subjects.sort(key=lambda s: (-s['avg_score'], -s['attempts']))
+    top = subjects[:3]
+
+    user_name = request.user.full_name or "O'quvchi"
+    if top:
+        parts = [f"{s['subject']} ({s['avg_score']}%)" for s in top]
+        if len(parts) == 1:
+            subj_str = parts[0]
+        else:
+            subj_str = ', '.join(parts[:-1]) + ' va ' + parts[-1]
+        share_text = f"Men Olympy da {subj_str} fanlarida kuchliman!"
+    else:
+        share_text = "Men Olympy da o'qishni boshladim!"
+
+    return Response({
+        'user': user_name,
+        'top_subjects': top,
+        'share_text': share_text,
+    })
+
+
+# ─── O6. Olimpiada tayyorgarlik plani (AI) ───────────────────────────────────
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
+def olympiad_prep_plan(request):
+    """POST /api/me/olympiad-prep-plan/ — olimpiadaga AI tayyorgarlik rejasi.
+
+    Body: {olympiad_id}. O'quvchining zaif fanlari + olimpiadagacha kunlar
+    asosida kunlik reja generatsiya qiladi (Gemini). Premium, throttle 5/day.
+    Javob: {olympiad_name, days_left, focus_subjects, daily_plan: [{day, tasks}]}
+    """
+    from olympiads.models import Olympiad
+    from accounts.views_student import _subject_performance
+
+    if not getattr(request.user, 'is_premium', False):
+        return _premium_required()
+
+    olympiad_id = (request.data or {}).get('olympiad_id')
+    if not olympiad_id:
+        return Response({'detail': 'olympiad_id majburiy'}, status=http_status.HTTP_400_BAD_REQUEST)
+    olympiad = Olympiad.objects.filter(pk=olympiad_id, is_deleted=False).first()
+    if not olympiad:
+        return Response({'detail': 'Olimpiada topilmadi'}, status=http_status.HTTP_404_NOT_FOUND)
+
+    now = timezone.now()
+    if olympiad.start_datetime:
+        delta = olympiad.start_datetime - now
+        days_left = max(0, delta.days)
+    else:
+        days_left = 7  # sana belgilanmagan bo'lsa standart 7 kunlik reja
+    # Reja uzunligini oqilona cheklaymiz (1..14 kun).
+    plan_days = max(1, min(days_left or 1, 14))
+
+    perf = _subject_performance(request.user)
+    olympiad_subject = (olympiad.subject or '').strip()
+    # Fokus fanlar: olimpiada fani + eng zaif 2 ta fan.
+    focus = []
+    if olympiad_subject:
+        focus.append(olympiad_subject)
+    weak_sorted = sorted((s for s in perf), key=lambda s: perf[s])
+    for s in weak_sorted:
+        if s not in focus:
+            focus.append(s)
+        if len(focus) >= 3:
+            break
+    if not focus:
+        focus = [olympiad_subject] if olympiad_subject else ["Umumiy tayyorgarlik"]
+
+    daily_plan = _generate_prep_plan_ai(
+        olympiad.title, focus, plan_days, perf,
+    )
+
+    return Response({
+        'olympiad_id': olympiad.id,
+        'olympiad_name': olympiad.title,
+        'days_left': days_left,
+        'focus_subjects': focus,
+        'daily_plan': daily_plan,
+    })
+
+
+olympiad_prep_plan.cls.throttle_scope = 'ai_prep'
+
+
+def _generate_prep_plan_ai(olympiad_name, focus_subjects, plan_days, perf):
+    """Gemini orqali kunlik tayyorgarlik rejasi.
+
+    Qaytaradi: [{day: 1, tasks: ["...", "..."]}]. AI yo'q/xato bo'lsa oddiy
+    fallback reja qaytariladi.
+    """
+    import json
+    import urllib.parse
+    import urllib.request
+
+    from questions.ai_generation import _gemini_api_keys, _gemini_models
+
+    def _fallback():
+        plan = []
+        for d in range(1, plan_days + 1):
+            subj = focus_subjects[(d - 1) % len(focus_subjects)]
+            plan.append({
+                'day': d,
+                'tasks': [
+                    f"{subj} fanidan 30-45 daqiqa nazariy takrorlash",
+                    f"{subj} bo'yicha 10-15 ta mashq savol yechish",
+                ],
+            })
+        return plan
+
+    keys = _gemini_api_keys()
+    if not keys:
+        return _fallback()
+
+    subj_str = ', '.join(
+        f"{s} ({round(perf.get(s, 0))}%)" for s in focus_subjects
+    )
+    prompt = (
+        f"Siz tajribali olimpiada murabbiyisiz. O'quvchi '{olympiad_name}' "
+        f"olimpiadasiga tayyorlanmoqda. {plan_days} kun qoldi. "
+        f"O'quvchining fokus fanlari va hozirgi darajasi: {subj_str}.\n"
+        f"Aniq {plan_days} kunlik tayyorgarlik rejasini tuz. Har kun uchun "
+        f"2-3 ta qisqa, amaliy vazifa ber. Javobni QAT'IY JSON ko'rinishida "
+        f"qaytar: {{\"daily_plan\": [{{\"day\": 1, \"tasks\": [\"...\", \"...\"]}}]}}. "
+        f"Vazifalar faqat o'zbek tilida bo'lsin. Boshqa matn yoki izoh qo'shma."
+    )
+    payload = {
+        'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
+        'generationConfig': {
+            'maxOutputTokens': 2048,
+            'responseMimeType': 'application/json',
+        },
+    }
+    body = json.dumps(payload).encode('utf-8')
+    for model in _gemini_models():
+        model_path = urllib.parse.quote(model, safe='-_.~/')
+        url = (
+            f'https://generativelanguage.googleapis.com/v1beta/models/'
+            f'{model_path}:generateContent'
+        )
+        for api_key in keys:
+            req = urllib.request.Request(
+                url, data=body, method='POST',
+                headers={'Content-Type': 'application/json', 'x-goog-api-key': api_key},
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=45) as response:
+                    raw = json.loads(response.read().decode('utf-8'))
+                parts = (
+                    ((raw.get('candidates') or [{}])[0].get('content') or {})
+                    .get('parts') or []
+                )
+                text = ''.join(part.get('text') or '' for part in parts).strip()
+                if not text:
+                    continue
+                parsed = json.loads(text)
+                plan = parsed.get('daily_plan')
+                if isinstance(plan, list) and plan:
+                    # Normallashtiramiz: day int, tasks list[str].
+                    clean = []
+                    for i, item in enumerate(plan[:plan_days], start=1):
+                        tasks = item.get('tasks') if isinstance(item, dict) else None
+                        if not isinstance(tasks, list):
+                            continue
+                        clean.append({
+                            'day': item.get('day') or i,
+                            'tasks': [str(t) for t in tasks if str(t).strip()][:4],
+                        })
+                    if clean:
+                        return clean
+            except Exception:
+                pass
+    return _fallback()
+
+
+# ─── O4. AI tahlil audio (Telegram) ──────────────────────────────────────────
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
+def ai_audio_analysis(request):
+    """POST /api/me/ai-audio-analysis/ — AI tahlilni Telegram orqali yuborish.
+
+    Body: {attempt_id}. Mavjud AI tahlil matnini oladi (yo'q bo'lsa yangidan
+    generatsiya qiladi). gTTS bo'lsa audio (voice) qilib, bo'lmasa matn xabar
+    sifatida o'quvchining Telegram'iga yuboradi. Premium, throttle 3/day.
+    Javob: {status: "sent"|"text_only"|"no_telegram", message}
+    """
+    from attempts.models import AttemptAIAnalysis, TestAttempt
+    from questions.ai_generation import analyze_attempt_ai
+
+    if not getattr(request.user, 'is_premium', False):
+        return _premium_required()
+
+    attempt_id = (request.data or {}).get('attempt_id')
+    if not attempt_id:
+        return Response({'detail': 'attempt_id majburiy'}, status=http_status.HTTP_400_BAD_REQUEST)
+    attempt = (
+        TestAttempt.objects
+        .filter(pk=attempt_id, user=request.user)
+        .select_related('olympiad')
+        .first()
+    )
+    if not attempt:
+        return Response({'detail': 'Urinish topilmadi'}, status=http_status.HTTP_404_NOT_FOUND)
+
+    # Avval saqlangan AI tahlil bor bo'lsa undan foydalanamiz (qayta
+    # generatsiya qilmaymiz — Gemini chaqiruvini tejaymiz).
+    analysis = AttemptAIAnalysis.objects.filter(attempt=attempt).first()
+    if analysis and analysis.status == AttemptAIAnalysis.STATUS_READY and analysis.analysis_text:
+        analysis_text = analysis.analysis_text
+    else:
+        olympiad = attempt.olympiad
+        summary = {
+            'olympiad_title': olympiad.title if olympiad else '',
+            'subject': olympiad.subject if olympiad else '',
+            'score': attempt.score,
+            'correct': attempt.correct_count,
+            'wrong': attempt.wrong_count,
+            'total': attempt.total_questions,
+        }
+        mistakes = []
+        if olympiad:
+            from attempts.views import _build_attempt_mistakes
+            mistakes = _build_attempt_mistakes(attempt, olympiad, attempt.answers or {})
+        analysis_text = analyze_attempt_ai(summary, mistakes)
+
+    chat_id = getattr(request.user, 'telegram_chat_id', '')
+    if not chat_id:
+        return Response({
+            'status': 'no_telegram',
+            'message': "Telegram ulanmagan. Avval Telegram hisobingizni bog'lang.",
+        })
+
+    # gTTS mavjud bo'lsa audio (voice) yuboramiz, aks holda matn.
+    audio_sent = _try_send_voice(chat_id, analysis_text)
+    if audio_sent:
+        return Response({'status': 'sent', 'message': 'Audio tahlil Telegram orqali yuborildi.'})
+
+    # Matn xabar (fallback).
+    from notifications.services import _send_telegram_to_user
+    text_msg = f"🎓 Olympy AI tahlil:\n\n{analysis_text}"
+    ok = _send_telegram_to_user(request.user, text_msg)
+    if ok:
+        return Response({'status': 'text_only', 'message': 'Tahlil matn ko\'rinishida yuborildi (audio mavjud emas).'})
+    return Response({
+        'status': 'text_only',
+        'message': 'Tahlil tayyor, lekin Telegram yuborishda muammo bo\'ldi.',
+    })
+
+
+ai_audio_analysis.cls.throttle_scope = 'ai_audio'
+
+
+def _try_send_voice(chat_id, text):
+    """gTTS orqali audio yaratib Telegram sendVoice bilan yuboradi.
+
+    gTTS o'rnatilmagan yoki xato bo'lsa False qaytaradi (chaqiruvchi matn
+    yuborishga o'tadi). Hech qachon exception otmaydi.
+    """
+    try:
+        import io
+        from gtts import gTTS
+    except Exception:
+        return False
+    try:
+        import urllib.request
+
+        from django.conf import settings
+
+        token = (
+            getattr(settings, 'TELEGRAM_MANAGER_BOT_TOKEN', '')
+            or getattr(settings, 'TELEGRAM_BOT_TOKEN', '')
+        )
+        if not token:
+            return False
+
+        buf = io.BytesIO()
+        gTTS(text=text[:1500], lang='uz').write_to_fp(buf)
+        audio_bytes = buf.getvalue()
+        if not audio_bytes:
+            return False
+
+        boundary = '----OlympyAIAudioBoundary'
+        parts = []
+        parts.append(f'--{boundary}'.encode())
+        parts.append(b'Content-Disposition: form-data; name="chat_id"\r\n')
+        parts.append(str(chat_id).encode())
+        parts.append(f'--{boundary}'.encode())
+        parts.append('Content-Disposition: form-data; name="caption"\r\n'.encode())
+        parts.append('🎓 Olympy AI tahlil'.encode('utf-8'))
+        parts.append(f'--{boundary}'.encode())
+        parts.append(
+            b'Content-Disposition: form-data; name="voice"; filename="analysis.mp3"'
+        )
+        parts.append(b'Content-Type: audio/mpeg\r\n')
+
+        raw_body = b''
+        for item in parts:
+            raw_body += item + b'\r\n'
+        raw_body += audio_bytes + b'\r\n'
+        raw_body += f'--{boundary}--\r\n'.encode()
+
+        url = f'https://api.telegram.org/bot{token}/sendVoice'
+        req = urllib.request.Request(
+            url, raw_body,
+            headers={'Content-Type': f'multipart/form-data; boundary={boundary}'},
+            method='POST',
+        )
+        with urllib.request.urlopen(req, timeout=20):
+            return True
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('AI audio sendVoice failed')
+        return False

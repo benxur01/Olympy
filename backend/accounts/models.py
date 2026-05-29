@@ -427,3 +427,144 @@ class Achievement(models.Model):
 
     def __str__(self):
         return f'{self.user_id}:{self.type}={self.value}'
+
+
+class DailyGoal(models.Model):
+    """O2: O'quvchining kunlik maqsadi.
+
+    Har kuni yangi yozuv: o'quvchi nechta savol yechishni rejalashtirgan
+    (`target_questions`) va bugun nechta savolga javob berdi
+    (`completed_questions`). Har (user, date) juftligi yagona. Maqsad
+    bajarilganda `is_achieved=True` bo'ladi va bir martalik `xp_bonus`
+    (coinlarga) qo'shiladi.
+    """
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='daily_goals',
+    )
+    target_questions = models.PositiveIntegerField(default=20)
+    completed_questions = models.PositiveIntegerField(default=0)
+    date = models.DateField(db_index=True)
+    is_achieved = models.BooleanField(default=False)
+    xp_bonus = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'date'],
+                name='unique_user_daily_goal_date',
+            ),
+        ]
+
+    def __str__(self):
+        return f'goal:{self.user_id}@{self.date} {self.completed_questions}/{self.target_questions}'
+
+
+class Duel(models.Model):
+    """O3: Ikki o'quvchi o'rtasidagi do'stona duel (10 savol).
+
+    `challenger` duelni boshlaydi, `opponent` qarshi o'ynaydi. Vaqt cheklovi
+    yo'q — har ikkalasi 10 savolga javob beradi. Ikkalasi tugatgach g'olib
+    aniqlanadi (kim ko'p to'g'ri javob bersa). Teng bo'lsa `winner` None
+    (durang).
+    """
+    STATUS_PENDING = 'pending'      # boshlandi, hech kim tugatmagan
+    STATUS_COMPLETED = 'completed'  # ikkalasi ham javob berib bo'ldi
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Davom etmoqda'),
+        (STATUS_COMPLETED, 'Tugadi'),
+    ]
+
+    challenger = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='duels_started',
+    )
+    opponent = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='duels_received',
+    )
+    subject = models.CharField(max_length=80, blank=True, default='')
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True)
+    winner = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='duels_won',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'duel:{self.challenger_id} vs {self.opponent_id} [{self.status}]'
+
+
+class DuelQuestion(models.Model):
+    """O3: Duelga biriktirilgan savol (10 ta, tartiblangan)."""
+    duel = models.ForeignKey(
+        Duel,
+        on_delete=models.CASCADE,
+        related_name='duel_questions',
+    )
+    question = models.ForeignKey(
+        'questions.Question',
+        on_delete=models.CASCADE,
+        related_name='duel_questions',
+    )
+    order = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ['order']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['duel', 'question'],
+                name='unique_duel_question',
+            ),
+        ]
+
+    def __str__(self):
+        return f'duel:{self.duel_id} q:{self.question_id} #{self.order}'
+
+
+class DuelAnswer(models.Model):
+    """O3: O'quvchining duel savoliga bergan javobi.
+
+    Har (duel, user, question) juftligi yagona — bir savolga bir marta javob.
+    """
+    duel = models.ForeignKey(
+        Duel,
+        on_delete=models.CASCADE,
+        related_name='duel_answers',
+    )
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='duel_answers',
+    )
+    question = models.ForeignKey(
+        'questions.Question',
+        on_delete=models.CASCADE,
+        related_name='duel_answers',
+    )
+    selected_option = models.IntegerField(default=-1)
+    is_correct = models.BooleanField(default=False)
+    answered_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['answered_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['duel', 'user', 'question'],
+                name='unique_duel_user_question_answer',
+            ),
+        ]
+
+    def __str__(self):
+        return f'duel:{self.duel_id} user:{self.user_id} q:{self.question_id}={self.selected_option}'

@@ -596,6 +596,14 @@ def export_all_results(request, center_id):
     if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
 
+    # T5: eksport amalini menejer logiga yozamiz.
+    from .models import ManagerActivityLog
+    from .services import log_manager_activity
+    log_manager_activity(
+        center, request.user, ManagerActivityLog.ACTION_EXPORT_DATA,
+        description='Barcha natijalar eksporti',
+    )
+
     fmt = (request.query_params.get('format') or 'xlsx').strip().lower()
 
     attempts = list(

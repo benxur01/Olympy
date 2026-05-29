@@ -255,6 +255,21 @@ def study_plan(request):
         weak_subjects,
         perf,
     )
+
+    # T5: AI reja generatsiyasini menejer faoliyat logiga yozamiz (markaz bo'lsa).
+    try:
+        from centers.models import ManagerActivityLog
+        from centers.services import log_manager_activity, primary_center_for_user
+        center = primary_center_for_user(request.user)
+        if center is not None:
+            log_manager_activity(
+                center, request.user, ManagerActivityLog.ACTION_SEND_PLAN,
+                description="O'quv rejasi (AI) generatsiya qilindi",
+                target_user=request.user,
+            )
+    except Exception:
+        pass
+
     return Response({'plan': plan, 'weak_subjects': weak_subjects[:5]})
 
 

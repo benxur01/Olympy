@@ -37,6 +37,54 @@ def create_pending_center_for_owner(owner, center_data):
     return center
 
 
+def primary_center_for_user(user):
+    """Foydalanuvchining asosiy markazini qaytaradi (log uchun).
+
+    Avval owner bo'lgan markaz, keyin manager, keyin student a'zoligi
+    bo'yicha. Topilmasa None. ManagerActivityLog.center majburiy bo'lgani
+    uchun log yozishdan oldin shu yordamchi ishlatiladi.
+    """
+    try:
+        # Rol ustuvorligi bo'yicha tanlash (owner > manager > teacher > student).
+        memberships = list(
+            CenterMembership.objects
+            .filter(user=user, status=CenterMembership.STATUS_APPROVED)
+            .select_related('center')
+        )
+        if not memberships:
+            return None
+        priority = {
+            CenterMembership.ROLE_OWNER: 0,
+            CenterMembership.ROLE_MANAGER: 1,
+            CenterMembership.ROLE_TEACHER: 2,
+            CenterMembership.ROLE_STUDENT: 3,
+        }
+        memberships.sort(key=lambda mm: priority.get(mm.role, 9))
+        return memberships[0].center
+    except Exception:
+        return None
+
+
+def log_manager_activity(center, manager, action_type, description='', target_user=None):
+    """T5: Menejer faoliyatini ManagerActivityLog ga yozadi.
+
+    Hech qachon exception otmaydi — logging asosiy oqimni buzmasligi kerak.
+    `manager` platforma admini yoki owner bo'lsa ham yoziladi (kim amalni
+    bajargani aniq bo'lsin).
+    """
+    try:
+        from .models import ManagerActivityLog
+        ManagerActivityLog.objects.create(
+            center=center,
+            manager=manager,
+            action_type=action_type,
+            description=(description or '')[:255],
+            target_user=target_user,
+        )
+    except Exception:
+        logger.exception('manager activity log write failed')
+
+
 def user_can_manage_center(user, center):
     if not getattr(user, 'is_authenticated', False):
         return False
