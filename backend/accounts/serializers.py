@@ -28,7 +28,7 @@ class UserSerializer(serializers.ModelSerializer):
                   'phone', 'normalized_phone', 'roles',
                   'roles_detail', 'telegram_linked', 'is_platform_admin',
                   'is_premium', 'is_active', 'avatar_url', 'created_at',
-                  'streak_count', 'last_active_date', 'badges']
+                  'streak_count', 'longest_streak', 'last_active_date', 'badges']
         # Xavfsizlik (privilege escalation / IDOR himoyasi): `roles`,
         # `is_platform_admin`, `is_premium`, `is_active` — bular foydalanuvchi
         # tomonidan O'ZGARTIRILMASLIGI kerak. Aks holda kimdir bu serializer'ni
@@ -43,7 +43,7 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'roles', 'normalized_phone', 'roles_detail',
                             'telegram_linked', 'is_platform_admin',
                             'is_premium', 'is_active', 'avatar_url', 'created_at',
-                            'streak_count', 'last_active_date', 'badges']
+                            'streak_count', 'longest_streak', 'last_active_date', 'badges']
 
     def get_badges(self, obj):
         return obj.get_badges()

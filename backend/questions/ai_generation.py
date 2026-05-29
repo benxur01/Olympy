@@ -584,3 +584,70 @@ def explain_mistakes_ai(mistakes_list):
     return "AI yordamida xatolar tahlili generatsiya qilinmadi. Iltimos keyinroq urinib ko'ring."
 
 
+def analyze_attempt_ai(attempt_summary, mistakes_list):
+    """O4: Bitta test natijasi bo'yicha qisqa AI tahlil (o'zbek tilida).
+
+    `attempt_summary` — {olympiad_title, subject, score, correct, wrong, total}.
+    `mistakes_list` — shu testdagi xato savollar (cheklangan, max 6).
+    AI sozlanmagan bo'lsa oddiy fallback matn qaytaradi.
+    """
+    keys = _gemini_api_keys()
+    summary = (
+        f"Olimpiada: {attempt_summary.get('olympiad_title', '')}\n"
+        f"Fan: {attempt_summary.get('subject', '')}\n"
+        f"Ball: {attempt_summary.get('score', 0)}%\n"
+        f"To'g'ri: {attempt_summary.get('correct', 0)} / {attempt_summary.get('total', 0)}\n"
+    )
+    if not keys:
+        # Fallback — AI yo'q bo'lsa ham foydali qisqa xulosa.
+        pct = attempt_summary.get('score', 0)
+        if pct >= 85:
+            tip = "Ajoyib natija! Ushbu mavzuni mustahkamlab, qiyinroq savollarga o'ting."
+        elif pct >= 60:
+            tip = "Yaxshi natija. Xato qilgan savollaringizni qayta ko'rib chiqing."
+        else:
+            tip = "Mavzuni qayta o'rganib, ko'proq mashq qilishni tavsiya qilamiz."
+        return f"{summary}\n{tip}"
+
+    mistakes_str = ''
+    for i, m in enumerate(mistakes_list[:6]):
+        mistakes_str += (
+            f"{i+1}. Savol: {m.get('text')}\n"
+            f"   To'g'ri javob indeksi: {m.get('correct_answer')}, "
+            f"o'quvchi tanlagan: {m.get('chosen_answer')}\n"
+        )
+
+    prompt = (
+        "Siz tajribali repetitorsiz. O'quvchi quyidagi testni topshirdi:\n\n"
+        f"{summary}\n"
+        + (f"Xato qilgan savollar:\n{mistakes_str}\n" if mistakes_str else "")
+        + "Shu natija asosida o'quvchiga qisqa (3-5 jumla) tahlil va aniq "
+        "tavsiya bering. Faqat o'zbek tilida, motivatsion ruhda yozing. "
+        "Sarlavha yoki ortiqcha izohsiz, faqat tahlil matni."
+    )
+    payload = {
+        'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
+        'generationConfig': {'maxOutputTokens': 1024},
+    }
+    body = json.dumps(payload).encode('utf-8')
+    for model in _gemini_models():
+        model_path = urllib.parse.quote(model, safe='-_.~/')
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+        for api_key in keys:
+            req = urllib.request.Request(
+                url, data=body, method='POST',
+                headers={'Content-Type': 'application/json', 'x-goog-api-key': api_key},
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=45) as response:
+                    raw = json.loads(response.read().decode('utf-8'))
+                parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
+                text = ''.join(part.get('text') or '' for part in parts)
+                if text.strip():
+                    return text.strip()
+            except Exception as exc:
+                logger.warning('Gemini attempt analysis failed with model=%s: %s', model, exc)
+    # Fallback (AI xato berdi).
+    return f"{summary}\nTahlilni keyinroq qayta yuklang."
+
+

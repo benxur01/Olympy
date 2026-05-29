@@ -1,11 +1,20 @@
 from django.urls import path
 
 from . import views
+from . import views_me_premium
 from . import views_parent
 from . import views_student
 
 urlpatterns = [
     path('me/', views.me, name='me'),
+    # Yangi premium funksiyalar (O1–O7)
+    path('me/streak/', views_me_premium.my_streak, name='me-streak'),
+    path('me/rivals/', views_me_premium.rivals, name='me-rivals'),
+    path('me/rivals/<int:rival_id>/', views_me_premium.remove_rival, name='me-remove-rival'),
+    path('me/subject-readiness/', views_me_premium.subject_readiness, name='me-subject-readiness'),
+    path('me/achievements/', views_me_premium.my_achievements, name='me-achievements'),
+    path('me/weekly-summary/', views_me_premium.weekly_summary, name='me-weekly-summary'),
+    path('me/recommended-olympiads/', views_me_premium.recommended_olympiads, name='me-recommended-olympiads'),
     path('me/history-chart/', views_student.history_chart, name='me-history-chart'),
     path('me/competitor-analysis/', views_student.competitor_analysis, name='me-competitor-analysis'),
     path('me/subject-weakness/', views_student.subject_weakness, name='me-subject-weakness'),

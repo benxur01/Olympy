@@ -33,6 +33,84 @@ from .serializers import SubmitAttemptSerializer, TestAttemptSerializer
 from .session_utils import score_session_answers, session_is_expired
 
 
+def _build_attempt_mistakes(attempt, olympiad, answers):
+    """O4: Attempt bo'yicha xato savollar ro'yxatini tuzadi (AI tahlil uchun)."""
+    mistakes = []
+    answers = answers or {}
+    for q in olympiad.questions.all().order_by('id'):
+        chosen = answers.get(str(q.id))
+        if chosen is None:
+            chosen = answers.get(q.id)
+        try:
+            chosen_idx = int(chosen) if chosen is not None else None
+        except (TypeError, ValueError):
+            chosen_idx = None
+        if chosen_idx is None or chosen_idx == q.correct_answer:
+            continue
+        mistakes.append({
+            'text': (q.text or '')[:200],
+            'correct_answer': q.correct_answer,
+            'chosen_answer': chosen_idx,
+        })
+        if len(mistakes) >= 6:
+            break
+    return mistakes
+
+
+def _trigger_attempt_ai_analysis(attempt, olympiad, answers):
+    """O4: AttemptAIAnalysis pending yozuv yaratib, AI call'ni thread'da bajaradi.
+
+    Submit latency'ni bloklamaslik uchun butun AI generatsiya alohida daemon
+    thread'da ishlaydi (parent notification pattern bilan bir xil).
+    """
+    import threading
+
+    from .models import AttemptAIAnalysis
+
+    # Allaqachon mavjud bo'lsa qayta yaratmaymiz (idempotent).
+    obj, created = AttemptAIAnalysis.objects.get_or_create(
+        attempt=attempt,
+        defaults={'status': AttemptAIAnalysis.STATUS_PENDING},
+    )
+    if not created and obj.status == AttemptAIAnalysis.STATUS_READY:
+        return
+
+    summary = {
+        'olympiad_title': olympiad.title,
+        'subject': olympiad.subject,
+        'score': attempt.score,
+        'correct': attempt.correct_count,
+        'wrong': attempt.wrong_count,
+        'total': attempt.total_questions,
+    }
+    mistakes = _build_attempt_mistakes(attempt, olympiad, answers)
+    attempt_id = attempt.id
+
+    def _run():
+        from django.db import close_old_connections
+        close_old_connections()
+        try:
+            from questions.ai_generation import analyze_attempt_ai
+            text = analyze_attempt_ai(summary, mistakes)
+            AttemptAIAnalysis.objects.filter(attempt_id=attempt_id).update(
+                analysis_text=text or '',
+                status=AttemptAIAnalysis.STATUS_READY,
+            )
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'AI analysis generation failed for attempt=%s', attempt_id,
+            )
+            try:
+                AttemptAIAnalysis.objects.filter(attempt_id=attempt_id).update(
+                    status=AttemptAIAnalysis.STATUS_FAILED,
+                )
+            except Exception:
+                pass
+
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _user_can_manage_olympiad(user, olympiad):
     """Olympiad uchun manager/owner/teacher/admin huquqi tekshiruvi."""
     if user.is_platform_admin:
@@ -349,6 +427,32 @@ def submit_attempt(request):
         session.status = TestSession.STATUS_COMPLETED
         session.save(update_fields=['status'])
 
+        # O5: Yutuq (milestone) tekshiruvi — submit'dan keyin. request.user
+        # yuqorida streak_count bilan yangilangan, shu sababli streak
+        # milestone'lari to'g'ri hisoblanadi. Hech qachon exception otmaydi.
+        try:
+            from accounts.achievements import check_achievements
+            check_achievements(request.user, attempt)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'achievement check failed for attempt=%s', attempt.id,
+            )
+
+        # O4: Premium o'quvchi uchun avtomatik AI tahlil. Submit latency'ni
+        # bloklamaslik uchun: shu yerda pending yozuv yaratamiz, AI call'ni
+        # alohida daemon thread'da bajaramiz (Gemini 45s gacha kutishi
+        # mumkin — bu submit'ni bloklamasligi shart). Endpoint tayyor
+        # bo'lmaguncha {status: "pending"} qaytaradi.
+        if getattr(request.user, 'is_premium', False):
+            try:
+                _trigger_attempt_ai_analysis(attempt, olympiad, answers)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception(
+                    'AI analysis trigger failed for attempt=%s', attempt.id,
+                )
+
         # Center rating recompute ham submit ichidan olib tashlandi —
         # bu N ta attempt bo'yicha katta AVG aggregate qilardi va submit
         # latency'ni oshirardi. Funksiyaning o'zi mavjud, kerak bo'lsa
@@ -567,6 +671,53 @@ def attempt_detail(request, attempt_id):
             })
         data['questions_review'] = questions_review
     return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def attempt_ai_analysis(request, attempt_id):
+    """GET /api/attempts/<id>/ai-analysis/ — saqlangan AI tahlilini qaytaradi (O4).
+
+    Faqat attempt egasi (yoki admin). Tahlil hali tayyor bo'lmasa
+    {status: "pending"}, tayyor bo'lsa {status: "ready", analysis: "..."}.
+    Premium bo'lmagan foydalanuvchi uchun 403.
+    """
+    from .models import AttemptAIAnalysis
+
+    attempt = get_object_or_404(
+        TestAttempt.objects.select_related('user', 'olympiad'),
+        pk=attempt_id,
+    )
+    is_owner = attempt.user_id == request.user.id
+    if not (is_owner or request.user.is_platform_admin):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if is_owner and not getattr(request.user, 'is_premium', False):
+        return Response(
+            {
+                'detail': "AI tahlil premium o'quvchilar uchun.",
+                'upgrade_required': True,
+            },
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+
+    analysis = AttemptAIAnalysis.objects.filter(attempt=attempt).first()
+    if not analysis:
+        # Hali umuman trigger qilinmagan bo'lsa (masalan, eski attempt yoki
+        # submit paytida premium bo'lmagan). Egasi premium bo'lsa shu yerda
+        # lazy ravishda boshlаymiz.
+        if is_owner and getattr(request.user, 'is_premium', False):
+            try:
+                _trigger_attempt_ai_analysis(
+                    attempt, attempt.olympiad, attempt.answers or {},
+                )
+            except Exception:
+                pass
+        return Response({'status': 'pending'})
+    if analysis.status == AttemptAIAnalysis.STATUS_READY:
+        return Response({'status': 'ready', 'analysis': analysis.analysis_text})
+    if analysis.status == AttemptAIAnalysis.STATUS_FAILED:
+        return Response({'status': 'failed', 'analysis': analysis.analysis_text or ''})
+    return Response({'status': 'pending'})
 
 
 @api_view(['GET'])

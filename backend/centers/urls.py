@@ -1,6 +1,7 @@
 from django.urls import path
 
 from . import views
+from . import views_premium
 
 # Mounted under /api/centers/
 urlpatterns = [
@@ -28,4 +29,13 @@ urlpatterns = [
     path('<int:center_id>/top-students/', views.top_students, name='center-top-students'),
     path('<int:center_id>/question-bank/', views.center_question_bank, name='center-question-bank'),
     path('<int:center_id>/question-bank/<int:q_id>/', views.center_question_bank_delete, name='center-question-bank-delete'),
+    # Premium analitika va hisobotlar (T1–T7)
+    path('<int:center_id>/member-comparison/', views_premium.member_comparison, name='center-member-comparison'),
+    path('<int:center_id>/report-pdf/', views_premium.report_pdf, name='center-report-pdf'),
+    path('<int:center_id>/report-json/', views_premium.report_json, name='center-report-json'),
+    path('<int:center_id>/inactive-students/', views_premium.inactive_students, name='center-inactive-students'),
+    path('<int:center_id>/question-analytics/', views_premium.question_analytics, name='center-question-analytics'),
+    path('<int:center_id>/tag-comparison/', views_premium.tag_comparison, name='center-tag-comparison'),
+    path('<int:center_id>/export-all-results/', views_premium.export_all_results, name='center-export-all-results'),
+    path('<int:center_id>/rating-history/', views_premium.rating_history, name='center-rating-history'),
 ]

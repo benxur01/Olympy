@@ -61,6 +61,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     token_version = models.PositiveIntegerField(default=0)
     avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
     streak_count = models.PositiveIntegerField(default=0)
+    # O1: eng uzun ketma-ket faollik seriyasi — streak uzilganda ham
+    # saqlanib qoladi, joriy streak nolga tushsa ham eski rekord ko'rinadi.
+    longest_streak = models.PositiveIntegerField(default=0)
     coins = models.PositiveIntegerField(default=0)
     last_active_date = models.DateField(null=True, blank=True)
 
@@ -104,27 +107,35 @@ class User(AbstractBaseUser, PermissionsMixin):
         return role in (self.roles or [])
 
     def update_streak(self):
-        """ Ketma-ket faollik kunlarini (streak) yangilash logikasi """
+        """ Ketma-ket faollik kunlarini (streak) yangilash logikasi.
+
+        Har streak o'zgarishida `longest_streak` ham yangilanadi — joriy
+        streak eng uzun rekorddan oshsa, rekord yangilanadi. Streak uzilib
+        1 ga qaytsa ham longest_streak saqlanib qoladi.
+        """
         from django.utils import timezone
         from datetime import timedelta
-        
+
         today = timezone.now().date()
         if not self.last_active_date:
             self.streak_count = 1
             self.last_active_date = today
-            self.save(update_fields=['streak_count', 'last_active_date'])
+            self.longest_streak = max(self.longest_streak or 0, self.streak_count)
+            self.save(update_fields=['streak_count', 'last_active_date', 'longest_streak'])
             return True
-            
+
         diff = today - self.last_active_date
         if diff.days == 1:
             self.streak_count += 1
             self.last_active_date = today
-            self.save(update_fields=['streak_count', 'last_active_date'])
+            self.longest_streak = max(self.longest_streak or 0, self.streak_count)
+            self.save(update_fields=['streak_count', 'last_active_date', 'longest_streak'])
             return True
         elif diff.days > 1:
             self.streak_count = 1
             self.last_active_date = today
-            self.save(update_fields=['streak_count', 'last_active_date'])
+            self.longest_streak = max(self.longest_streak or 0, self.streak_count)
+            self.save(update_fields=['streak_count', 'last_active_date', 'longest_streak'])
             return True
         return False
 
@@ -354,3 +365,65 @@ class PhoneVerification(models.Model):
     @property
     def otp_is_expired(self):
         return bool(self.otp_expires_at and self.otp_expires_at <= timezone.now())
+
+
+class Rival(models.Model):
+    """O2: O'quvchining tanlagan raqibi.
+
+    Foydalanuvchi maksimum 3 ta raqib qo'sha oladi (cheklov view'da). Raqib
+    bilan ball/reyting taqqoslash uchun. `user` — raqibni qo'shgan kishi,
+    `rival_user` — kuzatilayotgan raqib.
+    """
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='rivals',
+    )
+    rival_user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='rival_of',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'rival_user'],
+                name='unique_user_rival',
+            ),
+        ]
+
+    def __str__(self):
+        return f'rival: {self.user_id} → {self.rival_user_id}'
+
+
+class Achievement(models.Model):
+    """O5: Foydalanuvchi yutug'i / bosqichi (milestone).
+
+    `type` — yutuq turi (attempts_10, streak_7, new_record, perfect_score, ...).
+    `value` — yutuqqa bog'liq son (masalan, yangi rekord ball yoki streak kuni).
+    Har (user, type) juftligi yagona: bir xil milestone ikki marta berilmaydi —
+    bundan `new_record` mustasno (u har yangi rekordda value bilan yangilanadi).
+    """
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='achievements',
+    )
+    type = models.CharField(max_length=32, db_index=True)
+    value = models.PositiveIntegerField(default=0)
+    achieved_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-achieved_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'type'],
+                name='unique_user_achievement_type',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.user_id}:{self.type}={self.value}'
