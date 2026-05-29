@@ -150,19 +150,24 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs — "Sinfdoshlar" faqat real API rejimida ko'rinadi (LT4). */}
       <div className="nav-tabs flex gap-1">
-        {['all','center','subject'].map(t => (
+        {['all','center','subject', ...(isApi ? ['classmates'] : [])].map(t => (
           <button key={t} onClick={() => setActiveTab(t)} className={`nav-tab ${activeTab===t?'active':''}`}>
-            {t==='all'?'Umumiy':t==='center'?'Tashkilot':'Fan'}
+            {t==='all'?'Umumiy':t==='center'?'Tashkilot':t==='subject'?'Fan':'Sinfdoshlar'}
           </button>
         ))}
       </div>
 
-      {apiLoading && (
+      {/* LT4: Sinfdoshlar reytingi — alohida endpoint (per-user o'rtacha ball). */}
+      {activeTab === 'classmates' && <ClassmatesLeaderboard />}
+
+      {activeTab !== 'classmates' && apiLoading && (
         <div className="glass rounded-2xl p-6 text-center text-white/50 text-sm">Reyting yuklanmoqda...</div>
       )}
 
+      {activeTab !== 'classmates' && (
+      <>
       {/* Top 3 podium — podium tartibi (silver-gold-bronze) saqlanadi, lekin mobile'da kompakt */}
       <div className="grid grid-cols-3 gap-1.5 md:gap-3">
         {[top3[1], top3[0], top3[2]].filter(Boolean).map((p, i) => {
@@ -229,10 +234,63 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
           </div>
         ))}
       </div>
+      </>
+      )}
     </div>
   );
 
   return content;
 };
 
-Object.assign(window, { LeaderboardPage, mapApiLeaderboard });
+// LT4: Sinfdoshlar reytingi — onboarding_grade bo'yicha (yo'q bo'lsa umumiy).
+const ClassmatesLeaderboard = () => {
+  const { data, loading } = useApiData(
+    () => OlympyApi.getClassmatesLeaderboard(OlympyApi.getToken()),
+    [],
+  );
+  if (loading) {
+    return <div className="glass rounded-2xl p-6 text-center text-white/50 text-sm">Yuklanmoqda...</div>;
+  }
+  const rows = Array.isArray(data) ? data : [];
+  if (!rows.length) {
+    return <div className="glass rounded-2xl p-6 text-center text-white/40 text-sm">Sinfdoshlar reytingi hozircha bo'sh</div>;
+  }
+  return (
+    <div className="glass rounded-2xl overflow-hidden">
+      <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 border-b border-white/5 text-xs text-white/40 font-medium">
+        <div className="col-span-1">#</div>
+        <div className="col-span-6">O'quvchi</div>
+        <div className="col-span-3 text-right">O'rtacha ball</div>
+        <div className="col-span-2 text-right">Streak</div>
+      </div>
+      {rows.map(p => (
+        <div
+          key={p.user_id}
+          className={`olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5 ${p.is_me ? 'bg-indigo-500/15 border-l-2 border-indigo-400' : ''}`}
+        >
+          <div className="md:col-span-1 flex-shrink-0">
+            <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
+              {p.rank}
+            </div>
+          </div>
+          <div className="md:col-span-6 flex-1 flex items-center gap-2 min-w-0">
+            <Avatar name={p.full_name} size={32} />
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium text-white truncate">
+                {p.full_name}{p.is_me && <span className="text-indigo-300"> (siz)</span>}
+              </div>
+            </div>
+          </div>
+          <div className="md:col-span-3 text-right flex-shrink-0">
+            <span className={`text-sm font-black ${p.avg_score >= 90 ? 'text-emerald-400' : p.avg_score >= 75 ? 'text-indigo-400' : 'text-amber-400'}`}>{p.avg_score}</span>
+          </div>
+          <div className="md:col-span-2 text-right text-xs text-orange-400 font-semibold flex-shrink-0">
+            {p.streak ? `🔥 ${p.streak}` : '—'}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+Object.assign(window, { LeaderboardPage, mapApiLeaderboard, ClassmatesLeaderboard });

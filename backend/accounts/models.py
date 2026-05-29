@@ -67,6 +67,15 @@ class User(AbstractBaseUser, PermissionsMixin):
     coins = models.PositiveIntegerField(default=0)
     last_active_date = models.DateField(null=True, blank=True)
 
+    # Retention onboarding (OB1): yangi foydalanuvchi birinchi kirishda 3-4
+    # bosqichli sehrgardan o'tadi. `onboarding_completed` True bo'lguncha
+    # frontend wizard'ni ko'rsatadi. `onboarding_subjects` — qiziqadigan
+    # fanlar ro'yxati (mini-test va olimpiada takliflari shu asosda).
+    onboarding_completed = models.BooleanField(default=False)
+    onboarding_grade = models.CharField(max_length=10, null=True, blank=True)
+    onboarding_subjects = models.JSONField(default=list, blank=True)
+    onboarding_goal = models.CharField(max_length=50, null=True, blank=True)
+
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -568,3 +577,135 @@ class DuelAnswer(models.Model):
 
     def __str__(self):
         return f'duel:{self.duel_id} user:{self.user_id} q:{self.question_id}={self.selected_option}'
+
+
+class DailyQuestion(models.Model):
+    """DH1: Kunlik savol — har kuni platformaga 3 ta savol tanlanadi.
+
+    `generate_daily_questions` management command har kuni `questions.Question`
+    dan random savollarni tanlab shu yerga yozadi. Har (question, date)
+    juftligi yagona — bir savol bir kunda ikki marta qo'shilmaydi.
+    Foydalanuvchi bugungi savollarga `DailyQuestionAnswer` orqali javob beradi.
+    """
+    question = models.ForeignKey(
+        'questions.Question',
+        on_delete=models.CASCADE,
+        related_name='daily_questions',
+    )
+    date = models.DateField(db_index=True)
+    subject = models.CharField(max_length=80, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['date', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['question', 'date'],
+                name='unique_daily_question_date',
+            ),
+        ]
+
+    def __str__(self):
+        return f'daily:{self.date} q:{self.question_id}'
+
+
+class DailyQuestionAnswer(models.Model):
+    """DH1: Foydalanuvchining kunlik savolga bergan javobi.
+
+    Har (user, daily_question) juftligi yagona — bir savolga bir marta javob.
+    """
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='daily_question_answers',
+    )
+    daily_question = models.ForeignKey(
+        DailyQuestion,
+        on_delete=models.CASCADE,
+        related_name='answers',
+    )
+    selected_option = models.IntegerField(default=-1)
+    is_correct = models.BooleanField(default=False)
+    answered_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-answered_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'daily_question'],
+                name='unique_user_daily_question_answer',
+            ),
+        ]
+
+    def __str__(self):
+        return f'daily-ans:{self.user_id}@{self.daily_question_id}={self.selected_option}'
+
+
+class WeeklyContest(models.Model):
+    """DH4: Haftalik musobaqa — dushanba–yakshanba oralig'idagi reyting.
+
+    `finalize_weekly_contest` management command har juma (yoki yakshanba)
+    joriy haftani yakunlaydi: shu hafta yig'ilgan ballarga ko'ra
+    `WeeklyContestResult` yozuvlari yaratiladi va status `finished` bo'ladi.
+    Bir vaqtning o'zida faqat bitta `active` musobaqa bo'ladi.
+    """
+    STATUS_ACTIVE = 'active'
+    STATUS_FINISHED = 'finished'
+    STATUS_CHOICES = [
+        (STATUS_ACTIVE, 'Faol'),
+        (STATUS_FINISHED, 'Yakunlandi'),
+    ]
+
+    week_start = models.DateField(db_index=True)
+    week_end = models.DateField()
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default=STATUS_ACTIVE, db_index=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-week_start']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['week_start'],
+                name='unique_weekly_contest_week_start',
+            ),
+        ]
+
+    def __str__(self):
+        return f'weekly:{self.week_start}–{self.week_end} [{self.status}]'
+
+
+class WeeklyContestResult(models.Model):
+    """DH4: Foydalanuvchining haftalik musobaqadagi natijasi.
+
+    `score` — shu hafta to'plagan umumiy ball (TestAttempt yig'indisi).
+    `rank` musobaqa yakunlanganda yoki joriy reyting hisoblanganda beriladi.
+    Har (contest, user) juftligi yagona.
+    """
+    contest = models.ForeignKey(
+        WeeklyContest,
+        on_delete=models.CASCADE,
+        related_name='results',
+    )
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='weekly_contest_results',
+    )
+    score = models.PositiveIntegerField(default=0)
+    rank = models.PositiveIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['rank', '-score']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['contest', 'user'],
+                name='unique_weekly_contest_user',
+            ),
+        ]
+
+    def __str__(self):
+        return f'weekly-result:{self.user_id}@{self.contest_id} score={self.score} rank={self.rank}'

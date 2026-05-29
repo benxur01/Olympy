@@ -56,6 +56,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [activeOlympiad, setActiveOlympiad] = React.useState(null);
   const [joinModal, setJoinModal] = React.useState(false);
   const [centerConfirmOlympiad, setCenterConfirmOlympiad] = React.useState(null);
+  const [calendarOpen, setCalendarOpen] = React.useState(false);
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [olympiadFilter, setOlympiadFilter] = React.useState('Barchasi');
   const [apiToast, setApiToast] = React.useState('');
@@ -345,6 +346,16 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         );
       })()}
 
+      {/* Retention: kunlik ilg'ash widgetlari (faqat real API rejimida) */}
+      {isApi && (
+        <>
+          <StreakWarningBanner />
+          <SuggestedOlympiadCard onNavigate={setPage} olympiads={visibleOlympiads} />
+          <PeerComparisonCard />
+          <DailyQuestionsWidget />
+        </>
+      )}
+
       {/* Center status */}
       {studentStatus && studentCenterId && myCenter && (
         <div className={`glass rounded-2xl p-4 md:p-5 border ${studentStatus === 'approved' ? 'border-indigo-500/10' : studentStatus === 'rejected' ? 'border-rose-500/20' : 'border-amber-500/20'}`}>
@@ -384,7 +395,14 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       <div>
         <div className="flex items-center justify-between mb-3 md:mb-4 gap-2">
           <h3 className="font-bold text-white text-sm md:text-base">Bugungi tadbirlar</h3>
-          <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400 hover:text-indigo-300 flex-shrink-0 py-1">Barchasini ko'rish →</button>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {isApi && (
+              <button onClick={() => setCalendarOpen(true)} className="text-xs text-indigo-400 hover:text-indigo-300 py-1 flex items-center gap-1">
+                <Icon name="clock" size={13} /> Kalendar
+              </button>
+            )}
+            <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400 hover:text-indigo-300 py-1">Barchasini ko'rish →</button>
+          </div>
         </div>
         {!isCenterApproved && (
           <div className="glass rounded-2xl p-4 border border-amber-500/20 mb-4 text-sm text-amber-300 flex items-center gap-2">
@@ -411,6 +429,16 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           )}
         </div>
       </div>
+
+      {/* Retention: musobaqa va uzoq muddatli bog'liqlik widgetlari */}
+      {isApi && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <WeeklyContestWidget />
+          <RivalActivityWidget />
+          <ProgressComparisonCard />
+          <RoadmapCard />
+        </div>
+      )}
 
       {/* Upcoming events */}
       {visibleOlympiads.filter(o => o.status === 'inactive').length > 0 && (
@@ -1314,6 +1342,13 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           </div>
         </div>
       )}
+
+      {/* LT1: Olimpiada kalendari modali */}
+      <OlympiadCalendarModal
+        open={calendarOpen}
+        onClose={() => setCalendarOpen(false)}
+        onNavigate={setPage}
+      />
     </div>
   );
 };
