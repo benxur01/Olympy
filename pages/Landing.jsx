@@ -20,6 +20,171 @@ const escapeSvgText = (value) => String(value || '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&apos;');
 
+const TashkilotMockup = () => {
+  return (
+    <div className="p-4 md:p-6 text-white text-left select-none" style={{ background: '#090a0f', minHeight: '320px' }}>
+      <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-4">
+        <div>
+          <h4 className="text-sm md:text-base font-bold text-white flex items-center gap-1.5">
+            <Icon name="building" size={16} className="text-indigo-400" />
+            <span>ProSkill Academy</span>
+          </h4>
+          <p className="text-[10px] md:text-xs text-white/40">Tashkilot Boshqaruv & Premium Analitikasi</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] md:text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-lg border border-indigo-500/30 font-semibold">Premium Markaz</span>
+          <span className="text-[10px] md:text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-lg font-semibold">Reyting: #3</span>
+        </div>
+      </div>
+      
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="glass p-3 rounded-xl border border-white/5">
+          <div className="text-[10px] text-white/40 uppercase">O'rtacha Ball</div>
+          <div className="text-lg font-black text-indigo-400">82.4%</div>
+          <div className="text-[9px] text-emerald-400">↑ 3.2% o'sish</div>
+        </div>
+        <div className="glass p-3 rounded-xl border border-white/5">
+          <div className="text-[10px] text-white/40 uppercase">Jami Urinishlar</div>
+          <div className="text-lg font-black text-cyan-400">1,420 ta</div>
+          <div className="text-[9px] text-white/40">Ushbu oyda</div>
+        </div>
+        <div className="glass p-3 rounded-xl border border-white/5">
+          <div className="text-[10px] text-white/40 uppercase">Nofaol O'quvchilar</div>
+          <div className="text-lg font-black text-rose-400">4 ta</div>
+          <div className="text-[9px] text-rose-400/80">Ogohlantirish (T3)</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="glass p-3 rounded-xl border border-white/5">
+          <div className="text-[10px] text-white/40 uppercase mb-2 flex items-center gap-1">
+            <Icon name="users" size={12} className="text-indigo-400" />
+            <span>TOP O'quvchilar Taqqoslash (T1)</span>
+          </div>
+          <div className="space-y-2">
+            {[
+              { rank: 1, name: 'Ali Valiyev', score: '94.2%', attempts: 18 },
+              { rank: 2, name: 'Sardor Aliyev', score: '88.5%', attempts: 14 },
+              { rank: 3, name: 'Zuhra Karimova', score: '87.1%', attempts: 15 },
+            ].map(row => (
+              <div key={row.rank} className="flex justify-between text-xs text-white/70 border-b border-white/5 pb-1">
+                <span>{row.rank}. {row.name}</span>
+                <span className="font-semibold text-white">{row.score} <span className="text-[10px] text-white/40">({row.attempts} ta)</span></span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="glass p-3 rounded-xl border border-white/5">
+          <div className="text-[10px] text-white/40 uppercase mb-2 flex items-center gap-1">
+            <Icon name="brain" size={12} className="text-purple-400" />
+            <span>Savollar Qiyinlik Analitikasi (T4)</span>
+          </div>
+          <div className="space-y-2">
+            {[
+              { id: '#12', text: 'Kombinatorika elementlari...', error: '74%' },
+              { id: '#08', text: 'Eritmalarga oid masalalar...', error: '61%' },
+              { id: '#22', text: 'Matnli masalalar tahlili...', error: '55%' },
+            ].map((q, idx) => (
+              <div key={idx} className="flex justify-between items-center text-xs text-white/70">
+                <span className="truncate max-w-[120px]"><span className="text-indigo-400">{q.id}</span> {q.text}</span>
+                <span className="bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded text-[10px] border border-rose-500/20 font-semibold">{q.error} xato</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const OtaOnaMockup = () => {
+  return (
+    <div className="p-4 md:p-6 text-white text-left select-none" style={{ background: '#090a0f', minHeight: '320px' }}>
+      <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-4">
+        <div>
+          <h4 className="text-sm md:text-base font-bold text-white flex items-center gap-1.5">
+            <Icon name="award" size={16} className="text-cyan-400" />
+            <span>Farzand: Shahzod Valiyev</span>
+          </h4>
+          <p className="text-[10px] md:text-xs text-white/40">Ota-ona monitoringi va AI tahlil paneli</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] md:text-xs bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-lg border border-emerald-500/30 flex items-center gap-1 font-semibold">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Telegram Digest Faol
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+        {/* Success predictions */}
+        <div className="md:col-span-7 glass p-3.5 rounded-xl border border-white/5">
+          <div className="text-[10px] text-white/40 uppercase mb-2.5 flex items-center gap-1.5">
+            <Icon name="sparkles" size={12} className="text-cyan-400" />
+            <span>AI Muvaffaqiyat Prognostikasi</span>
+          </div>
+          <div className="space-y-3">
+            {[
+              { label: 'Prezident maktablari imtihoni', val: 78, color: 'bg-indigo-500' },
+              { label: 'Al-Xorazmiy olimpiadasi', val: 85, color: 'bg-cyan-500' },
+              { label: 'DTM Davlat imtihonlari', val: 94, color: 'bg-emerald-500' },
+            ].map(row => (
+              <div key={row.label} className="space-y-1">
+                <div className="flex justify-between text-[11px]">
+                  <span className="text-white/60">{row.label}</span>
+                  <span className="font-bold text-white">{row.val}% imkoniyat</span>
+                </div>
+                <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                  <div className={`h-full ${row.color}`} style={{ width: `${row.val}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Weekly stats and digest preview */}
+        <div className="md:col-span-5 flex flex-col gap-3">
+          <div className="glass p-3 rounded-xl border border-white/5 flex-1">
+            <div className="text-[10px] text-white/40 uppercase mb-1">Farzand faolligi</div>
+            <div className="text-xl font-black text-orange-400 flex items-center gap-1">
+              <span>🔥</span>
+              <span>7 kunlik streak</span>
+            </div>
+            <div className="text-[10px] text-white/50 mt-1">Uzluksiz kunlik mashq (O1)</div>
+          </div>
+          <div className="glass p-3 rounded-xl border border-white/5 flex-1">
+            <div className="text-[10px] text-white/40 uppercase mb-1">Nishonlar (Badges)</div>
+            <div className="flex gap-2.5 mt-1 text-base">
+              <span title="7 kun faol" className="cursor-help">🔥</span>
+              <span title="10 ta test topshirgan" className="cursor-help">🎖️</span>
+              <span title="90% dan yuqori natija" className="cursor-help">🎯</span>
+              <span title="Premium talaba" className="cursor-help">👑</span>
+            </div>
+            <div className="text-[9px] text-white/30 mt-1.5">To'plangan nishonlar: 4 ta (O5)</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="glass p-3.5 rounded-xl border border-white/5 mt-4">
+        <div className="text-[10px] text-white/40 uppercase mb-1.5">Haftalik PDF hisobot (Pillow PDF)</div>
+        <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2">
+            <Icon name="file" size={16} className="text-indigo-400" />
+            <div>
+              <span className="font-semibold text-white">olympy-hisobot-Shahzod-week.pdf</span>
+              <span className="text-[10px] text-white/30 ml-2">1.2 MB</span>
+            </div>
+          </div>
+          <span className="bg-indigo-600/20 text-indigo-300 text-[10px] font-bold px-3 py-1.5 rounded-lg border border-indigo-500/25 flex items-center gap-1">
+            <Icon name="download" size={10} />
+            <span>Yuklangan</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const use3DTilt = (maxRotate = 10, scale = 1.02) => {
   const ref = React.useRef(null);
   const [style, setStyle] = React.useState({});
@@ -338,6 +503,8 @@ const LandingPage = ({ onNavigate }) => {
     { label: 'Xatolar', icon: 'shield', img: '/screenshots/mistakes.svg', desc: 'Xato qilingan test savollarining sun\'iy intellekt tahlili' },
     { label: 'Do\'kon', icon: 'tag', img: '/screenshots/store.svg', desc: 'To\'plangan tangalar evaziga mukofotlar do\'koni' },
     { label: 'Profil', icon: 'award', img: '/screenshots/profile.svg', desc: 'O\'quvchi yutuqlari, progress va sertifikatlar' },
+    { label: 'Tashkilot', icon: 'building', isMock: true, desc: 'Tashkilot premium analitikasi, o\'quvchilar taqqoslash jadvali va tahliliy hisobotlar' },
+    { label: 'Ota-ona', icon: 'users', isMock: true, desc: 'Farzandning AI muvaffaqiyat bashorati, yutuqlari va Telegram hisobot sozlamalari' },
   ];
 
   const heroMetrics = [
@@ -638,7 +805,13 @@ const LandingPage = ({ onNavigate }) => {
                 className="screen-fade"
                 style={{ animation: 'screenFade 0.4s ease-out' }}
               >
-                {imgErrors[activeScreen] ? (
+                {screens[activeScreen].isMock ? (
+                  screens[activeScreen].label === 'Tashkilot' ? (
+                    <TashkilotMockup />
+                  ) : (
+                    <OtaOnaMockup />
+                  )
+                ) : imgErrors[activeScreen] ? (
                   <div
                     className="flex flex-col items-center justify-center text-center px-6 py-16 md:py-24"
                     style={{
