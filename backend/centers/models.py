@@ -206,7 +206,9 @@ class ExternalOlympiadResult(models.Model):
     )
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name='external_olympiad_results',
     )
     olympiad_name = models.CharField(max_length=200)
