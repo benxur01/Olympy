@@ -441,6 +441,16 @@ const LandingPage = ({ onNavigate }) => {
   const [todayLabel, setTodayLabel] = React.useState(formatLandingDate);
   const [dashboardSvg, setDashboardSvg] = React.useState('');
   const [selectedCategory, setSelectedCategory] = React.useState('all');
+  const [scrollProgress, setScrollProgress] = React.useState(0);
+
+  React.useEffect(() => {
+    const handleScroll = () => {
+      const totalScroll = document.documentElement.scrollHeight - window.innerHeight;
+      setScrollProgress(totalScroll > 0 ? (window.scrollY / totalScroll) * 100 : 0);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const mainMockupTilt = use3DTilt(5, 1.01);
 
@@ -572,6 +582,11 @@ const LandingPage = ({ onNavigate }) => {
 
   return (
     <div className="min-h-screen" style={{ background: '#050508' }}>
+      {/* Scroll progress bar */}
+      <div 
+        className="fixed top-0 left-0 h-[2px] z-[100] transition-all duration-150" 
+        style={{ width: `${scrollProgress}%`, background: 'linear-gradient(90deg, #6366f1, #22d3ee)' }} 
+      />
       {/* Navbar — Telegram WebView'da backdrop-filter sekin ishlaydi, shu sababli
           backdropFilter olib tashlangan va solid background ishlatilgan. */}
       <nav
@@ -671,6 +686,11 @@ const LandingPage = ({ onNavigate }) => {
       >
         <InteractiveParticles />
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(5,5,8,0.1) 0%, rgba(5,5,8,0.9) 100%)' }} />
+
+        {/* Neon orbs for mesh gradient background */}
+        <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] bg-indigo-600/10 rounded-full filter blur-[110px] pointer-events-none animate-pulse-slow" />
+        <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] bg-purple-600/8 rounded-full filter blur-[130px] pointer-events-none animate-pulse-slow" style={{ animationDelay: '2s' }} />
+        <div className="absolute top-10 right-10 w-[250px] h-[250px] bg-cyan-500/8 rounded-full filter blur-[90px] pointer-events-none animate-pulse-slow" style={{ animationDelay: '4s' }} />
         
         {/* Floating 3D badges on the right (desktop only) */}
         <div className="hidden lg:block absolute right-16 top-1/4 w-[400px] h-[300px] pointer-events-none z-10 preserve-3d" style={{ perspective: '1000px' }}>
@@ -706,8 +726,8 @@ const LandingPage = ({ onNavigate }) => {
               Online olimpiada, test va natija boshqaruvi
             </div>
 
-            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black text-white leading-tight mb-5 md:mb-6" style={{ textWrap: 'balance' }}>
-              Olympy — online olimpiada platformasi
+            <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black leading-tight mb-5 md:mb-6" style={{ textWrap: 'balance', background: 'linear-gradient(135deg, #ffffff 40%, #c7d2fe 75%, #818cf8 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              Olympy — <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">online olimpiada</span> platformasi
             </h1>
 
             <p className="text-base md:text-xl text-white/70 mb-7 md:mb-9 max-w-2xl leading-relaxed">
@@ -871,6 +891,28 @@ const LandingPage = ({ onNavigate }) => {
               transform: translateY(0) scale(1);
             }
           }
+          @keyframes pulseSlow {
+            0%, 100% { transform: scale(1) translate(0, 0); opacity: 0.7; }
+            50% { transform: scale(1.15) translate(30px, -20px); opacity: 0.9; }
+          }
+          .animate-pulse-slow {
+            animation: pulseSlow 12s ease-in-out infinite alternate;
+          }
+          @keyframes floatBadge1 {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-8px) rotate(1deg); }
+          }
+          @keyframes floatBadge2 {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-10px) rotate(-1deg); }
+          }
+          @keyframes floatBadge3 {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-6px) rotate(1.5deg); }
+          }
+          .float-badge-1 { animation: floatBadge1 6s ease-in-out infinite !important; }
+          .float-badge-2 { animation: floatBadge2 7s ease-in-out infinite !important; }
+          .float-badge-3 { animation: floatBadge3 8s ease-in-out infinite !important; }
         `}</style>
       </section>
 
@@ -992,9 +1034,17 @@ const LandingPage = ({ onNavigate }) => {
                 else window.location.href = `mailto:sanjarruzmetov017@gmail.com?subject=Olympy ${p.name} reja haqida`;
               };
               return (
-                <GlowCard key={i} className={`p-4 md:p-6 flex flex-col ${delayClass} ${p.popular ? 'gradient-bg glow-blue' : ''}`}>
+                <GlowCard 
+                  key={i} 
+                  className={`p-4 md:p-6 flex flex-col ${delayClass} ${p.popular ? 'glow-blue' : ''}`}
+                  style={p.popular ? {
+                    background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.1) 50%, rgba(34, 211, 238, 0.05) 100%)',
+                    borderColor: 'rgba(99, 102, 241, 0.45)',
+                    boxShadow: '0 20px 40px rgba(99, 102, 241, 0.12), 0 0 30px rgba(168, 85, 247, 0.08)'
+                  } : {}}
+                >
                   <div className="relative z-10 flex flex-col h-full">
-                    {p.popular && <div className="text-xs font-bold text-white bg-white/20 rounded-full px-3 py-1 w-fit mb-3 md:mb-4">⭐ Mashhur</div>}
+                    {p.popular && <div className="text-xs font-bold text-white bg-indigo-500/30 border border-indigo-500/40 rounded-full px-3 py-1 w-fit mb-3 md:mb-4">⭐ Mashhur</div>}
                     <div className={`text-sm font-medium mb-1 ${p.popular ? 'text-white/70' : 'text-white/50'}`}>{p.name}</div>
                     <div className={`text-2xl md:text-3xl font-black mb-1 ${p.popular ? 'text-white' : 'gradient-text'}`}>{p.price}</div>
                     {p.period && <div className={`text-sm mb-2 ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.period}</div>}
@@ -1002,13 +1052,13 @@ const LandingPage = ({ onNavigate }) => {
                     <ul className="space-y-2 flex-1 mb-6">
                       {p.features.map((f, j) => (
                         <li key={j} className={`flex items-center gap-2 text-sm ${p.popular ? 'text-white/80' : 'text-white/60'}`}>
-                          <span className={p.popular ? 'text-white' : 'text-indigo-400'}>✓</span> {f}
+                          <span className={p.popular ? 'text-indigo-300 font-bold' : 'text-indigo-400'}>✓</span> {f}
                         </li>
                       ))}
                     </ul>
                     <Magnetic>
                       <button onClick={handleClick}
-                        className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${p.popular ? 'bg-white text-indigo-600 hover:bg-white/90' : 'btn-ghost'}`}>
+                        className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${p.popular ? 'bg-white text-indigo-600 hover:bg-white/90 shadow-md shadow-white/10' : 'btn-ghost'}`}>
                         {isFree ? 'Boshlash' : "Bog'lanish"}
                       </button>
                     </Magnetic>
