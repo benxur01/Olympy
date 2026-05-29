@@ -22,6 +22,7 @@ from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import PhoneVerification
+from .throttling import OtpRequestThrottle, PasswordChangePerUserThrottle
 from .serializers import (
     ChangePasswordSerializer,
     ConfirmPasswordResetSerializer,
@@ -33,10 +34,13 @@ from .serializers import (
     UserSerializer,
     VerifyOtpSerializer,
 )
-from .utils import normalize_phone
+from .utils import mask_phone, normalize_phone
 
 
 logger = logging.getLogger('accounts.telegram')
+# Xavfsizlik audit loggeri: OTP tekshiruv muvaffaqiyatsizliklari shu yerda
+# yoziladi (LOGGING'dagi 'security' logger). OTP qiymati HECH QACHON loglanmaydi.
+security_logger = logging.getLogger('security')
 
 
 def _jwt_payload(user):
@@ -428,21 +432,18 @@ def me(request):
         if 'first_name' in data or 'last_name' in data:
             update_fields.append('full_name')
 
-        credentials_changed = ('username' in data)
-        if credentials_changed:
-            user.token_version = (user.token_version or 0) + 1
-            update_fields.append('token_version')
-
+        # Eslatma: username o'zgarishi token_version'ni OSHIRMAYDI. Avval
+        # username yangilanganda token_version bump qilinardi va bu
+        # foydalanuvchining boshqa qurilmalardagi (hatto shu qurilmadagi)
+        # barcha sessiyalarini bekor qilardi — oddiy profil tahriri uchun
+        # ortiqcha. token_version faqat parol o'zgarganda yoki logout'da
+        # oshiriladi (xavfsizlik hodisalari). Username — shunchaki ko'rinish
+        # maydoni, sessiyaga ta'sir qilmaydi.
         if update_fields:
             # save() ichidagi normalize/auto-full_name logikasi ishlashi
             # uchun update_fields'ga normalized_phone va phone qo'shilmaydi
             # (mavjud qiymatlar saqlanadi).
             user.save(update_fields=list(set(update_fields)))
-
-        if credentials_changed:
-            payload = _jwt_payload(user)
-            response = Response(UserSerializer(user, context={'request': request}).data)
-            return _set_auth_cookies(response, payload)
 
         return Response(UserSerializer(user, context={'request': request}).data)
 
@@ -451,6 +452,7 @@ def me(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([PasswordChangePerUserThrottle])
 def change_my_password(request):
     """POST /api/auth/me/change-password/ — eski parol bilan yangisini almashtirish.
 
@@ -918,7 +920,7 @@ def _telegram_deep_link(verify_token, bot='auth'):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@throttle_classes([ScopedRateThrottle])
+@throttle_classes([ScopedRateThrottle, OtpRequestThrottle])
 def start_telegram_phone_verification(request):
     """Start phone verification and return Telegram deep link."""
     serializer = StartTelegramPhoneVerificationSerializer(data=request.data)
@@ -952,7 +954,7 @@ start_telegram_phone_verification.cls.throttle_scope = 'auth'
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@throttle_classes([ScopedRateThrottle])
+@throttle_classes([ScopedRateThrottle, OtpRequestThrottle])
 def start_password_reset(request):
     """Start Telegram OTP flow for resetting an existing user's password."""
     serializer = StartPasswordResetSerializer(data=request.data)
@@ -1038,6 +1040,10 @@ def verify_otp(request):
         return Response({'detail': 'Verification not found'},
                         status=status.HTTP_400_BAD_REQUEST)
     if verification.attempts_count >= verification.max_attempts:
+        security_logger.warning(
+            'otp verify blocked (too many attempts) phone=%s',
+            mask_phone(normalized_phone),
+        )
         return Response({'detail': 'Too many attempts'},
                         status=status.HTTP_429_TOO_MANY_REQUESTS)
     if verification.otp_is_expired:
@@ -1047,6 +1053,11 @@ def verify_otp(request):
     verification.attempts_count += 1
     if not check_password(otp, verification.otp_hash):
         verification.save(update_fields=['attempts_count', 'updated_at'])
+        security_logger.warning(
+            'otp verify failed (wrong code) phone=%s attempt=%s/%s',
+            mask_phone(normalized_phone),
+            verification.attempts_count, verification.max_attempts,
+        )
         return Response({'detail': 'OTP noto\'g\'ri'},
                         status=status.HTTP_400_BAD_REQUEST)
 
@@ -1079,6 +1090,10 @@ def confirm_password_reset(request):
         return Response({'detail': 'Verification not found'},
                         status=status.HTTP_400_BAD_REQUEST)
     if verification.attempts_count >= verification.max_attempts:
+        security_logger.warning(
+            'password reset blocked (too many attempts) phone=%s',
+            mask_phone(normalized_phone),
+        )
         return Response({'detail': 'Too many attempts'},
                         status=status.HTTP_429_TOO_MANY_REQUESTS)
     if verification.otp_is_expired:
@@ -1088,6 +1103,11 @@ def confirm_password_reset(request):
     verification.attempts_count += 1
     if not check_password(otp, verification.otp_hash):
         verification.save(update_fields=['attempts_count', 'updated_at'])
+        security_logger.warning(
+            'password reset otp failed (wrong code) phone=%s attempt=%s/%s',
+            mask_phone(normalized_phone),
+            verification.attempts_count, verification.max_attempts,
+        )
         return Response({'detail': 'OTP noto\'g\'ri'},
                         status=status.HTTP_400_BAD_REQUEST)
 
@@ -1485,11 +1505,42 @@ def telegram_manager_webhook(request):
 def activity_leaderboard(request):
     """GET /api/accounts/activity-leaderboard/ — Ketma-ket faollik kunlari bo'yicha haftalik eng faol o'quvchilar reytingi."""
     from django.contrib.auth import get_user_model
+    from django.db.models import Count, Q as DQ
     User = get_user_model()
-    
-    # Filter for active users with student role and streak_count > 0
-    qs = User.objects.filter(is_active=True, streak_count__gt=0).order_by('-streak_count', '-last_active_date')[:15]
-    
+
+    # Faqat student rolidagi faol foydalanuvchilar. roles JSONField'da
+    # 'student' bo'lganlar yoki tasdiqlangan student a'zoligi borlar.
+    # N+1'ni oldini olish: get_badges() ishlatadigan annotatsiyalarni
+    # (attempts_100_count, total_attempts_count) queryset darajasida
+    # qo'shamiz — admin_users_list'dagi kabi. Aks holda 15 user × 2 = 30
+    # qo'shimcha COUNT so'rovi otilardi.
+    from centers.models import CenterMembership
+    qs = (
+        User.objects
+        .filter(is_active=True, streak_count__gt=0)
+        .filter(
+            DQ(roles__contains=['student'])
+            | DQ(
+                memberships__role=CenterMembership.ROLE_STUDENT,
+                memberships__status=CenterMembership.STATUS_APPROVED,
+            )
+        )
+        .annotate(
+            attempts_100_count=Count(
+                'attempts',
+                filter=DQ(attempts__score=100, attempts__disqualified=False),
+                distinct=True,
+            ),
+            total_attempts_count=Count(
+                'attempts',
+                filter=DQ(attempts__disqualified=False),
+                distinct=True,
+            ),
+        )
+        .distinct()
+        .order_by('-streak_count', '-last_active_date')[:15]
+    )
+
     entries = []
     for i, u in enumerate(qs):
         entries.append({
@@ -1497,9 +1548,9 @@ def activity_leaderboard(request):
             'user_id': u.id,
             'name': u.full_name or u.phone or 'O\'quvchi',
             'streak_count': u.streak_count,
-            'badges': u.get_badges()[:2] # Expose up to 2 badges
+            'badges': u.get_badges()[:2]  # Expose up to 2 badges
         })
-        
+
     return Response(entries)
 
 
@@ -1672,11 +1723,15 @@ def calculate_predictions_for_user(user):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
 def get_my_predictions(request):
     """GET /api/me/predictions/
     O'quvchining o'z natijalari bo'yicha AI muvaffaqiyat bashoratlarini qaytaradi.
     """
     res = calculate_predictions_for_user(request.user)
     return Response(res)
+
+
+get_my_predictions.cls.throttle_scope = 'ai'
 
 

@@ -161,10 +161,16 @@ else:
 
 AUTH_USER_MODEL = 'accounts.User'
 
+# Parol kuchaytirildi: minimal uzunlik 6 → 8. Mavjud foydalanuvchilarning
+# saqlangan parollari qayta tekshirilmaydi (faqat ro'yxatdan o'tish, parol
+# o'zgartirish/tiklashda amal qiladi). CommonPasswordValidator ("123456",
+# "password" kabilarni rad etadi), NumericPasswordValidator (faqat raqamli
+# parolni rad etadi) va UserAttributeSimilarityValidator (telefon/ismga
+# o'xshash parol) ham yoqilgan.
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-     'OPTIONS': {'min_length': 6}},
+     'OPTIONS': {'min_length': 8}},
     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
@@ -251,9 +257,26 @@ REST_FRAMEWORK = {
         # yuboradi. 60/min normal foydalanuvchi uchun yetarli keng, ammo
         # skript-based DoS'ni to'sadi.
         'ping': '60/min',
+        # AI endpointlari (xatolarni tushuntirish, bashorat, o'quv rejasi)
+        # tashqi Gemini API'ga murojaat qiladi — qimmat va sekin. Spec bo'yicha
+        # foydalanuvchi kuniga maksimal 10 ta so'rov yubora oladi; ortig'i
+        # abuse hisoblanadi va 429 qaytariladi.
+        'ai': '10/day',
+        # OTP/Telegram tasdiqlash so'rovi — TELEFON RAQAM bo'yicha (IP emas).
+        # Bir raqamga soatiga ko'pi bilan 3 ta tasdiqlash so'rovi. Telefon-
+        # bazali bo'lgani uchun NAT ortidagi maktablarni buzmaydi, faqat
+        # bitta raqamga spam yuborishni to'sadi (accounts.throttling).
+        'otp_request': '3/hour',
+        # Parol o'zgartirish — autentifikatsiyalangan FOYDALANUVCHI bo'yicha.
+        # Soatiga ko'pi bilan 5 marta (accounts.throttling).
+        'password_change': '5/hour',
     },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,
+    # Markazlashtirilgan xavfsizlik audit logging: 403/429 javoblar
+    # 'security' logger'iga yoziladi (olympy_api.security_logging). Bu DRF
+    # default handler'ni o'rab ishlaydi — javob xulqi o'zgarmaydi.
+    'EXCEPTION_HANDLER': 'olympy_api.security_logging.security_exception_handler',
 }
 
 SIMPLE_JWT = {
@@ -336,6 +359,9 @@ CORS_ALLOWED_ORIGINS = [
     if o.strip()
 ]
 CORS_ALLOW_CREDENTIALS = True
+# Faqat API ishlatadigan metodlar — django-cors-headers default'i TRACE va
+# boshqa keraksizlarni ham qo'shadi. Aniq ro'yxat hujum yuzasini kichraytiradi.
+CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 if not DEBUG and not CORS_ALLOWED_ORIGINS:
     raise ImproperlyConfigured('OLYMPY_CORS_ALLOWED_ORIGINS must be set in production')
 OLYMPY_FRONTEND_URL = (
@@ -353,16 +379,40 @@ CSRF_TRUSTED_ORIGINS = [
 if not CSRF_TRUSTED_ORIGINS and not DEBUG:
     CSRF_TRUSTED_ORIGINS = ['https://prolymp.uz', 'https://www.prolymp.uz']
 
-# Production security flags. Enable OLYMPY_SECURE_SSL_REDIRECT only after HTTPS
-# is correctly terminated by your hosting platform or reverse proxy.
+# Production security flags. HTTPS hosting platform (Render) HTTPS'ni terminate
+# qiladi va X-Forwarded-Proto header yuboradi — shu sababli production'da
+# (DEBUG=False) SSL redirect default yoqilgan. Render allaqachon HTTPS'ga
+# yo'naltirsa ham, bu ikkinchi himoya qatlami (HSTS bilan birga). Agar boshqa
+# muhit HTTPS'ni terminate qila olmasa, OLYMPY_SECURE_SSL_REDIRECT=0 bilan
+# o'chirib qo'yish mumkin.
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-SECURE_SSL_REDIRECT = env_bool('OLYMPY_SECURE_SSL_REDIRECT', False)
+SECURE_SSL_REDIRECT = env_bool('OLYMPY_SECURE_SSL_REDIRECT', not DEBUG)
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
+# Session/CSRF cookie SameSite=Lax — CSRF himoyasi (cross-site POST'da cookie
+# yuborilmaydi), ammo oddiy top-level navigatsiyada (Lax) ishlaydi. JWT auth
+# cookie'lari alohida JWT_COOKIE_SAMESITE bilan boshqariladi (cross-domain
+# frontend uchun production'da None) — bu sozlama ularga ta'sir qilmaydi.
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+# CSRF cookie'ni JS o'qiy olmasin (XSS orqali o'g'irlash xavfini kamaytiradi).
+# Frontend CSRF token'ni JS orqali o'qimaydi — autentifikatsiya JWT cookie /
+# Authorization header orqali, shu sababli HttpOnly xavfsiz.
+CSRF_COOKIE_HTTPONLY = True
 SECURE_HSTS_SECONDS = int(os.environ.get('OLYMPY_SECURE_HSTS_SECONDS', '0' if DEBUG else '31536000'))
 SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool('OLYMPY_SECURE_HSTS_INCLUDE_SUBDOMAINS', not DEBUG)
-SECURE_HSTS_PRELOAD = env_bool('OLYMPY_SECURE_HSTS_PRELOAD', False)
+# HSTS preload — production'da default yoqilgan. Brauzer preload ro'yxatiga
+# qo'shilishi uchun zarur (Django security.W021). Faqat barcha subdomenlar
+# HTTPS'ni qo'llab-quvvatlasa yoqilishi kerak — shu sababli env orqali
+# o'chirib qo'yish imkoni qoldirildi.
+SECURE_HSTS_PRELOAD = env_bool('OLYMPY_SECURE_HSTS_PRELOAD', not DEBUG)
 SECURE_CONTENT_TYPE_NOSNIFF = True
+# Referrer: tashqi saytlarga to'liq URL (yo'l/query bilan) sizdirilmasin —
+# faqat origin, va u ham bir xil sxema (HTTPS→HTTP downgrade'da yuborilmaydi).
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+# COOP: oyna boshqa origin'lar bilan window reference baham ko'rmasin
+# (Spectre/cross-window hujum yuzasini kamaytiradi).
+SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin'
 X_FRAME_OPTIONS = 'DENY'
 
 # Telegram bots. `TELEGRAM_BOT_*` stays as the backward-compatible default.
@@ -538,6 +588,23 @@ LOGGING = {
         'django.request': {
             'handlers': ['console'],
             'level': 'WARNING' if DEBUG else 'ERROR',
+            'propagate': False,
+        },
+        # Django'ning ichki xavfsizlik loggeri (masalan DisallowedHost,
+        # SuspiciousOperation) — WARNING darajasida console'ga.
+        'django.security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
+        # Loyihaning xavfsizlik audit loggeri: muvaffaqiyatsiz login, OTP
+        # tekshiruv xatolari, permission denied (403) va rate-limit (429)
+        # holatlari shu logger orqali yoziladi (logging.getLogger('security')).
+        # Render stdout/stderr'ni avtomatik yig'adi — xavfsizlik hodisalari
+        # log oqimida ko'rinadi.
+        'security': {
+            'handlers': ['console'],
+            'level': 'WARNING',
             'propagate': False,
         },
     },

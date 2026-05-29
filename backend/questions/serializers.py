@@ -13,6 +13,47 @@ class QuestionSerializer(serializers.ModelSerializer):
                   'created_at']
         read_only_fields = ['id', 'created_by', 'created_at']
 
+    def to_representation(self, instance):
+        """`correct_answer` faqat savolni boshqarishga haqli (teacher/manager/
+        owner/admin) foydalanuvchilarga chiqadi.
+
+        Bu serializer hozircha faqat staff CRUD endpoint'larida ishlatiladi
+        (student test savollarini `session_utils.questions_payload` orqali
+        oladi va u correct_answer'ni umuman qaytarmaydi). Ammo serializer
+        kelajakda student-facing joyda qayta ishlatilsa to'g'ri javob sizib
+        ketmasligi uchun bu yerda ham himoya qo'yamiz: context'da `request`
+        bo'lib, foydalanuvchi savolni boshqara olmasa — `correct_answer`
+        javobdan olib tashlanadi.
+        """
+        data = super().to_representation(instance)
+        request = (self.context or {}).get('request')
+        user = getattr(request, 'user', None) if request else None
+        if user is None or not getattr(user, 'is_authenticated', False):
+            return data
+        if getattr(user, 'is_platform_admin', False):
+            return data
+        # Savolni boshqarish huquqi — markaz owner/manager/teacher.
+        try:
+            from centers.models import CenterMembership
+            can_manage = (
+                instance.center_id
+                and CenterMembership.objects.filter(
+                    user=user,
+                    center_id=instance.center_id,
+                    role__in=[
+                        CenterMembership.ROLE_OWNER,
+                        CenterMembership.ROLE_MANAGER,
+                        CenterMembership.ROLE_TEACHER,
+                    ],
+                    status=CenterMembership.STATUS_APPROVED,
+                ).exists()
+            )
+        except Exception:
+            can_manage = False
+        if not can_manage:
+            data.pop('correct_answer', None)
+        return data
+
     def to_internal_value(self, data):
         # Multipart form-data sends JSON arrays as strings (e.g. when an
         # image file is attached). Decode 'options' transparently so the

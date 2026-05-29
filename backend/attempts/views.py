@@ -323,14 +323,28 @@ def submit_attempt(request):
         attempt.rank = better_count_for_rank + 1
         attempt.save(update_fields=['rank'])
 
+        # Coins va streak'ni atomic blok ichida locked user ustida yangilaymiz.
+        # Avval `request.user` (stale, lock qilinmagan) ustida yangilanardi va
+        # bir foydalanuvchi parallel ravishda submit + reward redeem qilsa
+        # coins qiymati ustiga yozilib (lost update) yo'qolardi.
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
         try:
-            user = request.user
+            locked_user = User.objects.select_for_update().get(pk=request.user.pk)
             earned_coins = (correct * 10) + 20
-            user.coins += earned_coins
-            user.save(update_fields=['coins'])
-            user.update_streak()
+            locked_user.coins = (locked_user.coins or 0) + earned_coins
+            locked_user.save(update_fields=['coins'])
+            locked_user.update_streak()
+            # Joriy request.user ob'ektini ham yangilab qo'yamiz — quyida
+            # streak_count javobga qo'shiladi.
+            request.user.coins = locked_user.coins
+            request.user.streak_count = locked_user.streak_count
         except Exception:
-            pass
+            import logging
+            logging.getLogger(__name__).exception(
+                'coins/streak update failed for user=%s attempt=%s',
+                request.user.pk, attempt.id,
+            )
 
         session.status = TestSession.STATUS_COMPLETED
         session.save(update_fields=['status'])
@@ -374,6 +388,8 @@ def submit_attempt(request):
         # sonni alohida ko'rsatishi mumkin: to'g'ri / noto'g'ri / bo'sh.
         data['blank_count'] = scored.get('blank', 0)
         data['answered_count'] = scored.get('answered', 0)
+        # request.user.streak_count yuqorida locked_user'dan yangilangan —
+        # ishonchli, lock'langan qiymatni qaytaramiz.
         data['streak_count'] = request.user.streak_count
         # Rank submit paytida yuqorida `attempt.rank` ga yozildi — bu
         # qiymatni ham `position` field sifatida qaytaramiz (frontend
@@ -907,10 +923,14 @@ def question_difficulty_stats(request):
     # Markaz tegishli barcha attempts'larni olib, savol bo'yicha
     # to'g'ri/jami javob hisoblaymiz. Bu markaz olimpiadalarida qatnashgan
     # attempts dan kelib chiqadi. Diskvalifikatsiyalar chiqarib tashlanadi.
-    attempts = list(
+    # `list(...)` o'rniga `.iterator()` — barcha answers JSON'larni bir vaqtda
+    # xotiraga yuklamaymiz, balki oqim (stream) ko'rinishida birma-bir
+    # qayta ishlaymiz. Markazda minglab attempt bo'lsa bu xotirani tejaydi.
+    attempts = (
         TestAttempt.objects
         .filter(olympiad__center_id=center_id, disqualified=False)
         .values_list('answers', flat=True)
+        .iterator(chunk_size=500)
     )
 
     # Per-question: to'g'ri va jami javob soni.
@@ -1403,6 +1423,7 @@ def get_mistakes_list(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
 def explain_all_mistakes(request):
     """POST /api/attempts/mistakes/explain/
     O'quvchining xatolari asosida Gemini AI orqali umumiy tavsiyalar generatsiya qiladi.
@@ -1456,5 +1477,8 @@ def explain_all_mistakes(request):
 
     explanation_text = explain_mistakes_ai(mistakes)
     return Response({'explanation': explanation_text})
+
+
+explain_all_mistakes.cls.throttle_scope = 'ai'
 
 

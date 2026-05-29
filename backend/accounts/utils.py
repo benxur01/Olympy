@@ -26,6 +26,24 @@ def normalize_phone(raw):
     return '+998' + last9
 
 
+def mask_phone(raw):
+    """Telefon raqamni qisman yashirish: ``+998 ** *** 78 90`` formatida.
+
+    Faqat oxirgi 4 raqam ko'rsatiladi — leaderboard/public endpoint'larda
+    PII sizdirilishini kamaytiradi. To'liq raqam faqat profil egasi va
+    admin uchun ochiq. Noto'g'ri/bo'sh raqam uchun bo'sh string qaytaradi.
+
+    Eslatma: bu DISPLAY-only maskalash — backend filtrlash, login va parol
+    tiklash hamon to'liq normalized_phone bilan ishlaydi.
+    """
+    norm = normalize_phone(raw)
+    if not norm:
+        return ''
+    # norm = +998 + 9 raqam. Oxirgi 4 ta raqamni ochamiz.
+    last4 = norm[-4:]
+    return f"+998 ** *** {last4[:2]} {last4[2:]}"
+
+
 def predict_success_ai(student_name, avg_score, attempts_count, subject_performance):
     """
     Generates a personalized AI success predictor report for a student in Uzbek.

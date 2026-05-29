@@ -5,9 +5,9 @@ const { useState, useEffect } = React;
 // Page <-> URL mapping. Brauzer manzil satrida sahifa o'zgarishini ko'rsatish
 // va orqaga/oldinga tugmalari ishlashi uchun ishlatiladi.
 //
-// Eslatma: `test` va `results` sahifalari URL o'zgartirmaydi — ular runtime
-// state (testResult, activeOlympiad) bilan boshqariladi va to'g'ridan link
-// ochilsa qayta tiklab bo'lmaydi.
+// Eslatma: `results` sahifasi URL o'zgartirmaydi — u runtime state
+// (testResult) bilan boshqariladi. `test` esa endi URL'ga bog'langan
+// (/test/<id>) va F5'dan keyin sessiya localStorage'dan tiklanadi.
 const PAGE_URLS = {
   landing: '/',
   login: '/login',
@@ -26,6 +26,30 @@ const PAGE_URLS = {
   'pending-home': '/pending',
   analytics: '/analytics',
   parent: '/dashboard/parent',
+};
+
+// Faol test sahifasidagi olimpiada ID'sini saqlash kaliti. F5 (sahifa
+// yangilash) yoki kraxdan keyin test sessiyasini shu ID orqali tiklaymiz.
+const ACTIVE_TEST_KEY = 'olympy:activeTestOlympiad';
+
+const readActiveTestId = () => {
+  try { return localStorage.getItem(ACTIVE_TEST_KEY) || null; } catch { return null; }
+};
+const writeActiveTestId = (id) => {
+  try {
+    if (id == null) localStorage.removeItem(ACTIVE_TEST_KEY);
+    else localStorage.setItem(ACTIVE_TEST_KEY, String(id));
+  } catch {}
+};
+
+// URL'dan test olimpiada ID'sini ajratish: /test yoki /test/<id>.
+const testIdFromPath = () => {
+  try {
+    const raw = window.location.pathname || '/';
+    const m = raw.match(/^\/test(?:\/([^/]+))?\/?$/);
+    if (!m) return undefined; // test sahifasi emas
+    return m[1] || null; // ID bo'lmasa null (localStorage fallback ishlatiladi)
+  } catch { return undefined; }
 };
 
 // URL → page (teskari mapping). Bir nechta page bitta URL ga ko'rsatsa,
@@ -49,6 +73,8 @@ const pageFromPath = () => {
   try {
     const raw = window.location.pathname || '/';
     const path = raw === '/' ? '/' : raw.replace(/\/+$/, '');
+    // /test va /test/<id> — test sahifasi (dinamik segment URL_PAGES'da yo'q).
+    if (/^\/test(\/.*)?$/.test(path)) return 'test';
     if (URL_PAGES[path]) return URL_PAGES[path];
     if (path === '/' || path === '') return 'landing';
   } catch {}
@@ -98,6 +124,33 @@ const App = () => {
     } catch {}
   };
 
+  // K17: F5 (sahifa yangilash) yoki to'g'ridan-to'g'ri /test/<id> link bilan
+  // kirilganda test sessiyasini tiklash. URL'dagi ID yoki localStorage'dagi
+  // faol test ID'si orqali olimpiadani topamiz. Faqat hali active bo'lgan
+  // (vaqti tugamagan) olimpiada tiklanadi — javoblar localStorage'dagi
+  // `olympy_answers_<id>` kalitidan OlympiadTest komponenti tomonidan
+  // avtomatik o'qiladi. Promise qaytaradi: true => tiklash boshlandi.
+  const tryRestoreActiveTest = (u, urlTestId) => {
+    if (!u?._api || !globalThis.OlympyApi?.getOlympiads) return Promise.resolve(false);
+    const targetId = (urlTestId != null && urlTestId !== '')
+      ? urlTestId
+      : readActiveTestId();
+    if (!targetId) return Promise.resolve(false);
+    const token = globalThis.OlympyApi?.getToken?.()
+      ?? globalThis.OlympyApi?.loadAuth?.()?.token;
+    return globalThis.OlympyApi.getOlympiads(token).then((list) => {
+      const target = (list || []).find(o => String(o.id) === String(targetId));
+      if (!target) { writeActiveTestId(null); return false; }
+      const mapped = mapApiOlympiad(target);
+      // Faqat active olimpiada tiklanadi. Yakunlangan/o'chirilgan bo'lsa
+      // saqlangan ID'ni tozalaymiz va dashboard'da qoldiramiz.
+      if (mapped?.status !== 'active') { writeActiveTestId(null); return false; }
+      setActiveOlympiad(mapped);
+      setPage('test');
+      return true;
+    }).catch(() => false);
+  };
+
   // Persist backend JWT session only.
   useEffect(() => {
     let cancelled = false;
@@ -107,6 +160,7 @@ const App = () => {
       // localStorage'dagi user obyektiga ko'r-ko'rona ishonmaslik —
       // token eskirgan bo'lsa dashboard 401 olib bounce loop yaratadi.
       // Avval getMe bilan validate qilamiz.
+      const urlTestId = testIdFromPath();
       if (auth?.user && auth?.token) {
         try {
           const freshUser = await globalThis.OlympyApi?.getMe?.(auth.token);
@@ -114,6 +168,14 @@ const App = () => {
           const mappedUser = globalThis.OlympyApi.mapBackendUser(freshUser);
           globalThis.OlympyApi.saveAuth({ token: auth.token, refresh: auth.refresh, user: mappedUser });
           setApiUser(mappedUser);
+          // F5'dan keyin test sahifasida bo'lsak — sessiyani tiklaymiz.
+          if (requestedPage === 'test') {
+            const restored = await tryRestoreActiveTest(mappedUser, urlTestId);
+            if (cancelled) return;
+            if (!restored) setPage(roleHomePage(mappedUser));
+            setBootstrapping(false);
+            return;
+          }
           const publicPages = ['login', 'register', 'landing'];
           const dest1 = (!requestedPage || publicPages.includes(requestedPage))
             ? roleHomePage(mappedUser) : requestedPage;
@@ -132,6 +194,12 @@ const App = () => {
         const mappedUser = globalThis.OlympyApi.mapBackendUser(freshUser);
         globalThis.OlympyApi.saveAuth({ user: mappedUser, cookieAuth: true });
         setApiUser(mappedUser);
+        if (requestedPage === 'test') {
+          const restored = await tryRestoreActiveTest(mappedUser, urlTestId);
+          if (cancelled) return;
+          if (!restored) setPage(roleHomePage(mappedUser));
+          return;
+        }
         const publicPages2 = ['login', 'register', 'landing'];
         const dest2 = (!requestedPage || publicPages2.includes(requestedPage))
           ? roleHomePage(mappedUser) : requestedPage;
@@ -139,7 +207,8 @@ const App = () => {
         tryResumePendingOlympiad(mappedUser);
         return;
       } catch {}
-      if (!cancelled && requestedPage) setPage(requestedPage);
+      // Autentifikatsiyasiz /test ochilsa — auth guard login'ga yo'naltiradi.
+      if (!cancelled && requestedPage && requestedPage !== 'test') setPage(requestedPage);
     };
     try {
       restore().finally(() => { if (!cancelled) setBootstrapping(false); });
@@ -166,6 +235,9 @@ const App = () => {
     setTestResult(null);
     setActiveOlympiad(null);
     setSwitcherOpen(false);
+    // Logout'da faol test ID'sini ham tozalaymiz — boshqa foydalanuvchi
+    // shu brauzerda kirsa eski testga tiklanib qolmasligi uchun.
+    writeActiveTestId(null);
     try { globalThis.OlympyApi?.clearAuth?.(); } catch {}
     // Race-condition'ni oldini olish: agar foydalanuvchi allaqachon public
     // sahifada bo'lsa (login/register/landing), sahifani o'zgartirmaymiz.
@@ -185,8 +257,30 @@ const App = () => {
   }, []);
 
   const navigate = (dest, data) => {
-    if (dest === 'test' && data) { setActiveOlympiad(data); setPage('test'); return; }
-    if (dest === 'results' && data) { setTestResult(data); setPage('results'); return; }
+    if (dest === 'test' && data) {
+      setActiveOlympiad(data);
+      // K17: test sessiyasini F5'dan keyin tiklash uchun olimpiada ID'sini
+      // saqlaymiz va URL'ni /test/<id> ga o'tkazamiz.
+      const testId = data.backendId ?? data.id ?? null;
+      writeActiveTestId(testId);
+      try {
+        const url = testId != null ? `/test/${testId}` : '/test';
+        if (window.location.pathname !== url) {
+          window.history.pushState({ page: 'test' }, '', url);
+        }
+      } catch {}
+      setPage('test');
+      return;
+    }
+    if (dest === 'results' && data) {
+      // Testdan natijaga o'tildi — faol test endi yo'q, saqlangan ID'ni tozalaymiz.
+      writeActiveTestId(null);
+      setTestResult(data);
+      setPage('results');
+      return;
+    }
+    // Boshqa har qanday sahifaga navigatsiya — faol test holatidan chiqadi.
+    if (dest !== 'test') writeActiveTestId(null);
     setPage(dest);
   };
 
@@ -214,6 +308,9 @@ const App = () => {
   }, []);
 
   const handleTestFinish = (result) => {
+    // Test yakunlandi (submit yoki diskvalifikatsiya) — faol test ID'sini
+    // tozalaymiz, aks holda F5'da tugagan testga qaytarib yuborardi.
+    writeActiveTestId(null);
     setTestResult(result);
     setPage('results');
     const auth = globalThis.OlympyApi?.loadAuth?.();

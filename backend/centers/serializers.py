@@ -175,7 +175,7 @@ class CreateManagerSerializer(serializers.Serializer):
     """Owner-created manager account for an approved education center."""
     full_name = serializers.CharField(max_length=120)
     phone = serializers.CharField(max_length=20)
-    password = serializers.CharField(write_only=True, min_length=6)
+    password = serializers.CharField(write_only=True, min_length=8)
 
     def validate_phone(self, value):
         from django.contrib.auth import get_user_model

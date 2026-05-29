@@ -63,9 +63,9 @@ def questions_list_create(request):
                 status=http_status.HTTP_403_FORBIDDEN,
             )
         qs = Question.objects.filter(center_id=center_id)
-        return Response(QuestionSerializer(qs, many=True).data)
+        return Response(QuestionSerializer(qs, many=True, context={'request': request}).data)
 
-    serializer = QuestionSerializer(data=request.data)
+    serializer = QuestionSerializer(data=request.data, context={'request': request})
     serializer.is_valid(raise_exception=True)
     center_id = serializer.validated_data['center'].id
     if not _user_can_create_for_center(request.user, center_id):
@@ -74,7 +74,7 @@ def questions_list_create(request):
             status=http_status.HTTP_403_FORBIDDEN,
         )
     question = serializer.save(created_by=request.user)
-    return Response(QuestionSerializer(question).data,
+    return Response(QuestionSerializer(question, context={'request': request}).data,
                     status=http_status.HTTP_201_CREATED)
 
 
@@ -91,7 +91,7 @@ def question_detail(request, question_id):
     if not _user_can_create_for_center(request.user, question.center_id):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
     if request.method == 'GET':
-        return Response(QuestionSerializer(question).data)
+        return Response(QuestionSerializer(question, context={'request': request}).data)
     if request.method == 'DELETE':
         question.delete()
         return Response(status=http_status.HTTP_204_NO_CONTENT)
@@ -105,10 +105,10 @@ def question_detail(request, question_id):
     else:
         data = dict(data)
     data.pop('center', None)
-    serializer = QuestionSerializer(question, data=data, partial=partial)
+    serializer = QuestionSerializer(question, data=data, partial=partial, context={'request': request})
     serializer.is_valid(raise_exception=True)
     serializer.save()
-    return Response(QuestionSerializer(question).data)
+    return Response(QuestionSerializer(question, context={'request': request}).data)
 
 
 @api_view(['DELETE'])
