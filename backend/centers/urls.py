@@ -2,6 +2,7 @@ from django.urls import path
 
 from . import views
 from . import views_premium
+from . import views_premium2
 
 # Mounted under /api/centers/
 urlpatterns = [
@@ -38,4 +39,13 @@ urlpatterns = [
     path('<int:center_id>/tag-comparison/', views_premium.tag_comparison, name='center-tag-comparison'),
     path('<int:center_id>/export-all-results/', views_premium.export_all_results, name='center-export-all-results'),
     path('<int:center_id>/rating-history/', views_premium.rating_history, name='center-rating-history'),
+    # Yangi premium funksiyalar (spec: T1–T6)
+    path('<int:center_id>/group-comparison/', views_premium2.group_comparison, name='center-group-comparison'),
+    path('<int:center_id>/churn-risk/', views_premium2.churn_risk, name='center-churn-risk'),
+    path('<int:center_id>/import-external-results/', views_premium2.import_external_results, name='center-import-external-results'),
+    path('<int:center_id>/external-results/', views_premium2.external_results, name='center-external-results'),
+    path('<int:center_id>/mock-olympiads/', views_premium2.mock_olympiads, name='center-mock-olympiads'),
+    path('<int:center_id>/mock-olympiads/<int:mock_id>/', views_premium2.mock_olympiad_delete, name='center-mock-olympiad-delete'),
+    path('<int:center_id>/manager-logs/', views_premium2.manager_logs, name='center-manager-logs'),
+    path('<int:center_id>/members/<int:user_id>/rating-message/', views_premium2.rating_message, name='center-rating-message'),
 ]

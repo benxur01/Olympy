@@ -189,3 +189,161 @@ class CenterRatingHistory(models.Model):
 
     def __str__(self):
         return f'{self.center_id}@{self.date}: rank={self.rank} score={self.score}'
+
+
+class ExternalOlympiadResult(models.Model):
+    """T3: Tashqi (platformadan tashqari) olimpiada natijasi.
+
+    Markaz menejeri CSV orqali o'quvchilarining boshqa platformalarda yoki
+    real (oflayn) olimpiadalarda erishgan natijalarini import qiladi. Shu
+    yozuvlar markaz analitikasini boyitadi. `student` — markazning o'quvchisi
+    (telefon bo'yicha topiladi), `center` — import qilgan markaz.
+    """
+    center = models.ForeignKey(
+        EducationCenter,
+        on_delete=models.CASCADE,
+        related_name='external_results',
+    )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='external_olympiad_results',
+    )
+    olympiad_name = models.CharField(max_length=200)
+    date = models.DateField()
+    score = models.DecimalField(max_digits=7, decimal_places=2, default=0)
+    max_score = models.DecimalField(max_digits=7, decimal_places=2, default=0)
+    imported_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-date', '-imported_at']
+        indexes = [
+            models.Index(fields=['center', '-date']),
+        ]
+
+    def __str__(self):
+        return f'{self.student_id}: {self.olympiad_name} ({self.score}/{self.max_score})'
+
+
+class MockOlympiad(models.Model):
+    """T4: Markaz tomonidan tuzilgan mashq (mock) olimpiadasi.
+
+    Haqiqiy Olympiad/musobaqadan farqli: jadval, faollik holati va
+    diskvalifikatsiya logikasi yo'q. O'quvchi xohlagan paytda boshlab,
+    javoblarini topshiradi va natija MockAttempt'da saqlanadi. Savollar
+    mavjud `questions.Question` modelidan tanlanadi (ManyToMany).
+    """
+    center = models.ForeignKey(
+        EducationCenter,
+        on_delete=models.CASCADE,
+        related_name='mock_olympiads',
+    )
+    title = models.CharField(max_length=200)
+    subject = models.CharField(max_length=80, blank=True, default='')
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='created_mock_olympiads',
+    )
+    questions = models.ManyToManyField(
+        'questions.Question',
+        related_name='mock_olympiads',
+        blank=True,
+    )
+    time_limit_minutes = models.PositiveIntegerField(default=30)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'{self.title} (mock@{self.center_id})'
+
+
+class MockAttempt(models.Model):
+    """T4: O'quvchining mock olimpiadadagi urinishi.
+
+    `answers` — {question_id: chosen_option_index} JSON map. Har (mock, user)
+    juftligi yagona — o'quvchi bir mock'ni bir marta topshiradi.
+    """
+    mock = models.ForeignKey(
+        MockOlympiad,
+        on_delete=models.CASCADE,
+        related_name='attempts',
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='mock_attempts',
+    )
+    answers = models.JSONField(default=dict, blank=True)
+    score = models.PositiveIntegerField(default=0)
+    correct_count = models.PositiveIntegerField(default=0)
+    total_questions = models.PositiveIntegerField(default=0)
+    started_at = models.DateTimeField(auto_now_add=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-started_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['mock', 'user'],
+                name='unique_mock_user_attempt',
+            ),
+        ]
+
+    def __str__(self):
+        return f'mock-attempt:{self.user_id}@{self.mock_id} = {self.score}'
+
+
+class ManagerActivityLog(models.Model):
+    """T5: Menejer faoliyat logi.
+
+    Owner markaz menejerlarining muhim amallarini (reja yuborish, tahlil,
+    eksport/import, hisobot ko'rish) shu yerda kuzatadi. `target_user` —
+    amal tegishli o'quvchi (bo'lsa).
+    """
+    ACTION_SEND_PLAN = 'send_plan'
+    ACTION_SEND_ANALYSIS = 'send_analysis'
+    ACTION_EXPORT_DATA = 'export_data'
+    ACTION_IMPORT_RESULTS = 'import_results'
+    ACTION_VIEW_REPORT = 'view_report'
+    ACTION_CHOICES = [
+        (ACTION_SEND_PLAN, "Reja yuborish"),
+        (ACTION_SEND_ANALYSIS, "Tahlil yuborish"),
+        (ACTION_EXPORT_DATA, "Ma'lumot eksporti"),
+        (ACTION_IMPORT_RESULTS, "Natija importi"),
+        (ACTION_VIEW_REPORT, "Hisobot ko'rish"),
+    ]
+
+    center = models.ForeignKey(
+        EducationCenter,
+        on_delete=models.CASCADE,
+        related_name='manager_logs',
+    )
+    manager = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='manager_activity_logs',
+    )
+    action_type = models.CharField(max_length=20, choices=ACTION_CHOICES, db_index=True)
+    target_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='manager_log_targets',
+    )
+    description = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['center', '-created_at']),
+            models.Index(fields=['manager', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.manager_id}:{self.action_type}@{self.center_id}'

@@ -262,6 +262,12 @@ REST_FRAMEWORK = {
         # foydalanuvchi kuniga maksimal 10 ta so'rov yubora oladi; ortig'i
         # abuse hisoblanadi va 429 qaytariladi.
         'ai': '10/day',
+        # AI tahlil audio (O4) — gTTS + Telegram, qimmat va sekin. Spec
+        # bo'yicha kuniga 3 ta.
+        'ai_audio': '3/day',
+        # Olimpiada tayyorgarlik rejasi (O6) — Gemini'ga uzun JSON so'rov.
+        # Spec bo'yicha kuniga 5 ta.
+        'ai_prep': '5/day',
         # OTP/Telegram tasdiqlash so'rovi — TELEFON RAQAM bo'yicha (IP emas).
         # Bir raqamga soatiga ko'pi bilan 3 ta tasdiqlash so'rovi. Telefon-
         # bazali bo'lgani uchun NAT ortidagi maktablarni buzmaydi, faqat

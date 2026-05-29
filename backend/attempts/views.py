@@ -424,6 +424,23 @@ def submit_attempt(request):
                 request.user.pk, attempt.id,
             )
 
+        # O2: Kunlik maqsadni javob berilgan savollar soni bilan oldinga
+        # suramiz (maqsad bajarilsa +50 coin). Hech qachon submit'ni buzmaydi.
+        daily_goal_achieved = False
+        try:
+            from accounts.daily_goal import record_progress
+            answered_for_goal = scored.get('answered', correct + wrong)
+            daily_goal_achieved = record_progress(
+                request.user, answered_for_goal,
+                locked_user=locals().get('locked_user'),
+            )
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'daily goal update failed for user=%s attempt=%s',
+                request.user.pk, attempt.id,
+            )
+
         session.status = TestSession.STATUS_COMPLETED
         session.save(update_fields=['status'])
 
@@ -495,6 +512,9 @@ def submit_attempt(request):
         # request.user.streak_count yuqorida locked_user'dan yangilangan —
         # ishonchli, lock'langan qiymatni qaytaramiz.
         data['streak_count'] = request.user.streak_count
+        # O2: kunlik maqsad shu submit'da bajarildimi (frontend bonus
+        # animatsiyasi uchun).
+        data['daily_goal_achieved'] = daily_goal_achieved
         # Rank submit paytida yuqorida `attempt.rank` ga yozildi — bu
         # qiymatni ham `position` field sifatida qaytaramiz (frontend
         # eski kod position'ga tayanishi mumkin).
@@ -1627,6 +1647,21 @@ def explain_all_mistakes(request):
         return Response({'explanation': "Sizda hozircha xatolar aniqlanmadi. Barakalla!"})
 
     explanation_text = explain_mistakes_ai(mistakes)
+
+    # T5: AI xatolar tahlilini menejer faoliyat logiga yozamiz (markaz bo'lsa).
+    try:
+        from centers.models import ManagerActivityLog
+        from centers.services import log_manager_activity, primary_center_for_user
+        center = primary_center_for_user(request.user)
+        if center is not None:
+            log_manager_activity(
+                center, request.user, ManagerActivityLog.ACTION_SEND_ANALYSIS,
+                description='Xatolar tahlili (AI) generatsiya qilindi',
+                target_user=request.user,
+            )
+    except Exception:
+        pass
+
     return Response({'explanation': explanation_text})
 
 
