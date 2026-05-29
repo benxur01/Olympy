@@ -275,6 +275,7 @@ const LandingPage = ({ onNavigate }) => {
   const [imgErrors, setImgErrors] = React.useState({});
   const [todayLabel, setTodayLabel] = React.useState(formatLandingDate);
   const [dashboardSvg, setDashboardSvg] = React.useState('');
+  const [selectedCategory, setSelectedCategory] = React.useState('all');
 
   const mainMockupTilt = use3DTilt(5, 1.01);
 
@@ -346,19 +347,44 @@ const LandingPage = ({ onNavigate }) => {
   ];
 
   const features = [
-    { icon: '✨', title: 'AI orqali savol yaratish', desc: 'Sun\'iy intellekt yordamida sekundlar ichida yuzlab savol yarating', color: 'from-indigo-500 to-purple-600' },
-    { icon: '📄', title: 'PDF\'dan test yaratish', desc: 'Darslik yoki materiallardan avtomatik test savollarini yarating', color: 'from-cyan-500 to-blue-600' },
-    { icon: '📱', title: 'Telegram orqali tasdiqlash', desc: 'Manager Telegram orqali bir tugma bilan arizalarni tasdiqlaydi', color: 'from-emerald-500 to-teal-600' },
-    { icon: '🏆', title: 'Online olimpiada', desc: 'Real vaqtda olimpiada o\'tkazib, natijalarni avtomatik hisoblang', color: 'from-amber-500 to-orange-600' },
-    { icon: '📊', title: 'Natijalar va reyting', desc: 'Batafsil statistika, grafik va reyting jadvallarini ko\'ring', color: 'from-pink-500 to-rose-600' },
-    { icon: '👤', title: 'O\'quvchi profili', desc: 'Har bir o\'quvchining yutuqlari va natijalarini kuzating', color: 'from-violet-500 to-purple-600' },
-    { icon: '🏋️', title: 'Mustaqil Mashq Rejimi', desc: 'Fanlar va mavzular bo\'yicha o\'z ustida ishlash hamda faollik (streak) tizimi', color: 'from-blue-500 to-indigo-600' },
-    { icon: '📂', title: 'AI Xatolar Sandig\'i', desc: 'Yo\'l qo\'yilgan xatolarni jamlab, sun\'iy intellekt orqali tushuntirish berish', color: 'from-amber-500 to-red-600' },
-    { icon: '🪙', title: 'Virtual Sovg\'alar Do\'koni', desc: 'Testlar va mashqlardan tangalar yig\'ib, qiziqarli mukofotlar xarid qilish', color: 'from-yellow-400 to-orange-500' },
-    { icon: '🔮', title: 'AI Muvaffaqiyat Prognostikasi', desc: 'Imtihon va olimpiadalarga kirish imkoniyatlarini AI yordamida prognozlash', color: 'from-purple-500 to-pink-600' },
-    { icon: '📄', title: 'Ota-onalar uchun PDF hisobot', desc: 'Telegram bot orqali farzand rivojlanishi bo\'yicha haftalik PDF tahlil xabarlari', color: 'from-emerald-500 to-green-600' },
-    { icon: '👁️', title: 'Jonli Proctoring nazorati', desc: 'Test topshirayotgan o\'quvchilarning tab o\'zgarishi va ping holatini real vaqtda kuzatish', color: 'from-rose-500 to-pink-600' },
+    // Center features
+    { category: 'center', icon: '✨', title: 'AI orqali savol yaratish', desc: 'Sun\'iy intellekt yordamida sekundlar ichida yuzlab savol yarating', color: 'from-indigo-500 to-purple-600' },
+    { category: 'center', icon: '📄', title: 'PDF\'dan test yaratish', desc: 'Darslik yoki materiallardan avtomatik test savollarini yarating', color: 'from-cyan-500 to-blue-600' },
+    { category: 'center', icon: '📱', title: 'Telegram orqali tasdiqlash', desc: 'Manager Telegram orqali bir tugma bilan arizalarni tasdiqlaydi', color: 'from-emerald-500 to-teal-600' },
+    { category: 'center', icon: '🏆', title: 'Online olimpiada', desc: 'Real vaqtda olimpiada o\'tkazib, Natijalarni avtomatik hisoblang', color: 'from-amber-500 to-orange-600' },
+    { category: 'center', icon: '👁️', title: 'Jonli Proctoring nazorati', desc: 'Test topshirayotgan o\'quvchilarning tab o\'zgarishi va ping holatini real vaqtda kuzatish', color: 'from-rose-500 to-pink-600' },
+    { category: 'center', icon: '📈', title: 'Tashkilot reyting dinamikasi', desc: 'Markazning global oylik reyting o\'zgarishi va ballar o\'sishini jonli grafikda kuzatish (T7)', color: 'from-blue-600 to-cyan-500' },
+    { category: 'center', icon: '📊', title: 'O\'quvchilar taqqoslash jadvali', desc: 'Guruhdagi barcha o\'quvchilarning o\'rtacha ballari, reytingi va urinishlari batafsil jadvali (T1)', color: 'from-indigo-500 to-blue-600' },
+    { category: 'center', icon: '🧠', title: 'Savollar qiyinlik tahlili', desc: 'Markaz savollarining o\'quvchilar tomonidan xato qilinish foizlari bo\'yicha qiyinlik darajasini aniqlash (T4)', color: 'from-purple-500 to-indigo-600' },
+    { category: 'center', icon: '⚠️', title: 'Nofaol o\'quvchilar ogohlantirishi', desc: 'Ma\'lum muddat davomida test topshirmagan nofaol o\'quvchilarni tizimli aniqlash va eslatish (T3)', color: 'from-amber-500 to-red-500' },
+    { category: 'center', icon: '🏷️', title: 'Guruhlararo taqqoslash', desc: 'Sinf va guruh teglari kesimida faollik hamda o\'rtacha ko\'rsatkichlarni guruhlab solishtirish (T5)', color: 'from-teal-500 to-emerald-600' },
+    { category: 'center', icon: '📥', title: 'Excel va CSV yig\'ma eksporti', desc: 'Markazning barcha o\'quvchilari natijalarini formatlangan Excel yoki CSV faylga bir tugma bilan yuklab olish (T6)', color: 'from-emerald-600 to-teal-500' },
+    { category: 'center', icon: '📄', title: 'Tashkilot tahliliy hisoboti', desc: 'Markaz faoliyatiga oid statistika va TOP 5 o\'quvchini Pillow orqali PDF shaklida yuklash (T2)', color: 'from-pink-500 to-rose-600' },
+
+    // Student features
+    { category: 'student', icon: '📊', title: 'Natijalar va reyting', desc: 'Batafsil statistika, shaxsiy grafik va global reyting jadvallarini ko\'ring', color: 'from-pink-500 to-rose-600' },
+    { category: 'student', icon: '👤', title: 'O\'quvchi profili', desc: 'Har bir o\'quvchining yutuqlari, faollik oylari va natijalarini kuzating', color: 'from-violet-500 to-purple-600' },
+    { category: 'student', icon: '🏋️', title: 'Mustaqil Mashq Rejimi', desc: 'Fanlar va mavzular bo\'yicha o\'z ustida ishlash hamda faollik (streak) tizimi', color: 'from-blue-500 to-indigo-600' },
+    { category: 'student', icon: '📂', title: 'AI Xatolar Sandig\'i', desc: 'Yo\'l qo\'yilgan xatolarni jamlab, sun\'iy intellekt orqali tushuntirish berish', color: 'from-amber-500 to-red-600' },
+    { category: 'student', icon: '🪙', title: 'Virtual Sovg\'alar Do\'koni', desc: 'Testlar va mashqlardan tangalar yig\'ib, qiziqarli mukofotlar xarid qilish', color: 'from-yellow-400 to-orange-500' },
+    { category: 'student', icon: '🔮', title: 'AI Muvaffaqiyat Prognostikasi', desc: 'Imtihon va olimpiadalarga kirish imkoniyatlarini AI yordamida prognozlash', color: 'from-purple-500 to-pink-600' },
+    { category: 'student', icon: '⚔️', title: 'Raqiblar tizimi (Rivals)', desc: 'Kursdoshlarni raqib sifatida qo\'shib, ular bilan o\'rtacha ball va reytinglarni taqqoslash (O2)', color: 'from-rose-500 to-orange-500' },
+    { category: 'student', icon: '🎯', title: 'Mavzu tayyorlik darajasi', desc: 'Har bir fan bo\'yicha o\'quvchining o\'zlashtirish foizini va tayyorgarlik darajasini ko\'rish (O3)', color: 'from-cyan-500 to-teal-500' },
+    { category: 'student', icon: '🔮', title: 'Urinishlar AI tahlili', desc: 'Har bir test urinishi yakunida Gemini AI yordamida yo\'l qo\'yilgan xatolarga tushuntirish olish (O4)', color: 'from-purple-600 to-pink-500' },
+    { category: 'student', icon: '🎖️', title: 'Premium Yutuqlar', desc: 'Urinishlar soni, streaklar va eng yuqori ballarga erishganda beriladigan nishonlar (O5)', color: 'from-yellow-500 to-amber-600' },
+    { category: 'student', icon: '💡', title: 'Smart Olimpiada tavsiyalari', desc: 'Zaif fanlaringizga mos ravishda navbatdagi olimpiada va mashqlarni avtomatik tavsiya etish (O7)', color: 'from-indigo-600 to-purple-600' },
+    { category: 'student', icon: '🔥', title: 'Ketma-ketlik (Streak) tizimi', desc: 'Kunlik faollikni va eng uzun streaklarni kuzatib borish orqali uzluksiz o\'rganish motivatsiyasi (O1)', color: 'from-orange-500 to-amber-500' },
+    { category: 'student', icon: '👑', title: 'Oltin avatar halqasi va unvon', desc: 'Premium o\'quvchilar uchun platformada alohida vizual oltin avatar va reytinglarda maxsus belgi', color: 'from-yellow-400 to-amber-500' },
+
+    // Parent features
+    { category: 'parent', icon: '📄', title: 'Ota-onalar uchun PDF hisobot', desc: 'Telegram bot orqali farzand rivojlanishi bo\'yicha haftalik PDF tahlil xabarlari', color: 'from-emerald-500 to-green-600' },
+    { category: 'parent', icon: '📩', title: 'Ota-onaga haftalik digest', desc: 'Farzandning oxirgi 7 kundagi urinishlari, o\'rtacha bali va faollik kunlarini Telegramda olish (O6)', color: 'from-emerald-500 to-green-600' },
   ];
+
+  const filteredFeatures = React.useMemo(() => {
+    if (selectedCategory === 'all') return features;
+    return features.filter(f => f.category === selectedCategory);
+  }, [selectedCategory]);
 
   const steps = [
     { num: '01', title: 'Ro\'yxatdan o\'ting', desc: 'Maktab, o\'quv markaz yoki tashkilot sifatida platformaga qo\'shiling', icon: '🚀' },
@@ -662,19 +688,64 @@ const LandingPage = ({ onNavigate }) => {
             from { transform: rotate(0deg); }
             to { transform: rotate(360deg); }
           }
+          @keyframes cardEntrance {
+            from {
+              opacity: 0;
+              transform: translateY(16px) scale(0.97);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0) scale(1);
+            }
+          }
         `}</style>
       </section>
 
       {/* Features */}
       <section id="features" className="py-12 md:py-24 max-w-7xl mx-auto px-4 md:px-6">
-        <div className="text-center mb-8 md:mb-16 scroll-reveal">
+        <div className="text-center mb-8 md:mb-10 scroll-reveal">
           <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-purple-300 border border-purple-500/20">✨ Xususiyatlar</div>
-          <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Hammasi bir joyda</h2>
-          <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Tashkilotingizni raqamlashtirishning eng zamonaviy yechimi</p>
+          <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Platforma Imkoniyatlari</h2>
+          <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Tashkilotingiz, o'quvchilar va ota-onalar uchun eng zamonaviy premium yechimlar</p>
         </div>
+
+        {/* Category Filter Tabs */}
+        <div className="flex justify-center mb-10 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex gap-2 p-1.5 rounded-2xl border border-white/5" style={{ background: 'rgba(255,255,255,0.02)' }}>
+            {[
+              { id: 'all', label: 'Barchasi', icon: 'grid' },
+              { id: 'center', label: 'Tashkilotlar uchun', icon: 'building' },
+              { id: 'student', label: 'O\'quvchilar uchun', icon: 'award' },
+              { id: 'parent', label: 'Ota-onalar uchun', icon: 'users' },
+            ].map(cat => {
+              const active = selectedCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat.id)}
+                  className={`flex-shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs md:text-sm font-semibold transition-all duration-300 ${
+                    active ? 'text-white shadow-lg shadow-indigo-500/20' : 'text-white/60 hover:text-white hover:bg-white/5'
+                  }`}
+                  style={active ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)' } : {}}
+                >
+                  <Icon name={cat.icon} size={15} />
+                  <span>{cat.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-          {features.map((f, i) => (
-            <GlowCard key={i} className={`p-4 md:p-6 group scroll-reveal scroll-reveal-delay-${(i % 3) + 1}`}>
+          {filteredFeatures.map((f, i) => (
+            <GlowCard 
+              key={f.title} 
+              className="p-4 md:p-6 group"
+              style={{
+                animation: 'cardEntrance 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                animationDelay: `${(i % 6) * 50}ms`
+              }}
+            >
               <div className={`feature-icon bg-gradient-to-br ${f.color} mb-3 md:mb-4 text-2xl relative z-10`}>{f.icon}</div>
               <h3 className="text-base md:text-lg font-bold text-white mb-1.5 md:mb-2 relative z-10">{f.title}</h3>
               <p className="text-sm text-white/40 leading-relaxed relative z-10">{f.desc}</p>
