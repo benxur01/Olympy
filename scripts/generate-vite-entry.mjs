@@ -45,12 +45,18 @@ let entry = `import * as React from 'react';\n`;
 entry += `import * as ReactDOMClient from 'react-dom/client';\n`;
 entry += `import { createPortal } from 'react-dom';\n\n`;
 entry += `import { OlympyApi } from './services/api.js';\n`;
+// DOMPurify — dangerouslySetInnerHTML ishlatadigan joylar (masalan Results.jsx
+// markdown render) untrusted matnni global DOMPurify.sanitize() orqali tozalashi
+// uchun. type="text/babel" manba fayllari import qila olmaydi, shuning uchun
+// React/OlympyApi kabi global qilib ochamiz.
+entry += `import DOMPurify from 'dompurify';\n`;
 // Tailwind + global CSS — avval index.html ichida CDN va inline <style> orqali
 // keldi. Endi PostCSS plugin bundle paytida CSS generatsiya qiladi.
 entry += `import './index.css';\n\n`;
 entry += `globalThis.React = React;\n`;
 entry += `globalThis.ReactDOM = { ...ReactDOMClient, createPortal };\n\n`;
-entry += `globalThis.OlympyApi = OlympyApi;\n\n`;
+entry += `globalThis.OlympyApi = OlympyApi;\n`;
+entry += `globalThis.DOMPurify = DOMPurify;\n\n`;
 
 for (const file of sourceFiles) {
   const filePath = path.join(root, file);

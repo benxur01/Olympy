@@ -241,9 +241,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # DRF
 REST_FRAMEWORK = {
+    # Faqat JWT autentifikatsiya. SessionAuthentication olib tashlandi —
+    # API to'liq stateless JWT cookie/Authorization header orqali ishlaydi,
+    # session-based CSRF yuzasi va cookie-auth xavfini kamaytiradi.
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'accounts.authentication.OlympyJWTAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -469,6 +471,11 @@ SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 # (Spectre/cross-window hujum yuzasini kamaytiradi).
 SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin'
 X_FRAME_OPTIONS = 'DENY'
+# Eski brauzerlarning ichki XSS filtri yoqilsin (legacy himoya qatlami).
+SECURE_BROWSER_XSS_FILTER = True
+# Django session cookie'sini JS o'qiy olmasin (XSS orqali sessiya o'g'irlash
+# xavfini kamaytiradi). API JWT bilan ishlaydi, session asosan admin panel uchun.
+SESSION_COOKIE_HTTPONLY = True
 
 # Telegram bots. `TELEGRAM_BOT_*` stays as the backward-compatible default.
 # Auth bot handles phone verification codes; manager bot handles notifications
@@ -506,7 +513,9 @@ if AI_ROSTER_GEMINI_API_KEY:
 AI_ROSTER_GEMINI_API_KEYS = list(dict.fromkeys(AI_ROSTER_GEMINI_API_KEYS))
 AI_ROSTER_MODEL = os.environ.get('AI_ROSTER_MODEL', 'gpt-4o-mini')
 AI_ROSTER_GEMINI_MODEL = os.environ.get('AI_ROSTER_GEMINI_MODEL', 'gemini-2.5-flash')
-AI_ROSTER_AUTO_APPROVE = env_bool('AI_ROSTER_AUTO_APPROVE', True)
+# Default False (xavfsiz). True qilinsa AI ajratgan o'quvchi ismlari inson
+# tasdig'isiz avtomatik qabul qilinadi. Faqat ishonchli muhitda env orqali yoqing.
+AI_ROSTER_AUTO_APPROVE = env_bool('AI_ROSTER_AUTO_APPROVE', False)
 AI_ROSTER_ALLOW_NAME_ONLY_APPROVAL = env_bool('AI_ROSTER_ALLOW_NAME_ONLY_APPROVAL', True)
 AI_ROSTER_MIN_CONFIDENCE = float(os.environ.get('AI_ROSTER_MIN_CONFIDENCE', '0.98'))
 AI_ROSTER_MAX_NAMES = int(os.environ.get('AI_ROSTER_MAX_NAMES', '1000'))

@@ -185,10 +185,16 @@ def child_report_pdf(request, student_id):
                 except Exception:
                     pass
             threading.Thread(target=_send, daemon=True).start()
-    except Exception as e:
+    except Exception:
         import logging
+        # Xatoning tafsiloti faqat server log'iga yoziladi — foydalanuvchiga
+        # raw exception xabarini qaytarish information disclosure xavfi
+        # tug'diradi (ichki tuzilma, fayl yo'llari oshkor bo'lishi mumkin).
         logging.getLogger(__name__).exception("Report generation failed for student %s", student_id)
-        return Response({'detail': f"Hisobot yaratib bo'lmadi: {str(e)}"}, status=http_status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {'detail': "Hisobotni yaratib bo'lmadi. Keyinroq qayta urinib ko'ring."},
+            status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
         
     response = HttpResponse(pdf_bytes, content_type='application/pdf')
     filename = f"hisobot-{student_id}.pdf"

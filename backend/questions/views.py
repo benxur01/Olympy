@@ -19,6 +19,18 @@ class AiQuestionRateThrottle(UserRateThrottle):
     scope = 'ai_question'
 
 
+class AiExplainRateThrottle(UserRateThrottle):
+    """AI tushuntirish endpoint'i uchun 'ai' scope (settings'da 10/day).
+
+    Eslatma: @api_view function-based view'da `throttle_scope` atributi
+    WrappedAPIView'ga ko'chmaganligi va ScopedRateThrottle.allow_request
+    scope'ni view'dan qayta o'qiganligi sababli, scope'ni shu yerda
+    UserRateThrottle subclass orqali (per-foydalanuvchi) o'rnatamiz —
+    AiQuestionRateThrottle bilan bir xil naqsh.
+    """
+    scope = 'ai'
+
+
 def _user_can_create_for_center(user, center_id):
     """Teacher/Manager/Owner with approved membership can create questions."""
     if user.is_platform_admin:
@@ -644,11 +656,15 @@ def olympiad_questions(request, olympiad_id):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([AiExplainRateThrottle])
 def explain_question(request, question_id):
     """POST /api/questions/<id>/explain/
 
     Savol uchun yechim tushuntirishini qaytaradi. Agar tushuntirish bazada
     saqlanmagan bo'lsa, Gemini AI yordamida generatsiya qilinadi va keshlanadi.
+
+    Rate limit: 'ai' scope (settings.REST_FRAMEWORK.DEFAULT_THROTTLE_RATES) —
+    tashqi Gemini API'ga qimmat va sekin murojaat qiladi, abuse'dan himoyalanadi.
     """
     question = get_object_or_404(Question, pk=question_id)
     if question.explanation and question.explanation.strip():

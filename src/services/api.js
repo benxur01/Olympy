@@ -17,16 +17,18 @@ const AUTH_TOKEN_KEY = 'olympy_api_token';
 const AUTH_REFRESH_KEY = 'olympy_refresh_token';
 const AUTH_USER_KEY = 'olympy_api_user';
 
-// Default rejimda env var orqali tanlangan store ishlatiladi (local yoki
-// session). "Meni eslab qolish" bayrog'i orqali saveAuth chaqiruvchisi
-// yopilganda token tozalanishi uchun aniq sessionStorage'ni majburlay oladi.
+// Default store — XAVFSIZLIK: sessionStorage. JWT token brauzer yopilganda
+// tozalanadi, bu XSS orqali o'g'irlash oynasini va eskirgan token xavfini
+// kamaytiradi. "Meni eslab qolish" tasdiqlangan foydalanuvchilar saveAuth'da
+// persistent=true orqali aniq localStorage'ni oladi. localStorage'ni default
+// qilish faqat VITE_AUTH_STORAGE=local bilan tanlanadi.
 const _defaultAuthStore = (() => {
   try {
     const env = (import.meta?.env?.VITE_AUTH_STORAGE || '').toLowerCase();
-    if (env === 'session' && typeof sessionStorage !== 'undefined') return sessionStorage;
-    if (typeof localStorage !== 'undefined') return localStorage;
+    if (env === 'local' && typeof localStorage !== 'undefined') return localStorage;
+    if (typeof sessionStorage !== 'undefined') return sessionStorage;
   } catch {}
-  return typeof sessionStorage !== 'undefined' ? sessionStorage : null;
+  return typeof localStorage !== 'undefined' ? localStorage : null;
 })();
 const _sessionStore = (() => {
   try { if (typeof sessionStorage !== 'undefined') return sessionStorage; } catch {}

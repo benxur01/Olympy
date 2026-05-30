@@ -23,6 +23,18 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
     }
   };
 
+  // AI/backend'dan kelgan tushuntirish matni untrusted — XSS oldini olish
+  // uchun faqat <strong> tegiga ruxsat berib DOMPurify orqali tozalaymiz.
+  // DOMPurify global entry'da ochilgan (generate-vite-entry.mjs). Mavjud
+  // bo'lmasa, butun HTML'ni teglardan tozalab (matn sifatida) qaytaramiz.
+  const sanitizeMarkup = (html) => {
+    const purifier = typeof globalThis !== 'undefined' ? globalThis.DOMPurify : undefined;
+    if (purifier?.sanitize) {
+      return purifier.sanitize(html, { ALLOWED_TAGS: ['strong'], ALLOWED_ATTR: [] });
+    }
+    return String(html).replace(/<[^>]*>/g, '');
+  };
+
   const renderMarkdown = (text) => {
     if (!text) return '';
     return text.split('\n').map((line, i) => {
@@ -30,9 +42,9 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
       content = content.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
       if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
         const stripped = content.trim().substring(2);
-        return <li key={i} className="ml-4 list-disc" dangerouslySetInnerHTML={{ __html: stripped }} />;
+        return <li key={i} className="ml-4 list-disc" dangerouslySetInnerHTML={{ __html: sanitizeMarkup(stripped) }} />;
       }
-      return <p key={i} className="mb-1.5" dangerouslySetInnerHTML={{ __html: content }} />;
+      return <p key={i} className="mb-1.5" dangerouslySetInnerHTML={{ __html: sanitizeMarkup(content) }} />;
     });
   };
   // Leaderboard yoki boshqa sahifadan attemptId bilan kelganda, backend'dan
