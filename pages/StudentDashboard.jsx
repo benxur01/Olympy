@@ -38,6 +38,172 @@ const PremiumLock = ({ title = 'Bu funksiya premium o\'quvchilar uchun' }) => (
   </div>
 );
 
+// Mukofotlar do'koni sahifasi — alohida React component.
+// Avval bu mantiq StudentDashboard ichidagi `renderRewards` oddiy funksiyasida
+// edi va u yerda React.useState/useEffect/useCallback chaqirilardi. Bu Rules of
+// Hooks ni buzardi (hooklar oddiy funksiya ichida chaqirilgan) va do'kon
+// ochilganda React xatosi (qora ekran) berardi. Endi barcha hook va mantiq shu
+// componentga ko'chirildi.
+function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate }) {
+  const rewardsData = apiRewardsRes.data || { coins: 0, products: [] };
+  const coins = rewardsData.coins;
+  const products = rewardsData.products || [];
+  const loading = apiRewardsRes.loading;
+
+  const [redemptions, setRedemptions] = React.useState([]);
+  const [redemptionsLoading, setRedemptionsLoading] = React.useState(false);
+  const [buyingId, setBuyingId] = React.useState(null);
+
+  const loadRedemptions = React.useCallback(async () => {
+    setRedemptionsLoading(true);
+    try {
+      const resp = await OlympyApi.getMyRedemptions(OlympyApi.getToken());
+      setRedemptions(resp || []);
+    } catch {}
+    setRedemptionsLoading(false);
+  }, []);
+
+  React.useEffect(() => {
+    if (page === 'rewards') {
+      loadRedemptions();
+    }
+  }, [page, loadRedemptions]);
+
+  const handleBuy = async (prod) => {
+    if (coins < prod.coin_cost) {
+      showApiToast("Tangalar yetarli emas!");
+      return;
+    }
+    setBuyingId(prod.id);
+    try {
+      const resp = await OlympyApi.redeemReward(prod.id, OlympyApi.getToken());
+      showApiToast(resp.detail || "Muvaffaqiyatli buyurtma qilindi!");
+      apiRewardsRes.reload();
+      loadRedemptions();
+      if (onUserUpdate && typeof resp.coins === 'number') {
+        onUserUpdate({ coins: resp.coins });
+      }
+    } catch (err) {
+      showApiToast(err.message || "Xarid qilishda xato");
+    } finally {
+      setBuyingId(null);
+    }
+  };
+
+  return (
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass rounded-2xl p-4 md:p-6 border border-amber-500/20 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
+        <div>
+          <h2 className="text-lg md:text-xl font-black text-white flex items-center gap-2">
+            <span>Mukofotlar Do'koni</span>
+            <span className="text-[10px] uppercase tracking-wider font-extrabold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md">STORE</span>
+          </h2>
+          <p className="text-white/40 text-xs mt-0.5">Testlarda to'g'ri javob berib tangalar yiging va ularni ajoyib sovg'alarga almashtiring.</p>
+        </div>
+        <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-4 py-2.5 rounded-2xl self-start sm:self-auto shadow-[0_4px_12px_rgba(245,158,11,0.1)]">
+          <span className="text-lg">🪙</span>
+          <div className="min-w-0">
+            <div className="text-[10px] text-amber-400 uppercase tracking-widest font-black leading-none">Mening balansim</div>
+            <div className="text-lg font-black text-amber-300 leading-none mt-1">{coins} tanga</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-4">
+          <h3 className="text-sm font-black text-white/50 uppercase tracking-wider">Mavjud sovg'alar</h3>
+          {loading ? (
+            <div className="text-center py-12 text-white/40 text-sm">Mukofotlar yuklanmoqda...</div>
+          ) : products.length === 0 ? (
+            <div className="glass rounded-2xl p-8 text-center text-white/40 text-sm">Do'kon hozircha bo'sh.</div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {products.map(p => {
+                const cantAfford = coins < p.coin_cost;
+                const features = Array.isArray(p.features) ? p.features : [];
+                return (
+                  <div key={p.id} className="glass rounded-2xl p-4 md:p-5 flex flex-col justify-between gap-4 card-hover">
+                    <div className="space-y-2">
+                      {p.image_url ? (
+                        <div className="w-full h-32 rounded-2xl overflow-hidden bg-white/5">
+                          <img src={p.image_url} alt={p.title} className="w-full h-full object-cover" loading="lazy" />
+                        </div>
+                      ) : (
+                        <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-2xl shadow-inner">{p.icon || '🎁'}</div>
+                      )}
+                      <div className="font-bold text-white text-base leading-snug">{p.title}</div>
+                      <p className="text-white/40 text-xs leading-relaxed">{p.description || "O'quv markazi tomonidan premium sovg'a."}</p>
+                      {features.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-1">
+                          {features.map((f, i) => (
+                            <span key={i} className="text-[10px] font-semibold text-white/60 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">
+                              {typeof f === 'string' ? f : (f?.value ? `${f.key ? f.key + ': ' : ''}${f.value}` : '')}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between border-t border-white/5 pt-3 mt-1">
+                      <div className="flex items-center gap-1">
+                        <span className="text-sm">🪙</span>
+                        <span className="text-sm font-black text-amber-300">{p.coin_cost}</span>
+                      </div>
+                      <button
+                        onClick={() => handleBuy(p)}
+                        disabled={buyingId === p.id}
+                        className={`text-xs font-bold px-4 py-2 rounded-xl transition-all ${
+                          cantAfford
+                            ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                            : 'bg-amber-500 hover:bg-amber-600 text-slate-900 shadow-[0_4px_12px_rgba(245,158,11,0.2)]'
+                        }`}
+                      >
+                        {buyingId === p.id ? 'Sotib olinmoqda...' : 'Sotib olish'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <div className="space-y-4">
+          <h3 className="text-sm font-black text-white/50 uppercase tracking-wider">Buyurtmalar tarixi</h3>
+          {redemptionsLoading ? (
+            <div className="text-center py-6 text-white/40 text-xs">Yuklanmoqda...</div>
+          ) : redemptions.length === 0 ? (
+            <div className="glass rounded-2xl p-6 text-center text-white/40 text-xs">
+              Siz hali sovg'a buyurtma qilmagansiz.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {redemptions.map(r => {
+                const isPending = r.status === 'pending';
+                return (
+                  <div key={r.id} className="glass rounded-xl p-3 flex items-center gap-3 justify-between">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-9 h-9 bg-white/5 rounded-xl flex items-center justify-center text-lg">{r.product_icon || '🎁'}</div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white truncate">{r.product_title}</div>
+                        <div className="text-[10px] text-white/40 mt-0.5">{new Date(r.redeemed_at).toLocaleDateString()}</div>
+                      </div>
+                    </div>
+                    <span className={`text-[9px] uppercase tracking-wider font-extrabold px-2 py-1 rounded-md ${
+                      isPending ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'
+                    }`}>
+                      {r.status_display}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
@@ -1122,165 +1288,14 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     );
   };
 
-  const renderRewards = () => {
-    const rewardsData = apiRewardsRes.data || { coins: 0, products: [] };
-    const coins = rewardsData.coins;
-    const products = rewardsData.products || [];
-    const loading = apiRewardsRes.loading;
-
-    const [redemptions, setRedemptions] = React.useState([]);
-    const [redemptionsLoading, setRedemptionsLoading] = React.useState(false);
-    const [buyingId, setBuyingId] = React.useState(null);
-
-    const loadRedemptions = React.useCallback(async () => {
-      setRedemptionsLoading(true);
-      try {
-        const resp = await OlympyApi.getMyRedemptions(OlympyApi.getToken());
-        setRedemptions(resp || []);
-      } catch {}
-      setRedemptionsLoading(false);
-    }, []);
-
-    React.useEffect(() => {
-      if (page === 'rewards') {
-        loadRedemptions();
-      }
-    }, [page, loadRedemptions]);
-
-    const handleBuy = async (prod) => {
-      if (coins < prod.coin_cost) {
-        showApiToast("Tangalar yetarli emas!");
-        return;
-      }
-      setBuyingId(prod.id);
-      try {
-        const resp = await OlympyApi.redeemReward(prod.id, OlympyApi.getToken());
-        showApiToast(resp.detail || "Muvaffaqiyatli buyurtma qilindi!");
-        apiRewardsRes.reload();
-        loadRedemptions();
-        if (onUserUpdate && typeof resp.coins === 'number') {
-          onUserUpdate({ coins: resp.coins });
-        }
-      } catch (err) {
-        showApiToast(err.message || "Xarid qilishda xato");
-      } finally {
-        setBuyingId(null);
-      }
-    };
-
-    return (
-      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass rounded-2xl p-4 md:p-6 border border-amber-500/20 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
-          <div>
-            <h2 className="text-lg md:text-xl font-black text-white flex items-center gap-2">
-              <span>Mukofotlar Do'koni</span>
-              <span className="text-[10px] uppercase tracking-wider font-extrabold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md">STORE</span>
-            </h2>
-            <p className="text-white/40 text-xs mt-0.5">Testlarda to'g'ri javob berib tangalar yiging va ularni ajoyib sovg'alarga almashtiring.</p>
-          </div>
-          <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-4 py-2.5 rounded-2xl self-start sm:self-auto shadow-[0_4px_12px_rgba(245,158,11,0.1)]">
-            <span className="text-lg">🪙</span>
-            <div className="min-w-0">
-              <div className="text-[10px] text-amber-400 uppercase tracking-widest font-black leading-none">Mening balansim</div>
-              <div className="text-lg font-black text-amber-300 leading-none mt-1">{coins} tanga</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-4">
-            <h3 className="text-sm font-black text-white/50 uppercase tracking-wider">Mavjud sovg'alar</h3>
-            {loading ? (
-              <div className="text-center py-12 text-white/40 text-sm">Mukofotlar yuklanmoqda...</div>
-            ) : products.length === 0 ? (
-              <div className="glass rounded-2xl p-8 text-center text-white/40 text-sm">Do'kon hozircha bo'sh.</div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {products.map(p => {
-                  const cantAfford = coins < p.coin_cost;
-                  const features = Array.isArray(p.features) ? p.features : [];
-                  return (
-                    <div key={p.id} className="glass rounded-2xl p-4 md:p-5 flex flex-col justify-between gap-4 card-hover">
-                      <div className="space-y-2">
-                        {p.image_url ? (
-                          <div className="w-full h-32 rounded-2xl overflow-hidden bg-white/5">
-                            <img src={p.image_url} alt={p.title} className="w-full h-full object-cover" loading="lazy" />
-                          </div>
-                        ) : (
-                          <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-2xl shadow-inner">{p.icon || '🎁'}</div>
-                        )}
-                        <div className="font-bold text-white text-base leading-snug">{p.title}</div>
-                        <p className="text-white/40 text-xs leading-relaxed">{p.description || "O'quv markazi tomonidan premium sovg'a."}</p>
-                        {features.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 pt-1">
-                            {features.map((f, i) => (
-                              <span key={i} className="text-[10px] font-semibold text-white/60 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">
-                                {typeof f === 'string' ? f : (f?.value ? `${f.key ? f.key + ': ' : ''}${f.value}` : '')}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center justify-between border-t border-white/5 pt-3 mt-1">
-                        <div className="flex items-center gap-1">
-                          <span className="text-sm">🪙</span>
-                          <span className="text-sm font-black text-amber-300">{p.coin_cost}</span>
-                        </div>
-                        <button
-                          onClick={() => handleBuy(p)}
-                          disabled={buyingId === p.id}
-                          className={`text-xs font-bold px-4 py-2 rounded-xl transition-all ${
-                            cantAfford
-                              ? 'bg-white/5 text-white/30 cursor-not-allowed'
-                              : 'bg-amber-500 hover:bg-amber-600 text-slate-900 shadow-[0_4px_12px_rgba(245,158,11,0.2)]'
-                          }`}
-                        >
-                          {buyingId === p.id ? 'Sotib olinmoqda...' : 'Sotib olish'}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-4">
-            <h3 className="text-sm font-black text-white/50 uppercase tracking-wider">Buyurtmalar tarixi</h3>
-            {redemptionsLoading ? (
-              <div className="text-center py-6 text-white/40 text-xs">Yuklanmoqda...</div>
-            ) : redemptions.length === 0 ? (
-              <div className="glass rounded-2xl p-6 text-center text-white/40 text-xs">
-                Siz hali sovg'a buyurtma qilmagansiz.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {redemptions.map(r => {
-                  const isPending = r.status === 'pending';
-                  return (
-                    <div key={r.id} className="glass rounded-xl p-3 flex items-center gap-3 justify-between">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-9 h-9 bg-white/5 rounded-xl flex items-center justify-center text-lg">{r.product_icon || '🎁'}</div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-bold text-white truncate">{r.product_title}</div>
-                          <div className="text-[10px] text-white/40 mt-0.5">{new Date(r.redeemed_at).toLocaleDateString()}</div>
-                        </div>
-                      </div>
-                      <span className={`text-[9px] uppercase tracking-wider font-extrabold px-2 py-1 rounded-md ${
-                        isPending ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'
-                      }`}>
-                        {r.status_display}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
+  const renderRewards = () => (
+    <RewardsPage
+      apiRewardsRes={apiRewardsRes}
+      page={page}
+      showApiToast={showApiToast}
+      onUserUpdate={onUserUpdate}
+    />
+  );
 
   const pages = {
     home: renderHome,
