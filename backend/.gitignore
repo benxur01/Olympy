@@ -17,3 +17,7 @@ env/
 # Mahalliy DB va media
 db.sqlite3
 media/
+
+# Vaqtinchalik test/skript fayllar — production parol/kalitlarni o'z ichiga
+# olishi mumkin, hech qachon commit qilinmasin.
+scratch/

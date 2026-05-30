@@ -1,15 +1,20 @@
-Django>=5.0,<6.0
-djangorestframework>=3.15
-django-cors-headers>=4.3
-psycopg[binary]>=3.1
-djangorestframework-simplejwt>=5.3
-Pillow>=10.0
-pypdf>=4.0
-openpyxl>=3.1
-celery>=5.4.0
-redis>=5.0.1
-django-celery-beat>=2.6.0
-gunicorn>=21.2
-whitenoise>=6.6
+# Reproducible build uchun aniq versiyalar (lokal muhitda o'rnatilgan).
+# Yangilashda: aktiv muhitda `pip freeze` chiqishini tekshirib, shu yerga ko'chiring.
+Django==5.2.14
+djangorestframework==3.17.1
+django-cors-headers==4.9.0
+psycopg[binary]==3.3.4
+djangorestframework-simplejwt==5.5.1
+Pillow==12.2.0
+pypdf==6.12.2
+openpyxl==3.1.5
+celery==5.3.6
+redis==5.0.1
+django-celery-beat==2.8.1
+gunicorn==26.0.0
+whitenoise==6.12.0
+# Cloudinary lokal muhitda o'rnatilmagan (faqat production'da, CLOUDINARY_CLOUD_NAME
+# o'rnatilganda yoqiladi) — aniq o'rnatilgan versiya yo'q, shu sababli minimal
+# chegara saqlandi. Production'da o'rnatib `pip freeze` orqali pin qiling.
 cloudinary>=1.40
 django-cloudinary-storage>=0.3

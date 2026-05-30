@@ -30,6 +30,10 @@ backend/.venv/
 # Local Python deps cache (committed-style vendoring used in dev)
 backend/.deps/
 
+# Vaqtinchalik test/skript fayllar — production parol/kalitlarni o'z ichiga
+# olishi mumkin, hech qachon commit qilinmasin.
+backend/scratch/
+
 # Django runtime
 backend/db.sqlite3
 backend/db.sqlite3-journal
