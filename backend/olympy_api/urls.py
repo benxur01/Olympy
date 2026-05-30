@@ -25,6 +25,8 @@ urlpatterns = [
     path('api/telegram/webhook/manager/', account_views.telegram_manager_webhook, name='telegram-manager-webhook'),
     path('api/', include('accounts.urls_me')),
     path('api/duels/', include('accounts.urls_duel')),
+    path('api/center/shop/', include('accounts.urls_shop')),
+    path('api/shop/', include('accounts.urls_shop_student')),
     path('api/centers/', include('centers.urls')),
     path('api/mock-olympiads/', include('centers.urls_mock')),
     path('api/admin/centers/', include('centers.urls_admin')),

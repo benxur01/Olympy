@@ -5,7 +5,7 @@ from django.contrib.auth.password_validation import validate_password as django_
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import User
+from .models import RewardProduct, User
 from .utils import mask_phone as _mask_phone_for_log
 from .utils import normalize_phone
 
@@ -351,3 +351,50 @@ class ConfirmPasswordResetSerializer(VerifyOtpSerializer):
         except DjangoValidationError as exc:
             raise serializers.ValidationError(list(exc.messages))
         return value
+
+
+class RewardProductSerializer(serializers.ModelSerializer):
+    """Markaz do'koni mahsuloti.
+
+    `center` write uchun ham ochiq, lekin view'larda menejer faqat o'z
+    markazini biriktiradi (perform_create'da center majburan o'rnatiladi),
+    shuning uchun bu yerda alohida validatsiya shart emas. `center_name`
+    va `image_url` read-only.
+    """
+    center_name = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RewardProduct
+        fields = ['id', 'center', 'center_name', 'title', 'description',
+                  'coin_cost', 'icon', 'image', 'image_url', 'features',
+                  'stock', 'is_active', 'created_at']
+        read_only_fields = ['id', 'center', 'center_name', 'image_url', 'created_at']
+
+    def get_center_name(self, obj):
+        return obj.center.name if obj.center_id else ''
+
+    def get_image_url(self, obj):
+        if not obj.image:
+            return ''
+        url = obj.image.url
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        return request.build_absolute_uri(url) if request else url
+
+    def validate_features(self, value):
+        # Xususiyatlar — string'lar ro'yxati. Frontend obyekt yuborsa ham
+        # (masalan {key, value}) qabul qilamiz, lekin oddiy string ro'yxati
+        # asosiy format. Ro'yxat emas bo'lsa bo'sh ro'yxatga aylantiramiz.
+        if value in (None, ''):
+            return []
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Xususiyatlar ro'yxat bo'lishi kerak")
+        cleaned = []
+        for item in value[:30]:  # ortiqcha shishirib yuborishni cheklash
+            if isinstance(item, str):
+                s = item.strip()
+                if s:
+                    cleaned.append(s[:120])
+            elif isinstance(item, dict):
+                cleaned.append(item)
+        return cleaned

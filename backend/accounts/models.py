@@ -290,11 +290,25 @@ class ParentStudentLink(models.Model):
 
 
 class RewardProduct(models.Model):
+    # Markaz do'koni: har bir o'quv markaz o'zining mahsulotlarini qo'sha
+    # oladi. `center=None` bo'lgan mahsulotlar — platforma global do'koni
+    # (admin boshqaradi, barcha o'quvchilarga ko'rinadi). Markazga bog'liq
+    # mahsulotlar faqat o'sha markaz o'quvchilariga ko'rinadi.
+    center = models.ForeignKey(
+        'centers.EducationCenter',
+        on_delete=models.CASCADE,
+        null=True, blank=True,
+        related_name='shop_products',
+    )
     title = models.CharField(max_length=120)
     description = models.TextField(blank=True)
     coin_cost = models.PositiveIntegerField()
     icon = models.CharField(max_length=10, default='🎁')
+    image = models.ImageField(upload_to='shop_products/', blank=True, null=True)
+    # Mahsulot xususiyatlari ro'yxati, masalan ["Hajmi: L", "Rangi: Qizil"].
+    features = models.JSONField(default=list, blank=True)
     stock = models.PositiveIntegerField(default=10)
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

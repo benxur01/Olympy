@@ -1576,17 +1576,41 @@ def list_rewards(request):
     """GET /api/me/rewards/
     Mukofot do'konidagi mahsulotlarni va o'quvchining joriy tangalarini qaytaradi.
     """
+    from django.db.models import Q
     from .models import RewardProduct
-    products = RewardProduct.objects.filter(stock__gt=0)
+    from .views_shop import _student_center_for
+
+    # O'quvchi global (center=null, admin do'koni) mahsulotlarni va o'z
+    # markazining mahsulotlarini ko'radi — boshqa markaz mahsulotlari emas.
+    # Faqat faol (is_active) va zaxirada bor mahsulotlar.
+    student_center = _student_center_for(request.user)
+    center_filter = Q(center__isnull=True)
+    if student_center is not None:
+        center_filter |= Q(center=student_center)
+    products = (
+        RewardProduct.objects
+        .filter(center_filter, is_active=True, stock__gt=0)
+        .order_by('-created_at')
+    )
     data = []
     for p in products:
+        img_url = ''
+        if p.image:
+            try:
+                img_url = request.build_absolute_uri(p.image.url)
+            except Exception:
+                img_url = ''
         data.append({
             'id': p.id,
             'title': p.title,
             'description': p.description,
             'coin_cost': p.coin_cost,
             'icon': p.icon,
+            'image_url': img_url,
+            'features': p.features or [],
             'stock': p.stock,
+            'center_id': p.center_id,
+            'center_name': p.center.name if p.center_id else '',
         })
     return Response({
         'coins': request.user.coins,
@@ -1610,6 +1634,18 @@ def redeem_reward(request):
         product = RewardProduct.objects.get(pk=product_id)
     except RewardProduct.DoesNotExist:
         return Response({'detail': "Mukofot topilmadi"}, status=status.HTTP_404_NOT_FOUND)
+
+    # Markaz do'koni izolyatsiyasi: o'quvchi faqat global (center=null, admin
+    # do'koni) yoki O'Z markazining mahsulotini sotib oladi. Boshqa markaz
+    # mahsulotiga so'rov yuborilsa 404 (mavjudligini ham oshkor qilmaymiz).
+    if product.center_id is not None:
+        from .views_shop import _student_center_for
+        student_center = _student_center_for(request.user)
+        if student_center is None or product.center_id != student_center.id:
+            return Response({'detail': "Mukofot topilmadi"}, status=status.HTTP_404_NOT_FOUND)
+
+    if not product.is_active:
+        return Response({'detail': "Bu mukofot mavjud emas"}, status=status.HTTP_400_BAD_REQUEST)
 
     if product.stock <= 0:
         return Response({'detail': "Bu mukofot tugagan"}, status=status.HTTP_400_BAD_REQUEST)

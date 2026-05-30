@@ -45,8 +45,9 @@ class PhoneVerificationAdmin(admin.ModelAdmin):
 
 @admin.register(RewardProduct)
 class RewardProductAdmin(admin.ModelAdmin):
-    list_display = ('title', 'coin_cost', 'stock', 'created_at')
-    search_fields = ('title', 'description')
+    list_display = ('title', 'center', 'coin_cost', 'stock', 'is_active', 'created_at')
+    list_filter = ('is_active', 'center')
+    search_fields = ('title', 'description', 'center__name')
     ordering = ('-created_at',)
 
 
