@@ -1,0 +1,19 @@
+# Maxfiy konfiguratsiya — HECH QACHON commit qilinmasin.
+# (Ildiz .gitignore ham backend/.env'ni e'tiborsiz qoldiradi; bu ikkinchi
+# himoya qatlami, kelajakda backend papkasi alohida ko'chirilsa ham amal qiladi.)
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Virtual muhitlar
+venv/
+.venv/
+env/
+
+# Mahalliy DB va media
+db.sqlite3
+media/

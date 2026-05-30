@@ -263,9 +263,11 @@ def peer_comparison(request):
 
     User = type(user)
     if grade:
+        # Katta sinflarda peer soni minglab bo'lishi mumkin — taqqoslash uchun
+        # 500 ta yetarli, qolganida ham GROUP BY + Python loop'ni cheklaymiz.
         peer_ids = list(
             User.objects.filter(onboarding_grade=grade, is_active=True)
-            .values_list('id', flat=True)
+            .values_list('id', flat=True)[:500]
         )
     else:
         peer_ids = []
@@ -443,10 +445,16 @@ def daily_question_answer(request, daily_id):
         is_correct=is_correct,
     )
     # Kunlik faollik streak'ini yangilaymiz (mavjud logikadan foydalanib).
+    # Xatolik javobni buzmaydi (foydalanuvchiga ko'rsatilmaydi), lekin jim
+    # yutilmasligi uchun log'ga yoziladi — aks holda streak yangilanmay
+    # qolsa sababini topib bo'lmaydi.
     try:
         request.user.update_streak()
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception(
+            'Streak/coin yangilashda xato: user=%s', request.user.pk,
+        )
 
     return Response({
         'is_correct': is_correct,
@@ -892,7 +900,9 @@ def classmates_leaderboard(request):
     else:
         peer_qs = User.objects.filter(is_active=True)
 
-    peer_ids = list(peer_qs.values_list('id', flat=True))
+    # Reyting top 20 ni ko'rsatadi — 500 ta peer aggregatsiya uchun yetarli,
+    # cheksiz User querysini oldini olamiz (xotira/CPU himoyasi).
+    peer_ids = list(peer_qs.values_list('id', flat=True)[:500])
     if user.id not in peer_ids:
         peer_ids.append(user.id)
 

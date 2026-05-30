@@ -232,6 +232,8 @@ def report_json(request, center_id):
     center = get_object_or_404(EducationCenter, pk=center_id)
     if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if not center.is_premium:
+        return _premium_center_required()
     period = (request.query_params.get('period') or 'week').strip()
     return Response(_build_center_report_data(center, period))
 
@@ -248,6 +250,8 @@ def report_pdf(request, center_id):
     center = get_object_or_404(EducationCenter, pk=center_id)
     if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if not center.is_premium:
+        return _premium_center_required()
     period = (request.query_params.get('period') or 'week').strip()
     data = _build_center_report_data(center, period)
 
@@ -378,6 +382,8 @@ def inactive_students(request, center_id):
     center = get_object_or_404(EducationCenter, pk=center_id)
     if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if not center.is_premium:
+        return _premium_center_required()
 
     try:
         days = int(request.query_params.get('days') or 14)
@@ -388,20 +394,24 @@ def inactive_students(request, center_id):
     today = timezone.now().date()
     cutoff = today - timedelta(days=days)
 
+    # Nofaollik filtri ORM darajasida bajariladi (Python loop'da emas):
+    # last_active_date NULL (hech qachon faol bo'lmagan) yoki cutoff'dan oldin
+    # bo'lgan o'quvchilar. Bu butun a'zolar ro'yxatini xotiraga yuklab keyin
+    # filtrlash o'rniga DB'da WHERE bilan kerakli qatorlarni qaytaradi.
     members = list(
         CenterMembership.objects.filter(
             center=center,
             role=CenterMembership.ROLE_STUDENT,
             status=CenterMembership.STATUS_APPROVED,
+        ).filter(
+            Q(user__last_active_date__isnull=True)
+            | Q(user__last_active_date__lte=cutoff)
         ).select_related('user')
     )
     rows = []
     for m in members:
         u = m.user
         last = u.last_active_date
-        # last_active_date yo'q yoki cutoff'dan oldin bo'lsa — nofaol.
-        if last is not None and last > cutoff:
-            continue
         if last is not None:
             days_inactive = (today - last).days
             last_str = last.isoformat()
@@ -516,6 +526,8 @@ def tag_comparison(request, center_id):
     center = get_object_or_404(EducationCenter, pk=center_id)
     if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if not center.is_premium:
+        return _premium_center_required()
 
     members = list(
         CenterMembership.objects.filter(
@@ -595,6 +607,8 @@ def export_all_results(request, center_id):
     center = get_object_or_404(EducationCenter, pk=center_id)
     if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if not center.is_premium:
+        return _premium_center_required()
 
     # T5: eksport amalini menejer logiga yozamiz.
     from .models import ManagerActivityLog
@@ -705,6 +719,8 @@ def rating_history(request, center_id):
     center = get_object_or_404(EducationCenter, pk=center_id)
     if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if not center.is_premium:
+        return _premium_center_required()
 
     try:
         months = int(request.query_params.get('months') or 6)

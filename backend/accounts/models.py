@@ -5,11 +5,16 @@ Per-role status (pending / approved / rejected) and the bound center live on
 ``CenterMembership`` (in the ``centers`` app), not here. Platform Admin is the
 exception — that's a system-wide role represented by ``is_platform_admin``.
 """
+import logging
+
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
 
 from .utils import normalize_phone
+
+
+logger = logging.getLogger(__name__)
 
 
 class UserManager(BaseUserManager):
@@ -58,7 +63,10 @@ class User(AbstractBaseUser, PermissionsMixin):
     telegram_chat_id = models.CharField(max_length=64, blank=True, db_index=True)
     telegram_user_id = models.CharField(max_length=64, blank=True, db_index=True)
     telegram_linked_at = models.DateTimeField(null=True, blank=True)
-    token_version = models.PositiveIntegerField(default=0)
+    # Yangi hisoblar uchun 1 dan boshlanadi — shu sababli birinchi login
+    # paytida token_version'ni 0 dan 1 ga ko'tarib qo'shimcha DB yozuvi
+    # qilishga hojat qolmaydi (bkz _jwt_payload).
+    token_version = models.PositiveIntegerField(default=1)
     avatar = models.ImageField(upload_to='avatars/', blank=True, null=True)
     streak_count = models.PositiveIntegerField(default=0)
     # O1: eng uzun ketma-ket faollik seriyasi — streak uzilganda ham
@@ -227,6 +235,7 @@ class User(AbstractBaseUser, PermissionsMixin):
                 })
             return badges
         except Exception:
+            logger.exception("get_badges xatosi: user=%s", self.pk)
             return []
 
     def add_role(self, role):

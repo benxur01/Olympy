@@ -67,7 +67,7 @@ const URL_PAGES = (() => {
 // Auth talab qiladigan sahifalar. Component tashqarisida `const` sifatida —
 // har render'da qayta yaratilmasligi va useEffect bog'liqliklarini bekorga
 // o'zgartirmasligi uchun.
-const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','results','leaderboard','profile','pending-home','analytics','parent'];
+const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','results','leaderboard','profile','pending','pending-home','analytics','parent','questions','olympiads'];
 
 const pageFromPath = () => {
   try {

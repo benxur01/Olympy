@@ -49,9 +49,6 @@ def _jwt_payload(user):
     # yuborilardi. Endi token_version faqat aniq xavfsizlik hodisalarida
     # (admin tomonidan bloklash, parol o'zgartirish, majburiy logout)
     # oshiriladi — login multi-device flow ni buzmaydi.
-    if not user.token_version:
-        user.token_version = 1
-        user.save(update_fields=['token_version'])
     refresh = RefreshToken.for_user(user)
     refresh['token_version'] = user.token_version
     return {
@@ -143,6 +140,11 @@ def register(request):
 
     # Optional join params
     join_center_id = request.data.get('center_id') or request.data.get('center')
+    if join_center_id is not None:
+        try:
+            join_center_id = int(join_center_id)
+        except (ValueError, TypeError):
+            return Response({'detail': "Noto'g'ri markaz ID."}, status=status.HTTP_400_BAD_REQUEST)
     join_role = (request.data.get('join_role') or '').strip().lower()
     join_subject = (request.data.get('join_subject') or request.data.get('subject') or '').strip()
     membership_data = None
@@ -1028,41 +1030,48 @@ def verify_otp(request):
     serializer.is_valid(raise_exception=True)
     normalized_phone = serializer.validated_data['phone']
     otp = serializer.validated_data['otp']
-    verification = PhoneVerification.objects.filter(
-        normalized_phone=normalized_phone,
-        verified_at__isnull=True,
-        otp_hash__gt='',
-    ).exclude(
-        purpose=PhoneVerification.PURPOSE_PASSWORD_RESET,
-    ).order_by('-created_at').first()
 
-    if not verification:
-        return Response({'detail': 'Verification not found'},
-                        status=status.HTTP_400_BAD_REQUEST)
-    if verification.attempts_count >= verification.max_attempts:
-        security_logger.warning(
-            'otp verify blocked (too many attempts) phone=%s',
-            mask_phone(normalized_phone),
-        )
-        return Response({'detail': 'Too many attempts'},
-                        status=status.HTTP_429_TOO_MANY_REQUESTS)
-    if verification.otp_is_expired:
-        return Response({'detail': 'OTP expired'},
-                        status=status.HTTP_400_BAD_REQUEST)
+    # Race condition himoyasi: ikkita parallel verify so'rovi bir vaqtda
+    # attempts_count'ni o'qib, ikkalasi ham eski qiymatdan +1 yozib yuborishi
+    # mumkin edi (lost update) — natijada max_attempts limiti aldanardi.
+    # select_for_update qatorni lock qiladi va attempts_count oshirish hamda
+    # verified_at yozish bitta tranzaksiyada atomik bo'ladi.
+    with transaction.atomic():
+        verification = PhoneVerification.objects.select_for_update().filter(
+            normalized_phone=normalized_phone,
+            verified_at__isnull=True,
+            otp_hash__gt='',
+        ).exclude(
+            purpose=PhoneVerification.PURPOSE_PASSWORD_RESET,
+        ).order_by('-created_at').first()
 
-    verification.attempts_count += 1
-    if not check_password(otp, verification.otp_hash):
-        verification.save(update_fields=['attempts_count', 'updated_at'])
-        security_logger.warning(
-            'otp verify failed (wrong code) phone=%s attempt=%s/%s',
-            mask_phone(normalized_phone),
-            verification.attempts_count, verification.max_attempts,
-        )
-        return Response({'detail': 'OTP noto\'g\'ri'},
-                        status=status.HTTP_400_BAD_REQUEST)
+        if not verification:
+            return Response({'detail': 'Verification not found'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if verification.attempts_count >= verification.max_attempts:
+            security_logger.warning(
+                'otp verify blocked (too many attempts) phone=%s',
+                mask_phone(normalized_phone),
+            )
+            return Response({'detail': 'Too many attempts'},
+                            status=status.HTTP_429_TOO_MANY_REQUESTS)
+        if verification.otp_is_expired:
+            return Response({'detail': 'OTP expired'},
+                            status=status.HTTP_400_BAD_REQUEST)
 
-    verification.verified_at = timezone.now()
-    verification.save(update_fields=['attempts_count', 'verified_at', 'updated_at'])
+        verification.attempts_count += 1
+        if not check_password(otp, verification.otp_hash):
+            verification.save(update_fields=['attempts_count', 'updated_at'])
+            security_logger.warning(
+                'otp verify failed (wrong code) phone=%s attempt=%s/%s',
+                mask_phone(normalized_phone),
+                verification.attempts_count, verification.max_attempts,
+            )
+            return Response({'detail': 'OTP noto\'g\'ri'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        verification.verified_at = timezone.now()
+        verification.save(update_fields=['attempts_count', 'verified_at', 'updated_at'])
     return Response({'verified': True, 'phone': normalized_phone})
 
 
@@ -1079,51 +1088,58 @@ def confirm_password_reset(request):
     normalized_phone = serializer.validated_data['phone']
     otp = serializer.validated_data['otp']
     new_password = serializer.validated_data['password']
-    verification = PhoneVerification.objects.filter(
-        normalized_phone=normalized_phone,
-        purpose=PhoneVerification.PURPOSE_PASSWORD_RESET,
-        verified_at__isnull=True,
-        otp_hash__gt='',
-    ).order_by('-created_at').first()
-
-    if not verification:
-        return Response({'detail': 'Verification not found'},
-                        status=status.HTTP_400_BAD_REQUEST)
-    if verification.attempts_count >= verification.max_attempts:
-        security_logger.warning(
-            'password reset blocked (too many attempts) phone=%s',
-            mask_phone(normalized_phone),
-        )
-        return Response({'detail': 'Too many attempts'},
-                        status=status.HTTP_429_TOO_MANY_REQUESTS)
-    if verification.otp_is_expired:
-        return Response({'detail': 'OTP expired'},
-                        status=status.HTTP_400_BAD_REQUEST)
-
-    verification.attempts_count += 1
-    if not check_password(otp, verification.otp_hash):
-        verification.save(update_fields=['attempts_count', 'updated_at'])
-        security_logger.warning(
-            'password reset otp failed (wrong code) phone=%s attempt=%s/%s',
-            mask_phone(normalized_phone),
-            verification.attempts_count, verification.max_attempts,
-        )
-        return Response({'detail': 'OTP noto\'g\'ri'},
-                        status=status.HTTP_400_BAD_REQUEST)
 
     from django.contrib.auth import get_user_model
     from django.core.cache import cache
 
     User = get_user_model()
-    user = User.objects.filter(normalized_phone=normalized_phone).first()
-    if not user:
-        return Response({'detail': 'Foydalanuvchi topilmadi'},
-                        status=status.HTTP_400_BAD_REQUEST)
-    if not user.is_active:
-        return Response({'detail': 'Hisob bloklangan'},
-                        status=status.HTTP_400_BAD_REQUEST)
 
+    # Race condition himoyasi: OTP tekshiruvi, attempts_count oshirish va
+    # parol almashtirish — barchasi bitta atomic blokda select_for_update
+    # bilan. Avval OTP tekshiruvi va attempts_count oshirish lock'siz, atomic
+    # blok tashqarisida bo'lgani uchun ikkita parallel so'rov max_attempts'ni
+    # aldab, har biri bitta noto'g'ri urinishni "yo'qotishi" mumkin edi.
     with transaction.atomic():
+        verification = PhoneVerification.objects.select_for_update().filter(
+            normalized_phone=normalized_phone,
+            purpose=PhoneVerification.PURPOSE_PASSWORD_RESET,
+            verified_at__isnull=True,
+            otp_hash__gt='',
+        ).order_by('-created_at').first()
+
+        if not verification:
+            return Response({'detail': 'Verification not found'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if verification.attempts_count >= verification.max_attempts:
+            security_logger.warning(
+                'password reset blocked (too many attempts) phone=%s',
+                mask_phone(normalized_phone),
+            )
+            return Response({'detail': 'Too many attempts'},
+                            status=status.HTTP_429_TOO_MANY_REQUESTS)
+        if verification.otp_is_expired:
+            return Response({'detail': 'OTP expired'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        verification.attempts_count += 1
+        if not check_password(otp, verification.otp_hash):
+            verification.save(update_fields=['attempts_count', 'updated_at'])
+            security_logger.warning(
+                'password reset otp failed (wrong code) phone=%s attempt=%s/%s',
+                mask_phone(normalized_phone),
+                verification.attempts_count, verification.max_attempts,
+            )
+            return Response({'detail': 'OTP noto\'g\'ri'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        user = User.objects.filter(normalized_phone=normalized_phone).first()
+        if not user:
+            return Response({'detail': 'Foydalanuvchi topilmadi'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if not user.is_active:
+            return Response({'detail': 'Hisob bloklangan'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
         user = User.objects.select_for_update().get(pk=user.pk)
         user.set_password(new_password)
         user.token_version = (user.token_version or 0) + 1
@@ -1627,8 +1643,12 @@ def redeem_reward(request):
                 product=product,
                 status=RewardRedemption.STATUS_PENDING
             )
-    except Exception as e:
-        return Response({'detail': f"Xatolik yuz berdi: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+    except Exception:
+        logger.exception("redeem_reward xatosi: user=%s", request.user.pk)
+        return Response(
+            {'detail': "Xatolik yuz berdi. Iltimos qayta urinib ko'ring."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
 
     return Response({
         'detail': "Mukofot muvaffaqiyatli buyurtma qilindi!",
@@ -1701,8 +1721,13 @@ def calculate_predictions_for_user(user):
         score = s.get('score__avg') or 0
         subject_performance[sub] = round(score, 1)
 
-    presidential_school = min(99, max(10, int(avg_score * 0.9 + (attempts_count * 0.5))))
-    al_xorazmiy = min(99, max(10, int(avg_score * 0.85 + (attempts_count * 0.5))))
+    # Bashorat faqat o'rtacha ball (avg_score) asosida hisoblanadi. Avval
+    # `attempts_count * 0.5` qo'shilardi — bu ko'p test topshirgan, ammo
+    # ballari past o'quvchining bashoratini sun'iy oshirib yuborardi (sifat
+    # emas, son rag'batlantirilardi). Endi imtihonlar soni bashoratga ta'sir
+    # qilmaydi.
+    presidential_school = min(99, max(10, int(avg_score * 0.9)))
+    al_xorazmiy = min(99, max(10, int(avg_score * 0.85)))
     dtm = min(99, max(10, int(avg_score * 1.05)))
 
     from .utils import predict_success_ai

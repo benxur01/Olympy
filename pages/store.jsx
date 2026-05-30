@@ -32,16 +32,16 @@ const OlympyStore = (() => {
   // ─── Initial seed ────────────────────────────────────────────────────────
   const seed = () => ({
     users: [
-      { id:'u1', name:'Ali Valiyev', phone:'+998901234567', password:'123456',
+      { id:'u1', name:'Ali Valiyev', phone:'+998901234567', password:'***',
         roles:{ student:{ status:'approved', centerId:'c1' } },
         activeRole:'student', joined:'2026-03-15' },
-      { id:'u2', name:'Sardor Usmonov', phone:'+998901234568', password:'123456',
+      { id:'u2', name:'Sardor Usmonov', phone:'+998901234568', password:'***',
         roles:{ owner:{ status:'approved', centerId:'c1' } },
         activeRole:'owner', joined:'2026-01-10' },
-      { id:'u3', name:'Admin Bekmurodov', phone:'+998901234569', password:'123456',
+      { id:'u3', name:'Admin Bekmurodov', phone:'+998901234569', password:'***',
         roles:{ admin:{ status:'approved' } },
         activeRole:'admin', joined:'2025-12-01' },
-      { id:'u4', name:'Malika Toshmatova', phone:'+998901234570', password:'123456',
+      { id:'u4', name:'Malika Toshmatova', phone:'+998901234570', password:'***',
         roles:{
           teacher:{ status:'approved', centerId:'c1', subject:'Ingliz tili' },
           student:{ status:'approved', centerId:'c1' },
@@ -49,50 +49,50 @@ const OlympyStore = (() => {
         activeRole:'teacher', joined:'2026-03-20' },
 
       // Approved students at c1 (used by Manager dashboard)
-      { id:'u5', name:'Jasur Normatov', phone:'+998901234571', password:'123456',
+      { id:'u5', name:'Jasur Normatov', phone:'+998901234571', password:'***',
         roles:{ student:{ status:'approved', centerId:'c1', subject:'Fizika' } },
         activeRole:'student', joined:'2026-04-01', avgScore:75, olympiads:4 },
-      { id:'u6', name:'Nilufar Karimova', phone:'+998901234572', password:'123456',
+      { id:'u6', name:'Nilufar Karimova', phone:'+998901234572', password:'***',
         roles:{ student:{ status:'approved', centerId:'c1', subject:'Kimyo' } },
         activeRole:'student', joined:'2026-04-10', avgScore:88, olympiads:2 },
-      { id:'u7', name:'Sherzod Tursunov', phone:'+998901234573', password:'123456',
+      { id:'u7', name:'Sherzod Tursunov', phone:'+998901234573', password:'***',
         roles:{ student:{ status:'approved', centerId:'c1', subject:'Biologiya' } },
         activeRole:'student', joined:'2026-04-15', avgScore:70, olympiads:1 },
 
       // Pending student requests at c1 (Manager has work to do)
-      { id:'u8', name:'Bobur Xolmatov', phone:'+998901234580', password:'123456',
+      { id:'u8', name:'Bobur Xolmatov', phone:'+998901234580', password:'***',
         roles:{ student:{ status:'pending', centerId:'c1', subject:'Matematika' } },
         activeRole:'student', joined:'2026-04-27' },
-      { id:'u9', name:'Zulfiya Yusupova', phone:'+998901234581', password:'123456',
+      { id:'u9', name:'Zulfiya Yusupova', phone:'+998901234581', password:'***',
         roles:{ student:{ status:'pending', centerId:'c1', subject:'Ingliz tili' } },
         activeRole:'student', joined:'2026-04-27' },
-      { id:'u10', name:'Otabek Mirzayev', phone:'+998901234582', password:'123456',
+      { id:'u10', name:'Otabek Mirzayev', phone:'+998901234582', password:'***',
         roles:{ student:{ status:'pending', centerId:'c1', subject:'Fizika' } },
         activeRole:'student', joined:'2026-04-26' },
-      { id:'u11', name:'Kamola Hasanova', phone:'+998901234583', password:'123456',
+      { id:'u11', name:'Kamola Hasanova', phone:'+998901234583', password:'***',
         roles:{ student:{ status:'approved', centerId:'c1', subject:'Kimyo' } },
         activeRole:'student', joined:'2026-04-25' },
-      { id:'u12', name:'Eldor Raximov', phone:'+998901234584', password:'123456',
+      { id:'u12', name:'Eldor Raximov', phone:'+998901234584', password:'***',
         roles:{ student:{ status:'rejected', centerId:'c1', subject:'Biologiya' } },
         activeRole:'student', joined:'2026-04-24' },
 
       // Pending teacher request at c1 (Owner has work to do)
-      { id:'u13', name:"Sevara Yo'ldosheva", phone:'+998901234585', password:'123456',
+      { id:'u13', name:"Sevara Yo'ldosheva", phone:'+998901234585', password:'***',
         roles:{ teacher:{ status:'pending', centerId:'c1', subject:'Matematika' } },
         activeRole:'teacher', joined:'2026-04-28' },
 
       // Pending manager request at c1
-      { id:'u14', name:'Aziz Karimov', phone:'+998901234586', password:'123456',
+      { id:'u14', name:'Aziz Karimov', phone:'+998901234586', password:'***',
         roles:{ manager:{ status:'pending', centerId:'c1' } },
         activeRole:'manager', joined:'2026-04-28' },
 
       // Approved manager created by director
-      { id:'u16', name:'Javohir Manager', phone:'+998901234588', password:'123456',
+      { id:'u16', name:'Javohir Manager', phone:'+998901234588', password:'***',
         roles:{ manager:{ status:'approved', centerId:'c1' } },
         activeRole:'manager', joined:'2026-04-30' },
 
       // Pending center owner with pending center (Admin has work to do)
-      { id:'u15', name:"Dilnoza Sa'dullayeva", phone:'+998901234587', password:'123456',
+      { id:'u15', name:"Dilnoza Sa'dullayeva", phone:'+998901234587', password:'***',
         roles:{ owner:{ status:'pending', centerId:'c6' } },
         activeRole:'owner', joined:'2026-04-29' },
     ],

@@ -264,8 +264,11 @@ def send_test_weekly_digest(request, student_id):
     avg_score = attempts.aggregate(Avg('score'))['score__avg'] or 0
     avg_score = round(avg_score, 1)
 
-    presidential_school = min(99, max(10, int(avg_score * 0.9 + (attempts_count * 0.5))))
-    al_xorazmiy = min(99, max(10, int(avg_score * 0.85 + (attempts_count * 0.5))))
+    # Bashorat faqat o'rtacha ball asosida (accounts/views.py bilan bir xil
+    # mantiq): imtihonlar soni bashoratni sun'iy oshirmasligi uchun
+    # `attempts_count` koeffitsienti olib tashlandi.
+    presidential_school = min(99, max(10, int(avg_score * 0.9)))
+    al_xorazmiy = min(99, max(10, int(avg_score * 0.85)))
     dtm = min(99, max(10, int(avg_score * 1.05)))
 
     badges_list = ", ".join(b.get('title') for b in student.get_badges()) or "Yo'q"

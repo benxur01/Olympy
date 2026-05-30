@@ -55,13 +55,23 @@ ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()] or (
 if not DEBUG and not ALLOWED_HOSTS:
     raise ImproperlyConfigured('OLYMPY_ALLOWED_HOSTS must be set in production')
 
+# Y5/P2: Cloudinary media storage faqat CLOUDINARY_CLOUD_NAME env mavjud
+# bo'lganda yoqiladi. Paket o'rnatilmagan lokal muhitlarda app'larni qo'shish
+# ImportError berishi sababli, app'lar ham, storage backend'i ham (pastda)
+# shu bitta flag bilan boshqariladi — izchil holat.
+USE_CLOUDINARY = bool(os.environ.get('CLOUDINARY_CLOUD_NAME'))
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    # cloudinary_storage django.contrib.staticfiles'dan OLDIN bo'lishi kerak
+    # (django-cloudinary-storage talabi). Faqat Cloudinary yoqilganda qo'shamiz.
+    *(['cloudinary_storage'] if USE_CLOUDINARY else []),
     'django.contrib.staticfiles',
+    *(['cloudinary'] if USE_CLOUDINARY else []),
     # Third-party
     'rest_framework',
     'rest_framework.authtoken',
@@ -182,29 +192,45 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Y5/P2: Render free tier'da disk persistent emas — har deploy'da yuklangan
+# media fayllar yo'qoladi. CLOUDINARY_CLOUD_NAME env o'rnatilgan bo'lsa media
+# fayllar Cloudinary'da saqlanadi (bepul tier), aks holda lokal FileSystem'da.
+# Static fayllar har doim WhiteNoise orqali — uni o'zgartirmaymiz.
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': os.environ.get('CLOUDINARY_CLOUD_NAME', ''),
+    'API_KEY': os.environ.get('CLOUDINARY_API_KEY', ''),
+    'API_SECRET': os.environ.get('CLOUDINARY_API_SECRET', ''),
+}
+if USE_CLOUDINARY:
+    import cloudinary  # noqa: F401  (paket INSTALLED_APPS'ga ham qo'shilgan)
+
 # WhiteNoise compress + immutable cache headers — production rejimida
 # faylni hash bilan nomlaydi va brauzer cache'ini agressiv ishlatadi.
+# Media (default) backend: Cloudinary yoqilgan bo'lsa MediaCloudinaryStorage,
+# aks holda lokal FileSystemStorage.
 STORAGES = {
-    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'default': {
+        'BACKEND': 'cloudinary_storage.storage.MediaCloudinaryStorage'
+        if USE_CLOUDINARY else 'django.core.files.storage.FileSystemStorage',
+    },
     'staticfiles': {
         'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'
         if not DEBUG else 'django.contrib.staticfiles.storage.StaticFilesStorage',
     },
 }
-MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-# Y5/P2: Render free tier'da disk persistent emas — har deploy'da media
-# fayllar yo'qoladi. Production'da CLOUDINARY_URL yoki AWS_STORAGE_BUCKET_NAME
-# o'rnatilmagan bo'lsa, ogohlantirish chiqaramiz. Hozircha kod bilan
-# avtomatik o'tib ketish yo'q (zavisimosti talab qiladi), lekin warning
-# bilan admin xabardor bo'ladi.
-if not DEBUG:
-    _has_cloudinary = bool(os.environ.get('CLOUDINARY_URL'))
+
+# Cloudinary yoki S3 sozlanmagan production deployda ogohlantirish — yuklangan
+# rasmlar har deploy'da yo'qolishini admin bilsin.
+if not DEBUG and not USE_CLOUDINARY:
+    _has_cloudinary_url = bool(os.environ.get('CLOUDINARY_URL'))
     _has_s3 = bool(os.environ.get('AWS_STORAGE_BUCKET_NAME'))
-    if not (_has_cloudinary or _has_s3):
+    if not (_has_cloudinary_url or _has_s3):
         import sys as _sys
         print(
-            'WARNING: Production muhitda CLOUDINARY_URL yoki '
+            'WARNING: Production muhitda CLOUDINARY_CLOUD_NAME yoki '
             'AWS_STORAGE_BUCKET_NAME o\'rnatilmagan — yuklangan rasmlar '
             'har deploy\'da yo\'qoladi. Persistent storage sozlang.',
             file=_sys.stderr,
@@ -276,6 +302,10 @@ REST_FRAMEWORK = {
         # Parol o'zgartirish — autentifikatsiyalangan FOYDALANUVCHI bo'yicha.
         # Soatiga ko'pi bilan 5 marta (accounts.throttling).
         'password_change': '5/hour',
+        # Xatolar ro'yxati (get_mistakes_list) — foydalanuvchining barcha
+        # attempt'larini stream qilib yig'adi, xotira/CPU jihatdan og'ir.
+        # 30/min dashboard uchun yetarli keng, ammo qayta-qayta spam'ni to'sadi.
+        'mistakes': '30/min',
     },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,
@@ -307,6 +337,25 @@ JWT_COOKIE_SAMESITE = os.environ.get('OLYMPY_JWT_COOKIE_SAMESITE', _default_same
 
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+
+# CELERY_BROKER_URL muhit o'zgaruvchisi o'rnatilmagan bo'lsa (development yoki
+# Redis ulanmagan deploy) — task'lar broker'ga ulanolmay jim ravishda
+# muvaffaqiyatsiz tugardi (masalan, ota-onaga xabar, AI tahlil yuborilmasdi).
+# Bunday holatda task'larni sinxron (eager) ishga tushiramiz: ular chaqirilgan
+# joyda darhol bajariladi, broker talab qilinmaydi. Ogohlantirish ham log'ga
+# yoziladi — productionda Redis o'rnatish kerakligini ko'rsatadi.
+CELERY_TASK_ALWAYS_EAGER = not bool(os.environ.get('CELERY_BROKER_URL'))
+# Eager rejimda task ichidagi xatolar (Exception) chaqiruvchiga ko'rinishi
+# uchun emas — ular ham yutilmasligi kerak, lekin default xulqni saqlaymiz
+# (chaqiruvchi joyda allaqachon try/except bilan o'ralgan).
+CELERY_TASK_EAGER_PROPAGATES = False
+if CELERY_TASK_ALWAYS_EAGER:
+    import logging as _logging
+    _logging.getLogger('olympy.celery').warning(
+        'CELERY_BROKER_URL o\'rnatilmagan — Celery task\'lari sinxron (EAGER) '
+        'rejimda ishlaydi. Productionda Redis broker o\'rnating, aks holda '
+        'og\'ir task\'lar (AI tahlil, ota-ona xabarlari) so\'rovni sekinlashtiradi.'
+    )
 
 # Cache — REDIS_URL bo'lsa Redis ishlatamiz, aks holda CELERY_BROKER_URL'dan
 # yoki local fallback'dan. Bu rate limit, AI model discovery cache va boshqa

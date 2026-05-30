@@ -13,7 +13,12 @@ urlpatterns = [
         url=f'{settings.OLYMPY_FRONTEND_URL}/admin' if settings.OLYMPY_FRONTEND_URL else '/admin',
         permanent=False,
     ), name='frontend-admin'),
-    path('django-admin/', admin.site.urls),
+    # Django admin URL'i anonim bruteforce'dan himoyalanish uchun oddiy
+    # 'django-admin/' o'rniga noaniq yo'lga ko'chirildi. Eski 'django-admin/'
+    # endi 404 qaytaradi (route ro'yxatda yo'q). Bu obfuscation — login
+    # himoyasini almashtirmaydi, faqat avtomatik skanerlovchi botlar uchun
+    # admin login sahifasini topishni qiyinlashtiradi.
+    path('olympy-mgmt-2025/', admin.site.urls),
     path('api/auth/', include('accounts.urls')),
     path('api/telegram/webhook/', account_views.telegram_webhook, name='telegram-webhook'),
     path('api/telegram/webhook/auth/', account_views.telegram_auth_webhook, name='telegram-auth-webhook'),
@@ -35,9 +40,19 @@ urlpatterns = [
     path('api/subjects/', subjects_list_create, name='subjects-list-create'),
 ]
 
+import os as _os
+
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-else:
+elif not _os.environ.get('CLOUDINARY_CLOUD_NAME'):
+    # Production'da media odatda Cloudinary (yoki S3) orqali xizmat qilinadi —
+    # bunda yuklangan fayl URL'lari to'g'ridan-to'g'ri storage domeniga ishora
+    # qiladi va bu route umuman ishlatilmaydi. Cloudinary sozlanmagan eski
+    # deploylar buzilmasligi uchun (media fayllar hech qaerdan kelmasligini
+    # oldini olish) faqat shu holatda legacy `serve()` fallback qoldiriladi.
+    # Eslatma: django.views.static.serve production uchun mo'ljallanmagan —
+    # Render diski persistent emasligi sababli Cloudinary'ga o'tish tavsiya
+    # etiladi (settings.py ham bu haqda ogohlantiradi).
     from django.views.static import serve
     from django.urls import re_path
     urlpatterns += [
