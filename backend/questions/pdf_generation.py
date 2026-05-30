@@ -35,6 +35,62 @@ DIFFICULTY_ALIASES = {
 }
 
 
+# --- Prompt qo'shimchalari: sifat, matematika, rasm va javobsiz savollar uchun ---
+
+QUALITY_PROMPT = (
+    "\nSifat qoidalari:\n"
+    "- Savol matnini PDFdagidek aniq saqla, qisqartirma yoki o'zgartirma.\n"
+    "- Imlo xatosi bo'lsa tuzat, lekin savol ma'nosini o'zgartirma.\n"
+    "- Variant matnini saqla (A, B, C, D harflarini olib tashlab, matnini qoldir).\n"
+    "- Bir xil savolni ikki marta chiqarma (dublikatlarni tashlab ket).\n"
+    "- Savol to'liq bo'lmasa yoki matn kesilgan bo'lsa — needs_review=true qo'y.\n"
+    "- Bo'sh yoki ma'nosiz savollarni umuman chiqarma.\n"
+)
+
+MATH_PROMPT_ADDITION = (
+    "\nMatematik belgilar uchun qoidalar:\n"
+    "- ∑ → \"yig'indisi\", ∫ → \"integrali\", √ → \"ildiz\", ^ → \"darajasi\".\n"
+    "- Belgi noto'g'ri o'qilgan bo'lsa, kontekstdan tushunib to'g'rilab yoz.\n"
+    "- Formulani o'qib bo'lmasa, savol matnida [formula] deb yoz va needs_review=true qo'y.\n"
+    "- Kasrlarni a/b shaklida yoz (masalan 3/4).\n"
+    "- LaTeX formatini oddiy matnga aylantir: \\frac{a}{b} → a/b.\n"
+)
+
+VISION_PROMPT_ADDITION = (
+    "\nRasm va diagrammaga oid savollar uchun qoidalar:\n"
+    "- Savol rasmga/diagrammaga/grafikka havola qilsa (masalan \"Quyidagi rasmga qarab...\" "
+    "yoki \"Grafikdan...\"), savol matnini saqla va needs_review=true qo'y.\n"
+    "- explanation o'rniga (agar mavjud bo'lsa) yoki belgisi sifatida answer_source='missing' bilan, "
+    "savolni yo'qotma — rasm ko'rinmasa ham saqla.\n"
+    "- Rasmga bog'liq savolda javobni ishonch bilan aniqlay olmasang, needs_review=true qoldir.\n"
+)
+
+NO_ANSWER_PROMPT_ADDITION = (
+    "\nJavobsiz savollar uchun qoidalar:\n"
+    "- Variantlar bor lekin to'g'ri javob ko'rsatilmagan bo'lsa: savolni saqla.\n"
+    "- Agar savol mantiqiy va sen javobni ishonch bilan bilsang — o'zing belgilab, "
+    "answer_source='inferred', needs_review=false qil.\n"
+    "- Agar bilmasang yoki noaniq bo'lsa — correct_answer=0, answer_source='missing', needs_review=true.\n"
+    "- Javob kaliti (answer key) alohida sahifada bo'lsa, uni topib variantlarga biriktir.\n"
+)
+
+# Matnda matematik belgilar ko'pligini aniqlash uchun.
+_MATH_SYMBOLS = ('∑', '∫', '√', '∏', '≈', '≤', '≥', '≠', '∞', '∂', 'π', '±', '×', '÷', '°', '^', '\\frac', '\\sqrt', '\\sum', '\\int')
+_MATH_SUBJECTS = ('matematika', 'matematik', 'fizika', 'kimyo', 'algebra', 'geometriya', 'math', 'physics', 'chemistry')
+
+
+def _looks_mathematical(subject, pdf_text):
+    """Fan matematik bo'lsa yoki matnda formula belgilari ko'p bo'lsa True."""
+    subject_lower = str(subject or '').strip().lower()
+    if any(key in subject_lower for key in _MATH_SUBJECTS):
+        return True
+    text = str(pdf_text or '')
+    if not text:
+        return False
+    hits = sum(text.count(symbol) for symbol in _MATH_SYMBOLS)
+    return hits >= 5
+
+
 def _int_setting(name, default, minimum=None, maximum=None):
     try:
         value = int(getattr(settings, name, default) or default)
@@ -47,6 +103,48 @@ def _int_setting(name, default, minimum=None, maximum=None):
     return value
 
 
+def _extract_tables_per_page(pdf_bytes, max_pages=1000):
+    """pdfplumber orqali har sahifadagi jadvallarni matnga aylantirib qaytaradi.
+
+    pypdf jadval strukturasini yo'qotadi (ustunlar bir-biriga yopishadi), shuning
+    uchun jadvalli savollar uchun pdfplumber'dan foydalanamiz. Qaytadigan dict:
+    {sahifa_raqami: "ustun | ustun ... matn"}. pdfplumber yo'q bo'lsa yoki xato
+    bo'lsa bo'sh dict qaytadi va chaqiruvchi pypdf matni bilan davom etadi.
+    """
+    if not pdf_bytes:
+        return {}
+    try:
+        import pdfplumber
+    except ImportError:
+        logger.info('pdfplumber is not installed; PDF table structure will rely on pypdf only')
+        return {}
+    tables_by_page = {}
+    try:
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            for page_number, page in enumerate(pdf.pages[:max_pages], start=1):
+                try:
+                    page_tables = page.extract_tables() or []
+                except Exception:
+                    continue
+                rendered = []
+                for table in page_tables:
+                    rows = []
+                    for row in table:
+                        if not row:
+                            continue
+                        cells = [str(cell).strip() if cell else '' for cell in row]
+                        if any(cells):
+                            rows.append(' | '.join(cells))
+                    if rows:
+                        rendered.append('\n'.join(rows))
+                if rendered:
+                    tables_by_page[page_number] = '\n\n'.join(rendered)
+    except Exception:
+        logger.exception('pdfplumber table extraction failed; continuing with pypdf text')
+        return {}
+    return tables_by_page
+
+
 def _extract_pdf_text(pdf_bytes):
     if not pdf_bytes:
         return '', 0
@@ -57,18 +155,67 @@ def _extract_pdf_text(pdf_bytes):
         return '', 0
     try:
         reader = PdfReader(io.BytesIO(pdf_bytes))
+        # Jadvallarni alohida (struktura saqlangan holda) pdfplumber bilan ajratamiz.
+        tables_by_page = _extract_tables_per_page(pdf_bytes, max_pages=min(len(reader.pages), 1000))
         chunks = []
         max_chars = _int_setting('AI_QUESTION_PDF_MAX_TEXT_CHARS', 300000, 10000, 800000)
         for page_number, page in enumerate(reader.pages[:1000], start=1):
             text = (page.extract_text() or '').strip()
+            table_text = tables_by_page.get(page_number, '')
+            if not text and not table_text:
+                continue
+            block = f'\n\n--- PAGE {page_number} ---\n'
             if text:
-                chunks.append(f'\n\n--- PAGE {page_number} ---\n{text}')
+                block += text
+            if table_text:
+                # Jadval matnini shu sahifa marker ichida saqlaymiz — _page_units
+                # va boshqa bo'lish logikasi PAGE markerlariga tayanadi.
+                block += f"\n[JADVAL]\n{table_text}"
+            chunks.append(block)
             if sum(len(chunk) for chunk in chunks) >= max_chars:
                 break
         return '\n'.join(chunks).strip()[:max_chars], len(reader.pages)
     except Exception:
         logger.exception('question PDF text extraction failed')
         return '', 0
+
+
+def _pdf_has_images(pdf_bytes, max_pages=50):
+    """PDF sahifalarida raster rasm (XObject Image) bor-yo'qligini aniqlaydi.
+
+    Rasm/diagrammaga bog'liq savollar matndan to'liq ajralmaydi, shuning uchun
+    rasm topilsa Gemini'ning vision (inline PDF) rejimini ustun qo'yamiz.
+    """
+    if not pdf_bytes:
+        return False
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        return False
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        for page in reader.pages[:max_pages]:
+            resources = page.get('/Resources')
+            if not resources:
+                continue
+            xobjects = resources.get('/XObject') if hasattr(resources, 'get') else None
+            if not xobjects:
+                continue
+            try:
+                xobjects = xobjects.get_object()
+            except Exception:
+                pass
+            for ref in (xobjects or {}).values():
+                try:
+                    obj = ref.get_object()
+                except Exception:
+                    continue
+                if obj.get('/Subtype') == '/Image':
+                    return True
+        return False
+    except Exception:
+        logger.debug('PDF image detection failed', exc_info=True)
+        return False
 
 
 def _split_pdf_into_page_chunks(pdf_bytes, pages_per_chunk=10):
@@ -183,19 +330,21 @@ def _schema_gemini():
     }
 
 
-def _prompt(subject, difficulty, question_type, has_extracted_text):
+def _prompt(subject, difficulty, question_type, has_extracted_text, pdf_text=''):
     source_hint = (
         "Quyida PDFdan ajratilgan matn beriladi."
         if has_extracted_text else
         "PDF faylning o'zini ko'rib tahlil qil."
     )
-    return (
+    base = (
         "Sen PROLYMP platformasi uchun PDFdan test savollarini ajratuvchi yordamchisan.\n"
         f"{source_hint}\n"
         "Vazifa: PDF ichidagi mavjud savollarni tartibini buzmasdan ajrat. "
         "PDFda savollar qanday ketma-ketlikda bo'lsa, JSON array ham shu tartibda bo'lsin. "
         "Bitta ham aniq ko'ringan savolni tashlab ketma. "
         "Yangi mavzu yoki ortiqcha savol o'ylab topma.\n"
+        "PDF matnida [JADVAL] belgisi bo'lsa, u jadval mazmuni — ustunlar | bilan ajratilgan. "
+        "Jadvalga oid savollarda jadval ma'lumotini to'g'ri o'qib, savol va variantlarni aniqla.\n"
         f"Fallback fan: {subject or '-'}\n"
         f"Fallback qiyinlik: {difficulty or 'medium'}\n"
         f"Kerakli format: {question_type or 'Ko‘p tanlovli'}\n"
@@ -214,6 +363,13 @@ def _prompt(subject, difficulty, question_type, has_extracted_text):
         "Savollar ko'p bo'lsa ham qisqartirma; har bir savol alohida obyekt bo'lsin. "
         "Natijani faqat JSON schema bo'yicha qaytar."
     )
+    extras = QUALITY_PROMPT + NO_ANSWER_PROMPT_ADDITION
+    # Vision rejimida (matn ajratilmagan) Gemini rasmni ko'radi — rasm ko'rsatmasini
+    # qo'shamiz. Matnli rejimda rasmga havola qiluvchi savollar ham bo'lishi mumkin.
+    extras += VISION_PROMPT_ADDITION
+    if _looks_mathematical(subject, pdf_text):
+        extras += MATH_PROMPT_ADDITION
+    return base + extras
 
 
 def _openai_keys():
@@ -588,7 +744,7 @@ def _openai_from_text(pdf_text, subject, difficulty, question_type):
         return {'ok': False, 'missing_key': True, 'error': "OpenAI API kaliti sozlanmagan.", 'questions': []}
     if not pdf_text:
         return {'ok': False, 'error': "PDF matni topilmadi.", 'questions': []}
-    prompt = f"{_prompt(subject, difficulty, question_type, True)}\n\nPDF matni:\n{pdf_text}"
+    prompt = f"{_prompt(subject, difficulty, question_type, True, pdf_text)}\n\nPDF matni:\n{pdf_text}"
     payload = {
         'model': getattr(settings, 'AI_QUESTION_MODEL', 'gpt-4o-mini'),
         'input': [{
@@ -641,7 +797,7 @@ def _openai_from_text(pdf_text, subject, difficulty, question_type):
 
 def _gemini_payload(pdf_bytes, pdf_text, subject, difficulty, question_type, include_pdf, chunk_note=''):
     use_inline_pdf = include_pdf and bool(pdf_bytes)
-    prompt = _prompt(subject, difficulty, question_type, not use_inline_pdf)
+    prompt = _prompt(subject, difficulty, question_type, not use_inline_pdf, pdf_text)
     if chunk_note:
         prompt = f'{prompt}\n\n{chunk_note}'
     parts = [{'text': prompt}]
@@ -886,7 +1042,15 @@ def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
             if best_result is None or len(vision_chunked.get('questions') or []) > len(best_result.get('questions') or []):
                 best_result = vision_chunked
 
-    modes = [False, True] if pdf_text else [True]
+    # Matn bo'lsa odatda avval text rejimi (tezroq), keyin vision (inline PDF).
+    # Lekin PDFda rasm/diagramma bor bo'lsa, savollar rasmga bog'liq bo'lishi
+    # mumkin — bunda vision rejimini oldinga qo'yamiz.
+    if not pdf_text:
+        modes = [True]
+    elif pdf_bytes and _pdf_has_images(pdf_bytes):
+        modes = [True, False]
+    else:
+        modes = [False, True]
     failures = []
     for include_pdf in modes:
         mode_label = 'inline_pdf' if include_pdf else 'text'
