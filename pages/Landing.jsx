@@ -526,15 +526,23 @@ const LandingPage = ({ onNavigate }) => {
     return () => clearInterval(interval);
   }, [activeScreen, screens.length]);
 
-  // Scroll active tab into view on mobile
+  // Scroll active tab into view horizontally on mobile
   React.useEffect(() => {
     if (!tabsContainerRef.current) return;
+    const container = tabsContainerRef.current.parentElement;
+    if (!container) return;
     const activeChild = tabsContainerRef.current.children[activeScreen];
     if (activeChild) {
-      activeChild.scrollIntoView({
-        behavior: 'smooth',
-        block: 'nearest',
-        inline: 'center',
+      const containerWidth = container.clientWidth;
+      const childLeft = activeChild.offsetLeft;
+      const childWidth = activeChild.clientWidth;
+      
+      // Center the active child tab inside the scroll container
+      const targetScrollLeft = childLeft - (containerWidth / 2) + (childWidth / 2);
+      
+      container.scrollTo({
+        left: targetScrollLeft,
+        behavior: 'smooth'
       });
     }
   }, [activeScreen]);
@@ -797,7 +805,7 @@ const LandingPage = ({ onNavigate }) => {
 
           {/* Tabs */}
           <div className="mb-6 md:mb-8 overflow-x-auto -mx-4 md:-mx-6 scroll-mask" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <div ref={tabsContainerRef} className="flex gap-2 md:gap-3 md:justify-center min-w-min px-4 md:px-6">
+            <div ref={tabsContainerRef} className="relative flex gap-2 md:gap-3 md:justify-center min-w-min px-4 md:px-6">
               {screens.map((s, i) => {
                 const active = activeScreen === i;
                 return (
