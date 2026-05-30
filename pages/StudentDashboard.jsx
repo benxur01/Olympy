@@ -123,6 +123,19 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const apiAttempts = isApi && Array.isArray(apiResultsRes.data) ? apiResultsRes.data.map(mapApiAttempt) : null;
   const activityLeaderboard = apiActivityLeaderboardRes.data || [];
 
+  // API xatolarini foydalanuvchiga ko'rsatish — avval har bir useApiData
+  // chaqiruvining `.error` holati jim yutilardi (faqat null data qaytardi)
+  // va o'quvchi sahifa nega bo'sh ekanini bilmasdi. Endi asosiy yuklashlardan
+  // (markazlar, tadbirlar, natijalar, statistika, ball-tarix, xatolar,
+  // sovrinlar, bashorat) birortasi xato bersa, sahifa tepasida oddiy
+  // ogohlantirish banner ko'rsatamiz. Bu mavjud kontentni buzmaydi —
+  // qisman yuklangan ma'lumot baribir ko'rinadi.
+  const apiHasError = isApi && [
+    apiCentersRes, apiOlympiadsRes, apiResultsRes, apiStatsRes,
+    apiActivityLeaderboardRes, apiMistakesRes, apiRewardsRes, apiPredictionsRes,
+    apiHistoryChartRes, apiCompetitorRes, apiWeaknessRes,
+  ].some(r => r && r.error);
+
   const allCenters = isApi ? (apiCenters || []) : store.centers;
   const myCenter = studentCenterId ? allCenters.find(c => String(c.id) === String(studentCenterId)) : null;
 
@@ -1292,6 +1305,12 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             </div>
           } />
         <main className="flex-1 overflow-x-hidden overflow-y-auto">
+          {apiHasError && (
+            <div className="error-state mx-3 md:mx-6 mt-3 md:mt-4 rounded-2xl px-4 py-3 bg-rose-500/10 border border-rose-500/30 flex items-center gap-2.5 text-sm text-rose-200">
+              <Icon name="info" size={16} />
+              <span>Ba'zi ma'lumotlar yuklanmadi. Internet aloqasini tekshirib, sahifani yangilang.</span>
+            </div>
+          )}
           {page === 'leaderboard' ? <LeaderboardPage embedded user={user} /> :
            page === 'profile' ? <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} /> :
            page === 'practice' ? (

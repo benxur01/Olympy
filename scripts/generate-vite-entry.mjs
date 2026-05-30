@@ -10,7 +10,10 @@ const entryPath = path.join(srcDir, 'olympy-entry.jsx');
 const indexPath = path.join(root, 'index.html');
 
 const sourceHtml = fs.readFileSync(sourceHtmlPath, 'utf8');
-const localScriptPattern = /<script\s+type="text\/babel"\s+src="([^"]+\.jsx)"\s*><\/script>/g;
+// .jsx (komponentlar) va .js (masalan constants) ikkalasini ham qabul qilamiz —
+// Olympy.html ichidagi `type="text/babel"` teglar bilan cheklangan, shuning
+// uchun src/services/api.js kabi bundle-import fayllar bu yerga tushmaydi.
+const localScriptPattern = /<script\s+type="text\/babel"\s+src="([^"]+\.jsx?)"\s*><\/script>/g;
 const sourceFiles = [...sourceHtml.matchAll(localScriptPattern)].map(match => match[1]);
 
 if (!sourceFiles.length) {
@@ -71,7 +74,7 @@ const indexHtml = sourceHtml
   .replace(/\n\s*<script\s+src="https:\/\/unpkg\.com\/react@[^"]+"[^>]*><\/script>/g, '')
   .replace(/\n\s*<script\s+src="https:\/\/unpkg\.com\/react-dom@[^"]+"[^>]*><\/script>/g, '')
   .replace(/\n\s*<script\s+src="https:\/\/unpkg\.com\/@babel\/standalone@[^"]+"[^>]*><\/script>/g, '')
-  .replace(/\n\s*<script\s+type="text\/babel"\s+src="[^"]+\.jsx"\s*><\/script>/g, '')
+  .replace(/\n\s*<script\s+type="text\/babel"\s+src="[^"]+\.jsx?"\s*><\/script>/g, '')
   .replace('</body>', '  <script type="module" src="/src/olympy-entry.jsx"></script>\n</body>');
 
 fs.writeFileSync(indexPath, indexHtml);

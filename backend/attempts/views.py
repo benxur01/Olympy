@@ -254,7 +254,11 @@ def submit_attempt(request):
         ).first()
         maybe_finish_expired_olympiad(_peek_olympiad)
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception(
+            'maybe_finish_expired_olympiad failed for olympiad=%s',
+            serializer.validated_data.get('olympiad'),
+        )
 
     with transaction.atomic():
         # Olimpiad qatorini lock qilmaymiz — bu butun olimpiada bo'yicha
@@ -546,7 +550,10 @@ def report_cheating(request):
 
     with transaction.atomic():
         olympiad = get_object_or_404(
-            Olympiad.objects.select_for_update().select_related('center', 'center__owner'),
+            Olympiad.objects.select_for_update().select_related('center', 'center__owner')
+            # _build_attempt_mistakes va scoring `olympiad.questions.all()` ni
+            # aylanadi — savollarni oldindan yuklab N+1 so'rovlarni oldini olamiz.
+            .prefetch_related('questions'),
             pk=olympiad_id,
         )
         if not user_can_participate_in_event(request.user, olympiad):
@@ -627,7 +634,10 @@ def attempt_detail(request, attempt_id):
     attempt = get_object_or_404(
         TestAttempt.objects
         .filter(olympiad__is_deleted=False)
-        .select_related('user', 'olympiad', 'olympiad__center'),
+        .select_related('user', 'olympiad', 'olympiad__center')
+        # Quyida `olympiad.questions.all()` aylanadi — savollarni oldindan
+        # yuklab N+1 (har savol uchun alohida so'rov) o'rniga 1 ta so'rov.
+        .prefetch_related('olympiad__questions'),
         pk=attempt_id,
     )
     is_owner = attempt.user_id == request.user.id
@@ -731,7 +741,10 @@ def attempt_ai_analysis(request, attempt_id):
                     attempt, attempt.olympiad, attempt.answers or {},
                 )
             except Exception:
-                pass
+                import logging
+                logging.getLogger(__name__).exception(
+                    'lazy AI analysis trigger failed for attempt=%s', attempt.id,
+                )
         return Response({'status': 'pending'})
     if analysis.status == AttemptAIAnalysis.STATUS_READY:
         return Response({'status': 'ready', 'analysis': analysis.analysis_text})
@@ -1411,38 +1424,53 @@ def test_session_ping(request):
         or ''
     )[:64]
 
-    # TestSession faolligini tekshirish
-    session = TestSession.objects.filter(user=request.user, olympiad_id=olympiad_id).first()
-    if not session:
-        return Response({'detail': "Test sessiya topilmadi"}, status=http_status.HTTP_404_NOT_FOUND)
-
     now = timezone.now()
 
-    # Parallel sessiya tekshiruvi — device_id berilgan bo'lsa.
-    if device_id:
-        if (
-            session.last_device_id
-            and session.last_device_id != device_id
-            and session.last_ping_at
-            and (now - session.last_ping_at) < timedelta(seconds=30)
-        ):
-            # Boshqa qurilma 30 soniya ichida faol — bir vaqtda ikki kirish.
-            if session.status != TestSession.STATUS_DISQUALIFIED:
-                session.status = TestSession.STATUS_DISQUALIFIED
-                session.disqualified_at = session.disqualified_at or now
-                session.cheating_reason = session.cheating_reason or 'concurrent_session'
-                session.save(update_fields=['status', 'disqualified_at', 'cheating_reason'])
-            return Response(
-                {
-                    'disqualified': True,
-                    'detail': "Boshqa qurilmadan kirilgani aniqlandi. Olimpiada yakunlandi.",
-                },
-                status=http_status.HTTP_409_CONFLICT,
-            )
-        # Aks holda joriy qurilmani egasi deb belgilaymiz.
-        session.last_device_id = device_id
-        session.last_ping_at = now
-        session.save(update_fields=['last_device_id', 'last_ping_at'])
+    # Race condition himoyasi: ikkita ping (masalan, ikki qurilmadan) bir
+    # vaqtda kelib bir-birining `last_device_id`/`last_ping_at` qiymatini
+    # ustiga yozib yuborishi mumkin edi — natijada parallel sessiya tekshiruvi
+    # ishlamay qolardi. Sessiyani `select_for_update()` bilan qatorni lock
+    # qilib, tekshiruv + yangilashni atomic blok ichida bajaramiz.
+    concurrent_conflict = False
+    with transaction.atomic():
+        session = (
+            TestSession.objects
+            .select_for_update()
+            .filter(user=request.user, olympiad_id=olympiad_id)
+            .first()
+        )
+        if not session:
+            return Response({'detail': "Test sessiya topilmadi"}, status=http_status.HTTP_404_NOT_FOUND)
+
+        # Parallel sessiya tekshiruvi — device_id berilgan bo'lsa.
+        if device_id:
+            if (
+                session.last_device_id
+                and session.last_device_id != device_id
+                and session.last_ping_at
+                and (now - session.last_ping_at) < timedelta(seconds=30)
+            ):
+                # Boshqa qurilma 30 soniya ichida faol — bir vaqtda ikki kirish.
+                if session.status != TestSession.STATUS_DISQUALIFIED:
+                    session.status = TestSession.STATUS_DISQUALIFIED
+                    session.disqualified_at = session.disqualified_at or now
+                    session.cheating_reason = session.cheating_reason or 'concurrent_session'
+                    session.save(update_fields=['status', 'disqualified_at', 'cheating_reason'])
+                concurrent_conflict = True
+            else:
+                # Aks holda joriy qurilmani egasi deb belgilaymiz.
+                session.last_device_id = device_id
+                session.last_ping_at = now
+                session.save(update_fields=['last_device_id', 'last_ping_at'])
+
+    if concurrent_conflict:
+        return Response(
+            {
+                'disqualified': True,
+                'detail': "Boshqa qurilmadan kirilgani aniqlandi. Olimpiada yakunlandi.",
+            },
+            status=http_status.HTTP_409_CONFLICT,
+        )
 
     # Cacheni yangilash (timeout 60 soniya, agar 60s ichida ping kelmasa oflayn hisoblanadi)
     cache_key = f"test_session_ping:{olympiad_id}:{request.user.id}"
@@ -1545,6 +1573,7 @@ def olympiad_live_proctoring(request, olympiad_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
 def get_mistakes_list(request):
     """GET /api/attempts/mistakes/
     O'quvchining barcha o'tgan imtihonlardagi noto'g'ri berilgan javoblarini savollar kesimida yig'ib qaytaradi.
@@ -1552,13 +1581,21 @@ def get_mistakes_list(request):
     from questions.models import Question
     from .models import TestAttempt
 
-    attempts = TestAttempt.objects.filter(user=request.user, disqualified=False)
+    # Faqat `answers` ustunini stream qilamiz (butun TestAttempt qatorlarini
+    # xotiraga yuklamaymiz). `.iterator()` server-side kursor bilan ko'p
+    # attempt'li foydalanuvchilarda xotirani bir tekis ushlab turadi.
+    answers_stream = (
+        TestAttempt.objects
+        .filter(user=request.user, disqualified=False)
+        .values_list('answers', flat=True)
+        .iterator()
+    )
 
     # Avval har bir savol uchun (birinchi ko'rilgan) tanlangan javobni yig'amiz,
     # keyin barcha savollarni bitta so'rov bilan olamiz (N+1'ni oldini olish uchun).
     chosen_by_question = {}
-    for a in attempts:
-        answers = a.answers or {}
+    for answers in answers_stream:
+        answers = answers or {}
         for q_id_str, chosen_idx in answers.items():
             try:
                 q_id = int(q_id_str)
@@ -1590,6 +1627,9 @@ def get_mistakes_list(request):
                 'explanation': question.explanation or '',
             })
     return Response(mistakes)
+
+
+get_mistakes_list.cls.throttle_scope = 'mistakes'
 
 
 @api_view(['POST'])
@@ -1660,7 +1700,10 @@ def explain_all_mistakes(request):
                 target_user=request.user,
             )
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception(
+            'manager activity log failed for user=%s', request.user.pk,
+        )
 
     return Response({'explanation': explanation_text})
 

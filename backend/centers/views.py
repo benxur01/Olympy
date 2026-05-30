@@ -183,6 +183,9 @@ def update_center(request, center_id):
         if not isinstance(subs, list):
             return Response({'subjects': "Fanlar ro'yxat bo'lishi kerak"},
                             status=http_status.HTTP_400_BAD_REQUEST)
+        if len(subs) > 20:
+            return Response({'detail': "Fanlar soni 20 tadan oshmasligi kerak."},
+                            status=http_status.HTTP_400_BAD_REQUEST)
         # Har bir fan nomi 80 belgidan oshmasin — DB'da har bir element
         # JSONField'ga tushadi va frontend chip ko'rinishida ko'rsatadi.
         payload['subjects'] = [str(s).strip()[:80] for s in subs if str(s).strip()]

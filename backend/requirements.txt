@@ -11,3 +11,5 @@ redis>=5.0.1
 django-celery-beat>=2.6.0
 gunicorn>=21.2
 whitenoise>=6.6
+cloudinary>=1.40
+django-cloudinary-storage>=0.3

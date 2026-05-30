@@ -4,6 +4,7 @@ Bu rejim oddiy attempts'dan farqli: TestSession va TestAttempt yaratmaydi,
 faqat random savollar tanlanadi va javoblar tekshiriladi. Session ma'lumoti
 Django cache'da 1 soat saqlanadi.
 """
+import random
 import secrets
 
 from django.core.cache import cache
@@ -85,15 +86,15 @@ def practice_start(request):
 
     get_object_or_404(EducationCenter, pk=center_id)
 
-    # Random tanlash — DB darajasida `order_by('?')` kichik banklarda
-    # qabul qilinadi. Katta banklarda bu sekin bo'lishi mumkin, ammo
-    # practice uchun (1-2 marta foydalanish) maqbul.
-    available = list(
+    # Random tanlash: `order_by('?')` katta banklarda butun jadvalni
+    # MySQL/Postgres'da sekin RANDOM() bilan saralashga majbur qiladi. Buning
+    # o'rniga avval barcha ID'larni olib, Python darajasida random tanlaymiz.
+    all_ids = list(
         Question.objects
         .filter(center_id=center_id, subject__iexact=subject)
-        .order_by('?')
-        .values_list('id', flat=True)[:question_count]
+        .values_list('id', flat=True)
     )
+    available = random.sample(all_ids, min(question_count, len(all_ids))) if all_ids else []
     if not available:
         return Response(
             {'detail': "Bu fan bo'yicha savol topilmadi"},
@@ -348,12 +349,14 @@ def wrong_answer_start(request):
             status=http_status.HTTP_404_NOT_FOUND,
         )
 
-    available = list(
+    # `order_by('?')` o'rniga ID'larni olib Python'da random tanlaymiz
+    # (katta banklarda DB-level RANDOM() saralashidan tezroq va arzonroq).
+    all_ids = list(
         Question.objects
         .filter(id__in=wrong_ids, subject__iexact=subject)
-        .order_by('?')
-        .values_list('id', flat=True)[:question_count]
+        .values_list('id', flat=True)
     )
+    available = random.sample(all_ids, min(question_count, len(all_ids))) if all_ids else []
     if not available:
         return Response(
             {'detail': "Bu fan bo'yicha noto'g'ri javob bergan savollaringiz topilmadi"},
