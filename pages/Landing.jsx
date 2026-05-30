@@ -442,6 +442,7 @@ const LandingPage = ({ onNavigate }) => {
   const [dashboardSvg, setDashboardSvg] = React.useState('');
   const [selectedCategory, setSelectedCategory] = React.useState('all');
   const [scrollProgress, setScrollProgress] = React.useState(0);
+  const tabsContainerRef = React.useRef(null);
 
   React.useEffect(() => {
     const handleScroll = () => {
@@ -516,6 +517,27 @@ const LandingPage = ({ onNavigate }) => {
     { label: 'Tashkilot', icon: 'building', isMock: true, desc: 'Tashkilot premium analitikasi, o\'quvchilar taqqoslash jadvali va tahliliy hisobotlar' },
     { label: 'Ota-ona', icon: 'users', isMock: true, desc: 'Farzandning AI muvaffaqiyat bashorati, yutuqlari va Telegram hisobot sozlamalari' },
   ];
+
+  // Auto-switch tabs every 4 seconds
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveScreen(prev => (prev + 1) % screens.length);
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [activeScreen, screens.length]);
+
+  // Scroll active tab into view on mobile
+  React.useEffect(() => {
+    if (!tabsContainerRef.current) return;
+    const activeChild = tabsContainerRef.current.children[activeScreen];
+    if (activeChild) {
+      activeChild.scrollIntoView({
+        behavior: 'smooth',
+        block: 'nearest',
+        inline: 'center',
+      });
+    }
+  }, [activeScreen]);
 
   const heroMetrics = [
     { value: 'AI', label: 'savol yaratish' },
@@ -774,8 +796,8 @@ const LandingPage = ({ onNavigate }) => {
           </div>
 
           {/* Tabs */}
-          <div className="mb-6 md:mb-8 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <div className="flex gap-2 md:gap-3 md:justify-center min-w-min">
+          <div className="mb-6 md:mb-8 overflow-x-auto -mx-4 md:mx-0 scroll-mask" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div ref={tabsContainerRef} className="flex gap-2 md:gap-3 md:justify-center min-w-min px-4 md:px-0">
               {screens.map((s, i) => {
                 const active = activeScreen === i;
                 return (

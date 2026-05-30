@@ -486,4 +486,10 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   background: rgba(255, 255, 255, 0.2);
 }
 
-
+/* Scroll mask for tabs on mobile to fade edges */
+@media (max-width: 767px) {
+  .scroll-mask {
+    mask-image: linear-gradient(to right, transparent, white 16px, white calc(100% - 16px), transparent);
+    -webkit-mask-image: linear-gradient(to right, transparent, white 16px, white calc(100% - 16px), transparent);
+  }
+}
