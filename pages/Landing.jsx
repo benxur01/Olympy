@@ -796,8 +796,8 @@ const LandingPage = ({ onNavigate }) => {
           </div>
 
           {/* Tabs */}
-          <div className="mb-6 md:mb-8 overflow-x-auto -mx-4 md:mx-0 scroll-mask" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <div ref={tabsContainerRef} className="flex gap-2 md:gap-3 md:justify-center min-w-min px-4 md:px-0">
+          <div className="mb-6 md:mb-8 overflow-x-auto -mx-4 md:-mx-6 scroll-mask" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div ref={tabsContainerRef} className="flex gap-2 md:gap-3 md:justify-center min-w-min px-4 md:px-6">
               {screens.map((s, i) => {
                 const active = activeScreen === i;
                 return (
