@@ -133,6 +133,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const emptyQbForm = { text: '', subject: '', difficulty: 'medium', options: [{ text: '', correct: true }, { text: '', correct: false }] };
   const [qbForm, setQbForm] = React.useState(emptyQbForm);
 
+  // Markaz do'koni (Mukofotlar) holatlari.
+  const [shopProducts, setShopProducts] = React.useState([]);
+  const [shopLoading, setShopLoading] = React.useState(false);
+  const [shopSaving, setShopSaving] = React.useState(false);
+  const [shopModal, setShopModal] = React.useState(null); // null | 'new' | product obyekti (tahrir)
+  const emptyShopForm = { title: '', description: '', coin_cost: 100, icon: '🎁', stock: 10, is_active: true, features: [], imageFile: null, image_url: '' };
+  const [shopForm, setShopForm] = React.useState(emptyShopForm);
+
 
   const showToast = (msg) => {
     setToast(msg);
@@ -679,6 +687,106 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi"));
   };
 
+  // Markaz do'koni: yuklash, qo'shish, tahrirlash, o'chirish.
+  const loadShopProducts = React.useCallback(() => {
+    if (!isApi || !ownerCenterId) { setShopProducts([]); return Promise.resolve(); }
+    return OlympyApi.getCenterShopProducts(OlympyApi.getToken(), ownerCenterId)
+      .then(rows => { setShopProducts(Array.isArray(rows) ? rows : []); });
+  }, [isApi, ownerCenterId]);
+
+  React.useEffect(() => {
+    if (page !== 'shop') return undefined;
+    let cancelled = false;
+    setShopLoading(true);
+    loadShopProducts()
+      .catch(() => { if (!cancelled) setShopProducts([]); })
+      .finally(() => { if (!cancelled) setShopLoading(false); });
+    return () => { cancelled = true; };
+  }, [page, loadShopProducts]);
+
+  const openShopModal = (product) => {
+    if (product) {
+      setShopForm({
+        title: product.title || '',
+        description: product.description || '',
+        coin_cost: product.coin_cost ?? 0,
+        icon: product.icon || '🎁',
+        stock: product.stock ?? 0,
+        is_active: product.is_active !== false,
+        features: Array.isArray(product.features) ? product.features.map(f => (typeof f === 'string' ? f : (f?.value || ''))).filter(Boolean) : [],
+        imageFile: null,
+        image_url: product.image_url || '',
+      });
+      setShopModal(product);
+    } else {
+      setShopForm(emptyShopForm);
+      setShopModal('new');
+    }
+  };
+  const closeShopModal = () => { setShopModal(null); setShopForm(emptyShopForm); };
+
+  const submitShopProduct = () => {
+    if (!isApi || !ownerCenterId) { showToast("Demo rejimida ishlamaydi"); return; }
+    const title = (shopForm.title || '').trim();
+    if (!title) { showToast('Mahsulot nomini kiriting'); return; }
+    const coinCost = parseInt(shopForm.coin_cost, 10);
+    if (!Number.isFinite(coinCost) || coinCost < 0) { showToast("Tanga narxini to'g'ri kiriting"); return; }
+    const stock = parseInt(shopForm.stock, 10);
+    const features = (shopForm.features || []).map(f => (typeof f === 'string' ? f.trim() : f)).filter(Boolean);
+
+    // Rasm bo'lsa multipart/form-data, aks holda JSON.
+    let body;
+    if (shopForm.imageFile) {
+      body = new FormData();
+      body.append('title', title);
+      body.append('description', (shopForm.description || '').trim());
+      body.append('coin_cost', String(coinCost));
+      body.append('icon', shopForm.icon || '🎁');
+      body.append('stock', String(Number.isFinite(stock) ? stock : 0));
+      body.append('is_active', shopForm.is_active ? 'true' : 'false');
+      body.append('features', JSON.stringify(features));
+      body.append('image', shopForm.imageFile);
+    } else {
+      body = {
+        title,
+        description: (shopForm.description || '').trim(),
+        coin_cost: coinCost,
+        icon: shopForm.icon || '🎁',
+        stock: Number.isFinite(stock) ? stock : 0,
+        is_active: !!shopForm.is_active,
+        features,
+      };
+    }
+
+    setShopSaving(true);
+    const token = OlympyApi.getToken();
+    const isEdit = shopModal && shopModal !== 'new';
+    const req = isEdit
+      ? OlympyApi.updateCenterShopProduct(shopModal.id, body, token, ownerCenterId)
+      : OlympyApi.createCenterShopProduct(body, token, ownerCenterId);
+    req
+      .then(() => { closeShopModal(); return loadShopProducts(); })
+      .then(() => showToast(isEdit ? 'Mahsulot yangilandi' : "Mahsulot qo'shildi"))
+      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "Saqlab bo'lmadi"))
+      .finally(() => setShopSaving(false));
+  };
+
+  const deleteShopProduct = (productId) => {
+    if (!isApi || !ownerCenterId) return;
+    if (!window.confirm("Mahsulotni do'kondan o'chirasizmi?")) return;
+    OlympyApi.deleteCenterShopProduct(productId, OlympyApi.getToken(), ownerCenterId)
+      .then(() => loadShopProducts())
+      .then(() => showToast("Mahsulot o'chirildi"))
+      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi"));
+  };
+
+  const toggleShopActive = (product) => {
+    if (!isApi || !ownerCenterId) return;
+    OlympyApi.updateCenterShopProduct(product.id, { is_active: !product.is_active }, OlympyApi.getToken(), ownerCenterId)
+      .then(() => loadShopProducts())
+      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'zgartirib bo'lmadi"));
+  };
+
   const openRoleModal = (row) => {
     if (!row) return;
     if (!isApi) {
@@ -963,6 +1071,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'students', icon: 'users', label: "O'quvchilar" },
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
     { key: 'questionbank', icon: 'file', label: 'Savol banki' },
+    { key: 'shop', icon: 'award', label: "Do'kon" },
     { key: 'statistics', icon: 'chart', label: 'Statistika' },
     { key: 'ranking', icon: 'star', label: 'Reyting' },
     { key: 'analytics', icon: 'chart', label: 'Analitika' },
@@ -2358,6 +2467,165 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     );
   };
 
+  const renderShop = () => {
+    const addFeature = () => setShopForm(f => ({ ...f, features: [...(f.features || []), ''] }));
+    const setFeature = (idx, val) => setShopForm(f => ({ ...f, features: (f.features || []).map((x, i) => i === idx ? val : x) }));
+    const removeFeature = (idx) => setShopForm(f => ({ ...f, features: (f.features || []).filter((_, i) => i !== idx) }));
+    const onPickImage = (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024) { showToast('Rasm 5 MB dan oshmasligi kerak'); return; }
+      setShopForm(f => ({ ...f, imageFile: file, image_url: URL.createObjectURL(file) }));
+    };
+    const isEdit = shopModal && shopModal !== 'new';
+    return (
+      <div className="space-y-5 p-4 lg:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Mukofotlar do'koni</h1>
+            <p className="mt-1 text-sm font-semibold text-white/50">{center.name} o'quvchilari tangalarini almashtiradigan sovg'alar.</p>
+          </div>
+          <button onClick={() => openShopModal(null)} className="btn-primary flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-black self-start">
+            <Icon name="plus" size={15} /> Yangi mahsulot
+          </button>
+        </div>
+
+        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+          <h2 className="mb-4 text-base font-black text-white">Mahsulotlar ({shopProducts.length})</h2>
+          {shopLoading ? (
+            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+          ) : shopProducts.length === 0 ? (
+            <EmptyState icon="award" title="Do'kon bo'sh" desc="Yuqoridagi tugma orqali birinchi mahsulotni qo'shing." />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {shopProducts.map(p => {
+                const features = Array.isArray(p.features) ? p.features : [];
+                return (
+                  <div key={p.id} className={`rounded-xl border p-3.5 flex flex-col gap-3 ${p.is_active ? 'border-white/8 bg-white/5' : 'border-white/5 bg-white/[0.02] opacity-70'}`}>
+                    <div className="flex items-start gap-3">
+                      {p.image_url ? (
+                        <img src={p.image_url} alt={p.title} className="h-14 w-14 flex-shrink-0 rounded-xl object-cover" />
+                      ) : (
+                        <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-white/5 text-2xl">{p.icon || '🎁'}</div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <div className="truncate text-sm font-black text-white">{p.title}</div>
+                          {!p.is_active && <span className="flex-shrink-0 rounded-md bg-white/5 px-1.5 py-0.5 text-[9px] font-black uppercase text-white/40">Nofaol</span>}
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] font-bold text-white/40">
+                          <span className="text-amber-300">🪙 {p.coin_cost}</span>
+                          <span>·</span>
+                          <span>Zaxira: {p.stock}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {p.description && <p className="text-xs leading-relaxed text-white/45 line-clamp-2">{p.description}</p>}
+                    {features.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {features.map((f, i) => (
+                          <span key={i} className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-white/60">
+                            {typeof f === 'string' ? f : (f?.value || '')}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-auto flex items-center gap-2 border-t border-white/5 pt-3">
+                      <button onClick={() => openShopModal(p)} className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/70 hover:bg-white/10">
+                        Tahrirlash
+                      </button>
+                      <button onClick={() => toggleShopActive(p)} className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/70 hover:bg-white/10" title={p.is_active ? 'Nofaol qilish' : 'Faollashtirish'}>
+                        {p.is_active ? 'Yashirish' : "Ko'rsatish"}
+                      </button>
+                      <button onClick={() => deleteShopProduct(p.id)} className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20">
+                        <Icon name="x" size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {shopModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={closeShopModal}>
+            <div className="modal w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="mb-5 flex items-start justify-between gap-4">
+                <h2 className="text-lg font-black text-white">{isEdit ? 'Mahsulotni tahrirlash' : 'Yangi mahsulot'}</h2>
+                <button type="button" onClick={closeShopModal} className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white">
+                  <Icon name="x" size={18} />
+                </button>
+              </div>
+              <div className="space-y-4">
+                {/* Rasm */}
+                <div className="flex items-center gap-3">
+                  {shopForm.image_url ? (
+                    <img src={shopForm.image_url} alt="" className="h-16 w-16 flex-shrink-0 rounded-xl object-cover" />
+                  ) : (
+                    <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl bg-white/5 text-2xl">{shopForm.icon || '🎁'}</div>
+                  )}
+                  <label className="btn-ghost cursor-pointer rounded-lg px-3 py-2 text-xs font-bold">
+                    Rasm yuklash
+                    <input type="file" accept="image/*" className="hidden" onChange={onPickImage} />
+                  </label>
+                  {shopForm.image_url && (
+                    <button type="button" onClick={() => setShopForm(f => ({ ...f, imageFile: null, image_url: '' }))} className="text-xs font-bold text-rose-300 hover:text-rose-200">O'chirish</button>
+                  )}
+                </div>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Nom</span>
+                  <input value={shopForm.title} onChange={e => setShopForm(f => ({ ...f, title: e.target.value }))} className="input-field" placeholder="Masalan, ProSkill futbolkasi" autoFocus />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tavsif</span>
+                  <textarea value={shopForm.description} onChange={e => setShopForm(f => ({ ...f, description: e.target.value }))} className="input-field" rows={2} placeholder="Mahsulot haqida qisqacha..." />
+                </label>
+                <div className="grid grid-cols-3 gap-3">
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tanga</span>
+                    <input type="number" min={0} value={shopForm.coin_cost} onChange={e => setShopForm(f => ({ ...f, coin_cost: e.target.value }))} className="input-field" />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Zaxira</span>
+                    <input type="number" min={0} value={shopForm.stock} onChange={e => setShopForm(f => ({ ...f, stock: e.target.value }))} className="input-field" />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Belgi</span>
+                    <input value={shopForm.icon} onChange={e => setShopForm(f => ({ ...f, icon: e.target.value }))} className="input-field text-center" maxLength={4} placeholder="🎁" />
+                  </label>
+                </div>
+                {/* Xususiyatlar */}
+                <div className="space-y-2">
+                  <span className="block text-xs font-black uppercase text-white/40">Xususiyatlar</span>
+                  {(shopForm.features || []).map((f, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input value={typeof f === 'string' ? f : (f?.value || '')} onChange={e => setFeature(i, e.target.value)} className="input-field w-full py-1.5 text-sm" placeholder="Masalan, Hajmi: L" />
+                      <button type="button" onClick={() => removeFeature(i)} className="flex-shrink-0 text-rose-300 hover:text-rose-200">
+                        <Icon name="x" size={16} />
+                      </button>
+                    </div>
+                  ))}
+                  <button type="button" onClick={addFeature} className="btn-ghost rounded-lg px-3 py-1.5 text-xs font-bold">+ Xususiyat qo'shish</button>
+                </div>
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={!!shopForm.is_active} onChange={e => setShopForm(f => ({ ...f, is_active: e.target.checked }))} className="h-4 w-4 rounded accent-indigo-500" />
+                  <span className="text-sm font-bold text-white/70">Faol (o'quvchilarga ko'rinadi)</span>
+                </label>
+              </div>
+              <div className="mt-6 flex gap-3">
+                <button onClick={submitShopProduct} disabled={shopSaving} className="btn-primary flex-1 rounded-xl py-2.5 text-sm font-black disabled:opacity-50">
+                  {shopSaving ? 'Saqlanmoqda...' : (isEdit ? 'Saqlash' : "Qo'shish")}
+                </button>
+                <button onClick={closeShopModal} className="btn-ghost rounded-xl px-5 py-2.5 text-sm font-bold">Bekor qilish</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const pagesMap = {
     home: renderHome,
     requests: renderRequests,
@@ -2370,6 +2638,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     center: renderCenter,
     settings: renderSettings,
     proctoring: renderProctoring,
+    shop: renderShop,
   };
 
   // Mobile bottom navigation uchun eng muhim 4 ta sahifa.

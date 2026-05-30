@@ -560,6 +560,15 @@ export const OlympyApi = {
   getRewards: (token) => request('/api/me/rewards/', { token }),
   redeemReward: (productId, token) => request('/api/me/rewards/redeem/', { method: 'POST', body: { product_id: productId }, token }),
   getMyRedemptions: (token) => request('/api/me/rewards/my-redemptions/', { token }).then(unwrapList),
+  // Markaz do'koni — o'quvchi (o'z markazining faol mahsulotlari)
+  getShopProducts: (token) => request('/api/shop/products/', { token }),
+  // Markaz do'koni — menejer/direktor CRUD. `body` FormData (rasm bilan) yoki
+  // oddiy JSON bo'lishi mumkin. `centerId` ixtiyoriy — bir nechta markazga
+  // ega owner/menejer aniq markazni tanlashi uchun.
+  getCenterShopProducts: (token, centerId) => request(`/api/center/shop/products/${centerId ? '?center_id=' + encodeURIComponent(centerId) : ''}`, { token }).then(unwrapList),
+  createCenterShopProduct: (body, token, centerId) => request(`/api/center/shop/products/${centerId ? '?center_id=' + encodeURIComponent(centerId) : ''}`, { method: 'POST', body, token }),
+  updateCenterShopProduct: (productId, body, token, centerId) => request(`/api/center/shop/products/${productId}/${centerId ? '?center_id=' + encodeURIComponent(centerId) : ''}`, { method: 'PATCH', body, token }),
+  deleteCenterShopProduct: (productId, token, centerId) => request(`/api/center/shop/products/${productId}/${centerId ? '?center_id=' + encodeURIComponent(centerId) : ''}`, { method: 'DELETE', token }),
   // Premium o'quvchi analitikasi
   getHistoryChart: (token) => request('/api/me/history-chart/', { token }),
   getCompetitorAnalysis: (olympiadId, token) => request(`/api/me/competitor-analysis/${olympiadId ? '?olympiad_id=' + encodeURIComponent(olympiadId) : ''}`, { token }),

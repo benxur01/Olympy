@@ -1198,12 +1198,28 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {products.map(p => {
                   const cantAfford = coins < p.coin_cost;
+                  const features = Array.isArray(p.features) ? p.features : [];
                   return (
                     <div key={p.id} className="glass rounded-2xl p-4 md:p-5 flex flex-col justify-between gap-4 card-hover">
                       <div className="space-y-2">
-                        <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-2xl shadow-inner">{p.icon || '🎁'}</div>
+                        {p.image_url ? (
+                          <div className="w-full h-32 rounded-2xl overflow-hidden bg-white/5">
+                            <img src={p.image_url} alt={p.title} className="w-full h-full object-cover" loading="lazy" />
+                          </div>
+                        ) : (
+                          <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-2xl shadow-inner">{p.icon || '🎁'}</div>
+                        )}
                         <div className="font-bold text-white text-base leading-snug">{p.title}</div>
                         <p className="text-white/40 text-xs leading-relaxed">{p.description || "O'quv markazi tomonidan premium sovg'a."}</p>
+                        {features.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {features.map((f, i) => (
+                              <span key={i} className="text-[10px] font-semibold text-white/60 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">
+                                {typeof f === 'string' ? f : (f?.value ? `${f.key ? f.key + ': ' : ''}${f.value}` : '')}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center justify-between border-t border-white/5 pt-3 mt-1">
                         <div className="flex items-center gap-1">
@@ -1214,7 +1230,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                           onClick={() => handleBuy(p)}
                           disabled={buyingId === p.id}
                           className={`text-xs font-bold px-4 py-2 rounded-xl transition-all ${
-                            cantAfford 
+                            cantAfford
                               ? 'bg-white/5 text-white/30 cursor-not-allowed'
                               : 'bg-amber-500 hover:bg-amber-600 text-slate-900 shadow-[0_4px_12px_rgba(245,158,11,0.2)]'
                           }`}
