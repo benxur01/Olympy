@@ -59,19 +59,14 @@ def is_supported(language: str) -> bool:
     return str(language or '').lower() in LANGUAGE_IDS
 
 
-def run_code(source_code: str, language: str, stdin: str = '', timeout: int = 10) -> dict:
+def run_code_batch(submissions: list, timeout: int = 10) -> list:
     """
-    Kodni ishga tushiradi.
-
-    Returns: {ok, stdout, stderr, compile_output, status, time, memory, error}
+    Submits a batch of code runs to Judge0 and polls them in parallel.
+    submissions list of dict: [{'source_code': str, 'language': str, 'stdin': str}]
+    Returns: list of dicts: [{'ok', 'stdout', 'stderr', 'compile_output', 'status', 'time', 'memory', 'error'}]
     """
     from django.conf import settings
     api_key = getattr(settings, 'JUDGE0_API_KEY', '')
-
-    lang = str(language or '').lower()
-    lang_id = LANGUAGE_IDS.get(lang)
-    if not lang_id:
-        return {'ok': False, 'error': f"'{language}' tili qo'llab-quvvatlanmaydi"}
 
     if api_key:
         base_url = JUDGE0_RAPIDAPI_URL
@@ -84,40 +79,70 @@ def run_code(source_code: str, language: str, stdin: str = '', timeout: int = 10
         base_url = getattr(settings, 'JUDGE0_URL', JUDGE0_PUBLIC_URL)
         headers = {'Content-Type': 'application/json'}
 
+    # Prepare submissions payload
+    batch_submissions = []
+    for sub in submissions:
+        lang = str(sub.get('language') or '').lower()
+        lang_id = LANGUAGE_IDS.get(lang)
+        if not lang_id:
+            batch_submissions.append(None)
+            continue
+        
+        batch_submissions.append({
+            'source_code': base64.b64encode((sub.get('source_code') or '').encode()).decode(),
+            'language_id': lang_id,
+            'stdin': base64.b64encode((sub.get('stdin') or '').encode()).decode(),
+            'cpu_time_limit': min(timeout, 15),
+            'memory_limit': 128000,
+        })
+
+    # Find valid ones to submit
+    valid_indices = [i for i, x in enumerate(batch_submissions) if x is not None]
+    if not valid_indices:
+        return [{'ok': False, 'error': "Qo'llab-quvvatlanmaydigan dasturlash tili yoki bo'sh so'rov"} for _ in submissions]
+
     payload = {
-        'source_code': base64.b64encode((source_code or '').encode()).decode(),
-        'language_id': lang_id,
-        'stdin': base64.b64encode((stdin or '').encode()).decode(),
-        'cpu_time_limit': min(timeout, 15),
-        'memory_limit': 128000,
+        'submissions': [batch_submissions[i] for i in valid_indices]
     }
+
+    results = [{'ok': False, 'error': "Dasturlash tili qo'llab-quvvatlanmaydi"} for _ in submissions]
 
     try:
         resp = requests.post(
-            f"{base_url}/submissions?base64_encoded=true&wait=false",
+            f"{base_url}/submissions/batch?base64_encoded=true&wait=false",
             json=payload, headers=headers, timeout=20,
         )
         if resp.status_code == 429:
-            return {'ok': False, 'error': 'Kod runner limiti tugadi. Biroz kuting va qayta urining.'}
+            return [{'ok': False, 'error': 'Kod runner limiti tugadi. Biroz kuting va qayta urining.'} for _ in submissions]
         if resp.status_code in (401, 403):
-            return {'ok': False, 'error': 'Kod runner xizmatiga kirish rad etildi.'}
+            return [{'ok': False, 'error': 'Kod runner xizmatiga kirish rad etildi.'} for _ in submissions]
         resp.raise_for_status()
 
-        token = resp.json().get('token')
-        if not token:
-            return {'ok': False, 'error': 'Kod runner tokenini olishda xato'}
+        tokens_data = resp.json()
+        if not isinstance(tokens_data, list) or len(tokens_data) != len(valid_indices):
+            return [{'ok': False, 'error': 'Kod runner tokenlarini olishda xato'} for _ in submissions]
 
-        # Natijani polling (max 15 sekund)
-        result = {}
+        tokens = [item.get('token') for item in tokens_data]
+        if any(not t for t in tokens):
+            return [{'ok': False, 'error': "Ayrim kod runner tokenlarini yuklab bo'lmadi"} for _ in submissions]
+
+        # Polling
+        tokens_str = ",".join(tokens)
+        batch_result = {}
         for _ in range(15):
             time.sleep(1)
             r = requests.get(
-                f"{base_url}/submissions/{token}?base64_encoded=true",
+                f"{base_url}/submissions/batch?tokens={tokens_str}&base64_encoded=true",
                 headers=headers, timeout=10,
             )
-            result = r.json()
-            if result.get('status', {}).get('id', 0) not in (1, 2):
+            batch_result = r.json()
+            subs = batch_result.get('submissions') or []
+            if subs and all(item.get('status', {}).get('id', 0) not in (1, 2) for item in subs):
                 break
+
+        subs = batch_result.get('submissions') or []
+        if not subs or len(subs) != len(valid_indices):
+            return [{'ok': False, 'error': 'Natijalarni olishda xato yuz berdi'} for _ in submissions]
 
         def decode(val):
             if not val:
@@ -127,21 +152,37 @@ def run_code(source_code: str, language: str, stdin: str = '', timeout: int = 10
             except Exception:
                 return str(val)
 
-        status_id = result.get('status', {}).get('id', 0)
-        status_desc = STATUS_MAP.get(status_id) or result.get('status', {}).get('description', 'Unknown')
+        for idx, item in enumerate(subs):
+            orig_idx = valid_indices[idx]
+            status_id = item.get('status', {}).get('id', 0)
+            status_desc = STATUS_MAP.get(status_id) or item.get('status', {}).get('description', 'Unknown')
+            results[orig_idx] = {
+                'ok': True,
+                'stdout': decode(item.get('stdout', '')),
+                'stderr': decode(item.get('stderr', '')),
+                'compile_output': decode(item.get('compile_output', '')),
+                'status': status_desc,
+                'time': float(item.get('time') or 0),
+                'memory': int(item.get('memory') or 0),
+            }
+        return results
 
-        return {
-            'ok': True,
-            'stdout': decode(result.get('stdout', '')),
-            'stderr': decode(result.get('stderr', '')),
-            'compile_output': decode(result.get('compile_output', '')),
-            'status': status_desc,
-            'time': float(result.get('time') or 0),
-            'memory': int(result.get('memory') or 0),
-        }
     except requests.exceptions.Timeout:
-        return {'ok': False, 'error': 'Kod bajarilishi vaqt limitini oshdi'}
+        return [{'ok': False, 'error': 'Kod bajarilishi vaqt limitini oshdi'} for _ in submissions]
     except requests.exceptions.ConnectionError:
-        return {'ok': False, 'error': 'Kod runner serveriga ulanib bo\'lmadi'}
+        return [{'ok': False, 'error': "Kod runner serveriga ulanib bo'lmadi"} for _ in submissions]
     except Exception as e:
-        return {'ok': False, 'error': f'Kod ishga tushirishda xato: {str(e)[:100]}'}
+        return [{'ok': False, 'error': f'Kod ishga tushirishda xato: {str(e)[:100]}'} for _ in submissions]
+
+
+def run_code(source_code: str, language: str, stdin: str = '', timeout: int = 10) -> dict:
+    """
+    Kodni ishga tushiradi (yagona kodni ishga tushirish uchun qulaylik).
+    """
+    submissions = [{
+        'source_code': source_code,
+        'language': language,
+        'stdin': stdin
+    }]
+    results = run_code_batch(submissions, timeout=timeout)
+    return results[0]

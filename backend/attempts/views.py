@@ -58,14 +58,13 @@ def _build_attempt_mistakes(attempt, olympiad, answers):
 
 
 def _trigger_attempt_ai_analysis(attempt, olympiad, answers):
-    """O4: AttemptAIAnalysis pending yozuv yaratib, AI call'ni thread'da bajaradi.
+    """O4: AttemptAIAnalysis pending yozuv yaratib, AI call'ni Celery'da bajaradi.
 
-    Submit latency'ni bloklamaslik uchun butun AI generatsiya alohida daemon
-    thread'da ishlaydi (parent notification pattern bilan bir xil).
+    Submit latency'ni bloklamaslik uchun butun AI generatsiya asinxron
+    vazifada (Celery) ishlaydi.
     """
-    import threading
-
     from .models import AttemptAIAnalysis
+    from .tasks import generate_attempt_ai_analysis_task
 
     # Allaqachon mavjud bo'lsa qayta yaratmaymiz (idempotent).
     obj, created = AttemptAIAnalysis.objects.get_or_create(
@@ -75,57 +74,22 @@ def _trigger_attempt_ai_analysis(attempt, olympiad, answers):
     if not created and obj.status == AttemptAIAnalysis.STATUS_READY:
         return
 
-    summary = {
-        'olympiad_title': olympiad.title,
-        'subject': olympiad.subject,
-        'score': attempt.score,
-        'correct': attempt.correct_count,
-        'wrong': attempt.wrong_count,
-        'total': attempt.total_questions,
-    }
-    mistakes = _build_attempt_mistakes(attempt, olympiad, answers)
-    attempt_id = attempt.id
-
-    def _run():
-        from django.db import close_old_connections
-        close_old_connections()
-        try:
-            from questions.ai_generation import analyze_attempt_ai
-            text = analyze_attempt_ai(summary, mistakes)
-            AttemptAIAnalysis.objects.filter(attempt_id=attempt_id).update(
-                analysis_text=text or '',
-                status=AttemptAIAnalysis.STATUS_READY,
-            )
-        except Exception:
-            import logging
-            logging.getLogger(__name__).exception(
-                'AI analysis generation failed for attempt=%s', attempt_id,
-            )
-            try:
-                AttemptAIAnalysis.objects.filter(attempt_id=attempt_id).update(
-                    status=AttemptAIAnalysis.STATUS_FAILED,
-                )
-            except Exception:
-                pass
-
-    threading.Thread(target=_run, daemon=True).start()
+    generate_attempt_ai_analysis_task.delay(attempt.id)
 
 
 def _save_code_submissions(attempt, olympiad, code_answers):
     """IT (kod) savollariga yuborilgan javoblarni CodeSubmission'ga saqlaydi
-    va AI baholashni alohida daemon thread'da ishga tushiradi.
+    va AI baholashni Celery asinxron vazifasida ishga tushiradi.
 
     `code_answers` — { "<question_id>": {"code": "...", "language": "..."} }.
     Faqat olimpiadaga biriktirilgan, question_type='code' savollar saqlanadi.
-    Submit latency'ni bloklamaslik uchun butun AI call thread'da ishlaydi
-    (mavjud AI analysis pattern bilan bir xil). Hech qachon exception otmaydi.
     """
     if not code_answers:
         return
 
     from questions.models import Question
-
     from .models import CodeSubmission
+    from .tasks import review_code_submissions_task
 
     # Olimpiadaning kod savollarini bir so'rovda olamiz.
     code_questions = {
@@ -159,35 +123,10 @@ def _save_code_submissions(attempt, olympiad, code_answers):
             },
         )
         if code.strip():
-            to_review.append((submission.id, question, code, language))
+            to_review.append(submission.id)
 
-    if not to_review:
-        return
-
-    def _run():
-        from django.db import close_old_connections
-        close_old_connections()
-        from questions.ai_generation import review_code_submission
-        for submission_id, question, code, language in to_review:
-            try:
-                result = review_code_submission(
-                    question_text=question.text,
-                    submitted_code=code,
-                    language=language,
-                    expected_output=question.expected_output or '',
-                )
-                CodeSubmission.objects.filter(pk=submission_id).update(
-                    ai_code_review=result.get('review') or '',
-                    ai_code_score=result.get('score'),
-                )
-            except Exception:
-                import logging
-                logging.getLogger(__name__).exception(
-                    'code review failed for submission=%s', submission_id,
-                )
-
-    import threading
-    threading.Thread(target=_run, daemon=True).start()
+    if to_review:
+        review_code_submissions_task.delay(to_review)
 
 
 def _user_can_manage_olympiad(user, olympiad):
@@ -597,30 +536,14 @@ def submit_attempt(request):
         # cron yoki manager dashboard'ida chaqiriladi.
 
         # Ota-onalarga Telegram xabari. Sinxron API call'ni request thread'ini
-        # bloklamasligi uchun alohida daemon thread'da yuboramiz. Xato bo'lsa
-        # asosiy submit jarayoniga ta'sir qilmaydi (try/except ichida).
+        # bloklamasligi uchun Celery orqali asinxron yuboramiz.
         try:
-            from notifications.services import send_attempt_result_to_parents
-            import threading
-            attempt_for_parents = attempt
-
-            def _notify_parents():
-                from django.db import close_old_connections
-                close_old_connections()
-                try:
-                    send_attempt_result_to_parents(attempt_for_parents)
-                except Exception:
-                    import logging
-                    logging.getLogger(__name__).exception(
-                        'parent notification failed for attempt=%s',
-                        attempt_for_parents.id,
-                    )
-
-            threading.Thread(target=_notify_parents, daemon=True).start()
+            from .tasks import send_attempt_result_to_parents_task
+            send_attempt_result_to_parents_task.delay(attempt.id)
         except Exception:
             import logging
             logging.getLogger(__name__).exception(
-                'failed to start parent notification thread'
+                'failed to queue parent notification task'
             )
 
         data = TestAttemptSerializer(attempt).data
@@ -1043,15 +966,20 @@ def download_certificate(request, attempt_id):
             {'detail': "Sertifikat faqat 1-o'rin egasiga beriladi"},
             status=http_status.HTTP_403_FORBIDDEN,
         )
-    try:
-        png_bytes = render_certificate_png(attempt)
-    except Exception as exc:
-        import logging
-        logging.getLogger(__name__).exception('certificate render failed: %s', exc)
-        return Response(
-            {'detail': "Sertifikatni yaratib bo'lmadi"},
-            status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
+    from django.core.cache import cache
+    cache_key = f"certificate:attempt:{attempt.id}"
+    png_bytes = cache.get(cache_key)
+    if not png_bytes:
+        try:
+            png_bytes = render_certificate_png(attempt)
+            cache.set(cache_key, png_bytes, timeout=604800)  # 7 days
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception('certificate render failed: %s', exc)
+            return Response(
+                {'detail': "Sertifikatni yaratib bo'lmadi"},
+                status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
     response = HttpResponse(png_bytes, content_type='image/png')
     safe_title = ''.join(ch for ch in attempt.olympiad.title if ch.isalnum() or ch in (' ', '_', '-'))[:60].strip() or 'certificate'
     response['Content-Disposition'] = f'attachment; filename="olympy-{safe_title}-{attempt.id}.png"'

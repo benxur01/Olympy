@@ -747,25 +747,25 @@ def _openai_from_text(pdf_text, subject, difficulty, question_type):
     prompt = f"{_prompt(subject, difficulty, question_type, True, pdf_text)}\n\nPDF matni:\n{pdf_text}"
     payload = {
         'model': getattr(settings, 'AI_QUESTION_MODEL', 'gpt-4o-mini'),
-        'input': [{
+        'messages': [{
             'role': 'user',
-            'content': [{'type': 'input_text', 'text': prompt}],
+            'content': prompt,
         }],
-        'text': {
-            'format': {
-                'type': 'json_schema',
+        'response_format': {
+            'type': 'json_schema',
+            'json_schema': {
                 'name': 'olympy_pdf_questions',
                 'schema': _schema_openai(),
                 'strict': True,
             },
         },
-        'max_output_tokens': getattr(settings, 'AI_QUESTION_MAX_OUTPUT_TOKENS', 6000),
+        'max_tokens': getattr(settings, 'AI_QUESTION_MAX_OUTPUT_TOKENS', 6000),
     }
     body = json.dumps(payload).encode('utf-8')
     last_error = ''
     for index, api_key in enumerate(keys, start=1):
         req = urllib.request.Request(
-            'https://api.openai.com/v1/responses',
+            'https://api.openai.com/v1/chat/completions',
             data=body,
             method='POST',
             headers={

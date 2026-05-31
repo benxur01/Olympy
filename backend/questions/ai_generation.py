@@ -36,6 +36,12 @@ def _json_from_ai_text(text):
 
 
 def _extract_output_text(raw):
+    try:
+        content = raw['choices'][0]['message']['content']
+        if content:
+            return content
+    except (KeyError, IndexError, TypeError):
+        pass
     text = raw.get('output_text') or ''
     if text:
         return text
@@ -243,26 +249,26 @@ def _generate_via_openai(subject, topic, count, difficulty, question_type):
 
     payload = {
         'model': getattr(settings, 'AI_QUESTION_MODEL', 'gpt-4o-mini'),
-        'input': [{
+        'messages': [{
             'role': 'user',
-            'content': [{'type': 'input_text', 'text': _prompt(subject, topic, count, difficulty, question_type)}],
+            'content': _prompt(subject, topic, count, difficulty, question_type),
         }],
-        'text': {
-            'format': {
-                'type': 'json_schema',
+        'response_format': {
+            'type': 'json_schema',
+            'json_schema': {
                 'name': 'olympy_generated_questions',
                 'schema': _schema(),
                 'strict': True,
             },
         },
-        'max_output_tokens': getattr(settings, 'AI_QUESTION_MAX_OUTPUT_TOKENS', 6000),
+        'max_tokens': getattr(settings, 'AI_QUESTION_MAX_OUTPUT_TOKENS', 6000),
     }
     body = json.dumps(payload).encode('utf-8')
     raw = None
     last_error = ''
     for index, api_key in enumerate(api_keys, start=1):
         req = urllib.request.Request(
-            'https://api.openai.com/v1/responses',
+            'https://api.openai.com/v1/chat/completions',
             data=body,
             method='POST',
             headers={
