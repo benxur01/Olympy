@@ -450,6 +450,8 @@ const LandingPage = ({ onNavigate, user }) => {
   // FALLBACK_PRICING ko'rsatiladi (pastdagi `pricing` ga qarang).
   const [plans, setPlans] = React.useState(null);
   const [plansLoading, setPlansLoading] = React.useState(true);
+  const [planTypeFilter, setPlanTypeFilter] = React.useState('student');
+  const [durationFilter, setDurationFilter] = React.useState(30);
 
   const handleCreatePayment = async (provider) => {
     if (!paymentPlan) return;
@@ -492,8 +494,10 @@ const LandingPage = ({ onNavigate, user }) => {
           return {
             id: p.id,
             name: p.name,
+            plan_type: p.plan_type,
             price: `${priceNum.toLocaleString('ru-RU').replace(/ /g, ' ')} UZS`,
-            period: priceNum > 0 ? 'oyiga' : undefined,
+            period: priceNum > 0 ? (p.duration_days === 365 ? 'yiliga' : p.duration_days === 180 ? '6 oyga' : p.duration_days === 90 ? '3 oyga' : 'oyiga') : undefined,
+            duration_days: p.duration_days,
             desc: p.description || '',
             features: Array.isArray(p.features) ? p.features : [],
             popular: !!p.is_popular,
@@ -669,12 +673,45 @@ const LandingPage = ({ onNavigate, user }) => {
   // `plans` state'iga qarang. Backend javob bermasa yoki bo'sh bo'lsa quyidagi
   // static fallback ishlatiladi (offline / API ishlamay qolgan holatlar uchun).
   const FALLBACK_PRICING = [
-    { id: 1, name: 'Boshlang\'ich', price: '0 UZS', desc: 'Barcha imkoniyatlar ochiq, bepul sinov', features: ['Asosiy hisobotlar', 'Email qo\'llab-quvvatlash'], popular: false },
-    { id: 2, name: 'Professional', price: '99 000 UZS', period: 'oyiga', desc: 'O\'sib borayotgan tashkilotlar uchun', features: ['Cheksiz olimpiada', '500 ta o\'quvchi', 'AI savol yaratish', 'PDF import', 'Telegram bot', 'Batafsil tahlil'], popular: true },
-    { id: 3, name: 'Enterprise', price: '299 000 UZS', period: 'oyiga', desc: 'Yirik ta\'lim tarmoqlari uchun', features: ['Cheksiz hamma narsa', 'Maxsus integratsiya', 'Shaxsiy menejer', 'API kirish', 'SLA kafolati'], popular: false },
+    // --- Students (O'quvchilar) ---
+    // Standart
+    { id: 1, name: 'Standart', plan_type: 'student', price: '9 999 UZS', duration_days: 30, desc: 'O\'quvchilar uchun asosiy reja (1 oy)', features: ["Barcha olimpiadalarda qatnashish", "Haftalik natijalar tahlili", "Telegram xabarnomalar"], popular: false },
+    { id: 2, name: 'Standart', plan_type: 'student', price: '26 999 UZS', duration_days: 90, desc: 'O\'quvchilar uchun asosiy reja (3 oy)', features: ["Barcha olimpiadalarda qatnashish", "Haftalik natijalar tahlili", "Telegram xabarnomalar"], popular: false },
+    { id: 3, name: 'Standart', plan_type: 'student', price: '47 999 UZS', duration_days: 180, desc: 'O\'quvchilar uchun asosiy reja (6 oy)', features: ["Barcha olimpiadalarda qatnashish", "Haftalik natijalar tahlili", "Telegram xabarnomalar"], popular: false },
+    { id: 4, name: 'Standart', plan_type: 'student', price: '83 999 UZS', duration_days: 365, desc: 'O\'quvchilar uchun asosiy reja (1 yil)', features: ["Barcha olimpiadalarda qatnashish", "Haftalik natijalar tahlili", "Telegram xabarnomalar"], popular: false },
+    // Plus
+    { id: 5, name: 'Plus', plan_type: 'student', price: '19 999 UZS', duration_days: 30, desc: 'O\'quvchilar uchun kengaytirilgan reja (1 oy)', features: ["Standart reja imkoniyatlari", "AI tavsiyalar va yechimlar", "Haftalik PDF hisobotlar", "Reyting tahlili"], popular: true },
+    { id: 6, name: 'Plus', plan_type: 'student', price: '53 999 UZS', duration_days: 90, desc: 'O\'quvchilar uchun kengaytirilgan reja (3 oy)', features: ["Standart reja imkoniyatlari", "AI tavsiyalar va yechimlar", "Haftalik PDF hisobotlar", "Reyting tahlili"], popular: true },
+    { id: 7, name: 'Plus', plan_type: 'student', price: '95 999 UZS', duration_days: 180, desc: 'O\'quvchilar uchun kengaytirilgan reja (6 oy)', features: ["Standart reja imkoniyatlari", "AI tavsiyalar va yechimlar", "Haftalik PDF hisobotlar", "Reyting tahlili"], popular: true },
+    { id: 8, name: 'Plus', plan_type: 'student', price: '167 999 UZS', duration_days: 365, desc: 'O\'quvchilar uchun kengaytirilgan reja (1 yil)', features: ["Standart reja imkoniyatlari", "AI tavsiyalar va yechimlar", "Haftalik PDF hisobotlar", "Reyting tahlili"], popular: true },
+    // Pro
+    { id: 9, name: 'Pro', plan_type: 'student', price: '29 999 UZS', duration_days: 30, desc: 'O\'quvchilar uchun to\'liq imkoniyatlar (1 oy)', features: ["Plus reja imkoniyatlari", "AI shaxsiy o'qituvchi", "Barcha olimpiadalar tarixi", "Cheksiz mashq qilish"], popular: false },
+    { id: 10, name: 'Pro', plan_type: 'student', price: '80 999 UZS', duration_days: 90, desc: 'O\'quvchilar uchun to\'liq imkoniyatlar (3 oy)', features: ["Plus reja imkoniyatlari", "AI shaxsiy o'qituvchi", "Barcha olimpiadalar tarixi", "Cheksiz mashq qilish"], popular: false },
+    { id: 11, name: 'Pro', plan_type: 'student', price: '143 999 UZS', duration_days: 180, desc: 'O\'quvchilar uchun to\'liq imkoniyatlar (6 oy)', features: ["Plus reja imkoniyatlari", "AI shaxsiy o'qituvchi", "Barcha olimpiadalar tarixi", "Cheksiz mashq qilish"], popular: false },
+    { id: 12, name: 'Pro', plan_type: 'student', price: '251 999 UZS', duration_days: 365, desc: 'O\'quvchilar uchun to\'liq imkoniyatlar (1 yil)', features: ["Plus reja imkoniyatlari", "AI shaxsiy o'qituvchi", "Barcha olimpiadalar tarixi", "Cheksiz mashq qilish"], popular: false },
+
+    // --- Organizations (Tashkilotlar) ---
+    // Standart
+    { id: 13, name: 'Standart', plan_type: 'organization', price: '199 999 UZS', duration_days: 30, desc: 'Kichik tashkilotlar uchun mos reja (1 oy)', features: ["1 ta tashkilot qo'shish", "Menejer boshqaruv paneli", "Olimpiadalar o'tkazish", "Asosiy tahlillar"], popular: false },
+    { id: 14, name: 'Standart', plan_type: 'organization', price: '539 999 UZS', duration_days: 90, desc: 'Kichik tashkilotlar uchun mos reja (3 oy)', features: ["1 ta tashkilot qo'shish", "Menejer boshqaruv paneli", "Olimpiadalar o'tkazish", "Asosiy tahlillar"], popular: false },
+    { id: 15, name: 'Standart', plan_type: 'organization', price: '959 999 UZS', duration_days: 180, desc: 'Kichik tashkilotlar uchun mos reja (6 oy)', features: ["1 ta tashkilot qo'shish", "Menejer boshqaruv paneli", "Olimpiadalar o'tkazish", "Asosiy tahlillar"], popular: false },
+    { id: 16, name: 'Standart', plan_type: 'organization', price: '1 679 999 UZS', duration_days: 365, desc: 'Kichik tashkilotlar uchun mos reja (1 yil)', features: ["1 ta tashkilot qo'shish", "Menejer boshqaruv paneli", "Olimpiadalar o'tkazish", "Asosiy tahlillar"], popular: false },
+    // Plus
+    { id: 17, name: 'Plus', plan_type: 'organization', price: '399 999 UZS', duration_days: 30, desc: 'O\'sib borayotgan tashkilotlar uchun (1 oy)', features: ["Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], popular: true },
+    { id: 18, name: 'Plus', plan_type: 'organization', price: '1 079 999 UZS', duration_days: 90, desc: 'O\'sib borayotgan tashkilotlar uchun (3 oy)', features: ["Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], popular: true },
+    { id: 19, name: 'Plus', plan_type: 'organization', price: '1 919 999 UZS', duration_days: 180, desc: 'O\'sib borayotgan tashkilotlar uchun (6 oy)', features: ["Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], popular: true },
+    { id: 20, name: 'Plus', plan_type: 'organization', price: '3 359 999 UZS', duration_days: 365, desc: 'O\'sib borayotgan tashkilotlar uchun (1 yil)', features: ["Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], popular: true },
+    // Pro
+    { id: 21, name: 'Pro', plan_type: 'organization', price: '799 999 UZS', duration_days: 30, desc: 'Yirik ta\'lim tashkilotlari uchun (1 oy)', features: ["Plus reja imkoniyatlari", "Cheksiz olimpiada va o'quvchilar", "API kirish", "Maxsus qo'llab-quvvatlash", "Ota-onalar paneli"], popular: false },
+    { id: 22, name: 'Pro', plan_type: 'organization', price: '2 159 999 UZS', duration_days: 90, desc: 'Yirik ta\'lim tashkilotlari uchun (3 oy)', features: ["Plus reja imkoniyatlari", "Cheksiz olimpiada va o'quvchilar", "API kirish", "Maxsus qo'llab-quvvatlash", "Ota-onalar paneli"], popular: false },
+    { id: 23, name: 'Pro', plan_type: 'organization', price: '3 839 999 UZS', duration_days: 180, desc: 'Yirik ta\'lim tashkilotlari uchun (6 oy)', features: ["Plus reja imkoniyatlari", "Cheksiz olimpiada va o'quvchilar", "API kirish", "Maxsus qo'llab-quvvatlash", "Ota-onalar paneli"], popular: false },
+    { id: 24, name: 'Pro', plan_type: 'organization', price: '6 719 999 UZS', duration_days: 365, desc: 'Yirik ta\'lim tashkilotlari uchun (1 yil)', features: ["Plus reja imkoniyatlari", "Cheksiz olimpiada va o'quvchilar", "API kirish", "Maxsus qo'llab-quvvatlash", "Ota-onalar paneli"], popular: false },
   ];
   // API'dan kelgan plan'lar bo'lsa shularni, aks holda fallback'ni ko'rsatamiz.
   const pricing = (plans && plans.length) ? plans : FALLBACK_PRICING;
+  const filteredPricing = pricing.filter(
+    (p) => (p.plan_type === planTypeFilter) && (p.duration_days === durationFilter)
+  );
 
   return (
     <div className="min-h-screen" style={{ background: '#050508' }}>
@@ -1110,12 +1147,60 @@ const LandingPage = ({ onNavigate, user }) => {
       {/* Pricing — rejalar backenddan (GET /api/billing/plans/) yuklanadi. */}
       <section id="pricing" className="py-12 md:py-24" style={{ background: 'rgba(99,102,241,0.03)' }}>
         <div className="max-w-5xl mx-auto px-4 md:px-6">
-          <div className="text-center mb-8 md:mb-16 scroll-reveal">
+          <div className="text-center mb-8 md:mb-12 scroll-reveal">
             <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-indigo-300 border border-indigo-500/20">💎 Narxlar</div>
             <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Qulay narxlar</h2>
             <p className="text-sm text-white/50 max-w-xl mx-auto">
-              Hozircha platforma erkin foydalanish bosqichida. Yakuniy rejalar va to'lov modullari tez orada e'lon qilinadi — batafsil ma'lumot uchun bog'laning.
+              Platformamiz premium imkoniyatlaridan foydalanish uchun o'zingizga qulay rejani tanlang. Muddat qanchalik uzun bo'lsa, chegirma shunchalik yuqori bo'ladi!
             </p>
+          </div>
+
+          {/* Plan Type Switcher & Duration Selector */}
+          <div className="flex flex-col items-center gap-6 mb-12 scroll-reveal scroll-reveal-delay-1">
+            {/* O'quvchi vs Tashkilot */}
+            <div className="inline-flex p-1 bg-white/5 rounded-2xl border border-white/10 shadow-inner">
+              <button
+                onClick={() => setPlanTypeFilter('student')}
+                className={`flex items-center gap-2 px-5 md:px-6 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all duration-300 ${planTypeFilter === 'student' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/20' : 'text-white/60 hover:text-white'}`}
+              >
+                <span>👨‍🎓</span>
+                <span>O'quvchilar</span>
+              </button>
+              <button
+                onClick={() => setPlanTypeFilter('organization')}
+                className={`flex items-center gap-2 px-5 md:px-6 py-2.5 rounded-xl font-bold text-xs md:text-sm transition-all duration-300 ${planTypeFilter === 'organization' ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/25 border border-indigo-400/20' : 'text-white/60 hover:text-white'}`}
+              >
+                <span>🏢</span>
+                <span>Tashkilotlar</span>
+              </button>
+            </div>
+
+            {/* Muddat selectorlari (1, 3, 6, 12 oy) */}
+            <div className="flex gap-2.5 flex-wrap justify-center">
+              {[
+                { label: '1 oy', days: 30 },
+                { label: '3 oy', days: 90, discount: '10%' },
+                { label: '6 oy', days: 180, discount: '20%' },
+                { label: '1 yil', days: 365, discount: '30%' },
+              ].map((dur) => (
+                <button
+                  key={dur.days}
+                  onClick={() => setDurationFilter(dur.days)}
+                  className={`relative px-4 md:px-5 py-2 rounded-xl text-xs font-bold transition-all duration-200 border ${
+                    durationFilter === dur.days
+                      ? 'bg-white text-indigo-950 border-white shadow-lg font-black'
+                      : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  {dur.label}
+                  {dur.discount && (
+                    <span className="absolute -top-2.5 -right-2 bg-gradient-to-r from-pink-500 to-rose-500 text-[8px] text-white px-1.5 py-0.5 rounded-md font-extrabold shadow-md animate-bounce">
+                      -{dur.discount}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
           {plansLoading && !plans ? (
             // Skeleton — rejalar yuklanguncha 3 ta placeholder karta.
@@ -1136,7 +1221,7 @@ const LandingPage = ({ onNavigate, user }) => {
             </div>
           ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-            {pricing.map((p, i) => {
+            {filteredPricing.map((p, i) => {
               const delayClass = `scroll-reveal scroll-reveal-delay-${(i % 3) + 1}`;
               // Narxi 0 bo'lgan reja bepul (API'da id farq qilishi mumkin,
               // shuning uchun narxga qarab aniqlaymiz).

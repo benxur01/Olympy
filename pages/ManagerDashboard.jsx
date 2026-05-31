@@ -788,6 +788,22 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         </button>
       </div>
 
+      {!center?.isPremium && (
+        <section className="relative overflow-hidden rounded-2xl border border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-purple-500/5 to-indigo-500/10 p-5 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-400 to-amber-600 text-white shadow-lg shadow-amber-500/25 animate-pulse">
+              <Icon name="star" size={24} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-white">Platformamizda 500+ ta'lim markazlari!</h3>
+              <p className="text-xs font-semibold text-white/60 mt-1">
+                Tashkilotingiz Premium imkoniyatlaridan (AI savollar, PDF tahlil, cheksiz olimpiadalar) foydalanishi uchun direktorga obunani faollashtirishni tavsiya qiling.
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard label="Kutilayotgan arizalar" value={pendingCount} sub={pendingCount > 0 ? 'Yangi' : ''} icon={<Icon name="bell" size={20} />} color="from-rose-500 to-pink-600" glow="glow-blue" />
         <StatCard label="Faol tadbirlar" value={olympiads.filter(o => o.status === 'active').length} icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />
@@ -1687,7 +1703,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     home: renderHome,
     requests: renderRequests,
     olympiads: renderOlympiads,
-    questions: () => <QuestionCreatorPage embedded user={user} onOpenSwitcher={onOpenSwitcher} />,
+    questions: () => <QuestionCreatorPage embedded user={user} onOpenSwitcher={onOpenSwitcher} onNavigate={onNavigate} />,
     students: renderStudents,
     results: renderResults,
     qanalytics: renderQAnalytics,
@@ -1989,7 +2005,27 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           <p className="text-sm text-white/75 leading-relaxed">{premiumModal}</p>
           <div className="flex gap-3">
             <button onClick={() => setPremiumModal('')} className="btn-ghost flex-1 py-3 rounded-xl">Yopish</button>
-            <button className="btn-primary flex-1 py-3 rounded-xl font-semibold" title="Tez orada">Premium oling</button>
+            {user?.roles?.owner ? (
+              <button
+                onClick={() => {
+                  setPremiumModal('');
+                  try { sessionStorage.setItem('owner_dashboard_initial_tab', 'premium'); } catch {}
+                  onNavigate('owner');
+                }}
+                className="btn-primary flex-1 py-3 rounded-xl font-semibold"
+              >
+                Premium oling
+              </button>
+            ) : (
+              <button
+                onClick={() => setPremiumModal('')}
+                className="btn-ghost flex-1 py-3 rounded-xl border border-white/10 text-white/50 cursor-not-allowed"
+                disabled
+                title="Premium faqat direktor (tashkilot egasi) hisobidan sotib olinadi"
+              >
+                Faqat direktor sotib oladi
+              </button>
+            )}
           </div>
         </div>
       </Modal>

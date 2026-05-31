@@ -212,3 +212,73 @@ class PasswordResetTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password(new_password))
+
+
+class AdminPremiumManagementTestCase(APITestCase):
+    """Platform Admin tomonidan premium boshqarilishi testlari."""
+
+    def setUp(self):
+        self.admin_user = User.objects.create_superuser(
+            phone='+998909999999', password='AdminPass123', full_name='Admin'
+        )
+        self.admin_user.is_platform_admin = True
+        self.admin_user.save()
+
+        self.target_user = User.objects.create_user(
+            phone='+998901112233', password='UserPass123', full_name='Normal User'
+        )
+
+        from billing.models import SubscriptionPlan
+        # Standart student va organization planlarini yaratamiz
+        SubscriptionPlan.objects.create(
+            name='Standart (1 oy)',
+            plan_type='student',
+            price=9999.00,
+            duration_days=30,
+            is_active=True
+        )
+        SubscriptionPlan.objects.create(
+            name='Standart Org (1 oy)',
+            plan_type='organization',
+            price=199999.00,
+            duration_days=30,
+            is_active=True
+        )
+
+    def test_admin_toggle_premium_duration_based(self):
+        url = reverse('admin-toggle-user-premium', kwargs={'user_id': self.target_user.id})
+        
+        # 1. Tizimga kirmagan holda 401 olishi kerak
+        response = self.client.post(url, {'duration': 30, 'plan_type': 'student'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        # 2. Oddiy foydalanuvchi sifatida 403 olishi kerak
+        self.client.force_authenticate(user=self.target_user)
+        response = self.client.post(url, {'duration': 30, 'plan_type': 'student'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        # 3. Admin sifatida kirish
+        self.client.force_authenticate(user=self.admin_user)
+
+        # 1. 30 kunlik Student Premium berish
+        response = self.client.post(url, {'duration': 30, 'plan_type': 'student'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        self.target_user.refresh_from_db()
+        self.assertTrue(self.target_user.is_premium)
+        self.assertTrue(self.target_user.subscriptions.filter(is_active=True, plan__plan_type='student').exists())
+
+        # 2. Premium bekor qilish (-1)
+        response = self.client.post(url, {'duration': -1}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        self.target_user.refresh_from_db()
+        self.assertFalse(self.target_user.is_premium)
+        self.assertFalse(self.target_user.subscriptions.filter(is_active=True).exists())
+
+        # 3. Umrbod Premium berish (0)
+        response = self.client.post(url, {'duration': 0, 'plan_type': 'organization'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        self.target_user.refresh_from_db()
+        self.assertTrue(self.target_user.is_premium)

@@ -180,6 +180,7 @@ def click_webhook(request):
             
         tx.status = PaymentTransaction.STATUS_SUCCESS
         tx.provider_transaction_id = click_trans_id
+        tx.manager_commission = tx.amount * Decimal('0.20')
         tx.save()
         
         # Activate premium subscription for the user
@@ -323,6 +324,7 @@ def payme_webhook(request):
             
         # Success!
         tx.status = PaymentTransaction.STATUS_SUCCESS
+        tx.manager_commission = tx.amount * Decimal('0.20')
         tx.save()
         
         # Activate premium
@@ -402,6 +404,7 @@ def list_subscription_plans(request):
         {
             'id': p.id,
             'name': p.name,
+            'plan_type': p.plan_type,
             'price': float(p.price),
             'duration_days': p.duration_days,
             'description': p.description or '',

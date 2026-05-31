@@ -72,8 +72,23 @@ const OwnerSidebarItem = ({ item, active, onClick }) => (
 const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
-  const [page, setPage] = React.useState('home');
+  const [page, setPage] = React.useState(() => {
+    try {
+      const saved = sessionStorage.getItem('owner_dashboard_initial_tab');
+      if (saved) {
+        sessionStorage.removeItem('owner_dashboard_initial_tab');
+        return saved;
+      }
+    } catch {}
+    return 'home';
+  });
   const [mobileMenu, setMobileMenu] = React.useState(false);
+  const [paymentPlan, setPaymentPlan] = React.useState(null);
+  const [paymentLoading, setPaymentLoading] = React.useState(false);
+  const [paymentError, setPaymentError] = React.useState('');
+  const [plans, setPlans] = React.useState([]);
+  const [plansLoading, setPlansLoading] = React.useState(true);
+  const [durationFilter, setDurationFilter] = React.useState(30);
   const [toast, setToast] = React.useState('');
   const [pendingTeachers, setPendingTeachers] = React.useState([]);
   const [pendingManagers, setPendingManagers] = React.useState([]);
@@ -310,6 +325,47 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     () => (isApi && ownerCenterId && page === 'statistics') ? OlympyApi.getTopStudents(ownerCenterId, OlympyApi.getToken()) : Promise.resolve(null),
     [isApi, ownerCenterId, page === 'statistics'],
   );
+
+  React.useEffect(() => {
+    if (page === 'premium') {
+      let cancelled = false;
+      setPlansLoading(true);
+      (async () => {
+        try {
+          const data = await OlympyApi.getSubscriptionPlans();
+          if (cancelled) return;
+          const list = Array.isArray(data) ? data.filter(p => p.plan_type === 'organization') : [];
+          setPlans(list);
+        } catch {
+        } finally {
+          if (!cancelled) setPlansLoading(false);
+        }
+      })();
+      return () => { cancelled = true; };
+    }
+  }, [page]);
+
+  const handleCreatePayment = async (provider) => {
+    if (!paymentPlan) return;
+    setPaymentLoading(true);
+    setPaymentError('');
+    try {
+      const token = OlympyApi.getToken();
+      const res = await OlympyApi.createCheckoutSession({
+        plan_id: paymentPlan.id,
+        provider: provider
+      }, token);
+      if (res && res.payment_url) {
+        window.location.href = res.payment_url;
+      } else {
+        throw new Error("To'lov havolasini olishda xatolik yuz berdi");
+      }
+    } catch (err) {
+      setPaymentError(OlympyApi.toUserMessage?.(err) || "To'lov havolasini generatsiya qilib bo'lmadi");
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
   const applyCenterImageOverride = (c) => {
     const override = centerImageOverrides[String(c.id)] || centerImageOverrides[String(c.backendId)];
     return override ? { ...c, imageUrl: override } : c;
@@ -1074,6 +1130,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'ranking', icon: 'star', label: 'Reyting' },
     { key: 'analytics', icon: 'chart', label: 'Analitika' },
     { key: 'center', icon: 'building', label: 'Profil' },
+    { key: 'premium', icon: 'star', label: 'Premium Obuna' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
   ];
 
@@ -1377,6 +1434,29 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           tone="purple"
         />
       </div>
+
+      {/* Premium Marketing Promo Banner */}
+      {!center?.isPremium && (
+        <section className="relative overflow-hidden rounded-2xl border border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-purple-500/5 to-indigo-500/10 p-5 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-400 to-amber-600 text-white shadow-lg shadow-amber-500/25 animate-pulse">
+              <Icon name="star" size={24} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-white">Loyihamizda 500+ ta'lim markazlari ro'yxatdan o'tdi!</h3>
+              <p className="text-xs font-semibold text-white/60 mt-1">
+                Tashkilotingiz uchun Premium obunani faollashtiring va barcha AI imkoniyatlari, cheksiz olimpiadalar hamda batafsil tahlillarga ega bo'ling.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setPage('premium')}
+            className="btn-primary flex-shrink-0 rounded-xl px-5 py-2.5 text-xs font-black bg-gradient-to-r from-amber-500 to-amber-600 border-none shadow-md shadow-amber-500/20 hover:scale-105 transition-transform"
+          >
+            Premiumga o'tish
+          </button>
+        </section>
+      )}
 
       {/* Pending requests + status panel */}
       <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
@@ -2282,8 +2362,29 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   // ─── Statistika: o'quvchilar dinamikasi + top o'quvchilar ───────────────
   const renderStatistics = () => {
-    const dynamics = Array.isArray(apiDynamicsRes.data) ? apiDynamicsRes.data : [];
-    const topStudents = Array.isArray(apiTopStudentsRes.data) ? apiTopStudentsRes.data : [];
+    const isStatisticsLocked = center ? !center.isPremium : false;
+
+    // Use dummy data if statistics are locked to show a preview (teaser)
+    const dummyDynamics = [
+      { month: '2026-01', joined: 5, total: 20 },
+      { month: '2026-02', joined: 8, total: 28 },
+      { month: '2026-03', joined: 12, total: 40 },
+      { month: '2026-04', joined: 15, total: 55 },
+      { month: '2026-05', joined: 22, total: 77 },
+      { month: '2026-06', joined: 30, total: 107 },
+    ];
+    const dummyTopStudents = [
+      { rank: 1, name: "Aliyev Vali (Teaser)", attempts: 12, avg_score: 95.5 },
+      { rank: 2, name: "Karimova Zilola (Teaser)", attempts: 10, avg_score: 92.3 },
+      { rank: 3, name: "Rustamov Dilshod (Teaser)", attempts: 11, avg_score: 88.7 },
+    ];
+
+    const rawDynamics = Array.isArray(apiDynamicsRes.data) ? apiDynamicsRes.data : [];
+    const rawTopStudents = Array.isArray(apiTopStudentsRes.data) ? apiTopStudentsRes.data : [];
+
+    const dynamics = isStatisticsLocked ? dummyDynamics : rawDynamics;
+    const topStudents = isStatisticsLocked ? dummyTopStudents : rawTopStudents;
+
     const barData = dynamics.map(d => {
       const [, m] = (d.month || '').split('-');
       const monthNames = ['', 'Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyl', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
@@ -2295,58 +2396,78 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           : rank === 3 ? 'bg-amber-700/15 text-amber-500 border border-amber-700/30'
             : 'glass text-white/40 border border-white/5';
     return (
-      <div className="space-y-5 p-4 lg:p-6">
+      <div className="space-y-5 p-4 lg:p-6 relative">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Statistika</h1>
           <p className="mt-1 text-sm font-semibold text-white/50">{center.name} bo'yicha o'sish va eng yaxshi o'quvchilar.</p>
         </div>
 
-        {/* 6. O'quvchilar dinamikasi grafigi */}
-        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-base font-black text-white">O'quvchilar dinamikasi</h2>
-            <span className="text-xs font-semibold text-white/45">Oxirgi 6 oyda qo'shilganlar</span>
-          </div>
-          {apiDynamicsRes.loading
-            ? <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
-            : <MonthBarChart data={barData} />}
-          {dynamics.length > 0 && (
-            <div className="mt-3 text-xs font-semibold text-white/45">
-              Jami tasdiqlangan o'quvchilar: <span className="text-white font-black">{dynamics[dynamics.length - 1]?.total || 0}</span>
+        <div className={`space-y-5 ${isStatisticsLocked ? 'blur-[6px] select-none pointer-events-none' : ''}`}>
+          {/* 6. O'quvchilar dinamikasi grafigi */}
+          <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-black text-white">O'quvchilar dinamikasi</h2>
+              <span className="text-xs font-semibold text-white/45">Oxirgi 6 oyda qo'shilganlar</span>
             </div>
-          )}
-        </section>
+            {apiDynamicsRes.loading && !isStatisticsLocked
+              ? <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+              : <MonthBarChart data={barData} />}
+            {dynamics.length > 0 && (
+              <div className="mt-3 text-xs font-semibold text-white/45">
+                Jami tasdiqlangan o'quvchilar: <span className="text-white font-black">{dynamics[dynamics.length - 1]?.total || 0}</span>
+              </div>
+            )}
+          </section>
 
-        {/* 7. Top-10 o'quvchi karti */}
-        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-base font-black text-white">Top o'quvchilar</h2>
-            <span className="text-xs font-semibold text-white/45">O'rtacha ball bo'yicha</span>
-          </div>
-          {apiTopStudentsRes.loading ? (
-            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
-          ) : topStudents.length === 0 ? (
-            <EmptyState icon="trophy" title="Hali natijalar yo'q" desc="O'quvchilar olimpiadalarda qatnashgach shu yerda chiqadi." />
-          ) : (
-            <div className="space-y-2.5">
-              {topStudents.map(s => (
-                <div key={s.rank} className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/5 p-3">
-                  <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-sm font-black ${medalClass(s.rank)}`}>
-                    {s.rank === 1 ? '🥇' : s.rank === 2 ? '🥈' : s.rank === 3 ? '🥉' : `#${s.rank}`}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-black text-white">{s.name}</div>
-                    <div className="text-[11px] font-semibold text-white/40">{s.attempts} ta tadbir</div>
-                  </div>
-                  <div className="flex-shrink-0 text-right">
-                    <div className="text-base font-black text-indigo-300">{s.avg_score}</div>
-                    <div className="text-[10px] font-semibold text-white/40">o'rt. ball</div>
-                  </div>
-                </div>
-              ))}
+          {/* 7. Top-10 o'quvchi karti */}
+          <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-black text-white">Top o'quvchilar</h2>
+              <span className="text-xs font-semibold text-white/45">O'rtacha ball bo'yicha</span>
             </div>
-          )}
-        </section>
+            {apiTopStudentsRes.loading && !isStatisticsLocked ? (
+              <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+            ) : topStudents.length === 0 ? (
+              <EmptyState icon="trophy" title="Hali natijalar yo'q" desc="O'quvchilar olimpiadalarda qatnashgach shu yerda chiqadi." />
+            ) : (
+              <div className="space-y-2.5">
+                {topStudents.map(s => (
+                  <div key={s.rank} className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/5 p-3">
+                    <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-sm font-black ${medalClass(s.rank)}`}>
+                      {s.rank === 1 ? '🥇' : s.rank === 2 ? '🥈' : s.rank === 3 ? '🥉' : `#${s.rank}`}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-black text-white">{s.name}</div>
+                      <div className="text-[11px] font-semibold text-white/40">{s.attempts} ta tadbir</div>
+                    </div>
+                    <div className="flex-shrink-0 text-right">
+                      <div className="text-base font-black text-indigo-300">{s.avg_score}</div>
+                      <div className="text-[10px] font-semibold text-white/40">o'rt. ball</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
+        {isStatisticsLocked && (
+          <div className="absolute inset-x-4 bottom-4 top-24 z-10 flex flex-col items-center justify-center bg-black/45 backdrop-blur-[2px] rounded-2xl p-6 text-center border border-white/5 shadow-2xl">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 to-amber-600 text-white shadow-lg shadow-amber-500/20 mb-4 animate-bounce">
+              <Icon name="star" size={32} />
+            </div>
+            <h3 className="text-xl font-black text-white mb-2">Tashkilot tahlillari faqat Premium obunachilar uchun ochiq</h3>
+            <p className="text-white/75 text-sm max-w-sm mx-auto mb-6 leading-relaxed">
+              O'quvchilar o'sish dinamikasi, top o'quvchilar reytingi va boshqa ko'rsatkichlarni ko'rish uchun Premium obunani faollashtiring.
+            </p>
+            <button
+              onClick={() => setPage('premium')}
+              className="btn-primary px-8 py-3 rounded-xl font-bold flex items-center justify-center gap-2 text-sm shadow-xl shadow-indigo-600/30 hover:scale-105 transition-transform animate-pulse"
+            >
+              <Icon name="star" size={16} /> Premium Obuna sahifasiga o'tish
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -2624,6 +2745,101 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     );
   };
 
+  const renderPremium = () => {
+    const activePlans = plans.filter(p => p.duration_days === durationFilter);
+    return (
+      <div className="space-y-6 p-4 lg:p-6 animate-in">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass rounded-3xl p-6 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+          <div>
+            <h2 className="text-lg md:text-xl font-black text-white flex items-center gap-2">
+              <span>Tashkilot Premium Obuna</span>
+              <span className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md">ORGANIZATION</span>
+            </h2>
+            <p className="text-white/40 text-xs mt-0.5">Tashkilotingizni premium qilish orqali cheksiz olimpiadalar, tahlillar va AI savollar bazasini ishga tushiring.</p>
+          </div>
+          <div className="flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/30 px-4 py-2.5 rounded-2xl self-start sm:self-auto shadow-md">
+            <span className="text-lg">🏢</span>
+            <div className="min-w-0">
+              <div className="text-[10px] text-indigo-400 uppercase tracking-widest font-black leading-none">Tashkilot holati</div>
+              <div className="text-sm font-black text-indigo-300 leading-none mt-1">
+                {center?.isPremium ? "Faol (Premium 👑)" : "Bepul rejim"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Muddat selectorlari (1, 3, 6, 12 oy) */}
+        <div className="flex gap-2.5 flex-wrap justify-start">
+          {[
+            { label: '1 oy', days: 30 },
+            { label: '3 oy', days: 90, discount: '10%' },
+            { label: '6 oy', days: 180, discount: '20%' },
+            { label: '1 yil', days: 365, discount: '30%' },
+          ].map((dur) => (
+            <button
+              key={dur.days}
+              type="button"
+              onClick={() => setDurationFilter(dur.days)}
+              className={`relative px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
+                durationFilter === dur.days
+                  ? 'bg-white text-indigo-950 border-white shadow-lg font-black'
+                  : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+              }`}
+            >
+              {dur.label}
+              {dur.discount && (
+                <span className="absolute -top-2 -right-2 bg-gradient-to-r from-pink-500 to-rose-500 text-[7px] text-white px-1 py-0.2 rounded font-extrabold shadow animate-pulse">
+                  -{dur.discount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {plansLoading ? (
+          <div className="text-center py-12 text-white/40 text-sm">Tariflar yuklanmoqda...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+            {activePlans.map((p, i) => {
+              const priceNum = Number(p.price) || 0;
+              const formattedPrice = `${priceNum.toLocaleString('ru-RU').replace(/ /g, ' ')} UZS`;
+              const features = Array.isArray(p.features) ? p.features : [];
+              return (
+                <div 
+                  key={i} 
+                  className={`glass rounded-2xl p-5 flex flex-col justify-between border ${p.is_popular ? 'border-indigo-500/40 bg-indigo-500/5 shadow-[0_12px_24px_rgba(99,102,241,0.06)]' : 'border-white/5'}`}
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-bold text-white">{p.name.split(' ')[0]}</div>
+                      {p.is_popular && <span className="bg-indigo-500/20 text-indigo-300 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border border-indigo-500/30">Mashhur</span>}
+                    </div>
+                    <div className="text-2xl font-black text-indigo-400">{formattedPrice}</div>
+                    <p className="text-white/40 text-xs">{p.description}</p>
+                    <ul className="space-y-2 border-t border-white/5 pt-4">
+                      {features.map((f, idx) => (
+                        <li key={idx} className="text-xs text-white/60 flex items-center gap-1.5">
+                          <span className="text-indigo-400 font-bold">✓</span> {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentPlan(p)}
+                    className="w-full mt-6 py-2.5 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/10 transition-colors"
+                  >
+                    Sotib olish
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const pagesMap = {
     home: renderHome,
     requests: renderRequests,
@@ -2637,6 +2853,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     settings: renderSettings,
     proctoring: renderProctoring,
     shop: renderShop,
+    premium: renderPremium,
   };
 
   // Mobile bottom navigation uchun eng muhim 4 ta sahifa.
@@ -2938,6 +3155,61 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         >
           {toast}
         </div>
+      )}
+
+      {paymentPlan && (
+        <Modal 
+          open={!!paymentPlan} 
+          onClose={() => { setPaymentPlan(null); setPaymentError(''); }} 
+          title="To'lov usulini tanlang"
+          width="max-w-md"
+        >
+          <div className="space-y-6 text-left">
+            <div className="rounded-2xl bg-white/5 p-4 border border-white/10">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-xs text-white/40">Tanlangan tarif</span>
+                <span className="text-xs text-indigo-300 font-bold">Tashkilot</span>
+              </div>
+              <div className="flex justify-between items-end">
+                <span className="text-sm font-bold text-white">{paymentPlan.name}</span>
+                <span className="text-lg font-black text-indigo-400">
+                  {Number(paymentPlan.price).toLocaleString('ru-RU').replace(/ /g, ' ')} UZS
+                </span>
+              </div>
+            </div>
+
+            {paymentError && (
+              <div className="rounded-xl bg-rose-500/15 border border-rose-500/30 p-3 text-xs text-rose-300">
+                {paymentError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                type="button"
+                disabled={paymentLoading}
+                onClick={() => handleCreatePayment('click')}
+                className="flex flex-col items-center justify-center p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-indigo-500/30 transition-all group min-h-[100px]"
+              >
+                <span className="text-sm font-black text-[#00a3ff] group-hover:scale-105 transition-transform">CLICK</span>
+                <span className="text-[10px] text-white/30 mt-2">Click Up / Click Evolution</span>
+              </button>
+              <button
+                type="button"
+                disabled={paymentLoading}
+                onClick={() => handleCreatePayment('payme')}
+                className="flex flex-col items-center justify-center p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-indigo-500/30 transition-all group min-h-[100px]"
+              >
+                <span className="text-sm font-black text-[#00c9c9] group-hover:scale-105 transition-transform">Payme</span>
+                <span className="text-[10px] text-white/30 mt-2">Payme Checkout</span>
+              </button>
+            </div>
+
+            {paymentLoading && (
+              <div className="text-center text-xs text-white/40 animate-pulse">To'lov sahifasiga yo'naltirilmoqda...</div>
+            )}
+          </div>
+        </Modal>
       )}
     </div>
   );

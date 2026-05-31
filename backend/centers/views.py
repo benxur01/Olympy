@@ -852,6 +852,32 @@ def admin_approve_center(request, center_id):
                 role=CenterMembership.ROLE_OWNER,
             ).update(status=CenterMembership.STATUS_APPROVED, approved_by=request.user)
             center.owner.add_role('owner')
+            
+            # 14 kunlik bepul trial obuna yaratish
+            from billing.models import SubscriptionPlan, UserSubscription
+            from django.utils import timezone
+            from datetime import timedelta
+            
+            # Kichikroq tarifni topib ulaymiz
+            plan = SubscriptionPlan.objects.filter(plan_type='organization', is_active=True).order_by('price').first()
+            if plan:
+                now = timezone.now()
+                # Agar allaqachon faol tashkilot premium obunasi bo'lmasa, trial yaratamiz
+                already_has_org = UserSubscription.objects.filter(
+                    user=center.owner,
+                    is_active=True,
+                    plan__plan_type='organization',
+                    end_date__gt=now
+                ).exists()
+                if not already_has_org:
+                    UserSubscription.objects.create(
+                        user=center.owner,
+                        plan=plan,
+                        start_date=now,
+                        end_date=now + timedelta(days=14),
+                        is_active=True
+                    )
+            
             from notifications.services import send_center_decision_notification
             send_center_decision_notification(center.owner, center, approved=True)
     return Response(AdminEducationCenterSerializer(center, context={'request': request}).data)

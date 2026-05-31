@@ -118,6 +118,7 @@ class BillingTestCase(APITestCase):
         # Transaction should succeed and subscription must activate
         tx.refresh_from_db()
         self.assertEqual(tx.status, PaymentTransaction.STATUS_SUCCESS)
+        self.assertEqual(tx.manager_commission, Decimal('19800.00')) # 20% of 99000.00
         
         self.user.refresh_from_db()
         self.assertTrue(self.user.is_premium)
@@ -186,7 +187,42 @@ class BillingTestCase(APITestCase):
         # Transaction should succeed and user become premium
         tx.refresh_from_db()
         self.assertEqual(tx.status, PaymentTransaction.STATUS_SUCCESS)
+        self.assertEqual(tx.manager_commission, Decimal('19800.00')) # 20% of 99000.00
 
         self.user.refresh_from_db()
         self.assertTrue(self.user.is_premium)
         self.assertTrue(UserSubscription.objects.filter(user=self.user, plan=self.plan, is_active=True).exists())
+
+    def test_organization_subscription_propagates_premium(self):
+        """Test that subscribing to an organization plan sets owner's EducationCenters as premium."""
+        from centers.models import EducationCenter
+        
+        # Create a center owned by this user
+        center = EducationCenter.objects.create(
+            name="Test Center",
+            organization_type="O'quv markaz",
+            city="Toshkent",
+            owner=self.user,
+            status=EducationCenter.STATUS_APPROVED
+        )
+        self.assertFalse(center.is_premium)
+        
+        # Create organization plan
+        org_plan = SubscriptionPlan.objects.create(
+            name='Org Plus (1 oy)',
+            plan_type='organization',
+            price=Decimal('399000.00'),
+            duration_days=30,
+            is_active=True
+        )
+        
+        # Subscribe user to org plan
+        UserSubscription.objects.create(
+            user=self.user,
+            plan=org_plan,
+            is_active=True
+        )
+        
+        # Verify that center is now premium
+        center.refresh_from_db()
+        self.assertTrue(center.is_premium)

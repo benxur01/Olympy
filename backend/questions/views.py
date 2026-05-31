@@ -192,6 +192,18 @@ def generate_ai_questions(request):
             status=http_status.HTTP_403_FORBIDDEN,
         )
 
+    # Premium check
+    from centers.models import EducationCenter
+    center = EducationCenter.objects.filter(pk=center_id).first()
+    if center and not center.is_premium:
+        return Response(
+            {
+                'detail': "AI yordamida savol yaratish faqat premium tashkilotlar uchun. Premium obunani faollashtiring.",
+                'upgrade_required': True
+            },
+            status=http_status.HTTP_403_FORBIDDEN
+        )
+
     result = generate_questions(
         subject=request.data.get('subject'),
         topic=request.data.get('topic'),
@@ -417,6 +429,19 @@ def preview_pdf_questions(request):
             {'detail': "Savol yaratish uchun o'qituvchi/manager arizangiz tasdiqlanishi kerak"},
             status=http_status.HTTP_403_FORBIDDEN,
         )
+
+    # Premium check
+    from centers.models import EducationCenter
+    center = EducationCenter.objects.filter(pk=center_id).first()
+    if center and not center.is_premium:
+        return Response(
+            {
+                'detail': "PDF tahlil orqali savollar ajratish faqat premium tashkilotlar uchun. Premium obunani faollashtiring.",
+                'upgrade_required': True
+            },
+            status=http_status.HTTP_403_FORBIDDEN
+        )
+
     pdf_file = request.FILES.get('pdf') or request.FILES.get('file') or request.FILES.get('document')
     if not pdf_file:
         return Response({'detail': 'PDF fayl yuboring'}, status=http_status.HTTP_400_BAD_REQUEST)

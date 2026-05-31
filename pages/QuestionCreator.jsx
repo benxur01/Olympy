@@ -53,6 +53,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const isApi = !!user?._api;
   const [apiToast, setApiToast] = React.useState('');
   const showApiToast = (m) => { setApiToast(m); setTimeout(() => setApiToast(''), 3000); };
+  const [premiumLockDetail, setPremiumLockDetail] = React.useState('');
   const [mode, setMode] = React.useState('list'); // list | manual | ai | pdf
   const [filterSubject, setFilterSubject] = React.useState('');
   const [filterLevel, setFilterLevel] = React.useState('');
@@ -203,7 +204,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       setAiResult(generated);
     } catch (err) {
       console.warn('generateAiQuestions failed:', err);
-      showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "AI savol yarata olmadi"}`);
+      if (err?.status === 403 && err?.data?.upgrade_required) {
+        setPremiumLockDetail(err.data.detail || "AI yordamida savol yaratish faqat premium tashkilotlar uchun. Premium obunani faollashtiring.");
+      } else {
+        showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "AI savol yarata olmadi"}`);
+      }
     } finally {
       setAiLoading(false);
     }
@@ -242,7 +247,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       if (!extracted.length) showApiToast("⚠ PDFdan savol topilmadi");
     } catch (err) {
       console.warn('extractPdfQuestions failed:', err);
-      showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "PDF tahlil qilinmadi"}`);
+      if (err?.status === 403 && err?.data?.upgrade_required) {
+        setPremiumLockDetail(err.data.detail || "PDF tahlil orqali savollar ajratish faqat premium tashkilotlar uchun. Premium obunani faollashtiring.");
+      } else {
+        showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "PDF tahlil qilinmadi"}`);
+      }
     } finally {
       setPdfLoading(false);
       e.target.value = '';
@@ -1145,6 +1154,44 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       {apiToast && (
         <div className="fixed bottom-20 md:bottom-6 right-3 md:right-6 left-3 md:left-auto z-50 glass-strong rounded-2xl px-5 py-3.5 border border-rose-500/30 animate-in text-sm font-medium text-white md:max-w-sm">{apiToast}</div>
       )}
+
+      {/* Premium Lock Modal */}
+      <Modal open={!!premiumLockDetail} onClose={() => setPremiumLockDetail('')} title="Premium Imkoniyat">
+        <div className="space-y-4 text-center py-4">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 animate-pulse mb-2">
+            <Icon name="star" size={32} />
+          </div>
+          <h3 className="text-lg font-black text-white">Premium Obuna Kerak</h3>
+          <p className="text-white/70 text-sm leading-relaxed">
+            {premiumLockDetail}
+          </p>
+          {!!user?.roles?.owner ? (
+            <div className="space-y-3 pt-2">
+              <button
+                onClick={() => {
+                  setPremiumLockDetail('');
+                  if (onNavigate) onNavigate('premium');
+                }}
+                className="btn-primary w-full py-3 rounded-xl font-bold flex items-center justify-center gap-2"
+              >
+                <Icon name="star" size={16} /> Premium Obunani faollashtirish
+              </button>
+              <button onClick={() => setPremiumLockDetail('')} className="btn-ghost w-full py-2.5 rounded-xl text-xs">
+                Keyinroq
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3 pt-2">
+              <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 leading-relaxed">
+                Tashkilotingiz bepul tarifda. Ushbu funksiyani ishlatish uchun iltimos tashkilot direktoriga (egasiga) Premium obunani faollashtirishini so'rab murojaat qiling.
+              </p>
+              <button onClick={() => setPremiumLockDetail('')} className="btn-primary w-full py-3 rounded-xl font-bold">
+                Tushunarli
+              </button>
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* New subject modal */}
       <Modal open={newSubjectModal} onClose={() => setNewSubjectModal(false)} title="Yangi fan qo'shish">

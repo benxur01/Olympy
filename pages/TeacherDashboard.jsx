@@ -17,6 +17,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
   const [onlyUnused, setOnlyUnused] = React.useState(false);
   const [toast, setToast] = React.useState('');
+  const [premiumModal, setPremiumModal] = React.useState('');
   const emptyEventForm = {
     eventType: 'competition',
     title: '',
@@ -191,7 +192,12 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         })
         .catch(err => {
           console.warn('teacher save event failed:', err);
-          showToast(`⚠ ${eventErrorMessage(err)}`);
+          if (err?.status === 403 && err?.data?.upgrade_required) {
+            resetEventForm();
+            setPremiumModal(err.data.detail || 'Bepul rejimda olimpiada limiti tugadi.');
+          } else {
+            showToast(`⚠ ${eventErrorMessage(err)}`);
+          }
         })
         .finally(() => setEventSaving(false));
       return;
@@ -489,7 +495,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const pagesMap = {
     home: renderHome,
     olympiads: renderOlympiads,
-    questions: () => <QuestionCreatorPage embedded user={user} onOpenSwitcher={onOpenSwitcher} />,
+    questions: () => <QuestionCreatorPage embedded user={user} onOpenSwitcher={onOpenSwitcher} onNavigate={onNavigate} />,
   };
 
   return (
@@ -960,6 +966,38 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             </div>
           );
         })()}
+      </Modal>
+
+      {/* Premium kerak modali */}
+      <Modal open={!!premiumModal} onClose={() => setPremiumModal('')} title="Premium kerak" width="max-w-md">
+        <div className="space-y-5 text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white text-2xl">⭐</div>
+          <p className="text-sm text-white/75 leading-relaxed">{premiumModal}</p>
+          <div className="flex gap-3">
+            <button onClick={() => setPremiumModal('')} className="btn-ghost flex-1 py-3 rounded-xl">Yopish</button>
+            {user?.roles?.owner ? (
+              <button
+                onClick={() => {
+                  setPremiumModal('');
+                  try { sessionStorage.setItem('owner_dashboard_initial_tab', 'premium'); } catch {}
+                  onNavigate('owner');
+                }}
+                className="btn-primary flex-1 py-3 rounded-xl font-semibold"
+              >
+                Premium oling
+              </button>
+            ) : (
+              <button
+                onClick={() => setPremiumModal('')}
+                className="btn-ghost flex-1 py-3 rounded-xl border border-white/10 text-white/50 cursor-not-allowed"
+                disabled
+                title="Premium faqat direktor (tashkilot egasi) hisobidan sotib olinadi"
+              >
+                Faqat direktor sotib oladi
+              </button>
+            )}
+          </div>
+        </div>
       </Modal>
 
       {toast && (

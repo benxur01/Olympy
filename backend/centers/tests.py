@@ -196,3 +196,54 @@ class CreateStaffTestCase(APITestCase):
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertFalse(User.objects.filter(normalized_phone='+998901200009').exists())
+
+
+class CenterApprovalTrialTestCase(APITestCase):
+    """Admin markazni tasdiqlaganda owner uchun 14-kunlik trial yaratilishi."""
+
+    def setUp(self):
+        from billing.models import SubscriptionPlan
+        self.admin = User.objects.create_user(
+            phone='+998901200099', password='StrongPass123', full_name='Admin',
+            is_platform_admin=True
+        )
+        self.owner = User.objects.create_user(
+            phone='+998901200098', password='StrongPass123', full_name='Owner'
+        )
+        self.center = EducationCenter.objects.create(
+            name='Yangi O\'quv Markazi', city='Toshkent', owner=self.owner,
+            status=EducationCenter.STATUS_PENDING
+        )
+        # Create an active subscription plan of type 'organization'
+        self.plan = SubscriptionPlan.objects.create(
+            name='Boshlang\'ich Plan',
+            plan_type='organization',
+            price=150000,
+            duration_days=30,
+            is_active=True
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    @patch('notifications.services.send_center_decision_notification')
+    def test_admin_approves_center_creates_trial(self, _mock_notify):
+        from billing.models import UserSubscription
+        url = reverse('admin-approve-center', args=[self.center.id])
+        response = self.client.post(url, {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        # Check that center is approved
+        self.center.refresh_from_db()
+        self.assertEqual(self.center.status, EducationCenter.STATUS_APPROVED)
+        
+        # Check that user subscription is created
+        sub = UserSubscription.objects.filter(user=self.owner, plan=self.plan).first()
+        self.assertIsNotNone(sub)
+        self.assertTrue(sub.is_active)
+        # Verify 14-day duration roughly (allowing a small delta)
+        from django.utils import timezone
+        delta = sub.end_date - timezone.now()
+        self.assertTrue(13 <= delta.days <= 15)
+        
+        # Verify the center is premium
+        self.assertTrue(self.center.is_premium)
+

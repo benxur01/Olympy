@@ -19,7 +19,7 @@ const BadgeList = ({ badges }) => {
 };
 
 // Premium funksiya o'rniga ko'rsatiladigan qulf ekrani.
-const PremiumLock = ({ title = 'Bu funksiya premium o\'quvchilar uchun' }) => (
+const PremiumLock = ({ title = 'Bu funksiya premium o\'quvchilar uchun', onUpgrade }) => (
   <div className="glass rounded-2xl p-6 md:p-10 text-center flex flex-col items-center gap-4">
     <div className="w-16 h-16 rounded-2xl bg-amber-500/15 flex items-center justify-center text-3xl">
       ⭐
@@ -27,14 +27,19 @@ const PremiumLock = ({ title = 'Bu funksiya premium o\'quvchilar uchun' }) => (
     <div>
       <h3 className="font-black text-white text-base md:text-lg">{title}</h3>
       <p className="text-white/50 text-xs md:text-sm mt-2 max-w-sm mx-auto leading-relaxed">
-        Markaz adminingizga murojaat qiling. Premium bilan tarixiy tahlil,
-        raqobatchi tahlili, fan bo'yicha zaiflik xaritasi, AI o'quv rejasi va
-        tayyorlik darajasi ochiladi.
+        Premium bilan tarixiy tahlil, raqobatchi tahlili, fan bo'yicha zaiflik xaritasi, AI o'quv rejasi va tayyorlik darajasi ochiladi.
       </p>
     </div>
-    <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-400 bg-amber-500/10 ring-1 ring-amber-500/20 px-3 py-1.5 rounded-xl">
-      🔒 Premium
-    </span>
+    <div className="flex items-center gap-3">
+      <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-400 bg-amber-500/10 ring-1 ring-amber-500/20 px-3 py-1.5 rounded-xl">
+        🔒 Premium
+      </span>
+      {onUpgrade && (
+        <button onClick={onUpgrade} className="text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3.5 py-1.5 rounded-xl shadow-md transition-all">
+          Premiumga o'tish ⚡
+        </button>
+      )}
+    </div>
   </div>
 );
 
@@ -374,6 +379,12 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [centerConfirmOlympiad, setCenterConfirmOlympiad] = React.useState(null);
   const [calendarOpen, setCalendarOpen] = React.useState(false);
   const [mobileMenu, setMobileMenu] = React.useState(false);
+  const [paymentPlan, setPaymentPlan] = React.useState(null);
+  const [paymentLoading, setPaymentLoading] = React.useState(false);
+  const [paymentError, setPaymentError] = React.useState('');
+  const [plans, setPlans] = React.useState([]);
+  const [plansLoading, setPlansLoading] = React.useState(true);
+  const [durationFilter, setDurationFilter] = React.useState(30);
   const [olympiadFilter, setOlympiadFilter] = React.useState('Barchasi');
   const [apiToast, setApiToast] = React.useState('');
   const showApiToast = (m) => { setApiToast(m); setTimeout(() => setApiToast(''), 3000); };
@@ -582,6 +593,47 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isApi, page, apiOlympiadsRes.data]);
 
+  React.useEffect(() => {
+    if (page === 'premium') {
+      let cancelled = false;
+      setPlansLoading(true);
+      (async () => {
+        try {
+          const data = await OlympyApi.getSubscriptionPlans();
+          if (cancelled) return;
+          const list = Array.isArray(data) ? data.filter(p => p.plan_type === 'student') : [];
+          setPlans(list);
+        } catch {
+        } finally {
+          if (!cancelled) setPlansLoading(false);
+        }
+      })();
+      return () => { cancelled = true; };
+    }
+  }, [page]);
+
+  const handleCreatePayment = async (provider) => {
+    if (!paymentPlan) return;
+    setPaymentLoading(true);
+    setPaymentError('');
+    try {
+      const token = OlympyApi.getToken();
+      const res = await OlympyApi.createCheckoutSession({
+        plan_id: paymentPlan.id,
+        provider: provider
+      }, token);
+      if (res && res.payment_url) {
+        window.location.href = res.payment_url;
+      } else {
+        throw new Error("To'lov havolasini olishda xatolik yuz berdi");
+      }
+    } catch (err) {
+      setPaymentError(OlympyApi.toUserMessage?.(err) || "To'lov havolasini generatsiya qilib bo'lmadi");
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
   // Student's attempts and derived results
   const myAttempts = (isApi ? (apiAttempts || []) : store.attempts.filter(a => a.userId === user.id))
     .slice()
@@ -649,6 +701,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     { key: 'mistakes', icon: 'file', label: "Xatolar Sandig'i" },
     { key: 'rewards', icon: 'award', label: 'Do\'kon' },
     { key: 'profile', icon: 'eye', label: 'Profil' },
+    { key: 'premium', icon: 'star', label: 'Premium Obuna' },
     { divider: true, key: 'd1' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
   ];
@@ -1213,7 +1266,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       return (
         <div className="p-3 md:p-6 animate-in mobile-content-pad">
           <h2 className="text-lg md:text-xl font-black text-white mb-4">Tarixim va tahlil</h2>
-          <PremiumLock />
+          <PremiumLock onUpgrade={() => setPage('premium')} />
         </div>
       );
     }
@@ -1352,6 +1405,99 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     );
   };
 
+  const renderPremium = () => {
+    const activePlans = plans.filter(p => p.duration_days === durationFilter);
+    return (
+      <div className="p-3 md:p-6 space-y-6 animate-in mobile-content-pad">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass rounded-2xl p-4 md:p-6 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+          <div>
+            <h2 className="text-lg md:text-xl font-black text-white flex items-center gap-2">
+              <span>Premium Obuna</span>
+              <span className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md">PREMIUM</span>
+            </h2>
+            <p className="text-white/40 text-xs mt-0.5">Premium orqali barcha tahlillar, AI yordamchi va eksklyuziv imkoniyatlarni ishga tushiring.</p>
+          </div>
+          <div className="flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/30 px-4 py-2.5 rounded-2xl self-start sm:self-auto shadow-md">
+            <span className="text-lg">⭐</span>
+            <div className="min-w-0">
+              <div className="text-[10px] text-indigo-400 uppercase tracking-widest font-black leading-none">Sizning holatingiz</div>
+              <div className="text-sm font-black text-indigo-300 leading-none mt-1">
+                {isPremium ? "Faol (Premium 👑)" : "Bepul rejim"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Muddat selectorlari (1, 3, 6, 12 oy) */}
+        <div className="flex gap-2.5 flex-wrap justify-start">
+          {[
+            { label: '1 oy', days: 30 },
+            { label: '3 oy', days: 90, discount: '10%' },
+            { label: '6 oy', days: 180, discount: '20%' },
+            { label: '1 yil', days: 365, discount: '30%' },
+          ].map((dur) => (
+            <button
+              key={dur.days}
+              onClick={() => setDurationFilter(dur.days)}
+              className={`relative px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
+                durationFilter === dur.days
+                  ? 'bg-white text-indigo-950 border-white shadow-lg font-black'
+                  : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+              }`}
+            >
+              {dur.label}
+              {dur.discount && (
+                <span className="absolute -top-2 -right-2 bg-gradient-to-r from-pink-500 to-rose-500 text-[7px] text-white px-1 py-0.2 rounded font-extrabold shadow animate-pulse">
+                  -{dur.discount}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {plansLoading ? (
+          <div className="text-center py-12 text-white/40 text-sm">Tariflar yuklanmoqda...</div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+            {activePlans.map((p, i) => {
+              const priceNum = Number(p.price) || 0;
+              const formattedPrice = `${priceNum.toLocaleString('ru-RU').replace(/ /g, ' ')} UZS`;
+              const features = Array.isArray(p.features) ? p.features : [];
+              return (
+                <div 
+                  key={i} 
+                  className={`glass rounded-2xl p-5 flex flex-col justify-between border ${p.is_popular ? 'border-indigo-500/40 bg-indigo-500/5 shadow-[0_12px_24px_rgba(99,102,241,0.06)]' : 'border-white/5'}`}
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-bold text-white">{p.name.split(' ')[0]}</div>
+                      {p.is_popular && <span className="bg-indigo-500/20 text-indigo-300 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border border-indigo-500/30">Mashhur</span>}
+                    </div>
+                    <div className="text-2xl font-black text-indigo-400">{formattedPrice}</div>
+                    <p className="text-white/40 text-xs">{p.description}</p>
+                    <ul className="space-y-2 border-t border-white/5 pt-4">
+                      {features.map((f, idx) => (
+                        <li key={idx} className="text-xs text-white/60 flex items-center gap-1.5">
+                          <span className="text-indigo-400 font-bold">✓</span> {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <button
+                    onClick={() => setPaymentPlan(p)}
+                    className="w-full mt-6 py-2.5 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/10 transition-colors"
+                  >
+                    Sotib olish
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderRewards = () => (
     <RewardsPage
       apiRewardsRes={apiRewardsRes}
@@ -1368,7 +1514,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     history: renderHistory,
     centers: renderCenters,
     mistakes: renderMistakes,
-    rewards: renderRewards
+    rewards: renderRewards,
+    premium: renderPremium
   };
 
   // Sahifa tugmasi `practice` yoki `analytics` bosilsa, ularni alohida
@@ -1463,6 +1610,59 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         onClose={() => setCalendarOpen(false)}
         onNavigate={setPage}
       />
+
+      {paymentPlan && (
+        <Modal 
+          open={!!paymentPlan} 
+          onClose={() => { setPaymentPlan(null); setPaymentError(''); }} 
+          title="To'lov usulini tanlang"
+          width="max-w-md"
+        >
+          <div className="space-y-6">
+            <div className="rounded-2xl bg-white/5 p-4 border border-white/10">
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-xs text-white/40">Tanlangan tarif</span>
+                <span className="text-xs text-indigo-300 font-bold">O'quvchi</span>
+              </div>
+              <div className="flex justify-between items-end">
+                <span className="text-sm font-bold text-white">{paymentPlan.name}</span>
+                <span className="text-lg font-black text-indigo-400">
+                  {Number(paymentPlan.price).toLocaleString('ru-RU').replace(/ /g, ' ')} UZS
+                </span>
+              </div>
+            </div>
+
+            {paymentError && (
+              <div className="rounded-xl bg-rose-500/15 border border-rose-500/30 p-3 text-xs text-rose-300">
+                {paymentError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <button
+                disabled={paymentLoading}
+                onClick={() => handleCreatePayment('click')}
+                className="flex flex-col items-center justify-center p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-indigo-500/30 transition-all group min-h-[100px]"
+              >
+                <span className="text-sm font-black text-[#00a3ff] group-hover:scale-105 transition-transform">CLICK</span>
+                <span className="text-[10px] text-white/30 mt-2">Click Up / Click Evolution</span>
+              </button>
+              <button
+                disabled={paymentLoading}
+                onClick={() => handleCreatePayment('payme')}
+                className="flex flex-col items-center justify-center p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-indigo-500/30 transition-all group min-h-[100px]"
+              >
+                <span className="text-sm font-black text-[#00c9c9] group-hover:scale-105 transition-transform">Payme</span>
+                <span className="text-[10px] text-white/30 mt-2">Payme Checkout</span>
+              </button>
+            </div>
+
+            {paymentLoading && (
+              <div className="text-center text-xs text-white/40 animate-pulse">To'lov sahifasiga yo'naltirilmoqda...</div>
+            )}
+          </div>
+        </Modal>
+      )}
     </div>
   );
 };
