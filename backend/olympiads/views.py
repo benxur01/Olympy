@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from .models import Olympiad
 from .serializers import OlympiadSerializer
 from .services import (
+    _queue_olympiad_summary,
     center_olympiad_limit_exceeded,
     event_readiness_errors,
     recompute_olympiad_ranks,
@@ -233,6 +234,11 @@ def finish_olympiad(request, olympiad_id):
         # paytida yangilanmaydi (DB yukini kamaytirish), shu sababli
         # yakunlash paytida bir martalik bulk update kifoya.
         recompute_olympiad_ranks(olympiad)
+        # Markazga bog'liq olimpiada bo'lsa — menejer/ustozlarga xulosa
+        # yuboramiz (commit'dan keyin, asinxron). Status tekshiruvi (yuqorida
+        # `STATUS_ACTIVE` shart) tufayli xabar bir marta yuboriladi.
+        if olympiad.center_id:
+            _queue_olympiad_summary(olympiad.pk)
     return Response(OlympiadSerializer(olympiad).data)
 
 

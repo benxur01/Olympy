@@ -87,7 +87,13 @@ def _save_code_submissions(attempt, olympiad, code_answers):
     if not code_answers:
         return
 
+    import uuid
+
+    from django.core.cache import cache
+
+    from questions.judge0_service import is_supported
     from questions.models import Question
+    from questions.tasks import run_code_async_task
     from .models import CodeSubmission
     from .tasks import review_code_submissions_task
 
@@ -120,10 +126,25 @@ def _save_code_submissions(attempt, olympiad, code_answers):
             defaults={
                 'submitted_code': code,
                 'code_language': language,
+                # Qayta submit (update) holatida eski natija qolib ketmasin —
+                # Judge0 qayta tekshirib yangilaydi.
+                'all_tests_passed': None,
             },
         )
         if code.strip():
             to_review.append(submission.id)
+            # Avtomatik ball uchun: kodni Judge0 test caslari bo'yicha
+            # tekshirib, natijani (all_tests_passed) shu submission yozuviga
+            # yozamiz. Til qo'llab-quvvatlanmasa Judge0 baribir xato qaytaradi,
+            # shu sababli faqat supported tillarni yuboramiz (aks holda
+            # all_tests_passed None qoladi — ball berilmaydi).
+            if is_supported(language):
+                task_id = str(uuid.uuid4())
+                cache.set(f"run_code:task:{task_id}", {'status': 'PENDING'}, timeout=300)
+                run_code_async_task.delay(
+                    task_id, code, language, '', question.id,
+                    submission_id=submission.id,
+                )
 
     if to_review:
         review_code_submissions_task.delay(to_review)

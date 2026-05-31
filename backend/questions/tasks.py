@@ -56,7 +56,7 @@ def _build_batch(source_code, language, stdin, question_id):
 
 
 @shared_task(bind=True, max_retries=60)
-def run_code_async_task(self, task_id, source_code, language, stdin, question_id, tokens=None, valid_indices=None, test_cases_meta=None):
+def run_code_async_task(self, task_id, source_code, language, stdin, question_id, tokens=None, valid_indices=None, test_cases_meta=None, submission_id=None):
     """Kodni Judge0 ga yuborib, test caslar bo'yicha tekshiradi va natijani keshga yozadi.
 
     Production (Redis broker bor) — bloklamasdan: har bosqichda `self.retry(countdown=1)`
@@ -65,6 +65,11 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
     EAGER rejim (Redis yo'q dev/test) — `self.retry()` Celery'da `Retry` exception
     ko'taradi va qayta ishga tushmaydi. Shu sababli EAGER'da bitta chaqiruv ichida
     natija tayyor bo'lguncha polling qilamiz (bu rejim faqat broker yo'q joyda yoqiladi).
+
+    `submission_id` berilgan bo'lsa (submit oqimida) — test caslar tugagach
+    o'sha `CodeSubmission` yozuvining `all_tests_passed` maydoni yangilanadi va
+    avtomatik ball hisoblash shunga tayanadi. "Run code" tugmasi oqimida
+    `submission_id=None` keladi va hech qanday yozuv yangilanmaydi.
     """
     from .judge0_service import submit_code_batch, check_batch_status
     from django.db import close_old_connections
@@ -106,7 +111,7 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
                 }, timeout=300)
                 return
 
-            _finalize_results(task_id, status_res['results'], test_cases_meta)
+            _finalize_results(task_id, status_res['results'], test_cases_meta, submission_id)
             return
 
         # ─── Production rejim: bloklamaydigan retry oqimi ───
@@ -127,7 +132,7 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
             valid_indices = sub_res['valid_indices']
 
             # Retry the task after 1 second to check status
-            self.retry(args=[task_id, source_code, language, stdin, question_id, tokens, valid_indices, test_cases_meta], countdown=1)
+            self.retry(args=[task_id, source_code, language, stdin, question_id, tokens, valid_indices, test_cases_meta, submission_id], countdown=1)
             return
 
         # Step 2: Retrieve batch results
@@ -141,11 +146,11 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
 
         # If still pending, retry after 1 second
         if status_res.get('status') == 'PENDING':
-            self.retry(args=[task_id, source_code, language, stdin, question_id, tokens, valid_indices, test_cases_meta], countdown=1)
+            self.retry(args=[task_id, source_code, language, stdin, question_id, tokens, valid_indices, test_cases_meta, submission_id], countdown=1)
             return
 
         # Step 3: Parse and cache completed results
-        _finalize_results(task_id, status_res['results'], test_cases_meta)
+        _finalize_results(task_id, status_res['results'], test_cases_meta, submission_id)
 
     except self.MaxRetriesExceededError:
         cache.set(f"run_code:task:{task_id}", {
@@ -160,7 +165,74 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
         }, timeout=300)
 
 
-def _finalize_results(task_id, batch_results, test_cases_meta):
+def _update_submission_tests_passed(submission_id, passed_all):
+    """Submit oqimidagi CodeSubmission yozuvining `all_tests_passed` maydonini
+    yangilaydi va shu attempt ballini qayta hisoblaydi.
+
+    `submission_id` berilmagan (Run code tugmasi) yoki yozuv topilmasa —
+    `filter().update()` hech narsa qilmaydi (jim o'tkazib yuboradi).
+
+    Submit paytida `score_session_answers` CodeSubmission yaratilishidan oldin
+    ishlaydi va Judge0 asinxron tugaydi, shu sababli submit javobida kod ball
+    hali 0 bo'ladi. Judge0 shu yerda tugagach attempt ballini qayta hisoblab
+    yozamiz — leaderboard va natijalar sahifasi to'g'ri ballni ko'rsatadi.
+    """
+    if not submission_id:
+        return
+    try:
+        from attempts.models import CodeSubmission
+        updated = CodeSubmission.objects.filter(pk=submission_id).update(
+            all_tests_passed=bool(passed_all),
+        )
+        if updated:
+            _recompute_attempt_score_for_submission(submission_id)
+    except Exception:
+        logger.exception(
+            'all_tests_passed yangilashda xato submission=%s', submission_id,
+        )
+
+
+def _recompute_attempt_score_for_submission(submission_id):
+    """CodeSubmission tegishli attempt ballini qayta hisoblab yozadi.
+
+    Kod savol balli Judge0 test natijasiga bog'liq va submit paytida hali
+    tayyor bo'lmaydi. Shu sababli har bir kod savol Judge0'da tugagach shu
+    funksiya attempt'ning score/correct_count/wrong_count'ini qayta hisoblaydi.
+    """
+    try:
+        from attempts.models import CodeSubmission, TestSession
+        from attempts.session_utils import score_session_answers
+
+        sub = (
+            CodeSubmission.objects
+            .select_related('attempt', 'attempt__olympiad')
+            .filter(pk=submission_id)
+            .first()
+        )
+        if not sub or not sub.attempt_id:
+            return
+        attempt = sub.attempt
+        olympiad = attempt.olympiad
+        session = TestSession.objects.filter(
+            user_id=attempt.user_id, olympiad=olympiad,
+        ).first()
+        if not session:
+            return
+        scored = score_session_answers(session, olympiad, attempt.answers or {})
+        attempt.score = scored['score']
+        attempt.correct_count = scored['correct']
+        attempt.wrong_count = scored['wrong']
+        attempt.total_questions = scored['total']
+        attempt.save(update_fields=[
+            'score', 'correct_count', 'wrong_count', 'total_questions',
+        ])
+    except Exception:
+        logger.exception(
+            'attempt ballini qayta hisoblashda xato submission=%s', submission_id,
+        )
+
+
+def _finalize_results(task_id, batch_results, test_cases_meta, submission_id=None):
     """Judge0 natijalarini test caslar bo'yicha hisoblab keshga yozadi."""
     try:
         # Single case
@@ -172,7 +244,9 @@ def _finalize_results(task_id, batch_results, test_cases_meta):
                     'error': result.get('error') or "Kodni ishga tushirib bo'lmadi"
                 }, timeout=300)
                 return
-            
+            # Test caslar yo'q savol — kutilgan natija bilan solishtirilmaydi,
+            # shu sababli avtomatik ball berilmaydi (all_tests_passed=False).
+            _update_submission_tests_passed(submission_id, False)
             cache.set(f"run_code:task:{task_id}", {
                 'status': 'COMPLETED',
                 'result': {
@@ -238,6 +312,10 @@ def _finalize_results(task_id, batch_results, test_cases_meta):
             test_results.append(entry)
 
         overall_status = 'Accepted' if passed_all else last_status
+        # Submit oqimida bo'lsa — barcha test caslar muvaffaqiyatli o'tdimi
+        # (passed_all) ni CodeSubmission yozuviga yozamiz. Avtomatik ball
+        # hisoblash (score_session_answers) shu maydonga tayanadi.
+        _update_submission_tests_passed(submission_id, passed_all)
         cache.set(f"run_code:task:{task_id}", {
             'status': 'COMPLETED',
             'result': {

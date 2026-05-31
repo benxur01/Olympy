@@ -194,6 +194,28 @@ def _do_finish_olympiad(olympiad):
         locked.status = Olympiad.STATUS_FINISHED
         locked.save(update_fields=['status'])
         recompute_olympiad_ranks(locked)
+        # Markazga bog'liq olimpiada bo'lsa — yakuniy xulosani menejer/
+        # ustozlarga yuboramiz. `on_commit` orqali: task DB'dagi yangilangan
+        # (FINISHED) holatni va rank'larni ko'rishi kafolatlanadi. Status
+        # tekshiruvi (yuqorida) tufayli xulosa har olimpiada uchun bir marta
+        # yuboriladi.
+        if locked.center_id:
+            _queue_olympiad_summary(locked.pk)
+
+
+def _queue_olympiad_summary(olympiad_id):
+    """Olimpiada xulosa task'ini transaction commit'dan keyin navbatga qo'yadi."""
+    def _enqueue():
+        try:
+            from .tasks import send_olympiad_summary_task
+            send_olympiad_summary_task.delay(olympiad_id)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'failed to queue olympiad summary task olympiad=%s', olympiad_id,
+            )
+
+    transaction.on_commit(_enqueue)
 
 
 def maybe_finish_expired_olympiad(olympiad):

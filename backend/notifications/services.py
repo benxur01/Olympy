@@ -421,6 +421,103 @@ def send_cheating_detected_notification(student, olympiad, center, reason=''):
             seen_push.discard(user.id)
 
 
+def send_olympiad_summary_to_manager(olympiad, center):
+    """Olimpiada tugagandan keyin markazga tegishli menejer/ustozlarga xulosa
+    yuboradi (Telegram Markdown).
+
+    Kimga: `center` ning manager va teacher rollaridagi tasdiqlangan staff
+    a'zolari + markaz egasi (owner). Har bir oluvchiga faqat bir marta
+    yuboriladi. Diskvalifikatsiya bo'lgan attempt'lar statistikaga kirmaydi.
+    Bu funksiya sinxron Telegram API call qiladi — chaqiruvchi tomon uni
+    asinxron (Celery task) ichida ishlatadi.
+    """
+    if not center:
+        return
+
+    from django.conf import settings
+    from django.db.models import Avg, Count, Max, Min
+
+    from attempts.models import TestAttempt
+    from centers.models import CenterMembership
+
+    attempts_qs = TestAttempt.objects.filter(olympiad=olympiad, disqualified=False)
+    agg = attempts_qs.aggregate(
+        total=Count('id'),
+        avg=Avg('score'),
+        top=Max('score'),
+        low=Min('score'),
+    )
+    total = agg['total'] or 0
+    if total == 0:
+        # Hech kim qatnashmagan olimpiada uchun xulosa yuborishning hojati yo'q.
+        logger.info('[olympiad-summary] olympiad=%s — qatnashuvchi yo\'q', olympiad.id)
+        return
+
+    avg = round(agg['avg'] or 0)
+    top_score = agg['top'] or 0
+    min_score = agg['low'] or 0
+    top_attempt = (
+        attempts_qs.select_related('user').order_by('-score', 'time_spent').first()
+    )
+    top_name = '—'
+    if top_attempt and top_attempt.user:
+        top_name = (
+            top_attempt.user.full_name
+            or getattr(top_attempt.user, 'normalized_phone', '')
+            or 'O\'quvchi'
+        )
+
+    site_url = (
+        getattr(settings, 'OLYMPY_FRONTEND_URL', '') or 'https://prolymp.uz'
+    ).rstrip('/')
+
+    message = (
+        f"📊 *{olympiad.title}* yakunlandi\n\n"
+        f"👥 Ishtirokchilar: {total}\n"
+        f"📈 O'rtacha ball: {avg}%\n"
+        f"🏆 Eng yuqori: {top_name} — {top_score}%\n"
+        f"📉 Eng past ball: {min_score}%\n\n"
+        f"🔗 To'liq natijalar: {site_url}/results/{olympiad.id}"
+    )
+
+    # Oluvchilar: owner + manager/teacher staff. Dublikatlarni user.id bo'yicha
+    # chiqarib tashlaymiz — bir kishi ham owner, ham manager bo'lsa bir marta.
+    recipients = []
+    seen_ids = set()
+    if center.owner_id and center.owner:
+        recipients.append(center.owner)
+        seen_ids.add(center.owner_id)
+    staff = (
+        CenterMembership.objects.filter(
+            center=center,
+            role__in=[CenterMembership.ROLE_MANAGER, CenterMembership.ROLE_TEACHER],
+            status=CenterMembership.STATUS_APPROVED,
+        ).select_related('user')
+    )
+    for membership in staff:
+        user = membership.user
+        if not user or user.id in seen_ids:
+            continue
+        seen_ids.add(user.id)
+        recipients.append(user)
+
+    for user in recipients:
+        chat_id = getattr(user, 'telegram_chat_id', '')
+        if not chat_id:
+            logger.info(
+                '[telegram-skip] manager=%s telegram ulanmagan (olympiad=%s)',
+                user.id, olympiad.id,
+            )
+            continue
+        try:
+            send_telegram_markdown(chat_id, message)
+        except Exception:
+            logger.exception(
+                'send_olympiad_summary_to_manager failed manager=%s olympiad=%s',
+                user.id, olympiad.id,
+            )
+
+
 def send_pdf_to_telegram(chat_id, pdf_bytes, filename, caption):
     """ Ota-onaga PDF hisobotini telegram orqali yuborish """
     import urllib.request
