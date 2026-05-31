@@ -999,7 +999,13 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     );
   };
 
-  const renderMistakes = () => {
+  // Xatolar Sandig'i — alohida komponent. Avval oddiy funksiya (renderMistakes)
+  // edi, lekin u o'z tanasida React.useState chaqirardi. Funksiya faqat shu
+  // sahifaga o'tilganda chaqirilgani uchun hooklar soni render'lar orasida
+  // o'zgarib, "Rendered more hooks than during the previous render" xatosi va
+  // qora ekran kelib chiqardi. Komponentga aylantirilib, hooklar har render'da
+  // barqaror chaqiriladi.
+  const MistakesPage = ({ apiMistakesRes, showApiToast }) => {
     const mistakes = apiMistakesRes.data || [];
     const loading = apiMistakesRes.loading;
     const [analyzing, setAnalyzing] = React.useState(false);
@@ -1143,6 +1149,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       </div>
     );
   };
+
+  const renderMistakes = () => (
+    <MistakesPage apiMistakesRes={apiMistakesRes} showApiToast={showApiToast} />
+  );
 
   const renderHistory = () => {
     if (!isPremium) {
