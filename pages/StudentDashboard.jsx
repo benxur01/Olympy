@@ -457,8 +457,17 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     rewards: [apiRewardsRes],
     predictions: [apiPredictionsRes],
   };
+  // Banner sahifa ochilishi bilan (so'rovlar hali loading'da) chiqib qolardi:
+  // parallel so'rovlardan biri boshqasidan oldin xato qaytarsa yoki initial
+  // render'da `error` hali yangilanmagan paytda ham `.some(.error)` true bo'lib
+  // ketardi (race condition). Endi banner faqat shu sahifaning BARCHA so'rovlari
+  // yuklanib bo'lgach (hech biri loading emas) VA kamida bittasi xato bo'lganda
+  // chiqadi — loading davomida hech qachon ko'rinmaydi.
+  const pageSources = pageErrorSources[page] || [];
   const apiHasError = isApi
-    && (pageErrorSources[page] || []).some(r => r && r.error);
+    && pageSources.length > 0
+    && pageSources.every(r => r && !r.loading)
+    && pageSources.some(r => r && r.error);
 
   const allCenters = isApi ? (apiCenters || []) : store.centers;
   const myCenter = studentCenterId ? allCenters.find(c => String(c.id) === String(studentCenterId)) : null;
