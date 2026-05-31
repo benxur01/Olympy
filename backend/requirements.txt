@@ -15,8 +15,7 @@ django-celery-beat==2.8.1
 gunicorn==26.0.0
 whitenoise==6.12.0
 requests==2.34.2
-# Cloudinary lokal muhitda o'rnatilmagan (faqat production'da, CLOUDINARY_CLOUD_NAME
-# o'rnatilganda yoqiladi) — aniq o'rnatilgan versiya yo'q, shu sababli minimal
-# chegara saqlandi. Production'da o'rnatib `pip freeze` orqali pin qiling.
-cloudinary>=1.40
-django-cloudinary-storage>=0.3
+# Cloudinary (faqat production'da, CLOUDINARY_CLOUD_NAME o'rnatilganda yoqiladi).
+# Reproducible build uchun lokal venv'da o'rnatilgan versiyalarga pinlangan.
+cloudinary==1.44.2
+django-cloudinary-storage==0.3.0

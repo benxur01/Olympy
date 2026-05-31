@@ -349,7 +349,11 @@ _default_samesite = 'Lax' if DEBUG else 'None'
 JWT_COOKIE_SAMESITE = os.environ.get('OLYMPY_JWT_COOKIE_SAMESITE', _default_samesite)
 
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
+CELERY_RESULT_BACKEND = (
+    os.environ.get('CELERY_RESULT_BACKEND_URL')
+    or os.environ.get('CELERY_BROKER_URL')
+    or 'redis://localhost:6379/0'
+)
 
 # CELERY_BROKER_URL muhit o'zgaruvchisi o'rnatilmagan bo'lsa (development yoki
 # Redis ulanmagan deploy) — task'lar broker'ga ulanolmay jim ravishda
@@ -699,12 +703,14 @@ LOGGING = {
 # markazlar uchun limit yo'q (kelajakda flag orqali ochiladi).
 FREE_OLYMPIAD_MONTHLY_LIMIT = int(os.environ.get('FREE_OLYMPIAD_MONTHLY_LIMIT', '2'))
 
-# CLICK to'lov tizimi sozlamalari
-CLICK_SERVICE_ID = os.environ.get('CLICK_SERVICE_ID', '12345')
-CLICK_MERCHANT_ID = os.environ.get('CLICK_MERCHANT_ID', '9999')
-CLICK_SECRET_KEY = os.environ.get('CLICK_SECRET_KEY', 'mysecret')
+# CLICK to'lov tizimi sozlamalari. Placeholder default'larsiz: env var
+# o'rnatilmagan bo'lsa None bo'ladi va views.py noto'g'ri qiymat bilan jim
+# ishlashning o'rniga checkout/webhook'ni rad etadi (production'da silent bug emas).
+CLICK_SERVICE_ID = os.environ.get('CLICK_SERVICE_ID') or None
+CLICK_MERCHANT_ID = os.environ.get('CLICK_MERCHANT_ID') or None
+CLICK_SECRET_KEY = os.environ.get('CLICK_SECRET_KEY') or None
 
-# PAYME to'lov tizimi sozlamalari
-PAYME_MERCHANT_ID = os.environ.get('PAYME_MERCHANT_ID', '601ab5...')
-PAYME_SECRET_KEY = os.environ.get('PAYME_SECRET_KEY', 'mykey')
+# PAYME to'lov tizimi sozlamalari (yuqoridagi bilan bir xil mantiq).
+PAYME_MERCHANT_ID = os.environ.get('PAYME_MERCHANT_ID') or None
+PAYME_SECRET_KEY = os.environ.get('PAYME_SECRET_KEY') or None
 
