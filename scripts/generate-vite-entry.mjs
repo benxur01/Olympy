@@ -10,9 +10,6 @@ const entryPath = path.join(srcDir, 'olympy-entry.jsx');
 const indexPath = path.join(root, 'index.html');
 
 const sourceHtml = fs.readFileSync(sourceHtmlPath, 'utf8');
-// .jsx (komponentlar) va .js (masalan constants) ikkalasini ham qabul qilamiz —
-// Olympy.html ichidagi `type="text/babel"` teglar bilan cheklangan, shuning
-// uchun src/services/api.js kabi bundle-import fayllar bu yerga tushmaydi.
 const localScriptPattern = /<script\s+type="text\/babel"\s+src="([^"]+\.jsx?)"\s*><\/script>/g;
 const sourceFiles = [...sourceHtml.matchAll(localScriptPattern)].map(match => match[1]);
 
@@ -45,23 +42,18 @@ let entry = `import * as React from 'react';\n`;
 entry += `import * as ReactDOMClient from 'react-dom/client';\n`;
 entry += `import { createPortal } from 'react-dom';\n\n`;
 entry += `import { OlympyApi } from './services/api.js';\n`;
-// DOMPurify — dangerouslySetInnerHTML ishlatadigan joylar (masalan Results.jsx
-// markdown render) untrusted matnni global DOMPurify.sanitize() orqali tozalashi
-// uchun. type="text/babel" manba fayllari import qila olmaydi, shuning uchun
-// React/OlympyApi kabi global qilib ochamiz.
 entry += `import DOMPurify from 'dompurify';\n`;
-// CodeMirror 6 lazy loader — IT (kod) savollari uchun CodeEditor komponenti
-// ishlatadi. Modulning o'zi kichik (faqat globalThis.OlympyCodeMirror.load ni
-// ochadi); haqiqiy CodeMirror chunklari faqat load() chaqirilganda dinamik
-// import orqali yuklanadi (question_type === 'code' bo'lganda).
 entry += `import './services/codemirror-loader.js';\n`;
-// Tailwind + global CSS — avval index.html ichida CDN va inline <style> orqali
-// keldi. Endi PostCSS plugin bundle paytida CSS generatsiya qiladi.
 entry += `import './index.css';\n\n`;
+
+// Maintain necessary global assignments for backwards compatibility / utility APIs
 entry += `globalThis.React = React;\n`;
 entry += `globalThis.ReactDOM = { ...ReactDOMClient, createPortal };\n\n`;
 entry += `globalThis.OlympyApi = OlympyApi;\n`;
 entry += `globalThis.DOMPurify = DOMPurify;\n\n`;
+
+// Local module scope object to share components between scopes without polluting globalThis
+entry += `const moduleScope = {};\n\n`;
 
 for (const file of sourceFiles) {
   const filePath = path.join(root, file);
@@ -70,11 +62,11 @@ for (const file of sourceFiles) {
 
   entry += `// ${file}\n{\n${source}\n`;
   if (names.length) {
-    entry += `\nObject.assign(globalThis, { ${names.join(', ')} });\n`;
+    entry += `\nObject.assign(moduleScope, { ${names.join(', ')} });\n`;
   }
   entry += `}\n`;
   for (const name of names) {
-    entry += `var ${name} = globalThis.${name};\n`;
+    entry += `var ${name} = moduleScope.${name};\n`;
   }
   entry += `\n`;
 }
