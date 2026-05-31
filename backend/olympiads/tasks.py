@@ -1,9 +1,34 @@
+import logging
 from datetime import timedelta
 
 from celery import shared_task
 from django.utils import timezone
 
 from .models import Olympiad
+
+logger = logging.getLogger(__name__)
+
+
+@shared_task
+def send_olympiad_summary_task(olympiad_id):
+    """Olimpiada yakunlangach markaz menejer/ustozlariga xulosa yuboradi.
+
+    Telegram API call sinxron — request thread'ini bloklamaslik uchun shu
+    asinxron task ichida bajariladi. Markazsiz (public) olimpiadalar uchun
+    hech narsa qilmaydi.
+    """
+    try:
+        olympiad = (
+            Olympiad.objects.select_related('center', 'center__owner')
+            .filter(pk=olympiad_id)
+            .first()
+        )
+        if not olympiad or not olympiad.center_id:
+            return
+        from notifications.services import send_olympiad_summary_to_manager
+        send_olympiad_summary_to_manager(olympiad, olympiad.center)
+    except Exception:
+        logger.exception('send_olympiad_summary_task failed olympiad=%s', olympiad_id)
 
 
 @shared_task

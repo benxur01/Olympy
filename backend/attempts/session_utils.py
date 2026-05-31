@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from questions.models import Question
 
-from .models import TestSession
+from .models import TestAttempt, TestSession
 
 
 def session_end_time(session, olympiad):
@@ -133,16 +133,19 @@ def score_session_answers(session, olympiad, answers):
     answered = 0
     earned_score = 0
     all_questions = ordered_questions(session, olympiad)
-    # Kod (IT) savollar variant indeksi orqali baholanmaydi — ular AI yoki
-    # ustoz tomonidan alohida baholanadi (CodeSubmission.ai_code_score). Shu
-    # sababli MCQ ball hisobidan (total/max_possible/correct) ularni butunlay
-    # chiqarib tashlaymiz: aralash olimpiadada (MCQ + kod) MCQ foiz ballari
-    # nohaq pasaymaydi.
-    questions = [
+    # Kod (IT) savollar variant indeksi orqali baholanmaydi — ular Judge0
+    # test caslari bo'yicha avtomatik baholanadi (CodeSubmission.all_tests_passed).
+    # MCQ ball hisobini (option index solishtirish) faqat MCQ savollar uchun
+    # yuritamiz; kod savollar ballini quyida alohida qo'shamiz.
+    mcq_questions = [
         q for q in all_questions
         if (getattr(q, 'question_type', 'mcq') or 'mcq') != 'code'
     ]
-    for question in questions:
+    code_questions = [
+        q for q in all_questions
+        if (getattr(q, 'question_type', 'mcq') or 'mcq') == 'code'
+    ]
+    for question in mcq_questions:
         chosen = answers.get(str(question.id))
         if chosen is None:
             chosen = answers.get(question.id)
@@ -161,6 +164,42 @@ def score_session_answers(session, olympiad, answers):
         if original_index == question.correct_answer:
             correct += 1
             earned_score += question.score
+
+    # Kod (IT) savollar bo'yicha avtomatik ball: har bir savol uchun shu
+    # attempt'dagi eng so'nggi CodeSubmission'ni olamiz. `all_tests_passed`
+    # True bo'lsa savolning to'liq balli (MCQ kabi) earned_score'ga qo'shiladi.
+    # False yoki None (hali Judge0 tugamagan / yozuv yo'q) — 0 ball. Kod
+    # savollar ham max_possible va total hisobiga kiradi: aralash olimpiadada
+    # foiz to'g'ri chiqishi uchun (kodi to'g'ri o'quvchi 100% dan oshmaydi).
+    if code_questions:
+        from .models import CodeSubmission
+        attempt = (
+            TestAttempt.objects
+            .filter(user=session.user, olympiad=olympiad)
+            .order_by('-submitted_at')
+            .first()
+        )
+        latest_subs = {}
+        if attempt is not None:
+            for cs in (
+                CodeSubmission.objects
+                .filter(attempt=attempt)
+                .order_by('-created_at')
+            ):
+                # order_by('-created_at') — birinchi ko'rilgan eng so'nggisi.
+                latest_subs.setdefault(cs.question_id, cs)
+        for question in code_questions:
+            cs = latest_subs.get(question.id)
+            if cs is not None and cs.all_tests_passed is True:
+                correct += 1
+                answered += 1
+                earned_score += question.score
+            elif cs is not None:
+                # Javob yuborilgan, lekin test caslar o'tmadi (yoki hali
+                # tekshirilmagan) — javob berilgan deb hisoblanadi.
+                answered += 1
+
+    questions = mcq_questions + code_questions
     total = len(questions)
     max_possible = sum(question.score for question in questions)
     # Avval `wrong = total - correct` edi va javob bermagan savollar ham

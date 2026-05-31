@@ -135,6 +135,11 @@ class CodeSubmission(models.Model):
     code_language = models.CharField(max_length=30, blank=True, default='')
     ai_code_review = models.TextField(blank=True, default='', help_text="AI tavsiyasi")
     ai_code_score = models.IntegerField(null=True, blank=True, help_text="AI ball (0-100)")
+    # Judge0 test caslar natijasi: barcha test caslar accepted bo'lsa True,
+    # bittasi xato bo'lsa False, hali tekshirilmagan bo'lsa None. MCQ kabi
+    # avtomatik ball hisoblash shu maydonga tayanadi (True bo'lsa savolning
+    # to'liq balli beriladi).
+    all_tests_passed = models.BooleanField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
