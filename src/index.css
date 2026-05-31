@@ -48,9 +48,43 @@ body {
   box-shadow: 0 20px 40px rgba(99,102,241,0.15), 0 0 25px rgba(168,85,247,0.1); 
   border-color: rgba(99,102,241,0.35);
 }
-.sidebar-item { transition: all 0.2s ease; }
-.sidebar-item.active { background: rgba(99,102,241,0.15); border-left: 2px solid #6366f1; }
-.sidebar-item:hover { background: rgba(255,255,255,0.06); }
+.sidebar-item {
+  position: relative;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
+}
+.sidebar-item .sidebar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sidebar-item:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.04);
+  color: #fff;
+}
+/* Faqat collapsed bo'lmaganda o'ngga 4px suriladi */
+.sidebar-desktop:not(.w-16) .sidebar-item:hover:not(.active) {
+  transform: translateX(4px);
+}
+.sidebar-item:hover:not(.active) .sidebar-icon {
+  color: rgba(255, 255, 255, 0.85);
+}
+.sidebar-item.active {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.14) 0%, rgba(168, 85, 247, 0.08) 100%) !important;
+  border: 1px solid rgba(99, 102, 241, 0.24) !important;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.12), inset 0 0 12px rgba(99, 102, 241, 0.04) !important;
+}
+.sidebar-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 25%;
+  height: 50%;
+  width: 3.5px;
+  background: #6366f1;
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 0 12px #6366f1;
+}
 
 /* Status badges — "Tugagan" va "Draft" endi kulrang/ko'k, qizil emas. */
 .badge-pending { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
