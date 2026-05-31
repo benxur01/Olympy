@@ -416,7 +416,7 @@ CELERY_BEAT_SCHEDULE = {
 CORS_ALLOW_ALL_ORIGINS = False
 _cors_origins = os.environ.get(
     'OLYMPY_CORS_ALLOWED_ORIGINS',
-    'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:5500' if DEBUG else '',
+    'http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:5500' if DEBUG else 'https://prolymp.uz,https://www.prolymp.uz',
 )
 CORS_ALLOWED_ORIGINS = [
     # Trailing slash bo'lsa CORS middleware origin'ni nomos deb hisoblaydi
@@ -425,6 +425,10 @@ CORS_ALLOWED_ORIGINS = [
     o.strip().rstrip('/') for o in _cors_origins.split(',')
     if o.strip()
 ]
+# Har doim production va local frontend origin'larini qo'shib qo'yamiz (CORS muammolarini oldini olish uchun)
+for origin in ['https://prolymp.uz', 'https://www.prolymp.uz', 'http://localhost:5173', 'http://127.0.0.1:5173']:
+    if origin not in CORS_ALLOWED_ORIGINS:
+        CORS_ALLOWED_ORIGINS.append(origin)
 CORS_ALLOW_CREDENTIALS = True
 # Faqat API ishlatadigan metodlar — django-cors-headers default'i TRACE va
 # boshqa keraksizlarni ham qo'shadi. Aniq ro'yxat hujum yuzasini kichraytiradi.
@@ -440,11 +444,10 @@ CSRF_TRUSTED_ORIGINS = [
     o.strip() for o in os.environ.get('OLYMPY_CSRF_TRUSTED_ORIGINS', '').split(',')
     if o.strip()
 ]
-# P1: production domenlari uchun default — env bo'sh bo'lsa ham CSRF
-# tasdiqlash ishlasin. Custom domen ishlatuvchilar OLYMPY_CSRF_TRUSTED_ORIGINS
-# orqali override qilishi mumkin.
-if not CSRF_TRUSTED_ORIGINS and not DEBUG:
-    CSRF_TRUSTED_ORIGINS = ['https://prolymp.uz', 'https://www.prolymp.uz']
+# Har doim prolymp domenlarini CSRF ishonchli origin'lar ro'yxatiga qo'shamiz
+for origin in ['https://prolymp.uz', 'https://www.prolymp.uz']:
+    if origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(origin)
 
 # Production security flags. HTTPS hosting platform (Render) HTTPS'ni terminate
 # qiladi va X-Forwarded-Proto header yuboradi — shu sababli production'da
