@@ -161,12 +161,12 @@ const App = () => {
       // token eskirgan bo'lsa dashboard 401 olib bounce loop yaratadi.
       // Avval getMe bilan validate qilamiz.
       const urlTestId = testIdFromPath();
-      if (auth?.user && auth?.token) {
+      if (auth?.user) {
         try {
-          const freshUser = await globalThis.OlympyApi?.getMe?.(auth.token);
-          if (!freshUser || cancelled) throw new Error('Stale token');
+          const freshUser = await globalThis.OlympyApi?.getMe?.(null);
+          if (!freshUser || cancelled) throw new Error('Stale session');
           const mappedUser = globalThis.OlympyApi.mapBackendUser(freshUser);
-          globalThis.OlympyApi.saveAuth({ token: auth.token, refresh: auth.refresh, user: mappedUser });
+          globalThis.OlympyApi.saveAuth({ user: mappedUser, cookieAuth: true });
           setApiUser(mappedUser);
           // F5'dan keyin test sahifasida bo'lsak — sessiyani tiklaymiz.
           if (requestedPage === 'test') {
@@ -434,7 +434,7 @@ const App = () => {
   // ─── Page renderer ────────────────────────────────────────────────────────
   const renderPage = () => {
     switch (page) {
-      case 'landing':       return <LandingPage onNavigate={navigate} />;
+      case 'landing':       return <LandingPage onNavigate={navigate} user={user} />;
       case 'login':         return <LoginPage onNavigate={navigate} onLogin={handleLogin} />;
       case 'register':      return <RegisterPage onNavigate={navigate} onLogin={handleLogin} />;
       case 'pending-home':  return <PendingHome user={user} onLogout={handleLogout} onNavigate={navigate} />;
@@ -529,7 +529,7 @@ const App = () => {
         return <AnalyticsPage user={apiUser || user} onNavigate={navigate} />;
       case 'parent':
         return <ParentDashboard user={apiUser || user} onNavigate={navigate} onLogout={handleLogout} />;
-      default: return <LandingPage onNavigate={navigate} />;
+      default: return <LandingPage onNavigate={navigate} user={user} />;
     }
   };
 

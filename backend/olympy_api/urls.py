@@ -40,6 +40,7 @@ urlpatterns = [
     path('api/practice/', include('practice.urls')),
     path('api/notifications/', include('notifications.urls')),
     path('api/subjects/', subjects_list_create, name='subjects-list-create'),
+    path('api/billing/', include('billing.urls')),
 ]
 
 import os as _os

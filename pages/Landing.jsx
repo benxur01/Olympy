@@ -434,7 +434,7 @@ const GlowCard = ({ children, className = '', style = {}, ...props }) => {
   );
 };
 
-const LandingPage = ({ onNavigate }) => {
+const LandingPage = ({ onNavigate, user }) => {
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [activeScreen, setActiveScreen] = React.useState(0);
   const [imgErrors, setImgErrors] = React.useState({});
@@ -443,6 +443,31 @@ const LandingPage = ({ onNavigate }) => {
   const [selectedCategory, setSelectedCategory] = React.useState('all');
   const [scrollProgress, setScrollProgress] = React.useState(0);
   const tabsContainerRef = React.useRef(null);
+  const [paymentPlan, setPaymentPlan] = React.useState(null);
+  const [paymentLoading, setPaymentLoading] = React.useState(false);
+  const [paymentError, setPaymentError] = React.useState('');
+
+  const handleCreatePayment = async (provider) => {
+    if (!paymentPlan) return;
+    setPaymentLoading(true);
+    setPaymentError('');
+    try {
+      const token = OlympyApi.getToken();
+      const res = await OlympyApi.createCheckoutSession({
+        plan_id: paymentPlan.id,
+        provider: provider
+      }, token);
+      if (res && res.payment_url) {
+        window.location.href = res.payment_url;
+      } else {
+        throw new Error("To'lov havolasini olishda xatolik yuz berdi");
+      }
+    } catch (err) {
+      setPaymentError(OlympyApi.toUserMessage?.(err) || "To'lov havolasini generatsiya qilib bo'lmadi");
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
 
   React.useEffect(() => {
     const handleScroll = () => {
@@ -600,14 +625,14 @@ const LandingPage = ({ onNavigate }) => {
     { num: '04', title: 'Natijalarni tahlil qiling', desc: 'Avtomatik hisoblangan natijalar va reytingni ko\'ring', icon: '📈' },
   ];
 
-  // Backend'da subscription/plan modeli hali yo'q — narxlar faqat
-  // ko'rsatma tariqasida turadi, "Boshlash" tugmasi mailto orqali
-  // direktorlar bilan bog'lanish uchun. Real to'lov-modul tayyor bo'lganda
-  // bu blok dynamicga o'zgartiriladi.
+  // Subscription plans configured on backend database:
+  // ID 1: Boshlang'ich (bepul)
+  // ID 2: Professional (99k UZS/month)
+  // ID 3: Enterprise (299k UZS/month)
   const pricing = [
-    { name: 'Boshlang\'ich', price: 'Hozir bepul', desc: 'Barcha imkoniyatlar ochiq, to\'lov moduli tez orada', features: ['Asosiy hisobotlar', 'Email qo\'llab-quvvatlash'], popular: false },
-    { name: 'Professional', price: 'Bog\'laning', desc: 'O\'sib borayotgan tashkilotlar uchun', features: ['Cheksiz olimpiada', '500 ta o\'quvchi', 'AI savol yaratish', 'PDF import', 'Telegram bot', 'Batafsil tahlil'], popular: true },
-    { name: 'Enterprise', price: 'Bog\'laning', desc: 'Yirik ta\'lim tarmoqlari uchun', features: ['Cheksiz hamma narsa', 'Maxsus integratsiya', 'Shaxsiy menejer', 'API kirish', 'SLA kafolati'], popular: false },
+    { id: 1, name: 'Boshlang\'ich', price: '0 UZS', desc: 'Barcha imkoniyatlar ochiq, bepul sinov', features: ['Asosiy hisobotlar', 'Email qo\'llab-quvvatlash'], popular: false },
+    { id: 2, name: 'Professional', price: '99 000 UZS', period: 'oyiga', desc: 'O\'sib borayotgan tashkilotlar uchun', features: ['Cheksiz olimpiada', '500 ta o\'quvchi', 'AI savol yaratish', 'PDF import', 'Telegram bot', 'Batafsil tahlil'], popular: true },
+    { id: 3, name: 'Enterprise', price: '299 000 UZS', period: 'oyiga', desc: 'Yirik ta\'lim tarmoqlari uchun', features: ['Cheksiz hamma narsa', 'Maxsus integratsiya', 'Shaxsiy menejer', 'API kirish', 'SLA kafolati'], popular: false },
   ];
 
   return (
@@ -1056,12 +1081,21 @@ const LandingPage = ({ onNavigate }) => {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             {pricing.map((p, i) => {
               const delayClass = `scroll-reveal scroll-reveal-delay-${(i % 3) + 1}`;
-              // Bepul plan to'g'ridan-to'g'ri ro'yxatdan o'tishga, qolgan
-              // ikkita plan esa email orqali bog'lanish uchun.
-              const isFree = typeof p.price === 'string' && p.price.toLowerCase().includes('bepul');
+              const isFree = p.id === 1;
               const handleClick = () => {
-                if (isFree) onNavigate('register');
-                else window.location.href = `mailto:sanjarruzmetov017@gmail.com?subject=Olympy ${p.name} reja haqida`;
+                if (isFree) {
+                  if (user) {
+                    onNavigate(user.activeRole || 'student');
+                  } else {
+                    onNavigate('register');
+                  }
+                } else {
+                  if (!user) {
+                    onNavigate('login');
+                  } else {
+                    setPaymentPlan(p);
+                  }
+                }
               };
               return (
                 <GlowCard 
@@ -1080,7 +1114,7 @@ const LandingPage = ({ onNavigate }) => {
                     {p.period && <div className={`text-sm mb-2 ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.period}</div>}
                     <div className={`text-xs mb-4 md:mb-6 ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.desc}</div>
                     <ul className="space-y-2 flex-1 mb-6">
-                      {p.features.map((f, j) => (
+                       {p.features.map((f, j) => (
                         <li key={j} className={`flex items-center gap-2 text-sm ${p.popular ? 'text-white/80' : 'text-white/60'}`}>
                           <span className={p.popular ? 'text-indigo-300 font-bold' : 'text-indigo-400'}>✓</span> {f}
                         </li>
@@ -1089,7 +1123,7 @@ const LandingPage = ({ onNavigate }) => {
                     <Magnetic>
                       <button onClick={handleClick}
                         className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${p.popular ? 'bg-white text-indigo-600 hover:bg-white/90 shadow-md shadow-white/10' : 'btn-ghost'}`}>
-                        {isFree ? 'Boshlash' : "Bog'lanish"}
+                        {isFree ? (user ? 'Boshqaruv paneli' : 'Boshlash') : (user ? 'Sotib olish' : 'Kirish va ulanish')}
                       </button>
                     </Magnetic>
                   </div>
@@ -1146,6 +1180,76 @@ const LandingPage = ({ onNavigate }) => {
           </div>
         </div>
       </footer>
+
+      {paymentPlan && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/80 backdrop-blur-md px-4">
+          <div className="glass-strong rounded-3xl p-6 md:p-8 max-w-md w-full border border-indigo-500/25 relative overflow-hidden">
+            <div className="hero-glow" style={{ background: '#6366f1', top: '-30%', left: '30%', opacity: 0.15 }} />
+            <div className="relative z-10">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className="text-xl font-bold text-white mb-1">To'lov usulini tanlang</h3>
+                  <p className="text-xs text-white/50">"{paymentPlan.name}" obunasi uchun to'lov</p>
+                </div>
+                <button 
+                  onClick={() => { setPaymentPlan(null); setPaymentError(''); }}
+                  className="text-white/40 hover:text-white transition-colors text-xl font-semibold outline-none"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-6">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-white/60">Tanlangan reja:</span>
+                  <span className="text-sm font-bold text-white">{paymentPlan.name}</span>
+                </div>
+                <div className="flex justify-between items-center mt-2 border-t border-white/5 pt-2">
+                  <span className="text-sm text-white/60">Jami narx:</span>
+                  <span className="text-lg font-black text-indigo-400">{paymentPlan.price}</span>
+                </div>
+              </div>
+
+              {paymentError && (
+                <div className="mb-4 text-xs font-semibold text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">
+                  {paymentError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  disabled={paymentLoading}
+                  onClick={() => handleCreatePayment('click')}
+                  className="flex flex-col items-center justify-center gap-3 p-4 bg-white/5 border border-white/10 hover:border-indigo-500/50 rounded-2xl transition-all hover:bg-white/10 group disabled:opacity-50"
+                >
+                  <div className="w-12 h-12 bg-[#009cf0]/10 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <span className="text-xl font-black text-[#009cf0]">C</span>
+                  </div>
+                  <span className="text-sm font-semibold text-white">Click</span>
+                </button>
+
+                <button
+                  disabled={paymentLoading}
+                  onClick={() => handleCreatePayment('payme')}
+                  className="flex flex-col items-center justify-center gap-3 p-4 bg-white/5 border border-white/10 hover:border-teal-500/50 rounded-2xl transition-all hover:bg-white/10 group disabled:opacity-50"
+                >
+                  <div className="w-12 h-12 bg-[#3cb8b6]/10 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+                    <span className="text-xl font-black text-[#3cb8b6]">P</span>
+                  </div>
+                  <span className="text-sm font-semibold text-white">Payme</span>
+                </button>
+              </div>
+
+              {paymentLoading && (
+                <div className="mt-6 flex items-center justify-center gap-2 text-sm text-indigo-300">
+                  <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                  <span>To'lov havolasi yuklanmoqda...</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

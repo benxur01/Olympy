@@ -28,3 +28,35 @@ def cleanup_phone_verifications():
         | Q(verified_at__isnull=False, verified_at__lt=cutoff_verified)
     ).delete()
     return f'Cleaned {deleted[0]} phone verification rows'
+
+
+@shared_task
+def send_monthly_report_pdf_telegram_task(chat_id, student_id, filename_tg, caption_tg):
+    """Generate child's monthly PDF report and send it to parent via Telegram."""
+    from django.contrib.auth import get_user_model
+    from accounts.reports import generate_monthly_report_pdf
+    from notifications.services import send_pdf_to_telegram
+    User = get_user_model()
+    try:
+        student = User.objects.get(pk=student_id)
+        pdf_bytes = generate_monthly_report_pdf(student)
+        send_pdf_to_telegram(chat_id, pdf_bytes, filename_tg, caption_tg)
+        return f"Successfully sent PDF report for student {student_id} to chat {chat_id}"
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception("Failed to send monthly report to telegram in celery task")
+        return f"Error sending PDF report: {str(e)}"
+
+
+@shared_task
+def send_telegram_markdown_task(chat_id, msg):
+    """Send markdown weekly digest message to parent via Telegram."""
+    from notifications.services import send_telegram_markdown
+    try:
+        send_telegram_markdown(chat_id, msg)
+        return f"Successfully sent weekly digest markdown to chat {chat_id}"
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).exception("Failed to send telegram markdown in celery task")
+        return f"Error sending markdown: {str(e)}"
+

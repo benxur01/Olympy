@@ -178,13 +178,8 @@ def child_report_pdf(request, student_id):
             cleaned_name = (student.full_name or 'o_quvchi').replace(' ', '_')
             filename_tg = f"hisobot-{cleaned_name}.pdf"
             caption_tg = f"📊 Farzandingiz {student.full_name or ''} ning oylik rivojlanish hisoboti."
-            import threading
-            def _send():
-                try:
-                    send_pdf_to_telegram(chat_id, pdf_bytes, filename_tg, caption_tg)
-                except Exception:
-                    pass
-            threading.Thread(target=_send, daemon=True).start()
+            from accounts.tasks import send_monthly_report_pdf_telegram_task
+            send_monthly_report_pdf_telegram_task.delay(chat_id, student_id, filename_tg, caption_tg)
     except Exception:
         import logging
         # Xatoning tafsiloti faqat server log'iga yoziladi — foydalanuvchiga
@@ -294,14 +289,8 @@ def send_test_weekly_digest(request, student_id):
         f"💡 _Tavsiya:_ Farzandingiz ushbu haftada ajoyib natijalar ko'rsatdi! Platforma obunasi orqali uning bilimini yanada oshirishda davom eting."
     )
 
-    from notifications.services import send_telegram_markdown
-    import threading
-    def _send():
-        try:
-            send_telegram_markdown(chat_id, msg)
-        except Exception:
-            pass
-    threading.Thread(target=_send, daemon=True).start()
+    from accounts.tasks import send_telegram_markdown_task
+    send_telegram_markdown_task.delay(chat_id, msg)
 
     return Response({'ok': True, 'detail': "Haftalik hisobot Telegram profilingizga jo'natildi!"})
 
