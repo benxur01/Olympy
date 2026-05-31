@@ -69,6 +69,23 @@ const OwnerSidebarItem = ({ item, active, onClick }) => (
   </button>
 );
 
+const FALLBACK_ORGANIZATION_PRICING = [
+  { id: 13, name: 'Standart (1 oy)', plan_type: 'organization', price: 199999, duration_days: 30, description: 'Kichik tashkilotlar uchun mos reja (1 oy)', features: ["1 ta tashkilot qo'shish", "Menejer boshqaruv paneli", "Olimpiadalar o'tkazish", "Asosiy tahlillar"], is_popular: false },
+  { id: 14, name: 'Standart (3 oy)', plan_type: 'organization', price: 539999, duration_days: 90, description: 'Kichik tashkilotlar uchun mos reja (3 oy)', features: ["1 ta tashkilot qo'shish", "Menejer boshqaruv paneli", "Olimpiadalar o'tkazish", "Asosiy tahlillar"], is_popular: false },
+  { id: 15, name: 'Standart (6 oy)', plan_type: 'organization', price: 959999, duration_days: 180, description: 'Kichik tashkilotlar uchun mos reja (6 oy)', features: ["1 ta tashkilot qo'shish", "Menejer boshqaruv paneli", "Olimpiadalar o'tkazish", "Asosiy tahlillar"], is_popular: false },
+  { id: 16, name: 'Standart (1 yil)', plan_type: 'organization', price: 1679999, duration_days: 365, description: 'Kichik tashkilotlar uchun mos reja (1 yil)', features: ["1 ta tashkilot qo'shish", "Menejer boshqaruv paneli", "Olimpiadalar o'tkazish", "Asosiy tahlillar"], is_popular: false },
+
+  { id: 17, name: 'Plus (1 oy)', plan_type: 'organization', price: 399999, duration_days: 30, description: 'O\'sib borayotgan tashkilotlar uchun (1 oy)', features: ["Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], is_popular: true },
+  { id: 18, name: 'Plus (3 oy)', plan_type: 'organization', price: 1079999, duration_days: 90, description: 'O\'sib borayotgan tashkilotlar uchun (3 oy)', features: ["Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], is_popular: true },
+  { id: 19, name: 'Plus (6 oy)', plan_type: 'organization', price: 1919999, duration_days: 180, description: 'O\'sib borayotgan tashkilotlar uchun (6 oy)', features: ["Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], is_popular: true },
+  { id: 20, name: 'Plus (1 yil)', plan_type: 'organization', price: 3359999, duration_days: 365, description: 'O\'sib borayotgan tashkilotlar uchun (1 yil)', features: ["Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], is_popular: true },
+
+  { id: 21, name: 'Pro (1 oy)', plan_type: 'organization', price: 799999, duration_days: 30, description: 'Yirik ta\'lim tashkilotlari uchun (1 oy)', features: ["Plus reja imkoniyatlari", "Cheksiz olimpiada va o'quvchilar", "API kirish", "Maxsus qo'llab-quvvatlash", "Ota-onalar paneli"], is_popular: false },
+  { id: 22, name: 'Pro (3 oy)', plan_type: 'organization', price: 2159999, duration_days: 90, description: 'Yirik ta\'lim tashkilotlari uchun (3 oy)', features: ["Plus reja imkoniyatlari", "Cheksiz olimpiada va o'quvchilar", "API kirish", "Maxsus qo'llab-quvvatlash", "Ota-onalar paneli"], is_popular: false },
+  { id: 23, name: 'Pro (6 oy)', plan_type: 'organization', price: 3839999, duration_days: 180, description: 'Yirik ta\'lim tashkilotlari uchun (6 oy)', features: ["Plus reja imkoniyatlari", "Cheksiz olimpiada va o'quvchilar", "API kirish", "Maxsus qo'llab-quvvatlash", "Ota-onalar paneli"], is_popular: false },
+  { id: 24, name: 'Pro (1 yil)', plan_type: 'organization', price: 6719999, duration_days: 365, description: 'Yirik ta\'lim tashkilotlari uchun (1 yil)', features: ["Plus reja imkoniyatlari", "Cheksiz olimpiada va o'quvchilar", "API kirish", "Maxsus qo'llab-quvvatlash", "Ota-onalar paneli"], is_popular: false },
+];
+
 const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
@@ -2746,7 +2763,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   };
 
   const renderPremium = () => {
-    const activePlans = plans.filter(p => p.duration_days === durationFilter);
+    const pricing = (plans && plans.length) ? plans : FALLBACK_ORGANIZATION_PRICING;
+    const activePlans = pricing.filter(p => p.duration_days === durationFilter);
     return (
       <div className="space-y-6 p-4 lg:p-6 animate-in">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass rounded-3xl p-6 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
