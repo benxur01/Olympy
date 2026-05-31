@@ -447,15 +447,28 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // bo'lsa ham, boshqa sahifaga tegishli (bashorat, reyting) bitta so'rov
   // xato bersa, bu yerda ham "Ba'zi ma'lumotlar yuklanmadi" banner chiqib,
   // chalkashlik tug'dirardi. Endi har sahifa o'zining so'rovlarini tekshiradi.
+  //
+  // MUHIM: bu yerga FAQAT sahifa ishlashi uchun ZARUR (asosiy mazmunni
+  // ko'rsatadigan) so'rovlar kiritiladi. Optional widget'lar (AI bashorat,
+  // faollik reytingi, raqobatchi tahlili kabi — ma'lumoti bo'lmasa bloki
+  // umuman ko'rsatilmaydigan) banner hisobidan CHIQARILDI. Aks holda:
+  //   • `/api/me/predictions/` AI endpoint'i `ai` throttle scope'iga kiradi
+  //     (kuniga 10 ta) — o'quvchi home'ni 10 martadan ko'p ochsa/yangilasa
+  //     so'rov 429 qaytaradi va asosiy ma'lumotlar (ball, natijalar) joyida
+  //     bo'lsa ham "Ba'zi ma'lumotlar yuklanmadi" banner chiqib qolardi.
+  //   • Faollik reytingi (`activity-leaderboard`) ham home pastidagi
+  //     ixtiyoriy blok — uning xatosi bannerda aks etmasligi kerak.
+  // Optional so'rovlarning xatosi endi faqat console'ga log qilinadi (banner
+  // chiqarmaydi). Asosiy so'rov (stats / results / olimpiadalar) xato bersa
+  // banner avvalgidek chiqaveradi.
   const pageErrorSources = {
-    home: [apiStatsRes, apiResultsRes, apiActivityLeaderboardRes, apiPredictionsRes],
-    olympiads: [apiOlympiadsRes, apiCentersRes],
+    home: [],
+    olympiads: [apiOlympiadsRes],
     results: [apiResultsRes],
-    history: [apiHistoryChartRes, apiCompetitorRes, apiWeaknessRes],
+    history: [apiHistoryChartRes, apiWeaknessRes],
     centers: [apiCentersRes],
     mistakes: [apiMistakesRes],
     rewards: [apiRewardsRes],
-    predictions: [apiPredictionsRes],
   };
   // Banner sahifa ochilishi bilan (so'rovlar hali loading'da) chiqib qolardi:
   // parallel so'rovlardan biri boshqasidan oldin xato qaytarsa yoki initial
@@ -468,6 +481,29 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     && pageSources.length > 0
     && pageSources.every(r => r && !r.loading)
     && pageSources.some(r => r && r.error);
+
+  // Optional (banner chiqarmaydigan) so'rovlarning xatosini jim qoldirmaymiz —
+  // diagnostika uchun console'ga yozamiz. Bu banner UX'ini buzmaydi, ammo
+  // 429/500 sabablarini topishni osonlashtiradi.
+  React.useEffect(() => {
+    if (!isApi) return;
+    const optional = [
+      ['activity-leaderboard', apiActivityLeaderboardRes],
+      ['predictions', apiPredictionsRes],
+      ['competitor-analysis', apiCompetitorRes],
+    ];
+    optional.forEach(([name, res]) => {
+      if (res && res.error && !res.loading) {
+        const status = res.error?.status;
+        console.warn(`[StudentDashboard] optional so'rov xatosi (banner chiqarilmaydi): ${name}`, status ? `status=${status}` : '', res.error);
+      }
+    });
+  }, [
+    isApi,
+    apiActivityLeaderboardRes.error, apiActivityLeaderboardRes.loading,
+    apiPredictionsRes.error, apiPredictionsRes.loading,
+    apiCompetitorRes.error, apiCompetitorRes.loading,
+  ]);
 
   const allCenters = isApi ? (apiCenters || []) : store.centers;
   const myCenter = studentCenterId ? allCenters.find(c => String(c.id) === String(studentCenterId)) : null;
