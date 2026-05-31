@@ -47,22 +47,20 @@ const OwnerMetric = ({ label, value, hint, icon, tone = 'indigo', glow }) => {
 const OwnerSidebarItem = ({ item, active, onClick }) => (
   <button
     onClick={onClick}
-    className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm font-semibold transition-all ${
-      active
-        ? 'text-white'
-        : 'text-white/55 hover:bg-white/5 hover:text-white'
+    className={`sidebar-item w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-left ${
+      active ? 'active' : ''
     }`}
-    style={active ? { background: 'linear-gradient(90deg, rgba(99,102,241,0.18), rgba(168,85,247,0.10))' } : undefined}
   >
-    {active && <span className="absolute left-0 top-1/2 h-7 w-[3px] -translate-y-1/2 rounded-r-full bg-gradient-to-b from-indigo-400 to-purple-500" />}
-    <span className={active ? 'text-indigo-300' : 'text-white/40 group-hover:text-white/70'}>
-      <Icon name={item.icon} size={17} />
+    <span className={`sidebar-icon transition-colors duration-200 ${active ? 'text-indigo-400' : 'text-white/40'}`}>
+      <Icon name={item.icon} size={20} />
     </span>
-    <span className="flex-1">{item.label}</span>
+    <span className={`text-[15px] font-semibold tracking-wide transition-colors duration-200 flex-1 ${active ? 'text-white' : 'text-white/65'}`}>
+      {item.label}
+    </span>
     {item.badge && (
-      <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${
+      <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
         active
-          ? 'bg-white/15 text-white'
+          ? 'bg-indigo-500/20 text-indigo-300'
           : 'bg-amber-400/15 text-amber-300 ring-1 ring-amber-400/30'
       }`}>
         {item.badge}
@@ -1090,7 +1088,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const Sidebar = () => (
     <aside
-      className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-[268px] flex-col border-r border-white/5 transition-transform duration-200 lg:static lg:translate-x-0`}
+      className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-white/5 transition-transform duration-200 lg:static lg:translate-x-0`}
       style={{ background: 'rgba(5,5,8,0.99)' }}
     >
       <div className="border-b border-white/5 px-5 py-5">

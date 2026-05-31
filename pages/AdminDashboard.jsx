@@ -564,7 +564,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   });
   const dashboardNotifications = recentActivity.slice(0, 4);
   const AdminSidebar = () => (
-    <aside className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-[184px] flex-col admin-sidebar text-slate-300 shadow-2xl transition-transform duration-200 lg:static lg:translate-x-0 lg:shadow-none`}>
+    <aside className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-60 flex-col admin-sidebar text-slate-300 shadow-2xl transition-transform duration-200 lg:static lg:translate-x-0 lg:shadow-none`}>
       <div className="flex h-[54px] items-center gap-2 border-b border-white/5 px-4 bg-white/[0.01]">
         <button onClick={() => onNavigate('landing')} className="flex items-center gap-2">
           <div className="relative flex h-7 w-7 items-center justify-center rounded-md bg-white text-base font-black text-[#050508]">
@@ -582,11 +582,15 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
           return (
             <button key={item.key}
               onClick={() => { setPage(item.key); setMobileMenu(false); }}
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-[9px] text-left text-[11px] font-bold transition-all duration-200 ${isActive ? 'bg-indigo-600/15 text-indigo-400 border-l-2 border-indigo-500 shadow-[inset_0_0_8px_rgba(99,102,241,0.08)]' : 'text-slate-400 hover:bg-white/[0.04] hover:text-white'}`}>
-              <Icon name={item.icon} size={14} className={isActive ? 'text-indigo-400' : 'text-slate-500'} />
-              <span className="flex-1">{item.label}</span>
+              className={`sidebar-item w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-left ${isActive ? 'active' : ''}`}>
+              <span className={`sidebar-icon transition-colors duration-200 ${isActive ? 'text-indigo-400' : 'text-white/40'}`}>
+                <Icon name={item.icon} size={20} />
+              </span>
+              <span className={`text-[15px] font-semibold tracking-wide transition-colors duration-200 flex-1 ${isActive ? 'text-white' : 'text-white/65'}`}>
+                {item.label}
+              </span>
               {item.badge && (
-                <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-extrabold ${isActive ? 'bg-indigo-500/20 text-indigo-300' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}`}>{item.badge}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${isActive ? 'bg-indigo-500/20 text-indigo-300' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}`}>{item.badge}</span>
               )}
             </button>
           );
