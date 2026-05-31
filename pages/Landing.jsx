@@ -554,7 +554,7 @@ const LandingPage = ({ onNavigate, user }) => {
     return () => {
       elements.forEach(el => observer.unobserve(el));
     };
-  }, []);
+  }, [plansLoading, planTypeFilter, durationFilter, selectedCategory]);
 
   React.useEffect(() => {
     let cancelled = false;
