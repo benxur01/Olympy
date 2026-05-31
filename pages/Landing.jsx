@@ -446,6 +446,10 @@ const LandingPage = ({ onNavigate, user }) => {
   const [paymentPlan, setPaymentPlan] = React.useState(null);
   const [paymentLoading, setPaymentLoading] = React.useState(false);
   const [paymentError, setPaymentError] = React.useState('');
+  // Obuna rejalari backenddan yuklanadi. Yuklanmaguncha skeleton, xato bo'lsa
+  // FALLBACK_PRICING ko'rsatiladi (pastdagi `pricing` ga qarang).
+  const [plans, setPlans] = React.useState(null);
+  const [plansLoading, setPlansLoading] = React.useState(true);
 
   const handleCreatePayment = async (provider) => {
     if (!paymentPlan) return;
@@ -468,6 +472,42 @@ const LandingPage = ({ onNavigate, user }) => {
       setPaymentLoading(false);
     }
   };
+
+  // Obuna rejalarini backenddan yuklash. Narx raqam ('99000') ko'rinishida
+  // keladi — uni '99 000 UZS' formatiga o'tkazamiz. Bepul reja (0) uchun
+  // period ko'rsatilmaydi. Xato yoki bo'sh javobda fallback static qoladi.
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await OlympyApi.getSubscriptionPlans();
+        if (cancelled) return;
+        const list = Array.isArray(data) ? data : [];
+        if (!list.length) {
+          setPlans(null); // fallback ishlatiladi
+          return;
+        }
+        const mapped = list.map((p) => {
+          const priceNum = Number(p.price) || 0;
+          return {
+            id: p.id,
+            name: p.name,
+            price: `${priceNum.toLocaleString('ru-RU').replace(/ /g, ' ')} UZS`,
+            period: priceNum > 0 ? 'oyiga' : undefined,
+            desc: p.description || '',
+            features: Array.isArray(p.features) ? p.features : [],
+            popular: !!p.is_popular,
+          };
+        });
+        setPlans(mapped);
+      } catch {
+        if (!cancelled) setPlans(null); // fallback static ishlatiladi
+      } finally {
+        if (!cancelled) setPlansLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   React.useEffect(() => {
     const handleScroll = () => {
@@ -625,15 +665,16 @@ const LandingPage = ({ onNavigate, user }) => {
     { num: '04', title: 'Natijalarni tahlil qiling', desc: 'Avtomatik hisoblangan natijalar va reytingni ko\'ring', icon: '📈' },
   ];
 
-  // Subscription plans configured on backend database:
-  // ID 1: Boshlang'ich (bepul)
-  // ID 2: Professional (99k UZS/month)
-  // ID 3: Enterprise (299k UZS/month)
-  const pricing = [
+  // Narxlar backenddan (GET /api/billing/plans/) yuklanadi — yuqoridagi
+  // `plans` state'iga qarang. Backend javob bermasa yoki bo'sh bo'lsa quyidagi
+  // static fallback ishlatiladi (offline / API ishlamay qolgan holatlar uchun).
+  const FALLBACK_PRICING = [
     { id: 1, name: 'Boshlang\'ich', price: '0 UZS', desc: 'Barcha imkoniyatlar ochiq, bepul sinov', features: ['Asosiy hisobotlar', 'Email qo\'llab-quvvatlash'], popular: false },
     { id: 2, name: 'Professional', price: '99 000 UZS', period: 'oyiga', desc: 'O\'sib borayotgan tashkilotlar uchun', features: ['Cheksiz olimpiada', '500 ta o\'quvchi', 'AI savol yaratish', 'PDF import', 'Telegram bot', 'Batafsil tahlil'], popular: true },
     { id: 3, name: 'Enterprise', price: '299 000 UZS', period: 'oyiga', desc: 'Yirik ta\'lim tarmoqlari uchun', features: ['Cheksiz hamma narsa', 'Maxsus integratsiya', 'Shaxsiy menejer', 'API kirish', 'SLA kafolati'], popular: false },
   ];
+  // API'dan kelgan plan'lar bo'lsa shularni, aks holda fallback'ni ko'rsatamiz.
+  const pricing = (plans && plans.length) ? plans : FALLBACK_PRICING;
 
   return (
     <div className="min-h-screen" style={{ background: '#050508' }}>
@@ -1066,9 +1107,7 @@ const LandingPage = ({ onNavigate, user }) => {
         </div>
       </section>
 
-      {/* Pricing
-          TODO: backend'da subscription/plan modeli hali yo'q. Bu blok faqat
-          ko'rsatma. To'lov-modul tayyor bo'lganda dynamic ga o'zgartiriladi. */}
+      {/* Pricing — rejalar backenddan (GET /api/billing/plans/) yuklanadi. */}
       <section id="pricing" className="py-12 md:py-24" style={{ background: 'rgba(99,102,241,0.03)' }}>
         <div className="max-w-5xl mx-auto px-4 md:px-6">
           <div className="text-center mb-8 md:mb-16 scroll-reveal">
@@ -1078,10 +1117,30 @@ const LandingPage = ({ onNavigate, user }) => {
               Hozircha platforma erkin foydalanish bosqichida. Yakuniy rejalar va to'lov modullari tez orada e'lon qilinadi — batafsil ma'lumot uchun bog'laning.
             </p>
           </div>
+          {plansLoading && !plans ? (
+            // Skeleton — rejalar yuklanguncha 3 ta placeholder karta.
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+              {[0, 1, 2].map((i) => (
+                <div key={i} className="glass rounded-2xl p-4 md:p-6 animate-pulse">
+                  <div className="h-4 w-24 bg-white/10 rounded mb-4" />
+                  <div className="h-8 w-32 bg-white/10 rounded mb-2" />
+                  <div className="h-3 w-40 bg-white/5 rounded mb-6" />
+                  <div className="space-y-3 mb-6">
+                    <div className="h-3 w-full bg-white/5 rounded" />
+                    <div className="h-3 w-5/6 bg-white/5 rounded" />
+                    <div className="h-3 w-4/6 bg-white/5 rounded" />
+                  </div>
+                  <div className="h-10 w-full bg-white/10 rounded-xl" />
+                </div>
+              ))}
+            </div>
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             {pricing.map((p, i) => {
               const delayClass = `scroll-reveal scroll-reveal-delay-${(i % 3) + 1}`;
-              const isFree = p.id === 1;
+              // Narxi 0 bo'lgan reja bepul (API'da id farq qilishi mumkin,
+              // shuning uchun narxga qarab aniqlaymiz).
+              const isFree = String(p.price || '').replace(/\s/g, '').startsWith('0');
               const handleClick = () => {
                 if (isFree) {
                   if (user) {
@@ -1131,6 +1190,7 @@ const LandingPage = ({ onNavigate, user }) => {
               );
             })}
           </div>
+          )}
         </div>
       </section>
 

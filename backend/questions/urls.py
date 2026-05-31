@@ -6,7 +6,6 @@ from . import views
 urlpatterns = [
     path('generate-ai/', views.generate_ai_questions, name='questions-generate-ai'),
     path('code-review/', views.code_review, name='questions-code-review'),
-    path('run-code/', views.run_code_view, name='questions-run-code'),
     path('run-code/start/', views.run_code_start_view, name='questions-run-code-start'),
     path('run-code/status/<str:task_id>/', views.run_code_status_view, name='questions-run-code-status'),
     path('pdf-preview/', views.preview_pdf_questions, name='questions-pdf-preview'),

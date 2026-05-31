@@ -1,5 +1,6 @@
 import hashlib
 import base64
+import logging
 from decimal import Decimal
 from django.conf import settings
 from django.http import JsonResponse
@@ -8,13 +9,14 @@ from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status as http_status
 
 from .models import SubscriptionPlan, UserSubscription, PaymentTransaction
 
 User = get_user_model()
+logger = logging.getLogger('olympy.billing')
 
 
 @api_view(['POST'])
@@ -44,12 +46,32 @@ def create_checkout_session(request):
     amount_str = f"{plan.price:.2f}"
     
     if provider == 'click':
-        service_id = getattr(settings, 'CLICK_SERVICE_ID', '12345')
-        merchant_id = getattr(settings, 'CLICK_MERCHANT_ID', '9999')
+        # Placeholder default'larsiz: kalit o'rnatilmagan bo'lsa noto'g'ri URL
+        # bilan jim ishlashning o'rniga ogohlantirish chiqarib, xato qaytaramiz.
+        service_id = getattr(settings, 'CLICK_SERVICE_ID', None)
+        merchant_id = getattr(settings, 'CLICK_MERCHANT_ID', None)
+        if not service_id or not merchant_id:
+            logger.warning(
+                "Click to'lovi so'raldi, lekin CLICK_SERVICE_ID yoki "
+                "CLICK_MERCHANT_ID settings.py da o'rnatilmagan — checkout bekor qilindi."
+            )
+            return Response(
+                {'detail': "Click to'lov tizimi sozlanmagan. Iltimos administrator bilan bog'laning."},
+                status=http_status.HTTP_503_SERVICE_UNAVAILABLE
+            )
         # Click payment link structure
         payment_url = f"https://my.click.uz/services/pay?service_id={service_id}&merchant_id={merchant_id}&amount={amount_str}&transaction_param={tx.id}"
     elif provider == 'payme':
-        merchant_id = getattr(settings, 'PAYME_MERCHANT_ID', '601ab5...')
+        merchant_id = getattr(settings, 'PAYME_MERCHANT_ID', None)
+        if not merchant_id:
+            logger.warning(
+                "Payme to'lovi so'raldi, lekin PAYME_MERCHANT_ID settings.py da "
+                "o'rnatilmagan — checkout bekor qilindi."
+            )
+            return Response(
+                {'detail': "Payme to'lov tizimi sozlanmagan. Iltimos administrator bilan bog'laning."},
+                status=http_status.HTTP_503_SERVICE_UNAVAILABLE
+            )
         # Base64 encode for Payme billing link
         params = f"m={merchant_id};ac.transaction_id={tx.id};a={int(plan.price * 100)}"
         encoded_params = base64.b64encode(params.encode()).decode()
@@ -98,8 +120,14 @@ def click_webhook(request):
     sign_time = data.get('sign_time')
     sign_string = data.get('sign_string')
     
-    secret_key = getattr(settings, 'CLICK_SECRET_KEY', 'mysecret')
-    
+    secret_key = getattr(settings, 'CLICK_SECRET_KEY', None)
+    if not secret_key:
+        logger.warning(
+            "Click webhook chaqirildi, lekin CLICK_SECRET_KEY o'rnatilmagan — "
+            "imzo tekshirib bo'lmaydi, so'rov rad etildi."
+        )
+        return JsonResponse({'error': -1, 'error_note': 'SIGN CHECK FAILED'})
+
     # Verify signature
     # sign_string = md5(click_trans_id + service_id + secret_key + merchant_trans_id + amount + action + sign_time)
     raw_sign = f"{click_trans_id}{service_id}{secret_key}{merchant_trans_id}{amount}{action}{sign_time}"
@@ -178,7 +206,13 @@ def payme_webhook(request):
         
     # HTTP Basic Authorization check
     auth_header = request.headers.get('Authorization', '')
-    payme_key = getattr(settings, 'PAYME_SECRET_KEY', 'mykey')
+    payme_key = getattr(settings, 'PAYME_SECRET_KEY', None)
+    if not payme_key and not settings.DEBUG:
+        logger.warning(
+            "Payme webhook chaqirildi, lekin PAYME_SECRET_KEY o'rnatilmagan — "
+            "avtorizatsiyani tekshirib bo'lmaydi, so'rov rad etildi."
+        )
+        return JsonResponse({'error': {'code': -32504, 'message': 'Insufficient privilege'}}, status=200)
     expected_auth = f"Paycom:{payme_key}"
     encoded_auth = base64.b64encode(expected_auth.encode()).decode()
     
@@ -357,3 +391,24 @@ def payme_webhook(request):
         })
 
     return JsonResponse({'error': {'code': -32601, 'message': 'Method not found'}}, status=200)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])  # Public endpoint so anyone can view plans on Landing
+def list_subscription_plans(request):
+    """GET /api/billing/plans/ — Returns active subscription plans."""
+    plans = SubscriptionPlan.objects.filter(is_active=True).order_by('price')
+    data = [
+        {
+            'id': p.id,
+            'name': p.name,
+            'price': float(p.price),
+            'duration_days': p.duration_days,
+            'description': p.description or '',
+            'features': p.features if isinstance(p.features, list) else [],
+            'is_popular': bool(p.is_popular),
+        }
+        for p in plans
+    ]
+    return Response(data)
+

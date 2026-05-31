@@ -15,7 +15,15 @@ const makeAssetUrl = (url) => {
 
 const AUTH_TOKEN_KEY = 'olympy_api_token';
 const AUTH_REFRESH_KEY = 'olympy_refresh_token';
-const AUTH_USER_KEY = 'olympy_api_user';
+
+// XAVFSIZLIK: foydalanuvchi profil obyekti (roles, is_premium, isPlatformAdmin
+// va h.k.) endi localStorage/sessionStorage'da SAQLANMAYDI. Storage'ga yozilgan
+// qiymatni buzg'unchi (yoki foydalanuvchining o'zi) tahrirlab `isPlatformAdmin:
+// true` qila olardi — UI faqat ko'rsatish uchun ishlatsa ham, bu client-side
+// privilege escalation oynasini ochadi. Buning o'rniga user obyekti faqat
+// in-memory (modul-darajali) saqlanadi va sahifa har yangilanganda
+// `/api/me/` (cookie'dagi JWT orqali) dan qayta yuklanadi.
+let _currentUser = null;
 
 // Default store — XAVFSIZLIK: sessionStorage. JWT token brauzer yopilganda
 // tozalanadi, bu XSS orqali o'g'irlash oynasini va eskirgan token xavfini
@@ -189,7 +197,7 @@ const request = async (
       // Autentifikatsiyali so'rovda token muddati tugagan — auth tozalanadi.
       _removeAuth(AUTH_TOKEN_KEY);
       _removeAuth(AUTH_REFRESH_KEY);
-      _removeAuth(AUTH_USER_KEY);
+      _currentUser = null;
       try { window.dispatchEvent(new CustomEvent('olympy:logout')); } catch {}
       throw new ApiError('Session expired', { status: 401, data });
     }
@@ -309,19 +317,29 @@ const saveAuth = ({ token, refresh, user, cookieAuth, persistent } = {}) => {
   // Ular faqat HttpOnly Secure cookie qatlami orqali brauzer tomonidan avtomatik yuboriladi.
   _removeAuth(AUTH_TOKEN_KEY);
   _removeAuth(AUTH_REFRESH_KEY);
-  if (user) _writeAuth(AUTH_USER_KEY, JSON.stringify(user));
+  // Migratsiya: eski versiyalar user obyektini 'olympy_api_user' kalitida
+  // storage'ga yozardi. Endi storage'da saqlamaymiz — qolib ketgan stale
+  // qiymatni bir martalik tozalaymiz, aks holda u keraksiz holda turaveradi.
+  _removeAuth('olympy_api_user');
+  // User obyekti faqat in-memory saqlanadi (storage'ga yozilmaydi) — XSS /
+  // qo'lda tahrir orqali privilege escalation oldini olish uchun. `user`
+  // undefined bo'lsa joriy qiymat saqlanib qoladi (faqat token yangilash
+  // chaqiruvlarida user'siz saveAuth ishlatiladi).
+  if (user !== undefined) _currentUser = user || null;
 };
 
 const loadAuth = () => {
-  const rawUser = _readAuth(AUTH_USER_KEY);
-  if (!rawUser) return null;
-  try { return { token: null, refresh: null, user: JSON.parse(rawUser) }; } catch { return null; }
+  if (!_currentUser) return null;
+  // token/refresh har doim null — ular cookie'da yashaydi. Eski chaqiruvchilar
+  // `loadAuth()?.token` kutgani uchun shaklni saqlab qolamiz (ular allaqachon
+  // null token bilan cookie auth orqali ishlaydi).
+  return { token: null, refresh: null, user: _currentUser };
 };
 
 const clearAuth = () => {
   _removeAuth(AUTH_TOKEN_KEY);
   _removeAuth(AUTH_REFRESH_KEY);
-  _removeAuth(AUTH_USER_KEY);
+  _currentUser = null;
   try { request('/api/auth/logout/', { method: 'POST', retryOnAuth: false }); } catch {}
 };
 
@@ -555,6 +573,8 @@ export const OlympyApi = {
   startWrongAnswerPractice: (body, token) => request('/api/practice/wrong-answers/start/', { method: 'POST', body, token }),
   explainQuestion: (questionId, token) => request(`/api/questions/${questionId}/explain/`, { method: 'POST', token }),
   // Billing / To'lov
+  // Aktiv obuna rejalari — Landing'da ochiq ko'rsatiladi, autentifikatsiya talab qilinmaydi.
+  getSubscriptionPlans: () => request('/api/billing/plans/', { retryOnAuth: false }),
   createCheckoutSession: (payload, token) => request('/api/billing/checkout/', { method: 'POST', body: payload, token }),
   // Parent / Ota-ona
   linkChild: (studentPhone, token) => request('/api/me/parent/link/', { method: 'POST', body: { student_phone: studentPhone }, token }),
