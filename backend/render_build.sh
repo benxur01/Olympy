@@ -12,9 +12,12 @@
 #   5) If bootstrap admin env vars are set, create/update the platform admin.
 set -o errexit
 
+echo "=== ENV: Python=$(python --version 2>&1) Pip=$(pip --version 2>&1 | head -1) ==="
+
 echo "=== STEP 1: pip install ==="
 pip install --upgrade pip
-pip install -r requirements.txt
+echo "=== pip upgraded ==="
+pip install --no-cache-dir -r requirements.txt
 echo "=== pip install OK ==="
 
 python <<'PY'
