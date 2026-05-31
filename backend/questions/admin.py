@@ -5,8 +5,8 @@ from .models import Question
 
 @admin.register(Question)
 class QuestionAdmin(admin.ModelAdmin):
-    list_display = ('text_short', 'center', 'subject', 'difficulty', 'source')
-    list_filter = ('subject', 'difficulty', 'source')
+    list_display = ('text_short', 'center', 'subject', 'question_type', 'difficulty', 'source')
+    list_filter = ('subject', 'question_type', 'difficulty', 'source')
     search_fields = ('text',)
 
     def text_short(self, obj):

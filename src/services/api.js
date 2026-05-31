@@ -469,6 +469,15 @@ export const OlympyApi = {
   getQuestions: (centerId, token) => request(`/api/questions/?center=${centerId}`, { token }).then(unwrapList),
   createQuestion: (payload, token) => request('/api/questions/', { method: 'POST', body: payload, token }),
   generateAiQuestions: (payload, token) => request('/api/questions/generate-ai/', { method: 'POST', body: payload, token }),
+  // IT (kod) savolini AI bilan baholash — test paytida o'quvchi kodini sinaydi.
+  // { question_id, submitted_code, language } → { score (0-100|null), review }.
+  reviewCode: (payload, token) => request('/api/questions/code-review/', { method: 'POST', body: payload, token }),
+  // IT (kod) savolini Judge0 orqali ishga tushirish ("Ishga tushirish" tugmasi).
+  // { source_code, language, stdin?, question_id? } →
+  // { stdout, stderr, compile_output, status, time, memory, test_results[] }.
+  runCode: (payload, token) => request('/api/questions/run-code/', { method: 'POST', body: payload, token }),
+  // Ustoz/menejer uchun olimpiadaning barcha kod javoblari + AI tavsiyalari.
+  getCodeSubmissions: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/code-submissions/`, { token }),
   extractPdfQuestions: (pdfFile, payload, token) => {
     const fd = new FormData();
     fd.append('pdf', pdfFile);

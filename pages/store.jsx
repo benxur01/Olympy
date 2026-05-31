@@ -538,6 +538,8 @@ const normaliseQuestionOption = (value) =>
 
 const inferQuestionTestType = (question) => {
   const explicit = String(question?.type || question?.questionType || question?.question_type || '').toLowerCase();
+  // Kod (IT) savol variantli test turiga kirmaydi.
+  if (explicit === 'code' || explicit.includes('kod')) return 'code';
   if (explicit.includes('true') || explicit.includes("to'g'ri") || explicit.includes("noto'g'ri")) return 'true_false';
   if (explicit.includes('short') || explicit.includes('qisqa')) return 'short_answer';
   if (explicit.includes('multiple') || explicit.includes("ko'p")) return 'multiple_choice';
@@ -553,7 +555,10 @@ const inferQuestionTestType = (question) => {
 };
 
 const questionMatchesTestType = (question, testType) =>
-  !testType || testType === 'mixed' || inferQuestionTestType(question) === testType;
+  // Kod savollar har qanday test turiga mos (backend ham ularni test_type
+  // mosligi tekshiruvidan chiqaradi) — manager ularni erkin biriktira oladi.
+  !testType || testType === 'mixed' || inferQuestionTestType(question) === 'code'
+  || inferQuestionTestType(question) === testType;
 
 const eventReadinessIssues = (event) => {
   const issues = [];
@@ -666,6 +671,11 @@ const mapApiOlympiad = (o) => {
       : (Array.isArray(o.questions) ? o.questions.map(String) : []),
     status: o.status || 'draft',
     groupFilter: o.group_filter || o.groupFilter || '',
+    // IT (kod) olimpiadasi sozlamalari.
+    allowedLanguages: Array.isArray(o.allowed_languages)
+      ? o.allowed_languages
+      : (Array.isArray(o.allowedLanguages) ? o.allowedLanguages : []),
+    itCategory: o.it_category || o.itCategory || '',
     createdAt: (o.created_at || '').slice(0, 10),
     participants: o.participants || 0,
     maxScore: o.max_score ?? 100,
@@ -763,6 +773,14 @@ const mapApiQuestion = (q) => {
     score: q.score ?? 3,
     difficulty: mappedDifficulty,
     source: q.source || 'manual',
+    // IT (kod) savol maydonlari. Oddiy MCQ savollarda questionType='mcq'.
+    questionType: q.question_type || q.questionType || 'mcq',
+    programmingLanguage: q.programming_language || q.programmingLanguage || '',
+    codeTemplate: q.code_template || q.codeTemplate || '',
+    expectedOutput: q.expected_output || q.expectedOutput || '',
+    // Judge0 test case'lar (staff savol formasida tahrirlanadi). Student
+    // javobida backend bu maydonni umuman qaytarmaydi (serializer himoyasi).
+    testCases: Array.isArray(q.test_cases) ? q.test_cases : (Array.isArray(q.testCases) ? q.testCases : []),
     _api: true,
   };
 };

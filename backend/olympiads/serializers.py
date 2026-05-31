@@ -55,7 +55,7 @@ class OlympiadSerializer(serializers.ModelSerializer):
         fields = ['id', 'center', 'event_type', 'title', 'subject', 'test_level',
                   'test_type', 'start_datetime',
                   'duration_minutes', 'max_score', 'status', 'created_by',
-                  'group_filter',
+                  'group_filter', 'allowed_languages', 'it_category',
                   'question_ids', 'participants', 'avg_score', 'created_at']
         read_only_fields = ['id', 'status', 'created_by', 'participants', 'avg_score',
                             'max_score', 'created_at']
@@ -87,6 +87,26 @@ class OlympiadSerializer(serializers.ModelSerializer):
         total = sum(q.score or 0 for q in obj.questions.all())
         return total if total > 0 else 100
 
+    # IT olimpiadasida ruxsat etilishi mumkin bo'lgan tillar — frontend va
+    # backend bir xil ro'yxatdan foydalanadi.
+    ALLOWED_CODE_LANGUAGES = {'python', 'javascript', 'java', 'cpp', 'c'}
+
+    def validate_allowed_languages(self, value):
+        if value in (None, ''):
+            return []
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Ro'yxat (list) bo'lishi kerak")
+        cleaned = []
+        for item in value:
+            lang = str(item or '').strip().lower()
+            if not lang:
+                continue
+            if lang not in self.ALLOWED_CODE_LANGUAGES:
+                raise serializers.ValidationError(f"Noto'g'ri til: {item}")
+            if lang not in cleaned:
+                cleaned.append(lang)
+        return cleaned
+
     def validate(self, attrs):
         center = attrs.get('center') or (self.instance.center if self.instance else None)
         questions = attrs.get('questions')
@@ -103,9 +123,14 @@ class OlympiadSerializer(serializers.ModelSerializer):
         if test_type and test_type != Olympiad.TEST_TYPE_MIXED:
             if questions is None and self.instance:
                 questions = list(self.instance.questions.all())
+            # Kod (IT) savollar variant-asosli test turiga mos kelmaydi
+            # (options bo'sh) — ularni mismatch tekshiruvidan chiqaramiz.
+            # IT olimpiadalarda manager test_type ni Aralash qoldirishi yoki
+            # kod savollar bilan birga MCQ savollar qo'shishi mumkin.
             mismatched = [
                 q.id for q in (questions or [])
-                if _question_test_type(q) != test_type
+                if getattr(q, 'question_type', 'mcq') != 'code'
+                and _question_test_type(q) != test_type
             ]
             if mismatched:
                 raise serializers.ValidationError({

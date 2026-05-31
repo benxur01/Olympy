@@ -47,6 +47,20 @@ class Olympiad(models.Model):
         (STATUS_FINISHED, 'Tugagan'),
     ]
 
+    # IT olimpiadasi kategoriyasi — bo'sh bo'lsa oddiy (variantli) olimpiada.
+    IT_CATEGORY_UNSET = ''
+    IT_CATEGORY_FRONTEND = 'frontend'
+    IT_CATEGORY_BACKEND = 'backend'
+    IT_CATEGORY_FULLSTACK = 'fullstack'
+    IT_CATEGORY_GENERAL = 'general'
+    IT_CATEGORY_CHOICES = [
+        (IT_CATEGORY_UNSET, 'Belgilanmagan'),
+        (IT_CATEGORY_FRONTEND, 'Frontend'),
+        (IT_CATEGORY_BACKEND, 'Backend'),
+        (IT_CATEGORY_FULLSTACK, 'Full Stack'),
+        (IT_CATEGORY_GENERAL, 'Umumiy'),
+    ]
+
     center = models.ForeignKey(
         EducationCenter,
         on_delete=models.CASCADE,
@@ -79,6 +93,18 @@ class Olympiad(models.Model):
     # Guruh olimpiadasi filtri — to'ldirilgan bo'lsa, faqat shu markazda
     # mos `CenterMembership.group_tag` ga ega o'quvchilar qatnasha oladi.
     group_filter = models.CharField(max_length=50, blank=True, default='')
+    # IT (dasturlash) olimpiadasi sozlamalari. allowed_languages bo'sh bo'lsa
+    # barcha til ruxsat etiladi; aks holda faqat ro'yxatdagi tillardan biriga
+    # kod yuborish mumkin (backend submit'da tekshiriladi). it_category — UI'da
+    # olimpiadani toifalash uchun (Frontend/Backend/Full Stack/Umumiy).
+    allowed_languages = models.JSONField(
+        default=list, blank=True,
+        help_text="['python', 'javascript'] — bo'sh bo'lsa barcha til ruxsat",
+    )
+    it_category = models.CharField(
+        max_length=30, blank=True, default='',
+        choices=IT_CATEGORY_CHOICES,
+    )
     is_deleted = models.BooleanField(default=False, db_index=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

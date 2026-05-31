@@ -50,6 +50,11 @@ entry += `import { OlympyApi } from './services/api.js';\n`;
 // uchun. type="text/babel" manba fayllari import qila olmaydi, shuning uchun
 // React/OlympyApi kabi global qilib ochamiz.
 entry += `import DOMPurify from 'dompurify';\n`;
+// CodeMirror 6 lazy loader — IT (kod) savollari uchun CodeEditor komponenti
+// ishlatadi. Modulning o'zi kichik (faqat globalThis.OlympyCodeMirror.load ni
+// ochadi); haqiqiy CodeMirror chunklari faqat load() chaqirilganda dinamik
+// import orqali yuklanadi (question_type === 'code' bo'lganda).
+entry += `import './services/codemirror-loader.js';\n`;
 // Tailwind + global CSS — avval index.html ichida CDN va inline <style> orqali
 // keldi. Endi PostCSS plugin bundle paytida CSS generatsiya qiladi.
 entry += `import './index.css';\n\n`;

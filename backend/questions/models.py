@@ -20,6 +20,18 @@ class Question(models.Model):
         (SOURCE_PDF, 'PDF'),
     ]
 
+    # Savol turi: oddiy test (MCQ/True-False) yoki IT dasturlash savoli (code).
+    # Eski savollarda maydon yo'q edi — default `mcq`, shu sababli mavjud test
+    # tizimi o'zgarmasdan ishlashda davom etadi. `code` turidagi savol uchun
+    # quyidagi programming_language/code_template/expected_output ishlatiladi
+    # va A/B/C/D variantlar o'rniga o'quvchi kod yozadi.
+    QUESTION_TYPE_MCQ = 'mcq'
+    QUESTION_TYPE_CODE = 'code'
+    QUESTION_TYPE_CHOICES = [
+        (QUESTION_TYPE_MCQ, 'Test (variantli)'),
+        (QUESTION_TYPE_CODE, 'Kod (dasturlash)'),
+    ]
+
     DIFFICULTY_EASY = 'easy'
     DIFFICULTY_MEDIUM = 'medium'
     DIFFICULTY_HARD = 'hard'
@@ -54,6 +66,34 @@ class Question(models.Model):
     options = models.JSONField(default=list)
     correct_answer = models.PositiveIntegerField(default=0)
     score = models.PositiveIntegerField(default=3)
+    question_type = models.CharField(
+        max_length=10,
+        choices=QUESTION_TYPE_CHOICES,
+        default=QUESTION_TYPE_MCQ,
+        db_index=True,
+    )
+    # Faqat question_type == 'code' bo'lganda ishlatiladigan maydonlar.
+    programming_language = models.CharField(
+        max_length=30, blank=True, default='',
+        help_text="python, javascript, java, cpp, c va h.k.",
+    )
+    code_template = models.TextField(
+        blank=True, default='',
+        help_text="O'quvchiga beriluvchi boshlang'ich kod skelet",
+    )
+    expected_output = models.TextField(
+        blank=True, default='',
+        help_text="Kutilgan natija (ustoz/menejer tekshirishi uchun)",
+    )
+    # Judge0 kod runner (2-bosqich) uchun test case'lar. Har element:
+    # {"input": "5", "expected_output": "25", "is_hidden": false}. `input`
+    # stdin sifatida, `expected_output` esa stdout bilan solishtiriladi.
+    # `is_hidden=True` bo'lsa o'quvchiga input/expected ko'rsatilmaydi (faqat
+    # o'tdi/o'tmadi). Faqat question_type == 'code' uchun ishlatiladi.
+    test_cases = models.JSONField(
+        default=list, blank=True,
+        help_text='[{"input": "5", "expected_output": "25", "is_hidden": false}]',
+    )
     difficulty = models.CharField(
         max_length=10, choices=DIFFICULTY_CHOICES, default=DIFFICULTY_MEDIUM,
     )

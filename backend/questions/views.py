@@ -9,7 +9,7 @@ from rest_framework.throttling import UserRateThrottle
 
 from centers.models import CenterMembership
 
-from .ai_generation import generate_questions, explain_question_ai
+from .ai_generation import generate_questions, explain_question_ai, review_code_submission
 from .models import Question
 from .pdf_generation import extract_questions_from_pdf
 from .serializers import QuestionSerializer
@@ -17,6 +17,16 @@ from .serializers import QuestionSerializer
 
 class AiQuestionRateThrottle(UserRateThrottle):
     scope = 'ai_question'
+
+
+class CodeReviewRateThrottle(UserRateThrottle):
+    """IT kod savolini AI baholash uchun 'code_review' scope (10/hour)."""
+    scope = 'code_review'
+
+
+class CodeRunRateThrottle(UserRateThrottle):
+    """Judge0 kod runner ("Ishga tushirish") uchun 'code_run' scope (20/hour)."""
+    scope = 'code_run'
 
 
 class AiExplainRateThrottle(UserRateThrottle):
@@ -651,6 +661,185 @@ def olympiad_questions(request, olympiad_id):
     return Response({
         'questions': all_questions,
         'session': session_timing_payload(session, olympiad),
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([CodeReviewRateThrottle])
+def code_review(request):
+    """POST /api/questions/code-review/ — IT kod savolini AI bilan baholaydi.
+
+    Body: { question_id, submitted_code, language }. O'quvchi test paytida
+    kodini sinash uchun AI feedback oladi (to'g'rilik 0-100, xatolar, tavsiya).
+    Bu yerda natija SAQLANMAYDI — yakuniy kod javob va AI bahosi submit
+    paytida CodeSubmission'ga yoziladi. Rate limit: 10/hour (code_review).
+    """
+    question_id = request.data.get('question_id')
+    submitted_code = request.data.get('submitted_code') or ''
+    language = (request.data.get('language') or '').strip().lower()
+    if not question_id:
+        return Response({'detail': 'question_id majburiy'}, status=http_status.HTTP_400_BAD_REQUEST)
+    if not str(submitted_code).strip():
+        return Response({'detail': 'Kod bo\'sh bo\'lishi mumkin emas'}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    question = get_object_or_404(Question, pk=question_id)
+    if question.question_type != Question.QUESTION_TYPE_CODE:
+        return Response(
+            {'detail': 'Bu kod (IT) savoli emas'},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    result = review_code_submission(
+        question_text=question.text,
+        submitted_code=submitted_code,
+        language=language or question.programming_language,
+        expected_output=question.expected_output or '',
+    )
+    return Response({
+        'score': result.get('score'),
+        'review': result.get('review') or '',
+    })
+
+
+def _normalize_output(text):
+    """Test case taqqoslash uchun stdout/expected normalizatsiyasi.
+
+    Trailing whitespace va satr oxiridagi bo'shliqlar Judge0 chiqishida tez-tez
+    farq qiladi (masalan oxirgi '\\n'). Har bir satrning o'ng tomonini va butun
+    matnning oxirini tozalaymiz — bu 'to'g'ri javob bo'sh joy tufayli xato'
+    holatini oldini oladi.
+    """
+    if text is None:
+        return ''
+    lines = str(text).replace('\r\n', '\n').replace('\r', '\n').split('\n')
+    return '\n'.join(line.rstrip() for line in lines).rstrip()
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([CodeRunRateThrottle])
+def run_code_view(request):
+    """POST /api/questions/run-code/ — kodni Judge0 orqali ishga tushiradi.
+
+    Body: {
+        source_code: str,
+        language: str,
+        stdin: str (ixtiyoriy),
+        question_id: int (ixtiyoriy — test case'larni olish uchun)
+    }
+
+    `question_id` berilsa va savolda `test_cases` bo'lsa — har bir ko'rinadigan
+    test case (max 5) uchun alohida run qilib o'tdi/o'tmadi natijasini qaytaradi.
+    Test case polling backend'da bajariladi (frontend yuklamaydi). Rate limit:
+    20/hour (code_run).
+    """
+    from .judge0_service import is_supported, run_code
+
+    source_code = request.data.get('source_code') or ''
+    language = (request.data.get('language') or '').strip().lower()
+    stdin = request.data.get('stdin') or ''
+    question_id = request.data.get('question_id')
+
+    if not str(source_code).strip():
+        return Response(
+            {'detail': "Kod bo'sh bo'lishi mumkin emas"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if not language:
+        return Response(
+            {'detail': "Dasturlash tili majburiy"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if not is_supported(language):
+        return Response(
+            {'detail': f"'{language}' tili qo'llab-quvvatlanmaydi"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Test case'lar — faqat question_id berilgan va u kod savoli bo'lsa.
+    test_cases = []
+    if question_id:
+        question = get_object_or_404(Question, pk=question_id)
+        if question.question_type == Question.QUESTION_TYPE_CODE:
+            raw = question.test_cases if isinstance(question.test_cases, list) else []
+            # Max 5 ta visible test case (spec). is_hidden bayrog'ini saqlaymiz —
+            # frontend yashirin test uchun input/expected'ni ko'rsatmaydi.
+            test_cases = raw[:5]
+
+    # Test case'lar bo'lmasa — oddiy bitta run (foydalanuvchi stdin'i bilan).
+    if not test_cases:
+        result = run_code(source_code, language, stdin=stdin)
+        if not result.get('ok'):
+            return Response(
+                {'detail': result.get('error') or "Kodni ishga tushirib bo'lmadi"},
+                status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        return Response({
+            'stdout': result.get('stdout', ''),
+            'stderr': result.get('stderr', ''),
+            'compile_output': result.get('compile_output', ''),
+            'status': result.get('status', 'Unknown'),
+            'time': result.get('time', 0),
+            'memory': result.get('memory', 0),
+            'test_results': [],
+        })
+
+    # Test case'lar bor — har biri uchun alohida run.
+    test_results = []
+    first_error = None  # compile/runtime xatosini umumiy panelda ko'rsatish uchun
+    passed_all = True
+    last_status = 'Accepted'
+    total_time = 0.0
+    max_memory = 0
+    for tc in test_cases:
+        tc_input = '' if tc.get('input') is None else str(tc.get('input'))
+        expected = '' if tc.get('expected_output') is None else str(tc.get('expected_output'))
+        is_hidden = bool(tc.get('is_hidden'))
+        result = run_code(source_code, language, stdin=tc_input)
+        if not result.get('ok'):
+            # Judge0 umuman ishlamadi — to'liq xato qaytaramiz (qisman emas).
+            return Response(
+                {'detail': result.get('error') or "Kodni ishga tushirib bo'lmadi"},
+                status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+        total_time += float(result.get('time') or 0)
+        max_memory = max(max_memory, int(result.get('memory') or 0))
+        got = result.get('stdout', '')
+        status_desc = result.get('status', 'Unknown')
+        # Compile/runtime xatosi bo'lsa — birinchisini eslab qolamiz.
+        if status_desc not in ('Accepted',) and (result.get('compile_output') or result.get('stderr')):
+            if first_error is None:
+                first_error = {
+                    'stderr': result.get('stderr', ''),
+                    'compile_output': result.get('compile_output', ''),
+                }
+        passed = (
+            status_desc == 'Accepted'
+            and _normalize_output(got) == _normalize_output(expected)
+        )
+        if not passed:
+            passed_all = False
+            last_status = status_desc if status_desc != 'Accepted' else 'Wrong Answer'
+        entry = {
+            'passed': passed,
+            'is_hidden': is_hidden,
+        }
+        if not is_hidden:
+            entry['input'] = tc_input
+            entry['expected'] = expected
+            entry['got'] = _normalize_output(got)
+        test_results.append(entry)
+
+    overall_status = 'Accepted' if passed_all else last_status
+    return Response({
+        'stdout': '',
+        'stderr': (first_error or {}).get('stderr', ''),
+        'compile_output': (first_error or {}).get('compile_output', ''),
+        'status': overall_status,
+        'time': round(total_time, 3),
+        'memory': max_memory,
+        'test_results': test_results,
     })
 
 

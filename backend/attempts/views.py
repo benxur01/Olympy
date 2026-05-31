@@ -111,6 +111,85 @@ def _trigger_attempt_ai_analysis(attempt, olympiad, answers):
     threading.Thread(target=_run, daemon=True).start()
 
 
+def _save_code_submissions(attempt, olympiad, code_answers):
+    """IT (kod) savollariga yuborilgan javoblarni CodeSubmission'ga saqlaydi
+    va AI baholashni alohida daemon thread'da ishga tushiradi.
+
+    `code_answers` — { "<question_id>": {"code": "...", "language": "..."} }.
+    Faqat olimpiadaga biriktirilgan, question_type='code' savollar saqlanadi.
+    Submit latency'ni bloklamaslik uchun butun AI call thread'da ishlaydi
+    (mavjud AI analysis pattern bilan bir xil). Hech qachon exception otmaydi.
+    """
+    if not code_answers:
+        return
+
+    from questions.models import Question
+
+    from .models import CodeSubmission
+
+    # Olimpiadaning kod savollarini bir so'rovda olamiz.
+    code_questions = {
+        q.id: q
+        for q in olympiad.questions.filter(
+            question_type=Question.QUESTION_TYPE_CODE,
+        )
+    }
+    if not code_questions:
+        return
+
+    to_review = []
+    for raw_qid, payload in (code_answers or {}).items():
+        try:
+            qid = int(raw_qid)
+        except (TypeError, ValueError):
+            continue
+        question = code_questions.get(qid)
+        if not question:
+            continue
+        code = str((payload or {}).get('code') or '')
+        language = str((payload or {}).get('language') or '').strip().lower()
+        if not language:
+            language = question.programming_language or ''
+        submission, _ = CodeSubmission.objects.update_or_create(
+            attempt=attempt,
+            question=question,
+            defaults={
+                'submitted_code': code,
+                'code_language': language,
+            },
+        )
+        if code.strip():
+            to_review.append((submission.id, question, code, language))
+
+    if not to_review:
+        return
+
+    def _run():
+        from django.db import close_old_connections
+        close_old_connections()
+        from questions.ai_generation import review_code_submission
+        for submission_id, question, code, language in to_review:
+            try:
+                result = review_code_submission(
+                    question_text=question.text,
+                    submitted_code=code,
+                    language=language,
+                    expected_output=question.expected_output or '',
+                )
+                CodeSubmission.objects.filter(pk=submission_id).update(
+                    ai_code_review=result.get('review') or '',
+                    ai_code_score=result.get('score'),
+                )
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception(
+                    'code review failed for submission=%s', submission_id,
+                )
+
+    import threading
+    threading.Thread(target=_run, daemon=True).start()
+
+
 def _user_can_manage_olympiad(user, olympiad):
     """Olympiad uchun manager/owner/teacher/admin huquqi tekshiruvi."""
     if user.is_platform_admin:
@@ -331,6 +410,30 @@ def submit_attempt(request):
             return Response({'detail': 'Test vaqti tugagan'},
                             status=http_status.HTTP_400_BAD_REQUEST)
 
+        # IT olimpiadasi til cheklovi: allowed_languages to'ldirilgan bo'lsa,
+        # yuborilgan har bir kod javobi shu tillardan biri bo'lishi shart.
+        # Frontend ham tekshiradi, lekin server avtoritar.
+        code_answers = serializer.validated_data.get('code_answers') or {}
+        allowed_langs = [
+            str(lang).strip().lower()
+            for lang in (olympiad.allowed_languages or [])
+            if str(lang).strip()
+        ]
+        if allowed_langs and code_answers:
+            for payload in code_answers.values():
+                lang = str((payload or {}).get('language') or '').strip().lower()
+                # Bo'sh til — savolning default tilidan foydalaniladi, taqiqlamaymiz.
+                if lang and lang not in allowed_langs:
+                    return Response(
+                        {
+                            'detail': (
+                                "Bu olimpiadada faqat "
+                                f"{', '.join(allowed_langs)} ishlatiladi"
+                            ),
+                        },
+                        status=http_status.HTTP_400_BAD_REQUEST,
+                    )
+
         answers = serializer.validated_data.get('answers', {}) or {}
         scored = score_session_answers(session, olympiad, answers)
         total = scored['total']
@@ -447,6 +550,20 @@ def submit_attempt(request):
 
         session.status = TestSession.STATUS_COMPLETED
         session.save(update_fields=['status'])
+
+        # IT (kod) javoblarini saqlaymiz va AI baholashni background'da ishga
+        # tushuramiz. Oddiy MCQ olimpiadalarda code_answers bo'sh — bu blok
+        # hech narsa qilmaydi. Submit'ni hech qachon buzmaydi.
+        try:
+            _save_code_submissions(
+                attempt, olympiad,
+                serializer.validated_data.get('code_answers') or {},
+            )
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'code submission save failed for attempt=%s', attempt.id,
+            )
 
         # O5: Yutuq (milestone) tekshiruvi — submit'dan keyin. request.user
         # yuqorida streak_count bilan yangilangan, shu sababli streak
@@ -679,7 +796,31 @@ def attempt_detail(request, attempt_id):
         questions_review = []
         # answers dict kalitlari string yoki integer bo'lishi mumkin.
         answers = attempt.answers or {}
+        # Kod (IT) javoblari — bitta so'rovda olib, savol bo'yicha map qilamiz.
+        from .models import CodeSubmission
+        code_subs = {
+            cs.question_id: cs
+            for cs in CodeSubmission.objects.filter(attempt=attempt)
+        }
         for q in olympiad.questions.all().order_by('id'):
+            q_type = getattr(q, 'question_type', 'mcq') or 'mcq'
+            if q_type == 'code':
+                cs = code_subs.get(q.id)
+                questions_review.append({
+                    'id': q.id,
+                    'text': q.text,
+                    'options': [],
+                    'question_type': 'code',
+                    'programming_language': getattr(q, 'programming_language', '') or '',
+                    'difficulty': q.difficulty,
+                    'score': q.score,
+                    'subject': q.subject,
+                    'submitted_code': cs.submitted_code if cs else '',
+                    'code_language': cs.code_language if cs else '',
+                    'ai_code_review': cs.ai_code_review if cs else '',
+                    'ai_code_score': cs.ai_code_score if cs else None,
+                })
+                continue
             chosen = answers.get(str(q.id))
             if chosen is None:
                 chosen = answers.get(q.id)
@@ -692,6 +833,7 @@ def attempt_detail(request, attempt_id):
                 'id': q.id,
                 'text': q.text,
                 'options': q.options or [],
+                'question_type': 'mcq',
                 'correct_answer': q.correct_answer,
                 'chosen_answer': chosen_idx,
                 'is_correct': is_correct,
