@@ -179,16 +179,16 @@ def _openai_extract_names_from_image(image_bytes, mime_type, caption=''):
         prompt += f"\nQo'shimcha caption: {caption[:1000]}"
     payload = {
         'model': getattr(settings, 'AI_ROSTER_MODEL', 'gpt-4o-mini'),
-        'input': [{
+        'messages': [{
             'role': 'user',
             'content': [
-                {'type': 'input_text', 'text': prompt},
-                {'type': 'input_image', 'image_url': data_url},
+                {'type': 'text', 'text': prompt},
+                {'type': 'image_url', 'image_url': {'url': data_url}},
             ],
         }],
-        'text': {
-            'format': {
-                'type': 'json_schema',
+        'response_format': {
+            'type': 'json_schema',
+            'json_schema': {
                 'name': 'student_roster_names',
                 'schema': schema,
                 'strict': True,
@@ -200,7 +200,7 @@ def _openai_extract_names_from_image(image_bytes, mime_type, caption=''):
     body = json.dumps(payload).encode('utf-8')
     for index, api_key in enumerate(api_keys, start=1):
         req = urllib.request.Request(
-            'https://api.openai.com/v1/responses',
+            'https://api.openai.com/v1/chat/completions',
             data=body,
             method='POST',
             headers={
@@ -227,14 +227,10 @@ def _openai_extract_names_from_image(image_bytes, mime_type, caption=''):
         logger.error('OpenAI roster extraction failed for all configured keys: %s', last_error)
         return {'ok': False, 'error': "OpenAI rasmni o'qiy olmadi.", 'names': [], 'provider': 'openai'}
 
-    text = raw.get('output_text') or ''
-    if not text:
-        chunks = []
-        for item in raw.get('output') or []:
-            for content in item.get('content') or []:
-                if content.get('type') in ('output_text', 'text'):
-                    chunks.append(content.get('text') or '')
-        text = ''.join(chunks)
+    try:
+        text = raw['choices'][0]['message']['content']
+    except (KeyError, IndexError, TypeError):
+        text = ''
     try:
         parsed = _json_from_ai_text(text)
     except (TypeError, ValueError):
@@ -303,26 +299,26 @@ def _openai_extract_names_from_text(text):
     )
     payload = {
         'model': getattr(settings, 'AI_ROSTER_MODEL', 'gpt-4o-mini'),
-        'input': [{
+        'messages': [{
             'role': 'user',
-            'content': [{'type': 'input_text', 'text': prompt}],
+            'content': prompt,
         }],
-        'text': {
-            'format': {
-                'type': 'json_schema',
+        'response_format': {
+            'type': 'json_schema',
+            'json_schema': {
                 'name': 'student_roster_text_names',
                 'schema': schema,
                 'strict': True,
             },
         },
-        'max_output_tokens': 5000,
+        'max_tokens': 4000,
     }
     body = json.dumps(payload).encode('utf-8')
     raw = None
     last_error = ''
     for index, api_key in enumerate(api_keys, start=1):
         req = urllib.request.Request(
-            'https://api.openai.com/v1/responses',
+            'https://api.openai.com/v1/chat/completions',
             data=body,
             method='POST',
             headers={
@@ -349,14 +345,10 @@ def _openai_extract_names_from_text(text):
         logger.error('OpenAI text roster extraction failed for all configured keys: %s', last_error)
         return {'ok': False, 'error': "OpenAI matnni o'qiy olmadi.", 'entries': [], 'names': [], 'provider': 'openai'}
 
-    text_out = raw.get('output_text') or ''
-    if not text_out:
-        chunks = []
-        for item in raw.get('output') or []:
-            for content in item.get('content') or []:
-                if content.get('type') in ('output_text', 'text'):
-                    chunks.append(content.get('text') or '')
-        text_out = ''.join(chunks)
+    try:
+        text_out = raw['choices'][0]['message']['content']
+    except (KeyError, IndexError, TypeError):
+        text_out = ''
     try:
         parsed = _json_from_ai_text(text_out)
     except (TypeError, ValueError):

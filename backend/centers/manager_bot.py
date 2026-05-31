@@ -530,17 +530,17 @@ def _openai_answer(actor, text, ctx):
     prompt = _manager_ai_prompt(actor, text, ctx)
     payload = {
         'model': getattr(settings, 'AI_MANAGER_BOT_MODEL', 'gpt-4o-mini'),
-        'input': [{
+        'messages': [{
             'role': 'user',
-            'content': [{'type': 'input_text', 'text': prompt}],
+            'content': prompt,
         }],
-        'max_output_tokens': 500,
+        'max_tokens': 500,
         'temperature': getattr(settings, 'AI_MANAGER_BOT_TEMPERATURE', 0.45),
     }
     body = json.dumps(payload).encode('utf-8')
     for index, api_key in enumerate(api_keys, start=1):
         req = urllib.request.Request(
-            'https://api.openai.com/v1/responses',
+            'https://api.openai.com/v1/chat/completions',
             data=body,
             method='POST',
             headers={
@@ -551,14 +551,10 @@ def _openai_answer(actor, text, ctx):
         try:
             with urllib.request.urlopen(req, timeout=30) as response:
                 raw = json.loads(response.read().decode('utf-8'))
-            text_out = raw.get('output_text') or ''
-            if not text_out:
-                chunks = []
-                for item in raw.get('output') or []:
-                    for content in item.get('content') or []:
-                        if content.get('type') in ('output_text', 'text'):
-                            chunks.append(content.get('text') or '')
-                text_out = ''.join(chunks)
+            try:
+                text_out = raw['choices'][0]['message']['content']
+            except (KeyError, IndexError, TypeError):
+                text_out = ''
             return text_out.strip()[:3500], ''
         except urllib.error.HTTPError as exc:
             status = getattr(exc, 'code', 0)

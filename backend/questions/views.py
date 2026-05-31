@@ -734,7 +734,7 @@ def run_code_view(request):
     Test case polling backend'da bajariladi (frontend yuklamaydi). Rate limit:
     20/hour (code_run).
     """
-    from .judge0_service import is_supported, run_code
+    from .judge0_service import is_supported, run_code, run_code_batch
 
     source_code = request.data.get('source_code') or ''
     language = (request.data.get('language') or '').strip().lower()
@@ -786,17 +786,39 @@ def run_code_view(request):
         })
 
     # Test case'lar bor — har biri uchun alohida run.
+    # Batch so'rovlarini tayyorlaymiz.
+    batch_subs = []
+    for tc in test_cases:
+        tc_input = '' if tc.get('input') is None else str(tc.get('input'))
+        batch_subs.append({
+            'source_code': source_code,
+            'language': language,
+            'stdin': tc_input
+        })
+
+    batch_results = run_code_batch(batch_subs)
+    if not isinstance(batch_results, list) or len(batch_results) != len(test_cases):
+        err_msg = "Kodni ishga tushirib bo'lmadi"
+        if isinstance(batch_results, dict) and not batch_results.get('ok'):
+            err_msg = batch_results.get('error') or err_msg
+        return Response(
+            {'detail': err_msg},
+            status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
     test_results = []
     first_error = None  # compile/runtime xatosini umumiy panelda ko'rsatish uchun
     passed_all = True
     last_status = 'Accepted'
     total_time = 0.0
     max_memory = 0
-    for tc in test_cases:
+
+    for idx, tc in enumerate(test_cases):
         tc_input = '' if tc.get('input') is None else str(tc.get('input'))
         expected = '' if tc.get('expected_output') is None else str(tc.get('expected_output'))
         is_hidden = bool(tc.get('is_hidden'))
-        result = run_code(source_code, language, stdin=tc_input)
+        
+        result = batch_results[idx]
         if not result.get('ok'):
             # Judge0 umuman ishlamadi — to'liq xato qaytaramiz (qisman emas).
             return Response(
