@@ -204,6 +204,156 @@ function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate }) {
   );
 }
 
+// Xatolar Sandig'i — alohida top-level komponent. Avval u StudentDashboard
+// ichida e'lon qilingan edi: bu har render'da yangi funksiya-reference
+// yaratardi, React komponentni har safar unmount/remount qilib, yozuvlar
+// miltillab (flickering) turardi va ichki state nolga qaytardi. Top-level
+// komponentga chiqarilib, reference barqaror bo'ldi — flickering yo'qoldi.
+function MistakesPage({ apiMistakesRes, showApiToast }) {
+  const mistakes = Array.isArray(apiMistakesRes.data) ? apiMistakesRes.data : [];
+  const loading = apiMistakesRes.loading;
+  const [analyzing, setAnalyzing] = React.useState(false);
+  const [overallAnalysis, setOverallAnalysis] = React.useState('');
+  const [selectedQuestion, setSelectedQuestion] = React.useState(null);
+  const [explainingId, setExplainingId] = React.useState(null);
+  const [explanationMap, setExplanationMap] = React.useState({});
+
+  const handleExplainMistake = async (item) => {
+    if (explanationMap[item.question_id]) {
+      setSelectedQuestion({ ...item, explanation: explanationMap[item.question_id] });
+      return;
+    }
+    setExplainingId(item.question_id);
+    try {
+      const resp = await OlympyApi.explainQuestion(item.question_id, OlympyApi.getToken());
+      if (resp?.explanation) {
+        setExplanationMap(prev => ({ ...prev, [item.question_id]: resp.explanation }));
+        setSelectedQuestion({ ...item, explanation: resp.explanation });
+      } else {
+        showApiToast("Tushuntirish olib bo'lmadi.");
+      }
+    } catch (err) {
+      showApiToast(err.message || "Xatolik yuz berdi");
+    } finally {
+      setExplainingId(null);
+    }
+  };
+
+  const handleOverallAnalysis = async () => {
+    setAnalyzing(true);
+    try {
+      const resp = await OlympyApi.explainAllMistakes(OlympyApi.getToken());
+      if (resp?.explanation) {
+        setOverallAnalysis(resp.explanation);
+      } else {
+        showApiToast("Tahlil olib bo'lmadi.");
+      }
+    } catch (err) {
+      showApiToast(err.message || "Xatolik yuz berdi");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  return (
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg md:text-xl font-black text-white">Xatolar Sandig'i</h2>
+          <p className="text-white/40 text-xs mt-0.5">Imtihonlarda yo'l qo'ygan xatolaringiz ustida ishlang va bilimingizni mustahkamlang.</p>
+        </div>
+        {mistakes.length > 0 && (
+          <button
+            onClick={handleOverallAnalysis}
+            disabled={analyzing}
+            className="btn-primary text-xs px-4 py-2.5 rounded-xl font-semibold flex items-center gap-1.5 min-h-[40px]"
+          >
+            <Icon name="sparkles" size={14} /> {analyzing ? 'Tahlil qilinmoqda...' : "AI Umumiy Tahlil"}
+          </button>
+        )}
+      </div>
+
+      {overallAnalysis && (
+        <div className="glass-strong rounded-2xl p-4 md:p-5 border border-indigo-500/30 animate-in">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
+              <Icon name="sparkles" size={16} />
+            </div>
+            <div className="font-bold text-white text-sm">AI Umumiy Tavsiyalari</div>
+          </div>
+          <div className="text-xs md:text-sm text-white/70 leading-relaxed whitespace-pre-line border-t border-white/10 pt-3">
+            {overallAnalysis}
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-center py-12 text-white/40 text-sm">Xatolar yuklanmoqda...</div>
+      ) : mistakes.length === 0 ? (
+        <div className="glass rounded-2xl p-8 text-center text-white/40 text-sm">
+          🎉 Tabriklaymiz! Sizda hech qanday xato aniqlanmagan. O'qishda davom eting!
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4">
+          {mistakes.map((item, idx) => (
+            <div key={idx} className="glass rounded-2xl p-4 md:p-5 flex flex-col md:flex-row md:items-start justify-between gap-4 card-hover">
+              <div className="flex-1 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] tracking-wider uppercase font-extrabold text-indigo-400 bg-indigo-500/10 px-2.5 py-0.5 rounded-md">
+                    {item.subject || 'Boshqa'}
+                  </span>
+                  <span className="text-xs text-white/40">Savol ID: #{item.question_id}</span>
+                </div>
+                <div className="text-sm font-bold text-white leading-relaxed">{item.text}</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+                  {(item.options || []).map((opt, oIdx) => {
+                    const isCorrect = oIdx === item.correct_answer;
+                    const isChosen = oIdx === item.chosen_answer;
+                    let bgClass = 'bg-white/5 text-white/60';
+                    if (isCorrect) bgClass = 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-medium';
+                    else if (isChosen) bgClass = 'bg-rose-500/10 border border-rose-500/30 text-rose-400';
+                    return (
+                      <div key={oIdx} className={`px-3 py-2 rounded-xl text-xs flex items-center justify-between ${bgClass}`}>
+                        <span>{opt}</span>
+                        {isCorrect && <span className="text-[10px] bg-emerald-500/20 px-1.5 py-0.5 rounded">To'g'ri</span>}
+                        {isChosen && <span className="text-[10px] bg-rose-500/20 px-1.5 py-0.5 rounded">Sizning javobingiz</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex flex-row md:flex-col gap-2 justify-end self-end md:self-auto">
+                <button
+                  onClick={() => handleExplainMistake(item)}
+                  disabled={explainingId === item.question_id}
+                  className="btn-ghost text-xs px-3 py-2 rounded-xl flex items-center gap-1.5"
+                >
+                  <Icon name="sparkles" size={13} /> {explainingId === item.question_id ? 'Yuklanmoqda...' : 'Tushuntirish (AI)'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Modal open={!!selectedQuestion} onClose={() => setSelectedQuestion(null)} title="AI Savol Tushuntirishi">
+        {selectedQuestion && (
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="glass rounded-xl p-3 md:p-4">
+              <div className="text-xs text-indigo-400 font-extrabold uppercase mb-1">{selectedQuestion.subject}</div>
+              <div className="font-bold text-white text-sm leading-relaxed">{selectedQuestion.text}</div>
+            </div>
+            <div className="text-xs md:text-sm text-white/80 leading-relaxed whitespace-pre-line border-t border-white/10 pt-3">
+              {selectedQuestion.explanation}
+            </div>
+            <button onClick={() => setSelectedQuestion(null)} className="btn-primary w-full py-2.5 rounded-xl text-sm font-semibold">Tushundim</button>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+}
+
 const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
@@ -291,16 +441,24 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   // API xatolarini foydalanuvchiga ko'rsatish — avval har bir useApiData
   // chaqiruvining `.error` holati jim yutilardi (faqat null data qaytardi)
-  // va o'quvchi sahifa nega bo'sh ekanini bilmasdi. Endi asosiy yuklashlardan
-  // (markazlar, tadbirlar, natijalar, statistika, ball-tarix, xatolar,
-  // sovrinlar, bashorat) birortasi xato bersa, sahifa tepasida oddiy
-  // ogohlantirish banner ko'rsatamiz. Bu mavjud kontentni buzmaydi —
-  // qisman yuklangan ma'lumot baribir ko'rinadi.
-  const apiHasError = isApi && [
-    apiCentersRes, apiOlympiadsRes, apiResultsRes, apiStatsRes,
-    apiActivityLeaderboardRes, apiMistakesRes, apiRewardsRes, apiPredictionsRes,
-    apiHistoryChartRes, apiCompetitorRes, apiWeaknessRes,
-  ].some(r => r && r.error);
+  // va o'quvchi sahifa nega bo'sh ekanini bilmasdi. Endi xato banner faqat
+  // JORIY sahifa ko'rsatadigan ma'lumot yuklanmaganda chiqadi. Avval banner
+  // 11 ta so'rovni birga tekshirardi — masalan, "Xatolar Sandig'i" ochiq
+  // bo'lsa ham, boshqa sahifaga tegishli (bashorat, reyting) bitta so'rov
+  // xato bersa, bu yerda ham "Ba'zi ma'lumotlar yuklanmadi" banner chiqib,
+  // chalkashlik tug'dirardi. Endi har sahifa o'zining so'rovlarini tekshiradi.
+  const pageErrorSources = {
+    home: [apiStatsRes, apiResultsRes, apiActivityLeaderboardRes, apiPredictionsRes],
+    olympiads: [apiOlympiadsRes, apiCentersRes],
+    results: [apiResultsRes],
+    history: [apiHistoryChartRes, apiCompetitorRes, apiWeaknessRes],
+    centers: [apiCentersRes],
+    mistakes: [apiMistakesRes],
+    rewards: [apiRewardsRes],
+    predictions: [apiPredictionsRes],
+  };
+  const apiHasError = isApi
+    && (pageErrorSources[page] || []).some(r => r && r.error);
 
   const allCenters = isApi ? (apiCenters || []) : store.centers;
   const myCenter = studentCenterId ? allCenters.find(c => String(c.id) === String(studentCenterId)) : null;
@@ -999,157 +1157,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     );
   };
 
-  // Xatolar Sandig'i — alohida komponent. Avval oddiy funksiya (renderMistakes)
-  // edi, lekin u o'z tanasida React.useState chaqirardi. Funksiya faqat shu
-  // sahifaga o'tilganda chaqirilgani uchun hooklar soni render'lar orasida
-  // o'zgarib, "Rendered more hooks than during the previous render" xatosi va
-  // qora ekran kelib chiqardi. Komponentga aylantirilib, hooklar har render'da
-  // barqaror chaqiriladi.
-  const MistakesPage = ({ apiMistakesRes, showApiToast }) => {
-    const mistakes = apiMistakesRes.data || [];
-    const loading = apiMistakesRes.loading;
-    const [analyzing, setAnalyzing] = React.useState(false);
-    const [overallAnalysis, setOverallAnalysis] = React.useState('');
-    const [selectedQuestion, setSelectedQuestion] = React.useState(null);
-    const [explainingId, setExplainingId] = React.useState(null);
-    const [explanationMap, setExplanationMap] = React.useState({});
-
-    const handleExplainMistake = async (item) => {
-      if (explanationMap[item.question_id]) {
-        setSelectedQuestion({ ...item, explanation: explanationMap[item.question_id] });
-        return;
-      }
-      setExplainingId(item.question_id);
-      try {
-        const resp = await OlympyApi.explainQuestion(item.question_id, OlympyApi.getToken());
-        if (resp?.explanation) {
-          setExplanationMap(prev => ({ ...prev, [item.question_id]: resp.explanation }));
-          setSelectedQuestion({ ...item, explanation: resp.explanation });
-        } else {
-          showApiToast("Tushuntirish olib bo'lmadi.");
-        }
-      } catch (err) {
-        showApiToast(err.message || "Xatolik yuz berdi");
-      } finally {
-        setExplainingId(null);
-      }
-    };
-
-    const handleOverallAnalysis = async () => {
-      setAnalyzing(true);
-      try {
-        const resp = await OlympyApi.explainAllMistakes(OlympyApi.getToken());
-        if (resp?.explanation) {
-          setOverallAnalysis(resp.explanation);
-        } else {
-          showApiToast("Tahlil olib bo'lmadi.");
-        }
-      } catch (err) {
-        showApiToast(err.message || "Xatolik yuz berdi");
-      } finally {
-        setAnalyzing(false);
-      }
-    };
-
-    return (
-      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg md:text-xl font-black text-white">Xatolar Sandig'i</h2>
-            <p className="text-white/40 text-xs mt-0.5">Imtihonlarda yo'l qo'ygan xatolaringiz ustida ishlang va bilimingizni mustahkamlang.</p>
-          </div>
-          {mistakes.length > 0 && (
-            <button
-              onClick={handleOverallAnalysis}
-              disabled={analyzing}
-              className="btn-primary text-xs px-4 py-2.5 rounded-xl font-semibold flex items-center gap-1.5 min-h-[40px]"
-            >
-              <Icon name="sparkles" size={14} /> {analyzing ? 'Tahlil qilinmoqda...' : "AI Umumiy Tahlil"}
-            </button>
-          )}
-        </div>
-
-        {overallAnalysis && (
-          <div className="glass-strong rounded-2xl p-4 md:p-5 border border-indigo-500/30 animate-in">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
-                <Icon name="sparkles" size={16} />
-              </div>
-              <div className="font-bold text-white text-sm">AI Umumiy Tavsiyalari</div>
-            </div>
-            <div className="text-xs md:text-sm text-white/70 leading-relaxed whitespace-pre-line border-t border-white/10 pt-3">
-              {overallAnalysis}
-            </div>
-          </div>
-        )}
-
-        {loading ? (
-          <div className="text-center py-12 text-white/40 text-sm">Xatolar yuklanmoqda...</div>
-        ) : mistakes.length === 0 ? (
-          <div className="glass rounded-2xl p-8 text-center text-white/40 text-sm">
-            🎉 Tabriklaymiz! Sizda hech qanday xato aniqlanmagan. O'qishda davom eting!
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {mistakes.map((item, idx) => (
-              <div key={idx} className="glass rounded-2xl p-4 md:p-5 flex flex-col md:flex-row md:items-start justify-between gap-4 card-hover">
-                <div className="flex-1 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[10px] tracking-wider uppercase font-extrabold text-indigo-400 bg-indigo-500/10 px-2.5 py-0.5 rounded-md">
-                      {item.subject || 'Boshqa'}
-                    </span>
-                    <span className="text-xs text-white/40">Savol ID: #{item.question_id}</span>
-                  </div>
-                  <div className="text-sm font-bold text-white leading-relaxed">{item.text}</div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
-                    {(item.options || []).map((opt, oIdx) => {
-                      const isCorrect = oIdx === item.correct_answer;
-                      const isChosen = oIdx === item.chosen_answer;
-                      let bgClass = 'bg-white/5 text-white/60';
-                      if (isCorrect) bgClass = 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-medium';
-                      else if (isChosen) bgClass = 'bg-rose-500/10 border border-rose-500/30 text-rose-400';
-                      return (
-                        <div key={oIdx} className={`px-3 py-2 rounded-xl text-xs flex items-center justify-between ${bgClass}`}>
-                          <span>{opt}</span>
-                          {isCorrect && <span className="text-[10px] bg-emerald-500/20 px-1.5 py-0.5 rounded">To'g'ri</span>}
-                          {isChosen && <span className="text-[10px] bg-rose-500/20 px-1.5 py-0.5 rounded">Sizning javobingiz</span>}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div className="flex flex-row md:flex-col gap-2 justify-end self-end md:self-auto">
-                  <button
-                    onClick={() => handleExplainMistake(item)}
-                    disabled={explainingId === item.question_id}
-                    className="btn-ghost text-xs px-3 py-2 rounded-xl flex items-center gap-1.5"
-                  >
-                    <Icon name="sparkles" size={13} /> {explainingId === item.question_id ? 'Yuklanmoqda...' : 'Tushuntirish (AI)'}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <Modal open={!!selectedQuestion} onClose={() => setSelectedQuestion(null)} title="AI Savol Tushuntirishi">
-          {selectedQuestion && (
-            <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-              <div className="glass rounded-xl p-3 md:p-4">
-                <div className="text-xs text-indigo-400 font-extrabold uppercase mb-1">{selectedQuestion.subject}</div>
-                <div className="font-bold text-white text-sm leading-relaxed">{selectedQuestion.text}</div>
-              </div>
-              <div className="text-xs md:text-sm text-white/80 leading-relaxed whitespace-pre-line border-t border-white/10 pt-3">
-                {selectedQuestion.explanation}
-              </div>
-              <button onClick={() => setSelectedQuestion(null)} className="btn-primary w-full py-2.5 rounded-xl text-sm font-semibold">Tushundim</button>
-            </div>
-          )}
-        </Modal>
-      </div>
-    );
-  };
-
+  // Xatolar Sandig'i top-level MistakesPage komponentiga uzatiladi (fayl
+  // boshida e'lon qilingan). Bu yerda faqat propslar bog'lanadi.
   const renderMistakes = () => (
     <MistakesPage apiMistakesRes={apiMistakesRes} showApiToast={showApiToast} />
   );
