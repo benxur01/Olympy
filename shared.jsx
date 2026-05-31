@@ -171,11 +171,23 @@ const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick,
         item.divider
           ? <div key={item.key} className="my-2 border-t border-white/5" />
           : <button key={item.key}
-              className={`sidebar-item w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left ${activePage === item.key ? 'active' : ''}`}
+              className={`sidebar-item w-full flex items-center rounded-xl text-left transition-all duration-200 ${
+                collapsed ? 'justify-center px-0 py-3' : 'gap-3.5 px-4 py-3'
+              } ${activePage === item.key ? 'active' : ''}`}
               onClick={() => { setPage(item.key); onItemClick && onItemClick(); }}>
-              <span className={activePage === item.key ? 'text-indigo-400' : 'text-white/40'}><Icon name={item.icon} size={17} /></span>
-              {!collapsed && <span className={`text-sm font-medium ${activePage === item.key ? 'text-white' : 'text-white/60'}`}>{item.label}</span>}
-              {!collapsed && item.badge && <span className="ml-auto bg-indigo-500/20 text-indigo-400 text-xs px-2 py-0.5 rounded-full">{item.badge}</span>}
+              <span className={`sidebar-icon transition-colors duration-200 ${activePage === item.key ? 'text-indigo-400' : 'text-white/40'}`}>
+                <Icon name={item.icon} size={20} />
+              </span>
+              {!collapsed && (
+                <span className={`text-[15px] font-semibold tracking-wide transition-colors duration-200 ${activePage === item.key ? 'text-white' : 'text-white/65'}`}>
+                  {item.label}
+                </span>
+              )}
+              {!collapsed && item.badge && (
+                <span className="ml-auto bg-indigo-500/20 text-indigo-400 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                  {item.badge}
+                </span>
+              )}
             </button>
       ))}
     </nav>
