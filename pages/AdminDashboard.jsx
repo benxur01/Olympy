@@ -188,6 +188,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [blockModal, setBlockModal] = React.useState(null);
   const [blockedIds, setBlockedIds] = React.useState({});
+  const [premiumUser, setPremiumUser] = React.useState(null);
+  const [premiumDuration, setPremiumDuration] = React.useState(30);
+  const [premiumPlanType, setPremiumPlanType] = React.useState('student');
+  const [premiumSaving, setPremiumSaving] = React.useState(false);
   const [newSubjectName, setNewSubjectName] = React.useState('');
   // Topbar global qidiruv — foydalanuvchi/tashkilot/olimpiada nomi bo'yicha
   // joriy ko'rinayotgan jadvalga ta'sir qiladi (avval onChange yo'q edi).
@@ -448,19 +452,36 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     showToast('Foydalanuvchi holati yangilandi');
   };
 
-  const toggleUserPremium = (row) => {
+  const openPremiumModal = (row) => {
+    setPremiumUser(row);
+    setPremiumDuration(row.isPremium ? -1 : 30);
+    setPremiumPlanType(row.role?.toLowerCase()?.includes('o\'quvchi') || row.role?.toLowerCase()?.includes('student') ? 'student' : 'organization');
+  };
+
+  const handleSavePremium = () => {
+    if (!premiumUser) return;
     if (!isApi) {
       showToast('Premium faqat API rejimida boshqariladi');
       return;
     }
-    const numericUserId = row?.backendId ?? (typeof row?.id === 'string' && row.id.startsWith('api:') ? Number(row.id.slice(4)) : null);
+    const numericUserId = premiumUser?.backendId ?? (typeof premiumUser?.id === 'string' && premiumUser.id.startsWith('api:') ? Number(premiumUser.id.slice(4)) : null);
     if (!numericUserId) { showToast('Backend ID topilmadi'); return; }
-    OlympyApi.adminToggleUserPremium(numericUserId, OlympyApi.getToken())
-      .then(res => {
-        showToast(res?.is_premium ? 'Premium berildi' : 'Premium bekor qilindi');
+
+    setPremiumSaving(true);
+    OlympyApi.adminToggleUserPremium(numericUserId, {
+      duration: premiumDuration,
+      plan_type: premiumPlanType
+    }, OlympyApi.getToken())
+      .then(() => {
+        showToast('Premium holati yangilandi');
+        setPremiumUser(null);
         apiUsersRes.reload();
       })
-      .catch(err => { console.warn('adminToggleUserPremium failed:', err); showToast(OlympyApi.toUserMessage(err)); });
+      .catch(err => {
+        console.warn('adminToggleUserPremium failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setPremiumSaving(false));
   };
 
   const userRows = allUsers.map(u => {
@@ -978,14 +999,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   <td className="px-5 py-4 font-semibold text-slate-400">{row.joined}</td>
                   <td className="px-5 py-4"><AdminPill status={row.status === 'Faol' ? 'approved' : 'rejected'}>{row.status}</AdminPill></td>
                   <td className="px-5 py-4">
-                    {row.isStudent ? (
-                      row.isPremium ? (
-                        <button onClick={() => toggleUserPremium(row)} className="rounded-lg bg-amber-500/15 px-3 py-1.5 text-[11px] font-bold text-amber-400 ring-1 ring-amber-500/30 hover:bg-amber-500/25 transition">⭐ Premium ✓</button>
-                      ) : (
-                        <button onClick={() => toggleUserPremium(row)} className="rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 ring-1 ring-white/10 hover:bg-amber-500/10 hover:text-amber-400 transition">Premium berish</button>
-                      )
+                    {row.isPremium ? (
+                      <button onClick={() => openPremiumModal(row)} className="rounded-lg bg-amber-500/15 px-3 py-1.5 text-[11px] font-bold text-amber-400 ring-1 ring-amber-500/30 hover:bg-amber-500/25 transition">⭐ Premium ✓</button>
                     ) : (
-                      <span className="text-[11px] font-semibold text-slate-600">—</span>
+                      <button onClick={() => openPremiumModal(row)} className="rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 ring-1 ring-white/10 hover:bg-amber-500/10 hover:text-amber-400 transition">Premium berish</button>
                     )}
                   </td>
                   <td className="px-5 py-4">
@@ -1015,6 +1032,86 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
             {blockModal?.status === 'Bloklangan' ? 'Blokni ochish' : 'Bloklash'}
           </button>
         </div>
+      </Modal>
+
+      {/* Premium sozlash modali */}
+      <Modal open={!!premiumUser} onClose={() => setPremiumUser(null)} title="Premium hisobni boshqarish">
+        {premiumUser && (
+          <div className="space-y-5">
+            <div className="flex items-center gap-3 rounded-xl bg-white/5 p-3">
+              <Avatar name={premiumUser.name || ''} size={36} />
+              <div>
+                <div className="text-sm font-semibold text-white">{premiumUser.name}</div>
+                <div className="text-xs text-white/40">{premiumUser.phone}</div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Premium turi</label>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { value: 'student', label: "O'quvchi (Student)" },
+                  { value: 'organization', label: 'Tashkilot (Organization)' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setPremiumPlanType(opt.value)}
+                    className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all border ${
+                      premiumPlanType === opt.value
+                        ? 'bg-indigo-500 text-white border-indigo-500 font-extrabold'
+                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Muddat</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { value: 30, label: '1 oy (30 kun)' },
+                  { value: 90, label: '3 oy (90 kun)' },
+                  { value: 180, label: '6 oy (180 kun)' },
+                  { value: 365, label: '1 yil (365 kun)' },
+                  { value: 0, label: 'Umrbod (Cheksiz)' },
+                  { value: -1, label: 'Bekor qilish' },
+                ].map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setPremiumDuration(opt.value)}
+                    className={`px-2 py-2 rounded-xl text-[11px] font-bold transition-all border ${
+                      premiumDuration === opt.value
+                        ? opt.value === -1
+                          ? 'bg-rose-600 text-white border-rose-600 font-extrabold shadow'
+                          : 'bg-amber-500 text-indigo-950 border-amber-500 font-extrabold shadow'
+                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button onClick={() => setPremiumUser(null)} disabled={premiumSaving} className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold">Bekor qilish</button>
+              <button
+                onClick={handleSavePremium}
+                disabled={premiumSaving}
+                className={`flex-1 rounded-xl py-3 font-semibold text-xs font-bold ${
+                  premiumDuration === -1 ? 'bg-rose-600 hover:bg-rose-500 text-white' : 'btn-primary'
+                }`}
+              >
+                {premiumSaving ? 'Saqlanmoqda...' : premiumDuration === -1 ? 'O\'chirish' : 'Saqlash'}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );

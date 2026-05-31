@@ -4,7 +4,13 @@ from django.utils import timezone
 
 
 class SubscriptionPlan(models.Model):
+    PLAN_TYPE_CHOICES = [
+        ('student', 'Student'),
+        ('organization', 'Organization'),
+    ]
+
     name = models.CharField(max_length=100)
+    plan_type = models.CharField(max_length=20, choices=PLAN_TYPE_CHOICES, default='student')
     price = models.DecimalField(max_digits=12, decimal_places=2)
     duration_days = models.IntegerField(default=30)
     description = models.CharField(max_length=255, blank=True, default='')
@@ -17,7 +23,7 @@ class SubscriptionPlan(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"{self.name} ({self.price} UZS)"
+        return f"{self.name} - {self.plan_type} ({self.price} UZS)"
 
 
 class UserSubscription(models.Model):
@@ -36,10 +42,36 @@ class UserSubscription(models.Model):
             self.end_date = self.start_date + timezone.timedelta(days=self.plan.duration_days)
         super().save(*args, **kwargs)
         
-        # Sync is_premium flag to User model dynamically
+        # Sync is_premium flag to User model and EducationCenters dynamically
         if self.is_active and self.end_date > timezone.now():
             self.user.is_premium = True
             self.user.save(update_fields=['is_premium'])
+            if self.plan and self.plan.plan_type == 'organization':
+                from centers.models import EducationCenter
+                EducationCenter.objects.filter(owner=self.user).update(is_premium=True)
+        else:
+            # Check if there are other active subscriptions for this user
+            has_active = UserSubscription.objects.filter(
+                user=self.user,
+                is_active=True,
+                end_date__gt=timezone.now()
+            ).exclude(pk=self.pk).exists()
+            
+            if not has_active:
+                self.user.is_premium = False
+                self.user.save(update_fields=['is_premium'])
+                
+            # Check if there are other active organization subscriptions
+            has_active_org = UserSubscription.objects.filter(
+                user=self.user,
+                is_active=True,
+                plan__plan_type='organization',
+                end_date__gt=timezone.now()
+            ).exclude(pk=self.pk).exists()
+            
+            if not has_active_org:
+                from centers.models import EducationCenter
+                EducationCenter.objects.filter(owner=self.user).update(is_premium=False)
 
 
 class PaymentTransaction(models.Model):
@@ -55,6 +87,7 @@ class PaymentTransaction(models.Model):
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions')
     amount = models.DecimalField(max_digits=12, decimal_places=2)
+    manager_commission = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     provider = models.CharField(max_length=50) # 'click' or 'payme'
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     provider_transaction_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
@@ -63,3 +96,4 @@ class PaymentTransaction(models.Model):
 
     def __str__(self):
         return f"{self.provider} - {self.amount} UZS ({self.status})"
+

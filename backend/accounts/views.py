@@ -400,6 +400,38 @@ def me(request):
     if not request.user.is_active:
         return Response({'detail': 'Hisob bloklangan'}, status=status.HTTP_401_UNAUTHORIZED)
 
+    # Muddati o'tgan obunalarni yopish va premium statuslarini yangilash (lazy expiration)
+    from billing.models import UserSubscription
+    from centers.models import EducationCenter
+    from django.utils import timezone
+    
+    now = timezone.now()
+    expired_subs = UserSubscription.objects.filter(
+        user=request.user,
+        is_active=True,
+        end_date__lte=now
+    )
+    if expired_subs.exists():
+        expired_subs.update(is_active=False)
+        
+        has_active = UserSubscription.objects.filter(
+            user=request.user,
+            is_active=True,
+            end_date__gt=now
+        ).exists()
+        if not has_active:
+            request.user.is_premium = False
+            request.user.save(update_fields=['is_premium'])
+            
+        has_active_org = UserSubscription.objects.filter(
+            user=request.user,
+            is_active=True,
+            plan__plan_type='organization',
+            end_date__gt=now
+        ).exists()
+        if not has_active_org:
+            EducationCenter.objects.filter(owner=request.user).update(is_premium=False)
+
     if request.method == 'PATCH':
         serializer = UpdateProfileSerializer(
             data=request.data,
@@ -651,22 +683,81 @@ def admin_set_user_active(request, user_id):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def admin_toggle_user_premium(request, user_id):
-    """POST /api/admin/users/{id}/toggle-premium/ — premium holatini almashtirish.
+    """POST /api/admin/users/{id}/toggle-premium/ — premium holatini boshqarish.
 
-    Faqat Platform Admin uchun. `is_premium` qiymatini toggle qiladi.
+    Faqat Platform Admin uchun.
+    Payload: { "duration": 30|90|180|365|0|-1, "plan_type": "student"|"organization" }
     """
     if not request.user.is_platform_admin:
         return Response({'detail': 'Forbidden'},
                         status=status.HTTP_403_FORBIDDEN)
+    
     from django.contrib.auth import get_user_model
+    from billing.models import SubscriptionPlan, UserSubscription
+    from django.utils import timezone
+    from datetime import timedelta
+    from centers.models import EducationCenter
 
     User = get_user_model()
     target = User.objects.filter(pk=user_id).first()
     if not target:
         return Response({'detail': 'Foydalanuvchi topilmadi'},
                         status=status.HTTP_404_NOT_FOUND)
-    target.is_premium = not target.is_premium
-    target.save(update_fields=['is_premium'])
+
+    duration = request.data.get('duration')
+    plan_type = request.data.get('plan_type', 'student')
+
+    if duration is None:
+        # Eski toggle mantiqini saqlaymiz (orqaga moslik uchun)
+        target.is_premium = not target.is_premium
+        target.save(update_fields=['is_premium'])
+        if target.is_premium:
+            EducationCenter.objects.filter(owner=target).update(is_premium=True)
+        else:
+            EducationCenter.objects.filter(owner=target).update(is_premium=False)
+            UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
+        return Response(UserSerializer(target, context={'request': request}).data)
+
+    try:
+        duration = int(duration)
+    except ValueError:
+        return Response({'detail': "Davomiylik butun son bo'lishi kerak"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if duration == -1:
+        # Premium bekor qilish
+        target.is_premium = False
+        target.save(update_fields=['is_premium'])
+        UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
+        EducationCenter.objects.filter(owner=target).update(is_premium=False)
+    elif duration == 0:
+        # Cheksiz premium (Umrbod)
+        target.is_premium = True
+        target.save(update_fields=['is_premium'])
+        if plan_type == 'organization':
+            EducationCenter.objects.filter(owner=target).update(is_premium=True)
+    elif duration in [30, 90, 180, 365]:
+        # Muddatli premium
+        UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
+        
+        plan = SubscriptionPlan.objects.filter(
+            plan_type=plan_type, 
+            duration_days=duration,
+            is_active=True
+        ).order_by('-price').first()
+        
+        now = timezone.now()
+        end_date = now + timedelta(days=duration)
+        UserSubscription.objects.create(
+            user=target,
+            plan=plan,
+            start_date=now,
+            end_date=end_date,
+            is_active=True
+        )
+    else:
+        return Response({'detail': "Noma'lum muddat ko'rsatildi (faqat 30, 90, 180, 365, 0 yoki -1 bo'lishi mumkin)"}, status=status.HTTP_400_BAD_REQUEST)
+
+    target.refresh_from_db()
     return Response(UserSerializer(target, context={'request': request}).data)
 
 

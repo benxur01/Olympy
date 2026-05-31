@@ -430,7 +430,7 @@ export const OlympyApi = {
       });
   },
   adminSetUserActive: (userId, isActive, token) => request(`/api/admin/users/${userId}/set-active/`, { method: 'POST', body: { is_active: !!isActive }, token }),
-  adminToggleUserPremium: (userId, token) => request(`/api/admin/users/${userId}/toggle-premium/`, { method: 'POST', token }),
+  adminToggleUserPremium: (userId, payload, token) => request(`/api/admin/users/${userId}/toggle-premium/`, { method: 'POST', body: payload, token }),
   // Subjects
   getSubjects: (token) => request('/api/subjects/', { token }),
   createSubject: (name, token) => request('/api/subjects/', { method: 'POST', body: { name }, token }),

@@ -166,3 +166,62 @@ class RunCodeViewTestCase(APITestCase):
         response = self.client.get(status_url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.data.get('status'), 'FAILED')
+
+
+class PremiumQuestionFeaturesTestCase(APITestCase):
+    """AI va PDF orqali savol yaratish premium obunaga bog'liqligini tekshirish."""
+
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            phone='+998901200097', password='StrongPass123', full_name='Owner'
+        )
+        self.center = EducationCenter.objects.create(
+            name='Test Markaz', city='Toshkent', owner=self.owner,
+            status=EducationCenter.STATUS_APPROVED,
+            is_premium=False
+        )
+        # approved membership
+        CenterMembership.objects.create(
+            user=self.owner, center=self.center,
+            role=CenterMembership.ROLE_OWNER,
+            status=CenterMembership.STATUS_APPROVED
+        )
+        self.client.force_authenticate(user=self.owner)
+
+    def test_generate_ai_questions_locked_for_free_center(self):
+        url = reverse('questions-generate-ai')
+        response = self.client.post(url, {
+            'center': self.center.id,
+            'subject': 'Matematika',
+            'topic': 'Integral',
+            'count': 5
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(response.data.get('upgrade_required'))
+
+    def test_preview_pdf_questions_locked_for_free_center(self):
+        url = reverse('questions-pdf-preview')
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        fake_pdf = SimpleUploadedFile("test.pdf", b"%PDF-1.4 dummy content", content_type="application/pdf")
+        response = self.client.post(url, {
+            'center': self.center.id,
+            'pdf': fake_pdf
+        }, format='multipart')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(response.data.get('upgrade_required'))
+
+    @patch('questions.views.generate_questions')
+    def test_generate_ai_questions_allowed_for_premium_center(self, mock_generate):
+        mock_generate.return_value = {'ok': True, 'questions': []}
+        self.center.is_premium = True
+        self.center.save()
+        
+        url = reverse('questions-generate-ai')
+        response = self.client.post(url, {
+            'center': self.center.id,
+            'subject': 'Matematika',
+            'topic': 'Integral',
+            'count': 5
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+

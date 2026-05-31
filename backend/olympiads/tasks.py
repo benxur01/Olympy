@@ -33,11 +33,7 @@ def send_olympiad_summary_task(olympiad_id):
 
 @shared_task
 def finish_expired_olympiads():
-    """Periodik task: muddati o'tgan olimpiadalarni yopadi + rank yangilaydi.
-
-    Render free tier'da Celery yo'q, lekin agar boshqa muhitda ishlatilsa
-    bu task `_do_finish_olympiad` orqali rank'larni ham hisoblab beradi.
-    """
+    """Periodik task: muddati o'tgan olimpiadalarni yopadi + rank yangilaydi."""
     from .services import _do_finish_olympiad
     now = timezone.now()
     expired = Olympiad.objects.filter(
@@ -51,4 +47,30 @@ def finish_expired_olympiads():
         if now > end_time:
             _do_finish_olympiad(olympiad)
             count += 1
-    return f'{count} ta olimpiada yakunlandi'
+
+    # Obunalarni fon rejimida yangilash
+    from billing.models import UserSubscription
+    from centers.models import EducationCenter
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    
+    expired_subs = UserSubscription.objects.filter(is_active=True, end_date__lte=now)
+    expired_users = list(expired_subs.values_list('user_id', flat=True).distinct())
+    if expired_subs.exists():
+        expired_subs.update(is_active=False)
+        for uid in expired_users:
+            u = User.objects.filter(pk=uid).first()
+            if not u:
+                continue
+            has_active = UserSubscription.objects.filter(user=u, is_active=True, end_date__gt=now).exists()
+            if not has_active:
+                u.is_premium = False
+                u.save(update_fields=['is_premium'])
+            
+            has_active_org = UserSubscription.objects.filter(
+                user=u, is_active=True, plan__plan_type='organization', end_date__gt=now
+            ).exists()
+            if not has_active_org:
+                EducationCenter.objects.filter(owner=u).update(is_premium=False)
+
+    return f'{count} ta olimpiada yakunlandi va obunalar yangilandi'
