@@ -5,6 +5,8 @@ from . import views
 # Mounted under /api/questions/
 urlpatterns = [
     path('generate-ai/', views.generate_ai_questions, name='questions-generate-ai'),
+    path('code-review/', views.code_review, name='questions-code-review'),
+    path('run-code/', views.run_code_view, name='questions-run-code'),
     path('pdf-preview/', views.preview_pdf_questions, name='questions-pdf-preview'),
     path('import/', views.import_questions_excel, name='questions-import'),
     path('delete-all/', views.delete_all_questions, name='questions-delete-all'),

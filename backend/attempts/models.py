@@ -109,6 +109,48 @@ class TestSession(models.Model):
         return f'session:{self.user_id}@{self.olympiad_id}'
 
 
+class CodeSubmission(models.Model):
+    """IT (kod) savoliga o'quvchi yuborgan kod javobi va AI bahosi.
+
+    Oddiy MCQ javoblar `TestAttempt.answers` (option index) ichida saqlanadi;
+    kod savollar option index'ga sig'maydi, shu sababli ular shu alohida
+    modelda saqlanadi — har (attempt, savol) juftligi uchun bitta yozuv. Bu
+    mavjud MCQ ball hisoblash tizimini umuman o'zgartirmaydi.
+
+    `ai_code_score` — AI bergan 0..100 ball (None bo'lsa hali baholanmagan),
+    `ai_code_review` — AI matnli tavsiya/tahlil. Ustoz/menejer bularni
+    olimpiada natijalari sahifasida ko'radi.
+    """
+    attempt = models.ForeignKey(
+        TestAttempt,
+        on_delete=models.CASCADE,
+        related_name='code_submissions',
+    )
+    question = models.ForeignKey(
+        'questions.Question',
+        on_delete=models.CASCADE,
+        related_name='code_submissions',
+    )
+    submitted_code = models.TextField(blank=True, default='')
+    code_language = models.CharField(max_length=30, blank=True, default='')
+    ai_code_review = models.TextField(blank=True, default='', help_text="AI tavsiyasi")
+    ai_code_score = models.IntegerField(null=True, blank=True, help_text="AI ball (0-100)")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['question_id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['attempt', 'question'],
+                name='unique_attempt_code_question',
+            ),
+        ]
+
+    def __str__(self):
+        return f'code:{self.attempt_id}@q{self.question_id}'
+
+
 class AttemptAIAnalysis(models.Model):
     """O4: Attempt uchun avtomatik AI tahlili.
 

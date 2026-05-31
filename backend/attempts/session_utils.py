@@ -71,6 +71,21 @@ def questions_payload(session, olympiad):
     data = []
     option_orders = session.option_orders or {}
     for question in ordered_questions(session, olympiad):
+        q_type = getattr(question, 'question_type', 'mcq') or 'mcq'
+        # Kod (IT) savol — variant yo'q; o'rniga dasturlash tili, boshlang'ich
+        # kod skelet va savol matni qaytariladi. expected_output (kutilgan
+        # natija) JUDA MUHIM: u faqat ustoz/AI uchun, studentga sizdirilmaydi.
+        if q_type == 'code':
+            data.append({
+                'id': question.id,
+                'text': question.text,
+                'options': [],
+                'score': question.score,
+                'question_type': 'code',
+                'programming_language': getattr(question, 'programming_language', '') or '',
+                'code_template': getattr(question, 'code_template', '') or '',
+            })
+            continue
         options = list(question.options or [])
         order = option_orders.get(str(question.id)) or list(range(len(options)))
         visible_options = [
@@ -83,6 +98,7 @@ def questions_payload(session, olympiad):
             'text': question.text,
             'options': visible_options,
             'score': question.score,
+            'question_type': 'mcq',
         })
     return data
 
@@ -116,7 +132,16 @@ def score_session_answers(session, olympiad, answers):
     correct = 0
     answered = 0
     earned_score = 0
-    questions = ordered_questions(session, olympiad)
+    all_questions = ordered_questions(session, olympiad)
+    # Kod (IT) savollar variant indeksi orqali baholanmaydi — ular AI yoki
+    # ustoz tomonidan alohida baholanadi (CodeSubmission.ai_code_score). Shu
+    # sababli MCQ ball hisobidan (total/max_possible/correct) ularni butunlay
+    # chiqarib tashlaymiz: aralash olimpiadada (MCQ + kod) MCQ foiz ballari
+    # nohaq pasaymaydi.
+    questions = [
+        q for q in all_questions
+        if (getattr(q, 'question_type', 'mcq') or 'mcq') != 'code'
+    ]
     for question in questions:
         chosen = answers.get(str(question.id))
         if chosen is None:

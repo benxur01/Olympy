@@ -313,6 +313,35 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                     const map = { easy: 'Oson', medium: "O'rta", hard: 'Qiyin', beginner: 'Beginner', elementary: 'Elementary', 'pre-int': 'Pre-Int', int: 'Intermediate', 'upper-int': 'Upper-Int', advanced: 'Advanced' };
                     return map[q.difficulty] || q.difficulty || '';
                   })();
+                  // Kod (IT) savol — variantlar o'rniga yuborilgan kod + AI bahosi.
+                  if (q.question_type === 'code') {
+                    return (
+                      <div key={q.id} className="rounded-2xl p-3 md:p-4 border border-sky-500/25 bg-sky-500/5">
+                        <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-white/40 text-xs font-bold">#{idx + 1}</span>
+                            <span className="chip bg-sky-500/15 text-sky-300 border border-sky-500/25 text-[10px] font-bold">{'</> '}{q.code_language || q.programming_language || 'kod'}</span>
+                            {difficultyLabel && (
+                              <span className="chip bg-white/5 text-white/60 border border-white/10 text-[10px]">{difficultyLabel}</span>
+                            )}
+                            <span className="chip bg-white/5 text-white/50 border border-white/10 text-[10px]">{q.score || 0} ball</span>
+                          </div>
+                          {typeof q.ai_code_score === 'number' && (
+                            <span className="chip text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold">AI: {q.ai_code_score}/100</span>
+                          )}
+                        </div>
+                        <div className="text-white text-sm font-medium mb-3 break-words whitespace-pre-wrap">{q.text}</div>
+                        <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">Sizning kodingiz</div>
+                        <pre className="text-xs text-white/80 bg-black/30 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap break-words border border-white/5">{q.submitted_code || '(kod yuborilmagan)'}</pre>
+                        {q.ai_code_review && (
+                          <div className="mt-3">
+                            <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">AI tavsiyasi</div>
+                            <div className="rounded-xl bg-[#12141a] border border-indigo-500/20 p-3 text-xs text-white/80 whitespace-pre-wrap break-words">{q.ai_code_review}</div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
                   return (
                     <div key={q.id} className={`rounded-2xl p-3 md:p-4 border ${q.is_correct ? 'border-emerald-500/30 bg-emerald-500/5' : (q.chosen_answer == null ? 'border-amber-500/30 bg-amber-500/5' : 'border-rose-500/30 bg-rose-500/5')}`}>
                       <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">

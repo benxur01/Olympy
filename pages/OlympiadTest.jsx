@@ -1,5 +1,14 @@
 // pages/OlympiadTest.jsx
 
+// IT (kod) savollarida dasturlash tili yorliqlari.
+const LANG_LABELS = {
+  python: 'Python',
+  javascript: 'JavaScript',
+  java: 'Java',
+  cpp: 'C++',
+  c: 'C',
+};
+
 const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const store = useStore();
 
@@ -96,12 +105,25 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     } catch { return null; }
   };
 
+  const codeStorageKey = persistedOlympiadId ? `olympy_code_${persistedOlympiadId}` : null;
+
   const [current, setCurrent] = React.useState(0);
   const [answers, setAnswers] = React.useState(() => readPersisted(answersStorageKey) || {});
+  // Kod (IT) javoblari: { [savolIndeksi]: { code, language } }. Oddiy MCQ
+  // olimpiadalarda bo'sh qoladi. localStorage'da ham backup qilinadi.
+  const [codeAnswers, setCodeAnswers] = React.useState(() => readPersisted(codeStorageKey) || {});
+  // Test paytida AI kod tekshiruvi natijasi: { [savolIndeksi]: { score, review } }.
+  const [codeReview, setCodeReview] = React.useState({});
+  const [codeReviewLoading, setCodeReviewLoading] = React.useState(false);
+  // Judge0 "Ishga tushirish" natijasi: { [savolIndeksi]: { status, stdout, ... } }.
+  const [runResults, setRunResults] = React.useState({});
+  const [runningIndex, setRunningIndex] = React.useState(null);
   // Timer useEffect closure stale answers ushlab qolmasligi uchun ref —
   // har render'da yangilanadi va handleSubmit uni o'qiydi.
   const answersRef = React.useRef(answers);
   React.useEffect(() => { answersRef.current = answers; }, [answers]);
+  const codeAnswersRef = React.useRef(codeAnswers);
+  React.useEffect(() => { codeAnswersRef.current = codeAnswers; }, [codeAnswers]);
   const [marked, setMarked] = React.useState(() => readPersisted(markedStorageKey) || {});
   const [timeLeft, setTimeLeft] = React.useState(DURATION);
   const [confirmModal, setConfirmModal] = React.useState(false);
@@ -143,6 +165,36 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   }
   // Bitta-bitta yuklangan savollarni keshlash — qayta so'rov ketmasligi uchun.
   const cachedQuestionsRef = React.useRef({});
+
+  // LeetCode-uslubidagi kod savol split layoutida CodeEditor to'liq balandlikni
+  // egallashi kerak. CodeEditor `height` ga aniq qiymat kutadi ('100%' parent
+  // balandlik zanjiriga bog'liq bo'lib, Telegram WebView'da ishonchsiz). Shu
+  // sababli editor konteynerining haqiqiy balandligini ResizeObserver bilan
+  // o'lchaymiz va piksel qiymat beramiz. Faqat kod savolda ishlatiladi.
+  // Callback ref — element DOM'ga qo'shilgandagina observer ulanadi (timer
+  // har-sekundlik re-render'larda qayta ulanmaydi).
+  const codeEditorRoRef = React.useRef(null);
+  const [codeEditorHeight, setCodeEditorHeight] = React.useState(0);
+  const codeEditorHostRef = React.useCallback((el) => {
+    if (codeEditorRoRef.current) {
+      codeEditorRoRef.current.disconnect();
+      codeEditorRoRef.current = null;
+    }
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = () => {
+      // clientHeight padding-box'ni beradi; editor uchun vertikal padding'ni
+      // ayiramiz (p-3 mobil = 24px, md:p-4 desktop = 32px). getComputedStyle
+      // bilan aniq olamiz — responsive padding o'zgarsa ham to'g'ri qoladi.
+      const cs = typeof getComputedStyle === 'function' ? getComputedStyle(el) : null;
+      const padY = cs ? (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) : 24;
+      const h = el.clientHeight - padY;
+      if (h > 0) setCodeEditorHeight(h);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    codeEditorRoRef.current = ro;
+  }, []);
   // Confirm modal yoki submit jarayonida brauzer fokusi tabiiy ravishda
   // o'zgaradi (modal ochiladi/yopiladi). Shu paytlarda blur/visibility
   // hodisalarini cheating deb hisoblamaslik uchun bayroq.
@@ -333,6 +385,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           if (typeof localStorage !== 'undefined') {
             localStorage.removeItem(answersStorageKey);
             localStorage.removeItem(markedStorageKey);
+            if (codeStorageKey) localStorage.removeItem(codeStorageKey);
           }
         } catch {}
         return;
@@ -363,9 +416,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       if (typeof localStorage !== 'undefined') {
         localStorage.removeItem(answersStorageKey);
         localStorage.removeItem(markedStorageKey);
+        if (codeStorageKey) localStorage.removeItem(codeStorageKey);
       }
     } catch {}
-  }, [submitted, cheated, user?._api, liveOlympiad?.backendId, answersStorageKey, markedStorageKey]);
+  }, [submitted, cheated, user?._api, liveOlympiad?.backendId, answersStorageKey, markedStorageKey, codeStorageKey]);
 
   React.useEffect(() => {
     if (!user?._api || !liveOlympiad?.backendId || apiTotal === 0 || submitted || cheated) {
@@ -430,13 +484,21 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     } catch {}
   }, [marked, markedStorageKey]);
 
+  React.useEffect(() => {
+    try {
+      if (typeof localStorage === 'undefined' || !codeStorageKey) return;
+      localStorage.setItem(codeStorageKey, JSON.stringify(codeAnswers || {}));
+    } catch {}
+  }, [codeAnswers, codeStorageKey]);
+
   const clearPersistedAnswers = React.useCallback(() => {
     try {
       if (typeof localStorage === 'undefined') return;
       if (answersStorageKey) localStorage.removeItem(answersStorageKey);
       if (markedStorageKey) localStorage.removeItem(markedStorageKey);
+      if (codeStorageKey) localStorage.removeItem(codeStorageKey);
     } catch {}
-  }, [answersStorageKey, markedStorageKey]);
+  }, [answersStorageKey, markedStorageKey, codeStorageKey]);
 
   React.useEffect(() => {
     // apiTotal===0 — hali birinchi savol yuklanmagan; mock rejimda apiTotal
@@ -454,12 +516,100 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   }, [answers, sendPing]);
 
   const formatTime = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
-  const answered = Object.keys(answers).length;
+  // Javob berilgan savollar: MCQ (answers) + kod yozilgan savollar (codeAnswers).
+  // Bir savol ikkalasida ham bo'lmaydi, shu sababli unique indekslar.
+  const answeredIndexes = new Set([
+    ...Object.keys(answers),
+    ...Object.keys(codeAnswers).filter(k => String(codeAnswers[k]?.code || '').trim()),
+  ]);
+  const answered = answeredIndexes.size;
   const progress = TOTAL ? (answered / TOTAL) * 100 : 0;
   const isUrgent = timeLeft < 120;
 
   const handleAnswer = (optIdx) => setAnswers(prev => ({ ...prev, [current]: optIdx }));
   const toggleMark = () => setMarked(prev => ({ ...prev, [current]: !prev[current] }));
+  // Olimpiadaning ruxsat etilgan tillari (bo'sh bo'lsa barcha til ruxsat).
+  const allowedLanguages = Array.isArray(liveOlympiad?.allowedLanguages)
+    ? liveOlympiad.allowedLanguages
+    : [];
+  // Joriy kod savoli uchun default til: savolning tili → olimpiadaning
+  // birinchi ruxsat etilgan tili → python.
+  const currentCodeLang = (qq) => (
+    codeAnswers[current]?.language
+    || qq?.programmingLanguage
+    || qq?.programming_language
+    || allowedLanguages[0]
+    || 'python'
+  );
+  // Kod savol uchun joriy savol kodini va tilini yangilash.
+  const handleCodeChange = (code) => {
+    const qq = TEST_QUESTIONS[current] || cachedQuestionsRef.current[current];
+    setCodeAnswers(prev => ({
+      ...prev,
+      [current]: { code, language: prev[current]?.language || currentCodeLang(qq) },
+    }));
+  };
+  const handleCodeLanguage = (language) => setCodeAnswers(prev => ({
+    ...prev,
+    [current]: { code: prev[current]?.code || '', language },
+  }));
+  // O'quvchi test paytida kodini AI orqali sinaydi (saqlanmaydi — faqat
+  // feedback). Rate limit: 10/hour (backend). Faqat API rejimida ishlaydi.
+  const handleRunCodeReview = async (qq) => {
+    if (!user?._api || !qq?.id) return;
+    const code = String(codeAnswers[current]?.code || '');
+    if (!code.trim()) return;
+    setCodeReviewLoading(true);
+    try {
+      const token = globalThis.OlympyApi.getToken();
+      const res = await globalThis.OlympyApi.reviewCode(
+        { question_id: qq.id, submitted_code: code, language: currentCodeLang(qq) },
+        token,
+      );
+      setCodeReview(prev => ({ ...prev, [current]: { score: res?.score, review: res?.review || '' } }));
+    } catch (err) {
+      const detail = err?.data?.detail || err?.message || "AI tekshiruvni bajarib bo'lmadi.";
+      setCodeReview(prev => ({ ...prev, [current]: { score: null, review: detail } }));
+    } finally {
+      setCodeReviewLoading(false);
+    }
+  };
+  // O'quvchi kodini Judge0 orqali ishga tushiradi ("Ishga tushirish" tugmasi).
+  // Test case'lar backend'da (DB'dan) tekshiriladi — frontend yuklamaydi.
+  // Faqat API rejimida ishlaydi. Rate limit: 20/hour (backend).
+  const handleRunCode = async (qq) => {
+    if (!user?._api || !qq?.id) return;
+    const code = String(codeAnswers[current]?.code || '');
+    if (!code.trim()) return;
+    setRunningIndex(current);
+    const idx = current;
+    try {
+      const token = globalThis.OlympyApi.getToken();
+      const res = await globalThis.OlympyApi.runCode(
+        { source_code: code, language: currentCodeLang(qq), question_id: qq.id },
+        token,
+      );
+      setRunResults(prev => ({ ...prev, [idx]: res }));
+    } catch (err) {
+      const detail = err?.data?.detail || err?.message || "Kodni ishga tushirib bo'lmadi.";
+      setRunResults(prev => ({ ...prev, [idx]: { status: 'Xato', error: detail } }));
+    } finally {
+      setRunningIndex(null);
+    }
+  };
+
+  // Kod savolni o'tkazib yuborish: joriy savolni xato (answer = -1) deb
+  // belgilab keyingisiga o'tamiz. Backend submit'da answer = -1 noto'g'ri
+  // javob sifatida 0 ball oladi — alohida skip logikasi shart emas.
+  const handleSkipCode = () => {
+    setAnswers(prev => ({ ...prev, [current]: -1 }));
+    setCodeAnswers(prev => ({ ...prev, [current]: { code: '', skipped: true } }));
+    if (current < TOTAL - 1) {
+      setCurrent(prev => prev + 1);
+    } else {
+      setConfirmModal(true);
+    }
+  };
 
   // Confirm modal ochilganda yoki yopilganda fokus o'zgaradi — bu paytda
   // cheating signalini hisoblamaymiz, aks holda foydalanuvchi yakunlash
@@ -490,6 +640,22 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         // Per-question yuklashda savol siyrak massivda; keshdan ham qidiramiz.
         const q = TEST_QUESTIONS[i] || cachedQuestionsRef.current[i];
         if (q) formattedAnswers[q.id] = optIdx;
+      });
+
+      // Kod (IT) javoblari: { "<question_id>": { code, language } }. Faqat
+      // bo'sh bo'lmagan kodlar yuboriladi. Oddiy MCQ olimpiadalarda bo'sh dict.
+      const currentCodeAnswers = codeAnswersRef.current || codeAnswers;
+      const formattedCodeAnswers = {};
+      Object.entries(currentCodeAnswers).forEach(([idx, payload]) => {
+        const i = parseInt(idx, 10);
+        const q = TEST_QUESTIONS[i] || cachedQuestionsRef.current[i];
+        const code = String(payload?.code || '');
+        if (q && code.trim()) {
+          formattedCodeAnswers[q.id] = {
+            code,
+            language: payload?.language || q.programmingLanguage || q.programming_language || '',
+          };
+        }
       });
 
       // Local score is kept only as a fallback if the API response omits fields.
@@ -535,10 +701,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           if (numericOlympiadId == null) throw new Error('Missing olympiad id');
           const token = globalThis.OlympyApi?.getToken?.()
             ?? globalThis.OlympyApi?.loadAuth?.()?.token;
-          const resp = await globalThis.OlympyApi.submitAttempt(
-            { olympiad: numericOlympiadId, answers: formattedAnswers, time_spent: timeSpent },
-            token,
-          );
+          const submitPayload = { olympiad: numericOlympiadId, answers: formattedAnswers, time_spent: timeSpent };
+          // Kod javoblar bo'lsagina qo'shamiz (oddiy MCQ submit'ni o'zgartirmaslik uchun).
+          if (Object.keys(formattedCodeAnswers).length > 0) {
+            submitPayload.code_answers = formattedCodeAnswers;
+          }
+          const resp = await globalThis.OlympyApi.submitAttempt(submitPayload, token);
           clearPersistedAnswers();
           onFinish({
             attemptId: resp?.id,
@@ -731,8 +899,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // Bu holatda butun sahifani null qaytarmasdan, savol kartasi o'rnida inline
   // spinner ko'rsatamiz (header, timer, navigator joyida qoladi).
   const questionPending = !q || currentQuestionLoading;
+  // IT (kod) savol — backend question_type:'code' qaytaradi.
+  const isCodeQuestion = q ? (q.questionType === 'code' || q.question_type === 'code') : false;
   // Derive a "type" for True/False rendering even though store questions don't carry one
-  const isTrueFalse = q ? (q.options || []).length === 2 && (q.options || []).every(o => /to'?g'?ri|no?to'?g'?ri/i.test(o)) : false;
+  const isTrueFalse = (q && !isCodeQuestion) ? (q.options || []).length === 2 && (q.options || []).every(o => /to'?g'?ri|no?to'?g'?ri/i.test(o)) : false;
 
   return (
     <div className="min-h-screen flex flex-col select-none" style={{ background: '#050508', userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}>
@@ -788,8 +958,9 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Question navigation sidebar */}
-        <div className="hidden md:flex flex-col glass border-r border-white/5 w-52 p-4 overflow-y-auto">
+        {/* Question navigation sidebar — kod savolda yashiriladi (LeetCode
+            split layoutiga joy kerak); mobil navigator pastda qoladi. */}
+        <div className={`hidden md:flex flex-col glass border-r border-white/5 w-52 p-4 overflow-y-auto ${isCodeQuestion ? '!hidden' : ''}`}>
           <div className="text-xs text-white/40 font-medium mb-3">Savollar ({answered}/{TOTAL})</div>
           <div className="grid grid-cols-4 gap-1.5 mb-4">
             {Array.from({ length: TOTAL }).map((_, i) => (
@@ -813,6 +984,207 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         </div>
 
         {/* Main content */}
+        {isCodeQuestion && !questionPending ? (
+          /* ── IT (kod) savol: LeetCode uslubidagi split layout ──────────
+             Chap (40%) savol + boshlang'ich kod + cheklovlar, o'ng (60%)
+             til tanlash + CodeEditor (to'liq baland) + ishga tushirish/AI
+             tugmalari va natija paneli. Mobil (< md) — vertikal: tepada
+             savol, pastda editor. Barcha funksiyalar (handleRunCode,
+             handleRunCodeReview, codeAnswers, runResults, codeReview) o'sha. */
+          <div className="flex-1 overflow-y-auto md:overflow-hidden flex flex-col md:flex-row pb-28 md:pb-0">
+            {/* CHAP — savol matni va boshlang'ich kod. Desktop'da o'z scroll'i,
+                mobil'da butun konteyner scroll bo'ladi. */}
+            <div className="md:w-2/5 md:min-w-[280px] flex flex-col md:border-r border-white/10 md:overflow-y-auto p-4 md:p-6 flex-shrink-0 md:flex-shrink">
+              {/* Savol hisoblagichi + belgilash */}
+              <div className="flex items-center justify-between mb-3 gap-2">
+                <div className="text-xs text-white/40 font-semibold uppercase tracking-wider">
+                  Savol <span className="text-white">{current+1}</span> / {TOTAL}
+                </div>
+                <button onClick={toggleMark}
+                  className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-xl transition-all flex-shrink-0 ${marked[current] ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'glass text-white/40 hover:text-white/60'}`}>
+                  <Icon name="star" size={13} /> {marked[current] ? 'Belgilangan' : 'Belgilash'}
+                </button>
+              </div>
+
+              {submitError && (
+                <div className="mb-4 flex items-center gap-2 bg-rose-500/10 text-rose-300 rounded-xl px-3 py-3 text-xs border border-rose-500/20">
+                  <Icon name="info" size={15} /> {submitError}
+                </div>
+              )}
+
+              {/* Savol matni */}
+              <p className="text-white text-sm md:text-base leading-relaxed whitespace-pre-wrap break-words mb-4">{q.text}</p>
+
+              {/* Boshlang'ich kod skelet (faqat o'qish) */}
+              {(q.codeTemplate || q.code_template) ? (
+                <div className="mt-1 mb-4">
+                  <div className="mb-1.5 text-xs text-white/40">Boshlang'ich kod:</div>
+                  <CodeEditor
+                    value={q.codeTemplate || q.code_template}
+                    readOnly
+                    language={currentCodeLang(q)}
+                    height="180px"
+                  />
+                </div>
+              ) : null}
+
+              {/* Til cheklovi ogohlantirishi */}
+              {allowedLanguages.length > 0 && !allowedLanguages.includes(currentCodeLang(q)) && (
+                <div className="mt-1 flex items-center gap-2 bg-amber-500/10 text-amber-300 rounded-xl px-3 py-2 text-xs border border-amber-500/20">
+                  <Icon name="info" size={14} className="flex-shrink-0" />
+                  Bu olimpiadada faqat {allowedLanguages.map(l => LANG_LABELS[l] || l).join(', ')} ishlatiladi
+                </div>
+              )}
+            </div>
+
+            {/* O'NG — kod muharriri. Desktop'da qolgan kenglikni to'ldiradi va
+                ichki scroll bilan; mobil'da savol ostida vertikal joylashadi. */}
+            <div className="md:flex-1 flex flex-col md:overflow-hidden md:min-h-0 border-t md:border-t-0 border-white/10">
+              {/* Yuqori bar: til tanlash + desktop savol navigatsiyasi.
+                  Kod savolda sidebar yashirin, shu sababli prev/next shu yerda
+                  (desktop). Mobil'da pastdagi sticky navigator ishlatiladi. */}
+              <div className="flex items-center gap-2 px-3 md:px-4 py-2 border-b border-white/10 flex-shrink-0 overflow-x-auto">
+                <span className="text-xs text-white/40 flex-shrink-0">Til:</span>
+                {(allowedLanguages.length ? allowedLanguages : ['python', 'javascript', 'java', 'cpp', 'c']).map(lng => {
+                  const active = currentCodeLang(q) === lng;
+                  return (
+                    <button key={lng} onClick={() => handleCodeLanguage(lng)}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition-all flex-shrink-0 ${active ? 'gradient-bg text-white' : 'glass text-white/50 hover:text-white/70'}`}>
+                      {LANG_LABELS[lng] || lng}
+                    </button>
+                  );
+                })}
+                <div className="hidden md:flex items-center gap-1.5 ml-auto flex-shrink-0">
+                  <button onClick={() => setCurrent(Math.max(0, current-1))} disabled={current === 0}
+                    className="btn-ghost px-2.5 py-1.5 rounded-lg text-xs font-medium disabled:opacity-30 flex items-center gap-1">
+                    <Icon name="arrowLeft" size={14} /> Oldingi
+                  </button>
+                  {current < TOTAL-1 ? (
+                    <button onClick={() => setCurrent(current+1)}
+                      className="btn-primary px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1">
+                      Keyingi <Icon name="chevronRight" size={14} />
+                    </button>
+                  ) : (
+                    <button onClick={() => setConfirmModal(true)} disabled={submitting}
+                      className="btn-primary px-2.5 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50">
+                      Yakunlash
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* CodeEditor — qolgan barcha joyni to'ldiradi. CodeEditor 'height'
+                  ga aniq piksel kerak; konteyner balandligini ResizeObserver
+                  bilan o'lchaymiz (codeEditorHeight). Mobil'da host'ga sobit
+                  balandlik (h-[60vh]) beriladi, desktop'da flex-1 qolgan joyni
+                  egallaydi — ikkala holatda ham real balandlik o'lchanadi. */}
+              <div ref={codeEditorHostRef} className="h-[60vh] md:h-auto md:flex-1 md:min-h-0 overflow-hidden p-3 md:p-4">
+                <CodeEditor
+                  value={codeAnswers[current]?.code || ''}
+                  onChange={handleCodeChange}
+                  language={currentCodeLang(q)}
+                  height={`${Math.max(codeEditorHeight, 220)}px`}
+                />
+              </div>
+
+              {/* Pastki bar: ishga tushirish / AI tekshirish + natija paneli.
+                  Faqat API rejimida (Judge0/AI backend bilan). */}
+              {user?._api && (() => {
+                const isRunning = runningIndex === current;
+                const runResult = runResults[current];
+                return (
+                <div className="border-t border-white/10 p-3 md:p-4 flex-shrink-0 max-h-[45%] overflow-y-auto">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      onClick={handleSkipCode}
+                      className="btn-ghost px-4 py-2 rounded-xl text-xs font-semibold text-white/40 hover:text-red-400 min-h-[40px]">
+                      O'tkazib yuborish
+                    </button>
+                    <button
+                      onClick={() => handleRunCode(q)}
+                      disabled={isRunning || !String(codeAnswers[current]?.code || '').trim()}
+                      className="btn-ghost px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 min-h-[40px] disabled:opacity-40">
+                      {isRunning
+                        ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Ishga tushirilmoqda...</>
+                        : <><Icon name="play" size={14} /> Ishga tushirish</>}
+                    </button>
+                    <button
+                      onClick={() => handleRunCodeReview(q)}
+                      disabled={codeReviewLoading || !String(codeAnswers[current]?.code || '').trim()}
+                      className="btn-ghost px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 min-h-[40px] disabled:opacity-40">
+                      {codeReviewLoading
+                        ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Tekshirilmoqda...</>
+                        : <><Icon name="sparkles" size={14} /> AI bilan tekshirish</>}
+                    </button>
+                  </div>
+
+                  {/* Judge0 natija paneli */}
+                  {runResult && (
+                    <div className="mt-3 glass rounded-2xl p-3 md:p-4 space-y-2 border border-white/10">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`text-sm font-semibold ${runResult.status === 'Accepted' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                          ● {runResult.status || 'Xato'}
+                        </span>
+                        {runResult.time > 0 && (
+                          <span className="text-white/30 text-[11px]">{runResult.time}s · {runResult.memory} KB</span>
+                        )}
+                      </div>
+
+                      {/* Ulanish/xato (Judge0 umuman ishlamadi) */}
+                      {runResult.error && (
+                        <div className="text-xs text-rose-300 bg-rose-500/10 rounded-lg px-3 py-2 break-words">{runResult.error}</div>
+                      )}
+
+                      {/* stdout */}
+                      {runResult.stdout && (
+                        <div>
+                          <div className="text-[11px] text-white/40 mb-1">Natija:</div>
+                          <pre className="bg-black/30 rounded-lg p-3 text-xs md:text-sm text-emerald-300 font-mono overflow-x-auto whitespace-pre-wrap break-words">{runResult.stdout}</pre>
+                        </div>
+                      )}
+
+                      {/* stderr / compile error */}
+                      {(runResult.stderr || runResult.compile_output) && (
+                        <div>
+                          <div className="text-[11px] text-rose-400 mb-1">Xato:</div>
+                          <pre className="bg-black/30 rounded-lg p-3 text-xs md:text-sm text-rose-300 font-mono overflow-x-auto whitespace-pre-wrap break-words">{runResult.stderr || runResult.compile_output}</pre>
+                        </div>
+                      )}
+
+                      {/* Test case natijalar */}
+                      {Array.isArray(runResult.test_results) && runResult.test_results.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="text-[11px] text-white/40 mb-1">Test natijalar:</div>
+                          {runResult.test_results.map((t, i) => (
+                            <div key={i} className={`flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-lg flex-wrap ${t.passed ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
+                              <span className="font-bold">{t.passed ? '✓' : '✗'} Test {i + 1}</span>
+                              {t.is_hidden
+                                ? <span className="text-white/30">(yashirin)</span>
+                                : <span className="text-white/40 break-words">input: {String(t.input)} → {t.passed ? "to'g'ri" : `kutilgan: ${String(t.expected)}, olindi: ${String(t.got)}`}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      <div className="text-[10px] text-white/30">Bu faqat sinov — yakuniy ball test yakunlanganda hisoblanadi.</div>
+                    </div>
+                  )}
+
+                  {/* AI tekshirish natija paneli */}
+                  {codeReview[current] && (
+                    <div className="mt-3 glass rounded-2xl p-3 md:p-4 border border-indigo-500/20">
+                      {typeof codeReview[current].score === 'number' && (
+                        <div className="mb-2 text-sm font-bold text-indigo-300">AI ball: {codeReview[current].score}/100</div>
+                      )}
+                      <div className="text-xs md:text-sm text-white/70 whitespace-pre-wrap break-words">{codeReview[current].review}</div>
+                      <div className="mt-2 text-[10px] text-white/30">Bu faqat sinov — yakuniy ball test yakunlanganda hisoblanadi.</div>
+                    </div>
+                  )}
+                </div>
+                );
+              })()}
+            </div>
+          </div>
+        ) : (
         <div className="flex-1 overflow-y-auto flex flex-col">
           <div className="max-w-2xl mx-auto w-full px-4 md:px-6 py-5 md:py-8 flex-1 pb-28 md:pb-8">
             {/* Question counter */}
@@ -884,6 +1256,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             </div>
           </div>
         </div>
+        )}
 
         {/* Mobile sticky bottom nav */}
         <div

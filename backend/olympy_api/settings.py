@@ -308,6 +308,16 @@ REST_FRAMEWORK = {
         # attempt'larini stream qilib yig'adi, xotira/CPU jihatdan og'ir.
         # 30/min dashboard uchun yetarli keng, ammo qayta-qayta spam'ni to'sadi.
         'mistakes': '30/min',
+        # IT kod savolini AI bilan baholash — tashqi Gemini API'ga qimmat va
+        # sekin murojaat qiladi. Spec bo'yicha o'quvchi soatiga 10 ta kod
+        # tekshiruvi yubora oladi; ortig'i abuse hisoblanadi.
+        'code_review': '10/hour',
+        # Judge0 kod runner ("Ishga tushirish") — tashqi Judge0 CE API'ga
+        # murojaat qiladi (bepul plan kuniga 50 req). Test case'lar ham har
+        # biri alohida run bo'lganligi uchun bitta so'rov bir nechta Judge0
+        # call'iga aylanadi. Spec bo'yicha o'quvchi soatiga 20 marta ishga
+        # tushira oladi; ortig'i abuse va tashqi limit'ni tez tugatadi.
+        'code_run': '20/hour',
     },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,
@@ -492,6 +502,13 @@ PHONE_VERIFICATION_OTP_TTL_SECONDS = int(
 PHONE_VERIFICATION_MAX_ATTEMPTS = int(
     os.environ.get('PHONE_VERIFICATION_MAX_ATTEMPTS', '5')
 )
+
+# Judge0 kod runner (IT/dasturlash savollari uchun "Ishga tushirish").
+# JUDGE0_URL — self-hosted Judge0 instansiyasi yoki public CE API. JUDGE0_API_KEY
+# — RapidAPI kaliti (judge0-ce.p.rapidapi.com uchun). Kalit bo'lmasa ham
+# endpoint ishlaydi, ammo public API limiti juda past bo'ladi.
+JUDGE0_URL = os.environ.get('JUDGE0_URL', 'https://ce.judge0.com')
+JUDGE0_API_KEY = os.environ.get('JUDGE0_API_KEY', '')
 
 # AI-assisted roster approval. AI extracts names only; backend permissions and
 # deterministic matching decide whether a pending student can be approved.

@@ -393,6 +393,35 @@ def export_results(request, olympiad_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def code_submissions(request, olympiad_id):
+    """GET /api/olympiads/{id}/code-submissions/ — IT (kod) javoblari ro'yxati.
+
+    Faqat center owner/manager/teacher va platform admin uchun. Olimpiadaga
+    yuborilgan barcha kod javoblar + AI tavsiyalari (ManagerDashboard "Kod
+    javoblari" tabi shu endpoint'ga ulanadi).
+    """
+    olympiad = get_object_or_404(
+        Olympiad.objects.select_related('center'),
+        pk=olympiad_id,
+    )
+    if not user_can_manage_center_event(request.user, olympiad.center):
+        return Response({'detail': 'Forbidden'},
+                        status=http_status.HTTP_403_FORBIDDEN)
+
+    from attempts.models import CodeSubmission
+    from attempts.serializers import CodeSubmissionSerializer
+
+    submissions = (
+        CodeSubmission.objects
+        .filter(attempt__olympiad=olympiad)
+        .select_related('attempt', 'attempt__user', 'question')
+        .order_by('question_id', 'attempt__user_id')
+    )
+    return Response(CodeSubmissionSerializer(submissions, many=True).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def olympiad_stats(request, olympiad_id):
     """GET /api/olympiads/{id}/stats/ — agregat statistika.
 

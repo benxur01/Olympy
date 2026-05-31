@@ -14,4 +14,5 @@ urlpatterns = [
     path('<int:olympiad_id>/finish/', views.finish_olympiad, name='olympiad-finish'),
     path('<int:olympiad_id>/export/', views.export_results, name='olympiad-export'),
     path('<int:olympiad_id>/stats/', views.olympiad_stats, name='olympiad-stats'),
+    path('<int:olympiad_id>/code-submissions/', views.code_submissions, name='olympiad-code-submissions'),
 ]

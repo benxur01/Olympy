@@ -8,7 +8,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [telegramLink, setTelegramLink] = React.useState(null);
   const [telegramLinkLoading, setTelegramLinkLoading] = React.useState(false);
   const [telegramLinked, setTelegramLinked] = React.useState(!!user?.telegramLinked);
-  const emptyOlympiadForm = { eventType: 'competition', title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft', testLevel: '', testType: '', groupFilter: '' };
+  const emptyOlympiadForm = { eventType: 'competition', title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft', testLevel: '', testType: '', groupFilter: '', itCategory: '', allowedLanguages: [] };
   const [newOlympiad, setNewOlympiad] = React.useState(emptyOlympiadForm);
   // Premium kerak bo'lganda ko'rinadigan modal (8-funksiya — limit oshganda).
   const [premiumModal, setPremiumModal] = React.useState('');
@@ -41,6 +41,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [proctoringLoading, setProctoringLoading] = React.useState(false);
   const [proctoringError, setProctoringError] = React.useState('');
   const [proctoringSearch, setProctoringSearch] = React.useState('');
+  // Kod (IT) javoblari modali — natijalar sahifasidan ochiladi.
+  const [codeSubModal, setCodeSubModal] = React.useState(null); // null | { id, title }
+  const [codeSubData, setCodeSubData] = React.useState([]);
+  const [codeSubLoading, setCodeSubLoading] = React.useState(false);
+  const [codeSubError, setCodeSubError] = React.useState('');
+  const [codeSubExpanded, setCodeSubExpanded] = React.useState({}); // { [submissionId]: bool }
   // Markaz do'koni (Mukofotlar) holatlari.
   const [shopProducts, setShopProducts] = React.useState([]);
   const [shopLoading, setShopLoading] = React.useState(false);
@@ -187,6 +193,24 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         setProctoringError("Jonli nazorat ma'lumotlarini yuklab bo'lmadi.");
       });
   }, [isApi, liveOlympiadId]);
+
+  // Kod (IT) javoblari modalini ochish va yuklash.
+  const openCodeSubmissions = (olympiad) => {
+    if (!isApi) { showToast('Real server rejimida ishlaydi'); return; }
+    const backendId = olympiad.backendId ?? olympiad.olympiad_id ?? olympiad.id;
+    setCodeSubModal({ id: backendId, title: olympiad.title });
+    setCodeSubData([]);
+    setCodeSubExpanded({});
+    setCodeSubError('');
+    setCodeSubLoading(true);
+    OlympyApi.getCodeSubmissions(backendId, OlympyApi.getToken())
+      .then(res => { setCodeSubData(Array.isArray(res) ? res : []); })
+      .catch(err => {
+        console.warn('getCodeSubmissions failed:', err);
+        setCodeSubError(OlympyApi.toUserMessage?.(err) || "Kod javoblarini yuklab bo'lmadi.");
+      })
+      .finally(() => setCodeSubLoading(false));
+  };
 
   React.useEffect(() => {
     if (page !== 'proctoring' || !liveOlympiadId) return undefined;
@@ -555,6 +579,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       testLevel: event.testLevel || '',
       testType: event.testType || '',
       groupFilter: event.groupFilter || '',
+      itCategory: event.itCategory || '',
+      allowedLanguages: Array.isArray(event.allowedLanguages) ? event.allowedLanguages : [],
     });
     setCreateModal(true);
   };
@@ -591,6 +617,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       test_level: (newOlympiad.testLevel || '').trim(),
       test_type: newOlympiad.testType || '',
       group_filter: (newOlympiad.groupFilter || '').trim(),
+      it_category: newOlympiad.itCategory || '',
+      allowed_languages: Array.isArray(newOlympiad.allowedLanguages) ? newOlympiad.allowedLanguages : [],
     };
 
     if (isApi) {
@@ -1150,6 +1178,13 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               >
                 <Icon name="download" size={12} /> Excel
               </button>
+              <button
+                onClick={() => openCodeSubmissions(e)}
+                className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
+                title="IT (kod) javoblari va AI tavsiyalari"
+              >
+                <Icon name="brain" size={12} /> Kod javoblari
+              </button>
             </div>
           ))}
           {!isApi && localFinished.map(o => (
@@ -1687,6 +1722,80 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
         <MobileBottomNav items={navItems} activePage={page} setPage={setPageOrSpecial} />
       </div>
 
+      {/* Kod (IT) javoblari modali */}
+      <Modal open={!!codeSubModal} onClose={() => setCodeSubModal(null)} title="Kod javoblari" width="max-w-3xl">
+        <div className="space-y-4">
+          <div className="text-sm text-white/60">{codeSubModal?.title}</div>
+          {codeSubLoading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+          {codeSubError && (
+            <div className="flex items-center gap-2 bg-rose-500/10 text-rose-300 rounded-xl px-3 py-2 text-xs border border-rose-500/20">
+              <Icon name="info" size={14} /> {codeSubError}
+            </div>
+          )}
+          {!codeSubLoading && !codeSubError && codeSubData.length === 0 && (
+            <div className="glass rounded-2xl p-8 text-center text-sm text-white/40">
+              Bu olimpiadada hali kod javoblari yo'q.
+            </div>
+          )}
+          {codeSubData.length > 0 && (
+            <div className="space-y-2.5 max-h-[60vh] overflow-y-auto">
+              {/* Sarlavha qatori (desktop) */}
+              <div className="hidden md:grid grid-cols-12 gap-2 px-3 text-[10px] uppercase tracking-wide text-white/35 font-bold">
+                <div className="col-span-3">O'quvchi</div>
+                <div className="col-span-4">Savol</div>
+                <div className="col-span-2">Til</div>
+                <div className="col-span-1">AI ball</div>
+                <div className="col-span-2">Kod</div>
+              </div>
+              {codeSubData.map(sub => {
+                const expanded = !!codeSubExpanded[sub.id];
+                return (
+                  <div key={sub.id} className="glass rounded-xl p-3 border border-white/5">
+                    <div className="grid grid-cols-2 md:grid-cols-12 gap-2 items-center">
+                      <div className="md:col-span-3 min-w-0">
+                        <div className="text-sm font-semibold text-white truncate">{sub.student_name || '—'}</div>
+                      </div>
+                      <div className="md:col-span-4 min-w-0">
+                        <div className="text-xs text-white/55 truncate" title={sub.question_text}>{sub.question_text || '—'}</div>
+                      </div>
+                      <div className="md:col-span-2">
+                        <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/5 text-white/60 font-semibold">{sub.code_language || '—'}</span>
+                      </div>
+                      <div className="md:col-span-1">
+                        {typeof sub.ai_code_score === 'number'
+                          ? <span className="text-sm font-black text-indigo-300">{sub.ai_code_score}</span>
+                          : <span className="text-xs text-white/30">—</span>}
+                      </div>
+                      <div className="md:col-span-2">
+                        <button onClick={() => setCodeSubExpanded(p => ({ ...p, [sub.id]: !p[sub.id] }))}
+                          className="btn-ghost text-[11px] px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                          <Icon name={expanded ? 'chevronDown' : 'chevronRight'} size={12} /> {expanded ? 'Yopish' : "Ko'rish"}
+                        </button>
+                      </div>
+                    </div>
+                    {expanded && (
+                      <div className="mt-3 space-y-3">
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">Kod</div>
+                          <pre className="text-xs text-white/80 bg-black/30 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap break-words border border-white/5">{sub.submitted_code || '(bo\'sh)'}</pre>
+                        </div>
+                        {sub.ai_code_review && (
+                          <div>
+                            <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">AI tavsiyasi</div>
+                            <div className="text-xs text-white/70 whitespace-pre-wrap break-words glass rounded-xl p-3 border border-indigo-500/20">{sub.ai_code_review}</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div className="text-[11px] text-white/30">AI tavsiyasi va ball test yakunlangach bir necha soniyada hisoblanadi.</div>
+        </div>
+      </Modal>
+
       {/* Create/edit event modal */}
       <Modal open={createModal} onClose={closeEventModal} title={editingOlympiadId ? 'Tadbirni tahrirlash' : 'Tadbir yaratish'} width="max-w-2xl">
         {(() => {
@@ -1807,6 +1916,46 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                   value={newOlympiad.groupFilter}
                   onChange={e => setNewOlympiad({ ...newOlympiad, groupFilter: e.target.value })} />
                 <p className="mt-1.5 text-[11px] text-white/35">To'ldirilsa, faqat shu guruh tegiga ega o'quvchilar tadbirga kira oladi.</p>
+              </div>
+
+              {/* IT (dasturlash) olimpiadasi sozlamalari — ixtiyoriy. To'ldirilsa
+                  olimpiada IT kategoriyasiga ega bo'ladi va kod savollarda til
+                  cheklovi qo'llaniladi. */}
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-white/70">
+                  <Icon name="brain" size={14} /> IT (dasturlash) sozlamalari <span className="text-white/35 font-normal">(ixtiyoriy)</span>
+                </div>
+                <div>
+                  <label className="block text-xs text-white/50 mb-1.5 font-medium">IT kategoriya</label>
+                  <select className="input-field" value={newOlympiad.itCategory}
+                    onChange={e => setNewOlympiad({ ...newOlympiad, itCategory: e.target.value })}>
+                    <option value="">— Tanlanmagan —</option>
+                    <option value="frontend">Frontend</option>
+                    <option value="backend">Backend</option>
+                    <option value="fullstack">Full Stack</option>
+                    <option value="general">Umumiy</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Ruxsat etilgan tillar</label>
+                  <div className="flex flex-wrap gap-2">
+                    {[['python','Python'],['javascript','JavaScript'],['java','Java'],['cpp','C++'],['c','C']].map(([val, label]) => {
+                      const selected = (newOlympiad.allowedLanguages || []).includes(val);
+                      return (
+                        <button key={val} type="button"
+                          onClick={() => {
+                            const cur = Array.isArray(newOlympiad.allowedLanguages) ? newOlympiad.allowedLanguages : [];
+                            const next = selected ? cur.filter(l => l !== val) : [...cur, val];
+                            setNewOlympiad({ ...newOlympiad, allowedLanguages: next });
+                          }}
+                          className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50 hover:text-white/70'}`}>
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-white/35">Bo'sh qoldirilsa, kod savollarida barcha til ruxsat etiladi.</p>
+                </div>
               </div>
 
               <div className={`rounded-2xl p-4 border text-xs ${formIssues.length ? 'bg-amber-500/10 border-amber-500/25 text-amber-300' : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'}`}>

@@ -584,6 +584,99 @@ def explain_mistakes_ai(mistakes_list):
     return "AI yordamida xatolar tahlili generatsiya qilinmadi. Iltimos keyinroq urinib ko'ring."
 
 
+def review_code_submission(question_text, submitted_code, language, expected_output=''):
+    """IT (kod) savoliga yuborilgan kodni Gemini orqali baholaydi.
+
+    Qaytaradi: {'score': int(0..100), 'review': str}. AI sozlanmagan yoki
+    xato bo'lsa score=None va oddiy fallback matn qaytariladi — submit hech
+    qachon buzilmaydi.
+    """
+    code = str(submitted_code or '').strip()
+    if not code:
+        return {'score': 0, 'review': "Kod yuborilmadi."}
+
+    keys = _gemini_api_keys()
+    if not keys:
+        # AI yo'q — qo'lda tekshirish uchun belgilab qo'yamiz (score=None).
+        return {
+            'score': None,
+            'review': (
+                "AI baholash sozlanmagan. Kod ustoz/menejer tomonidan qo'lda "
+                "tekshirilishi kerak."
+            ),
+        }
+
+    # Juda uzun kodlarni cheklaymiz (token portlashining oldini olish).
+    code = code[:8000]
+    expected_block = ''
+    if str(expected_output or '').strip():
+        expected_block = f"\nKutilgan natija:\n{str(expected_output).strip()[:2000]}\n"
+
+    schema = {
+        'type': 'OBJECT',
+        'properties': {
+            'score': {'type': 'INTEGER'},
+            'review': {'type': 'STRING'},
+        },
+        'required': ['score', 'review'],
+    }
+    prompt = (
+        "Sen tajribali dasturlash o'qituvchisisan. Quyidagi olimpiada masalasi "
+        "uchun o'quvchi yozgan kodni baholab ber.\n\n"
+        f"Dasturlash tili: {language or 'aniqlanmagan'}\n"
+        f"Masala matni:\n{str(question_text or '')[:3000]}\n"
+        f"{expected_block}\n"
+        f"O'quvchi kodi:\n```\n{code}\n```\n\n"
+        "Quyidagilarni baholang:\n"
+        "1. To'g'riligi — kod masalani yechadimi, kutilgan natijani beradimi.\n"
+        "2. Xatolar — sintaksis, mantiqiy yoki samaradorlik xatolari.\n"
+        "3. Yaxshilash tavsiyalari.\n\n"
+        "Natijani JSON shaklida qaytar:\n"
+        "- score: 0 dan 100 gacha butun son (umumiy ball).\n"
+        "- review: o'zbek tilida qisqa, aniq tahlil va tavsiya (Markdown: muhim "
+        "joylarini qalin, ro'yxatlar). To'g'ri tomonlarini ham, xatolarni ham yoz."
+    )
+    payload = {
+        'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
+        'generationConfig': {
+            'responseMimeType': 'application/json',
+            'responseSchema': schema,
+            'maxOutputTokens': 2048,
+        },
+    }
+    body = json.dumps(payload).encode('utf-8')
+    for model in _gemini_models():
+        model_path = urllib.parse.quote(model, safe='-_.~/')
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+        for api_key in keys:
+            req = urllib.request.Request(
+                url, data=body, method='POST',
+                headers={'Content-Type': 'application/json', 'x-goog-api-key': api_key},
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=45) as response:
+                    raw = json.loads(response.read().decode('utf-8'))
+                parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
+                text = ''.join(part.get('text') or '' for part in parts)
+                parsed = _json_from_ai_text(text)
+                if isinstance(parsed, dict):
+                    try:
+                        score = int(parsed.get('score'))
+                    except (TypeError, ValueError):
+                        score = None
+                    if score is not None:
+                        score = max(0, min(100, score))
+                    review = str(parsed.get('review') or '').strip()
+                    if review:
+                        return {'score': score, 'review': review}
+            except Exception as exc:
+                logger.warning('Gemini code review failed with model=%s: %s', model, exc)
+    return {
+        'score': None,
+        'review': "AI baholashni hozir bajarib bo'lmadi. Keyinroq qayta urinib ko'ring.",
+    }
+
+
 def analyze_attempt_ai(attempt_summary, mistakes_list):
     """O4: Bitta test natijasi bo'yicha qisqa AI tahlil (o'zbek tilida).
 

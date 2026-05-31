@@ -8,7 +8,15 @@ const SUBJECTS = (globalThis.SUBJECTS_LIST && globalThis.SUBJECTS_LIST.length > 
   : ['Matematika','Ingliz tili','Ona tili','Informatika','Fizika','Kimyo','Biologiya','Tarix','Geografiya'];
 const LEVELS = ['Oson','O\'rta','Qiyin'];
 const ENGLISH_LEVELS = ['Beginner', 'Elementary', 'Pre-Intermediate', 'Intermediate', 'Upper-Intermediate', 'Advanced'];
-const TYPES = ['Ko\'p tanlovli','To\'g\'ri/Noto\'g\'ri','Qisqa javob'];
+const TYPES = ['Ko\'p tanlovli','To\'g\'ri/Noto\'g\'ri','Qisqa javob','Kod (dasturlash)'];
+// IT (kod) savollari uchun dasturlash tillari.
+const CODE_LANGUAGES = [
+  ['python', 'Python'],
+  ['javascript', 'JavaScript'],
+  ['java', 'Java'],
+  ['cpp', 'C++'],
+  ['c', 'C'],
+];
 
 const getLevelColorClass = (lvl) => {
   const l = (lvl || '').toLowerCase();
@@ -58,7 +66,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [pdfVision, setPdfVision] = React.useState(false);
   const [pdfWarning, setPdfWarning] = React.useState('');
   const [pdfChunks, setPdfChunks] = React.useState(1);
-  const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject:'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0 });
+  const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject:'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0, programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
   const [editingQuestionId, setEditingQuestionId] = React.useState(null);
   const [newSubjectModal, setNewSubjectModal] = React.useState(false);
   const [newSubject, setNewSubject] = React.useState('');
@@ -331,9 +339,12 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     // mavjud savol ma'lumotlarini formga yuklash. Backend Question turi
     // (multiple_choice/true_false/short_answer) yo'q — Frontend "type"ni
     // options soniga qarab xulosa qiladi.
-    const inferredType = (q.options && q.options.length === 2 && q.options.every(o => /to'?g'?ri|noto'?g'?ri/i.test(o)))
-      ? "To'g'ri/Noto'g'ri"
-      : (Array.isArray(q.options) && q.options.length > 0 ? "Ko'p tanlovli" : 'Qisqa javob');
+    const isCode = (q.questionType || q.question_type) === 'code';
+    const inferredType = isCode
+      ? 'Kod (dasturlash)'
+      : ((q.options && q.options.length === 2 && q.options.every(o => /to'?g'?ri|noto'?g'?ri/i.test(o)))
+        ? "To'g'ri/Noto'g'ri"
+        : (Array.isArray(q.options) && q.options.length > 0 ? "Ko'p tanlovli" : 'Qisqa javob'));
     setEditingQuestionId(q.backendId ?? q.id);
     setNewQ({
       text: q.text || '',
@@ -347,23 +358,52 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       score: q.score || 3,
       options: Array.isArray(q.options) && q.options.length ? q.options.slice() : ['','','',''],
       correct: typeof q.correctAnswer === 'number' ? q.correctAnswer : 0,
+      programmingLanguage: q.programmingLanguage || q.programming_language || 'python',
+      codeTemplate: q.codeTemplate || q.code_template || '',
+      expectedOutput: q.expectedOutput || q.expected_output || '',
+      testCases: Array.isArray(q.test_cases) ? q.test_cases.map(tc => ({
+        input: tc.input || '',
+        expected_output: tc.expected_output || '',
+        is_hidden: !!tc.is_hidden,
+      })) : [],
     });
     setMode('manual');
   };
 
   const saveQuestion = () => {
     if (!newQ.text) return;
+    const isCode = newQ.type === 'Kod (dasturlash)';
+    // Kod savol uchun dasturlash tili majburiy.
+    if (isCode && !String(newQ.programmingLanguage || '').trim()) {
+      showApiToast('⚠ Dasturlash tilini tanlang');
+      return;
+    }
     const isEditing = !!editingQuestionId;
     if (isApi) {
       const token = OlympyApi.getToken();
-      const payload = {
-        subject: newQ.subject,
-        text: newQ.text,
-        options: newQ.options,
-        correct_answer: newQ.correct,
-        score: newQ.score,
-        difficulty: _diffToApi(newQ.level, newQ.subject),
-      };
+      const payload = isCode
+        ? {
+            subject: newQ.subject,
+            text: newQ.text,
+            score: newQ.score,
+            difficulty: _diffToApi(newQ.level, newQ.subject),
+            question_type: 'code',
+            programming_language: newQ.programmingLanguage,
+            code_template: newQ.codeTemplate || '',
+            expected_output: newQ.expectedOutput || '',
+            test_cases: (newQ.testCases || []).filter(tc => tc.input.trim() || tc.expected_output.trim()),
+            options: [],
+            correct_answer: 0,
+          }
+        : {
+            subject: newQ.subject,
+            text: newQ.text,
+            options: newQ.options,
+            correct_answer: newQ.correct,
+            score: newQ.score,
+            difficulty: _diffToApi(newQ.level, newQ.subject),
+            question_type: 'mcq',
+          };
       const promise = isEditing
         ? OlympyApi.updateQuestion(editingQuestionId, payload, token)
         : OlympyApi.createQuestion({
@@ -377,7 +417,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           console.warn('saveQuestion failed:', err);
           showApiToast(`⚠ ${isEditing ? "Tahrirlab" : "Saqlab"} bo'lmadi`);
         });
-      setNewQ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0 });
+      setNewQ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0, programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
       return;
     }
     if (isEditing) {
@@ -402,7 +442,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
         createdBy: user?.id,
       });
     }
-    setNewQ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0 });
+    setNewQ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0, programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
     setEditingQuestionId(null);
     setMode('list');
   };
@@ -626,6 +666,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   <p className="text-sm text-white/90 mb-2 leading-relaxed">{q.text}</p>
                   <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
                     <SubjectBadge subject={q.subject} />
+                    {(q.questionType === 'code' || q.question_type === 'code') && (
+                      <span className="chip text-xs bg-sky-500/15 text-sky-300 border border-sky-500/25 font-bold">
+                        {'</> '}{(q.programmingLanguage || q.programming_language || 'kod')}
+                      </span>
+                    )}
                     {q.source && <span className="chip glass text-white/50 text-xs">{q.source === 'ai' ? '✨ AI' : q.source === 'pdf' ? '📄 PDF' : '✏️ Qo\'lda'}</span>}
                     <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
                     <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
@@ -707,6 +752,100 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 <button key={v} onClick={() => setNewQ({...newQ, correct: i, options: ["To'g'ri","Noto'g'ri"]})}
                   className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${newQ.correct === i ? 'gradient-bg text-white' : 'glass text-white/50'}`}>{v}</button>
               ))}
+            </div>
+          )}
+          {newQ.type === 'Kod (dasturlash)' && (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-white/50 mb-1.5 font-medium">Dasturlash tili</label>
+                <div className="flex flex-wrap gap-2">
+                  {CODE_LANGUAGES.map(([val, label]) => (
+                    <button key={val} type="button" onClick={() => setNewQ({ ...newQ, programmingLanguage: val })}
+                      className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-all ${newQ.programmingLanguage === val ? 'gradient-bg text-white' : 'glass text-white/50 hover:text-white/70'}`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-white/50 mb-1.5 font-medium">Boshlang'ich kod skelet <span className="text-white/35">(ixtiyoriy)</span></label>
+                <CodeEditor
+                  value={newQ.codeTemplate}
+                  onChange={(code) => setNewQ({ ...newQ, codeTemplate: code })}
+                  language={newQ.programmingLanguage}
+                  height="160px"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-white/50 mb-1.5 font-medium">Kutilgan natija <span className="text-white/35">(ixtiyoriy — AI/ustoz tekshiruvi uchun)</span></label>
+                <textarea className="input-field font-mono text-xs" rows={3}
+                  placeholder="Masalan: 120"
+                  value={newQ.expectedOutput}
+                  onChange={e => setNewQ({ ...newQ, expectedOutput: e.target.value })} />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs text-white/50 font-medium">Test case'lar <span className="text-white/35">(Judge0 avtomatik tekshiruv uchun)</span></label>
+                  <button type="button"
+                    onClick={() => setNewQ({ ...newQ, testCases: [...(newQ.testCases || []), { input: '', expected_output: '', is_hidden: false }] })}
+                    className="text-xs px-3 py-1.5 rounded-lg glass text-indigo-300 hover:text-indigo-200 font-semibold transition-all">
+                    + Test case qo'shish
+                  </button>
+                </div>
+                {(newQ.testCases || []).length === 0 && (
+                  <p className="text-xs text-white/25 italic">Test case'lar yo'q. "+" tugmasini bosib qo'shing.</p>
+                )}
+                <div className="space-y-3">
+                  {(newQ.testCases || []).map((tc, idx) => (
+                    <div key={idx} className="glass rounded-xl p-3 border border-white/10 space-y-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-xs text-white/40 font-semibold">#{idx + 1}</span>
+                        <div className="flex items-center gap-3">
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input type="checkbox" checked={tc.is_hidden}
+                              onChange={e => {
+                                const updated = [...newQ.testCases];
+                                updated[idx] = { ...updated[idx], is_hidden: e.target.checked };
+                                setNewQ({ ...newQ, testCases: updated });
+                              }}
+                              className="w-3.5 h-3.5 accent-indigo-500" />
+                            <span className="text-xs text-white/40">Yashirin</span>
+                          </label>
+                          <button type="button"
+                            onClick={() => setNewQ({ ...newQ, testCases: newQ.testCases.filter((_, i) => i !== idx) })}
+                            className="text-xs text-rose-400 hover:text-rose-300 transition-colors px-2 py-0.5 rounded glass">
+                            O'chirish
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] text-white/35 mb-1">Kirish (stdin)</label>
+                          <textarea className="input-field font-mono text-xs" rows={2}
+                            placeholder="Masalan: 5"
+                            value={tc.input}
+                            onChange={e => {
+                              const updated = [...newQ.testCases];
+                              updated[idx] = { ...updated[idx], input: e.target.value };
+                              setNewQ({ ...newQ, testCases: updated });
+                            }} />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-white/35 mb-1">Kutilgan natija (stdout)</label>
+                          <textarea className="input-field font-mono text-xs" rows={2}
+                            placeholder="Masalan: 25"
+                            value={tc.expected_output}
+                            onChange={e => {
+                              const updated = [...newQ.testCases];
+                              updated[idx] = { ...updated[idx], expected_output: e.target.value };
+                              setNewQ({ ...newQ, testCases: updated });
+                            }} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
           <div className="flex gap-3">

@@ -10,7 +10,8 @@ class QuestionSerializer(serializers.ModelSerializer):
         model = Question
         fields = ['id', 'center', 'subject', 'text', 'options', 'correct_answer',
                   'score', 'difficulty', 'image', 'source', 'created_by',
-                  'created_at']
+                  'created_at', 'question_type', 'programming_language',
+                  'code_template', 'expected_output', 'test_cases']
         read_only_fields = ['id', 'created_by', 'created_at']
 
     def to_representation(self, instance):
@@ -52,6 +53,11 @@ class QuestionSerializer(serializers.ModelSerializer):
             can_manage = False
         if not can_manage:
             data.pop('correct_answer', None)
+            # `test_cases` ichida yashirin testlar va kutilgan natijalar bor —
+            # staff bo'lmagan foydalanuvchiga ularni butunlay yubormaymiz.
+            # (Run-code endpoint test natijalarini DB'dan o'zi hisoblaydi,
+            # frontend test case'larni bevosita yuklamaydi.)
+            data.pop('test_cases', None)
         return data
 
     def to_internal_value(self, data):
@@ -67,11 +73,43 @@ class QuestionSerializer(serializers.ModelSerializer):
             if isinstance(parsed, list):
                 data = data.copy() if hasattr(data, 'copy') else dict(data)
                 data['options'] = parsed
+        # `test_cases` ham multipart'da string sifatida keladi — xuddi
+        # `options` kabi shaffof decode qilamiz.
+        raw_test_cases = data.get('test_cases') if hasattr(data, 'get') else None
+        if isinstance(raw_test_cases, str):
+            try:
+                parsed_tc = json.loads(raw_test_cases)
+            except (TypeError, ValueError):
+                parsed_tc = None
+            if isinstance(parsed_tc, list):
+                data = data.copy() if hasattr(data, 'copy') else dict(data)
+                data['test_cases'] = parsed_tc
         return super().to_internal_value(data)
 
     def validate(self, data):
         # PATCH uchun mavjud instance maydonlari fallback bo'ladi.
         instance = getattr(self, 'instance', None)
+        q_type = data.get('question_type')
+        if q_type is None:
+            q_type = instance.question_type if instance is not None else Question.QUESTION_TYPE_MCQ
+
+        # Kod (IT) savol — variant/correct_answer talab qilinmaydi; o'rniga
+        # dasturlash tili majburiy. options bo'sh qoladi va baholash AI orqali
+        # (yoki ustoz tomonidan) bajariladi.
+        if q_type == Question.QUESTION_TYPE_CODE:
+            language = data.get('programming_language')
+            if language is None and instance is not None:
+                language = instance.programming_language
+            if not str(language or '').strip():
+                raise serializers.ValidationError(
+                    {'programming_language': "Kod savoli uchun dasturlash tili majburiy"}
+                )
+            # Kod savolda variant bo'lmaydi — har ehtimolga qarshi tozalaymiz,
+            # correct_answer 0 qoladi.
+            data['options'] = []
+            data['correct_answer'] = 0
+            return data
+
         options = data.get('options')
         if options is None and instance is not None:
             options = instance.options
