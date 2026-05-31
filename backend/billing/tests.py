@@ -29,6 +29,9 @@ class BillingTestCase(APITestCase):
         )
         self.client.force_authenticate(user=self.user)
 
+        # Clear seeded plans to avoid price lookup collisions in tests
+        SubscriptionPlan.objects.all().delete()
+
         # Create active pricing plan
         self.plan = SubscriptionPlan.objects.create(
             name='Professional Plan',
