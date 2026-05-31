@@ -86,6 +86,7 @@ INSTALLED_APPS = [
     'attempts',
     'notifications',
     'practice',
+    'billing',
 ]
 
 MIDDLEWARE = [
@@ -697,3 +698,13 @@ LOGGING = {
 # Bepul rejimda markaz oyiga maksimal nechta olimpiada yarata oladi. Premium
 # markazlar uchun limit yo'q (kelajakda flag orqali ochiladi).
 FREE_OLYMPIAD_MONTHLY_LIMIT = int(os.environ.get('FREE_OLYMPIAD_MONTHLY_LIMIT', '2'))
+
+# CLICK to'lov tizimi sozlamalari
+CLICK_SERVICE_ID = os.environ.get('CLICK_SERVICE_ID', '12345')
+CLICK_MERCHANT_ID = os.environ.get('CLICK_MERCHANT_ID', '9999')
+CLICK_SECRET_KEY = os.environ.get('CLICK_SECRET_KEY', 'mysecret')
+
+# PAYME to'lov tizimi sozlamalari
+PAYME_MERCHANT_ID = os.environ.get('PAYME_MERCHANT_ID', '601ab5...')
+PAYME_SECRET_KEY = os.environ.get('PAYME_SECRET_KEY', 'mykey')
+

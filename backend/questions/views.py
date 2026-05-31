@@ -893,3 +893,56 @@ def explain_question(request, question_id):
         question.save(update_fields=['explanation'])
 
     return Response({'explanation': explanation_text})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([CodeRunRateThrottle])
+def run_code_start_view(request):
+    """POST /api/questions/run-code/start/ — Asynchronously triggers a Judge0 run task."""
+    import uuid
+    from django.core.cache import cache
+    from .judge0_service import is_supported
+    from .tasks import run_code_async_task
+
+    source_code = request.data.get('source_code') or ''
+    language = (request.data.get('language') or '').strip().lower()
+    stdin = request.data.get('stdin') or ''
+    question_id = request.data.get('question_id')
+
+    if not str(source_code).strip():
+        return Response(
+            {'detail': "Kod bo'sh bo'lishi mumkin emas"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if not language:
+        return Response(
+            {'detail': "Dasturlash tili majburiy"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if not is_supported(language):
+        return Response(
+            {'detail': f"'{language}' tili qo'llab-quvvatlanmaydi"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    task_id = str(uuid.uuid4())
+    cache.set(f"run_code:task:{task_id}", {'status': 'PENDING'}, timeout=300)
+    
+    run_code_async_task.delay(task_id, source_code, language, stdin, question_id)
+    
+    return Response({'task_id': task_id}, status=http_status.HTTP_202_ACCEPTED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def run_code_status_view(request, task_id):
+    """GET /api/questions/run-code/status/<task_id>/ — Returns the status of the run code task."""
+    from django.core.cache import cache
+    state = cache.get(f"run_code:task:{task_id}")
+    if not state:
+        return Response(
+            {'status': 'FAILED', 'error': "Vazifa topilmadi yoki muddati o'tgan"},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+    return Response(state)

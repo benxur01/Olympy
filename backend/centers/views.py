@@ -341,84 +341,13 @@ def join_center(request, center_id):
             # diagnostika qilib bo'lmasdi. Endi xato log qilinadi, lekin
             # join_center javobini buzmaslik uchun reraise qilinmaydi.
             logger.warning("auto_approve_from_roster failed: %s", exc)
-        # Lazy import: avoid circular dependency at module load time.
-        from notifications.services import send_student_join_request_notification
-        managers = list(
-            CenterMembership.objects.filter(
-                center=center, role=CenterMembership.ROLE_MANAGER,
-                status=CenterMembership.STATUS_APPROVED,
-            ).select_related('user')
-        )
-        # Telegram API sekin bo'lsa (1-3 soniya har bir so'rov), avval
-        # foydalanuvchi join_center javobini 20+ manager * 2s = 40+ soniya
-        # kutib turardi. Endi xabarlarni daemon thread'ga ko'chiramiz —
-        # foydalanuvchi darhol javob oladi. Celery yo'q, lekin Django
-        # request thread'ini bloklamasligimiz uchun bu yetarli.
-        manager_users = [m.user for m in managers]
-        owner_user = center.owner if center.owner_id else None
-        requester = request.user
-        target_center = center
-        target_membership = membership
-
-        def _send_join_notifications():
-            from django.db import close_old_connections
-            close_old_connections()
-            for manager_user in manager_users:
-                try:
-                    send_student_join_request_notification(
-                        manager_user, requester, target_center, target_membership,
-                    )
-                except Exception:
-                    pass
-            if owner_user is not None:
-                try:
-                    send_student_join_request_notification(
-                        owner_user, requester, target_center, target_membership,
-                    )
-                except Exception:
-                    pass
-
-        import threading
-        # daemon=True — gunicorn worker shutdown'da thread yo'qoladi, lekin
-        # bu request thread'ini bloklamaydi. daemon=False bo'lsa worker
-        # graceful shutdown'da har bir thread tugashini kutardi va 50 ta
-        # join × 3s = worker freeze. Telegram'da xabar yo'qotsa ham
-        # in-app Notification baribir DB'ga yozilgan.
-        threading.Thread(target=_send_join_notifications, daemon=True).start()
+        # Trigger Celery task for student join notifications
+        from centers.tasks import send_student_join_notifications_task
+        send_student_join_notifications_task.delay(request.user.id, center.id, membership.id)
     elif created and role in (CenterMembership.ROLE_TEACHER, CenterMembership.ROLE_MANAGER):
-        # O'qituvchi/manager arizalari avval hech kimga xabar yuborilmasdi —
-        # owner faqat panelda polling qilib bilishi mumkin edi. Endi push
-        # xabarnoma yuboriladi va owner inline tugmalar bilan tasdiqlay
-        # oladi. Sinxron bo'lsa Telegram API kechikishi join_center javobini
-        # bloklardi — alohida thread'da yuboramiz.
-        from notifications.services import send_staff_join_request_notification
-        if center.owner_id:
-            owner_user = center.owner
-            requester = request.user
-            target_center = center
-            staff_role = role
-            staff_subject = membership.subject or ''
-            target_membership = membership
-
-            def _send_staff_notification():
-                from django.db import close_old_connections
-                close_old_connections()
-                try:
-                    send_staff_join_request_notification(
-                        owner_user,
-                        requester,
-                        target_center,
-                        role=staff_role,
-                        subject=staff_subject,
-                        membership=target_membership,
-                    )
-                except Exception:
-                    pass
-
-            import threading
-            # daemon=True — worker shutdown'da bloklamaslik uchun.
-            # In-app Notification baribir DB'ga yozilgan (yuqorida).
-            threading.Thread(target=_send_staff_notification, daemon=True).start()
+        # Trigger Celery task for staff join notification
+        from centers.tasks import send_staff_join_notification_task
+        send_staff_join_notification_task.delay(request.user.id, center.id, membership.id)
     return Response(CenterMembershipSerializer(membership).data,
                     status=http_status.HTTP_201_CREATED if created
                     else http_status.HTTP_200_OK)

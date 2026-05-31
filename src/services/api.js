@@ -305,22 +305,17 @@ const saveAuth = ({ token, refresh, user, cookieAuth, persistent } = {}) => {
   } else {
     _setActiveStore(_defaultAuthStore);
   }
-  // Avval cookie_auth=true bo'lsa token o'chirilardi va shu sababli
-  // getToken() null qaytarardi — bu barcha API so'rovlarni tokensiz qilib
-  // qo'yar va Bearer'siz endpoint'lar 401 berardi. Endi ikkalasi ham yashasin:
-  // cookie va Authorization header birga ishlashi normal (backend Bearer'ni
-  // ustun ko'radi, cookie fallback bo'ladi).
-  if (token) _writeAuth(AUTH_TOKEN_KEY, token);
-  if (refresh) _writeAuth(AUTH_REFRESH_KEY, refresh);
+  // XAVFSIZLIK: Token va refresh tokenlarni localStorage/sessionStorage'da saqlamaymiz.
+  // Ular faqat HttpOnly Secure cookie qatlami orqali brauzer tomonidan avtomatik yuboriladi.
+  _removeAuth(AUTH_TOKEN_KEY);
+  _removeAuth(AUTH_REFRESH_KEY);
   if (user) _writeAuth(AUTH_USER_KEY, JSON.stringify(user));
 };
 
 const loadAuth = () => {
-  const token = _readAuth(AUTH_TOKEN_KEY);
-  const refresh = _readAuth(AUTH_REFRESH_KEY);
   const rawUser = _readAuth(AUTH_USER_KEY);
   if (!rawUser) return null;
-  try { return { token, refresh, user: JSON.parse(rawUser) }; } catch { return null; }
+  try { return { token: null, refresh: null, user: JSON.parse(rawUser) }; } catch { return null; }
 };
 
 const clearAuth = () => {
@@ -330,7 +325,7 @@ const clearAuth = () => {
   try { request('/api/auth/logout/', { method: 'POST', retryOnAuth: false }); } catch {}
 };
 
-const getToken = () => _readAuth(AUTH_TOKEN_KEY);
+const getToken = () => null;
 
 export const OlympyApi = {
   API_BASE_URL,
@@ -472,10 +467,27 @@ export const OlympyApi = {
   // IT (kod) savolini AI bilan baholash — test paytida o'quvchi kodini sinaydi.
   // { question_id, submitted_code, language } → { score (0-100|null), review }.
   reviewCode: (payload, token) => request('/api/questions/code-review/', { method: 'POST', body: payload, token }),
-  // IT (kod) savolini Judge0 orqali ishga tushirish ("Ishga tushirish" tugmasi).
-  // { source_code, language, stdin?, question_id? } →
-  // { stdout, stderr, compile_output, status, time, memory, test_results[] }.
-  runCode: (payload, token) => request('/api/questions/run-code/', { method: 'POST', body: payload, token }),
+  runCode: async (payload, token) => {
+    // 1. Yangi asinxron Celery taskini yaratamiz
+    const startRes = await request('/api/questions/run-code/start/', { method: 'POST', body: payload, token });
+    const taskId = startRes?.task_id;
+    if (!taskId) {
+      throw new ApiError(startRes?.detail || "Kodni ishga tushirib bo'lmadi");
+    }
+    
+    // 2. Natijani keshdan olguncha polling qilamiz (maksimal 30 soniya)
+    for (let i = 0; i < 30; i++) {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      const statusRes = await request(`/api/questions/run-code/status/${taskId}/`, { token });
+      if (statusRes?.status === 'COMPLETED') {
+        return statusRes.result;
+      }
+      if (statusRes?.status === 'FAILED') {
+        throw new ApiError(statusRes?.error || "Kodni ishga tushirishda xatolik yuz berdi");
+      }
+    }
+    throw new ApiError("Kod ishga tushirish vaqti tugadi (Timeout)");
+  },
   // Ustoz/menejer uchun olimpiadaning barcha kod javoblari + AI tavsiyalari.
   getCodeSubmissions: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/code-submissions/`, { token }),
   extractPdfQuestions: (pdfFile, payload, token) => {
@@ -542,6 +554,8 @@ export const OlympyApi = {
   getWrongAnswerSubjects: (token) => request('/api/practice/wrong-answers/', { token }),
   startWrongAnswerPractice: (body, token) => request('/api/practice/wrong-answers/start/', { method: 'POST', body, token }),
   explainQuestion: (questionId, token) => request(`/api/questions/${questionId}/explain/`, { method: 'POST', token }),
+  // Billing / To'lov
+  createCheckoutSession: (payload, token) => request('/api/billing/checkout/', { method: 'POST', body: payload, token }),
   // Parent / Ota-ona
   linkChild: (studentPhone, token) => request('/api/me/parent/link/', { method: 'POST', body: { student_phone: studentPhone }, token }),
   getChildren: (token) => request('/api/me/parent/children/', { token }),
