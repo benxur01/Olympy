@@ -8,7 +8,7 @@ const ONBOARDING_GRADES = ['8', '9', '10', '11'];
 
 const ONBOARDING_SUBJECTS = [
   'Matematika', 'Fizika', 'Kimyo', 'Biologiya',
-  'Ingliz tili', 'Tarix', 'Informatika',
+  'Ingliz tili', 'Tarix', 'Informatika', 'IT',
 ];
 
 const ONBOARDING_GOALS = [

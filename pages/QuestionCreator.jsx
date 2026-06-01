@@ -5,7 +5,7 @@
 // faqat unga ulanmagan paytda fallback ishlatamiz.
 const SUBJECTS = (globalThis.SUBJECTS_LIST && globalThis.SUBJECTS_LIST.length > 0)
   ? globalThis.SUBJECTS_LIST
-  : ['Matematika','Ingliz tili','Ona tili','Informatika','Fizika','Kimyo','Biologiya','Tarix','Geografiya'];
+  : ['Matematika','Ingliz tili','Ona tili','Informatika','IT','Fizika','Kimyo','Biologiya','Tarix','Geografiya'];
 const LEVELS = ['Oson','O\'rta','Qiyin'];
 const ENGLISH_LEVELS = ['Beginner', 'Elementary', 'Pre-Intermediate', 'Intermediate', 'Upper-Intermediate', 'Advanced'];
 const TYPES = ['Ko\'p tanlovli','To\'g\'ri/Noto\'g\'ri','Qisqa javob','Kod (dasturlash)'];

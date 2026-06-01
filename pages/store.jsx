@@ -124,7 +124,7 @@ const OlympyStore = (() => {
       { id:'r8', type:'center',   userId:'u15', centerId:'c6', status:'pending', date:'2026-04-29' },
     ],
     // Sample subjects (extendable via admin / question creator)
-    subjects: ['Matematika','Ingliz tili','Ona tili','Informatika','Fizika','Kimyo','Biologiya','Tarix','Geografiya'],
+    subjects: ['Matematika','Ingliz tili','Ona tili','Informatika','IT','Fizika','Kimyo','Biologiya','Tarix','Geografiya'],
     // Question bank — questions belong to a center
     questions: [
       { id:'q1', centerId:'c1', subject:'Matematika', text:'2x + 5 = 13 tenglamasida x ning qiymatini toping.', options:['x = 2','x = 3','x = 4','x = 5'], correctAnswer:2, score:3, difficulty:"O'rta", source:'manual', createdBy:'u4' },

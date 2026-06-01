@@ -1,6 +1,6 @@
 // pages/Auth.jsx — Login + account/organization Register
 
-const SUBJECTS_LIST = ['Matematika','Ingliz tili','Ona tili','Informatika','Fizika','Kimyo','Biologiya','Tarix','Geografiya'];
+const SUBJECTS_LIST = ['Matematika','Ingliz tili','Ona tili','Informatika','IT','Fizika','Kimyo','Biologiya','Tarix','Geografiya'];
 const ORGANIZATION_TYPES = ["O'quv markaz", 'Maktab', 'Universitet/Kollej', 'Tashkilot', 'Online academy', 'Boshqa'];
 // UZBEKISTAN_DISTRICTS va UZBEKISTAN_REGIONS pages/constants/uzbekistanDistricts.js
 // ga ko'chirildi — Olympy.html ularni bu fayldan oldin yuklaydi, shuning uchun
