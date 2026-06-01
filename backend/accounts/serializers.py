@@ -368,7 +368,7 @@ class RewardProductSerializer(serializers.ModelSerializer):
         model = RewardProduct
         fields = ['id', 'center', 'center_name', 'title', 'description',
                   'coin_cost', 'icon', 'image', 'image_url', 'features',
-                  'stock', 'is_active', 'created_at']
+                  'stock', 'is_premium_only', 'is_active', 'created_at']
         read_only_fields = ['id', 'center', 'center_name', 'image_url', 'created_at']
 
     def get_center_name(self, obj):

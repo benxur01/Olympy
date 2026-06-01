@@ -570,12 +570,21 @@ def streak_warning(request):
     if streak <= 0:
         return Response({'warning': False, 'streak_count': 0})
 
+    if user.is_premium:
+        return Response({
+            'warning': False,
+            'is_premium': True,
+            'streak_count': streak,
+            'message': 'Streakingiz Premium himoyasida!'
+        })
+
     # Bugun allaqachon faol bo'lsa — ogohlantirish yo'q.
     if user.last_active_date == today:
-        return Response({'warning': False, 'streak_count': streak})
+        return Response({'warning': False, 'is_premium': False, 'streak_count': streak})
 
     return Response({
         'warning': True,
+        'is_premium': False,
         'streak_count': streak,
         'questions_needed': QUESTIONS_NEEDED,
         'message': (

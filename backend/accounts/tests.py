@@ -313,3 +313,97 @@ class AdminPremiumManagementTestCase(APITestCase):
         self.assertIsNotNone(sub)
         self.assertEqual(sub.plan.name, 'Pro (1 oy)')
 
+
+class StreakProtectionTestCase(APITestCase):
+    """Streak protection logic tests for premium users."""
+
+    def test_streak_protection(self):
+        from django.utils import timezone
+        from datetime import timedelta
+
+        # 1. Normal user (non-premium)
+        normal_user = User.objects.create_user(
+            phone='+998901110011', password='UserPass123', full_name='Normal User'
+        )
+        normal_user.streak_count = 5
+        # Set last active date to 3 days ago (gap > 1 day)
+        normal_user.last_active_date = timezone.now().date() - timedelta(days=3)
+        normal_user.save()
+
+        # Update streak
+        normal_user.update_streak()
+        normal_user.refresh_from_db()
+        # Normal user's streak should reset to 1
+        self.assertEqual(normal_user.streak_count, 1)
+
+        # 2. Premium user
+        premium_user = User.objects.create_user(
+            phone='+998901110022', password='UserPass123', full_name='Premium User',
+            is_premium=True
+        )
+        premium_user.streak_count = 5
+        premium_user.last_active_date = timezone.now().date() - timedelta(days=3)
+        premium_user.save()
+
+        # Update streak
+        premium_user.update_streak()
+        premium_user.refresh_from_db()
+        # Premium user's streak should be protected (incremented from 5 to 6)
+        self.assertEqual(premium_user.streak_count, 6)
+
+
+class PremiumRewardLockedTestCase(APITestCase):
+    """Premium locked reward store tests."""
+
+    def setUp(self):
+        self.normal_user = User.objects.create_user(
+            phone='+998901110033', password='UserPass123', full_name='Normal User'
+        )
+        self.normal_user.coins = 1000
+        self.normal_user.save()
+
+        self.premium_user = User.objects.create_user(
+            phone='+998901110044', password='UserPass123', full_name='Premium User',
+            is_premium=True
+        )
+        self.premium_user.coins = 1000
+        self.premium_user.save()
+
+        from .models import RewardProduct
+        self.premium_reward = RewardProduct.objects.create(
+            title="Premium Badge",
+            description="Excl premium badge",
+            coin_cost=100,
+            is_premium_only=True,
+            stock=10,
+            is_active=True
+        )
+
+    def test_list_rewards_premium_flag(self):
+        self.client.force_authenticate(user=self.normal_user)
+        response = self.client.get(reverse('rewards-list'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        products = response.data.get('products', [])
+        found_reward = next((p for p in products if p['id'] == self.premium_reward.id), None)
+        self.assertIsNotNone(found_reward)
+        self.assertTrue(found_reward['is_premium_only'])
+
+    def test_redeem_reward_premium_protection(self):
+        url = reverse('rewards-redeem')
+        
+        # 1. Normal user should be blocked (403 Forbidden)
+        self.client.force_authenticate(user=self.normal_user)
+        response = self.client.post(url, {'product_id': self.premium_reward.id}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(response.data['detail'], "Ushbu mukofot faqat Premium o'quvchilar uchun")
+
+        # 2. Premium user should purchase successfully (200 OK)
+        self.client.force_authenticate(user=self.premium_user)
+        response = self.client.post(url, {'product_id': self.premium_reward.id}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        self.premium_user.refresh_from_db()
+        self.assertEqual(self.premium_user.coins, 900)
+
+

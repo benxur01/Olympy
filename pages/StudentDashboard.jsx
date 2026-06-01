@@ -49,7 +49,7 @@ const PremiumLock = ({ title = 'Bu funksiya premium o\'quvchilar uchun', onUpgra
 // Hooks ni buzardi (hooklar oddiy funksiya ichida chaqirilgan) va do'kon
 // ochilganda React xatosi (qora ekran) berardi. Endi barcha hook va mantiq shu
 // componentga ko'chirildi.
-function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate }) {
+function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate, user, onNavigate }) {
   const rewardsData = apiRewardsRes.data || { coins: 0, products: [] };
   const coins = rewardsData.coins;
   const products = rewardsData.products || [];
@@ -58,6 +58,9 @@ function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate }) {
   const [redemptions, setRedemptions] = React.useState([]);
   const [redemptionsLoading, setRedemptionsLoading] = React.useState(false);
   const [buyingId, setBuyingId] = React.useState(null);
+  const [showUnlockModal, setShowUnlockModal] = React.useState(false);
+
+  const isPremium = user ? !!(user.isPremium ?? user.is_premium) : false;
 
   const loadRedemptions = React.useCallback(async () => {
     setRedemptionsLoading(true);
@@ -75,6 +78,10 @@ function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate }) {
   }, [page, loadRedemptions]);
 
   const handleBuy = async (prod) => {
+    if (prod.is_premium_only && !isPremium) {
+      setShowUnlockModal(true);
+      return;
+    }
     if (coins < prod.coin_cost) {
       showApiToast("Tangalar yetarli emas!");
       return;
@@ -125,18 +132,40 @@ function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate }) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {products.map(p => {
                 const cantAfford = coins < p.coin_cost;
+                const isPremiumLocked = p.is_premium_only && !isPremium;
                 const features = Array.isArray(p.features) ? p.features : [];
                 return (
-                  <div key={p.id} className="glass rounded-2xl p-4 md:p-5 flex flex-col justify-between gap-4 card-hover">
+                  <div 
+                    key={p.id} 
+                    className={`glass rounded-2xl p-4 md:p-5 flex flex-col justify-between gap-4 card-hover relative overflow-hidden transition-all ${
+                      isPremiumLocked 
+                        ? 'border-indigo-500/30 bg-gradient-to-b from-indigo-950/20 to-transparent' 
+                        : 'border-white/5'
+                    }`}
+                  >
+                    {p.is_premium_only && (
+                      <div className="absolute top-3 right-3 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-[8px] text-white px-2 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1 shadow-lg shadow-indigo-500/25 border border-indigo-400/20">
+                        <span>👑 Premium</span>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       {p.image_url ? (
-                        <div className="w-full h-32 rounded-2xl overflow-hidden bg-white/5">
-                          <img src={p.image_url} alt={p.title} className="w-full h-full object-cover" loading="lazy" />
+                        <div className="w-full h-32 rounded-2xl overflow-hidden bg-white/5 relative">
+                          <img src={p.image_url} alt={p.title} className={`w-full h-full object-cover ${isPremiumLocked ? 'blur-[3px] opacity-60' : ''}`} loading="lazy" />
+                          {isPremiumLocked && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+                              <span className="text-2xl animate-pulse">🔒</span>
+                            </div>
+                          )}
                         </div>
                       ) : (
-                        <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-2xl shadow-inner">{p.icon || '🎁'}</div>
+                        <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-2xl shadow-inner relative">
+                          {isPremiumLocked ? '🔒' : (p.icon || '🎁')}
+                        </div>
                       )}
-                      <div className="font-bold text-white text-base leading-snug">{p.title}</div>
+                      <div className="font-bold text-white text-base leading-snug flex items-center gap-1.5">
+                        <span>{p.title}</span>
+                      </div>
                       <p className="text-white/40 text-xs leading-relaxed">{p.description || "O'quv markazi tomonidan premium sovg'a."}</p>
                       {features.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 pt-1">
@@ -153,17 +182,26 @@ function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate }) {
                         <span className="text-sm">🪙</span>
                         <span className="text-sm font-black text-amber-300">{p.coin_cost}</span>
                       </div>
-                      <button
-                        onClick={() => handleBuy(p)}
-                        disabled={buyingId === p.id}
-                        className={`text-xs font-bold px-4 py-2 rounded-xl transition-all ${
-                          cantAfford
-                            ? 'bg-white/5 text-white/30 cursor-not-allowed'
-                            : 'bg-amber-500 hover:bg-amber-600 text-slate-900 shadow-[0_4px_12px_rgba(245,158,11,0.2)]'
-                        }`}
-                      >
-                        {buyingId === p.id ? 'Sotib olinmoqda...' : 'Sotib olish'}
-                      </button>
+                      {isPremiumLocked ? (
+                        <button
+                          onClick={() => setShowUnlockModal(true)}
+                          className="text-xs font-bold px-4 py-2 rounded-xl transition-all bg-gradient-to-r from-indigo-600 to-purple-700 text-white shadow-lg shadow-indigo-600/35 hover:from-indigo-500 hover:to-purple-600 flex items-center gap-1"
+                        >
+                          Qulfni ochish 🔑
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleBuy(p)}
+                          disabled={buyingId === p.id}
+                          className={`text-xs font-bold px-4 py-2 rounded-xl transition-all ${
+                            cantAfford
+                              ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                              : 'bg-amber-500 hover:bg-amber-600 text-slate-900 shadow-[0_4px_12px_rgba(245,158,11,0.2)]'
+                          }`}
+                        >
+                          {buyingId === p.id ? 'Sotib olinmoqda...' : 'Sotib olish'}
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
@@ -171,6 +209,33 @@ function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate }) {
             </div>
           )}
         </div>
+
+        <Modal open={showUnlockModal} onClose={() => setShowUnlockModal(false)} title="👑 Premium Do'kon" width="max-w-md">
+          <div className="text-center p-4 space-y-4">
+            <div className="text-5xl animate-bounce">🎁</div>
+            <h3 className="text-lg font-black text-white">Premium-eksklyuziv sovg'alar</h3>
+            <p className="text-xs text-white/60 leading-relaxed">
+              Premium obunaga o'tish orqali do'kondagi maxsus kiyimlar, nishonlar va platforma sovg'alarini tangalarga sotib olish imkoniyatiga ega bo'lasiz.
+            </p>
+            <div className="pt-4 flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  setShowUnlockModal(false);
+                  if (onNavigate) onNavigate('premium');
+                }}
+                className="btn-primary py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-md shadow-indigo-600/20"
+              >
+                Premiumga o'tish ⚡
+              </button>
+              <button
+                onClick={() => setShowUnlockModal(false)}
+                className="btn-ghost py-2 rounded-xl text-xs font-semibold text-white/50"
+              >
+                Yopish
+              </button>
+            </div>
+          </div>
+        </Modal>
 
         <div className="space-y-4">
           <h3 className="text-sm font-black text-white/50 uppercase tracking-wider">Buyurtmalar tarixi</h3>
@@ -784,7 +849,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {/* Retention: kunlik ilg'ash widgetlari (faqat real API rejimida) */}
       {isApi && (
         <>
-          <StreakWarningBanner />
+          <StreakWarningBanner onNavigate={setPage} />
           <SuggestedOlympiadCard onNavigate={setPage} olympiads={visibleOlympiads} />
           <PeerComparisonCard />
           <DailyQuestionsWidget />
@@ -1504,6 +1569,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       page={page}
       showApiToast={showApiToast}
       onUserUpdate={onUserUpdate}
+      user={user}
+      onNavigate={setPage}
     />
   );
 

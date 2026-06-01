@@ -8,16 +8,44 @@
 const _retToken = () => globalThis.OlympyApi?.getToken?.();
 
 // ─── DH3. Streak himoyasi eslatmasi (sariq banner) ───────────────────────────
-const StreakWarningBanner = () => {
+const StreakWarningBanner = ({ onNavigate }) => {
   const { data } = useApiData(() => OlympyApi.getStreakWarning(_retToken()), []);
-  if (!data || !data.warning || (data.streak_count || 0) <= 3) return null;
-  return (
-    <div className="rounded-2xl p-4 border border-amber-500/30 bg-amber-500/10 flex items-center gap-3">
-      <div className="text-3xl flex-shrink-0">🔥</div>
-      <div className="flex-1 min-w-0">
-        <div className="text-sm font-black text-amber-300">{data.streak_count} kunlik seriya xavf ostida!</div>
-        <div className="text-xs text-white/60 mt-0.5">{data.message}</div>
+  if (!data || (data.streak_count || 0) <= 3) return null;
+
+  if (data.is_premium) {
+    return (
+      <div className="rounded-2xl p-4 border border-indigo-500/30 bg-indigo-500/10 flex items-center gap-3 shadow-[0_4px_12px_rgba(99,102,241,0.05)]">
+        <div className="text-3xl flex-shrink-0 animate-pulse">❄️</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-black text-indigo-300 flex items-center gap-1.5">
+            <span>Streak Premium Himoyasida!</span>
+            <span className="text-[9px] font-extrabold uppercase tracking-widest text-indigo-400 bg-indigo-500/20 px-1.5 py-0.2 rounded">Muzlatilgan</span>
+          </div>
+          <div className="text-xs text-white/60 mt-0.5">Bugun faol bo'la olmasangiz ham, ketma-ket faollik seriyangiz uzilmaydi.</div>
+        </div>
       </div>
+    );
+  }
+
+  if (!data.warning) return null;
+
+  return (
+    <div className="rounded-2xl p-4 border border-amber-500/30 bg-amber-500/10 flex items-center justify-between gap-3 shadow-[0_4px_12px_rgba(245,158,11,0.05)]">
+      <div className="flex items-center gap-3 flex-1 min-w-0">
+        <div className="text-3xl flex-shrink-0">🔥</div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-black text-amber-300">{data.streak_count} kunlik seriya xavf ostida!</div>
+          <div className="text-xs text-white/60 mt-0.5">{data.message} Uni premium bilan butunlay himoyalashni xohlaysizmi?</div>
+        </div>
+      </div>
+      {onNavigate && (
+        <button
+          onClick={() => onNavigate('premium')}
+          className="btn-primary text-xs px-3.5 py-1.5 rounded-xl font-bold flex-shrink-0 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white border-none shadow-md shadow-orange-500/20 hover:scale-105 transition-transform"
+        >
+          Muzlatish ⚡
+        </button>
+      )}
     </div>
   );
 };

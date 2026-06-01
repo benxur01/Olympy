@@ -9,6 +9,8 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const [reviewOpen, setReviewOpen] = React.useState(false);
   const [explanations, setExplanations] = React.useState({}); // { [qid]: string }
   const [explaining, setExplaining] = React.useState({});     // { [qid]: boolean }
+  const isPremium = isApi ? !!(user?.isPremium ?? user?.is_premium) : true;
+  const [showPremiumLockModal, setShowPremiumLockModal] = React.useState(false);
 
   const handleExplain = async (qid) => {
     if (explanations[qid]) return;
@@ -389,7 +391,13 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                           </div>
                         ) : (
                           <button
-                            onClick={() => handleExplain(q.id)}
+                            onClick={() => {
+                              if (!isPremium) {
+                                setShowPremiumLockModal(true);
+                              } else {
+                                handleExplain(q.id);
+                              }
+                            }}
                             disabled={explaining[q.id]}
                             className="btn-ghost text-[11px] px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5 text-indigo-300 hover:text-indigo-200"
                           >
@@ -400,8 +408,8 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                               </>
                             ) : (
                               <>
-                                <Icon name="bolt" size={12} />
-                                AI Yechim Tushuntirishi
+                                <Icon name={isPremium ? "bolt" : "lock"} size={12} className={isPremium ? "text-indigo-400" : "text-amber-400"} />
+                                <span>AI Yechim Tushuntirishi {!isPremium && <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded font-extrabold ml-1">PRO</span>}</span>
                               </>
                             )}
                           </button>
@@ -427,6 +435,33 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
             {shareToast}
           </div>
         )}
+
+        <Modal open={showPremiumLockModal} onClose={() => setShowPremiumLockModal(false)} title="👑 Premium Imkoniyat" width="max-w-md">
+          <div className="text-center p-4 space-y-4">
+            <div className="text-5xl animate-bounce">🔒</div>
+            <h3 className="text-lg font-black text-white">AI Yechim Tushuntirishi faqat Premium o'quvchilarga ochiq</h3>
+            <p className="text-xs text-white/60 leading-relaxed">
+              Nega bu xatoga yo'l qo'yganingizni va to'g'ri yechim yo'lini batafsil tahlil qilish uchun AI o'qituvchi yordamidan foydalaning.
+            </p>
+            <div className="pt-4 flex flex-col gap-2">
+              <button
+                onClick={() => {
+                  setShowPremiumLockModal(false);
+                  if (onNavigate) onNavigate('premium');
+                }}
+                className="btn-primary py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-md shadow-indigo-600/20"
+              >
+                Premiumga o'tish ⚡
+              </button>
+              <button
+                onClick={() => setShowPremiumLockModal(false)}
+                className="btn-ghost py-2 rounded-xl text-xs font-semibold text-white/50"
+              >
+                Yopish
+              </button>
+            </div>
+          </div>
+        </Modal>
       </div>
     </div>
   );

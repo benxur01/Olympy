@@ -149,7 +149,10 @@ class User(AbstractBaseUser, PermissionsMixin):
             self.save(update_fields=['streak_count', 'last_active_date', 'longest_streak'])
             return True
         elif diff.days > 1:
-            self.streak_count = 1
+            if self.is_premium:
+                self.streak_count += 1
+            else:
+                self.streak_count = 1
             self.last_active_date = today
             self.longest_streak = max(self.longest_streak or 0, self.streak_count)
             self.save(update_fields=['streak_count', 'last_active_date', 'longest_streak'])
@@ -308,6 +311,7 @@ class RewardProduct(models.Model):
     # Mahsulot xususiyatlari ro'yxati, masalan ["Hajmi: L", "Rangi: Qizil"].
     features = models.JSONField(default=list, blank=True)
     stock = models.PositiveIntegerField(default=10)
+    is_premium_only = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
