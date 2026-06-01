@@ -520,10 +520,15 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   background: rgba(255, 255, 255, 0.2);
 }
 
-/* Scroll mask for tabs to fade edges */
+/* Scroll mask for tabs to fade edges and hide scrollbars */
 .scroll-mask {
   mask-image: linear-gradient(to right, transparent, white 16px, white calc(100% - 16px), transparent);
   -webkit-mask-image: linear-gradient(to right, transparent, white 16px, white calc(100% - 16px), transparent);
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.scroll-mask::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
 }
 @media (min-width: 768px) {
   .scroll-mask {
@@ -531,3 +536,15 @@ textarea.input-field { resize: vertical; min-height: 100px; }
     -webkit-mask-image: linear-gradient(to right, transparent, white 24px, white calc(100% - 24px), transparent);
   }
 }
+
+/* Global helper classes to hide scrollbars while keeping scroll functionality */
+.scrollbar-none,
+.no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.scrollbar-none::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
