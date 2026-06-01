@@ -642,7 +642,7 @@ const FOMOTicker = () => {
 
   return (
     <div
-      className={`fixed bottom-4 left-4 z-50 max-w-sm glass-strong rounded-2xl p-4 border border-indigo-500/30 bg-gradient-to-r from-indigo-950/85 to-purple-950/85 shadow-[0_12px_32px_rgba(99,102,241,0.2)] transition-all duration-500 ${
+      className={`fixed bottom-4 right-4 md:bottom-6 md:right-6 z-50 max-w-sm glass-strong rounded-2xl p-4 border border-indigo-500/30 bg-gradient-to-r from-indigo-950/85 to-purple-950/85 shadow-[0_12px_32px_rgba(99,102,241,0.2)] transition-all duration-500 ${
         visible ? 'translate-y-0 opacity-100' : 'translate-y-12 opacity-0 pointer-events-none'
       }`}
     >
