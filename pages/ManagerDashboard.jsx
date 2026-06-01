@@ -1863,7 +1863,19 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                         newLevel = '';
                       }
                     }
-                    setNewOlympiad({ ...newOlympiad, subject: newSubj, testLevel: newLevel });
+                    let nextItCategory = newOlympiad.itCategory;
+                    let nextAllowedLanguages = newOlympiad.allowedLanguages;
+                    if (newSubj !== 'IT' && newSubj !== 'Informatika') {
+                      nextItCategory = '';
+                      nextAllowedLanguages = [];
+                    }
+                    setNewOlympiad({
+                      ...newOlympiad,
+                      subject: newSubj,
+                      testLevel: newLevel,
+                      itCategory: nextItCategory,
+                      allowedLanguages: nextAllowedLanguages
+                    });
                   }}>
                     {store.subjects.map(s => <option key={s}>{s}</option>)}
                   </select>
@@ -1937,42 +1949,44 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
               {/* IT (dasturlash) olimpiadasi sozlamalari — ixtiyoriy. To'ldirilsa
                   olimpiada IT kategoriyasiga ega bo'ladi va kod savollarda til
                   cheklovi qo'llaniladi. */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
-                <div className="flex items-center gap-2 text-xs font-bold text-white/70">
-                  <Icon name="brain" size={14} /> IT (dasturlash) sozlamalari <span className="text-white/35 font-normal">(ixtiyoriy)</span>
-                </div>
-                <div>
-                  <label className="block text-xs text-white/50 mb-1.5 font-medium">IT kategoriya</label>
-                  <select className="input-field" value={newOlympiad.itCategory}
-                    onChange={e => setNewOlympiad({ ...newOlympiad, itCategory: e.target.value })}>
-                    <option value="">— Tanlanmagan —</option>
-                    <option value="frontend">Frontend</option>
-                    <option value="backend">Backend</option>
-                    <option value="fullstack">Full Stack</option>
-                    <option value="general">Umumiy</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Ruxsat etilgan tillar</label>
-                  <div className="flex flex-wrap gap-2">
-                    {[['python','Python'],['javascript','JavaScript'],['java','Java'],['cpp','C++'],['c','C']].map(([val, label]) => {
-                      const selected = (newOlympiad.allowedLanguages || []).includes(val);
-                      return (
-                        <button key={val} type="button"
-                          onClick={() => {
-                            const cur = Array.isArray(newOlympiad.allowedLanguages) ? newOlympiad.allowedLanguages : [];
-                            const next = selected ? cur.filter(l => l !== val) : [...cur, val];
-                            setNewOlympiad({ ...newOlympiad, allowedLanguages: next });
-                          }}
-                          className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50 hover:text-white/70'}`}>
-                          {label}
-                        </button>
-                      );
-                    })}
+              {(newOlympiad.subject === 'IT' || newOlympiad.subject === 'Informatika') && (
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white/70">
+                    <Icon name="brain" size={14} /> IT (dasturlash) sozlamalari <span className="text-white/35 font-normal">(ixtiyoriy)</span>
                   </div>
-                  <p className="mt-1.5 text-[11px] text-white/35">Bo'sh qoldirilsa, kod savollarida barcha til ruxsat etiladi.</p>
+                  <div>
+                    <label className="block text-xs text-white/50 mb-1.5 font-medium">IT kategoriya</label>
+                    <select className="input-field" value={newOlympiad.itCategory}
+                      onChange={e => setNewOlympiad({ ...newOlympiad, itCategory: e.target.value })}>
+                      <option value="">— Tanlanmagan —</option>
+                      <option value="frontend">Frontend</option>
+                      <option value="backend">Backend</option>
+                      <option value="fullstack">Full Stack</option>
+                      <option value="general">Umumiy</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-white/50 mb-1.5 font-medium">Ruxsat etilgan tillar</label>
+                    <div className="flex flex-wrap gap-2">
+                      {[['python','Python'],['javascript','JavaScript'],['java','Java'],['cpp','C++'],['c','C']].map(([val, label]) => {
+                        const selected = (newOlympiad.allowedLanguages || []).includes(val);
+                        return (
+                          <button key={val} type="button"
+                            onClick={() => {
+                              const cur = Array.isArray(newOlympiad.allowedLanguages) ? newOlympiad.allowedLanguages : [];
+                              const next = selected ? cur.filter(l => l !== val) : [...cur, val];
+                              setNewOlympiad({ ...newOlympiad, allowedLanguages: next });
+                            }}
+                            className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50 hover:text-white/70'}`}>
+                            {label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1.5 text-[11px] text-white/35">Bo'sh qoldirilsa, kod savollarida barcha til ruxsat etiladi.</p>
+                  </div>
                 </div>
-              </div>
+              )}
 
               <div className={`rounded-2xl p-4 border text-xs ${formIssues.length ? 'bg-amber-500/10 border-amber-500/25 text-amber-300' : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'}`}>
                 <div className="flex items-center gap-2 font-semibold">
