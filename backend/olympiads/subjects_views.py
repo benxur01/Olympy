@@ -23,7 +23,7 @@ from .models import Olympiad
 CACHE_KEY = 'olympy:extra_subjects'
 
 DEFAULT_SUBJECTS = [
-    'Matematika', 'Ingliz tili', 'Ona tili', 'Informatika',
+    'Matematika', 'Ingliz tili', 'Ona tili', 'Informatika', 'IT',
     'Fizika', 'Kimyo', 'Biologiya', 'Tarix', 'Geografiya',
 ]
 
