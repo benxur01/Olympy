@@ -1043,7 +1043,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
               {/* Yuqori bar: til tanlash + desktop savol navigatsiyasi.
                   Kod savolda sidebar yashirin, shu sababli prev/next shu yerda
                   (desktop). Mobil'da pastdagi sticky navigator ishlatiladi. */}
-              <div className="flex items-center gap-2 px-3 md:px-4 py-2 border-b border-white/10 flex-shrink-0 overflow-x-auto">
+              <div className="flex items-center gap-2 px-3 md:px-4 py-2 border-b border-white/10 flex-shrink-0 overflow-x-auto scrollbar-none">
                 <span className="text-xs text-white/40 flex-shrink-0">Til:</span>
                 {(allowedLanguages.length ? allowedLanguages : ['python', 'javascript', 'java', 'cpp', 'c']).map(lng => {
                   const active = currentCodeLang(q) === lng;

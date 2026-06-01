@@ -1058,7 +1058,7 @@ const LandingPage = ({ onNavigate, user }) => {
         </div>
 
         {/* Category Filter Tabs */}
-        <div className="flex justify-center mb-10 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <div className="flex justify-center mb-10 overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 scrollbar-none" style={{ WebkitOverflowScrolling: 'touch' }}>
           <div className="flex gap-2 p-1.5 rounded-2xl border border-white/5" style={{ background: 'rgba(255,255,255,0.02)' }}>
             {[
               { id: 'all', label: 'Barchasi', icon: 'grid' },
