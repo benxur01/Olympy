@@ -575,6 +575,7 @@ export const OlympyApi = {
   // Billing / To'lov
   // Aktiv obuna rejalari — Landing'da ochiq ko'rsatiladi, autentifikatsiya talab qilinmaydi.
   getSubscriptionPlans: () => request(`/api/billing/plans/?_t=${Date.now()}`, { retryOnAuth: false }),
+  getRecentPurchases: () => request('/api/billing/recent/', { retryOnAuth: false }),
   createCheckoutSession: (payload, token) => request('/api/billing/checkout/', { method: 'POST', body: payload, token }),
   // Parent / Ota-ona
   linkChild: (studentPhone, token) => request('/api/me/parent/link/', { method: 'POST', body: { student_phone: studentPhone }, token }),

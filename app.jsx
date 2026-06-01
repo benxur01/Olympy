@@ -595,6 +595,7 @@ const App = () => {
 const FOMOTicker = () => {
   const [toast, setToast] = useState(null);
   const [visible, setVisible] = useState(false);
+  const [realEvents, setRealEvents] = useState([]);
 
   const events = [
     "Everest O'quv Markazi hozirgina Pro obunaga o'tdi! 🚀",
@@ -610,8 +611,33 @@ const FOMOTicker = () => {
   ];
 
   useEffect(() => {
+    // 1. Fetch real recent purchases from backend
+    if (globalThis.OlympyApi?.getRecentPurchases) {
+      globalThis.OlympyApi.getRecentPurchases()
+        .then((data) => {
+          if (Array.isArray(data) && data.length > 0) {
+            const formatted = data.map(item => {
+              if (item.is_organization) {
+                const name = item.center_name || item.user_name;
+                return `${name} tashkiloti hozirgina ${item.plan_name} obunaga o'tdi! 🚀`;
+              } else {
+                return `${item.user_name} ${item.plan_name} obunasini faollashtirdi! ⭐`;
+              }
+            });
+            setRealEvents(formatted);
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
     const triggerNotification = () => {
-      const randomEvent = events[Math.floor(Math.random() * events.length)];
+      // 50% probability to show a real purchase if available
+      const showReal = realEvents.length > 0 && Math.random() > 0.5;
+      const list = showReal ? realEvents : events;
+      const randomEvent = list[Math.floor(Math.random() * list.length)];
+
       setToast(randomEvent);
       setVisible(true);
 
@@ -624,9 +650,11 @@ const FOMOTicker = () => {
 
     // Trigger first toast after 10 seconds
     const firstTimeout = setTimeout(() => {
-      const hideTimeout = triggerNotification();
+      let hideTimeout = triggerNotification();
       // Setup interval after the first one triggers
-      const interval = setInterval(triggerNotification, 30000);
+      const interval = setInterval(() => {
+        hideTimeout = triggerNotification();
+      }, 30000);
       return () => {
         clearInterval(interval);
         clearTimeout(hideTimeout);
@@ -636,7 +664,7 @@ const FOMOTicker = () => {
     return () => {
       clearTimeout(firstTimeout);
     };
-  }, []);
+  }, [realEvents]);
 
   if (!toast) return null;
 
