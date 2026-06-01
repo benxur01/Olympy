@@ -110,7 +110,31 @@ body {
 .input-field::placeholder { color: rgba(255,255,255,0.3); }
 
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 50; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
-.modal { background: #12141a; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; padding: 32px; max-width: 520px; width: 90%; animation: slideUp 0.3s ease; }
+.modal {
+  background: #12141a;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px;
+  padding: 32px;
+  max-width: 520px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: slideUp 0.3s ease;
+}
+.modal::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.modal::-webkit-scrollbar-track {
+  background: transparent;
+}
+.modal::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 99px;
+}
+.modal::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
 .stat-card { position: relative; overflow: hidden; }
 .stat-card::before { content: ''; position: absolute; top: -50%; right: -30%; width: 120px; height: 120px; border-radius: 50%; opacity: 0.1; filter: blur(30px); }
 .olympy-row { border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.15s; }
