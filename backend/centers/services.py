@@ -182,6 +182,12 @@ def change_membership_role(center, membership_id, new_role, actor):
             http_status=409,
         )
 
+    if new_role == CenterMembership.ROLE_STUDENT:
+        try:
+            check_student_limit(center)
+        except ValidationError as exc:
+            raise RoleChangeError(str(exc), http_status=400)
+
     old_subject = membership.subject
     membership.delete()
 
@@ -227,6 +233,47 @@ def change_membership_role(center, membership_id, new_role, actor):
     return new_membership
 
 
+def check_student_limit(center):
+    """Checks if the center has reached its student capacity limit based on subscription plan."""
+    from billing.models import UserSubscription
+    from django.utils import timezone
+    
+    # Get active student count of the center
+    active_count = CenterMembership.objects.filter(
+        center=center,
+        role=CenterMembership.ROLE_STUDENT,
+        status=CenterMembership.STATUS_APPROVED
+    ).count()
+    
+    # Check active subscription
+    now = timezone.now()
+    active_sub = UserSubscription.objects.filter(
+        user=center.owner,
+        is_active=True,
+        plan__plan_type='organization',
+        end_date__gt=now
+    ).select_related('plan').first()
+    
+    if active_sub:
+        plan_name = active_sub.plan.name.lower()
+        if 'standart' in plan_name or 'standard' in plan_name:
+            limit = 50
+        elif 'plus' in plan_name:
+            limit = 200
+        elif 'pro' in plan_name:
+            limit = 999999
+        else:
+            limit = 50  # default fallback for any active subscription
+    else:
+        limit = 10  # Free tier limit
+        
+    if active_count >= limit:
+        raise ValidationError(
+            f"Tashkilotda o'quvchilar soni limitga yetgan (Maksimal {limit} ta). "
+            "Qo'shimcha o'quvchilar qo'shish uchun tarifni premiumga yangilang."
+        )
+
+
 @transaction.atomic
 def decide_membership(membership, actor, decision):
     membership = (
@@ -241,6 +288,9 @@ def decide_membership(membership, actor, decision):
         raise ValidationError("Bu ariza allaqachon ko'rib chiqilgan")
 
     is_approved = decision in ('approve', 'approved')
+    if is_approved and membership.role == CenterMembership.ROLE_STUDENT:
+        check_student_limit(membership.center)
+
     membership.status = (
         CenterMembership.STATUS_APPROVED
         if is_approved else CenterMembership.STATUS_REJECTED

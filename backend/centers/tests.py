@@ -247,3 +247,89 @@ class CenterApprovalTrialTestCase(APITestCase):
         # Verify the center is premium
         self.assertTrue(self.center.is_premium)
 
+
+class CenterStudentLimitTestCase(APITestCase):
+    """Tashkilotlar uchun o'quvchilar soni limitini tekshirish."""
+
+    def setUp(self):
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        self.owner = User.objects.create_user(
+            phone='+998901200100', password='StrongPass123', full_name='Owner'
+        )
+        self.center = EducationCenter.objects.create(
+            name='Test Markaz', city='Toshkent', owner=self.owner,
+            status=EducationCenter.STATUS_APPROVED
+        )
+        # Create 12 users to make student requests
+        self.students = []
+        for i in range(12):
+            student = User.objects.create_user(
+                phone=f'+99890120011{i}', password='StrongPass123', full_name=f'Student {i}'
+            )
+            self.students.append(student)
+
+    @patch('notifications.services.send_membership_decision_notification')
+    def test_free_tier_student_limit(self, _mock_notify):
+        from django.core.exceptions import ValidationError
+        from centers.services import decide_membership
+        # Create 10 approved student memberships
+        for i in range(10):
+            req = CenterMembership.objects.create(
+                user=self.students[i], center=self.center,
+                role=CenterMembership.ROLE_STUDENT,
+                status=CenterMembership.STATUS_PENDING
+            )
+            decide_membership(req, self.owner, 'approve')
+
+        # The 11th student approval should fail
+        req11 = CenterMembership.objects.create(
+            user=self.students[10], center=self.center,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_PENDING
+        )
+        with self.assertRaises(ValidationError) as context:
+            decide_membership(req11, self.owner, 'approve')
+        self.assertIn("limitga yetgan", str(context.exception))
+
+    @patch('notifications.services.send_membership_decision_notification')
+    def test_standard_tier_student_limit(self, _mock_notify):
+        from billing.models import SubscriptionPlan, UserSubscription
+        from django.utils import timezone
+        from datetime import timedelta
+        from django.core.exceptions import ValidationError
+        from centers.services import decide_membership
+
+        # Set owner subscription to Standart
+        plan = SubscriptionPlan.objects.create(
+            name='Standart Plan',
+            plan_type='organization',
+            price=200000,
+            duration_days=30,
+            is_active=True
+        )
+        UserSubscription.objects.create(
+            user=self.owner,
+            plan=plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=30),
+            is_active=True
+        )
+
+        # We should be able to approve 11 students now (Standart limit is 50)
+        for i in range(11):
+            req = CenterMembership.objects.create(
+                user=self.students[i], center=self.center,
+                role=CenterMembership.ROLE_STUDENT,
+                status=CenterMembership.STATUS_PENDING
+            )
+            decide_membership(req, self.owner, 'approve')
+
+        active_count = CenterMembership.objects.filter(
+            center=self.center,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED
+        ).count()
+        self.assertEqual(active_count, 11)
+
+
