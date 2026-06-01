@@ -238,9 +238,9 @@ class AdminPremiumManagementTestCase(APITestCase):
             is_active=True
         )
         SubscriptionPlan.objects.create(
-            name='Standart Org (1 oy)',
-            plan_type='organization',
-            price=199999.00,
+            name='Pro (1 oy)',
+            plan_type='student',
+            price=29999.00,
             duration_days=30,
             is_active=True
         )
@@ -282,3 +282,34 @@ class AdminPremiumManagementTestCase(APITestCase):
         
         self.target_user.refresh_from_db()
         self.assertTrue(self.target_user.is_premium)
+
+    def test_admin_toggle_premium_with_plan_name(self):
+        url = reverse('admin-toggle-user-premium', kwargs={'user_id': self.target_user.id})
+        self.client.force_authenticate(user=self.admin_user)
+
+        # 1. Standart plan_name bilan premium berish
+        response = self.client.post(url, {
+            'duration': 30,
+            'plan_type': 'student',
+            'plan_name': 'Standart'
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        self.target_user.refresh_from_db()
+        sub = self.target_user.subscriptions.filter(is_active=True).first()
+        self.assertIsNotNone(sub)
+        self.assertEqual(sub.plan.name, 'Standart (1 oy)')
+
+        # 2. Pro plan_name bilan premium berish (eski obunani yopib yangi ochadi)
+        response = self.client.post(url, {
+            'duration': 30,
+            'plan_type': 'student',
+            'plan_name': 'Pro'
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        
+        self.target_user.refresh_from_db()
+        sub = self.target_user.subscriptions.filter(is_active=True).first()
+        self.assertIsNotNone(sub)
+        self.assertEqual(sub.plan.name, 'Pro (1 oy)')
+
