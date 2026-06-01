@@ -265,7 +265,8 @@ def check_student_limit(center):
         else:
             limit = 50  # default fallback for any active subscription
     else:
-        limit = 10  # Free tier limit
+        limit = 999999 if center.is_premium else 10  # Lifetime premium has no limit, otherwise Free limit of 10
+
         
     if active_count >= limit:
         raise ValidationError(

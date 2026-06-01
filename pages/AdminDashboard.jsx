@@ -191,6 +191,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const [premiumUser, setPremiumUser] = React.useState(null);
   const [premiumDuration, setPremiumDuration] = React.useState(30);
   const [premiumPlanType, setPremiumPlanType] = React.useState('student');
+  const [premiumPlanName, setPremiumPlanName] = React.useState('Pro');
   const [premiumSaving, setPremiumSaving] = React.useState(false);
   const [newSubjectName, setNewSubjectName] = React.useState('');
   // Topbar global qidiruv — foydalanuvchi/tashkilot/olimpiada nomi bo'yicha
@@ -456,6 +457,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     setPremiumUser(row);
     setPremiumDuration(row.isPremium ? -1 : 30);
     setPremiumPlanType(row.role?.toLowerCase()?.includes('o\'quvchi') || row.role?.toLowerCase()?.includes('student') ? 'student' : 'organization');
+    setPremiumPlanName('Pro');
   };
 
   const handleSavePremium = () => {
@@ -470,7 +472,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     setPremiumSaving(true);
     OlympyApi.adminToggleUserPremium(numericUserId, {
       duration: premiumDuration,
-      plan_type: premiumPlanType
+      plan_type: premiumPlanType,
+      plan_name: premiumPlanName
     }, OlympyApi.getToken())
       .then(() => {
         showToast('Premium holati yangilandi');
@@ -1068,6 +1071,32 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
                 ))}
               </div>
             </div>
+
+            {premiumDuration > 0 && (
+              <div>
+                <label className="block text-xs text-white/50 mb-1.5 font-medium">Tarif turi (Darajasi)</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'Standart', label: 'Standart' },
+                    { value: 'Plus', label: 'Plus' },
+                    { value: 'Pro', label: 'Pro' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => setPremiumPlanName(opt.value)}
+                      className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                        premiumPlanName === opt.value
+                          ? 'bg-indigo-500 text-white border-indigo-500 font-extrabold shadow'
+                          : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs text-white/50 mb-1.5 font-medium">Muddat</label>

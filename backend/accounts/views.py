@@ -739,11 +739,22 @@ def admin_toggle_user_premium(request, user_id):
         # Muddatli premium
         UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
         
-        plan = SubscriptionPlan.objects.filter(
-            plan_type=plan_type, 
-            duration_days=duration,
-            is_active=True
-        ).order_by('-price').first()
+        plan_name = request.data.get('plan_name')
+        plan = None
+        if plan_name:
+            plan = SubscriptionPlan.objects.filter(
+                plan_type=plan_type,
+                duration_days=duration,
+                name__istartswith=plan_name,
+                is_active=True
+            ).first()
+            
+        if not plan:
+            plan = SubscriptionPlan.objects.filter(
+                plan_type=plan_type, 
+                duration_days=duration,
+                is_active=True
+            ).order_by('-price').first()
         
         now = timezone.now()
         end_date = now + timedelta(days=duration)
