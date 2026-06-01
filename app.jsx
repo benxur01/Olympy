@@ -587,6 +587,74 @@ const App = () => {
         onLogout={handleLogout}
         onNavigate={navigate}
       />
+      <FOMOTicker />
+    </div>
+  );
+};
+
+const FOMOTicker = () => {
+  const [toast, setToast] = useState(null);
+  const [visible, setVisible] = useState(false);
+
+  const events = [
+    "Everest O'quv Markazi hozirgina Pro obunaga o'tdi! 🚀",
+    "Toshkent shahridan Jasur Qodirov Plus obunasini faollashtirdi! ⭐",
+    "Sirdaryo viloyatidan Dilnoza va yana 4 ta o'quvchi Premiumga a'zo bo'ldi! 🔥",
+    "Samarqand Grand School tashkiloti Plus tarifga yangilandi! 🎓",
+    "Farg'onadan Shoxrux Pro tarifini sotib oldi! 👑",
+    "Namangan Intellectual School hozirgina Pro obunaga o'tdi! 💎",
+    "Buxorodan Madina 3 oylik Plus obunani faollashtirdi! ⚡",
+    "Xorazmdan Asadbek 1 yillik Pro tarifini tanladi! 🏆",
+    "Navoiy viloyatidan Alisher va 3 ta do'sti premiumga o'tdi! ❄️",
+    "Toshkent shahridan Laylo va 2 ta sinfdoshi Plus obunasini sotib oldi! ⚡"
+  ];
+
+  useEffect(() => {
+    const triggerNotification = () => {
+      const randomEvent = events[Math.floor(Math.random() * events.length)];
+      setToast(randomEvent);
+      setVisible(true);
+
+      // Hide after 6 seconds
+      const hideTimeout = setTimeout(() => {
+        setVisible(false);
+      }, 6000);
+      return hideTimeout;
+    };
+
+    // Trigger first toast after 10 seconds
+    const firstTimeout = setTimeout(() => {
+      const hideTimeout = triggerNotification();
+      // Setup interval after the first one triggers
+      const interval = setInterval(triggerNotification, 30000);
+      return () => {
+        clearInterval(interval);
+        clearTimeout(hideTimeout);
+      };
+    }, 10000);
+
+    return () => {
+      clearTimeout(firstTimeout);
+    };
+  }, []);
+
+  if (!toast) return null;
+
+  return (
+    <div
+      className={`fixed bottom-4 left-4 z-50 max-w-sm glass-strong rounded-2xl p-4 border border-indigo-500/30 bg-gradient-to-r from-indigo-950/85 to-purple-950/85 shadow-[0_12px_32px_rgba(99,102,241,0.2)] transition-all duration-500 ${
+        visible ? 'translate-y-0 opacity-100' : 'translate-y-12 opacity-0 pointer-events-none'
+      }`}
+    >
+      <div className="flex items-center gap-3">
+        <div className="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-sm animate-pulse">
+          ⚡
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-400">Jonli faollik</div>
+          <p className="text-xs font-semibold text-white/95 mt-0.5 leading-snug">{toast}</p>
+        </div>
+      </div>
     </div>
   );
 };

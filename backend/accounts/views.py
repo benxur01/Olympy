@@ -1713,6 +1713,7 @@ def list_rewards(request):
             'stock': p.stock,
             'center_id': p.center_id,
             'center_name': p.center.name if p.center_id else '',
+            'is_premium_only': getattr(p, 'is_premium_only', False),
         })
     return Response({
         'coins': request.user.coins,
@@ -1751,6 +1752,9 @@ def redeem_reward(request):
 
     if product.stock <= 0:
         return Response({'detail': "Bu mukofot tugagan"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if getattr(product, 'is_premium_only', False) and not request.user.is_premium:
+        return Response({'detail': "Ushbu mukofot faqat Premium o'quvchilar uchun"}, status=status.HTTP_403_FORBIDDEN)
 
     if request.user.coins < product.coin_cost:
         return Response({'detail': "Tangalar yetarli emas"}, status=status.HTTP_400_BAD_REQUEST)
