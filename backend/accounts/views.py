@@ -452,7 +452,7 @@ def me(request):
             new_username = data.get('username')
             # Serializer validate_username bo'sh string'ni '' qilib qaytaradi
             # — bu yerda NULL'ga aylantiramiz (save()'da ham backstop bor).
-            user.username = (new_username or None) or None
+            user.username = new_username or None
             if isinstance(new_username, str) and new_username.strip() == '':
                 user.username = None
             update_fields.append('username')
@@ -708,14 +708,17 @@ def admin_toggle_user_premium(request, user_id):
     plan_type = request.data.get('plan_type', 'student')
 
     if duration is None:
-        # Eski toggle mantiqini saqlaymiz (orqaga moslik uchun)
-        target.is_premium = not target.is_premium
-        target.save(update_fields=['is_premium'])
-        if target.is_premium:
-            EducationCenter.objects.filter(owner=target).update(is_premium=True)
-        else:
-            EducationCenter.objects.filter(owner=target).update(is_premium=False)
-            UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
+        # Eski toggle mantiqini saqlaymiz (orqaga moslik uchun).
+        # Atomic: is_premium flag, EducationCenter va UserSubscription
+        # yangilanishlari yarmida xatolik bo'lsa nomuvofiq holat qolmasin.
+        with transaction.atomic():
+            target.is_premium = not target.is_premium
+            target.save(update_fields=['is_premium'])
+            if target.is_premium:
+                EducationCenter.objects.filter(owner=target).update(is_premium=True)
+            else:
+                EducationCenter.objects.filter(owner=target).update(is_premium=False)
+                UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
         return Response(UserSerializer(target, context={'request': request}).data)
 
     try:
