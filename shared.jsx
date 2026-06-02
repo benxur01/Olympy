@@ -14,6 +14,7 @@ const Icon = ({ name, size = 18, className = '' }) => {
   const icons = {
     home: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 12l9-9 9 9M5 10v9a1 1 0 001 1h4v-5h4v5h4a1 1 0 001-1v-9" />,
     users: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" /></>,
+    user: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></>,
     trophy: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 21h8M12 17v4M7 4H4a1 1 0 00-1 1v3a4 4 0 004 4h.01M17 4h3a1 1 0 011 1v3a4 4 0 01-4 4h-.01" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 4h10v6a5 5 0 01-10 0V4z" /></>,
     bolt: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />,
     chart: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M18 20V10M12 20V4M6 20v-6" />,
