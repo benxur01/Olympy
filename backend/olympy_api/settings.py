@@ -389,11 +389,7 @@ _redis_url_for_cache = (
 if _redis_url_for_cache and _redis_url_for_cache.startswith('redis'):
     CACHES = {
         'default': {
-            # ResilientRedisCache: Redis bir lahza uzilsa ham 500 bermaydi.
-            # Standart RedisCache'da throttling har so'rovda cache.get()
-            # chaqirgani uchun Redis uzilishi login/register/butun API'ni
-            # 500'ga aylantirardi (Render free tier'da Redis tez-tez to'xtaydi).
-            'BACKEND': 'olympy_api.cache.ResilientRedisCache',
+            'BACKEND': 'django.core.cache.backends.redis.RedisCache',
             'LOCATION': _redis_url_for_cache,
         }
     }
