@@ -42,53 +42,6 @@ urlpatterns = [
     path('api/notifications/', include('notifications.urls')),
     path('api/subjects/', subjects_list_create, name='subjects-list-create'),
     path('api/billing/', include('billing.urls')),
-    path('api/diagnose-db/', lambda request: (
-        lambda: (
-            import_module := __import__('importlib').import_module,
-            json := __import__('json'),
-            timezone := import_module('django.utils.timezone'),
-            JsonResponse := import_module('django.http').JsonResponse,
-            settings := import_module('django.conf').settings,
-            User := import_module('django.contrib.auth').get_user_model(),
-            EducationCenter := import_module('centers.models').EducationCenter,
-            CenterMembership := import_module('centers.models').CenterMembership,
-            Olympiad := import_module('olympiads.models').Olympiad,
-            request.GET.get('secret') == 'olympy_secret_diagnose' or JsonResponse({'status': 'forbidden'}, status=403),
-            JsonResponse({
-                'status': 'ok',
-                'database': 'PostgreSQL' if 'postgresql' in settings.DATABASES['default']['ENGINE'] else 'SQLite',
-                'centers': [{
-                    'id': c.id,
-                    'name': c.name,
-                    'status': c.status,
-                    'is_premium': c.is_premium,
-                    'owner_phone': c.owner.phone if c.owner else 'None'
-                } for c in EducationCenter.objects.all()],
-                'memberships': [{
-                    'id': m.id,
-                    'user_phone': m.user.phone,
-                    'center_name': m.center.name,
-                    'center_id': m.center.id,
-                    'role': m.role,
-                    'status': m.status
-                } for m in CenterMembership.objects.all()],
-                'olympiads': [{
-                    'id': o.id,
-                    'title': o.title,
-                    'center_name': o.center.name,
-                    'center_id': o.center.id,
-                    'status': o.status,
-                    'is_deleted': o.is_deleted,
-                    'created_by': o.created_by.phone if o.created_by else 'None'
-                } for o in Olympiad.objects.all()],
-                'users': [{
-                    'id': u.id,
-                    'phone': u.phone,
-                    'roles': u.roles,
-                } for u in User.objects.all()],
-            })
-        )[-1]
-    )() if request.GET.get('secret') == 'olympy_secret_diagnose' else __import__('django.http').JsonResponse({'status': 'forbidden'}, status=403)),
 
 ]
 
