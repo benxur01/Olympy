@@ -17,7 +17,7 @@ jobs:
           OWNER_ID=$(curl -sS -H "Authorization: Bearer $RENDER_TOKEN" "https://api.render.com/v1/owners" | jq -r '.[0].owner.id')
           echo "Owner ID: $OWNER_ID"
           
-          # Fetch and print build logs
           curl -sS -H "Authorization: Bearer $RENDER_TOKEN" \
-            "https://api.render.com/v1/logs?resource=srv-d7t49iq8qa3s73f76qag&ownerId=$OWNER_ID&type=build&limit=150" | jq -r '.logs[] | .message // .text // .' | tac
+            "https://api.render.com/v1/logs?resource=srv-d7t49iq8qa3s73f76qag&ownerId=$OWNER_ID&limit=150" | jq -r '.logs[] | .message // .text // .' | tac
+
 
