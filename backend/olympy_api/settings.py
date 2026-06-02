@@ -142,6 +142,9 @@ if DATABASE_URL:
     qs_params = parse_qs(parsed_db.query)
     if 'sslmode' in qs_params:
         db_options['sslmode'] = qs_params['sslmode'][0]
+    # connect_timeout: psycopg ulanish vaqtini cheklaydi (soniyada).
+    # Render → Supabase kabi managed DB ulanishlarida kerakli.
+    db_options.setdefault('connect_timeout', 30)
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
