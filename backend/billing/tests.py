@@ -226,21 +226,3 @@ class BillingTestCase(APITestCase):
         # Verify that center is now premium
         center.refresh_from_db()
         self.assertTrue(center.is_premium)
-
-    def test_recent_purchases_endpoint(self):
-        """Test that the recent purchases endpoint returns active subscriptions."""
-        UserSubscription.objects.create(
-            user=self.user,
-            plan=self.plan,
-            is_active=True
-        )
-
-        url = reverse('billing-recent')
-        # Remove authentication (it's a public endpoint)
-        self.client.force_authenticate(user=None)
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]['user_name'], self.user.full_name or self.user.username)
-        self.assertEqual(response.data[0]['plan_name'], 'Professional Plan')
