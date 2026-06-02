@@ -1,6 +1,6 @@
 // pages/TeacherDashboard.jsx — Teacher panel: events + question creation
 
-const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
+const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
   const [page, setPage] = React.useState('home');
@@ -497,7 +497,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     home: renderHome,
     olympiads: renderOlympiads,
     questions: () => <QuestionCreatorPage embedded user={user} onOpenSwitcher={onOpenSwitcher} onNavigate={onNavigate} />,
-    profile: () => <ProfilePage user={user} embedded onUserUpdate={u => OlympyApi.saveAuth({ token: OlympyApi.getToken(), user: u })} />,
+    profile: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} />,
   };
 
   return (

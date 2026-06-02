@@ -1,6 +1,6 @@
 // pages/ManagerDashboard.jsx
 
-const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
+const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
   const [page, setPage] = React.useState('home');
@@ -1710,7 +1710,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     qanalytics: renderQAnalytics,
     proctoring: renderProctoring,
     shop: renderShop,
-    profile: () => <ProfilePage user={user} embedded onUserUpdate={u => OlympyApi.saveAuth({ token: OlympyApi.getToken(), user: u })} />,
+    profile: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} />,
   };
 
   return (

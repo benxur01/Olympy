@@ -180,7 +180,7 @@ const AdminDonut = ({ segments }) => {
 };
 
 
-const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
+const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
   const [page, setPage] = React.useState('home');
@@ -1380,7 +1380,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     olympiads: renderOlympiads,
     subjects: renderSubjects,
     settings: renderSettings,
-    myprofile: () => <ProfilePage user={user} embedded onUserUpdate={u => OlympyApi.saveAuth({ token: OlympyApi.getToken(), user: u })} />,
+    myprofile: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} />,
   };
 
   const mobileNavItems = [
