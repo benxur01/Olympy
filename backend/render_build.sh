@@ -1,25 +1,15 @@
 #!/usr/bin/env bash
 # Render web service build hook. Runs on every deploy.
-# Steps:
-#   1) Install Python deps from requirements.txt
-#   2) Olympy uchun PostgreSQL schema'sini yaratamiz (agar yo'q bo'lsa).
-#      Quiz-bot bilan bitta DB'ni baham ko'rganda, table to'qnashishlarini
-#      oldini olish uchun Olympy o'zining olympy schema'sida ishlaydi.
-#      DATABASE_SCHEMA env var (default 'olympy') Django settings'da ham
-#      search_path uchun ishlatiladi.
-#   3) Collect static files into STATIC_ROOT (served by WhiteNoise)
-#   4) Apply database migrations (Django avtomatik olympy schema'siga yozadi)
-#   5) If bootstrap admin env vars are set, create/update the platform admin.
 set -o errexit
 
 echo "=== ENV: Python=$(python --version 2>&1) Pip=$(pip --version 2>&1 | head -1) ==="
 echo "=== DATABASE_URL host: $(python -c "from urllib.parse import urlparse; import os; u=urlparse(os.environ.get('DATABASE_URL','')); print(u.hostname)" 2>/dev/null || echo 'parse failed') ==="
 
-echo "=== STEP 1: pip install ==="
-pip install --upgrade pip
-echo "=== pip upgraded ==="
-pip install --no-cache-dir -r requirements.txt
-echo "=== pip install OK ==="
+echo "=== STEP 1a: pip upgrade ==="
+pip install --upgrade pip && echo "pip upgrade OK" || echo "pip upgrade FAILED (exit $?)"
+
+echo "=== STEP 1b: pip install requirements ==="
+pip install --no-cache-dir -r requirements.txt && echo "pip install OK" || { echo "pip install FAILED (exit $?)"; exit 1; }
 
 echo "=== STEP 2: schema bootstrap ==="
 python <<'PY'
