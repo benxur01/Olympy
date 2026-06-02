@@ -581,6 +581,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     { key: 'subjects', icon: 'book', label: 'Fanlar' },
     { key: 'analytics', icon: 'chart', label: 'Tahlil' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
+    { key: 'myprofile', icon: 'user', label: 'Mening profilim' },
   ];
 
   const dashboardCenters = (approvedCenters.length ? approvedCenters : centers).slice(0, 5);
@@ -1379,6 +1380,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     olympiads: renderOlympiads,
     subjects: renderSubjects,
     settings: renderSettings,
+    myprofile: () => <ProfilePage user={user} embedded onUserUpdate={u => OlympyApi.saveAuth({ token: OlympyApi.getToken(), user: u })} />,
   };
 
   const mobileNavItems = [
