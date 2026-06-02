@@ -2,47 +2,44 @@
 # Render web service build hook. Runs on every deploy.
 set -o errexit
 
-echo "=== ENV: Python=$(python --version 2>&1) ==="
+echo "=== ENV: Python=$(python --version 2>&1) Pip=$(pip --version 2>&1) ==="
 
 echo "=== STEP 1: pip install ==="
-pip install --upgrade pip
 pip install --no-cache-dir -r requirements.txt
 echo "=== pip install OK ==="
 
-echo "=== STEP 2: DB connectivity check (informational) ==="
-python - <<'PYEOF' || echo "[WARNING] DB check failed — build continuing"
+echo "=== STEP 2: DB check & schema ==="
+python - <<'PYEOF' || echo "[WARNING] DB check failed"
 import os, sys, socket
+from urllib.parse import urlparse
 
 db_url = os.environ.get('DATABASE_URL', '')
 if not db_url:
-    print('DATABASE_URL not set')
+    print('DATABASE_URL not set, skipping')
     sys.exit(0)
 
-from urllib.parse import urlparse
 p = urlparse(db_url)
-host = p.hostname
-port = p.port or 5432
-print(f'Trying to reach {host}:{port} ...')
+host, port = p.hostname, p.port or 5432
+print(f'DB host: {host}:{port}')
+
 try:
-    ip = socket.getaddrinfo(host, port, socket.AF_INET)
-    print(f'DNS resolved: {ip[0][4][0]}')
-except Exception as dns_err:
-    print(f'DNS FAILED: {dns_err}')
-    sys.exit(0)
+    addrs = socket.getaddrinfo(host, port, socket.AF_INET)
+    print(f'IPv4 resolved: {addrs[0][4][0]}')
+except Exception as e:
+    print(f'DNS/IPv4 failed: {e}')
 
 try:
     import psycopg
-    conn = psycopg.connect(db_url, connect_timeout=10)
+    schema = os.environ.get('DATABASE_SCHEMA', 'olympy').strip() or 'olympy'
+    conn = psycopg.connect(db_url, connect_timeout=20)
     cur = conn.cursor()
     cur.execute('SELECT 1')
-    print('DB connection OK')
-    schema = os.environ.get('DATABASE_SCHEMA', 'olympy').strip() or 'olympy'
     cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
     conn.commit()
     conn.close()
-    print(f'Schema "{schema}" ready')
+    print(f'DB OK, schema "{schema}" ready')
 except Exception as e:
-    print(f'DB connection failed: {type(e).__name__}: {e}')
+    print(f'DB failed: {type(e).__name__}: {e}')
 PYEOF
 
 echo "=== STEP 3: collectstatic ==="
