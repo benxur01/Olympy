@@ -204,7 +204,6 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [editFirstName, setEditFirstName] = React.useState('');
   const [editLastName, setEditLastName] = React.useState('');
   const [editUsername, setEditUsername] = React.useState('');
-  const [editPhone, setEditPhone] = React.useState('');
   const [savingProfile, setSavingProfile] = React.useState(false);
 
   // Password settings state
@@ -218,16 +217,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       setEditFirstName(user.first_name || '');
       setEditLastName(user.last_name || '');
       setEditUsername(user.username || '');
-      setEditPhone(user.phone || '');
     }
   }, [user]);
 
   const handleUpdateProfile = async (e) => {
     e.preventDefault();
-    if (!editPhone.trim()) {
-      showToast("Telefon raqami bo'sh bo'lishi mumkin emas!");
-      return;
-    }
     setSavingProfile(true);
     try {
       if (isApi) {
@@ -235,18 +229,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         const payload = {
           first_name: editFirstName,
           last_name: editLastName,
-          username: editUsername,
-          phone: editPhone
+          username: editUsername
         };
         const updated = await OlympyApi.updateProfile(payload, token);
         showToast("Profil ma'lumotlari muvaffaqiyatli saqlandi!");
-        if (updated && updated.phone) {
-          // Update localized user state dynamically if needed
-          user.first_name = updated.first_name;
-          user.last_name = updated.last_name;
-          user.username = updated.username;
-          user.phone = updated.phone;
-          user.full_name = updated.full_name;
+        if (updated) {
+          const mapped = OlympyApi.mapBackendUser(updated);
+          onUserUpdate?.(mapped);
         }
       } else {
         showToast("Profil ma'lumotlari yangilandi (Mock)!");
@@ -267,6 +256,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     }
     if (newPassword !== confirmPassword) {
       showToast("Yangi parollar bir-biriga mos kelmadi!");
+      return;
+    }
+    if (newPassword.length < 8) {
+      showToast("Parol kamida 8 belgi bo'lishi kerak!");
       return;
     }
     setSavingPassword(true);
@@ -1305,11 +1298,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Telefon Raqami</label>
               <input
                 type="text"
-                value={editPhone}
-                onChange={e => setEditPhone(e.target.value)}
-                className="h-9 w-full admin-input px-3 text-xs outline-none"
+                value={user?.phone || ''}
+                readOnly
+                disabled
+                className="h-9 w-full admin-input px-3 text-xs outline-none opacity-60 cursor-not-allowed"
                 placeholder="+998901234567"
               />
+              <div className="text-[10px] text-slate-500 mt-1">Telefon raqamini tasdiqsiz o'zgartirib bo'lmaydi.</div>
             </div>
             <button
               type="submit"

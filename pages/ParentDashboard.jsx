@@ -121,7 +121,7 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
   const navItems = [
     { key: 'home', icon: 'home', label: 'Uy' },
     { key: 'children', icon: 'users', label: 'Farzandlarim' },
-    { key: 'profile', icon: 'eye', label: 'Profil' },
+    { key: 'profile', icon: 'user', label: 'Profil' },
   ];
 
   const renderHome = () => (

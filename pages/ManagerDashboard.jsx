@@ -529,6 +529,17 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     { key: 'profile', icon: 'user', label: 'Profil' },
   ];
 
+  // MobileBottomNav faqat dastlabki 5 ta elementni oladi — profil navItems
+  // oxirida bo'lgani uchun mobil panelda ko'rinmasdi. Sidebar tartibini
+  // buzmasdan mobil uchun alohida ro'yxat: oxiriga profilni kiritamiz.
+  const mobileNavItems = [
+    navItems.find(n => n.key === 'home'),
+    navItems.find(n => n.key === 'requests'),
+    navItems.find(n => n.key === 'olympiads'),
+    navItems.find(n => n.key === 'students'),
+    navItems.find(n => n.key === 'profile'),
+  ].filter(Boolean);
+
   // Sidebar/Mobile nav uchun "analytics" tugmasini bosganda app-level
   // sahifaga o'tkazamiz (alohida sahifa).
   const setPageOrSpecial = (key) => {
@@ -1737,7 +1748,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         <main className="flex-1 overflow-x-hidden overflow-y-auto">
           {(pagesMap[page] || renderHome)()}
         </main>
-        <MobileBottomNav items={navItems} activePage={page} setPage={setPageOrSpecial} />
+        <MobileBottomNav items={mobileNavItems} activePage={page} setPage={setPageOrSpecial} />
       </div>
 
       {/* Kod (IT) javoblari modali */}
