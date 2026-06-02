@@ -247,6 +247,66 @@ def maybe_finish_expired_olympiad(olympiad):
         logging.getLogger(__name__).exception('maybe_finish_expired_olympiad failed')
 
 
+def finalize_expired_active_olympiads():
+    """Muddati o'tgan barcha ACTIVE olimpiadalarni FINISHED ga o'tkazadi.
+
+    Celery worker yo'q muhitda (Render free tier) `finish_expired_olympiads`
+    periodik task ishlamaydi, shu sababli vaqti tugagan olimpiada ACTIVE
+    holatda osilib qolardi: studentlar uni "Faol" ro'yxatida ko'rib,
+    ochmoqchi bo'lganda "Olimpiada yakunlangan" deb rad etilardi, lekin
+    "Tugagan" tabiga hech qachon o'tmasdi.
+
+    Bu funksiya olimpiadalar RO'YXATI so'ralganda (`olympiads_list_create`
+    GET) chaqiriladi: ro'yxat qaytarilishidan oldin muddati o'tgan
+    ACTIVE'larni yopadi, shunda foydalanuvchi doim to'g'ri status (active /
+    finished) ko'radi.
+
+    N+1 ni oldini olish uchun avval DB tomonida `end_time < now` shartiga
+    mos faqat ID'larni tanlaymiz; faollashtirilishi kerak bo'lganlar odatda
+    kam (0-3 ta) bo'ladi. Topilganlar `_do_finish_olympiad` orqali rank
+    qayta hisoblanib, markaz xulosasi navbatga qo'yilib yopiladi.
+
+    Atomic transaction ICHIDA chaqirilmasligi kerak (har bir yopish o'z
+    `transaction.atomic()` blokига ega va `select_for_update` ishlatadi).
+
+    Returns: yopilgan olimpiadalar soni.
+    """
+    now = timezone.now()
+    # ACTIVE olimpiadalar soni odatda kam (o'nlab) — faqat muddatni
+    # hisoblash uchun zarur 3 ta kolonkani yuklab, Python'da `end_time` ni
+    # tekshiramiz. Avval DB tomonida `start_datetime + duration*interval`
+    # qilingan edi, lekin bu SQLite (lokal/test) va PostgreSQL o'rtasida
+    # turlicha ishlardi; Python'da hisoblash to'liq DB-agnostik va N+1
+    # emas (qatorlar boshlang'ich querysetda yuklanadi).
+    candidates = (
+        Olympiad.objects
+        .filter(
+            status=Olympiad.STATUS_ACTIVE,
+            start_datetime__isnull=False,
+            duration_minutes__gt=0,
+            is_deleted=False,
+        )
+        .only('id', 'start_datetime', 'duration_minutes')
+    )
+    expired_ids = [
+        o.id for o in candidates
+        if o.start_datetime + timedelta(minutes=o.duration_minutes) < now
+    ]
+    if not expired_ids:
+        return 0
+    count = 0
+    for olympiad in Olympiad.objects.filter(id__in=expired_ids):
+        try:
+            _do_finish_olympiad(olympiad)
+            count += 1
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'finalize_expired_active_olympiads failed olympiad=%s', olympiad.pk,
+            )
+    return count
+
+
 def event_readiness_errors(olympiad):
     errors = []
     if not (olympiad.title or '').strip():

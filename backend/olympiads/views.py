@@ -15,6 +15,7 @@ from .services import (
     _queue_olympiad_summary,
     center_olympiad_limit_exceeded,
     event_readiness_errors,
+    finalize_expired_active_olympiads,
     recompute_olympiad_ranks,
     user_can_manage_center_event,
     visible_events_filter,
@@ -28,6 +29,20 @@ def olympiads_list_create(request):
     POST /api/olympiads/    — create draft event (manager/owner/admin).
     """
     if request.method == 'GET':
+        # Celery worker yo'q muhitda (Render free tier) muddati o'tgan
+        # olimpiadalar avtomatik FINISHED ga o'tmasdi va ACTIVE bo'lib
+        # osilib qolardi — student ro'yxatda "Faol" deb ko'rib, ochmoqchi
+        # bo'lganda "Olimpiada yakunlangan" deb rad etilardi, "Tugagan"
+        # tabiga esa hech qachon o'tmasdi (tugagandek "yo'qolardi"). Ro'yxat
+        # qaytarilishidan OLDIN muddati o'tgan ACTIVE'larni yopamiz, shunda
+        # quyidagi queryset doim to'g'ri status (active/finished) qaytaradi.
+        try:
+            finalize_expired_active_olympiads()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).warning(
+                'finalize_expired_active_olympiads skipped', exc_info=True,
+            )
         # Avval `prefetch_related('questions')` to'liq Question modelidagi
         # barcha maydonlarni yuklab olardi (text, options, image, va h.k.).
         # List javobida faqat `question_ids` (id'lar massivi) va `max_score`
