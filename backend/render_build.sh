@@ -21,6 +21,7 @@ echo "=== pip upgraded ==="
 pip install --no-cache-dir -r requirements.txt
 echo "=== pip install OK ==="
 
+echo "=== STEP 2: schema bootstrap ==="
 python <<'PY'
 import os
 import sys
@@ -53,25 +54,6 @@ except Exception as e:
         print(f'[render_build] WARNING: schema creation failed: {e2}', file=sys.stderr)
         print('[render_build] Continuing — schema may already exist', file=sys.stderr)
 PY
-
-echo "=== STEP 2.5: DB connection check ==="
-python -c "
-import os, sys
-url = os.environ.get('DATABASE_URL', '')
-if not url:
-    print('DATABASE_URL not set, skipping check')
-    sys.exit(0)
-try:
-    import psycopg
-    conn = psycopg.connect(url, connect_timeout=15)
-    cur = conn.cursor()
-    cur.execute('SELECT 1')
-    conn.close()
-    print('DB connection OK (psycopg3)')
-except Exception as e:
-    print(f'DB connection FAILED: {e}', file=sys.stderr)
-    sys.exit(1)
-"
 
 echo "=== STEP 3: collectstatic ==="
 python manage.py collectstatic --no-input
