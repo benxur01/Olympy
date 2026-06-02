@@ -13,7 +13,7 @@ following environment variables:
 from datetime import timedelta
 import os
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -137,6 +137,11 @@ if DATABASE_URL:
         # search_path ni schema'ga qo'yamiz, public ham reachable bo'lsin
         # (masalan extension'lar yoki shared sequence'lar uchun).
         db_options['options'] = f'-c search_path={DATABASE_SCHEMA},public'
+    # URL query string'dagi sslmode ni Django OPTIONS'ga o'tkazamiz.
+    # Supabase va boshqa managed PostgreSQL xizmatlar sslmode=require talab qiladi.
+    qs_params = parse_qs(parsed_db.query)
+    if 'sslmode' in qs_params:
+        db_options['sslmode'] = qs_params['sslmode'][0]
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
