@@ -2,48 +2,48 @@
 # Render web service build hook. Runs on every deploy.
 set -o errexit
 
-echo "=== ENV: Python=$(python --version 2>&1) Pip=$(pip --version 2>&1 | head -1) ==="
-echo "=== DATABASE_URL host: $(python -c "from urllib.parse import urlparse; import os; u=urlparse(os.environ.get('DATABASE_URL','')); print(u.hostname)" 2>/dev/null || echo 'parse failed') ==="
+echo "=== ENV: Python=$(python --version 2>&1) ==="
 
-echo "=== STEP 1a: pip upgrade ==="
-pip install --upgrade pip && echo "pip upgrade OK" || echo "pip upgrade FAILED (exit $?)"
+echo "=== STEP 1: pip install ==="
+pip install --upgrade pip
+pip install --no-cache-dir -r requirements.txt
+echo "=== pip install OK ==="
 
-echo "=== STEP 1b: pip install requirements ==="
-pip install --no-cache-dir -r requirements.txt && echo "pip install OK" || { echo "pip install FAILED (exit $?)"; exit 1; }
+echo "=== STEP 2: DB connectivity check (informational) ==="
+python - <<'PYEOF' || echo "[WARNING] DB check failed — build continuing"
+import os, sys, socket
 
-echo "=== STEP 2: schema bootstrap ==="
-python <<'PY'
-import os
-import sys
-
-url = os.environ.get('DATABASE_URL', '').strip()
-schema = os.environ.get('DATABASE_SCHEMA', 'olympy').strip() or 'olympy'
-if not url:
-    print('[render_build] DATABASE_URL not set — skipping schema bootstrap', file=sys.stderr)
+db_url = os.environ.get('DATABASE_URL', '')
+if not db_url:
+    print('DATABASE_URL not set')
     sys.exit(0)
 
-safe_schema = schema.replace('"', '""')
+from urllib.parse import urlparse
+p = urlparse(db_url)
+host = p.hostname
+port = p.port or 5432
+print(f'Trying to reach {host}:{port} ...')
+try:
+    ip = socket.getaddrinfo(host, port, socket.AF_INET)
+    print(f'DNS resolved: {ip[0][4][0]}')
+except Exception as dns_err:
+    print(f'DNS FAILED: {dns_err}')
+    sys.exit(0)
+
 try:
     import psycopg
-    with psycopg.connect(url, connect_timeout=15) as conn:
-        with conn.cursor() as cur:
-            cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"')
-        conn.commit()
-    print(f'[render_build] schema "{schema}" ready (psycopg3)')
+    conn = psycopg.connect(db_url, connect_timeout=10)
+    cur = conn.cursor()
+    cur.execute('SELECT 1')
+    print('DB connection OK')
+    schema = os.environ.get('DATABASE_SCHEMA', 'olympy').strip() or 'olympy'
+    cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+    conn.commit()
+    conn.close()
+    print(f'Schema "{schema}" ready')
 except Exception as e:
-    print(f'[render_build] psycopg3 failed: {e}', file=sys.stderr)
-    try:
-        import psycopg2
-        conn = psycopg2.connect(url)
-        conn.autocommit = True
-        cur = conn.cursor()
-        cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"')
-        conn.close()
-        print(f'[render_build] schema "{schema}" ready (psycopg2)')
-    except Exception as e2:
-        print(f'[render_build] WARNING: schema creation failed: {e2}', file=sys.stderr)
-        print('[render_build] Continuing — schema may already exist', file=sys.stderr)
-PY
+    print(f'DB connection failed: {type(e).__name__}: {e}')
+PYEOF
 
 echo "=== STEP 3: collectstatic ==="
 python manage.py collectstatic --no-input
