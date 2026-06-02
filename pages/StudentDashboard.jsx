@@ -966,6 +966,24 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </div>
       )}
 
+      {/* So'nggi yakunlangan tadbirlar — tugagan olimpiada Home'da ham
+          ko'rinadi (avval faqat "Tadbirlar > Tugagan" tabida edi, shu sabab
+          tugagan olimpiada "yo'qolgandek" tuyilardi). */}
+      {visibleOlympiads.filter(o => o.status === 'finished').length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3 md:mb-4 gap-2">
+            <h3 className="font-bold text-white text-sm md:text-base">So'nggi yakunlangan tadbirlar</h3>
+            <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400 hover:text-indigo-300 flex-shrink-0 py-1">Barchasini ko'rish →</button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {visibleOlympiads.filter(o => o.status === 'finished').slice(0, 2).map(o => (
+              <OlympiadCard key={o.id} olympiad={o} locked={!canAccessEvent(o)}
+                onStart={() => setPage('olympiads')} />
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Subject performance */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         <div className="glass rounded-2xl p-4 md:p-5">
