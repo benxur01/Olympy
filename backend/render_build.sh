@@ -76,21 +76,6 @@ fi
 echo "=== STEP 6: ensure_manager ==="
 python manage.py ensure_manager || echo "[WARNING] ensure_manager skipped"
 
-echo "=== STEP 7: DB DIAGNOSTICS ==="
-python manage.py shell -c "
-from centers.models import EducationCenter, CenterMembership
-from django.contrib.auth import get_user_model
-User = get_user_model()
-print('=== CENTERS ===')
-for c in EducationCenter.objects.all():
-    print(f'Center: ID={c.id}, Name={c.name}, Status={c.status}, Premium={c.is_premium}')
-print('=== MEMBERSHIPS ===')
-for m in CenterMembership.objects.all():
-    print(f'Membership: User={m.user.phone}, Center={m.center.name}, Role={m.role}, Status={m.status}')
-print('=== USERS ===')
-for u in User.objects.all():
-    print(f'User: ID={u.id}, Phone={u.phone}, Roles={u.roles}, Admin={u.is_platform_admin}, Premium={u.is_premium}')
-" || echo "[WARNING] DB Diagnostics failed"
-
 echo "=== BUILD COMPLETE ==="
+
 
