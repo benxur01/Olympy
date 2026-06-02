@@ -84,7 +84,7 @@ def centers_list_create(request):
 
     if not request.user.is_authenticated:
         return Response({'detail': 'Authentication required'},
-                        status=http_status.HTTP_401_UNAUTHORIZED)
+                        status=http_status.HTTP_403_FORBIDDEN)
     serializer = CenterRegisterSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     with transaction.atomic():
