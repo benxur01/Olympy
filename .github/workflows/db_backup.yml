@@ -1,0 +1,30 @@
+name: DB Backup (Haftalik)
+
+on:
+  schedule:
+    - cron: '0 2 * * 1'  # Har dushanba soat 02:00 UTC
+  workflow_dispatch:       # Qo'lda ham ishga tushirish mumkin
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: PostgreSQL client o'rnatish
+        run: sudo apt-get install -y postgresql-client
+
+      - name: Backup olish
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL_EXTERNAL }}
+        run: |
+          FILENAME="backup_$(date +%Y%m%d_%H%M%S).dump"
+          pg_dump --format=custom --no-acl --no-owner "$DATABASE_URL" -f "$FILENAME"
+          echo "BACKUP_FILE=$FILENAME" >> $GITHUB_ENV
+          SIZE=$(du -sh "$FILENAME" | cut -f1)
+          echo "Backup tayyor: $FILENAME ($SIZE)"
+
+      - name: Backup ni saqlash (90 kun)
+        uses: actions/upload-artifact@v4
+        with:
+          name: olympy-db-backup-${{ github.run_number }}
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 90

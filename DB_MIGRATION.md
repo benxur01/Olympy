@@ -1,67 +1,77 @@
-# DB yoki Server ko'chirish qo'llanmasi
+# Ma'lumotlar xavfsizligi va ko'chirish qo'llanmasi
 
-## Qachon backup olish SHART
+## Avtomatik backup (GitHub Actions)
 
-- Render DB plan o'zgartirishdan **oldin**
-- Yangi serverga ko'chirishdan **oldin**
-- Har hafta (muntazam)
+Har dushanba soat 02:00 UTC da avtomatik backup olinadi va GitHub'da 90 kun saqlanadi.
+
+**Bir marta sozlash kerak:**
+1. GitHub → Olympy repo → **Settings** → **Secrets and variables** → **Actions**
+2. **New repository secret** → ism: `DATABASE_URL_EXTERNAL`
+3. Qiymat:
+   ```
+   postgresql://olympy:0hhYOTZcxjLG1badV5W8oKNMUik0NbWJ@dpg-d8fd738g4nts738rhe60-a.ohio-postgres.render.com:5432/olympy
+   ```
+
+**Backupni qo'lda yuklab olish:**
+GitHub → Olympy repo → **Actions** → **DB Backup** → kerakli run → **Artifacts**
 
 ---
 
-## 1. Backup olish
+## Qo'lda backup olish (lokal)
 
 ```bash
-# Render DB URL ni backend/.env dan o'qib backup oladi
+# pg_dump o'rnatilmagan bo'lsa:
+sudo apt-get install postgresql-client
+
+# Backup olish (Render DB ga tashqaridan ulanadi)
 ./scripts/db_backup.sh
-
-# Yoki DATABASE_URL ni to'g'ridan-to'g'ri bering
-./scripts/db_backup.sh 'postgresql://user:pass@host:5432/dbname'
 ```
 
-Backup `backups/` papkasiga `backup_YYYYMMDD_HHMMSS.dump` formatida saqlanadi.
+Backup `backups/` papkasiga saqlanadi (GitHubga chiqmaydi).
 
 ---
 
-## 2. Yangi DB ga ko'chirish
+## Yangi DB yoki serverga ko'chirish
 
-### Render'da yangi DB yaratish (agar kerak bo'lsa)
-
-1. [dashboard.render.com](https://dashboard.render.com) → **New** → **PostgreSQL**
-2. Yangi DB ning `Internal Database URL` ni ko'chiring
-
-### Restore qilish
-
+### 1-qadam: Avval backup oling
 ```bash
-./scripts/db_restore.sh backups/backup_20260602_120000.dump 'yangi_db_url'
+./scripts/db_backup.sh
 ```
 
-### Render'da DATABASE_URL ni yangilash
+### 2-qadam: Yangi DB yarating
+- **Render:** dashboard.render.com → New → PostgreSQL → External Database URL ni oling
+- **Boshqa:** Railway, Supabase, VPS — connection string oling
 
+### 3-qadam: Restore qiling
 ```bash
-# Render API orqali (API key kerak)
-curl -X PUT https://api.render.com/v1/services/SERVICE_ID/env-vars \
-  -H "Authorization: Bearer RENDER_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '[{"key":"DATABASE_URL","value":"yangi_db_url"}]'
+./scripts/db_restore.sh backups/backup_YYYYMMDD_HHMMSS.dump 'yangi_db_url'
 ```
 
-Yoki Render dashboard → **olympy-api** → **Environment** → `DATABASE_URL` ni yangilang.
+### 4-qadam: Render'da DATABASE_URL ni yangilang
+Render dashboard → **olympy-api** → **Environment** → `DATABASE_URL` → yangi URL ni kiriting → **Save**
+
+### 5-qadam: Deploy
+Render avtomatik qayta deploy qiladi. Tayyor!
 
 ---
 
-## 3. Boshqa serverga (masalan VPS, Railway, Supabase) ko'chirish
+## MUHIM qoidalar
 
-1. Yangi joyda PostgreSQL yarating va connection string oling
-2. Backup oling (yuqoridagi 1-qadam)
-3. Restore qiling (yuqoridagi 2-qadam)
-4. Yangi serverda `DATABASE_URL` env var ni o'rnating
-5. `python manage.py migrate --check` bilan tekshiring
+| Holat | Nima qilish kerak |
+|-------|-------------------|
+| Render DB plan o'zgartirish | **Oldin backup oling** — plan o'zgartirsa yangi instance yaratiladi |
+| Yangi serverga o'tish | **Oldin backup oling** |
+| Har haftada | Avtomatik GitHub Actions backup ishlaydi |
+| Har oyda | Eski backup fayllarni tekshirib turing |
 
 ---
 
-## Muhim eslatmalar
+## Fayllar
 
-- `pg_dump` va `pg_restore` o'rnatilgan bo'lishi kerak (`sudo apt install postgresql-client`)
-- Render free tier DB **90 kun** dan keyin o'chadi — paid plan ishlatish tavsiya etiladi
-- Render DB **plan o'zgartirsa yangi instance yaratadi** — backup olmasdan o'zgartirmang
-- `backups/` papkasi `.gitignore` ga qo'shilgan — backup fayllar GitHubga chiqmaydi
+| Fayl | Maqsad |
+|------|--------|
+| `scripts/db_backup.sh` | Lokal backup skripti |
+| `scripts/db_restore.sh` | Restore skripti |
+| `backend/.env.external` | Render DB tashqi connection URL (GitHubga chiqmaydi) |
+| `.github/workflows/db_backup.yml` | Haftalik avtomatik backup |
+| `backups/` | Lokal backup fayllar (GitHubga chiqmaydi) |

@@ -68,3 +68,4 @@ Thumbs.db
 .claude/
 .codex
 backups/
+backend/.env.external
