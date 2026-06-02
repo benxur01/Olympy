@@ -4,7 +4,7 @@
 // mapApiCenter va boshqa modul-level helper'lar ham access qila oladi.
 const apiBaseUrl = (
   import.meta.env?.VITE_API_BASE_URL ||
-  (import.meta.env?.PROD ? (globalThis.location?.origin || '') : 'http://localhost:8000')
+  (import.meta.env?.PROD ? 'https://olympy-api.onrender.com' : 'http://localhost:8000')
 ).replace(/\/+$/, '');
 
 const makeAssetUrl = (url) => {
