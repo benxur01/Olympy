@@ -19,4 +19,5 @@ jobs:
           
           # Fetch and print build logs
           curl -sS -H "Authorization: Bearer $RENDER_TOKEN" \
-            "https://api.render.com/v1/logs?resource=srv-d7t49iq8qa3s73f76qag&ownerId=$OWNER_ID&type=build&limit=150" | jq -r '.[] | .message' | tac
+            "https://api.render.com/v1/logs?resource=srv-d7t49iq8qa3s73f76qag&ownerId=$OWNER_ID&type=build&limit=150" | jq -r '.logs[] | .message // .text // .' | tac
+

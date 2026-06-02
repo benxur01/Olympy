@@ -62,9 +62,9 @@ jobs:
               echo "=== FETCHING BUILD LOGS ==="
               OWNER_ID=$(curl -sS -H "Authorization: Bearer $RENDER_TOKEN" "https://api.render.com/v1/owners" | jq -r '.[0].owner.id')
               echo "Owner ID: $OWNER_ID"
-              # Query logs, reverse order to show chronological output, and print message fields
               curl -sS -H "Authorization: Bearer $RENDER_TOKEN" \
-                "https://api.render.com/v1/logs?resource=srv-d7t49iq8qa3s73f76qag&ownerId=$OWNER_ID&type=build&limit=300" | jq -r '.[] | .message' | tac || echo "Failed to fetch logs"
+                "https://api.render.com/v1/logs?resource=srv-d7t49iq8qa3s73f76qag&ownerId=$OWNER_ID&type=build&limit=300" | jq -r '.logs[] | .message // .text // .' | tac || echo "Failed to fetch logs"
+
               exit 1
             fi
             sleep 15
