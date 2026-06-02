@@ -13,7 +13,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger backend deploy (olympy-api)
+      - name: Trigger backend deploy (olympy-api) and poll status
         env:
           RENDER_TOKEN: ${{ secrets.RENDER_API_TOKEN }}
         run: |
@@ -21,13 +21,31 @@ jobs:
             echo "::error::RENDER_API_TOKEN secret yo'q. Settings → Secrets → Actions ga qo'shing."
             exit 1
           fi
-          curl -fsS -X POST \
+          RESPONSE=$(curl -fsS -X POST \
             -H "Authorization: Bearer $RENDER_TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"clearCache":"do_not_clear"}' \
-            "https://api.render.com/v1/services/srv-d7t49iq8qa3s73f76qag/deploys" \
-            | tee /tmp/backend_deploy.json
-          echo "Backend deploy id: $(jq -r '.id' < /tmp/backend_deploy.json)"
+            "https://api.render.com/v1/services/srv-d7t49iq8qa3s73f76qag/deploys")
+          DEPLOY_ID=$(echo "$RESPONSE" | jq -r '.id')
+          echo "Backend deploy triggered. ID: $DEPLOY_ID"
+          
+          # Poll status
+          while true; do
+            STATUS_RESP=$(curl -fsS -H "Authorization: Bearer $RENDER_TOKEN" \
+              "https://api.render.com/v1/services/srv-d7t49iq8qa3s73f76qag/deploys/$DEPLOY_ID")
+            STATUS=$(echo "$STATUS_RESP" | jq -r '.status')
+            echo "Deploy status: $STATUS"
+            if [ "$STATUS" = "live" ]; then
+              echo "Deploy succeeded!"
+              break
+            elif [ "$STATUS" = "build_failed" ] || [ "$STATUS" = "pre_deploy_failed" ] || [ "$STATUS" = "deactivated" ] || [ "$STATUS" = "canceled" ]; then
+              echo "::error::Deploy failed with status: $STATUS"
+              echo "Full response: $STATUS_RESP"
+              exit 1
+            fi
+            sleep 15
+          done
+
 
       - name: Trigger frontend deploy (olympy)
         env:
