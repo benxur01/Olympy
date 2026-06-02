@@ -7,6 +7,30 @@ from django.views.generic import RedirectView
 
 from accounts import views as account_views
 from olympiads.subjects_views import subjects_list_create
+from django.http import JsonResponse
+import traceback
+from django.db import connection
+from django.core.cache import cache
+import os
+
+def healthz_view(request):
+    status = {}
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        status['db'] = 'OK'
+    except Exception as e:
+        status['db'] = f'FAIL: {traceback.format_exc()}'
+        
+    try:
+        cache.set("healthz_test", "1", timeout=5)
+        val = cache.get("healthz_test")
+        status['cache'] = 'OK' if val == '1' else f'FAIL: got {val}'
+    except Exception as e:
+        status['cache'] = f'FAIL: {traceback.format_exc()}'
+        
+    status['env_keys'] = [k for k in os.environ.keys() if not any(w in k.upper() for w in ['KEY', 'PASSWORD', 'TOKEN', 'SECRET', 'URL'])]
+    return JsonResponse(status)
 
 urlpatterns = [
     path('admin/', RedirectView.as_view(
@@ -41,6 +65,7 @@ urlpatterns = [
     path('api/notifications/', include('notifications.urls')),
     path('api/subjects/', subjects_list_create, name='subjects-list-create'),
     path('api/billing/', include('billing.urls')),
+    path('api/healthz/', healthz_view, name='healthz'),
 ]
 
 import os as _os
