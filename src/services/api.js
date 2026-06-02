@@ -545,14 +545,29 @@ export const OlympyApi = {
   getAttempt: (attemptId, token) => request(`/api/attempts/${attemptId}/`, { token }),
   getMyResults: (token) => request('/api/results/me/', { token }).then(unwrapList),
   getMyStats: (token) => request('/api/results/me/stats/', { token }),
-  // Backend yangi shakl: { olympiad: {...}|null, entries: [...] }. Eski koddan
-  // xavotirsiz array kutadigan joylar uchun array fallback ham qo'llab-quvvatlanadi.
+  // Backend shakli: { results: [...], pagination: {...}, header: {...}|null }.
+  // Frontend `entries` (qatorlar) va `olympiad` (sarlavha info) kutadi, shu
+  // sababli `results` → `entries`, `header` → `olympiad` ga moslashtiramiz va
+  // `pagination` ni ham o'tkazamiz. Eski `{ entries }` shakli va to'g'ridan-
+  // to'g'ri array fallback ham qo'llab-quvvatlanadi (orqaga moslik).
   getLeaderboard: (olympiadId, token) => request(`/api/leaderboard/${olympiadId ? '?olympiad=' + olympiadId : ''}`, { token })
     .then(res => {
-      if (Array.isArray(res)) return { olympiad: null, entries: res };
-      if (res && Array.isArray(res.entries)) return { olympiad: res.olympiad || null, entries: res.entries };
-      if (res && Array.isArray(res.results)) return { olympiad: null, entries: res.results };
-      return { olympiad: null, entries: [] };
+      if (Array.isArray(res)) return { olympiad: null, entries: res, pagination: null };
+      if (res && Array.isArray(res.results)) {
+        return {
+          olympiad: res.header || res.olympiad || null,
+          entries: res.results,
+          pagination: res.pagination || null,
+        };
+      }
+      if (res && Array.isArray(res.entries)) {
+        return {
+          olympiad: res.header || res.olympiad || null,
+          entries: res.entries,
+          pagination: res.pagination || null,
+        };
+      }
+      return { olympiad: null, entries: [], pagination: null };
     }),
   getManagerStats: (centerId, token) => request(`/api/manager/stats/${centerId ? '?center=' + centerId : ''}`, { token }),
   getQuestionDifficultyStats: (centerId, token) => request(`/api/manager/question-difficulty-stats/?center=${centerId}`, { token }),

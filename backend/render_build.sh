@@ -77,7 +77,7 @@ echo "=== STEP 6: ensure_manager ==="
 python manage.py ensure_manager || echo "[WARNING] ensure_manager skipped"
 
 echo "=== STEP 7: ensure_center_owner ==="
-python manage.py ensure_center_owner || echo "[WARNING] ensure_center_owner skipped"
+python manage.py ensure_center_owner || echo "[WARNING] ensure_center_owner: OLYMPY_BOOTSTRAP_OWNER_PHONE yoki CENTER o'rnatilmagan, skip"
 
 echo "=== BUILD COMPLETE ==="
 

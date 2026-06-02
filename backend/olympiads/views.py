@@ -36,13 +36,29 @@ def olympiads_list_create(request):
         # tabiga esa hech qachon o'tmasdi (tugagandek "yo'qolardi"). Ro'yxat
         # qaytarilishidan OLDIN muddati o'tgan ACTIVE'larni yopamiz, shunda
         # quyidagi queryset doim to'g'ri status (active/finished) qaytaradi.
-        try:
-            finalize_expired_active_olympiads()
-        except Exception:
-            import logging
-            logging.getLogger(__name__).warning(
-                'finalize_expired_active_olympiads skipped', exc_info=True,
-            )
+        #
+        # Throttle: CELERY_TASK_ALWAYS_EAGER (Redis yo'q, production free tier)
+        # rejimida bu funksiya har GET so'rovda SINXRON ishlaydi va ro'yxat
+        # yuklanishini sekinlashtiradi. Cache flag bilan 60 soniyada faqat
+        # bir marta ishlatamiz — qolgan so'rovlar darhol javob qaytaradi.
+        # Celery beat (Redis bor) muhitda ham bu kifoya, chunki beat baribir
+        # davriy ishlaydi; bu yerda EAGER stsenariy uchun zaxira mexanizm.
+        from django.conf import settings as dj_settings
+        from django.core.cache import cache
+        should_finalize = True
+        if getattr(dj_settings, 'CELERY_TASK_ALWAYS_EAGER', False):
+            # add() faqat kalit mavjud bo'lmaganda True qaytaradi (atomik) —
+            # 60 soniya ichidagi keyingi so'rovlar False oladi va o'tkazib
+            # yuboriladi.
+            should_finalize = cache.add('finalize_expired_throttle', 1, 60)
+        if should_finalize:
+            try:
+                finalize_expired_active_olympiads()
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning(
+                    'finalize_expired_active_olympiads skipped', exc_info=True,
+                )
         # Avval `prefetch_related('questions')` to'liq Question modelidagi
         # barcha maydonlarni yuklab olardi (text, options, image, va h.k.).
         # List javobida faqat `question_ids` (id'lar massivi) va `max_score`

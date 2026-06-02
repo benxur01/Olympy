@@ -1327,7 +1327,7 @@ const LandingPage = ({ onNavigate, user }) => {
       </footer>
 
       {paymentPlan && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/80 backdrop-blur-md px-4">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-950/95 px-4">
           <div className="glass-strong rounded-3xl p-6 md:p-8 max-w-md w-full border border-indigo-500/25 relative overflow-hidden">
             <div className="hero-glow" style={{ background: '#6366f1', top: '-30%', left: '30%', opacity: 0.15 }} />
             <div className="relative z-10">

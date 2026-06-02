@@ -3,6 +3,7 @@ import base64
 import logging
 from decimal import Decimal
 from django.conf import settings
+from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -91,12 +92,19 @@ def _activate_subscription(user, amount):
     if not plan:
         # Default or fallback plan
         plan = SubscriptionPlan.objects.filter(is_active=True).first()
-        
+
     if plan:
+        # end_date'ni model save() ham hisoblaydi, lekin bu yerda aniq
+        # o'rnatib qo'yamiz — plan.duration_days bo'yicha. Shunda obuna doim
+        # to'g'ri muddatga ega bo'ladi (model logikasiga bog'liqlik kamayadi).
+        from datetime import timedelta
+        start = timezone.now()
+        end = start + timedelta(days=plan.duration_days or 30)
         UserSubscription.objects.create(
             user=user,
             plan=plan,
-            start_date=timezone.now(),
+            start_date=start,
+            end_date=end,
             is_active=True
         )
 
@@ -135,8 +143,14 @@ def click_webhook(request):
     
     if my_sign != sign_string:
         return JsonResponse({'error': -1, 'error_note': 'SIGN CHECK FAILED'})
-        
-    if error and int(error) < 0:
+
+    # error qiymati noto'g'ri (raqam bo'lmagan) bo'lsa int() ValueError beradi —
+    # webhook 500 bilan qulamasligi uchun himoyalaymiz.
+    try:
+        error_code = int(error) if error not in (None, '') else 0
+    except (TypeError, ValueError):
+        error_code = 0
+    if error_code < 0:
         if merchant_trans_id:
             try:
                 tx = PaymentTransaction.objects.get(pk=merchant_trans_id)
@@ -150,7 +164,7 @@ def click_webhook(request):
         tx = PaymentTransaction.objects.get(pk=merchant_trans_id)
     except PaymentTransaction.DoesNotExist:
         return JsonResponse({'error': -5, 'error_note': 'Transaction not found'})
-        
+
     if Decimal(amount) != tx.amount:
         return JsonResponse({'error': -2, 'error_note': 'Incorrect amount'})
         
@@ -177,15 +191,29 @@ def click_webhook(request):
                 'error': 0,
                 'error_note': 'Already confirmed'
             })
-            
-        tx.status = PaymentTransaction.STATUS_SUCCESS
-        tx.provider_transaction_id = click_trans_id
-        tx.manager_commission = tx.amount * Decimal('0.20')
-        tx.save()
-        
-        # Activate premium subscription for the user
-        _activate_subscription(tx.user, tx.amount)
-        
+
+        # Race condition himoyasi: parallel Complete webhook'lari bir vaqtda
+        # tx'ni o'qib, ikkalasi ham _activate_subscription chaqirib dublikat
+        # obuna yaratishi mumkin edi. select_for_update qatorni lock qiladi,
+        # ichida statusni qayta tekshiramiz (allaqachon SUCCESS bo'lsa ikkinchi
+        # so'rov obuna yaratmaydi) va save + activate bitta atomik blokda.
+        with transaction.atomic():
+            tx = PaymentTransaction.objects.select_for_update().get(pk=tx.pk)
+            if tx.status == PaymentTransaction.STATUS_SUCCESS:
+                return JsonResponse({
+                    'click_trans_id': click_trans_id,
+                    'merchant_trans_id': merchant_trans_id,
+                    'merchant_confirm_id': tx.id,
+                    'error': 0,
+                    'error_note': 'Already confirmed'
+                })
+            tx.status = PaymentTransaction.STATUS_SUCCESS
+            tx.provider_transaction_id = click_trans_id
+            tx.manager_commission = tx.amount * Decimal('0.20')
+            tx.save()
+            # Activate premium subscription for the user
+            _activate_subscription(tx.user, tx.amount)
+
         return JsonResponse({
             'click_trans_id': click_trans_id,
             'merchant_trans_id': merchant_trans_id,
@@ -321,15 +349,28 @@ def payme_webhook(request):
             
         if tx.status == PaymentTransaction.STATUS_FAILED:
             return rpc_error(-31008, "Tranzaksiya bekor qilingan", "Транзакция отменена")
-            
-        # Success!
-        tx.status = PaymentTransaction.STATUS_SUCCESS
-        tx.manager_commission = tx.amount * Decimal('0.20')
-        tx.save()
-        
-        # Activate premium
-        _activate_subscription(tx.user, tx.amount)
-        
+
+        # Race condition himoyasi: parallel PerformTransaction so'rovlari
+        # dublikat obuna yaratmasligi uchun tx'ni lock qilib, ichida statusni
+        # qayta tekshiramiz va save + activate bitta atomik blokda bajariladi.
+        with transaction.atomic():
+            tx = PaymentTransaction.objects.select_for_update().get(pk=tx.pk)
+            if tx.status == PaymentTransaction.STATUS_SUCCESS:
+                return JsonResponse({
+                    'result': {
+                        'transaction': str(tx.id),
+                        'perform_time': int(tx.updated_at.timestamp() * 1000),
+                        'state': 2
+                    },
+                    'id': rpc_id
+                })
+            # Success!
+            tx.status = PaymentTransaction.STATUS_SUCCESS
+            tx.manager_commission = tx.amount * Decimal('0.20')
+            tx.save()
+            # Activate premium
+            _activate_subscription(tx.user, tx.amount)
+
         return JsonResponse({
             'result': {
                 'transaction': str(tx.id),

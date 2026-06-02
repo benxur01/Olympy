@@ -2469,7 +2469,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
 
         {isStatisticsLocked && (
-          <div className="absolute inset-x-4 bottom-4 top-24 z-10 flex flex-col items-center justify-center bg-black/45 backdrop-blur-[2px] rounded-2xl p-6 text-center border border-white/5 shadow-2xl">
+          <div className="absolute inset-x-4 bottom-4 top-24 z-10 flex flex-col items-center justify-center bg-slate-900/80 rounded-2xl p-6 text-center border border-white/5 shadow-2xl">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 to-amber-600 text-white shadow-lg shadow-amber-500/20 mb-4 animate-bounce">
               <Icon name="star" size={32} />
             </div>
