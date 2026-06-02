@@ -3,20 +3,19 @@ from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
-from django.views.generic import RedirectView
 
 from accounts import views as account_views
 from olympiads.subjects_views import subjects_list_create
 
 
 urlpatterns = [
-    path('admin/', RedirectView.as_view(
-        url=f'{settings.OLYMPY_FRONTEND_URL}/admin' if settings.OLYMPY_FRONTEND_URL else '/admin',
-        permanent=False,
-    ), name='frontend-admin'),
+    # Eslatma: avval `/admin/` frontend `/admin` sahifasiga redirect qilardi —
+    # bu chalkashlik edi (Django admin emas, frontend admin paneliga ketardi).
+    # Olib tashlandi: endi `/admin/` route ro'yxatda yo'q va 404 qaytaradi.
+    # Haqiqiy Django admin quyidagi noaniq URL'da.
+    #
     # Django admin URL'i anonim bruteforce'dan himoyalanish uchun oddiy
-    # 'django-admin/' o'rniga noaniq yo'lga ko'chirildi. Eski 'django-admin/'
-    # endi 404 qaytaradi (route ro'yxatda yo'q). Bu obfuscation — login
+    # 'admin/' o'rniga noaniq yo'lga ko'chirilgan. Bu obfuscation — login
     # himoyasini almashtirmaydi, faqat avtomatik skanerlovchi botlar uchun
     # admin login sahifasini topishni qiyinlashtiradi.
     path('olympy-mgmt-2025/', admin.site.urls),

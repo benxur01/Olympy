@@ -400,35 +400,38 @@ def me(request):
     if not request.user.is_active:
         return Response({'detail': 'Hisob bloklangan'}, status=status.HTTP_401_UNAUTHORIZED)
 
-    # Muddati o'tgan obunalarni yopish va premium statuslarini yangilash (lazy expiration)
+    # Muddati o'tgan obunalarni yopish va premium statuslarini yangilash
+    # (lazy expiration). Avval 3 ta alohida DB so'rovi bor edi (expired
+    # exists + active exists + org active exists). Endi foydalanuvchining
+    # barcha aktiv obunalarini select_related('plan') bilan BITTA so'rovda
+    # olamiz va expired/active/organization tekshiruvlarini Python ichida
+    # bajaramiz. user.save() faqat is_premium haqiqatan o'zgarganda chaqiriladi.
     from billing.models import UserSubscription
     from centers.models import EducationCenter
     from django.utils import timezone
-    
+
     now = timezone.now()
-    expired_subs = UserSubscription.objects.filter(
-        user=request.user,
-        is_active=True,
-        end_date__lte=now
+    active_subs = list(
+        UserSubscription.objects
+        .filter(user=request.user, is_active=True)
+        .select_related('plan')
     )
-    if expired_subs.exists():
-        expired_subs.update(is_active=False)
-        
-        has_active = UserSubscription.objects.filter(
-            user=request.user,
-            is_active=True,
-            end_date__gt=now
-        ).exists()
-        if not has_active:
+    expired_ids = [s.id for s in active_subs if s.end_date and s.end_date <= now]
+    if expired_ids:
+        UserSubscription.objects.filter(id__in=expired_ids).update(is_active=False)
+        # Muddati o'tmagan (hali amal qiluvchi) aktiv obunalar.
+        still_active = [
+            s for s in active_subs
+            if s.id not in expired_ids and s.end_date and s.end_date > now
+        ]
+        if not still_active and request.user.is_premium:
             request.user.is_premium = False
             request.user.save(update_fields=['is_premium'])
-            
-        has_active_org = UserSubscription.objects.filter(
-            user=request.user,
-            is_active=True,
-            plan__plan_type='organization',
-            end_date__gt=now
-        ).exists()
+
+        has_active_org = any(
+            s.plan and s.plan.plan_type == 'organization'
+            for s in still_active
+        )
         if not has_active_org:
             EducationCenter.objects.filter(owner=request.user).update(is_premium=False)
 
