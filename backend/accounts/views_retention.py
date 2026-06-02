@@ -265,8 +265,10 @@ def peer_comparison(request):
     if grade:
         # Katta sinflarda peer soni minglab bo'lishi mumkin — taqqoslash uchun
         # 500 ta yetarli, qolganida ham GROUP BY + Python loop'ni cheklaymiz.
+        # Admin userlarni chiqarib tashlaymiz.
         peer_ids = list(
             User.objects.filter(onboarding_grade=grade, is_active=True)
+            .exclude(is_platform_admin=True)
             .values_list('id', flat=True)[:500]
         )
     else:
@@ -898,7 +900,8 @@ def classmates_leaderboard(request):
     """GET /api/me/classmates-leaderboard/ — sinfdoshlar reytingi (top 20).
 
     Bir xil onboarding_grade'dagi foydalanuvchilar. Grade yo'q bo'lsa umumiy
-    leaderboard. Javob: [{rank, user_id, full_name, avg_score, streak, is_me}].
+    leaderboard. Platform adminlar chiqariladi.
+    Javob: [{rank, user_id, full_name, avg_score, streak, is_me}].
     """
     user = request.user
     grade = getattr(user, 'onboarding_grade', None)
@@ -908,6 +911,8 @@ def classmates_leaderboard(request):
         peer_qs = User.objects.filter(onboarding_grade=grade, is_active=True)
     else:
         peer_qs = User.objects.filter(is_active=True)
+    # Platform adminlar sinfdoshlar reytingida ko'rinmasin.
+    peer_qs = peer_qs.exclude(is_platform_admin=True)
 
     # Reyting top 20 ni ko'rsatadi — 500 ta peer aggregatsiya uchun yetarli,
     # cheksiz User querysini oldini olamiz (xotira/CPU himoyasi).

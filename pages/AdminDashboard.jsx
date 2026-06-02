@@ -336,7 +336,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
   const apiAllUsers = apiUsersList
     ? apiUsersList.map(OlympyApi.mapBackendUser)
     : null;
-  const allUsers = apiAllUsers || store.users;
+  // Platform adminlar statistika va ro'yxatlarda hisoblanmasin. Backend
+  // admin_users_list ularni allaqachon chiqarib tashlaydi; bu zaxira filtr
+  // mock/store fallback uchun ham adminlarni statistikadan ajratib turadi.
+  const allUsers = (apiAllUsers || store.users).filter(u => !u.isPlatformAdmin);
   const apiOlympiads = isApi && Array.isArray(apiOlympiadsRes.data)
     ? apiOlympiadsRes.data.map(mapApiOlympiad)
     : null;
@@ -961,7 +964,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h1 className="text-[20px] font-black leading-tight text-white">Foydalanuvchilar</h1>
-          <p className="mt-1 text-[11px] font-bold text-slate-400">Platformadagi foydalanuvchi rollari va holati.</p>
+          <p className="mt-1 text-[11px] font-bold text-slate-400">Platformadagi foydalanuvchi rollari va holati. Admin userlar hisobga olinmaydi.</p>
         </div>
         <div className="relative w-full md:w-72">
           <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
