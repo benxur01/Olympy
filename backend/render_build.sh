@@ -13,6 +13,7 @@
 set -o errexit
 
 echo "=== ENV: Python=$(python --version 2>&1) Pip=$(pip --version 2>&1 | head -1) ==="
+echo "=== DATABASE_URL host: $(python -c "from urllib.parse import urlparse; import os; u=urlparse(os.environ.get('DATABASE_URL','')); print(u.hostname)" 2>/dev/null || echo 'parse failed') ==="
 
 echo "=== STEP 1: pip install ==="
 pip install --upgrade pip
@@ -33,7 +34,7 @@ if not url:
 safe_schema = schema.replace('"', '""')
 try:
     import psycopg
-    with psycopg.connect(url) as conn:
+    with psycopg.connect(url, connect_timeout=15) as conn:
         with conn.cursor() as cur:
             cur.execute(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"')
         conn.commit()
@@ -52,6 +53,25 @@ except Exception as e:
         print(f'[render_build] WARNING: schema creation failed: {e2}', file=sys.stderr)
         print('[render_build] Continuing — schema may already exist', file=sys.stderr)
 PY
+
+echo "=== STEP 2.5: DB connection check ==="
+python -c "
+import os, sys
+url = os.environ.get('DATABASE_URL', '')
+if not url:
+    print('DATABASE_URL not set, skipping check')
+    sys.exit(0)
+try:
+    import psycopg
+    conn = psycopg.connect(url, connect_timeout=15)
+    cur = conn.cursor()
+    cur.execute('SELECT 1')
+    conn.close()
+    print('DB connection OK (psycopg3)')
+except Exception as e:
+    print(f'DB connection FAILED: {e}', file=sys.stderr)
+    sys.exit(1)
+"
 
 echo "=== STEP 3: collectstatic ==="
 python manage.py collectstatic --no-input
