@@ -17,8 +17,11 @@ jobs:
           OWNER_ID=$(curl -sS -H "Authorization: Bearer $RENDER_TOKEN" "https://api.render.com/v1/owners" | jq -r '.[0].owner.id')
           echo "Owner ID: $OWNER_ID"
           
-          curl -sS -H "Authorization: Bearer $RENDER_TOKEN" \
-            "https://api.render.com/v1/logs?resource=srv-d7t49iq8qa3s73f76qag&ownerId=$OWNER_ID&type=app&limit=1000" | jq -r '.logs[] | .message // .text // .' | tac
+          curl -i -v -X POST \
+            -H "Authorization: Bearer $RENDER_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache":"do_not_clear"}' \
+            "https://api.render.com/v1/services/srv-d7t49iq8qa3s73f76qag/deploys"
 
 
 
