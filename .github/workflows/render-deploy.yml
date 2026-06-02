@@ -23,16 +23,27 @@ jobs:
           fi
           
           # Trigger deploy with retry for rate limits
-          RESPONSE=""
           DEPLOY_ID=""
           for i in {1..5}; do
-            RESPONSE=$(curl -s -X POST \
+            HTTP_STATUS=$(curl -s -o /tmp/resp.json -w "%{http_code}" -X POST \
               -H "Authorization: Bearer $RENDER_TOKEN" \
               -H "Content-Type: application/json" \
               -d '{"clearCache":"do_not_clear"}' \
               "https://api.render.com/v1/services/srv-d7t49iq8qa3s73f76qag/deploys")
-            echo "Trigger response: $RESPONSE"
+            echo "HTTP Status: $HTTP_STATUS"
+            RESPONSE=$(cat /tmp/resp.json)
+            echo "Response body: $RESPONSE"
+            
             DEPLOY_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
+            if [ -z "$DEPLOY_ID" ] || [ "$DEPLOY_ID" = "null" ]; then
+              if [ "$HTTP_STATUS" = "202" ] || [ "$HTTP_STATUS" = "200" ]; then
+                echo "Deploy accepted. Fetching latest deploy ID from list..."
+                sleep 5
+                DEPLOY_ID=$(curl -sS -H "Authorization: Bearer $RENDER_TOKEN" \
+                  "https://api.render.com/v1/services/srv-d7t49iq8qa3s73f76qag/deploys?limit=1" | jq -r '.[0].deploy.id // empty')
+              fi
+            fi
+            
             if [ -n "$DEPLOY_ID" ] && [ "$DEPLOY_ID" != "null" ]; then
               break
             fi
