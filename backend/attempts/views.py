@@ -692,13 +692,23 @@ def attempt_detail(request, attempt_id):
       - Olympiad markaziga tegishli owner/manager
     Boshqa hollarda 403 qaytariladi.
     """
+    from django.db.models import Prefetch
+    from questions.models import Question
     attempt = get_object_or_404(
         TestAttempt.objects
         .filter(olympiad__is_deleted=False)
         .select_related('user', 'olympiad', 'olympiad__center')
-        # Quyida `olympiad.questions.all()` aylanadi — savollarni oldindan
-        # yuklab N+1 (har savol uchun alohida so'rov) o'rniga 1 ta so'rov.
-        .prefetch_related('olympiad__questions'),
+        # Quyida savollar `id` bo'yicha tartiblangan holda aylanadi —
+        # savollarni oldindan yuklab N+1 (har savol uchun alohida so'rov)
+        # o'rniga 1 ta so'rov. Tartiblashni Prefetch queryset ichida
+        # qilamiz: aks holda `.order_by('id')` prefetch cache'ni buzib
+        # qo'shimcha DB so'rovi otardi.
+        .prefetch_related(
+            Prefetch(
+                'olympiad__questions',
+                queryset=Question.objects.order_by('id'),
+            )
+        ),
         pk=attempt_id,
     )
     is_owner = attempt.user_id == request.user.id
@@ -746,7 +756,10 @@ def attempt_detail(request, attempt_id):
             cs.question_id: cs
             for cs in CodeSubmission.objects.filter(attempt=attempt)
         }
-        for q in olympiad.questions.all().order_by('id'):
+        # Prefetch `id` bo'yicha tartiblangan — bu yerda `.order_by('id')`
+        # qo'ymaymiz, aks holda prefetch cache buziladi va yangi DB so'rovi
+        # otiladi.
+        for q in olympiad.questions.all():
             q_type = getattr(q, 'question_type', 'mcq') or 'mcq'
             if q_type == 'code':
                 cs = code_subs.get(q.id)
@@ -1607,6 +1620,16 @@ def olympiad_live_proctoring(request, olympiad_id):
     # Loop ichida har iteratsiyada count() qilmaslik uchun bir marta hisoblaymiz
     olympiad_question_count = olympiad.questions.count()
 
+    # Ping ma'lumotlarini bitta cache.get_many() chaqiruvi bilan olamiz —
+    # avval loop ichida har o'quvchi uchun alohida cache.get() chaqirilardi
+    # (N ta Redis round-trip). Endi barcha kalitlarni oldindan list qilib,
+    # bitta so'rovda hammasini olamiz.
+    ping_keys = {
+        s.user_id: f"test_session_ping:{olympiad_id}:{s.user_id}"
+        for s in sessions
+    }
+    ping_map = cache.get_many(list(ping_keys.values()))
+
     now = timezone.now()
     results = []
 
@@ -1614,9 +1637,8 @@ def olympiad_live_proctoring(request, olympiad_id):
         user = s.user
         attempt = attempts.get(user.id)
 
-        # Cache'dan joriy ping ma'lumotlarini o'qish
-        cache_key = f"test_session_ping:{olympiad_id}:{user.id}"
-        ping_data = cache.get(cache_key)
+        # Cache'dan joriy ping ma'lumotlarini o'qish (get_many natijasidan)
+        ping_data = ping_map.get(ping_keys.get(user.id))
 
         # O'quvchi onlaynmi yoki yo'qligini tekshirish
         is_online = False

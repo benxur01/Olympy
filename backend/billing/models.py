@@ -41,37 +41,43 @@ class UserSubscription(models.Model):
         if not self.end_date and self.plan:
             self.end_date = self.start_date + timezone.timedelta(days=self.plan.duration_days)
         super().save(*args, **kwargs)
-        
-        # Sync is_premium flag to User model and EducationCenters dynamically
+
+        # Sync is_premium flag to User model and EducationCenters dynamically.
+        # Avval bu yerda `self.user.save(update_fields=['is_premium'])` chaqirilardi
+        # — bu har obuna saqlanganda butun User qatorini saqlab, signal trigger
+        # qilish xavfini tug'dirardi. Endi `User.objects.filter(pk=...).update()`
+        # ishlatamiz: atomik, signal trigger qilmaydi va faqat is_premium ustunini
+        # yangilaydi. is_premium sync logikasi saqlanadi — billing webhook'lari
+        # (_activate_subscription) va admin toggle shu sync'ga tayanadi.
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
         if self.is_active and self.end_date > timezone.now():
-            self.user.is_premium = True
-            self.user.save(update_fields=['is_premium'])
+            User.objects.filter(pk=self.user_id).update(is_premium=True)
             if self.plan and self.plan.plan_type == 'organization':
                 from centers.models import EducationCenter
-                EducationCenter.objects.filter(owner=self.user).update(is_premium=True)
+                EducationCenter.objects.filter(owner_id=self.user_id).update(is_premium=True)
         else:
             # Check if there are other active subscriptions for this user
             has_active = UserSubscription.objects.filter(
-                user=self.user,
+                user_id=self.user_id,
                 is_active=True,
                 end_date__gt=timezone.now()
             ).exclude(pk=self.pk).exists()
-            
+
             if not has_active:
-                self.user.is_premium = False
-                self.user.save(update_fields=['is_premium'])
-                
+                User.objects.filter(pk=self.user_id).update(is_premium=False)
+
             # Check if there are other active organization subscriptions
             has_active_org = UserSubscription.objects.filter(
-                user=self.user,
+                user_id=self.user_id,
                 is_active=True,
                 plan__plan_type='organization',
                 end_date__gt=timezone.now()
             ).exclude(pk=self.pk).exists()
-            
+
             if not has_active_org:
                 from centers.models import EducationCenter
-                EducationCenter.objects.filter(owner=self.user).update(is_premium=False)
+                EducationCenter.objects.filter(owner_id=self.user_id).update(is_premium=False)
 
 
 class PaymentTransaction(models.Model):
