@@ -145,6 +145,9 @@ if DATABASE_URL:
     # connect_timeout: psycopg ulanish vaqtini cheklaydi (soniyada).
     # Render → Supabase kabi managed DB ulanishlarida kerakli.
     db_options.setdefault('connect_timeout', 30)
+    # Supabase transaction pooler (port 6543) prepared statements ni
+    # qo'llab-quvvatlamaydi — DISABLE_SERVER_SIDE_CURSORS kerak.
+    is_supabase_pooler = (parsed_db.port == 6543)
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -157,6 +160,7 @@ if DATABASE_URL:
             'HOST': parsed_db.hostname or '',
             'PORT': str(parsed_db.port or 5432),
             'OPTIONS': db_options,
+            'DISABLE_SERVER_SIDE_CURSORS': is_supabase_pooler,
         }
     }
 elif os.environ.get('OLYMPY_DB_ENGINE', 'sqlite') == 'postgres':
