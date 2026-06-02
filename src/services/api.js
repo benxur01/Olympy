@@ -108,6 +108,11 @@ const toUserMessage = (error) => {
   if (text.includes("otp noto") || text.includes('wrong otp') || text.includes('invalid otp')) {
     return "Kod noto‘g‘ri kiritildi";
   }
+  if (text.includes('session expired') || text.includes('token not valid')
+    || text.includes('token is invalid') || text.includes('token is expired')
+    || text.includes('authentication credentials')) {
+    return "Sessiya muddati tugadi. Iltimos, qayta kiring.";
+  }
   if (!error?.status) {
     return "Server bilan bog‘lanishda xatolik yuz berdi";
   }

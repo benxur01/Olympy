@@ -70,8 +70,8 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
       setPwMsg({ type: 'err', text: 'Yangi parol va tasdiqlash mos kelmadi' });
       return;
     }
-    if (pwForm.newPassword.length < 6) {
-      setPwMsg({ type: 'err', text: "Parol kamida 6 belgi bo'lishi kerak" });
+    if (pwForm.newPassword.length < 8) {
+      setPwMsg({ type: 'err', text: "Parol kamida 8 belgi bo'lishi kerak" });
       return;
     }
     setPwSaving(true);

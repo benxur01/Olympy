@@ -1136,18 +1136,18 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   };
 
   const navItems = [
-    { key: 'home', icon: 'home', label: 'Overview' },
+    { key: 'home', icon: 'home', label: 'Asosiy' },
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCount || undefined },
     { key: 'staff', icon: 'users', label: 'Xodimlar' },
     { key: 'students', icon: 'users', label: "O'quvchilar" },
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
     { key: 'questionbank', icon: 'file', label: 'Savol banki' },
     { key: 'shop', icon: 'award', label: "Do'kon" },
-    { key: 'statistics', icon: 'chart', label: 'Statistika' },
+    { key: 'statistics', icon: 'grid', label: 'Statistika' },
     { key: 'ranking', icon: 'star', label: 'Reyting' },
     { key: 'analytics', icon: 'chart', label: 'Analitika' },
     { key: 'center', icon: 'building', label: 'Profil' },
-    { key: 'premium', icon: 'star', label: 'Premium Obuna' },
+    { key: 'premium', icon: 'award', label: 'Premium Obuna' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
     { key: 'myprofile', icon: 'user', label: 'Mening profilim' },
   ];
@@ -1256,7 +1256,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <Icon name="menu" size={20} />
         </button>
         <div className="min-w-0">
-          <div className="truncate text-[15px] font-black text-white">{navItems.find(n => n.key === page)?.label || 'Overview'}</div>
+          <div className="truncate text-[15px] font-black text-white">{navItems.find(n => n.key === page)?.label || 'Asosiy'}</div>
           <div className="truncate text-[11px] font-semibold text-white/40">
             {center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · {ownerFormatDate(center.createdAt)}
           </div>
