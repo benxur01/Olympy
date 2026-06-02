@@ -41,8 +41,12 @@ jobs:
             elif [ "$STATUS" = "build_failed" ] || [ "$STATUS" = "pre_deploy_failed" ] || [ "$STATUS" = "deactivated" ] || [ "$STATUS" = "canceled" ]; then
               echo "::error::Deploy failed with status: $STATUS"
               echo "Full response: $STATUS_RESP"
+              echo "=== FETCHING BUILD LOGS ==="
+              curl -sS -H "Authorization: Bearer $RENDER_TOKEN" \
+                "https://api.render.com/v1/logs?resource=srv-d7t49iq8qa3s73f76qag&limit=200" || echo "Failed to fetch logs"
               exit 1
             fi
+
             sleep 15
           done
 
