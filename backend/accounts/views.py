@@ -603,6 +603,9 @@ def admin_users_list(request):
     #    select_related('center') bilan prefetch.
     qs = (
         User.objects.all()
+        # Platform adminlar statistikaga kirmasin: foydalanuvchilar soni,
+        # faol/o'quvchilar hisobi va o'sish grafigi shu ro'yxatdan keladi.
+        .exclude(is_platform_admin=True)
         .annotate(
             attempts_100_count=Count(
                 'attempts',
@@ -1642,6 +1645,8 @@ def activity_leaderboard(request):
     qs = (
         User.objects
         .filter(is_active=True, streak_count__gt=0)
+        # Platform adminlarni faollik reytingidan chiqarib tashlaymiz.
+        .exclude(is_platform_admin=True)
         .filter(
             DQ(roles__contains=['student'])
             | DQ(
@@ -1670,7 +1675,7 @@ def activity_leaderboard(request):
         entries.append({
             'rank': i + 1,
             'user_id': u.id,
-            'name': u.full_name or u.phone or 'O\'quvchi',
+            'name': u.full_name or u.phone or "O'quvchi",
             'streak_count': u.streak_count,
             'badges': u.get_badges()[:2]  # Expose up to 2 badges
         })
