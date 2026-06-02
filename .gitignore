@@ -67,3 +67,4 @@ Thumbs.db
 # Claude Code per-project state
 .claude/
 .codex
+backups/
