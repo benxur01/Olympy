@@ -95,6 +95,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     { key: 'home', icon: 'home', label: 'Asosiy' },
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
     { key: 'questions', icon: 'book', label: 'Savollar' },
+    { key: 'profile', icon: 'user', label: 'Profil' },
   ];
 
   const formStartIso = (form) => {
@@ -496,6 +497,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     home: renderHome,
     olympiads: renderOlympiads,
     questions: () => <QuestionCreatorPage embedded user={user} onOpenSwitcher={onOpenSwitcher} onNavigate={onNavigate} />,
+    profile: () => <ProfilePage user={user} embedded onUserUpdate={u => OlympyApi.saveAuth({ token: OlympyApi.getToken(), user: u })} />,
   };
 
   return (
