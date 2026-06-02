@@ -21,12 +21,30 @@ jobs:
             echo "::error::RENDER_API_TOKEN secret yo'q. Settings → Secrets → Actions ga qo'shing."
             exit 1
           fi
-          RESPONSE=$(curl -fsS -X POST \
-            -H "Authorization: Bearer $RENDER_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d '{"clearCache":"do_not_clear"}' \
-            "https://api.render.com/v1/services/srv-d7t49iq8qa3s73f76qag/deploys")
-          DEPLOY_ID=$(echo "$RESPONSE" | jq -r '.id')
+          
+          # Trigger deploy with retry for rate limits
+          RESPONSE=""
+          DEPLOY_ID=""
+          for i in {1..5}; do
+            RESPONSE=$(curl -s -X POST \
+              -H "Authorization: Bearer $RENDER_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"clearCache":"do_not_clear"}' \
+              "https://api.render.com/v1/services/srv-d7t49iq8qa3s73f76qag/deploys")
+            echo "Trigger response: $RESPONSE"
+            DEPLOY_ID=$(echo "$RESPONSE" | jq -r '.id // empty')
+            if [ -n "$DEPLOY_ID" ] && [ "$DEPLOY_ID" != "null" ]; then
+              break
+            fi
+            echo "Trigger failed or rate-limited. Retrying in 15 seconds..."
+            sleep 15
+          done
+          
+          if [ -z "$DEPLOY_ID" ] || [ "$DEPLOY_ID" = "null" ]; then
+            echo "::error::Failed to trigger deploy after retries."
+            exit 1
+          fi
+          
           echo "Backend deploy triggered. ID: $DEPLOY_ID"
           
           # Poll status
@@ -44,15 +62,14 @@ jobs:
               echo "=== FETCHING BUILD LOGS ==="
               OWNER_ID=$(curl -sS -H "Authorization: Bearer $RENDER_TOKEN" "https://api.render.com/v1/owners" | jq -r '.[0].owner.id')
               echo "Owner ID: $OWNER_ID"
+              # Query logs, reverse order to show chronological output, and print message fields
               curl -sS -H "Authorization: Bearer $RENDER_TOKEN" \
-                "https://api.render.com/v1/logs?resource=srv-d7t49iq8qa3s73f76qag&ownerId=$OWNER_ID&type=build&limit=200" | jq . || echo "Failed to fetch logs"
-
+                "https://api.render.com/v1/logs?resource=srv-d7t49iq8qa3s73f76qag&ownerId=$OWNER_ID&type=build&limit=300" | jq -r '.[] | .message' | tac || echo "Failed to fetch logs"
               exit 1
             fi
-
-
             sleep 15
           done
+
 
 
       - name: Trigger frontend deploy (olympy)
