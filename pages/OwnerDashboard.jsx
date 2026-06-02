@@ -2873,7 +2873,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     proctoring: renderProctoring,
     shop: renderShop,
     premium: renderPremium,
-    myprofile: () => <ProfilePage user={user} embedded onUserUpdate={u => OlympyApi.saveAuth({ token: OlympyApi.getToken(), user: u })} />,
+    myprofile: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} />,
   };
 
   // Mobile bottom navigation uchun eng muhim 4 ta sahifa.
