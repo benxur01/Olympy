@@ -45,7 +45,8 @@ jobs:
               OWNER_ID=$(curl -sS -H "Authorization: Bearer $RENDER_TOKEN" "https://api.render.com/v1/owners" | jq -r '.[0].owner.id')
               echo "Owner ID: $OWNER_ID"
               curl -sS -H "Authorization: Bearer $RENDER_TOKEN" \
-                "https://api.render.com/v1/logs?resource=srv-d7t49iq8qa3s73f76qag&ownerId=$OWNER_ID&limit=200" | jq . || echo "Failed to fetch logs"
+                "https://api.render.com/v1/logs?resource=srv-d7t49iq8qa3s73f76qag&ownerId=$OWNER_ID&type=build&limit=200" | jq . || echo "Failed to fetch logs"
+
               exit 1
             fi
 
