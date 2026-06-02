@@ -526,6 +526,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     { key: 'shop', icon: 'award', label: "Do'kon" },
     { key: 'qanalytics', icon: 'info', label: 'Savollar analitikasi' },
     { key: 'analytics', icon: 'chart', label: 'Analitika' },
+    { key: 'profile', icon: 'user', label: 'Profil' },
   ];
 
   // Sidebar/Mobile nav uchun "analytics" tugmasini bosganda app-level
@@ -1709,6 +1710,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher }) => {
     qanalytics: renderQAnalytics,
     proctoring: renderProctoring,
     shop: renderShop,
+    profile: () => <ProfilePage user={user} embedded onUserUpdate={u => OlympyApi.saveAuth({ token: OlympyApi.getToken(), user: u })} />,
   };
 
   return (
