@@ -73,4 +73,7 @@ else
     echo "=== ensure_platform_admin FAILED (exit $?) ===" && exit 1
 fi
 
+echo "=== STEP 6: ensure_manager ==="
+python manage.py ensure_manager || echo "[WARNING] ensure_manager skipped"
+
 echo "=== BUILD COMPLETE ==="
