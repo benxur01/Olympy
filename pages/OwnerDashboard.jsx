@@ -1149,6 +1149,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'center', icon: 'building', label: 'Profil' },
     { key: 'premium', icon: 'star', label: 'Premium Obuna' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
+    { key: 'myprofile', icon: 'user', label: 'Mening profilim' },
   ];
 
   // Analytics tugmasini sahifa darajasiga yo'naltirish.
@@ -2872,6 +2873,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     proctoring: renderProctoring,
     shop: renderShop,
     premium: renderPremium,
+    myprofile: () => <ProfilePage user={user} embedded onUserUpdate={u => OlympyApi.saveAuth({ token: OlympyApi.getToken(), user: u })} />,
   };
 
   // Mobile bottom navigation uchun eng muhim 4 ta sahifa.
