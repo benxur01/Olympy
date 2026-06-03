@@ -284,17 +284,18 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.UserRateThrottle',
     ],
     'DEFAULT_THROTTLE_RATES': {
-        'anon': '60/min',
-        'user': '100/min',
+        # Million foydalanuvchi uchun scale: anon/user limitlari per-minute
+        # ga o'tkazildi, Redis cache bilan ishlaydi (locmem emas).
+        'anon': '30/min',
+        'user': '200/min',
         # Avval '5/min' edi — maktab/o'quv markazda 30+ talaba bitta IP
         # orqali (NAT) kirsa 25 tasi 429 olardi. Per-account brute-force
         # himoyasi LoginSerializer ichida bor (15 daqiqa lock per phone),
-        # shu sababli IP-level limitni 60/min ga oshirish xavfsiz.
-        'auth': '60/min',
-        # Register endpoint'lari uchun alohida cheklov. Avval bu endpoint'larda
-        # rate limit yo'q edi va hujumchi soatiga 1000+ ta hisob yarata olardi
-        # — endi IP bo'yicha soatiga 5 ta ro'yxatdan o'tish.
-        'register': '5/hour',
+        # shu sababli IP-level limitni 10/min ga oshirish xavfsiz (login).
+        'auth': '10/min',
+        # Register endpoint'lari uchun brute-force himoya.
+        # IP bo'yicha 5/min — ro'yxatdan o'tishni spamdan saqlaydi.
+        'register': '5/min',
         'ai_question': '20/hour',
         # Submit endpoint uchun alohida cheklov: olimpiada paytida bir
         # foydalanuvchi tezda ko'p marta submit'ni urinmasin (duplicate,
