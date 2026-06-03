@@ -1684,9 +1684,12 @@ def handle_telegram_update(update, bot='auth'):
                 _link_user_to_telegram(existing_user, chat_id, telegram_user_id)
                 if verification.purpose == PhoneVerification.PURPOSE_PASSWORD_RESET:
                     otp = _prepare_otp(verification)
-                    _send_telegram_message(
-                        chat_id,
-                        f'Parolni tiklash kodi: {otp}',
+                    # OTP yuborish background Celery task'ga ko'chirildi —
+                    # Telegram 429 webhook javobini bloklamaydi.
+                    from accounts.tasks import send_telegram_otp_task
+                    send_telegram_otp_task.delay(
+                        chat_id=chat_id,
+                        text=f'Parolni tiklash kodi: {otp}',
                         bot=bot,
                     )
                     return {'ok': True}
@@ -1717,7 +1720,14 @@ def handle_telegram_update(update, bot='auth'):
                 return {'ok': True}
 
             otp = _prepare_otp(verification)
-            _send_telegram_message(chat_id, f'Tasdiqlash kodi: {otp}', bot=bot)
+            # OTP yuborish background Celery task'ga ko'chirildi —
+            # Telegram 429 webhook javobini bloklamaydi.
+            from accounts.tasks import send_telegram_otp_task
+            send_telegram_otp_task.delay(
+                chat_id=chat_id,
+                text=f'Tasdiqlash kodi: {otp}',
+                bot=bot,
+            )
         else:
             _send_telegram_message(chat_id, 'Telefon raqam mos kelmadi.', bot=bot)
         return {'ok': True}

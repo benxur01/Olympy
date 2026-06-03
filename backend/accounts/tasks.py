@@ -60,3 +60,48 @@ def send_telegram_markdown_task(chat_id, msg):
         logging.getLogger(__name__).exception("Failed to send telegram markdown in celery task")
         return f"Error sending markdown: {str(e)}"
 
+
+@shared_task(
+    bind=True,
+    max_retries=5,
+    default_retry_delay=5,
+    name='accounts.send_telegram_otp',
+)
+def send_telegram_otp_task(self, chat_id, text, bot='auth'):
+    """OTP kodni Telegram orqali background'da yuboradi.
+
+    HTTP so'rovni bloklamaslik uchun OTP yuborish ishi shu task'ga
+    ko'chirildi. Telegram 429 (rate limit) yoki vaqtinchalik xato bo'lsa
+    Celery avtomatik qayta urinadi — Gunicorn worker'lar qotib qolmaydi.
+
+    `text` chaqiruvchi tomonda to'liq shakllantiriladi (masalan,
+    'Tasdiqlash kodi: 123456' yoki 'Parolni tiklash kodi: 123456') —
+    shu sababli xabar formati o'zgarmaydi.
+    """
+    # Circular import oldini olish uchun lokal import.
+    from django.conf import settings
+    from accounts.views import _send_telegram_message, _telegram_bot_token
+
+    # Token umuman yo'q (lokal/dev muhit) — qayta urinishning ma'nosi yo'q.
+    if not _telegram_bot_token(bot):
+        return {'sent': False, 'reason': 'no_token', 'chat_id': chat_id}
+
+    # `_send_telegram_message` ichida 429 retry_after bilan boshqariladi va
+    # OTP matni log'da maskirovka qilinadi. Muvaffaqiyatda True qaytaradi.
+    ok = _send_telegram_message(chat_id, text, bot=bot)
+    if ok:
+        return {'sent': True, 'chat_id': chat_id}
+
+    # EAGER rejimda (Redis yo'q — lokal/dev) retry ham sinxron bo'ladi va
+    # so'rovni bloklab qotirib qo'yadi — ya'ni asl muammoni qaytaradi. Shu
+    # sababli faqat real broker bo'lganda (production) qayta urinamiz.
+    if getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False):
+        return {'sent': False, 'reason': 'send_failed', 'chat_id': chat_id}
+
+    # Yuborilmadi (rate limit tugadi yoki Telegram not-ok qaytardi) —
+    # task darajasida qayta urinamiz.
+    raise self.retry(
+        exc=Exception('telegram sendMessage failed'),
+        countdown=10,
+    )
+
