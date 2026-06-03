@@ -34,6 +34,9 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // filter. Avval input value/onChange'siz mavjud edi — foydalanuvchi
   // yozardi lekin natija filterlanmasdi.
   const [studentSearch, setStudentSearch] = React.useState('');
+  // Debounce: o'quvchilar ro'yxati katta bo'lishi mumkin — har bosishda
+  // emas, foydalanuvchi to'xtaganidan keyin filtrlaymiz.
+  const debouncedStudentSearch = useDebounce(studentSearch, 300);
   // Guruh tegi tahrirlash holati (10-funksiya).
   const [groupTagEdit, setGroupTagEdit] = React.useState(null);
   const [liveOlympiadId, setLiveOlympiadId] = React.useState(null);
@@ -41,6 +44,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [proctoringLoading, setProctoringLoading] = React.useState(false);
   const [proctoringError, setProctoringError] = React.useState('');
   const [proctoringSearch, setProctoringSearch] = React.useState('');
+  const debouncedProctoringSearch = useDebounce(proctoringSearch, 300);
   // Kod (IT) javoblari modali — natijalar sahifasidan ochiladi.
   const [codeSubModal, setCodeSubModal] = React.useState(null); // null | { id, title }
   const [codeSubData, setCodeSubData] = React.useState([]);
@@ -864,7 +868,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   );
 
   const renderStudents = () => {
-    const searchQuery = (studentSearch || '').trim().toLowerCase();
+    const searchQuery = (debouncedStudentSearch || '').trim().toLowerCase();
     const filteredStudents = searchQuery
       ? students.filter(s => {
           const name = String(s.name || '').toLowerCase();
@@ -1276,7 +1280,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const renderProctoring = () => {
     const activeOlym = olympiads.find(o => String(o.id) === String(liveOlympiadId));
-    const searchQuery = (proctoringSearch || '').trim().toLowerCase();
+    const searchQuery = (debouncedProctoringSearch || '').trim().toLowerCase();
     
     const filteredProctoring = searchQuery
       ? proctoringData.filter(p => {

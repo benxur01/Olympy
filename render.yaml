@@ -6,6 +6,11 @@ services:
     buildCommand: npm install && npm run build
     staticPublishPath: dist
     pullRequestPreviewsEnabled: false
+    envVars:
+      # Frontend Sentry DSN — Vite build paytida o'qiladi (VITE_ prefiks).
+      # Bo'sh bo'lsa Sentry init o'tkazib yuboriladi (graceful fallback).
+      - key: VITE_SENTRY_DSN
+        sync: false
     routes:
       - type: rewrite
         source: /*
@@ -58,6 +63,9 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: GEMINI_API_KEY
+        sync: false
+      # Sentry backend DSN — bo'sh bo'lsa monitoring o'chiq qoladi.
+      - key: SENTRY_DSN
         sync: false
 
   # ── Celery Background Worker ────────────────────────────────────────────────

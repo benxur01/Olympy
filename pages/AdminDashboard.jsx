@@ -199,6 +199,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [globalSearch, setGlobalSearch] = React.useState('');
   // Foydalanuvchilar sahifasi uchun alohida qidiruv input.
   const [userSearch, setUserSearch] = React.useState('');
+  // Debounce: har bosishda emas, foydalanuvchi to'xtaganidan keyin filtr ishlaydi
+  // (katta foydalanuvchilar jadvalini har harfda qayta filtrlamaslik uchun).
+  const debouncedUserSearch = useDebounce(userSearch, 300);
+  const debouncedGlobalSearch = useDebounce(globalSearch, 300);
 
   // Profile settings state
   const [editFirstName, setEditFirstName] = React.useState('');
@@ -990,7 +994,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </thead>
             <tbody className="divide-y divide-white/5">
               {(() => {
-                const q = (userSearch || globalSearch || '').trim().toLowerCase();
+                const q = (debouncedUserSearch || debouncedGlobalSearch || '').trim().toLowerCase();
                 const visible = q
                   ? userRows.filter(row =>
                       (row.name || '').toLowerCase().includes(q) ||

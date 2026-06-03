@@ -2,10 +2,21 @@ import * as React from 'react';
 import * as ReactDOMClient from 'react-dom/client';
 import { createPortal } from 'react-dom';
 
+import * as Sentry from '@sentry/react';
 import { OlympyApi } from './services/api.js';
 import DOMPurify from 'dompurify';
 import './services/codemirror-loader.js';
 import './index.css';
+
+const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
+if (SENTRY_DSN) {
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: import.meta.env.MODE,
+    tracesSampleRate: 0.1,
+    replaysSessionSampleRate: 0,
+  });
+}
 
 globalThis.React = React;
 globalThis.ReactDOM = { ...ReactDOMClient, createPortal };
@@ -730,11 +741,47 @@ const useApiData = (fetcher, deps = []) => {
   return { data, loading, error, reload, mutate };
 };
 
+// useDebounce — qiymat o'zgarganidan keyin `delay` ms kutib, eng oxirgi
+// qiymatni qaytaradi. Qidiruv input'larida foydalaniladi: har bosishda
+// emas, foydalanuvchi to'xtaganidan keyingina filtr/so'rov ishlaydi.
+function useDebounce(value, delay = 300) {
+  const [debounced, setDebounced] = React.useState(value);
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
+// VirtualList — uzun ro'yxatlarni (100+ element) virtual scroll bilan
+// ko'rsatadi: faqat ekranda ko'rinadigan elementlar DOM'da bo'ladi. Qisqa
+// ro'yxatlarda shart emas — oddiy .map() ishlatilsin.
+function VirtualList({ items, itemHeight = 60, containerHeight = 400, renderItem }) {
+  const [scrollTop, setScrollTop] = React.useState(0);
+  const visibleCount = Math.ceil(containerHeight / itemHeight) + 2;
+  const startIdx = Math.max(0, Math.floor(scrollTop / itemHeight) - 1);
+  const endIdx = Math.min(items.length, startIdx + visibleCount);
+  const visibleItems = items.slice(startIdx, endIdx);
+
+  return (
+    <div
+      style={{ height: containerHeight, overflowY: 'auto', position: 'relative' }}
+      onScroll={e => setScrollTop(e.currentTarget.scrollTop)}
+    >
+      <div style={{ height: items.length * itemHeight, position: 'relative' }}>
+        <div style={{ position: 'absolute', top: startIdx * itemHeight, width: '100%' }}>
+          {visibleItems.map((item, i) => renderItem(item, startIdx + i))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Export all
-Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal });
+Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList });
 
 
-Object.assign(moduleScope, { formatUzPhoneInput, Icon, BRAND_ASSET_BASE, BRAND_LOGO_SRC, BrandLogo, Avatar, Badge, StatCard, SidebarContent, Sidebar, MobileBottomNav, Topbar, Modal, AvatarCropModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, subjectColors, SubjectBadge, TelegramMockup, useApiData });
+Object.assign(moduleScope, { formatUzPhoneInput, Icon, BRAND_ASSET_BASE, BRAND_LOGO_SRC, BrandLogo, Avatar, Badge, StatCard, SidebarContent, Sidebar, MobileBottomNav, Topbar, Modal, AvatarCropModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, subjectColors, SubjectBadge, TelegramMockup, useApiData, useDebounce, VirtualList });
 }
 var formatUzPhoneInput = moduleScope.formatUzPhoneInput;
 var Icon = moduleScope.Icon;
@@ -759,6 +806,8 @@ var subjectColors = moduleScope.subjectColors;
 var SubjectBadge = moduleScope.SubjectBadge;
 var TelegramMockup = moduleScope.TelegramMockup;
 var useApiData = moduleScope.useApiData;
+var useDebounce = moduleScope.useDebounce;
+var VirtualList = moduleScope.VirtualList;
 
 // pages/constants/uzbekistanDistricts.js
 {
@@ -5871,6 +5920,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [page, setPage] = React.useState('home');
   const [centerModal, setCenterModal] = React.useState(null);
   const [centerSearch, setCenterSearch] = React.useState('');
+  // Debounce: markaz qidiruvi har bosishda emas, foydalanuvchi to'xtaganidan
+  // keyin filtrlaydi (markazlar ro'yxati uzun bo'lishi mumkin).
+  const debouncedCenterSearch = useDebounce(centerSearch, 300);
   const [cityFilter, setCityFilter] = React.useState('');
   const [activeOlympiad, setActiveOlympiad] = React.useState(null);
   const [joinModal, setJoinModal] = React.useState(false);
@@ -6664,11 +6716,12 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const renderCenters = () => {
     const liveCenters = (isApi ? (apiCenters || []) : store.centers).filter(c => c.status === 'approved');
     const cities = [...new Set(liveCenters.map(c => c.region || c.city).filter(Boolean))];
+    const centerQuery = debouncedCenterSearch.toLowerCase();
     const filtered = liveCenters.filter(c =>
       (
-        c.name.toLowerCase().includes(centerSearch.toLowerCase()) ||
-        String(c.organizationType || '').toLowerCase().includes(centerSearch.toLowerCase()) ||
-        formatCenterLocation(c).toLowerCase().includes(centerSearch.toLowerCase())
+        c.name.toLowerCase().includes(centerQuery) ||
+        String(c.organizationType || '').toLowerCase().includes(centerQuery) ||
+        formatCenterLocation(c).toLowerCase().includes(centerQuery)
       ) &&
       (!cityFilter || c.region === cityFilter || c.city === cityFilter)
     );
@@ -7738,6 +7791,9 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // filter. Avval input value/onChange'siz mavjud edi — foydalanuvchi
   // yozardi lekin natija filterlanmasdi.
   const [studentSearch, setStudentSearch] = React.useState('');
+  // Debounce: o'quvchilar ro'yxati katta bo'lishi mumkin — har bosishda
+  // emas, foydalanuvchi to'xtaganidan keyin filtrlaymiz.
+  const debouncedStudentSearch = useDebounce(studentSearch, 300);
   // Guruh tegi tahrirlash holati (10-funksiya).
   const [groupTagEdit, setGroupTagEdit] = React.useState(null);
   const [liveOlympiadId, setLiveOlympiadId] = React.useState(null);
@@ -7745,6 +7801,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [proctoringLoading, setProctoringLoading] = React.useState(false);
   const [proctoringError, setProctoringError] = React.useState('');
   const [proctoringSearch, setProctoringSearch] = React.useState('');
+  const debouncedProctoringSearch = useDebounce(proctoringSearch, 300);
   // Kod (IT) javoblari modali — natijalar sahifasidan ochiladi.
   const [codeSubModal, setCodeSubModal] = React.useState(null); // null | { id, title }
   const [codeSubData, setCodeSubData] = React.useState([]);
@@ -8568,7 +8625,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   );
 
   const renderStudents = () => {
-    const searchQuery = (studentSearch || '').trim().toLowerCase();
+    const searchQuery = (debouncedStudentSearch || '').trim().toLowerCase();
     const filteredStudents = searchQuery
       ? students.filter(s => {
           const name = String(s.name || '').toLowerCase();
@@ -8980,7 +9037,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const renderProctoring = () => {
     const activeOlym = olympiads.find(o => String(o.id) === String(liveOlympiadId));
-    const searchQuery = (proctoringSearch || '').trim().toLowerCase();
+    const searchQuery = (debouncedProctoringSearch || '').trim().toLowerCase();
     
     const filteredProctoring = searchQuery
       ? proctoringData.filter(p => {
@@ -14431,42 +14488,52 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
           <div className="col-span-1 text-right">Vaqt</div>
           <div className="col-span-1"></div>
         </div>
-        {rest.map((p, i) => (
-          <div key={p.key || p.rank} className="olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5">
-            <div className="md:col-span-1 flex-shrink-0">
-              <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
-                {p.rank}
+        {(() => {
+          // Reyting qatori — virtual scroll va oddiy map o'rtasida bir xil JSX.
+          const renderRow = (p) => (
+            <div key={p.key || p.rank} className="olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5">
+              <div className="md:col-span-1 flex-shrink-0">
+                <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
+                  {p.rank}
+                </div>
+              </div>
+              <div className="md:col-span-3 flex-1 flex items-center gap-2 min-w-0">
+                <Avatar name={p.name} size={32} premium={!!p.isPremium} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-white truncate">{p.isPremium && <span title="Premium o'quvchi">⭐ </span>}{p.name}</div>
+                  <div className="text-xs text-white/30 truncate md:hidden">{p.center}</div>
+                </div>
+              </div>
+              <div className="col-span-3 hidden md:flex items-center">
+                <span className="text-sm text-white/50 truncate">{p.center}</span>
+              </div>
+              <div className="col-span-2 hidden md:block"><SubjectBadge subject={p.subject} /></div>
+              <div className="md:col-span-1 text-right flex-shrink-0">
+                <span className={`text-sm font-black ${p.score>=90?'text-emerald-400':p.score>=75?'text-indigo-400':'text-amber-400'}`}>{p.score}</span>
+              </div>
+              <div className="md:col-span-1 text-right text-xs text-white/30 font-mono flex-shrink-0">{p.time}</div>
+              <div className="md:col-span-1 text-right flex-shrink-0">
+                {/* Avval bu tugma faqat dekorativ edi — hech narsa qilmasdi.
+                    Endi natijani Results sahifasiga olib o'tadi (attemptId
+                    bo'lgan qatorlar uchun). */}
+                <button
+                  onClick={() => p.attemptId && onNavigate && onNavigate('results', { attemptId: p.attemptId })}
+                  disabled={!p.attemptId}
+                  className="text-white/30 hover:text-indigo-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Natijani ko'rish">
+                  <Icon name="eye" size={14} />
+                </button>
               </div>
             </div>
-            <div className="md:col-span-3 flex-1 flex items-center gap-2 min-w-0">
-              <Avatar name={p.name} size={32} premium={!!p.isPremium} />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-white truncate">{p.isPremium && <span title="Premium o'quvchi">⭐ </span>}{p.name}</div>
-                <div className="text-xs text-white/30 truncate md:hidden">{p.center}</div>
-              </div>
-            </div>
-            <div className="col-span-3 hidden md:flex items-center">
-              <span className="text-sm text-white/50 truncate">{p.center}</span>
-            </div>
-            <div className="col-span-2 hidden md:block"><SubjectBadge subject={p.subject} /></div>
-            <div className="md:col-span-1 text-right flex-shrink-0">
-              <span className={`text-sm font-black ${p.score>=90?'text-emerald-400':p.score>=75?'text-indigo-400':'text-amber-400'}`}>{p.score}</span>
-            </div>
-            <div className="md:col-span-1 text-right text-xs text-white/30 font-mono flex-shrink-0">{p.time}</div>
-            <div className="md:col-span-1 text-right flex-shrink-0">
-              {/* Avval bu tugma faqat dekorativ edi — hech narsa qilmasdi.
-                  Endi natijani Results sahifasiga olib o'tadi (attemptId
-                  bo'lgan qatorlar uchun). */}
-              <button
-                onClick={() => p.attemptId && onNavigate && onNavigate('results', { attemptId: p.attemptId })}
-                disabled={!p.attemptId}
-                className="text-white/30 hover:text-indigo-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                title="Natijani ko'rish">
-                <Icon name="eye" size={14} />
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+          // Ro'yxat juda uzun bo'lsa (100+ qator) virtual scroll bilan
+          // ko'rsatamiz — faqat ekrandagi qatorlar DOM'da bo'ladi. Aks holda
+          // oddiy .map() (qisqa ro'yxatlarda virtualizatsiya keraksiz).
+          if (rest.length > 100) {
+            return <VirtualList items={rest} itemHeight={68} containerHeight={640} renderItem={renderRow} />;
+          }
+          return rest.map(renderRow);
+        })()}
       </div>
       </>
       )}
@@ -14497,32 +14564,39 @@ const ClassmatesLeaderboard = () => {
         <div className="col-span-3 text-right">O'rtacha ball</div>
         <div className="col-span-2 text-right">Streak</div>
       </div>
-      {rows.map(p => (
-        <div
-          key={p.user_id}
-          className={`olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5 ${p.is_me ? 'bg-indigo-500/15 border-l-2 border-indigo-400' : ''}`}
-        >
-          <div className="md:col-span-1 flex-shrink-0">
-            <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
-              {p.rank}
-            </div>
-          </div>
-          <div className="md:col-span-6 flex-1 flex items-center gap-2 min-w-0">
-            <Avatar name={p.full_name} size={32} />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium text-white truncate">
-                {p.full_name}{p.is_me && <span className="text-indigo-300"> (siz)</span>}
+      {(() => {
+        const renderRow = (p) => (
+          <div
+            key={p.user_id}
+            className={`olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5 ${p.is_me ? 'bg-indigo-500/15 border-l-2 border-indigo-400' : ''}`}
+          >
+            <div className="md:col-span-1 flex-shrink-0">
+              <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
+                {p.rank}
               </div>
             </div>
+            <div className="md:col-span-6 flex-1 flex items-center gap-2 min-w-0">
+              <Avatar name={p.full_name} size={32} />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-white truncate">
+                  {p.full_name}{p.is_me && <span className="text-indigo-300"> (siz)</span>}
+                </div>
+              </div>
+            </div>
+            <div className="md:col-span-3 text-right flex-shrink-0">
+              <span className={`text-sm font-black ${p.avg_score >= 90 ? 'text-emerald-400' : p.avg_score >= 75 ? 'text-indigo-400' : 'text-amber-400'}`}>{p.avg_score}</span>
+            </div>
+            <div className="md:col-span-2 text-right text-xs text-orange-400 font-semibold flex-shrink-0">
+              {p.streak ? `🔥 ${p.streak}` : '—'}
+            </div>
           </div>
-          <div className="md:col-span-3 text-right flex-shrink-0">
-            <span className={`text-sm font-black ${p.avg_score >= 90 ? 'text-emerald-400' : p.avg_score >= 75 ? 'text-indigo-400' : 'text-amber-400'}`}>{p.avg_score}</span>
-          </div>
-          <div className="md:col-span-2 text-right text-xs text-orange-400 font-semibold flex-shrink-0">
-            {p.streak ? `🔥 ${p.streak}` : '—'}
-          </div>
-        </div>
-      ))}
+        );
+        // 100+ sinfdosh bo'lsa virtual scroll; aks holda oddiy map.
+        if (rows.length > 100) {
+          return <VirtualList items={rows} itemHeight={68} containerHeight={640} renderItem={renderRow} />;
+        }
+        return rows.map(renderRow);
+      })()}
     </div>
   );
 };
@@ -15403,6 +15477,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [globalSearch, setGlobalSearch] = React.useState('');
   // Foydalanuvchilar sahifasi uchun alohida qidiruv input.
   const [userSearch, setUserSearch] = React.useState('');
+  // Debounce: har bosishda emas, foydalanuvchi to'xtaganidan keyin filtr ishlaydi
+  // (katta foydalanuvchilar jadvalini har harfda qayta filtrlamaslik uchun).
+  const debouncedUserSearch = useDebounce(userSearch, 300);
+  const debouncedGlobalSearch = useDebounce(globalSearch, 300);
 
   // Profile settings state
   const [editFirstName, setEditFirstName] = React.useState('');
@@ -16194,7 +16272,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </thead>
             <tbody className="divide-y divide-white/5">
               {(() => {
-                const q = (userSearch || globalSearch || '').trim().toLowerCase();
+                const q = (debouncedUserSearch || debouncedGlobalSearch || '').trim().toLowerCase();
                 const visible = q
                   ? userRows.filter(row =>
                       (row.name || '').toLowerCase().includes(q) ||
@@ -16787,6 +16865,9 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [studentsError, setStudentsError] = React.useState('');
   const [studentStatusFilter, setStudentStatusFilter] = React.useState('all');
   const [studentSearch, setStudentSearch] = React.useState('');
+  // Debounce: o'quvchilar ro'yxati katta — har bosishda emas, foydalanuvchi
+  // to'xtaganidan keyin filtrlaymiz.
+  const debouncedStudentSearch = useDebounce(studentSearch, 300);
   const [studentActionId, setStudentActionId] = React.useState(null);
   // Guruh tegi tahrirlash holati: { membershipId, value }.
   const [groupTagEdit, setGroupTagEdit] = React.useState(null);
@@ -16796,6 +16877,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [proctoringLoading, setProctoringLoading] = React.useState(false);
   const [proctoringError, setProctoringError] = React.useState('');
   const [proctoringSearch, setProctoringSearch] = React.useState('');
+  const debouncedProctoringSearch = useDebounce(proctoringSearch, 300);
   const [liveOlympiadId, setLiveOlympiadId] = React.useState(null);
 
   // Savol banki (9-funksiya) holatlari.
@@ -18300,7 +18382,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       groupTag: m.group_tag || '',
       isPremium: !!(m.user?.is_premium ?? m.user?.isPremium),
     }));
-    const query = (studentSearch || '').trim().toLowerCase();
+    const query = (debouncedStudentSearch || '').trim().toLowerCase();
     const filteredStudents = query
       ? studentRows.filter(s =>
           String(s.name).toLowerCase().includes(query) ||
@@ -18569,7 +18651,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const renderProctoring = () => {
     const activeOlym = centerOlympiads.find(o => String(o.id) === String(liveOlympiadId));
-    const searchQuery = (proctoringSearch || '').trim().toLowerCase();
+    const searchQuery = (debouncedProctoringSearch || '').trim().toLowerCase();
     
     const filteredProctoring = searchQuery
       ? proctoringData.filter(p => {

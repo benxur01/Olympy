@@ -438,6 +438,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [page, setPage] = React.useState('home');
   const [centerModal, setCenterModal] = React.useState(null);
   const [centerSearch, setCenterSearch] = React.useState('');
+  // Debounce: markaz qidiruvi har bosishda emas, foydalanuvchi to'xtaganidan
+  // keyin filtrlaydi (markazlar ro'yxati uzun bo'lishi mumkin).
+  const debouncedCenterSearch = useDebounce(centerSearch, 300);
   const [cityFilter, setCityFilter] = React.useState('');
   const [activeOlympiad, setActiveOlympiad] = React.useState(null);
   const [joinModal, setJoinModal] = React.useState(false);
@@ -1231,11 +1234,12 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const renderCenters = () => {
     const liveCenters = (isApi ? (apiCenters || []) : store.centers).filter(c => c.status === 'approved');
     const cities = [...new Set(liveCenters.map(c => c.region || c.city).filter(Boolean))];
+    const centerQuery = debouncedCenterSearch.toLowerCase();
     const filtered = liveCenters.filter(c =>
       (
-        c.name.toLowerCase().includes(centerSearch.toLowerCase()) ||
-        String(c.organizationType || '').toLowerCase().includes(centerSearch.toLowerCase()) ||
-        formatCenterLocation(c).toLowerCase().includes(centerSearch.toLowerCase())
+        c.name.toLowerCase().includes(centerQuery) ||
+        String(c.organizationType || '').toLowerCase().includes(centerQuery) ||
+        formatCenterLocation(c).toLowerCase().includes(centerQuery)
       ) &&
       (!cityFilter || c.region === cityFilter || c.city === cityFilter)
     );

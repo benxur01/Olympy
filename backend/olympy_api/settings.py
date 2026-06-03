@@ -92,6 +92,10 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    # GZip API javoblarini siqadi (JSON ro'yxatlar, katta payload'lar). Trafik
+    # va yuklab olish vaqtini kamaytiradi. SecurityMiddleware'dan keyin va
+    # WhiteNoise'dan oldin — statik fayllarni WhiteNoise o'zi siqadi.
+    'django.middleware.gzip.GZipMiddleware',
     # WhiteNoise statik fayllarni production'da samarali serve qiladi —
     # SecurityMiddleware'dan keyin va boshqa middleware'lardan oldin.
     'whitenoise.middleware.WhiteNoiseMiddleware',
@@ -739,4 +743,19 @@ CLICK_SECRET_KEY = os.environ.get('CLICK_SECRET_KEY') or None
 # PAYME to'lov tizimi sozlamalari (yuqoridagi bilan bir xil mantiq).
 PAYME_MERCHANT_ID = os.environ.get('PAYME_MERCHANT_ID') or None
 PAYME_SECRET_KEY = os.environ.get('PAYME_SECRET_KEY') or None
+
+# Sentry — xato monitoring. Faqat SENTRY_DSN env o'rnatilgan bo'lsa yoqiladi;
+# bo'lmasa hech narsa qilmaydi (lokal development va DSN'siz deploylarda
+# graceful fallback). send_default_pii=False — foydalanuvchi shaxsiy ma'lumoti
+# (IP, cookie, headers) Sentry'ga yuborilmaydi.
+SENTRY_DSN = os.environ.get('SENTRY_DSN', '')
+if SENTRY_DSN:
+    import sentry_sdk
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=os.environ.get('DJANGO_ENV', 'production'),
+        traces_sample_rate=0.1,
+        profiles_sample_rate=0.05,
+        send_default_pii=False,
+    )
 

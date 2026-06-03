@@ -705,5 +705,41 @@ const useApiData = (fetcher, deps = []) => {
   return { data, loading, error, reload, mutate };
 };
 
+// useDebounce — qiymat o'zgarganidan keyin `delay` ms kutib, eng oxirgi
+// qiymatni qaytaradi. Qidiruv input'larida foydalaniladi: har bosishda
+// emas, foydalanuvchi to'xtaganidan keyingina filtr/so'rov ishlaydi.
+function useDebounce(value, delay = 300) {
+  const [debounced, setDebounced] = React.useState(value);
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
+}
+
+// VirtualList — uzun ro'yxatlarni (100+ element) virtual scroll bilan
+// ko'rsatadi: faqat ekranda ko'rinadigan elementlar DOM'da bo'ladi. Qisqa
+// ro'yxatlarda shart emas — oddiy .map() ishlatilsin.
+function VirtualList({ items, itemHeight = 60, containerHeight = 400, renderItem }) {
+  const [scrollTop, setScrollTop] = React.useState(0);
+  const visibleCount = Math.ceil(containerHeight / itemHeight) + 2;
+  const startIdx = Math.max(0, Math.floor(scrollTop / itemHeight) - 1);
+  const endIdx = Math.min(items.length, startIdx + visibleCount);
+  const visibleItems = items.slice(startIdx, endIdx);
+
+  return (
+    <div
+      style={{ height: containerHeight, overflowY: 'auto', position: 'relative' }}
+      onScroll={e => setScrollTop(e.currentTarget.scrollTop)}
+    >
+      <div style={{ height: items.length * itemHeight, position: 'relative' }}>
+        <div style={{ position: 'absolute', top: startIdx * itemHeight, width: '100%' }}>
+          {visibleItems.map((item, i) => renderItem(item, startIdx + i))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Export all
-Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal });
+Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList });

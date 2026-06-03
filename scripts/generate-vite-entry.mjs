@@ -41,10 +41,25 @@ const collectTopLevelNames = (source) => {
 let entry = `import * as React from 'react';\n`;
 entry += `import * as ReactDOMClient from 'react-dom/client';\n`;
 entry += `import { createPortal } from 'react-dom';\n\n`;
+entry += `import * as Sentry from '@sentry/react';\n`;
 entry += `import { OlympyApi } from './services/api.js';\n`;
 entry += `import DOMPurify from 'dompurify';\n`;
 entry += `import './services/codemirror-loader.js';\n`;
 entry += `import './index.css';\n\n`;
+
+// Sentry — frontend xato monitoring. Faqat VITE_SENTRY_DSN build paytida
+// o'rnatilgan bo'lsa yoqiladi; aks holda init o'tkazib yuboriladi (DSN'siz
+// lokal/preview buildlarda xato bermaydi). replaysSessionSampleRate=0 —
+// session replay o'chiq (qo'shimcha bundle/trafik yuki bo'lmasin).
+entry += `const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;\n`;
+entry += `if (SENTRY_DSN) {\n`;
+entry += `  Sentry.init({\n`;
+entry += `    dsn: SENTRY_DSN,\n`;
+entry += `    environment: import.meta.env.MODE,\n`;
+entry += `    tracesSampleRate: 0.1,\n`;
+entry += `    replaysSessionSampleRate: 0,\n`;
+entry += `  });\n`;
+entry += `}\n\n`;
 
 // Maintain necessary global assignments for backwards compatibility / utility APIs
 entry += `globalThis.React = React;\n`;
