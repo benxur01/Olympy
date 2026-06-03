@@ -474,7 +474,11 @@ export const OlympyApi = {
   // Markaz statistikasi (Owner/Manager dashboard).
   getCenterStats: (centerId, token) => request(`/api/centers/${centerId}/stats/`, { token }),
   // Questions
-  getQuestions: (centerId, token) => request(`/api/questions/?center=${centerId}`, { token }).then(unwrapList),
+  // page_size=200: backend savollar ro'yxatini paginatsiya qiladi
+  // (LargePageNumberPagination). Markazning barcha savollarini bitta
+  // round-trip'da olish uchun katta page_size so'raymiz; unwrapList
+  // {results:[...]} javobni ham, oddiy massivni ham massivga keltiradi.
+  getQuestions: (centerId, token) => request(`/api/questions/?center=${centerId}&page_size=200`, { token }).then(unwrapList),
   createQuestion: (payload, token) => request('/api/questions/', { method: 'POST', body: payload, token }),
   generateAiQuestions: (payload, token) => request('/api/questions/generate-ai/', { method: 'POST', body: payload, token }),
   // IT (kod) savolini AI bilan baholash — test paytida o'quvchi kodini sinaydi.
