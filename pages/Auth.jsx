@@ -31,6 +31,12 @@ const LoginPage = ({ onNavigate, onLogin }) => {
   const [error, setError] = React.useState('');
   const [showPass, setShowPass] = React.useState(false);
   const [rememberMe, setRememberMe] = React.useState(true);
+  // 2FA holati: backend `requires_2fa` qaytarsa, parol+telefonni saqlab,
+  // foydalanuvchidan autentifikator kodini so'raymiz va qayta yuboramiz.
+  const [step, setStep] = React.useState('login'); // 'login' | '2fa'
+  const [totpCode, setTotpCode] = React.useState('');
+  const [pendingPhone, setPendingPhone] = React.useState('');
+  const [pendingPassword, setPendingPassword] = React.useState('');
   const [forgotOpen, setForgotOpen] = React.useState(false);
   const [forgot, setForgot] = React.useState({
     step: 'phone',
@@ -45,6 +51,20 @@ const LoginPage = ({ onNavigate, onLogin }) => {
     loading: false,
     error: '',
   });
+  const finishLogin = (data) => {
+    const mappedUser = OlympyApi.mapBackendUser(data.user);
+    OlympyApi.saveAuth({
+      token: data.token,
+      refresh: data.refresh,
+      user: mappedUser,
+      cookieAuth: data.cookie_auth,
+      // "Meni eslab qolish" tasdiqlanmagan bo'lsa, token sessionStorage'da
+      // saqlanadi va brauzer yopilganda tozalanadi.
+      persistent: rememberMe,
+    });
+    onLogin(mappedUser);
+  };
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
@@ -52,21 +72,54 @@ const LoginPage = ({ onNavigate, onLogin }) => {
 
     try {
       const data = await OlympyApi.login({ phone: form.phone, password: form.password });
-      const mappedUser = OlympyApi.mapBackendUser(data.user);
-      OlympyApi.saveAuth({
-        token: data.token,
-        refresh: data.refresh,
-        user: mappedUser,
-        cookieAuth: data.cookie_auth,
-        // "Meni eslab qolish" tasdiqlanmagan bo'lsa, token sessionStorage'da
-        // saqlanadi va brauzer yopilganda tozalanadi.
-        persistent: rememberMe,
-      });
-      onLogin(mappedUser);
+      // 2FA yoqilgan foydalanuvchi uchun backend token bermaydi, faqat
+      // `requires_2fa: true` qaytaradi. Kod so'rash holatiga o'tamiz va
+      // telefon+parolni saqlaymiz (TOTP tasdiqlashda qayta kerak bo'ladi).
+      if (data?.requires_2fa) {
+        setPendingPhone(form.phone);
+        setPendingPassword(form.password);
+        setTotpCode('');
+        setStep('2fa');
+        setLoading(false);
+        return;
+      }
+      finishLogin(data);
     } catch (err) {
       setError(OlympyApi.toUserMessage(err));
       setLoading(false);
     }
+  };
+
+  const handleTotpVerify = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (totpCode.length < 6 || loading) return;
+    setError('');
+    setLoading(true);
+    try {
+      const data = await OlympyApi.login({
+        phone: pendingPhone,
+        password: pendingPassword,
+        totp_code: totpCode,
+      });
+      if (data?.requires_2fa) {
+        // Kod noto'g'ri — backend yana requires_2fa qaytaradi.
+        setError("Noto'g'ri 2FA kod");
+        setLoading(false);
+        return;
+      }
+      finishLogin(data);
+    } catch (err) {
+      setError(OlympyApi.toUserMessage(err));
+      setLoading(false);
+    }
+  };
+
+  const backToLogin = () => {
+    setStep('login');
+    setTotpCode('');
+    setPendingPassword('');
+    setError('');
+    setLoading(false);
   };
   const normalizedForgotPhone = OlympyStore.normalizePhone(forgot.phone);
   const forgotExpired = !!(forgot.expiresAt && forgot.now > forgot.expiresAt);
@@ -157,8 +210,8 @@ const LoginPage = ({ onNavigate, onLogin }) => {
       setForgot(prev => ({ ...prev, error: 'Kodni kiriting' }));
       return;
     }
-    if (forgot.password.length < 6) {
-      setForgot(prev => ({ ...prev, error: 'Yangi parol kamida 6 ta belgidan iborat bo‘lsin' }));
+    if (forgot.password.length < 8) {
+      setForgot(prev => ({ ...prev, error: 'Yangi parol kamida 8 ta belgidan iborat bo‘lsin' }));
       return;
     }
     if (forgot.password !== forgot.confirm) {
@@ -217,10 +270,35 @@ const LoginPage = ({ onNavigate, onLogin }) => {
           <div className="flex items-center gap-2 mb-6 md:mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
             <BrandLogo size="lg" />
           </div>
-          <h1 className="text-2xl md:text-3xl font-black text-white mb-2">Kirish</h1>
-          <p className="text-white/40 text-sm md:text-base">Hisobingizga kiring</p>
+          <h1 className="text-2xl md:text-3xl font-black text-white mb-2">{step === '2fa' ? 'Ikki bosqichli tasdiqlash' : 'Kirish'}</h1>
+          <p className="text-white/40 text-sm md:text-base">{step === '2fa' ? 'Autentifikator ilovasidagi kodni kiriting' : 'Hisobingizga kiring'}</p>
         </div>
 
+        {step === '2fa' ? (
+          <form onSubmit={handleTotpVerify} className="space-y-4">
+            <div>
+              <label className="block text-sm text-white/60 mb-2 font-medium">6 raqamli kod</label>
+              <input
+                className="input-field text-center font-mono tracking-[0.4em] text-lg"
+                value={totpCode}
+                onChange={e => { setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); }}
+                placeholder="000000"
+                maxLength={6}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                autoFocus
+              />
+              <p className="text-white/30 text-xs mt-2">Authenticator (Google/Microsoft Authenticator, Authy) ilovasini oching</p>
+            </div>
+            {error && <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 rounded-xl px-4 py-3"><Icon name="info" size={16} />{error}</div>}
+            <button type="submit" disabled={loading || totpCode.length < 6}
+              className="btn-primary w-full py-3.5 rounded-2xl font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
+              {loading ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Tekshirilmoqda...</> : 'Tasdiqlash'}
+            </button>
+            <button type="button" onClick={backToLogin}
+              className="btn-ghost w-full py-3 rounded-2xl font-semibold">← Orqaga</button>
+          </form>
+        ) : (
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
@@ -255,11 +333,14 @@ const LoginPage = ({ onNavigate, onLogin }) => {
             {loading ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Kirish...</> : 'Kirish'}
           </button>
         </form>
+        )}
 
+        {step !== '2fa' && (
         <p className="text-center text-sm text-white/40 mt-6">
           Hisobingiz yo'qmi?{' '}
           <button onClick={() => onNavigate('register')} className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Ro'yxatdan o'ting</button>
         </p>
+        )}
       </div>
       {forgotOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.75)' }}>
@@ -356,7 +437,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                   <input
                     className="input-field"
                     type="password"
-                    placeholder="Kamida 6 ta belgi"
+                    placeholder="Kamida 8 ta belgi"
                     value={forgot.password}
                     onChange={e => setForgot(prev => ({ ...prev, password: e.target.value, error: '' }))}
                   />
@@ -388,7 +469,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                   <button
                     type="button"
                     onClick={submitForgotReset}
-                    disabled={!forgot.code || forgot.password.length < 6 || forgot.password !== forgot.confirm || forgot.loading || forgotExpired}
+                    disabled={!forgot.code || forgot.password.length < 8 || forgot.password !== forgot.confirm || forgot.loading || forgotExpired}
                     className="btn-primary flex-1 py-3 rounded-2xl font-semibold disabled:opacity-50"
                   >
                     {forgot.loading ? 'Tekshirilmoqda...' : 'Parolni yangilash'}
@@ -488,6 +569,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
       setStep(2);
     } else if (step === 2) {
       if (!form.name || !form.phone || !form.password || !form.confirm) return;
+      if (form.password.length < 8) { setPhoneError('Parol kamida 8 ta belgidan iborat bo‘lsin'); return; }
       if (form.password !== form.confirm) return;
       const norm = OlympyStore.normalizePhone(form.phone);
       if (!norm) { setPhoneError("Telefon raqam noto'g'ri"); return; }
@@ -664,7 +746,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
             />
             <div>
               <label className="block text-sm text-white/60 mb-2 font-medium">Parol</label>
-              <input className="input-field" type="password" placeholder="Kamida 6 ta belgi" value={form.password}
+              <input className="input-field" type="password" placeholder="Kamida 8 ta belgi" value={form.password}
                 onChange={e => setForm({ ...form, password: e.target.value })} />
             </div>
             <div>
@@ -677,7 +759,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
             <div className="flex gap-3 pt-2">
               <button onClick={() => setStep(1)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
               <button onClick={goNext}
-                disabled={!form.name || !form.phone || !form.password || form.password !== form.confirm || !!phoneError || !phoneVerified}
+                disabled={!form.name || !form.phone || form.password.length < 8 || form.password !== form.confirm || !!phoneError || !phoneVerified}
                 className="btn-primary flex-1 py-3.5 rounded-2xl font-bold disabled:opacity-50">
                 {registrationType === 'organization' ? "Tashkilotga o'tish →" : 'Davom etish →'}
               </button>
