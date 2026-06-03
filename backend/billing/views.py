@@ -34,9 +34,11 @@ def create_checkout_session(request):
         
     plan = get_object_or_404(SubscriptionPlan, pk=plan_id, is_active=True)
     
-    # Create a pending transaction
+    # Create a pending transaction. plan'ni saqlaymiz — webhook obunani
+    # aktivlashtirayotganda aynan shu plan ishlatiladi (narx bo'yicha taxminsiz).
     tx = PaymentTransaction.objects.create(
         user=request.user,
+        plan=plan,
         amount=plan.price,
         provider=provider,
         status=PaymentTransaction.STATUS_PENDING
@@ -86,12 +88,79 @@ def create_checkout_session(request):
     })
 
 
-def _activate_subscription(user, amount):
-    # Find matching subscription plan by price or default
-    plan = SubscriptionPlan.objects.filter(price=amount, is_active=True).first()
+def _client_ip(request):
+    """Reverse-proxy (Render) ortidagi real client IP'ni aniqlaydi."""
+    xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.META.get('REMOTE_ADDR', '') or 'unknown'
+
+
+def _webhook_rate_limited(request, scope, limit=60, window=60):
+    """Oddiy cache-asosli IP rate limiter (yangi dependency talab qilmaydi).
+
+    Bir IP'dan `window` soniyada `limit` so'rovdan ko'p kelsa True qaytaradi.
+    To'lov webhook'lari brute-force/spam'dan himoyalanadi. Cache ishlamasa
+    (xatolik) — fail-open: webhook bloklanmaydi (to'lovlar yo'qolmasligi uchun).
+    """
+    try:
+        from django.core.cache import cache
+        ip = _client_ip(request)
+        key = f"webhook_rl:{scope}:{ip}"
+        current = cache.get(key, 0)
+        if current >= limit:
+            return True
+        # add() faqat kalit yo'q bo'lsa o'rnatadi (TTL bilan oynani boshlaydi),
+        # keyin incr() atomik oshiradi.
+        if not cache.add(key, 1, window):
+            try:
+                cache.incr(key)
+            except ValueError:
+                cache.set(key, 1, window)
+    except Exception:
+        return False
+    return False
+
+
+def _activate_subscription(user, amount, plan_id=None):
+    # Plan'ni aniqlash. Iloji bo'lsa plan_id bo'yicha (eng aniq) topamiz —
+    # webhook payload'da kelgan bo'lsa. Aks holda narx bo'yicha. DIQQAT:
+    # bir xil narxli bir nechta aktiv plan bo'lsa, narx bo'yicha tanlash
+    # noaniq (tasodifiy) — bunday holatda log'ga ogohlantirish yozamiz, chunki
+    # noto'g'ri muddatli (masalan 30 kunlik o'rniga 90 kunlik) obuna berilishi
+    # mumkin.
+    plan = None
+    if plan_id:
+        plan = SubscriptionPlan.objects.filter(pk=plan_id, is_active=True).first()
+        if plan and plan.price != amount:
+            logger.warning(
+                "Obuna aktivlashtirish: plan_id=%s narxi (%s) to'langan summa (%s) "
+                "bilan mos kelmadi — payload tekshirilsin.",
+                plan_id, plan.price, amount,
+            )
+
+    if not plan:
+        matching = list(
+            SubscriptionPlan.objects.filter(price=amount, is_active=True)[:2]
+        )
+        if len(matching) > 1:
+            logger.warning(
+                "Obuna aktivlashtirish: %s summa uchun bir nechta aktiv plan "
+                "topildi — birinchisi tanlandi (plan_id=%s). Webhook payload'iga "
+                "plan ID/kod qo'shilishi tavsiya etiladi.",
+                amount, matching[0].id,
+            )
+        plan = matching[0] if matching else None
+
     if not plan:
         # Default or fallback plan
         plan = SubscriptionPlan.objects.filter(is_active=True).first()
+        if plan:
+            logger.warning(
+                "Obuna aktivlashtirish: %s summaga mos plan topilmadi — "
+                "fallback plan_id=%s ishlatildi.",
+                amount, plan.id,
+            )
 
     if plan:
         # end_date'ni model save() ham hisoblaydi, lekin bu yerda aniq
@@ -107,6 +176,13 @@ def _activate_subscription(user, amount):
             end_date=end,
             is_active=True
         )
+        # /me endpoint subscription cache'ini bekor qilamiz — obuna endi aktiv,
+        # foydalanuvchi premium statusini darhol ko'rishi kerak.
+        try:
+            from accounts.utils import invalidate_user_subscription_cache
+            invalidate_user_subscription_cache(user.id)
+        except Exception:
+            pass
 
 
 # ─── CLICK CALLBACK API ───────────────────────────────────────────────────────
@@ -115,7 +191,11 @@ def click_webhook(request):
     """Click payment system callback handler."""
     if request.method != 'POST':
         return JsonResponse({'error': -3, 'error_note': 'Method not allowed'})
-        
+
+    if _webhook_rate_limited(request, 'click'):
+        logger.warning("Click webhook rate limit oshib ketdi: ip=%s", _client_ip(request))
+        return JsonResponse({'error': -4, 'error_note': 'Too many requests'})
+
     data = request.POST
     
     click_trans_id = data.get('click_trans_id')
@@ -212,7 +292,7 @@ def click_webhook(request):
             tx.manager_commission = tx.amount * Decimal('0.20')
             tx.save()
             # Activate premium subscription for the user
-            _activate_subscription(tx.user, tx.amount)
+            _activate_subscription(tx.user, tx.amount, plan_id=tx.plan_id)
 
         return JsonResponse({
             'click_trans_id': click_trans_id,
@@ -232,11 +312,17 @@ def payme_webhook(request):
     import json
     if request.method != 'POST':
         return JsonResponse({'error': {'code': -32601, 'message': 'Method not allowed'}}, status=405)
-        
-    # HTTP Basic Authorization check
+
+    if _webhook_rate_limited(request, 'payme'):
+        logger.warning("Payme webhook rate limit oshib ketdi: ip=%s", _client_ip(request))
+        return JsonResponse({'error': {'code': -32504, 'message': 'Too many requests'}}, status=200)
+
+    # HTTP Basic Authorization check. Authorization is enforced regardless of
+    # DEBUG — a payment webhook must never run unauthenticated, even locally,
+    # otherwise anyone could mark transactions paid and grant free premium.
     auth_header = request.headers.get('Authorization', '')
     payme_key = getattr(settings, 'PAYME_SECRET_KEY', None)
-    if not payme_key and not settings.DEBUG:
+    if not payme_key:
         logger.warning(
             "Payme webhook chaqirildi, lekin PAYME_SECRET_KEY o'rnatilmagan — "
             "avtorizatsiyani tekshirib bo'lmaydi, so'rov rad etildi."
@@ -244,11 +330,14 @@ def payme_webhook(request):
         return JsonResponse({'error': {'code': -32504, 'message': 'Insufficient privilege'}}, status=200)
     expected_auth = f"Paycom:{payme_key}"
     encoded_auth = base64.b64encode(expected_auth.encode()).decode()
-    
-    if not auth_header.startswith('Basic ') or auth_header.split(' ')[1] != encoded_auth:
-        # For testing, we can allow without auth in debug mode, but let's be strict
-        if not settings.DEBUG:
-            return JsonResponse({'error': {'code': -32504, 'message': 'Insufficient privilege'}}, status=200)
+
+    auth_parts = auth_header.split(' ', 1)
+    if (
+        len(auth_parts) != 2
+        or auth_parts[0] != 'Basic'
+        or auth_parts[1] != encoded_auth
+    ):
+        return JsonResponse({'error': {'code': -32504, 'message': 'Insufficient privilege'}}, status=200)
 
     try:
         body = json.loads(request.body.decode('utf-8'))
@@ -369,7 +458,7 @@ def payme_webhook(request):
             tx.manager_commission = tx.amount * Decimal('0.20')
             tx.save()
             # Activate premium
-            _activate_subscription(tx.user, tx.amount)
+            _activate_subscription(tx.user, tx.amount, plan_id=tx.plan_id)
 
         return JsonResponse({
             'result': {

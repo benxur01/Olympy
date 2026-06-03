@@ -112,6 +112,11 @@ class CenterMembership(models.Model):
                 name='unique_user_center_role',
             ),
         ]
+        indexes = [
+            # Foydalanuvchining ma'lum roldagi (approved/pending) a'zoligini
+            # tez topish — primary_center_for_user va ruxsat tekshiruvlarida.
+            models.Index(fields=['user', 'role', 'status']),
+        ]
 
     def __str__(self):
         return f'{self.user_id}/{self.center_id}/{self.role} [{self.status}]'

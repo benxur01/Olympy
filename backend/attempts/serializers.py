@@ -4,12 +4,30 @@ from .models import TestAttempt
 
 
 class TestAttemptSerializer(serializers.ModelSerializer):
+    # Attempt egasining ismi va profil rasmi — natijalar/attempt sahifalarida
+    # avatarni ko'rsatish uchun. `request` konteksti bo'lmasa ham ishlaydi
+    # (avatar_url_for absolyut yoki nisbiy URL qaytaradi).
+    user_name = serializers.SerializerMethodField()
+    avatar_url = serializers.SerializerMethodField()
+
     class Meta:
         model = TestAttempt
-        fields = ['id', 'user', 'olympiad', 'answers', 'score', 'correct_count',
-                  'wrong_count', 'total_questions', 'time_spent', 'rank',
-                  'disqualified', 'submitted_at']
-        read_only_fields = ['id', 'user', 'rank', 'disqualified', 'submitted_at']
+        fields = ['id', 'user', 'user_name', 'avatar_url', 'olympiad', 'answers',
+                  'score', 'correct_count', 'wrong_count', 'total_questions',
+                  'time_spent', 'rank', 'disqualified', 'submitted_at']
+        read_only_fields = ['id', 'user', 'user_name', 'avatar_url', 'rank',
+                            'disqualified', 'submitted_at']
+
+    def get_user_name(self, obj):
+        user = getattr(obj, 'user', None)
+        if not user:
+            return ''
+        return getattr(user, 'full_name', '') or getattr(user, 'phone', '') or ''
+
+    def get_avatar_url(self, obj):
+        from accounts.utils import avatar_url_for
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        return avatar_url_for(getattr(obj, 'user', None), request)
 
 
 class CodeAnswerSerializer(serializers.Serializer):
@@ -34,6 +52,7 @@ class CodeSubmissionSerializer(serializers.ModelSerializer):
     """Ustoz/menejer uchun kod javobini ko'rsatish (natijalar sahifasi)."""
     student_name = serializers.SerializerMethodField()
     student_id = serializers.SerializerMethodField()
+    student_avatar_url = serializers.SerializerMethodField()
     question_text = serializers.SerializerMethodField()
 
     class Meta:
@@ -41,7 +60,7 @@ class CodeSubmissionSerializer(serializers.ModelSerializer):
         model = CodeSubmission
         fields = [
             'id', 'attempt', 'question', 'question_text', 'student_id',
-            'student_name', 'submitted_code', 'code_language',
+            'student_name', 'student_avatar_url', 'submitted_code', 'code_language',
             'ai_code_review', 'ai_code_score', 'created_at',
         ]
         read_only_fields = fields
@@ -51,6 +70,11 @@ class CodeSubmissionSerializer(serializers.ModelSerializer):
         if not user:
             return ''
         return getattr(user, 'full_name', '') or getattr(user, 'phone', '') or ''
+
+    def get_student_avatar_url(self, obj):
+        from accounts.utils import avatar_url_for
+        request = self.context.get('request') if hasattr(self, 'context') else None
+        return avatar_url_for(getattr(obj.attempt, 'user', None), request)
 
     def get_student_id(self, obj):
         return getattr(obj.attempt, 'user_id', None)

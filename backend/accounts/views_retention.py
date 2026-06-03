@@ -532,6 +532,7 @@ def rival_activity(request):
     my_change = recent_by_user.get(request.user.id, 0)
     my_avg = avg_by_user.get(request.user.id, 0)
 
+    from accounts.utils import avatar_url_for
     result = []
     for r in rival_users:
         ru = r.rival_user
@@ -548,6 +549,7 @@ def rival_activity(request):
         result.append({
             'rival_id': r.rival_user_id,
             'rival_name': name,
+            'rival_avatar_url': avatar_url_for(ru, request),
             'rival_score_change': rival_change,
             'my_score_change': my_change,
             'ahead_by': ahead_by,
@@ -942,6 +944,7 @@ def classmates_leaderboard(request):
     if user.id not in top_ids:
         top_ids = top_ids + [user.id]
 
+    from accounts.utils import avatar_url_for
     users = {u.id: u for u in User.objects.filter(id__in=top_ids)}
     result = []
     for i, uid in enumerate(ranked_ids):
@@ -952,6 +955,7 @@ def classmates_leaderboard(request):
             'rank': i + 1,
             'user_id': uid,
             'full_name': (getattr(u, 'full_name', '') or 'Foydalanuvchi') if u else 'Foydalanuvchi',
+            'avatar_url': avatar_url_for(u, request) if u else '',
             'avg_score': avg_by_user.get(uid, 0),
             'streak': (u.streak_count or 0) if u else 0,
             'is_me': uid == user.id,

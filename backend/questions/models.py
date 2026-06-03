@@ -113,6 +113,11 @@ class Question(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            # Markazning ma'lum fan bo'yicha savollarini filtrlash — savol
+            # banki va olimpiada uchun savol tanlash so'rovlarida.
+            models.Index(fields=['center', 'subject']),
+        ]
 
     def __str__(self):
         return self.text[:60]
