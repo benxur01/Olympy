@@ -434,6 +434,43 @@ const GlowCard = ({ children, className = '', style = {}, ...props }) => {
   );
 };
 
+// ─── A/B test hook ──────────────────────────────────────────────────────────
+// Cookie asosida doimiy variant tayinlaydi: foydalanuvchining yarmi 'A', yarmi
+// 'B' ko'radi. Bir marta tanlangan variant 30 kun saqlanadi.
+function useABTest(testName) {
+  const [variant, setVariant] = React.useState(null);
+
+  React.useEffect(() => {
+    const cookieKey = `ab_${testName}`;
+    const existing = document.cookie.split(';').find(c => c.trim().startsWith(cookieKey + '='));
+    if (existing) {
+      setVariant(existing.split('=')[1].trim());
+    } else {
+      const v = Math.random() < 0.5 ? 'A' : 'B';
+      document.cookie = `${cookieKey}=${v}; max-age=${60 * 60 * 24 * 30}; path=/`;
+      setVariant(v);
+    }
+  }, [testName]);
+
+  return variant;
+}
+
+// A/B test event'ini backendga yuborish (fire-and-forget). API boshqa domenda
+// bo'lishi mumkin, shuning uchun to'liq URL (OlympyApi.API_BASE_URL) ishlatamiz.
+// `keepalive` — 'click' eventi sahifa o'zgarganda ham yuborilishini ta'minlaydi.
+const trackAbEvent = (variant, event) => {
+  if (!variant) return;
+  const base = globalThis.OlympyApi?.API_BASE_URL || '';
+  try {
+    fetch(`${base}/api/ab/track/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ test: 'hero_cta', variant, event }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {}
+};
+
 const LandingPage = ({ onNavigate, user }) => {
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [activeScreen, setActiveScreen] = React.useState(0);
@@ -452,6 +489,23 @@ const LandingPage = ({ onNavigate, user }) => {
   const [plansLoading, setPlansLoading] = React.useState(true);
   const [planTypeFilter, setPlanTypeFilter] = React.useState('student');
   const [durationFilter, setDurationFilter] = React.useState(30);
+
+  // A/B test: hero sarlavha va CTA matnining ikki varianti (faqat matn farq
+  // qiladi, dizayn bir xil). Variant aniqlangach 'view' eventi yuboriladi.
+  const heroVariant = useABTest('hero_cta');
+  const heroViewSent = React.useRef(false);
+  React.useEffect(() => {
+    if (heroVariant && !heroViewSent.current) {
+      heroViewSent.current = true;
+      trackAbEvent(heroVariant, 'view');
+    }
+  }, [heroVariant]);
+
+  // Hero CTA bosilganda: 'click' eventini yuborib, ro'yxatdan o'tishga o'tamiz.
+  const handleHeroCta = () => {
+    trackAbEvent(heroVariant, 'click');
+    onNavigate('register');
+  };
 
   const handleCreatePayment = async (provider) => {
     if (!paymentPlan) return;
@@ -865,7 +919,11 @@ const LandingPage = ({ onNavigate, user }) => {
             </div>
 
             <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-black leading-tight mb-5 md:mb-6" style={{ textWrap: 'balance', background: 'linear-gradient(135deg, #ffffff 40%, #c7d2fe 75%, #818cf8 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-              Olympy — <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">online olimpiada</span> platformasi
+              {heroVariant === 'B' ? (
+                <>O'zbekistonning eng yaxshi <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">olimpiada</span> platformasi</>
+              ) : (
+                <>Olympy — <span className="bg-gradient-to-r from-indigo-400 via-purple-400 to-cyan-400 bg-clip-text text-transparent">online olimpiada</span> platformasi</>
+              )}
             </h1>
 
             <p className="text-base md:text-xl text-white/70 mb-7 md:mb-9 max-w-2xl leading-relaxed">
@@ -874,9 +932,9 @@ const LandingPage = ({ onNavigate, user }) => {
 
             <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center gap-2.5 md:gap-4 mb-7 md:mb-9">
               <Magnetic>
-                <button onClick={() => onNavigate('register')} className="btn-primary inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-bold glow-blue w-full sm:w-auto">
+                <button onClick={handleHeroCta} className="btn-primary inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-3.5 rounded-2xl text-sm md:text-base font-bold glow-blue w-full sm:w-auto">
                   <Icon name="bolt" size={18} />
-                  Boshlash
+                  {heroVariant === 'B' ? 'Bepul sinab ko\'r' : 'Boshlash'}
                 </button>
               </Magnetic>
               <Magnetic>
