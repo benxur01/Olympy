@@ -32,6 +32,39 @@ def send_olympiad_summary_task(olympiad_id):
 
 
 @shared_task
+def send_olympiad_results_email_task(olympiad_id):
+    """Olimpiada yakunlangach ishtirokchilarga natija email'ini yuboradi.
+
+    DIQQAT: faqat olimpiada YAKUNLANGANDA bir marta chaqiriladi (har attempt'da
+    emas) — `_do_finish_olympiad` ichidan `on_commit` orqali. Hozirgi User
+    modelida `email` maydoni yo'q, shu sababli bu funksiya amalda no-op bo'ladi;
+    User'ga email qo'shilsa avtomatik ishlay boshlaydi. Diskvalifikatsiya
+    qilinganlar (disqualified=True) chetlab o'tiladi.
+    """
+    try:
+        olympiad = Olympiad.objects.filter(pk=olympiad_id).first()
+        if not olympiad:
+            return
+        from attempts.models import TestAttempt
+        from accounts.email_utils import send_olympiad_result
+        attempts = (
+            TestAttempt.objects
+            .filter(olympiad=olympiad, disqualified=False)
+            .select_related('user')
+        )
+        for a in attempts:
+            try:
+                send_olympiad_result(a.user, olympiad.title, a.score, a.rank)
+            except Exception:
+                logger.exception(
+                    'send_olympiad_result failed olympiad=%s attempt=%s',
+                    olympiad_id, a.id,
+                )
+    except Exception:
+        logger.exception('send_olympiad_results_email_task failed olympiad=%s', olympiad_id)
+
+
+@shared_task
 def finish_expired_olympiads():
     """Periodik task: muddati o'tgan olimpiadalarni yopadi + rank yangilaydi."""
     from .services import _do_finish_olympiad

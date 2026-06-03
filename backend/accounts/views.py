@@ -124,6 +124,32 @@ def _recent_verified_phone(normalized_phone):
     ).order_by('-verified_at').first()
 
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_check(request):
+    """GET /api/health/ — uptime monitoring uchun health check.
+
+    DB va Redis (cache) ulanishini tekshiradi. DB ishlamasa status
+    'degraded' bo'ladi; Redis ishlamasa faqat redis maydoni 'error' bo'ladi
+    (cache local memory'ga fallback bo'lishi mumkin, shu sbabli umumiy status
+    'ok' qoladi). Hech qachon exception ko'tarmaydi — har doim JSON qaytaradi.
+    """
+    status_payload = {'status': 'ok', 'db': 'ok', 'redis': 'ok'}
+    try:
+        from django.db import connection
+        connection.ensure_connection()
+    except Exception:
+        status_payload['db'] = 'error'
+        status_payload['status'] = 'degraded'
+    try:
+        from django.core.cache import cache
+        cache.set('health', '1', 5)
+        assert cache.get('health') == '1'
+    except Exception:
+        status_payload['redis'] = 'error'
+    return Response(status_payload)
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @throttle_classes([ScopedRateThrottle])

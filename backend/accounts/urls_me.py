@@ -1,5 +1,6 @@
 from django.urls import path
 
+from . import export_views
 from . import views
 from . import views_duel
 from . import views_me_premium
@@ -61,6 +62,11 @@ urlpatterns = [
     path('me/rewards/', views.list_rewards, name='rewards-list'),
     path('me/rewards/redeem/', views.redeem_reward, name='rewards-redeem'),
     path('me/rewards/my-redemptions/', views.my_redemptions, name='rewards-my-redemptions'),
+    # Excel eksport (markaz a'zolari / olimpiada natijalari).
+    path('export/center/<int:center_id>/members/', export_views.export_center_members_excel,
+         name='export-center-members'),
+    path('export/olympiad/<int:olympiad_id>/results/', export_views.export_olympiad_results_excel,
+         name='export-olympiad-results'),
     path('admin/users/', views.admin_users_list, name='admin-users-list'),
     path('admin/users/<int:user_id>/set-active/', views.admin_set_user_active,
          name='admin-set-user-active'),

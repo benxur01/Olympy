@@ -892,6 +892,13 @@ def admin_approve_center(request, center_id):
             
             from notifications.services import send_center_decision_notification
             send_center_decision_notification(center.owner, center, approved=True)
+            # Markaz tasdiqlandi — direktorga email xabar (email maydoni
+            # bo'lmasa yoki yuborishda xato bo'lsa jimgina o'tib ketadi).
+            try:
+                from accounts.email_utils import send_center_approved
+                send_center_approved(center.owner, center.name)
+            except Exception:
+                pass
     AuditLog.log(request, 'center_approve', target=center, extra={
         'center_name': center.name,
         'owner_id': center.owner_id,

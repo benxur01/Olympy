@@ -19,6 +19,9 @@ urlpatterns = [
     # himoyasini almashtirmaydi, faqat avtomatik skanerlovchi botlar uchun
     # admin login sahifasini topishni qiyinlashtiradi.
     path('olympy-mgmt-2025/', admin.site.urls),
+    # Uptime monitoring health check (DB + Redis tekshiruvi). UptimeRobot va
+    # Render healthCheckPath shu endpointni so'raydi.
+    path('api/health/', account_views.health_check, name='health-check'),
     path('api/auth/', include('accounts.urls')),
     path('api/telegram/webhook/', account_views.telegram_webhook, name='telegram-webhook'),
     path('api/telegram/webhook/auth/', account_views.telegram_auth_webhook, name='telegram-auth-webhook'),

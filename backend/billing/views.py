@@ -183,6 +183,13 @@ def _activate_subscription(user, amount, plan_id=None):
             invalidate_user_subscription_cache(user.id)
         except Exception:
             pass
+        # Obuna faollashtirildi — foydalanuvchiga email xabar (email maydoni
+        # bo'lmasa yoki yuborishda xato bo'lsa jimgina o'tib ketadi).
+        try:
+            from accounts.email_utils import send_subscription_activated
+            send_subscription_activated(user)
+        except Exception:
+            pass
 
 
 # ─── CLICK CALLBACK API ───────────────────────────────────────────────────────

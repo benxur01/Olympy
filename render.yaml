@@ -35,6 +35,9 @@ services:
     # Cloudinary'da saqlanadi.
     numInstances: 1
     healthCheckPath: /api/health/
+    # Uptime monitoring: UptimeRobot (uptimerobot.com) da bepul monitor yarating
+    # URL: https://prolymp.uz/api/health/ — 5 daqiqada bir tekshiradi
+    # Alert: Telegram yoki email orqali xabar beradi
     envVars:
       - key: REDIS_URL
         sync: false
@@ -67,6 +70,16 @@ services:
       # Sentry backend DSN — bo'sh bo'lsa monitoring o'chiq qoladi.
       - key: SENTRY_DSN
         sync: false
+      # Email — MAILGUN_API_KEY o'rnatilsa Mailgun backend yoqiladi, aks holda
+      # console backend (email yuborilmaydi). Barchasi ixtiyoriy.
+      - key: EMAIL_BACKEND
+        sync: false
+      - key: MAILGUN_API_KEY
+        sync: false
+      - key: MAILGUN_SENDER_DOMAIN
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
 
   # ── Celery Background Worker ────────────────────────────────────────────────
   - type: background_worker
@@ -98,6 +111,16 @@ services:
       - key: TELEGRAM_AUTH_BOT_TOKEN
         sync: false
       - key: TELEGRAM_MANAGER_BOT_TOKEN
+        sync: false
+      # Email — natija xabarlari shu worker'da yuboriladi (Mailgun yoqilgan
+      # bo'lsa). Barchasi ixtiyoriy.
+      - key: EMAIL_BACKEND
+        sync: false
+      - key: MAILGUN_API_KEY
+        sync: false
+      - key: MAILGUN_SENDER_DOMAIN
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
         sync: false
 
   # ── Celery Beat Scheduler ───────────────────────────────────────────────────
