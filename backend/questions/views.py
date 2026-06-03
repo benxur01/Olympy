@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 
+from accounts.models import AuditLog
 from centers.models import CenterMembership
 
 from .ai_generation import generate_questions, explain_question_ai, review_code_submission
@@ -108,6 +109,10 @@ def questions_list_create(request):
             status=http_status.HTTP_403_FORBIDDEN,
         )
     question = serializer.save(created_by=request.user)
+    AuditLog.log(request, 'question_create', target=question, extra={
+        'center_id': question.center_id,
+        'subject': getattr(question, 'subject', ''),
+    })
     return Response(QuestionSerializer(question, context={'request': request}).data,
                     status=http_status.HTTP_201_CREATED)
 
@@ -127,6 +132,12 @@ def question_detail(request, question_id):
     if request.method == 'GET':
         return Response(QuestionSerializer(question, context={'request': request}).data)
     if request.method == 'DELETE':
+        # Audit yozuvini o'chirishdan OLDIN yozamiz — delete() dan keyin pk
+        # None bo'lib qoladi va target_id yo'qoladi.
+        AuditLog.log(request, 'question_delete', target=question, extra={
+            'center_id': question.center_id,
+            'subject': getattr(question, 'subject', ''),
+        })
         question.delete()
         return Response(status=http_status.HTTP_204_NO_CONTENT)
     # PATCH / PUT

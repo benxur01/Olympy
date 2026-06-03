@@ -12,6 +12,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.models import AuditLog
 from .models import CenterMembership, CenterQuestion, EducationCenter
 from .serializers import (
     AdminEducationCenterSerializer,
@@ -393,6 +394,17 @@ def _approve(request, center_id, role):
         detail = '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc)
         return Response({'detail': detail},
                         status=http_status.HTTP_400_BAD_REQUEST)
+    AuditLog.log(
+        request,
+        'member_approve' if decision == 'approve' else 'member_reject',
+        target=membership,
+        extra={
+            'center_id': center.id,
+            'center_name': center.name,
+            'role': role,
+            'member_user_id': membership.user_id,
+        },
+    )
     return Response(CenterMembershipSerializer(membership).data)
 
 
@@ -880,6 +892,10 @@ def admin_approve_center(request, center_id):
             
             from notifications.services import send_center_decision_notification
             send_center_decision_notification(center.owner, center, approved=True)
+    AuditLog.log(request, 'center_approve', target=center, extra={
+        'center_name': center.name,
+        'owner_id': center.owner_id,
+    })
     return Response(AdminEducationCenterSerializer(center, context={'request': request}).data)
 
 
@@ -901,6 +917,10 @@ def admin_reject_center(request, center_id):
             ).update(status=CenterMembership.STATUS_REJECTED, approved_by=request.user)
             from notifications.services import send_center_decision_notification
             send_center_decision_notification(center.owner, center, approved=False)
+    AuditLog.log(request, 'center_reject', target=center, extra={
+        'center_name': center.name,
+        'owner_id': center.owner_id,
+    })
     return Response(AdminEducationCenterSerializer(center, context={'request': request}).data)
 
 
