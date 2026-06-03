@@ -13,6 +13,12 @@ globalThis.ReactDOM = { ...ReactDOMClient, createPortal };
 globalThis.OlympyApi = OlympyApi;
 globalThis.DOMPurify = DOMPurify;
 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
+
 const moduleScope = {};
 
 // shared.jsx
@@ -705,6 +711,11 @@ const useApiData = (fetcher, deps = []) => {
   const [error, setError] = React.useState(null);
   const [tick, setTick] = React.useState(0);
   const reload = React.useCallback(() => setTick(t => t + 1), []);
+  // Optimistic UI uchun: serverga so'rov yubormasdan, mahalliy data'ni darhol
+  // yangilash imkonini beradi (xato bo'lsa avvalgi data'ga qaytarish mumkin).
+  const mutate = React.useCallback((updater) => {
+    setData(prev => (typeof updater === 'function' ? updater(prev) : updater));
+  }, []);
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -716,7 +727,7 @@ const useApiData = (fetcher, deps = []) => {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick]);
-  return { data, loading, error, reload };
+  return { data, loading, error, reload, mutate };
 };
 
 // Export all
@@ -15608,12 +15619,23 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const backendCenterId = center?.backendId;
     if (!backendCenterId) { showToast('Tashkilot ID topilmadi'); return; }
     const next = !center.isPremium;
+    // Optimistic: ro'yxat darhol yangilanadi (xom backend data'da is_premium),
+    // xato bo'lsa avvalgi holatga qaytaramiz.
+    apiCentersRes.mutate(prev => Array.isArray(prev)
+      ? prev.map(c => (c?.id === backendCenterId ? { ...c, is_premium: next } : c))
+      : prev);
     OlympyApi.updateCenter(backendCenterId, { is_premium: next }, OlympyApi.getToken())
       .then(() => {
         showToast(next ? 'Premium berildi' : 'Premium bekor qilindi');
         apiCentersRes.reload();
       })
-      .catch(err => { console.warn('togglePremium failed:', err); showToast(OlympyApi.toUserMessage(err)); });
+      .catch(err => {
+        console.warn('togglePremium failed:', err);
+        apiCentersRes.mutate(prev => Array.isArray(prev)
+          ? prev.map(c => (c?.id === backendCenterId ? { ...c, is_premium: center.isPremium } : c))
+          : prev);
+        showToast(OlympyApi.toUserMessage(err));
+      });
   };
 
   const approveCenterReq = (req) => {
@@ -17473,9 +17495,15 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const toggleShopActive = (product) => {
     if (!isApi || !ownerCenterId) return;
-    OlympyApi.updateCenterShopProduct(product.id, { is_active: !product.is_active }, OlympyApi.getToken(), ownerCenterId)
+    const next = !product.is_active;
+    // Optimistic: UI darhol yangilanadi, xato bo'lsa eski holatga qaytadi.
+    setShopProducts(prev => prev.map(p => (p.id === product.id ? { ...p, is_active: next } : p)));
+    OlympyApi.updateCenterShopProduct(product.id, { is_active: next }, OlympyApi.getToken(), ownerCenterId)
       .then(() => loadShopProducts())
-      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'zgartirib bo'lmadi"));
+      .catch(err => {
+        setShopProducts(prev => prev.map(p => (p.id === product.id ? { ...p, is_active: product.is_active } : p)));
+        showToast(OlympyApi.toUserMessage?.(err) || "O'zgartirib bo'lmadi");
+      });
   };
 
   const openRoleModal = (row) => {
