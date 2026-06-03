@@ -145,6 +145,9 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [studentsError, setStudentsError] = React.useState('');
   const [studentStatusFilter, setStudentStatusFilter] = React.useState('all');
   const [studentSearch, setStudentSearch] = React.useState('');
+  // Debounce: o'quvchilar ro'yxati katta — har bosishda emas, foydalanuvchi
+  // to'xtaganidan keyin filtrlaymiz.
+  const debouncedStudentSearch = useDebounce(studentSearch, 300);
   const [studentActionId, setStudentActionId] = React.useState(null);
   // Guruh tegi tahrirlash holati: { membershipId, value }.
   const [groupTagEdit, setGroupTagEdit] = React.useState(null);
@@ -154,6 +157,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [proctoringLoading, setProctoringLoading] = React.useState(false);
   const [proctoringError, setProctoringError] = React.useState('');
   const [proctoringSearch, setProctoringSearch] = React.useState('');
+  const debouncedProctoringSearch = useDebounce(proctoringSearch, 300);
   const [liveOlympiadId, setLiveOlympiadId] = React.useState(null);
 
   // Savol banki (9-funksiya) holatlari.
@@ -1658,7 +1662,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       groupTag: m.group_tag || '',
       isPremium: !!(m.user?.is_premium ?? m.user?.isPremium),
     }));
-    const query = (studentSearch || '').trim().toLowerCase();
+    const query = (debouncedStudentSearch || '').trim().toLowerCase();
     const filteredStudents = query
       ? studentRows.filter(s =>
           String(s.name).toLowerCase().includes(query) ||
@@ -1927,7 +1931,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const renderProctoring = () => {
     const activeOlym = centerOlympiads.find(o => String(o.id) === String(liveOlympiadId));
-    const searchQuery = (proctoringSearch || '').trim().toLowerCase();
+    const searchQuery = (debouncedProctoringSearch || '').trim().toLowerCase();
     
     const filteredProctoring = searchQuery
       ? proctoringData.filter(p => {

@@ -14,6 +14,9 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // 4KB dan kichik rasm/asset'lar base64 inline bo'ladi — qo'shimcha HTTP
+    // so'rovlarsiz yuklanadi. Kattaroqlari odatdagidek alohida fayl bo'ladi.
+    assetsInlineLimit: 4096,
     // Keng brauzer qamrovi: es2015 target eski mobil brauzerlarni
     // (Telegram WebView ichidagi qadimiy WebView'lar) ham qo'llab-quvvatlaydi.
     target: 'es2015',

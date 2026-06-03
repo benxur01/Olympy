@@ -197,42 +197,52 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
           <div className="col-span-1 text-right">Vaqt</div>
           <div className="col-span-1"></div>
         </div>
-        {rest.map((p, i) => (
-          <div key={p.key || p.rank} className="olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5">
-            <div className="md:col-span-1 flex-shrink-0">
-              <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
-                {p.rank}
+        {(() => {
+          // Reyting qatori — virtual scroll va oddiy map o'rtasida bir xil JSX.
+          const renderRow = (p) => (
+            <div key={p.key || p.rank} className="olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5">
+              <div className="md:col-span-1 flex-shrink-0">
+                <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
+                  {p.rank}
+                </div>
+              </div>
+              <div className="md:col-span-3 flex-1 flex items-center gap-2 min-w-0">
+                <Avatar name={p.name} size={32} premium={!!p.isPremium} />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-white truncate">{p.isPremium && <span title="Premium o'quvchi">⭐ </span>}{p.name}</div>
+                  <div className="text-xs text-white/30 truncate md:hidden">{p.center}</div>
+                </div>
+              </div>
+              <div className="col-span-3 hidden md:flex items-center">
+                <span className="text-sm text-white/50 truncate">{p.center}</span>
+              </div>
+              <div className="col-span-2 hidden md:block"><SubjectBadge subject={p.subject} /></div>
+              <div className="md:col-span-1 text-right flex-shrink-0">
+                <span className={`text-sm font-black ${p.score>=90?'text-emerald-400':p.score>=75?'text-indigo-400':'text-amber-400'}`}>{p.score}</span>
+              </div>
+              <div className="md:col-span-1 text-right text-xs text-white/30 font-mono flex-shrink-0">{p.time}</div>
+              <div className="md:col-span-1 text-right flex-shrink-0">
+                {/* Avval bu tugma faqat dekorativ edi — hech narsa qilmasdi.
+                    Endi natijani Results sahifasiga olib o'tadi (attemptId
+                    bo'lgan qatorlar uchun). */}
+                <button
+                  onClick={() => p.attemptId && onNavigate && onNavigate('results', { attemptId: p.attemptId })}
+                  disabled={!p.attemptId}
+                  className="text-white/30 hover:text-indigo-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  title="Natijani ko'rish">
+                  <Icon name="eye" size={14} />
+                </button>
               </div>
             </div>
-            <div className="md:col-span-3 flex-1 flex items-center gap-2 min-w-0">
-              <Avatar name={p.name} size={32} premium={!!p.isPremium} />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-white truncate">{p.isPremium && <span title="Premium o'quvchi">⭐ </span>}{p.name}</div>
-                <div className="text-xs text-white/30 truncate md:hidden">{p.center}</div>
-              </div>
-            </div>
-            <div className="col-span-3 hidden md:flex items-center">
-              <span className="text-sm text-white/50 truncate">{p.center}</span>
-            </div>
-            <div className="col-span-2 hidden md:block"><SubjectBadge subject={p.subject} /></div>
-            <div className="md:col-span-1 text-right flex-shrink-0">
-              <span className={`text-sm font-black ${p.score>=90?'text-emerald-400':p.score>=75?'text-indigo-400':'text-amber-400'}`}>{p.score}</span>
-            </div>
-            <div className="md:col-span-1 text-right text-xs text-white/30 font-mono flex-shrink-0">{p.time}</div>
-            <div className="md:col-span-1 text-right flex-shrink-0">
-              {/* Avval bu tugma faqat dekorativ edi — hech narsa qilmasdi.
-                  Endi natijani Results sahifasiga olib o'tadi (attemptId
-                  bo'lgan qatorlar uchun). */}
-              <button
-                onClick={() => p.attemptId && onNavigate && onNavigate('results', { attemptId: p.attemptId })}
-                disabled={!p.attemptId}
-                className="text-white/30 hover:text-indigo-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                title="Natijani ko'rish">
-                <Icon name="eye" size={14} />
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+          // Ro'yxat juda uzun bo'lsa (100+ qator) virtual scroll bilan
+          // ko'rsatamiz — faqat ekrandagi qatorlar DOM'da bo'ladi. Aks holda
+          // oddiy .map() (qisqa ro'yxatlarda virtualizatsiya keraksiz).
+          if (rest.length > 100) {
+            return <VirtualList items={rest} itemHeight={68} containerHeight={640} renderItem={renderRow} />;
+          }
+          return rest.map(renderRow);
+        })()}
       </div>
       </>
       )}
@@ -263,32 +273,39 @@ const ClassmatesLeaderboard = () => {
         <div className="col-span-3 text-right">O'rtacha ball</div>
         <div className="col-span-2 text-right">Streak</div>
       </div>
-      {rows.map(p => (
-        <div
-          key={p.user_id}
-          className={`olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5 ${p.is_me ? 'bg-indigo-500/15 border-l-2 border-indigo-400' : ''}`}
-        >
-          <div className="md:col-span-1 flex-shrink-0">
-            <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
-              {p.rank}
-            </div>
-          </div>
-          <div className="md:col-span-6 flex-1 flex items-center gap-2 min-w-0">
-            <Avatar name={p.full_name} size={32} />
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium text-white truncate">
-                {p.full_name}{p.is_me && <span className="text-indigo-300"> (siz)</span>}
+      {(() => {
+        const renderRow = (p) => (
+          <div
+            key={p.user_id}
+            className={`olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5 ${p.is_me ? 'bg-indigo-500/15 border-l-2 border-indigo-400' : ''}`}
+          >
+            <div className="md:col-span-1 flex-shrink-0">
+              <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
+                {p.rank}
               </div>
             </div>
+            <div className="md:col-span-6 flex-1 flex items-center gap-2 min-w-0">
+              <Avatar name={p.full_name} size={32} />
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-white truncate">
+                  {p.full_name}{p.is_me && <span className="text-indigo-300"> (siz)</span>}
+                </div>
+              </div>
+            </div>
+            <div className="md:col-span-3 text-right flex-shrink-0">
+              <span className={`text-sm font-black ${p.avg_score >= 90 ? 'text-emerald-400' : p.avg_score >= 75 ? 'text-indigo-400' : 'text-amber-400'}`}>{p.avg_score}</span>
+            </div>
+            <div className="md:col-span-2 text-right text-xs text-orange-400 font-semibold flex-shrink-0">
+              {p.streak ? `🔥 ${p.streak}` : '—'}
+            </div>
           </div>
-          <div className="md:col-span-3 text-right flex-shrink-0">
-            <span className={`text-sm font-black ${p.avg_score >= 90 ? 'text-emerald-400' : p.avg_score >= 75 ? 'text-indigo-400' : 'text-amber-400'}`}>{p.avg_score}</span>
-          </div>
-          <div className="md:col-span-2 text-right text-xs text-orange-400 font-semibold flex-shrink-0">
-            {p.streak ? `🔥 ${p.streak}` : '—'}
-          </div>
-        </div>
-      ))}
+        );
+        // 100+ sinfdosh bo'lsa virtual scroll; aks holda oddiy map.
+        if (rows.length > 100) {
+          return <VirtualList items={rows} itemHeight={68} containerHeight={640} renderItem={renderRow} />;
+        }
+        return rows.map(renderRow);
+      })()}
     </div>
   );
 };
