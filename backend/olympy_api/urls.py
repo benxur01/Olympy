@@ -44,6 +44,10 @@ urlpatterns = [
     path('api/notifications/', include('notifications.urls')),
     path('api/subjects/', subjects_list_create, name='subjects-list-create'),
     path('api/billing/', include('billing.urls')),
+    # A/B testing event tracking (Landing hero CTA). Frontend `/api/ab/...`
+    # manziliga yuboradi, shuning uchun to'g'ridan-to'g'ri shu yerda mount.
+    path('api/ab/track/', account_views.ab_track_event, name='ab-track-event'),
+    path('api/ab/results/', account_views.ab_results, name='ab-results'),
 
 ]
 

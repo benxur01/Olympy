@@ -59,6 +59,7 @@ const Icon = ({ name, size = 18, className = '' }) => {
 
 const BRAND_ASSET_BASE = window.location.protocol === 'file:' ? 'public/brand' : '/brand';
 const BRAND_LOGO_SRC = `${BRAND_ASSET_BASE}/olympy-brand.png`;
+const BRAND_LOGO_SRC_WEBP = `${BRAND_ASSET_BASE}/olympy-brand.webp`;
 
 const BrandLogo = ({ compact = false, size = 'md', className = '' }) => {
   const sizes = {
@@ -91,7 +92,10 @@ const BrandLogo = ({ compact = false, size = 'md', className = '' }) => {
       };
   return (
     <span className={`inline-flex items-center flex-shrink-0 ${className}`}>
-      <img src={BRAND_LOGO_SRC} alt="Olympy" className="block" style={style} />
+      <picture>
+        <source srcSet={BRAND_LOGO_SRC_WEBP} type="image/webp" />
+        <img src={BRAND_LOGO_SRC} alt="Olympy" className="block" style={style} />
+      </picture>
     </span>
   );
 };

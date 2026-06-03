@@ -7,7 +7,8 @@
     "predev": "node scripts/generate-vite-entry.mjs",
     "dev": "vite --host 127.0.0.1",
     "prebuild": "node scripts/generate-vite-entry.mjs",
-    "build": "vite build"
+    "build": "vite build",
+    "convert-webp": "node scripts/convert-webp.mjs"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
@@ -29,6 +30,7 @@
   "devDependencies": {
     "autoprefixer": "^10.5.0",
     "postcss": "^8.5.14",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.19",
     "terser": "^5.48.0"
   }

@@ -2139,3 +2139,69 @@ def totp_disable(request):
     return Response({'detail': "2FA o'chirildi"})
 
 
+# ─── A/B testing event tracking ──────────────────────────────────────────────
+# Landing page hero CTA uchun oddiy feature-flag asosidagi A/B test. Hisoblash
+# Redis (yoki LocMem fallback) cache'da olib boriladi — bu taxminiy analitika,
+# qat'iy hisoblashga muhtoj emas. Kalit hech qachon o'chmasin uchun timeout
+# berilmaydi (None = cheksiz). Faqat ma'lum test/variant/event qiymatlari qabul
+# qilinadi — bu cache kalit maydonini cheksiz "kirlanish"dan himoya qiladi.
+AB_ALLOWED_TESTS = {'hero_cta'}
+AB_ALLOWED_VARIANTS = {'A', 'B'}
+AB_ALLOWED_EVENTS = {'view', 'click', 'register'}
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def ab_track_event(request):
+    """POST /api/ab/track/ — A/B test event'larini qayd etish."""
+    test_name = str(request.data.get('test', '')).strip()
+    variant = str(request.data.get('variant', '')).strip()
+    event = str(request.data.get('event', '')).strip()  # 'view', 'click', 'register'
+
+    if not all([test_name, variant, event]):
+        return Response({'ok': False}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Faqat oldindan belgilangan qiymatlarni qabul qilamiz — aks holda
+    # ixtiyoriy foydalanuvchi kiritmasi cache'ni to'ldirib yuborishi mumkin.
+    if (
+        test_name not in AB_ALLOWED_TESTS
+        or variant not in AB_ALLOWED_VARIANTS
+        or event not in AB_ALLOWED_EVENTS
+    ):
+        return Response({'ok': False}, status=status.HTTP_400_BAD_REQUEST)
+
+    from django.core.cache import cache
+    key = f"ab:{test_name}:{variant}:{event}"
+    # cache.incr mavjud bo'lmagan kalitda ValueError beradi (Redis ham, LocMem
+    # ham), shuning uchun avval `add` bilan 0 o'rnatamiz (faqat kalit yo'q bo'lsa
+    # ishlaydi), keyin atomik incr qilamiz.
+    cache.add(key, 0, timeout=None)
+    try:
+        cache.incr(key)
+    except ValueError:
+        # Nodir race holatda kalit incr'gacha yo'qolsa — qaytadan o'rnatamiz.
+        cache.set(key, 1, timeout=None)
+
+    return Response({'ok': True})
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def ab_results(request):
+    """GET /api/ab/results/ — A/B test natijalarini ko'rish (faqat admin)."""
+    if not request.user.is_staff:
+        return Response({'detail': "Ruxsat yo'q"}, status=status.HTTP_403_FORBIDDEN)
+
+    from django.core.cache import cache
+    results = {}
+    for test in AB_ALLOWED_TESTS:
+        results[test] = {}
+        for v in AB_ALLOWED_VARIANTS:
+            results[test][v] = {}
+            for e in AB_ALLOWED_EVENTS:
+                key = f"ab:{test}:{v}:{e}"
+                results[test][v][e] = cache.get(key, 0)
+
+    return Response(results)
+
+
