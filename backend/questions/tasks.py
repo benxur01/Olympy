@@ -335,3 +335,33 @@ def _finalize_results(task_id, batch_results, test_cases_meta, submission_id=Non
             'status': 'FAILED',
             'error': str(e)
         }, timeout=300)
+
+
+@shared_task(bind=True, max_retries=3)
+def update_question_embedding(self, question_id):
+    """RAG: savol matnini vektorga aylantirib `embedding` ustuniga yozadi.
+
+    Raw SQL bilan yoziladi (`.save()` emas) — shu sababli `post_save` signal
+    qayta ishga tushmaydi va cheksiz tsikl bo'lmaydi. Embedding olib bo'lmasa
+    (kalit yo'q yoki API xato) jim o'tadi. pgvector ulanmagan muhitda UPDATE
+    xato bersa retry qilinadi, lekin uch urinishdan keyin to'xtaydi.
+    """
+    from django.db import connection
+    from .embeddings import get_embedding
+
+    try:
+        question = Question.objects.filter(pk=question_id).only('id', 'text').first()
+        if not question:
+            return
+        embedding = get_embedding(question.text)
+        if not embedding:
+            return
+        vector_str = '[' + ','.join(str(x) for x in embedding) + ']'
+        with connection.cursor() as cursor:
+            cursor.execute(
+                'UPDATE questions_question SET embedding = %s::vector WHERE id = %s',
+                [vector_str, question_id],
+            )
+    except Exception as exc:
+        logger.warning('Embedding yangilashda xato question=%s: %s', question_id, exc)
+        raise self.retry(exc=exc, countdown=60)

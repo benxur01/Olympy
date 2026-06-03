@@ -91,7 +91,45 @@ def _question_type_label(question_type):
     return TYPE_MULTIPLE_CHOICE
 
 
-def _prompt(subject, topic, count, difficulty, question_type):
+def _rag_examples_block(subject, topic):
+    """RAG: DB'dagi o'xshash savollarni "namuna" sifatida prompt'ga qo'shadi.
+
+    pgvector ulanmagan, embedding olib bo'lmagan yoki mos savol topilmasa —
+    bo'sh satr qaytaradi va prompt o'zgarmaydi. Xato hech qachon savol
+    yaratishni buzmaydi.
+    """
+    try:
+        from .embeddings import find_similar_questions
+        similar = find_similar_questions(subject, topic, limit=15)
+    except Exception:
+        return ''
+    if not similar:
+        return ''
+    lines = []
+    for q in similar[:10]:
+        text = str(q.get('text') or '').strip()
+        if not text:
+            continue
+        options = q.get('options') or []
+        idx = q.get('correct_answer')
+        correct = ''
+        if isinstance(idx, int) and 0 <= idx < len(options):
+            correct = str(options[idx]).strip()
+        if correct:
+            lines.append(f"- {text} (To'g'ri javob: {correct})")
+        else:
+            lines.append(f'- {text}')
+    if not lines:
+        return ''
+    examples_text = '\n'.join(lines)
+    return (
+        '\n\nQuyidagi savollar shu fandan avval kiritilgan — uslub va '
+        'darajasiga e\'tibor ber, lekin bir xil savol yaratma:\n'
+        f'{examples_text}'
+    )
+
+
+def _prompt(subject, topic, count, difficulty, question_type, use_rag=False):
     label = _question_type_label(question_type)
     difficulty_label = DIFFICULTY_LABELS.get(difficulty, difficulty or "O'rta")
     if label == TYPE_TRUE_FALSE:
@@ -111,6 +149,7 @@ def _prompt(subject, topic, count, difficulty, question_type):
                 "testlarni variant orqali tekshiradi; shuning uchun qisqa javobga "
                 "mos mazmunni 4 variantli testga aylantir."
             )
+    rag_block = _rag_examples_block(subject, topic) if use_rag else ''
     return (
         "O'zbek tilida ta'lim tashkiloti olimpiadasi uchun original test savollarini tuz.\n"
         f"Fan: {subject}\n"
@@ -122,6 +161,7 @@ def _prompt(subject, topic, count, difficulty, question_type):
         "Savollar aniq, tekshiriladigan va yoshga mos bo'lsin. "
         "'Hammasi to'g'ri', 'yuqoridagilarning barchasi' kabi noaniq variantlardan foydalanma. "
         "Variantlarni takrorlama. Natijani faqat JSON schema bo'yicha qaytar."
+        f"{rag_block}"
     )
 
 
@@ -237,7 +277,7 @@ def _build_questions_from_parsed(parsed, count, subject, difficulty, question_ty
     return questions
 
 
-def _generate_via_openai(subject, topic, count, difficulty, question_type):
+def _generate_via_openai(subject, topic, count, difficulty, question_type, use_rag=False):
     api_keys = _api_keys()
     if not api_keys:
         return {
@@ -251,7 +291,7 @@ def _generate_via_openai(subject, topic, count, difficulty, question_type):
         'model': getattr(settings, 'AI_QUESTION_MODEL', 'gpt-4o-mini'),
         'messages': [{
             'role': 'user',
-            'content': _prompt(subject, topic, count, difficulty, question_type),
+            'content': _prompt(subject, topic, count, difficulty, question_type, use_rag),
         }],
         'response_format': {
             'type': 'json_schema',
@@ -327,7 +367,7 @@ def _generate_via_openai(subject, topic, count, difficulty, question_type):
     }
 
 
-def _generate_via_gemini(subject, topic, count, difficulty, question_type):
+def _generate_via_gemini(subject, topic, count, difficulty, question_type, use_rag=False):
     keys = _gemini_api_keys()
     if not keys:
         return {
@@ -337,7 +377,7 @@ def _generate_via_gemini(subject, topic, count, difficulty, question_type):
             'questions': [],
         }
 
-    prompt = _prompt(subject, topic, count, difficulty, question_type)
+    prompt = _prompt(subject, topic, count, difficulty, question_type, use_rag)
     max_output_tokens = getattr(settings, 'AI_QUESTION_GEMINI_MAX_OUTPUT_TOKENS', 8192)
     try:
         max_output_tokens = int(max_output_tokens)
@@ -421,7 +461,7 @@ def _generate_via_gemini(subject, topic, count, difficulty, question_type):
     }
 
 
-def generate_questions(subject, topic, count, difficulty='medium', question_type=TYPE_MULTIPLE_CHOICE):
+def generate_questions(subject, topic, count, difficulty='medium', question_type=TYPE_MULTIPLE_CHOICE, use_rag=True):
     max_count = getattr(settings, 'AI_QUESTION_MAX_COUNT', 30)
     try:
         count = int(count)
@@ -452,7 +492,7 @@ def generate_questions(subject, topic, count, difficulty='medium', question_type
 
     openai_result = None
     if openai_keys:
-        openai_result = _generate_via_openai(subject, topic, count, difficulty, question_type)
+        openai_result = _generate_via_openai(subject, topic, count, difficulty, question_type, use_rag)
         if openai_result.get('ok'):
             return openai_result
         logger.info(
@@ -461,7 +501,7 @@ def generate_questions(subject, topic, count, difficulty='medium', question_type
         )
 
     if gemini_keys:
-        gemini_result = _generate_via_gemini(subject, topic, count, difficulty, question_type)
+        gemini_result = _generate_via_gemini(subject, topic, count, difficulty, question_type, use_rag)
         if gemini_result.get('ok'):
             return gemini_result
         if openai_result is None:
