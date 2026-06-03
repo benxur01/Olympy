@@ -78,6 +78,9 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'django_celery_beat',
+    # Anymail (Mailgun email backend) — faqat MAILGUN_API_KEY o'rnatilganda
+    # qo'shamiz. Aks holda paket o'rnatilmagan lokal muhitda startup buzilmaydi.
+    *(['anymail'] if os.environ.get('MAILGUN_API_KEY') else []),
     # Local
     'accounts',
     'centers',
@@ -758,4 +761,23 @@ if SENTRY_DSN:
         profiles_sample_rate=0.05,
         send_default_pii=False,
     )
+
+# ─── Email sozlamalari ────────────────────────────────────────────────────────
+# Default — console backend (lokal development'da email'ni terminalga chiqaradi).
+# Production'da MAILGUN_API_KEY o'rnatilsa avtomatik Mailgun backend yoqiladi.
+EMAIL_BACKEND = os.environ.get(
+    'EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend',
+)
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Olympy <noreply@prolymp.uz>')
+SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+# Mailgun (anymail) — MAILGUN_API_KEY mavjud bo'lsa yoqiladi. anymail
+# INSTALLED_APPS'ga ham shu shart bilan qo'shilgan.
+if os.environ.get('MAILGUN_API_KEY'):
+    EMAIL_BACKEND = 'anymail.backends.mailgun.EmailBackend'
+    ANYMAIL = {
+        'MAILGUN_API_KEY': os.environ.get('MAILGUN_API_KEY', ''),
+        'MAILGUN_SENDER_DOMAIN': os.environ.get('MAILGUN_SENDER_DOMAIN', 'prolymp.uz'),
+    }
 

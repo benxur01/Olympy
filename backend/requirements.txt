@@ -9,6 +9,8 @@ Pillow==12.2.0
 pypdf==6.12.2
 pdfplumber==0.11.4
 openpyxl==3.1.5
+# Excel/PDF eksport (markaz a'zolari, olimpiada natijalari).
+reportlab==4.4.1
 celery==5.3.6
 redis==5.0.1
 django-celery-beat==2.8.1
@@ -23,3 +25,6 @@ cloudinary==1.44.2
 django-cloudinary-storage==0.3.0
 # Sentry — xato monitoring (faqat SENTRY_DSN env o'rnatilganda yoqiladi).
 sentry-sdk[django]==2.20.0
+# Email yuborish — Mailgun backend (faqat MAILGUN_API_KEY o'rnatilganda
+# yoqiladi, aks holda console/SMTP backend ishlatiladi).
+django-anymail[mailgun]==12.0

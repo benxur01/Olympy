@@ -201,6 +201,26 @@ def _do_finish_olympiad(olympiad):
         # yuboriladi.
         if locked.center_id:
             _queue_olympiad_summary(locked.pk)
+        # Ishtirokchilarga natija email'ini transaction commit'dan keyin
+        # yuboramiz — olimpiada har yakunlanganda BIR marta (yuqoridagi status
+        # tekshiruvi takrorlanishni oldini oladi). Email maydoni bo'lmasa amalda
+        # no-op.
+        _queue_olympiad_results_email(locked.pk)
+
+
+def _queue_olympiad_results_email(olympiad_id):
+    """Olimpiada natija email task'ini transaction commit'dan keyin navbatga qo'yadi."""
+    def _enqueue():
+        try:
+            from .tasks import send_olympiad_results_email_task
+            send_olympiad_results_email_task.delay(olympiad_id)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'failed to queue olympiad results email task olympiad=%s', olympiad_id,
+            )
+
+    transaction.on_commit(_enqueue)
 
 
 def _queue_olympiad_summary(olympiad_id):
