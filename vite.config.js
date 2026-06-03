@@ -17,6 +17,24 @@ export default defineConfig({
     // Keng brauzer qamrovi: es2015 target eski mobil brauzerlarni
     // (Telegram WebView ichidagi qadimiy WebView'lar) ham qo'llab-quvvatlaydi.
     target: 'es2015',
+    // Minifikatsiya: esbuild o'rniga terser. esbuild tez, lekin terser
+    // kuchliroq siqadi (o'lik kod, ifoda soddalashtirish, takror nomlar).
+    // Bizning asosiy bundle ulkan (yagona global-scope ilova kodi), shuning
+    // uchun terser'ning qo'shimcha siqishi sezilarli foyda beradi.
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        // Productionda debug chiqishini olib tashlaymiz. Loyihada faqat
+        // console.warn ishlatilgan (debug ogohlantirishlari, foydalanuvchiga
+        // ko'rinmaydi) — ularni pure_funcs orqali o'lik kod sifatida
+        // tozalaymiz. console.error ataylab QOLDIRILADI (haqiqiy xatolarni
+        // log qilish uchun), shu sababli drop_console: true ishlatilmadi.
+        drop_debugger: true,
+        pure_funcs: ['console.log', 'console.info', 'console.debug', 'console.warn'],
+      },
+    },
+    // CSS'ni ham siqamiz.
+    cssMinify: true,
     // Har bir lazy chunk uchun CSS'ni alohida fayllarga ajratamiz — faqat
     // kerakli sahifa CSS'i yuklanadi. (Vite default'i ham true, aniqlik
     // uchun ochiq yozildi.)
