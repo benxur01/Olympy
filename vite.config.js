@@ -14,6 +14,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    // Keng brauzer qamrovi: es2015 target eski mobil brauzerlarni
+    // (Telegram WebView ichidagi qadimiy WebView'lar) ham qo'llab-quvvatlaydi.
+    target: 'es2015',
+    // Har bir lazy chunk uchun CSS'ni alohida fayllarga ajratamiz — faqat
+    // kerakli sahifa CSS'i yuklanadi. (Vite default'i ham true, aniqlik
+    // uchun ochiq yozildi.)
+    cssCodeSplit: true,
     // Asosiy bundle hajmini kamaytirish uchun katta `node_modules`
     // kutubxonalarni alohida chunklarga ajratamiz. Bu chunklar kamdan-kam
     // o'zgaradi, shuning uchun brauzer ularni uzoq muddat keshlaydi va

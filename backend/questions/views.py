@@ -85,6 +85,18 @@ def questions_list_create(request):
                 status=http_status.HTTP_403_FORBIDDEN,
             )
         qs = Question.objects.filter(center_id=center_id)
+        # Pagination: bitta markazda yuzlab savol to'planishi mumkin — butun
+        # ro'yxatni bitta response'da uzatish xotira/trafik jihatdan og'ir.
+        # olympiads_list_create kabi LargePageNumberPagination ishlatamiz:
+        # frontend `?page_size=200` yuboradi (api.js getQuestions), shu sababli
+        # bitta sahifada hammasi keladi va round-trip ko'paymaydi.
+        from olympy_api.pagination import LargePageNumberPagination
+        paginator = LargePageNumberPagination()
+        page = paginator.paginate_queryset(qs, request)
+        if page is not None:
+            return paginator.get_paginated_response(
+                QuestionSerializer(page, many=True, context={'request': request}).data
+            )
         return Response(QuestionSerializer(qs, many=True, context={'request': request}).data)
 
     serializer = QuestionSerializer(data=request.data, context={'request': request})
