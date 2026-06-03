@@ -56,11 +56,9 @@ class UserSerializer(serializers.ModelSerializer):
         return bool(obj.telegram_chat_id)
 
     def get_avatar_url(self, obj):
-        if not obj.avatar:
-            return ''
-        url = obj.avatar.url
+        from .utils import avatar_url_for
         request = self.context.get('request') if hasattr(self, 'context') else None
-        return request.build_absolute_uri(url) if request else url
+        return avatar_url_for(obj, request)
 
     def get_roles_detail(self, obj):
         from centers.models import CenterMembership

@@ -183,6 +183,18 @@ else:
         }
     }
 
+# Persistent DB connections: har HTTP so'rovda yangi PostgreSQL ulanish ochish
+# (TLS handshake + auth) sekin. CONN_MAX_AGE (soniya) ulanishni qayta
+# ishlatishga ruxsat beradi va bog'lanish overhead'ini kamaytiradi.
+# DIQQAT: Supabase transaction pooler (port 6543) har so'rovdan keyin
+# ulanishni qaytarib oladi — bunda persistent connection mos kelmaydi,
+# shuning uchun pooler aniqlangan bo'lsa CONN_MAX_AGE=0 qoldiriladi.
+# SQLite uchun ham ahamiyatsiz, lekin zararsiz.
+_conn_max_age = int(os.environ.get('CONN_MAX_AGE', 60))
+if DATABASE_URL and locals().get('is_supabase_pooler'):
+    _conn_max_age = 0
+DATABASES['default']['CONN_MAX_AGE'] = _conn_max_age
+
 AUTH_USER_MODEL = 'accounts.User'
 
 # Parol kuchaytirildi: minimal uzunlik 6 → 8. Mavjud foydalanuvchilarning

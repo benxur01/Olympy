@@ -537,6 +537,15 @@ def submit_attempt(request):
                 'achievement check failed for attempt=%s', attempt.id,
             )
 
+        # Yangi attempt qo'shildi — bashorat (predictions) cache'i endi
+        # eskirgan (o'rtacha ball va fan kesimi o'zgardi). Keyingi
+        # /me/predictions/ so'rovida qayta hisoblanishi uchun bekor qilamiz.
+        try:
+            from accounts.utils import invalidate_user_predictions_cache
+            invalidate_user_predictions_cache(request.user.id)
+        except Exception:
+            pass
+
         # O4: Premium o'quvchi uchun avtomatik AI tahlil. Submit latency'ni
         # bloklamaslik uchun: shu yerda pending yozuv yaratamiz, AI call'ni
         # alohida daemon thread'da bajaramiz (Gemini 45s gacha kutishi
@@ -1429,12 +1438,14 @@ def leaderboard(request):
     # `time_spent`, `submitted_at`) bo'yicha `i+1` o'rin beriladi. Bu
     # filter (masalan, faqat bitta olimpiada) uchun ham to'g'ri natija
     # qaytaradi, chunki tartiblash querysetda allaqachon qo'llanilgan.
+    from accounts.utils import avatar_url_for
     entries = [
         {
             'rank': offset + i + 1,
             'attempt_id': a.id,
             'user_id': a.user_id,
             'name': a.user.full_name,
+            'avatar_url': avatar_url_for(a.user, request),
             'is_premium': a.user.is_premium,
             'center': a.olympiad.center.name,
             'organization_type': a.olympiad.center.organization_type,
@@ -1630,6 +1641,7 @@ def olympiad_live_proctoring(request, olympiad_id):
     }
     ping_map = cache.get_many(list(ping_keys.values()))
 
+    from accounts.utils import avatar_url_for
     now = timezone.now()
     results = []
 
@@ -1669,6 +1681,7 @@ def olympiad_live_proctoring(request, olympiad_id):
         results.append({
             'student_id': user.id,
             'student_name': user.full_name or user.phone or 'O\'quvchi',
+            'avatar_url': avatar_url_for(user, request),
             'phone': user.normalized_phone or user.phone or '—',
             'started_at': s.started_at.isoformat(),
             'status': status,
@@ -1756,14 +1769,22 @@ def explain_all_mistakes(request):
     from questions.ai_generation import explain_mistakes_ai
     from .models import TestAttempt
 
-    attempts = TestAttempt.objects.filter(user=request.user, disqualified=False)
-
     # Avval har bir savol uchun (birinchi ko'rilgan) tanlangan javobni yig'amiz,
     # tartibni saqlagan holda (dict insertion order). Keyin barcha savollarni
-    # bitta so'rov bilan olamiz (N+1'ni oldini olish uchun).
+    # bitta so'rov bilan olamiz (N+1'ni oldini olish uchun). Faqat `answers`
+    # JSON maydonini .values_list(...).iterator() bilan oqimda o'qiymiz —
+    # to'liq TestAttempt obyektlarini xotiraga yuklab, ko'p attempt'li
+    # foydalanuvchida xotirani to'ldirib qo'ymaslik uchun (xuddi
+    # get_mistakes_list dagi kabi).
+    answers_iter = (
+        TestAttempt.objects
+        .filter(user=request.user, disqualified=False)
+        .values_list('answers', flat=True)
+        .iterator()
+    )
     chosen_by_question = {}
-    for a in attempts:
-        answers = a.answers or {}
+    for answers in answers_iter:
+        answers = answers or {}
         for q_id_str, chosen_idx in answers.items():
             try:
                 q_id = int(q_id_str)

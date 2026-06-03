@@ -960,7 +960,6 @@ def center_ratings(request):
 
     centers = list(centers_qs)
     enriched = []
-    centers_to_update = []
     for c in centers:
         row = agg_map.get(c.id)
         if not row or not row.get('total_attempts'):
@@ -973,21 +972,13 @@ def center_ratings(request):
             avg_score = round(row.get('avg_score') or 0, 1)
             total_attempts = row.get('total_attempts') or 0
         # Rating: 0..100 ballni 0..5 reytingga o'tkazamiz, max 5.0.
+        # MUHIM: bu GET endpoint — EducationCenter.rating maydoni BU YERDA
+        # YOZILMAYDI. Avval har so'rovda 1000+ markaz uchun bulk_update
+        # bajarilardi (GET ichida DB write — sekin, lock xavfi, idempotent
+        # emas). Reytingni doimiy saqlash kerak bo'lsa, u alohida triggered
+        # endpoint yoki Celery task orqali yangilanishi kerak. Bu yerda faqat
+        # joriy hisoblangan natija qaytariladi.
         new_rating = round(min(5.0, (avg_score / 20.0)), 1) if avg_score else 0.0
-        # EducationCenter.rating Decimal field — qiymat o'zgargan bo'lsa
-        # update qilamiz (bulk_update keyin).
-        if subject:
-            # subject filterda barcha markazlarning rating'ini ishonchli
-            # yangilab bo'lmaydi (faqat shu fan bo'yicha) — skip qilamiz.
-            pass
-        else:
-            try:
-                from decimal import Decimal
-                if Decimal(str(new_rating)) != Decimal(str(c.rating or 0)):
-                    c.rating = new_rating
-                    centers_to_update.append(c)
-            except Exception:
-                pass
         enriched.append({
             'center_id': c.id,
             'center_name': c.name,
@@ -999,13 +990,6 @@ def center_ratings(request):
             'total_olympiads': olympiads_count_map.get(c.id, 0),
             'rating': new_rating,
         })
-
-    # Bulk update rating maydonini — N+1 query yo'q.
-    if centers_to_update:
-        try:
-            EducationCenter.objects.bulk_update(centers_to_update, ['rating'])
-        except Exception:
-            pass
 
     # Sort: avg_score desc, total_attempts desc (tie-breaker).
     enriched.sort(key=lambda x: (-x['average_score'], -x['total_attempts']))
@@ -1288,16 +1272,18 @@ def top_students(request, center_id):
     )
     rows = list(rows)
     from accounts.models import User
+    from accounts.utils import avatar_url_for
     user_ids = [r['user_id'] for r in rows]
-    name_map = {
-        u.id: (u.full_name or u.normalized_phone or u.phone or '—')
-        for u in User.objects.filter(id__in=user_ids)
-    }
+    users_by_id = {u.id: u for u in User.objects.filter(id__in=user_ids)}
     data = []
     for i, r in enumerate(rows, start=1):
+        u = users_by_id.get(r['user_id'])
+        name = (u.full_name or u.normalized_phone or u.phone or '—') if u else '—'
         data.append({
             'rank': i,
-            'name': name_map.get(r['user_id'], '—'),
+            'user_id': r['user_id'],
+            'name': name,
+            'avatar_url': avatar_url_for(u, request) if u else '',
             'avg_score': round(r['avg_score'] or 0, 1),
             'attempts': r['attempts'] or 0,
         })

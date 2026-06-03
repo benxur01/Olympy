@@ -820,10 +820,15 @@ const LandingPage = ({ onNavigate, user }) => {
         <InteractiveParticles />
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(5,5,8,0.1) 0%, rgba(5,5,8,0.9) 100%)' }} />
 
-        {/* Neon orbs for mesh gradient background */}
-        <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] bg-indigo-600/10 rounded-full filter blur-[110px] pointer-events-none animate-pulse-slow" />
-        <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] bg-purple-600/8 rounded-full filter blur-[130px] pointer-events-none animate-pulse-slow" style={{ animationDelay: '2s' }} />
-        <div className="absolute top-10 right-10 w-[250px] h-[250px] bg-cyan-500/8 rounded-full filter blur-[90px] pointer-events-none animate-pulse-slow" style={{ animationDelay: '4s' }} />
+        {/* Neon orbs for mesh gradient background.
+            Telegram WebView va zaif qurilmalarda og'ir blur (110-130px) +
+            animate-pulse-slow kombinatsiyasi kadrlarni sekinlashtirardi. Blur
+            qiymatlari pasaytirildi (60/60/40px), animatsiya GPU-ga ko'chirish
+            uchun will-change: transform berildi va motion-reduce rejimida
+            animatsiya o'chiriladi. */}
+        <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] bg-indigo-600/10 rounded-full filter blur-[60px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ willChange: 'transform' }} />
+        <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] bg-purple-600/8 rounded-full filter blur-[60px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ animationDelay: '2s', willChange: 'transform' }} />
+        <div className="absolute top-10 right-10 w-[250px] h-[250px] bg-cyan-500/8 rounded-full filter blur-[40px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ animationDelay: '4s', willChange: 'transform' }} />
         
         {/* Floating 3D badges on the right (desktop only) */}
         <div className="hidden lg:block absolute right-16 top-1/4 w-[400px] h-[300px] pointer-events-none z-10 preserve-3d" style={{ perspective: '1000px' }}>

@@ -49,23 +49,13 @@ const _localStore = (() => {
 let _activeAuthStore = _defaultAuthStore;
 const _setActiveStore = (store) => { _activeAuthStore = store || _defaultAuthStore; };
 const _readAuth = (key) => {
-  // Avvalgi sessiyada qaysi store ishlatilganini bilmasligimiz mumkin (masalan,
-  // restore paytida) — shu sababli har ikkalasidan ham qidiramiz.
+  // XAVFSIZLIK: token endi yagona manbadan — aktiv store'dan o'qiladi. Avval
+  // active + local + session uchtasidan qidirilardi (ikki/uch kanal), bu esa
+  // stale qiymat va izchilsizlik manbai edi (bir store'da eski, boshqasida
+  // yangi token qolib ketishi mumkin). Asosiy JWT cookie'da yashaydi —
+  // _readAuth faqat eski refresh oqimi uchun fallback bo'lib qoladi.
   try {
-    const a = _activeAuthStore ? _activeAuthStore.getItem(key) : null;
-    if (a != null) return a;
-  } catch {}
-  try {
-    if (_localStore && _localStore !== _activeAuthStore) {
-      const b = _localStore.getItem(key);
-      if (b != null) return b;
-    }
-  } catch {}
-  try {
-    if (_sessionStore && _sessionStore !== _activeAuthStore) {
-      const c = _sessionStore.getItem(key);
-      if (c != null) return c;
-    }
+    return _activeAuthStore ? _activeAuthStore.getItem(key) : null;
   } catch {}
   return null;
 };

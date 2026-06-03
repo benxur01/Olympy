@@ -37,6 +37,18 @@ from .serializers import (
 from .utils import mask_phone, normalize_phone
 
 
+# Pillow decompression-bomb limitini modul yuklanishida BIR MARTA o'rnatamiz.
+# Avval bu avatar yuklash funksiyasi ichida har chaqiruvda global
+# PilImage.MAX_IMAGE_PIXELS'ga yozilardi — bu thread-safe emas (bir nechta
+# worker thread bir vaqtda global o'zgaruvchiga yozardi). Modul darajasida bir
+# marta o'rnatish yetarli va xavfsiz.
+try:
+    from PIL import Image as _PilImageModule
+    _PilImageModule.MAX_IMAGE_PIXELS = 50 * 1024 * 1024  # 50 MP limit
+except Exception:
+    pass
+
+
 logger = logging.getLogger('accounts.telegram')
 # Xavfsizlik audit loggeri: OTP tekshiruv muvaffaqiyatsizliklari shu yerda
 # yoziladi (LOGGING'dagi 'security' logger). OTP qiymati HECH QACHON loglanmaydi.
@@ -406,34 +418,64 @@ def me(request):
     # barcha aktiv obunalarini select_related('plan') bilan BITTA so'rovda
     # olamiz va expired/active/organization tekshiruvlarini Python ichida
     # bajaramiz. user.save() faqat is_premium haqiqatan o'zgarganda chaqiriladi.
-    from billing.models import UserSubscription
-    from centers.models import EducationCenter
+    #
+    # Caching: bu blok HAR sahifa yuklanishida ishlaydi. Obuna holati kamdan
+    # kam o'zgaradi, shuning uchun "yaqin orada hech narsa muddati o'tmaydi"
+    # signalini 60 soniyaga cache'laymiz. Cache mavjud bo'lsa (va undagi
+    # `recheck_at` hali kelmagan bo'lsa) — UserSubscription so'rovini butunlay
+    # o'tkazib yuboramiz. Cache obuna o'zgarganda (billing webhook, admin
+    # toggle premium) invalidate qilinadi.
+    from django.core.cache import cache
     from django.utils import timezone
+    from .utils import subscription_cache_key
 
     now = timezone.now()
-    active_subs = list(
-        UserSubscription.objects
-        .filter(user=request.user, is_active=True)
-        .select_related('plan')
-    )
-    expired_ids = [s.id for s in active_subs if s.end_date and s.end_date <= now]
-    if expired_ids:
-        UserSubscription.objects.filter(id__in=expired_ids).update(is_active=False)
+    sub_cache_key = subscription_cache_key(request.user.id)
+    sub_cache = cache.get(sub_cache_key)
+    recheck_at = sub_cache.get('recheck_at') if isinstance(sub_cache, dict) else None
+    skip_subscription_sync = bool(recheck_at and recheck_at > now.timestamp())
+
+    if not skip_subscription_sync:
+        from billing.models import UserSubscription
+        from centers.models import EducationCenter
+
+        active_subs = list(
+            UserSubscription.objects
+            .filter(user=request.user, is_active=True)
+            .select_related('plan')
+        )
+        expired_ids = [s.id for s in active_subs if s.end_date and s.end_date <= now]
+        if expired_ids:
+            UserSubscription.objects.filter(id__in=expired_ids).update(is_active=False)
         # Muddati o'tmagan (hali amal qiluvchi) aktiv obunalar.
         still_active = [
             s for s in active_subs
             if s.id not in expired_ids and s.end_date and s.end_date > now
         ]
-        if not still_active and request.user.is_premium:
-            request.user.is_premium = False
-            request.user.save(update_fields=['is_premium'])
+        if expired_ids:
+            if not still_active and request.user.is_premium:
+                request.user.is_premium = False
+                request.user.save(update_fields=['is_premium'])
 
-        has_active_org = any(
-            s.plan and s.plan.plan_type == 'organization'
-            for s in still_active
+            has_active_org = any(
+                s.plan and s.plan.plan_type == 'organization'
+                for s in still_active
+            )
+            if not has_active_org:
+                EducationCenter.objects.filter(owner=request.user).update(is_premium=False)
+
+        # Keyingi tekshiruv vaqtini hisoblaymiz: aktiv obunalar ichidagi eng
+        # yaqin tugash vaqti yoki 60 soniya — qaysi biri kichik bo'lsa. Shunda
+        # obuna aynan muddati tugaganda darhol qayta tekshiriladi, aks holda
+        # 60 soniya so'rovsiz o'tadi.
+        next_expiry_ts = min(
+            (s.end_date.timestamp() for s in still_active if s.end_date),
+            default=None,
         )
-        if not has_active_org:
-            EducationCenter.objects.filter(owner=request.user).update(is_premium=False)
+        recheck_ts = now.timestamp() + 60
+        if next_expiry_ts is not None:
+            recheck_ts = min(recheck_ts, next_expiry_ts)
+        cache.set(sub_cache_key, {'recheck_at': recheck_ts}, 60)
 
     if request.method == 'PATCH':
         serializer = UpdateProfileSerializer(
@@ -566,8 +608,9 @@ def update_my_avatar(request):
     # faqat header'ni tekshiradi, `load()` esa to'liq dekompressiyani urinib,
     # bomb'ni shu yerda ushlab qoladi (DecompressionBombError).
     try:
+        # MAX_IMAGE_PIXELS modul darajasida (fayl boshida) bir marta o'rnatilgan
+        # — bu yerda thread-unsafe global yozuv yo'q.
         from PIL import Image as PilImage
-        PilImage.MAX_IMAGE_PIXELS = 50 * 1024 * 1024  # 50 MP limit
         img = PilImage.open(io.BytesIO(image.read()))
         img.load()
         image.seek(0)
@@ -626,14 +669,30 @@ def admin_users_list(request):
         )
         .order_by('-created_at')
     )
-    # Optional search query: phone yoki ism bo'yicha
+    # Optional search query: phone yoki ism bo'yicha.
+    # Optimizatsiya: telefon raqamlari uchun `icontains` B-tree indeksdan
+    # foydalanmaydi (har qatorni to'liq skanerlash). Qidiruv matnida raqam ko'p
+    # bo'lsa, uni telefon deb hisoblab `normalized_phone__startswith` ishlatamiz
+    # — bu indeksli prefiks qidiruvi. Ism qidiruvi uchun `icontains` qoladi
+    # (aloxida trigram indeks pg_trgm talab qiladi — bu yerda qo'shilmaydi).
     search = request.query_params.get('search', '').strip()
     if search:
         from django.db.models import Q
-        qs = qs.filter(
-            Q(full_name__icontains=search)
-            | Q(normalized_phone__icontains=search)
-        )
+        import re as _re
+        digits = _re.sub(r'\D', '', search)
+        # 3+ raqam va matnning ko'p qismi raqam bo'lsa — telefon qidiruvi.
+        looks_like_phone = len(digits) >= 3 and len(digits) >= len(search.replace(' ', '')) - 2
+        if looks_like_phone:
+            norm = normalize_phone(search)
+            if norm:
+                # To'liq normalizatsiya bo'ldi (+998XXXXXXXXX) — aniq prefiks.
+                qs = qs.filter(normalized_phone__startswith=norm)
+            else:
+                # Qisman raqam — oxirgi raqamlar bo'yicha indeksli prefiks
+                # qidiruvi (normalized_phone har doim +998 bilan boshlanadi).
+                qs = qs.filter(normalized_phone__startswith=f'+998{digits[-9:]}')
+        else:
+            qs = qs.filter(full_name__icontains=search)
     # O9: admin paneli uchun katta paginator — default 100 elem, ?page_size=
     # bilan max 200. Avval 50 limit bilan admin har sahifani alohida
     # varaqlardi va katta tashkilotlarda 1000+ foydalanuvchini ko'rish
@@ -725,6 +784,8 @@ def admin_toggle_user_premium(request, user_id):
             else:
                 EducationCenter.objects.filter(owner=target).update(is_premium=False)
                 UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
+        from .utils import invalidate_user_subscription_cache
+        invalidate_user_subscription_cache(target.id)
         return Response(UserSerializer(target, context={'request': request}).data)
 
     try:
@@ -733,49 +794,61 @@ def admin_toggle_user_premium(request, user_id):
         return Response({'detail': "Davomiylik butun son bo'lishi kerak"}, status=status.HTTP_400_BAD_REQUEST)
 
     if duration == -1:
-        # Premium bekor qilish
-        target.is_premium = False
-        target.save(update_fields=['is_premium'])
-        UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
-        EducationCenter.objects.filter(owner=target).update(is_premium=False)
+        # Premium bekor qilish. Atomic: is_premium flag, UserSubscription va
+        # EducationCenter yangilanishlari yarmida xatolik bo'lsa nomuvofiq
+        # holat (masalan flag o'chgan, lekin obuna aktivligicha) qolmasin.
+        with transaction.atomic():
+            target.is_premium = False
+            target.save(update_fields=['is_premium'])
+            UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
+            EducationCenter.objects.filter(owner=target).update(is_premium=False)
     elif duration == 0:
-        # Cheksiz premium (Umrbod)
-        target.is_premium = True
-        target.save(update_fields=['is_premium'])
-        if plan_type == 'organization':
-            EducationCenter.objects.filter(owner=target).update(is_premium=True)
+        # Cheksiz premium (Umrbod). Atomic: flag va EducationCenter birga.
+        with transaction.atomic():
+            target.is_premium = True
+            target.save(update_fields=['is_premium'])
+            if plan_type == 'organization':
+                EducationCenter.objects.filter(owner=target).update(is_premium=True)
     elif duration in [30, 90, 180, 365]:
-        # Muddatli premium
-        UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
-        
-        plan_name = request.data.get('plan_name')
-        plan = None
-        if plan_name:
-            plan = SubscriptionPlan.objects.filter(
-                plan_type=plan_type,
-                duration_days=duration,
-                name__istartswith=plan_name,
+        # Muddatli premium. Atomic: eski obunani yopish va yangisini yaratish
+        # bitta tranzaksiyada — yarim holatda (eski yopilgan, yangi yaratilmagan)
+        # foydalanuvchi premiumsiz qolib ketmasin.
+        with transaction.atomic():
+            UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
+
+            plan_name = request.data.get('plan_name')
+            plan = None
+            if plan_name:
+                plan = SubscriptionPlan.objects.filter(
+                    plan_type=plan_type,
+                    duration_days=duration,
+                    name__istartswith=plan_name,
+                    is_active=True
+                ).first()
+
+            if not plan:
+                plan = SubscriptionPlan.objects.filter(
+                    plan_type=plan_type,
+                    duration_days=duration,
+                    is_active=True
+                ).order_by('-price').first()
+
+            now = timezone.now()
+            end_date = now + timedelta(days=duration)
+            UserSubscription.objects.create(
+                user=target,
+                plan=plan,
+                start_date=now,
+                end_date=end_date,
                 is_active=True
-            ).first()
-            
-        if not plan:
-            plan = SubscriptionPlan.objects.filter(
-                plan_type=plan_type, 
-                duration_days=duration,
-                is_active=True
-            ).order_by('-price').first()
-        
-        now = timezone.now()
-        end_date = now + timedelta(days=duration)
-        UserSubscription.objects.create(
-            user=target,
-            plan=plan,
-            start_date=now,
-            end_date=end_date,
-            is_active=True
-        )
+            )
     else:
         return Response({'detail': "Noma'lum muddat ko'rsatildi (faqat 30, 90, 180, 365, 0 yoki -1 bo'lishi mumkin)"}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Obuna/premium holati o'zgardi — /me endpoint'dagi subscription cache'ni
+    # bekor qilamiz, aks holda foydalanuvchi 60 soniya eski holatni ko'rardi.
+    from .utils import invalidate_user_subscription_cache
+    invalidate_user_subscription_cache(target.id)
 
     target.refresh_from_db()
     return Response(UserSerializer(target, context={'request': request}).data)
@@ -1670,12 +1743,14 @@ def activity_leaderboard(request):
         .order_by('-streak_count', '-last_active_date')[:15]
     )
 
+    from .utils import avatar_url_for
     entries = []
     for i, u in enumerate(qs):
         entries.append({
             'rank': i + 1,
             'user_id': u.id,
             'name': u.full_name or u.phone or "O'quvchi",
+            'avatar_url': avatar_url_for(u, request),
             'streak_count': u.streak_count,
             'badges': u.get_badges()[:2]  # Expose up to 2 badges
         })
@@ -1846,6 +1921,24 @@ def my_redemptions(request):
 
 
 def calculate_predictions_for_user(user):
+    # Bashorat hisoblanishi 2 ta DB aggregate (avg + per-subject) va bitta
+    # tashqi AI so'rovini talab qiladi — har sahifa yuklanishida bajarilsa
+    # qimmat. Natijani 5 daqiqaga cache'laymiz; foydalanuvchi yangi attempt
+    # qo'shganda cache invalidate qilinadi (attempts/views.py'da).
+    from django.core.cache import cache
+    from .utils import predictions_cache_key
+
+    cache_key = predictions_cache_key(user.id)
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return cached
+
+    result = _compute_predictions_for_user(user)
+    cache.set(cache_key, result, 300)
+    return result
+
+
+def _compute_predictions_for_user(user):
     from attempts.models import TestAttempt
     from django.db.models import Avg
     attempts = TestAttempt.objects.filter(user=user, disqualified=False).select_related('olympiad')

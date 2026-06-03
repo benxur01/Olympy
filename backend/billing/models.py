@@ -92,6 +92,10 @@ class PaymentTransaction(models.Model):
     ]
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions')
+    # Tranzaksiya qaysi plan uchun yaratilganini saqlaymiz. Webhook obunani
+    # aktivlashtirayotganda aynan shu plan ishlatiladi — narx bo'yicha taxmin
+    # qilish (bir xil narxli planlar orasida noaniqlik) o'rniga.
+    plan = models.ForeignKey(SubscriptionPlan, on_delete=models.SET_NULL, null=True, blank=True, related_name='transactions')
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     manager_commission = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
     provider = models.CharField(max_length=50) # 'click' or 'payme'

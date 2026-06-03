@@ -13,6 +13,42 @@ Examples that all collapse to ``+998901234567``:
 import re
 
 
+# ─── User-scoped cache helpers ────────────────────────────────────────────────
+# Bashorat (predictions) va obuna (subscription) holatlari har HTTP so'rovda
+# DB aggregate/filter talab qiladi. Bularni qisqa muddatli cache'da saqlaymiz
+# va tegishli ma'lumot o'zgarganda (yangi attempt, obuna o'zgarishi) bekor
+# qilamiz. Kalitlar markazda — invalidatsiya har joyda bir xil bo'lsin.
+
+def predictions_cache_key(user_id):
+    return f"user_predictions_{user_id}"
+
+
+def subscription_cache_key(user_id):
+    return f"user_subscription_{user_id}"
+
+
+def invalidate_user_predictions_cache(user_id):
+    """Foydalanuvchi natijalari o'zgarganda bashorat cache'ini tozalaydi."""
+    if not user_id:
+        return
+    try:
+        from django.core.cache import cache
+        cache.delete(predictions_cache_key(user_id))
+    except Exception:
+        pass
+
+
+def invalidate_user_subscription_cache(user_id):
+    """Obuna holati o'zgarganda (premium berildi/bekor qilindi) cache tozalanadi."""
+    if not user_id:
+        return
+    try:
+        from django.core.cache import cache
+        cache.delete(subscription_cache_key(user_id))
+    except Exception:
+        pass
+
+
 def normalize_phone(raw):
     """Return canonical ``+998<9 digits>`` form, or ``''`` if invalid."""
     if raw is None:
@@ -24,6 +60,38 @@ def normalize_phone(raw):
     if len(last9) != 9:
         return ''
     return '+998' + last9
+
+
+def avatar_url_for(user, request=None):
+    """Foydalanuvchi avatari uchun URL qaytaradi (bo'sh bo'lsa '').
+
+    Bu helper barcha serializer/view'larda ishlatilishi uchun `request`
+    kontekstidan mustaqil ishlaydi:
+
+    - Cloudinary/S3 ishlatilganda `avatar.url` allaqachon to'liq absolyut
+      URL (``https://...``) qaytaradi — o'shani o'zgartirmasdan beramiz.
+    - Lokal FileSystem storage'da `avatar.url` nisbiy (``/media/avatars/..``)
+      bo'ladi; `request` mavjud bo'lsa absolyut URL yasaymiz, aks holda
+      nisbiy URL qaytaramiz (frontend uni API base bilan birlashtiradi).
+    """
+    avatar = getattr(user, 'avatar', None) if user is not None else None
+    if not avatar:
+        return ''
+    try:
+        url = avatar.url
+    except Exception:
+        return ''
+    if not url:
+        return ''
+    # Allaqachon absolyut (Cloudinary/S3) bo'lsa o'zgartirmaymiz.
+    if url.startswith('http://') or url.startswith('https://'):
+        return url
+    if request is not None:
+        try:
+            return request.build_absolute_uri(url)
+        except Exception:
+            return url
+    return url
 
 
 def mask_phone(raw):

@@ -116,6 +116,14 @@ class Olympiad(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            # Markaz bo'yicha aktiv (o'chirilmagan) olimpiadalarni status
+            # bilan filtrlash — center dashboard va ro'yxat so'rovlarida.
+            models.Index(fields=['center', 'is_deleted', 'status']),
+            # Global status + is_deleted filter (masalan, aktiv published
+            # olimpiadalar ro'yxati).
+            models.Index(fields=['status', 'is_deleted']),
+        ]
 
     def __str__(self):
         return f'{self.title} ({self.center.name})'
