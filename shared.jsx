@@ -686,6 +686,11 @@ const useApiData = (fetcher, deps = []) => {
   const [error, setError] = React.useState(null);
   const [tick, setTick] = React.useState(0);
   const reload = React.useCallback(() => setTick(t => t + 1), []);
+  // Optimistic UI uchun: serverga so'rov yubormasdan, mahalliy data'ni darhol
+  // yangilash imkonini beradi (xato bo'lsa avvalgi data'ga qaytarish mumkin).
+  const mutate = React.useCallback((updater) => {
+    setData(prev => (typeof updater === 'function' ? updater(prev) : updater));
+  }, []);
   React.useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -697,7 +702,7 @@ const useApiData = (fetcher, deps = []) => {
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick]);
-  return { data, loading, error, reload };
+  return { data, loading, error, reload, mutate };
 };
 
 // Export all

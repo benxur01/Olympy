@@ -853,9 +853,15 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const toggleShopActive = (product) => {
     if (!isApi || !ownerCenterId) return;
-    OlympyApi.updateCenterShopProduct(product.id, { is_active: !product.is_active }, OlympyApi.getToken(), ownerCenterId)
+    const next = !product.is_active;
+    // Optimistic: UI darhol yangilanadi, xato bo'lsa eski holatga qaytadi.
+    setShopProducts(prev => prev.map(p => (p.id === product.id ? { ...p, is_active: next } : p)));
+    OlympyApi.updateCenterShopProduct(product.id, { is_active: next }, OlympyApi.getToken(), ownerCenterId)
       .then(() => loadShopProducts())
-      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'zgartirib bo'lmadi"));
+      .catch(err => {
+        setShopProducts(prev => prev.map(p => (p.id === product.id ? { ...p, is_active: product.is_active } : p)));
+        showToast(OlympyApi.toUserMessage?.(err) || "O'zgartirib bo'lmadi");
+      });
   };
 
   const openRoleModal = (row) => {

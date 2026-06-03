@@ -415,12 +415,23 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const backendCenterId = center?.backendId;
     if (!backendCenterId) { showToast('Tashkilot ID topilmadi'); return; }
     const next = !center.isPremium;
+    // Optimistic: ro'yxat darhol yangilanadi (xom backend data'da is_premium),
+    // xato bo'lsa avvalgi holatga qaytaramiz.
+    apiCentersRes.mutate(prev => Array.isArray(prev)
+      ? prev.map(c => (c?.id === backendCenterId ? { ...c, is_premium: next } : c))
+      : prev);
     OlympyApi.updateCenter(backendCenterId, { is_premium: next }, OlympyApi.getToken())
       .then(() => {
         showToast(next ? 'Premium berildi' : 'Premium bekor qilindi');
         apiCentersRes.reload();
       })
-      .catch(err => { console.warn('togglePremium failed:', err); showToast(OlympyApi.toUserMessage(err)); });
+      .catch(err => {
+        console.warn('togglePremium failed:', err);
+        apiCentersRes.mutate(prev => Array.isArray(prev)
+          ? prev.map(c => (c?.id === backendCenterId ? { ...c, is_premium: center.isPremium } : c))
+          : prev);
+        showToast(OlympyApi.toUserMessage(err));
+      });
   };
 
   const approveCenterReq = (req) => {

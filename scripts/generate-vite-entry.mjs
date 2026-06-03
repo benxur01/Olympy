@@ -52,6 +52,15 @@ entry += `globalThis.ReactDOM = { ...ReactDOMClient, createPortal };\n\n`;
 entry += `globalThis.OlympyApi = OlympyApi;\n`;
 entry += `globalThis.DOMPurify = DOMPurify;\n\n`;
 
+// PWA: service worker'ni ro'yxatdan o'tkazish (oflayn rejim + kesh).
+// Faqat brauzer qo'llasa va xavfsiz kontekstda (https/localhost) ishlaydi;
+// xato yuz bersa ilova oddiy holatda davom etadi.
+entry += `if ('serviceWorker' in navigator) {\n`;
+entry += `  window.addEventListener('load', () => {\n`;
+entry += `    navigator.serviceWorker.register('/sw.js').catch(() => {});\n`;
+entry += `  });\n`;
+entry += `}\n\n`;
+
 // Local module scope object to share components between scopes without polluting globalThis
 entry += `const moduleScope = {};\n\n`;
 
