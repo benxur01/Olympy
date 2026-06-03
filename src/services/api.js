@@ -331,11 +331,14 @@ const loadAuth = () => {
   return { token: null, refresh: null, user: _currentUser };
 };
 
-const clearAuth = () => {
+const clearAuth = async () => {
   _removeAuth(AUTH_TOKEN_KEY);
   _removeAuth(AUTH_REFRESH_KEY);
   _currentUser = null;
-  try { request('/api/auth/logout/', { method: 'POST', retryOnAuth: false }); } catch {}
+  // await — logout so'rovi tugashini kutamiz, aks holda refresh token
+  // server tomonda blacklist'ga tushmasdan qolib ketishi mumkin (fetch
+  // boshlanmasdan sahifa o'zgarsa). Chaqiruvchilar natijani kutmaydi.
+  try { await request('/api/auth/logout/', { method: 'POST', retryOnAuth: false }); } catch {}
 };
 
 const getToken = () => null;
