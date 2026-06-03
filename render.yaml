@@ -22,19 +22,14 @@ services:
     branch: main
     buildCommand: ./render_build.sh
     startCommand: ./render_start.sh
-    # DIQQAT: Disk-mounted servisni Render horizontal scale qilmaydi
-    # (Scalable disk-backed services early access talab qilinadi).
-    # Media fayllarni Cloudinary'ga ko'chirilgandan keyin disk olib
-    # tashlanib, numInstances: 2+ qo'yish mumkin bo'ladi.
-    # Hozircha 1 instance — Gunicorn ichidagi 4 worker + 2 thread
-    # (8 parallel so'rov) yetarli. Katta load uchun Cloudinary + disk olib
-    # tashlash kerak.
+    # Media fayllar Cloudinary'ga ko'chirildi (CLOUDINARY_* env var'lar) —
+    # endi disk dependency'si yo'q va servis horizontal scale qilinishi
+    # mumkin. numInstances'ni 2+ ga oshirish uchun disk bo'limi olib
+    # tashlandi. DIQQAT: disk olib tashlangach, eski (Cloudinary'gacha
+    # yuklangan) media fayllar Render diskidan yo'qoladi — yangi yuklamalar
+    # Cloudinary'da saqlanadi.
     numInstances: 1
     healthCheckPath: /api/health/
-    disk:
-      name: olympy-media-disk
-      mountPath: /opt/render/project/src/backend/media
-      sizeGB: 5
     envVars:
       - key: REDIS_URL
         sync: false
