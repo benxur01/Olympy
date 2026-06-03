@@ -800,21 +800,6 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </button>
       </div>
 
-      {!center?.isPremium && (
-        <section className="relative overflow-hidden rounded-2xl border border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-purple-500/5 to-indigo-500/10 p-5 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-400 to-amber-600 text-white shadow-lg shadow-amber-500/25 animate-pulse">
-              <Icon name="star" size={24} />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-white">Platformamizda 500+ ta'lim markazlari!</h3>
-              <p className="text-xs font-semibold text-white/60 mt-1">
-                Tashkilotingiz Premium imkoniyatlaridan (AI savollar, PDF tahlil, cheksiz olimpiadalar) foydalanishi uchun direktorga obunani faollashtirishni tavsiya qiling.
-              </p>
-            </div>
-          </div>
-        </section>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard label="Kutilayotgan arizalar" value={pendingCount} sub={pendingCount > 0 ? 'Yangi' : ''} icon={<Icon name="bell" size={20} />} color="from-rose-500 to-pink-600" glow="glow-blue" />

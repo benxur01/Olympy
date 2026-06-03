@@ -1453,28 +1453,6 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         />
       </div>
 
-      {/* Premium Marketing Promo Banner */}
-      {!center?.isPremium && (
-        <section className="relative overflow-hidden rounded-2xl border border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-purple-500/5 to-indigo-500/10 p-5 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-amber-400 to-amber-600 text-white shadow-lg shadow-amber-500/25 animate-pulse">
-              <Icon name="star" size={24} />
-            </div>
-            <div>
-              <h3 className="text-base font-black text-white">Loyihamizda 500+ ta'lim markazlari ro'yxatdan o'tdi!</h3>
-              <p className="text-xs font-semibold text-white/60 mt-1">
-                Tashkilotingiz uchun Premium obunani faollashtiring va barcha AI imkoniyatlari, cheksiz olimpiadalar hamda batafsil tahlillarga ega bo'ling.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => setPage('premium')}
-            className="btn-primary flex-shrink-0 rounded-xl px-5 py-2.5 text-xs font-black bg-gradient-to-r from-amber-500 to-amber-600 border-none shadow-md shadow-amber-500/20 hover:scale-105 transition-transform"
-          >
-            Premiumga o'tish
-          </button>
-        </section>
-      )}
 
       {/* Pending requests + status panel */}
       <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
