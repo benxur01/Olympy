@@ -84,6 +84,12 @@ class User(AbstractBaseUser, PermissionsMixin):
     onboarding_subjects = models.JSONField(default=list, blank=True)
     onboarding_goal = models.CharField(max_length=50, null=True, blank=True)
 
+    # TOTP 2FA (ixtiyoriy). `totp_secret` — base32 maxfiy kalit (faqat
+    # serverda saqlanadi, mijozga QR/secret faqat sozlash paytida beriladi).
+    # `totp_enabled` True bo'lsa login paytida qo'shimcha kod talab qilinadi.
+    totp_secret = models.CharField(max_length=32, blank=True, default='')
+    totp_enabled = models.BooleanField(default=False)
+
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -736,3 +742,70 @@ class WeeklyContestResult(models.Model):
 
     def __str__(self):
         return f'weekly-result:{self.user_id}@{self.contest_id} score={self.score} rank={self.rank}'
+
+
+class AuditLog(models.Model):
+    """Xavfsizlik audit jurnali: admin/owner/manager qilgan muhim
+    harakatlar shu yerda yoziladi (premium o'zgartirish, bloklash, markaz
+    tasdiqlash/rad etish, olimpiada/savol yaratish-o'chirish, a'zo tasdiqlash).
+
+    Hech qachon maxfiy ma'lumot (parol, OTP, token) yozilmaydi — faqat kim,
+    qachon, qaysi obyektga, qanday harakat qilgani va IP manzili.
+    """
+    ACTION_CHOICES = [
+        ('user_premium_toggle', "Premium holat o'zgardi"),
+        ('user_block', 'Foydalanuvchi bloklandi'),
+        ('center_approve', 'Markaz tasdiqlandi'),
+        ('center_reject', 'Markaz rad etildi'),
+        ('olympiad_create', 'Olimpiada yaratildi'),
+        ('olympiad_delete', "Olimpiada o'chirildi"),
+        ('question_create', 'Savol yaratildi'),
+        ('question_delete', "Savol o'chirildi"),
+        ('member_approve', "A'zo tasdiqlandi"),
+        ('member_reject', "A'zo rad etildi"),
+    ]
+
+    actor = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='audit_logs',
+    )
+    action = models.CharField(max_length=50, choices=ACTION_CHOICES)
+    target_id = models.IntegerField(null=True, blank=True)
+    target_type = models.CharField(max_length=50, blank=True)
+    extra = models.JSONField(default=dict, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['actor', '-created_at']),
+            models.Index(fields=['action', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'audit:{self.action} by {self.actor_id} @ {self.created_at:%Y-%m-%d %H:%M}'
+
+    @classmethod
+    def log(cls, request, action, target=None, extra=None):
+        """Audit yozuvini yaratadi. Hech qachon exception ko'tarmaydi —
+        log yozish biror sababga ko'ra muvaffaqiyatsiz bo'lsa ham asosiy
+        harakat (bloklash, tasdiqlash va h.k.) buzilmasligi kerak.
+        """
+        try:
+            ip = (
+                request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
+                or request.META.get('REMOTE_ADDR')
+            )
+            cls.objects.create(
+                actor=request.user if request.user.is_authenticated else None,
+                action=action,
+                target_id=getattr(target, 'pk', None),
+                target_type=type(target).__name__ if target else '',
+                extra=extra or {},
+                ip_address=ip or None,
+            )
+        except Exception:
+            logger.exception('AuditLog.log xatosi: action=%s', action)

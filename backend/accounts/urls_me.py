@@ -66,5 +66,6 @@ urlpatterns = [
          name='admin-set-user-active'),
     path('admin/users/<int:user_id>/toggle-premium/', views.admin_toggle_user_premium,
          name='admin-toggle-user-premium'),
+    path('admin/audit-log/', views.audit_log_list, name='admin-audit-log'),
 ]
 

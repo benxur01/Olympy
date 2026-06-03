@@ -9,6 +9,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.models import AuditLog
 from .models import Olympiad
 from .serializers import OlympiadSerializer
 from .services import (
@@ -150,6 +151,11 @@ def olympiads_list_create(request):
         )
         if questions is not None:
             olympiad.questions.set(questions)
+    AuditLog.log(request, 'olympiad_create', target=olympiad, extra={
+        'title': olympiad.title,
+        'center_id': olympiad.center_id,
+        'event_type': olympiad.event_type,
+    })
     return Response(OlympiadSerializer(olympiad).data,
                     status=http_status.HTTP_201_CREATED)
 
@@ -172,6 +178,10 @@ def olympiad_detail(request, olympiad_id):
             )
         olympiad.is_deleted = True
         olympiad.save(update_fields=['is_deleted'])
+        AuditLog.log(request, 'olympiad_delete', target=olympiad, extra={
+            'title': olympiad.title,
+            'center_id': olympiad.center_id,
+        })
         return Response({'detail': "Tadbir muvaffaqiyatli o'chirildi"}, status=http_status.HTTP_200_OK)
 
     if olympiad.status not in [Olympiad.STATUS_DRAFT, Olympiad.STATUS_INACTIVE]:

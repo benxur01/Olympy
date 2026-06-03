@@ -15,6 +15,8 @@ django-celery-beat==2.8.1
 gunicorn==26.0.0
 whitenoise==6.12.0
 requests==2.34.2
+# TOTP 2FA (admin/owner uchun ixtiyoriy ikki bosqichli autentifikatsiya).
+pyotp==2.9.0
 # Cloudinary (faqat production'da, CLOUDINARY_CLOUD_NAME o'rnatilganda yoqiladi).
 # Reproducible build uchun lokal venv'da o'rnatilgan versiyalarga pinlangan.
 cloudinary==1.44.2

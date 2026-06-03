@@ -18,4 +18,8 @@ urlpatterns = [
     path('telegram/link/start/', views.start_telegram_account_link,
          name='start-telegram-account-link'),
     path('phone/verify-otp/', views.verify_otp, name='verify-otp'),
+    # TOTP 2FA (ixtiyoriy)
+    path('2fa/setup/', views.totp_setup, name='totp-setup'),
+    path('2fa/verify/', views.totp_verify, name='totp-verify'),
+    path('2fa/disable/', views.totp_disable, name='totp-disable'),
 ]

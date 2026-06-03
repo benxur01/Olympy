@@ -21,7 +21,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import PhoneVerification
+from .models import AuditLog, PhoneVerification
 from .throttling import OtpRequestThrottle, PasswordChangePerUserThrottle
 from .serializers import (
     ChangePasswordSerializer,
@@ -309,10 +309,33 @@ register_organization.cls.throttle_scope = 'register'
 @permission_classes([AllowAny])
 @throttle_classes([ScopedRateThrottle])
 def login(request):
-    """POST /api/auth/login/ — authenticate by normalized phone + password."""
+    """POST /api/auth/login/ — authenticate by normalized phone + password.
+
+    Agar foydalanuvchida 2FA yoqilgan bo'lsa, parol to'g'ri bo'lganidan keyin
+    qo'shimcha `totp_code` talab qilinadi. Kod yuborilmagan bo'lsa
+    `requires_2fa: true` qaytariladi (token berilmaydi) — frontend kod so'rab,
+    o'sha telefon+parol+kod bilan qayta yuboradi.
+    """
     serializer = LoginSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     user = serializer.validated_data['user']
+
+    if user.totp_enabled and user.totp_secret:
+        totp_code = str(request.data.get('totp_code', '')).strip()
+        if not totp_code:
+            # Parol to'g'ri, lekin 2FA kodi kerak — token bermaymiz.
+            return Response({'requires_2fa': True})
+        import pyotp
+        totp = pyotp.TOTP(user.totp_secret)
+        if not totp.verify(totp_code, valid_window=1):
+            security_logger.warning(
+                'login failed (wrong 2FA code) user_id=%s', user.pk,
+            )
+            return Response(
+                {'detail': "Noto'g'ri 2FA kod", 'requires_2fa': True},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
     payload = _jwt_payload(user)
     response = Response({
         **payload,
@@ -742,6 +765,10 @@ def admin_set_user_active(request, user_id):
     # avvalgi tokenlar qayta ishlashi kerak emas.
     target.token_version = (target.token_version or 0) + 1
     target.save(update_fields=['is_active', 'token_version'])
+    AuditLog.log(request, 'user_block', target=target, extra={
+        'is_active': desired,
+        'phone': mask_phone(target.normalized_phone),
+    })
     return Response(UserSerializer(target, context={'request': request}).data)
 
 
@@ -786,6 +813,10 @@ def admin_toggle_user_premium(request, user_id):
                 UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
         from .utils import invalidate_user_subscription_cache
         invalidate_user_subscription_cache(target.id)
+        AuditLog.log(request, 'user_premium_toggle', target=target, extra={
+            'mode': 'toggle',
+            'is_premium': target.is_premium,
+        })
         return Response(UserSerializer(target, context={'request': request}).data)
 
     try:
@@ -851,6 +882,12 @@ def admin_toggle_user_premium(request, user_id):
     invalidate_user_subscription_cache(target.id)
 
     target.refresh_from_db()
+    AuditLog.log(request, 'user_premium_toggle', target=target, extra={
+        'mode': 'duration',
+        'duration': duration,
+        'plan_type': plan_type,
+        'is_premium': target.is_premium,
+    })
     return Response(UserSerializer(target, context={'request': request}).data)
 
 
@@ -2004,5 +2041,75 @@ def get_my_predictions(request):
 
 
 get_my_predictions.cls.throttle_scope = 'ai'
+
+
+# ---------------------------------------------------------------------------
+# Audit log (Platform Admin)
+# ---------------------------------------------------------------------------
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def audit_log_list(request):
+    """GET /api/admin/audit-log/ — oxirgi 100 ta audit yozuvi (faqat staff)."""
+    if not request.user.is_staff:
+        return Response({'detail': "Ruxsat yo'q"}, status=status.HTTP_403_FORBIDDEN)
+    logs = AuditLog.objects.select_related('actor').order_by('-created_at')[:100]
+    data = [{
+        'id': l.id,
+        'actor': l.actor.full_name if l.actor else 'Tizim',
+        'action': l.get_action_display(),
+        'target_type': l.target_type,
+        'target_id': l.target_id,
+        'extra': l.extra,
+        'ip': l.ip_address,
+        'created_at': l.created_at.isoformat(),
+    } for l in logs]
+    return Response(data)
+
+
+# ---------------------------------------------------------------------------
+# TOTP 2FA (ixtiyoriy — har bir foydalanuvchi yoqishi mumkin)
+# ---------------------------------------------------------------------------
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def totp_setup(request):
+    """POST /api/auth/2fa/setup/ — 2FA sozlash, QR kod URI qaytaradi."""
+    import pyotp
+    if not request.user.totp_secret:
+        request.user.totp_secret = pyotp.random_base32()
+        request.user.save(update_fields=['totp_secret'])
+    totp = pyotp.TOTP(request.user.totp_secret)
+    uri = totp.provisioning_uri(
+        request.user.phone or str(request.user.id),
+        issuer_name='Olympy',
+    )
+    return Response({'uri': uri, 'secret': request.user.totp_secret})
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def totp_verify(request):
+    """POST /api/auth/2fa/verify/ — kodni tekshiradi va 2FA'ni yoqadi."""
+    import pyotp
+    code = str(request.data.get('code', '')).strip()
+    if not request.user.totp_secret:
+        return Response({'detail': 'Avval 2FA sozlang'}, status=status.HTTP_400_BAD_REQUEST)
+    totp = pyotp.TOTP(request.user.totp_secret)
+    if totp.verify(code, valid_window=1):
+        request.user.totp_enabled = True
+        request.user.save(update_fields=['totp_enabled'])
+        return Response({'detail': '2FA faollashtirildi'})
+    return Response({'detail': "Noto'g'ri kod"}, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def totp_disable(request):
+    """POST /api/auth/2fa/disable/ — 2FA'ni o'chiradi."""
+    request.user.totp_enabled = False
+    request.user.totp_secret = ''
+    request.user.save(update_fields=['totp_enabled', 'totp_secret'])
+    return Response({'detail': "2FA o'chirildi"})
 
 

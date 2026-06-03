@@ -30,7 +30,7 @@ class UserSerializer(serializers.ModelSerializer):
                   'is_premium', 'is_active', 'avatar_url', 'created_at',
                   'streak_count', 'longest_streak', 'last_active_date', 'badges',
                   'onboarding_completed', 'onboarding_grade',
-                  'onboarding_subjects', 'onboarding_goal']
+                  'onboarding_subjects', 'onboarding_goal', 'totp_enabled']
         # Xavfsizlik (privilege escalation / IDOR himoyasi): `roles`,
         # `is_platform_admin`, `is_premium`, `is_active` — bular foydalanuvchi
         # tomonidan O'ZGARTIRILMASLIGI kerak. Aks holda kimdir bu serializer'ni
@@ -47,7 +47,7 @@ class UserSerializer(serializers.ModelSerializer):
                             'is_premium', 'is_active', 'avatar_url', 'created_at',
                             'streak_count', 'longest_streak', 'last_active_date', 'badges',
                             'onboarding_completed', 'onboarding_grade',
-                            'onboarding_subjects', 'onboarding_goal']
+                            'onboarding_subjects', 'onboarding_goal', 'totp_enabled']
 
     def get_badges(self, obj):
         return obj.get_badges()
