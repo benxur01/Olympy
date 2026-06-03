@@ -115,6 +115,12 @@ def find_similar_questions(subject, topic, limit=20):
     """
     from django.db import connection
 
+    # `<=>` operatori va `::vector` cast faqat pgvector (PostgreSQL) bor
+    # muhitda ishlaydi. SQLite (lokal) yoki boshqa backend'da so'rovni
+    # umuman yubormaymiz — bo'sh ro'yxat qaytaramiz.
+    if connection.vendor != 'postgresql':
+        return []
+
     query_text = f'{subject} {topic}'.strip()
     embedding = get_embedding(query_text)
     if embedding is None:
