@@ -958,7 +958,7 @@ def _telegram_bot_username(bot='auth'):
     )
 
 
-def _telegram_api_call(method, payload, timeout=10, bot='auth'):
+def _telegram_api_call(method, payload, timeout=10, bot='auth', _retries=3):
     token = _telegram_bot_token(bot)
     if not token:
         logger.info('[telegram-%s-local] method=%s payload=%s', bot, method, payload)
@@ -971,17 +971,39 @@ def _telegram_api_call(method, payload, timeout=10, bot='auth'):
             encoded[key] = value
     data = urllib.parse.urlencode(encoded).encode()
     url = f'https://api.telegram.org/bot{token}/{method}'
-    try:
-        req = urllib.request.Request(url, data=data, method='POST')
-        with urllib.request.urlopen(req, timeout=timeout) as response:
-            result = json.loads(response.read().decode('utf-8'))
-        if not result.get('ok'):
-            logger.warning('Telegram %s/%s returned not ok: %s', bot, method, result.get('description'))
+    import time as _time
+    for attempt in range(_retries):
+        try:
+            req = urllib.request.Request(url, data=data, method='POST')
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                result = json.loads(response.read().decode('utf-8'))
+            if not result.get('ok'):
+                logger.warning('Telegram %s/%s returned not ok: %s', bot, method, result.get('description'))
+                return None
+            return result.get('result')
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                # Telegram rate limit — retry_after soniyadan keyin qayta urinish
+                try:
+                    body = json.loads(e.read().decode('utf-8'))
+                    retry_after = body.get('parameters', {}).get('retry_after', 5)
+                except Exception:
+                    retry_after = 5
+                logger.warning('Telegram %s/%s rate limited, retry after %ss (attempt %d/%d)',
+                               bot, method, retry_after, attempt + 1, _retries)
+                if attempt < _retries - 1:
+                    _time.sleep(min(retry_after, 30))
+                    continue
+            else:
+                logger.exception('Telegram %s/%s HTTP error %s', bot, method, e.code)
             return None
-        return result.get('result')
-    except Exception:
-        logger.exception('Telegram %s/%s failed', bot, method)
-        return None
+        except Exception:
+            logger.exception('Telegram %s/%s failed (attempt %d/%d)', bot, method, attempt + 1, _retries)
+            if attempt < _retries - 1:
+                _time.sleep(2 ** attempt)
+                continue
+            return None
+    return None
 
 
 def _telegram_api_post(method, payload, bot='auth'):
