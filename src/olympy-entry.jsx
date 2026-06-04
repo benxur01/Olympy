@@ -9044,7 +9044,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   <Icon name="book" size={13} /> Savollar ({assignedCount})
                 </button>
                 {['draft', 'inactive'].includes(o.status) && (
-                  <button onClick={() => requestActivation(o)} disabled={!isReady || eventSaving}
+                  <button onClick={() => requestActivation(o)} disabled={!isReady}
                     className={`${isReady ? 'btn-primary' : 'btn-ghost opacity-50'} text-xs px-3 py-1.5 rounded-xl disabled:cursor-not-allowed`}>
                     Faollashtirish
                   </button>
@@ -12282,7 +12282,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                     <Icon name="book" size={13} /> Savollar ({assignedCount})
                   </button>
                   {['draft', 'inactive'].includes(o.status) && (
-                    <button onClick={() => requestActivation(o)} disabled={!isReady || eventSaving}
+                    <button onClick={() => requestActivation(o)} disabled={!isReady}
                       className={`${isReady ? 'btn-primary' : 'btn-ghost opacity-50'} text-xs px-3 py-1.5 rounded-xl disabled:cursor-not-allowed`}>
                       Faollashtirish
                     </button>
