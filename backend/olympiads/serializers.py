@@ -18,6 +18,15 @@ def _normalise_option(value):
     )
 
 
+# Variantli test turiga (multiple_choice/true_false/short_answer) sig'maydigan
+# maxsus savol turlari. Kod kabi, ular har qanday variantli test turidagi
+# olimpiadaga erkin biriktiriladi (mismatch tekshiruvidan chiqariladi) va
+# faqat "Aralash" yoki o'z mantig'i bo'yicha baholanadi.
+_NON_OPTION_QUESTION_TYPES = frozenset({
+    'code', 'multiple_select', 'yes_no', 'essay', 'fill_blank', 'fill_blanks',
+})
+
+
 def _question_test_type(question):
     options = [_normalise_option(option) for option in (question.options or [])]
     if not options:
@@ -140,13 +149,14 @@ class OlympiadSerializer(serializers.ModelSerializer):
         elif test_type and test_type != Olympiad.TEST_TYPE_MIXED:
             if questions is None and self.instance:
                 questions = list(self.instance.questions.all())
-            # Kod (IT) savollar variant-asosli test turiga mos kelmaydi
-            # (options bo'sh) — ularni mismatch tekshiruvidan chiqaramiz.
-            # IT olimpiadalarda manager test_type ni Aralash qoldirishi yoki
-            # kod savollar bilan birga MCQ savollar qo'shishi mumkin.
+            # Kod (IT) va boshqa maxsus turlar (essay/fill_blank/fill_blanks/
+            # multiple_select/yes_no) variant-asosli test turiga mos kelmaydi —
+            # ularni mismatch tekshiruvidan chiqaramiz. Manager bunday savollarni
+            # variantli olimpiadaga qo'shsa, test turini Aralash qoldirishi yoki
+            # ular bilan birga MCQ savollar qo'shishi mumkin.
             mismatched = [
                 q.id for q in (questions or [])
-                if getattr(q, 'question_type', 'mcq') != 'code'
+                if getattr(q, 'question_type', 'mcq') not in _NON_OPTION_QUESTION_TYPES
                 and _question_test_type(q) != test_type
             ]
             if mismatched:
