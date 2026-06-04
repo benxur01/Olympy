@@ -8,7 +8,36 @@ const SUBJECTS = (globalThis.SUBJECTS_LIST && globalThis.SUBJECTS_LIST.length > 
   : ['Matematika','Ingliz tili','Ona tili','Informatika','IT','Fizika','Kimyo','Biologiya','Tarix','Geografiya'];
 const LEVELS = ['Oson','O\'rta','Qiyin'];
 const ENGLISH_LEVELS = ['Beginner', 'Elementary', 'Pre-Intermediate', 'Intermediate', 'Upper-Intermediate', 'Advanced'];
-const TYPES = ['Ko\'p tanlovli','To\'g\'ri/Noto\'g\'ri','Qisqa javob','Kod (dasturlash)'];
+// Savol turi label'lari. Birinchi uchtasi va "Kod" eski (o'zgarmadi);
+// qolganlari yangi turlar. AI/PDF generatsiyasi faqat dastlabki uchta variantli
+// turni qo'llab-quvvatlagani uchun bu ro'yxat AI test-turi select'ida emas,
+// faqat qo'lda yaratishda to'liq ishlatiladi (pastda AI_TYPES ajratilgan).
+const TYPES = [
+  "Ko'p tanlovli",
+  "To'g'ri/Noto'g'ri",
+  'Qisqa javob',
+  'Kod (dasturlash)',
+  'Bir nechta to\'g\'ri (Multiple Select)',
+  "Ha / Yo'q",
+  'Essay (Katta matn)',
+  "Bo'sh joy to'ldirish",
+  "Ko'p bo'sh joy to'ldirish",
+];
+// AI/PDF generatori faqat klassik variantli turlarni biladi.
+const AI_TYPES = ["Ko'p tanlovli", "To'g'ri/Noto'g'ri", 'Qisqa javob'];
+// Label → backend question_type. Ko'p tanlovli/To'g'ri-Noto'g'ri/Qisqa javob
+// hammasi `mcq` (vizual rejim sifatida); qolganlari 1:1.
+const TYPE_TO_BACKEND = {
+  "Ko'p tanlovli": 'mcq',
+  "To'g'ri/Noto'g'ri": 'mcq',
+  'Qisqa javob': 'mcq',
+  'Kod (dasturlash)': 'code',
+  'Bir nechta to\'g\'ri (Multiple Select)': 'multiple_select',
+  "Ha / Yo'q": 'yes_no',
+  'Essay (Katta matn)': 'essay',
+  "Bo'sh joy to'ldirish": 'fill_blank',
+  "Ko'p bo'sh joy to'ldirish": 'fill_blanks',
+};
 // IT (kod) savollari uchun dasturlash tillari.
 const CODE_LANGUAGES = [
   ['python', 'Python'],
@@ -67,7 +96,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [pdfVision, setPdfVision] = React.useState(false);
   const [pdfWarning, setPdfWarning] = React.useState('');
   const [pdfChunks, setPdfChunks] = React.useState(1);
-  const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject:'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0, programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
+  const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject:'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
   const [editingQuestionId, setEditingQuestionId] = React.useState(null);
   const [newSubjectModal, setNewSubjectModal] = React.useState(false);
   const [newSubject, setNewSubject] = React.useState('');
@@ -345,15 +374,49 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   };
 
   const startEditQuestion = (q) => {
-    // mavjud savol ma'lumotlarini formga yuklash. Backend Question turi
-    // (multiple_choice/true_false/short_answer) yo'q — Frontend "type"ni
-    // options soniga qarab xulosa qiladi.
-    const isCode = (q.questionType || q.question_type) === 'code';
-    const inferredType = isCode
-      ? 'Kod (dasturlash)'
-      : ((q.options && q.options.length === 2 && q.options.every(o => /to'?g'?ri|noto'?g'?ri/i.test(o)))
-        ? "To'g'ri/Noto'g'ri"
-        : (Array.isArray(q.options) && q.options.length > 0 ? "Ko'p tanlovli" : 'Qisqa javob'));
+    // mavjud savol ma'lumotlarini formga yuklash. `mcq` turida vizual rejim
+    // (Multiple Choice / True-False / Short Answer) options soniga qarab
+    // xulosa qilinadi; yangi turlar esa question_type orqali aniqlanadi.
+    const backendType = q.questionType || q.question_type || 'mcq';
+    const correctTextRaw = q.correctText ?? q.correct_text ?? '';
+    let inferredType;
+    if (backendType === 'code') {
+      inferredType = 'Kod (dasturlash)';
+    } else if (backendType === 'multiple_select') {
+      inferredType = 'Bir nechta to\'g\'ri (Multiple Select)';
+    } else if (backendType === 'yes_no') {
+      inferredType = "Ha / Yo'q";
+    } else if (backendType === 'essay') {
+      inferredType = 'Essay (Katta matn)';
+    } else if (backendType === 'fill_blank') {
+      inferredType = "Bo'sh joy to'ldirish";
+    } else if (backendType === 'fill_blanks') {
+      inferredType = "Ko'p bo'sh joy to'ldirish";
+    } else if (q.options && q.options.length === 2 && q.options.every(o => /to'?g'?ri|noto'?g'?ri/i.test(o))) {
+      inferredType = "To'g'ri/Noto'g'ri";
+    } else if (Array.isArray(q.options) && q.options.length > 0) {
+      inferredType = "Ko'p tanlovli";
+    } else {
+      inferredType = 'Qisqa javob';
+    }
+    // multiple_select to'g'ri indekslari va fill_blanks javoblari correct_text
+    // (JSON) ichida — formaga ochib yuklaymiz.
+    let correctIndexes = [];
+    let blanks = [{ key: '1', answer: '' }];
+    let correctText = '';
+    if (backendType === 'multiple_select') {
+      try { const p = JSON.parse(correctTextRaw); if (Array.isArray(p)) correctIndexes = p.map(Number); } catch (_) {}
+    } else if (backendType === 'fill_blanks') {
+      try {
+        const p = JSON.parse(correctTextRaw);
+        if (p && typeof p === 'object') {
+          const entries = Object.entries(p);
+          if (entries.length) blanks = entries.map(([key, answer]) => ({ key: String(key), answer: String(answer) }));
+        }
+      } catch (_) {}
+    } else if (backendType === 'fill_blank') {
+      correctText = String(correctTextRaw || '');
+    }
     setEditingQuestionId(q.backendId ?? q.id);
     setNewQ({
       text: q.text || '',
@@ -367,6 +430,9 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       score: q.score || 3,
       options: Array.isArray(q.options) && q.options.length ? q.options.slice() : ['','','',''],
       correct: typeof q.correctAnswer === 'number' ? q.correctAnswer : 0,
+      correctIndexes,
+      correctText,
+      blanks,
       programmingLanguage: q.programmingLanguage || q.programming_language || 'python',
       codeTemplate: q.codeTemplate || q.code_template || '',
       expectedOutput: q.expectedOutput || q.expected_output || '',
@@ -379,40 +445,71 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     setMode('manual');
   };
 
+  // Bo'sh joy reset qiymati — saqlashdan keyin va bekor qilishda ishlatiladi.
+  const _resetQ = () => ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
+
+  // Forma holatidan backend payload quradi va front validatsiyasini bajaradi.
+  // Xatolik bo'lsa toast ko'rsatib null qaytaradi (saqlash to'xtaydi).
+  const _buildManualPayload = () => {
+    const backendType = TYPE_TO_BACKEND[newQ.type] || 'mcq';
+    const base = {
+      subject: newQ.subject,
+      text: newQ.text,
+      score: newQ.score,
+      difficulty: _diffToApi(newQ.level, newQ.subject),
+      question_type: backendType,
+    };
+    if (backendType === 'code') {
+      return { ...base, programming_language: newQ.programmingLanguage,
+        code_template: newQ.codeTemplate || '', expected_output: newQ.expectedOutput || '',
+        test_cases: (newQ.testCases || []).filter(tc => tc.input.trim() || tc.expected_output.trim()),
+        options: [], correct_answer: 0 };
+    }
+    if (backendType === 'essay') {
+      return { ...base, options: [], correct_answer: 0, correct_text: '' };
+    }
+    if (backendType === 'yes_no') {
+      return { ...base, options: ['Ha', "Yo'q"], correct_answer: newQ.correct === 1 ? 1 : 0, correct_text: '' };
+    }
+    if (backendType === 'fill_blank') {
+      if (!String(newQ.correctText || '').trim()) { showApiToast("⚠ To'g'ri javobni kiriting"); return null; }
+      return { ...base, options: [], correct_answer: 0, correct_text: String(newQ.correctText).trim() };
+    }
+    if (backendType === 'fill_blanks') {
+      const entries = (newQ.blanks || []).filter(b => String(b.answer || '').trim());
+      if (entries.length === 0) { showApiToast("⚠ Kamida bitta bo'sh joy javobini kiriting"); return null; }
+      const map = {};
+      entries.forEach((b, i) => { map[String(b.key || (i + 1))] = String(b.answer).trim(); });
+      return { ...base, options: [], correct_answer: 0, correct_text: JSON.stringify(map) };
+    }
+    if (backendType === 'multiple_select') {
+      const opts = (newQ.options || []).filter(o => String(o).trim());
+      if (opts.length < 2) { showApiToast('⚠ Kamida 2 ta variant kiriting'); return null; }
+      // Indekslar to'liq (bo'sh bo'lmagan) variantlar ro'yxatiga moslab qayta hisoblanadi.
+      const validIndexes = (newQ.correctIndexes || [])
+        .map(idx => { const val = newQ.options[idx]; return opts.indexOf(val); })
+        .filter(i => i >= 0);
+      const uniq = [...new Set(validIndexes)].sort((a, b) => a - b);
+      if (uniq.length === 0) { showApiToast("⚠ Kamida bitta to'g'ri javobni belgilang"); return null; }
+      return { ...base, options: opts, correct_answer: uniq[0], correct_text: JSON.stringify(uniq) };
+    }
+    // mcq (Ko'p tanlovli / To'g'ri-Noto'g'ri / Qisqa javob)
+    return { ...base, options: newQ.options, correct_answer: newQ.correct, question_type: 'mcq' };
+  };
+
   const saveQuestion = () => {
     if (!newQ.text) return;
-    const isCode = newQ.type === 'Kod (dasturlash)';
+    const backendType = TYPE_TO_BACKEND[newQ.type] || 'mcq';
     // Kod savol uchun dasturlash tili majburiy.
-    if (isCode && !String(newQ.programmingLanguage || '').trim()) {
+    if (backendType === 'code' && !String(newQ.programmingLanguage || '').trim()) {
       showApiToast('⚠ Dasturlash tilini tanlang');
       return;
     }
     const isEditing = !!editingQuestionId;
     if (isApi) {
+      const payload = _buildManualPayload();
+      if (!payload) return;
       const token = OlympyApi.getToken();
-      const payload = isCode
-        ? {
-            subject: newQ.subject,
-            text: newQ.text,
-            score: newQ.score,
-            difficulty: _diffToApi(newQ.level, newQ.subject),
-            question_type: 'code',
-            programming_language: newQ.programmingLanguage,
-            code_template: newQ.codeTemplate || '',
-            expected_output: newQ.expectedOutput || '',
-            test_cases: (newQ.testCases || []).filter(tc => tc.input.trim() || tc.expected_output.trim()),
-            options: [],
-            correct_answer: 0,
-          }
-        : {
-            subject: newQ.subject,
-            text: newQ.text,
-            options: newQ.options,
-            correct_answer: newQ.correct,
-            score: newQ.score,
-            difficulty: _diffToApi(newQ.level, newQ.subject),
-            question_type: 'mcq',
-          };
       const promise = isEditing
         ? OlympyApi.updateQuestion(editingQuestionId, payload, token)
         : OlympyApi.createQuestion({
@@ -426,32 +523,33 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           console.warn('saveQuestion failed:', err);
           showApiToast(`⚠ ${isEditing ? "Tahrirlab" : "Saqlab"} bo'lmadi`);
         });
-      setNewQ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0, programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
+      setNewQ(_resetQ());
       return;
     }
+    // ─── Mock (lokal) rejim — backend yo'q, store'ga yangi turlar bilan yozamiz.
+    const payload = _buildManualPayload();
+    if (!payload) return;
+    const storeFields = {
+      subject: newQ.subject,
+      text: newQ.text,
+      options: payload.options || [],
+      correctAnswer: payload.correct_answer ?? 0,
+      score: newQ.score,
+      difficulty: newQ.level,
+      questionType: backendType,
+      correctText: payload.correct_text || '',
+    };
     if (isEditing) {
-      OlympyStore.updateQuestion(editingQuestionId, {
-        subject: newQ.subject,
-        text: newQ.text,
-        options: newQ.options,
-        correctAnswer: newQ.correct,
-        score: newQ.score,
-        difficulty: newQ.level,
-      });
+      OlympyStore.updateQuestion(editingQuestionId, storeFields);
     } else {
       OlympyStore.createQuestion({
         centerId: myCenterId,
-        subject: newQ.subject,
-        text: newQ.text,
-        options: newQ.options,
-        correctAnswer: newQ.correct,
-        score: newQ.score,
-        difficulty: newQ.level,
+        ...storeFields,
         source: 'manual',
         createdBy: user?.id,
       });
     }
-    setNewQ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0, programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
+    setNewQ(_resetQ());
     setEditingQuestionId(null);
     setMode('list');
   };
@@ -763,6 +861,101 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               ))}
             </div>
           )}
+          {/* Ha / Yo'q — True/False ga o'xshash, lekin "Ha"/"Yo'q" yozuvi bilan */}
+          {newQ.type === "Ha / Yo'q" && (
+            <div className="flex gap-3">
+              {['Ha', "Yo'q"].map((v,i) => (
+                <button key={v} onClick={() => setNewQ({...newQ, correct: i, options: ['Ha', "Yo'q"]})}
+                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${newQ.correct === i ? 'gradient-bg text-white' : 'glass text-white/50'}`}>{v}</button>
+              ))}
+            </div>
+          )}
+          {/* Multiple Select — bir nechta to'g'ri javob (checkbox bilan) */}
+          {newQ.type === "Bir nechta to'g'ri (Multiple Select)" && (
+            <div>
+              <label className="block text-xs text-white/50 mb-2 font-medium">Javob variantlari (to'g'rilarini belgilang — bir nechta bo'lishi mumkin)</label>
+              <div className="space-y-2">
+                {newQ.options.map((opt, i) => {
+                  const checked = (newQ.correctIndexes || []).includes(i);
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      <button type="button" onClick={() => {
+                        const set = new Set(newQ.correctIndexes || []);
+                        if (set.has(i)) set.delete(i); else set.add(i);
+                        setNewQ({...newQ, correctIndexes: [...set].sort((a,b)=>a-b)});
+                      }}
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${checked ? 'gradient-bg text-white' : 'glass text-white/40'}`}>
+                        {checked ? <Icon name="check" size={14} /> : String.fromCharCode(65+i)}
+                      </button>
+                      <input className="input-field py-2" placeholder={`${String.fromCharCode(65+i)} varianti`}
+                        value={opt} onChange={e => { const o = [...newQ.options]; o[i] = e.target.value; setNewQ({...newQ, options: o}); }} />
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-[11px] text-white/35">Belgilangan barcha variantlar to'g'ri javob sifatida saqlanadi.</p>
+            </div>
+          )}
+          {/* Essay — katta matn (avtomatik baholanmaydi, menejer qo'lda ball beradi) */}
+          {newQ.type === 'Essay (Katta matn)' && (
+            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
+              <p className="text-xs text-white/55 leading-relaxed">
+                <Icon name="info" size={13} className="inline -mt-0.5 mr-1" />
+                Essay savolda o'quvchi katta matn yozadi. Variant va to'g'ri javob belgilanmaydi —
+                javob <strong>menejer tomonidan qo'lda baholanadi</strong>. Yuqorida ball maydonida maksimal ballni belgilang.
+              </p>
+            </div>
+          )}
+          {/* Bitta bo'sh joy to'ldirish */}
+          {newQ.type === "Bo'sh joy to'ldirish" && (
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">To'g'ri javob</label>
+              <input className="input-field" placeholder="Masalan: Toshkent"
+                value={newQ.correctText} onChange={e => setNewQ({...newQ, correctText: e.target.value})} />
+              <p className="mt-2 text-[11px] text-white/35">Savol matnida bo'sh joyni <code className="text-white/50">___</code> bilan belgilashingiz mumkin. O'quvchi javobi shu matnga moslab tekshiriladi.</p>
+            </div>
+          )}
+          {/* Ko'p bo'sh joy to'ldirish */}
+          {newQ.type === "Ko'p bo'sh joy to'ldirish" && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="text-xs text-white/50 font-medium">Bo'sh joylar va javoblari</label>
+                <button type="button"
+                  onClick={() => {
+                    const next = [...(newQ.blanks || [])];
+                    next.push({ key: String(next.length + 1), answer: '' });
+                    setNewQ({...newQ, blanks: next});
+                  }}
+                  className="text-xs px-3 py-1.5 rounded-lg glass text-indigo-300 hover:text-indigo-200 font-semibold transition-all">
+                  + Bo'sh joy qo'shish
+                </button>
+              </div>
+              <p className="mb-2 text-[11px] text-white/35">Savol matnida bo'sh joylarni <code className="text-white/50">[blank]</code> yoki <code className="text-white/50">___</code> bilan belgilang. Har bir bo'sh joyga tartib bo'yicha javob kiriting.</p>
+              <div className="space-y-2">
+                {(newQ.blanks || []).map((b, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="w-12 text-center text-xs font-bold text-white/40 flex-shrink-0">#{b.key || idx + 1}</span>
+                    <input className="input-field py-2" placeholder={`${idx + 1}-bo'sh joy javobi`}
+                      value={b.answer} onChange={e => {
+                        const next = [...newQ.blanks];
+                        next[idx] = { ...next[idx], answer: e.target.value };
+                        setNewQ({...newQ, blanks: next});
+                      }} />
+                    {(newQ.blanks || []).length > 1 && (
+                      <button type="button"
+                        onClick={() => {
+                          const next = newQ.blanks.filter((_, i) => i !== idx).map((x, i) => ({ ...x, key: String(i + 1) }));
+                          setNewQ({...newQ, blanks: next});
+                        }}
+                        className="text-rose-400 hover:text-rose-300 transition-colors p-2 rounded-lg glass flex-shrink-0">
+                        <Icon name="trash" size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {newQ.type === 'Kod (dasturlash)' && (
             <div className="space-y-4">
               <div>
@@ -902,7 +1095,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 </select></div>
               <div><label className="block text-xs text-white/50 mb-1.5">Test turi</label>
                 <select className="input-field" value={aiForm.type} onChange={e => setAiForm({...aiForm, type: e.target.value})}>
-                  {TYPES.map(t => <option key={t}>{t}</option>)}
+                  {AI_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select></div>
             </div>
             <button onClick={generateAI} disabled={!aiForm.topic || aiLoading}

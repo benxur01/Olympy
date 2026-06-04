@@ -537,10 +537,23 @@ const normaliseQuestionOption = (value) =>
     .toLowerCase()
     .replace(/[‘’`ʼʻ]/g, "'");
 
+// Yangi savol turlari (multiple_select/yes_no/essay/fill_blank/fill_blanks)
+// variantli test turlariga (multiple_choice/true_false/short_answer) kirmaydi —
+// ular o'z nomi bilan qaytadi va faqat "Aralash" tadbirlarga yoki kod kabi
+// erkin biriktiriladi (pastdagi questionMatchesTestType ga qarang).
+const SPECIAL_QUESTION_TYPES = new Set([
+  'code', 'multiple_select', 'yes_no', 'essay', 'fill_blank', 'fill_blanks',
+]);
+
 const inferQuestionTestType = (question) => {
   const explicit = String(question?.type || question?.questionType || question?.question_type || '').toLowerCase();
-  // Kod (IT) savol variantli test turiga kirmaydi.
+  // Yangi/maxsus turlar question_type orqali aniq keladi.
   if (explicit === 'code' || explicit.includes('kod')) return 'code';
+  if (explicit === 'multiple_select') return 'multiple_select';
+  if (explicit === 'yes_no') return 'yes_no';
+  if (explicit === 'essay') return 'essay';
+  if (explicit === 'fill_blank') return 'fill_blank';
+  if (explicit === 'fill_blanks') return 'fill_blanks';
   if (explicit.includes('true') || explicit.includes("to'g'ri") || explicit.includes("noto'g'ri")) return 'true_false';
   if (explicit.includes('short') || explicit.includes('qisqa')) return 'short_answer';
   if (explicit.includes('multiple') || explicit.includes("ko'p")) return 'multiple_choice';
@@ -561,9 +574,9 @@ const questionMatchesTestType = (question, testType) => {
   // Faqat kod (dasturlash) turida — faqat `code` savollar mos keladi.
   if (testType === 'code_only') return inferred === 'code';
   if (testType === 'mixed') return true;
-  // Variantli turlarda kod savollar har qanday turga erkin biriktiriladi
-  // (backend ham ularni test_type mosligi tekshiruvidan chiqaradi).
-  return inferred === 'code' || inferred === testType;
+  // Variantli turlarda kod va boshqa maxsus savollar har qanday turga erkin
+  // biriktiriladi (backend ham ularni test_type mosligi tekshiruvidan chiqaradi).
+  return SPECIAL_QUESTION_TYPES.has(inferred) || inferred === testType;
 };
 
 const eventReadinessIssues = (event) => {
@@ -776,6 +789,9 @@ const mapApiQuestion = (q) => {
     text: q.text,
     options: Array.isArray(q.options) ? q.options : [],
     correctAnswer: q.correct_answer ?? 0,
+    // Yangi turlar (fill_blank/fill_blanks/multiple_select) to'g'ri javobi —
+    // matn yoki JSON string. Staff bo'lmaganlarga backend uni qaytarmaydi.
+    correctText: q.correct_text ?? q.correctText ?? '',
     score: q.score ?? 3,
     difficulty: mappedDifficulty,
     source: q.source || 'manual',

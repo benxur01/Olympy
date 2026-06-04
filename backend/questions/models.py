@@ -27,9 +27,23 @@ class Question(models.Model):
     # va A/B/C/D variantlar o'rniga o'quvchi kod yozadi.
     QUESTION_TYPE_MCQ = 'mcq'
     QUESTION_TYPE_CODE = 'code'
+    # Yangi savol turlari. `mcq` (Multiple Choice / True-False / Short Answer
+    # vizual rejimlari) va `code` o'zgarmadi. Quyidagilar correct_answer
+    # integer indeksiga sig'maydigan turlar — ular `correct_text` (matn/JSON)
+    # maydonidan foydalanadi yoki umuman avtomatik baholanmaydi (essay).
+    QUESTION_TYPE_MULTIPLE_SELECT = 'multiple_select'
+    QUESTION_TYPE_YES_NO = 'yes_no'
+    QUESTION_TYPE_ESSAY = 'essay'
+    QUESTION_TYPE_FILL_BLANK = 'fill_blank'
+    QUESTION_TYPE_FILL_BLANKS = 'fill_blanks'
     QUESTION_TYPE_CHOICES = [
         (QUESTION_TYPE_MCQ, 'Test (variantli)'),
         (QUESTION_TYPE_CODE, 'Kod (dasturlash)'),
+        (QUESTION_TYPE_MULTIPLE_SELECT, 'Multiple Select'),
+        (QUESTION_TYPE_YES_NO, "Ha / Yo'q"),
+        (QUESTION_TYPE_ESSAY, 'Essay (Katta matn)'),
+        (QUESTION_TYPE_FILL_BLANK, "Bo'sh joy to'ldirish"),
+        (QUESTION_TYPE_FILL_BLANKS, "Ko'p bo'sh joy to'ldirish"),
     ]
 
     DIFFICULTY_EASY = 'easy'
@@ -65,9 +79,18 @@ class Question(models.Model):
     text = models.TextField()
     options = models.JSONField(default=list)
     correct_answer = models.PositiveIntegerField(default=0)
+    # Integer indeksiga sig'maydigan to'g'ri javoblar uchun matn/JSON maydoni.
+    #   fill_blank   → bitta matnli javob (string)
+    #   fill_blanks  → JSON, masalan {"1": "javob1", "2": "javob2"}
+    #   multiple_select → JSON ro'yxat, to'g'ri option indekslari (masalan [0, 2])
+    # mcq/code/yes_no/essay bu maydonni ishlatmaydi (bo'sh qoladi).
+    correct_text = models.TextField(
+        blank=True, default='',
+        help_text="fill_blank/fill_blanks/multiple_select to'g'ri javobi (matn yoki JSON)",
+    )
     score = models.PositiveIntegerField(default=3)
     question_type = models.CharField(
-        max_length=10,
+        max_length=20,
         choices=QUESTION_TYPE_CHOICES,
         default=QUESTION_TYPE_MCQ,
         db_index=True,

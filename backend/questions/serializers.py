@@ -9,9 +9,10 @@ class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
         fields = ['id', 'center', 'subject', 'text', 'options', 'correct_answer',
-                  'score', 'difficulty', 'image', 'source', 'created_by',
-                  'created_at', 'question_type', 'programming_language',
-                  'code_template', 'expected_output', 'test_cases']
+                  'correct_text', 'score', 'difficulty', 'image', 'source',
+                  'created_by', 'created_at', 'question_type',
+                  'programming_language', 'code_template', 'expected_output',
+                  'test_cases']
         read_only_fields = ['id', 'created_by', 'created_at']
 
     def to_representation(self, instance):
@@ -53,6 +54,9 @@ class QuestionSerializer(serializers.ModelSerializer):
             can_manage = False
         if not can_manage:
             data.pop('correct_answer', None)
+            # `correct_text` ham to'g'ri javobni saqlaydi (fill_blank/fill_blanks/
+            # multiple_select) — staff bo'lmaganlarga yubormaymiz.
+            data.pop('correct_text', None)
             # `test_cases` ichida yashirin testlar va kutilgan natijalar bor —
             # staff bo'lmagan foydalanuvchiga ularni butunlay yubormaymiz.
             # (Run-code endpoint test natijalarini DB'dan o'zi hisoblaydi,
@@ -110,6 +114,119 @@ class QuestionSerializer(serializers.ModelSerializer):
             data['correct_answer'] = 0
             return data
 
+        # ─── Essay ─────────────────────────────────────────────────────────
+        # Katta matn javob — variant ham, to'g'ri javob ham talab qilinmaydi.
+        # Menejer keyinchalik qo'lda ball beradi. Faqat score tekshiriladi.
+        if q_type == Question.QUESTION_TYPE_ESSAY:
+            data['options'] = []
+            data['correct_answer'] = 0
+            data['correct_text'] = ''
+            return self._validate_score(data, instance)
+
+        # ─── Ha / Yo'q ─────────────────────────────────────────────────────
+        # True/False ga o'xshash, lekin variantlar "Ha"/"Yo'q". Variantlar
+        # avtomatik o'rnatiladi; correct_answer 0 (Ha) yoki 1 (Yo'q).
+        if q_type == Question.QUESTION_TYPE_YES_NO:
+            correct = data.get('correct_answer')
+            if correct is None and instance is not None:
+                correct = instance.correct_answer
+            try:
+                correct = int(correct)
+            except (TypeError, ValueError):
+                correct = 0
+            if correct not in (0, 1):
+                raise serializers.ValidationError(
+                    {'correct_answer': "Ha/Yo'q savolida to'g'ri javob 0 (Ha) yoki 1 (Yo'q) bo'lishi kerak"}
+                )
+            data['options'] = ['Ha', "Yo'q"]
+            data['correct_answer'] = correct
+            data['correct_text'] = ''
+            return self._validate_score(data, instance)
+
+        # ─── Bitta bo'sh joy to'ldirish ────────────────────────────────────
+        # Bitta matnli to'g'ri javob `correct_text` da saqlanadi.
+        if q_type == Question.QUESTION_TYPE_FILL_BLANK:
+            answer = data.get('correct_text')
+            if answer is None and instance is not None:
+                answer = instance.correct_text
+            if not str(answer or '').strip():
+                raise serializers.ValidationError(
+                    {'correct_text': "Bo'sh joy to'ldirish savoli uchun to'g'ri javob majburiy"}
+                )
+            data['options'] = []
+            data['correct_answer'] = 0
+            data['correct_text'] = str(answer).strip()
+            return self._validate_score(data, instance)
+
+        # ─── Ko'p bo'sh joy to'ldirish ─────────────────────────────────────
+        # `correct_text` JSON format: {"1": "javob1", "2": "javob2"}. Kamida
+        # bitta bo'sh joy javobi bo'lishi shart.
+        if q_type == Question.QUESTION_TYPE_FILL_BLANKS:
+            answer = data.get('correct_text')
+            if answer is None and instance is not None:
+                answer = instance.correct_text
+            parsed = answer
+            if isinstance(parsed, str):
+                try:
+                    parsed = json.loads(parsed)
+                except (TypeError, ValueError):
+                    raise serializers.ValidationError(
+                        {'correct_text': "Javoblar JSON format bo'lishi kerak: {\"1\": \"javob\"}"}
+                    )
+            if not isinstance(parsed, dict) or not parsed:
+                raise serializers.ValidationError(
+                    {'correct_text': "Kamida bitta bo'sh joy uchun javob kiriting"}
+                )
+            if any(not str(v).strip() for v in parsed.values()):
+                raise serializers.ValidationError(
+                    {'correct_text': "Bo'sh joy javobi bo'sh bo'lmasligi kerak"}
+                )
+            data['options'] = []
+            data['correct_answer'] = 0
+            data['correct_text'] = json.dumps(parsed, ensure_ascii=False)
+            return self._validate_score(data, instance)
+
+        # ─── Multiple Select (bir nechta to'g'ri javob) ────────────────────
+        # Variantlar string ro'yxat; to'g'ri javob indekslari `correct_text`
+        # da JSON ro'yxat sifatida saqlanadi (masalan [0, 2]). Kamida 2 ta
+        # variant va kamida 1 ta to'g'ri javob bo'lishi shart.
+        if q_type == Question.QUESTION_TYPE_MULTIPLE_SELECT:
+            options = data.get('options')
+            if options is None and instance is not None:
+                options = instance.options
+            if not options or len(options) < 2:
+                raise serializers.ValidationError({'options': "Kamida 2 ta variant bo'lishi kerak"})
+            if any(not str(o).strip() for o in options):
+                raise serializers.ValidationError({'options': "Variant bo'sh bo'lmasligi kerak"})
+
+            raw = data.get('correct_text')
+            if raw is None and instance is not None:
+                raw = instance.correct_text
+            correct_indexes = raw
+            if isinstance(correct_indexes, str):
+                try:
+                    correct_indexes = json.loads(correct_indexes)
+                except (TypeError, ValueError):
+                    correct_indexes = None
+            if not isinstance(correct_indexes, list) or not correct_indexes:
+                raise serializers.ValidationError(
+                    {'correct_text': "Kamida bitta to'g'ri javobni belgilang"}
+                )
+            try:
+                correct_indexes = sorted({int(i) for i in correct_indexes})
+            except (TypeError, ValueError):
+                raise serializers.ValidationError(
+                    {'correct_text': "To'g'ri javob indekslari noto'g'ri"}
+                )
+            if any(not (0 <= i < len(options)) for i in correct_indexes):
+                raise serializers.ValidationError(
+                    {'correct_text': "To'g'ri javob indeksi variantlar sonidan tashqarida"}
+                )
+            data['options'] = options
+            data['correct_answer'] = correct_indexes[0]
+            data['correct_text'] = json.dumps(correct_indexes)
+            return self._validate_score(data, instance)
+
         options = data.get('options')
         if options is None and instance is not None:
             options = instance.options
@@ -130,6 +247,13 @@ class QuestionSerializer(serializers.ModelSerializer):
         if not (0 <= correct < len(options)):
             raise serializers.ValidationError({'correct_answer': "To'g'ri javob indeksi noto'g'ri"})
 
+        # MCQ to'g'ri javobi correct_answer indeksida — correct_text ishlatilmaydi.
+        data['correct_text'] = ''
+        return self._validate_score(data, instance)
+
+    def _validate_score(self, data, instance):
+        """Ball (score) 1..100 oralig'ida ekanini tekshiradi. Yangi savol
+        turlari va MCQ uchun umumiy — takrorlanmasin deb ajratildi."""
         score = data.get('score')
         if score is None and instance is not None:
             score = instance.score
