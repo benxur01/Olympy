@@ -28,12 +28,15 @@ class Olympiad(models.Model):
     TEST_TYPE_TRUE_FALSE = 'true_false'
     TEST_TYPE_SHORT_ANSWER = 'short_answer'
     TEST_TYPE_MIXED = 'mixed'
+    # IT olimpiadalar uchun — faqat dasturlash (kod) savollari biriktiriladi.
+    TEST_TYPE_CODE_ONLY = 'code_only'
     TEST_TYPE_CHOICES = [
         (TEST_TYPE_UNSET, 'Belgilanmagan'),
         (TEST_TYPE_MULTIPLE_CHOICE, 'Multiple choice'),
         (TEST_TYPE_TRUE_FALSE, 'True/False'),
         (TEST_TYPE_SHORT_ANSWER, 'Qisqa javob'),
         (TEST_TYPE_MIXED, 'Aralash'),
+        (TEST_TYPE_CODE_ONLY, 'Faqat kod (dasturlash)'),
     ]
 
     STATUS_DRAFT = 'draft'

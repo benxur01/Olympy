@@ -526,6 +526,7 @@ const TEST_TYPE_META = {
   true_false: { label: 'True/False' },
   short_answer: { label: 'Qisqa javob' },
   mixed: { label: 'Aralash' },
+  code_only: { label: 'Faqat kod (dasturlash)' },
 };
 
 const testTypeLabel = (testType) => TEST_TYPE_META[testType]?.label || '';
@@ -554,11 +555,16 @@ const inferQuestionTestType = (question) => {
   return 'multiple_choice';
 };
 
-const questionMatchesTestType = (question, testType) =>
-  // Kod savollar har qanday test turiga mos (backend ham ularni test_type
-  // mosligi tekshiruvidan chiqaradi) — manager ularni erkin biriktira oladi.
-  !testType || testType === 'mixed' || inferQuestionTestType(question) === 'code'
-  || inferQuestionTestType(question) === testType;
+const questionMatchesTestType = (question, testType) => {
+  if (!testType) return true;
+  const inferred = inferQuestionTestType(question);
+  // Faqat kod (dasturlash) turida — faqat `code` savollar mos keladi.
+  if (testType === 'code_only') return inferred === 'code';
+  if (testType === 'mixed') return true;
+  // Variantli turlarda kod savollar har qanday turga erkin biriktiriladi
+  // (backend ham ularni test_type mosligi tekshiruvidan chiqaradi).
+  return inferred === 'code' || inferred === testType;
+};
 
 const eventReadinessIssues = (event) => {
   const issues = [];

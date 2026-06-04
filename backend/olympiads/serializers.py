@@ -120,7 +120,24 @@ class OlympiadSerializer(serializers.ModelSerializer):
             'test_type',
             self.instance.test_type if self.instance else Olympiad.TEST_TYPE_UNSET,
         )
-        if test_type and test_type != Olympiad.TEST_TYPE_MIXED:
+        if test_type == Olympiad.TEST_TYPE_CODE_ONLY:
+            # Faqat kod (dasturlash) turida — barcha savollar `code` bo'lishi
+            # shart. Variantli (mcq/true_false/short_answer) savollar mos kelmaydi.
+            if questions is None and self.instance:
+                questions = list(self.instance.questions.all())
+            mismatched = [
+                q.id for q in (questions or [])
+                if getattr(q, 'question_type', 'mcq') != 'code'
+            ]
+            if mismatched:
+                raise serializers.ValidationError({
+                    'test_type': (
+                        f"Faqat kod turida {len(mismatched)} ta savol mos emas. "
+                        "Faqat dasturlash (kod) savollarini tanlang yoki "
+                        "test turini Aralash qiling."
+                    ),
+                })
+        elif test_type and test_type != Olympiad.TEST_TYPE_MIXED:
             if questions is None and self.instance:
                 questions = list(self.instance.questions.all())
             # Kod (IT) savollar variant-asosli test turiga mos kelmaydi
