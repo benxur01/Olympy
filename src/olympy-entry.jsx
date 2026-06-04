@@ -9033,7 +9033,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   <Icon name="edit" size={13} /> Tahrirlash
                 </button>
                 {(canEdit || o.status === 'finished') && (
-                  <button onClick={() => setDeleteEventId(o.id)} disabled={eventSaving}
+                  <button onClick={() => setDeleteEventId(o.id)}
                     className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50 flex items-center justify-center gap-1">
                     <Icon name="trash" size={13} /> O'chirish
                   </button>
@@ -9055,9 +9055,9 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                       className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 flex items-center justify-center gap-1">
                       👁️ Jonli nazorat
                     </button>
-                    <button onClick={() => deactivateEvent(o)} disabled={eventSaving}
+                    <button onClick={() => deactivateEvent(o)}
                       className="btn-ghost text-xs px-3 py-1.5 rounded-xl disabled:opacity-50">Nofaol qilish</button>
-                    <button onClick={() => finishEvent(o)} disabled={eventSaving}
+                    <button onClick={() => finishEvent(o)}
                       className="btn-ghost text-xs px-3 py-1.5 rounded-xl disabled:opacity-50">Yakunlash</button>
                   </>
                 )}
@@ -12271,7 +12271,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                     <Icon name="edit" size={13} /> Tahrirlash
                   </button>
                   {canEdit && (
-                    <button onClick={() => setDeleteEventId(o.id)} disabled={eventSaving}
+                    <button onClick={() => setDeleteEventId(o.id)}
                       className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50 flex items-center justify-center gap-1">
                       <Icon name="trash" size={13} /> O'chirish
                     </button>
@@ -12289,9 +12289,9 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   )}
                   {o.status === 'active' && (
                     <>
-                      <button onClick={() => deactivateEvent(o)} disabled={eventSaving}
+                      <button onClick={() => deactivateEvent(o)}
                         className="btn-ghost text-xs px-3 py-1.5 rounded-xl disabled:opacity-50">Nofaol qilish</button>
-                      <button onClick={() => finishEvent(o)} disabled={eventSaving}
+                      <button onClick={() => finishEvent(o)}
                         className="btn-ghost text-xs px-3 py-1.5 rounded-xl disabled:opacity-50">Yakunlash</button>
                     </>
                   )}
