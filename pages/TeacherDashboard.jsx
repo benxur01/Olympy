@@ -787,6 +787,23 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               OlympyStore.updateOlympiad(liveEvent.id, { questionIds: next });
             }
           };
+          const toggleAllSubjectQs = () => {
+            const subjectQsIds = subjectQs.map(q => q.id);
+            const allSelected = subjectQs.every(q => assigned.has(q.id));
+            let next;
+            if (allSelected) {
+              const set = new Set(subjectQsIds);
+              next = [...assigned].filter(id => !set.has(id));
+            } else {
+              const set = new Set([...assigned, ...subjectQsIds]);
+              next = [...set];
+            }
+            if (isApi) {
+              setAssignedQuestionIds(next);
+            } else {
+              OlympyStore.updateOlympiad(liveEvent.id, { questionIds: next });
+            }
+          };
           const saveAssignment = () => {
             if (typeMismatches.length > 0) {
               showToast(`⚠ ${typeMismatches.length} ta savol ${testTypeLabel(assignmentType)} turiga mos emas`);
@@ -895,7 +912,18 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 )}
               </div>
               <div className="space-y-2 max-h-80 overflow-y-auto">
-                {subjectQs.length > 0 && <div className="text-xs text-white/40 font-medium uppercase tracking-wider mt-1">Tegishli fan savollari</div>}
+                {subjectQs.length > 0 && (
+                  <div className="flex items-center justify-between mt-1 mb-0.5">
+                    <div className="text-xs text-white/40 font-medium uppercase tracking-wider">Tegishli fan savollari</div>
+                    <button
+                      type="button"
+                      onClick={toggleAllSubjectQs}
+                      className="text-xs font-bold text-violet-400 hover:text-violet-300 transition-colors"
+                    >
+                      {subjectQs.every(q => assigned.has(q.id)) ? "Barchasini o'chirish" : "Barchasini tanlash"}
+                    </button>
+                  </div>
+                )}
                 {subjectQs.map(q => (
                   <label key={q.id} className="flex items-start gap-3 p-3 rounded-xl glass cursor-pointer hover:bg-white/5">
                     <input type="checkbox" checked={assigned.has(q.id)} onChange={() => toggle(q.id)} className="mt-1" />
