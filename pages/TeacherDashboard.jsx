@@ -645,6 +645,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                     <option value="true_false">True/False</option>
                     <option value="short_answer">Qisqa javob</option>
                     <option value="mixed">Aralash</option>
+                    <option value="code_only">Faqat kod (dasturlash)</option>
                   </select>
                 </div>
               </div>
