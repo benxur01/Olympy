@@ -10,16 +10,8 @@ const MAX_ATTEMPTS = 5;
 const goToTelegramLink = (link) => {
   if (!link) return false;
   try {
-    window.location.assign(link);
+    openExternalLink(link);
     return true;
-  } catch (_) {}
-  try {
-    window.location.href = link;
-    return true;
-  } catch (_) {}
-  try {
-    const opened = window.open(link, '_blank', 'noopener,noreferrer');
-    return !!opened;
   } catch (_) {
     return false;
   }
