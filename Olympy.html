@@ -35,6 +35,26 @@
   <!-- Tailwind CDN olib tashlandi: avval https://cdn.tailwindcss.com 1+ MB JS yuklardi
        va render kechikishi yaratardi. Endi Tailwind PostCSS plugin orqali build paytida
        CSS generatsiya qilinadi (tailwind.config.js + postcss.config.js + src/index.css). -->
+  <!-- Birinchi tashrif (Duolingo splash/onboarding) uchun: React mount bo'lgunicha
+       to'q (#050508) body foni ko'rinib, so'ng oq splashga sakrardi (flicker).
+       URL '/' va onboarding ko'rilmagan bo'lsa, mountdan oldin oq fon o'rnatamiz.
+       Telegram WebView uchun yengil: bitta klass + statik rang, animatsiyasiz. -->
+  <style>
+    html.booting-light, html.booting-light body { background: #ffffff !important; }
+    html.booting-light #root:empty {
+      position: fixed; inset: 0; background: #ffffff;
+    }
+  </style>
+  <script>
+    (function () {
+      try {
+        var onLanding = (location.pathname || '/') === '/';
+        var seen = false;
+        try { seen = localStorage.getItem('onboarding_done') === '1'; } catch (e) {}
+        if (onLanding && !seen) document.documentElement.classList.add('booting-light');
+      } catch (e) {}
+    })();
+  </script>
 </head>
 <body class="dark">
   <div id="root"></div>
@@ -50,6 +70,9 @@
   <script type="text/babel" src="pages/Landing.jsx"></script>
   <script type="text/babel" src="pages/TelegramVerify.jsx"></script>
   <script type="text/babel" src="pages/Auth.jsx"></script>
+  <!-- Splash + marketing onboarding (Duolingo uslubi). BrandLogo (shared.jsx)
+       dan keyin, app.jsx dan oldin yuklanadi. -->
+  <script type="text/babel" src="pages/Splash.jsx"></script>
   <!-- Retention: widget va onboarding komponentlari StudentDashboard/app.jsx'dan
        oldin yuklanadi (global scope'da ulardan oldin ta'riflanishi kerak). -->
   <script type="text/babel" src="pages/RetentionWidgets.jsx"></script>

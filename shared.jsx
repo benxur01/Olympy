@@ -61,7 +61,7 @@ const BRAND_ASSET_BASE = window.location.protocol === 'file:' ? 'public/brand' :
 const BRAND_LOGO_SRC = `${BRAND_ASSET_BASE}/olympy-brand.png`;
 const BRAND_LOGO_SRC_WEBP = `${BRAND_ASSET_BASE}/olympy-brand.webp`;
 
-const BrandLogo = ({ compact = false, size = 'md', className = '' }) => {
+const BrandLogo = ({ compact = false, size = 'md', className = '', variant = 'default' }) => {
   const sizes = {
     xs: { width: 48, height: 32, mark: 28 },
     sm: { width: 84, height: 56, mark: 32 },
@@ -70,6 +70,35 @@ const BrandLogo = ({ compact = false, size = 'md', className = '' }) => {
     xl: { width: 156, height: 104, mark: 72 },
   };
   const current = sizes[size] || sizes.md;
+
+  // Light yuzalar uchun matnli wordmark — brend rasmi to'q fonli (screen
+  // blend), oq fonda ko'rinmaydi. Shuning uchun Splash/Onboarding/Auth
+  // light ekranlarida yashil "Olympy" matnli logotip ishlatamiz.
+  if (variant === 'wordmark') {
+    const fontSizes = { xs: 22, sm: 28, md: 34, lg: 40, xl: 52 };
+    const fs = fontSizes[size] || fontSizes.md;
+    const dot = Math.round(fs * 0.42);
+    return (
+      <span className={`inline-flex items-center flex-shrink-0 ${className}`}
+        style={{ gap: Math.round(fs * 0.18) }}>
+        <span
+          style={{
+            width: dot, height: dot, borderRadius: '50%',
+            background: 'var(--duo-green, #58CC02)',
+            boxShadow: '0 3px 0 var(--duo-green-dark, #46A302)',
+            flexShrink: 0,
+          }}
+        />
+        <span style={{
+          fontWeight: 800,
+          fontSize: fs,
+          letterSpacing: '-0.02em',
+          color: 'var(--duo-green, #58CC02)',
+          lineHeight: 1,
+        }}>Olympy</span>
+      </span>
+    );
+  }
   const imageBlend = {
     mixBlendMode: 'screen',
     opacity: 0.96,
