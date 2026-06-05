@@ -17,6 +17,11 @@ const mapApiLeaderboard = (entry) => ({
   time: formatTime(entry.time_spent || 0),
   city: entry.region || entry.city || '—',
   isPremium: !!(entry.is_premium ?? entry.isPremium),
+  // Avatar rasmi — backend `avatar_url` qaytaradi. Avval bu tashlab ketilardi
+  // va premium oltin halqa faqat bosh harf ustida ko'rinardi.
+  avatarUrl: OlympyApi.makeAssetUrl
+    ? OlympyApi.makeAssetUrl(entry.avatar_url || entry.avatarUrl || '')
+    : (entry.avatar_url || entry.avatarUrl || ''),
   _api: true,
 });
 
@@ -176,8 +181,9 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
           return (
             <div key={p.key || p.rank} className={`rounded-2xl p-2 md:p-4 text-center card-hover min-w-0 ${cls} ${isFirst ? 'mt-0' : 'mt-3 md:mt-6'}`}>
               <div className="text-2xl md:text-3xl mb-0.5 md:mb-1">{p.badge}</div>
-              <Avatar name={p.name} size={isFirst?40:32} gradient={isFirst?'from-amber-400 to-orange-500':'from-indigo-500 to-purple-600'} premium={!!p.isPremium} />
-              <div className="text-xs md:text-sm font-bold text-white mt-1.5 md:mt-2 truncate">{p.isPremium && <span title="Premium o'quvchi">⭐ </span>}{p.name.split(' ')[0]}</div>
+              <Avatar name={p.name} src={p.avatarUrl || ''} size={isFirst?40:32} gradient={isFirst?'from-amber-400 to-orange-500':'from-indigo-500 to-purple-600'} premium={!!p.isPremium} />
+              <div className="text-xs md:text-sm font-bold text-white mt-1.5 md:mt-2 truncate">{p.name.split(' ')[0]}</div>
+              {p.isPremium && <div className="mt-1 flex justify-center"><span className="premium-badge premium-badge--sm" title="Premium o'quvchi">⭐ Premium</span></div>}
               <div className="hidden md:block text-xs text-white/40 truncate mb-2">{p.center} · {p.organizationType}</div>
               <div className={`text-lg md:text-2xl font-black mt-1 md:mt-0 ${isFirst?'text-amber-400':i===0?'text-slate-300':'text-amber-600'}`}>{p.score}</div>
               <div className="hidden md:block"><SubjectBadge subject={p.subject} /></div>
@@ -200,16 +206,19 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
         {(() => {
           // Reyting qatori — virtual scroll va oddiy map o'rtasida bir xil JSX.
           const renderRow = (p) => (
-            <div key={p.key || p.rank} className="olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5">
+            <div key={p.key || p.rank} className={`olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5 ${p.isPremium ? 'premium-row' : ''}`}>
               <div className="md:col-span-1 flex-shrink-0">
                 <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
                   {p.rank}
                 </div>
               </div>
               <div className="md:col-span-3 flex-1 flex items-center gap-2 min-w-0">
-                <Avatar name={p.name} size={32} premium={!!p.isPremium} />
+                <Avatar name={p.name} src={p.avatarUrl || ''} size={32} premium={!!p.isPremium} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-white truncate">{p.isPremium && <span title="Premium o'quvchi">⭐ </span>}{p.name}</div>
+                  <div className="text-sm font-medium text-white truncate flex items-center gap-1.5">
+                    <span className="truncate">{p.name}</span>
+                    {p.isPremium && <span className="premium-badge premium-badge--sm flex-shrink-0" title="Premium o'quvchi">Premium</span>}
+                  </div>
                   <div className="text-xs text-white/30 truncate md:hidden">{p.center}</div>
                 </div>
               </div>

@@ -348,6 +348,7 @@ export const OlympyApi = {
   ApiError,
   toUserMessage,
   mapBackendUser,
+  makeAssetUrl,
   saveAuth,
   loadAuth,
   clearAuth,

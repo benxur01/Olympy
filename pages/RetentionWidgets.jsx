@@ -153,10 +153,18 @@ const RivalActivityWidget = () => {
       <h3 className="font-bold text-white text-sm md:text-base mb-3 flex items-center gap-2">⚔️ Raqiblar</h3>
       <div className="space-y-2">
         {rivals.map(r => (
-          <div key={r.rival_id} className="flex items-center gap-3 rounded-xl bg-white/[0.03] p-2.5">
-            <Avatar name={r.rival_name} size={34} />
+          <div key={r.rival_id} className={`flex items-center gap-3 rounded-xl p-2.5 ${r.rival_is_premium ? 'premium-row' : 'bg-white/[0.03]'}`}>
+            <Avatar
+              name={r.rival_name}
+              src={OlympyApi.makeAssetUrl ? OlympyApi.makeAssetUrl(r.rival_avatar_url || '') : (r.rival_avatar_url || '')}
+              size={34}
+              premium={!!r.rival_is_premium}
+            />
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-white truncate">{r.rival_name}</div>
+              <div className="text-sm font-semibold text-white truncate flex items-center gap-1.5">
+                <span className="truncate">{r.rival_name}</span>
+                {r.rival_is_premium && <span className="premium-badge premium-badge--sm flex-shrink-0" title="Premium o'quvchi">Premium</span>}
+              </div>
               <div className="text-xs text-white/50 truncate">{r.message}</div>
             </div>
             <div className="text-right flex-shrink-0">

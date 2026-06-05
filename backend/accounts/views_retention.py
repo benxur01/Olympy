@@ -550,6 +550,7 @@ def rival_activity(request):
             'rival_id': r.rival_user_id,
             'rival_name': name,
             'rival_avatar_url': avatar_url_for(ru, request),
+            'rival_is_premium': bool(getattr(ru, 'is_premium', False)),
             'rival_score_change': rival_change,
             'my_score_change': my_change,
             'ahead_by': ahead_by,
