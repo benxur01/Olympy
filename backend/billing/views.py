@@ -1,7 +1,7 @@
 import hashlib
 import base64
 import logging
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from django.conf import settings
 from django.db import transaction
 from django.http import JsonResponse
@@ -169,13 +169,19 @@ def _activate_subscription(user, amount, plan_id=None):
         from datetime import timedelta
         start = timezone.now()
         end = start + timedelta(days=plan.duration_days or 30)
-        UserSubscription.objects.create(
-            user=user,
-            plan=plan,
-            start_date=start,
-            end_date=end,
-            is_active=True
-        )
+        # UserSubscription.save() o'z navbatida User.is_premium ni yangilaydi
+        # (billing/models.py). Bu ikki yozuv — obuna yozuvi va is_premium
+        # flag'i — bitta atomik birlik bo'lishi kerak: agar oraliqda xato
+        # bo'lsa yoki tashqi blok rollback qilsa, ikkalasi ham birga qaytadi
+        # va yarim holat (obuna bor, premium yo'q yoki aksincha) qolmaydi.
+        with transaction.atomic():
+            UserSubscription.objects.create(
+                user=user,
+                plan=plan,
+                start_date=start,
+                end_date=end,
+                is_active=True
+            )
         # /me endpoint subscription cache'ini bekor qilamiz — obuna endi aktiv,
         # foydalanuvchi premium statusini darhol ko'rishi kerak.
         try:
@@ -252,9 +258,17 @@ def click_webhook(request):
     except PaymentTransaction.DoesNotExist:
         return JsonResponse({'error': -5, 'error_note': 'Transaction not found'})
 
-    if Decimal(amount) != tx.amount:
+    # amount None yoki vergulli ("123,456") kelsa Decimal() InvalidOperation
+    # otadi va to'lov 500 bilan qulardi — try/except bilan himoyalaymiz va
+    # vergulni nuqtaga almashtiramiz.
+    try:
+        amount_decimal = Decimal(str(amount).replace(',', '.'))
+    except (InvalidOperation, TypeError, ValueError):
         return JsonResponse({'error': -2, 'error_note': 'Incorrect amount'})
-        
+
+    if amount_decimal != tx.amount:
+        return JsonResponse({'error': -2, 'error_note': 'Incorrect amount'})
+
     # Action = 0: Prepare
     if int(action) == 0:
         if tx.status != PaymentTransaction.STATUS_PENDING:
@@ -397,33 +411,38 @@ def payme_webhook(request):
         time = params.get('time')
         amount = params.get('amount')
         
-        try:
-            tx = PaymentTransaction.objects.get(pk=tx_id)
-        except PaymentTransaction.DoesNotExist:
-            return rpc_error(-31050, "Tranzaksiya topilmadi", "Транзакция не найдена")
-            
-        if Decimal(amount) / 100 != tx.amount:
-            return rpc_error(-31001, "Noto'g'ri summa", "Неверная сумма")
-            
-        if tx.status == PaymentTransaction.STATUS_SUCCESS:
-            return rpc_error(-31051, "Tranzaksiya allaqachon to'langan", "Транзакция уже оплачена")
-            
-        if tx.provider_transaction_id and tx.provider_transaction_id != payme_trans_id:
-            return rpc_error(-31051, "Boshqa tranzaksiya mavjud", "Существует другая транзакция")
-            
-        if not tx.provider_transaction_id:
-            tx.provider_transaction_id = payme_trans_id
-            tx.save()
-            
-        # Return state
-        return JsonResponse({
-            'result': {
-                'create_time': int(tx.created_at.timestamp() * 1000),
-                'transaction': str(tx.id),
-                'state': 1 # Pending state
-            },
-            'id': rpc_id
-        })
+        # Race condition himoyasi: parallel CreateTransaction so'rovlari bir
+        # vaqtda tx'ni o'qib, ikkalasi ham provider_transaction_id ni yozishi
+        # mumkin edi. select_for_update qatorni lock qiladi va tekshiruv +
+        # save bitta atomik blokda bajariladi.
+        with transaction.atomic():
+            try:
+                tx = PaymentTransaction.objects.select_for_update().get(pk=tx_id)
+            except PaymentTransaction.DoesNotExist:
+                return rpc_error(-31050, "Tranzaksiya topilmadi", "Транзакция не найдена")
+
+            if Decimal(amount) / 100 != tx.amount:
+                return rpc_error(-31001, "Noto'g'ri summa", "Неверная сумма")
+
+            if tx.status == PaymentTransaction.STATUS_SUCCESS:
+                return rpc_error(-31051, "Tranzaksiya allaqachon to'langan", "Транзакция уже оплачена")
+
+            if tx.provider_transaction_id and tx.provider_transaction_id != payme_trans_id:
+                return rpc_error(-31051, "Boshqa tranzaksiya mavjud", "Существует другая транзакция")
+
+            if not tx.provider_transaction_id:
+                tx.provider_transaction_id = payme_trans_id
+                tx.save()
+
+            # Return state
+            return JsonResponse({
+                'result': {
+                    'create_time': int(tx.created_at.timestamp() * 1000),
+                    'transaction': str(tx.id),
+                    'state': 1 # Pending state
+                },
+                'id': rpc_id
+            })
 
     # 3. PerformTransaction
     elif method == 'PerformTransaction':

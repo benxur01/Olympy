@@ -201,6 +201,11 @@ _conn_max_age = int(os.environ.get('CONN_MAX_AGE', 60))
 if DATABASE_URL and locals().get('is_supabase_pooler'):
     _conn_max_age = 0
 DATABASES['default']['CONN_MAX_AGE'] = _conn_max_age
+# Django 4.1+: persistent connection qayta ishlatishdan oldin uning hali
+# tirikligini tekshiradi. Eskirgan (server tomonidan yopilgan) ulanish
+# avtomatik tashlanadi va yangisi ochiladi — bu "OperationalError: server
+# closed the connection unexpectedly" xatosini oldini oladi.
+DATABASES['default']['CONN_HEALTH_CHECKS'] = True
 
 AUTH_USER_MODEL = 'accounts.User'
 
