@@ -91,6 +91,26 @@ const App = () => {
   // bayrog'i: true bo'lsa, butun ekran loaderda turadi va shundan so'nggina
   // haqiqiy sahifa render bo'ladi.
   const [bootstrapping, setBootstrapping] = React.useState(true);
+  // Splash + Duolingo onboarding (faqat birinchi marta, localStorage flag).
+  // Boshlang'ich qiymat URL '/' (landing) va onboarding tugatilmaganida true.
+  // Deep-link (masalan /login, /dashboard) yoki takroriy kirishda ko'rinmaydi.
+  const [showSplash, setShowSplash] = React.useState(() => {
+    try {
+      const onLanding = (window.location.pathname || '/') === '/';
+      const seen = (typeof isOnboardingDone === 'function') ? isOnboardingDone() : true;
+      return onLanding && !seen;
+    } catch { return false; }
+  });
+
+  // `booting-light` (index.html'dagi mount-oldi oq fon) — splash/onboarding
+  // ko'rsatilib turganда saqlanadi (orqada to'q body ko'rinmasligi uchun).
+  // Splash tugaгач (showSplash=false) olib tashlaymiz: keyin fonni
+  // komponentlarning o'zi beradi (duo-screen — light; dark sahifalar —
+  // body.dark).
+  React.useEffect(() => {
+    if (showSplash) return;
+    try { document.documentElement.classList.remove('booting-light'); } catch {}
+  }, [showSplash]);
 
   const user = apiUser;
 
@@ -537,6 +557,21 @@ const App = () => {
     // Avval restore tugamaguncha "landing" sahifasi ko'rinib, keyin esa
     // foydalanuvchi dashboardiga sakrar va flicker hosil bo'lardi. Endi
     // bootstrap davomida loading skeleton ko'rsatamiz.
+    //
+    // Birinchi tashrif (showSplash) — light Duolingo splash bilan uzluksiz
+    // bo'lishi uchun loader ham light. Aks holda (takroriy/deep-link) eski
+    // dark loader saqlanadi.
+    if (showSplash) {
+      return (
+        <div className="duo-splash">
+          <div className="duo-splash-mark flex flex-col items-center gap-5">
+            <BrandLogo size="xl" variant="wordmark" />
+            <div className="w-10 h-10 rounded-full animate-spin"
+              style={{ border: '3px solid var(--duo-border)', borderTopColor: 'var(--duo-green)' }} />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="dark min-h-screen flex items-center justify-center" style={{ background: '#050508' }}>
         <div className="flex flex-col items-center gap-4 text-white/70">
@@ -545,6 +580,20 @@ const App = () => {
           <div className="text-sm font-semibold tracking-wide">Olympy yuklanmoqda...</div>
         </div>
       </div>
+    );
+  }
+
+  // Splash + Duolingo marketing onboarding (birinchi tashrif). Faqat
+  // autentifikatsiyasiz foydalanuvchi uchun va flag o'rnatilmaganida.
+  // Wizard ichida tugatilгач `login`/`register` ga o'tadi.
+  if (showSplash && !user) {
+    return (
+      <SplashOnboarding
+        onFinish={(dest) => {
+          setShowSplash(false);
+          navigate(dest === 'register' ? 'register' : 'login');
+        }}
+      />
     );
   }
 

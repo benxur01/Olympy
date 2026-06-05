@@ -24,6 +24,14 @@ export default {
           900: '#050508', 800: '#0d0e12', 700: '#12141a',
           600: '#191b22', 500: '#20232b',
         },
+        // Duolingo palitra — onboarding/splash/auth light yuzalari uchun.
+        duo: {
+          green: '#58CC02', greenDark: '#46A302', greenSoft: '#D7FFB8',
+          yellow: '#FFD900', blue: '#1CB0F6', blueDark: '#1899D6',
+          purple: '#CE82FF', red: '#FF4B4B', redDark: '#E63F3F',
+          bg: '#FFFFFF', bgDark: '#131F24', card: '#F7F7F7',
+          border: '#E5E5E5', text: '#3C3C3C', textSec: '#777777',
+        },
       },
       animation: {
         'fade-in': 'fadeIn 0.5s ease forwards',

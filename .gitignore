@@ -56,6 +56,12 @@ dist/
 src/olympy-entry.jsx
 index.html
 
+# ─── Capacitor (Android native loyiha) ───────────────────────────────────
+# `npx cap add android` orqali qayta yaratiladi; web assetlar `npx cap sync`
+# bilan dist'dan ko'chiriladi. Katta build artefaktlari repo'da saqlanmaydi.
+android/
+.gradle/
+
 # ─── IDE / OS ─────────────────────────────────────────────────────────────
 .vscode/
 .idea/

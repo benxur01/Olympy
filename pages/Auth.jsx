@@ -240,122 +240,108 @@ const LoginPage = ({ onNavigate, onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex" style={{ background: '#050508' }}>
-      {/* Left panel */}
-      <div className="hidden lg:flex flex-1 flex-col justify-center items-center p-12 relative overflow-hidden">
-        <div className="hero-glow" style={{ background: '#6366f1', top: '20%', left: '20%' }} />
-        <div className="hero-glow" style={{ background: '#a855f7', bottom: '20%', right: '10%' }} />
-        <div className="relative z-10 text-center">
-          <div className="flex items-center justify-center mx-auto mb-8" style={{ animation: 'float 6s ease-in-out infinite' }}>
-            <BrandLogo compact size="xl" />
-          </div>
-          <h2 className="text-3xl font-black text-white mb-4">Xush kelibsiz!</h2>
-          <p className="text-white/40 max-w-sm mx-auto leading-relaxed mb-10">O'zbekistonning eng zamonaviy olimpiada platformasiga kiring va yutuqlarga erishishni boshlang.</p>
-          <div className="grid grid-cols-2 gap-4 max-w-xs mx-auto">
-            {/* Platforma yangi — soxta "120+ tashkilot, 15K+ o'quvchi"
-                raqamlari o'rniga imkoniyatlar. */}
-            {[{ v: 'AI', l: 'Savol generator' }, { v: 'PDF', l: 'Import' }, { v: 'Telegram', l: 'Bot' }, { v: '24/7', l: 'Online' }].map((s, i) => (
-              <div key={i} className="glass rounded-2xl p-4 text-center">
-                <div className="text-xl font-black gradient-text">{s.v}</div>
-                <div className="text-xs text-white/40">{s.l}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+    <div className="duo-screen">
+      {/* Yuqori qator: orqaga (landing/tanlash) */}
+      <div className="flex items-center px-4 pt-4" style={{ minHeight: 52 }}>
+        <button type="button" onClick={() => onNavigate('landing')}
+          className="duo-skip flex items-center gap-1" aria-label="Orqaga">
+          <Icon name="arrowLeft" size={18} /> Orqaga
+        </button>
       </div>
 
-      {/* Right panel */}
-      <div className="flex-1 lg:max-w-md flex flex-col justify-start md:justify-center px-5 md:px-8 py-8 md:py-12">
-        <div className="mb-6 md:mb-8">
-          <div className="flex items-center gap-2 mb-6 md:mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
-            <BrandLogo size="lg" />
+      {/* Forma — markazlashtirilgan, mobile-first */}
+      <div className="flex-1 flex flex-col items-center justify-start md:justify-center px-5 py-6">
+        <div className="w-full max-w-md">
+          <div className="flex flex-col items-center text-center mb-8">
+            <BrandLogo size="lg" variant="wordmark" className="mb-5" />
+            <h1 className="text-2xl font-extrabold mb-1" style={{ color: 'var(--duo-text)' }}>
+              {step === '2fa' ? 'Ikki bosqichli tasdiqlash' : 'Hisobingizga kiring'}
+            </h1>
+            <p className="text-sm" style={{ color: 'var(--duo-text-secondary)' }}>
+              {step === '2fa' ? 'Autentifikator ilovasidagi kodni kiriting' : 'Telefon raqam va parolingizni kiriting'}
+            </p>
           </div>
-          <h1 className="text-2xl md:text-3xl font-black text-white mb-2">{step === '2fa' ? 'Ikki bosqichli tasdiqlash' : 'Kirish'}</h1>
-          <p className="text-white/40 text-sm md:text-base">{step === '2fa' ? 'Autentifikator ilovasidagi kodni kiriting' : 'Hisobingizga kiring'}</p>
-        </div>
 
-        {step === '2fa' ? (
-          <form onSubmit={handleTotpVerify} className="space-y-4">
-            <div>
-              <label className="block text-sm text-white/60 mb-2 font-medium">6 raqamli kod</label>
-              <input
-                className="input-field text-center font-mono tracking-[0.4em] text-lg"
-                value={totpCode}
-                onChange={e => { setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); }}
-                placeholder="000000"
-                maxLength={6}
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                autoFocus
-              />
-              <p className="text-white/30 text-xs mt-2">Authenticator (Google/Microsoft Authenticator, Authy) ilovasini oching</p>
-            </div>
-            {error && <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 rounded-xl px-4 py-3"><Icon name="info" size={16} />{error}</div>}
-            <button type="submit" disabled={loading || totpCode.length < 6}
-              className="btn-primary w-full py-3.5 rounded-2xl font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
-              {loading ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Tekshirilmoqda...</> : 'Tasdiqlash'}
-            </button>
-            <button type="button" onClick={backToLogin}
-              className="btn-ghost w-full py-3 rounded-2xl font-semibold">← Orqaga</button>
-          </form>
-        ) : (
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
-            <input ref={phoneInputRef.ref} className="input-field" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
-              placeholder="+998901234567" value={form.phone}
-              onChange={e => phoneInputRef.handleChange(e, phone => setForm(f => ({ ...f, phone })))}
-              onFocus={e => setForm(f => ({ ...f, phone: formatUzPhoneInput(e.target.value) }))}
-              required />
-          </div>
-          <div>
-            <label className="block text-sm text-white/60 mb-2 font-medium">Parol</label>
-            <div className="relative">
-              <input className="input-field pr-12" type={showPass ? 'text' : 'password'} placeholder="••••••••"
-                value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} required />
-              <button type="button" onClick={() => setShowPass(!showPass)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors">
-                <Icon name="eye" size={18} />
+          {step === '2fa' ? (
+            <form onSubmit={handleTotpVerify} className="space-y-4">
+              <div>
+                <label className="duo-label">6 raqamli kod</label>
+                <input
+                  className="duo-input text-center font-mono tracking-[0.4em] text-lg"
+                  value={totpCode}
+                  onChange={e => { setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6)); setError(''); }}
+                  placeholder="000000"
+                  maxLength={6}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoFocus
+                />
+                <p className="text-xs mt-2" style={{ color: 'var(--duo-text-secondary)' }}>Authenticator (Google/Microsoft Authenticator, Authy) ilovasini oching</p>
+              </div>
+              {error && <div className="duo-error"><Icon name="info" size={16} />{error}</div>}
+              <button type="submit" disabled={loading || totpCode.length < 6} className="duo-btn duo-btn--green">
+                {loading ? 'Tekshirilmoqda...' : 'Tasdiqlash'}
               </button>
+              <button type="button" onClick={backToLogin} className="duo-btn duo-btn--ghost">← Orqaga</button>
+            </form>
+          ) : (
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="duo-label">Telefon raqam</label>
+              <input ref={phoneInputRef.ref} className="duo-input" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
+                placeholder="+998901234567" value={form.phone}
+                onChange={e => phoneInputRef.handleChange(e, phone => setForm(f => ({ ...f, phone })))}
+                onFocus={e => setForm(f => ({ ...f, phone: formatUzPhoneInput(e.target.value) }))}
+                required />
             </div>
-          </div>
-          {error && <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 rounded-xl px-4 py-3"><Icon name="info" size={16} />{error}</div>}
-          <div className="flex items-center justify-between text-sm">
-            <label className="flex items-center gap-2 text-white/50 cursor-pointer">
-              <input type="checkbox" className="rounded"
-                checked={rememberMe}
-                onChange={e => setRememberMe(e.target.checked)} /> Meni eslab qolish
-            </label>
-            <button type="button" onClick={openForgotModal} className="text-indigo-400 hover:text-indigo-300 transition-colors">Parolni unutdingizmi?</button>
-          </div>
-          <button type="submit" disabled={loading}
-            className="btn-primary w-full py-3.5 rounded-2xl font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
-            {loading ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Kirish...</> : 'Kirish'}
-          </button>
-        </form>
-        )}
+            <div>
+              <label className="duo-label">Parol</label>
+              <div className="relative">
+                <input className="duo-input pr-12" type={showPass ? 'text' : 'password'} placeholder="••••••••"
+                  value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} required />
+                <button type="button" onClick={() => setShowPass(!showPass)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 transition-colors" style={{ color: 'var(--duo-text-secondary)' }}>
+                  <Icon name="eye" size={18} />
+                </button>
+              </div>
+            </div>
+            {error && <div className="duo-error"><Icon name="info" size={16} />{error}</div>}
+            <div className="flex items-center justify-between text-sm">
+              <label className="flex items-center gap-2 cursor-pointer" style={{ color: 'var(--duo-text-secondary)' }}>
+                <input type="checkbox" className="rounded"
+                  checked={rememberMe}
+                  onChange={e => setRememberMe(e.target.checked)} /> Meni eslab qolish
+              </label>
+              <button type="button" onClick={openForgotModal} className="font-semibold transition-colors" style={{ color: 'var(--duo-blue)' }}>Parolni unutdingizmi?</button>
+            </div>
+            <button type="submit" disabled={loading} className="duo-btn duo-btn--green">
+              {loading ? 'Kirish...' : 'Kirish'}
+            </button>
+          </form>
+          )}
 
-        {step !== '2fa' && (
-        <p className="text-center text-sm text-white/40 mt-6">
-          Hisobingiz yo'qmi?{' '}
-          <button onClick={() => onNavigate('register')} className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Ro'yxatdan o'ting</button>
-        </p>
-        )}
+          {step !== '2fa' && (
+          <p className="text-center text-sm mt-6" style={{ color: 'var(--duo-text-secondary)' }}>
+            Hisobingiz yo'qmi?{' '}
+            <button onClick={() => onNavigate('register')} className="font-bold transition-colors" style={{ color: 'var(--duo-green)' }}>Ro'yxatdan o'ting</button>
+          </p>
+          )}
+        </div>
       </div>
       {forgotOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.75)' }}>
-          <div className="rounded-3xl p-6 max-w-md w-full border border-white/15" style={{ background: '#12141a' }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }}>
+          <div className="rounded-3xl p-6 max-w-md w-full" style={{ background: '#fff', border: '2px solid var(--duo-border)', boxShadow: '0 12px 40px rgba(0,0,0,0.15)' }}>
             <div className="text-3xl mb-3">🔐</div>
-            <h3 className="text-xl font-black text-white mb-2">Parolni tiklash</h3>
+            <h3 className="text-xl font-extrabold mb-2" style={{ color: 'var(--duo-text)' }}>Parolni tiklash</h3>
             {forgot.step === 'phone' && (
               <div className="space-y-4">
-                <p className="text-white/60 text-sm leading-relaxed">
+                <p className="text-sm leading-relaxed" style={{ color: 'var(--duo-text-secondary)' }}>
                   Telefon raqamingizni kiriting. Code bot telefoningizni tasdiqlatib, parolni tiklash kodini yuboradi.
                 </p>
                 <div>
-                  <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
+                  <label className="duo-label">Telefon raqam</label>
                   <input
-                    className="input-field"
+                    className="duo-input"
                     type="tel"
                     inputMode="numeric"
                     autoComplete="tel"
@@ -374,19 +360,17 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                   />
                 </div>
                 {forgot.error && (
-                  <div className="text-xs text-rose-400 flex items-center gap-1">
-                    <Icon name="info" size={12} /> {forgot.error}
-                  </div>
+                  <div className="duo-error text-xs"><Icon name="info" size={12} /> {forgot.error}</div>
                 )}
                 <div className="flex gap-3">
-                  <button type="button" onClick={closeForgotModal} className="btn-ghost flex-1 py-3 rounded-2xl font-semibold">
+                  <button type="button" onClick={closeForgotModal} className="duo-btn duo-btn--ghost flex-1">
                     Bekor qilish
                   </button>
                   <button
                     type="button"
                     onClick={startForgotReset}
                     disabled={!normalizedForgotPhone || forgot.loading}
-                    className="btn-primary flex-1 py-3 rounded-2xl font-semibold disabled:opacity-50"
+                    className="duo-btn duo-btn--green flex-1"
                   >
                     {forgot.loading ? 'Yuborilmoqda...' : "Botga o'tish"}
                   </button>
@@ -396,13 +380,13 @@ const LoginPage = ({ onNavigate, onLogin }) => {
 
             {forgot.step === 'code' && (
               <div className="space-y-4">
-                <div className="glass rounded-2xl p-3 border border-indigo-500/20">
+                <div className="rounded-2xl p-3" style={{ background: '#F3FFE8', border: '1.5px solid rgba(88,204,2,0.3)' }}>
                   <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="text-indigo-300">
+                    <span className="font-semibold" style={{ color: 'var(--duo-green-dark)' }}>
                       {forgot.botUsername ? `@${forgot.botUsername}` : 'Code bot'} kontaktni tasdiqlaydi
                     </span>
                     {forgot.expiresAt && !forgotExpired && (
-                      <span className="text-white/40 font-mono">{forgotRemainingLabel}</span>
+                      <span className="font-mono" style={{ color: 'var(--duo-text-secondary)' }}>{forgotRemainingLabel}</span>
                     )}
                   </div>
                   {forgot.deepLink && (
@@ -410,14 +394,15 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                       href={forgot.deepLink}
                       target="_blank"
                       rel="noreferrer"
-                      className="btn-ghost mt-3 text-xs px-3 py-2 rounded-xl flex items-center justify-center gap-1.5 font-semibold"
+                      className="duo-btn duo-btn--blue mt-3 text-xs"
+                      style={{ padding: '8px 12px', textTransform: 'none' }}
                     >
                       <Icon name="send" size={12} /> Telegram botni ochish
                     </a>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm text-white/60 mb-2 font-medium">Telegram kodi</label>
+                  <label className="duo-label">Telegram kodi</label>
                   <input
                     value={forgot.code}
                     onChange={e => setForgot(prev => ({
@@ -425,7 +410,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                       code: e.target.value.replace(/\D/g, '').slice(0, 6),
                       error: '',
                     }))}
-                    className="input-field text-center font-mono tracking-[0.4em]"
+                    className="duo-input text-center font-mono tracking-[0.4em]"
                     placeholder="••••••"
                     maxLength={6}
                     inputMode="numeric"
@@ -433,9 +418,9 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-white/60 mb-2 font-medium">Yangi parol</label>
+                  <label className="duo-label">Yangi parol</label>
                   <input
-                    className="input-field"
+                    className="duo-input"
                     type="password"
                     placeholder="Kamida 8 ta belgi"
                     value={forgot.password}
@@ -443,9 +428,9 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                   />
                 </div>
                 <div>
-                  <label className="block text-sm text-white/60 mb-2 font-medium">Yangi parolni tasdiqlang</label>
+                  <label className="duo-label">Yangi parolni tasdiqlang</label>
                   <input
-                    className="input-field"
+                    className="duo-input"
                     type="password"
                     placeholder="Parolni qaytaring"
                     value={forgot.confirm}
@@ -454,15 +439,13 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                   />
                 </div>
                 {forgot.error && (
-                  <div className="text-xs text-rose-400 flex items-center gap-1">
-                    <Icon name="info" size={12} /> {forgot.error}
-                  </div>
+                  <div className="duo-error text-xs"><Icon name="info" size={12} /> {forgot.error}</div>
                 )}
                 <div className="flex gap-3">
                   <button
                     type="button"
                     onClick={() => setForgot(prev => ({ ...prev, step: 'phone', code: '', password: '', confirm: '', error: '' }))}
-                    className="btn-ghost flex-1 py-3 rounded-2xl font-semibold"
+                    className="duo-btn duo-btn--ghost flex-1"
                   >
                     Qayta
                   </button>
@@ -470,7 +453,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                     type="button"
                     onClick={submitForgotReset}
                     disabled={!forgot.code || forgot.password.length < 8 || forgot.password !== forgot.confirm || forgot.loading || forgotExpired}
-                    className="btn-primary flex-1 py-3 rounded-2xl font-semibold disabled:opacity-50"
+                    className="duo-btn duo-btn--green flex-1"
                   >
                     {forgot.loading ? 'Tekshirilmoqda...' : 'Parolni yangilash'}
                   </button>
@@ -638,17 +621,17 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   if (success) {
     const isAuto = registrationType === 'student' && !centerId;
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#050508' }}>
-        <div className="text-center animate-in">
-          <div className="w-24 h-24 gradient-bg rounded-full flex items-center justify-center mx-auto mb-6 glow-blue">
+      <div className="duo-screen items-center justify-center">
+        <div className="text-center animate-in px-6">
+          <div className="w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-6" style={{ background: 'var(--duo-green)', boxShadow: '0 6px 0 var(--duo-green-dark)', color: '#fff' }}>
             <Icon name="check" size={40} />
           </div>
-          <h2 className="text-3xl font-black text-white mb-2">Tabriklaymiz!</h2>
-          <p className="text-white/50">
+          <h2 className="text-3xl font-extrabold mb-2" style={{ color: 'var(--duo-text)' }}>Tabriklaymiz!</h2>
+          <p style={{ color: 'var(--duo-text-secondary)' }}>
             {registrationType === 'organization' ? "Tashkilot arizangiz qabul qilindi" : 'Hisobingiz muvaffaqiyatli yaratildi'}
           </p>
           {!isAuto && (
-            <p className="text-amber-300 text-sm mt-3">
+            <p className="text-sm mt-3 font-semibold" style={{ color: '#B8860B' }}>
               {registrationType === 'organization' ? "Tashkilot/markaz arizangiz Platform Adminga yuborildi" :
                'Arizangiz tashkilot manageriga yuborildi'}
             </p>
@@ -660,72 +643,52 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
 
   // ─── Render steps ───────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex" style={{ background: '#050508' }}>
-      {/* Left panel */}
-      <div className="hidden lg:flex flex-1 flex-col justify-center items-center p-12 relative overflow-hidden">
-        <div className="hero-glow" style={{ background: '#22d3ee', top: '20%', right: '20%' }} />
-        <div className="hero-glow" style={{ background: '#6366f1', bottom: '20%', left: '10%' }} />
-        <div className="relative z-10">
-          <div className="glass rounded-3xl p-8 max-w-sm">
-            <div className="text-4xl mb-4">{currentRegisterMeta.icon}</div>
-            <h3 className="text-xl font-black text-white mb-3">
-              {currentRegisterMeta.title}
-            </h3>
-            <p className="text-white/40 text-sm leading-relaxed mb-6">
-              {currentRegisterMeta.subtitle}
-            </p>
-            <div className="space-y-3">
-              {[
-                "Tashkilot yoki shaxs sifatida boshlash",
-                'Tasdiqlash arizalari',
-                'Real vaqtda hisobotlar',
-                'Telegram orqali xabarnoma',
-              ].map((f, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm text-white/60">
-                  <span className="text-indigo-400 font-bold">✓</span> {f}
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+    <div className="duo-screen">
+      {/* Yuqori qator: orqaga */}
+      <div className="flex items-center px-4 pt-4" style={{ minHeight: 52 }}>
+        <button type="button" onClick={() => onNavigate('landing')}
+          className="duo-skip flex items-center gap-1" aria-label="Orqaga">
+          <Icon name="arrowLeft" size={18} /> Orqaga
+        </button>
       </div>
 
-      {/* Right panel */}
-      <div className="flex-1 lg:max-w-md flex flex-col justify-start md:justify-center px-5 md:px-8 py-8 md:py-12 overflow-y-auto">
-        <div className="mb-6 md:mb-8">
-          <div className="flex items-center gap-2 mb-6 md:mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
-            <BrandLogo size="lg" />
+      <div className="flex-1 flex flex-col items-center justify-start md:justify-center px-5 py-6 overflow-y-auto">
+        <div className="w-full max-w-md">
+          <div className="flex flex-col items-center text-center mb-6">
+            <BrandLogo size="lg" variant="wordmark" className="mb-5" />
+            <h1 className="text-2xl font-extrabold mb-1" style={{ color: 'var(--duo-text)' }}>Ro'yxatdan o'tish</h1>
+            <p className="text-sm" style={{ color: 'var(--duo-text-secondary)' }}>
+              {step === 1 ? "Avval qanday boshlashingizni tanlang" :
+               registrationType === 'organization' ? "Tashkilot va mas'ul shaxs ma'lumotlari" :
+               'Hisobingizni yarating'}
+            </p>
           </div>
-          <h1 className="text-2xl md:text-3xl font-black text-white mb-2">Ro'yxatdan o'tish</h1>
-          <p className="text-white/40 text-sm md:text-base">
-            {step === 1 ? "Avval qanday boshlashingizni tanlang" :
-             registrationType === 'organization' ? "Tashkilot va mas'ul shaxs ma'lumotlari" :
-             'Hisobingizni yarating'}
-          </p>
 
           {/* Steps */}
-          <div className="flex items-center gap-2 mt-6">
+          <div className="flex items-center gap-2 mb-6">
             {[1, 2, 3].map(s => (
               <React.Fragment key={s}>
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all ${step >= s ? 'gradient-bg text-white' : 'glass text-white/30'}`}>{s}</div>
-                {s < 3 && <div className={`flex-1 h-0.5 rounded-full transition-all ${step > s ? 'bg-indigo-500' : 'bg-white/10'}`} />}
+                <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-extrabold transition-all"
+                  style={step >= s
+                    ? { background: 'var(--duo-green)', color: '#fff' }
+                    : { background: 'var(--duo-card)', color: '#bbb', border: '2px solid var(--duo-border)' }}>{s}</div>
+                {s < 3 && <div className="flex-1 h-1 rounded-full transition-all" style={{ background: step > s ? 'var(--duo-green)' : 'var(--duo-border)' }} />}
               </React.Fragment>
             ))}
           </div>
-        </div>
 
         {/* Step 2: credentials */}
         {step === 2 && (
           <div className="space-y-4 animate-in">
             <div>
-              <label className="block text-sm text-white/60 mb-2 font-medium">
+              <label className="duo-label">
                 {registrationType === 'organization' ? "Mas'ul shaxs ism familiyasi" : 'Ism familiya'}
               </label>
-              <input className="input-field" placeholder="Ali Valiyev" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+              <input className="duo-input" placeholder="Ali Valiyev" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
             </div>
             <div>
-              <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
-              <input ref={regPhoneInputRef.ref} className="input-field" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
+              <label className="duo-label">Telefon raqam</label>
+              <input ref={regPhoneInputRef.ref} className="duo-input" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
                 placeholder="+998901234567" value={form.phone}
                 onChange={e => regPhoneInputRef.handleChange(e, phone => {
                   setForm(f => ({ ...f, phone }));
@@ -736,7 +699,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
                   setForm(f => ({ ...f, phone }));
                   validatePhone(phone);
                 }} />
-              {phoneError && <div className="flex items-center gap-1 text-red-400 text-xs mt-1"><Icon name="info" size={12} /> {phoneError}</div>}
+              {phoneError && <div className="duo-error text-xs mt-1"><Icon name="info" size={12} /> {phoneError}</div>}
             </div>
             <TelegramVerifyBlock
               phone={normalizedRegisterPhone}
@@ -745,23 +708,23 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               onVerified={() => setPhoneVerified(true)}
             />
             <div>
-              <label className="block text-sm text-white/60 mb-2 font-medium">Parol</label>
-              <input className="input-field" type="password" placeholder="Kamida 8 ta belgi" value={form.password}
+              <label className="duo-label">Parol</label>
+              <input className="duo-input" type="password" placeholder="Kamida 8 ta belgi" value={form.password}
                 onChange={e => setForm({ ...form, password: e.target.value })} />
             </div>
             <div>
-              <label className="block text-sm text-white/60 mb-2 font-medium">Parolni tasdiqlang</label>
-              <input className="input-field" type="password" placeholder="Parolni qaytaring" value={form.confirm}
+              <label className="duo-label">Parolni tasdiqlang</label>
+              <input className="duo-input" type="password" placeholder="Parolni qaytaring" value={form.confirm}
                 onChange={e => setForm({ ...form, confirm: e.target.value })} />
               {form.confirm && form.password !== form.confirm &&
-                <div className="text-red-400 text-xs mt-1">Parollar mos kelmaydi</div>}
+                <div className="text-xs mt-1 font-semibold" style={{ color: 'var(--duo-red)' }}>Parollar mos kelmaydi</div>}
             </div>
             <div className="flex gap-3 pt-2">
-              <button onClick={() => setStep(1)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
+              <button onClick={() => setStep(1)} className="duo-btn duo-btn--ghost flex-1">← Orqaga</button>
               <button onClick={goNext}
                 disabled={!form.name || !form.phone || form.password.length < 8 || form.password !== form.confirm || !!phoneError || !phoneVerified}
-                className="btn-primary flex-1 py-3.5 rounded-2xl font-bold disabled:opacity-50">
-                {registrationType === 'organization' ? "Tashkilotga o'tish →" : 'Davom etish →'}
+                className="duo-btn duo-btn--green flex-1">
+                {registrationType === 'organization' ? "Tashkilotga o'tish" : 'Davom etish'}
               </button>
             </div>
           </div>
@@ -770,24 +733,24 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
         {/* Step 1: registration type */}
         {step === 1 && (
           <div className="space-y-3 animate-in">
-            <div className="text-sm text-white/60 mb-2">Qanday ro'yxatdan o'tmoqchisiz?</div>
+            <div className="duo-label" style={{ textTransform: 'none', fontSize: 14 }}>Qanday ro'yxatdan o'tmoqchisiz?</div>
             {[
               { k:'student', icon:'🎓', label:"O'quvchi", desc:'Olimpiadalarda qatnashish' },
               { k:'organization', icon:'🏛', label:"Tashkilot/o'quv markaz", desc:"Tashkilotni ro'yxatdan o'tkazish" },
             ].map(r => (
               <button key={r.k} onClick={() => selectRegistrationType(r.k)}
-                className={`w-full flex items-center gap-3 p-4 rounded-2xl text-left transition-all ${registrationType === r.k ? 'border border-indigo-500 bg-indigo-500/10' : 'glass hover:bg-white/5 border border-transparent'}`}>
+                className={`duo-option ${registrationType === r.k ? 'duo-option--active' : ''}`}>
                 <span className="text-2xl">{r.icon}</span>
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-white">{r.label}</div>
-                  <div className="text-xs text-white/40">{r.desc}</div>
+                  <div className="font-bold" style={{ color: 'var(--duo-text)' }}>{r.label}</div>
+                  <div className="text-xs" style={{ color: 'var(--duo-text-secondary)' }}>{r.desc}</div>
                 </div>
-                {registrationType === r.k && <Icon name="check" size={16} className="text-indigo-400" />}
+                {registrationType === r.k && <Icon name="check" size={18} style={{ color: 'var(--duo-green)' }} />}
               </button>
             ))}
             <div className="flex gap-3 pt-2">
-              <button onClick={() => onNavigate('login')} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">Kirish</button>
-              <button onClick={goNext} disabled={!registrationType} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold disabled:opacity-50">Davom etish →</button>
+              <button onClick={() => onNavigate('login')} className="duo-btn duo-btn--ghost flex-1">Kirish</button>
+              <button onClick={goNext} disabled={!registrationType} className="duo-btn duo-btn--green flex-1">Davom etish</button>
             </div>
           </div>
         )}
@@ -796,10 +759,10 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
         {step === 3 && registrationType === 'student' && (
           <div className="space-y-4 animate-in">
             <div>
-              <label className="block text-sm text-white/60 mb-2 font-medium">Tashkilot yoki markaz tanlash <span className="text-white/30">(ixtiyoriy)</span></label>
+              <label className="duo-label">Tashkilot yoki markaz tanlash <span style={{ color: '#bbb', textTransform: 'none' }}>(ixtiyoriy)</span></label>
               <div className="relative">
-                <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-                <input className="input-field pl-10" placeholder="Nomi, turi, viloyat yoki tuman..." value={centerSearch}
+                <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#bbb' }} />
+                <input className="duo-input pl-10" placeholder="Nomi, turi, viloyat yoki tuman..." value={centerSearch}
                   onChange={e => setCenterSearch(e.target.value)} />
               </div>
             </div>
@@ -807,7 +770,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               {filteredCenters.map(c => (
                 <div key={c.id}
                   onClick={() => setCenterId(centerId === c.id ? null : c.id)}
-                  className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all ${centerId === c.id ? 'border border-indigo-500 bg-indigo-500/10' : 'glass hover:bg-white/5'}`}>
+                  className={`duo-option ${centerId === c.id ? 'duo-option--active' : ''}`} style={{ justifyContent: 'space-between', padding: 12 }}>
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     {c.imageUrl ? (
                       <img src={c.imageUrl} alt={c.name} className="h-9 w-9 rounded-xl object-cover flex-shrink-0"
@@ -816,25 +779,25 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
                           e.currentTarget.nextElementSibling?.classList.remove('hidden');
                         }} />
                     ) : null}
-                    <div className={`w-9 h-9 gradient-bg rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${c.imageUrl ? 'hidden' : ''}`}>{c.name[0]}</div>
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-white font-bold text-sm flex-shrink-0 ${c.imageUrl ? 'hidden' : ''}`} style={{ background: 'var(--duo-green)' }}>{c.name[0]}</div>
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-semibold text-white truncate">{c.name}</div>
-                      <div className="text-xs text-white/40 truncate">{c.organizationType || "O'quv markaz"} · {formatCenterLocation(c)} · {c.students} o'quvchi</div>
+                      <div className="text-sm font-bold truncate" style={{ color: 'var(--duo-text)' }}>{c.name}</div>
+                      <div className="text-xs truncate" style={{ color: 'var(--duo-text-secondary)' }}>{c.organizationType || "O'quv markaz"} · {formatCenterLocation(c)} · {c.students} o'quvchi</div>
                     </div>
                   </div>
-                  {centerId === c.id && <Icon name="check" size={16} className="text-indigo-400" />}
+                  {centerId === c.id && <Icon name="check" size={16} style={{ color: 'var(--duo-green)' }} />}
                 </div>
               ))}
             </div>
             {centerId && (
-              <div className="glass rounded-xl p-3 border border-indigo-500/20 text-sm text-indigo-300 flex items-center gap-2">
+              <div className="rounded-xl p-3 text-sm flex items-center gap-2" style={{ background: '#F3FFE8', border: '1.5px solid rgba(88,204,2,0.3)', color: 'var(--duo-green-dark)' }}>
                 <Icon name="info" size={14} /> Ariza managerga yuboriladi va tasdiqlanishi kutiladi
               </div>
             )}
             <div className="flex gap-3">
-              <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
-              <button onClick={submit} disabled={loading} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2">
-                {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : "Ro'yxatdan o'tish"}
+              <button onClick={() => setStep(2)} className="duo-btn duo-btn--ghost flex-1">← Orqaga</button>
+              <button onClick={submit} disabled={loading} className="duo-btn duo-btn--green flex-1">
+                {loading ? 'Yuborilmoqda...' : "Ro'yxatdan o'tish"}
               </button>
             </div>
           </div>
@@ -842,39 +805,39 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
 
         {step === 3 && registrationType === 'organization' && (
           <div className="space-y-4 animate-in">
-            <div className="text-sm text-white/60">Yangi tashkilot yoki markaz ma'lumotlari</div>
+            <div className="duo-label" style={{ textTransform: 'none', fontSize: 14 }}>Yangi tashkilot yoki markaz ma'lumotlari</div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Tashkilot turi</label>
-              <select className="input-field" value={newCenter.organizationType}
+              <label className="duo-label">Tashkilot turi</label>
+              <select className="duo-input" value={newCenter.organizationType}
                 onChange={e => setNewCenter({ ...newCenter, organizationType: e.target.value, customOrganizationType: e.target.value === 'Boshqa' ? newCenter.customOrganizationType : '' })}>
                 {ORGANIZATION_TYPES.map(type => <option key={type} value={type}>{type}</option>)}
               </select>
             </div>
             {newCenter.organizationType === 'Boshqa' && (
               <div>
-                <label className="block text-xs text-white/50 mb-1.5 font-medium">Tashkilot turini yozing</label>
-                <input className="input-field" placeholder="Masalan: Respublika markazi" value={newCenter.customOrganizationType}
+                <label className="duo-label">Tashkilot turini yozing</label>
+                <input className="duo-input" placeholder="Masalan: Respublika markazi" value={newCenter.customOrganizationType}
                   onChange={e => setNewCenter({ ...newCenter, customOrganizationType: e.target.value })} />
               </div>
             )}
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Davlat</label>
-              <select className="input-field" value={newCenter.country}
+              <label className="duo-label">Davlat</label>
+              <select className="duo-input" value={newCenter.country}
                 onChange={e => setNewCenter({ ...newCenter, country: e.target.value })}>
                 <option value="O'zbekiston">O'zbekiston</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Viloyat</label>
-              <select className="input-field" value={newCenter.region}
+              <label className="duo-label">Viloyat</label>
+              <select className="duo-input" value={newCenter.region}
                 onChange={e => setNewCenter({ ...newCenter, region: e.target.value, district: '' })}>
                 <option value="">Viloyatni tanlang...</option>
                 {UZBEKISTAN_REGIONS.map(region => <option key={region} value={region}>{region}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Tuman/Shahar</label>
-              <select className="input-field" value={newCenter.district}
+              <label className="duo-label">Tuman/Shahar</label>
+              <select className="duo-input" value={newCenter.district}
                 disabled={!newCenter.region}
                 onChange={e => setNewCenter({ ...newCenter, district: e.target.value })}>
                 <option value="">{newCenter.region ? 'Tumanni tanlang...' : 'Avval viloyatni tanlang'}</option>
@@ -882,12 +845,12 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Tashkilot/markaz nomi</label>
-              <input className="input-field" placeholder="Masalan: Smart Education" value={newCenter.name}
+              <label className="duo-label">Tashkilot/markaz nomi</label>
+              <input className="duo-input" placeholder="Masalan: Smart Education" value={newCenter.name}
                 onChange={e => setNewCenter({ ...newCenter, name: e.target.value })} />
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Yo'naltirilgan fanlar</label>
+              <label className="duo-label">Yo'naltirilgan fanlar</label>
               <div className="flex flex-wrap gap-2">
                 {SUBJECTS_LIST.map(s => {
                   const on = newCenter.subjects.includes(s);
@@ -897,29 +860,33 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
                         ...newCenter,
                         subjects: on ? newCenter.subjects.filter(x => x !== s) : [...newCenter.subjects, s],
                       })}
-                      className={`text-xs px-3 py-1.5 rounded-lg transition-all ${on ? 'gradient-bg text-white' : 'glass text-white/50 border border-white/10'}`}>
+                      className="text-xs px-3 py-1.5 rounded-lg font-semibold transition-all"
+                      style={on
+                        ? { background: 'var(--duo-green)', color: '#fff' }
+                        : { background: 'var(--duo-card)', color: 'var(--duo-text-secondary)', border: '1.5px solid var(--duo-border)' }}>
                       {s}
                     </button>
                   );
                 })}
               </div>
             </div>
-            <div className="glass rounded-xl p-3 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
+            <div className="rounded-xl p-3 text-sm flex items-center gap-2" style={{ background: '#FFFBEB', border: '1.5px solid rgba(255,217,0,0.4)', color: '#92740B' }}>
               <Icon name="info" size={14} /> Tashkilot Platform Admin tomonidan tasdiqlangach faollashadi.
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
-              <button onClick={submit} disabled={loading || !newCenterTypeValid || !newCenterLocationValid || !newCenter.name} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
-                {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Arizani yuborish'}
+              <button onClick={() => setStep(2)} className="duo-btn duo-btn--ghost flex-1">← Orqaga</button>
+              <button onClick={submit} disabled={loading || !newCenterTypeValid || !newCenterLocationValid || !newCenter.name} className="duo-btn duo-btn--green flex-1">
+                {loading ? 'Yuborilmoqda...' : 'Arizani yuborish'}
               </button>
             </div>
           </div>
         )}
 
-        <p className="text-center text-sm text-white/40 mt-6">
-          Hisobingiz bormi?{' '}
-          <button onClick={() => onNavigate('login')} className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors">Kirish</button>
-        </p>
+          <p className="text-center text-sm mt-6" style={{ color: 'var(--duo-text-secondary)' }}>
+            Hisobingiz bormi?{' '}
+            <button onClick={() => onNavigate('login')} className="font-bold transition-colors" style={{ color: 'var(--duo-green)' }}>Kirish</button>
+          </p>
+        </div>
       </div>
     </div>
   );
