@@ -473,7 +473,7 @@ for origin in [
     'https://prolymp.uz', 'https://www.prolymp.uz',
     'http://localhost:5173', 'http://127.0.0.1:5173',
     # Capacitor mobile app originlari (Android va iOS)
-    'capacitor://localhost', 'ionic://localhost', 'http://localhost',
+    'capacitor://localhost', 'ionic://localhost', 'http://localhost', 'https://localhost',
 ]:
     if origin not in CORS_ALLOWED_ORIGINS:
         CORS_ALLOWED_ORIGINS.append(origin)

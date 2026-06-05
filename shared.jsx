@@ -9,6 +9,11 @@ const formatUzPhoneInput = (raw) => {
   return '+998' + local.slice(0, 9);
 };
 
+const openExternalLink = (url) => {
+  if (!url) return;
+  window.location.href = url;
+};
+
 // ─── Icons (inline SVG helpers) ───────────────────────────────────────────────
 const Icon = ({ name, size = 18, className = '' }) => {
   const icons = {

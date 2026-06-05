@@ -691,7 +691,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         provider: provider
       }, token);
       if (res && res.payment_url) {
-        window.location.href = res.payment_url;
+        openExternalLink(res.payment_url);
       } else {
         throw new Error("To'lov havolasini olishda xatolik yuz berdi");
       }

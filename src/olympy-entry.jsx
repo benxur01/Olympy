@@ -45,6 +45,11 @@ const formatUzPhoneInput = (raw) => {
   return '+998' + local.slice(0, 9);
 };
 
+const openExternalLink = (url) => {
+  if (!url) return;
+  window.location.href = url;
+};
+
 // ─── Icons (inline SVG helpers) ───────────────────────────────────────────────
 const Icon = ({ name, size = 18, className = '' }) => {
   const icons = {
@@ -814,9 +819,10 @@ function VirtualList({ items, itemHeight = 60, containerHeight = 400, renderItem
 Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList });
 
 
-Object.assign(moduleScope, { formatUzPhoneInput, Icon, BRAND_ASSET_BASE, BRAND_LOGO_SRC, BRAND_LOGO_SRC_WEBP, BrandLogo, Avatar, Badge, StatCard, SidebarContent, Sidebar, MobileBottomNav, Topbar, Modal, AvatarCropModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, subjectColors, SubjectBadge, TelegramMockup, useApiData, useDebounce, VirtualList });
+Object.assign(moduleScope, { formatUzPhoneInput, openExternalLink, Icon, BRAND_ASSET_BASE, BRAND_LOGO_SRC, BRAND_LOGO_SRC_WEBP, BrandLogo, Avatar, Badge, StatCard, SidebarContent, Sidebar, MobileBottomNav, Topbar, Modal, AvatarCropModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, subjectColors, SubjectBadge, TelegramMockup, useApiData, useDebounce, VirtualList });
 }
 var formatUzPhoneInput = moduleScope.formatUzPhoneInput;
+var openExternalLink = moduleScope.openExternalLink;
 var Icon = moduleScope.Icon;
 var BRAND_ASSET_BASE = moduleScope.BRAND_ASSET_BASE;
 var BRAND_LOGO_SRC = moduleScope.BRAND_LOGO_SRC;
@@ -2608,7 +2614,7 @@ const LandingPage = ({ onNavigate, user }) => {
         provider: provider
       }, token);
       if (res && res.payment_url) {
-        window.location.href = res.payment_url;
+        openExternalLink(res.payment_url);
       } else {
         throw new Error("To'lov havolasini olishda xatolik yuz berdi");
       }
@@ -3583,16 +3589,8 @@ const MAX_ATTEMPTS = 5;
 const goToTelegramLink = (link) => {
   if (!link) return false;
   try {
-    window.location.assign(link);
+    openExternalLink(link);
     return true;
-  } catch (_) {}
-  try {
-    window.location.href = link;
-    return true;
-  } catch (_) {}
-  try {
-    const opened = window.open(link, '_blank', 'noopener,noreferrer');
-    return !!opened;
   } catch (_) {
     return false;
   }
@@ -6506,7 +6504,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         provider: provider
       }, token);
       if (res && res.payment_url) {
-        window.location.href = res.payment_url;
+        openExternalLink(res.payment_url);
       } else {
         throw new Error("To'lov havolasini olishda xatolik yuz berdi");
       }
@@ -17699,7 +17697,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         provider: provider
       }, token);
       if (res && res.payment_url) {
-        window.location.href = res.payment_url;
+        openExternalLink(res.payment_url);
       } else {
         throw new Error("To'lov havolasini olishda xatolik yuz berdi");
       }
