@@ -1686,12 +1686,16 @@ def handle_telegram_update(update, bot='auth'):
                     otp = _prepare_otp(verification)
                     # OTP yuborish background Celery task'ga ko'chirildi —
                     # Telegram 429 webhook javobini bloklamaydi.
-                    from accounts.tasks import send_telegram_otp_task
-                    send_telegram_otp_task.delay(
-                        chat_id=chat_id,
-                        text=f'Parolni tiklash kodi: {otp}',
-                        bot=bot,
-                    )
+                    try:
+                        from accounts.tasks import send_telegram_otp_task
+                        send_telegram_otp_task.delay(
+                            chat_id=chat_id,
+                            text=f'Parolni tiklash kodi: {otp}',
+                            bot=bot,
+                        )
+                    except Exception:
+                        logger.exception('send_telegram_otp_task.delay failed, falling back to direct send')
+                        _send_telegram_message(chat_id, f'Parolni tiklash kodi: {otp}', bot=bot)
                     return {'ok': True}
 
                 verification.verified_at = timezone.now()
@@ -1722,12 +1726,16 @@ def handle_telegram_update(update, bot='auth'):
             otp = _prepare_otp(verification)
             # OTP yuborish background Celery task'ga ko'chirildi —
             # Telegram 429 webhook javobini bloklamaydi.
-            from accounts.tasks import send_telegram_otp_task
-            send_telegram_otp_task.delay(
-                chat_id=chat_id,
-                text=f'Tasdiqlash kodi: {otp}',
-                bot=bot,
-            )
+            try:
+                from accounts.tasks import send_telegram_otp_task
+                send_telegram_otp_task.delay(
+                    chat_id=chat_id,
+                    text=f'Tasdiqlash kodi: {otp}',
+                    bot=bot,
+                )
+            except Exception:
+                logger.exception('send_telegram_otp_task.delay failed, falling back to direct send')
+                _send_telegram_message(chat_id, f'Tasdiqlash kodi: {otp}', bot=bot)
         else:
             _send_telegram_message(chat_id, 'Telefon raqam mos kelmadi.', bot=bot)
         return {'ok': True}
