@@ -165,6 +165,51 @@ select.input-field option { background: #12141a; }
   border-radius: 50%;
 }
 
+/* ── Premium vizual to'plami ──────────────────────────────────────────────
+   Telegram WebView uchun: backdrop-blur va og'ir animatsiyalar YO'Q —
+   faqat statik gradient, border va rang. */
+
+/* Premium badge — oltin gradient chip ("PREMIUM"). Profil va reytinglarda. */
+.premium-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #1a1205;
+  background: linear-gradient(135deg, #fde68a 0%, #f59e0b 55%, #d97706 100%);
+  border: 1px solid rgba(253,230,138,0.6);
+  box-shadow: 0 2px 8px rgba(245,158,11,0.25);
+  white-space: nowrap;
+}
+.premium-badge--sm { padding: 1px 7px; font-size: 9px; gap: 2px; }
+
+/* Premium profil hero kartasi — oltin tusli gradient fon + oltin border. */
+.premium-hero {
+  background: linear-gradient(135deg, rgba(245,158,11,0.12) 0%, rgba(217,119,6,0.05) 45%, rgba(99,102,241,0.06) 100%);
+  border: 1px solid rgba(245,158,11,0.35);
+  box-shadow: 0 8px 30px rgba(245,158,11,0.08);
+}
+
+/* Premium foydalanuvchi ismi — oltin gradient matn. */
+.premium-name {
+  background: linear-gradient(135deg, #fde68a 0%, #f59e0b 60%, #fbbf24 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: #f59e0b;
+}
+
+/* Reyting qatorida premium o'quvchiga nozik oltin urg'u (chap chiziq). */
+.premium-row {
+  background: linear-gradient(90deg, rgba(245,158,11,0.07) 0%, rgba(245,158,11,0) 60%);
+  box-shadow: inset 2px 0 0 0 rgba(245,158,11,0.55);
+}
+
 .leaderboard-gold { background: linear-gradient(135deg, rgba(251,191,36,0.1), rgba(245,158,11,0.05)); border: 1px solid rgba(251,191,36,0.3); }
 .leaderboard-silver { background: linear-gradient(135deg, rgba(148,163,184,0.1), rgba(100,116,139,0.05)); border: 1px solid rgba(148,163,184,0.3); }
 .leaderboard-bronze { background: linear-gradient(135deg, rgba(180,83,9,0.1), rgba(146,64,14,0.05)); border: 1px solid rgba(180,83,9,0.3); }
