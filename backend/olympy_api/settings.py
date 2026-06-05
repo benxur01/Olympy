@@ -469,7 +469,12 @@ CORS_ALLOWED_ORIGINS = [
     if o.strip()
 ]
 # Har doim production va local frontend origin'larini qo'shib qo'yamiz (CORS muammolarini oldini olish uchun)
-for origin in ['https://prolymp.uz', 'https://www.prolymp.uz', 'http://localhost:5173', 'http://127.0.0.1:5173']:
+for origin in [
+    'https://prolymp.uz', 'https://www.prolymp.uz',
+    'http://localhost:5173', 'http://127.0.0.1:5173',
+    # Capacitor mobile app originlari (Android va iOS)
+    'capacitor://localhost', 'ionic://localhost', 'http://localhost',
+]:
     if origin not in CORS_ALLOWED_ORIGINS:
         CORS_ALLOWED_ORIGINS.append(origin)
 CORS_ALLOW_CREDENTIALS = True
