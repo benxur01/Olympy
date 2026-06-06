@@ -411,6 +411,92 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   z-index: 1;
 }
 
+/* ─── Seasonal particles (CSS-only, Telegram WebView uchun yengil) ──────────
+   Landing va Auth fonida fasllarga mos floating effektlar. blur YO'Q.
+   Har bir zarra inline CSS o'zgaruvchilari (--p-*) bilan boshqariladi. */
+.seasonal-particles {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+.season-particle {
+  position: absolute;
+  top: -8%;
+  display: block;
+  opacity: var(--p-opacity, 0.5);
+  will-change: transform;
+}
+
+/* Gul barglari (bahor) — yumshoq tomchi shakl, aylanib tushadi */
+.season-particle--petal {
+  border-radius: 50% 0 50% 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  animation: seasonPetalFall var(--p-duration, 12s) linear var(--p-delay, 0s) infinite;
+}
+/* Yulduzcha/nur (yoz) — kichik miltillovchi nuqta, yuqoriga ko'tariladi */
+.season-particle--spark {
+  border-radius: 50%;
+  box-shadow: 0 0 8px currentColor, 0 0 14px currentColor;
+  animation: seasonSparkRise var(--p-duration, 12s) ease-in var(--p-delay, 0s) infinite;
+}
+/* Tushayotgan barglar (kuz) — chap-o'ngga chayqaladi */
+.season-particle--leaf {
+  border-radius: 0 60% 0 60%;
+  background: currentColor;
+  box-shadow: 0 0 5px currentColor;
+  animation: seasonLeafFall var(--p-duration, 12s) ease-in-out var(--p-delay, 0s) infinite;
+}
+/* Qor uchqunlari (qish) — yumaloq, sekin tushadi */
+.season-particle--snow {
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 6px currentColor;
+  animation: seasonSnowFall var(--p-duration, 12s) linear var(--p-delay, 0s) infinite;
+}
+
+@keyframes seasonPetalFall {
+  0%   { transform: translate3d(0, -10vh, 0) rotate(var(--p-rotate, 0deg)); opacity: 0; }
+  10%  { opacity: var(--p-opacity, 0.5); }
+  90%  { opacity: var(--p-opacity, 0.5); }
+  100% { transform: translate3d(var(--p-drift, 30px), 110vh, 0) rotate(calc(var(--p-rotate, 0deg) + 320deg)); opacity: 0; }
+}
+@keyframes seasonLeafFall {
+  0%   { transform: translate3d(0, -10vh, 0) rotate(var(--p-rotate, 0deg)); opacity: 0; }
+  10%  { opacity: var(--p-opacity, 0.5); }
+  50%  { transform: translate3d(var(--p-drift, 40px), 55vh, 0) rotate(calc(var(--p-rotate, 0deg) + 180deg)); }
+  90%  { opacity: var(--p-opacity, 0.5); }
+  100% { transform: translate3d(calc(var(--p-drift, 40px) * -1), 110vh, 0) rotate(calc(var(--p-rotate, 0deg) + 360deg)); opacity: 0; }
+}
+@keyframes seasonSnowFall {
+  0%   { transform: translate3d(0, -10vh, 0); opacity: 0; }
+  10%  { opacity: var(--p-opacity, 0.5); }
+  90%  { opacity: var(--p-opacity, 0.5); }
+  100% { transform: translate3d(var(--p-drift, 20px), 110vh, 0); opacity: 0; }
+}
+@keyframes seasonSparkRise {
+  0%   { transform: translate3d(0, 110vh, 0) scale(0.6); opacity: 0; }
+  15%  { opacity: var(--p-opacity, 0.6); }
+  50%  { transform: translate3d(var(--p-drift, 30px), 55vh, 0) scale(1); opacity: var(--p-opacity, 0.6); }
+  85%  { opacity: var(--p-opacity, 0.6); }
+  100% { transform: translate3d(calc(var(--p-drift, 30px) * 1.4), -10vh, 0) scale(0.5); opacity: 0; }
+}
+
+/* Seasonal glow orblari — hero/login fonida yumshoq rang dog'lari.
+   Inline ranglar (theme.glow*) style orqali beriladi. blur o'rniga past
+   opacity radial-gradient (WebView uchun yengilroq). */
+.season-orb {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(60px);
+  opacity: 0.9;
+  animation: seasonOrbDrift 14s ease-in-out infinite alternate;
+  will-change: transform;
+}
+
 .glow-card {
   position: relative;
   border-radius: 16px;
@@ -637,6 +723,28 @@ textarea.input-field { resize: vertical; min-height: 100px; }
 .scrollbar-none::-webkit-scrollbar,
 .no-scrollbar::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
+}
+
+@keyframes seasonOrbDrift {
+  0%   { transform: translate3d(0, 0, 0) scale(1); }
+  100% { transform: translate3d(24px, -18px, 0) scale(1.12); }
+}
+
+/* ─── prefers-reduced-motion ────────────────────────────────────────────────
+   Harakatni kamaytirishni xohlagan foydalanuvchilar uchun seasonal va boshqa
+   og'ir animatsiyalarni o'chiramiz (zarralar yashiriladi, orblar qotadi). */
+@media (prefers-reduced-motion: reduce) {
+  .seasonal-particles { display: none; }
+  .season-orb {
+    animation: none !important;
+    filter: blur(50px);
+  }
+  .animate-pulse-slow,
+  .float-badge-1,
+  .float-badge-2,
+  .float-badge-3 {
+    animation: none !important;
+  }
 }
 
 

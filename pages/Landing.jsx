@@ -472,6 +472,8 @@ const trackAbEvent = (variant, event) => {
 };
 
 const LandingPage = ({ onNavigate, user }) => {
+  // Joriy faslga mos mavzu (fon gradienti, accent, particle turi).
+  const season = useSeason();
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [activeScreen, setActiveScreen] = React.useState(0);
   const [imgErrors, setImgErrors] = React.useState({});
@@ -769,10 +771,10 @@ const LandingPage = ({ onNavigate, user }) => {
 
   return (
     <div className="min-h-screen" style={{ background: '#050508' }}>
-      {/* Scroll progress bar */}
-      <div 
-        className="fixed top-0 left-0 h-[2px] z-[100] transition-all duration-150" 
-        style={{ width: `${scrollProgress}%`, background: 'linear-gradient(90deg, #6366f1, #22d3ee)' }} 
+      {/* Scroll progress bar — seasonal accent rangida */}
+      <div
+        className="fixed top-0 left-0 h-[2px] z-[100] transition-all duration-150"
+        style={{ width: `${scrollProgress}%`, background: `linear-gradient(90deg, #6366f1, ${season.accent})` }}
       />
       {/* Navbar — Telegram WebView'da backdrop-filter sekin ishlaydi, shu sababli
           backdropFilter olib tashlangan va solid background ishlatilgan. */}
@@ -871,7 +873,12 @@ const LandingPage = ({ onNavigate, user }) => {
           backgroundPosition: 'center top',
         }}
       >
+        {/* Seasonal rang qatlami — dashboard fon rasmiga fasl tusini beradi
+            (past z-index, mavjud dark gradient ustiga aralashadi). */}
+        <div className="absolute inset-0 pointer-events-none" style={{ background: season.gradient, opacity: 0.55, mixBlendMode: 'screen' }} />
         <InteractiveParticles />
+        {/* Faslga mos floating particles (gul barglari / nurlar / barglar / qor) */}
+        <SeasonalParticles season={season} count={16} />
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(5,5,8,0.1) 0%, rgba(5,5,8,0.9) 100%)' }} />
 
         {/* Neon orbs for mesh gradient background.
@@ -880,9 +887,9 @@ const LandingPage = ({ onNavigate, user }) => {
             qiymatlari pasaytirildi (60/60/40px), animatsiya GPU-ga ko'chirish
             uchun will-change: transform berildi va motion-reduce rejimida
             animatsiya o'chiriladi. */}
-        <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] bg-indigo-600/10 rounded-full filter blur-[60px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ willChange: 'transform' }} />
-        <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] bg-purple-600/8 rounded-full filter blur-[60px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ animationDelay: '2s', willChange: 'transform' }} />
-        <div className="absolute top-10 right-10 w-[250px] h-[250px] bg-cyan-500/8 rounded-full filter blur-[40px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ animationDelay: '4s', willChange: 'transform' }} />
+        <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full filter blur-[60px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ background: season.glow1, willChange: 'transform' }} />
+        <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] rounded-full filter blur-[60px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ background: season.glow2, animationDelay: '2s', willChange: 'transform' }} />
+        <div className="absolute top-10 right-10 w-[250px] h-[250px] rounded-full filter blur-[40px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ background: season.glow3, animationDelay: '4s', willChange: 'transform' }} />
         
         {/* Floating 3D badges on the right (desktop only) */}
         <div className="hidden lg:block absolute right-16 top-1/4 w-[400px] h-[300px] pointer-events-none z-10 preserve-3d" style={{ perspective: '1000px' }}>
@@ -913,7 +920,15 @@ const LandingPage = ({ onNavigate, user }) => {
 
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-14 md:py-24 relative z-10">
           <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-5 md:mb-6 text-xs md:text-sm text-cyan-100 border border-cyan-300/20" style={{ background: 'rgba(8,145,178,0.16)' }}>
+            {/* Seasonal accent badge — joriy faslga mos shior */}
+            <div
+              className="inline-flex items-center gap-2 rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm font-semibold season-badge-pulse motion-reduce:animate-none"
+              style={{ background: season.accentSoft, border: `1px solid ${season.accentBorder}`, color: season.accent }}
+            >
+              <span aria-hidden="true">{season.emoji}</span>
+              {season.badge}
+            </div>
+            <div className="inline-flex items-center gap-2 rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-5 md:mb-6 ml-0 sm:ml-2 text-xs md:text-sm text-cyan-100 border border-cyan-300/20" style={{ background: 'rgba(8,145,178,0.16)' }}>
               <Icon name="shield" size={16} />
               Online olimpiada, test va natija boshqaruvi
             </div>
@@ -1109,6 +1124,14 @@ const LandingPage = ({ onNavigate, user }) => {
           .float-badge-1 { animation: floatBadge1 6s ease-in-out infinite !important; }
           .float-badge-2 { animation: floatBadge2 7s ease-in-out infinite !important; }
           .float-badge-3 { animation: floatBadge3 8s ease-in-out infinite !important; }
+          @keyframes seasonBadgePulse {
+            0%, 100% { transform: translateY(0); opacity: 0.92; }
+            50% { transform: translateY(-2px); opacity: 1; }
+          }
+          .season-badge-pulse { animation: seasonBadgePulse 4s ease-in-out infinite; }
+          @media (prefers-reduced-motion: reduce) {
+            .season-badge-pulse { animation: none; }
+          }
         `}</style>
       </section>
 

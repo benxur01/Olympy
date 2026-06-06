@@ -25,6 +25,8 @@ const usePhoneInput = () => {
 };
 
 const LoginPage = ({ onNavigate, onLogin }) => {
+  // Joriy faslga mos mavzu — login fonida seasonal gradient va particles.
+  const season = useSeason();
   const [form, setForm] = React.useState({ phone: '+998', password: '' });
   const phoneInputRef = usePhoneInput();
   const [loading, setLoading] = React.useState(false);
@@ -240,16 +242,28 @@ const LoginPage = ({ onNavigate, onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen flex" style={{ background: '#050508' }}>
+    <div className="min-h-screen flex relative overflow-hidden" style={{ background: '#050508' }}>
+      {/* Seasonal fon: gradient qatlami + subtle floating particles. Minimal
+          dizayn — particles soni past, blur ishlatilmaydi (WebView uchun). */}
+      <div className="absolute inset-0 pointer-events-none" style={{ background: season.gradient, opacity: 0.7 }} />
+      <SeasonalParticles season={season} count={12} />
       {/* Left panel */}
-      <div className="hidden lg:flex flex-1 flex-col justify-center items-center p-12 relative overflow-hidden">
-        <div className="hero-glow" style={{ background: '#6366f1', top: '20%', left: '20%' }} />
-        <div className="hero-glow" style={{ background: '#a855f7', bottom: '20%', right: '10%' }} />
+      <div className="hidden lg:flex flex-1 flex-col justify-center items-center p-12 relative overflow-hidden z-10">
+        <div className="hero-glow" style={{ background: season.accent, top: '20%', left: '20%', opacity: 0.18 }} />
+        <div className="hero-glow" style={{ background: season.glow2, bottom: '20%', right: '10%', opacity: 0.2 }} />
         <div className="relative z-10 text-center">
           <div className="flex items-center justify-center mx-auto mb-8" style={{ animation: 'float 6s ease-in-out infinite' }}>
             <BrandLogo compact size="xl" />
           </div>
           <h2 className="text-3xl font-black text-white mb-4">Xush kelibsiz!</h2>
+          {/* Seasonal shior */}
+          <div
+            className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 mb-5 text-sm font-semibold"
+            style={{ background: season.accentSoft, border: `1px solid ${season.accentBorder}`, color: season.accent }}
+          >
+            <span aria-hidden="true">{season.emoji}</span>
+            {season.badge}
+          </div>
           <p className="text-white/40 max-w-sm mx-auto leading-relaxed mb-10">O'zbekistonning eng zamonaviy olimpiada platformasiga kiring va yutuqlarga erishishni boshlang.</p>
           <div className="grid grid-cols-2 gap-4 max-w-xs mx-auto">
             {/* Platforma yangi — soxta "120+ tashkilot, 15K+ o'quvchi"
@@ -265,7 +279,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
       </div>
 
       {/* Right panel */}
-      <div className="flex-1 lg:max-w-md flex flex-col justify-start md:justify-center px-5 md:px-8 py-8 md:py-12">
+      <div className="flex-1 lg:max-w-md flex flex-col justify-start md:justify-center px-5 md:px-8 py-8 md:py-12 relative z-10">
         <div className="mb-6 md:mb-8">
           <div className="flex items-center gap-2 mb-6 md:mb-8 cursor-pointer" onClick={() => onNavigate('landing')}>
             <BrandLogo size="lg" />
