@@ -651,4 +651,41 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   }
 }
 
+/* ─── Modern Grid Backdrop and Glow Accents ─────────────────────────────── */
+.grid-backdrop {
+  background-size: 50px 50px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+}
+
+.aura-glow {
+  position: absolute;
+  width: 140%;
+  height: 140%;
+  top: -20%;
+  left: -20%;
+  border-radius: 50%;
+  filter: blur(120px);
+  opacity: 0.18;
+  pointer-events: none;
+  transition: background 0.8s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.8s ease;
+  z-index: 0;
+}
+
+/* ─── Accordion Animation for FAQ ───────────────────────────────────────── */
+.accordion-content {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.3s cubic-bezier(0, 1, 0, 1), opacity 0.2s ease;
+}
+
+.accordion-content.open {
+  max-height: 500px;
+  opacity: 1;
+  transition: max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease;
+}
+
+
 

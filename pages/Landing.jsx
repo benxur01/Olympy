@@ -22,61 +22,68 @@ const escapeSvgText = (value) => String(value || '')
 
 const TashkilotMockup = () => {
   return (
-    <div className="p-4 md:p-6 text-white text-left select-none" style={{ background: '#090a0f', minHeight: '320px' }}>
-      <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-4">
+    <div className="p-5 md:p-6 text-white text-left select-none relative overflow-hidden" style={{ background: '#07080c', minHeight: '340px' }}>
+      <div className="flex items-center justify-between border-b border-white/5 pb-3.5 mb-4">
         <div>
-          <h4 className="text-sm md:text-base font-bold text-white flex items-center gap-1.5">
-            <Icon name="building" size={16} className="text-indigo-400" />
+          <h4 className="text-sm md:text-base font-bold text-white flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse" />
             <span>ProSkill Academy</span>
           </h4>
-          <p className="text-[10px] md:text-xs text-white/40">Tashkilot Boshqaruv & Premium Analitikasi</p>
+          <p className="text-[10px] md:text-xs text-white/45 mt-0.5">Tashkilot Boshqaruv & Premium Analitikasi</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] md:text-xs bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-lg border border-indigo-500/30 font-semibold">Premium Markaz</span>
-          <span className="text-[10px] md:text-xs bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-lg font-semibold">Reyting: #3</span>
+          <span className="text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-lg font-bold tracking-wide uppercase">Premium</span>
+          <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-lg font-bold">Reyting: #3</span>
         </div>
       </div>
       
-      <div className="grid grid-cols-3 gap-3 mb-4">
-        <div className="glass p-3 rounded-xl border border-white/5">
-          <div className="text-[10px] text-white/40 uppercase">O'rtacha Ball</div>
-          <div className="text-lg font-black text-indigo-400">82.4%</div>
-          <div className="text-[9px] text-emerald-400">↑ 3.2% o'sish</div>
+      <div className="grid grid-cols-3 gap-3 mb-5">
+        <div className="glass p-3 rounded-xl border-t-2 border-t-indigo-500 border-x-white/5 border-b-white/5">
+          <div className="text-[9px] text-white/40 uppercase font-bold tracking-wider">O'rtacha Ball</div>
+          <div className="text-lg font-black text-indigo-400 mt-1">82.4%</div>
+          <div className="text-[9px] text-emerald-400 font-semibold mt-0.5 flex items-center gap-0.5">
+            <span>↑</span> 3.2% o'sish
+          </div>
         </div>
-        <div className="glass p-3 rounded-xl border border-white/5">
-          <div className="text-[10px] text-white/40 uppercase">Jami Urinishlar</div>
-          <div className="text-lg font-black text-cyan-400">1,420 ta</div>
-          <div className="text-[9px] text-white/40">Ushbu oyda</div>
+        <div className="glass p-3 rounded-xl border-t-2 border-t-cyan-500 border-x-white/5 border-b-white/5">
+          <div className="text-[9px] text-white/40 uppercase font-bold tracking-wider">Jami Urinishlar</div>
+          <div className="text-lg font-black text-cyan-400 mt-1">1,420 ta</div>
+          <div className="text-[9px] text-white/40 font-semibold mt-0.5">Ushbu oyda</div>
         </div>
-        <div className="glass p-3 rounded-xl border border-white/5">
-          <div className="text-[10px] text-white/40 uppercase">Nofaol O'quvchilar</div>
-          <div className="text-lg font-black text-rose-400">4 ta</div>
-          <div className="text-[9px] text-rose-400/80">Ogohlantirish (T3)</div>
+        <div className="glass p-3 rounded-xl border-t-2 border-t-rose-500 border-x-white/5 border-b-white/5">
+          <div className="text-[9px] text-white/40 uppercase font-bold tracking-wider">Nofaol O'quvchilar</div>
+          <div className="text-lg font-black text-rose-400 mt-1">4 ta</div>
+          <div className="text-[9px] text-rose-400/80 font-semibold mt-0.5">Ogohlantirish (T3)</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="glass p-3 rounded-xl border border-white/5">
-          <div className="text-[10px] text-white/40 uppercase mb-2 flex items-center gap-1">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+        <div className="glass p-3.5 rounded-xl border border-white/5">
+          <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2.5 flex items-center gap-1.5">
             <Icon name="users" size={12} className="text-indigo-400" />
             <span>TOP O'quvchilar Taqqoslash (T1)</span>
           </div>
           <div className="space-y-2">
             {[
-              { rank: 1, name: 'Ali Valiyev', score: '94.2%', attempts: 18 },
-              { rank: 2, name: 'Sardor Aliyev', score: '88.5%', attempts: 14 },
-              { rank: 3, name: 'Zuhra Karimova', score: '87.1%', attempts: 15 },
+              { rank: 1, name: 'Ali Valiyev', score: 94.2, attempts: 18, color: 'bg-indigo-500' },
+              { rank: 2, name: 'Sardor Aliyev', score: 88.5, attempts: 14, color: 'bg-indigo-500/80' },
+              { rank: 3, name: 'Zuhra Karimova', score: 87.1, attempts: 15, color: 'bg-indigo-500/60' },
             ].map(row => (
-              <div key={row.rank} className="flex justify-between text-xs text-white/70 border-b border-white/5 pb-1">
-                <span>{row.rank}. {row.name}</span>
-                <span className="font-semibold text-white">{row.score} <span className="text-[10px] text-white/40">({row.attempts} ta)</span></span>
+              <div key={row.rank} className="space-y-1">
+                <div className="flex justify-between text-xs text-white/80">
+                  <span>{row.rank}. {row.name}</span>
+                  <span className="font-semibold text-white">{row.score}% <span className="text-[10px] text-white/40">({row.attempts} ta)</span></span>
+                </div>
+                <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                  <div className={`h-full ${row.color}`} style={{ width: `${row.score}%` }} />
+                </div>
               </div>
             ))}
           </div>
         </div>
 
-        <div className="glass p-3 rounded-xl border border-white/5">
-          <div className="text-[10px] text-white/40 uppercase mb-2 flex items-center gap-1">
+        <div className="glass p-3.5 rounded-xl border border-white/5">
+          <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2.5 flex items-center gap-1.5">
             <Icon name="brain" size={12} className="text-purple-400" />
             <span>Savollar Qiyinlik Analitikasi (T4)</span>
           </div>
@@ -86,9 +93,9 @@ const TashkilotMockup = () => {
               { id: '#08', text: 'Eritmalarga oid masalalar...', error: '61%' },
               { id: '#22', text: 'Matnli masalalar tahlili...', error: '55%' },
             ].map((q, idx) => (
-              <div key={idx} className="flex justify-between items-center text-xs text-white/70">
-                <span className="truncate max-w-[120px]"><span className="text-indigo-400">{q.id}</span> {q.text}</span>
-                <span className="bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded text-[10px] border border-rose-500/20 font-semibold">{q.error} xato</span>
+              <div key={idx} className="flex justify-between items-center text-xs text-white/70 border-b border-white/5 pb-1 last:border-0 last:pb-0">
+                <span className="truncate max-w-[110px]"><span className="text-indigo-400 font-semibold">{q.id}</span> {q.text}</span>
+                <span className="bg-rose-500/10 text-rose-400 px-1.5 py-0.5 rounded text-[10px] border border-rose-500/20 font-bold">{q.error} xato</span>
               </div>
             ))}
           </div>
@@ -100,17 +107,17 @@ const TashkilotMockup = () => {
 
 const OtaOnaMockup = () => {
   return (
-    <div className="p-4 md:p-6 text-white text-left select-none" style={{ background: '#090a0f', minHeight: '320px' }}>
-      <div className="flex items-center justify-between border-b border-white/5 pb-3 mb-4">
+    <div className="p-5 md:p-6 text-white text-left select-none relative overflow-hidden" style={{ background: '#07080c', minHeight: '340px' }}>
+      <div className="flex items-center justify-between border-b border-white/5 pb-3.5 mb-4">
         <div>
-          <h4 className="text-sm md:text-base font-bold text-white flex items-center gap-1.5">
-            <Icon name="award" size={16} className="text-cyan-400" />
+          <h4 className="text-sm md:text-base font-bold text-white flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse" />
             <span>Farzand: Shahzod Valiyev</span>
           </h4>
-          <p className="text-[10px] md:text-xs text-white/40">Ota-ona monitoringi va AI tahlil paneli</p>
+          <p className="text-[10px] md:text-xs text-white/45 mt-0.5">Ota-ona monitoringi va AI tahlil paneli</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] md:text-xs bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-lg border border-emerald-500/30 flex items-center gap-1 font-semibold">
+          <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2.5 py-0.5 rounded-lg flex items-center gap-1 font-bold">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Telegram Digest Faol
           </span>
         </div>
@@ -119,15 +126,15 @@ const OtaOnaMockup = () => {
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
         {/* Success predictions */}
         <div className="md:col-span-7 glass p-3.5 rounded-xl border border-white/5">
-          <div className="text-[10px] text-white/40 uppercase mb-2.5 flex items-center gap-1.5">
+          <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2.5 flex items-center gap-1.5">
             <Icon name="sparkles" size={12} className="text-cyan-400" />
             <span>AI Muvaffaqiyat Prognostikasi</span>
           </div>
           <div className="space-y-3">
             {[
-              { label: 'Prezident maktablari imtihoni', val: 78, color: 'bg-indigo-500' },
-              { label: 'Al-Xorazmiy olimpiadasi', val: 85, color: 'bg-cyan-500' },
-              { label: 'DTM Davlat imtihonlari', val: 94, color: 'bg-emerald-500' },
+              { label: 'Prezident maktablari imtihoni', val: 78, color: 'from-indigo-500 to-indigo-400' },
+              { label: 'Al-Xorazmiy olimpiadasi', val: 85, color: 'from-cyan-500 to-cyan-400' },
+              { label: 'DTM Davlat imtihonlari', val: 94, color: 'from-emerald-500 to-emerald-400' },
             ].map(row => (
               <div key={row.label} className="space-y-1">
                 <div className="flex justify-between text-[11px]">
@@ -135,7 +142,7 @@ const OtaOnaMockup = () => {
                   <span className="font-bold text-white">{row.val}% imkoniyat</span>
                 </div>
                 <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                  <div className={`h-full ${row.color}`} style={{ width: `${row.val}%` }} />
+                  <div className={`h-full bg-gradient-to-r ${row.color}`} style={{ width: `${row.val}%` }} />
                 </div>
               </div>
             ))}
@@ -144,40 +151,40 @@ const OtaOnaMockup = () => {
 
         {/* Weekly stats and digest preview */}
         <div className="md:col-span-5 flex flex-col gap-3">
-          <div className="glass p-3 rounded-xl border border-white/5 flex-1">
-            <div className="text-[10px] text-white/40 uppercase mb-1">Farzand faolligi</div>
-            <div className="text-xl font-black text-orange-400 flex items-center gap-1">
-              <span>🔥</span>
+          <div className="glass p-3 rounded-xl border border-white/5 flex-1 flex flex-col justify-center">
+            <div className="text-[9px] text-white/45 uppercase font-bold tracking-wider">Farzand faolligi</div>
+            <div className="text-base font-black text-orange-400 flex items-center gap-1.5 mt-1.5">
+              <span className="text-lg">🔥</span>
               <span>7 kunlik streak</span>
             </div>
-            <div className="text-[10px] text-white/50 mt-1">Uzluksiz kunlik mashq (O1)</div>
+            <div className="text-[9px] text-white/40 mt-1">Kunlik mashq o'tash (O1)</div>
           </div>
-          <div className="glass p-3 rounded-xl border border-white/5 flex-1">
-            <div className="text-[10px] text-white/40 uppercase mb-1">Nishonlar (Badges)</div>
-            <div className="flex gap-2.5 mt-1 text-base">
-              <span title="7 kun faol" className="cursor-help">🔥</span>
-              <span title="10 ta test topshirgan" className="cursor-help">🎖️</span>
-              <span title="90% dan yuqori natija" className="cursor-help">🎯</span>
-              <span title="Premium talaba" className="cursor-help">👑</span>
+          <div className="glass p-3 rounded-xl border border-white/5 flex-1 flex flex-col justify-center">
+            <div className="text-[9px] text-white/45 uppercase font-bold tracking-wider">Nishonlar (Badges)</div>
+            <div className="flex gap-2 mt-2">
+              <span title="7 kun faol" className="cursor-help w-6 h-6 bg-orange-500/10 border border-orange-500/20 rounded-full flex items-center justify-center text-xs">🔥</span>
+              <span title="10 ta test topshirgan" className="cursor-help w-6 h-6 bg-indigo-500/10 border border-indigo-500/20 rounded-full flex items-center justify-center text-xs">🎖️</span>
+              <span title="90% dan yuqori natija" className="cursor-help w-6 h-6 bg-cyan-500/10 border border-cyan-500/20 rounded-full flex items-center justify-center text-xs">🎯</span>
+              <span title="Premium talaba" className="cursor-help w-6 h-6 bg-amber-500/10 border border-amber-500/20 rounded-full flex items-center justify-center text-xs font-bold text-amber-400">👑</span>
             </div>
-            <div className="text-[9px] text-white/30 mt-1.5">To'plangan nishonlar: 4 ta (O5)</div>
+            <div className="text-[9px] text-white/30 mt-1.5">Jami nishonlar: 4 ta (O5)</div>
           </div>
         </div>
       </div>
 
-      <div className="glass p-3.5 rounded-xl border border-white/5 mt-4">
-        <div className="text-[10px] text-white/40 uppercase mb-1.5">Haftalik PDF hisobot (Pillow PDF)</div>
+      <div className="glass p-3 rounded-xl border border-white/5 mt-4">
+        <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2">Haftalik PDF hisobot (Pillow PDF)</div>
         <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <Icon name="file" size={16} className="text-indigo-400" />
-            <div>
-              <span className="font-semibold text-white">olympy-hisobot-Shahzod-week.pdf</span>
-              <span className="text-[10px] text-white/30 ml-2">1.2 MB</span>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Icon name="file" size={16} className="text-indigo-400 flex-shrink-0" />
+            <div className="min-w-0">
+              <div className="font-semibold text-white truncate text-xs">olympy-hisobot-Shahzod-week.pdf</div>
+              <div className="text-[9px] text-white/30">1.2 MB</div>
             </div>
           </div>
-          <span className="bg-indigo-600/20 text-indigo-300 text-[10px] font-bold px-3 py-1.5 rounded-lg border border-indigo-500/25 flex items-center gap-1">
+          <span className="bg-indigo-500/10 text-indigo-300 text-[10px] font-bold px-3 py-1.5 rounded-lg border border-indigo-500/25 flex items-center gap-1.5 shadow-sm hover:bg-indigo-500/20 transition-all cursor-pointer">
             <Icon name="download" size={10} />
-            <span>Yuklangan</span>
+            <span>Yuklash</span>
           </span>
         </div>
       </div>
@@ -473,6 +480,7 @@ const trackAbEvent = (variant, event) => {
 
 const LandingPage = ({ onNavigate, user }) => {
   const [mobileMenu, setMobileMenu] = React.useState(false);
+  const [openFaq, setOpenFaq] = React.useState(null);
   const [activeScreen, setActiveScreen] = React.useState(0);
   const [imgErrors, setImgErrors] = React.useState({});
   const [todayLabel, setTodayLabel] = React.useState(formatLandingDate);
@@ -630,15 +638,15 @@ const LandingPage = ({ onNavigate, user }) => {
   }, [dashboardSvg, todayLabel]);
 
   const screens = [
-    { label: 'Dashboard', icon: 'chart', img: dashboardImgSrc, desc: 'Tadbirlar, natijalar va sertifikatlar bir joyda' },
-    { label: 'Olimpiada', icon: 'trophy', img: '/screenshots/test.svg', desc: 'Vaqt, savollar va javoblar uchun qulay test oynasi' },
-    { label: 'Mashq', icon: 'bolt', img: '/screenshots/practice.svg', desc: 'Fanlar va mavzular bo\'yicha mustaqil test mashqlari' },
-    { label: 'Reyting', icon: 'star', img: '/screenshots/leaderboard.svg', desc: 'Top o\'quvchilar va ballar bo\'yicha jonli reyting' },
-    { label: 'Xatolar', icon: 'shield', img: '/screenshots/mistakes.svg', desc: 'Xato qilingan test savollarining sun\'iy intellekt tahlili' },
-    { label: 'Do\'kon', icon: 'tag', img: '/screenshots/store.svg', desc: 'To\'plangan tangalar evaziga mukofotlar do\'koni' },
-    { label: 'Profil', icon: 'award', img: '/screenshots/profile.svg', desc: 'O\'quvchi yutuqlari, progress va sertifikatlar' },
-    { label: 'Tashkilot', icon: 'building', isMock: true, desc: 'Tashkilot premium analitikasi, o\'quvchilar taqqoslash jadvali va tahliliy hisobotlar' },
-    { label: 'Ota-ona', icon: 'users', isMock: true, desc: 'Farzandning AI muvaffaqiyat bashorati, yutuqlari va Telegram hisobot sozlamalari' },
+    { label: 'Dashboard', icon: 'chart', img: dashboardImgSrc, desc: 'Tadbirlar, natijalar va sertifikatlar bir joyda', glowColor: 'rgba(99, 102, 241, 0.22)' },
+    { label: 'Olimpiada', icon: 'trophy', img: '/screenshots/test.svg', desc: 'Vaqt, savollar va javoblar uchun qulay test oynasi', glowColor: 'rgba(59, 130, 246, 0.22)' },
+    { label: 'Mashq', icon: 'bolt', img: '/screenshots/practice.svg', desc: 'Fanlar va mavzular bo\'yicha mustaqil test mashqlari', glowColor: 'rgba(16, 185, 129, 0.22)' },
+    { label: 'Reyting', icon: 'star', img: '/screenshots/leaderboard.svg', desc: 'Top o\'quvchilar va ballar bo\'yicha jonli reyting', glowColor: 'rgba(245, 158, 11, 0.22)' },
+    { label: 'Xatolar', icon: 'shield', img: '/screenshots/mistakes.svg', desc: 'Xato qilingan test savollarining sun\'iy intellekt tahlili', glowColor: 'rgba(239, 68, 68, 0.22)' },
+    { label: 'Do\'kon', icon: 'tag', img: '/screenshots/store.svg', desc: 'To\'plangan tangalar evaziga mukofotlar do\'koni', glowColor: 'rgba(234, 179, 8, 0.22)' },
+    { label: 'Profil', icon: 'award', img: '/screenshots/profile.svg', desc: 'O\'quvchi yutuqlari, progress va sertifikatlar', glowColor: 'rgba(168, 85, 247, 0.22)' },
+    { label: 'Tashkilot', icon: 'building', isMock: true, desc: 'Tashkilot premium analitikasi, o\'quvchilar taqqoslash jadvali va tahliliy hisobotlar', glowColor: 'rgba(99, 102, 241, 0.22)' },
+    { label: 'Ota-ona', icon: 'users', isMock: true, desc: 'Farzandning AI muvaffaqiyat bashorati, yutuqlari va Telegram hisobot sozlamalari', glowColor: 'rgba(6, 182, 212, 0.22)' },
   ];
 
   // Auto-switch tabs every 4 seconds
@@ -670,45 +678,39 @@ const LandingPage = ({ onNavigate, user }) => {
     }
   }, [activeScreen]);
 
-  const heroMetrics = [
-    { value: 'AI', label: 'savol yaratish' },
-    { value: 'PDF', label: 'import' },
-    { value: 'Live', label: 'reyting' },
-  ];
-
   const features = [
     // Center features
-    { category: 'center', icon: '✨', title: 'AI orqali savol yaratish', desc: 'Sun\'iy intellekt yordamida sekundlar ichida yuzlab savol yarating', color: 'from-indigo-500 to-purple-600' },
-    { category: 'center', icon: '📄', title: 'PDF\'dan test yaratish', desc: 'Darslik yoki materiallardan avtomatik test savollarini yarating', color: 'from-cyan-500 to-blue-600' },
-    { category: 'center', icon: '📱', title: 'Telegram orqali tasdiqlash', desc: 'Manager Telegram orqali bir tugma bilan arizalarni tasdiqlaydi', color: 'from-emerald-500 to-teal-600' },
-    { category: 'center', icon: '🏆', title: 'Online olimpiada', desc: 'Real vaqtda olimpiada o\'tkazib, Natijalarni avtomatik hisoblang', color: 'from-amber-500 to-orange-600' },
-    { category: 'center', icon: '👁️', title: 'Jonli Proctoring nazorati', desc: 'Test topshirayotgan o\'quvchilarning tab o\'zgarishi va ping holatini real vaqtda kuzatish', color: 'from-rose-500 to-pink-600' },
-    { category: 'center', icon: '📈', title: 'Tashkilot reyting dinamikasi', desc: 'Markazning global oylik reyting o\'zgarishi va ballar o\'sishini jonli grafikda kuzatish (T7)', color: 'from-blue-600 to-cyan-500' },
-    { category: 'center', icon: '📊', title: 'O\'quvchilar taqqoslash jadvali', desc: 'Guruhdagi barcha o\'quvchilarning o\'rtacha ballari, reytingi va urinishlari batafsil jadvali (T1)', color: 'from-indigo-500 to-blue-600' },
-    { category: 'center', icon: '🧠', title: 'Savollar qiyinlik tahlili', desc: 'Markaz savollarining o\'quvchilar tomonidan xato qilinish foizlari bo\'yicha qiyinlik darajasini aniqlash (T4)', color: 'from-purple-500 to-indigo-600' },
-    { category: 'center', icon: '⚠️', title: 'Nofaol o\'quvchilar ogohlantirishi', desc: 'Ma\'lum muddat davomida test topshirmagan nofaol o\'quvchilarni tizimli aniqlash va eslatish (T3)', color: 'from-amber-500 to-red-500' },
-    { category: 'center', icon: '🏷️', title: 'Guruhlararo taqqoslash', desc: 'Sinf va guruh teglari kesimida faollik hamda o\'rtacha ko\'rsatkichlarni guruhlab solishtirish (T5)', color: 'from-teal-500 to-emerald-600' },
-    { category: 'center', icon: '📥', title: 'Excel va CSV yig\'ma eksporti', desc: 'Markazning barcha o\'quvchilari natijalarini formatlangan Excel yoki CSV faylga bir tugma bilan yuklab olish (T6)', color: 'from-emerald-600 to-teal-500' },
-    { category: 'center', icon: '📄', title: 'Tashkilot tahliliy hisoboti', desc: 'Markaz faoliyatiga oid statistika va TOP 5 o\'quvchini Pillow orqali PDF shaklida yuklash (T2)', color: 'from-pink-500 to-rose-600' },
-
+    { category: 'center', icon: '✨', iconName: 'sparkles', title: 'AI orqali savol yaratish', desc: 'Sun\'iy intellekt yordamida sekundlar ichida yuzlab savol yarating', color: 'from-indigo-500 to-purple-600' },
+    { category: 'center', icon: '📄', iconName: 'file', title: 'PDF\'dan test yaratish', desc: 'Darslik yoki materiallardan avtomatik test savollarini yarating', color: 'from-cyan-500 to-blue-600' },
+    { category: 'center', icon: '📱', iconName: 'send', title: 'Telegram orqali tasdiqlash', desc: 'Manager Telegram orqali bir tugma bilan arizalarni tasdiqlaydi', color: 'from-emerald-500 to-teal-600' },
+    { category: 'center', icon: '🏆', iconName: 'trophy', title: 'Online olimpiada', desc: 'Real vaqtda olimpiada o\'tkazib, Natijalarni avtomatik hisoblang', color: 'from-amber-500 to-orange-600' },
+    { category: 'center', icon: '👁️', iconName: 'eye', title: 'Jonli Proctoring nazorati', desc: 'Test topshirayotgan o\'quvchilarning tab o\'zgarishi va ping holatini real vaqtda kuzatish', color: 'from-rose-500 to-pink-600' },
+    { category: 'center', icon: '📈', iconName: 'chart', title: 'Tashkilot reyting dinamikasi', desc: 'Markazning global oylik reyting o\'zgarishi va ballar o\'sishini jonli grafikda kuzatish (T7)', color: 'from-blue-600 to-cyan-500' },
+    { category: 'center', icon: '📊', iconName: 'grid', title: 'O\'quvchilar taqqoslash jadvali', desc: 'Guruhdagi barcha o\'quvchilarning o\'rtacha ballari, reytingi va urinishlari batafsil jadvali (T1)', color: 'from-indigo-500 to-blue-600' },
+    { category: 'center', icon: '🧠', iconName: 'brain', title: 'Savollar qiyinlik tahlili', desc: 'Markaz savollarining o\'quvchilar tomonidan xato qilinish foizlari bo\'yicha qiyinlik darajasini aniqlash (T4)', color: 'from-purple-500 to-indigo-600' },
+    { category: 'center', icon: '⚠️', iconName: 'info', title: 'Nofaol o\'quvchilar ogohlantirishi', desc: 'Ma\'lum muddat davomida test topshirmagan nofaol o\'quvchilarni tizimli aniqlash va eslatish (T3)', color: 'from-amber-500 to-red-500' },
+    { category: 'center', icon: '🏷️', iconName: 'tag', title: 'Guruhlararo taqqoslash', desc: 'Sinf va guruh teglari kesimida faollik hamda o\'rtacha ko\'rsatkichlarni guruhlab solishtirish (T5)', color: 'from-teal-500 to-emerald-600' },
+    { category: 'center', icon: '📥', iconName: 'download', title: 'Excel va CSV yig\'ma eksporti', desc: 'Markazning barcha o\'quvchilari natijalarini formatlangan Excel yoki CSV faylga bir tugma bilan yuklab olish (T6)', color: 'from-emerald-600 to-teal-500' },
+    { category: 'center', icon: '📄', iconName: 'file', title: 'Tashkilot tahliliy hisoboti', desc: 'Markaz faoliyatiga oid statistika va TOP 5 o\'quvchini Pillow orqali PDF shaklida yuklash (T2)', color: 'from-pink-500 to-rose-600' },
+ 
     // Student features
-    { category: 'student', icon: '📊', title: 'Natijalar va reyting', desc: 'Batafsil statistika, shaxsiy grafik va global reyting jadvallarini ko\'ring', color: 'from-pink-500 to-rose-600' },
-    { category: 'student', icon: '👤', title: 'O\'quvchi profili', desc: 'Har bir o\'quvchining yutuqlari, faollik oylari va natijalarini kuzating', color: 'from-violet-500 to-purple-600' },
-    { category: 'student', icon: '🏋️', title: 'Mustaqil Mashq Rejimi', desc: 'Fanlar va mavzular bo\'yicha o\'z ustida ishlash hamda faollik (streak) tizimi', color: 'from-blue-500 to-indigo-600' },
-    { category: 'student', icon: '📂', title: 'AI Xatolar Sandig\'i', desc: 'Yo\'l qo\'yilgan xatolarni jamlab, sun\'iy intellekt orqali tushuntirish berish', color: 'from-amber-500 to-red-600' },
-    { category: 'student', icon: '🪙', title: 'Virtual Sovg\'alar Do\'koni', desc: 'Testlar va mashqlardan tangalar yig\'ib, qiziqarli mukofotlar xarid qilish', color: 'from-yellow-400 to-orange-500' },
-    { category: 'student', icon: '🔮', title: 'AI Muvaffaqiyat Prognostikasi', desc: 'Imtihon va olimpiadalarga kirish imkoniyatlarini AI yordamida prognozlash', color: 'from-purple-500 to-pink-600' },
-    { category: 'student', icon: '⚔️', title: 'Raqiblar tizimi (Rivals)', desc: 'Kursdoshlarni raqib sifatida qo\'shib, ular bilan o\'rtacha ball va reytinglarni taqqoslash (O2)', color: 'from-rose-500 to-orange-500' },
-    { category: 'student', icon: '🎯', title: 'Mavzu tayyorlik darajasi', desc: 'Har bir fan bo\'yicha o\'quvchining o\'zlashtirish foizini va tayyorgarlik darajasini ko\'rish (O3)', color: 'from-cyan-500 to-teal-500' },
-    { category: 'student', icon: '🔮', title: 'Urinishlar AI tahlili', desc: 'Har bir test urinishi yakunida Gemini AI yordamida yo\'l qo\'yilgan xatolarga tushuntirish olish (O4)', color: 'from-purple-600 to-pink-500' },
-    { category: 'student', icon: '🎖️', title: 'Premium Yutuqlar', desc: 'Urinishlar soni, streaklar va eng yuqori ballarga erishganda beriladigan nishonlar (O5)', color: 'from-yellow-500 to-amber-600' },
-    { category: 'student', icon: '💡', title: 'Smart Olimpiada tavsiyalari', desc: 'Zaif fanlaringizga mos ravishda navbatdagi olimpiada va mashqlarni avtomatik tavsiya etish (O7)', color: 'from-indigo-600 to-purple-600' },
-    { category: 'student', icon: '🔥', title: 'Ketma-ketlik (Streak) tizimi', desc: 'Kunlik faollikni va eng uzun streaklarni kuzatib borish orqali uzluksiz o\'rganish motivatsiyasi (O1)', color: 'from-orange-500 to-amber-500' },
-    { category: 'student', icon: '👑', title: 'Oltin avatar halqasi va unvon', desc: 'Premium o\'quvchilar uchun platformada alohida vizual oltin avatar va reytinglarda maxsus belgi', color: 'from-yellow-400 to-amber-500' },
-
+    { category: 'student', icon: '📊', iconName: 'chart', title: 'Natijalar va reyting', desc: 'Batafsil statistika, shaxsiy grafik va global reyting jadvallarini ko\'ring', color: 'from-pink-500 to-rose-600' },
+    { category: 'student', icon: '👤', iconName: 'user', title: 'O\'quvchi profili', desc: 'Har bir o\'quvchining yutuqlari, faollik oylari va natijalarini kuzating', color: 'from-violet-500 to-purple-600' },
+    { category: 'student', icon: '🏋️', iconName: 'bolt', title: 'Mustaqil Mashq Rejimi', desc: 'Fanlar va mavzular bo\'yicha o\'z ustida ishlash hamda faollik (streak) tizimi', color: 'from-blue-500 to-indigo-600' },
+    { category: 'student', icon: '📂', iconName: 'shield', title: 'AI Xatolar Sandig\'i', desc: 'Yo\'l qo\'yilgan xatolarni jamlab, sun\'iy intellekt orqali tushuntirish berish', color: 'from-amber-500 to-red-600' },
+    { category: 'student', icon: '🪙', iconName: 'tag', title: 'Virtual Sovg\'alar Do\'koni', desc: 'Testlar va mashqlardan tangalar yig\'ib, qiziqarli mukofotlar xarid qilish', color: 'from-yellow-400 to-orange-500' },
+    { category: 'student', icon: '🔮', iconName: 'sparkles', title: 'AI Muvaffaqiyat Prognostikasi', desc: 'Imtihon va olimpiadalarga kirish imkoniyatlarini AI yordamida prognozlash', color: 'from-purple-500 to-pink-600' },
+    { category: 'student', icon: '⚔️', iconName: 'users', title: 'Raqiblar tizimi (Rivals)', desc: 'Kursdoshlarni raqib sifatida qo\'shib, ular bilan o\'rtacha ball va reytinglarni taqqoslash (O2)', color: 'from-rose-500 to-orange-500' },
+    { category: 'student', icon: '🎯', iconName: 'award', title: 'Mavzu tayyorlik darajasi', desc: 'Har bir fan bo\'yicha o\'quvchining o\'zlashtirish foizini va tayyorgarlik darajasini ko\'rish (O3)', color: 'from-cyan-500 to-teal-500' },
+    { category: 'student', icon: '🔮', iconName: 'brain', title: 'Urinishlar AI tahlili', desc: 'Har bir test urinishi yakunida Gemini AI yordamida yo\'l qo\'yilgan xatolarga tushuntirish olish (O4)', color: 'from-purple-600 to-pink-500' },
+    { category: 'student', icon: '🎖️', iconName: 'star', title: 'Premium Yutuqlar', desc: 'Urinishlar soni, streaklar va eng yuqori ballarga erishganda beriladigan nishonlar (O5)', color: 'from-yellow-500 to-amber-600' },
+    { category: 'student', icon: '💡', iconName: 'info', title: 'Smart Olimpiada tavsiyalari', desc: 'Zaif fanlaringizga mos ravishda navbatdagi olimpiada va mashqlarni avtomatik tavsiya etish (O7)', color: 'from-indigo-600 to-purple-600' },
+    { category: 'student', icon: '🔥', iconName: 'bolt', title: 'Ketma-ketlik (Streak) tizimi', desc: 'Kunlik faollikni va eng uzun streaklarni kuzatib borish orqali uzluksiz o\'rganish motivatsiyasi (O1)', color: 'from-orange-500 to-amber-500' },
+    { category: 'student', icon: '👑', iconName: 'award', title: 'Oltin avatar halqasi va unvon', desc: 'Premium o\'quvchilar uchun platformada alohida vizual oltin avatar va reytinglarda maxsus belgi', color: 'from-yellow-400 to-amber-500' },
+ 
     // Parent features
-    { category: 'parent', icon: '📄', title: 'Ota-onalar uchun PDF hisobot', desc: 'Telegram bot orqali farzand rivojlanishi bo\'yicha haftalik PDF tahlil xabarlari', color: 'from-emerald-500 to-green-600' },
-    { category: 'parent', icon: '📩', title: 'Ota-onaga haftalik digest', desc: 'Farzandning oxirgi 7 kundagi urinishlari, o\'rtacha bali va faollik kunlarini Telegramda olish (O6)', color: 'from-emerald-500 to-green-600' },
+    { category: 'parent', icon: '📄', iconName: 'file', title: 'Ota-onalar uchun PDF hisobot', desc: 'Telegram bot orqali farzand rivojlanishi bo\'yicha haftalik PDF tahlil xabarlari', color: 'from-emerald-500 to-green-600' },
+    { category: 'parent', icon: '📩', iconName: 'send', title: 'Ota-onaga haftalik digest', desc: 'Farzandning oxirgi 7 kundagi urinishlari, o\'rtacha bali va faollik kunlarini Telegramda olish (O6)', color: 'from-emerald-500 to-green-600' },
   ];
 
   const filteredFeatures = React.useMemo(() => {
@@ -717,10 +719,10 @@ const LandingPage = ({ onNavigate, user }) => {
   }, [selectedCategory]);
 
   const steps = [
-    { num: '01', title: 'Ro\'yxatdan o\'ting', desc: 'Maktab, o\'quv markaz yoki tashkilot sifatida platformaga qo\'shiling', icon: '🚀' },
-    { num: '02', title: 'Savollar yarating', desc: 'AI, PDF yoki qo\'lda savollar bazasini to\'ldiring', icon: '✏️' },
-    { num: '03', title: 'Olimpiada o\'tkazing', desc: 'O\'quvchilarni qo\'shing va olimpiada boshlang', icon: '🏆' },
-    { num: '04', title: 'Natijalarni tahlil qiling', desc: 'Avtomatik hisoblangan natijalar va reytingni ko\'ring', icon: '📈' },
+    { num: '01', title: 'Ro\'yxatdan o\'ting', desc: 'Maktab, o\'quv markaz yoki tashkilot sifatida platformaga qo\'shiling', icon: '🚀', iconName: 'bolt' },
+    { num: '02', title: 'Savollar yarating', desc: 'AI, PDF yoki qo\'lda savollar bazasini to\'ldiring', icon: '✏️', iconName: 'edit' },
+    { num: '03', title: 'Olimpiada o\'tkazing', desc: 'O\'quvchilarni qo\'shing va olimpiada boshlang', icon: '🏆', iconName: 'trophy' },
+    { num: '04', title: 'Natijalarni tahlil qiling', desc: 'Avtomatik hisoblangan natijalar va reytingni ko\'ring', icon: '📈', iconName: 'chart' },
   ];
 
   // Narxlar backenddan (GET /api/billing/plans/) yuklanadi — yuqoridagi
@@ -872,7 +874,8 @@ const LandingPage = ({ onNavigate, user }) => {
         }}
       >
         <InteractiveParticles />
-        <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(5,5,8,0.1) 0%, rgba(5,5,8,0.8) 85%, #050508 100%)' }} />
+        <div className="absolute inset-0 grid-backdrop pointer-events-none opacity-[0.22] z-[2]" />
+        <div className="absolute inset-0 pointer-events-none z-[2]" style={{ background: 'linear-gradient(180deg, rgba(5,5,8,0.1) 0%, rgba(5,5,8,0.8) 85%, #050508 100%)' }} />
 
         {/* Neon orbs for mesh gradient background.
             Telegram WebView va zaif qurilmalarda og'ir blur (110-130px) +
@@ -945,13 +948,22 @@ const LandingPage = ({ onNavigate, user }) => {
               </Magnetic>
             </div>
 
-            <div className="grid grid-cols-3 gap-2.5 md:gap-4 max-w-xl">
-              {heroMetrics.map((m) => (
-                <div key={m.label} className="rounded-2xl px-3 md:px-4 py-3 md:py-4 border border-white/10" style={{ background: 'rgba(255,255,255,0.07)' }}>
-                  <div className="text-xl md:text-3xl font-black text-white">{m.value}</div>
-                  <div className="text-[11px] md:text-sm text-white/50 leading-tight">{m.label}</div>
-                </div>
-              ))}
+            <div className="grid grid-cols-3 gap-3 md:gap-4 max-w-xl relative z-20">
+              {heroMetrics.map((m, idx) => {
+                const textColors = ['text-purple-400', 'text-cyan-400', 'text-emerald-400'];
+                return (
+                  <GlowCard 
+                    key={m.label} 
+                    className="p-3.5 md:p-5 border border-white/5 rounded-2xl flex flex-col group transition-all"
+                  >
+                    <div className={`text-xl md:text-3xl font-black ${textColors[idx % 3]} flex items-center gap-1.5`}>
+                      <span>{m.value}</span>
+                      <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse opacity-75" />
+                    </div>
+                    <div className="text-[11px] md:text-sm text-white/50 leading-tight mt-1.5 group-hover:text-white/80 transition-colors">{m.label}</div>
+                  </GlowCard>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -990,12 +1002,24 @@ const LandingPage = ({ onNavigate, user }) => {
           </div>
 
           {/* Browser window mockup */}
-          <div className="perspective-1000 scroll-reveal scroll-reveal-delay-2">
+          <div className="perspective-1000 scroll-reveal scroll-reveal-delay-2 relative">
+            <div 
+              className="aura-glow animate-pulse-slow" 
+              style={{ 
+                background: screens[activeScreen].glowColor || 'rgba(99, 102, 241, 0.22)',
+                left: '50%',
+                top: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '110%',
+                height: '110%',
+                opacity: 0.22
+              }} 
+            />
             <div
               ref={mainMockupTilt.ref}
               onMouseMove={mainMockupTilt.handleMouseMove}
               onMouseLeave={mainMockupTilt.handleMouseLeave}
-              className="tilt-card glass rounded-2xl overflow-hidden border border-white/10"
+              className="tilt-card glass rounded-2xl overflow-hidden border border-white/10 relative z-10"
               style={{ ...mainMockupTilt.style, background: '#0d0e12' }}
             >
               <div className="tilt-glow" />
@@ -1157,9 +1181,11 @@ const LandingPage = ({ onNavigate, user }) => {
                 animationDelay: `${(i % 6) * 50}ms`
               }}
             >
-              <div className={`feature-icon bg-gradient-to-br ${f.color} mb-3 md:mb-4 text-2xl relative z-10`}>{f.icon}</div>
-              <h3 className="text-base md:text-lg font-bold text-white mb-1.5 md:mb-2 relative z-10">{f.title}</h3>
-              <p className="text-sm text-white/40 leading-relaxed relative z-10">{f.desc}</p>
+              <div className={`feature-icon bg-gradient-to-br ${f.color} mb-4 relative z-10 flex items-center justify-center text-white/90 shadow-md shadow-black/20 group-hover:scale-110 transition-transform duration-300`}>
+                {f.iconName ? <Icon name={f.iconName} size={20} /> : <span className="text-xl">{f.icon}</span>}
+              </div>
+              <h3 className="text-base md:text-lg font-bold text-white mb-1.5 md:mb-2 relative z-10 group-hover:text-indigo-200 transition-colors duration-250">{f.title}</h3>
+              <p className="text-sm text-white/40 leading-relaxed relative z-10 group-hover:text-white/60 transition-colors duration-250">{f.desc}</p>
             </GlowCard>
           ))}
         </div>
@@ -1167,20 +1193,34 @@ const LandingPage = ({ onNavigate, user }) => {
 
       {/* How it works */}
       <section id="how" className="py-12 md:py-24" style={{ background: 'linear-gradient(180deg, #050508 0%, rgba(99,102,241,0.03) 15%, rgba(99,102,241,0.03) 100%)' }}>
-        <div className="max-w-5xl mx-auto px-4 md:px-6">
-          <div className="text-center mb-8 md:mb-16 scroll-reveal">
+        <div className="max-w-6xl mx-auto px-4 md:px-6">
+          <div className="text-center mb-10 md:mb-16 scroll-reveal">
             <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-cyan-300 border border-cyan-500/20">🔄 Qanday ishlaydi</div>
             <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">4 ta oson qadam</h2>
+            <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Platformadan foydalanishni boshlash juda oson va tez</p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+          
+          <div className="relative grid grid-cols-1 md:grid-cols-4 gap-6 md:gap-8 z-10">
+            {/* Connecting line (Desktop only) */}
+            <div className="hidden md:block absolute top-[44px] left-[10%] right-[10%] h-[1px] bg-gradient-to-r from-indigo-500/20 via-purple-500/30 to-cyan-500/20 border-t border-dashed border-indigo-500/30 z-0 pointer-events-none" />
+            
             {steps.map((s, i) => (
-              <div key={i} className={`glass rounded-2xl p-4 md:p-6 card-hover flex gap-3 md:gap-4 scroll-reveal scroll-reveal-delay-${(i % 2) + 1}`}>
-                <div className="gradient-text font-black text-3xl md:text-4xl opacity-30 flex-shrink-0">{s.num}</div>
-                <div className="min-w-0">
-                  <div className="text-xl mb-1.5 md:mb-2">{s.icon}</div>
-                  <h3 className="text-base md:text-lg font-bold text-white mb-1">{s.title}</h3>
-                  <p className="text-sm text-white/40 leading-relaxed">{s.desc}</p>
+              <div key={i} className={`glass rounded-2xl p-5 md:p-6 card-hover flex flex-col items-center md:items-start text-center md:text-left scroll-reveal scroll-reveal-delay-${(i % 4) + 1} relative z-10 group`}>
+                {/* Step Circle */}
+                <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-white/10 flex items-center justify-center relative shadow-lg mb-4 flex-shrink-0 group-hover:border-indigo-500/40 transition-colors duration-300">
+                  {/* Step Number Badge */}
+                  <span className="absolute -top-2.5 -right-2.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-[10px] font-black w-5 h-5 rounded-full flex items-center justify-center shadow-md">
+                    {s.num}
+                  </span>
+                  {s.iconName ? (
+                    <Icon name={s.iconName} size={20} className="text-indigo-400" />
+                  ) : (
+                    <span className="text-xl">{s.icon}</span>
+                  )}
                 </div>
+                
+                <h3 className="text-base md:text-lg font-bold text-white mb-2 group-hover:text-indigo-300 transition-colors duration-250">{s.title}</h3>
+                <p className="text-xs md:text-sm text-white/40 leading-relaxed">{s.desc}</p>
               </div>
             ))}
           </div>
@@ -1307,29 +1347,43 @@ const LandingPage = ({ onNavigate, user }) => {
               return (
                 <GlowCard 
                   key={i} 
-                  className={`p-4 md:p-6 flex flex-col ${delayClass} ${p.popular ? 'glow-blue' : ''}`}
+                  className={`p-5 md:p-6 flex flex-col ${delayClass} ${p.popular ? 'glow-purple border-purple-500/30' : 'border-white/5'}`}
                   style={p.popular ? {
-                    background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(168, 85, 247, 0.1) 50%, rgba(34, 211, 238, 0.05) 100%)',
-                    borderColor: 'rgba(99, 102, 241, 0.45)',
-                    boxShadow: '0 20px 40px rgba(99, 102, 241, 0.12), 0 0 30px rgba(168, 85, 247, 0.08)'
+                    background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.12) 0%, rgba(99, 102, 241, 0.08) 50%, rgba(34, 211, 238, 0.04) 100%)',
+                    borderColor: 'rgba(168, 85, 247, 0.4)',
+                    boxShadow: '0 20px 40px rgba(168, 85, 247, 0.1), 0 0 30px rgba(99, 102, 241, 0.06)'
                   } : {}}
                 >
                   <div className="relative z-10 flex flex-col h-full">
-                    {p.popular && <div className="text-xs font-bold text-white bg-indigo-500/30 border border-indigo-500/40 rounded-full px-3 py-1 w-fit mb-3 md:mb-4">⭐ Mashhur</div>}
-                    <div className={`text-sm font-medium mb-1 ${p.popular ? 'text-white/70' : 'text-white/50'}`}>{p.name}</div>
-                    <div className={`text-2xl md:text-3xl font-black mb-1 ${p.popular ? 'text-white' : 'gradient-text'}`}>{p.price}</div>
-                    {p.period && <div className={`text-sm mb-2 ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.period}</div>}
-                    <div className={`text-xs mb-4 md:mb-6 ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.desc}</div>
-                    <ul className="space-y-2 flex-1 mb-6">
+                    {p.popular && (
+                      <div className="flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-3 py-1 w-fit mb-4">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                        <span>Mashhur tanlov</span>
+                      </div>
+                    )}
+                    <div className={`text-sm font-bold tracking-wide mb-1 ${p.popular ? 'text-purple-300' : 'text-white/50'}`}>{p.name}</div>
+                    <div className="text-3xl md:text-4xl font-black mb-1.5 text-white flex items-baseline gap-1">
+                      <span>{p.price}</span>
+                    </div>
+                    {p.period && <div className={`text-xs mb-3 font-semibold ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.period}</div>}
+                    <div className={`text-xs mb-5 leading-relaxed ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.desc}</div>
+                    
+                    <ul className="space-y-3 flex-1 mb-6 border-t border-white/5 pt-4">
                        {p.features.map((f, j) => (
-                        <li key={j} className={`flex items-center gap-2 text-sm ${p.popular ? 'text-white/80' : 'text-white/60'}`}>
-                          <span className={p.popular ? 'text-indigo-300 font-bold' : 'text-indigo-400'}>✓</span> {f}
+                        <li key={j} className="flex items-start gap-2.5 text-xs md:text-sm text-white/75">
+                          <span className={`flex-shrink-0 w-4.5 h-4.5 rounded-full ${p.popular ? 'bg-purple-500/20 text-purple-300' : 'bg-indigo-500/20 text-indigo-300'} text-[10px] flex items-center justify-center font-black mt-0.5`}>✓</span> 
+                          <span className="leading-normal">{f}</span>
                         </li>
                       ))}
                     </ul>
+                    
                     <Magnetic>
                       <button onClick={handleClick}
-                        className={`w-full py-3 rounded-xl font-semibold text-sm transition-all ${p.popular ? 'bg-white text-indigo-600 hover:bg-white/90 shadow-md shadow-white/10' : 'btn-ghost'}`}>
+                        className={`w-full py-3 rounded-xl font-bold text-xs md:text-sm transition-all duration-300 ${
+                          p.popular 
+                            ? 'bg-gradient-to-r from-purple-500 via-indigo-500 to-cyan-500 text-white shadow-lg shadow-purple-500/10 hover:shadow-purple-500/20 hover:scale-[1.02] active:scale-[0.98]' 
+                            : 'btn-ghost border border-white/10 hover:border-white/20 hover:scale-[1.01] active:scale-[0.99]'
+                        }`}>
                         {isFree ? (user ? 'Boshqaruv paneli' : 'Boshlash') : (user ? 'Sotib olish' : 'Kirish va ulanish')}
                       </button>
                     </Magnetic>
@@ -1339,6 +1393,63 @@ const LandingPage = ({ onNavigate, user }) => {
             })}
           </div>
           )}
+        </div>
+      </section>
+
+      {/* FAQ Accordion Section */}
+      <section className="py-12 md:py-24 max-w-4xl mx-auto px-4 md:px-6 scroll-reveal">
+        <div className="text-center mb-10 md:mb-16">
+          <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-indigo-300 border border-indigo-500/20">❓ FAQ</div>
+          <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Ko'p beriladigan savollar</h2>
+          <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Olympy platformasi haqida o'zingizni qiziqtirgan barcha savollarga javob oling</p>
+        </div>
+
+        <div className="space-y-4">
+          {[
+            {
+              q: "Olympy platformasi kimlar uchun mo'ljallangan?",
+              a: "Olympy — o'quv markazlari, maktablar, lisey va oliy ta'lim muassasalari uchun mo'ljallangan. U olimpiadalar o'tkazish, testlar topshirish, reytinglarni hisoblash va natijalarni tahlil qilish jarayonlarini to'liq avtomatlashtiradi."
+            },
+            {
+              q: "AI (sun'iy intellekt) orqali qanday qilib savol yaratish mumkin?",
+              a: "Platformamizga integratsiya qilingan Gemini AI darsliklar, mavzular yoki kalit so'zlar asosida bir necha soniya ichida yuzlab noyob, qiyinchilik darajasi sozlangan test savollarini avtomatik yaratib beradi."
+            },
+            {
+              q: "Ota-onalar farzandlarining natijalarini qanday kuzatishadi?",
+              a: "Ota-onalar uchun maxsus Telegram-bot ishlaydi. Bot orqali ota-onaga har hafta farzandining test urinishlari, o'rtacha ballari, faollik kunlari va rivojlanish grafigi PDF (digest) shaklida yuboriladi."
+            },
+            {
+              q: "Premium tariflarning afzalliklari nimada?",
+              a: "Premium tariflarda AI savollar generatoridan cheksiz foydalanish, PDF formatida tahliliy hisobotlarni yuklab olish, Telegram-bot orqali tasdiqlash funksiyasi, oltin unvon va reyting cheklovlarisiz ishlash imkoniyatlari mavjud."
+            },
+            {
+              q: "To'lovlar qanday amalga oshiriladi va qanday tizimlar qo'llab-quvvatlanadi?",
+              a: "Biz Click va Payme to'lov tizimlarini to'liq qo'llab-quvvatlaymiz. O'zingizga qulay obuna rejasini tanlab, Click yoki Payme orqali bir necha klikda xavfsiz to'lovni amalga oshirishingiz mumkin."
+            }
+          ].map((faq, idx) => {
+            const isOpen = openFaq === idx;
+            return (
+              <div 
+                key={idx} 
+                className={`glass rounded-2xl border transition-all duration-300 ${isOpen ? 'border-indigo-500/30 bg-white/[0.04]' : 'border-white/5 hover:border-white/10'}`}
+              >
+                <button
+                  onClick={() => setOpenFaq(isOpen ? null : idx)}
+                  className="w-full flex items-center justify-between p-5 text-left font-bold text-sm md:text-base text-white hover:text-indigo-300 transition-colors select-none outline-none"
+                >
+                  <span>{faq.q}</span>
+                  <span className={`transition-transform duration-300 text-indigo-400 ${isOpen ? 'rotate-180' : 'rotate-0'}`}>
+                    <Icon name="chevronDown" size={20} />
+                  </span>
+                </button>
+                <div className={`accordion-content ${isOpen ? 'open' : ''}`}>
+                  <div className="p-5 pt-0 text-xs md:text-sm text-white/50 leading-relaxed border-t border-white/5 mt-1">
+                    {faq.a}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </section>
 
