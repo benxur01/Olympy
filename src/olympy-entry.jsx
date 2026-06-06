@@ -2745,6 +2745,12 @@ const LandingPage = ({ onNavigate, user }) => {
     { label: 'Ota-ona', icon: 'users', isMock: true, desc: 'Farzandning AI muvaffaqiyat bashorati, yutuqlari va Telegram hisobot sozlamalari', glowColor: 'rgba(6, 182, 212, 0.22)' },
   ];
 
+  const heroMetrics = [
+    { value: 'AI', label: 'savol yaratish' },
+    { value: 'PDF', label: 'import' },
+    { value: 'Live', label: 'reyting' },
+  ];
+
   // Auto-switch tabs every 4 seconds
   React.useEffect(() => {
     const interval = setInterval(() => {
