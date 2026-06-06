@@ -2968,7 +2968,7 @@ const LandingPage = ({ onNavigate, user }) => {
         }}
       >
         <InteractiveParticles />
-        <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(5,5,8,0.1) 0%, rgba(5,5,8,0.9) 100%)' }} />
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(5,5,8,0.1) 0%, rgba(5,5,8,0.8) 85%, #050508 100%)' }} />
 
         {/* Neon orbs for mesh gradient background.
             Telegram WebView va zaif qurilmalarda og'ir blur (110-130px) +
@@ -3054,7 +3054,7 @@ const LandingPage = ({ onNavigate, user }) => {
       </section>
 
       {/* Platforma ko'rinishi */}
-      <section className="py-12 md:py-24 relative overflow-hidden" style={{ background: 'linear-gradient(180deg, rgba(5,5,8,1) 0%, rgba(20,22,28,0.9) 100%)' }}>
+      <section className="py-12 md:py-24 relative overflow-hidden" style={{ background: 'linear-gradient(180deg, #050508 0%, rgba(20,22,28,0.9) 50%, #050508 100%)' }}>
         <div className="max-w-6xl mx-auto px-4 md:px-6">
           <div className="text-center mb-8 md:mb-14 scroll-reveal">
             <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-cyan-200 border border-cyan-500/20">
@@ -3262,7 +3262,7 @@ const LandingPage = ({ onNavigate, user }) => {
       </section>
 
       {/* How it works */}
-      <section id="how" className="py-12 md:py-24" style={{ background: 'rgba(99,102,241,0.03)' }}>
+      <section id="how" className="py-12 md:py-24" style={{ background: 'linear-gradient(180deg, #050508 0%, rgba(99,102,241,0.03) 15%, rgba(99,102,241,0.03) 100%)' }}>
         <div className="max-w-5xl mx-auto px-4 md:px-6">
           <div className="text-center mb-8 md:mb-16 scroll-reveal">
             <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-cyan-300 border border-cyan-500/20">🔄 Qanday ishlaydi</div>
@@ -3304,7 +3304,7 @@ const LandingPage = ({ onNavigate, user }) => {
       </section>
 
       {/* Pricing — rejalar backenddan (GET /api/billing/plans/) yuklanadi. */}
-      <section id="pricing" className="py-12 md:py-24" style={{ background: 'rgba(99,102,241,0.03)' }}>
+      <section id="pricing" className="py-12 md:py-24" style={{ background: 'linear-gradient(180deg, rgba(99,102,241,0.03) 0%, rgba(99,102,241,0.03) 85%, #050508 100%)' }}>
         <div className="max-w-5xl mx-auto px-4 md:px-6">
           <div className="text-center mb-8 md:mb-12 scroll-reveal">
             <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-indigo-300 border border-indigo-500/20">💎 Narxlar</div>
