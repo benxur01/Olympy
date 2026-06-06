@@ -815,165 +815,11 @@ function VirtualList({ items, itemHeight = 60, containerHeight = 400, renderItem
   );
 }
 
-// ─── Seasonal theme ────────────────────────────────────────────────────────
-// Joriy oyga qarab faslni aniqlaydi (O'zbekiston fasllari). Landing va Auth
-// sahifalarida seasonal background, accent va particle effektlari uchun.
-//   mart-may (2-4)    → bahor
-//   iyun-avgust (5-7) → yoz
-//   sentabr-noyabr (8-10) → kuz
-//   dekabr-fevral (11,0,1) → qish
-// Har bir fasl uchun meta: gradient fon, accent matn, particle turi/rangi.
-// Asosiy brand ranglari (indigo/purple/cyan) tegmaydi — faqat accent va fon.
-const SEASON_THEMES = {
-  spring: {
-    key: 'spring',
-    label: 'Bahor',
-    // pushti → och yashil → lavanda
-    gradient: 'linear-gradient(160deg, #1a0f1c 0%, #14121f 35%, #0a1410 70%, #050508 100%)',
-    glow1: 'rgba(244, 114, 182, 0.18)',   // pushti
-    glow2: 'rgba(134, 239, 172, 0.16)',   // och yashil
-    glow3: 'rgba(196, 181, 253, 0.16)',   // lavanda
-    accent: '#f9a8d4',
-    accentSoft: 'rgba(249, 168, 212, 0.14)',
-    accentBorder: 'rgba(249, 168, 212, 0.28)',
-    badge: 'Bahor olimpiadasi mavsumi boshlandi!',
-    emoji: '🌸',
-    particleType: 'petal',                 // gul barglari
-    particleColors: ['#f9a8d4', '#fbcfe8', '#c4b5fd', '#bbf7d0'],
-  },
-  summer: {
-    key: 'summer',
-    label: 'Yoz',
-    // chuqur ko'k → moviy → oltin sariq
-    gradient: 'linear-gradient(160deg, #04122e 0%, #061a3a 30%, #0a1f33 60%, #050508 100%)',
-    glow1: 'rgba(37, 99, 235, 0.20)',      // to'q ko'k
-    glow2: 'rgba(56, 189, 248, 0.16)',     // moviy
-    glow3: 'rgba(250, 204, 21, 0.16)',     // oltin sariq
-    accent: '#fcd34d',
-    accentSoft: 'rgba(252, 211, 77, 0.14)',
-    accentBorder: 'rgba(252, 211, 77, 0.30)',
-    badge: 'Yoz — g\'alaba mavsumi!',
-    emoji: '☀️',
-    particleType: 'spark',                 // yulduzcha / nurlar
-    particleColors: ['#fcd34d', '#fde68a', '#38bdf8', '#a7f3d0'],
-  },
-  autumn: {
-    key: 'autumn',
-    label: 'Kuz',
-    // to'q jigarrang → to'q sariq → krem
-    gradient: 'linear-gradient(160deg, #1c0f06 0%, #1f1408 35%, #150d05 70%, #050508 100%)',
-    glow1: 'rgba(180, 83, 9, 0.20)',       // jigarrang
-    glow2: 'rgba(234, 88, 12, 0.16)',      // to'q sariq
-    glow3: 'rgba(217, 119, 6, 0.16)',      // qo'ng'ir
-    accent: '#fb923c',
-    accentSoft: 'rgba(251, 146, 60, 0.14)',
-    accentBorder: 'rgba(251, 146, 60, 0.28)',
-    badge: 'Kuz olimpiadalariga tayyorlanish vaqti!',
-    emoji: '🍂',
-    particleType: 'leaf',                  // tushayotgan barglar
-    particleColors: ['#fb923c', '#d97706', '#b45309', '#fbbf24'],
-  },
-  winter: {
-    key: 'winter',
-    label: 'Qish',
-    // to'q ko'k → binafsha → kumush
-    gradient: 'linear-gradient(160deg, #060d1f 0%, #0d0a22 35%, #11131f 70%, #050508 100%)',
-    glow1: 'rgba(59, 130, 246, 0.18)',     // ko'k
-    glow2: 'rgba(139, 92, 246, 0.16)',     // sovuq binafsha
-    glow3: 'rgba(203, 213, 225, 0.14)',    // kumush
-    accent: '#bae6fd',
-    accentSoft: 'rgba(186, 230, 253, 0.12)',
-    accentBorder: 'rgba(186, 230, 253, 0.26)',
-    badge: 'Qish — kuchli bilimlar mavsumi!',
-    emoji: '❄️',
-    particleType: 'snow',                  // qor uchqunlari
-    particleColors: ['#e0f2fe', '#bae6fd', '#c7d2fe', '#ffffff'],
-  },
-};
-
-const getSeasonKey = (date = new Date()) => {
-  const m = date.getMonth(); // 0=yanvar ... 11=dekabr
-  if (m >= 2 && m <= 4) return 'spring';
-  if (m >= 5 && m <= 7) return 'summer';
-  if (m >= 8 && m <= 10) return 'autumn';
-  return 'winter'; // 11, 0, 1
-};
-
-// Joriy faslni qaytaradigan hook. Faslning meta obyektini beradi. Sahifa ochiq
-// turganda yarim tunda oy o'zgarsa qayta hisoblansin uchun har soatda tekshiradi
-// (yengil — faqat faol oynada, render minimal).
-function useSeason() {
-  const [seasonKey, setSeasonKey] = React.useState(() => getSeasonKey());
-
-  React.useEffect(() => {
-    const tick = () => {
-      const next = getSeasonKey();
-      setSeasonKey(prev => (prev === next ? prev : next));
-    };
-    const timer = setInterval(tick, 60 * 60 * 1000); // har soat
-    return () => clearInterval(timer);
-  }, []);
-
-  return SEASON_THEMES[seasonKey];
-}
-
-// Faslga mos floating particles (CSS-only animatsiya, juda yengil).
-// Performance uchun max 18 ta element. Har biri uchun pozitsiya, kechikish va
-// davomiylik bir marta hisoblanadi (useMemo). prefers-reduced-motion CSS orqali
-// animatsiyani to'xtatadi. Telegram WebView'da blur ishlatilmaydi.
-function SeasonalParticles({ season, count = 16, className = '' }) {
-  const theme = season || SEASON_THEMES[getSeasonKey()];
-  const safeCount = Math.max(0, Math.min(20, count));
-
-  const particles = React.useMemo(() => {
-    const colors = theme.particleColors;
-    return Array.from({ length: safeCount }, (_, i) => {
-      const size = theme.particleType === 'spark'
-        ? 3 + Math.random() * 4
-        : 8 + Math.random() * 12;
-      return {
-        id: i,
-        left: Math.random() * 100,                 // %
-        size,
-        delay: -(Math.random() * 14),              // s (manfiy — darhol boshlanadi)
-        duration: 9 + Math.random() * 9,           // s
-        drift: (Math.random() * 2 - 1) * 60,       // px gorizontal siljish
-        color: colors[i % colors.length],
-        rotate: Math.random() * 360,
-        opacity: 0.35 + Math.random() * 0.4,
-      };
-    });
-  }, [theme.particleType, theme.particleColors, safeCount]);
-
-  return (
-    <div className={`seasonal-particles ${className}`} aria-hidden="true">
-      {particles.map(p => (
-        <span
-          key={p.id}
-          className={`season-particle season-particle--${theme.particleType}`}
-          style={{
-            left: `${p.left}%`,
-            width: `${p.size}px`,
-            height: `${p.size}px`,
-            color: p.color,
-            background: theme.particleType === 'spark' ? p.color : undefined,
-            '--p-delay': `${p.delay}s`,
-            '--p-duration': `${p.duration}s`,
-            '--p-drift': `${p.drift}px`,
-            '--p-rotate': `${p.rotate}deg`,
-            '--p-opacity': p.opacity,
-          }}
-        />
-      ))}
-    </div>
-  );
-}
-
 // Export all
-Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList, useSeason, SeasonalParticles, SEASON_THEMES, getSeasonKey });
+Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList });
 
 
-Object.assign(moduleScope, { formatUzPhoneInput, openExternalLink, Icon, BRAND_ASSET_BASE, BRAND_LOGO_SRC, BRAND_LOGO_SRC_WEBP, BrandLogo, Avatar, Badge, StatCard, SidebarContent, Sidebar, MobileBottomNav, Topbar, Modal, AvatarCropModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, subjectColors, SubjectBadge, TelegramMockup, useApiData, SEASON_THEMES, getSeasonKey, useDebounce, VirtualList, useSeason, SeasonalParticles });
+Object.assign(moduleScope, { formatUzPhoneInput, openExternalLink, Icon, BRAND_ASSET_BASE, BRAND_LOGO_SRC, BRAND_LOGO_SRC_WEBP, BrandLogo, Avatar, Badge, StatCard, SidebarContent, Sidebar, MobileBottomNav, Topbar, Modal, AvatarCropModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, subjectColors, SubjectBadge, TelegramMockup, useApiData, useDebounce, VirtualList });
 }
 var formatUzPhoneInput = moduleScope.formatUzPhoneInput;
 var openExternalLink = moduleScope.openExternalLink;
@@ -1000,12 +846,8 @@ var subjectColors = moduleScope.subjectColors;
 var SubjectBadge = moduleScope.SubjectBadge;
 var TelegramMockup = moduleScope.TelegramMockup;
 var useApiData = moduleScope.useApiData;
-var SEASON_THEMES = moduleScope.SEASON_THEMES;
-var getSeasonKey = moduleScope.getSeasonKey;
 var useDebounce = moduleScope.useDebounce;
 var VirtualList = moduleScope.VirtualList;
-var useSeason = moduleScope.useSeason;
-var SeasonalParticles = moduleScope.SeasonalParticles;
 
 // pages/constants/uzbekistanDistricts.js
 {
@@ -2726,8 +2568,6 @@ const trackAbEvent = (variant, event) => {
 };
 
 const LandingPage = ({ onNavigate, user }) => {
-  // Joriy faslga mos mavzu (fon gradienti, accent, particle turi).
-  const season = useSeason();
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [activeScreen, setActiveScreen] = React.useState(0);
   const [imgErrors, setImgErrors] = React.useState({});
@@ -3025,10 +2865,10 @@ const LandingPage = ({ onNavigate, user }) => {
 
   return (
     <div className="min-h-screen" style={{ background: '#050508' }}>
-      {/* Scroll progress bar — seasonal accent rangida */}
+      {/* Scroll progress bar */}
       <div
         className="fixed top-0 left-0 h-[2px] z-[100] transition-all duration-150"
-        style={{ width: `${scrollProgress}%`, background: `linear-gradient(90deg, #6366f1, ${season.accent})` }}
+        style={{ width: `${scrollProgress}%`, background: 'linear-gradient(90deg, #6366f1, #a855f7)' }}
       />
       {/* Navbar — Telegram WebView'da backdrop-filter sekin ishlaydi, shu sababli
           backdropFilter olib tashlangan va solid background ishlatilgan. */}
@@ -3127,12 +2967,7 @@ const LandingPage = ({ onNavigate, user }) => {
           backgroundPosition: 'center top',
         }}
       >
-        {/* Seasonal rang qatlami — dashboard fon rasmiga fasl tusini beradi
-            (past z-index, mavjud dark gradient ustiga aralashadi). */}
-        <div className="absolute inset-0 pointer-events-none" style={{ background: season.gradient, opacity: 0.55, mixBlendMode: 'screen' }} />
         <InteractiveParticles />
-        {/* Faslga mos floating particles (gul barglari / nurlar / barglar / qor) */}
-        <SeasonalParticles season={season} count={16} />
         <div className="absolute inset-0 pointer-events-none" style={{ background: 'linear-gradient(180deg, rgba(5,5,8,0.1) 0%, rgba(5,5,8,0.9) 100%)' }} />
 
         {/* Neon orbs for mesh gradient background.
@@ -3141,9 +2976,9 @@ const LandingPage = ({ onNavigate, user }) => {
             qiymatlari pasaytirildi (60/60/40px), animatsiya GPU-ga ko'chirish
             uchun will-change: transform berildi va motion-reduce rejimida
             animatsiya o'chiriladi. */}
-        <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full filter blur-[60px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ background: season.glow1, willChange: 'transform' }} />
-        <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] rounded-full filter blur-[60px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ background: season.glow2, animationDelay: '2s', willChange: 'transform' }} />
-        <div className="absolute top-10 right-10 w-[250px] h-[250px] rounded-full filter blur-[40px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ background: season.glow3, animationDelay: '4s', willChange: 'transform' }} />
+        <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full filter blur-[60px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ background: 'rgba(99, 102, 241, 0.18)', willChange: 'transform' }} />
+        <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] rounded-full filter blur-[60px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ background: 'rgba(168, 85, 247, 0.16)', animationDelay: '2s', willChange: 'transform' }} />
+        <div className="absolute top-10 right-10 w-[250px] h-[250px] rounded-full filter blur-[40px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ background: 'rgba(34, 211, 238, 0.16)', animationDelay: '4s', willChange: 'transform' }} />
         
         {/* Floating 3D badges on the right (desktop only) */}
         <div className="hidden lg:block absolute right-16 top-1/4 w-[400px] h-[300px] pointer-events-none z-10 preserve-3d" style={{ perspective: '1000px' }}>
@@ -3174,15 +3009,7 @@ const LandingPage = ({ onNavigate, user }) => {
 
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-14 md:py-24 relative z-10">
           <div className="max-w-3xl">
-            {/* Seasonal accent badge — joriy faslga mos shior */}
-            <div
-              className="inline-flex items-center gap-2 rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm font-semibold season-badge-pulse motion-reduce:animate-none"
-              style={{ background: season.accentSoft, border: `1px solid ${season.accentBorder}`, color: season.accent }}
-            >
-              <span aria-hidden="true">{season.emoji}</span>
-              {season.badge}
-            </div>
-            <div className="inline-flex items-center gap-2 rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-5 md:mb-6 ml-0 sm:ml-2 text-xs md:text-sm text-cyan-100 border border-cyan-300/20" style={{ background: 'rgba(8,145,178,0.16)' }}>
+            <div className="inline-flex items-center gap-2 rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-5 md:mb-6 text-xs md:text-sm text-cyan-100 border border-cyan-300/20" style={{ background: 'rgba(8,145,178,0.16)' }}>
               <Icon name="shield" size={16} />
               Online olimpiada, test va natija boshqaruvi
             </div>
@@ -3378,14 +3205,6 @@ const LandingPage = ({ onNavigate, user }) => {
           .float-badge-1 { animation: floatBadge1 6s ease-in-out infinite !important; }
           .float-badge-2 { animation: floatBadge2 7s ease-in-out infinite !important; }
           .float-badge-3 { animation: floatBadge3 8s ease-in-out infinite !important; }
-          @keyframes seasonBadgePulse {
-            0%, 100% { transform: translateY(0); opacity: 0.92; }
-            50% { transform: translateY(-2px); opacity: 1; }
-          }
-          .season-badge-pulse { animation: seasonBadgePulse 4s ease-in-out infinite; }
-          @media (prefers-reduced-motion: reduce) {
-            .season-badge-pulse { animation: none; }
-          }
         `}</style>
       </section>
 
@@ -4004,8 +3823,6 @@ const usePhoneInput = () => {
 };
 
 const LoginPage = ({ onNavigate, onLogin }) => {
-  // Joriy faslga mos mavzu — login fonida seasonal gradient va particles.
-  const season = useSeason();
   const [form, setForm] = React.useState({ phone: '+998', password: '' });
   const phoneInputRef = usePhoneInput();
   const [loading, setLoading] = React.useState(false);
@@ -4222,27 +4039,15 @@ const LoginPage = ({ onNavigate, onLogin }) => {
 
   return (
     <div className="min-h-screen flex relative overflow-hidden" style={{ background: '#050508' }}>
-      {/* Seasonal fon: gradient qatlami + subtle floating particles. Minimal
-          dizayn — particles soni past, blur ishlatilmaydi (WebView uchun). */}
-      <div className="absolute inset-0 pointer-events-none" style={{ background: season.gradient, opacity: 0.7 }} />
-      <SeasonalParticles season={season} count={12} />
       {/* Left panel */}
       <div className="hidden lg:flex flex-1 flex-col justify-center items-center p-12 relative overflow-hidden z-10">
-        <div className="hero-glow" style={{ background: season.accent, top: '20%', left: '20%', opacity: 0.18 }} />
-        <div className="hero-glow" style={{ background: season.glow2, bottom: '20%', right: '10%', opacity: 0.2 }} />
+        <div className="hero-glow" style={{ background: '#6366f1', top: '20%', left: '20%' }} />
+        <div className="hero-glow" style={{ background: '#22d3ee', bottom: '20%', right: '10%' }} />
         <div className="relative z-10 text-center">
           <div className="flex items-center justify-center mx-auto mb-8" style={{ animation: 'float 6s ease-in-out infinite' }}>
             <BrandLogo compact size="xl" />
           </div>
           <h2 className="text-3xl font-black text-white mb-4">Xush kelibsiz!</h2>
-          {/* Seasonal shior */}
-          <div
-            className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 mb-5 text-sm font-semibold"
-            style={{ background: season.accentSoft, border: `1px solid ${season.accentBorder}`, color: season.accent }}
-          >
-            <span aria-hidden="true">{season.emoji}</span>
-            {season.badge}
-          </div>
           <p className="text-white/40 max-w-sm mx-auto leading-relaxed mb-10">O'zbekistonning eng zamonaviy olimpiada platformasiga kiring va yutuqlarga erishishni boshlang.</p>
           <div className="grid grid-cols-2 gap-4 max-w-xs mx-auto">
             {/* Platforma yangi — soxta "120+ tashkilot, 15K+ o'quvchi"
