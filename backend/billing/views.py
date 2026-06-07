@@ -146,13 +146,26 @@ def _webhook_rate_limited(request, scope, limit=60, window=60):
     return False
 
 
+def _capture_billing_issue(message):
+    """Obuna aktivlashtirishdagi jiddiy nomuvofiqlikni Sentry'ga yuboradi.
+
+    Sentry sozlanmagan (DSN yo'q) yoki paket o'rnatilmagan bo'lsa jimgina
+    o'tib ketadi — log'ga error allaqachon yozilgan bo'ladi.
+    """
+    try:
+        import sentry_sdk
+        sentry_sdk.capture_message(message, level='error')
+    except Exception:
+        pass
+
+
 def _activate_subscription(user, amount, plan_id=None):
-    # Plan'ni aniqlash. Iloji bo'lsa plan_id bo'yicha (eng aniq) topamiz —
-    # webhook payload'da kelgan bo'lsa. Aks holda narx bo'yicha. DIQQAT:
-    # bir xil narxli bir nechta aktiv plan bo'lsa, narx bo'yicha tanlash
-    # noaniq (tasodifiy) — bunday holatda log'ga ogohlantirish yozamiz, chunki
-    # noto'g'ri muddatli (masalan 30 kunlik o'rniga 90 kunlik) obuna berilishi
-    # mumkin.
+    # Plan'ni aniqlash. USTUVORLIK: webhook payload/transaction'dagi plan_id
+    # (eng aniq — foydalanuvchi checkout'da tanlagan aynan shu plan). plan_id
+    # yo'q bo'lsagina narx bo'yicha qidiramiz. DIQQAT: bir xil narxli bir
+    # nechta aktiv plan bo'lsa, narx bo'yicha tanlash noaniq (noto'g'ri muddatli
+    # obuna berilishi mumkin) — bunday holat ma'lumotlar konfiguratsiyasi xatosi,
+    # shuning uchun error log + Sentry bilan adminni xabardor qilamiz.
     plan = None
     if plan_id:
         plan = SubscriptionPlan.objects.filter(pk=plan_id, is_active=True).first()
@@ -168,23 +181,34 @@ def _activate_subscription(user, amount, plan_id=None):
             SubscriptionPlan.objects.filter(price=amount, is_active=True)[:2]
         )
         if len(matching) > 1:
-            logger.warning(
-                "Obuna aktivlashtirish: %s summa uchun bir nechta aktiv plan "
-                "topildi — birinchisi tanlandi (plan_id=%s). Webhook payload'iga "
-                "plan ID/kod qo'shilishi tavsiya etiladi.",
-                amount, matching[0].id,
+            # Bir xil narxli bir nechta aktiv plan — qaysi biri berilishi
+            # noaniq. Bu jiddiy konfiguratsiya muammosi (noto'g'ri muddatli
+            # obuna xavfi), shuning uchun error darajasida log + Sentry.
+            msg = (
+                f"Obuna aktivlashtirish: {amount} summa uchun bir nechta aktiv "
+                f"plan topildi (id'lar: {[p.id for p in matching]}). Birinchisi "
+                f"(plan_id={matching[0].id}) tanlandi — bu noto'g'ri muddatli "
+                f"obuna berishi mumkin. Webhook payload'iga plan ID qo'shilsin yoki "
+                f"bir xil narxli planlar ajratilsin (user_id={getattr(user, 'id', None)})."
             )
+            logger.error(msg)
+            _capture_billing_issue(msg)
         plan = matching[0] if matching else None
 
     if not plan:
-        # Default or fallback plan
-        plan = SubscriptionPlan.objects.filter(is_active=True).first()
-        if plan:
-            logger.warning(
-                "Obuna aktivlashtirish: %s summaga mos plan topilmadi — "
-                "fallback plan_id=%s ishlatildi.",
-                amount, plan.id,
-            )
+        # Mos plan topilmadi. Avval xavfli "ixtiyoriy birinchi aktiv plan"
+        # fallback'i bor edi — u tasodifiy (noto'g'ri narx/muddatdagi) obuna
+        # berishi mumkin edi, shuning uchun olib tashlandi. Endi: obuna
+        # yaratmaymiz, ammo to'lov allaqachon o'tgani uchun webhook'ni xato
+        # bilan to'xtatmaymiz (chaqiruvchi exception kutmaydi); o'rniga error
+        # log + Sentry bilan adminni xabardor qilamiz — qo'lda obuna beriladi.
+        msg = (
+            f"Obuna aktivlashtirish: to'langan {amount} summaga mos aktiv plan "
+            f"topilmadi (plan_id={plan_id}, user_id={getattr(user, 'id', None)}). "
+            f"Obuna AVTOMATIK berilmadi — qo'lda tekshirib obuna ulang."
+        )
+        logger.error(msg)
+        _capture_billing_issue(msg)
 
     if plan:
         # end_date'ni model save() ham hisoblaydi, lekin bu yerda aniq

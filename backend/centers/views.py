@@ -9,7 +9,7 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
 from accounts.models import AuditLog
@@ -60,10 +60,15 @@ def _make_approval_code():
 # ─── Public listing & registration ────────────────────────────────────────────
 
 @api_view(['GET', 'POST'])
-@permission_classes([AllowAny])
+@permission_classes([IsAuthenticatedOrReadOnly])
 def centers_list_create(request):
     """GET /api/centers/  — list approved centers (public).
     POST /api/centers/    — register a new center; status starts pending.
+
+    GET ochiq; POST autentifikatsiya talab qiladi. Ruxsatni DRF
+    IsAuthenticatedOrReadOnly hal qiladi — eskirgan/yaroqsiz JWT cookie bilan
+    kelgan POST so'rovi 401 (qo'lda 403 emas) oladi, anonim foydalanuvchi esa
+    403. Qo'lda is_authenticated tekshiruvi olib tashlandi.
     """
     if request.method == 'GET':
         queryset = (
@@ -83,9 +88,6 @@ def centers_list_create(request):
             return paginator.get_paginated_response(serializer.data)
         return Response(EducationCenterSerializer(queryset, many=True, context={'request': request}).data)
 
-    if not request.user.is_authenticated:
-        return Response({'detail': 'Authentication required'},
-                        status=http_status.HTTP_403_FORBIDDEN)
     serializer = CenterRegisterSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     with transaction.atomic():
@@ -869,27 +871,48 @@ def admin_approve_center(request, center_id):
             from billing.models import SubscriptionPlan, UserSubscription
             from django.utils import timezone
             from datetime import timedelta
-            
-            # Kichikroq tarifni topib ulaymiz
-            plan = SubscriptionPlan.objects.filter(plan_type='organization', is_active=True).order_by('price').first()
-            if plan:
-                now = timezone.now()
-                # Agar allaqachon faol tashkilot premium obunasi bo'lmasa, trial yaratamiz
-                already_has_org = UserSubscription.objects.filter(
-                    user=center.owner,
-                    is_active=True,
-                    plan__plan_type='organization',
-                    end_date__gt=now
-                ).exists()
-                if not already_has_org:
-                    UserSubscription.objects.create(
-                        user=center.owner,
-                        plan=plan,
-                        start_date=now,
-                        end_date=now + timedelta(days=14),
-                        is_active=True
+
+            now = timezone.now()
+            # Agar allaqachon faol tashkilot premium obunasi bo'lmasa, trial
+            # yaratamiz. Trial kerak bo'lgandagina plan'ni talab qilamiz.
+            already_has_org = UserSubscription.objects.filter(
+                user=center.owner,
+                is_active=True,
+                plan__plan_type='organization',
+                end_date__gt=now
+            ).exists()
+            if not already_has_org:
+                # Kichikroq tashkilot tarifini topib ulaymiz.
+                plan = SubscriptionPlan.objects.filter(
+                    plan_type='organization', is_active=True,
+                ).order_by('price').first()
+                if plan is None:
+                    # Aktiv 'organization' tarifi yo'q — trial'ni jimgina
+                    # o'tkazib yubormaymiz (avval plan=None bilan obuna
+                    # yaratilardi yoki jimgina o'tib ketardi). Markaz
+                    # tasdiqlashni ham yarim holatda qoldirmaymiz: transaction'ni
+                    # rollback qilib 503 qaytaramiz — admin tarifni sozlab,
+                    # qaytadan tasdiqlaydi.
+                    logger.error(
+                        "Markaz tasdiqlash: aktiv 'organization' tarifi topilmadi "
+                        "— trial obuna yaratib bo'lmadi (center_id=%s, owner_id=%s). "
+                        "Tasdiqlash bekor qilindi.",
+                        center.id, center.owner_id,
                     )
-            
+                    transaction.set_rollback(True)
+                    return Response(
+                        {'detail': "Tashkilot tarifi sozlanmagan — markazni hozir "
+                                   "tasdiqlab bo'lmadi. Administrator bilan bog'laning."},
+                        status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+                    )
+                UserSubscription.objects.create(
+                    user=center.owner,
+                    plan=plan,
+                    start_date=now,
+                    end_date=now + timedelta(days=14),
+                    is_active=True
+                )
+
             from notifications.services import send_center_decision_notification
             send_center_decision_notification(center.owner, center, approved=True)
             # Markaz tasdiqlandi — direktorga email xabar (email maydoni

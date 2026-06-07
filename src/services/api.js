@@ -162,7 +162,7 @@ const toUserMessage = (error) => {
 
 const request = async (
   path,
-  { method = 'GET', body, token, headers = {}, retryOnAuth = true, keepalive = false } = {},
+  { method = 'GET', body, token, headers = {}, retryOnAuth = true, keepalive = false, signal } = {},
 ) => {
   const requestHeaders = {
     Accept: 'application/json',
@@ -181,11 +181,18 @@ const request = async (
       headers: requestHeaders,
       credentials: 'include',
       keepalive,
+      signal,
       body: body === undefined
         ? undefined
         : (isFormData ? body : JSON.stringify(body)),
     });
   } catch (error) {
+    // AbortController.abort() — chaqiruvchi (masalan, unmount bo'lgan komponent)
+    // so'rovni atayin bekor qilgan. Buni "server bilan bog'lanish xatosi" deb
+    // ko'rsatmaymiz; chaqiruvchi catch'da abort'ni jimgina yutadi.
+    if (error?.name === 'AbortError') {
+      throw new ApiError('aborted', { status: 0 });
+    }
     throw new ApiError("Server bilan bog‘lanishda xatolik yuz berdi", { status: 0 });
   }
 
@@ -217,6 +224,7 @@ const request = async (
               token: nextToken || null,
               headers,
               retryOnAuth: false,
+              signal,
             });
           }
         } catch {}
@@ -556,18 +564,36 @@ export const OlympyApi = {
   // IT (kod) savolini AI bilan baholash — test paytida o'quvchi kodini sinaydi.
   // { question_id, submitted_code, language } → { score (0-100|null), review }.
   reviewCode: (payload, token) => request('/api/questions/code-review/', { method: 'POST', body: payload, token }),
-  runCode: async (payload, token) => {
+  runCode: async (payload, token, signal) => {
+    // `signal` (AbortSignal) ixtiyoriy — chaqiruvchi component unmount bo'lganda
+    // polling loop'ini va kutilayotgan fetch'ni bekor qiladi, aks holda loop
+    // 30 soniyagacha davom etib, unmount bo'lgan komponentga setState chaqirib
+    // (memory leak + React ogohlantirishi) ishlardi.
+    const aborted = () => signal && signal.aborted;
+    if (aborted()) throw new ApiError('aborted', { status: 0 });
     // 1. Yangi asinxron Celery taskini yaratamiz
-    const startRes = await request('/api/questions/run-code/start/', { method: 'POST', body: payload, token });
+    const startRes = await request('/api/questions/run-code/start/', { method: 'POST', body: payload, token, signal });
     const taskId = startRes?.task_id;
     if (!taskId) {
       throw new ApiError(startRes?.detail || "Kodni ishga tushirib bo'lmadi");
     }
-    
-    // 2. Natijani keshdan olguncha polling qilamiz (maksimal 30 soniya)
+
+    // 2. Natijani keshdan olguncha polling qilamiz (maksimal 30 soniya). Har
+    // iteratsiyada abort tekshiramiz va setTimeout'ni signal'ga ulaymiz, shunda
+    // unmount darhol sezilib loop to'xtaydi.
     for (let i = 0; i < 30; i++) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      const statusRes = await request(`/api/questions/run-code/status/${taskId}/`, { token });
+      await new Promise((resolve, reject) => {
+        if (aborted()) return reject(new ApiError('aborted', { status: 0 }));
+        const t = setTimeout(resolve, 1000);
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            clearTimeout(t);
+            reject(new ApiError('aborted', { status: 0 }));
+          }, { once: true });
+        }
+      });
+      if (aborted()) throw new ApiError('aborted', { status: 0 });
+      const statusRes = await request(`/api/questions/run-code/status/${taskId}/`, { token, signal });
       if (statusRes?.status === 'COMPLETED') {
         return statusRes.result;
       }
