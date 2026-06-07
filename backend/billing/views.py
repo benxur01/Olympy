@@ -230,20 +230,31 @@ def _activate_subscription(user, amount, plan_id=None):
                 end_date=end,
                 is_active=True
             )
-        # /me endpoint subscription cache'ini bekor qilamiz — obuna endi aktiv,
-        # foydalanuvchi premium statusini darhol ko'rishi kerak.
-        try:
-            from accounts.utils import invalidate_user_subscription_cache
-            invalidate_user_subscription_cache(user.id)
-        except Exception:
-            pass
-        # Obuna faollashtirildi — foydalanuvchiga email xabar (email maydoni
-        # bo'lmasa yoki yuborishda xato bo'lsa jimgina o'tib ketadi).
-        try:
-            from accounts.email_utils import send_subscription_activated
-            send_subscription_activated(user)
-        except Exception:
-            pass
+        # Cache invalidate va email yuborishni transaction.on_commit'ga ko'chirdik:
+        # _activate_subscription chaqiruvchilari (Click/Payme webhook) bu kodni
+        # tashqi transaction.atomic() ichida ishga tushiradi. Agar email/cache'ni
+        # bevosita chaqirsak, tashqi blok keyin rollback bo'lsa DB yozuv bekor
+        # qilinadi, lekin email allaqachon yuborilgan bo'lar edi (yon ta'sir).
+        # on_commit faqat eng tashqi tranzaksiya muvaffaqiyatli commit bo'lganda
+        # ishlaydi; rollback bo'lsa umuman chaqirilmaydi. Atomic blokdan tashqari
+        # chaqirilsa (test va h.k.) on_commit darhol bajariladi.
+        def _on_subscription_committed():
+            # /me endpoint subscription cache'ini bekor qilamiz — obuna endi aktiv,
+            # foydalanuvchi premium statusini darhol ko'rishi kerak.
+            try:
+                from accounts.utils import invalidate_user_subscription_cache
+                invalidate_user_subscription_cache(user.id)
+            except Exception:
+                pass
+            # Obuna faollashtirildi — foydalanuvchiga email xabar (email maydoni
+            # bo'lmasa yoki yuborishda xato bo'lsa jimgina o'tib ketadi).
+            try:
+                from accounts.email_utils import send_subscription_activated
+                send_subscription_activated(user)
+            except Exception:
+                pass
+
+        transaction.on_commit(_on_subscription_committed)
 
 
 # ─── CLICK CALLBACK API ───────────────────────────────────────────────────────
