@@ -34,6 +34,13 @@ class UserSubscription(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        indexes = [
+            # is_premium sync va aktiv obunalarni tekshirish so'rovlari
+            # (is_active=True, end_date__gt=now) keng ishlatiladi.
+            models.Index(fields=['is_active', 'end_date'], name='usersub_active_enddate_idx'),
+        ]
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # is_premium sync'iga ta'sir qiluvchi maydonlarning yuklanган
@@ -124,6 +131,14 @@ class PaymentTransaction(models.Model):
     provider_transaction_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            # Tranzaksiyalar status bo'yicha filtrlanadi (pending/success) va
+            # created_at bo'yicha hisobotlarda saralanadi.
+            models.Index(fields=['status'], name='paytx_status_idx'),
+            models.Index(fields=['created_at'], name='paytx_created_idx'),
+        ]
 
     def __str__(self):
         return f"{self.provider} - {self.amount} UZS ({self.status})"

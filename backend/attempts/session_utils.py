@@ -4,6 +4,7 @@ from datetime import timedelta
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from questions.grading import RESULT_CORRECT, RESULT_PENDING, grade_answer
 from questions.models import Question
 
 from .models import TestAttempt, TestSession
@@ -126,6 +127,33 @@ def session_timing_payload(session, olympiad):
     }
 
 
+def _deshuffle_index(chosen, order):
+    """Shuffle qilingan variant indeksini asl (original) indeksga o'giradi.
+
+    Student ko'rgan variantlar `order` bo'yicha aralashtirilgan; `order[chosen]`
+    — asl variant indeksi. Noto'g'ri/diapazondan tashqari qiymatda None.
+    """
+    try:
+        idx = int(chosen)
+    except (TypeError, ValueError):
+        return None
+    if idx < 0 or idx >= len(order):
+        return None
+    return order[idx]
+
+
+def _deshuffle_multi(chosen, order):
+    """multiple_select uchun tanlangan indekslar ro'yxatini de-shuffle qiladi."""
+    if not isinstance(chosen, (list, tuple, set)):
+        return None
+    result = []
+    for c in chosen:
+        original = _deshuffle_index(c, order)
+        if original is not None:
+            result.append(original)
+    return result
+
+
 def score_session_answers(session, olympiad, answers):
     answers = answers or {}
     option_orders = session.option_orders or {}
@@ -134,10 +162,13 @@ def score_session_answers(session, olympiad, answers):
     earned_score = 0
     all_questions = ordered_questions(session, olympiad)
     # Kod (IT) savollar variant indeksi orqali baholanmaydi — ular Judge0
-    # test caslari bo'yicha avtomatik baholanadi (CodeSubmission.all_tests_passed).
-    # MCQ ball hisobini (option index solishtirish) faqat MCQ savollar uchun
-    # yuritamiz; kod savollar ballini quyida alohida qo'shamiz.
-    mcq_questions = [
+    # test caslari bo'yicha avtomatik baholanadi (CodeSubmission.all_tests_passed),
+    # quyida alohida hisoblanadi. Qolgan barcha
+    # turlar (mcq, yes_no, multiple_select, fill_blank, fill_blanks, essay)
+    # variantsiz/variantli — questions.grading.grade_answer orqali izchil
+    # baholanadi. Variant indeksli turlarda (mcq/yes_no/multiple_select) avval
+    # shuffle qilingan indeksni asl indeksga o'giramiz (de-shuffle).
+    non_code_questions = [
         q for q in all_questions
         if (getattr(q, 'question_type', 'mcq') or 'mcq') != 'code'
     ]
@@ -145,23 +176,34 @@ def score_session_answers(session, olympiad, answers):
         q for q in all_questions
         if (getattr(q, 'question_type', 'mcq') or 'mcq') == 'code'
     ]
-    for question in mcq_questions:
+    for question in non_code_questions:
         chosen = answers.get(str(question.id))
         if chosen is None:
             chosen = answers.get(question.id)
-        if chosen is None:
-            continue
-        try:
-            chosen = int(chosen)
-        except (TypeError, ValueError):
-            continue
+
+        q_type = getattr(question, 'question_type', 'mcq') or 'mcq'
         options = list(question.options or [])
         order = option_orders.get(str(question.id)) or list(range(len(options)))
-        if chosen < 0 or chosen >= len(order):
+
+        # Variant indeksli turlar — shuffle qilingan indeksni asl indeksga
+        # o'giramiz, shunda grade_answer correct_answer bilan to'g'ri solishtiradi.
+        if q_type in ('mcq', 'yes_no'):
+            chosen = _deshuffle_index(chosen, order)
+        elif q_type == 'multiple_select':
+            chosen = _deshuffle_multi(chosen, order)
+        # fill_blank/fill_blanks/essay — matn/JSON, shuffle ta'sir qilmaydi.
+
+        result = grade_answer(question, chosen)
+        # Essay avtomatik baholanmaydi — javob bo'lsa "answered" deb sanaymiz,
+        # lekin ball bermaymiz (qo'lda baholanadi).
+        if result == RESULT_PENDING:
+            if chosen is not None:
+                answered += 1
+            continue
+        if chosen is None:
             continue
         answered += 1
-        original_index = order[chosen]
-        if original_index == question.correct_answer:
+        if result == RESULT_CORRECT:
             correct += 1
             earned_score += question.score
 
@@ -199,7 +241,7 @@ def score_session_answers(session, olympiad, answers):
                 # tekshirilmagan) — javob berilgan deb hisoblanadi.
                 answered += 1
 
-    questions = mcq_questions + code_questions
+    questions = non_code_questions + code_questions
     total = len(questions)
     max_possible = sum(question.score for question in questions)
     # Avval `wrong = total - correct` edi va javob bermagan savollar ham

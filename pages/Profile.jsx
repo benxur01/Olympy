@@ -105,6 +105,79 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
     }
   };
 
+  // ── 2FA (TOTP) holati ──────────────────────────────────────────────────
+  // Backend: /api/auth/2fa/{setup,verify,disable}/. user.totp_enabled (yoki
+  // mapBackendUser tomonidan kelgan camelCase) joriy holatni bildiradi.
+  const twoFAEnabled = !!(user?.totpEnabled ?? user?.totp_enabled);
+  const [twoFASecret, setTwoFASecret] = React.useState('');
+  const [twoFAUri, setTwoFAUri] = React.useState('');
+  const [twoFACode, setTwoFACode] = React.useState('');
+  const [twoFABusy, setTwoFABusy] = React.useState(false);
+  const [twoFAMsg, setTwoFAMsg] = React.useState({ type: '', text: '' });
+
+  const handleTwoFASetup = async () => {
+    if (!isApi || twoFABusy) return;
+    setTwoFABusy(true);
+    setTwoFAMsg({ type: '', text: '' });
+    try {
+      const data = await OlympyApi.twoFactorSetup(OlympyApi.getToken());
+      setTwoFASecret(data?.secret || '');
+      setTwoFAUri(data?.uri || '');
+    } catch (err) {
+      setTwoFAMsg({ type: 'err', text: OlympyApi.toUserMessage?.(err) || "2FA sozlab bo'lmadi" });
+    } finally {
+      setTwoFABusy(false);
+    }
+  };
+
+  const handleTwoFAVerify = async (e) => {
+    e?.preventDefault?.();
+    if (!isApi || twoFABusy) return;
+    const code = twoFACode.trim();
+    if (code.length < 6) {
+      setTwoFAMsg({ type: 'err', text: 'Kodni to\'liq kiriting (6 raqam)' });
+      return;
+    }
+    setTwoFABusy(true);
+    setTwoFAMsg({ type: '', text: '' });
+    try {
+      await OlympyApi.twoFactorVerify(code, OlympyApi.getToken());
+      // Holatni yangilaymiz — getMe orqali totpEnabled true bo'ladi.
+      const me = await OlympyApi.getMe(OlympyApi.getToken());
+      onUserUpdate?.(OlympyApi.mapBackendUser(me));
+      setTwoFASecret('');
+      setTwoFAUri('');
+      setTwoFACode('');
+      setTwoFAMsg({ type: 'ok', text: '2FA yoqildi' });
+    } catch (err) {
+      setTwoFAMsg({ type: 'err', text: OlympyApi.toUserMessage?.(err) || "Noto'g'ri kod" });
+    } finally {
+      setTwoFABusy(false);
+      setTimeout(() => setTwoFAMsg({ type: '', text: '' }), 4000);
+    }
+  };
+
+  const handleTwoFADisable = async () => {
+    if (!isApi || twoFABusy) return;
+    if (!window.confirm("Ikki bosqichli himoyani o'chirishni xohlaysizmi?")) return;
+    setTwoFABusy(true);
+    setTwoFAMsg({ type: '', text: '' });
+    try {
+      await OlympyApi.twoFactorDisable(OlympyApi.getToken());
+      const me = await OlympyApi.getMe(OlympyApi.getToken());
+      onUserUpdate?.(OlympyApi.mapBackendUser(me));
+      setTwoFASecret('');
+      setTwoFAUri('');
+      setTwoFACode('');
+      setTwoFAMsg({ type: 'ok', text: "2FA o'chirildi" });
+    } catch (err) {
+      setTwoFAMsg({ type: 'err', text: OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi" });
+    } finally {
+      setTwoFABusy(false);
+      setTimeout(() => setTwoFAMsg({ type: '', text: '' }), 4000);
+    }
+  };
+
   const handleAvatarFile = (e) => {
     const file = e.target.files?.[0];
     if (!file || !isApi) return;
@@ -633,6 +706,124 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
               {pwSaving ? "O'zgartirilmoqda..." : "Parolni o'zgartirish"}
             </button>
           </form>
+
+          {/* Ikki bosqichli himoya (2FA / TOTP) — to'liq kenglik */}
+          <div className="glass rounded-2xl p-5 space-y-3 md:col-span-2">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Icon name="shield" size={18} className="text-indigo-400" />
+                <h3 className="font-bold text-white">Ikki bosqichli himoya (2FA)</h3>
+                {twoFAEnabled && (
+                  <span className="chip badge-active text-xs">Yoqilgan</span>
+                )}
+              </div>
+              {isApi && twoFAEnabled && (
+                <button
+                  onClick={handleTwoFADisable}
+                  disabled={twoFABusy}
+                  className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 text-rose-300 hover:text-rose-200 disabled:opacity-50"
+                >
+                  <Icon name="x" size={13} /> {twoFABusy ? 'O\'chirilmoqda...' : "O'chirish"}
+                </button>
+              )}
+            </div>
+
+            {!isApi && (
+              <div className="text-xs text-amber-300">2FA faqat akkaunt rejimida mavjud.</div>
+            )}
+
+            {isApi && !twoFAEnabled && !twoFASecret && (
+              <>
+                <p className="text-sm text-white/50">
+                  Hisobingizni autentifikator ilovasi (Google Authenticator, Authy va h.k.)
+                  bilan qo'shimcha himoyalang. Kirishda parol bilan birga bir martalik kod talab qilinadi.
+                </p>
+                <button
+                  onClick={handleTwoFASetup}
+                  disabled={twoFABusy}
+                  className="gradient-bg text-white font-semibold rounded-xl py-2.5 px-5 text-sm disabled:opacity-50"
+                >
+                  {twoFABusy ? 'Tayyorlanmoqda...' : '2FA yoqish'}
+                </button>
+              </>
+            )}
+
+            {isApi && !twoFAEnabled && twoFASecret && (
+              <form onSubmit={handleTwoFAVerify} className="space-y-3">
+                <p className="text-sm text-white/50">
+                  Autentifikator ilovangizga quyidagi maxfiy kalitni qo'shing, so'ng ilova
+                  bergan 6 raqamli kodni kiriting.
+                </p>
+                <div>
+                  <label className="block text-xs text-white/50 mb-1">Maxfiy kalit</label>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-indigo-200 font-mono break-all select-all">
+                      {twoFASecret}
+                    </code>
+                    <button
+                      type="button"
+                      onClick={() => { navigator.clipboard?.writeText(twoFASecret); }}
+                      className="btn-ghost text-xs px-3 py-2 rounded-xl flex items-center gap-1.5"
+                      title="Nusxalash"
+                    >
+                      <Icon name="copy" size={13} />
+                    </button>
+                  </div>
+                  {twoFAUri && (
+                    <a
+                      href={twoFAUri}
+                      className="inline-block text-[11px] text-indigo-300 hover:text-indigo-200 mt-2 underline"
+                    >
+                      Autentifikator ilovasida ochish
+                    </a>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs text-white/50 mb-1">Tasdiqlash kodi</label>
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={twoFACode}
+                    onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    disabled={twoFABusy}
+                    placeholder="123456"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50 tracking-[0.4em] font-mono"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={twoFABusy || twoFACode.length < 6}
+                    className="gradient-bg text-white font-semibold rounded-xl py-2.5 px-5 text-sm disabled:opacity-50"
+                  >
+                    {twoFABusy ? 'Tekshirilmoqda...' : 'Tasdiqlash'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setTwoFASecret(''); setTwoFAUri(''); setTwoFACode(''); }}
+                    disabled={twoFABusy}
+                    className="btn-ghost text-sm px-5 py-2.5 rounded-xl disabled:opacity-50"
+                  >
+                    Bekor qilish
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {isApi && twoFAEnabled && (
+              <p className="text-sm text-white/50">
+                Hisobingiz ikki bosqichli himoya bilan himoyalangan. Kirishda autentifikator
+                kodini kiritishingiz kerak bo'ladi.
+              </p>
+            )}
+
+            {twoFAMsg.text && (
+              <div className={`text-xs font-semibold ${twoFAMsg.type === 'ok' ? 'text-emerald-300' : 'text-rose-300'}`}>
+                {twoFAMsg.text}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

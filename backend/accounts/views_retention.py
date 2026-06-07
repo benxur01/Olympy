@@ -11,6 +11,7 @@
 Barchasi `/api/...` ostida mount qilinadi (accounts/urls_me.py). Har biri faqat
 autentifikatsiyalangan foydalanuvchining O'Z ma'lumotlari bilan ishlaydi.
 """
+import random
 from collections import OrderedDict
 from datetime import timedelta
 
@@ -150,9 +151,12 @@ def onboarding_mini_test(request):
         if subj_qs.exists():
             qs = subj_qs
             chosen_subject = interest[0]
-    # Random 5 ta. order_by('?') katta bazada og'ir, lekin mini-test kamdan-kam
-    # (faqat onboarding) chaqiriladi va savollar soni cheklangan.
-    questions = list(qs.order_by('?')[:5])
+    # Random 5 ta. order_by('?') to'liq jadval skanini qiladi — ID-asosli random
+    # bilan almashtirildi (filter shartlari saqlanadi).
+    ids = list(qs.values_list('id', flat=True))
+    picked = random.sample(ids, min(5, len(ids))) if ids else []
+    by_id = {q.id: q for q in Question.objects.filter(id__in=picked)}
+    questions = [by_id[i] for i in picked if i in by_id]
     if chosen_subject == '' and questions:
         chosen_subject = questions[0].subject or ''
     payload = [

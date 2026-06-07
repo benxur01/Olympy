@@ -342,6 +342,7 @@ const mapBackendUser = (user) => {
     isPremium: user.is_premium || false,
     isActive: user.is_active !== false,
     telegramLinked: !!user.telegram_linked,
+    totpEnabled: !!user.totp_enabled,
     streakCount: user.streak_count || 0,
     lastActiveDate: user.last_active_date || null,
     badges: user.badges || [],
@@ -424,6 +425,11 @@ export const OlympyApi = {
   confirmPasswordReset: (payload) => request('/api/auth/password-reset/confirm/', { method: 'POST', body: payload, retryOnAuth: false }),
   startTelegramLink: (token) => request('/api/auth/telegram/link/start/', { method: 'POST', token }),
   verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload, retryOnAuth: false }),
+  // TOTP 2FA — autentifikatsiyalangan foydalanuvchi profilda yoqadi/o'chiradi.
+  // setup: {uri, secret} qaytaradi; verify: {code} qabul qiladi.
+  twoFactorSetup: (token) => request('/api/auth/2fa/setup/', { method: 'POST', token }),
+  twoFactorVerify: (code, token) => request('/api/auth/2fa/verify/', { method: 'POST', body: { code }, token }),
+  twoFactorDisable: (token) => request('/api/auth/2fa/disable/', { method: 'POST', token }),
   getMe: async (token) => {
     // Avval sessionStorage keshini ko'ramiz — sahifa yangilangach in-memory
     // _currentUser yo'qoladi, kesh esa darhol qiymat beradi. Keyin serverdan

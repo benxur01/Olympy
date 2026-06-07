@@ -2224,16 +2224,20 @@ def ab_track_event(request):
         return Response({'ok': False}, status=status.HTTP_400_BAD_REQUEST)
 
     from django.core.cache import cache
+    # A/B counter'lari 90 kundan keyin avtomatik o'chsin — abadiy saqlanib
+    # Redis'ni to'ldirmasligi uchun (test tugagach kalitlar o'z-o'zidan ketadi).
+    AB_COUNTER_TTL = 60 * 60 * 24 * 90
     key = f"ab:{test_name}:{variant}:{event}"
     # cache.incr mavjud bo'lmagan kalitda ValueError beradi (Redis ham, LocMem
     # ham), shuning uchun avval `add` bilan 0 o'rnatamiz (faqat kalit yo'q bo'lsa
-    # ishlaydi), keyin atomik incr qilamiz.
-    cache.add(key, 0, timeout=None)
+    # ishlaydi), keyin atomik incr qilamiz. TTL'ni `add` o'rnatadi; incr Redis'da
+    # mavjud TTL'ni saqlaydi.
+    cache.add(key, 0, timeout=AB_COUNTER_TTL)
     try:
         cache.incr(key)
     except ValueError:
         # Nodir race holatda kalit incr'gacha yo'qolsa — qaytadan o'rnatamiz.
-        cache.set(key, 1, timeout=None)
+        cache.set(key, 1, timeout=AB_COUNTER_TTL)
 
     return Response({'ok': True})
 

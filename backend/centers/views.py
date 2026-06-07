@@ -912,7 +912,7 @@ def admin_approve_center(request, center_id):
                     user=center.owner,
                     plan=plan,
                     start_date=now,
-                    end_date=now + timedelta(days=14),
+                    end_date=now + timedelta(days=settings.TRIAL_SUBSCRIPTION_DAYS),
                     is_active=True
                 )
 
