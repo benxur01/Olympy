@@ -13140,6 +13140,21 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // Judge0 "Ishga tushirish" natijasi: { [savolIndeksi]: { status, stdout, ... } }.
   const [runResults, setRunResults] = React.useState({});
   const [runningIndex, setRunningIndex] = React.useState(null);
+  // "Ishga tushirish" polling 30 soniyagacha davom etishi mumkin. Komponent
+  // unmount bo'lsa (foydalanuvchi sahifani tark etsa) polling'ni va kutilayotgan
+  // fetch'ni bekor qilamiz, aks holda unmount'dan keyin setRunResults chaqirilib
+  // memory leak / React ogohlantirishi yuzaga kelardi. runAbortRef — joriy
+  // run'ning AbortController'i; isMountedRef — setState'larni unmount'dan keyin
+  // bloklaydi.
+  const runAbortRef = React.useRef(null);
+  const isMountedRef = React.useRef(true);
+  React.useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      try { runAbortRef.current && runAbortRef.current.abort(); } catch {}
+    };
+  }, []);
   // Timer useEffect closure stale answers ushlab qolmasligi uchun ref —
   // har render'da yangilanadi va handleSubmit uni o'qiydi.
   const answersRef = React.useRef(answers);
@@ -13603,6 +13618,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     if (!user?._api || !qq?.id) return;
     const code = String(codeAnswers[current]?.code || '');
     if (!code.trim()) return;
+    // Oldingi run hali ketayotgan bo'lsa bekor qilamiz (yangi run boshlanadi).
+    try { runAbortRef.current && runAbortRef.current.abort(); } catch {}
+    const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    runAbortRef.current = controller;
     setRunningIndex(current);
     const idx = current;
     try {
@@ -13610,13 +13629,20 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       const res = await globalThis.OlympyApi.runCode(
         { source_code: code, language: currentCodeLang(qq), question_id: qq.id },
         token,
+        controller ? controller.signal : undefined,
       );
+      // Abort bo'lgan bo'lsa (unmount yoki yangi run) — natijani yozmaymiz.
+      if (controller && controller.signal.aborted) return;
+      if (!isMountedRef.current) return;
       setRunResults(prev => ({ ...prev, [idx]: res }));
     } catch (err) {
+      // Abort — atayin bekor qilingan, xato sifatida ko'rsatmaymiz.
+      if ((controller && controller.signal.aborted) || !isMountedRef.current) return;
       const detail = err?.data?.detail || err?.message || "Kodni ishga tushirib bo'lmadi.";
       setRunResults(prev => ({ ...prev, [idx]: { status: 'Xato', error: detail } }));
     } finally {
-      setRunningIndex(null);
+      if (runAbortRef.current === controller) runAbortRef.current = null;
+      if (isMountedRef.current) setRunningIndex(null);
     }
   };
 

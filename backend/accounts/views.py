@@ -2196,6 +2196,7 @@ AB_ALLOWED_EVENTS = {'view', 'click', 'register'}
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([ScopedRateThrottle])
 def ab_track_event(request):
     """POST /api/ab/track/ — A/B test event'larini qayd etish."""
     test_name = str(request.data.get('test', '')).strip()
@@ -2227,6 +2228,10 @@ def ab_track_event(request):
         cache.set(key, 1, timeout=None)
 
     return Response({'ok': True})
+
+
+# ScopedRateThrottle FBV'da scope'ni view'ning .cls atributidan o'qiydi.
+ab_track_event.cls.throttle_scope = 'ab_track'
 
 
 @api_view(['GET'])

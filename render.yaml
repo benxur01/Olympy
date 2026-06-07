@@ -67,6 +67,13 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      # Judge0 kod runner ("Ishga tushirish"). JUDGE0_URL bo'sh bo'lsa public CE
+      # API (ce.judge0.com) ishlatiladi; JUDGE0_API_KEY berilsa RapidAPI Judge0
+      # CE (ko'proq limit). Ikkalasi ham ixtiyoriy.
+      - key: JUDGE0_URL
+        sync: false
+      - key: JUDGE0_API_KEY
+        sync: false
       # Sentry backend DSN — bo'sh bo'lsa monitoring o'chiq qoladi.
       - key: SENTRY_DSN
         sync: false
@@ -129,6 +136,13 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: GEMINI_API_KEY
+        sync: false
+      # Judge0 kod runner — kodni ishga tushirish Celery task'i shu worker'da
+      # bajariladi, shuning uchun web service bilan bir xil qo'shamiz (aks holda
+      # worker public CE API'ga tushib qoladi yoki API key'siz ishlaydi).
+      - key: JUDGE0_URL
+        sync: false
+      - key: JUDGE0_API_KEY
         sync: false
       - key: TELEGRAM_AUTH_BOT_TOKEN
         sync: false

@@ -357,6 +357,11 @@ REST_FRAMEWORK = {
         # call'iga aylanadi. Spec bo'yicha o'quvchi soatiga 20 marta ishga
         # tushira oladi; ortig'i abuse va tashqi limit'ni tez tugatadi.
         'code_run': '20/hour',
+        # A/B test event tracking (ab_track_event) — ochiq (AllowAny) endpoint.
+        # Throttle bo'lmasa parallel/skriptli so'rovlar A/B counter'larni
+        # sun'iy oshirib analitikani buzishi mumkin. IP bo'yicha 5/min normal
+        # foydalanuvchi uchun yetarli (view/click/register hodisalari).
+        'ab_track': '5/min',
     },
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 50,
