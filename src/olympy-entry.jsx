@@ -13377,6 +13377,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         setTimeLeft(prev => {
           if (remainingSec <= 0 && prev > 0) {
             clearInterval(t);
+            // Vaqt tugadi — olimpiada yopildi, draft endi keraksiz. Submit
+            // tarmoq xatosi bilan tugasa ham (401 va h.k. da handleSubmit
+            // localStorage'ni tozalamaydi, javobni saqlab qoladi) bu yerda
+            // aniq tozalaymiz: vaqt tugaganidan keyin draftni tiklashning
+            // ma'nosi yo'q.
+            clearPersistedAnswers();
             handleSubmit();
             return 0;
           }
@@ -13385,7 +13391,13 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       } else {
         // Mock/dev rejim — eski lokal teskari sanash.
         setTimeLeft(prev => {
-          if (prev <= 1) { clearInterval(t); handleSubmit(); return 0; }
+          if (prev <= 1) {
+            clearInterval(t);
+            // Vaqt tugadi — yuqoridagi kabi draftni tozalaymiz.
+            clearPersistedAnswers();
+            handleSubmit();
+            return 0;
+          }
           return prev - 1;
         });
       }
@@ -19224,17 +19236,42 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   <td className="px-5 py-4">
                     <div className="flex gap-2">
                       {isApi ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            OlympyApi.exportOlympiadResults(o.id, OlympyApi.getToken())
-                              .catch(err => console.warn('export failed', err));
-                          }}
-                          className="btn-ghost text-xs px-2.5 py-1.5 rounded-xl inline-flex items-center gap-1"
-                          title="Natijalarni CSV faylga eksport qilish"
-                        >
-                          <Icon name="download" size={12} /> CSV
-                        </button>
+                        <>
+                          {/* CSV — universal import (Google Sheets/Excel). XLSX —
+                              formatlangan tayyor fayl. Owner ikkala endpointga
+                              ham kira oladi (backend ruxsati bir xil rollar),
+                              shuning uchun ikkala tugma ham ko'rsatiladi. */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              OlympyApi.exportOlympiadResults(o.id, OlympyApi.getToken())
+                                .then(() => showToast('✓ CSV fayl yuklandi'))
+                                .catch(err => {
+                                  console.warn('csv export failed:', err);
+                                  showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "CSV yuklab bo'lmadi"}`);
+                                });
+                            }}
+                            className="btn-ghost text-xs px-2.5 py-1.5 rounded-xl inline-flex items-center gap-1"
+                            title="Natijalarni CSV faylga eksport qilish"
+                          >
+                            <Icon name="download" size={12} /> CSV
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              OlympyApi.exportOlympiadResultsXlsx(o.id, OlympyApi.getToken())
+                                .then(() => showToast('✓ Excel fayl yuklandi'))
+                                .catch(err => {
+                                  console.warn('xlsx export failed:', err);
+                                  showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Excel yuklab bo'lmadi"}`);
+                                });
+                            }}
+                            className="btn-ghost text-xs px-2.5 py-1.5 rounded-xl inline-flex items-center gap-1"
+                            title="Natijalarni Excel (.xlsx) faylga eksport qilish"
+                          >
+                            <Icon name="download" size={12} /> XLSX
+                          </button>
+                        </>
                       ) : (
                         <span className="text-white/30 text-xs">—</span>
                       )}

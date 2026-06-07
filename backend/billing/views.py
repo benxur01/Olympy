@@ -209,6 +209,10 @@ def _activate_subscription(user, amount, plan_id=None):
         )
         logger.error(msg)
         _capture_billing_issue(msg)
+        # Explicit False: chaqiruvchi (webhook) obuna berilmaganini bilib,
+        # qo'shimcha aniq log qoldiradi. Jimgina None qaytib, webhook
+        # "muvaffaqiyat" deb hisoblab o'tib ketishining oldini olamiz.
+        return False
 
     if plan:
         # end_date'ni model save() ham hisoblaydi, lekin bu yerda aniq
@@ -255,6 +259,8 @@ def _activate_subscription(user, amount, plan_id=None):
                 pass
 
         transaction.on_commit(_on_subscription_committed)
+        # Obuna muvaffaqiyatli yaratildi — chaqiruvchiga aniq signal.
+        return True
 
 
 # ─── CLICK CALLBACK API ───────────────────────────────────────────────────────
@@ -377,8 +383,17 @@ def click_webhook(request):
             tx.provider_transaction_id = click_trans_id
             tx.manager_commission = tx.amount * settings.MANAGER_COMMISSION_RATE
             tx.save()
-            # Activate premium subscription for the user
-            _activate_subscription(tx.user, tx.amount, plan_id=tx.plan_id)
+            # Activate premium subscription for the user. To'lov o'tdi (tx
+            # SUCCESS), shuning uchun Click'ka baribir 'Success' qaytaramiz —
+            # aks holda Click qayta urinib, dublikat callback yuboradi. Ammo
+            # obuna berilmasa (plan topilmadi) aniq log qoldiramiz: to'lov
+            # qabul qilingan, lekin premium qo'lda ulanishi kerak.
+            if not _activate_subscription(tx.user, tx.amount, plan_id=tx.plan_id):
+                logger.error(
+                    "Click to'lovi qabul qilindi (tx=%s, user_id=%s, amount=%s), "
+                    "lekin obuna AVTOMATIK berilmadi — qo'lda premium ulang.",
+                    tx.id, tx.user_id, tx.amount,
+                )
 
         return JsonResponse({
             'click_trans_id': click_trans_id,
@@ -554,8 +569,16 @@ def payme_webhook(request):
             tx.status = PaymentTransaction.STATUS_SUCCESS
             tx.manager_commission = tx.amount * settings.MANAGER_COMMISSION_RATE
             tx.save()
-            # Activate premium
-            _activate_subscription(tx.user, tx.amount, plan_id=tx.plan_id)
+            # Activate premium. To'lov o'tdi (tx SUCCESS), shuning uchun
+            # Payme'ga baribir state=2 qaytaramiz — aks holda Payme qayta
+            # urinadi. Ammo obuna berilmasa (plan topilmadi) aniq log
+            # qoldiramiz: to'lov qabul qilingan, premium qo'lda ulanishi kerak.
+            if not _activate_subscription(tx.user, tx.amount, plan_id=tx.plan_id):
+                logger.error(
+                    "Payme to'lovi qabul qilindi (tx=%s, user_id=%s, amount=%s), "
+                    "lekin obuna AVTOMATIK berilmadi — qo'lda premium ulang.",
+                    tx.id, tx.user_id, tx.amount,
+                )
 
         return JsonResponse({
             'result': {

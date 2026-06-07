@@ -12,21 +12,41 @@ from .serializers import NotificationSerializer
 def my_notifications(request):
     """GET /api/notifications/ — current user's notifications, newest first.
 
-    Eng so'nggi 200 tasini qaytaramiz: avval cheksiz ro'yxat qaytarilardi va
-    ko'p oydan beri faol foydalanuvchilarda javob payloadi 1+ MB ga yetishi
-    mumkin edi. Bell dropdown va admin faolligi uchun 200 yetarli; eskilarini
-    arxiv qilish kerak bo'lsa alohida endpoint qo'shiladi.
+    Paginatsiyalangan: avval cheksiz (keyin top-200) ro'yxat qaytarilardi —
+    500+ bildirishnoma to'plagan foydalanuvchida eskilari umuman ko'rinmasdi
+    va javob payloadi katta bo'lardi. Endi `limit`/`offset` bilan sahifalanadi
+    va `total_count`/`has_more` orqali frontend qolgan yozuvlar borligini biladi.
+
+    Query params:
+      - limit:  bir sahifadagi yozuvlar soni (default 20, maksimum 100).
+      - offset: nechtasini o'tkazib yuborish (default 0).
+
+    Javob: { results: [...], total_count: int, has_more: bool }. Frontend
+    `unwrapList` orqali `results` ni ajratadi, shuning uchun avvalgi massiv
+    ishlatuvchi kod ham buzilmaydi.
     """
     try:
-        limit = int(request.query_params.get('limit', 200))
+        limit = int(request.query_params.get('limit', 20))
     except (TypeError, ValueError):
-        limit = 200
-    limit = max(1, min(limit, 500))
+        limit = 20
+    limit = max(1, min(limit, 100))
+    try:
+        offset = int(request.query_params.get('offset', 0))
+    except (TypeError, ValueError):
+        offset = 0
+    offset = max(0, offset)
+
+    base_qs = Notification.objects.filter(user=request.user)
+    total_count = base_qs.count()
     # Explicit order_by('-created_at') — Model.Meta.ordering allaqachon shunday,
     # lekin slicing ishlatilganda implicit ordering xavfsiz emas (kelajakda
     # Meta o'zgartirilsa bu kod sukut tarzda buziladi).
-    qs = Notification.objects.filter(user=request.user).order_by('-created_at')[:limit]
-    return Response(NotificationSerializer(qs, many=True).data)
+    qs = base_qs.order_by('-created_at')[offset:offset + limit]
+    return Response({
+        'results': NotificationSerializer(qs, many=True).data,
+        'total_count': total_count,
+        'has_more': offset + limit < total_count,
+    })
 
 
 @api_view(['POST'])

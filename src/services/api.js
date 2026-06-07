@@ -526,7 +526,27 @@ export const OlympyApi = {
   publishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/publish/`, { method: 'POST', token }),
   deactivateOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/deactivate/`, { method: 'POST', token }),
   finishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/finish/`, { method: 'POST', token }),
-  // Olimpiada statistikasi va natijalar eksporti (CSV).
+  // Olimpiada statistikasi va natijalar eksporti.
+  //
+  // Natijalarni eksport qilishning IKKI funksiyasi bor — ataylab, ikki xil
+  // backend endpoint va ikki xil fayl format uchun:
+  //
+  //   1) exportOlympiadResults (shu yerda, CSV) →  GET /api/olympiads/{id}/export/
+  //      Backend: olympiads.views.export_results. Ruxsat:
+  //      user_can_manage_center_event (owner / manager / teacher / platform admin).
+  //      CSV — yengil, har joyda ochiladi, Excel/Google Sheets'ga import qilinadi.
+  //      OwnerDashboard shu funksiyani ishlatadi.
+  //
+  //   2) exportOlympiadResultsXlsx (pastroqda, XLSX) → GET /api/manager/olympiads/{id}/export/
+  //      Backend: attempts.views.export_olympiad_results_xlsx. Ruxsat:
+  //      _user_can_manage_olympiad (xuddi shu rollar — owner / manager /
+  //      teacher / platform admin). XLSX — formatlangan (header rang, ustun
+  //      kengligi), to'g'ridan-to'g'ri ochiladi. ManagerDashboard ishlatadi.
+  //
+  // Ikkala endpoint ham bir xil rollarni (owner ham) qabul qiladi, shuning
+  // uchun Owner CSV va XLSX'ni ham yuklab olishi mumkin (OwnerDashboard'da
+  // ikkala tugma ham bor). CSV — soddalik/universal import uchun; XLSX —
+  // bevosita chiroyli ko'rinish uchun.
   getOlympiadStats: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/stats/`, { token }),
   exportOlympiadResultsUrl: (olympiadId) => `${API_BASE_URL}/api/olympiads/${olympiadId}/export/`,
   exportOlympiadResults: async (olympiadId, token) => {
@@ -795,7 +815,10 @@ export const OlympyApi = {
   getNotifications: (token) => request('/api/notifications/', { token }).then(unwrapList),
   markNotificationRead: (id, token) => request(`/api/notifications/${id}/read/`, { method: 'POST', token }),
   markAllNotificationsRead: (token) => request('/api/notifications/read-all/', { method: 'POST', token }),
-  // Manager Excel eksport (xlsx) — alohida endpoint, manager URL'da.
+  // Excel (XLSX) eksport — formatlangan fayl, alohida manager endpoint'da.
+  // Yuqoridagi exportOlympiadResults (CSV) bilan juftlik haqida to'liq izoh
+  // getOlympiadStats yonida. Ruxsat: owner / manager / teacher / admin —
+  // shuning uchun Owner ham (OwnerDashboard'dagi XLSX tugmasi) ishlatadi.
   exportOlympiadResultsXlsx: async (olympiadId, token) => {
     const res = await fetch(`${API_BASE_URL}/api/manager/olympiads/${olympiadId}/export/`, {
       method: 'GET',
