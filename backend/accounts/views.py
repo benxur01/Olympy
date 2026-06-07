@@ -1674,74 +1674,82 @@ def handle_telegram_update(update, bot='auth'):
     if contact and chat_id:
         contact_user_id = str(contact.get('user_id') or '')
         contact_phone = normalize_phone(contact.get('phone_number'))
-        verification = PhoneVerification.objects.filter(
-            telegram_chat_id=chat_id,
-            verified_at__isnull=True,
-        ).order_by('-created_at').first()
         same_telegram_user = bool(contact_user_id) and contact_user_id == telegram_user_id
-        if verification and same_telegram_user and contact_phone == verification.normalized_phone:
-            from django.contrib.auth import get_user_model
+        # Race condition himoyasi: Telegram webhook retry'larida parallel
+        # so'rovlar bir xil PhoneVerification'ni o'qib, ikkalasi ham verified_at
+        # yozib, _link_user_to_telegram'ni ikki marta chaqirishi mumkin edi.
+        # select_for_update qatorni lock qiladi — ikkinchi so'rov birinchisini
+        # kutadi, keyin verified_at allaqachon to'ldirilgani uchun (isnull=True
+        # filtri orqali) verification'ni topa olmaydi. verified_at yozish va
+        # _link_user_to_telegram chaqiruvi shu atomic blok ichida bajariladi.
+        with transaction.atomic():
+            verification = PhoneVerification.objects.select_for_update().filter(
+                telegram_chat_id=chat_id,
+                verified_at__isnull=True,
+            ).order_by('-created_at').first()
+            if verification and same_telegram_user and contact_phone == verification.normalized_phone:
+                from django.contrib.auth import get_user_model
 
-            User = get_user_model()
-            existing_user = User.objects.filter(normalized_phone=verification.normalized_phone).first()
-            if existing_user:
-                _link_user_to_telegram(existing_user, chat_id, telegram_user_id)
-                if verification.purpose == PhoneVerification.PURPOSE_PASSWORD_RESET:
-                    otp = _prepare_otp(verification)
-                    # OTP yuborish background Celery task'ga ko'chirildi —
-                    # Telegram 429 webhook javobini bloklamaydi.
-                    try:
-                        from accounts.tasks import send_telegram_otp_task
-                        send_telegram_otp_task.delay(
-                            chat_id=chat_id,
-                            text=f'Parolni tiklash kodi: {otp}',
-                            bot=bot,
-                        )
-                    except Exception:
-                        logger.exception('send_telegram_otp_task.delay failed, falling back to direct send')
-                        _send_telegram_message(chat_id, f'Parolni tiklash kodi: {otp}', bot=bot)
+                User = get_user_model()
+                existing_user = User.objects.filter(normalized_phone=verification.normalized_phone).first()
+                if existing_user:
+                    _link_user_to_telegram(existing_user, chat_id, telegram_user_id)
+                    if verification.purpose == PhoneVerification.PURPOSE_PASSWORD_RESET:
+                        otp = _prepare_otp(verification)
+                        # OTP yuborish background Celery task'ga ko'chirildi —
+                        # Telegram 429 webhook javobini bloklamaydi.
+                        try:
+                            from accounts.tasks import send_telegram_otp_task
+                            send_telegram_otp_task.delay(
+                                chat_id=chat_id,
+                                text=f'Parolni tiklash kodi: {otp}',
+                                bot=bot,
+                            )
+                        except Exception:
+                            logger.exception('send_telegram_otp_task.delay failed, falling back to direct send')
+                            _send_telegram_message(chat_id, f'Parolni tiklash kodi: {otp}', bot=bot)
+                        return {'ok': True}
+
+                    verification.verified_at = timezone.now()
+                    verification.save(update_fields=['verified_at', 'updated_at'])
+                    _send_telegram_message(
+                        chat_id,
+                        "Telegram bot hisobingizga ulandi. Endi arizalarni botdan tasdiqlashingiz mumkin.",
+                        bot=bot,
+                    )
                     return {'ok': True}
 
-                verification.verified_at = timezone.now()
-                verification.save(update_fields=['verified_at', 'updated_at'])
-                _send_telegram_message(
-                    chat_id,
-                    "Telegram bot hisobingizga ulandi. Endi arizalarni botdan tasdiqlashingiz mumkin.",
-                    bot=bot,
-                )
-                return {'ok': True}
+                if verification.purpose == PhoneVerification.PURPOSE_PASSWORD_RESET:
+                    _send_telegram_message(
+                        chat_id,
+                        "Bu telefon raqam bilan hisob topilmadi.",
+                        bot=bot,
+                    )
+                    return {'ok': True}
 
-            if verification.purpose == PhoneVerification.PURPOSE_PASSWORD_RESET:
-                _send_telegram_message(
-                    chat_id,
-                    "Bu telefon raqam bilan hisob topilmadi.",
-                    bot=bot,
-                )
-                return {'ok': True}
+                if bot == 'manager':
+                    _send_telegram_message(
+                        chat_id,
+                        "Avval ro'yxatdan o'tish uchun kod botidan foydalaning.",
+                        bot=bot,
+                    )
+                    return {'ok': True}
 
-            if bot == 'manager':
-                _send_telegram_message(
-                    chat_id,
-                    "Avval ro'yxatdan o'tish uchun kod botidan foydalaning.",
-                    bot=bot,
-                )
-                return {'ok': True}
-
-            otp = _prepare_otp(verification)
-            # OTP yuborish background Celery task'ga ko'chirildi —
-            # Telegram 429 webhook javobini bloklamaydi.
-            try:
-                from accounts.tasks import send_telegram_otp_task
-                send_telegram_otp_task.delay(
-                    chat_id=chat_id,
-                    text=f'Tasdiqlash kodi: {otp}',
-                    bot=bot,
-                )
-            except Exception:
-                logger.exception('send_telegram_otp_task.delay failed, falling back to direct send')
-                _send_telegram_message(chat_id, f'Tasdiqlash kodi: {otp}', bot=bot)
-        else:
-            _send_telegram_message(chat_id, 'Telefon raqam mos kelmadi.', bot=bot)
+                otp = _prepare_otp(verification)
+                # OTP yuborish background Celery task'ga ko'chirildi —
+                # Telegram 429 webhook javobini bloklamaydi.
+                try:
+                    from accounts.tasks import send_telegram_otp_task
+                    send_telegram_otp_task.delay(
+                        chat_id=chat_id,
+                        text=f'Tasdiqlash kodi: {otp}',
+                        bot=bot,
+                    )
+                except Exception:
+                    logger.exception('send_telegram_otp_task.delay failed, falling back to direct send')
+                    _send_telegram_message(chat_id, f'Tasdiqlash kodi: {otp}', bot=bot)
+            else:
+                _send_telegram_message(chat_id, 'Telefon raqam mos kelmadi.', bot=bot)
         return {'ok': True}
 
     same_bot = _telegram_bot_token('auth') == _telegram_bot_token('manager')

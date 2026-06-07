@@ -123,6 +123,11 @@ services:
         sync: false
       - key: OLYMPY_SECRET_KEY
         sync: false
+      # settings.py production'da OLYMPY_ALLOWED_HOSTS bo'sh bo'lsa
+      # ImproperlyConfigured otadi — bu Django settings import vaqtida
+      # yuz beradi, shuning uchun Celery worker umuman start bo'lmaydi.
+      - key: OLYMPY_ALLOWED_HOSTS
+        sync: false
       # Cloudinary — USE_CLOUDINARY env mavjudligiga qarab INSTALLED_APPS va
       # STORAGES'ni belgilaydi. Worker web service bilan bir xil storage
       # backend'ga ega bo'lishi shart (model media maydonlari izchil ishlashi
@@ -181,9 +186,18 @@ services:
         sync: false
       - key: CELERY_BROKER_URL
         sync: false
+      # Beat ham Celery app'ni yuklaydi — result backend web/worker bilan
+      # izchil bo'lishi uchun bir xil qo'shamiz (avval beat'da yo'q edi).
+      - key: CELERY_RESULT_BACKEND_URL
+        sync: false
       - key: DATABASE_URL
         sync: false
       - key: OLYMPY_SECRET_KEY
+        sync: false
+      # settings.py production'da OLYMPY_ALLOWED_HOSTS bo'sh bo'lsa
+      # ImproperlyConfigured otadi (Django settings import vaqtida) —
+      # aks holda beat scheduler umuman start bo'lmaydi.
+      - key: OLYMPY_ALLOWED_HOSTS
         sync: false
       # Cloudinary — Django sozlamalari beat jarayonida ham to'liq yuklanadi
       # (DatabaseScheduler model importlari). INSTALLED_APPS/STORAGES web va

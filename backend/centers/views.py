@@ -2,6 +2,7 @@ import io
 import logging
 import secrets
 
+from PIL import Image as PilImage
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
@@ -36,6 +37,11 @@ from .services import (
 
 
 logger = logging.getLogger(__name__)
+
+# Decompression bomb himoyasi: Pillow default MAX_IMAGE_PIXELS juda keng —
+# markaz logosi uchun 50MP yetarli. Modul darajasida bir marta o'rnatamiz
+# (har so'rovda global o'zgaruvchini qayta yozish thread-unsafe edi).
+PilImage.MAX_IMAGE_PIXELS = 50 * 1024 * 1024  # 50 MP limit
 
 
 def _annotate_center_counts(queryset):
@@ -233,13 +239,10 @@ def update_center_image(request, center_id):
             status=http_status.HTTP_400_BAD_REQUEST,
         )
     # Magic byte tekshiruvi: content_type spoof qilinishi mumkin.
-    # Decompression bomb himoyasi: Pillow default MAX_IMAGE_PIXELS juda
-    # keng — markaz logosi uchun 50MP yetarli. `verify()` faqat header'ni
-    # tekshiradi, to'liq dekompressiyaga `load()` ishlaydi va shu yerda
-    # bomb DecompressionBombError otadi.
+    # `verify()` faqat header'ni tekshiradi, to'liq dekompressiyaga `load()`
+    # ishlaydi va shu yerda bomb DecompressionBombError otadi.
+    # MAX_IMAGE_PIXELS modul darajasida o'rnatilgan (yuqoriga qarang).
     try:
-        from PIL import Image as PilImage
-        PilImage.MAX_IMAGE_PIXELS = 50 * 1024 * 1024  # 50 MP limit
         img = PilImage.open(io.BytesIO(image.read()))
         img.load()
         image.seek(0)
