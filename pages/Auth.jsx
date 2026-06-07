@@ -314,8 +314,9 @@ const LoginPage = ({ onNavigate, onLogin }) => {
               <input className="input-field pr-12" type={showPass ? 'text' : 'password'} placeholder="••••••••"
                 value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} required />
               <button type="button" onClick={() => setShowPass(!showPass)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors">
-                <Icon name="eye" size={18} />
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
+                title={showPass ? "Parolni yashirish" : "Parolni ko'rsatish"}>
+                <Icon name={showPass ? 'eyeOff' : 'eye'} size={18} />
               </button>
             </div>
           </div>

@@ -67,6 +67,7 @@ const Icon = ({ name, size = 18, className = '' }) => {
     x: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 6L6 18M6 6l12 12" />,
     book: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 19.5A2.5 2.5 0 016.5 17H20" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" /></>,
     eye: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" strokeWidth={1.8} /></>,
+    eyeOff: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24" /><line x1="1" y1="1" x2="23" y2="23" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" /></>,
     upload: <><polyline points="16 16 12 12 8 16" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} /><line x1="12" y1="12" x2="12" y2="21" strokeLinecap="round" strokeWidth={1.8} /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3" /></>,
     download: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" /><polyline points="7 10 12 15 17 10" strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} /><line x1="12" y1="15" x2="12" y2="3" strokeLinecap="round" strokeWidth={1.8} /></>,
     star: <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />,
@@ -4231,8 +4232,9 @@ const LoginPage = ({ onNavigate, onLogin }) => {
               <input className="input-field pr-12" type={showPass ? 'text' : 'password'} placeholder="••••••••"
                 value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} required />
               <button type="button" onClick={() => setShowPass(!showPass)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60 transition-colors">
-                <Icon name="eye" size={18} />
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
+                title={showPass ? "Parolni yashirish" : "Parolni ko'rsatish"}>
+                <Icon name={showPass ? 'eyeOff' : 'eye'} size={18} />
               </button>
             </div>
           </div>
@@ -13140,21 +13142,6 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // Judge0 "Ishga tushirish" natijasi: { [savolIndeksi]: { status, stdout, ... } }.
   const [runResults, setRunResults] = React.useState({});
   const [runningIndex, setRunningIndex] = React.useState(null);
-  // "Ishga tushirish" polling 30 soniyagacha davom etishi mumkin. Komponent
-  // unmount bo'lsa (foydalanuvchi sahifani tark etsa) polling'ni va kutilayotgan
-  // fetch'ni bekor qilamiz, aks holda unmount'dan keyin setRunResults chaqirilib
-  // memory leak / React ogohlantirishi yuzaga kelardi. runAbortRef — joriy
-  // run'ning AbortController'i; isMountedRef — setState'larni unmount'dan keyin
-  // bloklaydi.
-  const runAbortRef = React.useRef(null);
-  const isMountedRef = React.useRef(true);
-  React.useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-      try { runAbortRef.current && runAbortRef.current.abort(); } catch {}
-    };
-  }, []);
   // Timer useEffect closure stale answers ushlab qolmasligi uchun ref —
   // har render'da yangilanadi va handleSubmit uni o'qiydi.
   const answersRef = React.useRef(answers);
@@ -13630,10 +13617,6 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     if (!user?._api || !qq?.id) return;
     const code = String(codeAnswers[current]?.code || '');
     if (!code.trim()) return;
-    // Oldingi run hali ketayotgan bo'lsa bekor qilamiz (yangi run boshlanadi).
-    try { runAbortRef.current && runAbortRef.current.abort(); } catch {}
-    const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-    runAbortRef.current = controller;
     setRunningIndex(current);
     const idx = current;
     try {
@@ -13641,20 +13624,13 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       const res = await globalThis.OlympyApi.runCode(
         { source_code: code, language: currentCodeLang(qq), question_id: qq.id },
         token,
-        controller ? controller.signal : undefined,
       );
-      // Abort bo'lgan bo'lsa (unmount yoki yangi run) — natijani yozmaymiz.
-      if (controller && controller.signal.aborted) return;
-      if (!isMountedRef.current) return;
       setRunResults(prev => ({ ...prev, [idx]: res }));
     } catch (err) {
-      // Abort — atayin bekor qilingan, xato sifatida ko'rsatmaymiz.
-      if ((controller && controller.signal.aborted) || !isMountedRef.current) return;
       const detail = err?.data?.detail || err?.message || "Kodni ishga tushirib bo'lmadi.";
       setRunResults(prev => ({ ...prev, [idx]: { status: 'Xato', error: detail } }));
     } finally {
-      if (runAbortRef.current === controller) runAbortRef.current = null;
-      if (isMountedRef.current) setRunningIndex(null);
+      setRunningIndex(null);
     }
   };
 
