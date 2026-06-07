@@ -310,7 +310,7 @@ def click_webhook(request):
                 })
             tx.status = PaymentTransaction.STATUS_SUCCESS
             tx.provider_transaction_id = click_trans_id
-            tx.manager_commission = tx.amount * Decimal('0.20')
+            tx.manager_commission = tx.amount * settings.MANAGER_COMMISSION_RATE
             tx.save()
             # Activate premium subscription for the user
             _activate_subscription(tx.user, tx.amount, plan_id=tx.plan_id)
@@ -481,7 +481,7 @@ def payme_webhook(request):
                 })
             # Success!
             tx.status = PaymentTransaction.STATUS_SUCCESS
-            tx.manager_commission = tx.amount * Decimal('0.20')
+            tx.manager_commission = tx.amount * settings.MANAGER_COMMISSION_RATE
             tx.save()
             # Activate premium
             _activate_subscription(tx.user, tx.amount, plan_id=tx.plan_id)

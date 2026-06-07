@@ -155,9 +155,14 @@ def practice_submit(request):
 
     session = cache.get(f'{PRACTICE_CACHE_PREFIX}{practice_id}')
     if not session:
+        # Cache'dagi sessiya muddati tugagan yoki topilmadi. 410 GONE —
+        # resurs avval mavjud bo'lib, endi yo'qligini bildiradi (404'dan
+        # aniqroq semantika). Xabar `detail` kalitida (frontend
+        # extractErrorMessage shuni o'qiydi); `error` ham qaytariladi.
+        msg = "Sessiya muddati tugagan yoki topilmadi. Qaytadan boshlang."
         return Response(
-            {'detail': "Practice session topilmadi yoki muddati o'tgan"},
-            status=http_status.HTTP_404_NOT_FOUND,
+            {'detail': msg, 'error': msg},
+            status=http_status.HTTP_410_GONE,
         )
     if session.get('user_id') != request.user.id:
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)

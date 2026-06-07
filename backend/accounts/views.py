@@ -2116,8 +2116,8 @@ get_my_predictions.cls.throttle_scope = 'ai'
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def audit_log_list(request):
-    """GET /api/admin/audit-log/ — oxirgi 100 ta audit yozuvi (faqat staff)."""
-    if not request.user.is_staff:
+    """GET /api/admin/audit-log/ — oxirgi 100 ta audit yozuvi (faqat platform admin)."""
+    if not request.user.is_platform_admin:
         return Response({'detail': "Ruxsat yo'q"}, status=status.HTTP_403_FORBIDDEN)
     logs = AuditLog.objects.select_related('actor').order_by('-created_at')[:100]
     data = [{
@@ -2228,8 +2228,8 @@ def ab_track_event(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def ab_results(request):
-    """GET /api/ab/results/ — A/B test natijalarini ko'rish (faqat admin)."""
-    if not request.user.is_staff:
+    """GET /api/ab/results/ — A/B test natijalarini ko'rish (faqat platform admin)."""
+    if not request.user.is_platform_admin:
         return Response({'detail': "Ruxsat yo'q"}, status=status.HTTP_403_FORBIDDEN)
 
     from django.core.cache import cache

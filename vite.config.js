@@ -47,18 +47,39 @@ export default defineConfig({
     // o'zgaradi, shuning uchun brauzer ularni uzoq muddat keshlaydi va
     // ilova kodi o'zgarganda qayta yuklab o'tirmaydi.
     //
-    // Eslatma: sahifalar (pages/*.jsx) `type="text/babel"` rejimida yozilgan
+    // Eslatma: sahifalar (pages/*.jsx) `scripts/generate-vite-entry.mjs`
+    // tomonidan bitta `src/olympy-entry.jsx` faylga inline birlashtiriladi
     // va o'zaro global `var` (moduleScope) orqali bog'langan, ES `import`
-    // ishlatmaydi + aylanma bog'liqliklari bor. Shu sababli ularni
-    // route-based `React.lazy()` bilan ajratib bo'lmaydi (alohida modul
-    // scope'da globallar ko'rinmay qoladi). CodeMirror esa allaqachon
+    // ishlatmaydi + aylanma bog'liqliklari bor. Shu sababli har bir page'ni
+    // alohida chunkka ajratib bo'lmaydi (ular bitta modulning bir qismi,
+    // mustaqil modul emas). Buning o'rniga vendor (node_modules)
+    // kutubxonalarini alohida chunklarga ajratamiz — bu asosiy app
+    // bundle'ini yengillashtiradi va vendor kodi kamdan-kam o'zgargani
+    // uchun brauzer keshini yaxshilaydi. CodeMirror esa allaqachon
     // src/services/codemirror-loader.js orqali dinamik import bilan
     // lazy yuklanadi — kod savollari ochilgandagina tushadi.
     rollupOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
-          'vendor-dompurify': ['dompurify'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+          // React yadrosi — eng barqaror, alohida uzoq-keshlanadigan chunk.
+          if (/[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id)) {
+            return 'vendor-react';
+          }
+          // CodeMirror — faqat kod savollarida kerak, dinamik import orqali
+          // lazy tushadi; o'z chunkida qolib boshqa vendor bilan aralashmasin.
+          if (id.includes('node_modules/@codemirror') || id.includes('node_modules/@lezer')) {
+            return 'vendor-codemirror';
+          }
+          // Sentry — yiriq monitoring kutubxonasi.
+          if (id.includes('node_modules/@sentry')) {
+            return 'vendor-sentry';
+          }
+          if (id.includes('node_modules/dompurify')) {
+            return 'vendor-dompurify';
+          }
+          // Qolgan barcha uchinchi-tomon kutubxonalar.
+          return 'vendor';
         },
       },
     },
