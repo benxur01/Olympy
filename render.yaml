@@ -116,6 +116,16 @@ services:
         sync: false
       - key: OLYMPY_SECRET_KEY
         sync: false
+      # Cloudinary — USE_CLOUDINARY env mavjudligiga qarab INSTALLED_APPS va
+      # STORAGES'ni belgilaydi. Worker web service bilan bir xil storage
+      # backend'ga ega bo'lishi shart (model media maydonlari izchil ishlashi
+      # uchun); aks holda worker FileSystemStorage'ga tushib qoladi.
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: GEMINI_API_KEY
@@ -123,6 +133,10 @@ services:
       - key: TELEGRAM_AUTH_BOT_TOKEN
         sync: false
       - key: TELEGRAM_MANAGER_BOT_TOKEN
+        sync: false
+      # Sentry backend DSN — bo'sh bo'lsa monitoring o'chiq qoladi. Worker'da
+      # task xatolari ham kuzatilishi uchun web service bilan bir xil qo'shamiz.
+      - key: SENTRY_DSN
         sync: false
       # Email — natija xabarlari shu worker'da yuboriladi (Mailgun yoqilgan
       # bo'lsa). Barchasi ixtiyoriy.
@@ -156,6 +170,18 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: OLYMPY_SECRET_KEY
+        sync: false
+      # Cloudinary — Django sozlamalari beat jarayonida ham to'liq yuklanadi
+      # (DatabaseScheduler model importlari). INSTALLED_APPS/STORAGES web va
+      # worker bilan izchil bo'lishi uchun bir xil qo'shamiz.
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      # Sentry backend DSN — beat scheduler xatolari ham kuzatilishi uchun.
+      - key: SENTRY_DSN
         sync: false
 
 # Database va Redis allaqachon Render dashboard'da yaratilgan.

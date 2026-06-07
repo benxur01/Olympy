@@ -475,7 +475,6 @@ def me(request):
     # o'tkazib yuboramiz. Cache obuna o'zgarganda (billing webhook, admin
     # toggle premium) invalidate qilinadi.
     from django.core.cache import cache
-    from django.utils import timezone
     from .utils import subscription_cache_key
 
     now = timezone.now()
@@ -812,8 +811,6 @@ def admin_toggle_user_premium(request, user_id):
     
     from django.contrib.auth import get_user_model
     from billing.models import SubscriptionPlan, UserSubscription
-    from django.utils import timezone
-    from datetime import timedelta
     from centers.models import EducationCenter
 
     User = get_user_model()

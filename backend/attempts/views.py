@@ -10,6 +10,7 @@ from rest_framework.decorators import api_view, permission_classes, throttle_cla
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.views import APIView
 
 from centers.models import CenterMembership, EducationCenter
 from olympiads.models import Olympiad
@@ -603,90 +604,99 @@ def submit_attempt(request):
 submit_attempt.cls.throttle_scope = 'submit'
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-@throttle_classes([ScopedRateThrottle])
-def report_cheating(request):
+class ReportCheatingView(APIView):
     """POST /api/attempts/cheating/ — disqualify current user's test session.
 
     Throttle: foydalanuvchi bir daqiqada 5 martadan ortiq cheating signal
     yubora olmaydi — aks holda olimpiada paytida frontend bug yoki yomon
-    niyatli skript orqali DB'ga bosim kelishi mumkin.
+    niyatli skript orqali DB'ga bosim kelishi mumkin. `throttle_scope`
+    DEFAULT_THROTTLE_RATES['cheating'] = '5/min' ga ulanadi.
+
+    Eslatma: avval FBV (`@api_view`) edi va throttle scope `report_cheating.cls.
+    throttle_scope = 'cheating'` orqali (DRF ichki `.cls` atributiga) o'rnatilardi.
+    Standart CBV'da scope shunchaki klass atributi — `.cls` hiylasi kerak emas.
     """
-    olympiad_id = request.data.get('olympiad')
-    reason = str(request.data.get('reason') or 'test_window_left')[:120]
-    if not olympiad_id:
-        return Response({'detail': 'olympiad majburiy'}, status=http_status.HTTP_400_BAD_REQUEST)
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'cheating'
 
-    with transaction.atomic():
-        olympiad = get_object_or_404(
-            Olympiad.objects.select_for_update().select_related('center', 'center__owner')
-            # _build_attempt_mistakes va scoring `olympiad.questions.all()` ni
-            # aylanadi — savollarni oldindan yuklab N+1 so'rovlarni oldini olamiz.
-            .prefetch_related('questions'),
-            pk=olympiad_id,
-        )
-        if not user_can_participate_in_event(request.user, olympiad):
-            return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
-        if TestAttempt.objects.filter(user=request.user, olympiad=olympiad).exists():
-            return Response({'disqualified': False, 'detail': 'Attempt already submitted'})
-        session = (
-            TestSession.objects
-            .select_for_update()
-            .filter(user=request.user, olympiad=olympiad)
-            .first()
-        )
-        if not session:
-            return Response({'detail': "Test session topilmadi"}, status=http_status.HTTP_400_BAD_REQUEST)
-        if session.status == TestSession.STATUS_COMPLETED:
-            return Response({'disqualified': False, 'detail': 'Attempt already submitted'})
-        notify = session.status != TestSession.STATUS_DISQUALIFIED
-        session.status = TestSession.STATUS_DISQUALIFIED
-        session.disqualified_at = session.disqualified_at or timezone.now()
-        session.cheating_reason = session.cheating_reason or reason
-        session.save(update_fields=['status', 'disqualified_at', 'cheating_reason'])
+    def post(self, request):
+        olympiad_id = request.data.get('olympiad')
+        reason = str(request.data.get('reason') or 'test_window_left')[:120]
+        if not olympiad_id:
+            return Response({'detail': 'olympiad majburiy'}, status=http_status.HTTP_400_BAD_REQUEST)
 
-        # Diskvalifikatsiya bo'lgan student uchun ham attempt yaratamiz —
-        # aks holda na leaderboard'da, na manager paneli statistikasida
-        # ko'rinmasdi. score=0, disqualified=True bilan iz qoldiramiz.
-        # Session boshlanganidan hozirgacha bo'lgan vaqtni time_spent qilamiz.
-        time_spent = max(0, int(
-            (timezone.now() - session.started_at).total_seconds()
-        )) if session.started_at else 0
-        if olympiad.duration_minutes:
-            time_spent = min(time_spent, olympiad.duration_minutes * 60)
-        try:
-            TestAttempt.objects.create(
-                user=request.user,
-                olympiad=olympiad,
-                answers={},
-                score=0,
-                correct_count=0,
-                wrong_count=0,
-                total_questions=0,
-                time_spent=time_spent,
-                rank=None,
-                disqualified=True,
+        with transaction.atomic():
+            olympiad = get_object_or_404(
+                Olympiad.objects.select_for_update().select_related('center', 'center__owner')
+                # _build_attempt_mistakes va scoring `olympiad.questions.all()` ni
+                # aylanadi — savollarni oldindan yuklab N+1 so'rovlarni oldini olamiz.
+                .prefetch_related('questions'),
+                pk=olympiad_id,
             )
-        except IntegrityError:
-            # Race: bir vaqtda submit bilan kelishi mumkin. E'tibor bermaymiz.
-            pass
+            if not user_can_participate_in_event(request.user, olympiad):
+                return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+            if TestAttempt.objects.filter(user=request.user, olympiad=olympiad).exists():
+                return Response({'disqualified': False, 'detail': 'Attempt already submitted'})
+            session = (
+                TestSession.objects
+                .select_for_update()
+                .filter(user=request.user, olympiad=olympiad)
+                .first()
+            )
+            if not session:
+                return Response({'detail': "Test session topilmadi"}, status=http_status.HTTP_400_BAD_REQUEST)
+            if session.status == TestSession.STATUS_COMPLETED:
+                return Response({'disqualified': False, 'detail': 'Attempt already submitted'})
+            notify = session.status != TestSession.STATUS_DISQUALIFIED
+            session.status = TestSession.STATUS_DISQUALIFIED
+            session.disqualified_at = session.disqualified_at or timezone.now()
+            session.cheating_reason = session.cheating_reason or reason
+            session.save(update_fields=['status', 'disqualified_at', 'cheating_reason'])
 
-    if notify:
-        try:
-            from notifications.services import send_cheating_detected_notification
+            # Diskvalifikatsiya bo'lgan student uchun ham attempt yaratamiz —
+            # aks holda na leaderboard'da, na manager paneli statistikasida
+            # ko'rinmasdi. score=0, disqualified=True bilan iz qoldiramiz.
+            # Session boshlanganidan hozirgacha bo'lgan vaqtni time_spent qilamiz.
+            time_spent = max(0, int(
+                (timezone.now() - session.started_at).total_seconds()
+            )) if session.started_at else 0
+            if olympiad.duration_minutes:
+                time_spent = min(time_spent, olympiad.duration_minutes * 60)
+            try:
+                TestAttempt.objects.create(
+                    user=request.user,
+                    olympiad=olympiad,
+                    answers={},
+                    score=0,
+                    correct_count=0,
+                    wrong_count=0,
+                    total_questions=0,
+                    time_spent=time_spent,
+                    rank=None,
+                    disqualified=True,
+                )
+            except IntegrityError:
+                # Race: bir vaqtda submit bilan kelishi mumkin. E'tibor bermaymiz.
+                pass
 
-            send_cheating_detected_notification(request.user, olympiad, olympiad.center, reason)
-        except Exception:
-            import logging
-            logging.getLogger(__name__).exception('cheating notification failed')
-    return Response({
-        'disqualified': True,
-        'detail': "Siz cheating qildingiz. Olimpiada yakunlandi.",
-    })
+        if notify:
+            try:
+                from notifications.services import send_cheating_detected_notification
+
+                send_cheating_detected_notification(request.user, olympiad, olympiad.center, reason)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception('cheating notification failed')
+        return Response({
+            'disqualified': True,
+            'detail': "Siz cheating qildingiz. Olimpiada yakunlandi.",
+        })
 
 
-report_cheating.cls.throttle_scope = 'cheating'
+# URL routing FBV-shaklidagi callable kutadi — CBV'ni `.as_view()` orqali
+# beramiz, shunda urls.py'dagi `views.report_cheating` o'zgarmasdan ishlaydi.
+report_cheating = ReportCheatingView.as_view()
 
 
 @api_view(['GET'])

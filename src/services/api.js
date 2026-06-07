@@ -16,13 +16,17 @@ const makeAssetUrl = (url) => {
 const AUTH_TOKEN_KEY = 'olympy_api_token';
 const AUTH_REFRESH_KEY = 'olympy_refresh_token';
 
-// XAVFSIZLIK: foydalanuvchi profil obyekti (roles, is_premium, isPlatformAdmin
-// va h.k.) endi localStorage/sessionStorage'da SAQLANMAYDI. Storage'ga yozilgan
-// qiymatni buzg'unchi (yoki foydalanuvchining o'zi) tahrirlab `isPlatformAdmin:
-// true` qila olardi — UI faqat ko'rsatish uchun ishlatsa ham, bu client-side
-// privilege escalation oynasini ochadi. Buning o'rniga user obyekti faqat
-// in-memory (modul-darajali) saqlanadi va sahifa har yangilanganda
-// `/api/me/` (cookie'dagi JWT orqali) dan qayta yuklanadi.
+// Foydalanuvchi profil obyekti (xom backend `/api/me/` javobi) modul-darajali
+// in-memory `_currentUser`'da va qo'shimcha sessionStorage'da ('currentUser')
+// keshlanadi. Modul-darajali o'zgaruvchi sahifa yangilanganda yo'qolardi —
+// sessionStorage esa tab umri davomida saqlanib, getMe'ning birinchi
+// chaqiruvigacha (yoki tarmoq sekin bo'lganda) keshdan tezda qaytadi.
+//
+// XAVFSIZLIK ESLATMASI: kesh faqat UI ko'rsatish uchun. Server hech qachon
+// klientdagi rollarga ishonmaydi — har bir himoyalangan endpoint ruxsatni
+// o'zi (cookie'dagi JWT orqali) qayta tekshiradi. sessionStorage tab yopilganda
+// tozalanadi, shuning uchun localStorage'dan ko'ra qisqaroq oyna beradi.
+const CURRENT_USER_KEY = 'currentUser';
 let _currentUser = null;
 
 // Default store — XAVFSIZLIK: sessionStorage. JWT token brauzer yopilganda
@@ -46,6 +50,36 @@ const _localStore = (() => {
   try { if (typeof localStorage !== 'undefined') return localStorage; } catch {}
   return null;
 })();
+
+// ─── Joriy foydalanuvchi keshi (sessionStorage) ──────────────────────────────
+// _currentUser in-memory bo'lgani uchun sahifa yangilanganda yo'qolardi.
+// sessionStorage'ga ko'chiramiz: o'qishda JSON parse xatosini yutib, buzilgan
+// qiymatni tozalaymiz (eski/buzilgan kesh tufayli sahifa qulamasin).
+const _readCachedUser = () => {
+  if (_currentUser) return _currentUser;
+  try {
+    const raw = _sessionStore && _sessionStore.getItem(CURRENT_USER_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    _currentUser = parsed || null;
+    return _currentUser;
+  } catch {
+    try { _sessionStore && _sessionStore.removeItem(CURRENT_USER_KEY); } catch {}
+    return null;
+  }
+};
+const _writeCachedUser = (user) => {
+  _currentUser = user || null;
+  try {
+    if (user) _sessionStore && _sessionStore.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+    else _sessionStore && _sessionStore.removeItem(CURRENT_USER_KEY);
+  } catch {}
+};
+const _clearCachedUser = () => {
+  _currentUser = null;
+  try { _sessionStore && _sessionStore.removeItem(CURRENT_USER_KEY); } catch {}
+};
+
 let _activeAuthStore = _defaultAuthStore;
 const _setActiveStore = (store) => { _activeAuthStore = store || _defaultAuthStore; };
 const _readAuth = (key) => {
@@ -209,7 +243,7 @@ const request = async (
       // Autentifikatsiyali so'rovda token muddati tugagan — auth tozalanadi.
       _removeAuth(AUTH_TOKEN_KEY);
       _removeAuth(AUTH_REFRESH_KEY);
-      _currentUser = null;
+      _clearCachedUser();
       try { window.dispatchEvent(new CustomEvent('olympy:logout')); } catch {}
       throw new ApiError('Session expired', { status: 401, data });
     }
@@ -333,25 +367,27 @@ const saveAuth = ({ token, refresh, user, cookieAuth, persistent } = {}) => {
   // storage'ga yozardi. Endi storage'da saqlamaymiz — qolib ketgan stale
   // qiymatni bir martalik tozalaymiz, aks holda u keraksiz holda turaveradi.
   _removeAuth('olympy_api_user');
-  // User obyekti faqat in-memory saqlanadi (storage'ga yozilmaydi) — XSS /
-  // qo'lda tahrir orqali privilege escalation oldini olish uchun. `user`
-  // undefined bo'lsa joriy qiymat saqlanib qoladi (faqat token yangilash
-  // chaqiruvlarida user'siz saveAuth ishlatiladi).
-  if (user !== undefined) _currentUser = user || null;
+  // User obyekti in-memory + sessionStorage'da keshlanadi (CURRENT_USER_KEY).
+  // `user` undefined bo'lsa joriy qiymat saqlanib qoladi (faqat token yangilash
+  // chaqiruvlarida user'siz saveAuth ishlatiladi) — keshga tegmaymiz.
+  if (user !== undefined) _writeCachedUser(user || null);
 };
 
 const loadAuth = () => {
-  if (!_currentUser) return null;
+  // Avval in-memory, bo'lmasa sessionStorage keshidan o'qiymiz (sahifa
+  // yangilangach in-memory yo'qoladi, lekin kesh saqlanib qoladi).
+  const user = _readCachedUser();
+  if (!user) return null;
   // token/refresh har doim null — ular cookie'da yashaydi. Eski chaqiruvchilar
   // `loadAuth()?.token` kutgani uchun shaklni saqlab qolamiz (ular allaqachon
   // null token bilan cookie auth orqali ishlaydi).
-  return { token: null, refresh: null, user: _currentUser };
+  return { token: null, refresh: null, user };
 };
 
 const clearAuth = async () => {
   _removeAuth(AUTH_TOKEN_KEY);
   _removeAuth(AUTH_REFRESH_KEY);
-  _currentUser = null;
+  _clearCachedUser();
   // await — logout so'rovi tugashini kutamiz, aks holda refresh token
   // server tomonda blacklist'ga tushmasdan qolib ketishi mumkin (fetch
   // boshlanmasdan sahifa o'zgarsa). Chaqiruvchilar natijani kutmaydi.
@@ -380,7 +416,22 @@ export const OlympyApi = {
   confirmPasswordReset: (payload) => request('/api/auth/password-reset/confirm/', { method: 'POST', body: payload, retryOnAuth: false }),
   startTelegramLink: (token) => request('/api/auth/telegram/link/start/', { method: 'POST', token }),
   verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload, retryOnAuth: false }),
-  getMe: (token) => request('/api/me/', { token }),
+  getMe: async (token) => {
+    // Avval sessionStorage keshini ko'ramiz — sahifa yangilangach in-memory
+    // _currentUser yo'qoladi, kesh esa darhol qiymat beradi. Keyin serverdan
+    // yangilab, javobni keshga yozamiz (kesh faqat UI uchun; ruxsat har doim
+    // serverda tekshiriladi). Tarmoq xatosida (401 emas, status 0) keshdagi
+    // qiymatni fallback qilamiz, aks holda xatoni qayta otamiz.
+    const cached = _readCachedUser();
+    try {
+      const data = await request('/api/me/', { token });
+      _writeCachedUser(data);
+      return data;
+    } catch (error) {
+      if (!error?.status && cached) return cached;
+      throw error;
+    }
+  },
   getActivityLeaderboard: (token) => request('/api/me/activity-leaderboard/', { token }),
   updateProfile: (payload, token) => request('/api/me/', { method: 'PATCH', body: payload, token }),
   changePassword: (payload, token) => request('/api/auth/me/change-password/', { method: 'POST', body: payload, token }),
