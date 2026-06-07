@@ -63,6 +63,13 @@ services:
         sync: false
       - key: TELEGRAM_MANAGER_BOT_TOKEN
         sync: false
+      # Telegram webhook maxfiy tokenlari — kelgan webhook'larni tasdiqlash
+      # uchun (accounts/views.py). Production'da o'rnatilishi shart, aks holda
+      # webhook 403 qaytaradi. Auth bot va manager bot uchun alohida.
+      - key: TELEGRAM_AUTH_WEBHOOK_SECRET
+        sync: false
+      - key: TELEGRAM_MANAGER_WEBHOOK_SECRET
+        sync: false
       - key: OPENAI_API_KEY
         sync: false
       - key: GEMINI_API_KEY

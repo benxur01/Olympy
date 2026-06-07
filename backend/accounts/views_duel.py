@@ -12,6 +12,8 @@ O'yin oqimi:
 
 G'olib: kim ko'p to'g'ri javob bersa. Teng bo'lsa durang (winner=None).
 """
+import random
+
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Count, Q
@@ -57,7 +59,13 @@ def _pick_duel_questions(subject):
         # Shu fanda yetarli savol bo'lsa — faqat shundan, aks holda umumiy.
         if subject_qs.count() >= DUEL_QUESTION_COUNT:
             qs = subject_qs
-    return list(qs.order_by('?')[:DUEL_QUESTION_COUNT])
+    # order_by('?') to'liq jadval skanini oldini olish uchun ID-asosli random.
+    ids = list(qs.values_list('id', flat=True))
+    if not ids:
+        return []
+    picked = random.sample(ids, min(DUEL_QUESTION_COUNT, len(ids)))
+    by_id = {q.id: q for q in Question.objects.filter(id__in=picked)}
+    return [by_id[i] for i in picked if i in by_id]
 
 
 def _user_answer_count(duel, user_id):

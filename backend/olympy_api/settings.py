@@ -10,11 +10,12 @@ following environment variables:
     OLYMPY_DB_HOST=localhost
     OLYMPY_DB_PORT=5432
 """
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 import os
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from celery.schedules import crontab
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -460,7 +461,22 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'accounts.tasks.cleanup_phone_verifications',
         'schedule': timedelta(hours=1),
     },
+    # Har kuni soat 06:00 UTC — bugungi kunlik savollarni tanlaydi.
+    # CELERY_TIMEZONE Asia/Tashkent bo'lgani uchun nowfun bilan aniq UTC.
+    'generate-daily-questions': {
+        'task': 'accounts.generate_daily_questions',
+        'schedule': crontab(hour=6, minute=0, nowfun=lambda: datetime.now(dt_timezone.utc)),
+    },
+    # Har dushanba soat 08:00 UTC — ota-onalarga haftalik hisobot.
+    'send-weekly-parent-reports': {
+        'task': 'accounts.send_weekly_parent_reports',
+        'schedule': crontab(hour=8, minute=0, day_of_week='monday', nowfun=lambda: datetime.now(dt_timezone.utc)),
+    },
 }
+
+# Markaz tasdiqlanganda beriladigan trial obuna muddati (kun). Avval
+# centers/views.py'da hardcoded 14 edi — endi env orqali sozlanadi.
+TRIAL_SUBSCRIPTION_DAYS = int(os.environ.get('TRIAL_SUBSCRIPTION_DAYS', 14))
 
 # CORS — production rejimida faqat aniq ro'yxatdagi originlar.
 CORS_ALLOW_ALL_ORIGINS = False

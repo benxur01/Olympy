@@ -17,6 +17,12 @@ from rest_framework.response import Response
 
 from attempts.models import TestAttempt
 from centers.models import CenterMembership, EducationCenter
+from questions.grading import (
+    RESULT_CORRECT,
+    RESULT_PENDING,
+    RESULT_WRONG,
+    grade_answer,
+)
 from questions.models import Question
 
 
@@ -202,12 +208,14 @@ def practice_submit(request):
     question_ids = session.get('question_ids') or []
     questions = list(Question.objects.filter(id__in=question_ids).only(
         'id', 'text', 'options', 'difficulty', 'score', 'correct_answer',
+        'question_type', 'correct_text',
     ))
     qmap = {q.id: q for q in questions}
 
     review = []
     correct_count = 0
     wrong_count = 0
+    pending_count = 0
     for qid in question_ids:
         q = qmap.get(qid)
         if not q:
@@ -215,28 +223,43 @@ def practice_submit(request):
         chosen_raw = answers.get(str(qid))
         if chosen_raw is None:
             chosen_raw = answers.get(qid)
-        try:
-            chosen_idx = int(chosen_raw) if chosen_raw is not None else None
-        except (TypeError, ValueError):
-            chosen_idx = None
-        is_correct = (chosen_idx is not None and chosen_idx == q.correct_answer)
+
+        # Practice'da option shuffle yo'q — chosen_raw to'g'ridan-to'g'ri asl
+        # javob (mcq/yes_no uchun indeks, boshqa turlar uchun matn/ro'yxat).
+        # Savol turiga qarab grade_answer to'g'ri baholaydi.
+        result = grade_answer(q, chosen_raw)
+        is_correct = (result == RESULT_CORRECT)
         if is_correct:
             correct_count += 1
-        elif chosen_idx is not None:
+        elif result == RESULT_WRONG:
             wrong_count += 1
+        elif result == RESULT_PENDING:
+            pending_count += 1
+
+        # MCQ/yes_no uchun chosen_answer indeks sifatida ko'rsatiladi (eski
+        # frontend bilan moslik); boshqa turlar uchun xom javob qaytariladi.
+        try:
+            chosen_display = int(chosen_raw) if chosen_raw is not None else None
+        except (TypeError, ValueError):
+            chosen_display = chosen_raw
         review.append({
             'id': q.id,
             'text': q.text,
             'options': q.options or [],
+            'question_type': getattr(q, 'question_type', 'mcq') or 'mcq',
             'correct_answer': q.correct_answer,
-            'chosen_answer': chosen_idx,
+            'chosen_answer': chosen_display,
             'is_correct': is_correct,
+            'pending_review': result == RESULT_PENDING,
             'difficulty': q.difficulty,
             'score': q.score,
         })
 
     total = len(review)
-    score_pct = round((correct_count / total) * 100) if total else 0
+    # Essay (pending_review) savollar avtomatik baholanmaydi — foiz hisobidan
+    # chiqaramiz, aks holda baholanmagan savol natijani adolatsiz pasaytiradi.
+    gradable = total - pending_count
+    score_pct = round((correct_count / gradable) * 100) if gradable else 0
 
     # Streak'ni locked user ustida yangilaymiz — parallel submit'larda
     # lost update bo'lmasligi uchun (race condition himoyasi).
@@ -263,6 +286,7 @@ def practice_submit(request):
         'score': score_pct,
         'correct_count': correct_count,
         'wrong_count': wrong_count,
+        'pending_count': pending_count,
         'total': total,
         'review': review,
         'streak_count': request.user.streak_count,

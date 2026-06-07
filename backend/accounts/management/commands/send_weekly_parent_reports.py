@@ -32,6 +32,15 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         dry_run = options.get('dry_run')
+
+        if not dry_run:
+            # Yagona manba: logika `accounts.tasks.send_weekly_parent_reports`'da.
+            from accounts.tasks import send_weekly_parent_reports
+            result = send_weekly_parent_reports()
+            self.stdout.write(self.style.SUCCESS(str(result)))
+            return
+
+        # --dry-run: haqiqiy yubormasdan nechta xabar ketishini hisoblaymiz.
         week_ago = timezone.now() - timedelta(days=7)
 
         links = (
@@ -68,23 +77,9 @@ class Command(BaseCommand):
                 f"🏆 Eng yaxshi natija: {best_score}%"
             )
 
-            if dry_run:
-                self.stdout.write(f"[dry-run] parent={parent.id} student={student.id}\n{msg}\n")
-                sent += 1
-                continue
-
-            try:
-                from notifications.services import send_telegram_markdown
-                send_telegram_markdown(chat_id, msg)
-                sent += 1
-            except Exception:
-                import logging
-                logging.getLogger(__name__).exception(
-                    'weekly parent report failed for parent=%s student=%s',
-                    parent.id, student.id,
-                )
-                skipped += 1
+            self.stdout.write(f"[dry-run] parent={parent.id} student={student.id}\n{msg}\n")
+            sent += 1
 
         self.stdout.write(self.style.SUCCESS(
-            f"Haftalik hisobotlar: {sent} ta yuborildi, {skipped} ta o'tkazib yuborildi."
+            f"[dry-run] Haftalik hisobotlar: {sent} ta yuboriladi, {skipped} ta o'tkazib yuboriladi."
         ))

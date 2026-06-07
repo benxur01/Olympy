@@ -1,11 +1,14 @@
 """Periodic background tasks for the accounts app."""
+import random
 from datetime import timedelta
 
 from celery import shared_task
-from django.db.models import Q
+from django.db.models import Avg, Count, Max, Q
 from django.utils import timezone
 
 from .models import PhoneVerification
+
+DAILY_QUESTION_COUNT = 3
 
 
 @shared_task
@@ -104,4 +107,112 @@ def send_telegram_otp_task(self, chat_id, text, bot='auth'):
         exc=Exception('telegram sendMessage failed'),
         countdown=10,
     )
+
+
+@shared_task(name='accounts.generate_daily_questions')
+def generate_daily_questions(count=DAILY_QUESTION_COUNT):
+    """DH1: Bugungi `count` ta kunlik savolni tanlaydi (idempotent).
+
+    `generate_daily_questions` management command logikasining Celery beat
+    varianti. Bugun uchun savollar yetarli bo'lsa qayta ishlamaydi. Savol
+    tanlash ID-asosli random bilan amalga oshiriladi (`order_by('?')` to'liq
+    jadval skanini oldini olish uchun).
+    """
+    from accounts.models import DailyQuestion
+    from questions.models import Question
+
+    count = max(1, int(count or DAILY_QUESTION_COUNT))
+    today = timezone.now().date()
+
+    existing = DailyQuestion.objects.filter(date=today).count()
+    if existing >= count:
+        return f'skipped: {existing} daily questions already exist for {today}'
+
+    need = count - existing
+    # Bugun allaqachon tanlangan savollarni qayta tanlamaymiz.
+    used_ids = list(
+        DailyQuestion.objects.filter(date=today).values_list('question_id', flat=True)
+    )
+    candidate_ids = list(
+        Question.objects.exclude(id__in=used_ids).values_list('id', flat=True)
+    )
+    if not candidate_ids:
+        return 'no questions available — nothing created'
+
+    picked_ids = random.sample(candidate_ids, min(need, len(candidate_ids)))
+    questions = Question.objects.filter(id__in=picked_ids)
+
+    created = 0
+    for q in questions:
+        _, was_created = DailyQuestion.objects.get_or_create(
+            question=q,
+            date=today,
+            defaults={'subject': q.subject or ''},
+        )
+        if was_created:
+            created += 1
+
+    return f'daily questions ready: {created} created for {today}'
+
+
+@shared_task(name='accounts.send_weekly_parent_reports')
+def send_weekly_parent_reports():
+    """O6: Ota-onalarga farzandning haftalik hisobotini Telegram orqali yuboradi.
+
+    `send_weekly_parent_reports` management command logikasining Celery beat
+    varianti. Tasdiqlangan va digest yoqilgan har bir ota-ona-farzand
+    bog'lanishi uchun oxirgi 7 kunlik statistikani yuboradi.
+    """
+    from accounts.models import ParentStudentLink
+    from attempts.models import TestAttempt
+
+    week_ago = timezone.now() - timedelta(days=7)
+
+    links = (
+        ParentStudentLink.objects
+        .filter(is_confirmed=True, weekly_digest_enabled=True)
+        .select_related('parent', 'student')
+    )
+
+    sent = 0
+    skipped = 0
+    for link in links:
+        parent = link.parent
+        student = link.student
+        chat_id = getattr(parent, 'telegram_chat_id', '')
+        if not chat_id:
+            skipped += 1
+            continue
+
+        agg = TestAttempt.objects.filter(
+            user=student, disqualified=False, submitted_at__gte=week_ago,
+        ).aggregate(avg=Avg('score'), best=Max('score'), total=Count('id'))
+
+        olympiads_count = agg['total'] or 0
+        avg_score = round(agg['avg'] or 0, 1)
+        best_score = agg['best'] or 0
+        streak = student.streak_count or 0
+        name = student.full_name or 'Farzandingiz'
+
+        msg = (
+            f"📊 Haftalik hisobot: {name}\n"
+            f"📝 Olimpiadalar: {olympiads_count} ta\n"
+            f"⭐ O'rtacha ball: {avg_score}%\n"
+            f"🔥 Streak: {streak} kun\n"
+            f"🏆 Eng yaxshi natija: {best_score}%"
+        )
+
+        try:
+            from notifications.services import send_telegram_markdown
+            send_telegram_markdown(chat_id, msg)
+            sent += 1
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'weekly parent report failed for parent=%s student=%s',
+                parent.id, student.id,
+            )
+            skipped += 1
+
+    return f'weekly reports: {sent} sent, {skipped} skipped'
 
