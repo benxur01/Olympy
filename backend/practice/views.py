@@ -16,12 +16,31 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from attempts.models import TestAttempt
-from centers.models import EducationCenter
+from centers.models import CenterMembership, EducationCenter
 from questions.models import Question
 
 
 PRACTICE_CACHE_PREFIX = 'practice_session:'
 PRACTICE_CACHE_TTL = 60 * 60  # 1 soat
+
+
+def _user_is_center_member(user, center_id):
+    """Foydalanuvchi shu markazga tasdiqlangan a'zomi (yoki egasi/admin)?
+
+    Practice rejimi markazning savollar bankidan savol beradi — shu sababli
+    faqat o'sha markazga aloqador foydalanuvchilar (har qanday rol: student,
+    teacher, manager, owner yoki platforma admini) kira oladi. Aks holda
+    boshqa markazning savollar banki sizib chiqadi (ma'lumotlar sizishi).
+    """
+    if getattr(user, 'is_platform_admin', False):
+        return True
+    if EducationCenter.objects.filter(pk=center_id, owner=user).exists():
+        return True
+    return CenterMembership.objects.filter(
+        user=user,
+        center_id=center_id,
+        status=CenterMembership.STATUS_APPROVED,
+    ).exists()
 
 
 @api_view(['GET'])
@@ -45,8 +64,14 @@ def practice_subjects(request):
             {'detail': "center parametri son bo'lishi kerak"},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
-    # Markaz tasdiqlangan bo'lishi kerak (public ma'lumot).
     get_object_or_404(EducationCenter, pk=center_id)
+    # Faqat shu markazga a'zo foydalanuvchi savollar bankini ko'ra oladi —
+    # aks holda boshqa markazning fan ro'yxati sizib chiqadi.
+    if not _user_is_center_member(request.user, center_id):
+        return Response(
+            {'detail': 'Bu markazga kirish huquqingiz yo\'q'},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
     rows = (
         Question.objects
         .filter(center_id=center_id)
@@ -85,6 +110,13 @@ def practice_start(request):
     question_count = max(1, min(question_count, 100))
 
     get_object_or_404(EducationCenter, pk=center_id)
+    # Foydalanuvchi shu markazga a'zo bo'lishi shart — boshqa markazning
+    # savollar bankidan mashq qilishga yo'l qo'yilmaydi (ma'lumotlar sizishi).
+    if not _user_is_center_member(request.user, center_id):
+        return Response(
+            {'detail': 'Bu markazga kirish huquqingiz yo\'q'},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
 
     # Random tanlash: `order_by('?')` katta banklarda butun jadvalni
     # MySQL/Postgres'da sekin RANDOM() bilan saralashga majbur qiladi. Buning

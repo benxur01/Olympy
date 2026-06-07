@@ -507,10 +507,18 @@ def payme_webhook(request):
         if tx.status == PaymentTransaction.STATUS_SUCCESS:
             # Cannot cancel completed transaction
             return rpc_error(-31007, "To'lov bajarilgan, bekor qilib bo'lmaydi", "Оплата проведена, невозможно отменить")
-            
-        tx.status = PaymentTransaction.STATUS_FAILED
-        tx.save()
-        
+
+        # Race condition himoyasi: CreateTransaction/PerformTransaction kabi
+        # bu yerda ham tx'ni lock qilib, statusni lock ostida qayta tekshiramiz.
+        # Parallel PerformTransaction bilan poyga bo'lsa (success bo'lib qolsa)
+        # bekor qilmaymiz va save bitta atomik blokda bajariladi.
+        with transaction.atomic():
+            tx = PaymentTransaction.objects.select_for_update().get(pk=tx.pk)
+            if tx.status == PaymentTransaction.STATUS_SUCCESS:
+                return rpc_error(-31007, "To'lov bajarilgan, bekor qilib bo'lmaydi", "Оплата проведена, невозможно отменить")
+            tx.status = PaymentTransaction.STATUS_FAILED
+            tx.save()
+
         return JsonResponse({
             'result': {
                 'transaction': str(tx.id),

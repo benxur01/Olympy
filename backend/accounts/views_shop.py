@@ -13,6 +13,7 @@ import io
 import logging
 
 from django.shortcuts import get_object_or_404
+from PIL import Image as PilImage
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -26,6 +27,11 @@ from .serializers import RewardProductSerializer
 
 
 logger = logging.getLogger(__name__)
+
+# Pillow'ning decompression-bomb himoyasi chegarasi. Bu global modul
+# o'zgaruvchisi — har bir so'rovda emas, modul yuklanganda bir marta
+# o'rnatamiz (thread-safe; barcha thread'lar uchun bir xil qiymat).
+PilImage.MAX_IMAGE_PIXELS = 50 * 1024 * 1024
 
 
 def _managed_center_for(user, center_id=None):
@@ -117,8 +123,6 @@ def _validate_and_attach_image(product, request):
     if image.size and image.size > max_bytes:
         return 'Rasm juda katta. Limit: 5 MB'
     try:
-        from PIL import Image as PilImage
-        PilImage.MAX_IMAGE_PIXELS = 50 * 1024 * 1024
         img = PilImage.open(io.BytesIO(image.read()))
         img.load()
         image.seek(0)
