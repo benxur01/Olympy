@@ -52,20 +52,42 @@ urlpatterns = [
 ]
 
 import os as _os
+import logging as _logging
+
+_logger = _logging.getLogger('olympy')
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-elif not _os.environ.get('CLOUDINARY_CLOUD_NAME'):
-    # Production'da media odatda Cloudinary (yoki S3) orqali xizmat qilinadi —
-    # bunda yuklangan fayl URL'lari to'g'ridan-to'g'ri storage domeniga ishora
-    # qiladi va bu route umuman ishlatilmaydi. Cloudinary sozlanmagan eski
-    # deploylar buzilmasligi uchun (media fayllar hech qaerdan kelmasligini
-    # oldini olish) faqat shu holatda legacy `serve()` fallback qoldiriladi.
-    # Eslatma: django.views.static.serve production uchun mo'ljallanmagan —
-    # Render diski persistent emasligi sababli Cloudinary'ga o'tish tavsiya
-    # etiladi (settings.py ham bu haqda ogohlantiradi).
-    from django.views.static import serve
-    from django.urls import re_path
-    urlpatterns += [
-        re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
-    ]
+elif not settings.USE_CLOUDINARY:
+    # Cloudinary sozlangan production'da (settings.USE_CLOUDINARY=True) bu blok
+    # umuman ishlamaydi: media URL'lari to'g'ridan-to'g'ri Cloudinary domeniga
+    # ishora qiladi va Django serve() kerak emas (django.views.static.serve
+    # production uchun mo'ljallanmagan).
+    #
+    # USE_CLOUDINARY=False bo'lsagina (Cloudinary yo'q) legacy fallback'ni
+    # ko'rib chiqamiz. Render diski persistent emasligi sababli bu vaqtinchalik
+    # yechim — restart'da media yo'qoladi. MEDIA_ROOT umuman mavjud bo'lmasa
+    # (bo'sh/yangi disk) xizmat qiladigan fayl yo'q, shuning uchun serve()
+    # route'ni umuman qo'shmaymiz va bir marta ogohlantiramiz; mavjud bo'lsa
+    # (eski deploydan qolgan fayllar bo'lishi mumkin) route'ni qo'shamiz, lekin
+    # baribir Cloudinary'ga o'tish kerakligi haqida warning qoldiramiz.
+    if _os.path.isdir(settings.MEDIA_ROOT):
+        from django.views.static import serve
+        from django.urls import re_path
+        urlpatterns += [
+            re_path(r'^media/(?P<path>.*)$', serve, {'document_root': settings.MEDIA_ROOT}),
+        ]
+        _logger.warning(
+            "Production'da Cloudinary sozlanmagan — media fayllar Django "
+            "serve() orqali %s dan beriladi. Bu production uchun "
+            "mo'ljallanmagan va Render diski persistent emas (restart'da "
+            "fayllar yo'qoladi). CLOUDINARY_CLOUD_NAME env o'rnatib Cloudinary'ga o'ting.",
+            settings.MEDIA_ROOT,
+        )
+    else:
+        _logger.warning(
+            "Production'da Cloudinary sozlanmagan va MEDIA_ROOT (%s) mavjud emas "
+            "— media serve() route qo'shilmadi. Yuklangan fayllar hech qaerdan "
+            "ko'rinmaydi. CLOUDINARY_CLOUD_NAME env o'rnatib Cloudinary'ga o'ting.",
+            settings.MEDIA_ROOT,
+        )

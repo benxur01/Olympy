@@ -340,6 +340,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         setTimeLeft(prev => {
           if (remainingSec <= 0 && prev > 0) {
             clearInterval(t);
+            // Vaqt tugadi — olimpiada yopildi, draft endi keraksiz. Submit
+            // tarmoq xatosi bilan tugasa ham (401 va h.k. da handleSubmit
+            // localStorage'ni tozalamaydi, javobni saqlab qoladi) bu yerda
+            // aniq tozalaymiz: vaqt tugaganidan keyin draftni tiklashning
+            // ma'nosi yo'q.
+            clearPersistedAnswers();
             handleSubmit();
             return 0;
           }
@@ -348,7 +354,13 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       } else {
         // Mock/dev rejim — eski lokal teskari sanash.
         setTimeLeft(prev => {
-          if (prev <= 1) { clearInterval(t); handleSubmit(); return 0; }
+          if (prev <= 1) {
+            clearInterval(t);
+            // Vaqt tugadi — yuqoridagi kabi draftni tozalaymiz.
+            clearPersistedAnswers();
+            handleSubmit();
+            return 0;
+          }
           return prev - 1;
         });
       }

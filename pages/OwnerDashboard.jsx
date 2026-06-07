@@ -1885,17 +1885,42 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   <td className="px-5 py-4">
                     <div className="flex gap-2">
                       {isApi ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            OlympyApi.exportOlympiadResults(o.id, OlympyApi.getToken())
-                              .catch(err => console.warn('export failed', err));
-                          }}
-                          className="btn-ghost text-xs px-2.5 py-1.5 rounded-xl inline-flex items-center gap-1"
-                          title="Natijalarni CSV faylga eksport qilish"
-                        >
-                          <Icon name="download" size={12} /> CSV
-                        </button>
+                        <>
+                          {/* CSV — universal import (Google Sheets/Excel). XLSX —
+                              formatlangan tayyor fayl. Owner ikkala endpointga
+                              ham kira oladi (backend ruxsati bir xil rollar),
+                              shuning uchun ikkala tugma ham ko'rsatiladi. */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              OlympyApi.exportOlympiadResults(o.id, OlympyApi.getToken())
+                                .then(() => showToast('✓ CSV fayl yuklandi'))
+                                .catch(err => {
+                                  console.warn('csv export failed:', err);
+                                  showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "CSV yuklab bo'lmadi"}`);
+                                });
+                            }}
+                            className="btn-ghost text-xs px-2.5 py-1.5 rounded-xl inline-flex items-center gap-1"
+                            title="Natijalarni CSV faylga eksport qilish"
+                          >
+                            <Icon name="download" size={12} /> CSV
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              OlympyApi.exportOlympiadResultsXlsx(o.id, OlympyApi.getToken())
+                                .then(() => showToast('✓ Excel fayl yuklandi'))
+                                .catch(err => {
+                                  console.warn('xlsx export failed:', err);
+                                  showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Excel yuklab bo'lmadi"}`);
+                                });
+                            }}
+                            className="btn-ghost text-xs px-2.5 py-1.5 rounded-xl inline-flex items-center gap-1"
+                            title="Natijalarni Excel (.xlsx) faylga eksport qilish"
+                          >
+                            <Icon name="download" size={12} /> XLSX
+                          </button>
+                        </>
                       ) : (
                         <span className="text-white/30 text-xs">—</span>
                       )}
