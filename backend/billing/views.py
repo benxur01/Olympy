@@ -26,12 +26,36 @@ def create_checkout_session(request):
     """POST /api/billing/checkout/ — Creates a payment URL for Click or Payme.
     Body: { plan_id: int, provider: 'click'|'payme' }
     """
+    # Endpoint boshida: hech bir to'lov provayderi sozlanmagan bo'lsa (CLICK_*
+    # va PAYME_* kalitlari None) billing umuman ishlamaydi — darhol 503 qaytaramiz,
+    # plan/tx yaratib keyin yarim yo'lda to'xtab qolishning oldini olamiz.
+    if not getattr(settings, 'BILLING_ENABLED', False):
+        logger.warning("Checkout so'raldi, lekin hech bir to'lov provayderi sozlanmagan.")
+        return Response(
+            {'detail': "To'lov tizimi sozlanmagan. Iltimos administrator bilan bog'laning."},
+            status=http_status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+
     plan_id = request.data.get('plan_id')
     provider = request.data.get('provider')
-    
+
     if not plan_id or not provider:
         return Response({'detail': "plan_id va provider kiritilishi shart"}, status=http_status.HTTP_400_BAD_REQUEST)
-        
+
+    # Tanlangan provayder sozlanmagan bo'lsa — tx yaratmasdan oldin to'xtaymiz.
+    if provider == 'click' and not getattr(settings, 'CLICK_ENABLED', False):
+        logger.warning("Click checkout so'raldi, lekin CLICK_* kalitlari to'liq sozlanmagan.")
+        return Response(
+            {'detail': "Click to'lov tizimi sozlanmagan. Iltimos administrator bilan bog'laning."},
+            status=http_status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+    if provider == 'payme' and not getattr(settings, 'PAYME_ENABLED', False):
+        logger.warning("Payme checkout so'raldi, lekin PAYME_* kalitlari to'liq sozlanmagan.")
+        return Response(
+            {'detail': "Payme to'lov tizimi sozlanmagan. Iltimos administrator bilan bog'laning."},
+            status=http_status.HTTP_503_SERVICE_UNAVAILABLE
+        )
+
     plan = get_object_or_404(SubscriptionPlan, pk=plan_id, is_active=True)
     
     # Create a pending transaction. plan'ni saqlaymiz — webhook obunani
@@ -205,6 +229,12 @@ def click_webhook(request):
     if request.method != 'POST':
         return JsonResponse({'error': -3, 'error_note': 'Method not allowed'})
 
+    # Endpoint boshida: Click sozlanmagan bo'lsa (kalitlar None) webhook'ni
+    # qayta ishlamaymiz — imzo tekshirib bo'lmaydi.
+    if not getattr(settings, 'CLICK_ENABLED', False):
+        logger.warning("Click webhook chaqirildi, lekin Click sozlanmagan (CLICK_* kalitlari None).")
+        return JsonResponse({'error': -1, 'error_note': 'SIGN CHECK FAILED'})
+
     if _webhook_rate_limited(request, 'click'):
         logger.warning("Click webhook rate limit oshib ketdi: ip=%s", _client_ip(request))
         return JsonResponse({'error': -4, 'error_note': 'Too many requests'})
@@ -333,6 +363,12 @@ def payme_webhook(request):
     import json
     if request.method != 'POST':
         return JsonResponse({'error': {'code': -32601, 'message': 'Method not allowed'}}, status=405)
+
+    # Endpoint boshida: Payme sozlanmagan bo'lsa (kalitlar None) webhook'ni
+    # qayta ishlamaymiz — avtorizatsiyani tekshirib bo'lmaydi.
+    if not getattr(settings, 'PAYME_ENABLED', False):
+        logger.warning("Payme webhook chaqirildi, lekin Payme sozlanmagan (PAYME_* kalitlari None).")
+        return JsonResponse({'error': {'code': -32504, 'message': 'Insufficient privilege'}}, status=200)
 
     if _webhook_rate_limited(request, 'payme'):
         logger.warning("Payme webhook rate limit oshib ketdi: ip=%s", _client_ip(request))

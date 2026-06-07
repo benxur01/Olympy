@@ -759,6 +759,14 @@ CLICK_SECRET_KEY = os.environ.get('CLICK_SECRET_KEY') or None
 PAYME_MERCHANT_ID = os.environ.get('PAYME_MERCHANT_ID') or None
 PAYME_SECRET_KEY = os.environ.get('PAYME_SECRET_KEY') or None
 
+# Derived flag'lar — billing/views.py har bir provayder to'liq sozlanganligini
+# bitta joydan aniqlaydi (per-key getattr tekshiruvlarini takrorlamasdan).
+# Provayder kalitlaridan birortasi None bo'lsa, o'sha provayder o'chiq deb
+# hisoblanadi va checkout/webhook 503 qaytaradi.
+CLICK_ENABLED = bool(CLICK_SERVICE_ID and CLICK_MERCHANT_ID and CLICK_SECRET_KEY)
+PAYME_ENABLED = bool(PAYME_MERCHANT_ID and PAYME_SECRET_KEY)
+BILLING_ENABLED = CLICK_ENABLED or PAYME_ENABLED
+
 # Menejer komissiya foizi — muvaffaqiyatli to'lovdan menejerga hisoblanadigan
 # ulush (0.20 = 20%). Avval billing/views.py'da ikki joyda hardcoded edi;
 # bitta manbaga keltirildi. Env orqali sozlanadi (masalan, "0.15").
