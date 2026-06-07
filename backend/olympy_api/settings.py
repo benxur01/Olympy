@@ -400,10 +400,12 @@ CELERY_RESULT_BACKEND = (
 # joyda darhol bajariladi, broker talab qilinmaydi. Ogohlantirish ham log'ga
 # yoziladi — productionda Redis o'rnatish kerakligini ko'rsatadi.
 CELERY_TASK_ALWAYS_EAGER = not bool(os.environ.get('CELERY_BROKER_URL'))
-# Eager rejimda task ichidagi xatolar (Exception) chaqiruvchiga ko'rinishi
-# uchun emas — ular ham yutilmasligi kerak, lekin default xulqni saqlaymiz
-# (chaqiruvchi joyda allaqachon try/except bilan o'ralgan).
-CELERY_TASK_EAGER_PROPAGATES = False
+# Eager rejimda (broker yo'q — dev/staging) task ichidagi istisnolar jimgina
+# yutilib ketmasligi uchun chaqiruvchiga propagate qilamiz. Aks holda task
+# ichidagi buglar sezilmay qolardi. Bu faqat CELERY_TASK_ALWAYS_EAGER=True
+# bo'lganda ta'sir qiladi; real broker bilan task'lar baribir worker'da
+# bajariladi. Chaqiruvchi joylar allaqachon try/except bilan himoyalangan.
+CELERY_TASK_EAGER_PROPAGATES = True
 if CELERY_TASK_ALWAYS_EAGER:
     import logging as _logging
     _logging.getLogger('olympy.celery').warning(

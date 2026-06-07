@@ -80,6 +80,18 @@ services:
         sync: false
       - key: DEFAULT_FROM_EMAIL
         sync: false
+      # To'lov provayderlari (Click va Payme) — webhook'lar shu web service'da
+      # qayta ishlanadi. Qiymatlar maxfiy, Render dashboard'da qo'lda kiritiladi.
+      - key: CLICK_SERVICE_ID
+        sync: false
+      - key: CLICK_MERCHANT_ID
+        sync: false
+      - key: CLICK_SECRET_KEY
+        sync: false
+      - key: PAYME_MERCHANT_ID
+        sync: false
+      - key: PAYME_SECRET_KEY
+        sync: false
 
   # ── Celery Background Worker ────────────────────────────────────────────────
   - type: background_worker

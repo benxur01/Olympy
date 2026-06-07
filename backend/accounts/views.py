@@ -972,6 +972,13 @@ def _telegram_api_call(method, payload, timeout=10, bot='auth', _retries=3):
     data = urllib.parse.urlencode(encoded).encode()
     url = f'https://api.telegram.org/bot{token}/{method}'
     import time as _time
+    # TODO: Bu funksiya ba'zan HTTP request thread'i ichidan to'g'ridan-to'g'ri
+    # chaqiriladi (webhook handlerlar, parol tiklash va h.k.). retry/sleep
+    # request thread'ini bloklaydi — Gunicorn worker'ini band qiladi. To'liq
+    # yechim: barcha chaqiruvlarni Celery task'iga ko'chirish (OTP yuborish
+    # allaqachon send_telegram_otp_task'da). Hozircha sleep'ni qisqa (<=3s)
+    # ushlab turamiz, 30s blok xavfli edi.
+    _MAX_SLEEP = 3
     for attempt in range(_retries):
         try:
             req = urllib.request.Request(url, data=data, method='POST')
@@ -992,7 +999,7 @@ def _telegram_api_call(method, payload, timeout=10, bot='auth', _retries=3):
                 logger.warning('Telegram %s/%s rate limited, retry after %ss (attempt %d/%d)',
                                bot, method, retry_after, attempt + 1, _retries)
                 if attempt < _retries - 1:
-                    _time.sleep(min(retry_after, 30))
+                    _time.sleep(min(retry_after, _MAX_SLEEP))
                     continue
             else:
                 logger.exception('Telegram %s/%s HTTP error %s', bot, method, e.code)
@@ -1000,7 +1007,7 @@ def _telegram_api_call(method, payload, timeout=10, bot='auth', _retries=3):
         except Exception:
             logger.exception('Telegram %s/%s failed (attempt %d/%d)', bot, method, attempt + 1, _retries)
             if attempt < _retries - 1:
-                _time.sleep(2 ** attempt)
+                _time.sleep(min(2 ** attempt, _MAX_SLEEP))
                 continue
             return None
     return None
