@@ -2982,12 +2982,14 @@ const LandingPage = ({ onNavigate, user }) => {
         {/* Neon orbs for mesh gradient background.
             Telegram WebView va zaif qurilmalarda og'ir blur (110-130px) +
             animate-pulse-slow kombinatsiyasi kadrlarni sekinlashtirardi. Blur
-            qiymatlari pasaytirildi (60/60/40px), animatsiya GPU-ga ko'chirish
-            uchun will-change: transform berildi va motion-reduce rejimida
-            animatsiya o'chiriladi. */}
-        <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full filter blur-[60px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ background: 'rgba(99, 102, 241, 0.18)', willChange: 'transform' }} />
-        <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] rounded-full filter blur-[60px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ background: 'rgba(168, 85, 247, 0.16)', animationDelay: '2s', willChange: 'transform' }} />
-        <div className="absolute top-10 right-10 w-[250px] h-[250px] rounded-full filter blur-[40px] pointer-events-none animate-pulse-slow motion-reduce:animate-none" style={{ background: 'rgba(34, 211, 238, 0.16)', animationDelay: '4s', willChange: 'transform' }} />
+            qiymatlari pasaytirildi (60/60/40px). Telegram WebView
+            `prefers-reduced-motion` yubormaydi, shuning uchun
+            `motion-reduce:animate-none` u yerda ishlamasdi — pulse animatsiyasi
+            butunlay olib tashlandi (statik glow yetarli, kadrlarni
+            sekinlashtirmaydi). */}
+        <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full filter blur-[60px] pointer-events-none" style={{ background: 'rgba(99, 102, 241, 0.18)' }} />
+        <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] rounded-full filter blur-[60px] pointer-events-none" style={{ background: 'rgba(168, 85, 247, 0.16)' }} />
+        <div className="absolute top-10 right-10 w-[250px] h-[250px] rounded-full filter blur-[40px] pointer-events-none" style={{ background: 'rgba(34, 211, 238, 0.16)' }} />
         
         {/* Floating 3D badges on the right (desktop only) */}
         <div className="hidden lg:block absolute right-16 top-1/4 w-[400px] h-[300px] pointer-events-none z-10 preserve-3d" style={{ perspective: '1000px' }}>

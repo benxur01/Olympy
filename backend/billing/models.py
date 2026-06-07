@@ -34,13 +34,34 @@ class UserSubscription(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # is_premium sync'iga ta'sir qiluvchi maydonlarning yuklanган
+        # holatini eslab qolamiz — save() faqat shular o'zgargandagina
+        # qo'shimcha tekshiruv querylarini bajaradi (har saqlashda emas).
+        self._sync_snapshot = self._current_sync_state()
+
+    def _current_sync_state(self):
+        return (self.is_active, self.end_date, self.plan_id)
+
     def __str__(self):
         return f"{self.user} - {self.plan} (expires {self.end_date})"
 
     def save(self, *args, **kwargs):
         if not self.end_date and self.plan:
             self.end_date = self.start_date + timezone.timedelta(days=self.plan.duration_days)
+        is_new = self._state.adding
         super().save(*args, **kwargs)
+
+        # is_premium sync'i faqat zarur bo'lganda ishlasin. Har obuna
+        # saqlanganda `exists()` + tashkilot a'zolik tekshiruvlari bajarilishi
+        # signal-safe emas va keraksiz N+1 query keltirib chiqarardi. Yangi
+        # obyektda yoki sync'ga ta'sir qiluvchi maydonlar (is_active, end_date,
+        # plan) o'zgargandagina sync bajaramiz.
+        sync_changed = is_new or self._current_sync_state() != self._sync_snapshot
+        if not sync_changed:
+            return
+        self._sync_snapshot = self._current_sync_state()
 
         # Sync is_premium flag to User model and EducationCenters dynamically.
         # Avval bu yerda `self.user.save(update_fields=['is_premium'])` chaqirilardi

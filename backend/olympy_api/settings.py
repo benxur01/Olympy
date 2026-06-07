@@ -757,6 +757,12 @@ CLICK_SECRET_KEY = os.environ.get('CLICK_SECRET_KEY') or None
 PAYME_MERCHANT_ID = os.environ.get('PAYME_MERCHANT_ID') or None
 PAYME_SECRET_KEY = os.environ.get('PAYME_SECRET_KEY') or None
 
+# Menejer komissiya foizi — muvaffaqiyatli to'lovdan menejerga hisoblanadigan
+# ulush (0.20 = 20%). Avval billing/views.py'da ikki joyda hardcoded edi;
+# bitta manbaga keltirildi. Env orqali sozlanadi (masalan, "0.15").
+from decimal import Decimal as _Decimal
+MANAGER_COMMISSION_RATE = _Decimal(os.environ.get('MANAGER_COMMISSION_RATE', '0.20'))
+
 # Sentry — xato monitoring. Faqat SENTRY_DSN env o'rnatilgan bo'lsa yoqiladi;
 # bo'lmasa hech narsa qilmaydi (lokal development va DSN'siz deploylarda
 # graceful fallback). send_default_pii=False — foydalanuvchi shaxsiy ma'lumoti

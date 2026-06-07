@@ -67,6 +67,23 @@ const _removeAuth = (key) => {
 
 const unwrapList = (res) => Array.isArray(res) ? res : (res && res.results ? res.results : []);
 
+// page_size=N bilan paginatsiyalangan ro'yxatni unwrap qiladi va agar
+// server `count` qiymati so'ralgan limitdan oshsa — developer'ni ogohlantiradi.
+// Hozircha to'liq paginatsiya UI yo'q (barcha yozuvlar bitta katta page'da
+// olinadi); count > limit bo'lsa qisman ma'lumot ko'rsatilmoqda degani, shuning
+// uchun warn beramiz. (console.warn production bundle'da terser tomonidan
+// olib tashlanadi — vite.config.js pure_funcs.)
+const unwrapListPaged = (res, limit, label) => {
+  const count = (res && typeof res.count === 'number') ? res.count : null;
+  if (count !== null && count > limit) {
+    console.warn(
+      `[api] ${label}: serverda ${count} ta yozuv bor, lekin faqat ${limit} tasi ` +
+      `yuklandi (page_size=${limit}). Qolganlari ko'rinmaydi — paginatsiya kerak.`
+    );
+  }
+  return unwrapList(res);
+};
+
 class ApiError extends Error {
   constructor(message, { status, data } = {}) {
     super(message);
@@ -434,7 +451,7 @@ export const OlympyApi = {
   getSubjects: (token) => request('/api/subjects/', { token }),
   createSubject: (name, token) => request('/api/subjects/', { method: 'POST', body: { name }, token }),
   // Olympiads
-  getOlympiads: (token) => request('/api/olympiads/?page_size=200', { token }).then(unwrapList),
+  getOlympiads: (token) => request('/api/olympiads/?page_size=200', { token }).then((res) => unwrapListPaged(res, 200, 'getOlympiads')),
   createOlympiad: (payload, token) => request('/api/olympiads/', { method: 'POST', body: payload, token }),
   // questionIndex berilsa backend faqat o'sha indeksdagi savolni qaytaradi
   // (savollarni bitta-bitta yuklash — cheating-himoya). Berilmasa barcha
@@ -482,7 +499,7 @@ export const OlympyApi = {
   // (LargePageNumberPagination). Markazning barcha savollarini bitta
   // round-trip'da olish uchun katta page_size so'raymiz; unwrapList
   // {results:[...]} javobni ham, oddiy massivni ham massivga keltiradi.
-  getQuestions: (centerId, token) => request(`/api/questions/?center=${centerId}&page_size=200`, { token }).then(unwrapList),
+  getQuestions: (centerId, token) => request(`/api/questions/?center=${centerId}&page_size=200`, { token }).then((res) => unwrapListPaged(res, 200, 'getQuestions')),
   createQuestion: (payload, token) => request('/api/questions/', { method: 'POST', body: payload, token }),
   generateAiQuestions: (payload, token) => request('/api/questions/generate-ai/', { method: 'POST', body: payload, token }),
   // IT (kod) savolini AI bilan baholash — test paytida o'quvchi kodini sinaydi.
