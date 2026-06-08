@@ -858,11 +858,13 @@ def admin_toggle_user_premium(request, user_id):
             EducationCenter.objects.filter(owner=target).update(is_premium=False)
     elif duration == 0:
         # Cheksiz premium (Umrbod). Atomic: flag va EducationCenter birga.
+        # plan_type'dan qat'iy nazar, foydalanuvchi markaz egasi bo'lsa
+        # markaz ham premium bo'lishi kerak (aks holda 'student' plan bilan
+        # umrbod bergan markaz egasiga markaz premiumlari berilmay qolardi).
         with transaction.atomic():
             target.is_premium = True
             target.save(update_fields=['is_premium'])
-            if plan_type == 'organization':
-                EducationCenter.objects.filter(owner=target).update(is_premium=True)
+            EducationCenter.objects.filter(owner=target).update(is_premium=True)
     elif duration in [30, 90, 180, 365]:
         # Muddatli premium. Atomic: eski obunani yopish va yangisini yaratish
         # bitta tranzaksiyada — yarim holatda (eski yopilgan, yangi yaratilmagan)
@@ -1780,11 +1782,17 @@ def _telegram_webhook_response(request, bot='auth'):
     intact.
     """
     secret = _telegram_webhook_secret(bot)
-    if not settings.DEBUG and not secret:
-        logger.error('TELEGRAM_WEBHOOK_SECRET is required in production')
-        return Response({'detail': 'Server misconfigured'},
-                        status=status.HTTP_503_SERVICE_UNAVAILABLE)
-    if secret and request.headers.get('X-Telegram-Bot-Api-Secret-Token', '') != secret:
+    if not secret:
+        # Production'da secret MAJBURIY: bo'sh/sozlanmagan bo'lsa endpoint
+        # ochiq qolmasligi uchun har qanday so'rovni rad etamiz. Faqat dev
+        # (DEBUG=True) muhitida lokal polling/mock oqimini saqlash uchun
+        # secretsiz davom etamiz.
+        if not settings.DEBUG:
+            logger.error('TELEGRAM_WEBHOOK_SECRET is required in production')
+            return Response({'detail': 'Server misconfigured'},
+                            status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    elif request.headers.get('X-Telegram-Bot-Api-Secret-Token', '') != secret:
+        # Secret sozlangan — har bir so'rovda header aynan mos kelishi shart.
         return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
 
     update = request.data if isinstance(request.data, dict) else {}

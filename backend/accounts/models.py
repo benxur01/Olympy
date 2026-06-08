@@ -139,12 +139,23 @@ class User(AbstractBaseUser, PermissionsMixin):
         from django.utils import timezone
         from datetime import timedelta
 
+        def _persist_streak():
+            # save() o'rniga to'g'ridan-to'g'ri SQL UPDATE: save() signal'lari va
+            # normalize_phone/full_name kabi save() ichidagi ortiqcha logikani
+            # chetlab o'tib, faqat streak maydonlarini yangilaymiz. self
+            # atributlari allaqachon yangilangan, shuning uchun ulardan o'qiymiz.
+            User.objects.filter(pk=self.pk).update(
+                streak_count=self.streak_count,
+                last_active_date=self.last_active_date,
+                longest_streak=self.longest_streak,
+            )
+
         today = timezone.now().date()
         if not self.last_active_date:
             self.streak_count = 1
             self.last_active_date = today
             self.longest_streak = max(self.longest_streak or 0, self.streak_count)
-            self.save(update_fields=['streak_count', 'last_active_date', 'longest_streak'])
+            _persist_streak()
             return True
 
         diff = today - self.last_active_date
@@ -152,7 +163,7 @@ class User(AbstractBaseUser, PermissionsMixin):
             self.streak_count += 1
             self.last_active_date = today
             self.longest_streak = max(self.longest_streak or 0, self.streak_count)
-            self.save(update_fields=['streak_count', 'last_active_date', 'longest_streak'])
+            _persist_streak()
             return True
         elif diff.days > 1:
             if self.is_premium:
@@ -161,7 +172,7 @@ class User(AbstractBaseUser, PermissionsMixin):
                 self.streak_count = 1
             self.last_active_date = today
             self.longest_streak = max(self.longest_streak or 0, self.streak_count)
-            self.save(update_fields=['streak_count', 'last_active_date', 'longest_streak'])
+            _persist_streak()
             return True
         return False
 

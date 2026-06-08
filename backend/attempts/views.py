@@ -28,7 +28,7 @@ from olympiads.services import (
 
 from django.http import HttpResponse
 
-from questions.grading import RESULT_CORRECT, grade_answer
+from questions.grading import RESULT_CORRECT, RESULT_WRONG, grade_answer
 
 from .certificates import render_certificate_png
 from .models import TestAttempt, TestSession
@@ -1282,8 +1282,11 @@ def question_difficulty_stats(request):
         'advanced': 'Advanced',
     }
 
+    # grade_answer savol turiga qarab correct_text/question_type maydonlaridan
+    # ham foydalanadi — ularni .only() ga qo'shamiz, aks holda har bir baholash
+    # deferred maydon uchun qo'shimcha DB so'rovi qilib N+1 keltirib chiqaradi.
     questions = list(Question.objects.filter(center_id=center_id).only(
-        'id', 'difficulty', 'correct_answer',
+        'id', 'difficulty', 'correct_answer', 'correct_text', 'question_type',
     ))
     total = len(questions)
     if total == 0:
@@ -1319,11 +1322,12 @@ def question_difficulty_stats(request):
             if not q:
                 continue
             answered_count[qid] = answered_count.get(qid, 0) + 1
-            try:
-                if int(v) == q.correct_answer:
-                    correct_count[qid] = correct_count.get(qid, 0) + 1
-            except (TypeError, ValueError):
-                pass
+            # `v` savol turiga qarab int (mcq), str (fill_blank), list
+            # (multiple_select) yoki dict (fill_blanks) bo'lishi mumkin.
+            # `int(v)` yangi turlarda ValueError berardi — grade_answer
+            # har bir turni to'g'ri baholaydi.
+            if grade_answer(q, v) == RESULT_CORRECT:
+                correct_count[qid] = correct_count.get(qid, 0) + 1
 
     # Difficulty bo'yicha bucket'lar.
     buckets = {}
@@ -1791,18 +1795,21 @@ def get_mistakes_list(request):
 
     # Avval har bir savol uchun (birinchi ko'rilgan) tanlangan javobni yig'amiz,
     # keyin barcha savollarni bitta so'rov bilan olamiz (N+1'ni oldini olish uchun).
+    # chosen_val — savol turiga qarab int/str/list/dict bo'lishi mumkin.
+    # int() ga majburlamaymiz: aks holda fill_blank/multiple_select/essay
+    # javoblari ValueError bilan tushib qolib, xatolar ro'yxatiga umuman
+    # kirmasdi. Xom qiymatni saqlaymiz va grade_answer bilan baholaymiz.
     chosen_by_question = {}
     for answers in answers_stream:
         answers = answers or {}
-        for q_id_str, chosen_idx in answers.items():
+        for q_id_str, chosen_val in answers.items():
             try:
                 q_id = int(q_id_str)
-                chosen_idx = int(chosen_idx)
             except (ValueError, TypeError):
                 continue
             if q_id in chosen_by_question:
                 continue
-            chosen_by_question[q_id] = chosen_idx
+            chosen_by_question[q_id] = chosen_val
 
     questions_by_id = {
         q.id: q
@@ -1810,18 +1817,21 @@ def get_mistakes_list(request):
     }
 
     mistakes = []
-    for q_id, chosen_idx in chosen_by_question.items():
+    for q_id, chosen_val in chosen_by_question.items():
         question = questions_by_id.get(q_id)
         if not question:
             continue
-        if chosen_idx != question.correct_answer:
+        # Faqat aniq noto'g'ri javoblar (RESULT_WRONG) xatolar ro'yxatiga
+        # kiradi: to'g'ri (correct), bo'sh (blank) va qo'lda baholanadigan
+        # essay (pending_review) chiqarib tashlanadi.
+        if grade_answer(question, chosen_val) == RESULT_WRONG:
             mistakes.append({
                 'question_id': question.id,
                 'subject': question.subject,
                 'text': question.text,
                 'options': question.options,
                 'correct_answer': question.correct_answer,
-                'chosen_answer': chosen_idx,
+                'chosen_answer': chosen_val,
                 'explanation': question.explanation or '',
             })
     return Response(mistakes)
@@ -1854,18 +1864,19 @@ def explain_all_mistakes(request):
         .values_list('answers', flat=True)
         .iterator()
     )
+    # Xom javob qiymatini saqlaymiz (int() ga majburlamaymiz) — yangi savol
+    # turlari (fill_blank/multiple_select/essay) javoblari ham yig'ilsin.
     chosen_by_question = {}
     for answers in answers_iter:
         answers = answers or {}
-        for q_id_str, chosen_idx in answers.items():
+        for q_id_str, chosen_val in answers.items():
             try:
                 q_id = int(q_id_str)
-                chosen_idx = int(chosen_idx)
             except (ValueError, TypeError):
                 continue
             if q_id in chosen_by_question:
                 continue
-            chosen_by_question[q_id] = chosen_idx
+            chosen_by_question[q_id] = chosen_val
 
     questions_by_id = {
         q.id: q
@@ -1873,18 +1884,19 @@ def explain_all_mistakes(request):
     }
 
     mistakes = []
-    for q_id, chosen_idx in chosen_by_question.items():
+    for q_id, chosen_val in chosen_by_question.items():
         question = questions_by_id.get(q_id)
         if not question:
             continue
-        if chosen_idx != question.correct_answer:
+        # Faqat aniq noto'g'ri javoblarni (RESULT_WRONG) AI tahliliga beramiz.
+        if grade_answer(question, chosen_val) == RESULT_WRONG:
             mistakes.append({
                 'question_id': question.id,
                 'subject': question.subject,
                 'text': question.text,
                 'options': question.options,
                 'correct_answer': question.correct_answer,
-                'chosen_answer': chosen_idx,
+                'chosen_answer': chosen_val,
             })
             if len(mistakes) >= 8:
                 break

@@ -481,7 +481,10 @@ def payme_webhook(request):
         if tx.status != PaymentTransaction.STATUS_PENDING:
             return rpc_error(-31051, "Tranzaksiya faol emas", "Транзакция не активна")
             
-        if Decimal(amount) / 100 != tx.amount:
+        # amount tiyinda keladi (1 UZS = 100 tiyin). Decimal(str(...)) va
+        # Decimal('100') bilan bo'lib aniq natija olamiz — float aralashuvi
+        # tufayli yuzaga keladigan aniqsizlik (masalan 0.1+0.2) bo'lmasin.
+        if Decimal(str(amount)) / Decimal('100') != tx.amount:
             return rpc_error(-31001, "Noto'g'ri summa", "Неверная сумма")
             
         return JsonResponse({
@@ -507,7 +510,9 @@ def payme_webhook(request):
             except PaymentTransaction.DoesNotExist:
                 return rpc_error(-31050, "Tranzaksiya topilmadi", "Транзакция не найдена")
 
-            if Decimal(amount) / 100 != tx.amount:
+            # amount tiyinda — CheckPerformTransaction'dagi kabi aniq Decimal
+            # solishtirish (float aralashuvisiz).
+            if Decimal(str(amount)) / Decimal('100') != tx.amount:
                 return rpc_error(-31001, "Noto'g'ri summa", "Неверная сумма")
 
             if tx.status == PaymentTransaction.STATUS_SUCCESS:
