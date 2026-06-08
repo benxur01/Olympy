@@ -20,6 +20,9 @@ class BillingTestCase(APITestCase):
         settings.CLICK_SERVICE_ID = '123'
         settings.CLICK_MERCHANT_ID = '456'
         settings.PAYME_MERCHANT_ID = '789'
+        settings.CLICK_ENABLED = True
+        settings.PAYME_ENABLED = True
+        settings.BILLING_ENABLED = True
 
         # Create test user
         self.user = User.objects.create_user(
