@@ -16,8 +16,31 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from questions.grading import RESULT_CORRECT, grade_answer
+
 from .models import CenterMembership, MockAttempt, MockOlympiad
 from .services import user_can_manage_center
+
+
+def _extract_mock_chosen(chosen, q_type):
+    """Mock javob payload'idan baholash uchun xom qiymatni ajratadi.
+
+    Olimpiada (session_utils._extract_chosen) bilan bir xil shartnoma, lekin
+    mock savollar shuffle qilinmaydi — shu sababli de-shuffle yo'q. Eski
+    (skalar) MCQ formatini ham qo'llab-quvvatlaydi.
+    """
+    if isinstance(chosen, dict):
+        if q_type in ('mcq', 'yes_no'):
+            return chosen.get('chosen_idx')
+        if q_type == 'multiple_select':
+            return chosen.get('selected')
+        if q_type in ('fill_blank', 'essay'):
+            return chosen.get('text')
+        if q_type == 'fill_blanks':
+            if 'blanks' in chosen:
+                return chosen.get('blanks')
+            return chosen
+    return chosen
 
 
 def _user_is_center_student(user, center):
@@ -61,15 +84,22 @@ def start_mock(request, mock_id):
             status=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    questions = [
-        {
+    from questions.grading import _parse_correct_text
+    questions = []
+    for q in mock.questions.all().order_by('id'):
+        q_type = getattr(q, 'question_type', 'mcq') or 'mcq'
+        item = {
             'id': q.id,
             'text': q.text,
             'options': q.options,
             'subject': q.subject,
+            'question_type': q_type,
         }
-        for q in mock.questions.all().order_by('id')
-    ]
+        # fill_blanks uchun bo'sh joylar soni — to'g'ri javoblarni sizdirmasdan.
+        if q_type == 'fill_blanks':
+            correct = _parse_correct_text(getattr(q, 'correct_text', ''))
+            item['blanks_count'] = len(correct) if isinstance(correct, dict) else 1
+        questions.append(item)
     return Response({
         'attempt_id': attempt.id,
         'title': mock.title,
@@ -119,18 +149,25 @@ def submit_mock(request, mock_id):
     total = len(questions)
     correct = 0
     clean_answers = {}
+    # Baholash savol turiga qarab grade_answer orqali — mcq/yes_no/
+    # multiple_select/fill_blank/fill_blanks barchasi to'g'ri baholanadi.
+    # essay (RESULT_PENDING) avtomatik baholanmaydi: 0 ball, "noto'g'ri" emas.
+    # Mock savollar shuffle qilinmaydi, shu sababli de-shuffle shart emas.
     for q in questions:
         chosen = answers.get(str(q.id))
         if chosen is None:
             chosen = answers.get(q.id)
-        try:
-            chosen_idx = int(chosen) if chosen is not None else None
-        except (TypeError, ValueError):
-            chosen_idx = None
-        if chosen_idx is not None:
-            clean_answers[str(q.id)] = chosen_idx
-            if chosen_idx == q.correct_answer:
-                correct += 1
+        q_type = getattr(q, 'question_type', 'mcq') or 'mcq'
+        chosen = _extract_mock_chosen(chosen, q_type)
+        if chosen is None:
+            continue
+        # Saqlashda javobni o'z holicha qoldiramiz (matn/ro'yxat/dict/int) —
+        # natijalar ekranida qayta ko'rsatish uchun.
+        clean_answers[str(q.id)] = chosen
+        result = grade_answer(q, chosen)
+        if result == RESULT_CORRECT:
+            correct += 1
+        # RESULT_PENDING (essay) va RESULT_WRONG/RESULT_BLANK — correct emas.
 
     score = round((correct / total) * 100) if total else 0
     attempt.answers = clean_answers

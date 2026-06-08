@@ -39,6 +39,11 @@ class UserSubscription(models.Model):
             # is_premium sync va aktiv obunalarni tekshirish so'rovlari
             # (is_active=True, end_date__gt=now) keng ishlatiladi.
             models.Index(fields=['is_active', 'end_date'], name='usersub_active_enddate_idx'),
+            # `filter(user=..., is_active=True)` — getMe sync va admin
+            # toggle'larda eng tez-tez ishlatiladigan so'rov (accounts/views.py).
+            # FK avtomatik user indeksi bor, lekin (user, is_active) composite
+            # bu so'rovni to'liq qoplaydi.
+            models.Index(fields=['user', 'is_active'], name='usersub_user_active_idx'),
         ]
 
     def __init__(self, *args, **kwargs):

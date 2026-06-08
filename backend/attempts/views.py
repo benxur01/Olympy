@@ -28,10 +28,33 @@ from olympiads.services import (
 
 from django.http import HttpResponse
 
+from questions.grading import RESULT_CORRECT, grade_answer
+
 from .certificates import render_certificate_png
 from .models import TestAttempt, TestSession
 from .serializers import SubmitAttemptSerializer, TestAttemptSerializer
 from .session_utils import score_session_answers, session_is_expired
+
+
+def _extract_review_chosen(chosen, q_type):
+    """Saqlangan javob payload'idan review uchun xom qiymatni ajratadi.
+
+    score_session_answers/_extract_chosen bilan bir xil shartnoma — yangi
+    turlar obyekt-shaklli ({"chosen_idx"..}, {"selected"..}, {"text"..})
+    bo'lishi mumkin; eski skalar formatlar ham qo'llab-quvvatlanadi.
+    """
+    if isinstance(chosen, dict):
+        if q_type in ('mcq', 'yes_no'):
+            return chosen.get('chosen_idx')
+        if q_type == 'multiple_select':
+            return chosen.get('selected')
+        if q_type in ('fill_blank', 'essay'):
+            return chosen.get('text')
+        if q_type == 'fill_blanks':
+            if 'blanks' in chosen:
+                return chosen.get('blanks')
+            return chosen
+    return chosen
 
 
 def _build_attempt_mistakes(attempt, olympiad, answers):
@@ -797,26 +820,65 @@ def attempt_detail(request, attempt_id):
                     'ai_code_score': cs.ai_code_score if cs else None,
                 })
                 continue
-            chosen = answers.get(str(q.id))
-            if chosen is None:
-                chosen = answers.get(q.id)
-            try:
-                chosen_idx = int(chosen) if chosen is not None else None
-            except (TypeError, ValueError):
-                chosen_idx = None
-            is_correct = (chosen_idx is not None and chosen_idx == q.correct_answer)
-            questions_review.append({
+            raw_chosen = answers.get(str(q.id))
+            if raw_chosen is None:
+                raw_chosen = answers.get(q.id)
+            chosen_val = _extract_review_chosen(raw_chosen, q_type)
+
+            # Yangi savol turlari (multiple_select/fill_blank/fill_blanks/
+            # yes_no/essay) — grade_answer orqali baholanadi. Essay
+            # (RESULT_PENDING) avtomatik baholanmaydi: alohida "tekshirilmoqda"
+            # holatida ko'rsatiladi (is_correct=None), 0 ball/noto'g'ri emas.
+            review_item = {
                 'id': q.id,
                 'text': q.text,
                 'options': q.options or [],
-                'question_type': 'mcq',
-                'correct_answer': q.correct_answer,
-                'chosen_answer': chosen_idx,
-                'is_correct': is_correct,
+                'question_type': q_type,
                 'difficulty': q.difficulty,
                 'score': q.score,
                 'subject': q.subject,
-            })
+            }
+            if q_type in ('mcq', 'yes_no'):
+                # Mavjud xatti-harakatni saqlaymiz: chosen_idx ni qaytaramiz va
+                # correct_answer indeksi bilan solishtiramiz (frontend
+                # variantlarni shu indeks bo'yicha belgilaydi).
+                try:
+                    chosen_idx = int(chosen_val) if chosen_val is not None else None
+                except (TypeError, ValueError):
+                    chosen_idx = None
+                review_item['correct_answer'] = q.correct_answer
+                review_item['chosen_answer'] = chosen_idx
+                review_item['is_correct'] = (
+                    chosen_idx is not None and chosen_idx == q.correct_answer
+                )
+            elif q_type == 'essay':
+                # Qo'lda baholanadi — natija sahifasida alohida ko'rsatiladi.
+                review_item['chosen_answer'] = chosen_val
+                review_item['pending_review'] = True
+                review_item['is_correct'] = None
+            else:
+                # multiple_select / fill_blank / fill_blanks — server baholaydi.
+                # Frontend to'g'ri javobni ko'rsata olishi uchun korrekt
+                # qiymatni ham qaytaramiz: multiple_select → to'g'ri option
+                # indekslari (correct_answer_set), fill_blank/fill_blanks →
+                # matn yoki {"1": "..."} dict (correct_text).
+                from questions.grading import _parse_correct_text
+                result = grade_answer(q, chosen_val)
+                review_item['chosen_answer'] = chosen_val
+                review_item['is_correct'] = (result == RESULT_CORRECT)
+                if q_type == 'multiple_select':
+                    correct_raw = _parse_correct_text(getattr(q, 'correct_text', ''))
+                    if isinstance(correct_raw, (list, tuple)):
+                        try:
+                            review_item['correct_answer_set'] = [int(x) for x in correct_raw]
+                        except (TypeError, ValueError):
+                            review_item['correct_answer_set'] = []
+                else:
+                    # fill_blank / fill_blanks — to'g'ri matn(lar).
+                    review_item['correct_text'] = _parse_correct_text(
+                        getattr(q, 'correct_text', ''),
+                    )
+            questions_review.append(review_item)
         data['questions_review'] = questions_review
     return Response(data)
 

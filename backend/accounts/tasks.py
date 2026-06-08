@@ -113,7 +113,9 @@ def send_telegram_otp_task(self, chat_id, text, bot='auth'):
 def generate_daily_questions(count=DAILY_QUESTION_COUNT):
     """DH1: Bugungi `count` ta kunlik savolni tanlaydi (idempotent).
 
-    `generate_daily_questions` management command logikasining Celery beat
+    Bu task Celery Beat tomonidan har kuni avtomatik ishga tushiriladi
+    (settings.CELERY_BEAT_SCHEDULE['generate-daily-questions'], har kuni 06:00
+    UTC). `generate_daily_questions` management command logikasining Celery beat
     varianti. Bugun uchun savollar yetarli bo'lsa qayta ishlamaydi. Savol
     tanlash ID-asosli random bilan amalga oshiriladi (`order_by('?')` to'liq
     jadval skanini oldini olish uchun).
@@ -159,9 +161,11 @@ def generate_daily_questions(count=DAILY_QUESTION_COUNT):
 def send_weekly_parent_reports():
     """O6: Ota-onalarga farzandning haftalik hisobotini Telegram orqali yuboradi.
 
-    `send_weekly_parent_reports` management command logikasining Celery beat
-    varianti. Tasdiqlangan va digest yoqilgan har bir ota-ona-farzand
-    bog'lanishi uchun oxirgi 7 kunlik statistikani yuboradi.
+    Bu task Celery Beat tomonidan har hafta avtomatik ishga tushiriladi
+    (settings.CELERY_BEAT_SCHEDULE['send-weekly-parent-reports'], har dushanba
+    08:00 UTC). `send_weekly_parent_reports` management command logikasining
+    Celery beat varianti. Tasdiqlangan va digest yoqilgan har bir
+    ota-ona-farzand bog'lanishi uchun oxirgi 7 kunlik statistikani yuboradi.
     """
     from accounts.models import ParentStudentLink
     from attempts.models import TestAttempt

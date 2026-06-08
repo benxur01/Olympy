@@ -39,7 +39,14 @@ class CodeAnswerSerializer(serializers.Serializer):
 class SubmitAttemptSerializer(serializers.Serializer):
     """Payload sent by the test page when a student finishes."""
     olympiad = serializers.IntegerField()
-    answers = serializers.DictField(child=serializers.IntegerField(), required=False)
+    # answers — { "<question_id>": <javob> }. Javob qiymati savol turiga qarab
+    # farq qiladi: mcq/yes_no → int yoki {"chosen_idx": int}; multiple_select →
+    # {"selected": [int,...]}; fill_blank/essay → {"text": str};
+    # fill_blanks → {"blanks": {"1": str,...}}. Shu sababli child tipini int'ga
+    # cheklamaymiz (avval IntegerField edi va yangi turlarni rad etardi);
+    # baholash va validatsiya score_session_answers/grade_answer'da turga qarab
+    # bajariladi.
+    answers = serializers.DictField(required=False)
     # Kod (IT) javoblari: { "<question_id>": { "code": "...", "language": "python" } }.
     # Oddiy MCQ olimpiadalarda umuman yuborilmaydi (required=False).
     code_answers = serializers.DictField(

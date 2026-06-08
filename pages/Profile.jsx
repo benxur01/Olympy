@@ -114,6 +114,11 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
   const [twoFACode, setTwoFACode] = React.useState('');
   const [twoFABusy, setTwoFABusy] = React.useState(false);
   const [twoFAMsg, setTwoFAMsg] = React.useState({ type: '', text: '' });
+  // O'chirish — backend joriy TOTP kodi yoki parolni talab qiladi (token
+  // o'g'irlansa 2FA o'chirib bo'lmasin). Foydalanuvchi tasdiqlash maydonini
+  // ochib, kod/parol kiritadi.
+  const [twoFADisableMode, setTwoFADisableMode] = React.useState(false);
+  const [twoFADisableValue, setTwoFADisableValue] = React.useState('');
 
   const handleTwoFASetup = async () => {
     if (!isApi || twoFABusy) return;
@@ -157,18 +162,28 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
     }
   };
 
-  const handleTwoFADisable = async () => {
+  const handleTwoFADisable = async (e) => {
+    e?.preventDefault?.();
     if (!isApi || twoFABusy) return;
-    if (!window.confirm("Ikki bosqichli himoyani o'chirishni xohlaysizmi?")) return;
+    const value = twoFADisableValue.trim();
+    if (!value) {
+      setTwoFAMsg({ type: 'err', text: 'Joriy 6 raqamli kod yoki parolingizni kiriting' });
+      return;
+    }
+    // Faqat raqamlardan iborat va 6 ta bo'lsa — TOTP kodi; aks holda parol.
+    const isCode = /^\d{6}$/.test(value);
+    const credentials = isCode ? { totp_code: value } : { password: value };
     setTwoFABusy(true);
     setTwoFAMsg({ type: '', text: '' });
     try {
-      await OlympyApi.twoFactorDisable(OlympyApi.getToken());
+      await OlympyApi.twoFactorDisable(credentials, OlympyApi.getToken());
       const me = await OlympyApi.getMe(OlympyApi.getToken());
       onUserUpdate?.(OlympyApi.mapBackendUser(me));
       setTwoFASecret('');
       setTwoFAUri('');
       setTwoFACode('');
+      setTwoFADisableMode(false);
+      setTwoFADisableValue('');
       setTwoFAMsg({ type: 'ok', text: "2FA o'chirildi" });
     } catch (err) {
       setTwoFAMsg({ type: 'err', text: OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi" });
@@ -717,13 +732,13 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
                   <span className="chip badge-active text-xs">Yoqilgan</span>
                 )}
               </div>
-              {isApi && twoFAEnabled && (
+              {isApi && twoFAEnabled && !twoFADisableMode && (
                 <button
-                  onClick={handleTwoFADisable}
+                  onClick={() => { setTwoFADisableMode(true); setTwoFAMsg({ type: '', text: '' }); }}
                   disabled={twoFABusy}
                   className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 text-rose-300 hover:text-rose-200 disabled:opacity-50"
                 >
-                  <Icon name="x" size={13} /> {twoFABusy ? 'O\'chirilmoqda...' : "O'chirish"}
+                  <Icon name="x" size={13} /> O'chirish
                 </button>
               )}
             </div>
@@ -811,11 +826,49 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
               </form>
             )}
 
-            {isApi && twoFAEnabled && (
+            {isApi && twoFAEnabled && !twoFADisableMode && (
               <p className="text-sm text-white/50">
                 Hisobingiz ikki bosqichli himoya bilan himoyalangan. Kirishda autentifikator
                 kodini kiritishingiz kerak bo'ladi.
               </p>
+            )}
+
+            {isApi && twoFAEnabled && twoFADisableMode && (
+              <form onSubmit={handleTwoFADisable} className="space-y-3">
+                <p className="text-sm text-white/50">
+                  Xavfsizlik uchun o'chirishdan oldin autentifikator ilovangiz bergan
+                  joriy 6 raqamli kodni yoki hisobingiz parolini kiriting.
+                </p>
+                <div>
+                  <label className="block text-xs text-white/50 mb-1">Joriy kod yoki parol</label>
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={twoFADisableValue}
+                    onChange={(e) => setTwoFADisableValue(e.target.value)}
+                    disabled={twoFABusy}
+                    placeholder="123456 yoki parol"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-rose-400 disabled:opacity-50"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    disabled={twoFABusy || !twoFADisableValue.trim()}
+                    className="bg-rose-500/20 text-rose-200 border border-rose-500/30 font-semibold rounded-xl py-2.5 px-5 text-sm disabled:opacity-50"
+                  >
+                    {twoFABusy ? 'O\'chirilmoqda...' : "O'chirishni tasdiqlash"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setTwoFADisableMode(false); setTwoFADisableValue(''); setTwoFAMsg({ type: '', text: '' }); }}
+                    disabled={twoFABusy}
+                    className="btn-ghost text-sm px-5 py-2.5 rounded-xl disabled:opacity-50"
+                  >
+                    Bekor qilish
+                  </button>
+                </div>
+              </form>
             )}
 
             {twoFAMsg.text && (

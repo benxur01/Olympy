@@ -344,6 +344,10 @@ REST_FRAMEWORK = {
         # Parol o'zgartirish — autentifikatsiyalangan FOYDALANUVCHI bo'yicha.
         # Soatiga ko'pi bilan 5 marta (accounts.throttling).
         'password_change': '5/hour',
+        # 2FA (TOTP) sozlash/tasdiqlash/o'chirish — kod yoki parol taxminini
+        # cheklaydi. O'chirishda joriy TOTP kodi/parol talab qilinadi, shu
+        # sababli brute-force'ni daqiqada 10 ta urinish bilan to'samiz.
+        'totp': '10/min',
         # Xatolar ro'yxati (get_mistakes_list) — foydalanuvchining barcha
         # attempt'larini stream qilib yig'adi, xotira/CPU jihatdan og'ir.
         # 30/min dashboard uchun yetarli keng, ammo qayta-qayta spam'ni to'sadi.

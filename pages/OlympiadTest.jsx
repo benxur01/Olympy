@@ -9,6 +9,131 @@ const LANG_LABELS = {
   c: 'C',
 };
 
+// Savol turiga qarab javob kiritish UI. Kod (code) savol bu yerga kelmaydi —
+// u alohida LeetCode-uslubidagi split layoutda render qilinadi.
+//   value formati: mcq/yes_no → son/{chosen_idx}; multiple_select →
+//   {selected:[...]}; fill_blank/essay → {text}; fill_blanks → {blanks:{...}}.
+const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBlank, onMultiToggle, onYesNo }) => {
+  const inputCls = 'w-full glass rounded-2xl px-4 py-3 text-white text-sm md:text-base placeholder-white/30 border border-white/10 focus:border-indigo-500 focus:outline-none transition-all';
+
+  // fill_blank — bitta qator matn kiritish.
+  if (qType === 'fill_blank') {
+    return (
+      <input
+        type="text"
+        value={(value && typeof value === 'object' ? value.text : '') || ''}
+        onChange={(e) => onText(e.target.value)}
+        placeholder="Javobingizni kiriting..."
+        className={inputCls}
+        autoComplete="off"
+      />
+    );
+  }
+
+  // essay — katta matn maydoni.
+  if (qType === 'essay') {
+    return (
+      <textarea
+        value={(value && typeof value === 'object' ? value.text : '') || ''}
+        onChange={(e) => onText(e.target.value)}
+        placeholder="Javobingizni batafsil yozing..."
+        rows={8}
+        className={`${inputCls} resize-y min-h-[160px] leading-relaxed`}
+      />
+    );
+  }
+
+  // fill_blanks — bir nechta bo'sh joy. Soni backend blanks_count'dan keladi.
+  if (qType === 'fill_blanks') {
+    const count = Math.max(1, Number(q.blanksCount ?? q.blanks_count ?? 1) || 1);
+    const blanks = (value && typeof value === 'object' && value.blanks) || {};
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: count }).map((_, i) => {
+          const key = String(i + 1);
+          return (
+            <div key={key} className="flex items-center gap-3">
+              <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 glass text-white/50">
+                {i + 1}
+              </div>
+              <input
+                type="text"
+                value={blanks[key] || ''}
+                onChange={(e) => onBlank(i + 1, e.target.value)}
+                placeholder={`${i + 1}-bo'sh joy`}
+                className={inputCls}
+                autoComplete="off"
+              />
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // yes_no — "Ha" / "Yo'q" ikki tugma. chosen_idx: 0=Ha, 1=Yo'q.
+  if (qType === 'yes_no') {
+    const chosen = (value && typeof value === 'object') ? value.chosen_idx : value;
+    // Savol o'z variantlarini bersa (masalan ["Ha","Yo'q"]) — o'shani ko'rsatamiz.
+    const labels = Array.isArray(q.options) && q.options.length === 2 ? q.options : ['Ha', "Yo'q"];
+    return (
+      <div className="grid grid-cols-2 gap-3">
+        {labels.map((label, i) => {
+          const selected = chosen === i;
+          return (
+            <button key={i} onClick={() => onYesNo(i)}
+              className={`flex items-center justify-center gap-2 p-4 rounded-2xl font-semibold text-sm md:text-base transition-all min-h-[64px] ${selected ? (i === 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40') : 'glass text-white/70 border border-transparent hover:border-white/10'}`}>
+              <span className="text-lg">{i === 0 ? '✓' : '✗'}</span>
+              {label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // multiple_select — checkbox uslubidagi ko'p tanlovli.
+  if (qType === 'multiple_select') {
+    const selected = (value && typeof value === 'object' && Array.isArray(value.selected)) ? value.selected : [];
+    return (
+      <div className="space-y-2.5 md:space-y-3">
+        {(q.options || []).map((opt, i) => {
+          const checked = selected.includes(i);
+          return (
+            <button key={i} onClick={() => onMultiToggle(i)}
+              className={`w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left transition-all min-h-[56px] ${checked ? 'border-indigo-500 bg-indigo-500/15 border glow-blue' : 'glass hover:bg-white/7 border border-transparent hover:border-white/10'}`}>
+              <div className={`w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${checked ? 'gradient-bg text-white' : 'glass text-white/30 border border-white/15'}`}>
+                {checked && <Icon name="check" size={16} />}
+              </div>
+              <span className={`font-medium text-sm md:text-base break-words min-w-0 ${checked ? 'text-white' : 'text-white/70'}`}>{opt}</span>
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // MCQ (default) — bitta tanlovli option list. Mavjud UI o'zgarmaydi.
+  const mcqChosen = (value && typeof value === 'object') ? value.chosen_idx : value;
+  return (
+    <div className="space-y-2.5 md:space-y-3">
+      {(q.options || []).map((opt, i) => {
+        const selected = mcqChosen === i;
+        return (
+          <button key={i} onClick={() => onMcq(i)}
+            className={`w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left transition-all min-h-[56px] ${selected ? 'border-indigo-500 bg-indigo-500/15 border glow-blue' : 'glass hover:bg-white/7 border border-transparent hover:border-white/10'}`}>
+            <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50'}`}>
+              {isTrueFalse ? (i === 0 ? '✓' : '✗') : String.fromCharCode(65 + i)}
+            </div>
+            <span className={`font-medium text-sm md:text-base break-words min-w-0 ${selected ? 'text-white' : 'text-white/70'}`}>{opt}</span>
+            {selected && <Icon name="check" size={16} className="ml-auto text-indigo-400 flex-shrink-0" />}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
 const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const store = useStore();
 
@@ -528,17 +653,55 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   }, [answers, sendPing]);
 
   const formatTime = (s) => `${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;
-  // Javob berilgan savollar: MCQ (answers) + kod yozilgan savollar (codeAnswers).
+  // Javob "haqiqatda berilgan"mi? Savol turiga qarab format farq qiladi:
+  // MCQ/yes_no → son (-1 = o'tkazib yuborilgan kod, baribir javob), matnli
+  // turlar → {text}/{blanks}, multiple_select → {selected:[...]}. Bo'sh matn /
+  // bo'sh tanlov "javob berilmagan" hisoblanadi (navigator/progress aniq
+  // bo'lsin uchun).
+  const isAnswerFilled = (val) => {
+    if (val === undefined || val === null) return false;
+    if (typeof val === 'object') {
+      if (Array.isArray(val.selected)) return val.selected.length > 0;
+      if (typeof val.text === 'string') return val.text.trim().length > 0;
+      if (val.blanks && typeof val.blanks === 'object') {
+        return Object.values(val.blanks).some(v => String(v ?? '').trim().length > 0);
+      }
+      if (typeof val.chosen_idx === 'number') return true;
+      return false;
+    }
+    return true; // son (MCQ indeks, -1 ham javob deb sanaladi)
+  };
+  // Javob berilgan savollar: answers (barcha tur) + kod yozilgan savollar.
   // Bir savol ikkalasida ham bo'lmaydi, shu sababli unique indekslar.
   const answeredIndexes = new Set([
-    ...Object.keys(answers),
+    ...Object.keys(answers).filter(k => isAnswerFilled(answers[k])),
     ...Object.keys(codeAnswers).filter(k => String(codeAnswers[k]?.code || '').trim()),
   ]);
   const answered = answeredIndexes.size;
   const progress = TOTAL ? (answered / TOTAL) * 100 : 0;
   const isUrgent = timeLeft < 120;
 
+  // MCQ/yes_no: option indeksini saqlaymiz (orqaga-moslik uchun oddiy son).
   const handleAnswer = (optIdx) => setAnswers(prev => ({ ...prev, [current]: optIdx }));
+  // Matnli turlar (fill_blank/essay): {text}. Bo'sh bo'lsa ham yozamiz —
+  // isAnswerFilled "javob berilgan"ni baholaydi, lekin draft saqlash uchun
+  // kiritilayotgan matn yo'qolmasligi kerak.
+  const handleTextAnswer = (text) => setAnswers(prev => ({ ...prev, [current]: { text } }));
+  // fill_blanks: {blanks: {"1": "...", ...}}. Bitta bo'sh joyni yangilaymiz.
+  const handleBlankAnswer = (blankIndex, text) => setAnswers(prev => {
+    const cur = (prev[current] && typeof prev[current] === 'object' && prev[current].blanks) || {};
+    return { ...prev, [current]: { blanks: { ...cur, [String(blankIndex)]: text } } };
+  });
+  // multiple_select: {selected: [idx,...]}. Tanlovni toggle qilamiz.
+  const handleMultiToggle = (optIdx) => setAnswers(prev => {
+    const cur = (prev[current] && typeof prev[current] === 'object' && Array.isArray(prev[current].selected))
+      ? prev[current].selected
+      : [];
+    const next = cur.includes(optIdx) ? cur.filter(i => i !== optIdx) : [...cur, optIdx];
+    return { ...prev, [current]: { selected: next } };
+  });
+  // yes_no: {chosen_idx: 0|1}.
+  const handleYesNo = (idx) => setAnswers(prev => ({ ...prev, [current]: { chosen_idx: idx } }));
   const toggleMark = () => setMarked(prev => ({ ...prev, [current]: !prev[current] }));
   // Olimpiadaning ruxsat etilgan tillari (bo'sh bo'lsa barcha til ruxsat).
   const allowedLanguages = Array.isArray(liveOlympiad?.allowedLanguages)
@@ -911,8 +1074,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // Bu holatda butun sahifani null qaytarmasdan, savol kartasi o'rnida inline
   // spinner ko'rsatamiz (header, timer, navigator joyida qoladi).
   const questionPending = !q || currentQuestionLoading;
+  // Savol turi — backend question_type qaytaradi (mcq/code/multiple_select/
+  // yes_no/essay/fill_blank/fill_blanks). Mock/store savollarda yo'q bo'lsa
+  // 'mcq' deb qaraladi.
+  const qType = q ? String(q.questionType || q.question_type || 'mcq') : 'mcq';
   // IT (kod) savol — backend question_type:'code' qaytaradi.
-  const isCodeQuestion = q ? (q.questionType === 'code' || q.question_type === 'code') : false;
+  const isCodeQuestion = qType === 'code';
   // Derive a "type" for True/False rendering even though store questions don't carry one
   const isTrueFalse = (q && !isCodeQuestion) ? (q.options || []).length === 2 && (q.options || []).every(o => /to'?g'?ri|no?to'?g'?ri/i.test(o)) : false;
 
@@ -962,7 +1129,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         <div className="question-strip">
           {Array.from({ length: TOTAL }).map((_, i) => (
             <button key={i} onClick={() => setCurrent(i)}
-              className={`question-strip-btn ${i === current ? 'current' : marked[i] ? 'marked' : answers[i] !== undefined ? 'answered' : ''}`}>
+              className={`question-strip-btn ${i === current ? 'current' : marked[i] ? 'marked' : isAnswerFilled(answers[i]) ? 'answered' : ''}`}>
               {i+1}
             </button>
           ))}
@@ -977,7 +1144,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           <div className="grid grid-cols-4 gap-1.5 mb-4">
             {Array.from({ length: TOTAL }).map((_, i) => (
               <button key={i} onClick={() => setCurrent(i)}
-                className={`question-nav-btn ${i === current ? 'current' : marked[i] ? 'marked' : answers[i] !== undefined ? 'answered' : ''}`}>
+                className={`question-nav-btn ${i === current ? 'current' : marked[i] ? 'marked' : isAnswerFilled(answers[i]) ? 'answered' : ''}`}>
                 {i+1}
               </button>
             ))}
@@ -1229,21 +1396,19 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
                   <p className="text-white text-base md:text-lg leading-relaxed font-medium break-words">{q.text}</p>
                 </div>
 
-                {/* Answer options */}
-                <div className="space-y-2.5 md:space-y-3 mb-6 md:mb-8">
-                  {q.options.map((opt, i) => {
-                    const selected = answers[current] === i;
-                    return (
-                      <button key={i} onClick={() => handleAnswer(i)}
-                        className={`w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left transition-all min-h-[56px] ${selected ? 'border-indigo-500 bg-indigo-500/15 border glow-blue' : 'glass hover:bg-white/7 border border-transparent hover:border-white/10'}`}>
-                        <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50'}`}>
-                          {isTrueFalse ? (i === 0 ? '✓' : '✗') : String.fromCharCode(65+i)}
-                        </div>
-                        <span className={`font-medium text-sm md:text-base break-words min-w-0 ${selected ? 'text-white' : 'text-white/70'}`}>{opt}</span>
-                        {selected && <Icon name="check" size={16} className="ml-auto text-indigo-400 flex-shrink-0" />}
-                      </button>
-                    );
-                  })}
+                {/* Answer area — savol turiga qarab UI. */}
+                <div className="mb-6 md:mb-8">
+                  <QuestionAnswerArea
+                    qType={qType}
+                    q={q}
+                    isTrueFalse={isTrueFalse}
+                    value={answers[current]}
+                    onMcq={handleAnswer}
+                    onText={handleTextAnswer}
+                    onBlank={handleBlankAnswer}
+                    onMultiToggle={handleMultiToggle}
+                    onYesNo={handleYesNo}
+                  />
                 </div>
               </>
             )}
