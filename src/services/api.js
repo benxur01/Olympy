@@ -429,7 +429,10 @@ export const OlympyApi = {
   // setup: {uri, secret} qaytaradi; verify: {code} qabul qiladi.
   twoFactorSetup: (token) => request('/api/auth/2fa/setup/', { method: 'POST', token }),
   twoFactorVerify: (code, token) => request('/api/auth/2fa/verify/', { method: 'POST', body: { code }, token }),
-  twoFactorDisable: (token) => request('/api/auth/2fa/disable/', { method: 'POST', token }),
+  // O'chirish — backend xavfsizlik uchun joriy TOTP kodi yoki parolni talab
+  // qiladi (token o'g'irlansa tajovuzkor 2FA'ni o'chira olmasin). credentials
+  // = {totp_code} yoki {password}.
+  twoFactorDisable: (credentials, token) => request('/api/auth/2fa/disable/', { method: 'POST', body: credentials || {}, token }),
   getMe: async (token) => {
     // Avval sessionStorage keshini ko'ramiz — sahifa yangilangach in-memory
     // _currentUser yo'qoladi, kesh esa darhol qiymat beradi. Keyin serverdan

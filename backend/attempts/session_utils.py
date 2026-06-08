@@ -4,7 +4,12 @@ from datetime import timedelta
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from questions.grading import RESULT_CORRECT, RESULT_PENDING, grade_answer
+from questions.grading import (
+    RESULT_CORRECT,
+    RESULT_PENDING,
+    _parse_correct_text,
+    grade_answer,
+)
 from questions.models import Question
 
 from .models import TestAttempt, TestSession
@@ -94,13 +99,23 @@ def questions_payload(session, olympiad):
             for index in order
             if isinstance(index, int) and 0 <= index < len(options)
         ]
-        data.append({
+        # Variantsiz turlar (fill_blank/fill_blanks/essay) — options bo'sh,
+        # frontend question_type bo'yicha matn maydoni ko'rsatadi. yes_no va
+        # multiple_select esa options ro'yxatini ishlatadi (yes_no — odatda
+        # ["Ha","Yo'q"]). correct_answer/correct_text HECH QACHON yuborilmaydi —
+        # baholash faqat serverda. fill_blanks uchun bo'sh joylar sonini
+        # (blanks_count) to'g'ri javoblarni sizdirmasdan beramiz.
+        item = {
             'id': question.id,
             'text': question.text,
             'options': visible_options,
             'score': question.score,
-            'question_type': 'mcq',
-        })
+            'question_type': q_type,
+        }
+        if q_type == 'fill_blanks':
+            correct = _parse_correct_text(getattr(question, 'correct_text', ''))
+            item['blanks_count'] = len(correct) if isinstance(correct, dict) else 1
+        data.append(item)
     return data
 
 
@@ -154,6 +169,33 @@ def _deshuffle_multi(chosen, order):
     return result
 
 
+def _extract_chosen(chosen, q_type):
+    """Frontend yuborgan javob payload'idan baholash uchun xom qiymatni ajratadi.
+
+    Yangi savol turlari uchun frontend obyekt-shaklli payload yuboradi:
+      mcq / yes_no      → int yoki {"chosen_idx": int}
+      multiple_select   → [idx, ...] yoki {"selected": [idx, ...]}
+      fill_blank        → "matn" yoki {"text": "matn"}
+      essay             → "matn" yoki {"text": "matn"}
+      fill_blanks       → {"1": "...", ...} yoki {"blanks": {"1": "..."}}
+    Eski (skalар/ro'yxat) formatlar ham backward-compat qo'llab-quvvatlanadi —
+    shu sababli mavjud MCQ submit'lari buzilmaydi.
+    """
+    if isinstance(chosen, dict):
+        if q_type in ('mcq', 'yes_no'):
+            return chosen.get('chosen_idx')
+        if q_type == 'multiple_select':
+            return chosen.get('selected')
+        if q_type in ('fill_blank', 'essay'):
+            return chosen.get('text')
+        if q_type == 'fill_blanks':
+            # {"blanks": {...}} yoki to'g'ridan-to'g'ri {"1": "...", ...}.
+            if 'blanks' in chosen:
+                return chosen.get('blanks')
+            return chosen
+    return chosen
+
+
 def score_session_answers(session, olympiad, answers):
     answers = answers or {}
     option_orders = session.option_orders or {}
@@ -184,6 +226,10 @@ def score_session_answers(session, olympiad, answers):
         q_type = getattr(question, 'question_type', 'mcq') or 'mcq'
         options = list(question.options or [])
         order = option_orders.get(str(question.id)) or list(range(len(options)))
+
+        # Frontend obyekt-shaklli payload yuborishi mumkin ({"chosen_idx":..},
+        # {"selected":[..]}, {"text":".."}) — xom qiymatni ajratamiz.
+        chosen = _extract_chosen(chosen, q_type)
 
         # Variant indeksli turlar — shuffle qilingan indeksni asl indeksga
         # o'giramiz, shunda grade_answer correct_answer bilan to'g'ri solishtiradi.

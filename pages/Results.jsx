@@ -25,6 +25,132 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
     }
   };
 
+  // Savol turiga qarab javob tahlilini chizadi. Backend questions_review
+  // har bir savol uchun question_type bilan birga keladi:
+  //   mcq/yes_no        → options[], correct_answer (idx), chosen_answer (idx)
+  //   multiple_select   → options[], correct_answer_set (idx[]), chosen_answer (idx[])
+  //   fill_blank        → chosen_answer (matn), correct_text (matn)
+  //   fill_blanks       → chosen_answer ({"1":..}), correct_text ({"1":..})
+  //   essay             → chosen_answer (matn), pending_review=true
+  const renderReviewAnswer = (q) => {
+    const qType = String(q.question_type || 'mcq');
+
+    // essay — avtomatik baholanmaydi: faqat foydalanuvchi javobi va
+    // "tekshirilmoqda" holati.
+    if (qType === 'essay') {
+      return (
+        <div className="space-y-2">
+          <div>
+            <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">Sizning javobingiz</div>
+            <div className="rounded-xl px-3 py-2 text-xs md:text-sm border bg-white/5 text-white/80 border-white/10 whitespace-pre-wrap break-words">
+              {q.chosen_answer ? String(q.chosen_answer) : '(javob berilmagan)'}
+            </div>
+          </div>
+          <div className="text-[11px] text-amber-300 flex items-center gap-1.5">
+            <Icon name="info" size={12} /> Insho qo'lda baholanadi
+          </div>
+        </div>
+      );
+    }
+
+    // fill_blank — bitta matnli javob va to'g'ri javob.
+    if (qType === 'fill_blank') {
+      const correct = q.correct_text != null ? String(q.correct_text) : '';
+      return (
+        <div className="space-y-2">
+          <div>
+            <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">Sizning javobingiz</div>
+            <div className={`rounded-xl px-3 py-2 text-xs md:text-sm border whitespace-pre-wrap break-words ${q.is_correct ? 'bg-emerald-500/15 text-emerald-200 border-emerald-500/40' : 'bg-rose-500/15 text-rose-200 border-rose-500/40'}`}>
+              {q.chosen_answer != null && String(q.chosen_answer).trim() ? String(q.chosen_answer) : '(javob berilmagan)'}
+            </div>
+          </div>
+          {!q.is_correct && correct && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">To'g'ri javob</div>
+              <div className="rounded-xl px-3 py-2 text-xs md:text-sm border bg-emerald-500/15 text-emerald-200 border-emerald-500/40 whitespace-pre-wrap break-words">{correct}</div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // fill_blanks — bir nechta bo'sh joy: har biri uchun javob va to'g'ri qiymat.
+    if (qType === 'fill_blanks') {
+      const chosen = (q.chosen_answer && typeof q.chosen_answer === 'object') ? q.chosen_answer : {};
+      const correct = (q.correct_text && typeof q.correct_text === 'object') ? q.correct_text : {};
+      const keys = Object.keys(correct).length ? Object.keys(correct) : Object.keys(chosen);
+      return (
+        <div className="space-y-2">
+          {keys.map((k) => {
+            const userVal = String(chosen[k] ?? '').trim();
+            const correctVal = String(correct[k] ?? '').trim();
+            const ok = userVal.toLowerCase() === correctVal.toLowerCase() && !!correctVal;
+            return (
+              <div key={k} className="flex items-start gap-2">
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs flex-shrink-0 bg-white/5 text-white/40 border border-white/10">{k}</div>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className={`rounded-xl px-3 py-1.5 text-xs md:text-sm border break-words ${ok ? 'bg-emerald-500/15 text-emerald-200 border-emerald-500/40' : 'bg-rose-500/15 text-rose-200 border-rose-500/40'}`}>
+                    {userVal || '(bo\'sh)'}
+                  </div>
+                  {!ok && correctVal && (
+                    <div className="text-[11px] text-emerald-300 break-words">To'g'ri: {correctVal}</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // multiple_select — checkbox ro'yxati: tanlangan va to'g'ri indekslar.
+    if (qType === 'multiple_select') {
+      const chosenSet = Array.isArray(q.chosen_answer) ? q.chosen_answer.map(Number) : [];
+      const correctSet = Array.isArray(q.correct_answer_set) ? q.correct_answer_set.map(Number) : [];
+      return (
+        <div className="space-y-1.5">
+          {(q.options || []).map((opt, oi) => {
+            const isCorrect = correctSet.includes(oi);
+            const isChosen = chosenSet.includes(oi);
+            let cls = 'bg-white/5 text-white/60 border-white/10';
+            if (isCorrect) cls = 'bg-emerald-500/15 text-emerald-200 border-emerald-500/40';
+            else if (isChosen && !isCorrect) cls = 'bg-rose-500/15 text-rose-200 border-rose-500/40';
+            return (
+              <div key={oi} className={`rounded-xl px-3 py-2 text-xs md:text-sm border flex items-center gap-2 ${cls}`}>
+                <span className="text-white/40 font-bold flex-shrink-0">{String.fromCharCode(65 + oi)}.</span>
+                <span className="flex-1 break-words">{String(opt)}</span>
+                {isChosen && <span className="text-[10px] text-white/40 flex-shrink-0">tanlangan</span>}
+                {isCorrect && <Icon name="check" size={12} className="text-emerald-400 flex-shrink-0" />}
+                {isChosen && !isCorrect && <Icon name="x" size={12} className="text-rose-400 flex-shrink-0" />}
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+
+    // mcq / yes_no (default) — bitta tanlovli option list (mavjud xulq).
+    return (
+      <div className="space-y-1.5">
+        {(q.options || []).map((opt, oi) => {
+          const isCorrect = oi === q.correct_answer;
+          const isChosen = oi === q.chosen_answer;
+          let cls = 'bg-white/5 text-white/60 border-white/10';
+          if (isCorrect) cls = 'bg-emerald-500/15 text-emerald-200 border-emerald-500/40';
+          else if (isChosen && !isCorrect) cls = 'bg-rose-500/15 text-rose-200 border-rose-500/40';
+          return (
+            <div key={oi} className={`rounded-xl px-3 py-2 text-xs md:text-sm border flex items-center gap-2 ${cls}`}>
+              <span className="text-white/40 font-bold flex-shrink-0">{String.fromCharCode(65 + oi)}.</span>
+              <span className="flex-1 break-words">{String(opt)}</span>
+              {isCorrect && <Icon name="check" size={12} className="text-emerald-400 flex-shrink-0" />}
+              {isChosen && !isCorrect && <Icon name="x" size={12} className="text-rose-400 flex-shrink-0" />}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   // AI/backend'dan kelgan tushuntirish matni untrusted — XSS oldini olish
   // uchun faqat <strong> tegiga ruxsat berib DOMPurify orqali tozalaymiz.
   // DOMPurify global entry'da ochilgan (generate-vite-entry.mjs). Mavjud
@@ -359,23 +485,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                         </span>
                       </div>
                       <div className="text-white text-sm font-medium mb-3 break-words">{q.text}</div>
-                      <div className="space-y-1.5">
-                        {(q.options || []).map((opt, oi) => {
-                          const isCorrect = oi === q.correct_answer;
-                          const isChosen = oi === q.chosen_answer;
-                          let cls = 'bg-white/5 text-white/60 border-white/10';
-                          if (isCorrect) cls = 'bg-emerald-500/15 text-emerald-200 border-emerald-500/40';
-                          else if (isChosen && !isCorrect) cls = 'bg-rose-500/15 text-rose-200 border-rose-500/40';
-                          return (
-                            <div key={oi} className={`rounded-xl px-3 py-2 text-xs md:text-sm border flex items-center gap-2 ${cls}`}>
-                              <span className="text-white/40 font-bold flex-shrink-0">{String.fromCharCode(65 + oi)}.</span>
-                              <span className="flex-1 break-words">{String(opt)}</span>
-                              {isCorrect && <Icon name="check" size={12} className="text-emerald-400 flex-shrink-0" />}
-                              {isChosen && !isCorrect && <Icon name="x" size={12} className="text-rose-400 flex-shrink-0" />}
-                            </div>
-                          );
-                        })}
-                      </div>
+                      {renderReviewAnswer(q)}
 
                       {/* AI Explanation Button & Content */}
                       <div className="mt-4 pt-3 border-t border-white/5 space-y-2">

@@ -2151,6 +2151,7 @@ def audit_log_list(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
 def totp_setup(request):
     """POST /api/auth/2fa/setup/ — 2FA sozlash, QR kod URI qaytaradi."""
     import pyotp
@@ -2167,6 +2168,7 @@ def totp_setup(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
 def totp_verify(request):
     """POST /api/auth/2fa/verify/ — kodni tekshiradi va 2FA'ni yoqadi."""
     import pyotp
@@ -2183,12 +2185,46 @@ def totp_verify(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
 def totp_disable(request):
-    """POST /api/auth/2fa/disable/ — 2FA'ni o'chiradi."""
+    """POST /api/auth/2fa/disable/ — 2FA'ni o'chiradi.
+
+    Xavfsizlik: JWT token o'g'irlansa tajovuzkor 2FA'ni o'chirib, hisobni
+    egallab olmasin uchun — o'chirishdan avval JORIY TOTP kodi yoki parol
+    tasdig'i talab qilinadi. Ikkalasidan biri to'g'ri kelmasa 403.
+    """
+    import pyotp
+    totp_code = str(request.data.get('totp_code', '')).strip()
+    password = request.data.get('password') or ''
+
+    verified = False
+    if totp_code:
+        if request.user.totp_secret and pyotp.TOTP(request.user.totp_secret).verify(
+            totp_code, valid_window=1,
+        ):
+            verified = True
+    elif password:
+        if request.user.check_password(password):
+            verified = True
+
+    if not verified:
+        return Response(
+            {'detail': "2FA'ni o'chirish uchun joriy TOTP kodi yoki parolni kiriting"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
     request.user.totp_enabled = False
     request.user.totp_secret = ''
     request.user.save(update_fields=['totp_enabled', 'totp_secret'])
     return Response({'detail': "2FA o'chirildi"})
+
+
+# ScopedRateThrottle scope'lari: 2FA endpointlari brute-force'dan himoyalanadi
+# (kod/parol taxmin qilishni cheklash). settings.py DEFAULT_THROTTLE_RATES'da
+# 'totp': '10/min'.
+totp_setup.cls.throttle_scope = 'totp'
+totp_verify.cls.throttle_scope = 'totp'
+totp_disable.cls.throttle_scope = 'totp'
 
 
 # ─── A/B testing event tracking ──────────────────────────────────────────────
