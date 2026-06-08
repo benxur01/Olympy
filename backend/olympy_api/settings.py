@@ -96,10 +96,14 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
-    # GZip API javoblarini siqadi (JSON ro'yxatlar, katta payload'lar). Trafik
-    # va yuklab olish vaqtini kamaytiradi. SecurityMiddleware'dan keyin va
-    # WhiteNoise'dan oldin — statik fayllarni WhiteNoise o'zi siqadi.
-    'django.middleware.gzip.GZipMiddleware',
+    # GZipMiddleware ATAYIN o'chirilgan: CSRF token kabi maxfiy qiymatlarni
+    # o'z ichiga olgan dinamik HTTP javoblarni siqish BREACH hujumiga imkon
+    # beradi (siqilgan javob hajmi orqali maxfiy baytlarni tiklash). API JSON
+    # javoblarini siqishdan olinadigan tejamkorlik bu xavfga arzimaydi.
+    # Statik fayllar (JS/CSS) maxfiy ma'lumot saqlamaydi va ularni WhiteNoise
+    # xavfsiz siqadi; haqiqiy gzip kerak bo'lsa reverse-proxy (nginx) darajasida
+    # CSRF-himoyalangan yo'llarni chiqarib tashlab yoqilsin.
+    #   'django.middleware.gzip.GZipMiddleware',
     # WhiteNoise statik fayllarni production'da samarali serve qiladi —
     # SecurityMiddleware'dan keyin va boshqa middleware'lardan oldin.
     'whitenoise.middleware.WhiteNoiseMiddleware',

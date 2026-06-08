@@ -164,7 +164,14 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const startDt = liveOlympiad ? olympiadStartMoment(liveOlympiad) : null;
   const endDt = startDt ? new Date(startDt.getTime() + (liveOlympiad.duration || 60) * 60000) : null;
   const isBeforeStart = startDt && currentTime < startDt;
-  const isAfterEnd = endDt && currentTime > endDt;
+  // Vaqt tugashini imkon qadar server vaqtiga (serverExpiresAt) tayanib
+  // aniqlaymiz — foydalanuvchining lokal soati noto'g'ri (oldinga/orqaga
+  // surilgan) bo'lsa ham imtihon vaqti to'g'ri hisoblanadi. serverExpiresAt
+  // hali kelmagan bo'lsa (savollar yuklanmasdan oldin) lokal endDt'ga
+  // qaytamiz.
+  const isAfterEnd = serverExpiresAt
+    ? currentTime > new Date(serverExpiresAt)
+    : (endDt && currentTime > endDt);
 
   React.useEffect(() => {
     if (!isBeforeStart) return undefined;
