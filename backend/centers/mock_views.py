@@ -75,9 +75,25 @@ def start_mock(request, mock_id):
             status=http_status.HTTP_403_FORBIDDEN,
         )
 
-    attempt, _created = MockAttempt.objects.get_or_create(
+    # Mavjud attempt qaytarilsa, foydalanuvchi to'xtatgan joydan davom etadi
+    # (javoblar va `started_at` saqlanadi). Qayta boshlash uchun frontend
+    # `restart: true` yuboradi — faqat hali topshirilmagan (submitted_at is
+    # None) attempt reset qilinadi; yakunlangan urinish quyida 400 bilan
+    # bloklanadi, shu sababli topshirilgandan keyin restart ta'sir qilmaydi.
+    attempt, created = MockAttempt.objects.get_or_create(
         mock=mock, user=request.user,
     )
+    if not created and request.data.get('restart') and attempt.submitted_at is None:
+        attempt.answers = {}
+        attempt.started_at = timezone.now()
+        attempt.submitted_at = None
+        attempt.score = 0
+        attempt.correct_count = 0
+        attempt.total_questions = 0
+        attempt.save(update_fields=[
+            'answers', 'started_at', 'submitted_at',
+            'score', 'correct_count', 'total_questions',
+        ])
     if attempt.submitted_at is not None:
         return Response(
             {'detail': 'Siz bu mashqni allaqachon yakunlagansiz', 'attempt_id': attempt.id},
