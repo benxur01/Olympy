@@ -1515,19 +1515,24 @@ def leaderboard(request):
     # filter (masalan, faqat bitta olimpiada) uchun ham to'g'ri natija
     # qaytaradi, chunki tartiblash querysetda allaqachon qo'llanilgan.
     from accounts.utils import avatar_url_for
-    entries = [
-        {
+    entries = []
+    for i, a in enumerate(qs):
+        # Public olimpiadalarda `center` NULL bo'lishi mumkin — `a.olympiad.
+        # center.name` to'g'ridan-to'g'ri o'qilsa AttributeError (500) berardi.
+        # Markaz bo'lmasa markazga bog'liq maydonlar bo'sh qaytariladi.
+        center = a.olympiad.center if a.olympiad.center_id else None
+        entries.append({
             'rank': offset + i + 1,
             'attempt_id': a.id,
             'user_id': a.user_id,
             'name': a.user.full_name,
             'avatar_url': avatar_url_for(a.user, request),
             'is_premium': a.user.is_premium,
-            'center': a.olympiad.center.name,
-            'organization_type': a.olympiad.center.organization_type,
-            'country': a.olympiad.center.country,
-            'region': a.olympiad.center.region,
-            'district': a.olympiad.center.district,
+            'center': center.name if center else '',
+            'organization_type': center.organization_type if center else '',
+            'country': center.country if center else '',
+            'region': center.region if center else '',
+            'district': center.district if center else '',
             'subject': a.olympiad.subject,
             'olympiad_id': a.olympiad_id,
             'olympiad_title': a.olympiad.title,
@@ -1535,9 +1540,7 @@ def leaderboard(request):
             'score': a.score,
             'time_spent': a.time_spent,
             'submitted_at': a.submitted_at.isoformat(),
-        }
-        for i, a in enumerate(qs)
-    ]
+        })
     pagination_meta = {
         'page': page,
         'page_size': page_size,

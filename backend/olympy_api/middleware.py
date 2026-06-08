@@ -21,11 +21,18 @@ class SecurityHeadersMiddleware:
             # Vite HMR WebSocket va dev API uchun.
             connect_src += ['ws:', 'http://localhost:*', 'http://127.0.0.1:*']
 
+        # Vite build inline bootstrap script'lar uchun 'unsafe-inline' kerak.
+        # 'unsafe-eval' esa faqat DEBUG'da (Vite HMR talab qiladi) yoqiladi —
+        # production build eval ishlatmaydi, shu sababli xavfsizlik uchun
+        # production CSP'dan 'unsafe-eval' olib tashlanadi.
+        if settings.DEBUG:
+            script_src = "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+        else:
+            script_src = "script-src 'self' 'unsafe-inline'"
+
         directives = [
             "default-src 'self'",
-            # Vite build inline bootstrap script'lar uchun 'unsafe-inline';
-            # DEBUG'da HMR 'unsafe-eval' talab qiladi.
-            "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+            script_src,
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "font-src 'self' https://fonts.gstatic.com data:",
             # Cloudinary va boshqa media https: orqali; data:/blob: avatarlar uchun.

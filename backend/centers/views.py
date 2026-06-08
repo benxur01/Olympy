@@ -917,7 +917,18 @@ def admin_approve_center(request, center_id):
                 )
 
             from notifications.services import send_center_decision_notification
-            send_center_decision_notification(center.owner, center, approved=True)
+            # Notification'ni transaction COMMIT bo'lgandan keyin yuboramiz.
+            # Avval atomic blok ichida to'g'ridan-to'g'ri chaqirilardi — agar
+            # keyinroq (masalan trial obuna yaratishda) xatolik bo'lib
+            # transaction rollback bo'lsa, "markaz tasdiqlandi" xabari
+            # allaqachon yuborilgan bo'lardi (markaz esa aslida tasdiqlanmagan).
+            # `billing/views.py` va `olympiads/services.py` bilan uyg'un.
+            _owner = center.owner
+            transaction.on_commit(
+                lambda: send_center_decision_notification(
+                    _owner, center, approved=True,
+                )
+            )
             # Markaz tasdiqlandi — direktorga email xabar (email maydoni
             # bo'lmasa yoki yuborishda xato bo'lsa jimgina o'tib ketadi).
             try:

@@ -218,7 +218,13 @@ def _recompute_attempt_score_for_submission(submission_id):
         ).first()
         if not session:
             return
-        scored = score_session_answers(session, olympiad, attempt.answers or {})
+        # `attempt` uzatamiz — shunda score_session_answers kod savol ballini
+        # ham (shu attempt'ning CodeSubmission'lari bo'yicha) hisoblaydi.
+        # Submit oqimida esa attempt berilmaydi va kod savollar hisobga
+        # olinmaydi (Judge0 hali tugamagan).
+        scored = score_session_answers(
+            session, olympiad, attempt.answers or {}, attempt=attempt,
+        )
         attempt.score = scored['score']
         attempt.correct_count = scored['correct']
         attempt.wrong_count = scored['wrong']

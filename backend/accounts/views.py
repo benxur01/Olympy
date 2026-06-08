@@ -857,13 +857,48 @@ def admin_toggle_user_premium(request, user_id):
             UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
             EducationCenter.objects.filter(owner=target).update(is_premium=False)
     elif duration == 0:
-        # Cheksiz premium (Umrbod). Atomic: flag va EducationCenter birga.
+        # Cheksiz premium (Umrbod). Atomic: flag, UserSubscription va
+        # EducationCenter birga.
         # plan_type'dan qat'iy nazar, foydalanuvchi markaz egasi bo'lsa
         # markaz ham premium bo'lishi kerak (aks holda 'student' plan bilan
         # umrbod bergan markaz egasiga markaz premiumlari berilmay qolardi).
+        #
+        # MUHIM: avval bu yerda UserSubscription yozuvi YARATILMASDI — faqat
+        # `is_premium` flag o'rnatilardi. Natijada foydalanuvchida boshqa,
+        # muddati o'tgan obuna bo'lsa /me endpoint'idagi lazy expiry
+        # (still_active=[] bo'lganda) `is_premium`ni qaytarib False qilib,
+        # umrbod premium o'z-o'zidan o'chib qolardi. Endi amal qiluvchi obuna
+        # yozuvi yaratamiz.
+        #
+        # Eslatma: UserSubscription.end_date NOT NULL (modelni o'zgartirib
+        # migration qilmaslik uchun) — shu sababli "umrbod"ni juda uzoq
+        # kelajakdagi sana (~100 yil) bilan ifodalaymiz. Mavjud barcha
+        # `end_date__gt=now` / `end_date > now` taqqoslashlari (is_premium
+        # sync, lazy expiry, billing) buni doim amal qiluvchi deb sanaydi.
+        now = timezone.now()
+        lifetime_end = now + timedelta(days=365 * 100)
+        # Umrbod uchun plan'ni topishga harakat qilamiz (organization markaz
+        # premiumlari uchun plan_type='organization' bo'lishi muhim). Topilmasa
+        # plan=None bilan ham obuna yaratamiz — markaz premiumini quyida
+        # to'g'ridan-to'g'ri o'rnatamiz.
+        lifetime_plan = SubscriptionPlan.objects.filter(
+            plan_type=plan_type, is_active=True,
+        ).order_by('-duration_days').first()
         with transaction.atomic():
             target.is_premium = True
             target.save(update_fields=['is_premium'])
+            # Avvalgi aktiv obunalarni yopamiz — bir nechta aktiv obuna
+            # lazy expiry'ni chalkashtirmasin.
+            UserSubscription.objects.filter(
+                user=target, is_active=True,
+            ).update(is_active=False, end_date=now)
+            UserSubscription.objects.create(
+                user=target,
+                plan=lifetime_plan,
+                start_date=now,
+                end_date=lifetime_end,
+                is_active=True,
+            )
             EducationCenter.objects.filter(owner=target).update(is_premium=True)
     elif duration in [30, 90, 180, 365]:
         # Muddatli premium. Atomic: eski obunani yopish va yangisini yaratish

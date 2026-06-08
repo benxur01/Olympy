@@ -12,7 +12,7 @@ from questions.grading import (
 )
 from questions.models import Question
 
-from .models import TestAttempt, TestSession
+from .models import TestSession
 
 
 def session_end_time(session, olympiad):
@@ -196,20 +196,35 @@ def _extract_chosen(chosen, q_type):
     return chosen
 
 
-def score_session_answers(session, olympiad, answers):
+def score_session_answers(session, olympiad, answers, attempt=None):
+    """Sessiya javoblarini baholaydi.
+
+    Kod (IT) savollar Judge0 test caslari bo'yicha avtomatik baholanadi va
+    natija (`CodeSubmission.all_tests_passed`) submit paytida hali tayyor
+    bo'lmaydi (Judge0 asinxron tugaydi). Shu sababli `attempt` argumenti
+    ikkita rejimni boshqaradi:
+
+      - `attempt is None` (submit oqimi, attempt hali yaratilmagan): kod
+        savollar HISOBGA UMUMAN OLINMAYDI — na `correct`, na `total`, na
+        `max_possible` ga kiradi. Aks holda kod balli majburan 0 bo'lib,
+        `max_possible` ga esa kiritilib, student to'g'ri kod yozsa ham
+        submit javobida foiz nohaq pasayardi (eski xato).
+      - `attempt` berilgan (Judge0 callback'dan keyingi qayta hisoblash,
+        `_recompute_attempt_score_for_submission`): shu attempt'ning kod
+        submission'lari bo'yicha to'liq ball hisoblanadi va leaderboard /
+        natijalar sahifasidagi qiymat yangilanadi.
+    """
     answers = answers or {}
     option_orders = session.option_orders or {}
     correct = 0
     answered = 0
     earned_score = 0
     all_questions = ordered_questions(session, olympiad)
-    # Kod (IT) savollar variant indeksi orqali baholanmaydi — ular Judge0
-    # test caslari bo'yicha avtomatik baholanadi (CodeSubmission.all_tests_passed),
-    # quyida alohida hisoblanadi. Qolgan barcha
-    # turlar (mcq, yes_no, multiple_select, fill_blank, fill_blanks, essay)
-    # variantsiz/variantli — questions.grading.grade_answer orqali izchil
-    # baholanadi. Variant indeksli turlarda (mcq/yes_no/multiple_select) avval
-    # shuffle qilingan indeksni asl indeksga o'giramiz (de-shuffle).
+    # Qolgan barcha turlar (mcq, yes_no, multiple_select, fill_blank,
+    # fill_blanks, essay) variantsiz/variantli — questions.grading.grade_answer
+    # orqali izchil baholanadi. Variant indeksli turlarda
+    # (mcq/yes_no/multiple_select) avval shuffle qilingan indeksni asl indeksga
+    # o'giramiz (de-shuffle).
     non_code_questions = [
         q for q in all_questions
         if (getattr(q, 'question_type', 'mcq') or 'mcq') != 'code'
@@ -253,29 +268,23 @@ def score_session_answers(session, olympiad, answers):
             correct += 1
             earned_score += question.score
 
-    # Kod (IT) savollar bo'yicha avtomatik ball: har bir savol uchun shu
-    # attempt'dagi eng so'nggi CodeSubmission'ni olamiz. `all_tests_passed`
-    # True bo'lsa savolning to'liq balli (MCQ kabi) earned_score'ga qo'shiladi.
-    # False yoki None (hali Judge0 tugamagan / yozuv yo'q) — 0 ball. Kod
-    # savollar ham max_possible va total hisobiga kiradi: aralash olimpiadada
-    # foiz to'g'ri chiqishi uchun (kodi to'g'ri o'quvchi 100% dan oshmaydi).
-    if code_questions:
+    # Kod (IT) savollar bo'yicha avtomatik ball faqat `attempt` berilganda
+    # hisoblanadi (Judge0 callback'dan keyingi qayta hisoblash). Submit oqimida
+    # (`attempt is None`) kod savollar HISOBGA OLINMAYDI: ular `total` /
+    # `max_possible` ga ham kirmaydi, shu sababli foiz faqat non-code savollar
+    # bo'yicha hisoblanadi va kod balli keyinroq Judge0 tugagach
+    # `_recompute_attempt_score_for_submission` orqali to'liq yangilanadi.
+    scored_questions = list(non_code_questions)
+    if attempt is not None and code_questions:
         from .models import CodeSubmission
-        attempt = (
-            TestAttempt.objects
-            .filter(user=session.user, olympiad=olympiad)
-            .order_by('-submitted_at')
-            .first()
-        )
         latest_subs = {}
-        if attempt is not None:
-            for cs in (
-                CodeSubmission.objects
-                .filter(attempt=attempt)
-                .order_by('-created_at')
-            ):
-                # order_by('-created_at') — birinchi ko'rilgan eng so'nggisi.
-                latest_subs.setdefault(cs.question_id, cs)
+        for cs in (
+            CodeSubmission.objects
+            .filter(attempt=attempt)
+            .order_by('-created_at')
+        ):
+            # order_by('-created_at') — birinchi ko'rilgan eng so'nggisi.
+            latest_subs.setdefault(cs.question_id, cs)
         for question in code_questions:
             cs = latest_subs.get(question.id)
             if cs is not None and cs.all_tests_passed is True:
@@ -286,8 +295,12 @@ def score_session_answers(session, olympiad, answers):
                 # Javob yuborilgan, lekin test caslar o'tmadi (yoki hali
                 # tekshirilmagan) — javob berilgan deb hisoblanadi.
                 answered += 1
+        # Kod savollar ham max_possible va total hisobiga kiradi: aralash
+        # olimpiadada foiz to'g'ri chiqishi uchun (kodi to'g'ri o'quvchi
+        # 100% dan oshmaydi).
+        scored_questions += code_questions
 
-    questions = non_code_questions + code_questions
+    questions = scored_questions
     total = len(questions)
     max_possible = sum(question.score for question in questions)
     # Avval `wrong = total - correct` edi va javob bermagan savollar ham
