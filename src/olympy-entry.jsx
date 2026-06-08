@@ -6514,6 +6514,25 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const myAttempts = (isApi ? (apiAttempts || []) : store.attempts.filter(a => a.userId === user.id))
     .slice()
     .sort((a,b) => (b.submittedAt||'').localeCompare(a.submittedAt||''));
+  // Olimpiada kartasida "Natijani ko'rish" tugmasini ko'rsatish uchun: o'quvchi
+  // qaysi olimpiadalarga allaqachon urinish (attempt) qilganini tez topish
+  // mapi. olympiadId → eng so'nggi attempt (myAttempts submittedAt bo'yicha
+  // kamayuvchi saralangani uchun birinchi uchragan eng yangi bo'ladi).
+  const attemptByOlympiadId = {};
+  myAttempts.forEach(a => {
+    if (a.olympiadId != null && attemptByOlympiadId[String(a.olympiadId)] === undefined) {
+      attemptByOlympiadId[String(a.olympiadId)] = a;
+    }
+  });
+  // Olimpiada uchun o'quvchining attempt'ini qaytaradi (topilmasa null). id va
+  // backendId ikkalasi bilan ham tekshiramiz, chunki attempt.olympiadId backend
+  // id (string) bo'ladi, olimpiada esa id/backendId maydonlariga ega.
+  const getAttemptForOlympiad = (o) => {
+    if (!o) return null;
+    return attemptByOlympiadId[String(o.id)]
+      ?? (o.backendId != null ? attemptByOlympiadId[String(o.backendId)] : undefined)
+      ?? null;
+  };
   const myResults = myAttempts.map(a => {
     const o = baseOlympiads.find(x => String(x.id) === String(a.olympiadId));
     return {
@@ -6583,6 +6602,35 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   ];
 
   const hasCenter = isCenterApproved;
+
+  // Mashq rejimi (3-funksiya): o'tib ketgan olimpiadani mashq sifatida ochish.
+  // Backend MockOlympiad nusxasini get-or-create qiladi (reytingga ta'sir
+  // qilmaydi), so'ng mock test sahifasiga o'tamiz. Faqat API rejimida ishlaydi.
+  const [practicingId, setPracticingId] = React.useState(null);
+  const handlePractice = async (o) => {
+    if (!isApi) return;
+    const olympiadId = o?.backendId ?? (typeof o?.id === 'number' ? o.id : null);
+    if (olympiadId == null) return;
+    setPracticingId(o.id);
+    try {
+      const token = OlympyApi.getToken();
+      const res = await OlympyApi.createPracticeMock(olympiadId, token);
+      if (res?.mock_id != null) {
+        onNavigate('mock-test', {
+          mockId: res.mock_id,
+          title: res.title || o.title,
+          subject: o.subject,
+          duration: o.duration,
+        });
+      } else {
+        showApiToast("Mashq rejimini ochib bo'lmadi");
+      }
+    } catch (err) {
+      showApiToast(OlympyApi.toUserMessage?.(err) || "Mashq rejimini ochib bo'lmadi");
+    } finally {
+      setPracticingId(null);
+    }
+  };
 
   const sendRequest = (center) => {
     if (isApi) {
@@ -6721,8 +6769,12 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           </div>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {visibleOlympiads.filter(o => o.status === 'active').slice(0, 2).map(o => (
+          {visibleOlympiads.filter(o => o.status === 'active').slice(0, 2).map(o => {
+            const attempt = getAttemptForOlympiad(o);
+            return (
             <OlympiadCard key={o.id} olympiad={o} locked={!canAccessEvent(o)}
+              attempted={!!attempt}
+              onViewResult={attempt ? () => onNavigate('results', { ...attempt, olympiad: o }) : undefined}
               onStart={() => {
                 if (!canEnterEvent(o)) return;
                 const alreadyMember = String(o.centerId) === String(studentCenterId);
@@ -6734,7 +6786,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   onNavigate('test', o);
                 }
               }} />
-          ))}
+            );
+          })}
           {visibleOlympiads.filter(o => o.status === 'active').length === 0 && (
             <div className="md:col-span-2 text-center text-white/40 text-sm py-6 glass rounded-2xl">Bugungi faol tadbirlar yo'q</div>
           )}
@@ -6759,8 +6812,12 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400 hover:text-indigo-300 flex-shrink-0 py-1">Barchasini ko'rish →</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {visibleOlympiads.filter(o => o.status === 'inactive').slice(0, 2).map(o => (
+            {visibleOlympiads.filter(o => o.status === 'inactive').slice(0, 2).map(o => {
+              const attempt = getAttemptForOlympiad(o);
+              return (
               <OlympiadCard key={o.id} olympiad={o} locked={!canAccessEvent(o)}
+                attempted={!!attempt}
+                onViewResult={attempt ? () => onNavigate('results', { ...attempt, olympiad: o }) : undefined}
                 onStart={() => {
                   if (!canEnterEvent(o)) return;
                   const alreadyMember = String(o.centerId) === String(studentCenterId);
@@ -6772,7 +6829,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                     onNavigate('test', o);
                   }
                 }} />
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -6787,10 +6845,18 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400 hover:text-indigo-300 flex-shrink-0 py-1">Barchasini ko'rish →</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {visibleOlympiads.filter(o => o.status === 'finished').slice(0, 2).map(o => (
+            {visibleOlympiads.filter(o => o.status === 'finished').slice(0, 2).map(o => {
+              const attempt = getAttemptForOlympiad(o);
+              return (
               <OlympiadCard key={o.id} olympiad={o} locked={!canAccessEvent(o)}
+                attempted={!!attempt}
+                onViewResult={attempt ? () => onNavigate('results', { ...attempt, olympiad: o }) : undefined}
+                canPractice={isApi && o.status === 'finished' && !!attempt}
+                onPractice={() => handlePractice(o)}
+                practiceLoading={practicingId === o.id}
                 onStart={() => setPage('olympiads')} />
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
@@ -6960,9 +7026,16 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           if (filteredOlympiads.length === 0) {
             return <div className="md:col-span-2 glass rounded-2xl p-8 text-center text-white/40 text-sm">{olympiadFilter === 'Barchasi' ? "Hozircha tadbirlar mavjud emas" : `${olympiadFilter} tadbirlar topilmadi`}</div>;
           }
-          return filteredOlympiads.map(o => (
+          return filteredOlympiads.map(o => {
+            const attempt = getAttemptForOlympiad(o);
+            return (
             <OlympiadCard key={o.id} olympiad={o} locked={!canAccessEvent(o)}
               readinessPct={(o.status === 'active' || o.status === 'inactive') ? (readinessMap[o.backendId] ?? null) : null}
+              attempted={!!attempt}
+              onViewResult={attempt ? () => onNavigate('results', { ...attempt, olympiad: o }) : undefined}
+              canPractice={isApi && o.status === 'finished' && !!attempt}
+              onPractice={() => handlePractice(o)}
+              practiceLoading={practicingId === o.id}
               onStart={() => {
                 if (!canEnterEvent(o)) return;
                 const alreadyMember = String(o.centerId) === String(studentCenterId);
@@ -6974,7 +7047,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   onNavigate('test', o);
                 }
               }} />
-          ));
+            );
+          });
         })()}
       </div>
     </div>
@@ -8016,12 +8090,22 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
   );
 };
 
-const OlympiadCard = ({ olympiad: o, onStart, locked, readinessPct }) => {
+const OlympiadCard = ({ olympiad: o, onStart, locked, readinessPct, attempted, onViewResult, canPractice, onPractice, practiceLoading }) => {
   const isActive = o.status === 'active';
   const isUpcoming = o.status === 'inactive';
-  const disabled = !isActive || locked;
   const typeLabel = eventTypeLabel(o.eventType || 'competition');
-  const label = locked ? "🔒 Tashkilot tasdig'i kerak" : (isActive ? '▶ Boshlash' : (isUpcoming ? 'Yaqinda boshlanadi' : (o.status === 'draft' ? 'Hali e\'lon qilinmagan' : 'Tugagan')));
+  // O'quvchi shu olimpiadani allaqachon topshirgan bo'lsa — holatidan (faol /
+  // tugagan) qat'i nazar tugma "Natijani ko'rish" bo'ladi va to'g'ridan-to'g'ri
+  // natijalar sahifasiga olib boradi. Bu faol olimpiada qayta topshirishni va
+  // backend 400 ("allaqachon topshirgansiz") xatosini oldini oladi.
+  const showResult = !!attempted && !!onViewResult;
+  // Mashq tugmasi — olimpiada tugagan va o'quvchi haqiqiy attempt topshirgan
+  // bo'lsagina (canPractice). Bu holda kartada ikkita tugma yonma-yon turadi.
+  const showPractice = !!canPractice && !!onPractice;
+  const disabled = showResult ? false : (!isActive || locked);
+  const label = showResult
+    ? '📊 Natijani ko\'rish'
+    : (locked ? "🔒 Tashkilot tasdig'i kerak" : (isActive ? '▶ Boshlash' : (isUpcoming ? 'Yaqinda boshlanadi' : (o.status === 'draft' ? 'Hali e\'lon qilinmagan' : 'Tugagan'))));
   const time = o.startTime || o.time || '';
   const qCount = (o.questionIds && o.questionIds.length) || o.questions || 0;
   const formattedStartDate = (() => {
@@ -8057,11 +8141,29 @@ const OlympiadCard = ({ olympiad: o, onStart, locked, readinessPct }) => {
         <span className="flex items-center gap-1"><Icon name="file" size={12} /> {qCount} ta savol</span>
         <span className="flex items-center gap-1"><Icon name="users" size={12} /> {o.participants || 0} ishtirokchi</span>
       </div>
-      <button onClick={onStart}
-        className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all min-h-[44px] ${disabled ? 'btn-ghost opacity-50 cursor-not-allowed' : 'btn-primary'}`}
-        disabled={disabled}>
-        {label}
-      </button>
+      {/* Mashq tugmasi faqat tugagan olimpiadada (allaqachon topshirilgan)
+          ko'rinadi va "Natijani ko'rish" yonida yonma-yon turadi. Mashq rejimi
+          reytingga ta'sir qilmaydi — alohida mock test sahifasini ochadi. */}
+      {showPractice ? (
+        <div className="flex gap-2">
+          <button onClick={showResult ? onViewResult : onStart}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all min-h-[44px] ${disabled ? 'btn-ghost opacity-50 cursor-not-allowed' : 'btn-primary'}`}
+            disabled={disabled}>
+            {label}
+          </button>
+          <button onClick={onPractice} disabled={!!practiceLoading}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all min-h-[44px] glass border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/10 disabled:opacity-50"
+            title="O'tib ketgan olimpiadani mashq rejimida ishlash (reytingga ta'sir qilmaydi)">
+            {practiceLoading ? 'Ochilmoqda...' : '🔁 Mashq qilish'}
+          </button>
+        </div>
+      ) : (
+        <button onClick={showResult ? onViewResult : onStart}
+          className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all min-h-[44px] ${disabled ? 'btn-ghost opacity-50 cursor-not-allowed' : 'btn-primary'}`}
+          disabled={disabled}>
+          {label}
+        </button>
+      )}
     </div>
   );
 };
@@ -13158,6 +13260,305 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
   );
 };
 
+// ─── Mashq (mock) test sahifasi ──────────────────────────────────────────────
+// O'tib ketgan (tugagan) olimpiadani mashq rejimida ishlash uchun YENGIL test
+// ekrani. Atayin alohida komponent: real OlympiadTestPage proktoring (tab
+// kuzatuvi, ping, parallel qurilma DQ), savollarni bitta-bitta yuklash va
+// cheating logikasi bilan og'irlashgan — mashqda ularning hech biri kerak emas.
+// Bu komponent MockOlympiad/MockAttempt API'sini ishlatadi va NA reytingga, NA
+// markaz reytingiga ta'sir qiladi. Savollar `start_mock` orqali birato'la
+// yuklanadi, javoblar `submit_mock` orqali backendda baholanadi.
+const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
+  const mockId = mock?.mockId ?? mock?.mock_id ?? null;
+  const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState('');
+  const [questions, setQuestions] = React.useState([]);
+  const [title, setTitle] = React.useState(mock?.title || 'Mashq');
+  const [timeLimit, setTimeLimit] = React.useState((mock?.duration || 30) * 60);
+  const [timeLeft, setTimeLeft] = React.useState((mock?.duration || 30) * 60);
+  const [current, setCurrent] = React.useState(0);
+  // answers: { [questionId]: chosenPayload } — submit_mock kutgan formatda.
+  const [answers, setAnswers] = React.useState({});
+  const answersRef = React.useRef(answers);
+  React.useEffect(() => { answersRef.current = answers; }, [answers]);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [submitted, setSubmitted] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState('');
+  const [confirmModal, setConfirmModal] = React.useState(false);
+  // timeLeft'ni handleSubmit closure'iga har sekund bog'lab interval'ni qayta
+  // o'rnatmaslik uchun ref orqali o'qiymiz (sarflangan vaqtni hisoblashda).
+  const timeLeftRef = React.useRef(timeLeft);
+  React.useEffect(() => { timeLeftRef.current = timeLeft; }, [timeLeft]);
+  const timeLimitRef = React.useRef(timeLimit);
+  React.useEffect(() => { timeLimitRef.current = timeLimit; }, [timeLimit]);
+
+  // start_mock — savollarni va vaqt cheklovini yuklaymiz (idempotent).
+  React.useEffect(() => {
+    if (mockId == null) { setLoadError("Mashq topilmadi"); setLoading(false); return undefined; }
+    let cancelled = false;
+    setLoading(true);
+    setLoadError('');
+    const token = globalThis.OlympyApi?.getToken?.();
+    globalThis.OlympyApi.startMockOlympiad(mockId, {}, token)
+      .then(resp => {
+        if (cancelled) return;
+        const list = Array.isArray(resp?.questions) ? resp.questions : [];
+        setQuestions(list);
+        if (resp?.title) setTitle(resp.title);
+        const mins = Number(resp?.time_limit_minutes) || (mock?.duration || 30);
+        setTimeLimit(mins * 60);
+        setTimeLeft(mins * 60);
+        setLoading(false);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        // Allaqachon yakunlangan mashq — submit'da 400 bo'lardi; bu yerda
+        // boshlashda 400 ("yakunlagansiz") kelsa, foydalanuvchiga aniq xabar.
+        const detail = err?.data?.detail || err?.message || "Mashqni boshlab bo'lmadi";
+        setLoadError(detail);
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [mockId]);
+
+  const TOTAL = questions.length;
+  const q = questions[current] || null;
+  const qType = (q?.question_type || q?.questionType || 'mcq');
+  const isTrueFalse = qType === 'yes_no'
+    || (Array.isArray(q?.options) && q.options.length === 2
+        && ['ha', "yo'q", 'yes', 'no', "to'g'ri", "noto'g'ri"].includes(String(q.options[0]).trim().toLowerCase()));
+  const answered = Object.values(answers).filter(v => {
+    if (v == null) return false;
+    if (typeof v === 'object') {
+      if (Array.isArray(v.selected)) return v.selected.length > 0;
+      if (v.blanks && typeof v.blanks === 'object') return Object.values(v.blanks).some(x => String(x || '').trim());
+      if (typeof v.text === 'string') return v.text.trim().length > 0;
+      if (typeof v.chosen_idx === 'number') return true;
+    }
+    return true;
+  }).length;
+
+  const setAnswer = (payload) => {
+    if (!q) return;
+    setAnswers(prev => ({ ...prev, [String(q.id)]: payload }));
+  };
+  const curVal = q ? answers[String(q.id)] : undefined;
+
+  const handleSubmit = React.useCallback(async () => {
+    if (submitting || submitted) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      const token = globalThis.OlympyApi?.getToken?.();
+      const resp = await globalThis.OlympyApi.submitMockOlympiad(
+        mockId, { answers: answersRef.current || {} }, token,
+      );
+      setSubmitted(true);
+      onFinish({
+        // Mashq natijasi — reytingga kirmaydi, attemptId yo'q (sertifikat/
+        // leaderboard ko'rsatilmaydi). ResultsPage oddiy ball/to'g'ri/jami
+        // ko'rsatadi va isMock bilan "mashq" ekanini bildiradi.
+        score: resp?.score ?? 0,
+        correct: resp?.correct_count ?? 0,
+        wrong: (resp?.total_questions ?? TOTAL) - (resp?.correct_count ?? 0),
+        total: resp?.total_questions ?? TOTAL,
+        rank: null,
+        time: Math.max(0, timeLimitRef.current - timeLeftRef.current),
+        maxScore: 100,
+        olympiad: { title, subject: mock?.subject || '', eventType: 'olympiad' },
+        isMock: true,
+        _api: false,
+      });
+    } catch (err) {
+      const detail = err?.data?.detail || err?.message || '';
+      if (/allaqachon/i.test(detail)) {
+        // Mashq allaqachon topshirilgan — qayta topshirib bo'lmaydi.
+        setSubmitError(detail);
+      } else {
+        setSubmitError("Javoblarni yuborib bo'lmadi. Qayta urinib ko'ring.");
+      }
+      setSubmitting(false);
+    }
+  }, [submitting, submitted, mockId, TOTAL, title, mock, onFinish]);
+
+  // Timer — mashqda yumshoq cheklov: vaqt tugaganda avto-submit. Savollar
+  // yuklanmaguncha (loading) yoki yuborilgach to'xtaydi.
+  React.useEffect(() => {
+    if (loading || submitted || loadError || TOTAL === 0) return undefined;
+    if (timeLeft <= 0) { handleSubmit(); return undefined; }
+    const t = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) { clearInterval(t); handleSubmit(); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [loading, submitted, loadError, TOTAL, timeLeft <= 0, handleSubmit]);
+
+  const fmtTime = (s) => {
+    const m = Math.floor(Math.max(0, s) / 60);
+    const sec = Math.max(0, s) % 60;
+    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  };
+
+  const goHome = () => onNavigate(roleHomePage ? roleHomePage(user) : 'student');
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#050508' }}>
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
+          <div className="text-white/60 text-sm">Mashq yuklanmoqda...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+        <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
+          <div className="text-4xl">🔁</div>
+          <h2 className="text-lg font-black text-white">Mashqni ochib bo'lmadi</h2>
+          <p className="text-white/50 text-sm">{loadError}</p>
+          <button onClick={goHome} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold">Orqaga</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (TOTAL === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+        <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
+          <div className="text-4xl">📭</div>
+          <h2 className="text-lg font-black text-white">Mashqda savollar yo'q</h2>
+          <p className="text-white/50 text-sm">Bu olimpiada uchun savollar topilmadi.</p>
+          <button onClick={goHome} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold">Orqaga</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen" style={{ background: '#050508' }}>
+      {/* Header */}
+      <div className="glass border-b border-white/5 px-4 md:px-6 py-3 flex items-center gap-3 sticky top-0 z-20">
+        <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={goHome} aria-label="Orqaga">
+          <BrandLogo size="sm" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-bold text-white truncate flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-300 bg-indigo-500/15 px-2 py-0.5 rounded-md flex-shrink-0">Mashq</span>
+            <span className="truncate">{title}</span>
+          </div>
+        </div>
+        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold flex-shrink-0 ${timeLeft < 60 ? 'bg-rose-500/15 text-rose-300' : 'glass text-white/70'}`}>
+          <Icon name="clock" size={14} /> {fmtTime(timeLeft)}
+        </div>
+      </div>
+
+      <div className="max-w-3xl mx-auto p-4 md:p-6 space-y-4 md:space-y-6 pb-28">
+        {/* Progress */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs text-white/50">Savol {current + 1} / {TOTAL}</div>
+          <div className="text-xs text-white/50">{answered} ta belgilangan</div>
+        </div>
+        <div className="progress-bar h-1.5">
+          <div className="progress-fill" style={{ width: `${((current + 1) / TOTAL) * 100}%` }} />
+        </div>
+
+        {/* Question */}
+        <div className="glass rounded-2xl p-4 md:p-6">
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            {q?.subject && <span className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-md">{q.subject}</span>}
+          </div>
+          <div className="text-base md:text-lg font-bold text-white leading-relaxed mb-5 break-words select-none">{q?.text}</div>
+          <QuestionAnswerArea
+            qType={qType}
+            q={q}
+            isTrueFalse={isTrueFalse}
+            value={curVal}
+            onMcq={(i) => setAnswer({ chosen_idx: i })}
+            onYesNo={(i) => setAnswer({ chosen_idx: i })}
+            onText={(t) => setAnswer({ text: t })}
+            onMultiToggle={(i) => {
+              const sel = (curVal && Array.isArray(curVal.selected)) ? curVal.selected.slice() : [];
+              const pos = sel.indexOf(i);
+              if (pos >= 0) sel.splice(pos, 1); else sel.push(i);
+              setAnswer({ selected: sel });
+            }}
+            onBlank={(num, t) => {
+              const blanks = (curVal && curVal.blanks && typeof curVal.blanks === 'object') ? { ...curVal.blanks } : {};
+              blanks[String(num)] = t;
+              setAnswer({ blanks });
+            }}
+          />
+        </div>
+
+        {submitError && (
+          <div className="glass rounded-xl px-4 py-3 text-sm text-rose-300 border border-rose-500/20 flex items-center gap-2">
+            <Icon name="info" size={15} /> {submitError}
+          </div>
+        )}
+
+        {/* Navigation */}
+        <div className="flex items-center gap-3">
+          <button onClick={() => setCurrent(c => Math.max(0, c - 1))} disabled={current === 0}
+            className="btn-ghost px-4 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40">
+            ← Oldingi
+          </button>
+          {current < TOTAL - 1 ? (
+            <button onClick={() => setCurrent(c => Math.min(TOTAL - 1, c + 1))}
+              className="btn-primary flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold">
+              Keyingi →
+            </button>
+          ) : (
+            <button onClick={() => setConfirmModal(true)} disabled={submitting}
+              className="btn-primary flex-1 px-4 py-2.5 rounded-xl text-sm font-bold disabled:opacity-50">
+              {submitting ? 'Yuborilmoqda...' : 'Yakunlash ✓'}
+            </button>
+          )}
+        </div>
+
+        {/* Savol gridi — tez navigatsiya */}
+        <div className="flex flex-wrap gap-2">
+          {questions.map((qq, i) => {
+            const isAns = answers[String(qq.id)] != null;
+            const isCur = i === current;
+            return (
+              <button key={qq.id ?? i} onClick={() => setCurrent(i)}
+                className={`w-9 h-9 rounded-lg text-xs font-bold transition-all ${isCur ? 'gradient-bg text-white' : isAns ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'glass text-white/40 border border-white/10'}`}>
+                {i + 1}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <Modal open={confirmModal} onClose={() => setConfirmModal(false)} title="Mashqni yakunlash">
+        <div className="space-y-4">
+          <div className="space-y-3">
+            {TOTAL - answered > 0 && (
+              <div className="flex items-center gap-2 bg-amber-500/10 text-amber-400 rounded-xl px-4 py-3 text-sm border border-amber-500/20">
+                <Icon name="info" size={15} /> {TOTAL - answered} ta savol javobsiz qoldi
+              </div>
+            )}
+            <p className="text-white/60 text-sm">Mashqni yakunlamoqchimisiz? Natija reytingga ta'sir qilmaydi.</p>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => setConfirmModal(false)} className="btn-ghost flex-1 py-3 rounded-xl">Davom etish</button>
+            <button onClick={() => { setConfirmModal(false); handleSubmit(); }} disabled={submitting}
+              className="btn-primary flex-1 py-3 rounded-xl font-bold disabled:opacity-50">
+              {submitting ? 'Yuborilmoqda...' : 'Yakunlash ✓'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
 const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const store = useStore();
 
@@ -13188,7 +13589,14 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const startDt = liveOlympiad ? olympiadStartMoment(liveOlympiad) : null;
   const endDt = startDt ? new Date(startDt.getTime() + (liveOlympiad.duration || 60) * 60000) : null;
   const isBeforeStart = startDt && currentTime < startDt;
-  const isAfterEnd = endDt && currentTime > endDt;
+  // Vaqt tugashini imkon qadar server vaqtiga (serverExpiresAt) tayanib
+  // aniqlaymiz — foydalanuvchining lokal soati noto'g'ri (oldinga/orqaga
+  // surilgan) bo'lsa ham imtihon vaqti to'g'ri hisoblanadi. serverExpiresAt
+  // hali kelmagan bo'lsa (savollar yuklanmasdan oldin) lokal endDt'ga
+  // qaytamiz.
+  const isAfterEnd = serverExpiresAt
+    ? currentTime > new Date(serverExpiresAt)
+    : (endDt && currentTime > endDt);
 
   React.useEffect(() => {
     if (!isBeforeStart) return undefined;
@@ -14536,13 +14944,14 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   );
 };
 
-Object.assign(window, { OlympiadTestPage });
+Object.assign(window, { OlympiadTestPage, MockTestPage });
 
 
-Object.assign(moduleScope, { LANG_LABELS, QuestionAnswerArea, OlympiadTestPage });
+Object.assign(moduleScope, { LANG_LABELS, QuestionAnswerArea, MockTestPage, OlympiadTestPage });
 }
 var LANG_LABELS = moduleScope.LANG_LABELS;
 var QuestionAnswerArea = moduleScope.QuestionAnswerArea;
+var MockTestPage = moduleScope.MockTestPage;
 var OlympiadTestPage = moduleScope.OlympiadTestPage;
 
 // pages/Results.jsx
@@ -21898,7 +22307,7 @@ const URL_PAGES = (() => {
 // Auth talab qiladigan sahifalar. Component tashqarisida `const` sifatida —
 // har render'da qayta yaratilmasligi va useEffect bog'liqliklarini bekorga
 // o'zgartirmasligi uchun.
-const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','results','leaderboard','profile','pending','pending-home','analytics','parent','questions','olympiads'];
+const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','parent','questions','olympiads'];
 
 const pageFromPath = () => {
   try {
@@ -21916,6 +22325,10 @@ const App = () => {
   const [page, setPage] = React.useState(() => pageFromPath() || 'landing');
   const [testResult, setTestResult] = React.useState(null);
   const [activeOlympiad, setActiveOlympiad] = React.useState(null);
+  // Mashq (mock) testi — o'tib ketgan olimpiadani mashq rejimida ochish uchun.
+  // {mockId, title, subject, duration}. Runtime-only (URL'ga bog'lanmaydi):
+  // F5'da yo'qolsa ham mashq backend'da idempotent, qayta ochiladi.
+  const [activeMock, setActiveMock] = React.useState(null);
   const [switcherOpen, setSwitcherOpen] = React.useState(false);
   const [apiUser, setApiUser] = React.useState(null);
   // restore tugamasidan oldin landing flicker'i ko'rinmasligi uchun bootstrap
@@ -22101,6 +22514,14 @@ const App = () => {
         }
       } catch {}
       setPage('test');
+      return;
+    }
+    if (dest === 'mock-test' && data) {
+      // Mashq rejimi — faol olimpiada testi emas, alohida holat. Saqlangan
+      // test ID'sini tozalaymiz (mashq proktoringsiz, F5 tiklash kerak emas).
+      writeActiveTestId(null);
+      setActiveMock(data);
+      setPage('mock-test');
       return;
     }
     if (dest === 'results' && data) {
@@ -22305,6 +22726,21 @@ const App = () => {
         }
         return <OlympiadTestPage olympiad={activeOlympiad} user={user} onFinish={handleTestFinish} onNavigate={navigate} />;
       }
+      case 'mock-test': {
+        // Mashq rejimi (o'tib ketgan olimpiada). activeMock yo'q bo'lsa
+        // (masalan F5 bilan to'g'ridan-to'g'ri kirilgan) — dashboardga qaytaramiz.
+        if (!activeMock) {
+          return (
+            <PendingAccessCard
+              title="Mashq topilmadi"
+              status="pending"
+              message="Mashqni qaytadan o'tib ketgan olimpiada kartasidan oching."
+              onBack={() => setPage(roleHomePage(user))}
+            />
+          );
+        }
+        return <MockTestPage mock={activeMock} user={user} onFinish={handleTestFinish} onNavigate={navigate} />;
+      }
       case 'leaderboard': return (
         <div className="min-h-screen" style={{ background: '#050508' }}>
           <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
@@ -22387,7 +22823,7 @@ const App = () => {
     !!user &&
     user.onboardingCompleted === false &&
     !!studentStatus &&
-    !['test', 'login', 'register', 'landing'].includes(page)
+    !['test', 'mock-test', 'login', 'register', 'landing'].includes(page)
   );
 
   return (

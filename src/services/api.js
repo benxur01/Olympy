@@ -852,6 +852,15 @@ export const OlympyApi = {
   },
   // Markazlar reytingi (Owner uchun yangi endpoint).
   getCenterRanking: (token) => request('/api/centers/ranking/', { token }).then(unwrapList),
+  // ─── Mashq rejimi (o'tib ketgan olimpiada) ───
+  // O'tib ketgan (tugagan) olimpiadadan mashq nusxasini (MockOlympiad) olish/
+  // yaratish. Reyting va markaz reytingiga ta'sir qilmaydi. Javob:
+  // {mock_id, attempt_id, status, title}.
+  createPracticeMock: (olympiadId, token) => request(`/api/centers/practice-mock/${olympiadId}/`, { method: 'POST', token }),
+  // Mashq (mock) testini boshlash — savollar ro'yxati va sarlavhasini qaytaradi.
+  startMockOlympiad: (mockId, body, token) => request(`/api/mock-olympiads/${mockId}/start/`, { method: 'POST', body: body || {}, token }),
+  // Mashq javoblarini topshirish — backend baholaydi (reytingga ta'sir qilmaydi).
+  submitMockOlympiad: (mockId, body, token) => request(`/api/mock-olympiads/${mockId}/submit/`, { method: 'POST', body: body || {}, token }),
   // O'qituvchi/Manager analitikasi — eng ko'p noto'g'ri savollar.
   getQuestionAnalytics: (centerId, token) => request(`/api/questions/analytics/?center=${centerId}`, { token }),
 };

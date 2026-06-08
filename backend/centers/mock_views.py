@@ -204,6 +204,74 @@ def submit_mock(request, mock_id):
     })
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def get_or_create_practice_mock(request, olympiad_id):
+    """POST /api/centers/practice-mock/<olympiad_id>/ — o'tib ketgan olimpiadani
+    mashq rejimida ochish.
+
+    Tugagan (status='finished') real olimpiadadan bir martalik MockOlympiad
+    nusxasini yaratadi (keyingi so'rovlarda qayta ishlatiladi) va o'quvchi uchun
+    MockAttempt tayyorlaydi. Mashq rejimi leaderboard'ga ham, markaz reytingiga
+    ham TA'SIR QILMAYDI — barchasi MockOlympiad/MockAttempt qatlamida qoladi.
+
+    Javob: {mock_id, attempt_id, status, title}.
+    """
+    from olympiads.models import Olympiad
+
+    olympiad = get_object_or_404(
+        Olympiad.objects.select_related('center'),
+        pk=olympiad_id,
+        status=Olympiad.STATUS_FINISHED,
+        is_deleted=False,
+    )
+
+    # Mashqqa kirish ruxsati real olimpiada ko'rinishi bilan bir xil bo'lishi
+    # kerak: ochiq olimpiada (event_type='olympiad') hammaga, markaz musobaqasi
+    # esa faqat shu markazning tasdiqlangan o'quvchisiga/menejeriga.
+    is_public = olympiad.event_type == Olympiad.EVENT_TYPE_OLYMPIAD
+    if not is_public:
+        allowed = (
+            _user_is_center_student(request.user, olympiad.center)
+            or user_can_manage_center(request.user, olympiad.center)
+        )
+        if not allowed:
+            return Response(
+                {'detail': "Bu musobaqani mashq qilish uchun shu markaz tasdig'i kerak"},
+                status=http_status.HTTP_403_FORBIDDEN,
+            )
+
+    # Manba olimpiada uchun mashq nusxasi bir marta yaratiladi — keyin barcha
+    # o'quvchilar shu bitta MockOlympiad'ni ulashadi (savollar bir xil).
+    mock, created = MockOlympiad.objects.get_or_create(
+        source_olympiad=olympiad,
+        center=olympiad.center,
+        defaults={
+            'title': f'{olympiad.title} (mashq)',
+            'subject': olympiad.subject or '',
+            'time_limit_minutes': olympiad.duration_minutes or 30,
+            'is_active': True,
+        },
+    )
+    if created:
+        # Olimpiada savollarini mashq nusxasiga ko'chiramiz (ManyToMany — bir xil
+        # Question obyektlariga havola, nusxalanmaydi). Faqat yaratilganda.
+        question_ids = list(olympiad.questions.values_list('id', flat=True))
+        if question_ids:
+            mock.questions.set(question_ids)
+
+    attempt, _ = MockAttempt.objects.get_or_create(
+        mock=mock, user=request.user,
+    )
+
+    return Response({
+        'mock_id': mock.id,
+        'attempt_id': attempt.id,
+        'status': 'submitted' if attempt.submitted_at is not None else 'in_progress',
+        'title': mock.title,
+    })
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def mock_results(request, mock_id):
