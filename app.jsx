@@ -67,7 +67,7 @@ const URL_PAGES = (() => {
 // Auth talab qiladigan sahifalar. Component tashqarisida `const` sifatida —
 // har render'da qayta yaratilmasligi va useEffect bog'liqliklarini bekorga
 // o'zgartirmasligi uchun.
-const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','results','leaderboard','profile','pending','pending-home','analytics','parent','questions','olympiads'];
+const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','parent','questions','olympiads'];
 
 const pageFromPath = () => {
   try {
@@ -85,6 +85,10 @@ const App = () => {
   const [page, setPage] = React.useState(() => pageFromPath() || 'landing');
   const [testResult, setTestResult] = React.useState(null);
   const [activeOlympiad, setActiveOlympiad] = React.useState(null);
+  // Mashq (mock) testi — o'tib ketgan olimpiadani mashq rejimida ochish uchun.
+  // {mockId, title, subject, duration}. Runtime-only (URL'ga bog'lanmaydi):
+  // F5'da yo'qolsa ham mashq backend'da idempotent, qayta ochiladi.
+  const [activeMock, setActiveMock] = React.useState(null);
   const [switcherOpen, setSwitcherOpen] = React.useState(false);
   const [apiUser, setApiUser] = React.useState(null);
   // restore tugamasidan oldin landing flicker'i ko'rinmasligi uchun bootstrap
@@ -270,6 +274,14 @@ const App = () => {
         }
       } catch {}
       setPage('test');
+      return;
+    }
+    if (dest === 'mock-test' && data) {
+      // Mashq rejimi — faol olimpiada testi emas, alohida holat. Saqlangan
+      // test ID'sini tozalaymiz (mashq proktoringsiz, F5 tiklash kerak emas).
+      writeActiveTestId(null);
+      setActiveMock(data);
+      setPage('mock-test');
       return;
     }
     if (dest === 'results' && data) {
@@ -474,6 +486,21 @@ const App = () => {
         }
         return <OlympiadTestPage olympiad={activeOlympiad} user={user} onFinish={handleTestFinish} onNavigate={navigate} />;
       }
+      case 'mock-test': {
+        // Mashq rejimi (o'tib ketgan olimpiada). activeMock yo'q bo'lsa
+        // (masalan F5 bilan to'g'ridan-to'g'ri kirilgan) — dashboardga qaytaramiz.
+        if (!activeMock) {
+          return (
+            <PendingAccessCard
+              title="Mashq topilmadi"
+              status="pending"
+              message="Mashqni qaytadan o'tib ketgan olimpiada kartasidan oching."
+              onBack={() => setPage(roleHomePage(user))}
+            />
+          );
+        }
+        return <MockTestPage mock={activeMock} user={user} onFinish={handleTestFinish} onNavigate={navigate} />;
+      }
       case 'leaderboard': return (
         <div className="min-h-screen" style={{ background: '#050508' }}>
           <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
@@ -556,7 +583,7 @@ const App = () => {
     !!user &&
     user.onboardingCompleted === false &&
     !!studentStatus &&
-    !['test', 'login', 'register', 'landing'].includes(page)
+    !['test', 'mock-test', 'login', 'register', 'landing'].includes(page)
   );
 
   return (

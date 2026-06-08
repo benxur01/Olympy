@@ -1,5 +1,6 @@
 from django.urls import path
 
+from . import mock_views
 from . import views
 from . import views_premium
 from . import views_premium2
@@ -9,6 +10,8 @@ urlpatterns = [
     path('', views.centers_list_create, name='centers-list-create'),
     path('ratings/', views.center_ratings, name='center-ratings'),
     path('ranking/', views.center_ranking, name='center-ranking'),
+    # O'tib ketgan olimpiadani mashq rejimida ochish (reytingga ta'sir qilmaydi).
+    path('practice-mock/<int:olympiad_id>/', mock_views.get_or_create_practice_mock, name='practice-mock'),
     path('mine/', views.my_centers, name='my-centers'),
     path('<int:center_id>/', views.update_center, name='center-update'),
     path('<int:center_id>/image/', views.update_center_image, name='center-image'),

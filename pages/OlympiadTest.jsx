@@ -134,6 +134,305 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
   );
 };
 
+// ─── Mashq (mock) test sahifasi ──────────────────────────────────────────────
+// O'tib ketgan (tugagan) olimpiadani mashq rejimida ishlash uchun YENGIL test
+// ekrani. Atayin alohida komponent: real OlympiadTestPage proktoring (tab
+// kuzatuvi, ping, parallel qurilma DQ), savollarni bitta-bitta yuklash va
+// cheating logikasi bilan og'irlashgan — mashqda ularning hech biri kerak emas.
+// Bu komponent MockOlympiad/MockAttempt API'sini ishlatadi va NA reytingga, NA
+// markaz reytingiga ta'sir qiladi. Savollar `start_mock` orqali birato'la
+// yuklanadi, javoblar `submit_mock` orqali backendda baholanadi.
+const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
+  const mockId = mock?.mockId ?? mock?.mock_id ?? null;
+  const [loading, setLoading] = React.useState(true);
+  const [loadError, setLoadError] = React.useState('');
+  const [questions, setQuestions] = React.useState([]);
+  const [title, setTitle] = React.useState(mock?.title || 'Mashq');
+  const [timeLimit, setTimeLimit] = React.useState((mock?.duration || 30) * 60);
+  const [timeLeft, setTimeLeft] = React.useState((mock?.duration || 30) * 60);
+  const [current, setCurrent] = React.useState(0);
+  // answers: { [questionId]: chosenPayload } — submit_mock kutgan formatda.
+  const [answers, setAnswers] = React.useState({});
+  const answersRef = React.useRef(answers);
+  React.useEffect(() => { answersRef.current = answers; }, [answers]);
+  const [submitting, setSubmitting] = React.useState(false);
+  const [submitted, setSubmitted] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState('');
+  const [confirmModal, setConfirmModal] = React.useState(false);
+  // timeLeft'ni handleSubmit closure'iga har sekund bog'lab interval'ni qayta
+  // o'rnatmaslik uchun ref orqali o'qiymiz (sarflangan vaqtni hisoblashda).
+  const timeLeftRef = React.useRef(timeLeft);
+  React.useEffect(() => { timeLeftRef.current = timeLeft; }, [timeLeft]);
+  const timeLimitRef = React.useRef(timeLimit);
+  React.useEffect(() => { timeLimitRef.current = timeLimit; }, [timeLimit]);
+
+  // start_mock — savollarni va vaqt cheklovini yuklaymiz (idempotent).
+  React.useEffect(() => {
+    if (mockId == null) { setLoadError("Mashq topilmadi"); setLoading(false); return undefined; }
+    let cancelled = false;
+    setLoading(true);
+    setLoadError('');
+    const token = globalThis.OlympyApi?.getToken?.();
+    globalThis.OlympyApi.startMockOlympiad(mockId, {}, token)
+      .then(resp => {
+        if (cancelled) return;
+        const list = Array.isArray(resp?.questions) ? resp.questions : [];
+        setQuestions(list);
+        if (resp?.title) setTitle(resp.title);
+        const mins = Number(resp?.time_limit_minutes) || (mock?.duration || 30);
+        setTimeLimit(mins * 60);
+        setTimeLeft(mins * 60);
+        setLoading(false);
+      })
+      .catch(err => {
+        if (cancelled) return;
+        // Allaqachon yakunlangan mashq — submit'da 400 bo'lardi; bu yerda
+        // boshlashda 400 ("yakunlagansiz") kelsa, foydalanuvchiga aniq xabar.
+        const detail = err?.data?.detail || err?.message || "Mashqni boshlab bo'lmadi";
+        setLoadError(detail);
+        setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [mockId]);
+
+  const TOTAL = questions.length;
+  const q = questions[current] || null;
+  const qType = (q?.question_type || q?.questionType || 'mcq');
+  const isTrueFalse = qType === 'yes_no'
+    || (Array.isArray(q?.options) && q.options.length === 2
+        && ['ha', "yo'q", 'yes', 'no', "to'g'ri", "noto'g'ri"].includes(String(q.options[0]).trim().toLowerCase()));
+  const answered = Object.values(answers).filter(v => {
+    if (v == null) return false;
+    if (typeof v === 'object') {
+      if (Array.isArray(v.selected)) return v.selected.length > 0;
+      if (v.blanks && typeof v.blanks === 'object') return Object.values(v.blanks).some(x => String(x || '').trim());
+      if (typeof v.text === 'string') return v.text.trim().length > 0;
+      if (typeof v.chosen_idx === 'number') return true;
+    }
+    return true;
+  }).length;
+
+  const setAnswer = (payload) => {
+    if (!q) return;
+    setAnswers(prev => ({ ...prev, [String(q.id)]: payload }));
+  };
+  const curVal = q ? answers[String(q.id)] : undefined;
+
+  const handleSubmit = React.useCallback(async () => {
+    if (submitting || submitted) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      const token = globalThis.OlympyApi?.getToken?.();
+      const resp = await globalThis.OlympyApi.submitMockOlympiad(
+        mockId, { answers: answersRef.current || {} }, token,
+      );
+      setSubmitted(true);
+      onFinish({
+        // Mashq natijasi — reytingga kirmaydi, attemptId yo'q (sertifikat/
+        // leaderboard ko'rsatilmaydi). ResultsPage oddiy ball/to'g'ri/jami
+        // ko'rsatadi va isMock bilan "mashq" ekanini bildiradi.
+        score: resp?.score ?? 0,
+        correct: resp?.correct_count ?? 0,
+        wrong: (resp?.total_questions ?? TOTAL) - (resp?.correct_count ?? 0),
+        total: resp?.total_questions ?? TOTAL,
+        rank: null,
+        time: Math.max(0, timeLimitRef.current - timeLeftRef.current),
+        maxScore: 100,
+        olympiad: { title, subject: mock?.subject || '', eventType: 'olympiad' },
+        isMock: true,
+        _api: false,
+      });
+    } catch (err) {
+      const detail = err?.data?.detail || err?.message || '';
+      if (/allaqachon/i.test(detail)) {
+        // Mashq allaqachon topshirilgan — qayta topshirib bo'lmaydi.
+        setSubmitError(detail);
+      } else {
+        setSubmitError("Javoblarni yuborib bo'lmadi. Qayta urinib ko'ring.");
+      }
+      setSubmitting(false);
+    }
+  }, [submitting, submitted, mockId, TOTAL, title, mock, onFinish]);
+
+  // Timer — mashqda yumshoq cheklov: vaqt tugaganda avto-submit. Savollar
+  // yuklanmaguncha (loading) yoki yuborilgach to'xtaydi.
+  React.useEffect(() => {
+    if (loading || submitted || loadError || TOTAL === 0) return undefined;
+    if (timeLeft <= 0) { handleSubmit(); return undefined; }
+    const t = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) { clearInterval(t); handleSubmit(); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(t);
+  }, [loading, submitted, loadError, TOTAL, timeLeft <= 0, handleSubmit]);
+
+  const fmtTime = (s) => {
+    const m = Math.floor(Math.max(0, s) / 60);
+    const sec = Math.max(0, s) % 60;
+    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  };
+
+  const goHome = () => onNavigate(roleHomePage ? roleHomePage(user) : 'student');
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{ background: '#050508' }}>
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
+          <div className="text-white/60 text-sm">Mashq yuklanmoqda...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+        <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
+          <div className="text-4xl">🔁</div>
+          <h2 className="text-lg font-black text-white">Mashqni ochib bo'lmadi</h2>
+          <p className="text-white/50 text-sm">{loadError}</p>
+          <button onClick={goHome} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold">Orqaga</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (TOTAL === 0) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+        <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
+          <div className="text-4xl">📭</div>
+          <h2 className="text-lg font-black text-white">Mashqda savollar yo'q</h2>
+          <p className="text-white/50 text-sm">Bu olimpiada uchun savollar topilmadi.</p>
+          <button onClick={goHome} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold">Orqaga</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen" style={{ background: '#050508' }}>
+      {/* Header */}
+      <div className="glass border-b border-white/5 px-4 md:px-6 py-3 flex items-center gap-3 sticky top-0 z-20">
+        <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={goHome} aria-label="Orqaga">
+          <BrandLogo size="sm" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-bold text-white truncate flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-300 bg-indigo-500/15 px-2 py-0.5 rounded-md flex-shrink-0">Mashq</span>
+            <span className="truncate">{title}</span>
+          </div>
+        </div>
+        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold flex-shrink-0 ${timeLeft < 60 ? 'bg-rose-500/15 text-rose-300' : 'glass text-white/70'}`}>
+          <Icon name="clock" size={14} /> {fmtTime(timeLeft)}
+        </div>
+      </div>
+
+      <div className="max-w-3xl mx-auto p-4 md:p-6 space-y-4 md:space-y-6 pb-28">
+        {/* Progress */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-xs text-white/50">Savol {current + 1} / {TOTAL}</div>
+          <div className="text-xs text-white/50">{answered} ta belgilangan</div>
+        </div>
+        <div className="progress-bar h-1.5">
+          <div className="progress-fill" style={{ width: `${((current + 1) / TOTAL) * 100}%` }} />
+        </div>
+
+        {/* Question */}
+        <div className="glass rounded-2xl p-4 md:p-6">
+          <div className="flex items-center gap-2 mb-3 flex-wrap">
+            {q?.subject && <span className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-md">{q.subject}</span>}
+          </div>
+          <div className="text-base md:text-lg font-bold text-white leading-relaxed mb-5 break-words select-none">{q?.text}</div>
+          <QuestionAnswerArea
+            qType={qType}
+            q={q}
+            isTrueFalse={isTrueFalse}
+            value={curVal}
+            onMcq={(i) => setAnswer({ chosen_idx: i })}
+            onYesNo={(i) => setAnswer({ chosen_idx: i })}
+            onText={(t) => setAnswer({ text: t })}
+            onMultiToggle={(i) => {
+              const sel = (curVal && Array.isArray(curVal.selected)) ? curVal.selected.slice() : [];
+              const pos = sel.indexOf(i);
+              if (pos >= 0) sel.splice(pos, 1); else sel.push(i);
+              setAnswer({ selected: sel });
+            }}
+            onBlank={(num, t) => {
+              const blanks = (curVal && curVal.blanks && typeof curVal.blanks === 'object') ? { ...curVal.blanks } : {};
+              blanks[String(num)] = t;
+              setAnswer({ blanks });
+            }}
+          />
+        </div>
+
+        {submitError && (
+          <div className="glass rounded-xl px-4 py-3 text-sm text-rose-300 border border-rose-500/20 flex items-center gap-2">
+            <Icon name="info" size={15} /> {submitError}
+          </div>
+        )}
+
+        {/* Navigation */}
+        <div className="flex items-center gap-3">
+          <button onClick={() => setCurrent(c => Math.max(0, c - 1))} disabled={current === 0}
+            className="btn-ghost px-4 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-40">
+            ← Oldingi
+          </button>
+          {current < TOTAL - 1 ? (
+            <button onClick={() => setCurrent(c => Math.min(TOTAL - 1, c + 1))}
+              className="btn-primary flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold">
+              Keyingi →
+            </button>
+          ) : (
+            <button onClick={() => setConfirmModal(true)} disabled={submitting}
+              className="btn-primary flex-1 px-4 py-2.5 rounded-xl text-sm font-bold disabled:opacity-50">
+              {submitting ? 'Yuborilmoqda...' : 'Yakunlash ✓'}
+            </button>
+          )}
+        </div>
+
+        {/* Savol gridi — tez navigatsiya */}
+        <div className="flex flex-wrap gap-2">
+          {questions.map((qq, i) => {
+            const isAns = answers[String(qq.id)] != null;
+            const isCur = i === current;
+            return (
+              <button key={qq.id ?? i} onClick={() => setCurrent(i)}
+                className={`w-9 h-9 rounded-lg text-xs font-bold transition-all ${isCur ? 'gradient-bg text-white' : isAns ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'glass text-white/40 border border-white/10'}`}>
+                {i + 1}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <Modal open={confirmModal} onClose={() => setConfirmModal(false)} title="Mashqni yakunlash">
+        <div className="space-y-4">
+          <div className="space-y-3">
+            {TOTAL - answered > 0 && (
+              <div className="flex items-center gap-2 bg-amber-500/10 text-amber-400 rounded-xl px-4 py-3 text-sm border border-amber-500/20">
+                <Icon name="info" size={15} /> {TOTAL - answered} ta savol javobsiz qoldi
+              </div>
+            )}
+            <p className="text-white/60 text-sm">Mashqni yakunlamoqchimisiz? Natija reytingga ta'sir qilmaydi.</p>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => setConfirmModal(false)} className="btn-ghost flex-1 py-3 rounded-xl">Davom etish</button>
+            <button onClick={() => { setConfirmModal(false); handleSubmit(); }} disabled={submitting}
+              className="btn-primary flex-1 py-3 rounded-xl font-bold disabled:opacity-50">
+              {submitting ? 'Yuborilmoqda...' : 'Yakunlash ✓'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
 const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const store = useStore();
 
@@ -1519,4 +1818,4 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   );
 };
 
-Object.assign(window, { OlympiadTestPage });
+Object.assign(window, { OlympiadTestPage, MockTestPage });

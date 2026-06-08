@@ -245,6 +245,16 @@ class MockOlympiad(models.Model):
         on_delete=models.CASCADE,
         related_name='mock_olympiads',
     )
+    # O'tib ketgan (tugagan) real olimpiadadan avtomatik yaratilgan mashq
+    # nusxasi bo'lsa — manba olimpiada. Bo'sh (null) bo'lsa, markaz menejeri
+    # qo'lda tuzgan oddiy mock. Olimpiada o'chirilsa SET_NULL — mashq nusxasi
+    # va uning urinishlari saqlanib qoladi (reytingga ta'sir qilmaydi).
+    source_olympiad = models.ForeignKey(
+        'olympiads.Olympiad',
+        null=True, blank=True,
+        on_delete=models.SET_NULL,
+        related_name='practice_mocks',
+    )
     title = models.CharField(max_length=200)
     subject = models.CharField(max_length=80, blank=True, default='')
     created_by = models.ForeignKey(
