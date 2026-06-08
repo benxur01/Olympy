@@ -3,8 +3,10 @@
 //   - HTML hujjat (navigatsiya): network-first — yangi deploy darhol ko'rinadi,
 //     internet bo'lmasa keshdan beriladi (oflayn rejim).
 //   - /api/ so'rovlari: network-first — xato bo'lsa keshdan (oxirgi javob).
+//   - Brand rasmlar: network-first — logotip kabi hash-lanmagan assetlar deploydan
+//     keyin eski keshdan chiqib qolmasin.
 //   - Statik fayllar (hash-li JS/CSS, rasm, font): cache-first — tez yuklanadi.
-const CACHE_NAME = 'olympy-v1';
+const CACHE_NAME = 'olympy-v2';
 const STATIC_ASSETS = ['/', '/index.html'];
 
 self.addEventListener('install', (e) => {
@@ -65,6 +67,23 @@ self.addEventListener('fetch', (e) => {
           return response;
         })
         .catch(() => caches.match(req).then((cached) => cached || caches.match('/index.html')))
+    );
+    return;
+  }
+
+  // Brand assetlar hash-lanmagan URL bilan keladi. Cache-first bo'lsa eski logo
+  // service worker keshida qolib ketadi, shuning uchun tarmoqni birinchi tekshiramiz.
+  if (url.pathname.startsWith('/brand/')) {
+    e.respondWith(
+      fetch(req)
+        .then((response) => {
+          if (response.ok) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(req))
     );
     return;
   }
