@@ -14,7 +14,8 @@ from django.db import transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes, throttle_classes
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
@@ -622,6 +623,7 @@ def change_my_password(request):
 
 
 @api_view(['POST', 'DELETE'])
+@parser_classes([JSONParser, MultiPartParser, FormParser])
 @permission_classes([IsAuthenticated])
 def update_my_avatar(request):
     """POST /api/auth/me/avatar/ — upload current user's profile image.

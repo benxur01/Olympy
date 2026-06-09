@@ -22,7 +22,8 @@ from django.db.models import Avg, Count
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status as http_status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
@@ -208,6 +209,7 @@ def churn_risk(request, center_id):
 
 
 @api_view(['POST'])
+@parser_classes([JSONParser, MultiPartParser, FormParser])
 @permission_classes([IsAuthenticated])
 def import_external_results(request, center_id):
     """POST /api/centers/<id>/import-external-results/

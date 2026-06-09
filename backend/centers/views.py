@@ -9,7 +9,8 @@ from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
@@ -217,6 +218,7 @@ def update_center(request, center_id):
 
 
 @api_view(['POST'])
+@parser_classes([JSONParser, MultiPartParser, FormParser])
 @permission_classes([IsAuthenticated])
 def update_center_image(request, center_id):
     """POST /api/centers/{id}/image/ — owner/manager uploads center image."""
