@@ -580,3 +580,51 @@ def send_telegram_markdown(chat_id, text):
     }
     return _telegram_api_post('sendMessage', payload)
 
+
+# ─── BILLING (TO'LOV) HOLATI XABARLARI ────────────────────────────────────────
+# To'lov webhook'lari foydalanuvchini har bir bosqichda xabardor qilishi uchun.
+# Har bir funksiya Telegram (mavjud bo'lsa) orqali yuboradi va xato bo'lsa
+# faqat log qoldiradi — to'lov oqimini hech qachon buzmaydi. Telegram bo'lmasa
+# email_utils chaqiruvchi tomonda alohida (sinxron) yuboriladi.
+
+def send_payment_received_to_user(user):
+    """To'lov qabul qilindi, premium tez orada faollashadi — Telegram xabari."""
+    message = (
+        "✅ To'lovingiz qabul qilindi va tekshirilmoqda.\n"
+        "Premium obunangiz tez orada faollashadi."
+    )
+    try:
+        return _send_telegram_to_user(user, message)
+    except Exception:
+        logger.exception('send_payment_received_to_user failed user=%s', getattr(user, 'id', None))
+        return False
+
+
+def send_payment_activated_to_user(user):
+    """Premium muvaffaqiyatli faollashdi — Telegram xabari."""
+    message = (
+        "🎉 Premium obunangiz faollashtirildi!\n"
+        "Endi barcha premium imkoniyatlardan foydalanishingiz mumkin."
+    )
+    try:
+        return _send_telegram_to_user(user, message)
+    except Exception:
+        logger.exception('send_payment_activated_to_user failed user=%s', getattr(user, 'id', None))
+        return False
+
+
+def send_payment_failed_to_user(user, support_contact=None):
+    """To'lov o'tdi, lekin premium ulanmadi — support'ga murojaat (Telegram)."""
+    contact_line = f"\nQo'llab-quvvatlash: {support_contact}" if support_contact else ''
+    message = (
+        "⚠️ To'lovingiz qabul qilindi, lekin Premium obunani faollashtirishda "
+        "muammo yuz berdi.\n"
+        "Iltimos, qo'llab-quvvatlash xizmati bilan bog'laning — masala tez "
+        f"orada hal qilinadi.{contact_line}"
+    )
+    try:
+        return _send_telegram_to_user(user, message)
+    except Exception:
+        logger.exception('send_payment_failed_to_user failed user=%s', getattr(user, 'id', None))
+        return False
+

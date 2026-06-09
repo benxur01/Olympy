@@ -802,6 +802,10 @@ BILLING_ENABLED = CLICK_ENABLED or PAYME_ENABLED
 from decimal import Decimal as _Decimal
 MANAGER_COMMISSION_RATE = _Decimal(os.environ.get('MANAGER_COMMISSION_RATE', '0.20'))
 
+# To'lovda muammo yuz berganda foydalanuvchiga ko'rsatiladigan qo'llab-quvvatlash
+# kontakti (Telegram/telefon/email). Bo'sh bo'lsa xabar kontaktsiz yuboriladi.
+OLYMPY_SUPPORT_CONTACT = os.environ.get('OLYMPY_SUPPORT_CONTACT', '')
+
 # Sentry — xato monitoring. Faqat SENTRY_DSN env o'rnatilgan bo'lsa yoqiladi;
 # bo'lmasa hech narsa qilmaydi (lokal development va DSN'siz deploylarda
 # graceful fallback). send_default_pii=False — foydalanuvchi shaxsiy ma'lumoti

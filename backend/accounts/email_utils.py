@@ -59,6 +59,67 @@ def send_subscription_activated(user):
     )
 
 
+def send_payment_received(user):
+    """To'lov qabul qilindi, tekshirilmoqda — foydalanuvchiga ogohlantirish.
+
+    Webhook to'lovni qayd etganda, lekin obuna hali faollashmagan oraliqda
+    yuboriladi (masalan, to'lov pending/processing). Email maydoni bo'lmasa
+    jimgina o'tib ketadi.
+    """
+    email = _user_email(user)
+    if not email:
+        return
+    send_async_email(
+        subject="Olympy: To'lovingiz qabul qilindi",
+        message=(
+            f'Hurmatli {user.full_name},\n\n'
+            "To'lovingiz qabul qilindi va tekshirilmoqda. Premium obunangiz "
+            "tez orada faollashadi.\n\nOlympy jamoasi"
+        ),
+        html_message=f'''
+        <h2>To'lovingiz qabul qilindi ⏳</h2>
+        <p>Hurmatli <b>{user.full_name}</b>,</p>
+        <p>To'lovingiz qabul qilindi va tekshirilmoqda. Premium obunangiz tez orada faollashadi.</p>
+        <br><p>Olympy jamoasi</p>
+        ''',
+        recipient_list=[email],
+    )
+
+
+def send_payment_failed(user, support_contact=None):
+    """To'lov o'tdi, lekin obuna avtomatik berilmadi — support'ga murojaat.
+
+    `_activate_subscription` False qaytarganda chaqiriladi: pul yechildi, ammo
+    premium ulanmadi. Email maydoni bo'lmasa jimgina o'tib ketadi.
+    """
+    email = _user_email(user)
+    if not email:
+        return
+    contact_line = f'\n\nQo\'llab-quvvatlash: {support_contact}' if support_contact else ''
+    contact_html = (
+        f'<p>Qo\'llab-quvvatlash: <b>{support_contact}</b></p>' if support_contact else ''
+    )
+    send_async_email(
+        subject="Olympy: To'lovingizda muammo yuz berdi",
+        message=(
+            f'Hurmatli {user.full_name},\n\n'
+            "To'lovingiz qabul qilindi, lekin Premium obunani faollashtirishda "
+            "muammo yuz berdi. Iltimos, qo'llab-quvvatlash xizmati bilan "
+            f"bog'laning — masala tez orada hal qilinadi.{contact_line}\n\n"
+            "Olympy jamoasi"
+        ),
+        html_message=f'''
+        <h2>To'lovda muammo yuz berdi ⚠️</h2>
+        <p>Hurmatli <b>{user.full_name}</b>,</p>
+        <p>To'lovingiz qabul qilindi, lekin Premium obunani faollashtirishda muammo yuz berdi.
+        Iltimos, qo'llab-quvvatlash xizmati bilan bog'laning — masala tez orada hal qilinadi.</p>
+        {contact_html}
+        <br><p>Olympy jamoasi</p>
+        ''',
+        recipient_list=[email],
+    )
+
+
 def send_olympiad_result(user, olympiad_name, score, rank=None):
     """Olimpiada natijasi haqida xabar."""
     email = _user_email(user)

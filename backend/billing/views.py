@@ -257,10 +257,108 @@ def _activate_subscription(user, amount, plan_id=None):
                 send_subscription_activated(user)
             except Exception:
                 pass
+            # Telegram orqali ham "Premium faollashdi" xabari (chat_id ulanган
+            # bo'lsa). Email maydoni hozircha yo'q, shuning uchun Telegram
+            # asosiy kanal — ulanmagan bo'lsa jimgina o'tib ketadi.
+            try:
+                from notifications.services import send_payment_activated_to_user
+                send_payment_activated_to_user(user)
+            except Exception:
+                pass
 
         transaction.on_commit(_on_subscription_committed)
         # Obuna muvaffaqiyatli yaratildi — chaqiruvchiga aniq signal.
         return True
+
+
+def _notify_payment_pending(tx):
+    """To'lov boshlandi (pending) — foydalanuvchiga "qabul qilindi, tekshirilmoqda".
+
+    Telegram + email orqali. IDEMPOTENT: bir tx uchun faqat bir marta yuboradi
+    (cache-guard) — Click Prepare yoki Payme CreateTransaction takror chaqirilsa
+    foydalanuvchi bir nechta bir xil xabar olmaydi. Cache ishlamasa fail-open
+    (xabar baribir yuboriladi). Har bir kanal alohida try/except.
+    """
+    try:
+        from django.core.cache import cache
+        guard_key = f"billing_pending_notified:{tx.id}"
+        # add() faqat kalit yo'q bo'lsa True qaytaradi — birinchi chaqiruvni
+        # belgilaydi. Allaqachon belgilangan bo'lsa takror yubormaymiz.
+        if not cache.add(guard_key, 1, 24 * 3600):
+            return
+    except Exception:
+        pass  # cache yo'q/xato — fail-open, xabar yuboriladi
+
+    user = tx.user
+
+    def _notify_user():
+        try:
+            from notifications.services import send_payment_received_to_user
+            send_payment_received_to_user(user)
+        except Exception:
+            logger.exception("Telegram 'to'lov qabul qilindi' xabari yuborilmadi (tx=%s)", tx.id)
+        try:
+            from accounts.email_utils import send_payment_received
+            send_payment_received(user)
+        except Exception:
+            logger.exception("Email 'to'lov qabul qilindi' xabari yuborilmadi (tx=%s)", tx.id)
+
+    # Atomik blok ichidan chaqirilsa commit'dan keyin yuboramiz (rollback'da
+    # noto'g'ri xabar qolmasin); tashqarida bo'lsa darhol.
+    try:
+        transaction.on_commit(_notify_user)
+    except Exception:
+        _notify_user()
+
+
+def _handle_activation_failed(tx, provider_label):
+    """To'lov o'tdi, lekin obuna AVTOMATIK berilmaganda chaqiriladi.
+
+    1) tx.failure_reason'ga sababni yozadi (admin panelida ko'rinishi uchun).
+    2) Foydalanuvchiga "muammo yuz berdi, support bilan bog'laning" xabarini
+       Telegram + email orqali yuboradi.
+
+    Webhook tashqi transaction.atomic() ichidan chaqiradi — DB yozuv va xabar
+    yuborishni on_commit'ga qo'yamiz, shunda tashqi blok rollback bo'lsa ham yon
+    ta'sir (noto'g'ri xabar) qolmaydi. Har bir qadam alohida try/except — to'lov
+    oqimi hech qachon buzilmaydi.
+    """
+    reason = (
+        "To'lov qabul qilindi, lekin mos aktiv plan topilmadi — obuna qo'lda "
+        "ulanishi kerak."
+    )
+    try:
+        tx.failure_reason = reason
+        tx.save(update_fields=['failure_reason', 'updated_at'])
+    except Exception:
+        logger.exception("failure_reason saqlanmadi (tx=%s)", getattr(tx, 'id', None))
+
+    user = tx.user
+    support_contact = getattr(settings, 'OLYMPY_SUPPORT_CONTACT', '') or None
+
+    def _notify_user():
+        try:
+            from notifications.services import send_payment_failed_to_user
+            send_payment_failed_to_user(user, support_contact=support_contact)
+        except Exception:
+            logger.exception("Telegram 'to'lov muammosi' xabari yuborilmadi (tx=%s)", tx.id)
+        try:
+            from accounts.email_utils import send_payment_failed
+            send_payment_failed(user, support_contact=support_contact)
+        except Exception:
+            logger.exception("Email 'to'lov muammosi' xabari yuborilmadi (tx=%s)", tx.id)
+
+    try:
+        transaction.on_commit(_notify_user)
+    except Exception:
+        # Atomik blokdan tashqarida bo'lsa (kutilmagan), to'g'ridan-to'g'ri.
+        _notify_user()
+
+    logger.error(
+        "%s to'lovi qabul qilindi (tx=%s, user_id=%s, amount=%s), "
+        "lekin obuna AVTOMATIK berilmadi — qo'lda premium ulang.",
+        provider_label, tx.id, tx.user_id, tx.amount,
+    )
 
 
 # ─── CLICK CALLBACK API ───────────────────────────────────────────────────────
@@ -344,7 +442,11 @@ def click_webhook(request):
     if int(action) == 0:
         if tx.status != PaymentTransaction.STATUS_PENDING:
             return JsonResponse({'error': -4, 'error_note': 'Already paid or cancelled'})
-            
+
+        # To'lov boshlandi (Prepare) — foydalanuvchiga "qabul qilindi,
+        # tekshirilmoqda" xabari. _notify_payment_pending idempotent (cache-guard).
+        _notify_payment_pending(tx)
+
         return JsonResponse({
             'click_trans_id': click_trans_id,
             'merchant_trans_id': merchant_trans_id,
@@ -386,14 +488,11 @@ def click_webhook(request):
             # Activate premium subscription for the user. To'lov o'tdi (tx
             # SUCCESS), shuning uchun Click'ka baribir 'Success' qaytaramiz —
             # aks holda Click qayta urinib, dublikat callback yuboradi. Ammo
-            # obuna berilmasa (plan topilmadi) aniq log qoldiramiz: to'lov
-            # qabul qilingan, lekin premium qo'lda ulanishi kerak.
+            # obuna berilmasa (plan topilmadi) failure_reason yozamiz va
+            # foydalanuvchini xabardor qilamiz: to'lov qabul qilingan, premium
+            # qo'lda ulanishi kerak.
             if not _activate_subscription(tx.user, tx.amount, plan_id=tx.plan_id):
-                logger.error(
-                    "Click to'lovi qabul qilindi (tx=%s, user_id=%s, amount=%s), "
-                    "lekin obuna AVTOMATIK berilmadi — qo'lda premium ulang.",
-                    tx.id, tx.user_id, tx.amount,
-                )
+                _handle_activation_failed(tx, 'Click')
 
         return JsonResponse({
             'click_trans_id': click_trans_id,
@@ -524,6 +623,10 @@ def payme_webhook(request):
             if not tx.provider_transaction_id:
                 tx.provider_transaction_id = payme_trans_id
                 tx.save()
+                # To'lov boshlandi (pending) — foydalanuvchiga "qabul qilindi,
+                # tekshirilmoqda" xabari. Faqat birinchi marta (yangi
+                # provider_transaction_id yozilganda) — takror yubormaslik uchun.
+                _notify_payment_pending(tx)
 
             # Return state
             return JsonResponse({
@@ -576,14 +679,11 @@ def payme_webhook(request):
             tx.save()
             # Activate premium. To'lov o'tdi (tx SUCCESS), shuning uchun
             # Payme'ga baribir state=2 qaytaramiz — aks holda Payme qayta
-            # urinadi. Ammo obuna berilmasa (plan topilmadi) aniq log
-            # qoldiramiz: to'lov qabul qilingan, premium qo'lda ulanishi kerak.
+            # urinadi. Ammo obuna berilmasa (plan topilmadi) failure_reason
+            # yozamiz va foydalanuvchini xabardor qilamiz: to'lov qabul
+            # qilingan, premium qo'lda ulanishi kerak.
             if not _activate_subscription(tx.user, tx.amount, plan_id=tx.plan_id):
-                logger.error(
-                    "Payme to'lovi qabul qilindi (tx=%s, user_id=%s, amount=%s), "
-                    "lekin obuna AVTOMATIK berilmadi — qo'lda premium ulang.",
-                    tx.id, tx.user_id, tx.amount,
-                )
+                _handle_activation_failed(tx, 'Payme')
 
         return JsonResponse({
             'result': {
