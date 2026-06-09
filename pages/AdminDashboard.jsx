@@ -1,5 +1,13 @@
 // pages/AdminDashboard.jsx
 
+// Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/admin/<key>`
+// manziliga bog'lanadi (home → /dashboard/admin).
+const ADMIN_DASHBOARD_PAGES = [
+  'home', 'users', 'centers', 'olympiads', 'requests',
+  'subjects', 'analytics', 'settings', 'myprofile',
+];
+const adminDashUrl = makeDashboardUrlSync('/dashboard/admin', ADMIN_DASHBOARD_PAGES);
+
 const formatAdminDate = (value) => {
   if (!value) return '';
   const d = new Date(value);
@@ -183,7 +191,7 @@ const AdminDonut = ({ segments }) => {
 const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
-  const [page, setPage] = React.useState('home');
+  const [page, setPage] = adminDashUrl.usePageState();
   const [toast, setToast] = React.useState('');
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [blockModal, setBlockModal] = React.useState(null);

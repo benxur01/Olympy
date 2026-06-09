@@ -1,5 +1,16 @@
 // pages/OwnerDashboard.jsx — Center director panel scoped to one center
 
+// Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/owner/<key>`
+// manziliga bog'lanadi (home → /dashboard/owner).
+// MUHIM: `analytics` ro'yxatda YO'Q — u app-level alohida sahifa
+// (setPageOrSpecial → onNavigate('analytics')). `proctoring` ham YO'Q — u
+// `liveOlympiadId` runtime state'iga bog'liq drill-down ko'rinish.
+const OWNER_DASHBOARD_PAGES = [
+  'home', 'requests', 'staff', 'students', 'olympiads', 'questionbank',
+  'shop', 'statistics', 'ranking', 'center', 'premium', 'settings', 'myprofile',
+];
+const ownerDashUrl = makeDashboardUrlSync('/dashboard/owner', OWNER_DASHBOARD_PAGES);
+
 const ownerFormatDate = (value) => {
   if (!value) return '—';
   const d = new Date(value);
@@ -89,7 +100,9 @@ const FALLBACK_ORGANIZATION_PRICING = [
 const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
-  const [page, setPage] = React.useState(() => {
+  // Boshlang'ich tab: avval sessionStorage deep-link'ini (masalan boshqa
+  // dashboarddan "premium"ga o'tish), keyin URL'ni hisobga oladi.
+  const [page, setPage] = ownerDashUrl.usePageState(() => {
     try {
       const saved = sessionStorage.getItem('owner_dashboard_initial_tab');
       if (saved) {
@@ -97,7 +110,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         return saved;
       }
     } catch {}
-    return 'home';
+    return null;
   });
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [paymentPlan, setPaymentPlan] = React.useState(null);

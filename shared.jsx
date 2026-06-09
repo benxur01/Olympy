@@ -192,6 +192,95 @@ const StatCard = ({ label, value, sub, icon, color = 'from-indigo-500 to-purple-
   </div>
 );
 
+// ─── Dashboard ichki navigatsiyasi ↔ URL (umumiy yordamchi) ───────────────────
+// StudentDashboard'da yozilgan URL-sync namunasini (PAGE_TO_PATH / PATH_TO_PAGE,
+// pushState, popstate) barcha rol dashboardlari (owner/manager/admin/teacher/
+// parent) uchun qayta ishlatish mumkin bo'lsin deb bitta joyga chiqarildi.
+//
+// Foydalanish:
+//   const dashUrl = makeDashboardUrlSync('/dashboard/owner', ['home','requests',...]);
+//   const [page, setPage] = dashUrl.usePageState();   // URL-aware page state
+//
+// Semantikasi StudentDashboard bilan bir xil:
+//  • `home` (ro'yxatdagi birinchi/maxsus kalit) base URL'iga to'g'ri keladi
+//    (masalan /dashboard/owner), qolganlari /dashboard/owner/<key> bo'ladi.
+//  • Faqat ro'yxatdagi kalitlar URL'ga yoziladi. Noma'lum/maxsus kalitlar
+//    (masalan 'analytics' — app-level alohida sahifa) state'ni o'zgartiradi-yu,
+//    URL'ga tegmaydi (pushState chaqirilmaydi).
+//  • Brauzer orqaga/oldinga (popstate) ichki tab'ni tiklaydi, lekin faqat URL
+//    hali shu dashboard namespace'ida bo'lsa; aks holda app-level router boshqaradi.
+const makeDashboardUrlSync = (base, pageKeys, homeKey = 'home') => {
+  const cleanBase = base.replace(/\/+$/, '') || '/';
+  const PAGE_TO_PATH = pageKeys.reduce((acc, key) => {
+    acc[key] = key === homeKey ? cleanBase : `${cleanBase}/${key}`;
+    return acc;
+  }, {});
+  const PATH_TO_PAGE = Object.fromEntries(
+    Object.entries(PAGE_TO_PATH).map(([page, path]) => [path, page])
+  );
+  // Joriy URL pathname'idan dashboard sub-sahifasini aniqlaydi. Aniq mos
+  // kelmasa, lekin URL shu base namespace'ida bo'lsa — homeKey'ga tushadi.
+  const pageFromPath = () => {
+    try {
+      const raw = (window.location.pathname || cleanBase).replace(/\/+$/, '') || cleanBase;
+      return PATH_TO_PAGE[raw] || homeKey;
+    } catch {
+      return homeKey;
+    }
+  };
+  // URL hali shu dashboard namespace'ida ekanini tekshiradi (popstate filtri).
+  const inNamespace = () => {
+    try {
+      const path = (window.location.pathname || '').replace(/\/+$/, '') || '/';
+      return path === cleanBase || path.startsWith(`${cleanBase}/`);
+    } catch {
+      return false;
+    }
+  };
+  // URL-aware page state hook. setPage(key) state'ni o'zgartiradi va (kalit
+  // ro'yxatda bo'lsa) manzil satrini pushState bilan yangilaydi.
+  // `initialResolver` — ixtiyoriy: boshlang'ich tab'ni URL'dan boshqa manbadan
+  // (masalan sessionStorage deep-link) aniqlash uchun. `null`/`undefined`
+  // qaytarsa, URL'dan olinadi. Qaytgan kalit ro'yxatda bo'lsa, URL ham mos
+  // ravishda replaceState bilan yangilanadi (manzil satri to'g'ri ko'rinsin).
+  const usePageState = (initialResolver) => {
+    const [page, setPageState] = React.useState(() => {
+      try {
+        const override = typeof initialResolver === 'function' ? initialResolver() : null;
+        if (override && PAGE_TO_PATH[override]) {
+          try {
+            const path = PAGE_TO_PATH[override];
+            if (window.location.pathname.replace(/\/+$/, '') !== path) {
+              window.history.replaceState({ dashboardBase: cleanBase, dashboardPage: override }, '', path);
+            }
+          } catch {}
+          return override;
+        }
+      } catch {}
+      return pageFromPath();
+    });
+    const setPage = React.useCallback((key) => {
+      setPageState(key);
+      const path = PAGE_TO_PATH[key];
+      if (!path) return; // noma'lum/maxsus kalit — URL'ga tegmaymiz
+      try {
+        if (window.location.pathname.replace(/\/+$/, '') !== path) {
+          window.history.pushState({ dashboardBase: cleanBase, dashboardPage: key }, '', path);
+        }
+      } catch {}
+    }, []);
+    React.useEffect(() => {
+      const onPop = () => {
+        if (inNamespace()) setPageState(pageFromPath());
+      };
+      window.addEventListener('popstate', onPop);
+      return () => window.removeEventListener('popstate', onPop);
+    }, []);
+    return [page, setPage, setPageState];
+  };
+  return { base: cleanBase, PAGE_TO_PATH, PATH_TO_PAGE, pageFromPath, inNamespace, usePageState };
+};
+
 // ─── Sidebar inner content (shared between desktop + mobile drawer) ────────────
 const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick, collapsed, setCollapsed, onItemClick }) => (
   <>

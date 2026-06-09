@@ -1,5 +1,47 @@
 // pages/StudentDashboard.jsx
 
+// ─── Dashboard ichki navigatsiyasi ↔ URL ──────────────────────────────────
+// Ilgari `page` faqat React state edi: `setPage('olympiads')` chaqirilganda URL
+// `/dashboard` ligicha qolib, foydalanuvchi qaysi bo'limda ekani manzil satrida
+// ko'rinmasdi (va orqaga/oldinga tugmalari ichki sahifalar uchun ishlamasdi).
+// Endi har bir ichki sahifa `/dashboard/<key>` URL'iga bog'langan:
+//   home → /dashboard, olympiads → /dashboard/olympiads, ...
+//
+// MUHIM:
+//  • `analytics` bu yerda YO'Q — u dashboard ichida emas, app-level alohida
+//    sahifa (`onNavigate('analytics')` → /analytics). setPageOrSpecial uni
+//    alohida ushlaydi.
+//  • Faqat haqiqiy sahifalar URL'ga yoziladi. Modal/special holatlar
+//    (masalan to'lov modali — setPaymentPlan orqali) page state'ga tegmaydi,
+//    shuning uchun URL'ga ham yozilmaydi.
+const STUDENT_DASHBOARD_BASE = '/dashboard';
+// Dashboard sub-sahifa kalitlari (navItems'dagi `analytics`dan tashqari hammasi).
+// Yangi sahifa qo'shilsa, shu ro'yxatga kalitini qo'shish kifoya.
+const STUDENT_DASHBOARD_PAGES = [
+  'home', 'olympiads', 'practice', 'profile', 'results', 'history',
+  'centers', 'leaderboard', 'mistakes', 'rewards', 'premium', 'settings',
+];
+const PAGE_TO_PATH = STUDENT_DASHBOARD_PAGES.reduce((acc, key) => {
+  acc[key] = key === 'home' ? STUDENT_DASHBOARD_BASE : `${STUDENT_DASHBOARD_BASE}/${key}`;
+  return acc;
+}, {});
+const PATH_TO_PAGE = Object.fromEntries(
+  Object.entries(PAGE_TO_PATH).map(([page, path]) => [path, page])
+);
+
+// Joriy URL pathname'idan dashboard sub-sahifasini aniqlaydi.
+//   /dashboard            → 'home'
+//   /dashboard/olympiads  → 'olympiads'
+//   /dashboard/<noma'lum> → 'home' (fallback)
+const studentPageFromPath = () => {
+  try {
+    const raw = (window.location.pathname || STUDENT_DASHBOARD_BASE).replace(/\/+$/, '') || STUDENT_DASHBOARD_BASE;
+    return PATH_TO_PAGE[raw] || 'home';
+  } catch {
+    return 'home';
+  }
+};
+
 const BadgeList = ({ badges }) => {
   if (!badges || badges.length === 0) return null;
   return (
@@ -435,7 +477,39 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // ko'rinadi. Mock/demo rejimida `isPremium` doim true bo'lgani uchun bu yerda
   // alohida bayroq ishlatamiz, aks holda hamma o'quvchiga belgi chiqib qolardi.
   const showPremiumBadge = !!(user?.isPremium ?? user?.is_premium);
-  const [page, setPage] = React.useState('home');
+  // `page` boshlang'ich qiymati URL'dan olinadi (deep-link: /dashboard/olympiads
+  // to'g'ridan-to'g'ri ochilsa, o'sha tab ochiladi). `setPage` URL-aware: ichki
+  // sahifa o'zgarganda manzil satrini ham yangilaydi (pushState).
+  const [page, setPageState] = React.useState(() => studentPageFromPath());
+  const setPage = React.useCallback((key) => {
+    setPageState(key);
+    // Faqat haqiqiy dashboard sahifalari URL'ga yoziladi. Noma'lum/special
+    // kalitlar (URL'i yo'q) state'ni o'zgartiradi-yu, manzilga tegmaydi.
+    const path = PAGE_TO_PATH[key];
+    if (!path) return;
+    try {
+      if (window.location.pathname.replace(/\/+$/, '') !== path) {
+        window.history.pushState({ page: 'student', studentPage: key }, '', path);
+      }
+    } catch {}
+  }, []);
+
+  // Brauzer orqaga/oldinga tugmalari: URL o'zgarganda ichki `page`ni
+  // sinxronlaymiz. (App-level popstate handler ham ishlaydi — u app `page`ni
+  // 'student' da ushlab turadi; bu yer esa dashboard ichki tab'ini tiklaydi.)
+  React.useEffect(() => {
+    const onPop = () => {
+      // Faqat hali dashboard ichida bo'lsak (URL /dashboard bilan boshlansa)
+      // ichki tab'ni yangilaymiz; aks holda app-level router boshqaradi.
+      try {
+        if (/^\/dashboard(\/.*)?$/.test(window.location.pathname || '')) {
+          setPageState(studentPageFromPath());
+        }
+      } catch {}
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   const [centerModal, setCenterModal] = React.useState(null);
   const [centerSearch, setCenterSearch] = React.useState('');
   // Debounce: markaz qidiruvi har bosishda emas, foydalanuvchi to'xtaganidan

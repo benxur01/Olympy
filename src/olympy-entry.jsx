@@ -228,6 +228,95 @@ const StatCard = ({ label, value, sub, icon, color = 'from-indigo-500 to-purple-
   </div>
 );
 
+// ─── Dashboard ichki navigatsiyasi ↔ URL (umumiy yordamchi) ───────────────────
+// StudentDashboard'da yozilgan URL-sync namunasini (PAGE_TO_PATH / PATH_TO_PAGE,
+// pushState, popstate) barcha rol dashboardlari (owner/manager/admin/teacher/
+// parent) uchun qayta ishlatish mumkin bo'lsin deb bitta joyga chiqarildi.
+//
+// Foydalanish:
+//   const dashUrl = makeDashboardUrlSync('/dashboard/owner', ['home','requests',...]);
+//   const [page, setPage] = dashUrl.usePageState();   // URL-aware page state
+//
+// Semantikasi StudentDashboard bilan bir xil:
+//  • `home` (ro'yxatdagi birinchi/maxsus kalit) base URL'iga to'g'ri keladi
+//    (masalan /dashboard/owner), qolganlari /dashboard/owner/<key> bo'ladi.
+//  • Faqat ro'yxatdagi kalitlar URL'ga yoziladi. Noma'lum/maxsus kalitlar
+//    (masalan 'analytics' — app-level alohida sahifa) state'ni o'zgartiradi-yu,
+//    URL'ga tegmaydi (pushState chaqirilmaydi).
+//  • Brauzer orqaga/oldinga (popstate) ichki tab'ni tiklaydi, lekin faqat URL
+//    hali shu dashboard namespace'ida bo'lsa; aks holda app-level router boshqaradi.
+const makeDashboardUrlSync = (base, pageKeys, homeKey = 'home') => {
+  const cleanBase = base.replace(/\/+$/, '') || '/';
+  const PAGE_TO_PATH = pageKeys.reduce((acc, key) => {
+    acc[key] = key === homeKey ? cleanBase : `${cleanBase}/${key}`;
+    return acc;
+  }, {});
+  const PATH_TO_PAGE = Object.fromEntries(
+    Object.entries(PAGE_TO_PATH).map(([page, path]) => [path, page])
+  );
+  // Joriy URL pathname'idan dashboard sub-sahifasini aniqlaydi. Aniq mos
+  // kelmasa, lekin URL shu base namespace'ida bo'lsa — homeKey'ga tushadi.
+  const pageFromPath = () => {
+    try {
+      const raw = (window.location.pathname || cleanBase).replace(/\/+$/, '') || cleanBase;
+      return PATH_TO_PAGE[raw] || homeKey;
+    } catch {
+      return homeKey;
+    }
+  };
+  // URL hali shu dashboard namespace'ida ekanini tekshiradi (popstate filtri).
+  const inNamespace = () => {
+    try {
+      const path = (window.location.pathname || '').replace(/\/+$/, '') || '/';
+      return path === cleanBase || path.startsWith(`${cleanBase}/`);
+    } catch {
+      return false;
+    }
+  };
+  // URL-aware page state hook. setPage(key) state'ni o'zgartiradi va (kalit
+  // ro'yxatda bo'lsa) manzil satrini pushState bilan yangilaydi.
+  // `initialResolver` — ixtiyoriy: boshlang'ich tab'ni URL'dan boshqa manbadan
+  // (masalan sessionStorage deep-link) aniqlash uchun. `null`/`undefined`
+  // qaytarsa, URL'dan olinadi. Qaytgan kalit ro'yxatda bo'lsa, URL ham mos
+  // ravishda replaceState bilan yangilanadi (manzil satri to'g'ri ko'rinsin).
+  const usePageState = (initialResolver) => {
+    const [page, setPageState] = React.useState(() => {
+      try {
+        const override = typeof initialResolver === 'function' ? initialResolver() : null;
+        if (override && PAGE_TO_PATH[override]) {
+          try {
+            const path = PAGE_TO_PATH[override];
+            if (window.location.pathname.replace(/\/+$/, '') !== path) {
+              window.history.replaceState({ dashboardBase: cleanBase, dashboardPage: override }, '', path);
+            }
+          } catch {}
+          return override;
+        }
+      } catch {}
+      return pageFromPath();
+    });
+    const setPage = React.useCallback((key) => {
+      setPageState(key);
+      const path = PAGE_TO_PATH[key];
+      if (!path) return; // noma'lum/maxsus kalit — URL'ga tegmaymiz
+      try {
+        if (window.location.pathname.replace(/\/+$/, '') !== path) {
+          window.history.pushState({ dashboardBase: cleanBase, dashboardPage: key }, '', path);
+        }
+      } catch {}
+    }, []);
+    React.useEffect(() => {
+      const onPop = () => {
+        if (inNamespace()) setPageState(pageFromPath());
+      };
+      window.addEventListener('popstate', onPop);
+      return () => window.removeEventListener('popstate', onPop);
+    }, []);
+    return [page, setPage, setPageState];
+  };
+  return { base: cleanBase, PAGE_TO_PATH, PATH_TO_PAGE, pageFromPath, inNamespace, usePageState };
+};
+
 // ─── Sidebar inner content (shared between desktop + mobile drawer) ────────────
 const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick, collapsed, setCollapsed, onItemClick }) => (
   <>
@@ -820,7 +909,7 @@ function VirtualList({ items, itemHeight = 60, containerHeight = 400, renderItem
 Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList });
 
 
-Object.assign(moduleScope, { formatUzPhoneInput, openExternalLink, Icon, BRAND_ASSET_BASE, BRAND_LOGO_SRC, BRAND_LOGO_SRC_WEBP, BrandLogo, Avatar, Badge, StatCard, SidebarContent, Sidebar, MobileBottomNav, Topbar, Modal, AvatarCropModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, subjectColors, SubjectBadge, TelegramMockup, useApiData, useDebounce, VirtualList });
+Object.assign(moduleScope, { formatUzPhoneInput, openExternalLink, Icon, BRAND_ASSET_BASE, BRAND_LOGO_SRC, BRAND_LOGO_SRC_WEBP, BrandLogo, Avatar, Badge, StatCard, makeDashboardUrlSync, SidebarContent, Sidebar, MobileBottomNav, Topbar, Modal, AvatarCropModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, subjectColors, SubjectBadge, TelegramMockup, useApiData, useDebounce, VirtualList });
 }
 var formatUzPhoneInput = moduleScope.formatUzPhoneInput;
 var openExternalLink = moduleScope.openExternalLink;
@@ -832,6 +921,7 @@ var BrandLogo = moduleScope.BrandLogo;
 var Avatar = moduleScope.Avatar;
 var Badge = moduleScope.Badge;
 var StatCard = moduleScope.StatCard;
+var makeDashboardUrlSync = moduleScope.makeDashboardUrlSync;
 var SidebarContent = moduleScope.SidebarContent;
 var Sidebar = moduleScope.Sidebar;
 var MobileBottomNav = moduleScope.MobileBottomNav;
@@ -5808,6 +5898,48 @@ var CodeEditor = moduleScope.CodeEditor;
 {
 // pages/StudentDashboard.jsx
 
+// ─── Dashboard ichki navigatsiyasi ↔ URL ──────────────────────────────────
+// Ilgari `page` faqat React state edi: `setPage('olympiads')` chaqirilganda URL
+// `/dashboard` ligicha qolib, foydalanuvchi qaysi bo'limda ekani manzil satrida
+// ko'rinmasdi (va orqaga/oldinga tugmalari ichki sahifalar uchun ishlamasdi).
+// Endi har bir ichki sahifa `/dashboard/<key>` URL'iga bog'langan:
+//   home → /dashboard, olympiads → /dashboard/olympiads, ...
+//
+// MUHIM:
+//  • `analytics` bu yerda YO'Q — u dashboard ichida emas, app-level alohida
+//    sahifa (`onNavigate('analytics')` → /analytics). setPageOrSpecial uni
+//    alohida ushlaydi.
+//  • Faqat haqiqiy sahifalar URL'ga yoziladi. Modal/special holatlar
+//    (masalan to'lov modali — setPaymentPlan orqali) page state'ga tegmaydi,
+//    shuning uchun URL'ga ham yozilmaydi.
+const STUDENT_DASHBOARD_BASE = '/dashboard';
+// Dashboard sub-sahifa kalitlari (navItems'dagi `analytics`dan tashqari hammasi).
+// Yangi sahifa qo'shilsa, shu ro'yxatga kalitini qo'shish kifoya.
+const STUDENT_DASHBOARD_PAGES = [
+  'home', 'olympiads', 'practice', 'profile', 'results', 'history',
+  'centers', 'leaderboard', 'mistakes', 'rewards', 'premium', 'settings',
+];
+const PAGE_TO_PATH = STUDENT_DASHBOARD_PAGES.reduce((acc, key) => {
+  acc[key] = key === 'home' ? STUDENT_DASHBOARD_BASE : `${STUDENT_DASHBOARD_BASE}/${key}`;
+  return acc;
+}, {});
+const PATH_TO_PAGE = Object.fromEntries(
+  Object.entries(PAGE_TO_PATH).map(([page, path]) => [path, page])
+);
+
+// Joriy URL pathname'idan dashboard sub-sahifasini aniqlaydi.
+//   /dashboard            → 'home'
+//   /dashboard/olympiads  → 'olympiads'
+//   /dashboard/<noma'lum> → 'home' (fallback)
+const studentPageFromPath = () => {
+  try {
+    const raw = (window.location.pathname || STUDENT_DASHBOARD_BASE).replace(/\/+$/, '') || STUDENT_DASHBOARD_BASE;
+    return PATH_TO_PAGE[raw] || 'home';
+  } catch {
+    return 'home';
+  }
+};
+
 const BadgeList = ({ badges }) => {
   if (!badges || badges.length === 0) return null;
   return (
@@ -6243,7 +6375,39 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // ko'rinadi. Mock/demo rejimida `isPremium` doim true bo'lgani uchun bu yerda
   // alohida bayroq ishlatamiz, aks holda hamma o'quvchiga belgi chiqib qolardi.
   const showPremiumBadge = !!(user?.isPremium ?? user?.is_premium);
-  const [page, setPage] = React.useState('home');
+  // `page` boshlang'ich qiymati URL'dan olinadi (deep-link: /dashboard/olympiads
+  // to'g'ridan-to'g'ri ochilsa, o'sha tab ochiladi). `setPage` URL-aware: ichki
+  // sahifa o'zgarganda manzil satrini ham yangilaydi (pushState).
+  const [page, setPageState] = React.useState(() => studentPageFromPath());
+  const setPage = React.useCallback((key) => {
+    setPageState(key);
+    // Faqat haqiqiy dashboard sahifalari URL'ga yoziladi. Noma'lum/special
+    // kalitlar (URL'i yo'q) state'ni o'zgartiradi-yu, manzilga tegmaydi.
+    const path = PAGE_TO_PATH[key];
+    if (!path) return;
+    try {
+      if (window.location.pathname.replace(/\/+$/, '') !== path) {
+        window.history.pushState({ page: 'student', studentPage: key }, '', path);
+      }
+    } catch {}
+  }, []);
+
+  // Brauzer orqaga/oldinga tugmalari: URL o'zgarganda ichki `page`ni
+  // sinxronlaymiz. (App-level popstate handler ham ishlaydi — u app `page`ni
+  // 'student' da ushlab turadi; bu yer esa dashboard ichki tab'ini tiklaydi.)
+  React.useEffect(() => {
+    const onPop = () => {
+      // Faqat hali dashboard ichida bo'lsak (URL /dashboard bilan boshlansa)
+      // ichki tab'ni yangilaymiz; aks holda app-level router boshqaradi.
+      try {
+        if (/^\/dashboard(\/.*)?$/.test(window.location.pathname || '')) {
+          setPageState(studentPageFromPath());
+        }
+      } catch {}
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   const [centerModal, setCenterModal] = React.useState(null);
   const [centerSearch, setCenterSearch] = React.useState('');
   // Debounce: markaz qidiruvi har bosishda emas, foydalanuvchi to'xtaganidan
@@ -8204,8 +8368,13 @@ const OlympiadCard = ({ olympiad: o, onStart, locked, readinessPct, attempted, o
 Object.assign(window, { StudentDashboard, OlympiadCard });
 
 
-Object.assign(moduleScope, { BadgeList, PremiumLock, StudentDashboard, PracticeFlow, OlympiadCard, RewardsPage, MistakesPage });
+Object.assign(moduleScope, { STUDENT_DASHBOARD_BASE, STUDENT_DASHBOARD_PAGES, PAGE_TO_PATH, PATH_TO_PAGE, studentPageFromPath, BadgeList, PremiumLock, StudentDashboard, PracticeFlow, OlympiadCard, RewardsPage, MistakesPage });
 }
+var STUDENT_DASHBOARD_BASE = moduleScope.STUDENT_DASHBOARD_BASE;
+var STUDENT_DASHBOARD_PAGES = moduleScope.STUDENT_DASHBOARD_PAGES;
+var PAGE_TO_PATH = moduleScope.PAGE_TO_PATH;
+var PATH_TO_PAGE = moduleScope.PATH_TO_PAGE;
+var studentPageFromPath = moduleScope.studentPageFromPath;
 var BadgeList = moduleScope.BadgeList;
 var PremiumLock = moduleScope.PremiumLock;
 var StudentDashboard = moduleScope.StudentDashboard;
@@ -8218,10 +8387,22 @@ var MistakesPage = moduleScope.MistakesPage;
 {
 // pages/ManagerDashboard.jsx
 
+// Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/manager/<key>`
+// manziliga bog'lanadi (home → /dashboard/manager).
+// MUHIM: `analytics` ro'yxatda YO'Q — u app-level alohida sahifa
+// (setPageOrSpecial → onNavigate('analytics')). `proctoring` ham YO'Q — u
+// `liveOlympiadId` runtime state'iga bog'liq drill-down ko'rinish (URL'ga
+// yozilmaydi, deep-link'da bo'sh ochilib qolardi).
+const MANAGER_DASHBOARD_PAGES = [
+  'home', 'requests', 'olympiads', 'questions', 'students',
+  'results', 'qanalytics', 'shop', 'profile',
+];
+const managerDashUrl = makeDashboardUrlSync('/dashboard/manager', MANAGER_DASHBOARD_PAGES);
+
 const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
-  const [page, setPage] = React.useState('home');
+  const [page, setPage] = managerDashUrl.usePageState();
   const [createModal, setCreateModal] = React.useState(false);
   const [telegramLink, setTelegramLink] = React.useState(null);
   const [telegramLinkLoading, setTelegramLinkLoading] = React.useState(false);
@@ -10666,8 +10847,10 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 Object.assign(window, { ManagerDashboard });
 
 
-Object.assign(moduleScope, { ManagerDashboard });
+Object.assign(moduleScope, { MANAGER_DASHBOARD_PAGES, managerDashUrl, ManagerDashboard });
 }
+var MANAGER_DASHBOARD_PAGES = moduleScope.MANAGER_DASHBOARD_PAGES;
+var managerDashUrl = moduleScope.managerDashUrl;
 var ManagerDashboard = moduleScope.ManagerDashboard;
 
 // pages/QuestionCreator.jsx
@@ -12110,10 +12293,16 @@ var QuestionCreatorPage = moduleScope.QuestionCreatorPage;
 {
 // pages/TeacherDashboard.jsx — Teacher panel: events + question creation
 
+// Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/teacher/<key>`
+// manziliga bog'lanadi (home → /dashboard/teacher). Namuna StudentDashboard'dan,
+// umumiy yordamchi shared.jsx'dagi makeDashboardUrlSync.
+const TEACHER_DASHBOARD_PAGES = ['home', 'olympiads', 'questions', 'profile'];
+const teacherDashUrl = makeDashboardUrlSync('/dashboard/teacher', TEACHER_DASHBOARD_PAGES);
+
 const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
-  const [page, setPage] = React.useState('home');
+  const [page, setPage] = teacherDashUrl.usePageState();
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [createModal, setCreateModal] = React.useState(false);
   const [editingEventId, setEditingEventId] = React.useState(null);
@@ -13151,8 +13340,10 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 Object.assign(window, { TeacherDashboard });
 
 
-Object.assign(moduleScope, { TeacherDashboard });
+Object.assign(moduleScope, { TEACHER_DASHBOARD_PAGES, teacherDashUrl, TeacherDashboard });
 }
+var TEACHER_DASHBOARD_PAGES = moduleScope.TEACHER_DASHBOARD_PAGES;
+var teacherDashUrl = moduleScope.teacherDashUrl;
 var TeacherDashboard = moduleScope.TeacherDashboard;
 
 // pages/OlympiadTest.jsx
@@ -16847,6 +17038,14 @@ var ProfilePage = moduleScope.ProfilePage;
 {
 // pages/AdminDashboard.jsx
 
+// Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/admin/<key>`
+// manziliga bog'lanadi (home → /dashboard/admin).
+const ADMIN_DASHBOARD_PAGES = [
+  'home', 'users', 'centers', 'olympiads', 'requests',
+  'subjects', 'analytics', 'settings', 'myprofile',
+];
+const adminDashUrl = makeDashboardUrlSync('/dashboard/admin', ADMIN_DASHBOARD_PAGES);
+
 const formatAdminDate = (value) => {
   if (!value) return '';
   const d = new Date(value);
@@ -17030,7 +17229,7 @@ const AdminDonut = ({ segments }) => {
 const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
-  const [page, setPage] = React.useState('home');
+  const [page, setPage] = adminDashUrl.usePageState();
   const [toast, setToast] = React.useState('');
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [blockModal, setBlockModal] = React.useState(null);
@@ -18272,8 +18471,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 Object.assign(window, { AdminDashboard });
 
 
-Object.assign(moduleScope, { formatAdminDate, adminStatusMeta, GlowCard, AdminPill, AdminInitial, AdminCenterLogo, AdminMetricCard, AdminBarChart, AdminDonut, AdminDashboard });
+Object.assign(moduleScope, { ADMIN_DASHBOARD_PAGES, adminDashUrl, formatAdminDate, adminStatusMeta, GlowCard, AdminPill, AdminInitial, AdminCenterLogo, AdminMetricCard, AdminBarChart, AdminDonut, AdminDashboard });
 }
+var ADMIN_DASHBOARD_PAGES = moduleScope.ADMIN_DASHBOARD_PAGES;
+var adminDashUrl = moduleScope.adminDashUrl;
 var formatAdminDate = moduleScope.formatAdminDate;
 var adminStatusMeta = moduleScope.adminStatusMeta;
 var GlowCard = moduleScope.GlowCard;
@@ -18288,6 +18489,17 @@ var AdminDashboard = moduleScope.AdminDashboard;
 // pages/OwnerDashboard.jsx
 {
 // pages/OwnerDashboard.jsx — Center director panel scoped to one center
+
+// Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/owner/<key>`
+// manziliga bog'lanadi (home → /dashboard/owner).
+// MUHIM: `analytics` ro'yxatda YO'Q — u app-level alohida sahifa
+// (setPageOrSpecial → onNavigate('analytics')). `proctoring` ham YO'Q — u
+// `liveOlympiadId` runtime state'iga bog'liq drill-down ko'rinish.
+const OWNER_DASHBOARD_PAGES = [
+  'home', 'requests', 'staff', 'students', 'olympiads', 'questionbank',
+  'shop', 'statistics', 'ranking', 'center', 'premium', 'settings', 'myprofile',
+];
+const ownerDashUrl = makeDashboardUrlSync('/dashboard/owner', OWNER_DASHBOARD_PAGES);
 
 const ownerFormatDate = (value) => {
   if (!value) return '—';
@@ -18378,7 +18590,9 @@ const FALLBACK_ORGANIZATION_PRICING = [
 const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
-  const [page, setPage] = React.useState(() => {
+  // Boshlang'ich tab: avval sessionStorage deep-link'ini (masalan boshqa
+  // dashboarddan "premium"ga o'tish), keyin URL'ni hisobga oladi.
+  const [page, setPage] = ownerDashUrl.usePageState(() => {
     try {
       const saved = sessionStorage.getItem('owner_dashboard_initial_tab');
       if (saved) {
@@ -18386,7 +18600,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         return saved;
       }
     } catch {}
-    return 'home';
+    return null;
   });
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [paymentPlan, setPaymentPlan] = React.useState(null);
@@ -21540,8 +21754,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 Object.assign(window, { OwnerDashboard });
 
 
-Object.assign(moduleScope, { ownerFormatDate, OwnerStatusPill, OwnerMetric, OwnerSidebarItem, FALLBACK_ORGANIZATION_PRICING, OwnerDashboard });
+Object.assign(moduleScope, { OWNER_DASHBOARD_PAGES, ownerDashUrl, ownerFormatDate, OwnerStatusPill, OwnerMetric, OwnerSidebarItem, FALLBACK_ORGANIZATION_PRICING, OwnerDashboard });
 }
+var OWNER_DASHBOARD_PAGES = moduleScope.OWNER_DASHBOARD_PAGES;
+var ownerDashUrl = moduleScope.ownerDashUrl;
 var ownerFormatDate = moduleScope.ownerFormatDate;
 var OwnerStatusPill = moduleScope.OwnerStatusPill;
 var OwnerMetric = moduleScope.OwnerMetric;
@@ -21820,8 +22036,13 @@ var AnalyticsPage = moduleScope.AnalyticsPage;
 {
 // pages/ParentDashboard.jsx — Ota-ona / Kuzatuvchi paneli
 
+// Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/parent/<key>`
+// manziliga bog'lanadi (home → /dashboard/parent).
+const PARENT_DASHBOARD_PAGES = ['home', 'children', 'profile'];
+const parentDashUrl = makeDashboardUrlSync('/dashboard/parent', PARENT_DASHBOARD_PAGES);
+
 const ParentDashboard = ({ user, onNavigate, onLogout }) => {
-  const [page, setPage] = React.useState('home');
+  const [page, setPage] = parentDashUrl.usePageState();
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [phoneInput, setPhoneInput] = React.useState('+998');
   const [linkError, setLinkError] = React.useState('');
@@ -22265,8 +22486,10 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
 Object.assign(window, { ParentDashboard });
 
 
-Object.assign(moduleScope, { ParentDashboard });
+Object.assign(moduleScope, { PARENT_DASHBOARD_PAGES, parentDashUrl, ParentDashboard });
 }
+var PARENT_DASHBOARD_PAGES = moduleScope.PARENT_DASHBOARD_PAGES;
+var parentDashUrl = moduleScope.parentDashUrl;
 var ParentDashboard = moduleScope.ParentDashboard;
 
 // app.jsx
@@ -22279,26 +22502,47 @@ const { useState, useEffect } = React;
 // va orqaga/oldinga tugmalari ishlashi uchun ishlatiladi.
 //
 // Eslatma: `results` sahifasi URL o'zgartirmaydi — u runtime state
-// (testResult) bilan boshqariladi. `test` esa endi URL'ga bog'langan
-// (/test/<id>) va F5'dan keyin sessiya localStorage'dan tiklanadi.
+// (testResult) bilan boshqariladi (test natijasi detal sahifasi). `test` esa
+// endi URL'ga bog'langan (/test/<id>) va F5'dan keyin sessiya localStorage'dan
+// tiklanadi.
+//
+// MUHIM: `olympiads` va `results` ilgari shu yerda `/dashboard/olympiads` va
+// `/dashboard/results` ga ko'rsatardi. Endi bu sub-path'lar StudentDashboard
+// ichki navigatsiyasiga (page state) tegishli — shuning uchun ular bu
+// mapping'dan olib tashlandi. `/dashboard/*` barcha sub-path'lari `student`
+// (StudentDashboard) sahifasiga yo'naltiriladi, qolgani esa dashboard ichida
+// hal qilinadi. `teacher`, `questions`, `parent` boshqa rollarga tegishli
+// bo'lib qoladi.
 const PAGE_URLS = {
   landing: '/',
   login: '/login',
   register: '/register',
   student: '/dashboard',
   teacher: '/dashboard/teacher',
-  manager: '/manager',
-  owner: '/owner',
-  admin: '/admin',
+  manager: '/dashboard/manager',
+  owner: '/dashboard/owner',
+  admin: '/dashboard/admin',
   questions: '/dashboard/questions',
-  olympiads: '/dashboard/olympiads',
-  results: '/dashboard/results',
   leaderboard: '/leaderboard',
   profile: '/profile',
   pending: '/pending',
   'pending-home': '/pending',
   analytics: '/analytics',
   parent: '/dashboard/parent',
+};
+
+// Rol dashboardlarining URL namespace'i ↔ app-level `page`. Har bir dashboard
+// o'z ichki tab'ini `/dashboard/<role>/<tab>` sub-path'ida boshqaradi (qaysi
+// tab — dashboard komponenti window.location'dan o'zi aniqlaydi). Bu yerda
+// faqat sub-path'ni to'g'ri rol sahifasiga (`page`) yo'naltiramiz.
+// `student` ataylab YO'Q — u barcha qolgan `/dashboard/*` sub-path'larini
+// catch-all sifatida oladi (pastdagi pageFromPath'ga qarang).
+const DASHBOARD_ROLE_BASES = {
+  '/dashboard/owner': 'owner',
+  '/dashboard/manager': 'manager',
+  '/dashboard/admin': 'admin',
+  '/dashboard/teacher': 'teacher',
+  '/dashboard/parent': 'parent',
 };
 
 // Faol test sahifasidagi olimpiada ID'sini saqlash kaliti. F5 (sahifa
@@ -22340,7 +22584,7 @@ const URL_PAGES = (() => {
 // Auth talab qiladigan sahifalar. Component tashqarisida `const` sifatida —
 // har render'da qayta yaratilmasligi va useEffect bog'liqliklarini bekorga
 // o'zgartirmasligi uchun.
-const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','parent','questions','olympiads'];
+const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','parent','questions'];
 
 const pageFromPath = () => {
   try {
@@ -22348,7 +22592,24 @@ const pageFromPath = () => {
     const path = raw === '/' ? '/' : raw.replace(/\/+$/, '');
     // /test va /test/<id> — test sahifasi (dinamik segment URL_PAGES'da yo'q).
     if (/^\/test(\/.*)?$/.test(path)) return 'test';
+    // Aniq mos kelgan URL (masalan /dashboard/teacher, /dashboard/manager,
+    // /dashboard/owner, /dashboard/admin, /dashboard/parent, /dashboard/questions
+    // tegishli rollarga; /dashboard StudentDashboard'ga).
     if (URL_PAGES[path]) return URL_PAGES[path];
+    // /dashboard/<role>/<tab> — rol dashboardlarining ichki sub-sahifalari
+    // (masalan /dashboard/owner/staff, /dashboard/manager/requests). Tegishli
+    // rol sahifasiga (`page`) yo'naltiramiz; qaysi tab ochilishini dashboard
+    // komponenti window.location'dan o'zi aniqlaydi. Student catch-all'dan
+    // OLDIN turishi shart — aks holda bu sub-path'lar `student`ga ketib qolardi.
+    for (const [base, rolePage] of Object.entries(DASHBOARD_ROLE_BASES)) {
+      if (path === base || path.startsWith(`${base}/`)) return rolePage;
+    }
+    // /dashboard/<sub> — StudentDashboard ichki sahifalari (olympiads,
+    // results, centers, analytics, mistakes, premium, practice, store,
+    // notifications, settings va h.k.). Bular `student` sahifasiga
+    // yo'naltiriladi; qaysi sub-tab ochilishini StudentDashboard o'zi
+    // window.location.pathname'dan aniqlaydi.
+    if (/^\/dashboard(\/.*)?$/.test(path)) return 'student';
     if (path === '/' || path === '') return 'landing';
   } catch {}
   return null;
@@ -22578,6 +22839,11 @@ const App = () => {
       const url = PAGE_URLS[page];
       if (!url) return;
       if (window.location.pathname === url) return;
+      // Dashboard sub-path deep-link'ini buzmaymiz (masalan /dashboard/olympiads
+      // → student, /dashboard/owner/staff → owner). Agar URL allaqachon shu
+      // `page`ga tegishli bo'lsa (pageFromPath === page), URL'ni base manzilga
+      // qaytarib yozmaymiz — ichki sub-tab'ni dashboard komponenti o'zi boshqaradi.
+      if (pageFromPath() === page) return;
       window.history.pushState({ page }, '', url);
     } catch {}
   }, [page]);
@@ -22800,12 +23066,15 @@ const App = () => {
           <ProfilePage user={user} onUserUpdate={updateCurrentUser} onNavigate={navigate} />
         </div>
       );
-      // /dashboard/questions, /dashboard/olympiads, /dashboard/results deep
-      // linklari ilgari renderPage switch'iga tushmasdi va LandingPage
-      // ko'rinardi. Endi role home dashboard'iga yo'naltiramiz — u dashboard
-      // ichidagi sub-tab orqali kerakli sahifani ochishi mumkin.
+      // `/dashboard/questions` deep-link'i ilgari renderPage switch'iga
+      // tushmasdi va LandingPage ko'rinardi. Endi role home dashboard'iga
+      // yo'naltiramiz — u dashboard ichidagi sub-tab orqali kerakli sahifani
+      // ochishi mumkin. `results` esa runtime-only sahifa: test natijasi
+      // detali (`navigate('results', attempt)`) — `testResult` bo'lsa alohida
+      // ResultsPage ko'rsatiladi. (`/dashboard/olympiads`,
+      // `/dashboard/results` URL'lari endi `student` sahifasiga
+      // yo'naltiriladi va StudentDashboard ichida hal qilinadi.)
       case 'questions':
-      case 'olympiads':
       case 'results':
         if (page === 'results' && testResult) {
           return (
@@ -22895,9 +23164,10 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(<App />);
 
 
-Object.assign(moduleScope, { PAGE_URLS, ACTIVE_TEST_KEY, readActiveTestId, writeActiveTestId, testIdFromPath, URL_PAGES, NEEDS_AUTH_PAGES, pageFromPath, App, root });
+Object.assign(moduleScope, { PAGE_URLS, DASHBOARD_ROLE_BASES, ACTIVE_TEST_KEY, readActiveTestId, writeActiveTestId, testIdFromPath, URL_PAGES, NEEDS_AUTH_PAGES, pageFromPath, App, root });
 }
 var PAGE_URLS = moduleScope.PAGE_URLS;
+var DASHBOARD_ROLE_BASES = moduleScope.DASHBOARD_ROLE_BASES;
 var ACTIVE_TEST_KEY = moduleScope.ACTIVE_TEST_KEY;
 var readActiveTestId = moduleScope.readActiveTestId;
 var writeActiveTestId = moduleScope.writeActiveTestId;

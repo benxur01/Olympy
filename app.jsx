@@ -6,26 +6,47 @@ const { useState, useEffect } = React;
 // va orqaga/oldinga tugmalari ishlashi uchun ishlatiladi.
 //
 // Eslatma: `results` sahifasi URL o'zgartirmaydi — u runtime state
-// (testResult) bilan boshqariladi. `test` esa endi URL'ga bog'langan
-// (/test/<id>) va F5'dan keyin sessiya localStorage'dan tiklanadi.
+// (testResult) bilan boshqariladi (test natijasi detal sahifasi). `test` esa
+// endi URL'ga bog'langan (/test/<id>) va F5'dan keyin sessiya localStorage'dan
+// tiklanadi.
+//
+// MUHIM: `olympiads` va `results` ilgari shu yerda `/dashboard/olympiads` va
+// `/dashboard/results` ga ko'rsatardi. Endi bu sub-path'lar StudentDashboard
+// ichki navigatsiyasiga (page state) tegishli — shuning uchun ular bu
+// mapping'dan olib tashlandi. `/dashboard/*` barcha sub-path'lari `student`
+// (StudentDashboard) sahifasiga yo'naltiriladi, qolgani esa dashboard ichida
+// hal qilinadi. `teacher`, `questions`, `parent` boshqa rollarga tegishli
+// bo'lib qoladi.
 const PAGE_URLS = {
   landing: '/',
   login: '/login',
   register: '/register',
   student: '/dashboard',
   teacher: '/dashboard/teacher',
-  manager: '/manager',
-  owner: '/owner',
-  admin: '/admin',
+  manager: '/dashboard/manager',
+  owner: '/dashboard/owner',
+  admin: '/dashboard/admin',
   questions: '/dashboard/questions',
-  olympiads: '/dashboard/olympiads',
-  results: '/dashboard/results',
   leaderboard: '/leaderboard',
   profile: '/profile',
   pending: '/pending',
   'pending-home': '/pending',
   analytics: '/analytics',
   parent: '/dashboard/parent',
+};
+
+// Rol dashboardlarining URL namespace'i ↔ app-level `page`. Har bir dashboard
+// o'z ichki tab'ini `/dashboard/<role>/<tab>` sub-path'ida boshqaradi (qaysi
+// tab — dashboard komponenti window.location'dan o'zi aniqlaydi). Bu yerda
+// faqat sub-path'ni to'g'ri rol sahifasiga (`page`) yo'naltiramiz.
+// `student` ataylab YO'Q — u barcha qolgan `/dashboard/*` sub-path'larini
+// catch-all sifatida oladi (pastdagi pageFromPath'ga qarang).
+const DASHBOARD_ROLE_BASES = {
+  '/dashboard/owner': 'owner',
+  '/dashboard/manager': 'manager',
+  '/dashboard/admin': 'admin',
+  '/dashboard/teacher': 'teacher',
+  '/dashboard/parent': 'parent',
 };
 
 // Faol test sahifasidagi olimpiada ID'sini saqlash kaliti. F5 (sahifa
@@ -67,7 +88,7 @@ const URL_PAGES = (() => {
 // Auth talab qiladigan sahifalar. Component tashqarisida `const` sifatida —
 // har render'da qayta yaratilmasligi va useEffect bog'liqliklarini bekorga
 // o'zgartirmasligi uchun.
-const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','parent','questions','olympiads'];
+const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','parent','questions'];
 
 const pageFromPath = () => {
   try {
@@ -75,7 +96,24 @@ const pageFromPath = () => {
     const path = raw === '/' ? '/' : raw.replace(/\/+$/, '');
     // /test va /test/<id> — test sahifasi (dinamik segment URL_PAGES'da yo'q).
     if (/^\/test(\/.*)?$/.test(path)) return 'test';
+    // Aniq mos kelgan URL (masalan /dashboard/teacher, /dashboard/manager,
+    // /dashboard/owner, /dashboard/admin, /dashboard/parent, /dashboard/questions
+    // tegishli rollarga; /dashboard StudentDashboard'ga).
     if (URL_PAGES[path]) return URL_PAGES[path];
+    // /dashboard/<role>/<tab> — rol dashboardlarining ichki sub-sahifalari
+    // (masalan /dashboard/owner/staff, /dashboard/manager/requests). Tegishli
+    // rol sahifasiga (`page`) yo'naltiramiz; qaysi tab ochilishini dashboard
+    // komponenti window.location'dan o'zi aniqlaydi. Student catch-all'dan
+    // OLDIN turishi shart — aks holda bu sub-path'lar `student`ga ketib qolardi.
+    for (const [base, rolePage] of Object.entries(DASHBOARD_ROLE_BASES)) {
+      if (path === base || path.startsWith(`${base}/`)) return rolePage;
+    }
+    // /dashboard/<sub> — StudentDashboard ichki sahifalari (olympiads,
+    // results, centers, analytics, mistakes, premium, practice, store,
+    // notifications, settings va h.k.). Bular `student` sahifasiga
+    // yo'naltiriladi; qaysi sub-tab ochilishini StudentDashboard o'zi
+    // window.location.pathname'dan aniqlaydi.
+    if (/^\/dashboard(\/.*)?$/.test(path)) return 'student';
     if (path === '/' || path === '') return 'landing';
   } catch {}
   return null;
@@ -305,6 +343,11 @@ const App = () => {
       const url = PAGE_URLS[page];
       if (!url) return;
       if (window.location.pathname === url) return;
+      // Dashboard sub-path deep-link'ini buzmaymiz (masalan /dashboard/olympiads
+      // → student, /dashboard/owner/staff → owner). Agar URL allaqachon shu
+      // `page`ga tegishli bo'lsa (pageFromPath === page), URL'ni base manzilga
+      // qaytarib yozmaymiz — ichki sub-tab'ni dashboard komponenti o'zi boshqaradi.
+      if (pageFromPath() === page) return;
       window.history.pushState({ page }, '', url);
     } catch {}
   }, [page]);
@@ -527,12 +570,15 @@ const App = () => {
           <ProfilePage user={user} onUserUpdate={updateCurrentUser} onNavigate={navigate} />
         </div>
       );
-      // /dashboard/questions, /dashboard/olympiads, /dashboard/results deep
-      // linklari ilgari renderPage switch'iga tushmasdi va LandingPage
-      // ko'rinardi. Endi role home dashboard'iga yo'naltiramiz — u dashboard
-      // ichidagi sub-tab orqali kerakli sahifani ochishi mumkin.
+      // `/dashboard/questions` deep-link'i ilgari renderPage switch'iga
+      // tushmasdi va LandingPage ko'rinardi. Endi role home dashboard'iga
+      // yo'naltiramiz — u dashboard ichidagi sub-tab orqali kerakli sahifani
+      // ochishi mumkin. `results` esa runtime-only sahifa: test natijasi
+      // detali (`navigate('results', attempt)`) — `testResult` bo'lsa alohida
+      // ResultsPage ko'rsatiladi. (`/dashboard/olympiads`,
+      // `/dashboard/results` URL'lari endi `student` sahifasiga
+      // yo'naltiriladi va StudentDashboard ichida hal qilinadi.)
       case 'questions':
-      case 'olympiads':
       case 'results':
         if (page === 'results' && testResult) {
           return (

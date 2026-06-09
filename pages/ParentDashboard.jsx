@@ -1,7 +1,12 @@
 // pages/ParentDashboard.jsx — Ota-ona / Kuzatuvchi paneli
 
+// Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/parent/<key>`
+// manziliga bog'lanadi (home → /dashboard/parent).
+const PARENT_DASHBOARD_PAGES = ['home', 'children', 'profile'];
+const parentDashUrl = makeDashboardUrlSync('/dashboard/parent', PARENT_DASHBOARD_PAGES);
+
 const ParentDashboard = ({ user, onNavigate, onLogout }) => {
-  const [page, setPage] = React.useState('home');
+  const [page, setPage] = parentDashUrl.usePageState();
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [phoneInput, setPhoneInput] = React.useState('+998');
   const [linkError, setLinkError] = React.useState('');
