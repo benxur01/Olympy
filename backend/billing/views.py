@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import base64
 import logging
 from decimal import Decimal, InvalidOperation
@@ -403,7 +404,9 @@ def click_webhook(request):
     raw_sign = f"{click_trans_id}{service_id}{secret_key}{merchant_trans_id}{amount}{action}{sign_time}"
     my_sign = hashlib.md5(raw_sign.encode()).hexdigest()
     
-    if my_sign != sign_string:
+    # Timing-safe taqqoslash — oddiy != belgi-belgi solishtirib, imzoni
+    # timing-hujum bilan tiklashga yo'l qo'yishi mumkin.
+    if not hmac.compare_digest(str(my_sign), str(sign_string or '')):
         return JsonResponse({'error': -1, 'error_note': 'SIGN CHECK FAILED'})
 
     # error qiymati noto'g'ri (raqam bo'lmagan) bo'lsa int() ValueError beradi —
@@ -412,6 +415,13 @@ def click_webhook(request):
         error_code = int(error) if error not in (None, '') else 0
     except (TypeError, ValueError):
         error_code = 0
+
+    # action ham xuddi shunday: None yoki raqam bo'lmagan qiymatda int()
+    # 500 bilan qulardi — himoyalab, noto'g'ri bo'lsa -3 qaytaramiz.
+    try:
+        action_code = int(action)
+    except (TypeError, ValueError):
+        return JsonResponse({'error': -3, 'error_note': 'Invalid action'})
     if error_code < 0:
         if merchant_trans_id:
             try:
@@ -439,7 +449,7 @@ def click_webhook(request):
         return JsonResponse({'error': -2, 'error_note': 'Incorrect amount'})
 
     # Action = 0: Prepare
-    if int(action) == 0:
+    if action_code == 0:
         if tx.status != PaymentTransaction.STATUS_PENDING:
             return JsonResponse({'error': -4, 'error_note': 'Already paid or cancelled'})
 
@@ -456,7 +466,7 @@ def click_webhook(request):
         })
         
     # Action = 1: Complete
-    elif int(action) == 1:
+    elif action_code == 1:
         if tx.status == PaymentTransaction.STATUS_SUCCESS:
             return JsonResponse({
                 'click_trans_id': click_trans_id,
@@ -538,10 +548,11 @@ def payme_webhook(request):
     encoded_auth = base64.b64encode(expected_auth.encode()).decode()
 
     auth_parts = auth_header.split(' ', 1)
+    # Timing-safe taqqoslash (hmac.compare_digest) — oddiy != timing-hujumga ochiq.
     if (
         len(auth_parts) != 2
         or auth_parts[0] != 'Basic'
-        or auth_parts[1] != encoded_auth
+        or not hmac.compare_digest(auth_parts[1], encoded_auth)
     ):
         return JsonResponse({'error': {'code': -32504, 'message': 'Insufficient privilege'}}, status=200)
 

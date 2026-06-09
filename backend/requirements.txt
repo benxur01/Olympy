@@ -28,3 +28,5 @@ sentry-sdk[django]==2.20.0
 # Email yuborish — Mailgun backend (faqat MAILGUN_API_KEY o'rnatilganda
 # yoqiladi, aks holda console/SMTP backend ishlatiladi).
 django-anymail[mailgun]==12.0
+# Admin login brute-force himoyasi (5 xato urinishdan keyin 1 soat lock).
+django-axes>=6.0

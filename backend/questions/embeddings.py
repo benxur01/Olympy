@@ -11,6 +11,7 @@ Maydon nomlari `questions.models.Question` bilan mos: `text`, `options`
 Modelda `is_deleted` yo'q, shuning uchun u ishlatilmaydi.
 """
 
+import hashlib
 import json
 import logging
 import urllib.error
@@ -57,7 +58,9 @@ def get_embedding(text):
         return None
 
     snippet = text[:2000]
-    cache_key = f'emb_{hash(snippet[:200])}'
+    # sha256 — builtin hash() PYTHONHASHSEED'ga bog'liq (har gunicorn worker
+    # har xil kalit ishlatardi va cache amalda ishlamasdi).
+    cache_key = f'emb_{hashlib.sha256(snippet.encode()).hexdigest()[:32]}'
     cached = cache.get(cache_key)
     if cached:
         return cached

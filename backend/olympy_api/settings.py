@@ -79,6 +79,8 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt.token_blacklist',
     'corsheaders',
     'django_celery_beat',
+    # Admin login brute-force himoyasi (django-axes).
+    'axes',
     # Anymail (Mailgun email backend) — faqat MAILGUN_API_KEY o'rnatilganda
     # qo'shamiz. Aks holda paket o'rnatilmagan lokal muhitda startup buzilmaydi.
     *(['anymail'] if os.environ.get('MAILGUN_API_KEY') else []),
@@ -114,6 +116,9 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'olympy_api.middleware.SecurityHeadersMiddleware',
+    # django-axes: muvaffaqiyatsiz login urinishlarini kuzatadi va lockout
+    # javobini qaytaradi. Hujjat bo'yicha ro'yxat oxirida turishi kerak.
+    'axes.middleware.AxesMiddleware',
 ]
 
 ROOT_URLCONF = 'olympy_api.urls'
@@ -214,6 +219,19 @@ DATABASES['default']['CONN_HEALTH_CHECKS'] = True
 
 AUTH_USER_MODEL = 'accounts.User'
 
+# django-axes — admin login brute-force himoyasi: 5 ta muvaffaqiyatsiz
+# urinishdan keyin 1 soatga bloklanadi; muvaffaqiyatli login hisobni nollaydi.
+# API login'ga ta'sir qilmaydi (u check_password bilan ishlaydi va o'z
+# per-phone lock mexanizmiga ega) — axes faqat authenticate() oqimini qamraydi.
+AXES_FAILURE_LIMIT = 5
+AXES_COOLOFF_TIME = 1  # soat
+AXES_LOCKOUT_CALLABLE = None
+AXES_RESET_ON_SUCCESS = True
+AUTHENTICATION_BACKENDS = [
+    'axes.backends.AxesStandaloneBackend',
+    'django.contrib.auth.backends.ModelBackend',
+]
+
 # Parol kuchaytirildi: minimal uzunlik 6 → 8. Mavjud foydalanuvchilarning
 # saqlangan parollari qayta tekshirilmaydi (faqat ro'yxatdan o'tish, parol
 # o'zgartirish/tiklashda amal qiladi). CommonPasswordValidator ("123456",
@@ -295,6 +313,12 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
+    ],
+    # Default faqat JSON — cross-site HTML form POST (CSRF vektori) qabul
+    # qilinmaydi. Fayl yuklaydigan view'lar o'zida @parser_classes bilan
+    # MultiPartParser/FormParser'ni lokal yoqadi.
+    'DEFAULT_PARSER_CLASSES': [
+        'rest_framework.parsers.JSONParser',
     ],
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.AnonRateThrottle',
@@ -391,13 +415,11 @@ SIMPLE_JWT = {
 }
 JWT_ACCESS_COOKIE_NAME = os.environ.get('JWT_ACCESS_COOKIE_NAME', 'olympy_access')
 JWT_REFRESH_COOKIE_NAME = os.environ.get('JWT_REFRESH_COOKIE_NAME', 'olympy_refresh')
-# SameSite tanlash logikasi: dev rejimda Lax kifoya (frontend ham backend ham
-# localhost). Production rejimida frontend va backend turli domenlarda bo'lishi
-# mumkin (masalan app.olympy.uz va api.olympy.uz) — Lax cookie cross-site GET
-# da yuborilmaydi va auth restore ishlamay qoladi. Shuning uchun production
-# uchun 'None' tanlanadi (brauzer bunday cookie'ni faqat Secure+HTTPS bilan
-# qabul qiladi). Override OLYMPY_JWT_COOKIE_SAMESITE env var orqali mavjud.
-_default_samesite = 'Lax' if DEBUG else 'None'
+# SameSite=Lax har ikki muhitda ham yetarli: production'da prolymp.uz va
+# api.prolymp.uz bir xil eTLD+1 (prolymp.uz) ostida — bu same-site hisoblanadi
+# va Lax cookie barcha so'rovlarda yuboriladi. 'None' CSRF yuzasini keraksiz
+# kengaytirardi. Override OLYMPY_JWT_COOKIE_SAMESITE env var orqali mavjud.
+_default_samesite = 'Lax'
 JWT_COOKIE_SAMESITE = os.environ.get('OLYMPY_JWT_COOKIE_SAMESITE', _default_samesite)
 
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
@@ -563,8 +585,6 @@ SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 # (Spectre/cross-window hujum yuzasini kamaytiradi).
 SECURE_CROSS_ORIGIN_OPENER_POLICY = 'same-origin'
 X_FRAME_OPTIONS = 'DENY'
-# Eski brauzerlarning ichki XSS filtri yoqilsin (legacy himoya qatlami).
-SECURE_BROWSER_XSS_FILTER = True
 # Django session cookie'sini JS o'qiy olmasin (XSS orqali sessiya o'g'irlash
 # xavfini kamaytiradi). API JWT bilan ishlaydi, session asosan admin panel uchun.
 SESSION_COOKIE_HTTPONLY = True

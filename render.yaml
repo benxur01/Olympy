@@ -15,6 +15,22 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+    # Xavfsizlik headerlari — clickjacking, MIME-sniffing va XSS himoyasi.
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+      # CSP real resurslarga moslangan: Google Fonts (index.html), Cloudinary
+      # rasmlar (https:), API (api.prolymp.uz / onrender) va Sentry (connect).
+      - path: /*
+        name: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; connect-src 'self' https://api.prolymp.uz https://*.onrender.com https://*.sentry.io; font-src 'self' data: https://fonts.gstatic.com; frame-ancestors 'none'"
 
   # ── Backend API (Django + Gunicorn) ────────────────────────────────────────
   - type: web_service
