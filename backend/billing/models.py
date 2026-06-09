@@ -134,6 +134,10 @@ class PaymentTransaction(models.Model):
     provider = models.CharField(max_length=50) # 'click' or 'payme'
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     provider_transaction_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
+    # To'lov o'tdi (status=success), lekin obuna AVTOMATIK berilmaganda (plan
+    # topilmadi, noaniq narx va h.k.) yoki to'lov bekor bo'lganda sababini shu
+    # yerda saqlaymiz. Admin panelida muammoli to'lovlarni tez aniqlash uchun.
+    failure_reason = models.TextField(blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

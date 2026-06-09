@@ -450,6 +450,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [paymentPlan, setPaymentPlan] = React.useState(null);
   const [paymentLoading, setPaymentLoading] = React.useState(false);
   const [paymentError, setPaymentError] = React.useState('');
+  // To'lov havolasi ochilgandan keyin "qabul qilindi, tekshirilmoqda" holatiga
+  // o'tamiz — foydalanuvchi pul to'lab, premium darhol ko'rinmasa ham nima
+  // bo'layotganini biladi.
+  const [paymentSubmitted, setPaymentSubmitted] = React.useState(false);
   const [plans, setPlans] = React.useState([]);
   const [plansLoading, setPlansLoading] = React.useState(true);
   const [durationFilter, setDurationFilter] = React.useState(30);
@@ -684,6 +688,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     if (!paymentPlan) return;
     setPaymentLoading(true);
     setPaymentError('');
+    setPaymentSubmitted(false);
     try {
       const token = OlympyApi.getToken();
       const res = await OlympyApi.createCheckoutSession({
@@ -692,6 +697,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       }, token);
       if (res && res.payment_url) {
         openExternalLink(res.payment_url);
+        // To'lov sahifasi ochildi — modalni "qabul qilindi, tekshirilmoqda"
+        // holatiga o'tkazamiz.
+        setPaymentSubmitted(true);
       } else {
         throw new Error("To'lov havolasini olishda xatolik yuz berdi");
       }
@@ -1775,12 +1783,36 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       />
 
       {paymentPlan && (
-        <Modal 
-          open={!!paymentPlan} 
-          onClose={() => { setPaymentPlan(null); setPaymentError(''); }} 
-          title="To'lov usulini tanlang"
+        <Modal
+          open={!!paymentPlan}
+          onClose={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); }}
+          title={paymentSubmitted ? "To'lov qabul qilindi" : "To'lov usulini tanlang"}
           width="max-w-md"
         >
+          {paymentSubmitted ? (
+            <div className="space-y-5 text-center py-2">
+              <div className="mx-auto w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                <span className="text-3xl">✅</span>
+              </div>
+              <div className="space-y-2">
+                <p className="text-base font-bold text-white">To'lovingiz qabul qilindi</p>
+                <p className="text-sm text-white/60 leading-relaxed">
+                  To'lov tekshirilmoqda. Premium obunangiz tasdiqlangach tez orada
+                  avtomatik faollashadi. Telegram orqali xabar yuboriladi.
+                </p>
+                <p className="text-xs text-white/35 leading-relaxed">
+                  Agar bir necha daqiqada premium faollashmasa, sahifani yangilang
+                  yoki qo'llab-quvvatlash xizmatiga murojaat qiling.
+                </p>
+              </div>
+              <button
+                onClick={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); }}
+                className="w-full py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white text-sm font-bold transition-colors"
+              >
+                Yopish
+              </button>
+            </div>
+          ) : (
           <div className="space-y-6">
             <div className="rounded-2xl bg-white/5 p-4 border border-white/10">
               <div className="flex justify-between items-center mb-1">
@@ -1824,6 +1856,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <div className="text-center text-xs text-white/40 animate-pulse">To'lov sahifasiga yo'naltirilmoqda...</div>
             )}
           </div>
+          )}
         </Modal>
       )}
     </div>
