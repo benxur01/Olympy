@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="uz" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Olympy — Online Olimpiada Platformasi</title>
+  <meta name="description" content="Ta'lim markazlari va maktablar uchun online olimpiada platformasi. Musobaqalar, testlar va natijalarni real vaqtda kuzating." />
+  <meta name="keywords" content="olimpiada, online olimpiada, test platformasi, ta'lim, maktab olimpiadasi, olympy, Olympy" />
+  <meta name="robots" content="index, follow" />
+  <meta name="google-site-verification" content="v89q4inHmDlBFs8xevTBS20Dv5NJgqyPM1MWwYWMcow" />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://prolymp.uz/" />
+  <meta property="og:title" content="Olympy — Online Olimpiada Platformasi" />
+  <meta property="og:description" content="Ta'lim markazlari va maktablar uchun online olimpiada platformasi. Musobaqalar, testlar va natijalarni real vaqtda kuzating." />
+  <meta property="og:image" content="https://prolymp.uz/icons/icon-512x512.png" />
+  <meta property="og:locale" content="uz_UZ" />
+  <meta property="og:site_name" content="Olympy" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Olympy — Online Olimpiada Platformasi" />
+  <meta name="twitter:description" content="Ta'lim markazlari va maktablar uchun online olimpiada platformasi." />
+  <meta name="twitter:image" content="https://prolymp.uz/icons/icon-512x512.png" />
+  <meta name="theme-color" content="#050508" />
+  <!-- PWA: "Uy ekraniga qo'shish" orqali ilovani o'rnatish uchun -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Olympy" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!-- Tailwind CDN olib tashlandi: avval https://cdn.tailwindcss.com 1+ MB JS yuklardi
+       va render kechikishi yaratardi. Endi Tailwind PostCSS plugin orqali build paytida
+       CSS generatsiya qilinadi (tailwind.config.js + postcss.config.js + src/index.css). -->
+</head>
+<body class="dark">
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="shared.jsx"></script>
+  <script type="text/babel" src="pages/constants/uzbekistanDistricts.js"></script>
+  <script type="text/babel" src="pages/store.jsx"></script>
+  <script type="text/babel" src="pages/PendingAccess.jsx"></script>
+  <script type="text/babel" src="pages/Landing.jsx"></script>
+  <script type="text/babel" src="pages/TelegramVerify.jsx"></script>
+  <script type="text/babel" src="pages/Auth.jsx"></script>
+  <!-- Retention: widget va onboarding komponentlari StudentDashboard/app.jsx'dan
+       oldin yuklanadi (global scope'da ulardan oldin ta'riflanishi kerak). -->
+  <script type="text/babel" src="pages/RetentionWidgets.jsx"></script>
+  <script type="text/babel" src="pages/OnboardingWizard.jsx"></script>
+  <!-- CodeEditor (IT kod savollari uchun) OlympiadTest/QuestionCreator/Results'dan
+       oldin yuklanadi — ular global CodeEditor komponentidan foydalanadi. -->
+  <script type="text/babel" src="pages/CodeEditor.jsx"></script>
+  <script type="text/babel" src="pages/StudentDashboard.jsx"></script>
+  <script type="text/babel" src="pages/ManagerDashboard.jsx"></script>
+  <script type="text/babel" src="pages/QuestionCreator.jsx"></script>
+  <script type="text/babel" src="pages/TeacherDashboard.jsx"></script>
+  <script type="text/babel" src="pages/OlympiadTest.jsx"></script>
+  <script type="text/babel" src="pages/Results.jsx"></script>
+  <script type="text/babel" src="pages/Leaderboard.jsx"></script>
+  <script type="text/babel" src="pages/Profile.jsx"></script>
+  <script type="text/babel" src="pages/AdminDashboard.jsx"></script>
+  <script type="text/babel" src="pages/OwnerDashboard.jsx"></script>
+  <script type="text/babel" src="pages/Analytics.jsx"></script>
+  <script type="text/babel" src="pages/ParentDashboard.jsx"></script>
+  <script type="text/babel" src="app.jsx"></script>
+</body>
+</html>
