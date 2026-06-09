@@ -4,7 +4,7 @@
   "description": "Online olimpiada platformasi",
   "start_url": "/",
   "scope": "/",
-  "display": "standalone",
+  "display": "minimal-ui",
   "orientation": "portrait-primary",
   "background_color": "#050508",
   "theme_color": "#050508",
