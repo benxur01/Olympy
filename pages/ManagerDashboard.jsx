@@ -1,9 +1,21 @@
 // pages/ManagerDashboard.jsx
 
+// Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/manager/<key>`
+// manziliga bog'lanadi (home → /dashboard/manager).
+// MUHIM: `analytics` ro'yxatda YO'Q — u app-level alohida sahifa
+// (setPageOrSpecial → onNavigate('analytics')). `proctoring` ham YO'Q — u
+// `liveOlympiadId` runtime state'iga bog'liq drill-down ko'rinish (URL'ga
+// yozilmaydi, deep-link'da bo'sh ochilib qolardi).
+const MANAGER_DASHBOARD_PAGES = [
+  'home', 'requests', 'olympiads', 'questions', 'students',
+  'results', 'qanalytics', 'shop', 'profile',
+];
+const managerDashUrl = makeDashboardUrlSync('/dashboard/manager', MANAGER_DASHBOARD_PAGES);
+
 const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
-  const [page, setPage] = React.useState('home');
+  const [page, setPage] = managerDashUrl.usePageState();
   const [createModal, setCreateModal] = React.useState(false);
   const [telegramLink, setTelegramLink] = React.useState(null);
   const [telegramLinkLoading, setTelegramLinkLoading] = React.useState(false);

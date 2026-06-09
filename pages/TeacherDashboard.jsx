@@ -1,9 +1,15 @@
 // pages/TeacherDashboard.jsx — Teacher panel: events + question creation
 
+// Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/teacher/<key>`
+// manziliga bog'lanadi (home → /dashboard/teacher). Namuna StudentDashboard'dan,
+// umumiy yordamchi shared.jsx'dagi makeDashboardUrlSync.
+const TEACHER_DASHBOARD_PAGES = ['home', 'olympiads', 'questions', 'profile'];
+const teacherDashUrl = makeDashboardUrlSync('/dashboard/teacher', TEACHER_DASHBOARD_PAGES);
+
 const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
-  const [page, setPage] = React.useState('home');
+  const [page, setPage] = teacherDashUrl.usePageState();
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [createModal, setCreateModal] = React.useState(false);
   const [editingEventId, setEditingEventId] = React.useState(null);
