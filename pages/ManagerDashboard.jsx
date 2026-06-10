@@ -984,7 +984,9 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <Icon name="send" size={13} /> {telegramLinkLoading ? 'Ulanmoqda...' : 'Botni ulash'}
             </button>
             {telegramLink?.telegram_deep_link && (
-              <a href={telegramLink.telegram_deep_link} target="_blank" rel="noreferrer" className="text-xs text-indigo-300 hover:text-indigo-200">
+              <a href={telegramLink.telegram_deep_link} target="_blank" rel="noreferrer"
+                onClick={(e) => { if (goToTelegramLink(telegramLink.telegram_deep_link)) e.preventDefault(); }}
+                className="text-xs text-indigo-300 hover:text-indigo-200">
                 Telegram botni ochish
               </a>
             )}

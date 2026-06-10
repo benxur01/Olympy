@@ -10,8 +10,10 @@ const MAX_ATTEMPTS = 5;
 const goToTelegramLink = (link) => {
   if (!link) return false;
   try {
-    openExternalLink(link);
-    return true;
+    // fallbackRedirect=false — popup bloklansa SPA'dan chiqib ketmaymiz
+    // (forma va OTP holati saqlanadi); foydalanuvchi pastdagi ko'rinadigan
+    // "Telegram botni ochish" havolasini bosadi.
+    return openExternalLink(link, { fallbackRedirect: false });
   } catch (_) {
     return false;
   }
@@ -179,6 +181,7 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
           </div>
           {deepLink && (
             <a href={deepLink} target="_blank" rel="noreferrer"
+              onClick={(e) => { if (goToTelegramLink(deepLink)) e.preventDefault(); }}
               className="btn-ghost text-xs px-3 py-3 rounded-xl flex items-center justify-center gap-1.5 font-semibold">
               <Icon name="send" size={14} /> Telegram botni ochish
             </a>

@@ -9,9 +9,40 @@ const formatUzPhoneInput = (raw) => {
   return '+998' + local.slice(0, 9);
 };
 
-const openExternalLink = (url) => {
-  if (!url) return;
-  window.location.href = url;
+// Tashqi havolani ochish. Muvaffaqiyatli ochilsa true qaytaradi.
+// 1) Telegram Mini App ichida window.open/location.href ishonchsiz —
+//    rasmiy WebApp API (openTelegramLink / openLink) ishlatiladi;
+// 2) oddiy brauzerda yangi oynada ochiladi — SPA holati (forma, OTP
+//    bosqichi, to'lov polling) yo'qolmaydi;
+// 3) popup bloklansa: fallbackRedirect=true bo'lsa joriy oynada ochiladi,
+//    aks holda false qaytadi — chaqiruvchi ko'rinadigan havola ko'rsatadi.
+const openExternalLink = (url, { fallbackRedirect = true } = {}) => {
+  if (!url) return false;
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if (tg && tg.initData) {
+    try {
+      if (tg.openTelegramLink && /^https:\/\/t\.me\//i.test(url)) {
+        tg.openTelegramLink(url);
+        return true;
+      }
+      if (tg.openLink) {
+        tg.openLink(url);
+        return true;
+      }
+    } catch (_) { /* WebApp API ishlamasa pastdagi oddiy yo'lga o'tamiz */ }
+  }
+  // Eslatma: 'noopener' feature'i bilan window.open har doim null qaytaradi
+  // (spec bo'yicha) — blok aniqlash uchun avval ochib, keyin opener uziladi.
+  const win = window.open(url, '_blank');
+  if (win) {
+    try { win.opener = null; } catch (_) { /* cross-origin bo'lsa ham zarari yo'q */ }
+    return true;
+  }
+  if (fallbackRedirect) {
+    window.location.href = url;
+    return true;
+  }
+  return false;
 };
 
 // ─── Icons (inline SVG helpers) ───────────────────────────────────────────────

@@ -45,9 +45,40 @@ const formatUzPhoneInput = (raw) => {
   return '+998' + local.slice(0, 9);
 };
 
-const openExternalLink = (url) => {
-  if (!url) return;
-  window.location.href = url;
+// Tashqi havolani ochish. Muvaffaqiyatli ochilsa true qaytaradi.
+// 1) Telegram Mini App ichida window.open/location.href ishonchsiz —
+//    rasmiy WebApp API (openTelegramLink / openLink) ishlatiladi;
+// 2) oddiy brauzerda yangi oynada ochiladi — SPA holati (forma, OTP
+//    bosqichi, to'lov polling) yo'qolmaydi;
+// 3) popup bloklansa: fallbackRedirect=true bo'lsa joriy oynada ochiladi,
+//    aks holda false qaytadi — chaqiruvchi ko'rinadigan havola ko'rsatadi.
+const openExternalLink = (url, { fallbackRedirect = true } = {}) => {
+  if (!url) return false;
+  const tg = window.Telegram && window.Telegram.WebApp;
+  if (tg && tg.initData) {
+    try {
+      if (tg.openTelegramLink && /^https:\/\/t\.me\//i.test(url)) {
+        tg.openTelegramLink(url);
+        return true;
+      }
+      if (tg.openLink) {
+        tg.openLink(url);
+        return true;
+      }
+    } catch (_) { /* WebApp API ishlamasa pastdagi oddiy yo'lga o'tamiz */ }
+  }
+  // Eslatma: 'noopener' feature'i bilan window.open har doim null qaytaradi
+  // (spec bo'yicha) — blok aniqlash uchun avval ochib, keyin opener uziladi.
+  const win = window.open(url, '_blank');
+  if (win) {
+    try { win.opener = null; } catch (_) { /* cross-origin bo'lsa ham zarari yo'q */ }
+    return true;
+  }
+  if (fallbackRedirect) {
+    window.location.href = url;
+    return true;
+  }
+  return false;
 };
 
 // ─── Icons (inline SVG helpers) ───────────────────────────────────────────────
@@ -3799,8 +3830,10 @@ const MAX_ATTEMPTS = 5;
 const goToTelegramLink = (link) => {
   if (!link) return false;
   try {
-    openExternalLink(link);
-    return true;
+    // fallbackRedirect=false — popup bloklansa SPA'dan chiqib ketmaymiz
+    // (forma va OTP holati saqlanadi); foydalanuvchi pastdagi ko'rinadigan
+    // "Telegram botni ochish" havolasini bosadi.
+    return openExternalLink(link, { fallbackRedirect: false });
   } catch (_) {
     return false;
   }
@@ -3968,6 +4001,7 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
           </div>
           {deepLink && (
             <a href={deepLink} target="_blank" rel="noreferrer"
+              onClick={(e) => { if (goToTelegramLink(deepLink)) e.preventDefault(); }}
               className="btn-ghost text-xs px-3 py-3 rounded-xl flex items-center justify-center gap-1.5 font-semibold">
               <Icon name="send" size={14} /> Telegram botni ochish
             </a>
@@ -4419,6 +4453,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                       href={forgot.deepLink}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={(e) => { if (openTelegramDeepLink(forgot.deepLink)) e.preventDefault(); }}
                       className="btn-ghost mt-3 text-xs px-3 py-2 rounded-xl flex items-center justify-center gap-1.5 font-semibold"
                     >
                       <Icon name="send" size={12} /> Telegram botni ochish
@@ -9371,7 +9406,9 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <Icon name="send" size={13} /> {telegramLinkLoading ? 'Ulanmoqda...' : 'Botni ulash'}
             </button>
             {telegramLink?.telegram_deep_link && (
-              <a href={telegramLink.telegram_deep_link} target="_blank" rel="noreferrer" className="text-xs text-indigo-300 hover:text-indigo-200">
+              <a href={telegramLink.telegram_deep_link} target="_blank" rel="noreferrer"
+                onClick={(e) => { if (goToTelegramLink(telegramLink.telegram_deep_link)) e.preventDefault(); }}
+                className="text-xs text-indigo-300 hover:text-indigo-200">
                 Telegram botni ochish
               </a>
             )}

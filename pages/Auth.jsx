@@ -411,6 +411,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                       href={forgot.deepLink}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={(e) => { if (openTelegramDeepLink(forgot.deepLink)) e.preventDefault(); }}
                       className="btn-ghost mt-3 text-xs px-3 py-2 rounded-xl flex items-center justify-center gap-1.5 font-semibold"
                     >
                       <Icon name="send" size={12} /> Telegram botni ochish
