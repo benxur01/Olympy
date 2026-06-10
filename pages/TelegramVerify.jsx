@@ -7,14 +7,14 @@
 const OTP_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 
-const goToTelegramLink = (link) => {
+const goToTelegramLink = (link, { fallbackRedirect = true } = {}) => {
   if (!link) return false;
   try {
     // fallbackRedirect=true — window.open async so'rovdan keyin brauzer
     // tomonidan bloklanadi; fallback sifatida window.location.href ishlatiladi.
     // Mobileda t.me URL sxemasini OS ushlaydi va Telegram ochiladi,
     // brauzer sahifasi fonda qoladi (SPA holati yo'qolmaydi).
-    return openExternalLink(link, { fallbackRedirect: true });
+    return openExternalLink(link, { fallbackRedirect });
   } catch (_) {
     return false;
   }
@@ -102,7 +102,7 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
       setDeepLink(link);
       setStatus('opened');
       setExpiresAt(Date.now() + OTP_TTL_MS);
-      const opened = goToTelegramLink(link);
+      const opened = goToTelegramLink(link, { fallbackRedirect: false });
       if (!opened) {
         setError("Brauzer Telegramga o'tishni blokladi. Quyidagi “Telegram botni ochish” tugmasini bosing.");
       }
@@ -198,12 +198,12 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
               {verifying ? '...' : 'Tasdiqlash'}
             </button>
           </div>
-          {error && (
-            <div className="text-xs text-rose-400 flex items-center gap-1">
-              <Icon name="info" size={12} /> {error}
-            </div>
-          )}
         </>
+      )}
+      {error && (
+        <div className="text-xs text-rose-400 flex items-center gap-1 mt-1">
+          <Icon name="info" size={12} /> {error}
+        </div>
       )}
     </div>
   );

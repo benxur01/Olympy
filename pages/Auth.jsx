@@ -160,10 +160,16 @@ const LoginPage = ({ onNavigate, onLogin }) => {
 
   const openTelegramDeepLink = (link) => {
     if (!link) return false;
-    if (typeof goToTelegramLink === 'function') return goToTelegramLink(link);
+    if (typeof goToTelegramLink === 'function') {
+      return goToTelegramLink(link, { fallbackRedirect: false });
+    }
     try {
-      window.location.assign(link);
-      return true;
+      const win = window.open(link, '_blank');
+      if (win) {
+        try { win.opener = null; } catch (_) {}
+        return true;
+      }
+      return false;
     } catch (_) {
       return false;
     }
