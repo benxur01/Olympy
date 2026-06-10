@@ -110,8 +110,19 @@ def _set_auth_cookies(response, payload):
 
 
 def _clear_auth_cookies(response):
-    response.delete_cookie(getattr(settings, 'JWT_ACCESS_COOKIE_NAME', 'olympy_access'))
-    response.delete_cookie(getattr(settings, 'JWT_REFRESH_COOKIE_NAME', 'olympy_refresh'))
+    # samesite ni o'rnatishdagi bilan bir xil yuboramiz: SameSite=None (cross-
+    # site) rejimida atributsiz Set-Cookie (brauzer default Lax) cross-site
+    # javobda rad etiladi va cookie o'chmay qolardi. Django 3.1+ delete_cookie
+    # samesite='None' bo'lsa Secure flag'ni o'zi qo'shadi.
+    same_site = getattr(settings, 'JWT_COOKIE_SAMESITE', 'Lax')
+    response.delete_cookie(
+        getattr(settings, 'JWT_ACCESS_COOKIE_NAME', 'olympy_access'),
+        samesite=same_site,
+    )
+    response.delete_cookie(
+        getattr(settings, 'JWT_REFRESH_COOKIE_NAME', 'olympy_refresh'),
+        samesite=same_site,
+    )
     return response
 
 

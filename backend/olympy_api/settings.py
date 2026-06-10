@@ -415,11 +415,18 @@ SIMPLE_JWT = {
 }
 JWT_ACCESS_COOKIE_NAME = os.environ.get('JWT_ACCESS_COOKIE_NAME', 'olympy_access')
 JWT_REFRESH_COOKIE_NAME = os.environ.get('JWT_REFRESH_COOKIE_NAME', 'olympy_refresh')
-# SameSite=Lax har ikki muhitda ham yetarli: production'da prolymp.uz va
-# api.prolymp.uz bir xil eTLD+1 (prolymp.uz) ostida — bu same-site hisoblanadi
-# va Lax cookie barcha so'rovlarda yuboriladi. 'None' CSRF yuzasini keraksiz
-# kengaytirardi. Override OLYMPY_JWT_COOKIE_SAMESITE env var orqali mavjud.
-_default_samesite = 'Lax'
+# SameSite tanlash: dev rejimda Lax kifoya (frontend ham backend ham
+# localhost — same-site). Production'da esa frontend (prolymp.uz) va backend
+# (olympy-api.onrender.com) TURLI saytlarda: onrender.com Public Suffix
+# List'da bo'lgani uchun bu cross-site hisoblanadi. Cross-site fetch'da
+# brauzer SameSite=Lax cookie'ni saqlamaydi ham, yubormaydi ham — login'dan
+# keyin birinchi so'rovdayoq 401 kelib foydalanuvchi darhol chiqarib
+# yuborilardi. Shu sababli production default 'None' (Secure=True bilan,
+# _set_auth_cookies buni majburlaydi). CSRF xavfi cheklangan: API faqat
+# JSONParser qabul qiladi (cross-site HTML form POST o'tmaydi) va CORS
+# faqat ro'yxatdagi originlarga ruxsat beradi.
+# Override OLYMPY_JWT_COOKIE_SAMESITE env var orqali mavjud.
+_default_samesite = 'Lax' if DEBUG else 'None'
 JWT_COOKIE_SAMESITE = os.environ.get('OLYMPY_JWT_COOKIE_SAMESITE', _default_samesite)
 
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
