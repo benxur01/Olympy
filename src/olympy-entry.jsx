@@ -3827,13 +3827,14 @@ var useABTest = moduleScope.useABTest;
 const OTP_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
 
-const goToTelegramLink = (link) => {
+const goToTelegramLink = (link, { fallbackRedirect = true } = {}) => {
   if (!link) return false;
   try {
-    // fallbackRedirect=false — popup bloklansa SPA'dan chiqib ketmaymiz
-    // (forma va OTP holati saqlanadi); foydalanuvchi pastdagi ko'rinadigan
-    // "Telegram botni ochish" havolasini bosadi.
-    return openExternalLink(link, { fallbackRedirect: false });
+    // fallbackRedirect=true — window.open async so'rovdan keyin brauzer
+    // tomonidan bloklanadi; fallback sifatida window.location.href ishlatiladi.
+    // Mobileda t.me URL sxemasini OS ushlaydi va Telegram ochiladi,
+    // brauzer sahifasi fonda qoladi (SPA holati yo'qolmaydi).
+    return openExternalLink(link, { fallbackRedirect });
   } catch (_) {
     return false;
   }
@@ -3921,7 +3922,7 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
       setDeepLink(link);
       setStatus('opened');
       setExpiresAt(Date.now() + OTP_TTL_MS);
-      const opened = goToTelegramLink(link);
+      const opened = goToTelegramLink(link, { fallbackRedirect: false });
       if (!opened) {
         setError("Brauzer Telegramga o'tishni blokladi. Quyidagi “Telegram botni ochish” tugmasini bosing.");
       }
@@ -4017,12 +4018,12 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
               {verifying ? '...' : 'Tasdiqlash'}
             </button>
           </div>
-          {error && (
-            <div className="text-xs text-rose-400 flex items-center gap-1">
-              <Icon name="info" size={12} /> {error}
-            </div>
-          )}
         </>
+      )}
+      {error && (
+        <div className="text-xs text-rose-400 flex items-center gap-1 mt-1">
+          <Icon name="info" size={12} /> {error}
+        </div>
       )}
     </div>
   );
@@ -4202,10 +4203,16 @@ const LoginPage = ({ onNavigate, onLogin }) => {
 
   const openTelegramDeepLink = (link) => {
     if (!link) return false;
-    if (typeof goToTelegramLink === 'function') return goToTelegramLink(link);
+    if (typeof goToTelegramLink === 'function') {
+      return goToTelegramLink(link, { fallbackRedirect: false });
+    }
     try {
-      window.location.assign(link);
-      return true;
+      const win = window.open(link, '_blank');
+      if (win) {
+        try { win.opener = null; } catch (_) {}
+        return true;
+      }
+      return false;
     } catch (_) {
       return false;
     }
