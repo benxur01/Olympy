@@ -10,10 +10,11 @@ const MAX_ATTEMPTS = 5;
 const goToTelegramLink = (link) => {
   if (!link) return false;
   try {
-    // fallbackRedirect=false — popup bloklansa SPA'dan chiqib ketmaymiz
-    // (forma va OTP holati saqlanadi); foydalanuvchi pastdagi ko'rinadigan
-    // "Telegram botni ochish" havolasini bosadi.
-    return openExternalLink(link, { fallbackRedirect: false });
+    // fallbackRedirect=true — window.open async so'rovdan keyin brauzer
+    // tomonidan bloklanadi; fallback sifatida window.location.href ishlatiladi.
+    // Mobileda t.me URL sxemasini OS ushlaydi va Telegram ochiladi,
+    // brauzer sahifasi fonda qoladi (SPA holati yo'qolmaydi).
+    return openExternalLink(link, { fallbackRedirect: true });
   } catch (_) {
     return false;
   }
