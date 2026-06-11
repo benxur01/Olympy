@@ -132,6 +132,9 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
         verification_id: verificationId,
         phone,
         otp: code.trim(),
+        // Bu blok faqat ro'yxatdan o'tish oqimida ishlatiladi — backend
+        // aynan registration purpose'dagi kodni tekshiradi.
+        purpose: 'registration',
       });
       if (data && data.verified === false) {
         setAttempts(a => a + 1);

@@ -33,6 +33,20 @@ def cleanup_phone_verifications():
     return f'Cleaned {deleted[0]} phone verification rows'
 
 
+@shared_task(name='accounts.celery_heartbeat')
+def celery_heartbeat_task():
+    """Celery worker tirikligini health check uchun cache'ga belgilaydi.
+
+    Beat har 30 soniyada chaqiradi; /api/health/ esa cache'dagi timestamp
+    60 soniyadan eski (yoki yo'q) bo'lsa "celery": "down" qaytaradi. Timeout
+    120s — kechikkan heartbeat'ni ham aniq yoshi bilan o'qiy olamiz.
+    """
+    import time
+    from django.core.cache import cache
+
+    cache.set('celery_heartbeat', time.time(), timeout=120)
+
+
 @shared_task
 def send_monthly_report_pdf_telegram_task(chat_id, student_id, filename_tg, caption_tg):
     """Generate child's monthly PDF report and send it to parent via Telegram."""

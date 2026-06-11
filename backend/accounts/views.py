@@ -10,7 +10,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.contrib.auth.hashers import check_password, make_password
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -159,6 +159,24 @@ def health_check(request):
         assert cache.get('health') == '1'
     except Exception:
         status_payload['redis'] = 'error'
+    # Celery worker holati: beat har 30 soniyada 'celery_heartbeat' cache
+    # kalitini yangilaydi (accounts.celery_heartbeat task). Timestamp 60
+    # soniyadan eski yoki umuman yo'q bo'lsa worker o'lik deb hisoblanadi.
+    # EAGER rejimda (broker sozlanmagan, tasklar sinxron) worker yo'q —
+    # "eager" qaytaramiz, bu xato emas.
+    try:
+        if getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False):
+            status_payload['celery'] = 'eager'
+        else:
+            import time
+            from django.core.cache import cache
+            heartbeat = cache.get('celery_heartbeat')
+            if heartbeat is None or (time.time() - float(heartbeat)) > 60:
+                status_payload['celery'] = 'down'
+            else:
+                status_payload['celery'] = 'ok'
+    except Exception:
+        status_payload['celery'] = 'unknown'
     return Response(status_payload)
 
 
@@ -582,7 +600,16 @@ def me(request):
             # save() ichidagi normalize/auto-full_name logikasi ishlashi
             # uchun update_fields'ga normalized_phone va phone qo'shilmaydi
             # (mavjud qiymatlar saqlanadi).
-            user.save(update_fields=list(set(update_fields)))
+            # Race condition: serializer validate_username unique tekshirsa
+            # ham, parallel PATCH so'rovida ikkalasi ham tekshiruvdan o'tib,
+            # biri IntegrityError (500) olishi mumkin edi — endi 400.
+            try:
+                user.save(update_fields=list(set(update_fields)))
+            except IntegrityError:
+                return Response(
+                    {'username': ['Bu username band.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         return Response(UserSerializer(user, context={'request': request}).data)
 
@@ -1298,12 +1325,16 @@ def start_password_reset(request):
         verify_token=secrets.token_urlsafe(32),
         max_attempts=getattr(settings, 'PHONE_VERIFICATION_MAX_ATTEMPTS', 5),
     )
+    # Enumeration himoyasi: hisob mavjudligidan qat'i nazar bir xil shakldagi
+    # javob qaytariladi. Mavjud bo'lmagan raqam uchun ham OTP oqimi davom
+    # etadi, lekin confirm_password_reset bosqichi parolni almashtirmaydi.
     return Response({
         'verification_id': verification.id,
         'phone': normalized_phone,
         'verify_token': verification.verify_token,
         'telegram_deep_link': _telegram_deep_link(verification.verify_token, bot='auth'),
         'bot_username': _telegram_bot_username('auth'),
+        'detail': "Agar bu raqam ro'yxatdan o'tgan bo'lsa, kod yuboriladi",
     }, status=status.HTTP_201_CREATED)
 
 
@@ -1353,6 +1384,7 @@ def verify_otp(request):
     serializer.is_valid(raise_exception=True)
     normalized_phone = serializer.validated_data['phone']
     otp = serializer.validated_data['otp']
+    purpose = serializer.validated_data.get('purpose')
 
     # Race condition himoyasi: ikkita parallel verify so'rovi bir vaqtda
     # attempts_count'ni o'qib, ikkalasi ham eski qiymatdan +1 yozib yuborishi
@@ -1360,13 +1392,19 @@ def verify_otp(request):
     # select_for_update qatorni lock qiladi va attempts_count oshirish hamda
     # verified_at yozish bitta tranzaksiyada atomik bo'ladi.
     with transaction.atomic():
-        verification = PhoneVerification.objects.select_for_update().filter(
+        qs = PhoneVerification.objects.select_for_update().filter(
             normalized_phone=normalized_phone,
             verified_at__isnull=True,
             otp_hash__gt='',
-        ).exclude(
-            purpose=PhoneVerification.PURPOSE_PASSWORD_RESET,
-        ).order_by('-created_at').first()
+        )
+        # Purpose berilsa — aynan shu maqsad uchun yaratilgan kodgina o'tadi
+        # (registration kodi account_link'da ishlamasin). Berilmasa (eski
+        # klientlar) avvalgidek password_reset'dan boshqa hammasi izlanadi.
+        if purpose:
+            qs = qs.filter(purpose=purpose)
+        else:
+            qs = qs.exclude(purpose=PhoneVerification.PURPOSE_PASSWORD_RESET)
+        verification = qs.order_by('-created_at').first()
 
         if not verification:
             return Response({'detail': 'Verification not found'},

@@ -21,9 +21,23 @@ def session_end_time(session, olympiad):
     return session.started_at + timedelta(minutes=olympiad.duration_minutes)
 
 
-def session_is_expired(session, olympiad):
+# Submit grace period: frontend timer 0 ga yetganda submit yuboradi, lekin
+# sekin tarmoqda so'rov serverga muddat tugagandan KEYIN yetib borishi mumkin.
+# 60 soniyalik grace oynasi — halol o'quvchining javoblari yo'qolmasligi uchun.
+SUBMIT_GRACE_SECONDS = 60
+
+
+def session_is_expired(session, olympiad, grace_seconds=0):
+    """Sessiya muddati tugaganmi. `grace_seconds` — qo'shimcha imtiyoz oynasi.
+
+    Submit oqimida SUBMIT_GRACE_SECONDS bilan chaqiriladi: frontend timeri
+    0 ga yetganda yuborilgan so'rov sekin tarmoqda kechikib kelsa ham
+    javoblar qabul qilinadi. Savol olish oqimida grace ishlatilmaydi.
+    """
     end_time = session_end_time(session, olympiad)
-    return bool(end_time and timezone.now() > end_time)
+    if not end_time:
+        return False
+    return timezone.now() > end_time + timedelta(seconds=grace_seconds)
 
 
 def get_or_create_test_session(user, olympiad):
@@ -233,7 +247,20 @@ def score_session_answers(session, olympiad, answers, attempt=None):
         q for q in all_questions
         if (getattr(q, 'question_type', 'mcq') or 'mcq') == 'code'
     ]
-    for question in non_code_questions:
+    # Essay savollar avtomatik baholanmaydi va hozircha qo'lda baholash
+    # tizimi ham yo'q. Ularni `total` / `max_possible` ga kiritsak, o'quvchi
+    # hech qachon 100% ololmaydi va natija abadiy "tekshirilmoqda" bo'lib
+    # qoladi. Shu sababli essay'lar ball hisobidan butunlay chiqariladi —
+    # keyinchalik qo'lda baholash qo'shilganda alohida hisoblanadi.
+    essay_questions = [
+        q for q in non_code_questions
+        if (getattr(q, 'question_type', 'mcq') or 'mcq') == 'essay'
+    ]
+    gradeable_questions = [
+        q for q in non_code_questions
+        if (getattr(q, 'question_type', 'mcq') or 'mcq') != 'essay'
+    ]
+    for question in gradeable_questions:
         chosen = answers.get(str(question.id))
         if chosen is None:
             chosen = answers.get(question.id)
@@ -255,11 +282,9 @@ def score_session_answers(session, olympiad, answers, attempt=None):
         # fill_blank/fill_blanks/essay — matn/JSON, shuffle ta'sir qilmaydi.
 
         result = grade_answer(question, chosen)
-        # Essay avtomatik baholanmaydi — javob bo'lsa "answered" deb sanaymiz,
-        # lekin ball bermaymiz (qo'lda baholanadi).
+        # RESULT_PENDING bu yerda kutilmaydi (essay'lar gradeable ro'yxatdan
+        # chiqarilgan) — himoya uchun skip qilamiz.
         if result == RESULT_PENDING:
-            if chosen is not None:
-                answered += 1
             continue
         if chosen is None:
             continue
@@ -274,7 +299,7 @@ def score_session_answers(session, olympiad, answers, attempt=None):
     # `max_possible` ga ham kirmaydi, shu sababli foiz faqat non-code savollar
     # bo'yicha hisoblanadi va kod balli keyinroq Judge0 tugagach
     # `_recompute_attempt_score_for_submission` orqali to'liq yangilanadi.
-    scored_questions = list(non_code_questions)
+    scored_questions = list(gradeable_questions)
     if attempt is not None and code_questions:
         from .models import CodeSubmission
         latest_subs = {}
@@ -300,6 +325,27 @@ def score_session_answers(session, olympiad, answers, attempt=None):
         # 100% dan oshmaydi).
         scored_questions += code_questions
 
+    # Essay savollar: faqat ustoz/menejer BAHOLAGAN essay'lar hisobga kiradi
+    # (`attempt` rejimida). Baholanmagan essay'lar avvalgidek total/max_possible
+    # dan tashqarida qoladi — aks holda o'quvchi baho qo'yilguncha hech qachon
+    # 100% ololmasdi. To'liq ball olgan essay `correct` deb sanaladi.
+    if attempt is not None and essay_questions:
+        from .models import EssayGrade
+        essay_grades = {
+            g.question_id: g
+            for g in EssayGrade.objects.filter(attempt=attempt)
+        }
+        for question in essay_questions:
+            grade = essay_grades.get(question.id)
+            if grade is None:
+                continue
+            answered += 1
+            earned = max(0, min(int(grade.score or 0), question.score))
+            earned_score += earned
+            if earned >= question.score:
+                correct += 1
+            scored_questions.append(question)
+
     questions = scored_questions
     total = len(questions)
     max_possible = sum(question.score for question in questions)
@@ -322,4 +368,7 @@ def score_session_answers(session, olympiad, answers, attempt=None):
         'earned_score': earned_score,
         'max_possible': max_possible,
         'score': score,
+        # Essay savollar soni — ular avtomatik ball hisobiga kirmaydi
+        # (qo'lda baholash tizimi qo'shilguncha).
+        'essay_count': len(essay_questions),
     }

@@ -297,18 +297,18 @@ def _collect_wrong_question_ids(user):
     """Foydalanuvchining barcha attempts'idagi noto'g'ri javob berilgan
     savol id'larini yig'adi.
 
-    `TestAttempt.answers` — `{question_id_str: chosen_idx}` formatda. Savol
-    noto'g'ri deb hisoblanadi:
-      - foydalanuvchi javob bergan (chosen_idx mavjud), lekin
-        `Question.correct_answer` ga teng emas.
-    Yechilmagan savollar (chosen_idx is None) bu yerga kirmaydi — ular
-    "xato" emas, balki "qoldirib ketilgan".
+    `TestAttempt.answers` — `{question_id_str: javob}` formatda; javob savol
+    turiga qarab int (mcq indeks), list (multiple_select), str (fill_blank)
+    yoki obyekt-shaklli payload bo'lishi mumkin. Savol noto'g'ri deb
+    hisoblanadi: foydalanuvchi javob bergan, lekin grade_answer natijasi
+    RESULT_WRONG. Yechilmagan savollar (javob None) bu yerga kirmaydi —
+    ular "xato" emas, balki "qoldirib ketilgan".
 
     Returns: set(question_id) — noyob savollar to'plami.
     """
     wrong_ids = set()
-    attempts = TestAttempt.objects.filter(user=user).only('id', 'answers')
-    attempt_answers = []  # [(attempt_id, {qid:int -> chosen_idx})]
+    attempts = TestAttempt.objects.filter(user=user).only('id', 'answers', 'olympiad_id')
+    attempt_answers = []  # [(olympiad_id, {qid:int -> xom javob})]
     referenced_qids = set()
 
     for attempt in attempts:
@@ -323,30 +323,55 @@ def _collect_wrong_question_ids(user):
                 continue
             if v is None:
                 continue
-            try:
-                chosen = int(v)
-            except (TypeError, ValueError):
-                continue
-            normalised[qid] = chosen
+            # Avval faqat int(v) qabul qilinardi — multiple_select (list),
+            # fill_blank (str) kabi turlar jimgina skip bo'lardi. Endi xom
+            # qiymat saqlanadi va pastda grade_answer bilan baholanadi.
+            normalised[qid] = v
             referenced_qids.add(qid)
         if normalised:
-            attempt_answers.append(normalised)
+            attempt_answers.append((attempt.olympiad_id, normalised))
 
     if not referenced_qids:
         return wrong_ids
 
-    correct_map = dict(
-        Question.objects
-        .filter(id__in=referenced_qids)
-        .values_list('id', 'correct_answer')
-    )
+    question_map = Question.objects.filter(id__in=referenced_qids).in_bulk()
 
-    for normalised in attempt_answers:
+    # Variant indeksli turlarda (mcq/yes_no/multiple_select) attempt'dagi
+    # javob shuffle qilingan indeks — sessiyadagi option_orders bilan asl
+    # indeksga o'giramiz, aks holda to'g'ri javob ham "xato" deb belgilanardi.
+    from attempts.models import TestSession
+    from attempts.session_utils import (
+        _deshuffle_index,
+        _deshuffle_multi,
+        _extract_chosen,
+    )
+    session_orders = {
+        olympiad_id: (orders or {})
+        for olympiad_id, orders in (
+            TestSession.objects
+            .filter(user=user)
+            .values_list('olympiad_id', 'option_orders')
+        )
+    }
+
+    for olympiad_id, normalised in attempt_answers:
+        orders = session_orders.get(olympiad_id) or {}
         for qid, chosen in normalised.items():
-            correct = correct_map.get(qid)
-            if correct is None:
+            question = question_map.get(qid)
+            if question is None:
                 continue
-            if chosen != correct:
+            q_type = getattr(question, 'question_type', 'mcq') or 'mcq'
+            # Kod va essay avtomatik baholanmaydi — "xato" deb belgilamaymiz.
+            if q_type in ('code', 'essay'):
+                continue
+            chosen = _extract_chosen(chosen, q_type)
+            options = list(question.options or [])
+            order = orders.get(str(qid)) or list(range(len(options)))
+            if q_type in ('mcq', 'yes_no'):
+                chosen = _deshuffle_index(chosen, order)
+            elif q_type == 'multiple_select':
+                chosen = _deshuffle_multi(chosen, order)
+            if grade_answer(question, chosen) == RESULT_WRONG:
                 wrong_ids.add(qid)
     return wrong_ids
 

@@ -104,6 +104,14 @@ class TestSession(models.Model):
                 name='unique_user_olympiad_session',
             ),
         ]
+        indexes = [
+            # Live proctoring va statistika so'rovlari (olympiad bo'yicha
+            # status filtrlash) uchun composite indeks.
+            models.Index(
+                fields=['olympiad', 'status'],
+                name='testsession_olymp_status_idx',
+            ),
+        ]
 
     def __str__(self):
         return f'session:{self.user_id}@{self.olympiad_id}'
@@ -154,6 +162,50 @@ class CodeSubmission(models.Model):
 
     def __str__(self):
         return f'code:{self.attempt_id}@q{self.question_id}'
+
+
+class EssayGrade(models.Model):
+    """Essay savoliga teacher/manager qo'ygan qo'lda baho.
+
+    Essay javoblar avtomatik baholanmaydi (questions.grading RESULT_PENDING) —
+    ustoz/menejer har (attempt, savol) juftligi uchun 0..question.score
+    oralig'ida ball va ixtiyoriy izoh qo'yadi. Baho saqlanganda attempt'ning
+    score/percentage qiymati qayta hisoblanadi (score_session_answers
+    `attempt` rejimida baholangan essay'larni ham hisobga oladi).
+    """
+    attempt = models.ForeignKey(
+        TestAttempt,
+        on_delete=models.CASCADE,
+        related_name='essay_grades',
+    )
+    question = models.ForeignKey(
+        'questions.Question',
+        on_delete=models.CASCADE,
+        related_name='essay_grades',
+    )
+    score = models.PositiveIntegerField(default=0)
+    feedback = models.TextField(blank=True, default='', help_text="Ustoz izohi")
+    graded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='essay_grades_given',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['question_id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['attempt', 'question'],
+                name='unique_attempt_essay_question',
+            ),
+        ]
+
+    def __str__(self):
+        return f'essay-grade:{self.attempt_id}@q{self.question_id} = {self.score}'
 
 
 class AttemptAIAnalysis(models.Model):

@@ -254,17 +254,25 @@ class StartPasswordResetSerializer(serializers.Serializer):
         norm = normalize_phone(value)
         if not norm:
             raise serializers.ValidationError("Telefon raqam noto'g'ri")
-        try:
-            user = User.objects.get(normalized_phone=norm)
-        except User.DoesNotExist:
-            raise serializers.ValidationError("Bu telefon raqam bilan hisob topilmadi")
-        if not user.is_active:
-            raise serializers.ValidationError("Hisob bloklangan")
+        # XAVFSIZLIK (enumeration himoyasi): hisob bor-yo'qligini bu yerda
+        # OSHKOR QILMAYMIZ. Avval "hisob topilmadi" / "hisob bloklangan"
+        # xatolari qaytarilardi — bu orqali istalgan raqamning ro'yxatdan
+        # o'tgan-o'tmaganini aniqlash mumkin edi. Endi oqim har doim davom
+        # etadi; mavjud bo'lmagan hisob uchun parol almashtirish baribir
+        # confirm bosqichida (to'g'ri OTP'dan keyingina) rad etiladi.
         return norm
 
 
 class VerifyOtpSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=20)
+    # OTP maqsadi — berilsa verify_otp aynan shu purpose'dagi yozuvni izlaydi
+    # (registration kodi account_link oqimida ishlamasin va aksincha).
+    # Ixtiyoriy: eski klientlar yubormaydi, ular uchun avvalgi xatti-harakat
+    # (password_reset'dan tashqari barchasi) saqlanadi.
+    purpose = serializers.ChoiceField(
+        choices=['registration', 'account_link'],
+        required=False,
+    )
     # OTP server tomonida aniq 6 xonali raqam bo'lishi shart. Generatsiya
     # qilingan kod doim 6 xonali (_make_otp). Avval 4-12 belgi qabul qilinardi
     # va harf/belgi ham o'tib ketardi — endi faqat 6 ta raqam, aks holda
