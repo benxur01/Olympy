@@ -633,11 +633,19 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // ketardi (race condition). Endi banner faqat shu sahifaning BARCHA so'rovlari
   // yuklanib bo'lgach (hech biri loading emas) VA kamida bittasi xato bo'lganda
   // chiqadi — loading davomida hech qachon ko'rinmaydi.
+  // Premium 403 (upgrade_required) — bu tarmoq xatosi emas: frontend
+  // foydalanuvchini premium deb biladi (`user.is_premium`), backend esa
+  // real-time tekshiruvda rad etgan. Bunday javob "Internet aloqasini
+  // tekshiring" bannerini chiqarmasligi kerak — o'rniga PremiumLock
+  // ko'rsatiladi (renderHistory'da `premiumDenied` orqali).
+  const isPremiumDeniedError = (r) => !!(
+    r && r.error && r.error.status === 403 && r.error.data && r.error.data.upgrade_required
+  );
   const pageSources = pageErrorSources[page] || [];
   const apiHasError = isApi
     && pageSources.length > 0
     && pageSources.every(r => r && !r.loading)
-    && pageSources.some(r => r && r.error);
+    && pageSources.some(r => r && r.error && !isPremiumDeniedError(r));
 
   // Optional (banner chiqarmaydigan) so'rovlarning xatosini jim qoldirmaymiz —
   // diagnostika uchun console'ga yozamiz. Bu banner UX'ini buzmaydi, ammo
@@ -1505,7 +1513,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   );
 
   const renderHistory = () => {
-    if (!isPremium) {
+    // Backend premium so'rovlarni 403 (upgrade_required) bilan rad etgan
+    // bo'lsa — frontend flag'i eskirgan: xato banner o'rniga PremiumLock.
+    const premiumDenied = [apiHistoryChartRes, apiWeaknessRes, apiCompetitorRes]
+      .some(isPremiumDeniedError);
+    if (!isPremium || premiumDenied) {
       return (
         <div className="p-3 md:p-6 animate-in mobile-content-pad">
           <h2 className="text-lg md:text-xl font-black text-white mb-4">Tarixim va tahlil</h2>

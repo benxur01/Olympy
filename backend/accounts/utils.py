@@ -65,8 +65,19 @@ def is_user_premium(user):
     `user.is_premium` flag'i obuna muddati tugaganda darhol yangilanmaydi
     (Celery task 60 daqiqada bir yuradi, /me lazy expiry esa faqat /me
     so'rovida ishlaydi). Premium-only endpoint'lar shu helper orqali
-    flag + aktiv obuna (`is_active=True, end_date > now`) ikkalasini
-    tekshiradi — muddati o'tgan obuna bilan premium imkoniyat ochilmaydi.
+    flag + obuna holatini tekshiradi — muddati o'tgan (lekin hali sync
+    qilinmagan) obuna bilan premium imkoniyat ochilmaydi.
+
+    MUHIM: premium har doim ham UserSubscription yozuvi bilan berilmaydi —
+    eski admin toggle (duration'siz), Django admin'dagi is_premium checkbox
+    va ensure_manager komandasi faqat flag'ni o'rnatadi. Bunday foydalanuvchida
+    aktiv obuna yozuvi umuman bo'lmaydi; /me lazy expiry ham flag'ni
+    o'chirmaydi (frontend premium deb ko'rsatadi). Avval bu yerda
+    `exists()` talab qilinardi — natijada frontend premium deb so'rov
+    yuborar, backend esa 403 qaytarib, "Tarixim"da "Ba'zi ma'lumotlar
+    yuklanmadi" xatosi chiqardi. Endi: aktiv obuna yozuvi YO'Q bo'lsa
+    flag'ga ishonamiz; yozuv BOR bo'lsa kamida bittasining muddati
+    o'tmagan bo'lishi shart (real-time himoya saqlanadi).
     """
     if user is None or not getattr(user, 'is_authenticated', True):
         return False
@@ -81,9 +92,16 @@ def is_user_premium(user):
     except Exception:
         cache = None
     from django.utils import timezone
-    active = user.subscriptions.filter(
-        is_active=True, end_date__gt=timezone.now(),
-    ).exists()
+    now = timezone.now()
+    end_dates = list(
+        user.subscriptions.filter(is_active=True).values_list('end_date', flat=True)
+    )
+    if end_dates:
+        # Aktiv obuna yozuvlari bor — kamida bittasi hali amal qilishi kerak.
+        active = any(ed and ed > now for ed in end_dates)
+    else:
+        # Aktiv obuna yozuvi yo'q, lekin is_premium=True — legacy/manual grant.
+        active = True
     if cache is not None:
         try:
             cache.set(key, 1 if active else 0, PREMIUM_CHECK_CACHE_TTL)
