@@ -771,12 +771,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         setTimeLeft(prev => {
           if (remainingSec <= 0 && prev > 0) {
             clearInterval(t);
-            // Vaqt tugadi — olimpiada yopildi, draft endi keraksiz. Submit
-            // tarmoq xatosi bilan tugasa ham (401 va h.k. da handleSubmit
-            // localStorage'ni tozalamaydi, javobni saqlab qoladi) bu yerda
-            // aniq tozalaymiz: vaqt tugaganidan keyin draftni tiklashning
-            // ma'nosi yo'q.
-            clearPersistedAnswers();
+            // Vaqt tugadi — submit qilamiz. MUHIM: draft (localStorage) bu
+            // yerda tozalanmaydi! Sekin tarmoqda submit so'rovi expiry'dan
+            // keyin yetib borib 400 qaytarsa, javoblar saqlanib qolishi
+            // kerak — handleSubmit faqat MUVAFFAQIYATLI submit'dan keyin
+            // clearPersistedAnswers() chaqiradi.
             handleSubmit();
             return 0;
           }
@@ -787,8 +786,8 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         setTimeLeft(prev => {
           if (prev <= 1) {
             clearInterval(t);
-            // Vaqt tugadi — yuqoridagi kabi draftni tozalaymiz.
-            clearPersistedAnswers();
+            // Vaqt tugadi — submit. Draft faqat muvaffaqiyatli submit'da
+            // tozalanadi (handleSubmit ichida).
             handleSubmit();
             return 0;
           }

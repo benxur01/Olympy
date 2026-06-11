@@ -29,4 +29,7 @@ sentry-sdk[django]==2.20.0
 # yoqiladi, aks holda console/SMTP backend ishlatiladi).
 django-anymail[mailgun]==12.0
 # Admin login brute-force himoyasi (5 xato urinishdan keyin 1 soat lock).
-django-axes>=6.0
+# Pin: `>=6.0` deploy'dan deploy'ga boshqa versiya o'rnatib reproducible
+# build'ni buzardi. 8.3.1 — hozirgi barqaror versiya (>=6.0 bilan so'nggi
+# deploylar ham shu major'ni o'rnatgan).
+django-axes==8.3.1

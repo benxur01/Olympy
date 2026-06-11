@@ -63,6 +63,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [codeSubLoading, setCodeSubLoading] = React.useState(false);
   const [codeSubError, setCodeSubError] = React.useState('');
   const [codeSubExpanded, setCodeSubExpanded] = React.useState({}); // { [submissionId]: bool }
+  // Essay baholash modali: olimpiadaning essay javoblari ro'yxati + ball/izoh.
+  const [essayModal, setEssayModal] = React.useState(null); // null | { id, title }
+  const [essayData, setEssayData] = React.useState([]);
+  const [essayLoading, setEssayLoading] = React.useState(false);
+  const [essayError, setEssayError] = React.useState('');
+  const [essayOnlyUngraded, setEssayOnlyUngraded] = React.useState(true);
+  const [essayDrafts, setEssayDrafts] = React.useState({}); // { 'attemptId:questionId': {score, feedback} }
+  const [essaySavingKey, setEssaySavingKey] = React.useState('');
   // Markaz do'koni (Mukofotlar) holatlari.
   const [shopProducts, setShopProducts] = React.useState([]);
   const [shopLoading, setShopLoading] = React.useState(false);
@@ -226,6 +234,60 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         setCodeSubError(OlympyApi.toUserMessage?.(err) || "Kod javoblarini yuklab bo'lmadi.");
       })
       .finally(() => setCodeSubLoading(false));
+  };
+
+  // Essay javoblarini yuklash (modal ochiq paytda filter o'zgarsa ham chaqiriladi).
+  const loadEssayAnswers = (olympiadBackendId, onlyUngraded) => {
+    setEssayError('');
+    setEssayLoading(true);
+    OlympyApi.getOlympiadEssayAnswers(olympiadBackendId, OlympyApi.getToken(), onlyUngraded)
+      .then(res => { setEssayData(Array.isArray(res) ? res : []); })
+      .catch(err => {
+        console.warn('getOlympiadEssayAnswers failed:', err);
+        setEssayError(OlympyApi.toUserMessage?.(err) || "Essay javoblarini yuklab bo'lmadi.");
+      })
+      .finally(() => setEssayLoading(false));
+  };
+
+  // Essay baholash modalini ochish.
+  const openEssayGrading = (olympiad) => {
+    if (!isApi) { showToast('Real server rejimida ishlaydi'); return; }
+    const backendId = olympiad.backendId ?? olympiad.olympiad_id ?? olympiad.id;
+    setEssayModal({ id: backendId, title: olympiad.title });
+    setEssayData([]);
+    setEssayDrafts({});
+    setEssayOnlyUngraded(true);
+    loadEssayAnswers(backendId, true);
+  };
+
+  // Bitta essay javobga ball + izoh saqlash. Backend attempt foizini ham
+  // qayta hisoblab qaytaradi.
+  const saveEssayGrade = (entry) => {
+    const key = `${entry.attempt_id}:${entry.question_id}`;
+    const draft = essayDrafts[key] || {};
+    const rawScore = draft.score !== undefined ? draft.score : entry.score;
+    const score = parseInt(rawScore, 10);
+    if (Number.isNaN(score) || score < 0 || score > entry.max_score) {
+      showToast(`⚠ Ball 0 dan ${entry.max_score} gacha bo'lishi kerak`);
+      return;
+    }
+    const feedback = draft.feedback !== undefined ? draft.feedback : (entry.feedback || '');
+    setEssaySavingKey(key);
+    OlympyApi.gradeEssayAnswer(entry.attempt_id, entry.question_id, { score, feedback }, OlympyApi.getToken())
+      .then(res => {
+        setEssayData(list => list.map(e =>
+          (e.attempt_id === entry.attempt_id && e.question_id === entry.question_id)
+            ? { ...e, ...res }
+            : e
+        ));
+        setEssayDrafts(p => { const n = { ...p }; delete n[key]; return n; });
+        showToast('✓ Baho saqlandi');
+      })
+      .catch(err => {
+        console.warn('gradeEssayAnswer failed:', err);
+        showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Bahoni saqlab bo'lmadi"}`);
+      })
+      .finally(() => setEssaySavingKey(''));
   };
 
   React.useEffect(() => {
@@ -1216,6 +1278,13 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               >
                 <Icon name="brain" size={12} /> Kod javoblari
               </button>
+              <button
+                onClick={() => openEssayGrading(e)}
+                className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
+                title="Essay javoblarni qo'lda baholash"
+              >
+                <Icon name="edit" size={12} /> Essay baholash
+              </button>
             </div>
           ))}
           {!isApi && localFinished.map(o => (
@@ -1825,6 +1894,108 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             </div>
           )}
           <div className="text-[11px] text-white/30">AI tavsiyasi va ball test yakunlangach bir necha soniyada hisoblanadi.</div>
+        </div>
+      </Modal>
+
+      {/* Essay baholash modali */}
+      <Modal open={!!essayModal} onClose={() => setEssayModal(null)} title="Essay baholash" width="max-w-3xl">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-sm text-white/60">{essayModal?.title}</div>
+            <label className="flex items-center gap-2 text-xs text-white/50 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={essayOnlyUngraded}
+                onChange={e => {
+                  const v = e.target.checked;
+                  setEssayOnlyUngraded(v);
+                  if (essayModal?.id) loadEssayAnswers(essayModal.id, v);
+                }}
+                className="accent-indigo-500"
+              />
+              Faqat baholanmaganlar
+            </label>
+          </div>
+          {essayLoading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+          {essayError && (
+            <div className="flex items-center gap-2 bg-rose-500/10 text-rose-300 rounded-xl px-3 py-2 text-xs border border-rose-500/20">
+              <Icon name="info" size={14} /> {essayError}
+            </div>
+          )}
+          {!essayLoading && !essayError && essayData.length === 0 && (
+            <div className="glass rounded-2xl p-8 text-center text-sm text-white/40">
+              {essayOnlyUngraded
+                ? 'Baholanmagan essay javoblar yo\'q.'
+                : 'Bu olimpiadada essay javoblar yo\'q.'}
+            </div>
+          )}
+          {essayData.length > 0 && (
+            <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
+              {essayData.map(entry => {
+                const key = `${entry.attempt_id}:${entry.question_id}`;
+                const draft = essayDrafts[key] || {};
+                const scoreVal = draft.score !== undefined
+                  ? draft.score
+                  : (entry.score !== null && entry.score !== undefined ? String(entry.score) : '');
+                const feedbackVal = draft.feedback !== undefined ? draft.feedback : (entry.feedback || '');
+                const saving = essaySavingKey === key;
+                return (
+                  <div key={key} className={`glass rounded-xl p-4 border ${entry.graded ? 'border-emerald-500/20' : 'border-white/5'}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-white truncate">{entry.student_name || '—'}</div>
+                        <div className="text-xs text-white/55 mt-1">{entry.question_text || '—'}</div>
+                      </div>
+                      {entry.graded && (
+                        <span className="flex-shrink-0 text-[10px] uppercase tracking-wide font-extrabold text-emerald-300 bg-emerald-500/10 px-2 py-1 rounded-md">
+                          Baholangan · {entry.score}/{entry.max_score}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-3">
+                      <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">O'quvchi javobi</div>
+                      <div className="text-xs text-white/80 bg-black/30 rounded-xl p-3 whitespace-pre-wrap break-words border border-white/5">
+                        {entry.answer_text || "(bo'sh)"}
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-col sm:flex-row sm:items-end gap-2">
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">
+                          Ball (0–{entry.max_score})
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max={entry.max_score}
+                          value={scoreVal}
+                          onChange={e => setEssayDrafts(p => ({ ...p, [key]: { ...p[key], score: e.target.value } }))}
+                          className="input-field w-24 py-2 text-sm"
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <label className="block text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">Izoh (ixtiyoriy)</label>
+                        <input
+                          type="text"
+                          value={feedbackVal}
+                          onChange={e => setEssayDrafts(p => ({ ...p, [key]: { ...p[key], feedback: e.target.value } }))}
+                          placeholder="O'quvchiga izoh..."
+                          className="input-field py-2 text-sm"
+                        />
+                      </div>
+                      <button
+                        onClick={() => saveEssayGrade(entry)}
+                        disabled={saving || scoreVal === ''}
+                        className="btn-primary text-xs px-4 py-2.5 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+                      >
+                        {saving ? 'Saqlanmoqda...' : 'Saqlash'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div className="text-[11px] text-white/30">Baho saqlangach o'quvchining umumiy foizi avtomatik qayta hisoblanadi.</div>
         </div>
       </Modal>
 

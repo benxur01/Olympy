@@ -35,9 +35,10 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const renderReviewAnswer = (q) => {
     const qType = String(q.question_type || 'mcq');
 
-    // essay — avtomatik baholanmaydi: faqat foydalanuvchi javobi va
-    // "tekshirilmoqda" holati.
+    // essay — avtomatik baholanmaydi: ustoz baho qo'ygan bo'lsa ball + izoh
+    // (essay_score/essay_feedback), aks holda "tekshirilmoqda" holati.
     if (qType === 'essay') {
+      const graded = q.pending_review === false && q.essay_score !== undefined && q.essay_score !== null;
       return (
         <div className="space-y-2">
           <div>
@@ -46,9 +47,25 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
               {q.chosen_answer ? String(q.chosen_answer) : '(javob berilmagan)'}
             </div>
           </div>
-          <div className="text-[11px] text-amber-300 flex items-center gap-1.5">
-            <Icon name="info" size={12} /> Insho qo'lda baholanadi
-          </div>
+          {graded ? (
+            <>
+              <div className="text-[11px] text-emerald-300 flex items-center gap-1.5">
+                <Icon name="check" size={12} /> Ustoz bahosi: {q.essay_score}/{q.score} ball
+              </div>
+              {q.essay_feedback && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">Ustoz izohi</div>
+                  <div className="rounded-xl px-3 py-2 text-xs md:text-sm border bg-indigo-500/10 text-white/75 border-indigo-500/25 whitespace-pre-wrap break-words">
+                    {q.essay_feedback}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="text-[11px] text-amber-300 flex items-center gap-1.5">
+              <Icon name="info" size={12} /> Insho qo'lda baholanadi
+            </div>
+          )}
         </div>
       );
     }

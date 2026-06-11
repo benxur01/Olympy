@@ -33,7 +33,11 @@ from questions.grading import RESULT_CORRECT, RESULT_WRONG, grade_answer
 from .certificates import render_certificate_png
 from .models import TestAttempt, TestSession
 from .serializers import SubmitAttemptSerializer, TestAttemptSerializer
-from .session_utils import score_session_answers, session_is_expired
+from .session_utils import (
+    SUBMIT_GRACE_SECONDS,
+    score_session_answers,
+    session_is_expired,
+)
 
 
 def _extract_review_chosen(chosen, q_type):
@@ -58,23 +62,52 @@ def _extract_review_chosen(chosen, q_type):
 
 
 def _build_attempt_mistakes(attempt, olympiad, answers):
-    """O4: Attempt bo'yicha xato savollar ro'yxatini tuzadi (AI tahlil uchun)."""
+    """O4: Attempt bo'yicha xato savollar ro'yxatini tuzadi (AI tahlil uchun).
+
+    Avval faqat int (mcq indeks) javoblar tushunilardi — multiple_select,
+    fill_blank kabi turlar jimgina skip bo'lardi. Endi barcha turlar
+    questions.grading.grade_answer orqali izchil baholanadi; variant indeksli
+    turlarda sessiyadagi option_orders bilan de-shuffle qilinadi.
+    """
+    from questions.grading import RESULT_WRONG, grade_answer
+
+    from .session_utils import _deshuffle_index, _deshuffle_multi
+
     mistakes = []
     answers = answers or {}
+    option_orders = {}
+    session = TestSession.objects.filter(
+        user=attempt.user, olympiad=olympiad,
+    ).only('option_orders').first()
+    if session:
+        option_orders = session.option_orders or {}
+
     for q in olympiad.questions.all().order_by('id'):
         chosen = answers.get(str(q.id))
         if chosen is None:
             chosen = answers.get(q.id)
-        try:
-            chosen_idx = int(chosen) if chosen is not None else None
-        except (TypeError, ValueError):
-            chosen_idx = None
-        if chosen_idx is None or chosen_idx == q.correct_answer:
+        if chosen is None:
+            continue
+        q_type = getattr(q, 'question_type', 'mcq') or 'mcq'
+        # Kod va essay avtomatik baholanmaydi — mistakes ro'yxatiga kirmaydi.
+        if q_type in ('code', 'essay'):
+            continue
+        chosen = _extract_review_chosen(chosen, q_type)
+        options = list(q.options or [])
+        order = option_orders.get(str(q.id)) or list(range(len(options)))
+        if q_type in ('mcq', 'yes_no'):
+            chosen = _deshuffle_index(chosen, order)
+        elif q_type == 'multiple_select':
+            chosen = _deshuffle_multi(chosen, order)
+        if grade_answer(q, chosen) != RESULT_WRONG:
             continue
         mistakes.append({
             'text': (q.text or '')[:200],
-            'correct_answer': q.correct_answer,
-            'chosen_answer': chosen_idx,
+            'correct_answer': (
+                q.correct_answer if q_type in ('mcq', 'yes_no')
+                else getattr(q, 'correct_text', '') or q.correct_answer
+            ),
+            'chosen_answer': chosen,
         })
         if len(mistakes) >= 6:
             break
@@ -390,7 +423,9 @@ def submit_attempt(request):
                 {'detail': "Siz cheating qildingiz. Olimpiada yakunlandi."},
                 status=http_status.HTTP_403_FORBIDDEN,
             )
-        if session_is_expired(session, olympiad):
+        # 60 soniyalik grace period: timer tugaganda yuborilgan submit sekin
+        # tarmoqda kechikib kelsa ham javoblar yo'qolmasin.
+        if session_is_expired(session, olympiad, grace_seconds=SUBMIT_GRACE_SECONDS):
             return Response({'detail': 'Test vaqti tugagan'},
                             status=http_status.HTTP_400_BAD_REQUEST)
 
@@ -575,7 +610,8 @@ def submit_attempt(request):
         # alohida daemon thread'da bajaramiz (Gemini 45s gacha kutishi
         # mumkin — bu submit'ni bloklamasligi shart). Endpoint tayyor
         # bo'lmaguncha {status: "pending"} qaytaradi.
-        if getattr(request.user, 'is_premium', False):
+        from accounts.utils import is_user_premium
+        if is_user_premium(request.user):
             try:
                 _trigger_attempt_ai_analysis(attempt, olympiad, answers)
             except Exception:
@@ -793,10 +829,16 @@ def attempt_detail(request, attempt_id):
         # answers dict kalitlari string yoki integer bo'lishi mumkin.
         answers = attempt.answers or {}
         # Kod (IT) javoblari — bitta so'rovda olib, savol bo'yicha map qilamiz.
-        from .models import CodeSubmission
+        from .models import CodeSubmission, EssayGrade
         code_subs = {
             cs.question_id: cs
             for cs in CodeSubmission.objects.filter(attempt=attempt)
+        }
+        # Essay baholari (qo'lda) — savol bo'yicha map. Baholangan essay
+        # "tekshirilmoqda" o'rniga ball + izoh bilan ko'rsatiladi.
+        essay_grades = {
+            g.question_id: g
+            for g in EssayGrade.objects.filter(attempt=attempt)
         }
         # Prefetch `id` bo'yicha tartiblangan — bu yerda `.order_by('id')`
         # qo'ymaymiz, aks holda prefetch cache buziladi va yangi DB so'rovi
@@ -853,9 +895,18 @@ def attempt_detail(request, attempt_id):
                 )
             elif q_type == 'essay':
                 # Qo'lda baholanadi — natija sahifasida alohida ko'rsatiladi.
+                # Ustoz baho qo'ygan bo'lsa ball + izoh qaytariladi va
+                # pending_review=False bo'ladi.
                 review_item['chosen_answer'] = chosen_val
-                review_item['pending_review'] = True
-                review_item['is_correct'] = None
+                grade = essay_grades.get(q.id)
+                if grade is not None:
+                    review_item['pending_review'] = False
+                    review_item['essay_score'] = grade.score
+                    review_item['essay_feedback'] = grade.feedback or ''
+                    review_item['is_correct'] = grade.score >= q.score
+                else:
+                    review_item['pending_review'] = True
+                    review_item['is_correct'] = None
             else:
                 # multiple_select / fill_blank / fill_blanks — server baholaydi.
                 # Frontend to'g'ri javobni ko'rsata olishi uchun korrekt
@@ -901,7 +952,10 @@ def attempt_ai_analysis(request, attempt_id):
     is_owner = attempt.user_id == request.user.id
     if not (is_owner or request.user.is_platform_admin):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
-    if is_owner and not getattr(request.user, 'is_premium', False):
+    # Real-time premium tekshiruvi: flag + aktiv obuna muddati (60s cache).
+    from accounts.utils import is_user_premium
+    owner_is_premium = is_user_premium(request.user) if is_owner else False
+    if is_owner and not owner_is_premium:
         return Response(
             {
                 'detail': "AI tahlil premium o'quvchilar uchun.",
@@ -915,7 +969,7 @@ def attempt_ai_analysis(request, attempt_id):
         # Hali umuman trigger qilinmagan bo'lsa (masalan, eski attempt yoki
         # submit paytida premium bo'lmagan). Egasi premium bo'lsa shu yerda
         # lazy ravishda boshlаymiz.
-        if is_owner and getattr(request.user, 'is_premium', False):
+        if is_owner and owner_is_premium:
             try:
                 _trigger_attempt_ai_analysis(
                     attempt, attempt.olympiad, attempt.answers or {},
@@ -1489,6 +1543,28 @@ def leaderboard(request):
         qs = qs.filter(
             olympiad__status__in=[Olympiad.STATUS_ACTIVE, Olympiad.STATUS_FINISHED]
         )
+        # Global rejimda har foydalanuvchi faqat BIR marta ko'rinadi — eng
+        # yaxshi attempti bilan (eng yuqori ball, teng bo'lsa eng tez vaqt).
+        # Avval har bir attempt alohida qator edi va 5 ta olimpiadada
+        # qatnashgan o'quvchi reytingda 5 marta chiqardi. Window RowNumber
+        # (PARTITION BY user) bilan per-user birinchi qatornigina olamiz —
+        # Django 4.2+ window funksiyalar bo'yicha filtrni qo'llab-quvvatlaydi.
+        from django.db.models import F, Window
+        from django.db.models.functions import RowNumber
+        qs = qs.annotate(
+            _user_row=Window(
+                expression=RowNumber(),
+                partition_by=[F('user_id')],
+                order_by=[
+                    F('score').desc(),
+                    F('time_spent').asc(),
+                    F('submitted_at').asc(),
+                ],
+            )
+        ).filter(_user_row=1)
+        # Window filtri queryset'ni subquery'ga o'raydi — yakuniy tartibni
+        # qayta tiklaymiz (eng yuqori ball yuqorida).
+        qs = qs.order_by('-score', 'time_spent', 'submitted_at')
     # Pagination: `?page=` va `?page_size=` query parametrlari qo'llab-
     # quvvatlanadi. Default page_size=100, maksimum 500. Eski `?limit=`
     # parametri ham backward-compat uchun qabul qilinadi.
@@ -1635,6 +1711,14 @@ def test_session_ping(request):
         )
         if not session:
             return Response({'detail': "Test sessiya topilmadi"}, status=http_status.HTTP_404_NOT_FOUND)
+
+        # Faqat ACTIVE sessiyada parallel-qurilma tekshiruvi qilinadi.
+        # COMPLETED sessiyaga kechikib kelgan ping (masalan, submit'dan keyin
+        # navbatda qolgan so'rov) foydalanuvchini nohaq 409/DQ qilmasin.
+        # DISQUALIFIED holat esa quyidagi oqimda 409 qaytarishda davom etadi —
+        # frontend shu javob orqali cheat ekranini ko'rsatadi.
+        if session.status == TestSession.STATUS_COMPLETED:
+            return Response({'ok': True, 'status': session.status})
 
         # Parallel sessiya tekshiruvi — device_id berilgan bo'lsa.
         if device_id:

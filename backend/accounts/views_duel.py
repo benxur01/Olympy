@@ -25,6 +25,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .models import Duel, DuelAnswer, DuelQuestion
+from .utils import is_user_premium
 
 DUEL_QUESTION_COUNT = 10
 
@@ -106,7 +107,7 @@ def _maybe_complete_duel(duel, total_questions):
 @permission_classes([IsAuthenticated])
 def create_duel(request):
     """POST /api/duels/ — duel boshlash. Body: {opponent_id, subject}."""
-    if not getattr(request.user, 'is_premium', False):
+    if not is_user_premium(request.user):
         return _premium_required()
 
     body = request.data or {}

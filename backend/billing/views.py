@@ -183,17 +183,19 @@ def _activate_subscription(user, amount, plan_id=None):
         )
         if len(matching) > 1:
             # Bir xil narxli bir nechta aktiv plan — qaysi biri berilishi
-            # noaniq. Bu jiddiy konfiguratsiya muammosi (noto'g'ri muddatli
-            # obuna xavfi), shuning uchun error darajasida log + Sentry.
+            # noaniq. Noto'g'ri muddatli obuna berishdan ko'ra AVTOMATIK
+            # bermaslik xavfsizroq: error log + Sentry bilan adminni
+            # xabardor qilamiz, obuna qo'lda ulanadi.
             msg = (
                 f"Obuna aktivlashtirish: {amount} summa uchun bir nechta aktiv "
-                f"plan topildi (id'lar: {[p.id for p in matching]}). Birinchisi "
-                f"(plan_id={matching[0].id}) tanlandi — bu noto'g'ri muddatli "
-                f"obuna berishi mumkin. Webhook payload'iga plan ID qo'shilsin yoki "
-                f"bir xil narxli planlar ajratilsin (user_id={getattr(user, 'id', None)})."
+                f"plan topildi (id'lar: {[p.id for p in matching]}). Qaysi biri "
+                f"to'g'riligi noaniq — obuna AVTOMATIK berilmadi. Webhook "
+                f"payload'iga plan ID qo'shilsin yoki bir xil narxli planlar "
+                f"ajratilsin (user_id={getattr(user, 'id', None)})."
             )
             logger.error(msg)
             _capture_billing_issue(msg)
+            return False
         plan = matching[0] if matching else None
 
     if not plan:
@@ -549,6 +551,12 @@ def payme_webhook(request):
 
     auth_parts = auth_header.split(' ', 1)
     # Timing-safe taqqoslash (hmac.compare_digest) — oddiy != timing-hujumga ochiq.
+    # ESLATMA (audit #5): Payme JSON-RPC protokoli rasman faqat HTTP Basic
+    # (base64(Paycom:secret)) avtorizatsiyani qo'llaydi — Payme so'rovlarida
+    # HMAC imzo headeri yo'q, shuning uchun Click'dagi kabi HMAC tekshiruv
+    # qo'shib bo'lmaydi (real webhooklar sinardi). Himoya: (1) compare_digest
+    # bilan constant-time solishtirish, (2) endpoint faqat HTTPS orqali
+    # ochilishi shart (SECURE_SSL_REDIRECT production'da yoqilgan).
     if (
         len(auth_parts) != 2
         or auth_parts[0] != 'Basic'
@@ -594,7 +602,13 @@ def payme_webhook(request):
         # amount tiyinda keladi (1 UZS = 100 tiyin). Decimal(str(...)) va
         # Decimal('100') bilan bo'lib aniq natija olamiz — float aralashuvi
         # tufayli yuzaga keladigan aniqsizlik (masalan 0.1+0.2) bo'lmasin.
-        if Decimal(str(amount)) / Decimal('100') != tx.amount:
+        # amount None yoki noto'g'ri formatda kelsa InvalidOperation otiladi —
+        # 500 o'rniga JSON-RPC -31001 xatosini qaytaramiz.
+        try:
+            amount_uzs = Decimal(str(amount)) / Decimal('100')
+        except (InvalidOperation, TypeError, ValueError):
+            return rpc_error(-31001, "Noto'g'ri summa", "Неверная сумма")
+        if amount_uzs != tx.amount:
             return rpc_error(-31001, "Noto'g'ri summa", "Неверная сумма")
             
         return JsonResponse({
@@ -609,6 +623,11 @@ def payme_webhook(request):
         payme_trans_id = params.get('id')
         time = params.get('time')
         amount = params.get('amount')
+
+        # Payme tranzaksiya ID'si bo'sh kelsa provider_transaction_id=None
+        # yozilib, keyingi so'rovlarda noaniq qidiruv kelib chiqardi.
+        if not payme_trans_id:
+            return rpc_error(-31050, "Tranzaksiya ID ko'rsatilmagan", "Не указан ID транзакции")
         
         # Race condition himoyasi: parallel CreateTransaction so'rovlari bir
         # vaqtda tx'ni o'qib, ikkalasi ham provider_transaction_id ni yozishi
@@ -621,8 +640,13 @@ def payme_webhook(request):
                 return rpc_error(-31050, "Tranzaksiya topilmadi", "Транзакция не найдена")
 
             # amount tiyinda — CheckPerformTransaction'dagi kabi aniq Decimal
-            # solishtirish (float aralashuvisiz).
-            if Decimal(str(amount)) / Decimal('100') != tx.amount:
+            # solishtirish (float aralashuvisiz). None/buzuq qiymatda
+            # InvalidOperation o'rniga -31001 qaytariladi.
+            try:
+                amount_uzs = Decimal(str(amount)) / Decimal('100')
+            except (InvalidOperation, TypeError, ValueError):
+                return rpc_error(-31001, "Noto'g'ri summa", "Неверная сумма")
+            if amount_uzs != tx.amount:
                 return rpc_error(-31001, "Noto'g'ri summa", "Неверная сумма")
 
             if tx.status == PaymentTransaction.STATUS_SUCCESS:
@@ -652,6 +676,10 @@ def payme_webhook(request):
     # 3. PerformTransaction
     elif method == 'PerformTransaction':
         payme_trans_id = params.get('id')
+        # ID bo'sh bo'lsa provider_transaction_id=None bo'yicha qidiruv
+        # MultipleObjectsReturned (500) berishi mumkin — oldindan rad etamiz.
+        if not payme_trans_id:
+            return rpc_error(-31050, "Tranzaksiya ID ko'rsatilmagan", "Не указан ID транзакции")
         try:
             tx = PaymentTransaction.objects.get(provider_transaction_id=payme_trans_id)
         except PaymentTransaction.DoesNotExist:
@@ -667,7 +695,7 @@ def payme_webhook(request):
                 'id': rpc_id
             })
             
-        if tx.status == PaymentTransaction.STATUS_FAILED:
+        if tx.status in (PaymentTransaction.STATUS_FAILED, PaymentTransaction.STATUS_CANCELLED):
             return rpc_error(-31008, "Tranzaksiya bekor qilingan", "Транзакция отменена")
 
         # Race condition himoyasi: parallel PerformTransaction so'rovlari
@@ -708,39 +736,105 @@ def payme_webhook(request):
     # 4. CancelTransaction
     elif method == 'CancelTransaction':
         payme_trans_id = params.get('id')
-        reason = params.get('reason')
+        # Payme `reason` kodi (int) — saqlanadi va CheckTransaction'da qaytariladi.
+        try:
+            cancel_reason = int(params.get('reason'))
+        except (TypeError, ValueError):
+            cancel_reason = None
+        if not payme_trans_id:
+            return rpc_error(-31050, "Tranzaksiya ID ko'rsatilmagan", "Не указан ID транзакции")
         try:
             tx = PaymentTransaction.objects.get(provider_transaction_id=payme_trans_id)
         except PaymentTransaction.DoesNotExist:
             return rpc_error(-31050, "Tranzaksiya topilmadi", "Транзакция не найдена")
-            
-        if tx.status == PaymentTransaction.STATUS_SUCCESS:
-            # Cannot cancel completed transaction
-            return rpc_error(-31007, "To'lov bajarilgan, bekor qilib bo'lmaydi", "Оплата проведена, невозможно отменить")
+
+        def _cancel_response(tx, state):
+            return JsonResponse({
+                'result': {
+                    'transaction': str(tx.id),
+                    'cancel_time': int(tx.updated_at.timestamp() * 1000),
+                    'state': state,
+                },
+                'id': rpc_id
+            })
+
+        # Idempotentlik: allaqachon bekor qilingan tranzaksiya uchun xuddi
+        # shu javob qaytariladi (Payme qayta so'rashi mumkin).
+        if tx.status == PaymentTransaction.STATUS_CANCELLED:
+            return _cancel_response(tx, -2)
+        if tx.status == PaymentTransaction.STATUS_FAILED:
+            return _cancel_response(tx, -1)
 
         # Race condition himoyasi: CreateTransaction/PerformTransaction kabi
-        # bu yerda ham tx'ni lock qilib, statusni lock ostida qayta tekshiramiz.
-        # Parallel PerformTransaction bilan poyga bo'lsa (success bo'lib qolsa)
-        # bekor qilmaymiz va save bitta atomik blokda bajariladi.
+        # bu yerda ham tx'ni lock qilib, statusni lock ostida qayta tekshiramiz
+        # va save bitta atomik blokda bajariladi.
         with transaction.atomic():
             tx = PaymentTransaction.objects.select_for_update().get(pk=tx.pk)
-            if tx.status == PaymentTransaction.STATUS_SUCCESS:
-                return rpc_error(-31007, "To'lov bajarilgan, bekor qilib bo'lmaydi", "Оплата проведена, невозможно отменить")
-            tx.status = PaymentTransaction.STATUS_FAILED
-            tx.save()
+            if tx.status == PaymentTransaction.STATUS_CANCELLED:
+                return _cancel_response(tx, -2)
+            if tx.status == PaymentTransaction.STATUS_FAILED:
+                return _cancel_response(tx, -1)
 
-        return JsonResponse({
-            'result': {
-                'transaction': str(tx.id),
-                'cancel_time': int(tx.updated_at.timestamp() * 1000),
-                'state': -1 # Cancelled state
-            },
-            'id': rpc_id
-        })
+            if tx.status == PaymentTransaction.STATUS_SUCCESS:
+                # Refund stsenariysi (Payme sertifikatsiyasi): bajarilgan
+                # to'lovni bekor qilish — state=-2 va obuna deaktivatsiyasi.
+                # Shu to'lov bergan obunani topamiz (user + plan bo'yicha
+                # eng so'nggi aktiv obuna).
+                sub = (
+                    UserSubscription.objects
+                    .select_for_update()
+                    .filter(user_id=tx.user_id, plan_id=tx.plan_id, is_active=True)
+                    .order_by('-created_at')
+                    .first()
+                )
+                # Obuna topilmasa yoki muddati allaqachon tugagan bo'lsa —
+                # foydalanuvchi premiumdan to'liq foydalanib bo'lgan, bekor
+                # qilib (pul qaytarib) bo'lmaydi: -31007.
+                if sub is None or sub.end_date <= timezone.now():
+                    return rpc_error(
+                        -31007,
+                        "Tranzaksiyani bekor qilib bo'lmaydi",
+                        "Невозможно отменить транзакцию",
+                    )
+                # Obunani o'chiramiz — UserSubscription.save() o'zi
+                # User.is_premium flag'ini sinxronlaydi.
+                sub.is_active = False
+                sub.save(update_fields=['is_active'])
+                tx.status = PaymentTransaction.STATUS_CANCELLED
+                tx.cancel_reason = cancel_reason
+                tx.failure_reason = (
+                    f"Payme refund: tranzaksiya bekor qilindi (reason={cancel_reason})"
+                )
+                tx.save()
+                logger.warning(
+                    "Payme refund: tx=%s user_id=%s obuna deaktivatsiya qilindi "
+                    "(reason=%s)", tx.id, tx.user_id, cancel_reason,
+                )
+
+                # /me subscription cache'ini commit'dan keyin bekor qilamiz —
+                # foydalanuvchi premium statusi darhol yangilanishi kerak.
+                def _invalidate_cache(user_id=tx.user_id):
+                    try:
+                        from accounts.utils import invalidate_user_subscription_cache
+                        invalidate_user_subscription_cache(user_id)
+                    except Exception:
+                        pass
+                transaction.on_commit(_invalidate_cache)
+                cancelled_state = -2
+            else:
+                # Hali bajarilmagan (pending) tranzaksiya — oddiy bekor: state=-1.
+                tx.status = PaymentTransaction.STATUS_FAILED
+                tx.cancel_reason = cancel_reason
+                tx.save()
+                cancelled_state = -1
+
+        return _cancel_response(tx, cancelled_state)
 
     # 5. CheckTransaction
     elif method == 'CheckTransaction':
         payme_trans_id = params.get('id')
+        if not payme_trans_id:
+            return rpc_error(-31050, "Tranzaksiya ID ko'rsatilmagan", "Не указан ID транзакции")
         try:
             tx = PaymentTransaction.objects.get(provider_transaction_id=payme_trans_id)
         except PaymentTransaction.DoesNotExist:
@@ -749,16 +843,30 @@ def payme_webhook(request):
         state = 1
         if tx.status == PaymentTransaction.STATUS_SUCCESS:
             state = 2
+        elif tx.status == PaymentTransaction.STATUS_CANCELLED:
+            # Bajarilgandan keyin bekor qilingan (refund) — Payme state=-2.
+            state = -2
         elif tx.status == PaymentTransaction.STATUS_FAILED:
             state = -1
-            
+
+        is_cancelled = tx.status in (
+            PaymentTransaction.STATUS_FAILED,
+            PaymentTransaction.STATUS_CANCELLED,
+        )
         res_data = {
             'create_time': int(tx.created_at.timestamp() * 1000),
-            'perform_time': int(tx.updated_at.timestamp() * 1000) if tx.status == PaymentTransaction.STATUS_SUCCESS else 0,
-            'cancel_time': int(tx.updated_at.timestamp() * 1000) if tx.status == PaymentTransaction.STATUS_FAILED else 0,
+            # CANCELLED (refund) tranzaksiya avval bajarilgan — perform_time
+            # nolga teng bo'lmasligi kerak (Payme sandbox tekshiradi).
+            'perform_time': int(tx.updated_at.timestamp() * 1000) if tx.status in (
+                PaymentTransaction.STATUS_SUCCESS,
+                PaymentTransaction.STATUS_CANCELLED,
+            ) else 0,
+            'cancel_time': int(tx.updated_at.timestamp() * 1000) if is_cancelled else 0,
             'transaction': str(tx.id),
             'state': state,
-            'reason': 1 if tx.status == PaymentTransaction.STATUS_FAILED else None
+            # Saqlangan Payme reason kodi; eski yozuvlarda (kod yo'q) failed
+            # uchun avvalgidek 1 qaytariladi.
+            'reason': (tx.cancel_reason if tx.cancel_reason is not None else 1) if is_cancelled else None
         }
         
         return JsonResponse({

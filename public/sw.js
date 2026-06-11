@@ -3,11 +3,18 @@
 //   - HTML hujjat (navigatsiya): network-first — yangi deploy darhol ko'rinadi,
 //     internet bo'lmasa keshdan beriladi (oflayn rejim).
 //   - /api/ so'rovlari: network-first — xato bo'lsa keshdan (oxirgi javob).
+//     API keshi ALOHIDA cache'da, 5 daqiqalik TTL bilan va logout'da butunlay
+//     tozalanadi — eski foydalanuvchining javoblari keyingisiga ko'rinmasin.
 //   - Brand rasmlar: network-first — logotip kabi hash-lanmagan assetlar deploydan
 //     keyin eski keshdan chiqib qolmasin.
 //   - Statik fayllar (hash-li JS/CSS, rasm, font): cache-first — tez yuklanadi.
 const CACHE_NAME = 'olympy-v2';
+const API_CACHE_NAME = 'olympy-api-v1';
 const STATIC_ASSETS = ['/', '/index.html'];
+// API javoblari keshda maksimal shuncha yashaydi (millisekund) — eski
+// (masalan, logout'dan oldingi) ma'lumot uzoq ko'rsatilmasin.
+const API_CACHE_TTL_MS = 5 * 60 * 1000;
+const API_CACHED_AT_HEADER = 'x-olympy-cached-at';
 
 self.addEventListener('install', (e) => {
   e.waitUntil(
@@ -22,11 +29,54 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+      Promise.all(
+        keys
+          .filter((k) => k !== CACHE_NAME && k !== API_CACHE_NAME)
+          .map((k) => caches.delete(k))
+      )
     )
   );
   self.clients.claim();
 });
+
+// Logout'da frontend SW'ga xabar yuboradi — API keshi butunlay tozalanadi.
+// Aks holda keyingi login qilgan foydalanuvchi oldingi foydalanuvchining
+// keshdagi javoblarini (oflayn rejimda) ko'rishi mumkin edi.
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'CLEAR_API_CACHE') {
+    e.waitUntil(caches.delete(API_CACHE_NAME));
+  }
+});
+
+// API javobini TTL belgisi (cached-at header) bilan keshga yozadi.
+const putApiResponseWithTimestamp = async (req, response) => {
+  try {
+    const headers = new Headers(response.headers);
+    headers.set(API_CACHED_AT_HEADER, String(Date.now()));
+    const body = await response.blob();
+    const stamped = new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+    const cache = await caches.open(API_CACHE_NAME);
+    await cache.put(req, stamped);
+  } catch {}
+};
+
+// Keshdagi API javobini TTL bo'yicha tekshirib qaytaradi; eskirgan bo'lsa
+// o'chiradi va undefined qaytaradi.
+const matchFreshApiResponse = async (req) => {
+  const cache = await caches.open(API_CACHE_NAME);
+  const cached = await cache.match(req);
+  if (!cached) return undefined;
+  const cachedAt = Number(cached.headers.get(API_CACHED_AT_HEADER) || 0);
+  if (!cachedAt || Date.now() - cachedAt > API_CACHE_TTL_MS) {
+    await cache.delete(req);
+    return undefined;
+  }
+  return cached;
+};
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
@@ -39,18 +89,18 @@ self.addEventListener('fetch', (e) => {
   // Boshqa domendagi so'rovlarga (CDN, fonts, analytics) aralashmaymiz.
   if (url.origin !== self.location.origin) return;
 
-  // API so'rovlari — network-first, xato bo'lsa keshdan.
+  // API so'rovlari — network-first, xato bo'lsa keshdan (5 daqiqalik TTL).
   if (url.pathname.startsWith('/api/')) {
     e.respondWith(
       fetch(req)
         .then((response) => {
           if (response.ok) {
             const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
+            putApiResponseWithTimestamp(req, clone);
           }
           return response;
         })
-        .catch(() => caches.match(req))
+        .catch(() => matchFreshApiResponse(req))
     );
     return;
   }

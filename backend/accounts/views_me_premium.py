@@ -16,6 +16,7 @@ from rest_framework.throttling import ScopedRateThrottle
 
 from attempts.models import TestAttempt
 from .models import Achievement, DailyGoal, ParentStudentLink, Rival
+from .utils import is_user_premium
 
 MAX_RIVALS = 3
 
@@ -271,7 +272,7 @@ def recommended_olympiads(request):
     from django.utils import timezone
     from olympiads.models import Olympiad
 
-    if not getattr(request.user, 'is_premium', False):
+    if not is_user_premium(request.user):
         return _premium_required()
 
     # Fan kesimida o'rtacha ball.
@@ -349,7 +350,7 @@ def error_notebook(request):
     """
     from questions.models import Question
 
-    if not getattr(request.user, 'is_premium', False):
+    if not is_user_premium(request.user):
         return _premium_required()
 
     subject = (request.query_params.get('subject') or '').strip()
@@ -558,7 +559,7 @@ def olympiad_prep_plan(request):
     from olympiads.models import Olympiad
     from accounts.views_student import _subject_performance
 
-    if not getattr(request.user, 'is_premium', False):
+    if not is_user_premium(request.user):
         return _premium_required()
 
     olympiad_id = (request.data or {}).get('olympiad_id')
@@ -715,7 +716,7 @@ def ai_audio_analysis(request):
     from attempts.models import AttemptAIAnalysis, TestAttempt
     from questions.ai_generation import analyze_attempt_ai
 
-    if not getattr(request.user, 'is_premium', False):
+    if not is_user_premium(request.user):
         return _premium_required()
 
     attempt_id = (request.data or {}).get('attempt_id')

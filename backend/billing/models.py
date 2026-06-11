@@ -117,11 +117,16 @@ class PaymentTransaction(models.Model):
     STATUS_PENDING = 'pending'
     STATUS_SUCCESS = 'success'
     STATUS_FAILED = 'failed'
-    
+    # Bajarilgan (success) to'lov keyin Payme tomonidan bekor qilingan —
+    # refund stsenariysi (Payme state=-2). Oddiy FAILED (state=-1) dan farqi:
+    # pul qaytarilgan va obuna deaktivatsiya qilingan.
+    STATUS_CANCELLED = 'cancelled'
+
     STATUS_CHOICES = [
         (STATUS_PENDING, 'Kutilmoqda'),
         (STATUS_SUCCESS, 'Muvaffaqiyatli'),
         (STATUS_FAILED, 'Xato'),
+        (STATUS_CANCELLED, 'Bekor qilingan (refund)'),
     ]
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions')
@@ -138,6 +143,10 @@ class PaymentTransaction(models.Model):
     # topilmadi, noaniq narx va h.k.) yoki to'lov bekor bo'lganda sababini shu
     # yerda saqlaymiz. Admin panelida muammoli to'lovlarni tez aniqlash uchun.
     failure_reason = models.TextField(blank=True, default='')
+    # Payme CancelTransaction `reason` kodi (masalan 5 — pul qaytarildi).
+    # CheckTransaction javobida shu kod qaytariladi — Payme sertifikatsiyasi
+    # bekor qilish sababini saqlashni talab qiladi.
+    cancel_reason = models.IntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

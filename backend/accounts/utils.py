@@ -45,8 +45,51 @@ def invalidate_user_subscription_cache(user_id):
     try:
         from django.core.cache import cache
         cache.delete(subscription_cache_key(user_id))
+        cache.delete(premium_realtime_cache_key(user_id))
     except Exception:
         pass
+
+
+def premium_realtime_cache_key(user_id):
+    return f"user_premium_rt_{user_id}"
+
+
+# is_user_premium natijasi qisqa muddat keshlanadi — premium-only endpoint'lar
+# har so'rovda DB'ga subscription query yubormasin.
+PREMIUM_CHECK_CACHE_TTL = 60
+
+
+def is_user_premium(user):
+    """Premium holatini real vaqtda tekshiradi (60 soniyalik cache bilan).
+
+    `user.is_premium` flag'i obuna muddati tugaganda darhol yangilanmaydi
+    (Celery task 60 daqiqada bir yuradi, /me lazy expiry esa faqat /me
+    so'rovida ishlaydi). Premium-only endpoint'lar shu helper orqali
+    flag + aktiv obuna (`is_active=True, end_date > now`) ikkalasini
+    tekshiradi — muddati o'tgan obuna bilan premium imkoniyat ochilmaydi.
+    """
+    if user is None or not getattr(user, 'is_authenticated', True):
+        return False
+    if not getattr(user, 'is_premium', False):
+        return False
+    try:
+        from django.core.cache import cache
+        key = premium_realtime_cache_key(user.id)
+        cached = cache.get(key)
+        if cached is not None:
+            return bool(cached)
+    except Exception:
+        cache = None
+    from django.utils import timezone
+    active = user.subscriptions.filter(
+        is_active=True, end_date__gt=timezone.now(),
+    ).exists()
+    if cache is not None:
+        try:
+            cache.set(key, 1 if active else 0, PREMIUM_CHECK_CACHE_TTL)
+        except Exception:
+            pass
+    return active
 
 
 def normalize_phone(raw):

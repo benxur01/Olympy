@@ -146,6 +146,10 @@ DATABASE_URL = os.environ.get('DATABASE_URL', '').strip()
 # ko'rishda (masalan, Render free tier'da Quiz-bot bilan) table-name
 # to'qnashishlarini oldini oladi. render_build.sh schema'ni yaratadi.
 DATABASE_SCHEMA = os.environ.get('DATABASE_SCHEMA', '').strip()
+# Supabase transaction pooler (port 6543) aniqlanganda True bo'ladi —
+# pastda CONN_MAX_AGE va DISABLE_SERVER_SIDE_CURSORS shu flag'ga tayanadi.
+# (Avval `locals().get('is_supabase_pooler')` ishlatilardi — mo'rt uslub.)
+is_supabase_pooler = False
 if DATABASE_URL:
     parsed_db = urlparse(DATABASE_URL)
     if parsed_db.scheme not in ('postgres', 'postgresql'):
@@ -208,7 +212,7 @@ else:
 # shuning uchun pooler aniqlangan bo'lsa CONN_MAX_AGE=0 qoldiriladi.
 # SQLite uchun ham ahamiyatsiz, lekin zararsiz.
 _conn_max_age = int(os.environ.get('CONN_MAX_AGE', 60))
-if DATABASE_URL and locals().get('is_supabase_pooler'):
+if DATABASE_URL and is_supabase_pooler:
     _conn_max_age = 0
 DATABASES['default']['CONN_MAX_AGE'] = _conn_max_age
 # Django 4.1+: persistent connection qayta ishlatishdan oldin uning hali
@@ -479,6 +483,18 @@ else:
             'LOCATION': 'olympy-default',
         }
     }
+    # MUHIM: production'da gunicorn bir nechta worker bilan ishlaydi va har
+    # worker O'Z LocMemCache'iga ega bo'ladi — login lockout (axes), throttle
+    # va cache'ga bog'liq sessiya mexanizmlari worker'lar orasida bo'linmaydi,
+    # ya'ni ishonchsiz ishlaydi. REDIS_URL o'rnatish shart.
+    if not DEBUG:
+        import sys as _sys
+        print(
+            "WARNING: REDIS_URL is not set. Running multiple workers without "
+            "shared cache is unsafe (login lockout, throttling va sessiyalar "
+            "worker'lar orasida bo'linmaydi). REDIS_URL o'rnating.",
+            file=_sys.stderr,
+        )
 CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
@@ -497,6 +513,12 @@ CELERY_BEAT_SCHEDULE = {
     'cleanup-phone-verifications': {
         'task': 'accounts.tasks.cleanup_phone_verifications',
         'schedule': timedelta(hours=1),
+    },
+    # Har 30 soniyada worker tirikligini cache'ga yozadi — /api/health/
+    # shu timestamp orqali Celery holatini ("ok"/"down") aniqlaydi.
+    'celery-heartbeat': {
+        'task': 'accounts.celery_heartbeat',
+        'schedule': timedelta(seconds=30),
     },
     # Har kuni soat 06:00 UTC — bugungi kunlik savollarni tanlaydi.
     # CELERY_TIMEZONE Asia/Tashkent bo'lgani uchun nowfun bilan aniq UTC.

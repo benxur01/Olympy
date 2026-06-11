@@ -1,5 +1,8 @@
+// API base URL — store.jsx bilan BIR XIL mantiq. Avval PROD'da
+// location.origin ishlatilardi: VITE_API_BASE_URL o'rnatilmagan deploy'da
+// so'rovlar frontend saytining o'ziga ketib 404 bo'lardi.
 const DEFAULT_API_BASE_URL = import.meta.env?.PROD
-  ? (globalThis.location?.origin || '')
+  ? 'https://olympy-api.onrender.com'
   : 'http://localhost:8000';
 const API_BASE_URL = (
   import.meta.env?.VITE_API_BASE_URL ||
@@ -101,21 +104,24 @@ const _removeAuth = (key) => {
 
 const unwrapList = (res) => Array.isArray(res) ? res : (res && res.results ? res.results : []);
 
-// page_size=N bilan paginatsiyalangan ro'yxatni unwrap qiladi va agar
-// server `count` qiymati so'ralgan limitdan oshsa — developer'ni ogohlantiradi.
-// Hozircha to'liq paginatsiya UI yo'q (barcha yozuvlar bitta katta page'da
-// olinadi); count > limit bo'lsa qisman ma'lumot ko'rsatilmoqda degani, shuning
-// uchun warn beramiz. (console.warn production bundle'da terser tomonidan
-// olib tashlanadi — vite.config.js pure_funcs.)
-const unwrapListPaged = (res, limit, label) => {
-  const count = (res && typeof res.count === 'number') ? res.count : null;
-  if (count !== null && count > limit) {
-    console.warn(
-      `[api] ${label}: serverda ${count} ta yozuv bor, lekin faqat ${limit} tasi ` +
-      `yuklandi (page_size=${limit}). Qolganlari ko'rinmaydi — paginatsiya kerak.`
-    );
+// DRF PageNumberPagination ro'yxatining BARCHA sahifalarini ketma-ket yuklab,
+// bitta massivga yig'adi. Avval `page_size=200` bilan faqat birinchi 200 ta
+// yozuv olinardi va qolganlari jimgina ko'rinmasdi (unwrapListPaged faqat
+// console.warn berardi). Endi server `next` qaytarganicha keyingi page
+// so'raladi. `maxPages` — himoya chegarasi (200×50 = 10 000 yozuv), cheksiz
+// loop yoki juda katta javoblardan saqlaydi.
+const requestAllPages = async (basePath, { token, pageSize = 200, maxPages = 50 } = {}) => {
+  const sep = basePath.includes('?') ? '&' : '?';
+  const all = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const res = await request(`${basePath}${sep}page_size=${pageSize}&page=${page}`, { token });
+    // Paginatsiyasiz (oddiy massiv) javob — bitta sahifa, shu yerda tugaydi.
+    if (Array.isArray(res)) { all.push(...res); break; }
+    const rows = (res && Array.isArray(res.results)) ? res.results : [];
+    all.push(...rows);
+    if (!res || !res.next || rows.length === 0) break;
   }
-  return unwrapList(res);
+  return all;
 };
 
 class ApiError extends Error {
@@ -160,6 +166,41 @@ const toUserMessage = (error) => {
   return error?.message || "Server bilan bog‘lanishda xatolik yuz berdi";
 };
 
+// ─── Token refresh "single-flight" ──────────────────────────────────────────
+// Parallel so'rovlar bir vaqtda 401 olsa, har biri alohida refresh chaqirardi.
+// Birinchi refresh tokenni rotate qilib eski refresh tokenni blacklist qiladi,
+// qolgan refresh'lar esa blacklisted token bilan muvaffaqiyatsiz bo'lib,
+// foydalanuvchi logout bo'lardi. Yechim: bitta shared in-flight Promise —
+// barcha 401 olgan so'rovlar bitta refresh natijasini kutadi.
+let _refreshInFlight = null;
+const _refreshTokens = () => {
+  if (_refreshInFlight) return _refreshInFlight;
+  const refresh = _readAuth(AUTH_REFRESH_KEY);
+  _refreshInFlight = (async () => {
+    const refreshed = await request('/api/auth/token/refresh/', {
+      method: 'POST',
+      body: refresh ? { refresh } : undefined,
+      retryOnAuth: false,
+    });
+    const nextToken = refreshed?.access || refreshed?.token || null;
+    const nextRefresh = refreshed?.refresh || refresh || null;
+    if (nextToken || refreshed?.cookie_auth) {
+      if (refreshed?.cookie_auth) {
+        _removeAuth(AUTH_TOKEN_KEY);
+        _removeAuth(AUTH_REFRESH_KEY);
+      } else {
+        if (nextToken) _writeAuth(AUTH_TOKEN_KEY, nextToken);
+        if (nextRefresh) _writeAuth(AUTH_REFRESH_KEY, nextRefresh);
+      }
+      return { token: nextToken };
+    }
+    throw new ApiError('Refresh failed', { status: 401 });
+  })().finally(() => {
+    _refreshInFlight = null;
+  });
+  return _refreshInFlight;
+};
+
 const request = async (
   path,
   { method = 'GET', body, token, headers = {}, retryOnAuth = true, keepalive = false, signal } = {},
@@ -200,33 +241,18 @@ const request = async (
   const data = contentType.includes('application/json') ? await response.json() : await response.text();
   if (!response.ok) {
     if (response.status === 401) {
-      const refresh = retryOnAuth ? _readAuth(AUTH_REFRESH_KEY) : null;
       if (retryOnAuth) {
         try {
-          const refreshed = await request('/api/auth/token/refresh/', {
-            method: 'POST',
-            body: refresh ? { refresh } : undefined,
+          // Single-flight: parallel 401'lar bitta refresh natijasini kutadi.
+          const { token: nextToken } = await _refreshTokens();
+          return request(path, {
+            method,
+            body,
+            token: nextToken || null,
+            headers,
             retryOnAuth: false,
+            signal,
           });
-          const nextToken = refreshed?.access || refreshed?.token;
-          const nextRefresh = refreshed?.refresh || refresh;
-          if (nextToken || refreshed?.cookie_auth) {
-            if (refreshed?.cookie_auth) {
-              _removeAuth(AUTH_TOKEN_KEY);
-              _removeAuth(AUTH_REFRESH_KEY);
-            } else {
-              if (nextToken) _writeAuth(AUTH_TOKEN_KEY, nextToken);
-              if (nextRefresh) _writeAuth(AUTH_REFRESH_KEY, nextRefresh);
-            }
-            return request(path, {
-              method,
-              body,
-              token: nextToken || null,
-              headers,
-              retryOnAuth: false,
-              signal,
-            });
-          }
         } catch {}
       }
       // retryOnAuth=false bo'lsa (login, register kabi public endpoint'lar):
@@ -252,6 +278,7 @@ const request = async (
       _removeAuth(AUTH_TOKEN_KEY);
       _removeAuth(AUTH_REFRESH_KEY);
       _clearCachedUser();
+      _clearSwApiCache();
       try { window.dispatchEvent(new CustomEvent('olympy:logout')); } catch {}
       throw new ApiError('Session expired', { status: 401, data });
     }
@@ -393,10 +420,20 @@ const loadAuth = () => {
   return { token: null, refresh: null, user };
 };
 
+// Service worker'dagi API keshini tozalash — logout'dan keyin eski
+// foydalanuvchining keshlangan javoblari (oflayn rejimda) keyingi
+// foydalanuvchiga ko'rinmasligi uchun (public/sw.js'dagi CLEAR_API_CACHE).
+const _clearSwApiCache = () => {
+  try {
+    navigator.serviceWorker?.controller?.postMessage({ type: 'CLEAR_API_CACHE' });
+  } catch {}
+};
+
 const clearAuth = async () => {
   _removeAuth(AUTH_TOKEN_KEY);
   _removeAuth(AUTH_REFRESH_KEY);
   _clearCachedUser();
+  _clearSwApiCache();
   // await — logout so'rovi tugashini kutamiz, aks holda refresh token
   // server tomonda blacklist'ga tushmasdan qolib ketishi mumkin (fetch
   // boshlanmasdan sahifa o'zgarsa). Chaqiruvchilar natijani kutmaydi.
@@ -519,7 +556,9 @@ export const OlympyApi = {
   getSubjects: (token) => request('/api/subjects/', { token }),
   createSubject: (name, token) => request('/api/subjects/', { method: 'POST', body: { name }, token }),
   // Olympiads
-  getOlympiads: (token) => request('/api/olympiads/?page_size=200', { token }).then((res) => unwrapListPaged(res, 200, 'getOlympiads')),
+  // Barcha sahifalar avtomatik yuklanadi — 200+ olimpiada bo'lsa ham
+  // to'liq ro'yxat keladi (requestAllPages).
+  getOlympiads: (token) => requestAllPages('/api/olympiads/', { token }),
   createOlympiad: (payload, token) => request('/api/olympiads/', { method: 'POST', body: payload, token }),
   // questionIndex berilsa backend faqat o'sha indeksdagi savolni qaytaradi
   // (savollarni bitta-bitta yuklash — cheating-himoya). Berilmasa barcha
@@ -583,11 +622,10 @@ export const OlympyApi = {
   // Markaz statistikasi (Owner/Manager dashboard).
   getCenterStats: (centerId, token) => request(`/api/centers/${centerId}/stats/`, { token }),
   // Questions
-  // page_size=200: backend savollar ro'yxatini paginatsiya qiladi
-  // (LargePageNumberPagination). Markazning barcha savollarini bitta
-  // round-trip'da olish uchun katta page_size so'raymiz; unwrapList
-  // {results:[...]} javobni ham, oddiy massivni ham massivga keltiradi.
-  getQuestions: (centerId, token) => request(`/api/questions/?center=${centerId}&page_size=200`, { token }).then((res) => unwrapListPaged(res, 200, 'getQuestions')),
+  // Backend savollar ro'yxatini paginatsiya qiladi (LargePageNumberPagination,
+  // max 200/page). requestAllPages barcha sahifalarni ketma-ket yuklaydi —
+  // markazda 200+ savol bo'lsa ham to'liq ro'yxat keladi.
+  getQuestions: (centerId, token) => requestAllPages(`/api/questions/?center=${centerId}`, { token }),
   createQuestion: (payload, token) => request('/api/questions/', { method: 'POST', body: payload, token }),
   generateAiQuestions: (payload, token) => request('/api/questions/generate-ai/', { method: 'POST', body: payload, token }),
   // IT (kod) savolini AI bilan baholash — test paytida o'quvchi kodini sinaydi.
@@ -634,6 +672,14 @@ export const OlympyApi = {
   },
   // Ustoz/menejer uchun olimpiadaning barcha kod javoblari + AI tavsiyalari.
   getCodeSubmissions: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/code-submissions/`, { token }),
+  // Essay baholash (teacher/manager): olimpiadaning barcha essay javoblari
+  // ro'yxati va bitta javobga ball + izoh saqlash.
+  getOlympiadEssayAnswers: (olympiadId, token, onlyUngraded) =>
+    request(`/api/manager/olympiads/${olympiadId}/essay-answers/${onlyUngraded ? '?only_ungraded=1' : ''}`, { token }),
+  getAttemptEssayAnswers: (attemptId, token) =>
+    request(`/api/attempts/${attemptId}/essay-answers/`, { token }),
+  gradeEssayAnswer: (attemptId, questionId, payload, token) =>
+    request(`/api/attempts/${attemptId}/essay-answers/${questionId}/grade/`, { method: 'POST', body: payload, token }),
   extractPdfQuestions: (pdfFile, payload, token) => {
     const fd = new FormData();
     fd.append('pdf', pdfFile);
