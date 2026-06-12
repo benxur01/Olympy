@@ -2659,6 +2659,52 @@ const GlowCard = ({ children, className = '', style = {}, ...props }) => {
   );
 };
 
+// ─── Count-up animatsiya ────────────────────────────────────────────────────
+// Raqamni 0 dan boshlab sanab chiqadi. IntersectionObserver element ko'ringanda
+// requestAnimationFrame bilan ishga tushiradi — layout o'zgarmaydi, shuning
+// uchun Telegram WebView'da ham xavfsiz. Bir marta ishlaydi (started ref).
+const CountUp = ({ end, suffix = '', duration = 1400, className = '' }) => {
+  const ref = React.useRef(null);
+  const startedRef = React.useRef(false);
+  const [val, setVal] = React.useState(0);
+
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setVal(end);
+      return;
+    }
+    let rafId;
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting || startedRef.current) return;
+        startedRef.current = true;
+        observer.disconnect();
+        const startTime = performance.now();
+        const tick = (now) => {
+          const progress = Math.min((now - startTime) / duration, 1);
+          const eased = 1 - Math.pow(1 - progress, 3); // easeOutCubic
+          setVal(Math.round(end * eased));
+          if (progress < 1) rafId = requestAnimationFrame(tick);
+        };
+        rafId = requestAnimationFrame(tick);
+      });
+    }, { threshold: 0.4 });
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [end, duration]);
+
+  return (
+    <span ref={ref} className={className}>
+      {val.toLocaleString('ru-RU').replace(/ /g, ' ')}{suffix}
+    </span>
+  );
+};
+
 // ─── A/B test hook ──────────────────────────────────────────────────────────
 // Cookie asosida doimiy variant tayinlaydi: foydalanuvchining yarmi 'A', yarmi
 // 'B' ko'radi. Bir marta tanlangan variant 30 kun saqlanadi.
@@ -2867,10 +2913,19 @@ const LandingPage = ({ onNavigate, user }) => {
     { label: 'Ota-ona', icon: 'users', isMock: true, desc: 'Farzandning AI muvaffaqiyat bashorati, yutuqlari va Telegram hisobot sozlamalari', glowColor: 'rgba(6, 182, 212, 0.22)' },
   ];
 
+  // Hero metrikalar — CountUp bilan sanab chiqiladi (A).
   const heroMetrics = [
-    { value: 'AI', label: 'savol yaratish' },
-    { value: 'PDF', label: 'import' },
-    { value: 'Live', label: 'reyting' },
+    { end: 100, suffix: '+', label: 'AI savol soniyalar ichida' },
+    { end: 26, suffix: '+', label: 'premium imkoniyat' },
+    { end: 9, suffix: '', label: 'modul bitta tizimda' },
+  ];
+
+  // Mobil chip qatori — desktopdagi floating badge'lar lg dan kichik
+  // ekranlarda ko'rinmaydi, ularning o'rnini shu chiplar bosadi (A).
+  const heroChips = [
+    { icon: 'sparkles', label: 'AI Savollar', color: 'text-indigo-300 border-indigo-500/25 bg-indigo-500/10' },
+    { icon: 'file', label: 'PDF Import', color: 'text-cyan-300 border-cyan-500/25 bg-cyan-500/10' },
+    { icon: 'trophy', label: 'Live Reyting', color: 'text-emerald-300 border-emerald-500/25 bg-emerald-500/10' },
   ];
 
   // Auto-switch tabs every 4 seconds
@@ -2904,11 +2959,13 @@ const LandingPage = ({ onNavigate, user }) => {
 
   const features = [
     // Center features
-    { category: 'center', icon: '✨', iconName: 'sparkles', title: 'AI orqali savol yaratish', desc: 'Sun\'iy intellekt yordamida sekundlar ichida yuzlab savol yarating', color: 'from-indigo-500 to-purple-600' },
-    { category: 'center', icon: '📄', iconName: 'file', title: 'PDF\'dan test yaratish', desc: 'Darslik yoki materiallardan avtomatik test savollarini yarating', color: 'from-cyan-500 to-blue-600' },
+    // `spotlight: true` — guruhning eng kuchli 3-4 ta imkoniyati katta kartada
+    // ko'rsatiladi, qolganlari kichik chip shaklida chiqadi (B).
+    { category: 'center', icon: '✨', iconName: 'sparkles', title: 'AI orqali savol yaratish', desc: 'Sun\'iy intellekt yordamida sekundlar ichida yuzlab savol yarating', color: 'from-indigo-500 to-purple-600', spotlight: true },
+    { category: 'center', icon: '📄', iconName: 'file', title: 'PDF\'dan test yaratish', desc: 'Darslik yoki materiallardan avtomatik test savollarini yarating', color: 'from-cyan-500 to-blue-600', spotlight: true },
     { category: 'center', icon: '📱', iconName: 'send', title: 'Telegram orqali tasdiqlash', desc: 'Manager Telegram orqali bir tugma bilan arizalarni tasdiqlaydi', color: 'from-emerald-500 to-teal-600' },
-    { category: 'center', icon: '🏆', iconName: 'trophy', title: 'Online olimpiada', desc: 'Real vaqtda olimpiada o\'tkazib, Natijalarni avtomatik hisoblang', color: 'from-amber-500 to-orange-600' },
-    { category: 'center', icon: '👁️', iconName: 'eye', title: 'Jonli Proctoring nazorati', desc: 'Test topshirayotgan o\'quvchilarning tab o\'zgarishi va ping holatini real vaqtda kuzatish', color: 'from-rose-500 to-pink-600' },
+    { category: 'center', icon: '🏆', iconName: 'trophy', title: 'Online olimpiada', desc: 'Real vaqtda olimpiada o\'tkazib, Natijalarni avtomatik hisoblang', color: 'from-amber-500 to-orange-600', spotlight: true },
+    { category: 'center', icon: '👁️', iconName: 'eye', title: 'Jonli Proctoring nazorati', desc: 'Test topshirayotgan o\'quvchilarning tab o\'zgarishi va ping holatini real vaqtda kuzatish', color: 'from-rose-500 to-pink-600', spotlight: true },
     { category: 'center', icon: '📈', iconName: 'chart', title: 'Tashkilot reyting dinamikasi', desc: 'Markazning global oylik reyting o\'zgarishi va ballar o\'sishini jonli grafikda kuzatish (T7)', color: 'from-blue-600 to-cyan-500' },
     { category: 'center', icon: '📊', iconName: 'grid', title: 'O\'quvchilar taqqoslash jadvali', desc: 'Guruhdagi barcha o\'quvchilarning o\'rtacha ballari, reytingi va urinishlari batafsil jadvali (T1)', color: 'from-indigo-500 to-blue-600' },
     { category: 'center', icon: '🧠', iconName: 'brain', title: 'Savollar qiyinlik tahlili', desc: 'Markaz savollarining o\'quvchilar tomonidan xato qilinish foizlari bo\'yicha qiyinlik darajasini aniqlash (T4)', color: 'from-purple-500 to-indigo-600' },
@@ -2920,11 +2977,11 @@ const LandingPage = ({ onNavigate, user }) => {
     // Student features
     { category: 'student', icon: '📊', iconName: 'chart', title: 'Natijalar va reyting', desc: 'Batafsil statistika, shaxsiy grafik va global reyting jadvallarini ko\'ring', color: 'from-pink-500 to-rose-600' },
     { category: 'student', icon: '👤', iconName: 'user', title: 'O\'quvchi profili', desc: 'Har bir o\'quvchining yutuqlari, faollik oylari va natijalarini kuzating', color: 'from-violet-500 to-purple-600' },
-    { category: 'student', icon: '🏋️', iconName: 'bolt', title: 'Mustaqil Mashq Rejimi', desc: 'Fanlar va mavzular bo\'yicha o\'z ustida ishlash hamda faollik (streak) tizimi', color: 'from-blue-500 to-indigo-600' },
-    { category: 'student', icon: '📂', iconName: 'shield', title: 'AI Xatolar Sandig\'i', desc: 'Yo\'l qo\'yilgan xatolarni jamlab, sun\'iy intellekt orqali tushuntirish berish', color: 'from-amber-500 to-red-600' },
+    { category: 'student', icon: '🏋️', iconName: 'bolt', title: 'Mustaqil Mashq Rejimi', desc: 'Fanlar va mavzular bo\'yicha o\'z ustida ishlash hamda faollik (streak) tizimi', color: 'from-blue-500 to-indigo-600', spotlight: true },
+    { category: 'student', icon: '📂', iconName: 'shield', title: 'AI Xatolar Sandig\'i', desc: 'Yo\'l qo\'yilgan xatolarni jamlab, sun\'iy intellekt orqali tushuntirish berish', color: 'from-amber-500 to-red-600', spotlight: true },
     { category: 'student', icon: '🪙', iconName: 'tag', title: 'Virtual Sovg\'alar Do\'koni', desc: 'Testlar va mashqlardan tangalar yig\'ib, qiziqarli mukofotlar xarid qilish', color: 'from-yellow-400 to-orange-500' },
-    { category: 'student', icon: '🔮', iconName: 'sparkles', title: 'AI Muvaffaqiyat Prognostikasi', desc: 'Imtihon va olimpiadalarga kirish imkoniyatlarini AI yordamida prognozlash', color: 'from-purple-500 to-pink-600' },
-    { category: 'student', icon: '⚔️', iconName: 'users', title: 'Raqiblar tizimi (Rivals)', desc: 'Kursdoshlarni raqib sifatida qo\'shib, ular bilan o\'rtacha ball va reytinglarni taqqoslash (O2)', color: 'from-rose-500 to-orange-500' },
+    { category: 'student', icon: '🔮', iconName: 'sparkles', title: 'AI Muvaffaqiyat Prognostikasi', desc: 'Imtihon va olimpiadalarga kirish imkoniyatlarini AI yordamida prognozlash', color: 'from-purple-500 to-pink-600', spotlight: true },
+    { category: 'student', icon: '⚔️', iconName: 'users', title: 'Raqiblar tizimi (Rivals)', desc: 'Kursdoshlarni raqib sifatida qo\'shib, ular bilan o\'rtacha ball va reytinglarni taqqoslash (O2)', color: 'from-rose-500 to-orange-500', spotlight: true },
     { category: 'student', icon: '🎯', iconName: 'award', title: 'Mavzu tayyorlik darajasi', desc: 'Har bir fan bo\'yicha o\'quvchining o\'zlashtirish foizini va tayyorgarlik darajasini ko\'rish (O3)', color: 'from-cyan-500 to-teal-500' },
     { category: 'student', icon: '🔮', iconName: 'brain', title: 'Urinishlar AI tahlili', desc: 'Har bir test urinishi yakunida Gemini AI yordamida yo\'l qo\'yilgan xatolarga tushuntirish olish (O4)', color: 'from-purple-600 to-pink-500' },
     { category: 'student', icon: '🎖️', iconName: 'star', title: 'Premium Yutuqlar', desc: 'Urinishlar soni, streaklar va eng yuqori ballarga erishganda beriladigan nishonlar (O5)', color: 'from-yellow-500 to-amber-600' },
@@ -2933,14 +2990,18 @@ const LandingPage = ({ onNavigate, user }) => {
     { category: 'student', icon: '👑', iconName: 'award', title: 'Oltin avatar halqasi va unvon', desc: 'Premium o\'quvchilar uchun platformada alohida vizual oltin avatar va reytinglarda maxsus belgi', color: 'from-yellow-400 to-amber-500' },
  
     // Parent features
-    { category: 'parent', icon: '📄', iconName: 'file', title: 'Ota-onalar uchun PDF hisobot', desc: 'Telegram bot orqali farzand rivojlanishi bo\'yicha haftalik PDF tahlil xabarlari', color: 'from-emerald-500 to-green-600' },
-    { category: 'parent', icon: '📩', iconName: 'send', title: 'Ota-onaga haftalik digest', desc: 'Farzandning oxirgi 7 kundagi urinishlari, o\'rtacha bali va faollik kunlarini Telegramda olish (O6)', color: 'from-emerald-500 to-green-600' },
+    { category: 'parent', icon: '📄', iconName: 'file', title: 'Ota-onalar uchun PDF hisobot', desc: 'Telegram bot orqali farzand rivojlanishi bo\'yicha haftalik PDF tahlil xabarlari', color: 'from-emerald-500 to-green-600', spotlight: true },
+    { category: 'parent', icon: '📩', iconName: 'send', title: 'Ota-onaga haftalik digest', desc: 'Farzandning oxirgi 7 kundagi urinishlari, o\'rtacha bali va faollik kunlarini Telegramda olish (O6)', color: 'from-emerald-500 to-green-600', spotlight: true },
   ];
 
   const filteredFeatures = React.useMemo(() => {
     if (selectedCategory === 'all') return features;
     return features.filter(f => f.category === selectedCategory);
   }, [selectedCategory]);
+
+  // Spotlight kartalar katta gridda, qolganlari kichik chip qatorida (B).
+  const spotlightFeatures = filteredFeatures.filter(f => f.spotlight);
+  const chipFeatures = filteredFeatures.filter(f => !f.spotlight);
 
   const steps = [
     { num: '01', title: 'Ro\'yxatdan o\'ting', desc: 'Maktab, o\'quv markaz yoki tashkilot sifatida platformaga qo\'shiling', icon: '🚀', iconName: 'bolt' },
@@ -2992,6 +3053,24 @@ const LandingPage = ({ onNavigate, user }) => {
   const filteredPricing = pricing.filter(
     (p) => (p.plan_type === planTypeFilter) && (p.duration_days === durationFilter)
   );
+
+  // ─── Tejash kalkulyatori (D) ──────────────────────────────────────────────
+  // Tanlangan muddat narxini xuddi shu rejaning 1 oylik narxi bilan solishtirib
+  // (oylik narx x oylar soni - tanlangan narx), qancha tejalishini hisoblaydi.
+  const parsePriceNum = (price) => Number(String(price || '').replace(/[^\d]/g, '')) || 0;
+  const formatUZS = (n) => `${Math.round(n).toLocaleString('ru-RU').replace(/ /g, ' ')} UZS`;
+  const getPlanSavings = (plan) => {
+    if (!plan || !plan.duration_days || plan.duration_days <= 30) return 0;
+    const monthly = pricing.find(
+      (b) => b.plan_type === plan.plan_type && b.name === plan.name && b.duration_days === 30
+    );
+    if (!monthly) return 0;
+    const months = Math.round(plan.duration_days / 30);
+    const saved = parsePriceNum(monthly.price) * months - parsePriceNum(plan.price);
+    return saved > 0 ? saved : 0;
+  };
+  const maxSavings = filteredPricing.reduce((max, p) => Math.max(max, getPlanSavings(p)), 0);
+  const durationLabel = durationFilter === 365 ? '1 yillik' : durationFilter === 180 ? '6 oylik' : durationFilter === 90 ? '3 oylik' : '1 oylik';
 
   return (
     <div className="min-h-screen" style={{ background: '#050508' }}>
@@ -3174,16 +3253,29 @@ const LandingPage = ({ onNavigate, user }) => {
               </Magnetic>
             </div>
 
+            {/* Mobil chip qatori (A) — desktopda floating badge'lar ko'rinadi */}
+            <div className="flex lg:hidden flex-wrap gap-2 mb-6">
+              {heroChips.map((chip) => (
+                <span
+                  key={chip.label}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-bold border ${chip.color}`}
+                >
+                  <Icon name={chip.icon} size={13} />
+                  {chip.label}
+                </span>
+              ))}
+            </div>
+
             <div className="grid grid-cols-3 gap-3 md:gap-4 max-w-xl relative z-20">
               {heroMetrics.map((m, idx) => {
                 const textColors = ['text-purple-400', 'text-cyan-400', 'text-emerald-400'];
                 return (
-                  <GlowCard 
-                    key={m.label} 
+                  <GlowCard
+                    key={m.label}
                     className="p-3.5 md:p-5 border border-white/5 rounded-2xl flex flex-col group transition-all"
                   >
                     <div className={`text-xl md:text-3xl font-black ${textColors[idx % 3]} flex items-center gap-1.5`}>
-                      <span>{m.value}</span>
+                      <CountUp end={m.end} suffix={m.suffix} />
                       <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse opacity-75" />
                     </div>
                     <div className="text-[11px] md:text-sm text-white/50 leading-tight mt-1.5 group-hover:text-white/80 transition-colors">{m.label}</div>
@@ -3397,24 +3489,51 @@ const LandingPage = ({ onNavigate, user }) => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-          {filteredFeatures.map((f, i) => (
-            <GlowCard 
-              key={f.title} 
-              className="p-4 md:p-6 group"
+        {/* Spotlight — har guruhning eng kuchli imkoniyatlari katta kartada (B) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+          {spotlightFeatures.map((f, i) => (
+            <GlowCard
+              key={f.title}
+              className="p-5 md:p-8 group"
               style={{
                 animation: 'cardEntrance 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',
                 animationDelay: `${(i % 6) * 50}ms`
               }}
             >
-              <div className={`feature-icon bg-gradient-to-br ${f.color} mb-4 relative z-10 flex items-center justify-center text-white/90 shadow-md shadow-black/20 group-hover:scale-110 transition-transform duration-300`}>
-                {f.iconName ? <Icon name={f.iconName} size={20} /> : <span className="text-xl">{f.icon}</span>}
+              <div className="flex items-start gap-4 relative z-10">
+                <div className={`feature-icon flex-shrink-0 bg-gradient-to-br ${f.color} flex items-center justify-center text-white/90 shadow-md shadow-black/20 group-hover:scale-110 transition-transform duration-300`}>
+                  {f.iconName ? <Icon name={f.iconName} size={22} /> : <span className="text-xl">{f.icon}</span>}
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base md:text-xl font-bold text-white mb-1.5 md:mb-2 group-hover:text-indigo-200 transition-colors duration-250">{f.title}</h3>
+                  <p className="text-sm md:text-[15px] text-white/45 leading-relaxed group-hover:text-white/65 transition-colors duration-250">{f.desc}</p>
+                </div>
               </div>
-              <h3 className="text-base md:text-lg font-bold text-white mb-1.5 md:mb-2 relative z-10 group-hover:text-indigo-200 transition-colors duration-250">{f.title}</h3>
-              <p className="text-sm text-white/40 leading-relaxed relative z-10 group-hover:text-white/60 transition-colors duration-250">{f.desc}</p>
             </GlowCard>
           ))}
         </div>
+
+        {/* Qolgan imkoniyatlar — kichik chip qatori (B) */}
+        {chipFeatures.length > 0 && (
+          <div className="mt-8 md:mt-10">
+            <div className="text-center text-xs md:text-sm font-semibold text-white/35 uppercase tracking-wider mb-4">
+              Va yana {chipFeatures.length} ta imkoniyat
+            </div>
+            <div className="flex flex-wrap justify-center gap-2 md:gap-2.5">
+              {chipFeatures.map((f) => (
+                <span
+                  key={f.title}
+                  title={f.desc}
+                  className="inline-flex items-center gap-1.5 px-3 md:px-3.5 py-1.5 md:py-2 rounded-full text-[11px] md:text-xs font-semibold text-white/60 border border-white/10 hover:text-white hover:border-indigo-500/40 transition-colors cursor-default"
+                  style={{ background: 'rgba(255,255,255,0.03)' }}
+                >
+                  <Icon name={f.iconName || 'sparkles'} size={13} className="text-indigo-300/80" />
+                  {f.title}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* How it works */}
@@ -3470,6 +3589,44 @@ const LandingPage = ({ onNavigate, user }) => {
           <div className="flex-shrink-0">
             <TelegramMockup studentName="Ali Valiyev" centerName="ProSkill Academy" onApprove={() => {}} onReject={() => {}} />
           </div>
+        </div>
+      </section>
+
+      {/* Social proof — foydalanuvchilar fikrlari (C) */}
+      <section className="py-12 md:py-24 max-w-6xl mx-auto px-4 md:px-6">
+        <div className="text-center mb-8 md:mb-12 scroll-reveal">
+          <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-amber-300 border border-amber-500/20">⭐ Fikrlar</div>
+          <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Bizga ishonishadi</h2>
+          <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Platformadan foydalanayotgan markazlar va ota-onalarning fikrlari</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
+          {[
+            { name: 'Sardorbek M.', org: 'ProSkill Academy', meta: "120 o'quvchi", stars: 5, color: 'from-indigo-500 to-purple-600', text: "AI savol generatori haftalik test tayyorlash vaqtimizni 10 barobar qisqartirdi. Olimpiada natijalarini endi qo'lda hisoblamaymiz." },
+            { name: 'Dilnoza K.', org: 'Bilim Markazi', meta: "85 o'quvchi", stars: 5, color: 'from-cyan-500 to-blue-600', text: "O'quvchilar reytingi va mashq rejimi guruhdagi faollikni sezilarli oshirdi. Ota-onalar PDF hisobotlardan juda mamnun." },
+            { name: 'Jasur T.', org: 'Iqtidor School', meta: "210 o'quvchi", stars: 5, color: 'from-emerald-500 to-teal-600', text: "PDF'dan test import qilish funksiyasi darsliklarimizni soniyalarda test bazasiga aylantirdi. Proctoring nazorati ham ishonchli." },
+            { name: 'Nilufar A.', org: 'Ota-ona', meta: "2 farzand", stars: 4, color: 'from-rose-500 to-orange-500', text: "Telegram orqali har hafta farzandlarim natijalarini olib turaman. Qaysi fanda oqsayotganini aniq bilaman." },
+          ].map((t, i) => (
+            <div key={t.name} className={`glass rounded-2xl p-5 border border-white/5 hover:border-white/10 transition-colors flex flex-col scroll-reveal scroll-reveal-delay-${(i % 4) + 1}`}>
+              {/* Yulduz reytingi */}
+              <div className="flex gap-0.5 mb-3 text-amber-400 text-sm" aria-label={`${t.stars} yulduz`}>
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <span key={s} className={s <= t.stars ? 'text-amber-400' : 'text-white/15'}>★</span>
+                ))}
+              </div>
+              <p className="text-xs md:text-sm text-white/60 leading-relaxed flex-1 mb-4">"{t.text}"</p>
+              <div className="flex items-center gap-3 border-t border-white/5 pt-3.5">
+                {/* Avatar placeholder — ism bosh harflari */}
+                <span className={`flex-shrink-0 w-9 h-9 rounded-full bg-gradient-to-br ${t.color} flex items-center justify-center text-[11px] font-black text-white shadow-md shadow-black/30`}>
+                  {t.name.split(' ').map(w => w[0]).join('')}
+                </span>
+                <div className="min-w-0">
+                  <div className="text-xs md:text-sm font-bold text-white truncate">{t.name}</div>
+                  <div className="text-[10px] md:text-[11px] text-white/40 truncate">{t.org} · {t.meta}</div>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -3530,6 +3687,17 @@ const LandingPage = ({ onNavigate, user }) => {
                 </button>
               ))}
             </div>
+
+            {/* Tejash kalkulyatori banneri (D) — 1 oydan uzun muddat tanlanganda */}
+            {durationFilter > 30 && maxSavings > 0 && (
+              <div className="inline-flex items-center gap-2.5 px-4 md:px-5 py-2.5 rounded-2xl border border-emerald-500/25 text-xs md:text-sm font-bold text-emerald-300" style={{ background: 'rgba(16,185,129,0.08)' }}>
+                <span className="text-base">💰</span>
+                <span>
+                  {durationLabel} rejani tanlasangiz, oyma-oy to'lovga nisbatan{' '}
+                  <span className="text-emerald-400 font-black">{formatUZS(maxSavings)}</span> gacha tejaysiz
+                </span>
+              </div>
+            )}
           </div>
           {plansLoading && !plans ? (
             // Skeleton — rejalar yuklanguncha 3 ta placeholder karta.
@@ -3592,6 +3760,13 @@ const LandingPage = ({ onNavigate, user }) => {
                       <span>{p.price}</span>
                     </div>
                     {p.period && <div className={`text-xs mb-3 font-semibold ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.period}</div>}
+                    {/* Tanlangan muddatdagi tejash miqdori (D) */}
+                    {getPlanSavings(p) > 0 && (
+                      <div className="inline-flex items-center gap-1.5 w-fit text-[11px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-1 mb-3">
+                        <span>💰</span>
+                        <span>{formatUZS(getPlanSavings(p))} tejaysiz</span>
+                      </div>
+                    )}
                     <div className={`text-xs mb-5 leading-relaxed ${p.popular ? 'text-white/60' : 'text-white/40'}`}>{p.desc}</div>
                     
                     <ul className="space-y-3 flex-1 mb-6 border-t border-white/5 pt-4">
@@ -3679,21 +3854,61 @@ const LandingPage = ({ onNavigate, user }) => {
         </div>
       </section>
 
-      {/* CTA */}
+      {/* CTA (E) — gradient mesh fon statik radial-gradient'lar bilan chizilgan
+          (filter: blur ishlatilmaydi — Telegram WebView'da xavfsiz). */}
       <section className="py-12 md:py-24 max-w-4xl mx-auto px-4 md:px-6 text-center scroll-reveal">
-        <div className="glass rounded-3xl p-6 md:p-12 relative overflow-hidden">
-          <div className="hero-glow" style={{ background: '#6366f1', top: '-50%', left: '30%', opacity: 0.12 }} />
-          <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4 relative">Bugun boshlang</h2>
-          <p className="text-white/40 mb-6 md:mb-8 relative text-sm md:text-base">Tashkilotingizni raqamli olimpiada platformasiga ulang</p>
-          <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center sm:justify-center gap-3 md:gap-4 relative">
-            <button onClick={() => onNavigate('register')} className="btn-primary inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-4 rounded-2xl text-sm md:text-base font-bold glow-blue">
-              <Icon name="bolt" size={18} />
-              Bepul boshlash
-            </button>
-            <button onClick={() => onNavigate('login')} className="btn-ghost inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-4 rounded-2xl text-sm md:text-base font-semibold">
-              Kirish
-              <Icon name="chevronRight" size={18} />
-            </button>
+        <div
+          className="rounded-3xl p-6 md:p-12 relative overflow-hidden border border-indigo-500/20"
+          style={{
+            background: [
+              'radial-gradient(ellipse 60% 50% at 15% 0%, rgba(99,102,241,0.22) 0%, transparent 60%)',
+              'radial-gradient(ellipse 50% 50% at 85% 20%, rgba(168,85,247,0.18) 0%, transparent 60%)',
+              'radial-gradient(ellipse 55% 45% at 50% 110%, rgba(34,211,238,0.14) 0%, transparent 60%)',
+              'rgba(13,14,18,0.9)',
+            ].join(', '),
+          }}
+        >
+          {/* Subtle grid pattern */}
+          <div className="absolute inset-0 grid-backdrop pointer-events-none opacity-[0.18]" />
+
+          <div className="relative z-10">
+            <div className="inline-flex items-center gap-2 rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-4 md:mb-5 text-xs md:text-sm font-bold text-indigo-200 border border-indigo-400/25" style={{ background: 'rgba(99,102,241,0.12)' }}>
+              <Icon name="bolt" size={14} />
+              Ro'yxatdan o'tish 2 daqiqa vaqt oladi
+            </div>
+            <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Bugun boshlang</h2>
+            <p className="text-white/45 mb-6 md:mb-8 text-sm md:text-base max-w-xl mx-auto">Tashkilotingizni raqamli olimpiada platformasiga ulang — AI savollar, jonli reyting va avtomatik hisobotlar bitta tizimda</p>
+
+            <div className="flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-center sm:justify-center gap-3 md:gap-4 mb-7 md:mb-9">
+              <button onClick={() => onNavigate('register')} className="btn-primary inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-4 rounded-2xl text-sm md:text-base font-bold glow-blue">
+                <Icon name="bolt" size={18} />
+                Bepul boshlash
+              </button>
+              <button onClick={() => onNavigate('login')} className="btn-ghost inline-flex items-center justify-center gap-2 px-6 md:px-8 py-3 md:py-4 rounded-2xl text-sm md:text-base font-semibold">
+                Kirish
+                <Icon name="chevronRight" size={18} />
+              </button>
+            </div>
+
+            {/* Motivatsion mini-statlar */}
+            <div className="flex flex-wrap justify-center gap-x-6 gap-y-3 text-[11px] md:text-xs font-semibold text-white/50 border-t border-white/5 pt-5 md:pt-6">
+              <span className="inline-flex items-center gap-1.5">
+                <Icon name="sparkles" size={14} className="text-indigo-400" />
+                <CountUp end={100} suffix="+" className="text-white font-black" /> AI savol soniyada
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Icon name="grid" size={14} className="text-cyan-400" />
+                <CountUp end={26} suffix="+" className="text-white font-black" /> premium imkoniyat
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Icon name="trophy" size={14} className="text-emerald-400" />
+                Jonli reyting va sertifikatlar
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <Icon name="shield" size={14} className="text-amber-400" />
+                Bepul boshlash uchun karta talab qilinmaydi
+              </span>
+            </div>
           </div>
         </div>
       </section>
@@ -3802,7 +4017,7 @@ const LandingPage = ({ onNavigate, user }) => {
 Object.assign(window, { LandingPage });
 
 
-Object.assign(moduleScope, { formatLandingDate, escapeSvgText, TashkilotMockup, OtaOnaMockup, use3DTilt, InteractiveParticles, Magnetic, GlowCard, trackAbEvent, LandingPage, useABTest });
+Object.assign(moduleScope, { formatLandingDate, escapeSvgText, TashkilotMockup, OtaOnaMockup, use3DTilt, InteractiveParticles, Magnetic, GlowCard, CountUp, trackAbEvent, LandingPage, useABTest });
 }
 var formatLandingDate = moduleScope.formatLandingDate;
 var escapeSvgText = moduleScope.escapeSvgText;
@@ -3812,6 +4027,7 @@ var use3DTilt = moduleScope.use3DTilt;
 var InteractiveParticles = moduleScope.InteractiveParticles;
 var Magnetic = moduleScope.Magnetic;
 var GlowCard = moduleScope.GlowCard;
+var CountUp = moduleScope.CountUp;
 var trackAbEvent = moduleScope.trackAbEvent;
 var LandingPage = moduleScope.LandingPage;
 var useABTest = moduleScope.useABTest;
