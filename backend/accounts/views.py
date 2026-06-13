@@ -660,6 +660,36 @@ def change_my_password(request):
     return _set_auth_cookies(response, payload)
 
 
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_my_account(request):
+    """DELETE /api/auth/me/ — foydalanuvchi o'z hisobini butunlay o'chiradi.
+
+    request.user.delete() CASCADE orqali barcha bog'liq ma'lumotlarni
+    (TestAttempt, CenterMembership va h.k.) o'chiradi. O'chirishdan OLDIN
+    audit log yoziladi (keyin user yo'q bo'ladi va actor=NULL bo'lib qoladi).
+    Javobda auth cookie'lar logout view'idagi kabi tozalanadi.
+    """
+    if not request.user.is_active:
+        return Response({'detail': 'Hisob bloklangan'}, status=status.HTTP_401_UNAUTHORIZED)
+    # Platform admin o'z hisobini o'chira olmaydi — platforma egasiz qolmasin.
+    if request.user.is_platform_admin:
+        return Response(
+            {'detail': "Platform admin o'z hisobini o'chira olmaydi"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    # O'chirishdan OLDIN audit log: keyin user obyekti yo'q bo'ladi.
+    AuditLog.log(request, 'account_delete', target=request.user, extra={
+        'phone': mask_phone(request.user.normalized_phone),
+    })
+
+    request.user.delete()
+
+    response = Response({'detail': "Hisobingiz muvaffaqiyatli o'chirildi"})
+    return _clear_auth_cookies(response)
+
+
 @api_view(['POST', 'DELETE'])
 @parser_classes([JSONParser, MultiPartParser, FormParser])
 @permission_classes([IsAuthenticated])
