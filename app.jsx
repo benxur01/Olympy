@@ -567,7 +567,7 @@ const App = () => {
               <Icon name="arrowLeft" size={13} /> Orqaga
             </button>
           </div>
-          <ProfilePage user={user} onUserUpdate={updateCurrentUser} onNavigate={navigate} />
+          <ProfilePage user={user} onUserUpdate={updateCurrentUser} onNavigate={navigate} onLogout={handleLogout} />
         </div>
       );
       // `/dashboard/questions` deep-link'i ilgari renderPage switch'iga

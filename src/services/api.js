@@ -497,6 +497,12 @@ export const OlympyApi = {
   deleteMyAvatar: (token) => {
     return request('/api/auth/me/avatar/', { method: 'DELETE', token });
   },
+  // Hisobni butunlay o'chirish — barcha ma'lumotlar (natijalar, a'zoliklar)
+  // backend tomonidan o'chiriladi. Qaytarib bo'lmaydi. 401 bo'lsa qayta auth
+  // urinmaymiz (hisob allaqachon o'chgan bo'lishi mumkin).
+  deleteMyAccount: (token) => {
+    return request('/api/auth/me/', { method: 'DELETE', token, retryOnAuth: false });
+  },
   // Centers
   getCenters: () => request('/api/centers/').then(unwrapList),
   getCenterRatings: (params, token) => {

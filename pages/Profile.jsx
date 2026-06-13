@@ -1,6 +1,6 @@
 // pages/Profile.jsx
 
-const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
+const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => {
   const store = useStore();
   const isApi = !!user?._api;
   // Premium o'quvchi vizual belgisi: "Premium" badge + ism oltin gradient +
@@ -369,6 +369,35 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
       setTimeout(() => setCertError(''), 3000);
     } finally {
       setCertDownloading(null);
+    }
+  };
+
+  // ── Hisobni o'chirish (Xavfli zona) ───────────────────────────────────
+  // DELETE /api/auth/me/ — barcha ma'lumotlar butunlay o'chiriladi. Muvaffaqiyatdan
+  // keyin logout qilib bosh sahifaga o'tamiz.
+  const [deletingAccount, setDeletingAccount] = React.useState(false);
+  const [deleteError, setDeleteError] = React.useState('');
+
+  const handleDeleteAccount = async () => {
+    if (!isApi || deletingAccount) return;
+    const confirmed = window.confirm(
+      "Hisobingizni butunlay o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi — barcha ma'lumotlaringiz, olimpiada natijalari va markaz a'zoliklaringiz butunlay o'chiriladi.",
+    );
+    if (!confirmed) return;
+    setDeletingAccount(true);
+    setDeleteError('');
+    try {
+      await OlympyApi.deleteMyAccount(OlympyApi.getToken());
+      // Auth tozalash + bosh sahifaga yo'naltirish handleLogout ichida.
+      if (onLogout) {
+        onLogout();
+      } else {
+        try { await OlympyApi.clearAuth?.(); } catch {}
+        onNavigate?.('landing');
+      }
+    } catch (err) {
+      setDeleteError(OlympyApi.toUserMessage?.(err) || "Hisobni o'chirib bo'lmadi");
+      setDeletingAccount(false);
     }
   };
 
@@ -887,6 +916,31 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate }) => {
           <ProgressComparisonCard />
           <PeerComparisonCard />
         </>
+      )}
+
+      {/* Xavfli zona — hisobni butunlay o'chirish. Faqat akkaunt rejimida. */}
+      {isApi && (
+        <div className="glass rounded-2xl p-5 border border-rose-500/30 bg-gradient-to-br from-rose-500/5 to-rose-600/5">
+          <div className="flex items-center gap-2 mb-2">
+            <Icon name="trash" size={18} className="text-rose-400" />
+            <h3 className="font-bold text-rose-300">Xavfli zona</h3>
+          </div>
+          <p className="text-sm text-white/50 mb-4">
+            Hisobni o'chirish qaytarib bo'lmaydi. Barcha ma'lumotlaringiz, olimpiada
+            natijalari va markaz a'zoliklaringiz butunlay o'chiriladi.
+          </p>
+          {deleteError && (
+            <div className="text-xs font-semibold text-rose-300 mb-3">{deleteError}</div>
+          )}
+          <button
+            onClick={handleDeleteAccount}
+            disabled={deletingAccount}
+            className="bg-rose-500/20 text-rose-200 border border-rose-500/30 font-semibold rounded-xl py-2.5 px-5 text-sm flex items-center gap-1.5 hover:bg-rose-500/30 disabled:opacity-50"
+          >
+            <Icon name="trash" size={14} />
+            {deletingAccount ? "O'chirilmoqda..." : "Hisobni o'chirish"}
+          </button>
+        </div>
       )}
     </div>
   );
