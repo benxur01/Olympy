@@ -368,11 +368,7 @@ REST_FRAMEWORK = {
         # Olimpiada tayyorgarlik rejasi (O6) — Gemini'ga uzun JSON so'rov.
         # Spec bo'yicha kuniga 5 ta.
         'ai_prep': '5/day',
-        # OTP/Telegram tasdiqlash so'rovi — TELEFON RAQAM bo'yicha (IP emas).
-        # Bir raqamga soatiga ko'pi bilan 3 ta tasdiqlash so'rovi. Telefon-
-        # bazali bo'lgani uchun NAT ortidagi maktablarni buzmaydi, faqat
-        # bitta raqamga spam yuborishni to'sadi (accounts.throttling).
-        'otp_request': '3/hour',
+
         # Parol o'zgartirish — autentifikatsiyalangan FOYDALANUVCHI bo'yicha.
         # Soatiga ko'pi bilan 5 marta (accounts.throttling).
         'password_change': '5/hour',

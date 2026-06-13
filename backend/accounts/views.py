@@ -23,7 +23,7 @@ from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import AuditLog, PhoneVerification
-from .throttling import OtpRequestThrottle, PasswordChangePerUserThrottle
+from .throttling import PasswordChangePerUserThrottle
 from .serializers import (
     ChangePasswordSerializer,
     ConfirmPasswordResetSerializer,
@@ -1302,7 +1302,7 @@ def _telegram_deep_link(verify_token, bot='auth'):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@throttle_classes([ScopedRateThrottle, OtpRequestThrottle])
+@throttle_classes([ScopedRateThrottle])
 def start_telegram_phone_verification(request):
     """Start phone verification and return Telegram deep link."""
     serializer = StartTelegramPhoneVerificationSerializer(data=request.data)
@@ -1336,7 +1336,7 @@ start_telegram_phone_verification.cls.throttle_scope = 'auth'
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
-@throttle_classes([ScopedRateThrottle, OtpRequestThrottle])
+@throttle_classes([ScopedRateThrottle])
 def start_password_reset(request):
     """Start Telegram OTP flow for resetting an existing user's password."""
     serializer = StartPasswordResetSerializer(data=request.data)
