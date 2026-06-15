@@ -380,6 +380,9 @@ const mapBackendUser = (user) => {
     onboardingGrade: user.onboarding_grade || null,
     onboardingSubjects: Array.isArray(user.onboarding_subjects) ? user.onboarding_subjects : [],
     onboardingGoal: user.onboarding_goal || null,
+    // Adaptiv daraja tizimi: {fan: daraja} va {fan: {streak, direction}}.
+    subjectLevels: user.subject_levels || {},
+    levelStreak: user.level_streak || {},
     _api: true,
   };
 };
