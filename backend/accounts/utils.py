@@ -100,7 +100,12 @@ def is_user_premium(user):
         # Aktiv obuna yozuvlari bor — kamida bittasi hali amal qilishi kerak.
         active = any(ed and ed > now for ed in end_dates)
     else:
-        # Aktiv obuna yozuvi yo'q, lekin is_premium=True — legacy/manual grant.
+        # Aktiv obuna yozuvi yo'q, lekin is_premium=True — bu legacy/manual
+        # grant (admin toggle, Django admin checkbox) yoki 1 oylik sinov
+        # muddati. Ikkala holatda ham flag'ga ishonamiz: sinov tugaganida flag
+        # /me lazy-expiry va Celery task tomonidan False qilinadi, shu sababli
+        # bu yerda alohida trial muddatini tekshirib manual grant'larni xato
+        # rad etmaymiz.
         active = True
     if cache is not None:
         try:

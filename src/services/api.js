@@ -366,7 +366,11 @@ const mapBackendUser = (user) => {
     activeRole,
     joined: (user.created_at || '').slice(0, 10),
     isPlatformAdmin: !!user.is_platform_admin,
-    isPremium: user.is_premium || false,
+    // is_premium_active — admin/obuna premiumi YOKI hali amal qiluvchi 1 oylik
+    // sinov muddatini hisobga oladi (backend property). Eski klientlar uchun
+    // is_premium flag'iga fallback (sinov paytida u ham True bo'ladi).
+    isPremium: !!(user.is_premium_active ?? user.is_premium),
+    premiumTrialEnd: user.premium_trial_end || null,
     isActive: user.is_active !== false,
     telegramLinked: !!user.telegram_linked,
     totpEnabled: !!user.totp_enabled,

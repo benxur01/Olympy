@@ -228,6 +228,14 @@ def register(request):
     try:
         with transaction.atomic():
             user = serializer.save()
+            # Yangi foydalanuvchi uchun 1 oylik premium sinov muddati.
+            # `is_premium=True` ham qo'yamiz, shunda questions/centers kabi
+            # `is_premium` flag'iga qaragan tekshiruvlar sinov davrida ochiq
+            # bo'ladi. Sinov tugaganida /me lazy-expiry va Celery task flag'ni
+            # qaytaradi (agar admin/obuna premiumi bo'lmasa).
+            user.is_premium = True
+            user.premium_trial_end = timezone.now() + timedelta(days=30)
+            user.save(update_fields=['is_premium', 'premium_trial_end'])
             if verified.telegram_chat_id:
                 _link_user_to_telegram(
                     user,
@@ -530,11 +538,22 @@ def me(request):
             s for s in active_subs
             if s.id not in expired_ids and s.end_date and s.end_date > now
         ]
-        if expired_ids:
-            if not still_active and request.user.is_premium:
-                request.user.is_premium = False
-                request.user.save(update_fields=['is_premium'])
+        # Premium sinov muddati hali amal qilyaptimi? Sinovli foydalanuvchida
+        # odatda UserSubscription yozuvi umuman bo'lmaydi, shuning uchun bu
+        # tekshiruv `expired_ids` dan mustaqil.
+        trial_active = bool(
+            request.user.premium_trial_end and request.user.premium_trial_end > now
+        )
+        # Premium flag'ni o'chirish sharti: hech qanday amal qiluvchi obuna
+        # YO'Q va sinov muddati ham tugagan, lekin flag hali True. Bu sinov
+        # tugashini ham, obuna tugashini ham bitta joyda qoplaydi.
+        if request.user.is_premium and not still_active and not trial_active:
+            request.user.is_premium = False
+            request.user.save(update_fields=['is_premium'])
 
+        # Markaz premiumini faqat aktiv obuna (expired_ids bo'lsa) holatida
+        # qayta hisoblaymiz — sinov markaz premiumiga ta'sir qilmaydi.
+        if expired_ids:
             has_active_org = any(
                 s.plan and s.plan.plan_type == 'organization'
                 for s in still_active
@@ -543,13 +562,13 @@ def me(request):
                 EducationCenter.objects.filter(owner=request.user).update(is_premium=False)
 
         # Keyingi tekshiruv vaqtini hisoblaymiz: aktiv obunalar ichidagi eng
-        # yaqin tugash vaqti yoki 60 soniya — qaysi biri kichik bo'lsa. Shunda
-        # obuna aynan muddati tugaganda darhol qayta tekshiriladi, aks holda
-        # 60 soniya so'rovsiz o'tadi.
-        next_expiry_ts = min(
-            (s.end_date.timestamp() for s in still_active if s.end_date),
-            default=None,
-        )
+        # yaqin tugash vaqti, sinov tugash vaqti yoki 60 soniya — qaysi biri
+        # kichik bo'lsa. Shunda obuna/sinov aynan tugaganda darhol qayta
+        # tekshiriladi, aks holda 60 soniya so'rovsiz o'tadi.
+        candidate_ts = [s.end_date.timestamp() for s in still_active if s.end_date]
+        if trial_active and request.user.premium_trial_end:
+            candidate_ts.append(request.user.premium_trial_end.timestamp())
+        next_expiry_ts = min(candidate_ts, default=None)
         recheck_ts = now.timestamp() + 60
         if next_expiry_ts is not None:
             recheck_ts = min(recheck_ts, next_expiry_ts)
