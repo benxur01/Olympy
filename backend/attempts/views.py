@@ -596,6 +596,25 @@ def submit_attempt(request):
                 'achievement check failed for attempt=%s', attempt.id,
             )
 
+        # Adaptiv daraja (ELO'ga o'xshash): natija olimpiada fani bo'yicha
+        # foydalanuvchining darajasini yuqori/past yo'naltiradi. score 0–100.
+        # Faqat foydalanuvchi shu fanga onboarding'da daraja belgilagan bo'lsa
+        # ishlaydi. Hech qachon submit'ni buzmaydi.
+        try:
+            subject = getattr(olympiad, 'subject', None) or ''
+            user = request.user
+            if subject and user.subject_levels and subject in user.subject_levels:
+                if score >= 70:
+                    user.update_subject_level(subject, 'up')
+                elif score < 40:
+                    user.update_subject_level(subject, 'down')
+                # 40–69 — neytral, daraja o'zgarmaydi.
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'subject level update failed for attempt=%s', attempt.id,
+            )
+
         # Yangi attempt qo'shildi — bashorat (predictions) cache'i endi
         # eskirgan (o'rtacha ball va fan kesimi o'zgardi). Keyingi
         # /me/predictions/ so'rovida qayta hisoblanishi uchun bekor qilamiz.

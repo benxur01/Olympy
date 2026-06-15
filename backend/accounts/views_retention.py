@@ -11,7 +11,6 @@
 Barchasi `/api/...` ostida mount qilinadi (accounts/urls_me.py). Har biri faqat
 autentifikatsiyalangan foydalanuvchining O'Z ma'lumotlari bilan ishlaydi.
 """
-import random
 from collections import OrderedDict
 from datetime import timedelta
 
@@ -24,12 +23,12 @@ from rest_framework.response import Response
 
 from attempts.models import TestAttempt
 from olympiads.models import Olympiad
-from questions.models import Question
 
 from .models import (
     DailyQuestion,
     DailyQuestionAnswer,
     Rival,
+    User,
     WeeklyContest,
     WeeklyContestResult,
 )
@@ -87,33 +86,79 @@ ONBOARDING_GOALS = {
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def complete_onboarding(request):
-    """POST /api/me/complete-onboarding/ — {grade, subjects, goal}.
+    """POST /api/me/complete-onboarding/ — {subjects, subject_levels}.
 
-    Onboarding sehrgar tugaganda chaqiriladi: foydalanuvchining sinf, fanlar
-    va maqsadini saqlaydi va `onboarding_completed=True` qiladi.
+    Yangi oqim: foydalanuvchi qiziqadigan fanlarni va har fan uchun boshlang'ich
+    darajani tanlaydi (Ingliz tili — CEFR A1..C2, qolganlar — Boshlang'ich/
+    O'rta/Ilg'or). `onboarding_completed=True` qilinadi.
+
+    `grade` va `goal` agar payload'da kelsa hamon saqlanadi (eski klientlar
+    bilan moslik). Ular endi onboarding UI'da so'ralmaydi.
     """
     data = request.data or {}
-    grade = data.get('grade')
-    subjects = data.get('subjects') or []
-    goal = data.get('goal')
+    subjects = data.get('subjects')
+    subject_levels = data.get('subject_levels')
+
+    # Validatsiya: subjects — ro'yxat, kamida 1 ta, faqat ma'lum fanlar.
+    if not isinstance(subjects, list) or not subjects:
+        return Response(
+            {'detail': "Kamida bitta fan tanlanishi shart"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    valid_subjects = set(User.SUBJECT_LEVELS_MAP.keys())
+    cleaned_subjects = []
+    for s in subjects:
+        if not isinstance(s, str):
+            continue
+        s = s.strip()
+        if s not in valid_subjects:
+            return Response(
+                {'detail': f"Noma'lum fan: {s}"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        if s not in cleaned_subjects:
+            cleaned_subjects.append(s)
+    if not cleaned_subjects:
+        return Response(
+            {'detail': "Kamida bitta fan tanlanishi shart"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validatsiya: subject_levels — dict, har kalit tanlangan fanlardan, har
+    # fan uchun daraja shu fanning ruxsat etilgan shkalasidan bo'lishi shart.
+    if not isinstance(subject_levels, dict):
+        return Response(
+            {'detail': "Har fan uchun daraja belgilanishi shart"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    cleaned_levels = {}
+    for subj in cleaned_subjects:
+        level = subject_levels.get(subj)
+        allowed = User.SUBJECT_LEVELS_MAP[subj]
+        if not isinstance(level, str) or level not in allowed:
+            return Response(
+                {
+                    'detail': (
+                        f"{subj} uchun daraja noto'g'ri. Ruxsat etilgan: "
+                        f"{', '.join(allowed)}"
+                    ),
+                },
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        cleaned_levels[subj] = level
 
     user = request.user
-    update_fields = ['onboarding_completed']
+    update_fields = ['onboarding_completed', 'onboarding_subjects', 'subject_levels']
     user.onboarding_completed = True
+    user.onboarding_subjects = cleaned_subjects
+    user.subject_levels = cleaned_levels
 
+    # Backward compat: grade/goal payload'da kelsa saqlanadi.
+    grade = data.get('grade')
+    goal = data.get('goal')
     if grade is not None:
         user.onboarding_grade = str(grade)[:10]
         update_fields.append('onboarding_grade')
-    if isinstance(subjects, list):
-        # Faqat string fanlar, dublikatsiz, maksimum 15 ta.
-        cleaned = []
-        for s in subjects:
-            if isinstance(s, str) and s.strip() and s not in cleaned:
-                cleaned.append(s.strip()[:80])
-            if len(cleaned) >= 15:
-                break
-        user.onboarding_subjects = cleaned
-        update_fields.append('onboarding_subjects')
     if goal is not None:
         user.onboarding_goal = str(goal)[:50]
         update_fields.append('onboarding_goal')
@@ -124,133 +169,7 @@ def complete_onboarding(request):
         'onboarding_grade': user.onboarding_grade,
         'onboarding_subjects': user.onboarding_subjects,
         'onboarding_goal': user.onboarding_goal,
-    })
-
-
-def _percentile_label(percent):
-    """percent (0..100) → "top X%" matni."""
-    if percent is None:
-        return None
-    top = max(1, round(100 - percent))
-    return f'top {top}%'
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def onboarding_mini_test(request):
-    """GET /api/onboarding/mini-test/ — qiziqadigan fanlar bo'yicha 5 ta savol.
-
-    Javob: {subject, questions: [{id, text, options}]}. To'g'ri javob
-    yuborilmaydi (submit'da tekshiriladi).
-    """
-    interest = _user_interest_subjects(request.user)
-    qs = Question.objects.all()
-    chosen_subject = ''
-    if interest:
-        subj_qs = qs.filter(subject__in=interest)
-        if subj_qs.exists():
-            qs = subj_qs
-            chosen_subject = interest[0]
-    # Random 5 ta. order_by('?') to'liq jadval skanini qiladi — ID-asosli random
-    # bilan almashtirildi (filter shartlari saqlanadi).
-    ids = list(qs.values_list('id', flat=True))
-    picked = random.sample(ids, min(5, len(ids))) if ids else []
-    by_id = {q.id: q for q in Question.objects.filter(id__in=picked)}
-    questions = [by_id[i] for i in picked if i in by_id]
-    if chosen_subject == '' and questions:
-        chosen_subject = questions[0].subject or ''
-    payload = [
-        {
-            'id': q.id,
-            'text': q.text,
-            'options': list(q.options or []),
-            'subject': q.subject,
-        }
-        for q in questions
-    ]
-    return Response({
-        'subject': chosen_subject,
-        'total': len(payload),
-        'questions': payload,
-    })
-
-
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def onboarding_mini_test_submit(request):
-    """POST /api/onboarding/mini-test/submit/ — {answers: [{question_id, selected_option}]}.
-
-    Javob: {score, total, percentage, percentile, message}.
-    Percentile: shu fandagi barcha foydalanuvchilarning o'rtacha balliga
-    nisbatan foydalanuvchi natijasi qaysi foizda turishi.
-    """
-    answers = (request.data or {}).get('answers') or []
-    if not isinstance(answers, list) or not answers:
-        return Response({'detail': 'answers majburiy'},
-                        status=http_status.HTTP_400_BAD_REQUEST)
-
-    q_ids = []
-    selected_map = {}
-    for a in answers:
-        try:
-            qid = int(a.get('question_id'))
-            sel = int(a.get('selected_option'))
-        except (TypeError, ValueError, AttributeError):
-            continue
-        q_ids.append(qid)
-        selected_map[qid] = sel
-
-    questions = Question.objects.filter(id__in=q_ids)
-    total = len(q_ids)
-    score = 0
-    subject = ''
-    for q in questions:
-        if not subject:
-            subject = q.subject or ''
-        if selected_map.get(q.id) == q.correct_answer:
-            score += 1
-
-    percentage = round((score / total) * 100) if total else 0
-
-    # Percentile: shu fandagi olimpiadalarning o'rtacha foizi bilan taqqoslash.
-    # Foydalanuvchi shu fandagi o'rtacha natijadan yuqori bo'lsa — yuqori
-    # percentilda. Ma'lumot yetarli bo'lmasa percentage'ning o'zidan foydalanamiz.
-    peer_avg_pct = None
-    if subject:
-        attempts = (
-            TestAttempt.objects
-            .filter(olympiad__subject=subject, disqualified=False,
-                    olympiad__is_deleted=False, total_questions__gt=0)
-        )
-        rows = list(attempts.values_list('correct_count', 'total_questions')[:2000])
-        if rows:
-            pcts = [(c / t) * 100 for c, t in rows if t]
-            if pcts:
-                peer_avg_pct = sum(pcts) / len(pcts)
-
-    if peer_avg_pct is not None and peer_avg_pct > 0:
-        # Foydalanuvchi peer o'rtachasidan qancha yuqori — taxminiy percentile.
-        ratio = percentage / peer_avg_pct if peer_avg_pct else 1
-        est_percentile = min(99, max(1, round(50 * ratio)))
-    else:
-        est_percentile = percentage
-    percentile = _percentile_label(est_percentile)
-
-    subj_label = subject or 'umumiy'
-    if percentage >= 80:
-        message = f'Ajoyib! Siz {subj_label} fanidan {percentile} orasidasiz!'
-    elif percentage >= 50:
-        message = f'Yaxshi boshlanish! {subj_label} fanidan {percentile} orasidasiz.'
-    else:
-        message = f'Mashq qilsangiz tezda yuqoriga ko\'tarilasiz. Hozir {subj_label} fanidan {percentile}.'
-
-    return Response({
-        'score': score,
-        'total': total,
-        'percentage': percentage,
-        'percentile': percentile,
-        'subject': subject,
-        'message': message,
+        'subject_levels': user.subject_levels,
     })
 
 

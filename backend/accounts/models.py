@@ -83,6 +83,12 @@ class User(AbstractBaseUser, PermissionsMixin):
     onboarding_grade = models.CharField(max_length=10, null=True, blank=True)
     onboarding_subjects = models.JSONField(default=list, blank=True)
     onboarding_goal = models.CharField(max_length=50, null=True, blank=True)
+    # Adaptiv daraja tizimi (ELO'ga o'xshash): har fan uchun joriy daraja va
+    # ketma-ket urinish seriyasi. `subject_levels` — {fan: daraja}, masalan
+    # {"Ingliz tili": "B1", "Matematika": "O'rta"}. `level_streak` — har fan
+    # uchun {streak, direction} (3 ketma-ket bir yo'nalishda daraja o'zgaradi).
+    subject_levels = models.JSONField(default=dict, blank=True)
+    level_streak = models.JSONField(default=dict, blank=True)
 
     # TOTP 2FA (ixtiyoriy). `totp_secret` — base32 maxfiy kalit (faqat
     # serverda saqlanadi, mijozga QR/secret faqat sozlash paytida beriladi).
@@ -128,6 +134,73 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def has_role(self, role):
         return role in (self.roles or [])
+
+    # ─── Adaptiv daraja tizimi ────────────────────────────────────────────
+    # CEFR — Ingliz tili uchun (A1..C2). Boshqa fanlar uchun 3 bosqichli
+    # standart shkala. SUBJECT_LEVELS_MAP fan nomini o'z shkalasiga bog'laydi.
+    CEFR_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2']
+    STANDARD_LEVELS = ["Boshlang'ich", "O'rta", "Ilg'or"]
+    SUBJECT_LEVELS_MAP = {
+        'Ingliz tili': ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'],
+        'Matematika': ["Boshlang'ich", "O'rta", "Ilg'or"],
+        'Fizika': ["Boshlang'ich", "O'rta", "Ilg'or"],
+        'Kimyo': ["Boshlang'ich", "O'rta", "Ilg'or"],
+        'Biologiya': ["Boshlang'ich", "O'rta", "Ilg'or"],
+        'Tarix': ["Boshlang'ich", "O'rta", "Ilg'or"],
+        'Informatika': ["Boshlang'ich", "O'rta", "Ilg'or"],
+        'IT': ["Boshlang'ich", "O'rta", "Ilg'or"],
+    }
+
+    def update_subject_level(self, subject: str, direction: str) -> dict:
+        """ELO'ga o'xshash adaptiv daraja yangilash.
+
+        `direction` — 'up' yoki 'down'. Bir xil yo'nalishda 3 ketma-ket
+        urinishdan keyin daraja bir pog'ona ko'tariladi/tushadi va seriya
+        nolga qaytadi. Yo'nalish o'zgarsa seriya 1 dan qayta boshlanadi.
+        Foydalanuvchining shu fanda joriy darajasi bo'lmasa hech narsa
+        qilmaydi (onboarding'da daraja belgilangan bo'lishi shart).
+        """
+        levels = self.SUBJECT_LEVELS_MAP.get(subject, self.STANDARD_LEVELS)
+        current_level = (self.subject_levels or {}).get(subject)
+        if not current_level or current_level not in levels:
+            return {'subject': subject, 'old_level': current_level, 'new_level': current_level, 'changed': False}
+
+        streaks = dict(self.level_streak or {})
+        entry = streaks.get(subject, {'streak': 0, 'direction': None})
+
+        if entry.get('direction') == direction:
+            entry['streak'] = entry.get('streak', 0) + 1
+        else:
+            entry = {'streak': 1, 'direction': direction}
+
+        old_level = current_level
+        new_level = current_level
+
+        if entry['streak'] >= 3:
+            idx = levels.index(current_level)
+            if direction == 'up' and idx < len(levels) - 1:
+                new_level = levels[idx + 1]
+            elif direction == 'down' and idx > 0:
+                new_level = levels[idx - 1]
+            entry = {'streak': 0, 'direction': None}
+
+        streaks[subject] = entry
+        new_subject_levels = dict(self.subject_levels or {})
+        new_subject_levels[subject] = new_level
+
+        User.objects.filter(pk=self.pk).update(
+            subject_levels=new_subject_levels,
+            level_streak=streaks,
+        )
+        self.subject_levels = new_subject_levels
+        self.level_streak = streaks
+
+        return {
+            'subject': subject,
+            'old_level': old_level,
+            'new_level': new_level,
+            'changed': new_level != old_level,
+        }
 
     def update_streak(self):
         """ Ketma-ket faollik kunlarini (streak) yangilash logikasi.
