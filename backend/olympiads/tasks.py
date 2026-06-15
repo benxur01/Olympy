@@ -106,4 +106,22 @@ def finish_expired_olympiads():
             if not has_active_org:
                 EducationCenter.objects.filter(owner=u).update(is_premium=False)
 
+    # Premium sinov muddati tugaganlarni o'chirish. Sinovli foydalanuvchida
+    # odatda UserSubscription yozuvi bo'lmaydi, shuning uchun ular yuqoridagi
+    # obuna blokiga tushmaydi. Faqat sinovi tugagan VA amal qiluvchi obunasi
+    # bo'lmagan foydalanuvchilarning flag'ini qaytaramiz (trial->obuna o'tgan
+    # foydalanuvchini xato o'chirib qo'ymaslik uchun aktiv obuna tekshiriladi).
+    trial_expired = User.objects.filter(
+        is_premium=True,
+        premium_trial_end__isnull=False,
+        premium_trial_end__lte=now,
+    )
+    for u in trial_expired:
+        has_active = UserSubscription.objects.filter(
+            user=u, is_active=True, end_date__gt=now,
+        ).exists()
+        if not has_active:
+            u.is_premium = False
+            u.save(update_fields=['is_premium'])
+
     return f'{count} ta olimpiada yakunlandi va obunalar yangilandi'

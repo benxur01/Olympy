@@ -60,6 +60,14 @@ class User(AbstractBaseUser, PermissionsMixin):
     roles = models.JSONField(default=list, blank=True)
     is_platform_admin = models.BooleanField(default=False)
     is_premium = models.BooleanField(default=False, db_index=True)
+    # Yangi ro'yxatdan o'tgan har bir foydalanuvchi uchun 1 oylik premium
+    # sinov muddati (register'da o'rnatiladi). Bu vaqt hali o'tmagan bo'lsa
+    # foydalanuvchi premium imkoniyatlardan foydalanadi — register paytida
+    # `is_premium=True` ham qilinadi (questions/centers tekshiruvlari shu
+    # flag'ga tayanadi). Sinov tugaganida lazy-expiry mantig'i (/me) va
+    # Celery task `is_premium`ni False qaytaradi (agar admin/obuna orqali
+    # premium berilmagan bo'lsa).
+    premium_trial_end = models.DateTimeField(null=True, blank=True)
     telegram_chat_id = models.CharField(max_length=64, blank=True, db_index=True)
     telegram_user_id = models.CharField(max_length=64, blank=True, db_index=True)
     telegram_linked_at = models.DateTimeField(null=True, blank=True)
@@ -134,6 +142,22 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def has_role(self, role):
         return role in (self.roles or [])
+
+    @property
+    def trial_active(self):
+        """Premium sinov muddati hali amal qilyaptimi?"""
+        return bool(
+            self.premium_trial_end and self.premium_trial_end > timezone.now()
+        )
+
+    @property
+    def is_premium_active(self):
+        """Premium holat — admin/obuna orqali berilgan (`is_premium`) YOKI
+        hali amal qiluvchi sinov muddati. Frontend va serializer shu
+        property'ni o'qiydi. Real-time obuna tekshiruvi (muddati o'tgan
+        obunani rad etish) uchun `accounts.utils.is_user_premium` ishlatiladi.
+        """
+        return bool(self.is_premium) or self.trial_active
 
     # ─── Adaptiv daraja tizimi ────────────────────────────────────────────
     # CEFR — Ingliz tili uchun (A1..C2). Boshqa fanlar uchun 3 bosqichli
