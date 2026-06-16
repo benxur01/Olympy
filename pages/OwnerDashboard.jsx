@@ -1608,7 +1608,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       </div>
                     </td>
                     <td className="px-5 py-4 font-mono text-xs text-white/55">
-                      {String(row.phone || '').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}
+                      {maskPhoneDisplay(row.phone, '')}
                     </td>
                     <td className="px-5 py-4">
                       <span className={`chip ${row.role === 'manager' ? 'badge-active' : 'badge-approved'}`}>
@@ -1766,7 +1766,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                         </div>
                       </td>
                       <td className="px-5 py-4 font-mono text-xs text-white/55">
-                        {String(row.phone || '').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}
+                        {maskPhoneDisplay(row.phone, '')}
                       </td>
                       <td className="px-5 py-4">
                         {groupTagEdit && groupTagEdit.membershipId === row.membershipId ? (
@@ -2954,15 +2954,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </label>
               <label className="block">
                 <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Telefon login</span>
-                <input
+                <PhoneField
                   value={staffForm.phone}
-                  onChange={e => updateStaffForm('phone', formatUzPhoneInput(e.target.value))}
-                  onFocus={e => updateStaffForm('phone', formatUzPhoneInput(e.target.value))}
-                  className="input-field font-mono"
-                  placeholder="+998901112233"
-                  inputMode="numeric"
-                  maxLength={13}
-                  type="tel"
+                  onChange={phone => updateStaffForm('phone', phone)}
+                  placeholder="901112233"
                 />
               </label>
               <label className="block">

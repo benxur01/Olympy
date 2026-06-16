@@ -240,12 +240,11 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
         <h3 className="font-bold text-white text-sm md:text-base mb-3">Yangi farzand qo'shish</h3>
         <p className="text-xs text-white/40 mb-4">Farzandingiz allaqachon Olympy'da ro'yxatdan o'tgan bo'lishi kerak. Uning telefon raqamini kiriting.</p>
         <div className="flex gap-2 flex-wrap">
-          <input
-            type="tel"
+          <PhoneField
             value={phoneInput}
-            onChange={e => setPhoneInput(formatUzPhoneInput ? formatUzPhoneInput(e.target.value) : e.target.value)}
-            placeholder="+998 90 123 45 67"
-            className="glass border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white bg-transparent flex-1 min-w-[200px]"
+            onChange={setPhoneInput}
+            placeholder="90 123 45 67"
+            className="flex-1 min-w-[240px]"
           />
           <button onClick={handleLink} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold">
             Qo'shish

@@ -1016,7 +1016,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 return visible.map(row => (
                 <tr key={row.id} className="text-xs admin-table-row text-slate-300">
                   <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={row.name} src={row.avatarUrl || ''} size={34} /><span className="font-bold text-white">{row.name}</span></div></td>
-                  <td className="px-5 py-4 font-mono text-[11px] text-slate-400">{row.phone?.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
+                  <td className="px-5 py-4 font-mono text-[11px] text-slate-400">{maskPhoneDisplay(row.phone, '')}</td>
                   <td className="px-5 py-4"><span className="rounded-md bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-400">{row.role}</span></td>
                   <td className="px-5 py-4 font-semibold text-slate-400">{row.center}</td>
                   <td className="px-5 py-4 font-semibold text-slate-400">{row.joined}</td>

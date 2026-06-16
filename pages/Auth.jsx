@@ -7,26 +7,11 @@ const ORGANIZATION_TYPES = ["O'quv markaz", 'Maktab', 'Universitet/Kollej', 'Tas
 // global scope'da shu yerda ham ko'rinadi.
 
 // ─── Login ────────────────────────────────────────────────────────────────
-const usePhoneInput = () => {
-  const ref = React.useRef(null);
-  const handleChange = React.useCallback((e, setVal) => {
-    const raw = e.target.value;
-    const pos = e.target.selectionStart;
-    const formatted = formatUzPhoneInput(raw);
-    setVal(formatted);
-    requestAnimationFrame(() => {
-      if (ref.current) {
-        const newPos = Math.min(pos, formatted.length);
-        ref.current.setSelectionRange(newPos, newPos);
-      }
-    });
-  }, []);
-  return { ref, handleChange };
-};
+// Telefon input endi shared.jsx dagi `PhoneField` komponenti orqali ishlanadi
+// (davlat kodi tanlash + xalqaro E.164, defolt O'zbekiston +998).
 
 const LoginPage = ({ onNavigate, onLogin }) => {
   const [form, setForm] = React.useState({ phone: '+998', password: '' });
-  const phoneInputRef = usePhoneInput();
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
   const [showPass, setShowPass] = React.useState(false);
@@ -135,7 +120,8 @@ const LoginPage = ({ onNavigate, onLogin }) => {
   const resetForgotState = (phone = form.phone || '+998') => {
     setForgot({
       step: 'phone',
-      phone: formatUzPhoneInput(phone || '+998'),
+      // Login formasidan kelgan raqamni (xalqaro bo'lsa ham) saqlaymiz.
+      phone: formatPhoneInput(phone || '+998', detectDialCode(phone || '+998')),
       code: '',
       password: '',
       confirm: '',
@@ -308,11 +294,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
-            <input ref={phoneInputRef.ref} className="input-field" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
-              placeholder="+998901234567" value={form.phone}
-              onChange={e => phoneInputRef.handleChange(e, phone => setForm(f => ({ ...f, phone })))}
-              onFocus={e => setForm(f => ({ ...f, phone: formatUzPhoneInput(e.target.value) }))}
-              required />
+            <PhoneField value={form.phone} onChange={phone => setForm(f => ({ ...f, phone }))} />
           </div>
           <div>
             <label className="block text-sm text-white/60 mb-2 font-medium">Parol</label>
@@ -361,23 +343,9 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                 </p>
                 <div>
                   <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
-                  <input
-                    className="input-field"
-                    type="tel"
-                    inputMode="numeric"
-                    autoComplete="tel"
-                    maxLength={13}
-                    placeholder="+998901234567"
+                  <PhoneField
                     value={forgot.phone}
-                    onChange={e => setForgot(prev => ({
-                      ...prev,
-                      phone: formatUzPhoneInput(e.target.value),
-                      error: '',
-                    }))}
-                    onFocus={e => setForgot(prev => ({
-                      ...prev,
-                      phone: formatUzPhoneInput(e.target.value),
-                    }))}
+                    onChange={phone => setForgot(prev => ({ ...prev, phone, error: '' }))}
                   />
                 </div>
                 {forgot.error && (
@@ -495,7 +463,6 @@ const LoginPage = ({ onNavigate, onLogin }) => {
 // ─── Register ─────────────────────────────────────────────────────────────
 const RegisterPage = ({ onNavigate, onLogin }) => {
   const store = useStore();
-  const regPhoneInputRef = usePhoneInput();
   const [step, setStep] = React.useState(1);
   const [form, setForm] = React.useState({ name: '', phone: '+998', password: '', confirm: '' });
   const [registrationType, setRegistrationType] = React.useState(null); // student|organization
@@ -733,17 +700,10 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
             </div>
             <div>
               <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
-              <input ref={regPhoneInputRef.ref} className="input-field" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
-                placeholder="+998901234567" value={form.phone}
-                onChange={e => regPhoneInputRef.handleChange(e, phone => {
-                  setForm(f => ({ ...f, phone }));
-                  validatePhone(phone);
-                })}
-                onFocus={e => {
-                  const phone = formatUzPhoneInput(e.target.value);
-                  setForm(f => ({ ...f, phone }));
-                  validatePhone(phone);
-                }} />
+              <PhoneField value={form.phone} onChange={phone => {
+                setForm(f => ({ ...f, phone }));
+                validatePhone(phone);
+              }} />
               {phoneError && <div className="flex items-center gap-1 text-red-400 text-xs mt-1"><Icon name="info" size={12} /> {phoneError}</div>}
             </div>
             <TelegramVerifyBlock
@@ -807,7 +767,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               <label className="block text-sm text-white/60 mb-2 font-medium">Tashkilot yoki markaz tanlash <span className="text-white/30">(ixtiyoriy)</span></label>
               <div className="relative">
                 <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-                <input className="input-field pl-10" placeholder="Nomi, turi, viloyat yoki tuman..." value={centerSearch}
+                <input className="input-field !pl-10" placeholder="Nomi, turi, viloyat yoki tuman..." value={centerSearch}
                   onChange={e => setCenterSearch(e.target.value)} />
               </div>
             </div>

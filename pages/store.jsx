@@ -18,15 +18,31 @@ const OlympyStore = (() => {
   const KEY = 'olympy_store_v4';
 
   // ─── Phone normalization ─────────────────────────────────────────────────
-  // "+998 90 123 45 67", "+998901234567", "998901234567", "90 123 45 67"
-  // → "+998901234567"
+  // Backenddagi accounts/utils.py:normalize_phone bilan bir xil qoida — E.164.
+  // '+' bilan boshlangan xalqaro raqam davlat kodini saqlaydi (8..15 raqam);
+  // '+' yo'q bo'lsa orqaga moslik uchun O'zbekiston (+998) deb hisoblanadi.
+  //   +14155552671      → +14155552671
+  //   +998 90 123 45 67 → +998901234567
+  //   998901234567      → +998901234567
+  //   90 123 45 67      → +998901234567
+  const E164_MIN_DIGITS = 8;
+  const E164_MAX_DIGITS = 15;
+  const UZ_CC = '998';
+  const UZ_LOCAL = 9;
   const normalizePhone = (raw) => {
     if (raw == null) return '';
-    const digits = String(raw).replace(/\D/g, '');
+    const text = String(raw).trim();
+    const digits = text.replace(/\D/g, '');
     if (!digits) return '';
-    const last9 = digits.slice(-9);
-    if (last9.length !== 9) return '';
-    return '+998' + last9;
+    if (text.startsWith('+')) {
+      if (digits.length >= E164_MIN_DIGITS && digits.length <= E164_MAX_DIGITS) return '+' + digits;
+      return '';
+    }
+    if (digits.startsWith(UZ_CC) && digits.length === UZ_CC.length + UZ_LOCAL) return '+' + digits;
+    if (digits.length === UZ_LOCAL) return '+' + UZ_CC + digits;
+    const last9 = digits.slice(-UZ_LOCAL);
+    if (last9.length === UZ_LOCAL && !digits.startsWith(UZ_CC)) return '+' + UZ_CC + last9;
+    return '';
   };
 
   // ─── Initial seed ────────────────────────────────────────────────────────

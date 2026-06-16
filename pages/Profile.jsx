@@ -450,7 +450,14 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                   : <span className="chip badge-draft text-xs">Yangi foydalanuvchi</span>;
               })()}
             </div>
-            <div className="text-white/40 text-sm mt-0.5">{(user?.phone || '+998901234567').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1 *** $2')}</div>
+            <div className="text-white/40 text-sm mt-0.5">{(() => {
+              // Telefonni qisman yashirish — O'zbekiston va xalqaro raqamlar
+              // uchun ham: boshini (davlat kodi + 2 raqam) va oxirgi 4 raqamni
+              // ko'rsatib, oradagini *** bilan almashtiramiz.
+              const phone = String(user?.phone || '+998901234567');
+              const m = phone.match(/^(\+\d{3,5})(\d+)(\d{4})$/);
+              return m ? `${m[1]} *** ${m[3]}` : phone;
+            })()}</div>
             <div className="flex flex-wrap gap-3 mt-3">
               <div className="flex items-center gap-1.5 text-sm text-white/50"><Icon name="building" size={14} />{(() => {
                 // Avval store.centers dan qidirilardi va API rejimida bo'sh
