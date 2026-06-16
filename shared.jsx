@@ -103,8 +103,7 @@ const detectDialCode = (raw, fallback = UZ_DIAL_CODE) => {
 // ─── PhoneField ────────────────────────────────────────────────────────────────
 // Davlat kodi tanlash dropdown + xalqaro telefon input. Defolt O'zbekiston
 // (+998). `value` — to'liq E.164 string (masalan '+998901234567'); `onChange`
-// shu formatdagi yangilangan stringni qaytaradi. Caret barqarorligi uchun
-// formatlashdan keyin kursor oxirgi pozitsiyasiga moslanadi.
+// shu formatdagi yangilangan stringni qaytaradi.
 const PhoneField = ({ value, onChange, className = '', placeholder = '901234567', autoComplete = 'tel', maxLength, disabled = false, inputRef: externalRef }) => {
   const innerRef = React.useRef(null);
   const ref = externalRef || innerRef;
@@ -126,20 +125,13 @@ const PhoneField = ({ value, onChange, className = '', placeholder = '901234567'
 
   const handleLocalChange = (e) => {
     const raw = e.target.value;
-    const pos = e.target.selectionStart;
     // Foydalanuvchi inputga '+' bilan boshlab to'liq xalqaro raqam ham
-    // yozishi mumkin — formatPhoneInput buni hurmat qiladi.
+    // yozishi mumkin — formatPhoneInput buni hurmat qiladi. Controlled input
+    // bo'lgani uchun React kursor pozitsiyasini o'zi to'g'ri saqlaydi; qo'lda
+    // setSelectionRange/requestAnimationFrame ishlatmaymiz (mobil/Telegram
+    // WebView yumshoq klaviaturasi bilan raqobatga kirib kiritishni buzadi).
     const next = formatPhoneInput(raw.startsWith('+') ? raw : (dial + raw.replace(/\D/g, '')), dial);
     onChange(next);
-    requestAnimationFrame(() => {
-      if (ref.current) {
-        try {
-          const localLen = next.replace(/\D/g, '').slice(dial.length).length;
-          const newPos = Math.min(pos != null ? pos : localLen, localLen);
-          ref.current.setSelectionRange(newPos, newPos);
-        } catch (_) {}
-      }
-    });
   };
 
   return (

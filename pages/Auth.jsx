@@ -767,7 +767,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               <label className="block text-sm text-white/60 mb-2 font-medium">Tashkilot yoki markaz tanlash <span className="text-white/30">(ixtiyoriy)</span></label>
               <div className="relative">
                 <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-                <input className="input-field !pl-10" placeholder="Nomi, turi, viloyat yoki tuman..." value={centerSearch}
+                <input className="input-field pl-10" placeholder="Nomi, turi, viloyat yoki tuman..." value={centerSearch}
                   onChange={e => setCenterSearch(e.target.value)} />
               </div>
             </div>

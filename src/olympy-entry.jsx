@@ -139,8 +139,7 @@ const detectDialCode = (raw, fallback = UZ_DIAL_CODE) => {
 // ─── PhoneField ────────────────────────────────────────────────────────────────
 // Davlat kodi tanlash dropdown + xalqaro telefon input. Defolt O'zbekiston
 // (+998). `value` — to'liq E.164 string (masalan '+998901234567'); `onChange`
-// shu formatdagi yangilangan stringni qaytaradi. Caret barqarorligi uchun
-// formatlashdan keyin kursor oxirgi pozitsiyasiga moslanadi.
+// shu formatdagi yangilangan stringni qaytaradi.
 const PhoneField = ({ value, onChange, className = '', placeholder = '901234567', autoComplete = 'tel', maxLength, disabled = false, inputRef: externalRef }) => {
   const innerRef = React.useRef(null);
   const ref = externalRef || innerRef;
@@ -162,20 +161,13 @@ const PhoneField = ({ value, onChange, className = '', placeholder = '901234567'
 
   const handleLocalChange = (e) => {
     const raw = e.target.value;
-    const pos = e.target.selectionStart;
     // Foydalanuvchi inputga '+' bilan boshlab to'liq xalqaro raqam ham
-    // yozishi mumkin — formatPhoneInput buni hurmat qiladi.
+    // yozishi mumkin — formatPhoneInput buni hurmat qiladi. Controlled input
+    // bo'lgani uchun React kursor pozitsiyasini o'zi to'g'ri saqlaydi; qo'lda
+    // setSelectionRange/requestAnimationFrame ishlatmaymiz (mobil/Telegram
+    // WebView yumshoq klaviaturasi bilan raqobatga kirib kiritishni buzadi).
     const next = formatPhoneInput(raw.startsWith('+') ? raw : (dial + raw.replace(/\D/g, '')), dial);
     onChange(next);
-    requestAnimationFrame(() => {
-      if (ref.current) {
-        try {
-          const localLen = next.replace(/\D/g, '').slice(dial.length).length;
-          const newPos = Math.min(pos != null ? pos : localLen, localLen);
-          ref.current.setSelectionRange(newPos, newPos);
-        } catch (_) {}
-      }
-    });
   };
 
   return (
@@ -5220,7 +5212,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               <label className="block text-sm text-white/60 mb-2 font-medium">Tashkilot yoki markaz tanlash <span className="text-white/30">(ixtiyoriy)</span></label>
               <div className="relative">
                 <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-                <input className="input-field !pl-10" placeholder="Nomi, turi, viloyat yoki tuman..." value={centerSearch}
+                <input className="input-field pl-10" placeholder="Nomi, turi, viloyat yoki tuman..." value={centerSearch}
                   onChange={e => setCenterSearch(e.target.value)} />
               </div>
             </div>
