@@ -822,11 +822,15 @@ def admin_users_list(request):
         if looks_like_phone:
             norm = normalize_phone(search)
             if norm:
-                # To'liq normalizatsiya bo'ldi (+998XXXXXXXXX) — aniq prefiks.
+                # To'liq normalizatsiya bo'ldi (+<davlat kodi><raqam>) — aniq prefiks.
                 qs = qs.filter(normalized_phone__startswith=norm)
+            elif search.lstrip().startswith('+'):
+                # Xalqaro qisman raqam ('+' bilan boshlangan, lekin hali
+                # to'liq emas) — kiritilgan raqamlar bo'yicha prefiks qidiruvi.
+                qs = qs.filter(normalized_phone__startswith=f'+{digits}')
             else:
-                # Qisman raqam — oxirgi raqamlar bo'yicha indeksli prefiks
-                # qidiruvi (normalized_phone har doim +998 bilan boshlanadi).
+                # Qisman raqam, davlat kodisiz — orqaga moslik uchun
+                # O'zbekiston abonent raqami deb prefiks qidiramiz.
                 qs = qs.filter(normalized_phone__startswith=f'+998{digits[-9:]}')
         else:
             qs = qs.filter(full_name__icontains=search)

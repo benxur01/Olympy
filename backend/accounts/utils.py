@@ -115,17 +115,60 @@ def is_user_premium(user):
     return active
 
 
+# E.164 xalqaro raqam: '+' + davlat kodi + abonent raqami. ITU-T E.164
+# bo'yicha raqamlar soni maksimal 15 ta (davlat kodi bilan birga). Minimal
+# chegarani amaliy ravishda 8 ta raqam deb olamiz (eng qisqa milliy raqamlar).
+E164_MIN_DIGITS = 8
+E164_MAX_DIGITS = 15
+
+# O'zbekiston raqamlari: davlat kodi 998 + 9 xonali abonent raqami.
+UZ_COUNTRY_CODE = '998'
+UZ_LOCAL_DIGITS = 9
+
+
 def normalize_phone(raw):
-    """Return canonical ``+998<9 digits>`` form, or ``''`` if invalid."""
+    """Telefon raqamni kanonik E.164 (``+<davlat kodi><raqam>``) shaklga keltiradi.
+
+    Qo'llab-quvvatlanadigan kiritmalar:
+
+    - ``+`` bilan boshlangan xalqaro raqam (``+14155552671``,
+      ``+998901234567``) — ``+`` saqlanadi, ortiqcha belgilar (bo'shliq,
+      qavs, tire) tashlanadi. Raqamlar soni E.164 chegaralarida
+      (8..15) bo'lishi shart.
+    - ``998`` bilan boshlangan yoki 9 xonali O'zbekiston raqami
+      (``998901234567``, ``901234567``, ``90 123 45 67``) — orqaga moslik
+      uchun ``+998`` prefiksi qo'yiladi (davlat kodi ko'rsatilmagan deb
+      hisoblanadi).
+
+    Noto'g'ri/bo'sh raqam uchun ``''`` qaytaradi.
+    """
     if raw is None:
         return ''
-    digits = re.sub(r'\D', '', str(raw))
+    text = str(raw).strip()
+    digits = re.sub(r'\D', '', text)
     if not digits:
         return ''
-    last9 = digits[-9:]
-    if len(last9) != 9:
+
+    # Foydalanuvchi aniq xalqaro raqam kiritgan ('+' bilan boshlanadi) —
+    # davlat kodini saqlaymiz, faqat E.164 uzunlik chegarasini tekshiramiz.
+    if text.startswith('+'):
+        if E164_MIN_DIGITS <= len(digits) <= E164_MAX_DIGITS:
+            return '+' + digits
         return ''
-    return '+998' + last9
+
+    # '+' yo'q. Orqaga moslik: O'zbekiston raqami deb hisoblaymiz.
+    # 998 bilan boshlangan to'liq raqam yoki 9 xonali abonent raqami.
+    if digits.startswith(UZ_COUNTRY_CODE) and len(digits) == len(UZ_COUNTRY_CODE) + UZ_LOCAL_DIGITS:
+        return '+' + digits
+    if len(digits) == UZ_LOCAL_DIGITS:
+        return '+' + UZ_COUNTRY_CODE + digits
+
+    # Boshqa hollarda ham eski xulqni saqlaymiz: oxirgi 9 raqamni
+    # O'zbekiston abonent raqami deb olamiz (masalan '8 90 123 45 67').
+    last9 = digits[-UZ_LOCAL_DIGITS:]
+    if len(last9) == UZ_LOCAL_DIGITS and not digits.startswith(UZ_COUNTRY_CODE):
+        return '+' + UZ_COUNTRY_CODE + last9
+    return ''
 
 
 def avatar_url_for(user, request=None):
@@ -167,15 +210,25 @@ def mask_phone(raw):
     PII sizdirilishini kamaytiradi. To'liq raqam faqat profil egasi va
     admin uchun ochiq. Noto'g'ri/bo'sh raqam uchun bo'sh string qaytaradi.
 
+    Xalqaro raqamlar uchun ham ishlaydi: davlat kodi (agar tanib olinsa)
+    ochiq qoladi, oradagi raqamlar yulduzcha bilan yashiriladi, oxirgi 4 ta
+    raqam ko'rsatiladi (masalan ``+1 ** *** 26 71``).
+
     Eslatma: bu DISPLAY-only maskalash — backend filtrlash, login va parol
     tiklash hamon to'liq normalized_phone bilan ishlaydi.
     """
     norm = normalize_phone(raw)
     if not norm:
         return ''
-    # norm = +998 + 9 raqam. Oxirgi 4 ta raqamni ochamiz.
-    last4 = norm[-4:]
-    return f"+998 ** *** {last4[:2]} {last4[2:]}"
+    digits = norm[1:]  # '+' tashlanadi
+    # Davlat kodini ajratamiz: O'zbekiston (998) bo'lsa ochiq ko'rsatamiz,
+    # aks holda birinchi 1-3 raqamni davlat kodi deb taxmin qilamiz.
+    if digits.startswith(UZ_COUNTRY_CODE):
+        cc = UZ_COUNTRY_CODE
+    else:
+        cc = digits[:max(1, len(digits) - 9)] if len(digits) > 9 else digits[:1]
+    last4 = digits[-4:]
+    return f"+{cc} ** *** {last4[:2]} {last4[2:]}"
 
 
 def predict_success_ai(student_name, avg_score, attempts_count, subject_performance):

@@ -38,11 +38,177 @@ const moduleScope = {};
 
 const { useState, useEffect, useRef, useContext, createContext } = React;
 
+// E.164 chegaralari — ITU-T bo'yicha raqamlar soni maksimal 15 ta.
+const PHONE_E164_MIN_DIGITS = 8;
+const PHONE_E164_MAX_DIGITS = 15;
+const UZ_DIAL_CODE = '998';
+const UZ_LOCAL_DIGITS = 9;
+
+// Tez tanlash uchun mashhur davlat kodlari ro'yxati. Default — O'zbekiston.
+// Foydalanuvchi ro'yxatdan tanlashi yoki qo'lda '+' bilan boshlab boshqa
+// kodni kiritishi mumkin. (Maxsus kutubxona shart emas — qo'lda E.164.)
+const COUNTRY_DIAL_CODES = [
+  { code: '998', flag: '🇺🇿', name: "O'zbekiston" },
+  { code: '7',   flag: '🇷🇺', name: 'Rossiya / Qozogʻiston' },
+  { code: '996', flag: '🇰🇬', name: 'Qirgʻiziston' },
+  { code: '992', flag: '🇹🇯', name: 'Tojikiston' },
+  { code: '993', flag: '🇹🇲', name: 'Turkmaniston' },
+  { code: '90',  flag: '🇹🇷', name: 'Turkiya' },
+  { code: '1',   flag: '🇺🇸', name: 'AQSH / Kanada' },
+  { code: '44',  flag: '🇬🇧', name: 'Buyuk Britaniya' },
+  { code: '49',  flag: '🇩🇪', name: 'Germaniya' },
+  { code: '971', flag: '🇦🇪', name: 'BAA' },
+  { code: '966', flag: '🇸🇦', name: 'Saudiya Arabistoni' },
+  { code: '82',  flag: '🇰🇷', name: 'Janubiy Koreya' },
+  { code: '86',  flag: '🇨🇳', name: 'Xitoy' },
+];
+
+// Eski format: inputni majburan O'zbekiston (+998) shakliga keltiradi.
+// Orqaga moslik uchun saqlanadi (login formasi va boshqa joylar shuni
+// ishlatadi). Yangi/xalqaro kiritma uchun `formatPhoneInput` ishlatiladi.
 const formatUzPhoneInput = (raw) => {
   const digits = String(raw || '').replace(/\D/g, '');
-  let local = digits.startsWith('998') ? digits.slice(3) : digits;
-  if (local.length > 9) local = local.slice(-9);
-  return '+998' + local.slice(0, 9);
+  let local = digits.startsWith(UZ_DIAL_CODE) ? digits.slice(UZ_DIAL_CODE.length) : digits;
+  if (local.length > UZ_LOCAL_DIGITS) local = local.slice(-UZ_LOCAL_DIGITS);
+  return '+' + UZ_DIAL_CODE + local.slice(0, UZ_LOCAL_DIGITS);
+};
+
+// Xalqaro input formatlash. `dialCode` — tanlangan davlat kodi (default 998).
+// Foydalanuvchi '+' bilan boshlab boshqa kod yozsa, uni hurmat qilamiz; aks
+// holda tanlangan davlat kodi prefiksini qo'yamiz. Natija doim '+' bilan
+// boshlanadi va E.164 max uzunligida cheklanadi. O'zbekiston tanlangan
+// bo'lsa, abonent raqamini 9 xona bilan cheklab eski xulqni saqlaymiz.
+const formatPhoneInput = (raw, dialCode = UZ_DIAL_CODE) => {
+  const text = String(raw || '').trim();
+  const startedPlus = text.startsWith('+');
+  const digits = text.replace(/\D/g, '');
+  const cc = String(dialCode || UZ_DIAL_CODE).replace(/\D/g, '') || UZ_DIAL_CODE;
+
+  // Foydalanuvchi aniq '+' bilan to'liq xalqaro raqam yozyapti — davlat
+  // kodini saqlaymiz, faqat E.164 max uzunligida kesamiz.
+  if (startedPlus) {
+    return '+' + digits.slice(0, PHONE_E164_MAX_DIGITS);
+  }
+
+  // '+' yo'q — tanlangan davlat kodiga moslaymiz. Avval ortiqcha takror
+  // kiritilgan davlat kodini olib tashlaymiz (masalan dialCode=998 va
+  // foydalanuvchi 998901234567 ni nusxa qilib qo'ydi).
+  let local = digits;
+  if (local.startsWith(cc)) local = local.slice(cc.length);
+
+  if (cc === UZ_DIAL_CODE) {
+    // O'zbekiston: abonent raqami aniq 9 xona.
+    local = local.slice(-UZ_LOCAL_DIGITS).slice(0, UZ_LOCAL_DIGITS);
+  } else {
+    // Boshqa davlatlar: umumiy E.164 chegarasi.
+    local = local.slice(0, Math.max(0, PHONE_E164_MAX_DIGITS - cc.length));
+  }
+  return '+' + cc + local;
+};
+
+// Telefonni ko'rsatish uchun qisman yashirish (DISPLAY-only). O'zbekiston
+// va xalqaro raqamlar uchun ham ishlaydi: boshini (`+` + 3..5 raqam) va
+// oxirgi 4 raqamni ochib, oradagini `***` bilan almashtiradi. Mos kelmasa
+// (yoki backend allaqachon maskalagan bo'lsa) qiymatni o'zgarishsiz qaytaradi.
+const maskPhoneDisplay = (raw, sep = ' ') => {
+  const phone = String(raw || '');
+  const m = phone.match(/^(\+\d{3,5})(\d+)(\d{4})$/);
+  return m ? `${m[1]}${sep}***${sep}${m[3]}` : phone;
+};
+
+// Berilgan to'liq raqamdan davlat kodini taxmin qiladi (ro'yxatdagi eng
+// uzun mos prefiks bo'yicha). Topilmasa default qaytaradi.
+const detectDialCode = (raw, fallback = UZ_DIAL_CODE) => {
+  const text = String(raw || '');
+  const digits = text.replace(/\D/g, '');
+  if (!digits) return fallback;
+  let best = '';
+  for (const { code } of COUNTRY_DIAL_CODES) {
+    if (digits.startsWith(code) && code.length > best.length) best = code;
+  }
+  if (best) return best;
+  // Ro'yxatda yo'q davlat kodi. Foydalanuvchi '+' bilan to'liq xalqaro raqam
+  // kiritgan bo'lsa (masalan +33...), abonent qismi ~9 raqam deb hisoblab,
+  // qolganini davlat kodi sifatida ajratamiz (1..4 raqam). Aks holda fallback.
+  if (text.trim().startsWith('+') && digits.length > 9) {
+    return digits.slice(0, Math.min(4, digits.length - 9));
+  }
+  return fallback;
+};
+
+// ─── PhoneField ────────────────────────────────────────────────────────────────
+// Davlat kodi tanlash dropdown + xalqaro telefon input. Defolt O'zbekiston
+// (+998). `value` — to'liq E.164 string (masalan '+998901234567'); `onChange`
+// shu formatdagi yangilangan stringni qaytaradi. Caret barqarorligi uchun
+// formatlashdan keyin kursor oxirgi pozitsiyasiga moslanadi.
+const PhoneField = ({ value, onChange, className = '', placeholder = '901234567', autoComplete = 'tel', maxLength, disabled = false, inputRef: externalRef }) => {
+  const innerRef = React.useRef(null);
+  const ref = externalRef || innerRef;
+  const dial = detectDialCode(value, UZ_DIAL_CODE);
+  // Inputda faqat davlat kodidan keyingi qism ko'rsatiladi.
+  const localPart = (() => {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (digits.startsWith(dial)) return digits.slice(dial.length);
+    return digits;
+  })();
+
+  const handleDialChange = (e) => {
+    const newCode = e.target.value;
+    // Davlat kodi o'zgarganda mavjud abonent raqamini saqlab, yangi kod
+    // prefiksini qo'yamiz.
+    const next = formatPhoneInput(localPart, newCode);
+    onChange(next);
+  };
+
+  const handleLocalChange = (e) => {
+    const raw = e.target.value;
+    const pos = e.target.selectionStart;
+    // Foydalanuvchi inputga '+' bilan boshlab to'liq xalqaro raqam ham
+    // yozishi mumkin — formatPhoneInput buni hurmat qiladi.
+    const next = formatPhoneInput(raw.startsWith('+') ? raw : (dial + raw.replace(/\D/g, '')), dial);
+    onChange(next);
+    requestAnimationFrame(() => {
+      if (ref.current) {
+        try {
+          const localLen = next.replace(/\D/g, '').slice(dial.length).length;
+          const newPos = Math.min(pos != null ? pos : localLen, localLen);
+          ref.current.setSelectionRange(newPos, newPos);
+        } catch (_) {}
+      }
+    });
+  };
+
+  return (
+    <div className={`flex gap-2 ${className}`}>
+      <select
+        value={dial}
+        onChange={handleDialChange}
+        disabled={disabled}
+        className="input-field flex-shrink-0 w-[104px] pr-2"
+        aria-label="Davlat kodi"
+      >
+        {COUNTRY_DIAL_CODES.map(c => (
+          <option key={c.code} value={c.code}>{c.flag} +{c.code}</option>
+        ))}
+        {/* Ro'yxatda yo'q kod qo'lda kiritilgan bo'lsa, uni ham ko'rsatamiz */}
+        {!COUNTRY_DIAL_CODES.some(c => c.code === dial) && (
+          <option value={dial}>+{dial}</option>
+        )}
+      </select>
+      <input
+        ref={ref}
+        className="input-field flex-1"
+        type="tel"
+        inputMode="numeric"
+        autoComplete={autoComplete}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        value={localPart}
+        onChange={handleLocalChange}
+        disabled={disabled}
+      />
+    </div>
+  );
 };
 
 // Tashqi havolani ochish. Muvaffaqiyatli ochilsa true qaytaradi.
@@ -937,12 +1103,21 @@ function VirtualList({ items, itemHeight = 60, containerHeight = 400, renderItem
 }
 
 // Export all
-Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList });
+Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList, formatUzPhoneInput, formatPhoneInput, detectDialCode, maskPhoneDisplay, COUNTRY_DIAL_CODES, PhoneField });
 
 
-Object.assign(moduleScope, { formatUzPhoneInput, openExternalLink, Icon, BRAND_ASSET_BASE, BRAND_LOGO_SRC, BRAND_LOGO_SRC_WEBP, BrandLogo, Avatar, Badge, StatCard, makeDashboardUrlSync, SidebarContent, Sidebar, MobileBottomNav, Topbar, Modal, AvatarCropModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, subjectColors, SubjectBadge, TelegramMockup, useApiData, useDebounce, VirtualList });
+Object.assign(moduleScope, { PHONE_E164_MIN_DIGITS, PHONE_E164_MAX_DIGITS, UZ_DIAL_CODE, UZ_LOCAL_DIGITS, COUNTRY_DIAL_CODES, formatUzPhoneInput, formatPhoneInput, maskPhoneDisplay, detectDialCode, PhoneField, openExternalLink, Icon, BRAND_ASSET_BASE, BRAND_LOGO_SRC, BRAND_LOGO_SRC_WEBP, BrandLogo, Avatar, Badge, StatCard, makeDashboardUrlSync, SidebarContent, Sidebar, MobileBottomNav, Topbar, Modal, AvatarCropModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, subjectColors, SubjectBadge, TelegramMockup, useApiData, useDebounce, VirtualList });
 }
+var PHONE_E164_MIN_DIGITS = moduleScope.PHONE_E164_MIN_DIGITS;
+var PHONE_E164_MAX_DIGITS = moduleScope.PHONE_E164_MAX_DIGITS;
+var UZ_DIAL_CODE = moduleScope.UZ_DIAL_CODE;
+var UZ_LOCAL_DIGITS = moduleScope.UZ_LOCAL_DIGITS;
+var COUNTRY_DIAL_CODES = moduleScope.COUNTRY_DIAL_CODES;
 var formatUzPhoneInput = moduleScope.formatUzPhoneInput;
+var formatPhoneInput = moduleScope.formatPhoneInput;
+var maskPhoneDisplay = moduleScope.maskPhoneDisplay;
+var detectDialCode = moduleScope.detectDialCode;
+var PhoneField = moduleScope.PhoneField;
 var openExternalLink = moduleScope.openExternalLink;
 var Icon = moduleScope.Icon;
 var BRAND_ASSET_BASE = moduleScope.BRAND_ASSET_BASE;
@@ -1026,15 +1201,31 @@ const OlympyStore = (() => {
   const KEY = 'olympy_store_v4';
 
   // ─── Phone normalization ─────────────────────────────────────────────────
-  // "+998 90 123 45 67", "+998901234567", "998901234567", "90 123 45 67"
-  // → "+998901234567"
+  // Backenddagi accounts/utils.py:normalize_phone bilan bir xil qoida — E.164.
+  // '+' bilan boshlangan xalqaro raqam davlat kodini saqlaydi (8..15 raqam);
+  // '+' yo'q bo'lsa orqaga moslik uchun O'zbekiston (+998) deb hisoblanadi.
+  //   +14155552671      → +14155552671
+  //   +998 90 123 45 67 → +998901234567
+  //   998901234567      → +998901234567
+  //   90 123 45 67      → +998901234567
+  const E164_MIN_DIGITS = 8;
+  const E164_MAX_DIGITS = 15;
+  const UZ_CC = '998';
+  const UZ_LOCAL = 9;
   const normalizePhone = (raw) => {
     if (raw == null) return '';
-    const digits = String(raw).replace(/\D/g, '');
+    const text = String(raw).trim();
+    const digits = text.replace(/\D/g, '');
     if (!digits) return '';
-    const last9 = digits.slice(-9);
-    if (last9.length !== 9) return '';
-    return '+998' + last9;
+    if (text.startsWith('+')) {
+      if (digits.length >= E164_MIN_DIGITS && digits.length <= E164_MAX_DIGITS) return '+' + digits;
+      return '';
+    }
+    if (digits.startsWith(UZ_CC) && digits.length === UZ_CC.length + UZ_LOCAL) return '+' + digits;
+    if (digits.length === UZ_LOCAL) return '+' + UZ_CC + digits;
+    const last9 = digits.slice(-UZ_LOCAL);
+    if (last9.length === UZ_LOCAL && !digits.startsWith(UZ_CC)) return '+' + UZ_CC + last9;
+    return '';
   };
 
   // ─── Initial seed ────────────────────────────────────────────────────────
@@ -4269,26 +4460,11 @@ const ORGANIZATION_TYPES = ["O'quv markaz", 'Maktab', 'Universitet/Kollej', 'Tas
 // global scope'da shu yerda ham ko'rinadi.
 
 // ─── Login ────────────────────────────────────────────────────────────────
-const usePhoneInput = () => {
-  const ref = React.useRef(null);
-  const handleChange = React.useCallback((e, setVal) => {
-    const raw = e.target.value;
-    const pos = e.target.selectionStart;
-    const formatted = formatUzPhoneInput(raw);
-    setVal(formatted);
-    requestAnimationFrame(() => {
-      if (ref.current) {
-        const newPos = Math.min(pos, formatted.length);
-        ref.current.setSelectionRange(newPos, newPos);
-      }
-    });
-  }, []);
-  return { ref, handleChange };
-};
+// Telefon input endi shared.jsx dagi `PhoneField` komponenti orqali ishlanadi
+// (davlat kodi tanlash + xalqaro E.164, defolt O'zbekiston +998).
 
 const LoginPage = ({ onNavigate, onLogin }) => {
   const [form, setForm] = React.useState({ phone: '+998', password: '' });
-  const phoneInputRef = usePhoneInput();
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
   const [showPass, setShowPass] = React.useState(false);
@@ -4397,7 +4573,8 @@ const LoginPage = ({ onNavigate, onLogin }) => {
   const resetForgotState = (phone = form.phone || '+998') => {
     setForgot({
       step: 'phone',
-      phone: formatUzPhoneInput(phone || '+998'),
+      // Login formasidan kelgan raqamni (xalqaro bo'lsa ham) saqlaymiz.
+      phone: formatPhoneInput(phone || '+998', detectDialCode(phone || '+998')),
       code: '',
       password: '',
       confirm: '',
@@ -4570,11 +4747,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
         <form onSubmit={handleLogin} className="space-y-4">
           <div>
             <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
-            <input ref={phoneInputRef.ref} className="input-field" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
-              placeholder="+998901234567" value={form.phone}
-              onChange={e => phoneInputRef.handleChange(e, phone => setForm(f => ({ ...f, phone })))}
-              onFocus={e => setForm(f => ({ ...f, phone: formatUzPhoneInput(e.target.value) }))}
-              required />
+            <PhoneField value={form.phone} onChange={phone => setForm(f => ({ ...f, phone }))} />
           </div>
           <div>
             <label className="block text-sm text-white/60 mb-2 font-medium">Parol</label>
@@ -4623,23 +4796,9 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                 </p>
                 <div>
                   <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
-                  <input
-                    className="input-field"
-                    type="tel"
-                    inputMode="numeric"
-                    autoComplete="tel"
-                    maxLength={13}
-                    placeholder="+998901234567"
+                  <PhoneField
                     value={forgot.phone}
-                    onChange={e => setForgot(prev => ({
-                      ...prev,
-                      phone: formatUzPhoneInput(e.target.value),
-                      error: '',
-                    }))}
-                    onFocus={e => setForgot(prev => ({
-                      ...prev,
-                      phone: formatUzPhoneInput(e.target.value),
-                    }))}
+                    onChange={phone => setForgot(prev => ({ ...prev, phone, error: '' }))}
                   />
                 </div>
                 {forgot.error && (
@@ -4757,7 +4916,6 @@ const LoginPage = ({ onNavigate, onLogin }) => {
 // ─── Register ─────────────────────────────────────────────────────────────
 const RegisterPage = ({ onNavigate, onLogin }) => {
   const store = useStore();
-  const regPhoneInputRef = usePhoneInput();
   const [step, setStep] = React.useState(1);
   const [form, setForm] = React.useState({ name: '', phone: '+998', password: '', confirm: '' });
   const [registrationType, setRegistrationType] = React.useState(null); // student|organization
@@ -4995,17 +5153,10 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
             </div>
             <div>
               <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
-              <input ref={regPhoneInputRef.ref} className="input-field" type="tel" inputMode="numeric" autoComplete="tel" maxLength={13}
-                placeholder="+998901234567" value={form.phone}
-                onChange={e => regPhoneInputRef.handleChange(e, phone => {
-                  setForm(f => ({ ...f, phone }));
-                  validatePhone(phone);
-                })}
-                onFocus={e => {
-                  const phone = formatUzPhoneInput(e.target.value);
-                  setForm(f => ({ ...f, phone }));
-                  validatePhone(phone);
-                }} />
+              <PhoneField value={form.phone} onChange={phone => {
+                setForm(f => ({ ...f, phone }));
+                validatePhone(phone);
+              }} />
               {phoneError && <div className="flex items-center gap-1 text-red-400 text-xs mt-1"><Icon name="info" size={12} /> {phoneError}</div>}
             </div>
             <TelegramVerifyBlock
@@ -5069,7 +5220,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               <label className="block text-sm text-white/60 mb-2 font-medium">Tashkilot yoki markaz tanlash <span className="text-white/30">(ixtiyoriy)</span></label>
               <div className="relative">
                 <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
-                <input className="input-field pl-10" placeholder="Nomi, turi, viloyat yoki tuman..." value={centerSearch}
+                <input className="input-field !pl-10" placeholder="Nomi, turi, viloyat yoki tuman..." value={centerSearch}
                   onChange={e => setCenterSearch(e.target.value)} />
               </div>
             </div>
@@ -5198,11 +5349,10 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
 Object.assign(window, { LoginPage, RegisterPage });
 
 
-Object.assign(moduleScope, { SUBJECTS_LIST, ORGANIZATION_TYPES, usePhoneInput, LoginPage, RegisterPage });
+Object.assign(moduleScope, { SUBJECTS_LIST, ORGANIZATION_TYPES, LoginPage, RegisterPage });
 }
 var SUBJECTS_LIST = moduleScope.SUBJECTS_LIST;
 var ORGANIZATION_TYPES = moduleScope.ORGANIZATION_TYPES;
-var usePhoneInput = moduleScope.usePhoneInput;
 var LoginPage = moduleScope.LoginPage;
 var RegisterPage = moduleScope.RegisterPage;
 
@@ -9507,7 +9657,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               return (
                 <tr key={s.id} className="olympy-row">
                   <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={s.name} src={s.avatarUrl || ''} size={32} premium={!!s.isPremium} /><div><div className="text-sm font-medium text-white">{s.isPremium && <span title="Premium o'quvchi">⭐ </span>}{s.name}</div><div className="text-xs text-white/40">{s.joined}</div></div></div></td>
-                  <td className="px-4 py-3 text-sm text-white/60">{s.phone.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
+                  <td className="px-4 py-3 text-sm text-white/60">{maskPhoneDisplay(s.phone, '')}</td>
                   <td className="px-4 py-3">
                     {groupTagEdit && groupTagEdit.membershipId === s.membershipId ? (
                       <input
@@ -9611,7 +9761,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             {requests.map(r => (
               <tr key={r.id} className="olympy-row">
                 <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={r.name} src={r.avatarUrl || ''} size={32} /><span className="text-sm font-medium text-white">{r.name}</span></div></td>
-                <td className="px-4 py-3 text-sm text-white/60">{r.phone.replace ? r.phone.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2') : r.phone}</td>
+                <td className="px-4 py-3 text-sm text-white/60">{maskPhoneDisplay(r.phone, '')}</td>
                 <td className="px-4 py-3 text-sm text-white/60">{r.date}</td>
                 <td className="px-4 py-3">{r.subject && r.subject !== '—' ? <SubjectBadge subject={r.subject} /> : <span className="text-xs text-white/30">—</span>}</td>
                 <td className="px-4 py-3 text-xs font-mono text-white/50">{r.approvalCode || '—'}</td>
@@ -11082,7 +11232,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <Avatar name={studentDetail.user?.full_name || '—'} src={studentDetail.user?.avatar_url || ''} size={56} />
               <div className="min-w-0 flex-1">
                 <div className="text-base font-bold text-white truncate">{studentDetail.user?.full_name || '—'}</div>
-                <div className="text-xs text-white/50">{(studentDetail.user?.normalized_phone || studentDetail.user?.phone || '').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1 *** $2')}</div>
+                <div className="text-xs text-white/50">{maskPhoneDisplay(studentDetail.user?.normalized_phone || studentDetail.user?.phone || '')}</div>
                 <div className="text-xs text-white/40 mt-0.5">{studentDetail.center?.name} · {studentDetail.subject || '—'} · {(studentDetail.joined_at || '').slice(0,10)}</div>
               </div>
               <Badge status={statusLabel(studentDetail.status)} />
@@ -16912,7 +17062,14 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                   : <span className="chip badge-draft text-xs">Yangi foydalanuvchi</span>;
               })()}
             </div>
-            <div className="text-white/40 text-sm mt-0.5">{(user?.phone || '+998901234567').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1 *** $2')}</div>
+            <div className="text-white/40 text-sm mt-0.5">{(() => {
+              // Telefonni qisman yashirish — O'zbekiston va xalqaro raqamlar
+              // uchun ham: boshini (davlat kodi + 2 raqam) va oxirgi 4 raqamni
+              // ko'rsatib, oradagini *** bilan almashtiramiz.
+              const phone = String(user?.phone || '+998901234567');
+              const m = phone.match(/^(\+\d{3,5})(\d+)(\d{4})$/);
+              return m ? `${m[1]} *** ${m[3]}` : phone;
+            })()}</div>
             <div className="flex flex-wrap gap-3 mt-3">
               <div className="flex items-center gap-1.5 text-sm text-white/50"><Icon name="building" size={14} />{(() => {
                 // Avval store.centers dan qidirilardi va API rejimida bo'sh
@@ -18447,7 +18604,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 return visible.map(row => (
                 <tr key={row.id} className="text-xs admin-table-row text-slate-300">
                   <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={row.name} src={row.avatarUrl || ''} size={34} /><span className="font-bold text-white">{row.name}</span></div></td>
-                  <td className="px-5 py-4 font-mono text-[11px] text-slate-400">{row.phone?.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
+                  <td className="px-5 py-4 font-mono text-[11px] text-slate-400">{maskPhoneDisplay(row.phone, '')}</td>
                   <td className="px-5 py-4"><span className="rounded-md bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-400">{row.role}</span></td>
                   <td className="px-5 py-4 font-semibold text-slate-400">{row.center}</td>
                   <td className="px-5 py-4 font-semibold text-slate-400">{row.joined}</td>
@@ -20491,7 +20648,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       </div>
                     </td>
                     <td className="px-5 py-4 font-mono text-xs text-white/55">
-                      {String(row.phone || '').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}
+                      {maskPhoneDisplay(row.phone, '')}
                     </td>
                     <td className="px-5 py-4">
                       <span className={`chip ${row.role === 'manager' ? 'badge-active' : 'badge-approved'}`}>
@@ -20649,7 +20806,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                         </div>
                       </td>
                       <td className="px-5 py-4 font-mono text-xs text-white/55">
-                        {String(row.phone || '').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}
+                        {maskPhoneDisplay(row.phone, '')}
                       </td>
                       <td className="px-5 py-4">
                         {groupTagEdit && groupTagEdit.membershipId === row.membershipId ? (
@@ -21837,15 +21994,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </label>
               <label className="block">
                 <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Telefon login</span>
-                <input
+                <PhoneField
                   value={staffForm.phone}
-                  onChange={e => updateStaffForm('phone', formatUzPhoneInput(e.target.value))}
-                  onFocus={e => updateStaffForm('phone', formatUzPhoneInput(e.target.value))}
-                  className="input-field font-mono"
-                  placeholder="+998901112233"
-                  inputMode="numeric"
-                  maxLength={13}
-                  type="tel"
+                  onChange={phone => updateStaffForm('phone', phone)}
+                  placeholder="901112233"
                 />
               </label>
               <label className="block">
@@ -22669,12 +22821,11 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
         <h3 className="font-bold text-white text-sm md:text-base mb-3">Yangi farzand qo'shish</h3>
         <p className="text-xs text-white/40 mb-4">Farzandingiz allaqachon Olympy'da ro'yxatdan o'tgan bo'lishi kerak. Uning telefon raqamini kiriting.</p>
         <div className="flex gap-2 flex-wrap">
-          <input
-            type="tel"
+          <PhoneField
             value={phoneInput}
-            onChange={e => setPhoneInput(formatUzPhoneInput ? formatUzPhoneInput(e.target.value) : e.target.value)}
-            placeholder="+998 90 123 45 67"
-            className="glass border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white bg-transparent flex-1 min-w-[200px]"
+            onChange={setPhoneInput}
+            placeholder="90 123 45 67"
+            className="flex-1 min-w-[240px]"
           />
           <button onClick={handleLink} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold">
             Qo'shish

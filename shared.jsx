@@ -2,11 +2,177 @@
 
 const { useState, useEffect, useRef, useContext, createContext } = React;
 
+// E.164 chegaralari — ITU-T bo'yicha raqamlar soni maksimal 15 ta.
+const PHONE_E164_MIN_DIGITS = 8;
+const PHONE_E164_MAX_DIGITS = 15;
+const UZ_DIAL_CODE = '998';
+const UZ_LOCAL_DIGITS = 9;
+
+// Tez tanlash uchun mashhur davlat kodlari ro'yxati. Default — O'zbekiston.
+// Foydalanuvchi ro'yxatdan tanlashi yoki qo'lda '+' bilan boshlab boshqa
+// kodni kiritishi mumkin. (Maxsus kutubxona shart emas — qo'lda E.164.)
+const COUNTRY_DIAL_CODES = [
+  { code: '998', flag: '🇺🇿', name: "O'zbekiston" },
+  { code: '7',   flag: '🇷🇺', name: 'Rossiya / Qozogʻiston' },
+  { code: '996', flag: '🇰🇬', name: 'Qirgʻiziston' },
+  { code: '992', flag: '🇹🇯', name: 'Tojikiston' },
+  { code: '993', flag: '🇹🇲', name: 'Turkmaniston' },
+  { code: '90',  flag: '🇹🇷', name: 'Turkiya' },
+  { code: '1',   flag: '🇺🇸', name: 'AQSH / Kanada' },
+  { code: '44',  flag: '🇬🇧', name: 'Buyuk Britaniya' },
+  { code: '49',  flag: '🇩🇪', name: 'Germaniya' },
+  { code: '971', flag: '🇦🇪', name: 'BAA' },
+  { code: '966', flag: '🇸🇦', name: 'Saudiya Arabistoni' },
+  { code: '82',  flag: '🇰🇷', name: 'Janubiy Koreya' },
+  { code: '86',  flag: '🇨🇳', name: 'Xitoy' },
+];
+
+// Eski format: inputni majburan O'zbekiston (+998) shakliga keltiradi.
+// Orqaga moslik uchun saqlanadi (login formasi va boshqa joylar shuni
+// ishlatadi). Yangi/xalqaro kiritma uchun `formatPhoneInput` ishlatiladi.
 const formatUzPhoneInput = (raw) => {
   const digits = String(raw || '').replace(/\D/g, '');
-  let local = digits.startsWith('998') ? digits.slice(3) : digits;
-  if (local.length > 9) local = local.slice(-9);
-  return '+998' + local.slice(0, 9);
+  let local = digits.startsWith(UZ_DIAL_CODE) ? digits.slice(UZ_DIAL_CODE.length) : digits;
+  if (local.length > UZ_LOCAL_DIGITS) local = local.slice(-UZ_LOCAL_DIGITS);
+  return '+' + UZ_DIAL_CODE + local.slice(0, UZ_LOCAL_DIGITS);
+};
+
+// Xalqaro input formatlash. `dialCode` — tanlangan davlat kodi (default 998).
+// Foydalanuvchi '+' bilan boshlab boshqa kod yozsa, uni hurmat qilamiz; aks
+// holda tanlangan davlat kodi prefiksini qo'yamiz. Natija doim '+' bilan
+// boshlanadi va E.164 max uzunligida cheklanadi. O'zbekiston tanlangan
+// bo'lsa, abonent raqamini 9 xona bilan cheklab eski xulqni saqlaymiz.
+const formatPhoneInput = (raw, dialCode = UZ_DIAL_CODE) => {
+  const text = String(raw || '').trim();
+  const startedPlus = text.startsWith('+');
+  const digits = text.replace(/\D/g, '');
+  const cc = String(dialCode || UZ_DIAL_CODE).replace(/\D/g, '') || UZ_DIAL_CODE;
+
+  // Foydalanuvchi aniq '+' bilan to'liq xalqaro raqam yozyapti — davlat
+  // kodini saqlaymiz, faqat E.164 max uzunligida kesamiz.
+  if (startedPlus) {
+    return '+' + digits.slice(0, PHONE_E164_MAX_DIGITS);
+  }
+
+  // '+' yo'q — tanlangan davlat kodiga moslaymiz. Avval ortiqcha takror
+  // kiritilgan davlat kodini olib tashlaymiz (masalan dialCode=998 va
+  // foydalanuvchi 998901234567 ni nusxa qilib qo'ydi).
+  let local = digits;
+  if (local.startsWith(cc)) local = local.slice(cc.length);
+
+  if (cc === UZ_DIAL_CODE) {
+    // O'zbekiston: abonent raqami aniq 9 xona.
+    local = local.slice(-UZ_LOCAL_DIGITS).slice(0, UZ_LOCAL_DIGITS);
+  } else {
+    // Boshqa davlatlar: umumiy E.164 chegarasi.
+    local = local.slice(0, Math.max(0, PHONE_E164_MAX_DIGITS - cc.length));
+  }
+  return '+' + cc + local;
+};
+
+// Telefonni ko'rsatish uchun qisman yashirish (DISPLAY-only). O'zbekiston
+// va xalqaro raqamlar uchun ham ishlaydi: boshini (`+` + 3..5 raqam) va
+// oxirgi 4 raqamni ochib, oradagini `***` bilan almashtiradi. Mos kelmasa
+// (yoki backend allaqachon maskalagan bo'lsa) qiymatni o'zgarishsiz qaytaradi.
+const maskPhoneDisplay = (raw, sep = ' ') => {
+  const phone = String(raw || '');
+  const m = phone.match(/^(\+\d{3,5})(\d+)(\d{4})$/);
+  return m ? `${m[1]}${sep}***${sep}${m[3]}` : phone;
+};
+
+// Berilgan to'liq raqamdan davlat kodini taxmin qiladi (ro'yxatdagi eng
+// uzun mos prefiks bo'yicha). Topilmasa default qaytaradi.
+const detectDialCode = (raw, fallback = UZ_DIAL_CODE) => {
+  const text = String(raw || '');
+  const digits = text.replace(/\D/g, '');
+  if (!digits) return fallback;
+  let best = '';
+  for (const { code } of COUNTRY_DIAL_CODES) {
+    if (digits.startsWith(code) && code.length > best.length) best = code;
+  }
+  if (best) return best;
+  // Ro'yxatda yo'q davlat kodi. Foydalanuvchi '+' bilan to'liq xalqaro raqam
+  // kiritgan bo'lsa (masalan +33...), abonent qismi ~9 raqam deb hisoblab,
+  // qolganini davlat kodi sifatida ajratamiz (1..4 raqam). Aks holda fallback.
+  if (text.trim().startsWith('+') && digits.length > 9) {
+    return digits.slice(0, Math.min(4, digits.length - 9));
+  }
+  return fallback;
+};
+
+// ─── PhoneField ────────────────────────────────────────────────────────────────
+// Davlat kodi tanlash dropdown + xalqaro telefon input. Defolt O'zbekiston
+// (+998). `value` — to'liq E.164 string (masalan '+998901234567'); `onChange`
+// shu formatdagi yangilangan stringni qaytaradi. Caret barqarorligi uchun
+// formatlashdan keyin kursor oxirgi pozitsiyasiga moslanadi.
+const PhoneField = ({ value, onChange, className = '', placeholder = '901234567', autoComplete = 'tel', maxLength, disabled = false, inputRef: externalRef }) => {
+  const innerRef = React.useRef(null);
+  const ref = externalRef || innerRef;
+  const dial = detectDialCode(value, UZ_DIAL_CODE);
+  // Inputda faqat davlat kodidan keyingi qism ko'rsatiladi.
+  const localPart = (() => {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (digits.startsWith(dial)) return digits.slice(dial.length);
+    return digits;
+  })();
+
+  const handleDialChange = (e) => {
+    const newCode = e.target.value;
+    // Davlat kodi o'zgarganda mavjud abonent raqamini saqlab, yangi kod
+    // prefiksini qo'yamiz.
+    const next = formatPhoneInput(localPart, newCode);
+    onChange(next);
+  };
+
+  const handleLocalChange = (e) => {
+    const raw = e.target.value;
+    const pos = e.target.selectionStart;
+    // Foydalanuvchi inputga '+' bilan boshlab to'liq xalqaro raqam ham
+    // yozishi mumkin — formatPhoneInput buni hurmat qiladi.
+    const next = formatPhoneInput(raw.startsWith('+') ? raw : (dial + raw.replace(/\D/g, '')), dial);
+    onChange(next);
+    requestAnimationFrame(() => {
+      if (ref.current) {
+        try {
+          const localLen = next.replace(/\D/g, '').slice(dial.length).length;
+          const newPos = Math.min(pos != null ? pos : localLen, localLen);
+          ref.current.setSelectionRange(newPos, newPos);
+        } catch (_) {}
+      }
+    });
+  };
+
+  return (
+    <div className={`flex gap-2 ${className}`}>
+      <select
+        value={dial}
+        onChange={handleDialChange}
+        disabled={disabled}
+        className="input-field flex-shrink-0 w-[104px] pr-2"
+        aria-label="Davlat kodi"
+      >
+        {COUNTRY_DIAL_CODES.map(c => (
+          <option key={c.code} value={c.code}>{c.flag} +{c.code}</option>
+        ))}
+        {/* Ro'yxatda yo'q kod qo'lda kiritilgan bo'lsa, uni ham ko'rsatamiz */}
+        {!COUNTRY_DIAL_CODES.some(c => c.code === dial) && (
+          <option value={dial}>+{dial}</option>
+        )}
+      </select>
+      <input
+        ref={ref}
+        className="input-field flex-1"
+        type="tel"
+        inputMode="numeric"
+        autoComplete={autoComplete}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        value={localPart}
+        onChange={handleLocalChange}
+        disabled={disabled}
+      />
+    </div>
+  );
 };
 
 // Tashqi havolani ochish. Muvaffaqiyatli ochilsa true qaytaradi.
@@ -901,4 +1067,4 @@ function VirtualList({ items, itemHeight = 60, containerHeight = 400, renderItem
 }
 
 // Export all
-Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList });
+Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList, formatUzPhoneInput, formatPhoneInput, detectDialCode, maskPhoneDisplay, COUNTRY_DIAL_CODES, PhoneField });

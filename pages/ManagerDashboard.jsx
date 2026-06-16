@@ -970,7 +970,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               return (
                 <tr key={s.id} className="olympy-row">
                   <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={s.name} src={s.avatarUrl || ''} size={32} premium={!!s.isPremium} /><div><div className="text-sm font-medium text-white">{s.isPremium && <span title="Premium o'quvchi">⭐ </span>}{s.name}</div><div className="text-xs text-white/40">{s.joined}</div></div></div></td>
-                  <td className="px-4 py-3 text-sm text-white/60">{s.phone.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2')}</td>
+                  <td className="px-4 py-3 text-sm text-white/60">{maskPhoneDisplay(s.phone, '')}</td>
                   <td className="px-4 py-3">
                     {groupTagEdit && groupTagEdit.membershipId === s.membershipId ? (
                       <input
@@ -1074,7 +1074,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             {requests.map(r => (
               <tr key={r.id} className="olympy-row">
                 <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={r.name} src={r.avatarUrl || ''} size={32} /><span className="text-sm font-medium text-white">{r.name}</span></div></td>
-                <td className="px-4 py-3 text-sm text-white/60">{r.phone.replace ? r.phone.replace(/(\+998\d{2})\d{3}(\d{4})/, '$1***$2') : r.phone}</td>
+                <td className="px-4 py-3 text-sm text-white/60">{maskPhoneDisplay(r.phone, '')}</td>
                 <td className="px-4 py-3 text-sm text-white/60">{r.date}</td>
                 <td className="px-4 py-3">{r.subject && r.subject !== '—' ? <SubjectBadge subject={r.subject} /> : <span className="text-xs text-white/30">—</span>}</td>
                 <td className="px-4 py-3 text-xs font-mono text-white/50">{r.approvalCode || '—'}</td>
@@ -2545,7 +2545,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <Avatar name={studentDetail.user?.full_name || '—'} src={studentDetail.user?.avatar_url || ''} size={56} />
               <div className="min-w-0 flex-1">
                 <div className="text-base font-bold text-white truncate">{studentDetail.user?.full_name || '—'}</div>
-                <div className="text-xs text-white/50">{(studentDetail.user?.normalized_phone || studentDetail.user?.phone || '').replace(/(\+998\d{2})\d{3}(\d{4})/, '$1 *** $2')}</div>
+                <div className="text-xs text-white/50">{maskPhoneDisplay(studentDetail.user?.normalized_phone || studentDetail.user?.phone || '')}</div>
                 <div className="text-xs text-white/40 mt-0.5">{studentDetail.center?.name} · {studentDetail.subject || '—'} · {(studentDetail.joined_at || '').slice(0,10)}</div>
               </div>
               <Badge status={statusLabel(studentDetail.status)} />
