@@ -217,6 +217,54 @@ def update_center(request, center_id):
     return Response(EducationCenterSerializer(center, context={'request': request}).data)
 
 
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def update_center_branding(request, center_id):
+    """PATCH /api/centers/{id}/branding/ — markaz brendini (white-label) sozlash.
+
+    Faqat o'sha markaz owner'i (yoki platforma admini) o'zgartira oladi:
+      * `brand_color` — '#RRGGBB' formatdagi HEX rang (frontend --brand-color);
+      * `custom_domain` — ixtiyoriy maxsus domen (hozircha faqat saqlanadi).
+    Manager/teacher branding'ni o'zgartira olmaydi — bu owner darajasidagi sozlama.
+    """
+    import re
+
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    is_owner = center.owner_id == request.user.id
+    if not (request.user.is_platform_admin or is_owner):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    data = request.data or {}
+    update_fields = []
+
+    if 'brand_color' in data:
+        color = str(data.get('brand_color') or '').strip()
+        if not re.fullmatch(r'#[0-9a-fA-F]{6}', color):
+            return Response(
+                {'brand_color': "Rang #RRGGBB formatida bo'lishi kerak"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        center.brand_color = color.lower()
+        update_fields.append('brand_color')
+
+    if 'custom_domain' in data:
+        domain = str(data.get('custom_domain') or '').strip().lower()[:120]
+        center.custom_domain = domain
+        update_fields.append('custom_domain')
+
+    if not update_fields:
+        return Response(
+            {'detail': "Hech narsa o'zgartirilmadi"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    center.save(update_fields=update_fields)
+    center = _annotate_center_counts(
+        EducationCenter.objects.filter(pk=center.pk)
+    ).first()
+    return Response(EducationCenterSerializer(center, context={'request': request}).data)
+
+
 @api_view(['POST'])
 @parser_classes([JSONParser, MultiPartParser, FormParser])
 @permission_classes([IsAuthenticated])

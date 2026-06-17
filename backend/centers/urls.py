@@ -14,6 +14,7 @@ urlpatterns = [
     path('practice-mock/<int:olympiad_id>/', mock_views.get_or_create_practice_mock, name='practice-mock'),
     path('mine/', views.my_centers, name='my-centers'),
     path('<int:center_id>/', views.update_center, name='center-update'),
+    path('<int:center_id>/branding/', views.update_center_branding, name='center-branding'),
     path('<int:center_id>/image/', views.update_center_image, name='center-image'),
     path('<int:center_id>/join/', views.join_center, name='center-join'),
     path('<int:center_id>/memberships/pending/', views.pending_memberships, name='pending-memberships'),
