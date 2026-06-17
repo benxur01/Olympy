@@ -52,11 +52,14 @@ class Command(BaseCommand):
         horizon = now + timedelta(days=3)
         month_ago = now - timedelta(days=30)
 
+        # Eslatma: trial davrida user `is_premium=True` bo'ladi, shuning uchun
+        # premium holatiga emas, aynan trial muddatiga qaraymiz (real yuborish
+        # logikasi `accounts.tasks.send_trial_ending_reminders` bilan bir xil).
         users = User.objects.filter(
             premium_trial_end__isnull=False,
             premium_trial_end__gt=now,
             premium_trial_end__lte=horizon,
-            is_premium=False,
+            is_active=True,
             trial_reminder_sent_at__isnull=True,
         ).exclude(telegram_chat_id='')
 

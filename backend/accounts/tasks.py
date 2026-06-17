@@ -3,6 +3,7 @@ import random
 from datetime import timedelta
 
 from celery import shared_task
+from django.db import transaction
 from django.db.models import Avg, Count, Max, Q
 from django.utils import timezone
 
@@ -235,6 +236,126 @@ def send_weekly_parent_reports():
     return f'weekly reports: {sent} sent, {skipped} skipped'
 
 
+@shared_task(name='accounts.send_weekly_digest')
+def send_weekly_digest():
+    """B2B: Markaz egalariga (owner) haftalik hisobotni Telegram orqali yuboradi.
+
+    Bu task Celery Beat tomonidan har hafta avtomatik ishga tushiriladi
+    (settings.CELERY_BEAT_SCHEDULE['send-weekly-digest'], har dushanba
+    08:30 UTC). Har bir tasdiqlangan (approved) markaz owner'iga (faqat
+    `telegram_chat_id` bo'lsa) o'sha markaz bo'yicha qisqa statistika ketadi:
+    jami o'quvchilar, bu hafta faol o'quvchilar, o'rtacha ball, eng zaif fan.
+
+    Bittasida xato bo'lsa o'sha markaz o'tkazib yuboriladi, batch to'xtamaydi.
+    """
+    import logging
+
+    from django.conf import settings
+
+    from centers.models import CenterMembership, EducationCenter
+    from attempts.models import TestAttempt
+
+    logger = logging.getLogger(__name__)
+    week_ago = timezone.now() - timedelta(days=7)
+    site_url = getattr(settings, 'SITE_URL', 'https://prolymp.uz')
+
+    centers = (
+        EducationCenter.objects
+        .filter(status=EducationCenter.STATUS_APPROVED, owner__isnull=False)
+        .select_related('owner')
+    )
+
+    sent = 0
+    skipped = 0
+    for center in centers:
+        owner = center.owner
+        chat_id = getattr(owner, 'telegram_chat_id', '') if owner else ''
+        if not chat_id:
+            skipped += 1
+            continue
+
+        # Markazning tasdiqlangan o'quvchilari.
+        student_ids = list(
+            CenterMembership.objects
+            .filter(
+                center=center,
+                role=CenterMembership.ROLE_STUDENT,
+                status=CenterMembership.STATUS_APPROVED,
+            )
+            .values_list('user_id', flat=True)
+        )
+        total_students = len(student_ids)
+
+        # Bu hafta faol o'quvchilar — markaz olimpiadalarida oxirgi 7 kunda
+        # urinish qilganlar (diskvalifikatsiyasiz). distinct user.
+        active_this_week = (
+            TestAttempt.objects
+            .filter(
+                olympiad__center=center,
+                olympiad__is_deleted=False,
+                disqualified=False,
+                submitted_at__gte=week_ago,
+            )
+            .values('user_id')
+            .distinct()
+            .count()
+        )
+
+        # O'rtacha ball — markaz olimpiadalaridagi barcha urinishlar.
+        agg = (
+            TestAttempt.objects
+            .filter(
+                olympiad__center=center,
+                olympiad__is_deleted=False,
+                disqualified=False,
+            )
+            .aggregate(avg=Avg('score'))
+        )
+        avg_score = round(agg['avg'] or 0, 1)
+
+        # Eng zaif fan — o'rtacha ball eng past bo'lgan fan (kamida bitta urinish).
+        subject_rows = (
+            TestAttempt.objects
+            .filter(
+                olympiad__center=center,
+                olympiad__is_deleted=False,
+                disqualified=False,
+            )
+            .values('olympiad__subject')
+            .annotate(avg=Avg('score'), cnt=Count('id'))
+            .order_by('avg')
+        )
+        weakest_subject = '—'
+        for row in subject_rows:
+            subj = (row['olympiad__subject'] or '').strip()
+            if subj:
+                weakest_subject = subj
+                break
+
+        msg = (
+            f"📊 *Olympy haftalik hisobot*\n\n"
+            f"🏫 *{center.name}*\n"
+            f"👥 Jami o'quvchilar: {total_students}\n"
+            f"✅ Bu hafta faol: {active_this_week}\n"
+            f"🏆 O'rtacha ball: {avg_score}\n"
+            f"📉 Eng zaif fan: {weakest_subject}\n\n"
+            f"_Batafsil: {site_url}/dashboard/owner_"
+        )
+
+        try:
+            from notifications.services import send_telegram_markdown
+            send_telegram_markdown(chat_id, msg)
+            sent += 1
+        except Exception:
+            logger.exception(
+                'weekly digest failed for center=%s owner=%s',
+                center.id, owner.id if owner else None,
+            )
+            skipped += 1
+
+    return f'weekly digest: {sent} sent, {skipped} skipped'
+
+
 def _build_trial_reminder_message(name, total, avg_score, best_score):
     """P4: Trial tugashi eslatmasi uchun shaxsiylashtirilgan matn tuzadi.
 
@@ -271,9 +392,10 @@ def send_trial_ending_reminders():
 
     Tanlanadigan foydalanuvchilar:
       * `premium_trial_end` mavjud va keyingi 3 kun ichida tugaydi
-        (now < premium_trial_end <= now + 3 kun);
-      * `is_premium=False` — admin/obuna orqali hali premium berilmagan
-        (ya'ni hali pullik obunaga o'tmagan);
+        (now < premium_trial_end <= now + 3 kun) — trial davrida user
+        `is_premium=True` bo'ladi, shuning uchun premium holatiga emas, aynan
+        trial muddatiga qaraymiz;
+      * `is_active=True` — aktiv user;
       * `telegram_chat_id` bo'sh emas;
       * `trial_reminder_sent_at` NULL — eslatma hali yuborilmagan (har trial
         bir martalik, takror yubormaslik uchun).
@@ -295,53 +417,57 @@ def send_trial_ending_reminders():
     horizon = now + timedelta(days=3)
     month_ago = now - timedelta(days=30)
 
-    users = User.objects.filter(
-        premium_trial_end__isnull=False,
-        premium_trial_end__gt=now,
-        premium_trial_end__lte=horizon,
-        is_premium=False,
-        trial_reminder_sent_at__isnull=True,
-    ).exclude(telegram_chat_id='')
-
     sent = 0
     skipped = 0
-    for user in users:
-        chat_id = user.telegram_chat_id
-        if not chat_id:
-            skipped += 1
-            continue
+    # Tanlangan userlarni transaction + select_for_update() ostida qulflaymiz —
+    # ikkita parallel ishga tushish (Celery beat + management command) bir
+    # userga ikki marta eslatma yubormasligi uchun.
+    with transaction.atomic():
+        users = User.objects.filter(
+            premium_trial_end__isnull=False,
+            premium_trial_end__gt=now,
+            premium_trial_end__lte=horizon,
+            is_active=True,
+            trial_reminder_sent_at__isnull=True,
+        ).exclude(telegram_chat_id='').select_for_update()
 
-        agg = TestAttempt.objects.filter(
-            user=user, disqualified=False, submitted_at__gte=month_ago,
-        ).aggregate(avg=Avg('score'), best=Max('score'), total=Count('id'))
+        for user in users:
+            chat_id = user.telegram_chat_id
+            if not chat_id:
+                skipped += 1
+                continue
 
-        total = agg['total'] or 0
-        avg_score = round(agg['avg'] or 0, 1)
-        best_score = agg['best'] or 0
-        name = user.full_name or user.first_name or ''
+            agg = TestAttempt.objects.filter(
+                user=user, disqualified=False, submitted_at__gte=month_ago,
+            ).aggregate(avg=Avg('score'), best=Max('score'), total=Count('id'))
 
-        msg = _build_trial_reminder_message(name, total, avg_score, best_score)
+            total = agg['total'] or 0
+            avg_score = round(agg['avg'] or 0, 1)
+            best_score = agg['best'] or 0
+            name = user.full_name or user.first_name or ''
 
-        try:
-            ok = _send_telegram_message(chat_id, msg, bot='auth')
-        except Exception:
-            logger.exception(
-                'trial ending reminder failed for user=%s', user.id,
-            )
-            skipped += 1
-            continue
+            msg = _build_trial_reminder_message(name, total, avg_score, best_score)
 
-        if ok:
-            # Faqat shu maydonni yangilaymiz — save() ichidagi ortiqcha
-            # logikani (normalize_phone, full_name) chetlab o'tib.
-            user.trial_reminder_sent_at = now
-            user.save(update_fields=['trial_reminder_sent_at'])
-            sent += 1
-        else:
-            # Token yo'q (lokal/dev) yoki Telegram not-ok qaytardi —
-            # yuborilmadi deb hisoblaymiz va trial_reminder_sent_at'ni
-            # o'rnatmaymiz (keyingi ishga tushishda qayta urinish mumkin).
-            skipped += 1
+            try:
+                ok = _send_telegram_message(chat_id, msg, bot='auth')
+            except Exception:
+                logger.exception(
+                    'trial ending reminder failed for user=%s', user.id,
+                )
+                skipped += 1
+                continue
+
+            if ok:
+                # Faqat shu maydonni yangilaymiz — save() ichidagi ortiqcha
+                # logikani (normalize_phone, full_name) chetlab o'tib.
+                user.trial_reminder_sent_at = now
+                user.save(update_fields=['trial_reminder_sent_at'])
+                sent += 1
+            else:
+                # Token yo'q (lokal/dev) yoki Telegram not-ok qaytardi —
+                # yuborilmadi deb hisoblaymiz va trial_reminder_sent_at'ni
+                # o'rnatmaymiz (keyingi ishga tushishda qayta urinish mumkin).
+                skipped += 1
 
     return {'sent': sent, 'skipped': skipped}
 
