@@ -1002,10 +1002,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {/* Retention: kunlik ilg'ash widgetlari (faqat real API rejimida) */}
       {isApi && (
         <>
-          <StreakWarningBanner onNavigate={setPage} />
-          <SuggestedOlympiadCard onNavigate={setPage} olympiads={visibleOlympiads} />
-          <PeerComparisonCard />
-          <DailyQuestionsWidget />
+          <StreakWarningBanner onNavigate={setPage} user={user} />
+          <DailyGoalWidget streakCount={user?.streakCount} user={user} />
+          <SuggestedOlympiadCard onNavigate={setPage} olympiads={visibleOlympiads} user={user} />
+          <PeerComparisonCard user={user} />
+          <DailyQuestionsWidget user={user} />
         </>
       )}
 
@@ -1091,9 +1092,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {/* Retention: musobaqa va uzoq muddatli bog'liqlik widgetlari */}
       {isApi && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-          <WeeklyContestWidget />
-          <RivalActivityWidget />
-          <ProgressComparisonCard />
+          <WeeklyContestWidget user={user} />
+          <RivalActivityWidget user={user} />
+          <ProgressComparisonCard user={user} />
         </div>
       )}
 

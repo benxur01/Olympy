@@ -740,6 +740,9 @@ const mapApiCenter = (c) => {
     rating: parseFloat(c.rating) || 0,
     students: c.students || 0,
     olympiads: c.olympiads || 0,
+    // Branding (white-label, Feature #6). brand_color '#RRGGBB' yoki bo'sh.
+    brandColor: c.brand_color || c.brandColor || '',
+    customDomain: c.custom_domain || c.customDomain || '',
     createdAt: (c.created_at || '').slice(0, 10),
     _api: true,
   };

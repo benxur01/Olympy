@@ -188,6 +188,22 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const emptyShopForm = { title: '', description: '', coin_cost: 100, icon: '🎁', stock: 10, is_active: true, features: [], imageFile: null, image_url: '' };
   const [shopForm, setShopForm] = React.useState(emptyShopForm);
 
+  // F1: B2B markaz onboarding sehrgari (owner birinchi kirganda 3 qadamli modal).
+  // Faqat backend aniq `false` qaytarganda ochiladi (eski/undefined holatda emas).
+  const [onboardingStep, setOnboardingStep] = React.useState(0);
+  const [onboardingOpen, setOnboardingOpen] = React.useState(false);
+  const [onboardingSaving, setOnboardingSaving] = React.useState(false);
+  React.useEffect(() => {
+    if (isApi && user?.onboardingCenterCompleted === false) {
+      setOnboardingOpen(true);
+      setOnboardingStep(0);
+    }
+    // user obyekti yangilanganda (onboardingCenterCompleted=true) qayta ochilmaydi.
+  }, [isApi, user?.onboardingCenterCompleted]);
+
+  // F6: Branding (white-label) — joriy markaz brand rangi.
+  const [brandColorInput, setBrandColorInput] = React.useState('#6366f1');
+  const [brandSaving, setBrandSaving] = React.useState(false);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -456,6 +472,53 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     try { localStorage.setItem(selectedCenterStorageKey, String(ownerCenterId)); } catch {}
   }, [ownerCenterId, selectedCenterStorageKey]);
 
+  // F6: Markaz brand rangi o'zgarganda input'ni va CSS --brand-color o'zgaruvchisini
+  // sinxronlash. Sahifa yuklanganda ham markaz rangi bo'lsa darhol qo'llanadi.
+  React.useEffect(() => {
+    if (center?.brandColor) {
+      setBrandColorInput(center.brandColor);
+      try { document.documentElement.style.setProperty('--brand-color', center.brandColor); } catch {}
+    }
+  }, [center?.brandColor]);
+
+  // F1: Onboarding sehrgarini tugatish/o'tkazib yuborish — backendni yangilab,
+  // user state'ni ham (onUserUpdate orqali) sinxronlaymiz va modalni yopamiz.
+  const finishCenterOnboarding = () => {
+    setOnboardingSaving(true);
+    OlympyApi.completeCenterOnboarding(OlympyApi.getToken())
+      .then(() => {
+        if (onUserUpdate) onUserUpdate({ ...user, onboardingCenterCompleted: true });
+      })
+      .catch(err => { console.warn('completeCenterOnboarding failed:', err); })
+      .finally(() => {
+        setOnboardingSaving(false);
+        setOnboardingOpen(false);
+      });
+  };
+
+  // F6: Brand rangini saqlash. Saqlangach CSS o'zgaruvchini darhol qo'llaymiz
+  // va apiCenters'ni qayta yuklaymiz (yangi rang keyingi render'da ham qoladi).
+  const saveBranding = () => {
+    const centerId = center?.backendId ?? center?.id;
+    if (!centerId) return;
+    if (!/^#[0-9a-fA-F]{6}$/.test(brandColorInput)) {
+      showToast("⚠ Rang #RRGGBB formatida bo'lishi kerak");
+      return;
+    }
+    setBrandSaving(true);
+    OlympyApi.updateCenterBranding(centerId, { brand_color: brandColorInput }, OlympyApi.getToken())
+      .then(() => {
+        try { document.documentElement.style.setProperty('--brand-color', brandColorInput); } catch {}
+        showToast('✓ Brand rangi saqlandi');
+        apiCentersRes.reload?.();
+      })
+      .catch(err => {
+        console.warn('updateCenterBranding failed:', err);
+        showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Brendni saqlab bo'lmadi"}`);
+      })
+      .finally(() => setBrandSaving(false));
+  };
+
   // Savol banki va do'kon yuklovchilari: bu hook'lar early return'dan (pastdagi
   // PendingAccessCard) OLDIN, shartsiz chaqilishi shart — aks holda tasdiqlangan
   // va tasdiqlanmagan markaz render'lari orasida hook soni o'zgarib, "Rules of
@@ -517,6 +580,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   if (!center || center.status !== 'approved') {
     const approvedFallback = ownerCenters.find(c => c.status === 'approved');
+    // F1/F6: Markaz hali tasdiqlanmagan bo'lsa ham — owner onboarding bilan
+    // tanishishi va brendni oldindan sozlashi mumkin bo'lsin. Bu bloklar
+    // PendingAccessCard'ning `extra` qismida (tasdiqlash kutilayotgan paytda)
+    // ko'rsatiladi; tasdiqlash xabari va boshqa elementlar joyida qoladi.
+    const showCenterOnboarding = isApi && user?.onboardingCenterCompleted === false;
+    const canPreviewBranding = !!center && center.status !== 'rejected';
     return (
       <PendingAccessCard
         title={center?.status === 'rejected' ? 'Tashkilot arizasi rad etildi' : 'Tashkilot tasdig\'i kutilmoqda'}
@@ -540,6 +609,89 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 </span>
               </div>
             )}
+
+            {/* F1: B2B onboarding bilan tanishtiruvchi banner — tasdiqlash
+                kutilayotganda ham ko'rinadi. Bu yerda dashboard tablar hali
+                ochilmagani uchun faqat 3 qadamni ko'rsatamiz va "Tushunarli"
+                tugmasi onboarding'ni yakunlaydi (backend + user state). */}
+            {showCenterOnboarding && (
+              <div className="glass-strong rounded-2xl p-5 text-left border border-indigo-500/25 max-w-md mx-auto">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+                    <Icon name="trophy" size={18} />
+                  </div>
+                  <div className="text-sm font-black text-white">Olympy'da nimalar qila olasiz</div>
+                </div>
+                <div className="space-y-2.5">
+                  {[
+                    { icon: 'building', t: 'Markazingizni sozlang', d: "Nomi, logosi va joylashuvi o'quvchilarga ko'rinadi." },
+                    { icon: 'trophy', t: 'Olimpiada yarating', d: "O'quvchilaringiz qatnashishi uchun musobaqalar tashkil qiling." },
+                    { icon: 'users', t: "O'quvchilarni qo'shing", d: 'Ular arizalarini yuborib markazingizga qo\'shiladi.' },
+                  ].map((s, i) => (
+                    <div key={i} className="flex items-start gap-3 rounded-xl glass p-3">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white/8 text-indigo-300">
+                        <Icon name={s.icon} size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white">{s.t}</div>
+                        <div className="text-[11px] font-medium text-white/45 leading-relaxed">{s.d}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={finishCenterOnboarding}
+                  disabled={onboardingSaving}
+                  className="mt-3 w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {onboardingSaving ? 'Saqlanmoqda...' : 'Tushunarli'}
+                </button>
+              </div>
+            )}
+
+            {/* F6: Brending (white-label) minimal sozlamasi — tasdiqlash
+                kutilayotganda ham brend rangini oldindan tanlab saqlash mumkin. */}
+            {canPreviewBranding && (
+              <div className="glass-strong rounded-2xl p-5 text-left border border-fuchsia-500/20 max-w-md mx-auto">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white">
+                    <Icon name="sparkles" size={15} />
+                  </div>
+                  <div className="text-sm font-black text-white">Brendingni sozlang</div>
+                </div>
+                <div className="text-[11px] font-medium text-white/45 mb-3">Markazingiz brend rangini hozircha tanlab qo'ying.</div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={brandColorInput}
+                      onChange={e => setBrandColorInput(e.target.value)}
+                      className="h-10 w-14 cursor-pointer rounded-lg border border-white/10 bg-transparent p-1"
+                      aria-label="Brend rangi"
+                    />
+                    <input
+                      type="text"
+                      value={brandColorInput}
+                      onChange={e => setBrandColorInput(e.target.value)}
+                      className="input-field w-28 font-mono uppercase"
+                      placeholder="#6366F1"
+                      maxLength={7}
+                    />
+                  </div>
+                  <div className="h-10 w-10 rounded-xl border border-white/10" style={{ background: brandColorInput }} title="Oldindan ko'rish" />
+                  <button
+                    type="button"
+                    onClick={saveBranding}
+                    disabled={brandSaving}
+                    className="rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-60"
+                  >
+                    {brandSaving ? 'Saqlanmoqda...' : 'Saqlash'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {ownerCenters.length > 1 && (
               <select value={ownerCenterId || ''} onChange={e => setSelectedOwnerCenterId(e.target.value)} className="input-field max-w-sm">
                 {ownerCenters.map(c => <option key={c.id} value={c.id}>{c.name} — {statusLabel(c.status)}</option>)}
@@ -2416,6 +2568,54 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </div>
         </div>
       </section>
+
+      {/* F6: Branding (white-label) — markaz brend rangi. */}
+      {center && (
+        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <div className="feature-icon bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white" style={{ width: 32, height: 32, borderRadius: 10, fontSize: 14 }}>
+              <Icon name="sparkles" size={16} />
+            </div>
+            <div>
+              <div className="text-sm font-black text-white">Brending</div>
+              <div className="text-xs font-medium text-white/45">Markazingiz brend rangini sozlang.</div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Brend rangi</span>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={brandColorInput}
+                  onChange={e => setBrandColorInput(e.target.value)}
+                  className="h-11 w-16 cursor-pointer rounded-lg border border-white/10 bg-transparent p-1"
+                  aria-label="Brend rangi"
+                />
+                <input
+                  type="text"
+                  value={brandColorInput}
+                  onChange={e => setBrandColorInput(e.target.value)}
+                  className="input-field w-32 font-mono uppercase"
+                  placeholder="#6366F1"
+                  maxLength={7}
+                />
+              </div>
+            </label>
+            <div className="flex items-center gap-3">
+              <div className="h-11 w-11 rounded-xl border border-white/10" style={{ background: brandColorInput }} title="Oldindan ko'rish" />
+              <button
+                type="button"
+                onClick={saveBranding}
+                disabled={brandSaving}
+                className="rounded-lg bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {brandSaving ? 'Saqlanmoqda...' : 'Saqlash'}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 
@@ -3300,6 +3500,88 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           {toast}
         </div>
       )}
+
+      {/* F1: B2B markaz onboarding sehrgari (3 qadam). */}
+      {onboardingOpen && (() => {
+        const steps = [
+          {
+            icon: 'building',
+            title: 'Markazingizni sozlang',
+            desc: "Markaz ma'lumotlarini to'ldiring — nomi, logosi va joylashuvi o'quvchilarga ko'rinadi.",
+            cta: 'Keyingi',
+            action: () => setOnboardingStep(1),
+          },
+          {
+            icon: 'trophy',
+            title: 'Birinchi olimpiada yarating',
+            desc: "O'quvchilaringiz qatnashishi uchun birinchi olimpiada yoki musobaqa tashkil qiling.",
+            cta: 'Olimpiada yaratish',
+            action: () => { finishCenterOnboarding(); setPage('olympiads'); },
+          },
+          {
+            icon: 'users',
+            title: "O'quvchilarni qo'shing",
+            desc: "O'quvchilarni markazingizga taklif qiling — ular arizalarini yuborib qatnasha boshlaydi.",
+            cta: "O'quvchilarni boshqarish",
+            action: () => { finishCenterOnboarding(); setPage('students'); },
+          },
+        ];
+        const step = steps[onboardingStep] || steps[0];
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4">
+            <div className="modal w-full max-w-md">
+              {/* Markaz logosi/nomi — mavjud markaz ma'lumotidan. */}
+              {center && (
+                <div className="mb-5 flex items-center gap-3 rounded-xl border border-white/8 glass p-3">
+                  {center.imageUrl ? (
+                    <img src={center.imageUrl} alt={center.name} className="h-10 w-10 flex-shrink-0 rounded-xl object-cover" />
+                  ) : (
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl gradient-bg text-sm font-bold text-white">{(center.name || '?')[0]}</div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-black text-white">{center.name}</div>
+                    <div className="truncate text-xs font-semibold text-white/45">{center.organizationType || "O'quv markaz"}</div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-1 flex items-center gap-1.5">
+                {steps.map((_, i) => (
+                  <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${i <= onboardingStep ? 'bg-indigo-500' : 'bg-white/10'}`} />
+                ))}
+              </div>
+              <div className="mb-4 text-[11px] font-bold uppercase tracking-wide text-white/40">Qadam {onboardingStep + 1} / {steps.length}</div>
+
+              <div className="mb-5 text-center">
+                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+                  <Icon name={step.icon} size={26} />
+                </div>
+                <h2 className="text-lg font-black text-white">{step.title}</h2>
+                <p className="mt-1.5 text-sm font-medium text-white/55">{step.desc}</p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={finishCenterOnboarding}
+                  disabled={onboardingSaving}
+                  className="flex-1 rounded-lg border border-white/10 px-4 py-3 text-sm font-black text-white/60 hover:bg-white/5 disabled:opacity-50"
+                >
+                  O'tkazib yuborish
+                </button>
+                <button
+                  type="button"
+                  onClick={step.action}
+                  disabled={onboardingSaving}
+                  className="flex-1 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {step.cta}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {paymentPlan && (
         <Modal 

@@ -3,7 +3,7 @@
 // Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/teacher/<key>`
 // manziliga bog'lanadi (home → /dashboard/teacher). Namuna StudentDashboard'dan,
 // umumiy yordamchi shared.jsx'dagi makeDashboardUrlSync.
-const TEACHER_DASHBOARD_PAGES = ['home', 'olympiads', 'questions', 'profile'];
+const TEACHER_DASHBOARD_PAGES = ['home', 'students', 'olympiads', 'questions', 'profile'];
 const teacherDashUrl = makeDashboardUrlSync('/dashboard/teacher', TEACHER_DASHBOARD_PAGES);
 
 const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
@@ -59,6 +59,16 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       : Promise.resolve(null),
     [isApi, centerId],
   );
+  // F3: O'qituvchi paneli — markaz o'quvchilari (ism/telefon/ball) va
+  // olimpiadalari (ishtirokchilar soni bilan) backend endpointlaridan.
+  const apiTeacherStudentsRes = useApiData(
+    () => isApi ? OlympyApi.teacherStudents(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiTeacherOlympiadsRes = useApiData(
+    () => isApi ? OlympyApi.teacherOlympiads(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
 
   React.useEffect(() => {
     if (page === 'olympiads' && isApi && centerId) {
@@ -86,6 +96,17 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const questions = (isApi ? (apiQuestions || []) : store.questions).filter(q => String(q.centerId) === String(centerId));
   const activeEvents = olympiads.filter(o => o.status === 'active');
 
+  // F3: O'quvchilar ro'yxati va olimpiada ishtirokchilari soni (backend
+  // teacher endpointlaridan). participantsMap — olimpiada id → ishtirokchilar.
+  const teacherStudents = (isApi && apiTeacherStudentsRes.data?.results)
+    ? apiTeacherStudentsRes.data.results : [];
+  const participantsMap = React.useMemo(() => {
+    const map = {};
+    const rows = (isApi && apiTeacherOlympiadsRes.data?.results) ? apiTeacherOlympiadsRes.data.results : [];
+    rows.forEach(o => { map[String(o.id)] = o.participants || 0; });
+    return map;
+  }, [isApi, apiTeacherOlympiadsRes.data]);
+
   if (!center) {
     return (
       <PendingAccessCard
@@ -99,6 +120,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const navItems = [
     { key: 'home', icon: 'home', label: 'Asosiy' },
+    { key: 'students', icon: 'users', label: "O'quvchilar" },
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
     { key: 'questions', icon: 'book', label: 'Savollar' },
     { key: 'profile', icon: 'user', label: 'Profil' },
@@ -400,6 +422,66 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     </div>
   );
 
+  // F3: O'quvchilar tab — markaz o'quvchilari (ism, telefon, o'rtacha ball,
+  // urinishlar soni). Ma'lumot backend teacher_students endpointidan.
+  const renderStudents = () => {
+    const loading = isApi && apiTeacherStudentsRes.loading;
+    return (
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black text-white">O'quvchilar</h2>
+            <p className="text-white/40 text-sm">{centerName} · markaz o'quvchilari va natijalari</p>
+          </div>
+          <div className="rounded-xl glass px-4 py-2 text-sm font-bold text-white">
+            Jami: <span className="text-indigo-300">{teacherStudents.length}</span>
+          </div>
+        </div>
+
+        {loading && (
+          <div className="text-center py-10 text-white/40 text-sm">Yuklanmoqda...</div>
+        )}
+
+        {!loading && teacherStudents.length === 0 && (
+          <EmptyState
+            icon="users"
+            title="O'quvchilar yo'q"
+            desc="Markazingizga o'quvchilar qo'shilgach, ular shu yerda ko'rinadi"
+          />
+        )}
+
+        {!loading && teacherStudents.length > 0 && (
+          <div className="glass rounded-2xl border border-white/10 overflow-hidden">
+            {/* Sarlavha — faqat desktop. */}
+            <div className="hidden md:grid grid-cols-12 gap-3 px-5 py-3 border-b border-white/10 text-xs font-bold uppercase tracking-wide text-white/40">
+              <div className="col-span-5">Ism familiya</div>
+              <div className="col-span-4">Telefon</div>
+              <div className="col-span-2 text-center">O'rtacha ball</div>
+              <div className="col-span-1 text-center">Urinish</div>
+            </div>
+            <div className="divide-y divide-white/5">
+              {teacherStudents.map(s => (
+                <div key={s.id} className="grid grid-cols-12 gap-3 px-5 py-3.5 items-center hover:bg-white/[0.02]">
+                  <div className="col-span-12 md:col-span-5 flex items-center gap-3 min-w-0">
+                    <Avatar name={s.full_name} size={34} />
+                    <div className="font-semibold text-white truncate">{s.full_name || 'Foydalanuvchi'}</div>
+                  </div>
+                  <div className="col-span-6 md:col-span-4 text-sm text-white/55 truncate">
+                    <span className="md:hidden text-white/30">Tel: </span>{s.phone || '—'}
+                  </div>
+                  <div className="col-span-3 md:col-span-2 md:text-center">
+                    <span className="inline-block rounded-lg bg-indigo-500/15 px-2.5 py-1 text-sm font-bold text-indigo-300">{s.avg_score || 0}</span>
+                  </div>
+                  <div className="col-span-3 md:col-span-1 text-right md:text-center text-sm font-semibold text-white/60">{s.attempts || 0}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderOlympiads = () => (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -434,6 +516,11 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                     <span>{o.startDate || "Sana yo'q"} {o.startTime || ''}</span>
                     <span>{o.duration || 60} min</span>
                     <span>{assignedCount} ta savol</span>
+                    {isApi && (
+                      <span className="flex items-center gap-1 text-white/55">
+                        <Icon name="users" size={12} /> {participantsMap[String(o.backendId ?? o.id)] || 0} ishtirokchi
+                      </span>
+                    )}
                   </div>
                   {needsReadiness && (
                     <div className={`rounded-xl px-3 py-2 border text-xs ${isReady ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-amber-500/10 border-amber-500/25 text-amber-300'}`}>
@@ -501,6 +588,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const pagesMap = {
     home: renderHome,
+    students: renderStudents,
     olympiads: renderOlympiads,
     questions: () => <QuestionCreatorPage embedded user={user} onOpenSwitcher={onOpenSwitcher} onNavigate={onNavigate} />,
     profile: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} />,
