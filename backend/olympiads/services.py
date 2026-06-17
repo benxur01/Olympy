@@ -315,7 +315,16 @@ def finalize_expired_active_olympiads():
     if not expired_ids:
         return 0
     count = 0
-    for olympiad in Olympiad.objects.filter(id__in=expired_ids):
+    # `_do_finish_olympiad` har olimpiada uchun `olympiad.center` va
+    # `olympiad.attempts` ga murojaat qiladi — `select_related`/
+    # `prefetch_related` bo'lmasa har iteratsiyada alohida SELECT (N+1).
+    finalize_qs = (
+        Olympiad.objects
+        .filter(id__in=expired_ids)
+        .select_related('center')
+        .prefetch_related('attempts')
+    )
+    for olympiad in finalize_qs:
         try:
             _do_finish_olympiad(olympiad)
             count += 1

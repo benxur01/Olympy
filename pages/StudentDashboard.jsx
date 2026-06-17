@@ -42,6 +42,97 @@ const studentPageFromPath = () => {
   }
 };
 
+// ─── To'lov tasdiqlash polling hook'i ─────────────────────────────────────────
+// Foydalanuvchi to'lovni amalga oshirgach (Click/Payme), provayder webhook'i
+// obunani aktivlashtirgancha bir necha soniya/daqiqa ketishi mumkin. Bu hook
+// backend /api/billing/subscription/status/ ni davriy so'rab, premium faollashgani
+// bilinishi bilan modal holatini 'success' ga o'tkazadi — foydalanuvchi reload
+// qilmasdan natijani ko'radi.
+//
+// Holatlar: 'idle' (boshlanmagan) | 'checking' (tekshirilmoqda) |
+//           'success' (premium faollashdi) | 'timeout' (vaqt tugadi, hali yo'q).
+//
+// start(onSuccess): pollingni boshlaydi. onSuccess — premium faollashganda bir
+//   marta chaqiriladi (user state'ini yangilash uchun). reset(): holatni tozalab,
+//   intervalni to'xtatadi (modal yopilganda). Component unmount bo'lganda interval
+//   avtomatik tozalanadi.
+const POLL_INTERVAL_MS = 3000;   // har 3 soniyada
+const POLL_MAX_ATTEMPTS = 40;    // 40 × 3s = 2 daqiqa
+function usePaymentPolling() {
+  const [status, setStatus] = React.useState('idle');
+  // setInterval id, urinishlar soni va parallel so'rovga qarshi guard'ni
+  // ref'da saqlaymiz — bular qayta render keltirib chiqarmasligi kerak.
+  const intervalRef = React.useRef(null);
+  const attemptsRef = React.useRef(0);
+  const inFlightRef = React.useRef(false);
+  const onSuccessRef = React.useRef(null);
+
+  const stop = React.useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  const reset = React.useCallback(() => {
+    stop();
+    attemptsRef.current = 0;
+    inFlightRef.current = false;
+    onSuccessRef.current = null;
+    setStatus('idle');
+  }, [stop]);
+
+  const start = React.useCallback((onSuccess) => {
+    // Avvalgi sessiya qolgan bo'lsa tozalaymiz.
+    stop();
+    attemptsRef.current = 0;
+    inFlightRef.current = false;
+    onSuccessRef.current = typeof onSuccess === 'function' ? onSuccess : null;
+    setStatus('checking');
+
+    const tick = async () => {
+      // Oldingi so'rov hali tugamagan bo'lsa bu turni o'tkazib yuboramiz —
+      // sekin tarmoqda so'rovlar bir-birining ustiga chiqib ketmasin.
+      if (inFlightRef.current) return;
+      attemptsRef.current += 1;
+      inFlightRef.current = true;
+      try {
+        const token = OlympyApi.getToken();
+        const res = await OlympyApi.getSubscriptionStatus(token);
+        if (res && res.is_premium) {
+          stop();
+          setStatus('success');
+          if (onSuccessRef.current) {
+            try { onSuccessRef.current(res); } catch {}
+            onSuccessRef.current = null;
+          }
+          return;
+        }
+      } catch {
+        // Tarmoq/serverda vaqtinchalik xato — pollingni to'xtatmaymiz, keyingi
+        // urinishda qayta so'raymiz (urinishlar limiti baribir ishlaydi).
+      } finally {
+        inFlightRef.current = false;
+      }
+      if (attemptsRef.current >= POLL_MAX_ATTEMPTS) {
+        stop();
+        setStatus('timeout');
+      }
+    };
+
+    // Darhol bir marta tekshiramiz (webhook tez kelgan bo'lishi mumkin),
+    // keyin har POLL_INTERVAL_MS da takrorlaymiz.
+    tick();
+    intervalRef.current = setInterval(tick, POLL_INTERVAL_MS);
+  }, [stop]);
+
+  // Unmount bo'lganda intervalni tozalaymiz (memory leak / setState-after-unmount
+  // bo'lmasin).
+  React.useEffect(() => stop, [stop]);
+
+  return { status, start, reset };
+}
+
 const BadgeList = ({ badges }) => {
   if (!badges || badges.length === 0) return null;
   return (
@@ -528,6 +619,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // o'tamiz — foydalanuvchi pul to'lab, premium darhol ko'rinmasa ham nima
   // bo'layotganini biladi.
   const [paymentSubmitted, setPaymentSubmitted] = React.useState(false);
+  // To'lov tasdiqlash polling'i: to'lovdan keyin backend'ni davriy so'rab,
+  // premium faollashganini aniqlaydi (status: checking | success | timeout).
+  const payPolling = usePaymentPolling();
   const [plans, setPlans] = React.useState([]);
   const [plansLoading, setPlansLoading] = React.useState(true);
   const [durationFilter, setDurationFilter] = React.useState(30);
@@ -792,8 +886,23 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       if (res && res.payment_url) {
         openExternalLink(res.payment_url);
         // To'lov sahifasi ochildi — modalni "qabul qilindi, tekshirilmoqda"
-        // holatiga o'tkazamiz.
+        // holatiga o'tkazamiz va backend'ni polling qila boshlaymiz.
         setPaymentSubmitted(true);
+        payPolling.start(async () => {
+          // Premium faollashdi. user state'ini yangilaymiz: avval optimistik
+          // is_premium=true, keyin serverdan to'liq /me ni olib keshga yozamiz
+          // (boshqa premium maydonlar ham sinxron bo'lsin).
+          if (onUserUpdate) onUserUpdate({ isPremium: true, is_premium: true });
+          try {
+            const token2 = OlympyApi.getToken();
+            const me = await OlympyApi.getMe(token2);
+            if (me) {
+              const next = OlympyApi.mapBackendUser(me);
+              try { OlympyApi.saveAuth({ token: token2, user: next }); } catch {}
+              if (onUserUpdate) onUserUpdate(next);
+            }
+          } catch {}
+        });
       } else {
         throw new Error("To'lov havolasini olishda xatolik yuz berdi");
       }
@@ -803,6 +912,20 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       setPaymentLoading(false);
     }
   };
+
+  // To'lov muvaffaqiyatli tasdiqlangach modalni 2 soniyadan keyin avtomatik
+  // yopamiz (foydalanuvchi "muvaffaqiyatli" xabarini ko'rib ulguradi).
+  React.useEffect(() => {
+    if (payPolling.status !== 'success') return;
+    const t = setTimeout(() => {
+      setPaymentPlan(null);
+      setPaymentError('');
+      setPaymentSubmitted(false);
+      payPolling.reset();
+    }, 2000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payPolling.status]);
 
   // Student's attempts and derived results
   const myAttempts = (isApi ? (apiAttempts || []) : store.attempts.filter(a => a.userId === user.id))
@@ -1999,33 +2122,82 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {paymentPlan && (
         <Modal
           open={!!paymentPlan}
-          onClose={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); }}
-          title={paymentSubmitted ? "To'lov qabul qilindi" : "To'lov usulini tanlang"}
+          onClose={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); payPolling.reset(); }}
+          title={
+            !paymentSubmitted ? "To'lov usulini tanlang"
+              : payPolling.status === 'success' ? "To'lov muvaffaqiyatli!"
+              : payPolling.status === 'timeout' ? "To'lov tekshirilmoqda"
+              : "To'lov tekshirilmoqda..."
+          }
           width="max-w-md"
         >
           {paymentSubmitted ? (
-            <div className="space-y-5 text-center py-2">
-              <div className="mx-auto w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
-                <span className="text-3xl">✅</span>
+            payPolling.status === 'success' ? (
+              // Premium faollashdi — 2 soniyadan keyin modal avtomatik yopiladi.
+              <div className="space-y-5 text-center py-2">
+                <div className="mx-auto w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                  <span className="text-3xl">✅</span>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-base font-bold text-white">To'lov muvaffaqiyatli!</p>
+                  <p className="text-sm text-white/60 leading-relaxed">
+                    Premium obunangiz faollashtirildi. Endi barcha premium funksiyalardan
+                    foydalanishingiz mumkin.
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); payPolling.reset(); }}
+                  className="w-full py-3 rounded-2xl bg-emerald-500/90 hover:bg-emerald-500 text-white text-sm font-bold transition-colors"
+                >
+                  Yopish
+                </button>
               </div>
-              <div className="space-y-2">
-                <p className="text-base font-bold text-white">To'lovingiz qabul qilindi</p>
-                <p className="text-sm text-white/60 leading-relaxed">
-                  To'lov tekshirilmoqda. Premium obunangiz tasdiqlangach tez orada
-                  avtomatik faollashadi. Telegram orqali xabar yuboriladi.
-                </p>
-                <p className="text-xs text-white/35 leading-relaxed">
-                  Agar bir necha daqiqada premium faollashmasa, sahifani yangilang
-                  yoki qo'llab-quvvatlash xizmatiga murojaat qiling.
-                </p>
+            ) : payPolling.status === 'timeout' ? (
+              // 2 daqiqa o'tdi, hali tasdiqlanmadi.
+              <div className="space-y-5 text-center py-2">
+                <div className="mx-auto w-14 h-14 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
+                  <span className="text-3xl">⏳</span>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-base font-bold text-white">To'lov hali tasdiqlanmadi</p>
+                  <p className="text-sm text-white/60 leading-relaxed">
+                    Bir oz kuting yoki qo'llab-quvvatlash bilan bog'laning. Premium
+                    obunangiz tasdiqlangach Telegram orqali xabar yuboriladi va
+                    sahifani yangilaganingizda faol bo'ladi.
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); payPolling.reset(); }}
+                  className="w-full py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white text-sm font-bold transition-colors"
+                >
+                  Yopish
+                </button>
               </div>
-              <button
-                onClick={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); }}
-                className="w-full py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white text-sm font-bold transition-colors"
-              >
-                Yopish
-              </button>
-            </div>
+            ) : (
+              // checking — to'lov tekshirilmoqda (polling davom etmoqda).
+              <div className="space-y-5 text-center py-2">
+                <div className="mx-auto w-14 h-14 rounded-full bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center">
+                  <span className="text-3xl animate-spin">⏳</span>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-base font-bold text-white">To'lov tekshirilmoqda...</p>
+                  <p className="text-sm text-white/60 leading-relaxed">
+                    To'lovingiz qabul qilindi. Premium obunangiz tasdiqlanishini
+                    kutmoqdamiz — bu odatda bir necha soniya davom etadi.
+                  </p>
+                  <p className="text-xs text-white/35 leading-relaxed">
+                    Bu oynani yopsangiz ham obunangiz tasdiqlangach Telegram orqali
+                    xabar yuboriladi.
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); payPolling.reset(); }}
+                  className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-sm font-bold transition-colors"
+                >
+                  Yopish
+                </button>
+              </div>
+            )
           ) : (
           <div className="space-y-6">
             <div className="rounded-2xl bg-white/5 p-4 border border-white/10">

@@ -13,6 +13,12 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
   const [linkSuccess, setLinkSuccess] = React.useState('');
   const [selectedChild, setSelectedChild] = React.useState(null);
   const [downloadingReportId, setDownloadingReportId] = React.useState(null);
+  // Telegram WebApp'da alert() bloklanadi — mahalliy toast bilan almashtiramiz.
+  const [toast, setToast] = React.useState('');
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+  // Farzandni olib tashlash uchun inline tasdiqlash modali (confirm() o'rniga).
+  const [unlinkTarget, setUnlinkTarget] = React.useState(null);
+  const [unlinking, setUnlinking] = React.useState(false);
 
   const isApi = !!user?._api;
   const token = isApi ? OlympyApi.getToken() : null;
@@ -56,7 +62,7 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
         setSelectedChild(prev => ({ ...prev, weekly_digest_enabled: nextVal }));
       }
     } catch (err) {
-      alert("Haftalik hisobot rejimini o'zgartirib bo'lmadi");
+      showToast("Haftalik hisobot rejimini o'zgartirib bo'lmadi");
     } finally {
       setDigestTogglingId(null);
     }
@@ -66,9 +72,9 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
     setSendingDigestId(studentId);
     try {
       const resp = await OlympyApi.sendTestWeeklyDigest(studentId, token);
-      alert(resp?.detail || "Haftalik hisobot Telegram orqali jo'natildi!");
+      showToast(resp?.detail || "Haftalik hisobot Telegram orqali jo'natildi!");
     } catch (err) {
-      alert(err.message || "Telegramga xabar yuborib bo'lmadi. Telegram profil bog'langanligini tekshiring.");
+      showToast(err.message || "Telegramga xabar yuborib bo'lmadi. Telegram profil bog'langanligini tekshiring.");
     } finally {
       setSendingDigestId(null);
     }
@@ -93,13 +99,23 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
     }
   };
 
-  const handleUnlink = async (studentId) => {
-    if (!confirm("Farzandni olib tashlashni tasdiqlaysizmi?")) return;
+  // Tasdiqlash modalini ochadi (confirm() o'rniga).
+  const handleUnlink = (child) => {
+    setUnlinkTarget(child);
+  };
+
+  const confirmUnlink = async () => {
+    const child = unlinkTarget;
+    if (!child) return;
+    setUnlinking(true);
     try {
-      await OlympyApi.unlinkChild(studentId, token);
+      await OlympyApi.unlinkChild(child.student_id, token);
       childrenRes.reload();
+      setUnlinkTarget(null);
     } catch (err) {
-      alert(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi");
+      showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi");
+    } finally {
+      setUnlinking(false);
     }
   };
 
@@ -117,7 +133,7 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      alert(OlympyApi.toUserMessage?.(err) || "Hisobotni yuklab bo'lmadi");
+      showToast(OlympyApi.toUserMessage?.(err) || "Hisobotni yuklab bo'lmadi");
     } finally {
       setDownloadingReportId(null);
     }
@@ -270,7 +286,7 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
                   <div className="text-xs text-white/40 truncate">{child.phone}</div>
                 </div>
                 <button
-                  onClick={() => handleUnlink(child.student_id)}
+                  onClick={() => handleUnlink(child)}
                   className="text-xs text-rose-300 hover:text-rose-200 px-3 py-1.5 rounded-lg border border-rose-500/20 hover:border-rose-500/40"
                 >Olib tashlash</button>
               </div>
@@ -442,6 +458,27 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
           </div>
         )}
       </Modal>
+
+      {/* Farzandni olib tashlash tasdig'i (confirm() o'rniga) */}
+      <ConfirmModal
+        open={!!unlinkTarget}
+        onClose={() => setUnlinkTarget(null)}
+        onConfirm={confirmUnlink}
+        title="Farzandni olib tashlash"
+        message={unlinkTarget ? `${unlinkTarget.full_name || 'Farzand'}ni ro'yxatdan olib tashlashni tasdiqlaysizmi?` : ''}
+        confirmText="Olib tashlash"
+        danger
+        busy={unlinking}
+      />
+
+      {/* Toast (Telegram WebApp'da alert o'rniga) */}
+      {toast && (
+        <div
+          className="fixed bottom-20 md:bottom-6 right-3 md:right-6 left-3 md:left-auto z-50 glass-strong rounded-2xl px-5 py-3.5 border border-white/10 animate-in text-sm font-medium text-white md:max-w-sm"
+        >
+          {toast}
+        </div>
+      )}
     </div>
   );
 };

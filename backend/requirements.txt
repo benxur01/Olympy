@@ -19,6 +19,10 @@ whitenoise==6.12.0
 requests==2.34.2
 # TOTP 2FA (admin/owner uchun ixtiyoriy ikki bosqichli autentifikatsiya).
 pyotp==2.9.0
+# TOTP maxfiy kalitini DB'da shifrlash (Fernet). To'g'ridan-to'g'ri ishlatiladi
+# (accounts.utils.encrypt/decrypt_totp_secret) — transitive bog'liqlikka tayanmay
+# aniq pinlanadi.
+cryptography==46.0.5
 # Cloudinary (faqat production'da, CLOUDINARY_CLOUD_NAME o'rnatilganda yoqiladi).
 # Reproducible build uchun lokal venv'da o'rnatilgan versiyalarga pinlangan.
 cloudinary==1.44.2

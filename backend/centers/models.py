@@ -28,13 +28,23 @@ class EducationCenter(models.Model):
     region = models.CharField(max_length=100, blank=True, default='', db_index=True)
     district = models.CharField(max_length=100, blank=True, default='', db_index=True)
     city = models.CharField(max_length=80)
+    # PROTECT: owner o'chirilsa markaz "approved" holda yetim qolmasligi kerak —
+    # aks holda foydalanuvchilar hech kim boshqarmaydigan markazda turib qoladi.
+    # Owner'ni o'chirishdan oldin uning markazlari boshqa foydalanuvchiga
+    # o'tkazilishi shart (owner_id ni yangi egaga ko'chirib, keyin o'chirish).
+    # null/blank saqlanadi: markaz hali egasiz yaratilishi (admin tomonidan)
+    # yoki migratsiya davridagi eski yozuvlar uchun.
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.SET_NULL,
+        on_delete=models.PROTECT,
         null=True, blank=True,
         related_name='owned_centers',
     )
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    # `filter(status=STATUS_APPROVED)` eng tez-tez ishlatiladigan so'rov —
+    # indekslangan.
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING, db_index=True,
+    )
     # Premium tashkilot bayrog'i — faqat platforma admini boshqaradi.
     is_premium = models.BooleanField(default=False, db_index=True)
     subjects = models.JSONField(default=list, blank=True)

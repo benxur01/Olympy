@@ -517,8 +517,13 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   }, []);
 
   const validatePhone = (v) => {
+    // Bo'sh maydon — hali xato ko'rsatmaymiz (foydalanuvchi yozayotgan bo'lishi
+    // mumkin). Qiymat kiritilgan, lekin normalizatsiya muvaffaqiyatsiz bo'lsa —
+    // yaroqsiz raqam, foydalanuvchiga aniq xabar ko'rsatamiz.
+    const trimmed = String(v || '').trim();
+    if (!trimmed) { setPhoneError(''); return; }
     const norm = OlympyStore.normalizePhone(v);
-    if (!norm) { setPhoneError(''); return; }
+    if (!norm) { setPhoneError("To'g'ri telefon raqam kiriting"); return; }
     setPhoneError('');
   };
 

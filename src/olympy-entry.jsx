@@ -655,6 +655,52 @@ const Modal = ({ open, onClose, title, children, width = 'max-w-lg' }) => {
   );
 };
 
+// ─── ConfirmModal ────────────────────────────────────────────────────────────
+// Telegram WebApp ichida window.confirm() bloklanadi yoki tashqi oynada
+// ochiladi — foydalanuvchi savolni ko'rmaydi. Shu sabab inline tasdiqlash
+// modali ishlatiladi. `open` true bo'lganda Modal ustida "Ha / Yo'q"
+// tugmalarini ko'rsatadi; onConfirm yoki onClose chaqiriladi.
+const ConfirmModal = ({
+  open,
+  onClose,
+  onConfirm,
+  title = 'Tasdiqlaysizmi?',
+  message = '',
+  confirmText = 'Ha',
+  cancelText = "Yo'q",
+  danger = false,
+  busy = false,
+}) => {
+  if (!open) return null;
+  return (
+    <Modal open={open} onClose={busy ? () => {} : onClose} title={title} width="max-w-sm">
+      {message && <p className="text-sm text-white/60 leading-relaxed mb-5">{message}</p>}
+      <div className="flex gap-2 justify-end">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          className="btn-ghost text-sm px-5 py-2.5 rounded-xl disabled:opacity-50"
+        >
+          {cancelText}
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={busy}
+          className={`font-semibold rounded-xl py-2.5 px-5 text-sm disabled:opacity-50 ${
+            danger
+              ? 'bg-rose-500/20 text-rose-200 border border-rose-500/30 hover:bg-rose-500/30'
+              : 'gradient-bg text-white'
+          }`}
+        >
+          {busy ? '...' : confirmText}
+        </button>
+      </div>
+    </Modal>
+  );
+};
+
 // ─── AvatarCropModal ───────────────────────────────────────────────────────────
 const AvatarCropModal = ({ open, onClose, imageSrc, onCropComplete }) => {
   if (!open || !imageSrc) return null;
@@ -1095,10 +1141,10 @@ function VirtualList({ items, itemHeight = 60, containerHeight = 400, renderItem
 }
 
 // Export all
-Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList, formatUzPhoneInput, formatPhoneInput, detectDialCode, maskPhoneDisplay, COUNTRY_DIAL_CODES, PhoneField });
+Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, ConfirmModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList, formatUzPhoneInput, formatPhoneInput, detectDialCode, maskPhoneDisplay, COUNTRY_DIAL_CODES, PhoneField });
 
 
-Object.assign(moduleScope, { PHONE_E164_MIN_DIGITS, PHONE_E164_MAX_DIGITS, UZ_DIAL_CODE, UZ_LOCAL_DIGITS, COUNTRY_DIAL_CODES, formatUzPhoneInput, formatPhoneInput, maskPhoneDisplay, detectDialCode, PhoneField, openExternalLink, Icon, BRAND_ASSET_BASE, BRAND_LOGO_SRC, BRAND_LOGO_SRC_WEBP, BrandLogo, Avatar, Badge, StatCard, makeDashboardUrlSync, SidebarContent, Sidebar, MobileBottomNav, Topbar, Modal, AvatarCropModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, subjectColors, SubjectBadge, TelegramMockup, useApiData, useDebounce, VirtualList });
+Object.assign(moduleScope, { PHONE_E164_MIN_DIGITS, PHONE_E164_MAX_DIGITS, UZ_DIAL_CODE, UZ_LOCAL_DIGITS, COUNTRY_DIAL_CODES, formatUzPhoneInput, formatPhoneInput, maskPhoneDisplay, detectDialCode, PhoneField, openExternalLink, Icon, BRAND_ASSET_BASE, BRAND_LOGO_SRC, BRAND_LOGO_SRC_WEBP, BrandLogo, Avatar, Badge, StatCard, makeDashboardUrlSync, SidebarContent, Sidebar, MobileBottomNav, Topbar, Modal, ConfirmModal, AvatarCropModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, subjectColors, SubjectBadge, TelegramMockup, useApiData, useDebounce, VirtualList });
 }
 var PHONE_E164_MIN_DIGITS = moduleScope.PHONE_E164_MIN_DIGITS;
 var PHONE_E164_MAX_DIGITS = moduleScope.PHONE_E164_MAX_DIGITS;
@@ -1125,6 +1171,7 @@ var Sidebar = moduleScope.Sidebar;
 var MobileBottomNav = moduleScope.MobileBottomNav;
 var Topbar = moduleScope.Topbar;
 var Modal = moduleScope.Modal;
+var ConfirmModal = moduleScope.ConfirmModal;
 var AvatarCropModal = moduleScope.AvatarCropModal;
 var EmptyState = moduleScope.EmptyState;
 var DonutChart = moduleScope.DonutChart;
@@ -2598,7 +2645,17 @@ const OtaOnaMockup = () => {
 
 const use3DTilt = (maxRotate = 10, scale = 1.02) => {
   const ref = React.useRef(null);
-  const [style, setStyle] = React.useState({});
+
+  // Boshlang'ich (statik) style — faqat birinchi renderda qo'llanadi. Tilt
+  // qiymatlarini har `mousemove`da React state orqali emas, to'g'ridan-to'g'ri
+  // DOM `style` ustida o'zgartiramiz (pastdagi handler'lar) — shu sababli
+  // mouse harakatida React qayta render qilinmaydi (Telegram WebView'da va
+  // zaif qurilmalarda re-render bo'roni kadrlarni sekinlashtirardi).
+  const style = React.useMemo(() => ({
+    transform: 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)',
+    '--mouse-x': '50%',
+    '--mouse-y': '50%',
+  }), []);
 
   const handleMouseMove = (e) => {
     const el = ref.current;
@@ -2620,26 +2677,37 @@ const use3DTilt = (maxRotate = 10, scale = 1.02) => {
     const mouseXPercent = (x / w) * 100;
     const mouseYPercent = (y / h) * 100;
 
-    setStyle({
-      transform: `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(${scale}, ${scale}, ${scale})`,
-      '--mouse-x': `${mouseXPercent}%`,
-      '--mouse-y': `${mouseYPercent}%`,
-    });
+    el.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(${scale}, ${scale}, ${scale})`;
+    el.style.setProperty('--mouse-x', `${mouseXPercent}%`);
+    el.style.setProperty('--mouse-y', `${mouseYPercent}%`);
   };
 
   const handleMouseLeave = () => {
-    setStyle({
-      transform: `perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)`,
-    });
+    const el = ref.current;
+    if (!el) return;
+    el.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)';
   };
 
   return { ref, style, handleMouseMove, handleMouseLeave };
 };
 
+// Telegram WebView yoki touch (coarse pointer) qurilma — og'ir
+// requestAnimationFrame loop + `mousemove` ishlov beruvchini umuman ishga
+// tushirmaymiz. WebView'da bu kadrlarni sekinlashtirib, telefon batareyasini
+// behuda sarflaydi; touch qurilmada esa interaktiv mouse effektining ma'nosi
+// ham yo'q.
+const isLowPowerEnv = () => {
+  if (typeof window === 'undefined') return false;
+  if (window.Telegram?.WebApp?.initData) return true;
+  return window.matchMedia?.('(pointer: coarse)').matches || false;
+};
+
 const InteractiveParticles = () => {
   const canvasRef = React.useRef(null);
+  const skip = React.useMemo(() => isLowPowerEnv(), []);
 
   React.useEffect(() => {
+    if (skip) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -2778,7 +2846,9 @@ const InteractiveParticles = () => {
       }
       cancelAnimationFrame(animationFrameId);
     };
-  }, []);
+  }, [skip]);
+
+  if (skip) return null;
 
   return <canvas ref={canvasRef} className="particles-canvas" />;
 };
@@ -2929,6 +2999,9 @@ const trackAbEvent = (variant, event) => {
 };
 
 const LandingPage = ({ onNavigate, user }) => {
+  // Telegram WebView / touch qurilma — og'ir blur orblari GPU'ni to'liq
+  // yuklaydi, shu sababli ularni render qilmaymiz (statik fon yetarli).
+  const isLowPower = React.useMemo(() => isLowPowerEnv(), []);
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [openFaq, setOpenFaq] = React.useState(null);
   const [activeScreen, setActiveScreen] = React.useState(0);
@@ -3374,9 +3447,13 @@ const LandingPage = ({ onNavigate, user }) => {
             `motion-reduce:animate-none` u yerda ishlamasdi — pulse animatsiyasi
             butunlay olib tashlandi (statik glow yetarli, kadrlarni
             sekinlashtirmaydi). */}
-        <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full filter blur-[60px] pointer-events-none" style={{ background: 'rgba(99, 102, 241, 0.18)' }} />
-        <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] rounded-full filter blur-[60px] pointer-events-none" style={{ background: 'rgba(168, 85, 247, 0.16)' }} />
-        <div className="absolute top-10 right-10 w-[250px] h-[250px] rounded-full filter blur-[40px] pointer-events-none" style={{ background: 'rgba(34, 211, 238, 0.16)' }} />
+        {!isLowPower && (
+          <>
+            <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full filter blur-[60px] pointer-events-none" style={{ background: 'rgba(99, 102, 241, 0.18)' }} />
+            <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] rounded-full filter blur-[60px] pointer-events-none" style={{ background: 'rgba(168, 85, 247, 0.16)' }} />
+            <div className="absolute top-10 right-10 w-[250px] h-[250px] rounded-full filter blur-[40px] pointer-events-none" style={{ background: 'rgba(34, 211, 238, 0.16)' }} />
+          </>
+        )}
         
         {/* Floating 3D badges on the right (desktop only) */}
         <div className="hidden lg:block absolute right-16 top-1/4 w-[400px] h-[300px] pointer-events-none z-10 preserve-3d" style={{ perspective: '1000px' }}>
@@ -4203,13 +4280,14 @@ const LandingPage = ({ onNavigate, user }) => {
 Object.assign(window, { LandingPage });
 
 
-Object.assign(moduleScope, { formatLandingDate, escapeSvgText, TashkilotMockup, OtaOnaMockup, use3DTilt, InteractiveParticles, Magnetic, GlowCard, CountUp, trackAbEvent, LandingPage, useABTest });
+Object.assign(moduleScope, { formatLandingDate, escapeSvgText, TashkilotMockup, OtaOnaMockup, use3DTilt, isLowPowerEnv, InteractiveParticles, Magnetic, GlowCard, CountUp, trackAbEvent, LandingPage, useABTest });
 }
 var formatLandingDate = moduleScope.formatLandingDate;
 var escapeSvgText = moduleScope.escapeSvgText;
 var TashkilotMockup = moduleScope.TashkilotMockup;
 var OtaOnaMockup = moduleScope.OtaOnaMockup;
 var use3DTilt = moduleScope.use3DTilt;
+var isLowPowerEnv = moduleScope.isLowPowerEnv;
 var InteractiveParticles = moduleScope.InteractiveParticles;
 var Magnetic = moduleScope.Magnetic;
 var GlowCard = moduleScope.GlowCard;
@@ -4965,8 +5043,13 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   }, []);
 
   const validatePhone = (v) => {
+    // Bo'sh maydon — hali xato ko'rsatmaymiz (foydalanuvchi yozayotgan bo'lishi
+    // mumkin). Qiymat kiritilgan, lekin normalizatsiya muvaffaqiyatsiz bo'lsa —
+    // yaroqsiz raqam, foydalanuvchiga aniq xabar ko'rsatamiz.
+    const trimmed = String(v || '').trim();
+    if (!trimmed) { setPhoneError(''); return; }
     const norm = OlympyStore.normalizePhone(v);
-    if (!norm) { setPhoneError(''); return; }
+    if (!norm) { setPhoneError("To'g'ri telefon raqam kiriting"); return; }
     setPhoneError('');
   };
 
@@ -6400,6 +6483,97 @@ const studentPageFromPath = () => {
   }
 };
 
+// ─── To'lov tasdiqlash polling hook'i ─────────────────────────────────────────
+// Foydalanuvchi to'lovni amalga oshirgach (Click/Payme), provayder webhook'i
+// obunani aktivlashtirgancha bir necha soniya/daqiqa ketishi mumkin. Bu hook
+// backend /api/billing/subscription/status/ ni davriy so'rab, premium faollashgani
+// bilinishi bilan modal holatini 'success' ga o'tkazadi — foydalanuvchi reload
+// qilmasdan natijani ko'radi.
+//
+// Holatlar: 'idle' (boshlanmagan) | 'checking' (tekshirilmoqda) |
+//           'success' (premium faollashdi) | 'timeout' (vaqt tugadi, hali yo'q).
+//
+// start(onSuccess): pollingni boshlaydi. onSuccess — premium faollashganda bir
+//   marta chaqiriladi (user state'ini yangilash uchun). reset(): holatni tozalab,
+//   intervalni to'xtatadi (modal yopilganda). Component unmount bo'lganda interval
+//   avtomatik tozalanadi.
+const POLL_INTERVAL_MS = 3000;   // har 3 soniyada
+const POLL_MAX_ATTEMPTS = 40;    // 40 × 3s = 2 daqiqa
+function usePaymentPolling() {
+  const [status, setStatus] = React.useState('idle');
+  // setInterval id, urinishlar soni va parallel so'rovga qarshi guard'ni
+  // ref'da saqlaymiz — bular qayta render keltirib chiqarmasligi kerak.
+  const intervalRef = React.useRef(null);
+  const attemptsRef = React.useRef(0);
+  const inFlightRef = React.useRef(false);
+  const onSuccessRef = React.useRef(null);
+
+  const stop = React.useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  const reset = React.useCallback(() => {
+    stop();
+    attemptsRef.current = 0;
+    inFlightRef.current = false;
+    onSuccessRef.current = null;
+    setStatus('idle');
+  }, [stop]);
+
+  const start = React.useCallback((onSuccess) => {
+    // Avvalgi sessiya qolgan bo'lsa tozalaymiz.
+    stop();
+    attemptsRef.current = 0;
+    inFlightRef.current = false;
+    onSuccessRef.current = typeof onSuccess === 'function' ? onSuccess : null;
+    setStatus('checking');
+
+    const tick = async () => {
+      // Oldingi so'rov hali tugamagan bo'lsa bu turni o'tkazib yuboramiz —
+      // sekin tarmoqda so'rovlar bir-birining ustiga chiqib ketmasin.
+      if (inFlightRef.current) return;
+      attemptsRef.current += 1;
+      inFlightRef.current = true;
+      try {
+        const token = OlympyApi.getToken();
+        const res = await OlympyApi.getSubscriptionStatus(token);
+        if (res && res.is_premium) {
+          stop();
+          setStatus('success');
+          if (onSuccessRef.current) {
+            try { onSuccessRef.current(res); } catch {}
+            onSuccessRef.current = null;
+          }
+          return;
+        }
+      } catch {
+        // Tarmoq/serverda vaqtinchalik xato — pollingni to'xtatmaymiz, keyingi
+        // urinishda qayta so'raymiz (urinishlar limiti baribir ishlaydi).
+      } finally {
+        inFlightRef.current = false;
+      }
+      if (attemptsRef.current >= POLL_MAX_ATTEMPTS) {
+        stop();
+        setStatus('timeout');
+      }
+    };
+
+    // Darhol bir marta tekshiramiz (webhook tez kelgan bo'lishi mumkin),
+    // keyin har POLL_INTERVAL_MS da takrorlaymiz.
+    tick();
+    intervalRef.current = setInterval(tick, POLL_INTERVAL_MS);
+  }, [stop]);
+
+  // Unmount bo'lganda intervalni tozalaymiz (memory leak / setState-after-unmount
+  // bo'lmasin).
+  React.useEffect(() => stop, [stop]);
+
+  return { status, start, reset };
+}
+
 const BadgeList = ({ badges }) => {
   if (!badges || badges.length === 0) return null;
   return (
@@ -6886,6 +7060,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // o'tamiz — foydalanuvchi pul to'lab, premium darhol ko'rinmasa ham nima
   // bo'layotganini biladi.
   const [paymentSubmitted, setPaymentSubmitted] = React.useState(false);
+  // To'lov tasdiqlash polling'i: to'lovdan keyin backend'ni davriy so'rab,
+  // premium faollashganini aniqlaydi (status: checking | success | timeout).
+  const payPolling = usePaymentPolling();
   const [plans, setPlans] = React.useState([]);
   const [plansLoading, setPlansLoading] = React.useState(true);
   const [durationFilter, setDurationFilter] = React.useState(30);
@@ -7150,8 +7327,23 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       if (res && res.payment_url) {
         openExternalLink(res.payment_url);
         // To'lov sahifasi ochildi — modalni "qabul qilindi, tekshirilmoqda"
-        // holatiga o'tkazamiz.
+        // holatiga o'tkazamiz va backend'ni polling qila boshlaymiz.
         setPaymentSubmitted(true);
+        payPolling.start(async () => {
+          // Premium faollashdi. user state'ini yangilaymiz: avval optimistik
+          // is_premium=true, keyin serverdan to'liq /me ni olib keshga yozamiz
+          // (boshqa premium maydonlar ham sinxron bo'lsin).
+          if (onUserUpdate) onUserUpdate({ isPremium: true, is_premium: true });
+          try {
+            const token2 = OlympyApi.getToken();
+            const me = await OlympyApi.getMe(token2);
+            if (me) {
+              const next = OlympyApi.mapBackendUser(me);
+              try { OlympyApi.saveAuth({ token: token2, user: next }); } catch {}
+              if (onUserUpdate) onUserUpdate(next);
+            }
+          } catch {}
+        });
       } else {
         throw new Error("To'lov havolasini olishda xatolik yuz berdi");
       }
@@ -7161,6 +7353,20 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       setPaymentLoading(false);
     }
   };
+
+  // To'lov muvaffaqiyatli tasdiqlangach modalni 2 soniyadan keyin avtomatik
+  // yopamiz (foydalanuvchi "muvaffaqiyatli" xabarini ko'rib ulguradi).
+  React.useEffect(() => {
+    if (payPolling.status !== 'success') return;
+    const t = setTimeout(() => {
+      setPaymentPlan(null);
+      setPaymentError('');
+      setPaymentSubmitted(false);
+      payPolling.reset();
+    }, 2000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payPolling.status]);
 
   // Student's attempts and derived results
   const myAttempts = (isApi ? (apiAttempts || []) : store.attempts.filter(a => a.userId === user.id))
@@ -8357,33 +8563,82 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {paymentPlan && (
         <Modal
           open={!!paymentPlan}
-          onClose={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); }}
-          title={paymentSubmitted ? "To'lov qabul qilindi" : "To'lov usulini tanlang"}
+          onClose={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); payPolling.reset(); }}
+          title={
+            !paymentSubmitted ? "To'lov usulini tanlang"
+              : payPolling.status === 'success' ? "To'lov muvaffaqiyatli!"
+              : payPolling.status === 'timeout' ? "To'lov tekshirilmoqda"
+              : "To'lov tekshirilmoqda..."
+          }
           width="max-w-md"
         >
           {paymentSubmitted ? (
-            <div className="space-y-5 text-center py-2">
-              <div className="mx-auto w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
-                <span className="text-3xl">✅</span>
+            payPolling.status === 'success' ? (
+              // Premium faollashdi — 2 soniyadan keyin modal avtomatik yopiladi.
+              <div className="space-y-5 text-center py-2">
+                <div className="mx-auto w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                  <span className="text-3xl">✅</span>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-base font-bold text-white">To'lov muvaffaqiyatli!</p>
+                  <p className="text-sm text-white/60 leading-relaxed">
+                    Premium obunangiz faollashtirildi. Endi barcha premium funksiyalardan
+                    foydalanishingiz mumkin.
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); payPolling.reset(); }}
+                  className="w-full py-3 rounded-2xl bg-emerald-500/90 hover:bg-emerald-500 text-white text-sm font-bold transition-colors"
+                >
+                  Yopish
+                </button>
               </div>
-              <div className="space-y-2">
-                <p className="text-base font-bold text-white">To'lovingiz qabul qilindi</p>
-                <p className="text-sm text-white/60 leading-relaxed">
-                  To'lov tekshirilmoqda. Premium obunangiz tasdiqlangach tez orada
-                  avtomatik faollashadi. Telegram orqali xabar yuboriladi.
-                </p>
-                <p className="text-xs text-white/35 leading-relaxed">
-                  Agar bir necha daqiqada premium faollashmasa, sahifani yangilang
-                  yoki qo'llab-quvvatlash xizmatiga murojaat qiling.
-                </p>
+            ) : payPolling.status === 'timeout' ? (
+              // 2 daqiqa o'tdi, hali tasdiqlanmadi.
+              <div className="space-y-5 text-center py-2">
+                <div className="mx-auto w-14 h-14 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
+                  <span className="text-3xl">⏳</span>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-base font-bold text-white">To'lov hali tasdiqlanmadi</p>
+                  <p className="text-sm text-white/60 leading-relaxed">
+                    Bir oz kuting yoki qo'llab-quvvatlash bilan bog'laning. Premium
+                    obunangiz tasdiqlangach Telegram orqali xabar yuboriladi va
+                    sahifani yangilaganingizda faol bo'ladi.
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); payPolling.reset(); }}
+                  className="w-full py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white text-sm font-bold transition-colors"
+                >
+                  Yopish
+                </button>
               </div>
-              <button
-                onClick={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); }}
-                className="w-full py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white text-sm font-bold transition-colors"
-              >
-                Yopish
-              </button>
-            </div>
+            ) : (
+              // checking — to'lov tekshirilmoqda (polling davom etmoqda).
+              <div className="space-y-5 text-center py-2">
+                <div className="mx-auto w-14 h-14 rounded-full bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center">
+                  <span className="text-3xl animate-spin">⏳</span>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-base font-bold text-white">To'lov tekshirilmoqda...</p>
+                  <p className="text-sm text-white/60 leading-relaxed">
+                    To'lovingiz qabul qilindi. Premium obunangiz tasdiqlanishini
+                    kutmoqdamiz — bu odatda bir necha soniya davom etadi.
+                  </p>
+                  <p className="text-xs text-white/35 leading-relaxed">
+                    Bu oynani yopsangiz ham obunangiz tasdiqlangach Telegram orqali
+                    xabar yuboriladi.
+                  </p>
+                </div>
+                <button
+                  onClick={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); payPolling.reset(); }}
+                  className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-sm font-bold transition-colors"
+                >
+                  Yopish
+                </button>
+              </div>
+            )
           ) : (
           <div className="space-y-6">
             <div className="rounded-2xl bg-white/5 p-4 border border-white/10">
@@ -8968,18 +9223,21 @@ const OlympiadCard = ({ olympiad: o, onStart, locked, readinessPct, attempted, o
 Object.assign(window, { StudentDashboard, OlympiadCard });
 
 
-Object.assign(moduleScope, { STUDENT_DASHBOARD_BASE, STUDENT_DASHBOARD_PAGES, PAGE_TO_PATH, PATH_TO_PAGE, studentPageFromPath, BadgeList, PremiumLock, StudentDashboard, PracticeFlow, OlympiadCard, RewardsPage, MistakesPage });
+Object.assign(moduleScope, { STUDENT_DASHBOARD_BASE, STUDENT_DASHBOARD_PAGES, PAGE_TO_PATH, PATH_TO_PAGE, studentPageFromPath, POLL_INTERVAL_MS, POLL_MAX_ATTEMPTS, BadgeList, PremiumLock, StudentDashboard, PracticeFlow, OlympiadCard, usePaymentPolling, RewardsPage, MistakesPage });
 }
 var STUDENT_DASHBOARD_BASE = moduleScope.STUDENT_DASHBOARD_BASE;
 var STUDENT_DASHBOARD_PAGES = moduleScope.STUDENT_DASHBOARD_PAGES;
 var PAGE_TO_PATH = moduleScope.PAGE_TO_PATH;
 var PATH_TO_PAGE = moduleScope.PATH_TO_PAGE;
 var studentPageFromPath = moduleScope.studentPageFromPath;
+var POLL_INTERVAL_MS = moduleScope.POLL_INTERVAL_MS;
+var POLL_MAX_ATTEMPTS = moduleScope.POLL_MAX_ATTEMPTS;
 var BadgeList = moduleScope.BadgeList;
 var PremiumLock = moduleScope.PremiumLock;
 var StudentDashboard = moduleScope.StudentDashboard;
 var PracticeFlow = moduleScope.PracticeFlow;
 var OlympiadCard = moduleScope.OlympiadCard;
+var usePaymentPolling = moduleScope.usePaymentPolling;
 var RewardsPage = moduleScope.RewardsPage;
 var MistakesPage = moduleScope.MistakesPage;
 
@@ -17013,6 +17271,9 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
 
   const [cropImageSrc, setCropImageSrc] = React.useState('');
   const [cropModalOpen, setCropModalOpen] = React.useState(false);
+  // Tasdiqlash modallari — Telegram WebApp'da window.confirm() bloklanadi.
+  const [confirmDeleteAvatar, setConfirmDeleteAvatar] = React.useState(false);
+  const [confirmDeleteAccount, setConfirmDeleteAccount] = React.useState(false);
 
   // Profil ma'lumotlarini tahrirlash holati
   const [profileForm, setProfileForm] = React.useState({
@@ -17225,7 +17486,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
 
   const handleDeleteAvatar = async () => {
     if (!isApi) return;
-    if (!window.confirm("Profil rasmini o'chirishni xohlaysizmi?")) return;
+    setConfirmDeleteAvatar(false);
     setAvatarLoading(true);
     setAvatarError('');
     try {
@@ -17380,10 +17641,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
 
   const handleDeleteAccount = async () => {
     if (!isApi || deletingAccount) return;
-    const confirmed = window.confirm(
-      "Hisobingizni butunlay o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi — barcha ma'lumotlaringiz, olimpiada natijalari va markaz a'zoliklaringiz butunlay o'chiriladi.",
-    );
-    if (!confirmed) return;
+    setConfirmDeleteAccount(false);
     setDeletingAccount(true);
     setDeleteError('');
     try {
@@ -17491,7 +17749,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             </button>
             {isApi && user?.avatarUrl && (
               <button
-                onClick={handleDeleteAvatar}
+                onClick={() => setConfirmDeleteAvatar(true)}
                 disabled={avatarLoading}
                 className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 text-rose-300 hover:text-rose-200 disabled:opacity-50"
               >
@@ -17940,7 +18198,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             <div className="text-xs font-semibold text-rose-300 mb-3">{deleteError}</div>
           )}
           <button
-            onClick={handleDeleteAccount}
+            onClick={() => setConfirmDeleteAccount(true)}
             disabled={deletingAccount}
             className="bg-rose-500/20 text-rose-200 border border-rose-500/30 font-semibold rounded-xl py-2.5 px-5 text-sm flex items-center gap-1.5 hover:bg-rose-500/30 disabled:opacity-50"
           >
@@ -17960,6 +18218,27 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
         onClose={() => { setCropModalOpen(false); setCropImageSrc(''); }}
         imageSrc={cropImageSrc}
         onCropComplete={handleCropComplete}
+      />
+      {/* Tasdiqlash modallari — Telegram WebApp'da window.confirm() o'rniga */}
+      <ConfirmModal
+        open={confirmDeleteAvatar}
+        onClose={() => setConfirmDeleteAvatar(false)}
+        onConfirm={handleDeleteAvatar}
+        title="Profil rasmini o'chirish"
+        message="Profil rasmini o'chirishni xohlaysizmi?"
+        confirmText="O'chirish"
+        danger
+        busy={avatarLoading}
+      />
+      <ConfirmModal
+        open={confirmDeleteAccount}
+        onClose={() => setConfirmDeleteAccount(false)}
+        onConfirm={handleDeleteAccount}
+        title="Hisobni o'chirish"
+        message="Hisobingizni butunlay o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi — barcha ma'lumotlaringiz, olimpiada natijalari va markaz a'zoliklaringiz butunlay o'chiriladi."
+        confirmText="Butunlay o'chirish"
+        danger
+        busy={deletingAccount}
       />
     </>
   );
@@ -19548,6 +19827,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [plansLoading, setPlansLoading] = React.useState(true);
   const [durationFilter, setDurationFilter] = React.useState(30);
   const [toast, setToast] = React.useState('');
+  // Tasdiqlash modali — Telegram WebApp'da window.confirm() bloklanadi.
+  // { title, message, confirmText, onConfirm } yoki null.
+  const [confirmDialog, setConfirmDialog] = React.useState(null);
+  const askConfirm = (opts) => setConfirmDialog(opts);
   const [pendingTeachers, setPendingTeachers] = React.useState([]);
   const [pendingManagers, setPendingManagers] = React.useState([]);
   const [apiStaff, setApiStaff] = React.useState([]);
@@ -20265,22 +20548,26 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       return;
     }
     const roleLabel = row.role === 'manager' ? 'menejerni' : "o'qituvchini";
-    if (!window.confirm(`${row.name || 'Foydalanuvchi'} — bu ${roleLabel} markazdan chiqarishni tasdiqlaysizmi?`)) {
-      return;
-    }
-    const backendCenterId = center?.backendId ?? center?.id;
-    const token = OlympyApi.getToken();
-    setRemovingMembershipId(membershipId);
-    OlympyApi.removeMembership(backendCenterId, membershipId, token)
-      .then(() => {
-        loadApiStaff().catch(() => null);
-        showToast("A'zolik bekor qilindi");
-      })
-      .catch(err => {
-        console.warn('removeMembership failed:', err);
-        showToast(OlympyApi.toUserMessage(err) || "A'zolikni o'chirib bo'lmadi");
-      })
-      .finally(() => setRemovingMembershipId(null));
+    askConfirm({
+      title: 'A\'zolikni bekor qilish',
+      message: `${row.name || 'Foydalanuvchi'} — bu ${roleLabel} markazdan chiqarishni tasdiqlaysizmi?`,
+      confirmText: 'Chiqarish',
+      onConfirm: () => {
+        const backendCenterId = center?.backendId ?? center?.id;
+        const token = OlympyApi.getToken();
+        setRemovingMembershipId(membershipId);
+        return OlympyApi.removeMembership(backendCenterId, membershipId, token)
+          .then(() => {
+            loadApiStaff().catch(() => null);
+            showToast("A'zolik bekor qilindi");
+          })
+          .catch(err => {
+            console.warn('removeMembership failed:', err);
+            showToast(OlympyApi.toUserMessage(err) || "A'zolikni o'chirib bo'lmadi");
+          })
+          .finally(() => setRemovingMembershipId(null));
+      },
+    });
   };
 
   // O'quvchini tasdiqlash yoki rad etish (approveStudent decision payload).
@@ -20320,20 +20607,24 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       showToast("A'zolik ma'lumotlari topilmadi");
       return;
     }
-    if (!window.confirm(`${row.name || "O'quvchi"}ni markazdan chiqarishni tasdiqlaysizmi?`)) {
-      return;
-    }
-    const backendCenterId = center?.backendId ?? center?.id;
-    const token = OlympyApi.getToken();
-    setStudentActionId(membershipId);
-    OlympyApi.removeMembership(backendCenterId, membershipId, token)
-      .then(() => loadStudents())
-      .then(() => showToast("O'quvchi markazdan chiqarildi"))
-      .catch(err => {
-        console.warn('removeMembership failed:', err);
-        showToast(OlympyApi.toUserMessage?.(err) || "Chiqarib bo'lmadi");
-      })
-      .finally(() => setStudentActionId(null));
+    askConfirm({
+      title: 'O\'quvchini chiqarish',
+      message: `${row.name || "O'quvchi"}ni markazdan chiqarishni tasdiqlaysizmi?`,
+      confirmText: 'Chiqarish',
+      onConfirm: () => {
+        const backendCenterId = center?.backendId ?? center?.id;
+        const token = OlympyApi.getToken();
+        setStudentActionId(membershipId);
+        return OlympyApi.removeMembership(backendCenterId, membershipId, token)
+          .then(() => loadStudents())
+          .then(() => showToast("O'quvchi markazdan chiqarildi"))
+          .catch(err => {
+            console.warn('removeMembership failed:', err);
+            showToast(OlympyApi.toUserMessage?.(err) || "Chiqarib bo'lmadi");
+          })
+          .finally(() => setStudentActionId(null));
+      },
+    });
   };
 
   // Guruh tegini saqlash (10-funksiya) — group olimpiadalar uchun.
@@ -20378,11 +20669,16 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const deleteQbQuestion = (qId) => {
     if (!isApi || !ownerCenterId) return;
-    if (!window.confirm("Savolni bankdan o'chirasizmi?")) return;
-    OlympyApi.deleteCenterQuestion(ownerCenterId, qId, OlympyApi.getToken())
-      .then(() => loadQuestionBank())
-      .then(() => showToast("Savol o'chirildi"))
-      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi"));
+    askConfirm({
+      title: 'Savolni o\'chirish',
+      message: "Savolni bankdan o'chirasizmi?",
+      confirmText: "O'chirish",
+      onConfirm: () =>
+        OlympyApi.deleteCenterQuestion(ownerCenterId, qId, OlympyApi.getToken())
+          .then(() => loadQuestionBank())
+          .then(() => showToast("Savol o'chirildi"))
+          .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi")),
+    });
   };
 
   // Markaz do'koni: qo'shish, tahrirlash, o'chirish. (loadShopProducts hook'i
@@ -20456,11 +20752,16 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const deleteShopProduct = (productId) => {
     if (!isApi || !ownerCenterId) return;
-    if (!window.confirm("Mahsulotni do'kondan o'chirasizmi?")) return;
-    OlympyApi.deleteCenterShopProduct(productId, OlympyApi.getToken(), ownerCenterId)
-      .then(() => loadShopProducts())
-      .then(() => showToast("Mahsulot o'chirildi"))
-      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi"));
+    askConfirm({
+      title: 'Mahsulotni o\'chirish',
+      message: "Mahsulotni do'kondan o'chirasizmi?",
+      confirmText: "O'chirish",
+      onConfirm: () =>
+        OlympyApi.deleteCenterShopProduct(productId, OlympyApi.getToken(), ownerCenterId)
+          .then(() => loadShopProducts())
+          .then(() => showToast("Mahsulot o'chirildi"))
+          .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi")),
+    });
   };
 
   const toggleShopActive = (product) => {
@@ -22929,6 +23230,21 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
       )}
 
+      {/* Tasdiqlash modali — Telegram WebApp'da window.confirm() o'rniga */}
+      <ConfirmModal
+        open={!!confirmDialog}
+        onClose={() => setConfirmDialog(null)}
+        onConfirm={() => {
+          const cb = confirmDialog?.onConfirm;
+          setConfirmDialog(null);
+          cb?.();
+        }}
+        title={confirmDialog?.title || 'Tasdiqlaysizmi?'}
+        message={confirmDialog?.message || ''}
+        confirmText={confirmDialog?.confirmText || 'Ha'}
+        danger
+      />
+
       {/* F1: B2B markaz onboarding sehrgari (3 qadam). */}
       {onboardingOpen && (() => {
         const steps = [
@@ -23367,6 +23683,12 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
   const [linkSuccess, setLinkSuccess] = React.useState('');
   const [selectedChild, setSelectedChild] = React.useState(null);
   const [downloadingReportId, setDownloadingReportId] = React.useState(null);
+  // Telegram WebApp'da alert() bloklanadi — mahalliy toast bilan almashtiramiz.
+  const [toast, setToast] = React.useState('');
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(''), 3000); };
+  // Farzandni olib tashlash uchun inline tasdiqlash modali (confirm() o'rniga).
+  const [unlinkTarget, setUnlinkTarget] = React.useState(null);
+  const [unlinking, setUnlinking] = React.useState(false);
 
   const isApi = !!user?._api;
   const token = isApi ? OlympyApi.getToken() : null;
@@ -23410,7 +23732,7 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
         setSelectedChild(prev => ({ ...prev, weekly_digest_enabled: nextVal }));
       }
     } catch (err) {
-      alert("Haftalik hisobot rejimini o'zgartirib bo'lmadi");
+      showToast("Haftalik hisobot rejimini o'zgartirib bo'lmadi");
     } finally {
       setDigestTogglingId(null);
     }
@@ -23420,9 +23742,9 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
     setSendingDigestId(studentId);
     try {
       const resp = await OlympyApi.sendTestWeeklyDigest(studentId, token);
-      alert(resp?.detail || "Haftalik hisobot Telegram orqali jo'natildi!");
+      showToast(resp?.detail || "Haftalik hisobot Telegram orqali jo'natildi!");
     } catch (err) {
-      alert(err.message || "Telegramga xabar yuborib bo'lmadi. Telegram profil bog'langanligini tekshiring.");
+      showToast(err.message || "Telegramga xabar yuborib bo'lmadi. Telegram profil bog'langanligini tekshiring.");
     } finally {
       setSendingDigestId(null);
     }
@@ -23447,13 +23769,23 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
     }
   };
 
-  const handleUnlink = async (studentId) => {
-    if (!confirm("Farzandni olib tashlashni tasdiqlaysizmi?")) return;
+  // Tasdiqlash modalini ochadi (confirm() o'rniga).
+  const handleUnlink = (child) => {
+    setUnlinkTarget(child);
+  };
+
+  const confirmUnlink = async () => {
+    const child = unlinkTarget;
+    if (!child) return;
+    setUnlinking(true);
     try {
-      await OlympyApi.unlinkChild(studentId, token);
+      await OlympyApi.unlinkChild(child.student_id, token);
       childrenRes.reload();
+      setUnlinkTarget(null);
     } catch (err) {
-      alert(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi");
+      showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi");
+    } finally {
+      setUnlinking(false);
     }
   };
 
@@ -23471,7 +23803,7 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
       a.remove();
       window.URL.revokeObjectURL(url);
     } catch (err) {
-      alert(OlympyApi.toUserMessage?.(err) || "Hisobotni yuklab bo'lmadi");
+      showToast(OlympyApi.toUserMessage?.(err) || "Hisobotni yuklab bo'lmadi");
     } finally {
       setDownloadingReportId(null);
     }
@@ -23624,7 +23956,7 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
                   <div className="text-xs text-white/40 truncate">{child.phone}</div>
                 </div>
                 <button
-                  onClick={() => handleUnlink(child.student_id)}
+                  onClick={() => handleUnlink(child)}
                   className="text-xs text-rose-300 hover:text-rose-200 px-3 py-1.5 rounded-lg border border-rose-500/20 hover:border-rose-500/40"
                 >Olib tashlash</button>
               </div>
@@ -23796,6 +24128,27 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
           </div>
         )}
       </Modal>
+
+      {/* Farzandni olib tashlash tasdig'i (confirm() o'rniga) */}
+      <ConfirmModal
+        open={!!unlinkTarget}
+        onClose={() => setUnlinkTarget(null)}
+        onConfirm={confirmUnlink}
+        title="Farzandni olib tashlash"
+        message={unlinkTarget ? `${unlinkTarget.full_name || 'Farzand'}ni ro'yxatdan olib tashlashni tasdiqlaysizmi?` : ''}
+        confirmText="Olib tashlash"
+        danger
+        busy={unlinking}
+      />
+
+      {/* Toast (Telegram WebApp'da alert o'rniga) */}
+      {toast && (
+        <div
+          className="fixed bottom-20 md:bottom-6 right-3 md:right-6 left-3 md:left-auto z-50 glass-strong rounded-2xl px-5 py-3.5 border border-white/10 animate-in text-sm font-medium text-white md:max-w-sm"
+        >
+          {toast}
+        </div>
+      )}
     </div>
   );
 };
@@ -23838,8 +24191,10 @@ const CertificateVerifyPage = ({ uuid }) => {
       })
       .catch(err => {
         if (cancelled) return;
-        // 404 → {valid:false}. Boshqa xato → umumiy "topilmadi" holati.
-        const data = err?.data && typeof err.data === 'object' ? err.data : { valid: false };
+        // 404 → {valid:false, reason}. Tarmoq/noma'lum xato → "topilmadi".
+        const data = err?.data && typeof err.data === 'object'
+          ? err.data
+          : { valid: false, reason: 'not_found' };
         setState({ loading: false, data, error: false });
       });
     return () => { cancelled = true; };
@@ -23850,6 +24205,14 @@ const CertificateVerifyPage = ({ uuid }) => {
   };
 
   const valid = !!state.data?.valid;
+  // Yaroqsiz holatda backend `reason` orqali sababni ajratadi:
+  //   not_awarded → natija 1-o'rinni egallamagan;
+  //   not_found (yoki noma'lum) → havola noto'g'ri / o'chirilgan.
+  const notAwarded = !valid && state.data?.reason === 'not_awarded';
+  const invalidTitle = notAwarded ? 'Sertifikat berilmagan' : 'Sertifikat topilmadi';
+  const invalidMessage = notAwarded
+    ? "Bu natija 1-o'rinni egallamagan."
+    : "Bu havola noto'g'ri yoki sertifikat o'chirilgan.";
 
   return (
     <div className="dark min-h-screen flex flex-col items-center justify-center p-4" style={{ background: '#050508' }}>
@@ -23907,9 +24270,9 @@ const CertificateVerifyPage = ({ uuid }) => {
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-500 to-rose-600 text-white">
               <Icon name="x" size={32} />
             </div>
-            <h1 className="text-xl font-black text-white">Sertifikat topilmadi</h1>
+            <h1 className="text-xl font-black text-white">{invalidTitle}</h1>
             <p className="mt-2 text-sm font-medium text-white/55">
-              Bu sertifikat haqiqiy emas yoki o'chirilgan. Havola noto'g'ri ko'chirilgan bo'lishi mumkin.
+              {invalidMessage}
             </p>
             <button type="button" onClick={goHome} className="btn-ghost mt-6 w-full rounded-xl py-3 text-sm font-black">
               Bosh sahifaga qaytish
@@ -24054,6 +24417,55 @@ const pageFromPath = () => {
   } catch {}
   return null;
 };
+
+// ErrorBoundary — render paytida ushlanmagan xato butun sahifani oq ekranga
+// tushirmasligi uchun. Bitta komponent yiqilsa, foydalanuvchiga tushunarli
+// xabar va "sahifani yangilash" tugmasi ko'rinadi. React'da xatoni faqat class
+// komponent (getDerivedStateFromError / componentDidCatch) ushlaydi.
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, info) {
+    // Konsolga (va mavjud bo'lsa Sentry'ga) log qilamiz — diagnostika uchun.
+    try {
+      console.error('Render xatosi (ErrorBoundary):', error, info);
+      if (globalThis.Sentry?.captureException) {
+        globalThis.Sentry.captureException(error);
+      }
+    } catch {}
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="dark min-h-screen flex items-center justify-center px-6" style={{ background: '#050508' }}>
+          <div className="glass rounded-2xl p-8 max-w-md w-full text-center flex flex-col items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl gradient-bg flex items-center justify-center text-white text-2xl font-bold">!</div>
+            <div className="text-lg font-semibold text-white">Xatolik yuz berdi</div>
+            <div className="text-sm text-white/50">
+              Kutilmagan xatolik sodir bo'ldi. Iltimos, sahifani yangilang. Muammo takrorlansa, birozdan so'ng qayta urinib ko'ring.
+            </div>
+            <button
+              type="button"
+              onClick={() => { try { window.location.reload(); } catch {} }}
+              className="btn-primary px-6 py-2.5 rounded-xl text-sm font-semibold mt-1"
+            >
+              Sahifani yangilash
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const App = () => {
   const [page, setPage] = React.useState(() => pageFromPath() || 'landing');
@@ -24348,7 +24760,7 @@ const App = () => {
     const meta = ROLE_META[role];
     const data = user.roles?.[role];
 
-    if (role === 'student' && status) {
+    if (role === 'student' && status === 'approved') {
       return (
         <StudentDashboard
           user={user}
@@ -24374,7 +24786,19 @@ const App = () => {
     }
 
     if (status === 'pending') {
-      const center = null;
+      // Pending foydalanuvchi qaysi markazni kutayotganini ko'rsatamiz. Markaz
+      // ma'lumoti user state'idan keladi (mapBackendUser: roles[role].centers[]
+      // yoki centerName). Hardcoded emas — mavjud bo'lmasa null qoladi va
+      // pastdagi `extra` bloki ko'rsatilmaydi.
+      const pendingCenter = data?.centers?.[0] || null;
+      const center = pendingCenter
+        ? {
+            name: pendingCenter.centerName || pendingCenter.name || data?.centerName || '',
+            city: pendingCenter.city || pendingCenter.region || '',
+          }
+        : (data?.centerName
+            ? { name: data.centerName, city: '' }
+            : null);
       const messages = {
         manager: "Manager paneliga kirish uchun arizangiz tasdiqlanishi kerak. Ariza direktorga yuborildi.",
         teacher: "Savol yaratish uchun o'qituvchi arizangiz tasdiqlanishi kerak. Ariza direktorga yuborildi.",
@@ -24386,12 +24810,12 @@ const App = () => {
           title={`${meta?.label || ''} arizasi kutilmoqda`}
           status="pending"
           message={messages[role] || ''}
-          extra={center && (
+          extra={center?.name && (
             <div className="glass rounded-2xl p-4 inline-flex items-center gap-3">
               <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center text-white font-bold">{center.name[0]}</div>
               <div className="text-left">
                 <div className="text-sm font-semibold text-white">{center.name}</div>
-                <div className="text-xs text-white/40">{center.city}</div>
+                {center.city && <div className="text-xs text-white/40">{center.city}</div>}
               </div>
             </div>
           )}
@@ -24569,7 +24993,7 @@ const App = () => {
   );
 
   return (
-    <div key={page} className="dark">
+    <div className="dark">
       {renderPage()}
       {showOnboarding && (
         <OnboardingWizard
@@ -24613,13 +25037,13 @@ const certVerifyUuid = (() => {
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 if (certVerifyUuid) {
-  root.render(<CertificateVerifyPage uuid={certVerifyUuid} />);
+  root.render(<ErrorBoundary><CertificateVerifyPage uuid={certVerifyUuid} /></ErrorBoundary>);
 } else {
-  root.render(<App />);
+  root.render(<ErrorBoundary><App /></ErrorBoundary>);
 }
 
 
-Object.assign(moduleScope, { PAGE_URLS, DASHBOARD_ROLE_BASES, ACTIVE_TEST_KEY, readActiveTestId, writeActiveTestId, testIdFromPath, URL_PAGES, NEEDS_AUTH_PAGES, pageFromPath, App, certVerifyUuid, root });
+Object.assign(moduleScope, { PAGE_URLS, DASHBOARD_ROLE_BASES, ACTIVE_TEST_KEY, readActiveTestId, writeActiveTestId, testIdFromPath, URL_PAGES, NEEDS_AUTH_PAGES, pageFromPath, App, certVerifyUuid, root, ErrorBoundary });
 }
 var PAGE_URLS = moduleScope.PAGE_URLS;
 var DASHBOARD_ROLE_BASES = moduleScope.DASHBOARD_ROLE_BASES;
@@ -24633,4 +25057,5 @@ var pageFromPath = moduleScope.pageFromPath;
 var App = moduleScope.App;
 var certVerifyUuid = moduleScope.certVerifyUuid;
 var root = moduleScope.root;
+var ErrorBoundary = moduleScope.ErrorBoundary;
 

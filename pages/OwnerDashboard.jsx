@@ -120,6 +120,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [plansLoading, setPlansLoading] = React.useState(true);
   const [durationFilter, setDurationFilter] = React.useState(30);
   const [toast, setToast] = React.useState('');
+  // Tasdiqlash modali — Telegram WebApp'da window.confirm() bloklanadi.
+  // { title, message, confirmText, onConfirm } yoki null.
+  const [confirmDialog, setConfirmDialog] = React.useState(null);
+  const askConfirm = (opts) => setConfirmDialog(opts);
   const [pendingTeachers, setPendingTeachers] = React.useState([]);
   const [pendingManagers, setPendingManagers] = React.useState([]);
   const [apiStaff, setApiStaff] = React.useState([]);
@@ -837,22 +841,26 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       return;
     }
     const roleLabel = row.role === 'manager' ? 'menejerni' : "o'qituvchini";
-    if (!window.confirm(`${row.name || 'Foydalanuvchi'} — bu ${roleLabel} markazdan chiqarishni tasdiqlaysizmi?`)) {
-      return;
-    }
-    const backendCenterId = center?.backendId ?? center?.id;
-    const token = OlympyApi.getToken();
-    setRemovingMembershipId(membershipId);
-    OlympyApi.removeMembership(backendCenterId, membershipId, token)
-      .then(() => {
-        loadApiStaff().catch(() => null);
-        showToast("A'zolik bekor qilindi");
-      })
-      .catch(err => {
-        console.warn('removeMembership failed:', err);
-        showToast(OlympyApi.toUserMessage(err) || "A'zolikni o'chirib bo'lmadi");
-      })
-      .finally(() => setRemovingMembershipId(null));
+    askConfirm({
+      title: 'A\'zolikni bekor qilish',
+      message: `${row.name || 'Foydalanuvchi'} — bu ${roleLabel} markazdan chiqarishni tasdiqlaysizmi?`,
+      confirmText: 'Chiqarish',
+      onConfirm: () => {
+        const backendCenterId = center?.backendId ?? center?.id;
+        const token = OlympyApi.getToken();
+        setRemovingMembershipId(membershipId);
+        return OlympyApi.removeMembership(backendCenterId, membershipId, token)
+          .then(() => {
+            loadApiStaff().catch(() => null);
+            showToast("A'zolik bekor qilindi");
+          })
+          .catch(err => {
+            console.warn('removeMembership failed:', err);
+            showToast(OlympyApi.toUserMessage(err) || "A'zolikni o'chirib bo'lmadi");
+          })
+          .finally(() => setRemovingMembershipId(null));
+      },
+    });
   };
 
   // O'quvchini tasdiqlash yoki rad etish (approveStudent decision payload).
@@ -892,20 +900,24 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       showToast("A'zolik ma'lumotlari topilmadi");
       return;
     }
-    if (!window.confirm(`${row.name || "O'quvchi"}ni markazdan chiqarishni tasdiqlaysizmi?`)) {
-      return;
-    }
-    const backendCenterId = center?.backendId ?? center?.id;
-    const token = OlympyApi.getToken();
-    setStudentActionId(membershipId);
-    OlympyApi.removeMembership(backendCenterId, membershipId, token)
-      .then(() => loadStudents())
-      .then(() => showToast("O'quvchi markazdan chiqarildi"))
-      .catch(err => {
-        console.warn('removeMembership failed:', err);
-        showToast(OlympyApi.toUserMessage?.(err) || "Chiqarib bo'lmadi");
-      })
-      .finally(() => setStudentActionId(null));
+    askConfirm({
+      title: 'O\'quvchini chiqarish',
+      message: `${row.name || "O'quvchi"}ni markazdan chiqarishni tasdiqlaysizmi?`,
+      confirmText: 'Chiqarish',
+      onConfirm: () => {
+        const backendCenterId = center?.backendId ?? center?.id;
+        const token = OlympyApi.getToken();
+        setStudentActionId(membershipId);
+        return OlympyApi.removeMembership(backendCenterId, membershipId, token)
+          .then(() => loadStudents())
+          .then(() => showToast("O'quvchi markazdan chiqarildi"))
+          .catch(err => {
+            console.warn('removeMembership failed:', err);
+            showToast(OlympyApi.toUserMessage?.(err) || "Chiqarib bo'lmadi");
+          })
+          .finally(() => setStudentActionId(null));
+      },
+    });
   };
 
   // Guruh tegini saqlash (10-funksiya) — group olimpiadalar uchun.
@@ -950,11 +962,16 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const deleteQbQuestion = (qId) => {
     if (!isApi || !ownerCenterId) return;
-    if (!window.confirm("Savolni bankdan o'chirasizmi?")) return;
-    OlympyApi.deleteCenterQuestion(ownerCenterId, qId, OlympyApi.getToken())
-      .then(() => loadQuestionBank())
-      .then(() => showToast("Savol o'chirildi"))
-      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi"));
+    askConfirm({
+      title: 'Savolni o\'chirish',
+      message: "Savolni bankdan o'chirasizmi?",
+      confirmText: "O'chirish",
+      onConfirm: () =>
+        OlympyApi.deleteCenterQuestion(ownerCenterId, qId, OlympyApi.getToken())
+          .then(() => loadQuestionBank())
+          .then(() => showToast("Savol o'chirildi"))
+          .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi")),
+    });
   };
 
   // Markaz do'koni: qo'shish, tahrirlash, o'chirish. (loadShopProducts hook'i
@@ -1028,11 +1045,16 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const deleteShopProduct = (productId) => {
     if (!isApi || !ownerCenterId) return;
-    if (!window.confirm("Mahsulotni do'kondan o'chirasizmi?")) return;
-    OlympyApi.deleteCenterShopProduct(productId, OlympyApi.getToken(), ownerCenterId)
-      .then(() => loadShopProducts())
-      .then(() => showToast("Mahsulot o'chirildi"))
-      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi"));
+    askConfirm({
+      title: 'Mahsulotni o\'chirish',
+      message: "Mahsulotni do'kondan o'chirasizmi?",
+      confirmText: "O'chirish",
+      onConfirm: () =>
+        OlympyApi.deleteCenterShopProduct(productId, OlympyApi.getToken(), ownerCenterId)
+          .then(() => loadShopProducts())
+          .then(() => showToast("Mahsulot o'chirildi"))
+          .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi")),
+    });
   };
 
   const toggleShopActive = (product) => {
@@ -3500,6 +3522,21 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           {toast}
         </div>
       )}
+
+      {/* Tasdiqlash modali — Telegram WebApp'da window.confirm() o'rniga */}
+      <ConfirmModal
+        open={!!confirmDialog}
+        onClose={() => setConfirmDialog(null)}
+        onConfirm={() => {
+          const cb = confirmDialog?.onConfirm;
+          setConfirmDialog(null);
+          cb?.();
+        }}
+        title={confirmDialog?.title || 'Tasdiqlaysizmi?'}
+        message={confirmDialog?.message || ''}
+        confirmText={confirmDialog?.confirmText || 'Ha'}
+        danger
+      />
 
       {/* F1: B2B markaz onboarding sehrgari (3 qadam). */}
       {onboardingOpen && (() => {

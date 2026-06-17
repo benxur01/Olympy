@@ -804,7 +804,11 @@ def attempt_detail(request, attempt_id):
             Prefetch(
                 'olympiad__questions',
                 queryset=Question.objects.order_by('id'),
-            )
+            ),
+            # Kod (IT) javoblari va essay baholarini ham oldindan yuklaymiz —
+            # quyida savol bo'yicha map qilinadi (N+1 emas, 1 ta so'rov).
+            'code_submissions',
+            'essay_grades',
         ),
         pk=attempt_id,
     )
@@ -847,17 +851,19 @@ def attempt_detail(request, attempt_id):
         questions_review = []
         # answers dict kalitlari string yoki integer bo'lishi mumkin.
         answers = attempt.answers or {}
-        # Kod (IT) javoblari — bitta so'rovda olib, savol bo'yicha map qilamiz.
-        from .models import CodeSubmission, EssayGrade
+        # Kod (IT) javoblari — yuqorida `prefetch_related('code_submissions')`
+        # bilan oldindan yuklangan; `.all()` orqali prefetch cache'dan o'qiymiz
+        # (qo'shimcha DB so'rovi otmaymiz). `.filter(...)` ishlatsak prefetch
+        # e'tiborsiz qolib N+1 qaytarди.
         code_subs = {
             cs.question_id: cs
-            for cs in CodeSubmission.objects.filter(attempt=attempt)
+            for cs in attempt.code_submissions.all()
         }
         # Essay baholari (qo'lda) — savol bo'yicha map. Baholangan essay
         # "tekshirilmoqda" o'rniga ball + izoh bilan ko'rsatiladi.
         essay_grades = {
             g.question_id: g
-            for g in EssayGrade.objects.filter(attempt=attempt)
+            for g in attempt.essay_grades.all()
         }
         # Prefetch `id` bo'yicha tartiblangan — bu yerda `.order_by('id')`
         # qo'ymaymiz, aks holda prefetch cache buziladi va yangi DB so'rovi

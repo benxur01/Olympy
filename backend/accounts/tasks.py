@@ -124,6 +124,44 @@ def send_telegram_otp_task(self, chat_id, text, bot='auth'):
     )
 
 
+@shared_task(
+    bind=True,
+    max_retries=5,
+    default_retry_delay=5,
+    name='accounts.send_telegram_message',
+)
+def send_telegram_message_task(self, chat_id, text, reply_markup=None, bot='auth'):
+    """Oddiy Telegram xabarni background'da yuboradi (fire-and-forget).
+
+    `send_telegram_otp_task` bilan bir xil pattern, lekin OTP bo'lmagan
+    umumiy xabarlar uchun (eski egani ogohlantirish, callback'dan keyingi
+    ma'lumot xabari). HTTP so'rovni bloklamaslik uchun ishlatiladi: oldin bu
+    chaqiruvlar `_telegram_api_call` ichidagi retry/sleep tufayli Gunicorn
+    worker thread'ini 9 soniyagacha bloklardi (3 retry × 3s). `reply_markup`
+    ixtiyoriy — keyboard yuborish kerak bo'lganda beriladi.
+    """
+    from django.conf import settings
+    from accounts.views import _send_telegram_message, _telegram_bot_token
+
+    # Token yo'q (lokal/dev) — qayta urinish ma'nosiz.
+    if not _telegram_bot_token(bot):
+        return {'sent': False, 'reason': 'no_token', 'chat_id': chat_id}
+
+    ok = _send_telegram_message(chat_id, text, reply_markup=reply_markup, bot=bot)
+    if ok:
+        return {'sent': True, 'chat_id': chat_id}
+
+    # EAGER rejimda (Redis yo'q) retry sinxron bo'lib so'rovni bloklaydi —
+    # faqat real broker bo'lganda (production) qayta urinamiz.
+    if getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False):
+        return {'sent': False, 'reason': 'send_failed', 'chat_id': chat_id}
+
+    raise self.retry(
+        exc=Exception('telegram sendMessage failed'),
+        countdown=10,
+    )
+
+
 @shared_task(name='accounts.generate_daily_questions')
 def generate_daily_questions(count=DAILY_QUESTION_COUNT):
     """DH1: Bugungi `count` ta kunlik savolni tanlaydi (idempotent).
@@ -182,9 +220,12 @@ def send_weekly_parent_reports():
     Celery beat varianti. Tasdiqlangan va digest yoqilgan har bir
     ota-ona-farzand bog'lanishi uchun oxirgi 7 kunlik statistikani yuboradi.
     """
+    import logging
+
     from accounts.models import ParentStudentLink
     from attempts.models import TestAttempt
 
+    logger = logging.getLogger(__name__)
     week_ago = timezone.now() - timedelta(days=7)
 
     links = (
@@ -193,7 +234,12 @@ def send_weekly_parent_reports():
         .select_related('parent', 'student')
     )
 
-    sent = 0
+    # 1000+ ota-onada barcha Telegram HTTP so'rovlarini bitta for-loop'da
+    # sinxron yuborish butun task'ni bloklab qo'yardi (har biri sekundlar).
+    # Buning o'rniga DB o'qish (stat) shu yerda qoladi, lekin har xabar
+    # alohida `send_telegram_markdown_task` subtask'iga (retry'li) topshiriladi
+    # — yuborish parallel/distributed bo'lib, batch tezda yakunlanadi.
+    queued = 0
     skipped = 0
     for link in links:
         parent = link.parent
@@ -222,18 +268,16 @@ def send_weekly_parent_reports():
         )
 
         try:
-            from notifications.services import send_telegram_markdown
-            send_telegram_markdown(chat_id, msg)
-            sent += 1
+            send_telegram_markdown_task.delay(chat_id, msg)
+            queued += 1
         except Exception:
-            import logging
-            logging.getLogger(__name__).exception(
-                'weekly parent report failed for parent=%s student=%s',
+            logger.exception(
+                'weekly parent report enqueue failed for parent=%s student=%s',
                 parent.id, student.id,
             )
             skipped += 1
 
-    return f'weekly reports: {sent} sent, {skipped} skipped'
+    return f'weekly reports: {queued} queued, {skipped} skipped'
 
 
 @shared_task(name='accounts.send_weekly_digest')
@@ -407,7 +451,6 @@ def send_trial_ending_reminders():
     import logging
 
     from django.contrib.auth import get_user_model
-    from accounts.views import _send_telegram_message
     from attempts.models import TestAttempt
 
     logger = logging.getLogger(__name__)
@@ -417,11 +460,20 @@ def send_trial_ending_reminders():
     horizon = now + timedelta(days=3)
     month_ago = now - timedelta(days=30)
 
-    sent = 0
     skipped = 0
+    # Yuboriladigan xabarlarni shu yerga yig'amiz va Telegram HTTP so'rovlarini
+    # FAQAT lock yopilgandan keyin (alohida Celery subtask sifatida) yuboramiz.
+    # Ilgari `_send_telegram_message` aynan `select_for_update()` qulfi ostida
+    # chaqirilardi — DB qatori lock'da turgan holda har user uchun bloklovchi
+    # HTTP bajariladi, 1000+ userda kuchli lock contention / deadlock xavfi.
+    pending_messages = []
+
     # Tanlangan userlarni transaction + select_for_update() ostida qulflaymiz —
     # ikkita parallel ishga tushish (Celery beat + management command) bir
-    # userga ikki marta eslatma yubormasligi uchun.
+    # userga ikki marta eslatma yubormasligi uchun. Qulf ichida FAQAT DB ishi
+    # bajariladi: stat o'qish, `trial_reminder_sent_at` belgilash. Belgilashni
+    # darhol (yuborishdan oldin) qilamiz — bu lock'ning asl maqsadi (idempotent,
+    # takror yubormaslik). Yuborishni esa subtask'ga retry bilan topshiramiz.
     with transaction.atomic():
         users = User.objects.filter(
             premium_trial_end__isnull=False,
@@ -448,26 +500,26 @@ def send_trial_ending_reminders():
 
             msg = _build_trial_reminder_message(name, total, avg_score, best_score)
 
-            try:
-                ok = _send_telegram_message(chat_id, msg, bot='auth')
-            except Exception:
-                logger.exception(
-                    'trial ending reminder failed for user=%s', user.id,
-                )
-                skipped += 1
-                continue
+            # Faqat shu maydonni yangilaymiz — save() ichidagi ortiqcha
+            # logikani (normalize_phone, full_name) chetlab o'tib.
+            user.trial_reminder_sent_at = now
+            user.save(update_fields=['trial_reminder_sent_at'])
 
-            if ok:
-                # Faqat shu maydonni yangilaymiz — save() ichidagi ortiqcha
-                # logikani (normalize_phone, full_name) chetlab o'tib.
-                user.trial_reminder_sent_at = now
-                user.save(update_fields=['trial_reminder_sent_at'])
-                sent += 1
-            else:
-                # Token yo'q (lokal/dev) yoki Telegram not-ok qaytardi —
-                # yuborilmadi deb hisoblaymiz va trial_reminder_sent_at'ni
-                # o'rnatmaymiz (keyingi ishga tushishda qayta urinish mumkin).
-                skipped += 1
+            pending_messages.append((chat_id, msg))
 
-    return {'sent': sent, 'skipped': skipped}
+    # Lock yopildi — endi Telegram yuborishni alohida subtask'larga bo'lamiz.
+    # `send_telegram_otp_task` har xabar uchun mustaqil ishlaydi, 429/xatoda
+    # 5 martagacha qayta urinadi (production'da) va lokal/dev'da token yo'q
+    # bo'lsa darrov no_token qaytaradi. Eslatma optimistik tarzda "yuborilgan"
+    # deb belgilanadi (trial bir martalik) — takror yubormaslik DB lock'i bilan
+    # kafolatlangani uchun bu maqbul.
+    for chat_id, msg in pending_messages:
+        try:
+            send_telegram_otp_task.delay(chat_id, msg, bot='auth')
+        except Exception:
+            logger.exception(
+                'trial reminder enqueue failed for chat_id=%s', chat_id,
+            )
+
+    return {'sent': len(pending_messages), 'skipped': skipped}
 

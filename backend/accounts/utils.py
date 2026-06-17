@@ -10,7 +10,71 @@ Examples that all collapse to ``+998901234567``:
     90 123 45 67
     (90) 123-45-67
 """
+import base64
+import hashlib
 import re
+
+
+# ─── TOTP secret shifrlash ────────────────────────────────────────────────────
+# 2FA maxfiy kaliti (`totp_secret`) DB'da OCHIQ (plaintext) saqlanmasligi kerak:
+# DB dump sizib chiqsa barcha 2FA kalitlari ochiq qolardi. Shuning uchun uni
+# Fernet (symmetric AES) bilan shifrlab saqlaymiz. Shifrlash kaliti:
+#   1) `TOTP_ENCRYPTION_KEY` env var (agar berilgan bo'lsa) — to'g'ridan-to'g'ri
+#      Fernet kaliti (url-safe base64, 32 bayt) sifatida ishlatiladi; yoki
+#   2) aks holda Django `SECRET_KEY` dan SHA-256 orqali derivatsiya qilinadi.
+# Fernet aniq 32-baytli url-safe base64 kalit talab qiladi — SECRET_KEY har
+# qanday uzunlikda bo'lishi mumkin, shuning uchun uni xeshlab normallashtiramiz.
+
+
+def _totp_fernet():
+    """`cryptography.fernet.Fernet` nusxasini qaytaradi.
+
+    `cryptography` paketi o'rnatilmagan bo'lsa ImportError ko'taradi —
+    chaqiruvchilar (encrypt/decrypt) buni ushlab graceful fallback qiladi.
+    """
+    from cryptography.fernet import Fernet  # lazy import
+
+    from django.conf import settings
+
+    explicit = getattr(settings, 'TOTP_ENCRYPTION_KEY', None)
+    if explicit:
+        key = explicit.encode() if isinstance(explicit, str) else explicit
+    else:
+        # SECRET_KEY'dan barqaror 32-baytli kalit derivatsiya qilamiz.
+        digest = hashlib.sha256(settings.SECRET_KEY.encode('utf-8')).digest()
+        key = base64.urlsafe_b64encode(digest)
+    return Fernet(key)
+
+
+def encrypt_totp_secret(plaintext):
+    """TOTP maxfiy kalitini shifrlaydi (DB'ga yozishdan oldin).
+
+    Bo'sh qiymat bo'sh qaytadi (2FA o'chirilgan holat). Shifrlash imkonsiz
+    bo'lsa (paket yo'q) — kalit yo'qotilmasin uchun ochiq saqlanadi (orqaga
+    moslik); bunday holat production'da bo'lmasligi kerak.
+    """
+    if not plaintext:
+        return ''
+    try:
+        return _totp_fernet().encrypt(str(plaintext).encode('utf-8')).decode('ascii')
+    except Exception:
+        return str(plaintext)
+
+
+def decrypt_totp_secret(stored):
+    """DB'dan o'qilgan shifrlangan TOTP kalitini ochadi.
+
+    Bo'sh bo'lsa bo'sh qaytadi. Shifrni ochib bo'lmasa (eski migratsiya
+    qilinmagan plaintext qiymat yoki noto'g'ri kalit) — qiymatni o'zini
+    qaytaramiz, shunda migratsiyadan oldin yoki kalit muammosida 2FA butunlay
+    ishdan chiqmaydi (eski plaintext base32 kalit pyotp uchun yaroqli qoladi).
+    """
+    if not stored:
+        return ''
+    try:
+        return _totp_fernet().decrypt(str(stored).encode('ascii')).decode('utf-8')
+    except Exception:
+        return str(stored)
 
 
 # ─── User-scoped cache helpers ────────────────────────────────────────────────
