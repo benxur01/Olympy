@@ -381,6 +381,12 @@ const mapBackendUser = (user) => {
     // (undefined) wizard'ni ko'rsatmaslik uchun default true — faqat backend
     // aniq `false` qaytarganda wizard ochiladi.
     onboardingCompleted: user.onboarding_completed !== false,
+    // B2B owner onboarding (Feature #1). Backend har doim boolean qaytaradi;
+    // eski javobda maydon bo'lmasa (undefined) modal ochilmasligi uchun
+    // OwnerDashboard aniq `=== false` tekshiradi.
+    onboardingCenterCompleted: user.onboarding_center_completed,
+    // Tanga balansi (referral/mukofotlar uchun). Serializer qaytarmasa 0.
+    coins: typeof user.coins === 'number' ? user.coins : 0,
     onboardingGrade: user.onboarding_grade || null,
     onboardingSubjects: Array.isArray(user.onboarding_subjects) ? user.onboarding_subjects : [],
     onboardingGoal: user.onboarding_goal || null,
@@ -928,6 +934,25 @@ export const OlympyApi = {
   submitMockOlympiad: (mockId, body, token) => request(`/api/mock-olympiads/${mockId}/submit/`, { method: 'POST', body: body || {}, token }),
   // O'qituvchi/Manager analitikasi — eng ko'p noto'g'ri savollar.
   getQuestionAnalytics: (centerId, token) => request(`/api/questions/analytics/?center=${centerId}`, { token }),
+  // ─── B2B / O'sish (growth) funksiyalari ───
+  // Feature #1: B2B markaz onboarding — owner sehrgarini tugatish/o'tkazib yuborish.
+  completeCenterOnboarding: (token) => request('/api/me/center-onboarding/', { method: 'PATCH', token }),
+  // Feature #3: O'qituvchi paneli — markaz o'quvchilari va olimpiadalari.
+  // { count, results: [...] } qaytaradi (raw — chaqiruvchi results'ni oladi).
+  teacherStudents: (token) => request('/api/me/teacher/students/', { token }),
+  teacherOlympiads: (token) => request('/api/me/teacher/olympiads/', { token }),
+  // Feature #4: Kunlik maqsad. GET — bugungi holat; POST {target_questions:N} — belgilash.
+  getDailyGoal: (token) => request('/api/me/daily-goal/', { token }),
+  setDailyGoal: (n, token) => request('/api/me/daily-goal/', { method: 'POST', body: { target_questions: n }, token }),
+  // Feature #5: Sertifikat haqiqiyligini tekshirish — PUBLIC (auth shart emas).
+  // Token YUBORILMAYDI va 401 da logout chaqirilmasligi uchun retryOnAuth:false.
+  // Topilmasa backend {valid:false} 404 qaytaradi — ApiError.data orqali o'qiladi.
+  verifyCertificate: (uuid) => request(`/api/certificates/verify/${uuid}/`, { retryOnAuth: false }),
+  // Feature #6: Markaz brendi (white-label) — faqat owner. body {brand_color, custom_domain?}.
+  updateCenterBranding: (centerId, body, token) => request(`/api/centers/${centerId}/branding/`, { method: 'PATCH', body, token }),
+  // Feature #7: Referral — o'z kodi/statistikasi va boshqa kodni ishlatish.
+  getReferral: (token) => request('/api/me/referral/', { token }),
+  useReferral: (code, token) => request('/api/me/referral/use/', { method: 'POST', body: { code }, token }),
 };
 
 Object.assign(globalThis, { OlympyApi });

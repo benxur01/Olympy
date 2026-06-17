@@ -1915,6 +1915,9 @@ const mapApiCenter = (c) => {
     rating: parseFloat(c.rating) || 0,
     students: c.students || 0,
     olympiads: c.olympiads || 0,
+    // Branding (white-label, Feature #6). brand_color '#RRGGBB' yoki bo'sh.
+    brandColor: c.brand_color || c.brandColor || '',
+    customDomain: c.custom_domain || c.customDomain || '',
     createdAt: (c.created_at || '').slice(0, 10),
     _api: true,
   };
@@ -5360,8 +5363,10 @@ var RegisterPage = moduleScope.RegisterPage;
 const _retToken = () => globalThis.OlympyApi?.getToken?.();
 
 // ─── DH3. Streak himoyasi eslatmasi (sariq banner) ───────────────────────────
-const StreakWarningBanner = ({ onNavigate }) => {
-  const { data } = useApiData(() => OlympyApi.getStreakWarning(_retToken()), []);
+const StreakWarningBanner = ({ onNavigate, user }) => {
+  // user o'zgarsa (logout/login) ma'lumot qayta yuklansin — komponent
+  // unmount bo'lmaydi, shuning uchun dep array'ga user identifikatorini qo'shamiz.
+  const { data } = useApiData(() => OlympyApi.getStreakWarning(_retToken()), [user?.id, user?.backendId]);
   if (!data || (data.streak_count || 0) <= 3) return null;
 
   if (data.is_premium) {
@@ -5403,8 +5408,8 @@ const StreakWarningBanner = ({ onNavigate }) => {
 };
 
 // ─── DH1. Bugungi savollar (countdown + 3 ta savol) ──────────────────────────
-const DailyQuestionsWidget = () => {
-  const { data, loading, reload } = useApiData(() => OlympyApi.getDailyQuestions(_retToken()), []);
+const DailyQuestionsWidget = ({ user }) => {
+  const { data, loading, reload } = useApiData(() => OlympyApi.getDailyQuestions(_retToken()), [user?.id, user?.backendId]);
   const [timeLeft, setTimeLeft] = React.useState('');
   const [answering, setAnswering] = React.useState(null);
 
@@ -5494,9 +5499,221 @@ const DailyQuestionsWidget = () => {
   );
 };
 
+// ─── F4. Streak + Kunlik maqsad (gamifikatsiya) ──────────────────────────────
+// Yuqorida streak kartochkasi (🔥 ketma-ket kunlar) va 7 kunlik rekord banneri,
+// pastda bugungi kunlik maqsad progress bari. Maqsad belgilanmagan bo'lsa
+// (target=0) 1/3/5/10 savol tanlash tugmalari ko'rsatiladi.
+const DAILY_GOAL_OPTIONS = [1, 3, 5, 10];
+const DailyGoalWidget = ({ streakCount = 0, user }) => {
+  const { data, loading, reload } = useApiData(() => OlympyApi.getDailyGoal(_retToken()), [user?.id, user?.backendId]);
+  const [saving, setSaving] = React.useState(false);
+
+  const setGoal = async (n) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await OlympyApi.setDailyGoal(n, _retToken());
+      reload();
+    } catch (e) {
+      // jim — keyingi yuklashda holat tiklanadi
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return null;
+
+  const target = data?.target_questions || 0;
+  const completed = data?.completed_questions || 0;
+  const isAchieved = !!data?.is_achieved;
+  const pct = target > 0 ? Math.min(100, Math.round((completed / target) * 100)) : 0;
+  const hasStreak = (streakCount || 0) > 0;
+  const recordReached = (streakCount || 0) >= 7;
+
+  return (
+    <div className="space-y-3">
+      {/* Streak kartochkasi — har doim ko'rsatiladi (0 bo'lsa motivatsion matn). */}
+      <div className={`glass rounded-2xl p-4 md:p-5 border ${recordReached ? 'border-orange-500/30 bg-orange-500/10' : 'border-orange-500/15'}`}>
+        <div className="flex items-center gap-3">
+          <div className="text-3xl flex-shrink-0">🔥</div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-black text-white">
+              {hasStreak
+                ? <>Ketma-ket <span className="text-orange-400">{streakCount}</span> kun!</>
+                : 'Bugun mashq qilib seriyani boshlang'}
+            </div>
+            <div className="text-xs text-white/50 mt-0.5">
+              {hasStreak
+                ? 'Har kuni faol bo\'lib seriyangizni uzaytiring.'
+                : 'Har kungi faollik bonus tanga va reyting beradi.'}
+            </div>
+          </div>
+        </div>
+        {recordReached && (
+          <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/15 px-3 py-2 text-xs font-bold text-amber-200 flex items-center gap-2">
+            <span>🏆</span> 7 kunlik rekord! +50 coin
+          </div>
+        )}
+      </div>
+
+      {/* Kunlik maqsad */}
+      <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/15">
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <h3 className="font-bold text-white text-sm md:text-base flex items-center gap-2">🎯 Kunlik maqsad</h3>
+          {target > 0 && (
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${isAchieved ? 'bg-emerald-500/15 text-emerald-300' : 'bg-indigo-500/10 text-indigo-300'}`}>
+              {completed}/{target} savol
+            </span>
+          )}
+        </div>
+        {target > 0 ? (
+          <>
+            <div className="h-2.5 w-full rounded-full bg-white/10 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${isAchieved ? 'bg-gradient-to-r from-emerald-500 to-teal-500' : 'bg-gradient-to-r from-indigo-500 to-purple-600'}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <div className="mt-2 text-xs text-white/55">
+              {isAchieved
+                ? <span className="text-emerald-300 font-semibold">✓ Bugungi maqsad bajarildi! Ajoyib.</span>
+                : <>Bugun yana <span className="text-white font-semibold">{data?.remaining || 0}</span> ta savol yeching.</>}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-white/40 font-medium mr-1">Maqsadni o'zgartirish:</span>
+              {DAILY_GOAL_OPTIONS.map(n => (
+                <button
+                  key={n}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setGoal(n)}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all disabled:opacity-50 ${n === target ? 'bg-indigo-500 text-white' : 'bg-white/5 text-white/55 hover:bg-white/10 hover:text-white'}`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="space-y-2.5">
+            <div className="text-xs text-white/55">Bugungi maqsadingizni belgilang — har kuni nechta savol yechasiz?</div>
+            <div className="flex flex-wrap gap-2">
+              {DAILY_GOAL_OPTIONS.map(n => (
+                <button
+                  key={n}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setGoal(n)}
+                  className="rounded-xl bg-white/5 px-4 py-2 text-sm font-bold text-white/80 hover:bg-indigo-500/20 hover:text-white transition-all disabled:opacity-50"
+                >
+                  {n} savol
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── F7. Referral — do'stni taklif qilish ────────────────────────────────────
+// O'z referral kodi + nusxalash tugmasi, taklif qilinganlar soni va ixtiyoriy
+// kod kiritish (boshqa do'st kodini ishlatib ikkalasiga 50 coin). Profile yoki
+// StudentDashboard'ga joylashtiriladi.
+const ReferralWidget = ({ user }) => {
+  const { data, loading, reload } = useApiData(() => OlympyApi.getReferral(_retToken()), [user?.id, user?.backendId]);
+  const [copied, setCopied] = React.useState(false);
+  const [codeInput, setCodeInput] = React.useState('');
+  const [submitting, setSubmitting] = React.useState(false);
+  const [msg, setMsg] = React.useState({ type: '', text: '' });
+
+  const handleCopy = async () => {
+    if (!data?.code) return;
+    try {
+      await navigator.clipboard?.writeText(data.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (e) {
+      // clipboard ruxsati yo'q — jim
+    }
+  };
+
+  const handleUse = async (e) => {
+    e.preventDefault();
+    const code = codeInput.trim();
+    if (!code || submitting) return;
+    setSubmitting(true);
+    setMsg({ type: '', text: '' });
+    try {
+      const res = await OlympyApi.useReferral(code, _retToken());
+      setMsg({ type: 'ok', text: res?.detail || "Tabriklaymiz! Bonus tanga qo'shildi" });
+      setCodeInput('');
+      reload();
+    } catch (err) {
+      setMsg({ type: 'err', text: OlympyApi.toUserMessage?.(err) || "Kodni ishlatib bo'lmadi" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading || !data) return null;
+
+  return (
+    <div className="glass rounded-2xl p-4 md:p-5 border border-emerald-500/15">
+      <h3 className="font-bold text-white text-sm md:text-base mb-1 flex items-center gap-2">🎁 Do'stni taklif qiling</h3>
+      <p className="text-xs text-white/50 mb-3">Kodingizni do'stingizga yuboring — u kodni ishlatsa, ikkalangiz ham 50 coin olasiz.</p>
+
+      <div className="flex items-center gap-2">
+        <div className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 font-mono text-base font-black tracking-widest text-white text-center select-all">
+          {data.code}
+        </div>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="btn-ghost flex items-center gap-1.5 rounded-xl px-3.5 py-2.5 text-xs font-bold"
+        >
+          <Icon name={copied ? 'check' : 'copy'} size={14} />
+          {copied ? 'Nusxalandi' : 'Nusxalash'}
+        </button>
+      </div>
+
+      <div className="mt-3 text-xs text-white/55">
+        Siz <span className="text-emerald-300 font-bold">{data.invited_count || 0}</span> ta do'st taklif qildingiz.
+      </div>
+
+      {/* Ixtiyoriy: do'st kodini kiritish. */}
+      <form onSubmit={handleUse} className="mt-4 border-t border-white/5 pt-3">
+        <label className="block text-[11px] font-bold uppercase tracking-wide text-white/40 mb-1.5">Do'stingiz kodi bormi?</label>
+        <div className="flex items-center gap-2">
+          <input
+            value={codeInput}
+            onChange={e => setCodeInput(e.target.value.toUpperCase())}
+            placeholder="Kodni kiriting"
+            maxLength={12}
+            className="input-field flex-1 font-mono tracking-widest"
+          />
+          <button
+            type="submit"
+            disabled={submitting || !codeInput.trim()}
+            className="btn-primary rounded-xl px-4 py-2.5 text-xs font-bold disabled:opacity-50"
+          >
+            {submitting ? '...' : 'Tasdiqlash'}
+          </button>
+        </div>
+        {msg.text && (
+          <div className={`mt-2 text-xs font-semibold ${msg.type === 'ok' ? 'text-emerald-300' : 'text-rose-300'}`}>
+            {msg.text}
+          </div>
+        )}
+      </form>
+    </div>
+  );
+};
+
 // ─── DH2. Raqib harakati ─────────────────────────────────────────────────────
-const RivalActivityWidget = () => {
-  const { data, loading } = useApiData(() => OlympyApi.getRivalActivity(_retToken()), []);
+const RivalActivityWidget = ({ user }) => {
+  const { data, loading } = useApiData(() => OlympyApi.getRivalActivity(_retToken()), [user?.id, user?.backendId]);
   if (loading) return null;
   const rivals = Array.isArray(data) ? data : [];
   if (!rivals.length) return null;
@@ -5533,8 +5750,8 @@ const RivalActivityWidget = () => {
 };
 
 // ─── DH4. Haftalik musobaqa (top 5 + o'z o'rni) ──────────────────────────────
-const WeeklyContestWidget = () => {
-  const { data, loading } = useApiData(() => OlympyApi.getWeeklyContest(_retToken()), []);
+const WeeklyContestWidget = ({ user }) => {
+  const { data, loading } = useApiData(() => OlympyApi.getWeeklyContest(_retToken()), [user?.id, user?.backendId]);
   if (loading) return null;
   const top = data?.top || [];
   const myEntry = data?.my_entry;
@@ -5570,8 +5787,8 @@ const WeeklyContestWidget = () => {
 };
 
 // ─── OB3. "Sizga o'xshash o'quvchi" taqqoslash (kichik karta) ─────────────────
-const PeerComparisonCard = () => {
-  const { data, loading } = useApiData(() => OlympyApi.getPeerComparison(_retToken()), []);
+const PeerComparisonCard = ({ user }) => {
+  const { data, loading } = useApiData(() => OlympyApi.getPeerComparison(_retToken()), [user?.id, user?.backendId]);
   if (loading || !data) return null;
   if ((data.total_peers || 0) <= 1) return null;
   return (
@@ -5592,8 +5809,8 @@ const PeerComparisonCard = () => {
 };
 
 // ─── OB4. Birinchi/keyingi olimpiada taklifi ─────────────────────────────────
-const SuggestedOlympiadCard = ({ onNavigate, olympiads }) => {
-  const { data, loading } = useApiData(() => OlympyApi.getSuggestedOlympiad(_retToken()), []);
+const SuggestedOlympiadCard = ({ onNavigate, olympiads, user }) => {
+  const { data, loading } = useApiData(() => OlympyApi.getSuggestedOlympiad(_retToken()), [user?.id, user?.backendId]);
   if (loading || !data || !data.olympiad_id) return null;
   const handleGo = () => {
     if (!onNavigate) return;
@@ -5621,8 +5838,8 @@ const SuggestedOlympiadCard = ({ onNavigate, olympiads }) => {
 
 
 // ─── LT3. "O'tgan oy shu paytda" taqqoslash ──────────────────────────────────
-const ProgressComparisonCard = () => {
-  const { data, loading } = useApiData(() => OlympyApi.getProgressComparison(_retToken()), []);
+const ProgressComparisonCard = ({ user }) => {
+  const { data, loading } = useApiData(() => OlympyApi.getProgressComparison(_retToken()), [user?.id, user?.backendId]);
   if (loading || !data) return null;
   // Ikkala oyda ham faollik bo'lmasa ko'rsatmaymiz.
   if ((data.current_month?.attempts || 0) === 0 && (data.last_month?.attempts || 0) === 0) return null;
@@ -5713,6 +5930,8 @@ const OlympiadCalendarModal = ({ open, onClose, onNavigate }) => {
 Object.assign(window, {
   StreakWarningBanner,
   DailyQuestionsWidget,
+  DailyGoalWidget,
+  ReferralWidget,
   RivalActivityWidget,
   WeeklyContestWidget,
   PeerComparisonCard,
@@ -5722,11 +5941,14 @@ Object.assign(window, {
 });
 
 
-Object.assign(moduleScope, { _retToken, StreakWarningBanner, DailyQuestionsWidget, RivalActivityWidget, WeeklyContestWidget, PeerComparisonCard, SuggestedOlympiadCard, ProgressComparisonCard, OlympiadCalendarModal });
+Object.assign(moduleScope, { _retToken, StreakWarningBanner, DailyQuestionsWidget, DAILY_GOAL_OPTIONS, DailyGoalWidget, ReferralWidget, RivalActivityWidget, WeeklyContestWidget, PeerComparisonCard, SuggestedOlympiadCard, ProgressComparisonCard, OlympiadCalendarModal });
 }
 var _retToken = moduleScope._retToken;
 var StreakWarningBanner = moduleScope.StreakWarningBanner;
 var DailyQuestionsWidget = moduleScope.DailyQuestionsWidget;
+var DAILY_GOAL_OPTIONS = moduleScope.DAILY_GOAL_OPTIONS;
+var DailyGoalWidget = moduleScope.DailyGoalWidget;
+var ReferralWidget = moduleScope.ReferralWidget;
 var RivalActivityWidget = moduleScope.RivalActivityWidget;
 var WeeklyContestWidget = moduleScope.WeeklyContestWidget;
 var PeerComparisonCard = moduleScope.PeerComparisonCard;
@@ -7138,10 +7360,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {/* Retention: kunlik ilg'ash widgetlari (faqat real API rejimida) */}
       {isApi && (
         <>
-          <StreakWarningBanner onNavigate={setPage} />
-          <SuggestedOlympiadCard onNavigate={setPage} olympiads={visibleOlympiads} />
-          <PeerComparisonCard />
-          <DailyQuestionsWidget />
+          <StreakWarningBanner onNavigate={setPage} user={user} />
+          <DailyGoalWidget streakCount={user?.streakCount} user={user} />
+          <SuggestedOlympiadCard onNavigate={setPage} olympiads={visibleOlympiads} user={user} />
+          <PeerComparisonCard user={user} />
+          <DailyQuestionsWidget user={user} />
         </>
       )}
 
@@ -7227,9 +7450,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {/* Retention: musobaqa va uzoq muddatli bog'liqlik widgetlari */}
       {isApi && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-          <WeeklyContestWidget />
-          <RivalActivityWidget />
-          <ProgressComparisonCard />
+          <WeeklyContestWidget user={user} />
+          <RivalActivityWidget user={user} />
+          <ProgressComparisonCard user={user} />
         </div>
       )}
 
@@ -12846,7 +13069,7 @@ var QuestionCreatorPage = moduleScope.QuestionCreatorPage;
 // Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/teacher/<key>`
 // manziliga bog'lanadi (home → /dashboard/teacher). Namuna StudentDashboard'dan,
 // umumiy yordamchi shared.jsx'dagi makeDashboardUrlSync.
-const TEACHER_DASHBOARD_PAGES = ['home', 'olympiads', 'questions', 'profile'];
+const TEACHER_DASHBOARD_PAGES = ['home', 'students', 'olympiads', 'questions', 'profile'];
 const teacherDashUrl = makeDashboardUrlSync('/dashboard/teacher', TEACHER_DASHBOARD_PAGES);
 
 const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
@@ -12902,6 +13125,16 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       : Promise.resolve(null),
     [isApi, centerId],
   );
+  // F3: O'qituvchi paneli — markaz o'quvchilari (ism/telefon/ball) va
+  // olimpiadalari (ishtirokchilar soni bilan) backend endpointlaridan.
+  const apiTeacherStudentsRes = useApiData(
+    () => isApi ? OlympyApi.teacherStudents(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiTeacherOlympiadsRes = useApiData(
+    () => isApi ? OlympyApi.teacherOlympiads(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
 
   React.useEffect(() => {
     if (page === 'olympiads' && isApi && centerId) {
@@ -12929,6 +13162,17 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const questions = (isApi ? (apiQuestions || []) : store.questions).filter(q => String(q.centerId) === String(centerId));
   const activeEvents = olympiads.filter(o => o.status === 'active');
 
+  // F3: O'quvchilar ro'yxati va olimpiada ishtirokchilari soni (backend
+  // teacher endpointlaridan). participantsMap — olimpiada id → ishtirokchilar.
+  const teacherStudents = (isApi && apiTeacherStudentsRes.data?.results)
+    ? apiTeacherStudentsRes.data.results : [];
+  const participantsMap = React.useMemo(() => {
+    const map = {};
+    const rows = (isApi && apiTeacherOlympiadsRes.data?.results) ? apiTeacherOlympiadsRes.data.results : [];
+    rows.forEach(o => { map[String(o.id)] = o.participants || 0; });
+    return map;
+  }, [isApi, apiTeacherOlympiadsRes.data]);
+
   if (!center) {
     return (
       <PendingAccessCard
@@ -12942,6 +13186,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const navItems = [
     { key: 'home', icon: 'home', label: 'Asosiy' },
+    { key: 'students', icon: 'users', label: "O'quvchilar" },
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
     { key: 'questions', icon: 'book', label: 'Savollar' },
     { key: 'profile', icon: 'user', label: 'Profil' },
@@ -13243,6 +13488,66 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     </div>
   );
 
+  // F3: O'quvchilar tab — markaz o'quvchilari (ism, telefon, o'rtacha ball,
+  // urinishlar soni). Ma'lumot backend teacher_students endpointidan.
+  const renderStudents = () => {
+    const loading = isApi && apiTeacherStudentsRes.loading;
+    return (
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black text-white">O'quvchilar</h2>
+            <p className="text-white/40 text-sm">{centerName} · markaz o'quvchilari va natijalari</p>
+          </div>
+          <div className="rounded-xl glass px-4 py-2 text-sm font-bold text-white">
+            Jami: <span className="text-indigo-300">{teacherStudents.length}</span>
+          </div>
+        </div>
+
+        {loading && (
+          <div className="text-center py-10 text-white/40 text-sm">Yuklanmoqda...</div>
+        )}
+
+        {!loading && teacherStudents.length === 0 && (
+          <EmptyState
+            icon="users"
+            title="O'quvchilar yo'q"
+            desc="Markazingizga o'quvchilar qo'shilgach, ular shu yerda ko'rinadi"
+          />
+        )}
+
+        {!loading && teacherStudents.length > 0 && (
+          <div className="glass rounded-2xl border border-white/10 overflow-hidden">
+            {/* Sarlavha — faqat desktop. */}
+            <div className="hidden md:grid grid-cols-12 gap-3 px-5 py-3 border-b border-white/10 text-xs font-bold uppercase tracking-wide text-white/40">
+              <div className="col-span-5">Ism familiya</div>
+              <div className="col-span-4">Telefon</div>
+              <div className="col-span-2 text-center">O'rtacha ball</div>
+              <div className="col-span-1 text-center">Urinish</div>
+            </div>
+            <div className="divide-y divide-white/5">
+              {teacherStudents.map(s => (
+                <div key={s.id} className="grid grid-cols-12 gap-3 px-5 py-3.5 items-center hover:bg-white/[0.02]">
+                  <div className="col-span-12 md:col-span-5 flex items-center gap-3 min-w-0">
+                    <Avatar name={s.full_name} size={34} />
+                    <div className="font-semibold text-white truncate">{s.full_name || 'Foydalanuvchi'}</div>
+                  </div>
+                  <div className="col-span-6 md:col-span-4 text-sm text-white/55 truncate">
+                    <span className="md:hidden text-white/30">Tel: </span>{s.phone || '—'}
+                  </div>
+                  <div className="col-span-3 md:col-span-2 md:text-center">
+                    <span className="inline-block rounded-lg bg-indigo-500/15 px-2.5 py-1 text-sm font-bold text-indigo-300">{s.avg_score || 0}</span>
+                  </div>
+                  <div className="col-span-3 md:col-span-1 text-right md:text-center text-sm font-semibold text-white/60">{s.attempts || 0}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderOlympiads = () => (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -13277,6 +13582,11 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                     <span>{o.startDate || "Sana yo'q"} {o.startTime || ''}</span>
                     <span>{o.duration || 60} min</span>
                     <span>{assignedCount} ta savol</span>
+                    {isApi && (
+                      <span className="flex items-center gap-1 text-white/55">
+                        <Icon name="users" size={12} /> {participantsMap[String(o.backendId ?? o.id)] || 0} ishtirokchi
+                      </span>
+                    )}
                   </div>
                   {needsReadiness && (
                     <div className={`rounded-xl px-3 py-2 border text-xs ${isReady ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-amber-500/10 border-amber-500/25 text-amber-300'}`}>
@@ -13344,6 +13654,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const pagesMap = {
     home: renderHome,
+    students: renderStudents,
     olympiads: renderOlympiads,
     questions: () => <QuestionCreatorPage embedded user={user} onOpenSwitcher={onOpenSwitcher} onNavigate={onNavigate} />,
     profile: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} />,
@@ -17608,8 +17919,9 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
       {/* Retention: o'sish yo'li, oylik o'sish va sinf taqqoslash (LT2/LT3/OB3) */}
       {isApi && (
         <>
-          <ProgressComparisonCard />
-          <PeerComparisonCard />
+          <ReferralWidget user={user} />
+          <ProgressComparisonCard user={user} />
+          <PeerComparisonCard user={user} />
         </>
       )}
 
@@ -19304,6 +19616,22 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const emptyShopForm = { title: '', description: '', coin_cost: 100, icon: '🎁', stock: 10, is_active: true, features: [], imageFile: null, image_url: '' };
   const [shopForm, setShopForm] = React.useState(emptyShopForm);
 
+  // F1: B2B markaz onboarding sehrgari (owner birinchi kirganda 3 qadamli modal).
+  // Faqat backend aniq `false` qaytarganda ochiladi (eski/undefined holatda emas).
+  const [onboardingStep, setOnboardingStep] = React.useState(0);
+  const [onboardingOpen, setOnboardingOpen] = React.useState(false);
+  const [onboardingSaving, setOnboardingSaving] = React.useState(false);
+  React.useEffect(() => {
+    if (isApi && user?.onboardingCenterCompleted === false) {
+      setOnboardingOpen(true);
+      setOnboardingStep(0);
+    }
+    // user obyekti yangilanganda (onboardingCenterCompleted=true) qayta ochilmaydi.
+  }, [isApi, user?.onboardingCenterCompleted]);
+
+  // F6: Branding (white-label) — joriy markaz brand rangi.
+  const [brandColorInput, setBrandColorInput] = React.useState('#6366f1');
+  const [brandSaving, setBrandSaving] = React.useState(false);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -19572,6 +19900,53 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     try { localStorage.setItem(selectedCenterStorageKey, String(ownerCenterId)); } catch {}
   }, [ownerCenterId, selectedCenterStorageKey]);
 
+  // F6: Markaz brand rangi o'zgarganda input'ni va CSS --brand-color o'zgaruvchisini
+  // sinxronlash. Sahifa yuklanganda ham markaz rangi bo'lsa darhol qo'llanadi.
+  React.useEffect(() => {
+    if (center?.brandColor) {
+      setBrandColorInput(center.brandColor);
+      try { document.documentElement.style.setProperty('--brand-color', center.brandColor); } catch {}
+    }
+  }, [center?.brandColor]);
+
+  // F1: Onboarding sehrgarini tugatish/o'tkazib yuborish — backendni yangilab,
+  // user state'ni ham (onUserUpdate orqali) sinxronlaymiz va modalni yopamiz.
+  const finishCenterOnboarding = () => {
+    setOnboardingSaving(true);
+    OlympyApi.completeCenterOnboarding(OlympyApi.getToken())
+      .then(() => {
+        if (onUserUpdate) onUserUpdate({ ...user, onboardingCenterCompleted: true });
+      })
+      .catch(err => { console.warn('completeCenterOnboarding failed:', err); })
+      .finally(() => {
+        setOnboardingSaving(false);
+        setOnboardingOpen(false);
+      });
+  };
+
+  // F6: Brand rangini saqlash. Saqlangach CSS o'zgaruvchini darhol qo'llaymiz
+  // va apiCenters'ni qayta yuklaymiz (yangi rang keyingi render'da ham qoladi).
+  const saveBranding = () => {
+    const centerId = center?.backendId ?? center?.id;
+    if (!centerId) return;
+    if (!/^#[0-9a-fA-F]{6}$/.test(brandColorInput)) {
+      showToast("⚠ Rang #RRGGBB formatida bo'lishi kerak");
+      return;
+    }
+    setBrandSaving(true);
+    OlympyApi.updateCenterBranding(centerId, { brand_color: brandColorInput }, OlympyApi.getToken())
+      .then(() => {
+        try { document.documentElement.style.setProperty('--brand-color', brandColorInput); } catch {}
+        showToast('✓ Brand rangi saqlandi');
+        apiCentersRes.reload?.();
+      })
+      .catch(err => {
+        console.warn('updateCenterBranding failed:', err);
+        showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Brendni saqlab bo'lmadi"}`);
+      })
+      .finally(() => setBrandSaving(false));
+  };
+
   // Savol banki va do'kon yuklovchilari: bu hook'lar early return'dan (pastdagi
   // PendingAccessCard) OLDIN, shartsiz chaqilishi shart — aks holda tasdiqlangan
   // va tasdiqlanmagan markaz render'lari orasida hook soni o'zgarib, "Rules of
@@ -19633,6 +20008,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   if (!center || center.status !== 'approved') {
     const approvedFallback = ownerCenters.find(c => c.status === 'approved');
+    // F1/F6: Markaz hali tasdiqlanmagan bo'lsa ham — owner onboarding bilan
+    // tanishishi va brendni oldindan sozlashi mumkin bo'lsin. Bu bloklar
+    // PendingAccessCard'ning `extra` qismida (tasdiqlash kutilayotgan paytda)
+    // ko'rsatiladi; tasdiqlash xabari va boshqa elementlar joyida qoladi.
+    const showCenterOnboarding = isApi && user?.onboardingCenterCompleted === false;
+    const canPreviewBranding = !!center && center.status !== 'rejected';
     return (
       <PendingAccessCard
         title={center?.status === 'rejected' ? 'Tashkilot arizasi rad etildi' : 'Tashkilot tasdig\'i kutilmoqda'}
@@ -19656,6 +20037,89 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 </span>
               </div>
             )}
+
+            {/* F1: B2B onboarding bilan tanishtiruvchi banner — tasdiqlash
+                kutilayotganda ham ko'rinadi. Bu yerda dashboard tablar hali
+                ochilmagani uchun faqat 3 qadamni ko'rsatamiz va "Tushunarli"
+                tugmasi onboarding'ni yakunlaydi (backend + user state). */}
+            {showCenterOnboarding && (
+              <div className="glass-strong rounded-2xl p-5 text-left border border-indigo-500/25 max-w-md mx-auto">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+                    <Icon name="trophy" size={18} />
+                  </div>
+                  <div className="text-sm font-black text-white">Olympy'da nimalar qila olasiz</div>
+                </div>
+                <div className="space-y-2.5">
+                  {[
+                    { icon: 'building', t: 'Markazingizni sozlang', d: "Nomi, logosi va joylashuvi o'quvchilarga ko'rinadi." },
+                    { icon: 'trophy', t: 'Olimpiada yarating', d: "O'quvchilaringiz qatnashishi uchun musobaqalar tashkil qiling." },
+                    { icon: 'users', t: "O'quvchilarni qo'shing", d: 'Ular arizalarini yuborib markazingizga qo\'shiladi.' },
+                  ].map((s, i) => (
+                    <div key={i} className="flex items-start gap-3 rounded-xl glass p-3">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white/8 text-indigo-300">
+                        <Icon name={s.icon} size={16} />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white">{s.t}</div>
+                        <div className="text-[11px] font-medium text-white/45 leading-relaxed">{s.d}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={finishCenterOnboarding}
+                  disabled={onboardingSaving}
+                  className="mt-3 w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {onboardingSaving ? 'Saqlanmoqda...' : 'Tushunarli'}
+                </button>
+              </div>
+            )}
+
+            {/* F6: Brending (white-label) minimal sozlamasi — tasdiqlash
+                kutilayotganda ham brend rangini oldindan tanlab saqlash mumkin. */}
+            {canPreviewBranding && (
+              <div className="glass-strong rounded-2xl p-5 text-left border border-fuchsia-500/20 max-w-md mx-auto">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white">
+                    <Icon name="sparkles" size={15} />
+                  </div>
+                  <div className="text-sm font-black text-white">Brendingni sozlang</div>
+                </div>
+                <div className="text-[11px] font-medium text-white/45 mb-3">Markazingiz brend rangini hozircha tanlab qo'ying.</div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={brandColorInput}
+                      onChange={e => setBrandColorInput(e.target.value)}
+                      className="h-10 w-14 cursor-pointer rounded-lg border border-white/10 bg-transparent p-1"
+                      aria-label="Brend rangi"
+                    />
+                    <input
+                      type="text"
+                      value={brandColorInput}
+                      onChange={e => setBrandColorInput(e.target.value)}
+                      className="input-field w-28 font-mono uppercase"
+                      placeholder="#6366F1"
+                      maxLength={7}
+                    />
+                  </div>
+                  <div className="h-10 w-10 rounded-xl border border-white/10" style={{ background: brandColorInput }} title="Oldindan ko'rish" />
+                  <button
+                    type="button"
+                    onClick={saveBranding}
+                    disabled={brandSaving}
+                    className="rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-60"
+                  >
+                    {brandSaving ? 'Saqlanmoqda...' : 'Saqlash'}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {ownerCenters.length > 1 && (
               <select value={ownerCenterId || ''} onChange={e => setSelectedOwnerCenterId(e.target.value)} className="input-field max-w-sm">
                 {ownerCenters.map(c => <option key={c.id} value={c.id}>{c.name} — {statusLabel(c.status)}</option>)}
@@ -21532,6 +21996,54 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </div>
         </div>
       </section>
+
+      {/* F6: Branding (white-label) — markaz brend rangi. */}
+      {center && (
+        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+          <div className="mb-4 flex items-center gap-2">
+            <div className="feature-icon bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white" style={{ width: 32, height: 32, borderRadius: 10, fontSize: 14 }}>
+              <Icon name="sparkles" size={16} />
+            </div>
+            <div>
+              <div className="text-sm font-black text-white">Brending</div>
+              <div className="text-xs font-medium text-white/45">Markazingiz brend rangini sozlang.</div>
+            </div>
+          </div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Brend rangi</span>
+              <div className="flex items-center gap-3">
+                <input
+                  type="color"
+                  value={brandColorInput}
+                  onChange={e => setBrandColorInput(e.target.value)}
+                  className="h-11 w-16 cursor-pointer rounded-lg border border-white/10 bg-transparent p-1"
+                  aria-label="Brend rangi"
+                />
+                <input
+                  type="text"
+                  value={brandColorInput}
+                  onChange={e => setBrandColorInput(e.target.value)}
+                  className="input-field w-32 font-mono uppercase"
+                  placeholder="#6366F1"
+                  maxLength={7}
+                />
+              </div>
+            </label>
+            <div className="flex items-center gap-3">
+              <div className="h-11 w-11 rounded-xl border border-white/10" style={{ background: brandColorInput }} title="Oldindan ko'rish" />
+              <button
+                type="button"
+                onClick={saveBranding}
+                disabled={brandSaving}
+                className="rounded-lg bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {brandSaving ? 'Saqlanmoqda...' : 'Saqlash'}
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
     </div>
   );
 
@@ -22417,6 +22929,88 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
       )}
 
+      {/* F1: B2B markaz onboarding sehrgari (3 qadam). */}
+      {onboardingOpen && (() => {
+        const steps = [
+          {
+            icon: 'building',
+            title: 'Markazingizni sozlang',
+            desc: "Markaz ma'lumotlarini to'ldiring — nomi, logosi va joylashuvi o'quvchilarga ko'rinadi.",
+            cta: 'Keyingi',
+            action: () => setOnboardingStep(1),
+          },
+          {
+            icon: 'trophy',
+            title: 'Birinchi olimpiada yarating',
+            desc: "O'quvchilaringiz qatnashishi uchun birinchi olimpiada yoki musobaqa tashkil qiling.",
+            cta: 'Olimpiada yaratish',
+            action: () => { finishCenterOnboarding(); setPage('olympiads'); },
+          },
+          {
+            icon: 'users',
+            title: "O'quvchilarni qo'shing",
+            desc: "O'quvchilarni markazingizga taklif qiling — ular arizalarini yuborib qatnasha boshlaydi.",
+            cta: "O'quvchilarni boshqarish",
+            action: () => { finishCenterOnboarding(); setPage('students'); },
+          },
+        ];
+        const step = steps[onboardingStep] || steps[0];
+        return (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4">
+            <div className="modal w-full max-w-md">
+              {/* Markaz logosi/nomi — mavjud markaz ma'lumotidan. */}
+              {center && (
+                <div className="mb-5 flex items-center gap-3 rounded-xl border border-white/8 glass p-3">
+                  {center.imageUrl ? (
+                    <img src={center.imageUrl} alt={center.name} className="h-10 w-10 flex-shrink-0 rounded-xl object-cover" />
+                  ) : (
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl gradient-bg text-sm font-bold text-white">{(center.name || '?')[0]}</div>
+                  )}
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-black text-white">{center.name}</div>
+                    <div className="truncate text-xs font-semibold text-white/45">{center.organizationType || "O'quv markaz"}</div>
+                  </div>
+                </div>
+              )}
+
+              <div className="mb-1 flex items-center gap-1.5">
+                {steps.map((_, i) => (
+                  <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${i <= onboardingStep ? 'bg-indigo-500' : 'bg-white/10'}`} />
+                ))}
+              </div>
+              <div className="mb-4 text-[11px] font-bold uppercase tracking-wide text-white/40">Qadam {onboardingStep + 1} / {steps.length}</div>
+
+              <div className="mb-5 text-center">
+                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+                  <Icon name={step.icon} size={26} />
+                </div>
+                <h2 className="text-lg font-black text-white">{step.title}</h2>
+                <p className="mt-1.5 text-sm font-medium text-white/55">{step.desc}</p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={finishCenterOnboarding}
+                  disabled={onboardingSaving}
+                  className="flex-1 rounded-lg border border-white/10 px-4 py-3 text-sm font-black text-white/60 hover:bg-white/5 disabled:opacity-50"
+                >
+                  O'tkazib yuborish
+                </button>
+                <button
+                  type="button"
+                  onClick={step.action}
+                  disabled={onboardingSaving}
+                  className="flex-1 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50"
+                >
+                  {step.cta}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {paymentPlan && (
         <Modal 
           open={!!paymentPlan} 
@@ -23215,6 +23809,129 @@ var PARENT_DASHBOARD_PAGES = moduleScope.PARENT_DASHBOARD_PAGES;
 var parentDashUrl = moduleScope.parentDashUrl;
 var ParentDashboard = moduleScope.ParentDashboard;
 
+// pages/CertificateVerify.jsx
+{
+// pages/CertificateVerify.jsx — Sertifikat haqiqiyligini tekshirish (PUBLIC).
+//
+// Feature #5. Sertifikatdagi URL (prolymp.uz/certificates/verify/<uuid>) ochilganda
+// ko'rsatiladi. Auth TALAB QILINMAYDI — backend endpoint AllowAny. Komponent
+// App'dan tashqarida (app.jsx top-level router'ida) render qilinadi, shuning uchun
+// JWT restore oqimi umuman ishga tushmaydi va login talab qilinmaydi.
+//
+// URL'dan UUID ajratiladi: /certificates/verify/<uuid>[/]. Backend topsa
+// {valid:true, student_name, olympiad_name, score, date, center_name},
+// topmasa {valid:false} 404 (ApiError.data orqali o'qiladi).
+
+const CertificateVerifyPage = ({ uuid }) => {
+  const [state, setState] = React.useState({ loading: true, data: null, error: false });
+
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!uuid) {
+      setState({ loading: false, data: null, error: true });
+      return undefined;
+    }
+    OlympyApi.verifyCertificate(uuid)
+      .then(data => {
+        if (cancelled) return;
+        setState({ loading: false, data, error: false });
+      })
+      .catch(err => {
+        if (cancelled) return;
+        // 404 → {valid:false}. Boshqa xato → umumiy "topilmadi" holati.
+        const data = err?.data && typeof err.data === 'object' ? err.data : { valid: false };
+        setState({ loading: false, data, error: false });
+      });
+    return () => { cancelled = true; };
+  }, [uuid]);
+
+  const goHome = () => {
+    try { window.location.href = '/'; } catch {}
+  };
+
+  const valid = !!state.data?.valid;
+
+  return (
+    <div className="dark min-h-screen flex flex-col items-center justify-center p-4" style={{ background: '#050508' }}>
+      <div className="w-full max-w-md">
+        {/* Brend logosi — bosilsa bosh sahifaga. */}
+        <button type="button" onClick={goHome} className="mx-auto mb-6 flex cursor-pointer items-center justify-center border-0 bg-transparent p-0" aria-label="Bosh sahifa">
+          <BrandLogo size="lg" />
+        </button>
+
+        {state.loading && (
+          <div className="glass-strong rounded-3xl border border-white/8 p-8 text-center">
+            <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+            <div className="text-sm font-semibold text-white/60">Sertifikat tekshirilmoqda...</div>
+          </div>
+        )}
+
+        {!state.loading && valid && (
+          <div className="glass-strong rounded-3xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/10 to-teal-500/5 p-8 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20">
+              <Icon name="check" size={32} />
+            </div>
+            <div className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-1 text-xs font-black text-emerald-300">
+              <Icon name="shield" size={13} /> Haqiqiy sertifikat
+            </div>
+            <h1 className="mt-3 text-2xl font-black text-white">{state.data.student_name || 'Foydalanuvchi'}</h1>
+            <p className="mt-1 text-sm font-semibold text-white/55">{state.data.olympiad_name || ''}</p>
+
+            <div className="mt-6 space-y-2.5 text-left">
+              <div className="flex items-center justify-between rounded-xl glass px-4 py-3">
+                <span className="text-xs font-bold uppercase tracking-wide text-white/40">Natija</span>
+                <span className="text-base font-black text-emerald-300">{state.data.score != null ? `${state.data.score} ball` : '—'}</span>
+              </div>
+              {state.data.center_name ? (
+                <div className="flex items-center justify-between rounded-xl glass px-4 py-3">
+                  <span className="text-xs font-bold uppercase tracking-wide text-white/40">Tashkilot</span>
+                  <span className="truncate pl-3 text-sm font-bold text-white">{state.data.center_name}</span>
+                </div>
+              ) : null}
+              {state.data.date ? (
+                <div className="flex items-center justify-between rounded-xl glass px-4 py-3">
+                  <span className="text-xs font-bold uppercase tracking-wide text-white/40">Sana</span>
+                  <span className="text-sm font-bold text-white">{state.data.date}</span>
+                </div>
+              ) : null}
+            </div>
+
+            <button type="button" onClick={goHome} className="btn-primary mt-6 w-full rounded-xl py-3 text-sm font-black">
+              Olympy'ga o'tish
+            </button>
+          </div>
+        )}
+
+        {!state.loading && !valid && (
+          <div className="glass-strong rounded-3xl border border-rose-500/25 bg-gradient-to-br from-rose-500/10 to-rose-600/5 p-8 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-500 to-rose-600 text-white">
+              <Icon name="x" size={32} />
+            </div>
+            <h1 className="text-xl font-black text-white">Sertifikat topilmadi</h1>
+            <p className="mt-2 text-sm font-medium text-white/55">
+              Bu sertifikat haqiqiy emas yoki o'chirilgan. Havola noto'g'ri ko'chirilgan bo'lishi mumkin.
+            </p>
+            <button type="button" onClick={goHome} className="btn-ghost mt-6 w-full rounded-xl py-3 text-sm font-black">
+              Bosh sahifaga qaytish
+            </button>
+          </div>
+        )}
+
+        <div className="mt-6 text-center text-xs font-semibold text-white/30">
+          Olympy — Online Olimpiada Platformasi
+        </div>
+      </div>
+    </div>
+  );
+};
+
+Object.assign(window, { CertificateVerifyPage });
+
+
+Object.assign(moduleScope, { CertificateVerifyPage });
+}
+var CertificateVerifyPage = moduleScope.CertificateVerifyPage;
+
 // app.jsx
 {
 // app.jsx — Main router & state (store-driven)
@@ -23643,7 +24360,7 @@ const App = () => {
       );
     }
 
-    if (status === 'approved') {
+    if (status === 'approved' || (status === 'pending' && role === 'owner')) {
       const props = {
         user, onNavigate: navigate, onLogout: handleLogout,
         onOpenSwitcher: () => setSwitcherOpen(true),
@@ -23883,11 +24600,26 @@ const App = () => {
   );
 };
 
+// Public sertifikat tekshirish sahifasi (Feature #5) — App'dan TASHQARIDA
+// ishlaydi, shuning uchun JWT restore/auth guard umuman ishga tushmaydi
+// (login talab qilinmaydi). /certificates/verify/<uuid>[/] URL'ini ushlaymiz.
+const certVerifyUuid = (() => {
+  try {
+    const raw = (window.location.pathname || '').replace(/\/+$/, '');
+    const m = raw.match(/^\/certificates\/verify\/([^/]+)$/);
+    return m ? m[1] : null;
+  } catch { return null; }
+})();
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
+if (certVerifyUuid) {
+  root.render(<CertificateVerifyPage uuid={certVerifyUuid} />);
+} else {
+  root.render(<App />);
+}
 
 
-Object.assign(moduleScope, { PAGE_URLS, DASHBOARD_ROLE_BASES, ACTIVE_TEST_KEY, readActiveTestId, writeActiveTestId, testIdFromPath, URL_PAGES, NEEDS_AUTH_PAGES, pageFromPath, App, root });
+Object.assign(moduleScope, { PAGE_URLS, DASHBOARD_ROLE_BASES, ACTIVE_TEST_KEY, readActiveTestId, writeActiveTestId, testIdFromPath, URL_PAGES, NEEDS_AUTH_PAGES, pageFromPath, App, certVerifyUuid, root });
 }
 var PAGE_URLS = moduleScope.PAGE_URLS;
 var DASHBOARD_ROLE_BASES = moduleScope.DASHBOARD_ROLE_BASES;
@@ -23899,5 +24631,6 @@ var URL_PAGES = moduleScope.URL_PAGES;
 var NEEDS_AUTH_PAGES = moduleScope.NEEDS_AUTH_PAGES;
 var pageFromPath = moduleScope.pageFromPath;
 var App = moduleScope.App;
+var certVerifyUuid = moduleScope.certVerifyUuid;
 var root = moduleScope.root;
 
