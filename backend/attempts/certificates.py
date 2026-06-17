@@ -314,10 +314,18 @@ def render_certificate_png(attempt):
     # --- 9. QR-kod va Sana (Bottom Right) ---
     qr_bbox = (1330, 840, 1480, 990)
     _draw_mock_qr(draw, qr_bbox, attempt.id, blue_color)
-    
+
     right_align_text(1300, 860, f"Sana: {date_str}", footer_font, text_muted)
     right_align_text(1300, 900, f"Sertifikat ID: {attempt.id}", footer_font, text_muted)
     right_align_text(1300, 940, "QR-kod orqali tekshiring", _load_font(16, bold=True), blue_color)
+
+    # --- 9b. Ommaviy tekshiruv (verify) URL ---
+    # Sertifikat haqiqiyligini istalgan kishi shu manzil orqali tekshiradi.
+    # certificate_uuid bo'lmasa (juda eski attempt) URL ko'rsatilmaydi.
+    cert_uuid = getattr(attempt, 'certificate_uuid', None)
+    if cert_uuid:
+        verify_url = f"prolymp.uz/certificates/verify/{cert_uuid}"
+        center_text(1030, verify_url, _load_font(15), text_muted)
     
     # Rasmni saqlab bytes qaytarish
     buf = BytesIO()
