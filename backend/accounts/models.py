@@ -68,6 +68,14 @@ class User(AbstractBaseUser, PermissionsMixin):
     # Celery task `is_premium`ni False qaytaradi (agar admin/obuna orqali
     # premium berilmagan bo'lsa).
     premium_trial_end = models.DateTimeField(null=True, blank=True)
+    # Trial→paid konversiya eslatmasi (P4): premium sinov muddati tugashiga
+    # yaqin (2-3 kun) qolgan, hali pullik obunaga o'tmagan foydalanuvchilarga
+    # bir martalik shaxsiylashtirilgan Telegram eslatma yuboriladi. Bu maydon
+    # eslatma yuborilgan vaqtni saqlaydi — har trial bir martalik bo'lib,
+    # `send_trial_ending_reminders` task NULL bo'lgan userlarnigina tanlaydi
+    # (takror yubormaslik uchun). BooleanFlag o'rniga DateTimeField — qachon
+    # yuborilganini bilish va kelajakda trial davriga bog'lash imkonini beradi.
+    trial_reminder_sent_at = models.DateTimeField(null=True, blank=True)
     telegram_chat_id = models.CharField(max_length=64, blank=True, db_index=True)
     telegram_user_id = models.CharField(max_length=64, blank=True, db_index=True)
     telegram_linked_at = models.DateTimeField(null=True, blank=True)

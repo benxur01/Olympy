@@ -93,6 +93,7 @@ INSTALLED_APPS = [
     'notifications',
     'practice',
     'billing',
+    'analytics',
 ]
 
 MIDDLEWARE = [
@@ -526,6 +527,12 @@ CELERY_BEAT_SCHEDULE = {
     'send-weekly-parent-reports': {
         'task': 'accounts.send_weekly_parent_reports',
         'schedule': crontab(hour=8, minute=0, day_of_week='monday', nowfun=lambda: datetime.now(dt_timezone.utc)),
+    },
+    # Har kuni soat 09:00 UTC — premium sinovi 3 kun ichida tugaydigan, hali
+    # pullik obunaga o'tmagan foydalanuvchilarga konversiya eslatmasi (P4).
+    'send-trial-ending-reminders': {
+        'task': 'accounts.send_trial_ending_reminders',
+        'schedule': crontab(hour=9, minute=0, nowfun=lambda: datetime.now(dt_timezone.utc)),
     },
 }
 

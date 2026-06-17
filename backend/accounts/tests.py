@@ -407,3 +407,283 @@ class PremiumRewardLockedTestCase(APITestCase):
         self.assertEqual(self.premium_user.coins, 900)
 
 
+class GrowthAnalyticsTestCase(APITestCase):
+    """O2: reyting tarixi (score-timeline) + eng zaif 3 mavzu (weakest-topics).
+
+    Premium o'quvchi to'liq 30/90 kunlik tarix va real zaif mavzularni oladi;
+    premium bo'lmagan o'quvchi cheklangan (7 kun, limited) tarix va locked
+    (bo'sh) zaif mavzular ro'yxatini oladi.
+    """
+
+    def setUp(self):
+        from django.core.cache import cache
+        from centers.models import EducationCenter
+
+        cache.clear()  # is_user_premium 60s cache — testlar orasida tozalaymiz
+        self.center = EducationCenter.objects.create(name='Growth Academy', city='Toshkent')
+
+        self.premium_user = User.objects.create_user(
+            phone='+998901110055', password='UserPass123', full_name='Premium O',
+            is_premium=True,
+        )
+        self.free_user = User.objects.create_user(
+            phone='+998901110066', password='UserPass123', full_name='Free O',
+        )
+
+        # Premium o'quvchiga ikki fanda bir nechta urinish — biri yangi (3 kun
+        # oldin), biri eski (40 kun oldin). 7 kunlik (free) oynaga faqat
+        # yangisi tushadi.
+        self._make_olympiad_attempt(
+            self.premium_user, subject='Matematika', score=40,
+            correct=4, wrong=6, total=10, days_ago=3,
+        )
+        self._make_olympiad_attempt(
+            self.premium_user, subject='Fizika', score=80,
+            correct=8, wrong=2, total=10, days_ago=40,
+        )
+        self._make_olympiad_attempt(
+            self.premium_user, subject='Ona tili', score=20,
+            correct=2, wrong=8, total=10, days_ago=5,
+        )
+
+    def _make_olympiad_attempt(self, user, subject, score, correct, wrong, total, days_ago):
+        from attempts.models import TestAttempt
+        from olympiads.models import Olympiad
+
+        olympiad = Olympiad.objects.create(
+            center=self.center,
+            title=f'{subject} Olimpiadasi {days_ago}',
+            subject=subject,
+            status='active',
+            event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timedelta(days=days_ago, minutes=10),
+            duration_minutes=60,
+        )
+        attempt = TestAttempt.objects.create(
+            user=user, olympiad=olympiad, score=score,
+            correct_count=correct, wrong_count=wrong, total_questions=total,
+        )
+        # submitted_at auto_now_add — testda o'tmishga ko'chiramiz.
+        TestAttempt.objects.filter(pk=attempt.pk).update(
+            submitted_at=timezone.now() - timedelta(days=days_ago),
+        )
+        return attempt
+
+    def test_timeline_premium_full_window(self):
+        self.client.force_authenticate(user=self.premium_user)
+        resp = self.client.get(reverse('me-score-timeline'), {'days': 90})
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(resp.data['premium'])
+        self.assertFalse(resp.data['limited'])
+        self.assertEqual(resp.data['days'], 90)
+        # 90 kun ichida 3 urinishning hammasi (3, 40, 5 kun oldin).
+        self.assertEqual(len(resp.data['points']), 3)
+        # Eskidan yangiga tartiblangan bo'lishi kerak.
+        dates = [p['date'] for p in resp.data['points']]
+        self.assertEqual(dates, sorted(dates))
+
+    def test_timeline_free_user_limited_to_7_days(self):
+        self.client.force_authenticate(user=self.free_user)
+        # Free user uchun premium urinishlar emas — o'ziga 1 ta yangi urinish.
+        self._make_olympiad_attempt(
+            self.free_user, subject='Kimyo', score=50,
+            correct=5, wrong=5, total=10, days_ago=2,
+        )
+        self._make_olympiad_attempt(
+            self.free_user, subject='Tarix', score=30,
+            correct=3, wrong=7, total=10, days_ago=20,
+        )
+        resp = self.client.get(reverse('me-score-timeline'), {'days': 90})
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertFalse(resp.data['premium'])
+        self.assertTrue(resp.data['limited'])
+        self.assertEqual(resp.data['days'], 7)       # oyna 7 kunga qisqargan
+        self.assertEqual(resp.data['full_days'], 90)  # so'ralgan oyna saqlangan
+        # Faqat 7 kun ichidagi urinish (2 kun oldin) — 20 kunlik chiqib ketadi.
+        self.assertEqual(len(resp.data['points']), 1)
+
+    def test_weakest_topics_premium(self):
+        self.client.force_authenticate(user=self.premium_user)
+        resp = self.client.get(reverse('me-weakest-topics'))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(resp.data['premium'])
+        self.assertFalse(resp.data['locked'])
+        topics = resp.data['topics']
+        self.assertEqual(len(topics), 3)
+        # Eng zaif (eng past foiz) birinchi: Ona tili (20%) < Matematika (40%) < Fizika (80%).
+        self.assertEqual(topics[0]['subject'], 'Ona tili')
+        self.assertEqual(topics[0]['pct'], 20)
+        self.assertLessEqual(topics[0]['pct'], topics[1]['pct'])
+
+    def test_weakest_topics_free_locked(self):
+        self.client.force_authenticate(user=self.free_user)
+        resp = self.client.get(reverse('me-weakest-topics'))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertFalse(resp.data['premium'])
+        self.assertTrue(resp.data['locked'])
+        self.assertEqual(resp.data['topics'], [])
+
+
+class TrialEndingRemindersTestCase(APITestCase):
+    """P4: Premium sinovi tugayotgan foydalanuvchilarga konversiya eslatmasi.
+
+    `send_trial_ending_reminders` task'i faqat kerakli foydalanuvchilarga
+    (sinovi 3 kun ichida tugaydigan, is_premium=False, telegram bog'langan,
+    eslatma hali yuborilmagan) bir martalik Telegram xabar yuborishini va
+    `trial_reminder_sent_at`'ni o'rnatishini tekshiradi. `_send_telegram_message`
+    mock qilinadi — haqiqiy Telegram chaqirilmaydi.
+    """
+
+    def _make_attempt(self, user, score, days_ago=2):
+        from attempts.models import TestAttempt
+        from centers.models import EducationCenter
+        from olympiads.models import Olympiad
+
+        center = EducationCenter.objects.create(name='Trial Academy', city='Toshkent')
+        olympiad = Olympiad.objects.create(
+            center=center,
+            title=f'Trial Olimpiada {user.id}-{days_ago}-{score}',
+            subject='Matematika',
+            status='active',
+            event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timedelta(days=days_ago, minutes=10),
+            duration_minutes=60,
+        )
+        attempt = TestAttempt.objects.create(
+            user=user, olympiad=olympiad, score=score,
+            correct_count=score // 10, wrong_count=10 - score // 10, total_questions=10,
+        )
+        TestAttempt.objects.filter(pk=attempt.pk).update(
+            submitted_at=timezone.now() - timedelta(days=days_ago),
+        )
+        return attempt
+
+    @patch('accounts.views._send_telegram_message', return_value=True)
+    def test_reminder_sent_for_ending_trial(self, mock_send):
+        """Sinovi 2 kun ichida tugaydigan, telegram bog'langan, is_premium=False
+        userga eslatma yuboriladi va trial_reminder_sent_at o'rnatiladi."""
+        from accounts.tasks import send_trial_ending_reminders
+
+        user = User.objects.create_user(
+            phone='+998901119001', password='UserPass123', full_name='Trial User',
+            is_premium=False,
+        )
+        user.premium_trial_end = timezone.now() + timedelta(days=2)
+        user.telegram_chat_id = '123456'
+        user.save()
+        self._make_attempt(user, score=80, days_ago=2)
+
+        result = send_trial_ending_reminders()
+
+        self.assertEqual(result, {'sent': 1, 'skipped': 0})
+        mock_send.assert_called_once()
+        # Xabarda real statistika (test soni / o'rtacha ball) bo'lishi kerak.
+        sent_text = mock_send.call_args.args[1]
+        self.assertIn('1 ta test', sent_text)
+        user.refresh_from_db()
+        self.assertIsNotNone(user.trial_reminder_sent_at)
+
+    @patch('accounts.views._send_telegram_message', return_value=True)
+    def test_premium_user_skipped(self, mock_send):
+        """is_premium=True (pullik obunaga o'tgan) userga yuborilmaydi."""
+        from accounts.tasks import send_trial_ending_reminders
+
+        user = User.objects.create_user(
+            phone='+998901119002', password='UserPass123', full_name='Paid User',
+            is_premium=True,
+        )
+        user.premium_trial_end = timezone.now() + timedelta(days=2)
+        user.telegram_chat_id = '123457'
+        user.save()
+
+        result = send_trial_ending_reminders()
+
+        self.assertEqual(result, {'sent': 0, 'skipped': 0})
+        mock_send.assert_not_called()
+        user.refresh_from_db()
+        self.assertIsNone(user.trial_reminder_sent_at)
+
+    @patch('accounts.views._send_telegram_message', return_value=True)
+    def test_far_trial_skipped(self, mock_send):
+        """Sinovi 10 kundan keyin tugaydigan userga hali yuborilmaydi."""
+        from accounts.tasks import send_trial_ending_reminders
+
+        user = User.objects.create_user(
+            phone='+998901119003', password='UserPass123', full_name='Far Trial',
+            is_premium=False,
+        )
+        user.premium_trial_end = timezone.now() + timedelta(days=10)
+        user.telegram_chat_id = '123458'
+        user.save()
+
+        result = send_trial_ending_reminders()
+
+        self.assertEqual(result, {'sent': 0, 'skipped': 0})
+        mock_send.assert_not_called()
+
+    @patch('accounts.views._send_telegram_message', return_value=True)
+    def test_already_reminded_not_resent(self, mock_send):
+        """trial_reminder_sent_at allaqachon o'rnatilgan userga qayta yuborilmaydi."""
+        from accounts.tasks import send_trial_ending_reminders
+
+        already = timezone.now() - timedelta(days=1)
+        user = User.objects.create_user(
+            phone='+998901119004', password='UserPass123', full_name='Reminded User',
+            is_premium=False,
+        )
+        user.premium_trial_end = timezone.now() + timedelta(days=2)
+        user.telegram_chat_id = '123459'
+        user.trial_reminder_sent_at = already
+        user.save()
+
+        result = send_trial_ending_reminders()
+
+        self.assertEqual(result, {'sent': 0, 'skipped': 0})
+        mock_send.assert_not_called()
+        user.refresh_from_db()
+        # Eski vaqt o'zgarmasligi kerak.
+        self.assertEqual(user.trial_reminder_sent_at, already)
+
+    @patch('accounts.views._send_telegram_message', return_value=True)
+    def test_no_telegram_skipped(self, mock_send):
+        """telegram_chat_id bo'sh user — yuborilmaydi (skip)."""
+        from accounts.tasks import send_trial_ending_reminders
+
+        user = User.objects.create_user(
+            phone='+998901119005', password='UserPass123', full_name='No TG User',
+            is_premium=False,
+        )
+        user.premium_trial_end = timezone.now() + timedelta(days=2)
+        user.telegram_chat_id = ''
+        user.save()
+
+        result = send_trial_ending_reminders()
+
+        self.assertEqual(result, {'sent': 0, 'skipped': 0})
+        mock_send.assert_not_called()
+        user.refresh_from_db()
+        self.assertIsNone(user.trial_reminder_sent_at)
+
+    @patch('accounts.views._send_telegram_message', return_value=True)
+    def test_no_attempts_uses_generic_message(self, mock_send):
+        """Bu oy test ishlamagan userga umumiy (soxta raqamsiz) matn yuboriladi."""
+        from accounts.tasks import send_trial_ending_reminders
+
+        user = User.objects.create_user(
+            phone='+998901119006', password='UserPass123', full_name='Quiet User',
+            is_premium=False,
+        )
+        user.premium_trial_end = timezone.now() + timedelta(days=1)
+        user.telegram_chat_id = '123460'
+        user.save()
+
+        result = send_trial_ending_reminders()
+
+        self.assertEqual(result, {'sent': 1, 'skipped': 0})
+        sent_text = mock_send.call_args.args[1]
+        # Statistika yo'q — "N ta test" iborasi bo'lmasligi kerak.
+        self.assertNotIn('ta test ishladingiz', sent_text)
+        user.refresh_from_db()
+        self.assertIsNotNone(user.trial_reminder_sent_at)
+
+

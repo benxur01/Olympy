@@ -234,3 +234,114 @@ def send_weekly_parent_reports():
 
     return f'weekly reports: {sent} sent, {skipped} skipped'
 
+
+def _build_trial_reminder_message(name, total, avg_score, best_score):
+    """P4: Trial tugashi eslatmasi uchun shaxsiylashtirilgan matn tuzadi.
+
+    `total` — shu oydagi test soni. 0 bo'lsa (foydalanuvchi bu oy umuman test
+    ishlamagan) soxta statistika yozmaymiz — umumiy, lekin baribir foydali
+    matn qaytaramiz. Aks holda real raqamlarga asoslangan matn beriladi.
+    """
+    greeting = name or 'Salom'
+    if total > 0:
+        return (
+            f"⏳ {greeting}, premium sinov muddatingiz tugashiga oz qoldi!\n\n"
+            f"📊 Bu oy siz {total} ta test ishladingiz, o'rtacha balingiz "
+            f"{avg_score}% (eng yaxshisi {best_score}%).\n\n"
+            f"💎 Premium bilan natijangizni yanada yaxshilang: cheksiz olimpiada, "
+            f"AI tahlil va batafsil statistika sizni kutmoqda. Obunani uzaytiring "
+            f"va o'sishda davom eting!"
+        )
+    return (
+        f"⏳ {greeting}, premium sinov muddatingiz tugashiga oz qoldi!\n\n"
+        f"💎 Premium imkoniyatlardan to'liq foydalanish uchun hali kech emas: "
+        f"cheksiz olimpiada, AI tahlil va shaxsiy statistika bilan bilimingizni "
+        f"sinab ko'ring. Obunani uzaytiring va birinchi natijangizga erishing!"
+    )
+
+
+@shared_task(name='accounts.send_trial_ending_reminders')
+def send_trial_ending_reminders():
+    """P4: Premium sinovi tugayotgan foydalanuvchilarga konversiya eslatmasi.
+
+    Bu task Celery Beat tomonidan har kuni avtomatik ishga tushiriladi
+    (settings.CELERY_BEAT_SCHEDULE['send-trial-ending-reminders'], har kuni
+    09:00 UTC). `send_trial_ending_reminders` management command logikasining
+    Celery beat varianti.
+
+    Tanlanadigan foydalanuvchilar:
+      * `premium_trial_end` mavjud va keyingi 3 kun ichida tugaydi
+        (now < premium_trial_end <= now + 3 kun);
+      * `is_premium=False` — admin/obuna orqali hali premium berilmagan
+        (ya'ni hali pullik obunaga o'tmagan);
+      * `telegram_chat_id` bo'sh emas;
+      * `trial_reminder_sent_at` NULL — eslatma hali yuborilmagan (har trial
+        bir martalik, takror yubormaslik uchun).
+
+    Har bir foydalanuvchiga shu oydagi (oxirgi 30 kun) TestAttempt statistikasi
+    asosida shaxsiylashtirilgan matn yuboriladi. Bittasida xato bo'lsa o'sha
+    user o'tkazib yuboriladi, batch to'xtamaydi.
+    """
+    import logging
+
+    from django.contrib.auth import get_user_model
+    from accounts.views import _send_telegram_message
+    from attempts.models import TestAttempt
+
+    logger = logging.getLogger(__name__)
+    User = get_user_model()
+
+    now = timezone.now()
+    horizon = now + timedelta(days=3)
+    month_ago = now - timedelta(days=30)
+
+    users = User.objects.filter(
+        premium_trial_end__isnull=False,
+        premium_trial_end__gt=now,
+        premium_trial_end__lte=horizon,
+        is_premium=False,
+        trial_reminder_sent_at__isnull=True,
+    ).exclude(telegram_chat_id='')
+
+    sent = 0
+    skipped = 0
+    for user in users:
+        chat_id = user.telegram_chat_id
+        if not chat_id:
+            skipped += 1
+            continue
+
+        agg = TestAttempt.objects.filter(
+            user=user, disqualified=False, submitted_at__gte=month_ago,
+        ).aggregate(avg=Avg('score'), best=Max('score'), total=Count('id'))
+
+        total = agg['total'] or 0
+        avg_score = round(agg['avg'] or 0, 1)
+        best_score = agg['best'] or 0
+        name = user.full_name or user.first_name or ''
+
+        msg = _build_trial_reminder_message(name, total, avg_score, best_score)
+
+        try:
+            ok = _send_telegram_message(chat_id, msg, bot='auth')
+        except Exception:
+            logger.exception(
+                'trial ending reminder failed for user=%s', user.id,
+            )
+            skipped += 1
+            continue
+
+        if ok:
+            # Faqat shu maydonni yangilaymiz — save() ichidagi ortiqcha
+            # logikani (normalize_phone, full_name) chetlab o'tib.
+            user.trial_reminder_sent_at = now
+            user.save(update_fields=['trial_reminder_sent_at'])
+            sent += 1
+        else:
+            # Token yo'q (lokal/dev) yoki Telegram not-ok qaytardi —
+            # yuborilmadi deb hisoblaymiz va trial_reminder_sent_at'ni
+            # o'rnatmaymiz (keyingi ishga tushishda qayta urinish mumkin).
+            skipped += 1
+
+    return {'sent': sent, 'skipped': skipped}
+

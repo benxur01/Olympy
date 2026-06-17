@@ -582,6 +582,18 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     () => (isApi && isPremium) ? OlympyApi.getSubjectWeakness(OlympyApi.getToken()) : Promise.resolve([]),
     [isApi, isPremium, page === 'history'],
   );
+  // Vaqt bo'yicha reyting tarixi + eng zaif 3 mavzu. Bu ikki endpoint premium
+  // bo'lmaganlar uchun ham so'raladi (backend 403 emas, balki cheklangan/locked
+  // javob qaytaradi) — frontend blur + "premium oling" CTA ko'rsatadi.
+  const [timelineDays, setTimelineDays] = React.useState(30);
+  const apiScoreTimelineRes = useApiData(
+    () => isApi ? OlympyApi.getScoreTimeline(timelineDays, OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, timelineDays, page === 'history'],
+  );
+  const apiWeakestTopicsRes = useApiData(
+    () => isApi ? OlympyApi.getWeakestTopics(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, page === 'history'],
+  );
   // Olimpiadaga tayyorlik badge'lari — Tadbirlar sahifasi ochilganda
   // ko'rinadigan olimpiadalar uchun yuklanadi.
   const [readinessMap, setReadinessMap] = React.useState({});
@@ -1517,11 +1529,125 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     // bo'lsa — frontend flag'i eskirgan: xato banner o'rniga PremiumLock.
     const premiumDenied = [apiHistoryChartRes, apiWeaknessRes, apiCompetitorRes]
       .some(isPremiumDeniedError);
+    const weaknessColor = (pct) => pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+
+    // ── "O'sish" bloklari (reyting tarixi + eng zaif 3 mavzu) ──────────────
+    // Bu ikki blok premium bo'lmagan o'quvchiga ham (blur + CTA bilan)
+    // ko'rsatiladi — "men o'sayotganimni ko'raman" tuyg'usini berish uchun.
+    const timeline = apiScoreTimelineRes.data || {};
+    const timelinePoints = Array.isArray(timeline.points) ? timeline.points : [];
+    const timelineChartPoints = timelinePoints.map((p) => ({
+      label: (p.date || '').slice(5),  // MM-DD
+      value: p.score || 0,
+      title: `${p.date} · ${p.olympiad_name} · ${p.score}%${p.rank ? ' · #' + p.rank : ''}`,
+    }));
+    const weakest = apiWeakestTopicsRes.data || {};
+    const weakestTopics = Array.isArray(weakest.topics) ? weakest.topics : [];
+
+    const renderGrowthSections = () => (
+      <>
+        {/* Reyting tarixi (vaqt bo'yicha) */}
+        <div className="glass rounded-2xl p-4 md:p-5">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 bg-emerald-500/20 rounded-xl flex items-center justify-center text-emerald-400 shrink-0">
+                <Icon name="chart" size={16} />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-white text-sm md:text-base leading-none">Reyting tarixim</h3>
+                <span className="text-[9px] text-white/40 mt-1 block truncate">
+                  {isPremium ? `Oxirgi ${timelineDays} kundagi ball dinamikasi` : 'Oxirgi 7 kun (premium bilan 90 kun)'}
+                </span>
+              </div>
+            </div>
+            {isPremium && (
+              <div className="flex items-center gap-1 shrink-0">
+                {[30, 90].map((d) => (
+                  <button key={d} onClick={() => setTimelineDays(d)}
+                    className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all ${timelineDays === d ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/30' : 'text-white/40 hover:text-white/70'}`}>
+                    {d} kun
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {apiScoreTimelineRes.loading ? (
+            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+          ) : timelineChartPoints.length === 0 ? (
+            <div className="text-center text-white/40 text-sm py-8">
+              {isPremium ? "Bu davrda urinish yo'q" : "Hali ma'lumot yo'q — birinchi tadbirda qatnashing"}
+            </div>
+          ) : (
+            <>
+              <SvgLineChart points={timelineChartPoints} stroke="#10b981" />
+              <div className="mt-2 text-[11px] text-white/50 text-center">
+                O'rtacha ball: <span className="font-bold text-emerald-300">{timeline.average || 0}%</span>
+                <span className="text-white/30"> · {timelinePoints.length} ta urinish</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Eng zaif 3 mavzu */}
+        <div className="glass rounded-2xl p-4 md:p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 bg-rose-500/20 rounded-xl flex items-center justify-center text-rose-400 shrink-0">
+              <Icon name="bolt" size={16} />
+            </div>
+            <div>
+              <h3 className="font-bold text-white text-sm md:text-base leading-none">Eng zaif 3 mavzu</h3>
+              <span className="text-[9px] text-white/40 mt-1 block">E'tibor qaratishingiz kerak bo'lgan fanlar</span>
+            </div>
+          </div>
+          {apiWeakestTopicsRes.loading ? (
+            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+          ) : weakestTopics.length === 0 ? (
+            <div className="text-center text-white/40 text-sm py-8">
+              {isPremium ? "Hali yetarli ma'lumot yo'q" : 'Premium bilan zaif mavzularingiz aniqlanadi'}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {weakestTopics.map((t, i) => (
+                <div key={i} className="glass rounded-xl p-3 border border-white/5">
+                  <div className="flex items-center justify-between mb-1.5 text-xs md:text-sm">
+                    <span className="text-white/80 font-semibold">{i + 1}. {t.subject}</span>
+                    <span className="text-white/50">{t.correct}/{t.total} · <span className="font-bold" style={{ color: weaknessColor(t.pct) }}>{t.pct}%</span></span>
+                  </div>
+                  <div className="h-2.5 rounded-full bg-white/5 overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${t.pct}%`, background: weaknessColor(t.pct) }} />
+                  </div>
+                  {t.recommendation && (
+                    <div className="text-[11px] text-white/45 mt-1.5">{t.recommendation}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </>
+    );
+
+    // Premium bo'lmagan o'quvchi: yangi "o'sish" bloklarini blur ostida ko'rsatamiz
+    // (CTA bilan), qolgan to'liq tahlilni esa PremiumLock bilan yopamiz.
     if (!isPremium || premiumDenied) {
       return (
-        <div className="p-3 md:p-6 animate-in mobile-content-pad">
-          <h2 className="text-lg md:text-xl font-black text-white mb-4">Tarixim va tahlil</h2>
-          <PremiumLock onUpgrade={() => setPage('premium')} />
+        <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+          <h2 className="text-lg md:text-xl font-black text-white">Tarixim va tahlil</h2>
+          <div className="relative">
+            <div className="space-y-4 md:space-y-6 pointer-events-none blur-[3px] opacity-60 select-none">
+              {renderGrowthSections()}
+            </div>
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-4">
+              <span className="text-3xl">⭐</span>
+              <p className="text-white/80 text-sm font-bold max-w-xs leading-relaxed">
+                Reyting tarixingiz va eng zaif mavzularingizni to'liq ko'rish uchun premium oling
+              </p>
+              <button onClick={() => setPage('premium')}
+                className="text-[12px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-xl shadow-md transition-all">
+                Premiumga o'tish ⚡
+              </button>
+            </div>
+          </div>
         </div>
       );
     }
@@ -1533,13 +1659,15 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       value: h.pct || 0,
       title: `${h.olympiad_name} · ${h.score}/${h.max_score} (${h.pct}%)${h.rank ? ' · #' + h.rank : ''} · ${h.date}`,
     }));
-    const weaknessColor = (pct) => pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
 
     return (
       <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
         <h2 className="text-lg md:text-xl font-black text-white">Tarixim va tahlil</h2>
 
-        {/* 1. Tarixiy tahlil grafigi */}
+        {/* O'sish bloklari: vaqt bo'yicha reyting tarixi + eng zaif 3 mavzu */}
+        {renderGrowthSections()}
+
+        {/* 1. Tarixiy tahlil grafigi (olimpiada kesimida) */}
         <div className="glass rounded-2xl p-4 md:p-5">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
