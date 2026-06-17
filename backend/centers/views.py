@@ -1356,6 +1356,195 @@ def top_students(request, center_id):
     return Response(data)
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def center_activity_trend(request, center_id):
+    """GET /api/centers/{id}/activity-trend/?months=6 — faollik trendi.
+
+    Markazning olimpiadalaridagi attempt'lar asosida har oy uchun o'sha oyning
+    o'rtacha balli va topshirilgan urinishlar soni. ``rating_history``'dan farqi:
+    bu management command snapshot'iga bog'liq emas — to'g'ridan-to'g'ri
+    TestAttempt.submitted_at bo'yicha hisoblanadi, shu sababli har doim
+    ma'lumot beradi. Javob: [{"month": "2026-01", "avg_score": 78.4, "attempts": 42}].
+    Faqat owner/manager (premium markaz) ko'ra oladi.
+    """
+    from datetime import datetime
+
+    from django.db.models import Avg, Count
+    from django.db.models.functions import TruncMonth
+    from django.utils import timezone as dj_timezone
+
+    from attempts.models import TestAttempt
+
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    if not user_can_manage_center(request.user, center):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if not center.is_premium:
+        return Response(
+            {'detail': "Bu funksiya premium markazlar uchun.", 'upgrade_required': True},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+
+    try:
+        months_count = int(request.query_params.get('months') or 6)
+    except (TypeError, ValueError):
+        months_count = 6
+    months_count = max(1, min(months_count, 12))
+
+    now = dj_timezone.now()
+    # Oxirgi N oy chegaralarini tuzamiz (joriy oy oxirgi bo'ladi).
+    months = []
+    year, month = now.year, now.month
+    for _ in range(months_count):
+        months.append((year, month))
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+    months.reverse()
+
+    first_year, first_month = months[0]
+    window_start = datetime(first_year, first_month, 1)
+    if dj_timezone.is_naive(window_start):
+        window_start = dj_timezone.make_aware(window_start)
+
+    # Bitta GROUP BY so'rovi — oyma-oy o'rtacha ball va urinishlar soni.
+    monthly = (
+        TestAttempt.objects
+        .filter(
+            olympiad__center=center,
+            olympiad__is_deleted=False,
+            disqualified=False,
+            submitted_at__gte=window_start,
+        )
+        .annotate(month_bucket=TruncMonth('submitted_at'))
+        .values('month_bucket')
+        .annotate(avg_score=Avg('score'), attempts=Count('id'))
+    )
+    by_key = {}
+    for row in monthly:
+        mb = row['month_bucket']
+        if mb is None:
+            continue
+        by_key[(mb.year, mb.month)] = row
+
+    data = []
+    for (y, m) in months:
+        row = by_key.get((y, m))
+        data.append({
+            'month': f'{y:04d}-{m:02d}',
+            'avg_score': round(float(row['avg_score']) if row and row['avg_score'] is not None else 0, 1),
+            'attempts': (row['attempts'] if row else 0) or 0,
+        })
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def center_region_rank(request, center_id):
+    """GET /api/centers/{id}/region-rank/ — markazning hudud bo'yicha o'rni.
+
+    Markazning o'z hududi (region) ichidagi va umumiy (global) reytingdagi
+    o'rnini anonim tarzda qaytaradi — boshqa markazlarning nomi yoki balli
+    OSHKOR QILINMAYDI. Faqat: o'z o'rni, hududda/jami nechta markaz bor va
+    markazning o'rtacha balli ko'rsatiladi.
+
+    Reyting mezoni ``center_ranking`` bilan bir xil: o'rtacha ball (desc),
+    keyin urinishlar soni, keyin id — barqaror tartib uchun. Faqat owner/manager
+    (premium markaz) ko'ra oladi.
+
+    Javob:
+      {
+        "average_score": 78.4,
+        "region": "Toshkent",
+        "region_rank": 12, "region_total": 45,
+        "global_rank": 134, "global_total": 1200
+      }
+    """
+    from django.db.models import Avg, Count, OuterRef, Subquery
+    from django.db.models.functions import Coalesce
+
+    from attempts.models import TestAttempt
+
+    center = get_object_or_404(EducationCenter, pk=center_id)
+    if not user_can_manage_center(request.user, center):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    if not center.is_premium:
+        return Response(
+            {'detail': "Bu funksiya premium markazlar uchun.", 'upgrade_required': True},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+
+    # center_ranking'dagi kabi: attempt agregatlari Subquery orqali — JOIN
+    # ko'paytirishidan qochamiz. Faqat tasdiqlangan markazlar reytingda.
+    valid_attempts = TestAttempt.objects.filter(
+        olympiad__center=OuterRef('pk'),
+        disqualified=False,
+        olympiad__is_deleted=False,
+    )
+    attempt_avg_sq = (
+        valid_attempts.values('olympiad__center')
+        .annotate(a=Avg('score')).values('a')
+    )
+    attempt_total_sq = (
+        valid_attempts.values('olympiad__center')
+        .annotate(c=Count('id')).values('c')
+    )
+    base_qs = (
+        EducationCenter.objects
+        .filter(status=EducationCenter.STATUS_APPROVED)
+        .annotate(
+            average_score=Coalesce(Subquery(attempt_avg_sq), 0.0),
+            total_attempts=Coalesce(Subquery(attempt_total_sq), 0),
+        )
+    )
+
+    def _rank_within(queryset):
+        """Markazning queryset ichidagi o'rni (1-based) va jami soni.
+
+        Butun ro'yxatni emas, faqat (avg, attempts, id) uchligini olib kelamiz —
+        ID/ball oshkor bo'lmaydi, faqat tartibni aniqlash uchun. O'z markazidan
+        "oldinda" turgan (yaxshiroq) markazlar soni + 1 = o'rin.
+        """
+        rows = list(queryset.values('id', 'average_score', 'total_attempts'))
+        total = len(rows)
+        me = next((r for r in rows if r['id'] == center.id), None)
+        if me is None:
+            return None, total
+        my_key = (float(me['average_score'] or 0), me['total_attempts'] or 0, -me['id'])
+        ahead = 0
+        for r in rows:
+            if r['id'] == center.id:
+                continue
+            key = (float(r['average_score'] or 0), r['total_attempts'] or 0, -r['id'])
+            if key > my_key:
+                ahead += 1
+        return ahead + 1, total
+
+    region_value = (center.region or '').strip()
+    region_rank, region_total = (None, 0)
+    if region_value:
+        region_rank, region_total = _rank_within(
+            base_qs.filter(region__iexact=region_value)
+        )
+    global_rank, global_total = _rank_within(base_qs)
+
+    # O'z markazining o'rtacha balli (base_qs annotatsiyasidan).
+    my_avg = 0.0
+    my_row = base_qs.filter(pk=center.id).values('average_score').first()
+    if my_row:
+        my_avg = round(float(my_row['average_score'] or 0), 1)
+
+    return Response({
+        'average_score': my_avg,
+        'region': region_value,
+        'region_rank': region_rank,
+        'region_total': region_total,
+        'global_rank': global_rank,
+        'global_total': global_total,
+    })
+
+
 # ─── Premium: markaz savol banki ───────────────────────────────────────────
 
 

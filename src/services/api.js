@@ -814,6 +814,11 @@ export const OlympyApi = {
   deleteCenterShopProduct: (productId, token, centerId) => request(`/api/center/shop/products/${productId}/${centerId ? '?center_id=' + encodeURIComponent(centerId) : ''}`, { method: 'DELETE', token }),
   // Premium o'quvchi analitikasi
   getHistoryChart: (token) => request('/api/me/history-chart/', { token }),
+  // Vaqt bo'yicha reyting tarixi (oxirgi 30/90 kun). Premium bo'lmaganlarga
+  // backend faqat oxirgi 7 kunni qaytaradi (limited: true).
+  getScoreTimeline: (days, token) => request(`/api/me/score-timeline/?days=${encodeURIComponent(days || 30)}`, { token }),
+  // Eng zaif 3 mavzu/fan. Premium bo'lmasa {locked: true, topics: []}.
+  getWeakestTopics: (token) => request('/api/me/weakest-topics/', { token }),
   getCompetitorAnalysis: (olympiadId, token) => request(`/api/me/competitor-analysis/${olympiadId ? '?olympiad_id=' + encodeURIComponent(olympiadId) : ''}`, { token }),
   getSubjectWeakness: (token) => request('/api/me/subject-weakness/', { token }),
   getReadiness: (olympiadId, token) => request(`/api/me/readiness/?olympiad_id=${encodeURIComponent(olympiadId)}`, { token }),
@@ -844,6 +849,8 @@ export const OlympyApi = {
   getClassmatesLeaderboard: (token) => request('/api/me/classmates-leaderboard/', { token }),
   // Premium markaz funksiyalari
   getStudentDynamics: (centerId, token) => request(`/api/centers/${centerId}/student-dynamics/`, { token }),
+  getCenterActivityTrend: (centerId, token, months = 6) => request(`/api/centers/${centerId}/activity-trend/?months=${months}`, { token }),
+  getCenterRegionRank: (centerId, token) => request(`/api/centers/${centerId}/region-rank/`, { token }),
   getTopStudents: (centerId, token) => request(`/api/centers/${centerId}/top-students/`, { token }),
   getCenterQuestionBank: (centerId, token) => request(`/api/centers/${centerId}/question-bank/`, { token }),
   addCenterQuestion: (centerId, payload, token) => request(`/api/centers/${centerId}/question-bank/`, { method: 'POST', body: payload, token }),

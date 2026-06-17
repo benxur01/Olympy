@@ -359,6 +359,15 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     () => (isApi && ownerCenterId && page === 'statistics') ? OlympyApi.getTopStudents(ownerCenterId, OlympyApi.getToken()) : Promise.resolve(null),
     [isApi, ownerCenterId, page === 'statistics'],
   );
+  // Markaz faollik trendi (oylik o'rtacha ball) va hudud bo'yicha anonim o'rin.
+  const apiActivityTrendRes = useApiData(
+    () => (isApi && ownerCenterId && page === 'statistics') ? OlympyApi.getCenterActivityTrend(ownerCenterId, OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, ownerCenterId, page === 'statistics'],
+  );
+  const apiRegionRankRes = useApiData(
+    () => (isApi && ownerCenterId && page === 'statistics') ? OlympyApi.getCenterRegionRank(ownerCenterId, OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, ownerCenterId, page === 'statistics'],
+  );
 
   React.useEffect(() => {
     if (page === 'premium') {
@@ -446,6 +455,42 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     if (!ownerCenterId) return;
     try { localStorage.setItem(selectedCenterStorageKey, String(ownerCenterId)); } catch {}
   }, [ownerCenterId, selectedCenterStorageKey]);
+
+  // Savol banki va do'kon yuklovchilari: bu hook'lar early return'dan (pastdagi
+  // PendingAccessCard) OLDIN, shartsiz chaqilishi shart — aks holda tasdiqlangan
+  // va tasdiqlanmagan markaz render'lari orasida hook soni o'zgarib, "Rules of
+  // Hooks" buziladi (komponent crash bo'ladi).
+  const loadQuestionBank = React.useCallback(() => {
+    if (!isApi || !ownerCenterId) { setQuestionBank([]); return Promise.resolve(); }
+    return OlympyApi.getCenterQuestionBank(ownerCenterId, OlympyApi.getToken())
+      .then(rows => { setQuestionBank(Array.isArray(rows) ? rows : []); });
+  }, [isApi, ownerCenterId]);
+
+  React.useEffect(() => {
+    if (page !== 'questionbank') return undefined;
+    let cancelled = false;
+    setQuestionBankLoading(true);
+    loadQuestionBank()
+      .catch(() => { if (!cancelled) setQuestionBank([]); })
+      .finally(() => { if (!cancelled) setQuestionBankLoading(false); });
+    return () => { cancelled = true; };
+  }, [page, loadQuestionBank]);
+
+  const loadShopProducts = React.useCallback(() => {
+    if (!isApi || !ownerCenterId) { setShopProducts([]); return Promise.resolve(); }
+    return OlympyApi.getCenterShopProducts(OlympyApi.getToken(), ownerCenterId)
+      .then(rows => { setShopProducts(Array.isArray(rows) ? rows : []); });
+  }, [isApi, ownerCenterId]);
+
+  React.useEffect(() => {
+    if (page !== 'shop') return undefined;
+    let cancelled = false;
+    setShopLoading(true);
+    loadShopProducts()
+      .catch(() => { if (!cancelled) setShopProducts([]); })
+      .finally(() => { if (!cancelled) setShopLoading(false); });
+    return () => { cancelled = true; };
+  }, [page, loadShopProducts]);
 
   const handleCenterImageUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -729,23 +774,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .finally(() => { setStudentActionId(null); setGroupTagEdit(null); });
   };
 
-  // Savol banki: yuklash, qo'shish, o'chirish.
-  const loadQuestionBank = React.useCallback(() => {
-    if (!isApi || !ownerCenterId) { setQuestionBank([]); return Promise.resolve(); }
-    return OlympyApi.getCenterQuestionBank(ownerCenterId, OlympyApi.getToken())
-      .then(rows => { setQuestionBank(Array.isArray(rows) ? rows : []); });
-  }, [isApi, ownerCenterId]);
-
-  React.useEffect(() => {
-    if (page !== 'questionbank') return undefined;
-    let cancelled = false;
-    setQuestionBankLoading(true);
-    loadQuestionBank()
-      .catch(() => { if (!cancelled) setQuestionBank([]); })
-      .finally(() => { if (!cancelled) setQuestionBankLoading(false); });
-    return () => { cancelled = true; };
-  }, [page, loadQuestionBank]);
-
+  // Savol banki: qo'shish, o'chirish. (loadQuestionBank hook'i early return'dan
+  // oldin yuqorida e'lon qilingan — Rules of Hooks talabi.)
   const addQbQuestion = () => {
     if (!isApi || !ownerCenterId) { showToast("Demo rejimida ishlamaydi"); return; }
     const text = (qbForm.text || '').trim();
@@ -775,23 +805,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi"));
   };
 
-  // Markaz do'koni: yuklash, qo'shish, tahrirlash, o'chirish.
-  const loadShopProducts = React.useCallback(() => {
-    if (!isApi || !ownerCenterId) { setShopProducts([]); return Promise.resolve(); }
-    return OlympyApi.getCenterShopProducts(OlympyApi.getToken(), ownerCenterId)
-      .then(rows => { setShopProducts(Array.isArray(rows) ? rows : []); });
-  }, [isApi, ownerCenterId]);
-
-  React.useEffect(() => {
-    if (page !== 'shop') return undefined;
-    let cancelled = false;
-    setShopLoading(true);
-    loadShopProducts()
-      .catch(() => { if (!cancelled) setShopProducts([]); })
-      .finally(() => { if (!cancelled) setShopLoading(false); });
-    return () => { cancelled = true; };
-  }, [page, loadShopProducts]);
-
+  // Markaz do'koni: qo'shish, tahrirlash, o'chirish. (loadShopProducts hook'i
+  // early return'dan oldin yuqorida e'lon qilingan — Rules of Hooks talabi.)
   const openShopModal = (product) => {
     if (product) {
       setShopForm({
@@ -2422,12 +2437,41 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       { rank: 2, name: "Karimova Zilola (Teaser)", attempts: 10, avg_score: 92.3 },
       { rank: 3, name: "Rustamov Dilshod (Teaser)", attempts: 11, avg_score: 88.7 },
     ];
+    const dummyTrend = [
+      { month: '2026-01', avg_score: 64.2, attempts: 18 },
+      { month: '2026-02', avg_score: 68.5, attempts: 24 },
+      { month: '2026-03', avg_score: 71.1, attempts: 30 },
+      { month: '2026-04', avg_score: 73.8, attempts: 41 },
+      { month: '2026-05', avg_score: 77.4, attempts: 52 },
+      { month: '2026-06', avg_score: 81.0, attempts: 60 },
+    ];
+    const dummyRegionRank = {
+      average_score: 81.0, region: 'Toshkent',
+      region_rank: 4, region_total: 38, global_rank: 27, global_total: 540,
+    };
 
     const rawDynamics = Array.isArray(apiDynamicsRes.data) ? apiDynamicsRes.data : [];
     const rawTopStudents = Array.isArray(apiTopStudentsRes.data) ? apiTopStudentsRes.data : [];
+    const rawTrend = Array.isArray(apiActivityTrendRes.data) ? apiActivityTrendRes.data : [];
+    const rawRegionRank = (apiRegionRankRes.data && typeof apiRegionRankRes.data === 'object') ? apiRegionRankRes.data : null;
 
     const dynamics = isStatisticsLocked ? dummyDynamics : rawDynamics;
     const topStudents = isStatisticsLocked ? dummyTopStudents : rawTopStudents;
+    const trend = isStatisticsLocked ? dummyTrend : rawTrend;
+    const regionRank = isStatisticsLocked ? dummyRegionRank : rawRegionRank;
+
+    const monthNamesShort = ['', 'Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyl', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
+    // SvgLineChart [{label, value (0..100), title}] formatini kutadi.
+    const trendPoints = trend.map(t => {
+      const [, m] = (t.month || '').split('-');
+      const label = monthNamesShort[parseInt(m, 10)] || t.month;
+      return { label, value: t.avg_score || 0, title: `${label}: ${t.avg_score || 0} ball (${t.attempts || 0} urinish)` };
+    });
+    const lastTrend = trend.length ? trend[trend.length - 1] : null;
+    const prevTrend = trend.length > 1 ? trend[trend.length - 2] : null;
+    const trendDelta = (lastTrend && prevTrend)
+      ? Math.round((lastTrend.avg_score - prevTrend.avg_score) * 10) / 10
+      : null;
 
     const barData = dynamics.map(d => {
       const [, m] = (d.month || '').split('-');
@@ -2447,6 +2491,65 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
 
         <div className={`space-y-5 ${isStatisticsLocked ? 'blur-[6px] select-none pointer-events-none' : ''}`}>
+          {/* Markaz faollik trendi — oylik o'rtacha ball */}
+          <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-black text-white">Markaz faollik trendi</h2>
+              <span className="text-xs font-semibold text-white/45">Oylik o'rtacha ball</span>
+            </div>
+            {apiActivityTrendRes.loading && !isStatisticsLocked ? (
+              <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+            ) : (
+              <>
+                <div className="mb-3 flex flex-wrap items-end gap-x-6 gap-y-2">
+                  <div>
+                    <div className="text-2xl font-black text-white">{lastTrend ? lastTrend.avg_score : 0}</div>
+                    <div className="text-[11px] font-semibold text-white/40">joriy oy o'rt. ball</div>
+                  </div>
+                  {trendDelta !== null && (
+                    <div className={`flex items-center gap-1 text-sm font-black ${trendDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <span>{trendDelta >= 0 ? '▲' : '▼'}</span>
+                      {trendDelta >= 0 ? '+' : ''}{trendDelta}
+                      <span className="text-[11px] font-semibold text-white/40">o'tgan oyga nisbatan</span>
+                    </div>
+                  )}
+                </div>
+                <SvgLineChart points={trendPoints} height={170} stroke="#a855f7" />
+              </>
+            )}
+          </section>
+
+          {/* Hudud bo'yicha anonim o'rin */}
+          {regionRank && (
+            <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-base font-black text-white">Reytingdagi o'rningiz</h2>
+                <span className="text-xs font-semibold text-white/45">{regionRank.average_score} o'rt. ball asosida</span>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl bg-gradient-to-br from-indigo-500/15 to-purple-500/10 border border-indigo-400/20 p-4">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-indigo-300/80">
+                    {regionRank.region ? `${regionRank.region} hududida` : 'Hudud ko\'rsatilmagan'}
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-1.5">
+                    <span className="text-3xl font-black text-white">{regionRank.region_rank ? `#${regionRank.region_rank}` : '—'}</span>
+                    {regionRank.region_total ? <span className="text-sm font-semibold text-white/45">/ {regionRank.region_total} markaz</span> : null}
+                  </div>
+                </div>
+                <div className="rounded-xl bg-white/5 border border-white/8 p-4">
+                  <div className="text-[11px] font-bold uppercase tracking-wide text-white/45">Umumiy reytingda</div>
+                  <div className="mt-1 flex items-baseline gap-1.5">
+                    <span className="text-3xl font-black text-white">{regionRank.global_rank ? `#${regionRank.global_rank}` : '—'}</span>
+                    {regionRank.global_total ? <span className="text-sm font-semibold text-white/45">/ {regionRank.global_total} markaz</span> : null}
+                  </div>
+                </div>
+              </div>
+              <p className="mt-3 text-[11px] font-semibold text-white/35">
+                O'rin o'rtacha ball bo'yicha aniqlanadi. Boshqa markazlar nomi yashirin.
+              </p>
+            </section>
+          )}
+
           {/* 6. O'quvchilar dinamikasi grafigi */}
           <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
             <div className="mb-4 flex items-center justify-between">

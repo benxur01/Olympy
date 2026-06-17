@@ -1,0 +1,108 @@
+{% extends "admin/base_site.html" %}
+{% load i18n %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block content_title %}<h1>{{ title }}</h1>{% endblock %}
+
+{% block extrahead %}{{ block.super }}
+<style>
+  .an-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 28px; }
+  .an-card { border: 1px solid var(--hairline-color, #e5e5e5); border-radius: 10px; padding: 16px 18px; background: var(--body-bg, #fff); }
+  .an-card h3 { margin: 0 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--body-quiet-color, #666); font-weight: 600; }
+  .an-big { font-size: 30px; font-weight: 700; line-height: 1.1; }
+  .an-sub { font-size: 12px; color: var(--body-quiet-color, #777); margin-top: 4px; }
+  .an-section-title { margin: 28px 0 12px; font-size: 16px; font-weight: 700; }
+  .an-bar-wrap { background: var(--darkened-bg, #f0f0f0); border-radius: 6px; height: 8px; margin-top: 8px; overflow: hidden; }
+  .an-bar { height: 8px; background: #16a34a; }
+  .an-meta { font-size: 12px; color: var(--body-quiet-color, #777); margin-bottom: 18px; }
+  .an-toolbar { margin: 0 0 18px; }
+  .an-refresh { display: inline-block; padding: 6px 14px; border-radius: 6px; background: #2563eb; color: #fff !important; text-decoration: none; font-size: 13px; }
+  table.an-table { border-collapse: collapse; width: 100%; max-width: 640px; }
+  table.an-table th, table.an-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--hairline-color, #eee); font-size: 13px; }
+  table.an-table th { color: var(--body-quiet-color, #666); font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="an-meta">
+  Hisoblangan vaqt: <b>{{ metrics.generated_at }}</b> &middot;
+  Natijalar ~{{ cache_minutes }} daqiqa cache'lanadi.
+</div>
+<div class="an-toolbar">
+  <a class="an-refresh" href="?refresh=1">&#x21bb; Hozir qayta hisoblash</a>
+</div>
+
+<h2 class="an-section-title">Retention (ro'yxatdan o'tgandan keyin qaytib kelish)</h2>
+<div class="an-grid">
+  {% for key, r in metrics.retention.items %}
+  <div class="an-card">
+    <h3>D{{ r.days }} retention</h3>
+    <div class="an-big">{{ r.pct }}%</div>
+    <div class="an-bar-wrap"><div class="an-bar" style="width: {{ r.pct }}%;"></div></div>
+    <div class="an-sub">{{ r.returned }} / {{ r.eligible }} foydalanuvchi qaytib kelgan</div>
+  </div>
+  {% endfor %}
+</div>
+<p class="an-sub" style="max-width:640px;">
+  "Qaytib kelgan" — ro'yxatdan o'tib N kun o'tgach faollik (kunlik faollik sanasi
+  yoki test topshirish) ko'rsatgan foydalanuvchi. Maxrajga faqat kohortasi yetuk
+  (ro'yxatdan o'tganiga &ge; N kun bo'lgan) foydalanuvchilar kiradi.
+</p>
+
+<h2 class="an-section-title">Trial &rarr; Paid conversion</h2>
+<div class="an-grid">
+  <div class="an-card">
+    <h3>Umumiy conversion</h3>
+    <div class="an-big">{{ metrics.conversion.trial_to_paid_pct }}%</div>
+    <div class="an-sub">{{ metrics.conversion.trial_to_paid }} / {{ metrics.conversion.trial_started }} trial &rarr; pullik</div>
+  </div>
+  <div class="an-card">
+    <h3>Trial tugaganlar conversion</h3>
+    <div class="an-big">{{ metrics.conversion.trial_ended_to_paid_pct }}%</div>
+    <div class="an-sub">{{ metrics.conversion.trial_ended_to_paid }} / {{ metrics.conversion.trial_ended }} (trial muddati o'tgan)</div>
+  </div>
+  <div class="an-card">
+    <h3>Trial boshlaganlar</h3>
+    <div class="an-big">{{ metrics.conversion.trial_started }}</div>
+    <div class="an-sub">premium sinov muddati berilgan</div>
+  </div>
+  <div class="an-card">
+    <h3>Pullik obuna olganlar</h3>
+    <div class="an-big">{{ metrics.conversion.paid_total }}</div>
+    <div class="an-sub">kamida 1 ta obuna yozuvi</div>
+  </div>
+</div>
+
+<h2 class="an-section-title">Premium foydalanuvchilar</h2>
+<div class="an-grid">
+  <div class="an-card">
+    <h3>Faol premium</h3>
+    <div class="an-big">{{ metrics.premium.premium_active }}</div>
+    <div class="an-bar-wrap"><div class="an-bar" style="width: {{ metrics.premium.premium_pct }}%; background:#9333ea;"></div></div>
+    <div class="an-sub">umumiy foydalanuvchilarning {{ metrics.premium.premium_pct }}%</div>
+  </div>
+  <div class="an-card">
+    <h3>Umumiy foydalanuvchilar</h3>
+    <div class="an-big">{{ metrics.premium.total_users }}</div>
+    <div class="an-sub">{{ metrics.premium.active_users }} faol (is_active)</div>
+  </div>
+  <div class="an-card">
+    <h3>Pullik (admin/obuna)</h3>
+    <div class="an-big">{{ metrics.premium.paid_flag }}</div>
+    <div class="an-sub">is_premium = True</div>
+  </div>
+  <div class="an-card">
+    <h3>Faqat trial premium</h3>
+    <div class="an-big">{{ metrics.premium.trial_only }}</div>
+    <div class="an-sub">trial davom etmoqda, hali pul to'lamagan</div>
+  </div>
+</div>
+
+<h2 class="an-section-title">Yangi ro'yxatdan o'tishlar</h2>
+<table class="an-table">
+  <tr><th>Oxirgi 1 kun</th><td>{{ metrics.signups.last_1d }}</td></tr>
+  <tr><th>Oxirgi 7 kun</th><td>{{ metrics.signups.last_7d }}</td></tr>
+  <tr><th>Oxirgi 30 kun</th><td>{{ metrics.signups.last_30d }}</td></tr>
+</table>
+{% endblock %}

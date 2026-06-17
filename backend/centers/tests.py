@@ -333,3 +333,145 @@ class CenterStudentLimitTestCase(APITestCase):
         self.assertEqual(active_count, 11)
 
 
+class CenterActivityTrendTestCase(APITestCase):
+    """GET /api/centers/{id}/activity-trend/ — oylik o'rtacha ball trendi."""
+
+    def setUp(self):
+        from django.utils import timezone
+        from olympiads.models import Olympiad
+        from attempts.models import TestAttempt
+
+        self.owner = User.objects.create_user(
+            phone='+998901300001', password='StrongPass123', full_name='Direktor',
+        )
+        self.center = EducationCenter.objects.create(
+            name='Trend Markaz', city='Toshkent', region='Toshkent',
+            status=EducationCenter.STATUS_APPROVED, is_premium=True, owner=self.owner,
+        )
+        now = timezone.now()
+        self.olympiad = Olympiad.objects.create(
+            center=self.center, title='Olimpiada', subject='Matematika',
+            status='finished', event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=now - timezone.timedelta(days=20), duration_minutes=60,
+        )
+        self.s1 = User.objects.create_user(phone='+998901300002', password='p', full_name='A')
+        self.s2 = User.objects.create_user(phone='+998901300003', password='p', full_name='B')
+        # Joriy oyda 2 ta attempt: 80 va 60 → o'rtacha 70.
+        TestAttempt.objects.create(user=self.s1, olympiad=self.olympiad, score=80)
+        TestAttempt.objects.create(user=self.s2, olympiad=self.olympiad, score=60)
+        # Diskvalifikatsiya qilingan attempt — o'rtachaga ta'sir qilmasligi kerak.
+        s3 = User.objects.create_user(phone='+998901300004', password='p', full_name='C')
+        TestAttempt.objects.create(
+            user=s3, olympiad=self.olympiad, score=10, disqualified=True,
+        )
+        self.client.force_authenticate(user=self.owner)
+
+    def test_owner_sees_current_month_average(self):
+        from django.utils import timezone
+        url = reverse('center-activity-trend', args=[self.center.id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertTrue(len(data) >= 1)
+        current_key = timezone.now().strftime('%Y-%m')
+        current = next((d for d in data if d['month'] == current_key), None)
+        self.assertIsNotNone(current)
+        # 80 va 60 → 70.0; diskvalifikatsiya qilingan 10 hisobga olinmaydi.
+        self.assertEqual(current['avg_score'], 70.0)
+        self.assertEqual(current['attempts'], 2)
+
+    def test_non_premium_blocked(self):
+        self.center.is_premium = False
+        self.center.save(update_fields=['is_premium'])
+        url = reverse('center-activity-trend', args=[self.center.id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(response.json().get('upgrade_required'))
+
+    def test_outsider_forbidden(self):
+        stranger = User.objects.create_user(
+            phone='+998901300009', password='p', full_name='Begona',
+        )
+        self.client.force_authenticate(user=stranger)
+        url = reverse('center-activity-trend', args=[self.center.id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class CenterRegionRankTestCase(APITestCase):
+    """GET /api/centers/{id}/region-rank/ — hudud bo'yicha anonim o'rin."""
+
+    def _center_with_score(self, name, region, owner, score, premium=False):
+        from django.utils import timezone
+        from olympiads.models import Olympiad
+        from attempts.models import TestAttempt
+
+        center = EducationCenter.objects.create(
+            name=name, city='Sh', region=region,
+            status=EducationCenter.STATUS_APPROVED, is_premium=premium, owner=owner,
+        )
+        olympiad = Olympiad.objects.create(
+            center=center, title='O', subject='Matematika', status='finished',
+            event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timezone.timedelta(days=5),
+            duration_minutes=60,
+        )
+        if score is not None:
+            # Student telefoni markaz id'siga bog'lab unikal qilinadi —
+            # owner telefonlari (+99890140000X) bilan to'qnashmasligi uchun
+            # boshqa diapazon (+99890141XXXX) ishlatamiz.
+            student = User.objects.create_user(
+                phone=f'+998901410{center.id:03d}', password='p', full_name='St',
+            )
+            TestAttempt.objects.create(user=student, olympiad=olympiad, score=score)
+        return center
+
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            phone='+998901400001', password='StrongPass123', full_name='Mening direktor',
+        )
+        o2 = User.objects.create_user(phone='+998901400002', password='p', full_name='O2')
+        o3 = User.objects.create_user(phone='+998901400003', password='p', full_name='O3')
+        o4 = User.objects.create_user(phone='+998901400004', password='p', full_name='O4')
+        # Toshkent hududi: 90 (boshqa), 75 (mening), 50 (boshqa) → men 2-o'rinda.
+        self.my_center = self._center_with_score('Mening', 'Toshkent', self.owner, 75, premium=True)
+        self.rival_top = self._center_with_score('Raqib Top', 'Toshkent', o2, 90)
+        self._center_with_score('Raqib Past', 'Toshkent', o3, 50)
+        # Boshqa hudud — region reytingga kirmasligi kerak.
+        self._center_with_score('Boshqa Hudud', 'Samarqand', o4, 99)
+        self.client.force_authenticate(user=self.owner)
+
+    def test_region_rank_correct_and_anonymous(self):
+        url = reverse('center-region-rank', args=[self.my_center.id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertEqual(data['region'], 'Toshkent')
+        # Toshkentda 3 markaz; men 90 dan keyin → 2-o'rin.
+        self.assertEqual(data['region_rank'], 2)
+        self.assertEqual(data['region_total'], 3)
+        # Global — 4 markaz; 99 va 90 dan keyin → 3-o'rin.
+        self.assertEqual(data['global_total'], 4)
+        self.assertEqual(data['global_rank'], 3)
+        # Xavfsizlik: javobda boshqa markazlarning nomi oshkor bo'lmasligi kerak.
+        body = response.content.decode()
+        self.assertNotIn('Raqib Top', body)
+        self.assertNotIn('Boshqa Hudud', body)
+
+    def test_non_premium_blocked(self):
+        self.my_center.is_premium = False
+        self.my_center.save(update_fields=['is_premium'])
+        url = reverse('center-region-rank', args=[self.my_center.id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_outsider_forbidden(self):
+        stranger = User.objects.create_user(
+            phone='+998901400099', password='p', full_name='Begona',
+        )
+        self.client.force_authenticate(user=stranger)
+        url = reverse('center-region-rank', args=[self.my_center.id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+

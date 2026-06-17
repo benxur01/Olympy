@@ -4,7 +4,9 @@ Barchasi `/api/me/` ostida mount qilinadi (accounts/urls_me.py). Har biri
 faqat autentifikatsiyalangan foydalanuvchining O'Z ma'lumotlarini qaytaradi.
 """
 from collections import OrderedDict
+from datetime import timedelta
 
+from django.utils import timezone
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
@@ -15,6 +17,12 @@ from attempts.models import TestAttempt
 from olympiads.models import Olympiad
 
 from .utils import is_user_premium
+
+# Reyting tarixi (score-timeline) uchun premium bo'lmagan o'quvchiga ko'rsatiladigan
+# oyna (kun). Premium o'quvchi 30 yoki 90 kunni tanlay oladi; bepul o'quvchi faqat
+# oxirgi FREE_TIMELINE_DAYS kunni ko'radi (qolgani blur + "premium oling" CTA).
+FREE_TIMELINE_DAYS = 7
+ALLOWED_TIMELINE_DAYS = (30, 90)
 
 
 def _premium_required_response():
@@ -64,6 +72,130 @@ def history_chart(request):
             'date': a.submitted_at.strftime('%Y-%m-%d') if a.submitted_at else '',
         })
     return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def score_timeline(request):
+    """GET /api/me/score-timeline/?days=30|90 — vaqt bo'yicha reyting tarixi.
+
+    Foydalanuvchining oxirgi N kundagi har bir urinishini sana+ball (foiz)
+    juftligi sifatida qaytaradi — chart uchun mos format. `TestAttempt.score`
+    allaqachon 0..100 foiz (questions.grading earned/max * 100), shu sababli
+    qo'shimcha hisob shart emas.
+
+    Premium o'quvchi: to'liq 30 yoki 90 kunlik tarix. Premium bo'lmagan
+    o'quvchi: faqat oxirgi 7 kun (`limited: true`, `full_days` so'ralgan oyna)
+    — frontend qolgan qismni blur qilib "premium oling" CTA ko'rsatadi.
+
+    Javob: {
+      days, limited, full_days, premium,
+      points: [{date, score, olympiad_name, rank}],
+      average,
+    }
+    """
+    premium = is_user_premium(request.user)
+
+    try:
+        requested_days = int(request.query_params.get('days') or 30)
+    except (TypeError, ValueError):
+        requested_days = 30
+    if requested_days not in ALLOWED_TIMELINE_DAYS:
+        requested_days = 30
+
+    # Premium bo'lmasa oynani 7 kunga qisqartiramiz (lekin foydalanuvchi
+    # so'ragan to'liq oynani `full_days` da qaytaramiz — frontend "yana N kun
+    # premium bilan ochiladi" deb ko'rsatishi uchun).
+    window_days = requested_days if premium else FREE_TIMELINE_DAYS
+    since = timezone.now() - timedelta(days=window_days)
+
+    attempts = list(
+        TestAttempt.objects
+        .filter(
+            user=request.user,
+            disqualified=False,
+            olympiad__is_deleted=False,
+            submitted_at__gte=since,
+        )
+        .select_related('olympiad')
+        .order_by('submitted_at')  # eskidan yangiga (grafik o'sish tartibida)
+    )
+
+    points = []
+    score_sum = 0
+    for a in attempts:
+        points.append({
+            'date': a.submitted_at.strftime('%Y-%m-%d') if a.submitted_at else '',
+            'score': a.score or 0,
+            'olympiad_name': a.olympiad.title if a.olympiad else '—',
+            'rank': a.rank,
+        })
+        score_sum += a.score or 0
+
+    average = round(score_sum / len(points)) if points else 0
+    return Response({
+        'days': window_days,
+        'full_days': requested_days,
+        'limited': not premium,
+        'premium': premium,
+        'points': points,
+        'average': average,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def weakest_topics(request):
+    """GET /api/me/weakest-topics/ — eng zaif 3 fan/mavzu.
+
+    Foydalanuvchining fan kesimidagi to'g'ri/jami javoblari asosida (yangi AI
+    chaqiruvsiz — oddiy agregatsiya) eng past foizli 3 fanni qaytaradi. Faqat
+    kamida bitta savol javob berilgan fanlar hisobga olinadi.
+
+    Premium o'quvchi: real ma'lumot. Premium bo'lmagan: `locked: true` va bo'sh
+    ro'yxat (frontend blur + CTA ko'rsatadi).
+
+    Javob: {premium, locked, topics: [{subject, correct, total, pct, recommendation}]}
+    """
+    premium = is_user_premium(request.user)
+    if not premium:
+        return Response({'premium': False, 'locked': True, 'topics': []})
+
+    attempts = (
+        TestAttempt.objects
+        .filter(user=request.user, disqualified=False, olympiad__is_deleted=False)
+        .select_related('olympiad')
+    )
+    buckets = OrderedDict()
+    for a in attempts:
+        subject = (a.olympiad.subject if a.olympiad else '') or '—'
+        b = buckets.setdefault(subject, {'subject': subject, 'correct': 0, 'total': 0})
+        b['correct'] += a.correct_count or 0
+        answered = (a.correct_count or 0) + (a.wrong_count or 0)
+        b['total'] += a.total_questions or answered
+
+    rows = []
+    for b in buckets.values():
+        total = b['total']
+        if total <= 0:
+            continue  # hech qachon javob berilmagan fanni "zaif" deb ko'rsatmaymiz
+        pct = round((b['correct'] / total) * 100)
+        if pct >= 80:
+            rec = 'Yaxshi natija — saqlab qoling'
+        elif pct >= 50:
+            rec = "Ko'proq mashq qiling"
+        else:
+            rec = 'Asosiy mavzularni takrorlash kerak'
+        rows.append({
+            'subject': b['subject'],
+            'correct': b['correct'],
+            'total': total,
+            'pct': pct,
+            'recommendation': rec,
+        })
+    # Eng zaif (eng past foiz) birinchi — yuqori 3 ta.
+    rows.sort(key=lambda x: (x['pct'], -x['total']))
+    return Response({'premium': True, 'locked': False, 'topics': rows[:3]})
 
 
 @api_view(['GET'])
