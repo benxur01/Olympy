@@ -56,6 +56,10 @@ ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()] or (
 if not DEBUG and not ALLOWED_HOSTS:
     raise ImproperlyConfigured('OLYMPY_ALLOWED_HOSTS must be set in production')
 
+# Frontend (foydalanuvchiga ko'rinadigan) sayt manzili — Telegram/email
+# bildirishnomalaridagi havolalar shu manzildan quriladi.
+SITE_URL = os.environ.get('SITE_URL', 'https://prolymp.uz')
+
 # Y5/P2: Cloudinary media storage faqat CLOUDINARY_CLOUD_NAME env mavjud
 # bo'lganda yoqiladi. Paket o'rnatilmagan lokal muhitlarda app'larni qo'shish
 # ImportError berishi sababli, app'lar ham, storage backend'i ham (pastda)
@@ -527,6 +531,11 @@ CELERY_BEAT_SCHEDULE = {
     'send-weekly-parent-reports': {
         'task': 'accounts.send_weekly_parent_reports',
         'schedule': crontab(hour=8, minute=0, day_of_week='monday', nowfun=lambda: datetime.now(dt_timezone.utc)),
+    },
+    # Har dushanba soat 08:30 UTC — markaz egalariga (owner) haftalik digest (B2B).
+    'send-weekly-digest': {
+        'task': 'accounts.send_weekly_digest',
+        'schedule': crontab(hour=8, minute=30, day_of_week='monday', nowfun=lambda: datetime.now(dt_timezone.utc)),
     },
     # Har kuni soat 09:00 UTC — premium sinovi 3 kun ichida tugaydigan, hali
     # pullik obunaga o'tmagan foydalanuvchilarga konversiya eslatmasi (P4).

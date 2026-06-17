@@ -2,6 +2,7 @@ from django.urls import path
 
 from . import export_views
 from . import views
+from . import views_b2b
 from . import views_duel
 from . import views_me_premium
 from . import views_parent
@@ -10,6 +11,12 @@ from . import views_student
 
 urlpatterns = [
     path('me/', views.me, name='me'),
+    # B2B markaz onboarding (owner), o'qituvchi roli va referral (Feature #1/#3/#7)
+    path('me/center-onboarding/', views_b2b.center_onboarding, name='me-center-onboarding'),
+    path('me/teacher/students/', views_b2b.teacher_students, name='me-teacher-students'),
+    path('me/teacher/olympiads/', views_b2b.teacher_olympiads, name='me-teacher-olympiads'),
+    path('me/referral/', views_b2b.my_referral, name='me-referral'),
+    path('me/referral/use/', views_b2b.use_referral, name='me-referral-use'),
     # Retention funksiyalar (Onboarding / Daily hooks / Long-term)
     path('me/complete-onboarding/', views_retention.complete_onboarding, name='me-complete-onboarding'),
     path('me/peer-comparison/', views_retention.peer_comparison, name='me-peer-comparison'),
