@@ -424,7 +424,7 @@ const App = () => {
       );
     }
 
-    if (status === 'approved') {
+    if (status === 'approved' || (status === 'pending' && role === 'owner')) {
       const props = {
         user, onNavigate: navigate, onLogout: handleLogout,
         onOpenSwitcher: () => setSwitcherOpen(true),
@@ -664,5 +664,20 @@ const App = () => {
   );
 };
 
+// Public sertifikat tekshirish sahifasi (Feature #5) — App'dan TASHQARIDA
+// ishlaydi, shuning uchun JWT restore/auth guard umuman ishga tushmaydi
+// (login talab qilinmaydi). /certificates/verify/<uuid>[/] URL'ini ushlaymiz.
+const certVerifyUuid = (() => {
+  try {
+    const raw = (window.location.pathname || '').replace(/\/+$/, '');
+    const m = raw.match(/^\/certificates\/verify\/([^/]+)$/);
+    return m ? m[1] : null;
+  } catch { return null; }
+})();
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(<App />);
+if (certVerifyUuid) {
+  root.render(<CertificateVerifyPage uuid={certVerifyUuid} />);
+} else {
+  root.render(<App />);
+}
