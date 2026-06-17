@@ -528,10 +528,12 @@ class TrialEndingRemindersTestCase(APITestCase):
     """P4: Premium sinovi tugayotgan foydalanuvchilarga konversiya eslatmasi.
 
     `send_trial_ending_reminders` task'i faqat kerakli foydalanuvchilarga
-    (sinovi 3 kun ichida tugaydigan, is_premium=False, telegram bog'langan,
-    eslatma hali yuborilmagan) bir martalik Telegram xabar yuborishini va
-    `trial_reminder_sent_at`'ni o'rnatishini tekshiradi. `_send_telegram_message`
-    mock qilinadi — haqiqiy Telegram chaqirilmaydi.
+    (sinovi 3 kun ichida tugaydigan, aktiv, telegram bog'langan, eslatma hali
+    yuborilmagan) bir martalik Telegram xabar yuborishini va
+    `trial_reminder_sent_at`'ni o'rnatishini tekshiradi. Trial davrida user
+    `is_premium=True` bo'lgani uchun (ro'yxatdan o'tishda shunday qo'yiladi)
+    tanlash aynan `premium_trial_end` maydoniga qarab amalga oshadi.
+    `_send_telegram_message` mock qilinadi — haqiqiy Telegram chaqirilmaydi.
     """
 
     def _make_attempt(self, user, score, days_ago=2):
@@ -560,13 +562,15 @@ class TrialEndingRemindersTestCase(APITestCase):
 
     @patch('accounts.views._send_telegram_message', return_value=True)
     def test_reminder_sent_for_ending_trial(self, mock_send):
-        """Sinovi 2 kun ichida tugaydigan, telegram bog'langan, is_premium=False
-        userga eslatma yuboriladi va trial_reminder_sent_at o'rnatiladi."""
+        """Sinovi 2 kun ichida tugaydigan, telegram bog'langan, aktiv trial
+        userga eslatma yuboriladi va trial_reminder_sent_at o'rnatiladi.
+        Trial davrida user is_premium=True bo'ladi — aynan shu holat avval
+        noto'g'ri is_premium=False filteri tufayli hech qachon tanlanmas edi."""
         from accounts.tasks import send_trial_ending_reminders
 
         user = User.objects.create_user(
             phone='+998901119001', password='UserPass123', full_name='Trial User',
-            is_premium=False,
+            is_premium=True,
         )
         user.premium_trial_end = timezone.now() + timedelta(days=2)
         user.telegram_chat_id = '123456'
@@ -584,16 +588,39 @@ class TrialEndingRemindersTestCase(APITestCase):
         self.assertIsNotNone(user.trial_reminder_sent_at)
 
     @patch('accounts.views._send_telegram_message', return_value=True)
-    def test_premium_user_skipped(self, mock_send):
-        """is_premium=True (pullik obunaga o'tgan) userga yuborilmaydi."""
+    def test_no_trial_user_skipped(self, mock_send):
+        """Trial muddati yo'q (premium_trial_end IS NULL) userga yuborilmaydi —
+        eslatma faqat amal qiluvchi trial muddatiga bog'lanadi, sof pullik /
+        oddiy userlarga emas."""
         from accounts.tasks import send_trial_ending_reminders
 
         user = User.objects.create_user(
             phone='+998901119002', password='UserPass123', full_name='Paid User',
             is_premium=True,
         )
-        user.premium_trial_end = timezone.now() + timedelta(days=2)
+        # premium_trial_end o'rnatilmaydi (NULL) — faqat pullik obuna.
         user.telegram_chat_id = '123457'
+        user.save()
+
+        result = send_trial_ending_reminders()
+
+        self.assertEqual(result, {'sent': 0, 'skipped': 0})
+        mock_send.assert_not_called()
+        user.refresh_from_db()
+        self.assertIsNone(user.trial_reminder_sent_at)
+
+    @patch('accounts.views._send_telegram_message', return_value=True)
+    def test_inactive_user_skipped(self, mock_send):
+        """is_active=False (bloklangan/o'chirilgan) userga yuborilmaydi."""
+        from accounts.tasks import send_trial_ending_reminders
+
+        user = User.objects.create_user(
+            phone='+998901119007', password='UserPass123', full_name='Inactive User',
+            is_premium=True,
+        )
+        user.premium_trial_end = timezone.now() + timedelta(days=2)
+        user.telegram_chat_id = '123461'
+        user.is_active = False
         user.save()
 
         result = send_trial_ending_reminders()
