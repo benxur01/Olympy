@@ -5619,46 +5619,6 @@ const SuggestedOlympiadCard = ({ onNavigate, olympiads }) => {
   );
 };
 
-// ─── LT2. O'sish yo'li (Roadmap) — vertikal progress ─────────────────────────
-const RoadmapCard = () => {
-  const { data, loading } = useApiData(() => OlympyApi.getRoadmap(_retToken()), []);
-  if (loading || !data) return null;
-  const stages = data.stages || [];
-  if (!stages.length) return null;
-  return (
-    <div className="glass rounded-2xl p-4 md:p-5 border border-white/5">
-      <h3 className="font-bold text-white text-sm md:text-base mb-1 flex items-center gap-2">🚀 O'sish yo'li</h3>
-      <p className="text-xs text-white/40 mb-4">O'rtacha ball: <span className="text-white/70 font-semibold">{data.current_score}</span></p>
-      <div className="relative pl-7">
-        {/* vertikal chiziq */}
-        <div className="absolute left-[10px] top-2 bottom-2 w-0.5 bg-white/10" />
-        {stages.map((s, i) => {
-          const isCurrent = data.current_level === s.level;
-          const dotCls = s.is_achieved
-            ? 'bg-emerald-500 border-emerald-400'
-            : isCurrent
-              ? 'bg-amber-500 border-amber-400 animate-pulse'
-              : 'bg-white/10 border-white/20';
-          const txtCls = s.is_achieved ? 'text-emerald-300' : isCurrent ? 'text-amber-300' : 'text-white/40';
-          return (
-            <div key={s.level} className="relative mb-4 last:mb-0">
-              <div className={`absolute -left-7 top-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center ${dotCls}`}>
-                {s.is_achieved && <Icon name="check" size={11} className="text-white" />}
-              </div>
-              <div className={`text-sm font-bold ${txtCls}`}>{s.title}</div>
-              <div className="text-xs text-white/40">
-                {s.is_achieved ? 'Bajarildi' : `${s.required_score}+ ball kerak`}
-                {isCurrent && s.next_milestone && s.next_milestone.points_needed > 0 && (
-                  <span> · {s.next_milestone.title}gacha {s.next_milestone.points_needed} ball</span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
 
 // ─── LT3. "O'tgan oy shu paytda" taqqoslash ──────────────────────────────────
 const ProgressComparisonCard = () => {
@@ -5757,13 +5717,12 @@ Object.assign(window, {
   WeeklyContestWidget,
   PeerComparisonCard,
   SuggestedOlympiadCard,
-  RoadmapCard,
   ProgressComparisonCard,
   OlympiadCalendarModal,
 });
 
 
-Object.assign(moduleScope, { _retToken, StreakWarningBanner, DailyQuestionsWidget, RivalActivityWidget, WeeklyContestWidget, PeerComparisonCard, SuggestedOlympiadCard, RoadmapCard, ProgressComparisonCard, OlympiadCalendarModal });
+Object.assign(moduleScope, { _retToken, StreakWarningBanner, DailyQuestionsWidget, RivalActivityWidget, WeeklyContestWidget, PeerComparisonCard, SuggestedOlympiadCard, ProgressComparisonCard, OlympiadCalendarModal });
 }
 var _retToken = moduleScope._retToken;
 var StreakWarningBanner = moduleScope.StreakWarningBanner;
@@ -5772,7 +5731,6 @@ var RivalActivityWidget = moduleScope.RivalActivityWidget;
 var WeeklyContestWidget = moduleScope.WeeklyContestWidget;
 var PeerComparisonCard = moduleScope.PeerComparisonCard;
 var SuggestedOlympiadCard = moduleScope.SuggestedOlympiadCard;
-var RoadmapCard = moduleScope.RoadmapCard;
 var ProgressComparisonCard = moduleScope.ProgressComparisonCard;
 var OlympiadCalendarModal = moduleScope.OlympiadCalendarModal;
 
@@ -7272,7 +7230,6 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           <WeeklyContestWidget />
           <RivalActivityWidget />
           <ProgressComparisonCard />
-          <RoadmapCard />
         </div>
       )}
 
@@ -17651,7 +17608,6 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
       {/* Retention: o'sish yo'li, oylik o'sish va sinf taqqoslash (LT2/LT3/OB3) */}
       {isApi && (
         <>
-          <RoadmapCard />
           <ProgressComparisonCard />
           <PeerComparisonCard />
         </>

@@ -919,7 +919,6 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
       {/* Retention: o'sish yo'li, oylik o'sish va sinf taqqoslash (LT2/LT3/OB3) */}
       {isApi && (
         <>
-          <RoadmapCard />
           <ProgressComparisonCard />
           <PeerComparisonCard />
         </>

@@ -702,62 +702,6 @@ def olympiad_calendar(request):
         })
     return Response({'upcoming': upcoming})
 
-
-# LT2 bosqichlar — o'rtacha ballga ko'ra darajalar.
-ROADMAP_LEVELS = [
-    {'level': 'school', 'title': 'Maktab', 'required_score': 0},
-    {'level': 'district', 'title': 'Tuman', 'required_score': 40},
-    {'level': 'region', 'title': 'Viloyat', 'required_score': 65},
-    {'level': 'republic', 'title': 'Respublika', 'required_score': 85},
-]
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def roadmap(request):
-    """GET /api/me/roadmap/ — o'sish yo'li (4 bosqich).
-
-    O'rtacha ball asosida joriy bosqich aniqlanadi.
-    Javob: {current_score, current_level, stages: [{level, title,
-    required_score, current_score, is_achieved, next_milestone}]}.
-    """
-    avg = (
-        TestAttempt.objects
-        .filter(user=request.user, disqualified=False, olympiad__is_deleted=False)
-        .aggregate(avg=Avg('score'))['avg']
-    )
-    current_score = round(avg or 0, 1)
-
-    stages = []
-    current_level = ROADMAP_LEVELS[0]['level']
-    for i, lvl in enumerate(ROADMAP_LEVELS):
-        is_achieved = current_score >= lvl['required_score']
-        if is_achieved:
-            current_level = lvl['level']
-        next_milestone = None
-        if i + 1 < len(ROADMAP_LEVELS):
-            nxt = ROADMAP_LEVELS[i + 1]
-            next_milestone = {
-                'level': nxt['level'],
-                'title': nxt['title'],
-                'required_score': nxt['required_score'],
-                'points_needed': max(0, round(nxt['required_score'] - current_score, 1)),
-            }
-        stages.append({
-            'level': lvl['level'],
-            'title': lvl['title'],
-            'required_score': lvl['required_score'],
-            'current_score': current_score,
-            'is_achieved': is_achieved,
-            'next_milestone': next_milestone,
-        })
-    return Response({
-        'current_score': current_score,
-        'current_level': current_level,
-        'stages': stages,
-    })
-
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def progress_comparison(request):

@@ -16,7 +16,6 @@ urlpatterns = [
     path('me/suggested-olympiad/', views_retention.suggested_olympiad, name='me-suggested-olympiad'),
     path('me/rival-activity/', views_retention.rival_activity, name='me-rival-activity'),
     path('me/streak-warning/', views_retention.streak_warning, name='me-streak-warning'),
-    path('me/roadmap/', views_retention.roadmap, name='me-roadmap'),
     path('me/progress-comparison/', views_retention.progress_comparison, name='me-progress-comparison'),
     path('me/classmates-leaderboard/', views_retention.classmates_leaderboard, name='me-classmates-leaderboard'),
     path('daily-questions/', views_retention.daily_questions, name='daily-questions'),

@@ -844,7 +844,6 @@ export const OlympyApi = {
       : '';
     return request(`/api/olympiad-calendar/${qs}`, { token });
   },
-  getRoadmap: (token) => request('/api/me/roadmap/', { token }),
   getProgressComparison: (token) => request('/api/me/progress-comparison/', { token }),
   getClassmatesLeaderboard: (token) => request('/api/me/classmates-leaderboard/', { token }),
   // Premium markaz funksiyalari
