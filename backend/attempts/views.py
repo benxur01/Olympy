@@ -7,7 +7,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
@@ -1154,6 +1154,14 @@ def download_certificate(request, attempt_id):
             {'detail': "Sertifikat faqat 1-o'rin egasiga beriladi"},
             status=http_status.HTTP_403_FORBIDDEN,
         )
+    # Eski attempt'larda certificate_uuid NULL bo'lishi mumkin (migratsiya
+    # data fill faqat eski qatorlarni qoplaydi, lekin imkoniyat uchun bu
+    # yerda ham lazy to'ldiramiz). Sertifikat PNG'sida verify URL shu UUID
+    # orqali ko'rsatiladi.
+    if not attempt.certificate_uuid:
+        import uuid as _uuid
+        attempt.certificate_uuid = _uuid.uuid4()
+        attempt.save(update_fields=['certificate_uuid'])
     from django.core.cache import cache
     cache_key = f"certificate:attempt:{attempt.id}"
     png_bytes = cache.get(cache_key)
@@ -1172,6 +1180,54 @@ def download_certificate(request, attempt_id):
     safe_title = ''.join(ch for ch in attempt.olympiad.title if ch.isalnum() or ch in (' ', '_', '-'))[:60].strip() or 'certificate'
     response['Content-Disposition'] = f'attachment; filename="olympy-{safe_title}-{attempt.id}.png"'
     return response
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def certificate_verify(request, cert_uuid):
+    """GET /api/certificates/verify/{uuid}/ — sertifikat haqiqiyligini tekshirish.
+
+    PUBLIC (auth shart emas) — sertifikatdagi QR/URL ochilganda kim bo'lishidan
+    qat'i nazar tekshirishi mumkin. Javob `reason` orqali holatni aniq
+    ajratadi, shunda foydalanuvchi nima xato bo'lganini tushunadi:
+      - UUID topilmadi → {valid: false, reason: "not_found"} 404
+      - UUID bor, lekin sertifikat berilmagan (disqualified yoki rank!=1)
+        → {valid: false, reason: "not_awarded"} 404
+      - To'g'ri sertifikat → {valid: true, reason: "ok", ...} 200
+
+    Faqat 1-o'rin egasiga sertifikat beriladigani uchun (download_certificate
+    bilan bir xil siyosat) — rank!=1 bo'lgan attempt UUID'i ham haqiqiy
+    sertifikat hisoblanmaydi.
+    """
+    attempt = (
+        TestAttempt.objects
+        .filter(certificate_uuid=cert_uuid, olympiad__is_deleted=False)
+        .select_related('user', 'olympiad', 'olympiad__center')
+        .first()
+    )
+    if not attempt:
+        return Response(
+            {'valid': False, 'reason': 'not_found'},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+    if attempt.disqualified or attempt.rank != 1:
+        return Response(
+            {'valid': False, 'reason': 'not_awarded'},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    olympiad = attempt.olympiad
+    center = olympiad.center if olympiad.center_id else None
+    student_name = (attempt.user.full_name or 'Foydalanuvchi').strip()
+    return Response({
+        'valid': True,
+        'reason': 'ok',
+        'student_name': student_name,
+        'olympiad_name': olympiad.title,
+        'score': attempt.score,
+        'date': attempt.submitted_at.strftime('%d.%m.%Y') if attempt.submitted_at else '',
+        'center_name': center.name if center else '',
+    })
 
 
 @api_view(['GET'])

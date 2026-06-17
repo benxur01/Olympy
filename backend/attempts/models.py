@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 
@@ -34,6 +36,14 @@ class TestAttempt(models.Model):
     # attempt yaratiladi va manager paneli "diskvalifitsiya bo'lgan" deb
     # ko'rsata oladi.
     disqualified = models.BooleanField(default=False)
+    # Sertifikat ommaviy tekshiruv (verify) UUID'i. Sertifikatda QR/URL
+    # sifatida ko'rsatiladi: prolymp.uz/certificates/verify/<uuid>. Public
+    # endpoint shu UUID orqali sertifikat haqiqiyligini tasdiqlaydi. Eski
+    # attempt'larda NULL bo'lishi mumkin (migratsiya null=True bilan qo'shadi);
+    # download_certificate paytida lazy ravishda to'ldiriladi.
+    certificate_uuid = models.UUIDField(
+        default=uuid.uuid4, unique=True, null=True, blank=True, db_index=True,
+    )
     submitted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
