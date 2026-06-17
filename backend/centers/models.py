@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.validators import RegexValidator
 from django.db import models
 
 
@@ -39,6 +40,18 @@ class EducationCenter(models.Model):
     subjects = models.JSONField(default=list, blank=True)
     image = models.ImageField(upload_to='centers/', blank=True, null=True)
     rating = models.DecimalField(max_digits=3, decimal_places=1, default=0)
+    # White-label (markaz brendi): owner o'z markazi uchun asosiy rangni
+    # (HEX, masalan '#6366f1') va ixtiyoriy maxsus domenni belgilashi mumkin.
+    # `brand_color` frontend'da CSS o'zgaruvchisi (--brand-color) sifatida
+    # qo'llaniladi. `custom_domain` hozircha faqat saqlanadi (kelajakdagi
+    # domen ulash uchun).
+    brand_color = models.CharField(
+        max_length=7,
+        default='#6366f1',
+        blank=True,
+        validators=[RegexValidator(r'^#[0-9a-fA-F]{6}$', "Rang #RRGGBB formatida bo'lishi kerak")],
+    )
+    custom_domain = models.CharField(max_length=120, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

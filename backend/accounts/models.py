@@ -99,6 +99,12 @@ class User(AbstractBaseUser, PermissionsMixin):
     onboarding_grade = models.CharField(max_length=10, null=True, blank=True)
     onboarding_subjects = models.JSONField(default=list, blank=True)
     onboarding_goal = models.CharField(max_length=50, null=True, blank=True)
+    # B2B onboarding (markaz egasi uchun): owner birinchi marta direktor
+    # paneliga kirganda alohida 3 bosqichli sehrgar ko'rsatiladi (markazni
+    # sozlash → birinchi olimpiada → o'quvchi qo'shish). `onboarding_center_
+    # completed` True bo'lguncha frontend bu modalni ochadi. Student onboarding
+    # (`onboarding_completed`) dan mustaqil — owner ham, student ham bo'lishi mumkin.
+    onboarding_center_completed = models.BooleanField(default=False)
     # Adaptiv daraja tizimi (ELO'ga o'xshash): har fan uchun joriy daraja va
     # ketma-ket urinish seriyasi. `subject_levels` — {fan: daraja}, masalan
     # {"Ingliz tili": "B1", "Matematika": "O'rta"}. `level_streak` — har fan
@@ -926,3 +932,34 @@ class AuditLog(models.Model):
             )
         except Exception:
             logger.exception('AuditLog.log xatosi: action=%s', action)
+
+
+class ReferralCode(models.Model):
+    """Referral (do'stni taklif qilish) tizimi.
+
+    Har foydalanuvchining yagona 8 belgilik kodi bo'ladi (talab qilinganda
+    avtomatik yaratiladi). Boshqa foydalanuvchi shu kodni `referral/use/`
+    orqali kiritsa, ikkalasiga ham `bonus_coins` (default 50) coin beriladi.
+    `used_by` — kodni ishlatgan foydalanuvchilar (M2M): bir foydalanuvchi
+    kodni faqat bir marta ishlata oladi va o'zining kodini ishlata olmaydi
+    (tekshiruv view'da).
+    """
+    user = models.OneToOneField(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='referral_code',
+    )
+    code = models.CharField(max_length=8, unique=True, db_index=True)
+    used_by = models.ManyToManyField(
+        'accounts.User',
+        related_name='used_referral_codes',
+        blank=True,
+    )
+    bonus_coins = models.PositiveIntegerField(default=50)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'referral:{self.user_id}={self.code}'

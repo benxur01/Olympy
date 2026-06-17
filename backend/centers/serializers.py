@@ -22,11 +22,15 @@ class EducationCenterSerializer(serializers.ModelSerializer):
         model = EducationCenter
         fields = ['id', 'name', 'organization_type', 'country', 'region', 'district',
                   'city', 'owner', 'status', 'is_premium', 'subjects', 'rating',
-                  'created_at', 'image_url', 'students', 'olympiads']
+                  'created_at', 'image_url', 'students', 'olympiads',
+                  'brand_color', 'custom_domain']
         # is_premium read-only serializer darajasida — yozish faqat
         # update_center view'ida is_platform_admin tekshiruvidan keyin amalga
-        # oshiriladi (oddiy owner uni o'zgartira olmaydi).
-        read_only_fields = ['id', 'owner', 'status', 'is_premium', 'rating', 'created_at']
+        # oshiriladi (oddiy owner uni o'zgartira olmaydi). brand_color/
+        # custom_domain ham read-only: ular alohida `branding` endpoint orqali
+        # (faqat owner) yangilanadi, umumiy markaz update'ida emas.
+        read_only_fields = ['id', 'owner', 'status', 'is_premium', 'rating', 'created_at',
+                            'brand_color', 'custom_domain']
 
     def get_owner(self, obj):
         request = self.context.get('request') if hasattr(self, 'context') else None
