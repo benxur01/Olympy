@@ -8,8 +8,10 @@
 const _retToken = () => globalThis.OlympyApi?.getToken?.();
 
 // ─── DH3. Streak himoyasi eslatmasi (sariq banner) ───────────────────────────
-const StreakWarningBanner = ({ onNavigate }) => {
-  const { data } = useApiData(() => OlympyApi.getStreakWarning(_retToken()), []);
+const StreakWarningBanner = ({ onNavigate, user }) => {
+  // user o'zgarsa (logout/login) ma'lumot qayta yuklansin — komponent
+  // unmount bo'lmaydi, shuning uchun dep array'ga user identifikatorini qo'shamiz.
+  const { data } = useApiData(() => OlympyApi.getStreakWarning(_retToken()), [user?.id, user?.backendId]);
   if (!data || (data.streak_count || 0) <= 3) return null;
 
   if (data.is_premium) {
@@ -51,8 +53,8 @@ const StreakWarningBanner = ({ onNavigate }) => {
 };
 
 // ─── DH1. Bugungi savollar (countdown + 3 ta savol) ──────────────────────────
-const DailyQuestionsWidget = () => {
-  const { data, loading, reload } = useApiData(() => OlympyApi.getDailyQuestions(_retToken()), []);
+const DailyQuestionsWidget = ({ user }) => {
+  const { data, loading, reload } = useApiData(() => OlympyApi.getDailyQuestions(_retToken()), [user?.id, user?.backendId]);
   const [timeLeft, setTimeLeft] = React.useState('');
   const [answering, setAnswering] = React.useState(null);
 
@@ -142,9 +144,221 @@ const DailyQuestionsWidget = () => {
   );
 };
 
+// ─── F4. Streak + Kunlik maqsad (gamifikatsiya) ──────────────────────────────
+// Yuqorida streak kartochkasi (🔥 ketma-ket kunlar) va 7 kunlik rekord banneri,
+// pastda bugungi kunlik maqsad progress bari. Maqsad belgilanmagan bo'lsa
+// (target=0) 1/3/5/10 savol tanlash tugmalari ko'rsatiladi.
+const DAILY_GOAL_OPTIONS = [1, 3, 5, 10];
+const DailyGoalWidget = ({ streakCount = 0, user }) => {
+  const { data, loading, reload } = useApiData(() => OlympyApi.getDailyGoal(_retToken()), [user?.id, user?.backendId]);
+  const [saving, setSaving] = React.useState(false);
+
+  const setGoal = async (n) => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      await OlympyApi.setDailyGoal(n, _retToken());
+      reload();
+    } catch (e) {
+      // jim — keyingi yuklashda holat tiklanadi
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) return null;
+
+  const target = data?.target_questions || 0;
+  const completed = data?.completed_questions || 0;
+  const isAchieved = !!data?.is_achieved;
+  const pct = target > 0 ? Math.min(100, Math.round((completed / target) * 100)) : 0;
+  const hasStreak = (streakCount || 0) > 0;
+  const recordReached = (streakCount || 0) >= 7;
+
+  return (
+    <div className="space-y-3">
+      {/* Streak kartochkasi — har doim ko'rsatiladi (0 bo'lsa motivatsion matn). */}
+      <div className={`glass rounded-2xl p-4 md:p-5 border ${recordReached ? 'border-orange-500/30 bg-orange-500/10' : 'border-orange-500/15'}`}>
+        <div className="flex items-center gap-3">
+          <div className="text-3xl flex-shrink-0">🔥</div>
+          <div className="flex-1 min-w-0">
+            <div className="text-sm font-black text-white">
+              {hasStreak
+                ? <>Ketma-ket <span className="text-orange-400">{streakCount}</span> kun!</>
+                : 'Bugun mashq qilib seriyani boshlang'}
+            </div>
+            <div className="text-xs text-white/50 mt-0.5">
+              {hasStreak
+                ? 'Har kuni faol bo\'lib seriyangizni uzaytiring.'
+                : 'Har kungi faollik bonus tanga va reyting beradi.'}
+            </div>
+          </div>
+        </div>
+        {recordReached && (
+          <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/15 px-3 py-2 text-xs font-bold text-amber-200 flex items-center gap-2">
+            <span>🏆</span> 7 kunlik rekord! +50 coin
+          </div>
+        )}
+      </div>
+
+      {/* Kunlik maqsad */}
+      <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/15">
+        <div className="flex items-center justify-between mb-3 gap-2">
+          <h3 className="font-bold text-white text-sm md:text-base flex items-center gap-2">🎯 Kunlik maqsad</h3>
+          {target > 0 && (
+            <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${isAchieved ? 'bg-emerald-500/15 text-emerald-300' : 'bg-indigo-500/10 text-indigo-300'}`}>
+              {completed}/{target} savol
+            </span>
+          )}
+        </div>
+        {target > 0 ? (
+          <>
+            <div className="h-2.5 w-full rounded-full bg-white/10 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${isAchieved ? 'bg-gradient-to-r from-emerald-500 to-teal-500' : 'bg-gradient-to-r from-indigo-500 to-purple-600'}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <div className="mt-2 text-xs text-white/55">
+              {isAchieved
+                ? <span className="text-emerald-300 font-semibold">✓ Bugungi maqsad bajarildi! Ajoyib.</span>
+                : <>Bugun yana <span className="text-white font-semibold">{data?.remaining || 0}</span> ta savol yeching.</>}
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-white/40 font-medium mr-1">Maqsadni o'zgartirish:</span>
+              {DAILY_GOAL_OPTIONS.map(n => (
+                <button
+                  key={n}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setGoal(n)}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all disabled:opacity-50 ${n === target ? 'bg-indigo-500 text-white' : 'bg-white/5 text-white/55 hover:bg-white/10 hover:text-white'}`}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="space-y-2.5">
+            <div className="text-xs text-white/55">Bugungi maqsadingizni belgilang — har kuni nechta savol yechasiz?</div>
+            <div className="flex flex-wrap gap-2">
+              {DAILY_GOAL_OPTIONS.map(n => (
+                <button
+                  key={n}
+                  type="button"
+                  disabled={saving}
+                  onClick={() => setGoal(n)}
+                  className="rounded-xl bg-white/5 px-4 py-2 text-sm font-bold text-white/80 hover:bg-indigo-500/20 hover:text-white transition-all disabled:opacity-50"
+                >
+                  {n} savol
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── F7. Referral — do'stni taklif qilish ────────────────────────────────────
+// O'z referral kodi + nusxalash tugmasi, taklif qilinganlar soni va ixtiyoriy
+// kod kiritish (boshqa do'st kodini ishlatib ikkalasiga 50 coin). Profile yoki
+// StudentDashboard'ga joylashtiriladi.
+const ReferralWidget = ({ user }) => {
+  const { data, loading, reload } = useApiData(() => OlympyApi.getReferral(_retToken()), [user?.id, user?.backendId]);
+  const [copied, setCopied] = React.useState(false);
+  const [codeInput, setCodeInput] = React.useState('');
+  const [submitting, setSubmitting] = React.useState(false);
+  const [msg, setMsg] = React.useState({ type: '', text: '' });
+
+  const handleCopy = async () => {
+    if (!data?.code) return;
+    try {
+      await navigator.clipboard?.writeText(data.code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch (e) {
+      // clipboard ruxsati yo'q — jim
+    }
+  };
+
+  const handleUse = async (e) => {
+    e.preventDefault();
+    const code = codeInput.trim();
+    if (!code || submitting) return;
+    setSubmitting(true);
+    setMsg({ type: '', text: '' });
+    try {
+      const res = await OlympyApi.useReferral(code, _retToken());
+      setMsg({ type: 'ok', text: res?.detail || "Tabriklaymiz! Bonus tanga qo'shildi" });
+      setCodeInput('');
+      reload();
+    } catch (err) {
+      setMsg({ type: 'err', text: OlympyApi.toUserMessage?.(err) || "Kodni ishlatib bo'lmadi" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading || !data) return null;
+
+  return (
+    <div className="glass rounded-2xl p-4 md:p-5 border border-emerald-500/15">
+      <h3 className="font-bold text-white text-sm md:text-base mb-1 flex items-center gap-2">🎁 Do'stni taklif qiling</h3>
+      <p className="text-xs text-white/50 mb-3">Kodingizni do'stingizga yuboring — u kodni ishlatsa, ikkalangiz ham 50 coin olasiz.</p>
+
+      <div className="flex items-center gap-2">
+        <div className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 font-mono text-base font-black tracking-widest text-white text-center select-all">
+          {data.code}
+        </div>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="btn-ghost flex items-center gap-1.5 rounded-xl px-3.5 py-2.5 text-xs font-bold"
+        >
+          <Icon name={copied ? 'check' : 'copy'} size={14} />
+          {copied ? 'Nusxalandi' : 'Nusxalash'}
+        </button>
+      </div>
+
+      <div className="mt-3 text-xs text-white/55">
+        Siz <span className="text-emerald-300 font-bold">{data.invited_count || 0}</span> ta do'st taklif qildingiz.
+      </div>
+
+      {/* Ixtiyoriy: do'st kodini kiritish. */}
+      <form onSubmit={handleUse} className="mt-4 border-t border-white/5 pt-3">
+        <label className="block text-[11px] font-bold uppercase tracking-wide text-white/40 mb-1.5">Do'stingiz kodi bormi?</label>
+        <div className="flex items-center gap-2">
+          <input
+            value={codeInput}
+            onChange={e => setCodeInput(e.target.value.toUpperCase())}
+            placeholder="Kodni kiriting"
+            maxLength={12}
+            className="input-field flex-1 font-mono tracking-widest"
+          />
+          <button
+            type="submit"
+            disabled={submitting || !codeInput.trim()}
+            className="btn-primary rounded-xl px-4 py-2.5 text-xs font-bold disabled:opacity-50"
+          >
+            {submitting ? '...' : 'Tasdiqlash'}
+          </button>
+        </div>
+        {msg.text && (
+          <div className={`mt-2 text-xs font-semibold ${msg.type === 'ok' ? 'text-emerald-300' : 'text-rose-300'}`}>
+            {msg.text}
+          </div>
+        )}
+      </form>
+    </div>
+  );
+};
+
 // ─── DH2. Raqib harakati ─────────────────────────────────────────────────────
-const RivalActivityWidget = () => {
-  const { data, loading } = useApiData(() => OlympyApi.getRivalActivity(_retToken()), []);
+const RivalActivityWidget = ({ user }) => {
+  const { data, loading } = useApiData(() => OlympyApi.getRivalActivity(_retToken()), [user?.id, user?.backendId]);
   if (loading) return null;
   const rivals = Array.isArray(data) ? data : [];
   if (!rivals.length) return null;
@@ -181,8 +395,8 @@ const RivalActivityWidget = () => {
 };
 
 // ─── DH4. Haftalik musobaqa (top 5 + o'z o'rni) ──────────────────────────────
-const WeeklyContestWidget = () => {
-  const { data, loading } = useApiData(() => OlympyApi.getWeeklyContest(_retToken()), []);
+const WeeklyContestWidget = ({ user }) => {
+  const { data, loading } = useApiData(() => OlympyApi.getWeeklyContest(_retToken()), [user?.id, user?.backendId]);
   if (loading) return null;
   const top = data?.top || [];
   const myEntry = data?.my_entry;
@@ -218,8 +432,8 @@ const WeeklyContestWidget = () => {
 };
 
 // ─── OB3. "Sizga o'xshash o'quvchi" taqqoslash (kichik karta) ─────────────────
-const PeerComparisonCard = () => {
-  const { data, loading } = useApiData(() => OlympyApi.getPeerComparison(_retToken()), []);
+const PeerComparisonCard = ({ user }) => {
+  const { data, loading } = useApiData(() => OlympyApi.getPeerComparison(_retToken()), [user?.id, user?.backendId]);
   if (loading || !data) return null;
   if ((data.total_peers || 0) <= 1) return null;
   return (
@@ -240,8 +454,8 @@ const PeerComparisonCard = () => {
 };
 
 // ─── OB4. Birinchi/keyingi olimpiada taklifi ─────────────────────────────────
-const SuggestedOlympiadCard = ({ onNavigate, olympiads }) => {
-  const { data, loading } = useApiData(() => OlympyApi.getSuggestedOlympiad(_retToken()), []);
+const SuggestedOlympiadCard = ({ onNavigate, olympiads, user }) => {
+  const { data, loading } = useApiData(() => OlympyApi.getSuggestedOlympiad(_retToken()), [user?.id, user?.backendId]);
   if (loading || !data || !data.olympiad_id) return null;
   const handleGo = () => {
     if (!onNavigate) return;
@@ -269,8 +483,8 @@ const SuggestedOlympiadCard = ({ onNavigate, olympiads }) => {
 
 
 // ─── LT3. "O'tgan oy shu paytda" taqqoslash ──────────────────────────────────
-const ProgressComparisonCard = () => {
-  const { data, loading } = useApiData(() => OlympyApi.getProgressComparison(_retToken()), []);
+const ProgressComparisonCard = ({ user }) => {
+  const { data, loading } = useApiData(() => OlympyApi.getProgressComparison(_retToken()), [user?.id, user?.backendId]);
   if (loading || !data) return null;
   // Ikkala oyda ham faollik bo'lmasa ko'rsatmaymiz.
   if ((data.current_month?.attempts || 0) === 0 && (data.last_month?.attempts || 0) === 0) return null;
@@ -361,6 +575,8 @@ const OlympiadCalendarModal = ({ open, onClose, onNavigate }) => {
 Object.assign(window, {
   StreakWarningBanner,
   DailyQuestionsWidget,
+  DailyGoalWidget,
+  ReferralWidget,
   RivalActivityWidget,
   WeeklyContestWidget,
   PeerComparisonCard,
