@@ -194,7 +194,17 @@ const OtaOnaMockup = () => {
 
 const use3DTilt = (maxRotate = 10, scale = 1.02) => {
   const ref = React.useRef(null);
-  const [style, setStyle] = React.useState({});
+
+  // Boshlang'ich (statik) style — faqat birinchi renderda qo'llanadi. Tilt
+  // qiymatlarini har `mousemove`da React state orqali emas, to'g'ridan-to'g'ri
+  // DOM `style` ustida o'zgartiramiz (pastdagi handler'lar) — shu sababli
+  // mouse harakatida React qayta render qilinmaydi (Telegram WebView'da va
+  // zaif qurilmalarda re-render bo'roni kadrlarni sekinlashtirardi).
+  const style = React.useMemo(() => ({
+    transform: 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)',
+    '--mouse-x': '50%',
+    '--mouse-y': '50%',
+  }), []);
 
   const handleMouseMove = (e) => {
     const el = ref.current;
@@ -216,26 +226,37 @@ const use3DTilt = (maxRotate = 10, scale = 1.02) => {
     const mouseXPercent = (x / w) * 100;
     const mouseYPercent = (y / h) * 100;
 
-    setStyle({
-      transform: `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(${scale}, ${scale}, ${scale})`,
-      '--mouse-x': `${mouseXPercent}%`,
-      '--mouse-y': `${mouseYPercent}%`,
-    });
+    el.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale3d(${scale}, ${scale}, ${scale})`;
+    el.style.setProperty('--mouse-x', `${mouseXPercent}%`);
+    el.style.setProperty('--mouse-y', `${mouseYPercent}%`);
   };
 
   const handleMouseLeave = () => {
-    setStyle({
-      transform: `perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)`,
-    });
+    const el = ref.current;
+    if (!el) return;
+    el.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) scale3d(1, 1, 1)';
   };
 
   return { ref, style, handleMouseMove, handleMouseLeave };
 };
 
+// Telegram WebView yoki touch (coarse pointer) qurilma — og'ir
+// requestAnimationFrame loop + `mousemove` ishlov beruvchini umuman ishga
+// tushirmaymiz. WebView'da bu kadrlarni sekinlashtirib, telefon batareyasini
+// behuda sarflaydi; touch qurilmada esa interaktiv mouse effektining ma'nosi
+// ham yo'q.
+const isLowPowerEnv = () => {
+  if (typeof window === 'undefined') return false;
+  if (window.Telegram?.WebApp?.initData) return true;
+  return window.matchMedia?.('(pointer: coarse)').matches || false;
+};
+
 const InteractiveParticles = () => {
   const canvasRef = React.useRef(null);
+  const skip = React.useMemo(() => isLowPowerEnv(), []);
 
   React.useEffect(() => {
+    if (skip) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -374,7 +395,9 @@ const InteractiveParticles = () => {
       }
       cancelAnimationFrame(animationFrameId);
     };
-  }, []);
+  }, [skip]);
+
+  if (skip) return null;
 
   return <canvas ref={canvasRef} className="particles-canvas" />;
 };
@@ -525,6 +548,9 @@ const trackAbEvent = (variant, event) => {
 };
 
 const LandingPage = ({ onNavigate, user }) => {
+  // Telegram WebView / touch qurilma — og'ir blur orblari GPU'ni to'liq
+  // yuklaydi, shu sababli ularni render qilmaymiz (statik fon yetarli).
+  const isLowPower = React.useMemo(() => isLowPowerEnv(), []);
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [openFaq, setOpenFaq] = React.useState(null);
   const [activeScreen, setActiveScreen] = React.useState(0);
@@ -970,9 +996,13 @@ const LandingPage = ({ onNavigate, user }) => {
             `motion-reduce:animate-none` u yerda ishlamasdi — pulse animatsiyasi
             butunlay olib tashlandi (statik glow yetarli, kadrlarni
             sekinlashtirmaydi). */}
-        <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full filter blur-[60px] pointer-events-none" style={{ background: 'rgba(99, 102, 241, 0.18)' }} />
-        <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] rounded-full filter blur-[60px] pointer-events-none" style={{ background: 'rgba(168, 85, 247, 0.16)' }} />
-        <div className="absolute top-10 right-10 w-[250px] h-[250px] rounded-full filter blur-[40px] pointer-events-none" style={{ background: 'rgba(34, 211, 238, 0.16)' }} />
+        {!isLowPower && (
+          <>
+            <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full filter blur-[60px] pointer-events-none" style={{ background: 'rgba(99, 102, 241, 0.18)' }} />
+            <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] rounded-full filter blur-[60px] pointer-events-none" style={{ background: 'rgba(168, 85, 247, 0.16)' }} />
+            <div className="absolute top-10 right-10 w-[250px] h-[250px] rounded-full filter blur-[40px] pointer-events-none" style={{ background: 'rgba(34, 211, 238, 0.16)' }} />
+          </>
+        )}
         
         {/* Floating 3D badges on the right (desktop only) */}
         <div className="hidden lg:block absolute right-16 top-1/4 w-[400px] h-[300px] pointer-events-none z-10 preserve-3d" style={{ perspective: '1000px' }}>

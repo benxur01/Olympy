@@ -13,6 +13,9 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
 
   const [cropImageSrc, setCropImageSrc] = React.useState('');
   const [cropModalOpen, setCropModalOpen] = React.useState(false);
+  // Tasdiqlash modallari — Telegram WebApp'da window.confirm() bloklanadi.
+  const [confirmDeleteAvatar, setConfirmDeleteAvatar] = React.useState(false);
+  const [confirmDeleteAccount, setConfirmDeleteAccount] = React.useState(false);
 
   // Profil ma'lumotlarini tahrirlash holati
   const [profileForm, setProfileForm] = React.useState({
@@ -225,7 +228,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
 
   const handleDeleteAvatar = async () => {
     if (!isApi) return;
-    if (!window.confirm("Profil rasmini o'chirishni xohlaysizmi?")) return;
+    setConfirmDeleteAvatar(false);
     setAvatarLoading(true);
     setAvatarError('');
     try {
@@ -380,10 +383,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
 
   const handleDeleteAccount = async () => {
     if (!isApi || deletingAccount) return;
-    const confirmed = window.confirm(
-      "Hisobingizni butunlay o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi — barcha ma'lumotlaringiz, olimpiada natijalari va markaz a'zoliklaringiz butunlay o'chiriladi.",
-    );
-    if (!confirmed) return;
+    setConfirmDeleteAccount(false);
     setDeletingAccount(true);
     setDeleteError('');
     try {
@@ -491,7 +491,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             </button>
             {isApi && user?.avatarUrl && (
               <button
-                onClick={handleDeleteAvatar}
+                onClick={() => setConfirmDeleteAvatar(true)}
                 disabled={avatarLoading}
                 className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 text-rose-300 hover:text-rose-200 disabled:opacity-50"
               >
@@ -940,7 +940,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             <div className="text-xs font-semibold text-rose-300 mb-3">{deleteError}</div>
           )}
           <button
-            onClick={handleDeleteAccount}
+            onClick={() => setConfirmDeleteAccount(true)}
             disabled={deletingAccount}
             className="bg-rose-500/20 text-rose-200 border border-rose-500/30 font-semibold rounded-xl py-2.5 px-5 text-sm flex items-center gap-1.5 hover:bg-rose-500/30 disabled:opacity-50"
           >
@@ -960,6 +960,27 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
         onClose={() => { setCropModalOpen(false); setCropImageSrc(''); }}
         imageSrc={cropImageSrc}
         onCropComplete={handleCropComplete}
+      />
+      {/* Tasdiqlash modallari — Telegram WebApp'da window.confirm() o'rniga */}
+      <ConfirmModal
+        open={confirmDeleteAvatar}
+        onClose={() => setConfirmDeleteAvatar(false)}
+        onConfirm={handleDeleteAvatar}
+        title="Profil rasmini o'chirish"
+        message="Profil rasmini o'chirishni xohlaysizmi?"
+        confirmText="O'chirish"
+        danger
+        busy={avatarLoading}
+      />
+      <ConfirmModal
+        open={confirmDeleteAccount}
+        onClose={() => setConfirmDeleteAccount(false)}
+        onConfirm={handleDeleteAccount}
+        title="Hisobni o'chirish"
+        message="Hisobingizni butunlay o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi — barcha ma'lumotlaringiz, olimpiada natijalari va markaz a'zoliklaringiz butunlay o'chiriladi."
+        confirmText="Butunlay o'chirish"
+        danger
+        busy={deletingAccount}
       />
     </>
   );

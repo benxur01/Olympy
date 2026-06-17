@@ -23,14 +23,23 @@ security_logger = logging.getLogger('security')
 
 
 def _client_ip(request):
-    """Reverse-proxy (Render) ortidagi haqiqiy mijoz IP'sini aniqlash."""
+    """Reverse-proxy (Render) ortidagi haqiqiy mijoz IP'sini aniqlash.
+
+    X-Forwarded-For ni mijoz to'liq nazorat qila olmaydigan tarafdan o'qiymiz.
+    Hujumchi `X-Forwarded-For: 1.2.3.4` qo'shsa, Render uni saqlab oxiriga
+    real ulanish IP'sini qo'shadi (`1.2.3.4, <real-ip>`). Shuning uchun
+    BIRINCHI emas, OXIRGI elementni olamiz — Render proxy zanjirida 1 ta
+    hop bor, oxirgi qiymat ishonchli (spoof qilib bo'lmaydi). Header yo'q
+    bo'lsa REMOTE_ADDR ga qaytamiz.
+    """
     if request is None:
         return '-'
     meta = getattr(request, 'META', {}) or {}
     forwarded = meta.get('HTTP_X_FORWARDED_FOR', '')
     if forwarded:
-        # Birinchi IP — asl mijoz (qolganlari proxy zanjiri).
-        return forwarded.split(',')[0].strip()
+        parts = [p.strip() for p in forwarded.split(',') if p.strip()]
+        if parts:
+            return parts[-1]
     return meta.get('REMOTE_ADDR', '-')
 
 

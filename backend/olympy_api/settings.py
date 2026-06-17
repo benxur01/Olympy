@@ -48,6 +48,12 @@ def env_bool(name, default=False):
 SECRET_KEY = os.environ.get('OLYMPY_SECRET_KEY')
 if not SECRET_KEY:
     raise ImproperlyConfigured("OLYMPY_SECRET_KEY muhit o'zgaruvchisi o'rnatilmagan")
+# TOTP 2FA maxfiy kalitlarini DB'da shifrlash uchun Fernet kaliti (ixtiyoriy).
+# Berilmasa accounts.utils SECRET_KEY'dan SHA-256 orqali derivatsiya qiladi.
+# Alohida o'rnatilsa — `Fernet.generate_key()` (url-safe base64, 32 bayt)
+# bo'lishi kerak. Kalit aylantirilsa eski shifrlangan kalitlar ochilmaydi
+# (foydalanuvchilar 2FA'ni qayta sozlashi kerak bo'ladi).
+TOTP_ENCRYPTION_KEY = os.environ.get('TOTP_ENCRYPTION_KEY') or None
 DEBUG = env_bool('OLYMPY_DEBUG', False)
 _allowed = os.environ.get('OLYMPY_ALLOWED_HOSTS', '')
 ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()] or (
@@ -441,13 +447,25 @@ CELERY_RESULT_BACKEND = (
     or 'redis://localhost:6379/0'
 )
 
-# CELERY_BROKER_URL muhit o'zgaruvchisi o'rnatilmagan bo'lsa (development yoki
-# Redis ulanmagan deploy) — task'lar broker'ga ulanolmay jim ravishda
-# muvaffaqiyatsiz tugardi (masalan, ota-onaga xabar, AI tahlil yuborilmasdi).
-# Bunday holatda task'larni sinxron (eager) ishga tushiramiz: ular chaqirilgan
-# joyda darhol bajariladi, broker talab qilinmaydi. Ogohlantirish ham log'ga
-# yoziladi — productionda Redis o'rnatish kerakligini ko'rsatadi.
-CELERY_TASK_ALWAYS_EAGER = not bool(os.environ.get('CELERY_BROKER_URL'))
+# Eager (sinxron) rejim boshqaruvi. Avval `not bool(CELERY_BROKER_URL)` edi —
+# ya'ni broker o'rnatilmagan har qanday muhit AVTOMATIK eager bo'lardi. Bu
+# production'da xavfli: agar deploy'da CELERY_BROKER_URL tasodifan tushib
+# qolsa, barcha task'lar (AI tahlil, OTP, kod tekshiruvi) Gunicorn worker'da
+# SINXRON bajarilib so'rovni bloklab qo'yardi.
+#
+# Endi rejim aniq `CELERY_EAGER` env o'zgaruvchisi bilan boshqariladi
+# (default 'false'). Render production'da bu o'rnatilmagan → False, ya'ni
+# task'lar har doim worker'ga yuboriladi. Lokal development'da Redis yo'q
+# bo'lsa CELERY_EAGER=true qo'yib sinxron rejimda ishlash mumkin.
+#
+# Orqaga-moslik: broker URL umuman o'rnatilmagan bo'lsa (lokal dev, Redis
+# ulanmagan) — task'lar broker'ga ulanolmay jim muvaffaqiyatsiz tugmasligi
+# uchun shu holatda ham eager'ga o'tamiz (eski xulq saqlanadi). Bu faqat
+# broker MUTLAQO yo'q bo'lganda ishlaydi; production'da broker doim bor.
+CELERY_TASK_ALWAYS_EAGER = (
+    os.environ.get('CELERY_EAGER', 'false').lower() == 'true'
+    or not bool(os.environ.get('CELERY_BROKER_URL'))
+)
 # Eager rejimda (broker yo'q — dev/staging) task ichidagi istisnolar jimgina
 # yutilib ketmasligi uchun chaqiruvchiga propagate qilamiz. Aks holda task
 # ichidagi buglar sezilmay qolardi. Bu faqat CELERY_TASK_ALWAYS_EAGER=True
@@ -562,13 +580,18 @@ CORS_ALLOWED_ORIGINS = [
     o.strip().rstrip('/') for o in _cors_origins.split(',')
     if o.strip()
 ]
-# Har doim production va local frontend origin'larini qo'shib qo'yamiz (CORS muammolarini oldini olish uchun)
-for origin in [
-    'https://prolymp.uz', 'https://www.prolymp.uz',
-    'http://localhost:5173', 'http://127.0.0.1:5173',
-    # Capacitor mobile app originlari (Android va iOS)
-    'capacitor://localhost', 'ionic://localhost', 'http://localhost', 'https://localhost',
-]:
+# Production domenlari har doim ro'yxatda bo'ladi (CORS muammolarini oldini
+# olish uchun). Local va Capacitor (mobil ilova dev) origin'lari esa faqat
+# DEBUG=True bo'lganda qo'shiladi — production'da localhost ochiq qolmasin.
+_always_allowed = ['https://prolymp.uz', 'https://www.prolymp.uz']
+if DEBUG:
+    _always_allowed += [
+        'http://localhost:5173', 'http://127.0.0.1:5173',
+        # Capacitor mobile app originlari (Android va iOS) — faqat dev'da.
+        'capacitor://localhost', 'ionic://localhost',
+        'http://localhost', 'https://localhost',
+    ]
+for origin in _always_allowed:
     if origin not in CORS_ALLOWED_ORIGINS:
         CORS_ALLOWED_ORIGINS.append(origin)
 CORS_ALLOW_CREDENTIALS = True
@@ -597,6 +620,11 @@ for origin in ['https://prolymp.uz', 'https://www.prolymp.uz']:
 # yo'naltirsa ham, bu ikkinchi himoya qatlami (HSTS bilan birga). Agar boshqa
 # muhit HTTPS'ni terminate qila olmasa, OLYMPY_SECURE_SSL_REDIRECT=0 bilan
 # o'chirib qo'yish mumkin.
+# Render reverse proxy ortida ishlaymiz: u Host header'ni X-Forwarded-Host'ga
+# ko'chiradi. USE_X_FORWARDED_HOST=True bo'lmasa Django get_host() noto'g'ri
+# host qaytarib, absolute URL'lar (CSRF origin tekshiruvi, build_absolute_uri)
+# proxy ichki manzilini ishlatib qolardi.
+USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT = env_bool('OLYMPY_SECURE_SSL_REDIRECT', not DEBUG)
 SESSION_COOKIE_SECURE = not DEBUG

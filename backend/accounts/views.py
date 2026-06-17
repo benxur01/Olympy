@@ -8,7 +8,7 @@ import urllib.request
 from datetime import timedelta
 
 from django.conf import settings
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
@@ -698,6 +698,18 @@ def delete_my_account(request):
             status=status.HTTP_403_FORBIDDEN,
         )
 
+    # Markaz egasi (owner) o'z hisobini o'chira olmaydi — EducationCenter.owner
+    # endi PROTECT, demak o'chirish ProtectedError (500) chiqarardi va markaz
+    # egasiz "approved" holda qolardi. Avval owner'lik boshqa foydalanuvchiga
+    # o'tkazilishi shart. Foydalanuvchiga aniq xabar qaytaramiz.
+    from centers.models import EducationCenter
+    if EducationCenter.objects.filter(owner_id=request.user.id).exists():
+        return Response(
+            {'detail': "Siz tashkilot egasisiz. Hisobni o'chirishdan oldin "
+                       "tashkilot egaligini boshqa foydalanuvchiga o'tkazing."},
+            status=status.HTTP_409_CONFLICT,
+        )
+
     # O'chirishdan OLDIN audit log: keyin user obyekti yo'q bo'ladi.
     AuditLog.log(request, 'account_delete', target=request.user, extra={
         'phone': mask_phone(request.user.normalized_phone),
@@ -1297,21 +1309,24 @@ def _link_user_to_telegram(user, chat_id, telegram_user_id):
         ])
 
     # Eski egalarga ogohlantirish — atomic blok tashqarisida, xato bo'lsa
-    # link jarayonini buzmaslik uchun.
+    # link jarayonini buzmaslik uchun. Bu funksiya login/register HTTP
+    # handler ichidan chaqiriladi (Gunicorn thread). Telegram yuborishni
+    # background task'ga topshiramiz: _telegram_api_call ichidagi retry/sleep
+    # so'rovni 9 soniyagacha bloklamasin.
     for prev in previous_owners:
         prev_chat_id = (prev.telegram_chat_id or '').strip()
         if not prev_chat_id:
             continue
+        text = (
+            "Diqqat: sizning Olympy akkauntingiz boshqa qurilmaga ulandi. "
+            "Agar bu siz bo'lmasangiz, darhol parolingizni o'zgartiring."
+        )
         try:
-            _send_telegram_message(
-                prev_chat_id,
-                "Diqqat: sizning Olympy akkauntingiz boshqa qurilmaga ulandi. "
-                "Agar bu siz bo'lmasangiz, darhol parolingizni o'zgartiring.",
-                bot='auth',
-            )
+            from accounts.tasks import send_telegram_message_task
+            send_telegram_message_task.delay(prev_chat_id, text, bot='auth')
         except Exception:
             logger.warning(
-                'failed to notify previous telegram owner user_id=%s', prev.pk,
+                'failed to enqueue notify previous telegram owner user_id=%s', prev.pk,
             )
     return user
 
@@ -1654,16 +1669,22 @@ def _handle_telegram_callback(callback, bot='manager'):
             membership.center.region,
             membership.center.district or membership.center.city,
         ] if part)
-        _send_telegram_message(
-            chat_id,
-            (
-                f"{text}\n"
-                f"Tashkilot: {membership.center.name}\n"
-                f"Turi: {membership.center.organization_type}\n"
-                f"Manzil: {location}"
-            ),
-            bot=bot,
+        info_text = (
+            f"{text}\n"
+            f"Tashkilot: {membership.center.name}\n"
+            f"Turi: {membership.center.organization_type}\n"
+            f"Manzil: {location}"
         )
+        # Callback javobi (_answer_callback_query) va keyboard tozalash
+        # allaqachon yuborilgan — bu qo'shimcha ma'lumot xabari foydalanuvchi
+        # kutmaydigan fire-and-forget. Webhook handler Gunicorn thread'da
+        # ishlaydi, shuning uchun yuborishni background task'ga topshiramiz
+        # (retry/sleep webhook javobini bloklamasin).
+        try:
+            from accounts.tasks import send_telegram_message_task
+            send_telegram_message_task.delay(chat_id, info_text, bot=bot)
+        except Exception:
+            logger.exception('membership decision info xabarini navbatga qo\'yib bo\'lmadi')
     return {'ok': True}
 
 
@@ -2040,6 +2061,9 @@ def list_rewards(request):
     products = (
         RewardProduct.objects
         .filter(center_filter, is_active=True, stock__gt=0)
+        # `p.center.name` loop ichida — `select_related` bo'lmasa har
+        # mahsulot uchun alohida SELECT (N+1).
+        .select_related('center')
         .order_by('-created_at')
     )
     data = []
@@ -2133,8 +2157,26 @@ def redeem_reward(request):
                 product=product,
                 status=RewardRedemption.STATUS_PENDING
             )
+    except IntegrityError:
+        # Bir vaqtda ikki marta sotib olish (race) yoki unique cheklov buzilishi
+        # — mukofot allaqachon shu foydalanuvchi tomonidan band qilingan.
+        return Response(
+            {'detail': "Bu mukofot allaqachon sotib olingan"},
+            status=status.HTTP_409_CONFLICT,
+        )
+    except ValidationError as exc:
+        # Model validatsiyasi (clean/full_clean) muvaffaqiyatsiz — foydalanuvchiga
+        # aniq xabarni qaytaramiz.
+        detail = exc.messages[0] if getattr(exc, 'messages', None) else "Ma'lumot noto'g'ri"
+        return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
+    except ObjectDoesNotExist:
+        # select_for_update().get(...) — mahsulot/foydalanuvchi tranzaksiya
+        # ichida o'chirilgan bo'lsa (race) DoesNotExist ko'tariladi.
+        return Response({'detail': "Mukofot topilmadi"}, status=status.HTTP_404_NOT_FOUND)
     except Exception:
-        logger.exception("redeem_reward xatosi: user=%s", request.user.pk)
+        # Kutilmagan xatolar — to'liq stack trace bilan log qilamiz (debugging
+        # uchun), foydalanuvchiga umumiy 500 qaytaramiz.
+        logger.exception("redeem_reward kutilmagan xatosi: user=%s", request.user.pk)
         return Response(
             {'detail': "Xatolik yuz berdi. Iltimos qayta urinib ko'ring."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -2304,7 +2346,9 @@ def totp_setup(request):
     import pyotp
     if not request.user.totp_secret:
         request.user.totp_secret = pyotp.random_base32()
-        request.user.save(update_fields=['totp_secret'])
+        # `totp_secret` — shifrlovchi property; DB'dagi haqiqiy ustun
+        # `encrypted_totp_secret`. update_fields shu ustunni ko'rsatishi shart.
+        request.user.save(update_fields=['encrypted_totp_secret'])
     totp = pyotp.TOTP(request.user.totp_secret)
     uri = totp.provisioning_uri(
         request.user.phone or str(request.user.id),
@@ -2361,8 +2405,8 @@ def totp_disable(request):
         )
 
     request.user.totp_enabled = False
-    request.user.totp_secret = ''
-    request.user.save(update_fields=['totp_enabled', 'totp_secret'])
+    request.user.totp_secret = ''  # property — `encrypted_totp_secret`ni bo'shatadi
+    request.user.save(update_fields=['totp_enabled', 'encrypted_totp_secret'])
     return Response({'detail': "2FA o'chirildi"})
 
 

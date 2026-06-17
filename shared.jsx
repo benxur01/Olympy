@@ -619,6 +619,52 @@ const Modal = ({ open, onClose, title, children, width = 'max-w-lg' }) => {
   );
 };
 
+// ─── ConfirmModal ────────────────────────────────────────────────────────────
+// Telegram WebApp ichida window.confirm() bloklanadi yoki tashqi oynada
+// ochiladi — foydalanuvchi savolni ko'rmaydi. Shu sabab inline tasdiqlash
+// modali ishlatiladi. `open` true bo'lganda Modal ustida "Ha / Yo'q"
+// tugmalarini ko'rsatadi; onConfirm yoki onClose chaqiriladi.
+const ConfirmModal = ({
+  open,
+  onClose,
+  onConfirm,
+  title = 'Tasdiqlaysizmi?',
+  message = '',
+  confirmText = 'Ha',
+  cancelText = "Yo'q",
+  danger = false,
+  busy = false,
+}) => {
+  if (!open) return null;
+  return (
+    <Modal open={open} onClose={busy ? () => {} : onClose} title={title} width="max-w-sm">
+      {message && <p className="text-sm text-white/60 leading-relaxed mb-5">{message}</p>}
+      <div className="flex gap-2 justify-end">
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={busy}
+          className="btn-ghost text-sm px-5 py-2.5 rounded-xl disabled:opacity-50"
+        >
+          {cancelText}
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={busy}
+          className={`font-semibold rounded-xl py-2.5 px-5 text-sm disabled:opacity-50 ${
+            danger
+              ? 'bg-rose-500/20 text-rose-200 border border-rose-500/30 hover:bg-rose-500/30'
+              : 'gradient-bg text-white'
+          }`}
+        >
+          {busy ? '...' : confirmText}
+        </button>
+      </div>
+    </Modal>
+  );
+};
+
 // ─── AvatarCropModal ───────────────────────────────────────────────────────────
 const AvatarCropModal = ({ open, onClose, imageSrc, onCropComplete }) => {
   if (!open || !imageSrc) return null;
@@ -1059,4 +1105,4 @@ function VirtualList({ items, itemHeight = 60, containerHeight = 400, renderItem
 }
 
 // Export all
-Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList, formatUzPhoneInput, formatPhoneInput, detectDialCode, maskPhoneDisplay, COUNTRY_DIAL_CODES, PhoneField });
+Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, ConfirmModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList, formatUzPhoneInput, formatPhoneInput, detectDialCode, maskPhoneDisplay, COUNTRY_DIAL_CODES, PhoneField });

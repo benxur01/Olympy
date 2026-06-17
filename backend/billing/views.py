@@ -114,10 +114,18 @@ def create_checkout_session(request):
 
 
 def _client_ip(request):
-    """Reverse-proxy (Render) ortidagi real client IP'ni aniqlaydi."""
+    """Reverse-proxy (Render) ortidagi real client IP'ni aniqlaydi.
+
+    Hujumchi soxta `X-Forwarded-For` header qo'shib rate limiter'ni chetlab
+    o'tmasligi uchun BIRINCHI emas, OXIRGI elementni olamiz: Render proxy
+    mijoz yuborgan qiymat oxiriga real ulanish IP'sini qo'shadi (1 hop), shu
+    sababli oxirgi qiymat ishonchli. Header yo'q bo'lsa REMOTE_ADDR.
+    """
     xff = request.META.get('HTTP_X_FORWARDED_FOR', '')
     if xff:
-        return xff.split(',')[0].strip()
+        parts = [p.strip() for p in xff.split(',') if p.strip()]
+        if parts:
+            return parts[-1]
     return request.META.get('REMOTE_ADDR', '') or 'unknown'
 
 
@@ -875,6 +883,32 @@ def payme_webhook(request):
         })
 
     return JsonResponse({'error': {'code': -32601, 'message': 'Method not found'}}, status=200)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def subscription_status(request):
+    """GET /api/billing/subscription/status/ — foydalanuvchining joriy premium holati.
+
+    Frontend to'lovdan keyin shu endpoint'ni polling qiladi: to'lov provayderi
+    (Click/Payme) webhook'i obunani aktivlashtirgach, `is_premium` true bo'ladi va
+    foydalanuvchi reload qilmasdan premium statusni ko'radi.
+
+    `is_premium` — User modelidagi flag (webhook _activate_subscription orqali
+    yangilanadi). end_date/plan — eng so'nggi aktiv, muddati tugamagan obunadan.
+    """
+    sub = (
+        UserSubscription.objects
+        .filter(user=request.user, is_active=True, end_date__gt=timezone.now())
+        .select_related('plan')
+        .order_by('-end_date')
+        .first()
+    )
+    return Response({
+        'is_premium': bool(request.user.is_premium),
+        'end_date': sub.end_date if sub else None,
+        'plan': sub.plan.name if sub and sub.plan else None,
+    })
 
 
 @api_view(['GET'])

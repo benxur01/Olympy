@@ -112,11 +112,26 @@ class User(AbstractBaseUser, PermissionsMixin):
     subject_levels = models.JSONField(default=dict, blank=True)
     level_streak = models.JSONField(default=dict, blank=True)
 
-    # TOTP 2FA (ixtiyoriy). `totp_secret` — base32 maxfiy kalit (faqat
-    # serverda saqlanadi, mijozga QR/secret faqat sozlash paytida beriladi).
+    # TOTP 2FA (ixtiyoriy). Maxfiy kalit DB'da OCHIQ saqlanmaydi — Fernet bilan
+    # shifrlangan holatda `encrypted_totp_secret` da yotadi (DB dump sizsa
+    # kalitlar ochilmasin). Kod hamma joyda `user.totp_secret` (property) bilan
+    # ishlaydi: o'qishda shifr ochiladi, yozishda avtomatik shifrlanadi. Shifr-
+    # langan token plaintext base32'dan ancha uzun — shuning uchun max_length=255.
     # `totp_enabled` True bo'lsa login paytida qo'shimcha kod talab qilinadi.
-    totp_secret = models.CharField(max_length=32, blank=True, default='')
+    encrypted_totp_secret = models.CharField(max_length=255, blank=True, default='')
     totp_enabled = models.BooleanField(default=False)
+
+    @property
+    def totp_secret(self):
+        """Shifrlangan TOTP kalitini ochib qaytaradi (ochiq base32)."""
+        from .utils import decrypt_totp_secret
+        return decrypt_totp_secret(self.encrypted_totp_secret)
+
+    @totp_secret.setter
+    def totp_secret(self, value):
+        """Ochiq base32 kalitni shifrlab `encrypted_totp_secret` ga yozadi."""
+        from .utils import encrypt_totp_secret
+        self.encrypted_totp_secret = encrypt_totp_secret(value)
 
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)

@@ -782,6 +782,9 @@ export const OlympyApi = {
   // Aktiv obuna rejalari — Landing'da ochiq ko'rsatiladi, autentifikatsiya talab qilinmaydi.
   getSubscriptionPlans: () => request(`/api/billing/plans/?_t=${Date.now()}`, { retryOnAuth: false }),
   createCheckoutSession: (payload, token) => request('/api/billing/checkout/', { method: 'POST', body: payload, token }),
+  // To'lovdan keyin premium holatini polling qilish uchun — webhook obunani
+  // aktivlashtirgach is_premium true bo'ladi. Kesh aralashmasligi uchun _t.
+  getSubscriptionStatus: (token) => request(`/api/billing/subscription/status/?_t=${Date.now()}`, { token, retryOnAuth: false }),
   // Parent / Ota-ona
   linkChild: (studentPhone, token) => request('/api/me/parent/link/', { method: 'POST', body: { student_phone: studentPhone }, token }),
   getChildren: (token) => request('/api/me/parent/children/', { token }),

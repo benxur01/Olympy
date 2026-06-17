@@ -1,6 +1,13 @@
+from django.contrib.auth import get_user_model
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
+
+# Modul boshida import — circular import yo'q: centers.models billing'ni
+# import qilmaydi va INSTALLED_APPS'da 'centers' 'billing'dan oldin yuklanadi.
+# Avval bu import save() ichida runtime'da bajarilardi (har chaqiruvda qayta
+# import + circular xavf).
+from centers.models import EducationCenter
 
 
 class SubscriptionPlan(models.Model):
@@ -74,20 +81,30 @@ class UserSubscription(models.Model):
         if not sync_changed:
             return
         self._sync_snapshot = self._current_sync_state()
+        self.sync_premium_status()
 
-        # Sync is_premium flag to User model and EducationCenters dynamically.
-        # Avval bu yerda `self.user.save(update_fields=['is_premium'])` chaqirilardi
-        # — bu har obuna saqlanganda butun User qatorini saqlab, signal trigger
-        # qilish xavfini tug'dirardi. Endi `User.objects.filter(pk=...).update()`
-        # ishlatamiz: atomik, signal trigger qilmaydi va faqat is_premium ustunini
-        # yangilaydi. is_premium sync logikasi saqlanadi — billing webhook'lari
-        # (_activate_subscription) va admin toggle shu sync'ga tayanadi.
-        from django.contrib.auth import get_user_model
+    def sync_premium_status(self):
+        """User.is_premium va markaz premium bayrog'ini shu obunaga moslaydi.
+
+        MUHIM: bu sync `save()` ichidan avtomatik chaqiriladi. Lekin
+        `UserSubscription.objects.bulk_update(...)` yoki `.update(...)`
+        ishlatilsa `save()` CHAQIRILMAYDI — bunday hollarda is_premium va
+        markaz limiti desynclashadi. Toplu (bulk) yangilashdan keyin har bir
+        ta'sirlangan obuna uchun shu metodni QO'LDA chaqiring, masalan:
+
+            qs.update(is_active=False)
+            for sub in qs:
+                sub.sync_premium_status()
+
+        Atomik `update()` ishlatadi: signal trigger qilmaydi va faqat
+        is_premium ustunini yangilaydi (butun User qatorini save() qilmaydi).
+        Billing webhook'lari (_activate_subscription) va admin toggle shu
+        sync'ga tayanadi.
+        """
         User = get_user_model()
-        if self.is_active and self.end_date > timezone.now():
+        if self.is_active and self.end_date and self.end_date > timezone.now():
             User.objects.filter(pk=self.user_id).update(is_premium=True)
             if self.plan and self.plan.plan_type == 'organization':
-                from centers.models import EducationCenter
                 EducationCenter.objects.filter(owner_id=self.user_id).update(is_premium=True)
         else:
             # Check if there are other active subscriptions for this user
@@ -109,7 +126,6 @@ class UserSubscription(models.Model):
             ).exclude(pk=self.pk).exists()
 
             if not has_active_org:
-                from centers.models import EducationCenter
                 EducationCenter.objects.filter(owner_id=self.user_id).update(is_premium=False)
 
 
@@ -156,6 +172,9 @@ class PaymentTransaction(models.Model):
             # created_at bo'yicha hisobotlarda saralanadi.
             models.Index(fields=['status'], name='paytx_status_idx'),
             models.Index(fields=['created_at'], name='paytx_created_idx'),
+            # Foydalanuvchi to'lovlarini status bo'yicha filtrlash
+            # (filter(user=..., status=...)) — kompozit indeks.
+            models.Index(fields=['user', 'status'], name='paytx_user_status_idx'),
         ]
 
     def __str__(self):

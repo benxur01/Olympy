@@ -119,6 +119,55 @@ const pageFromPath = () => {
   return null;
 };
 
+// ErrorBoundary — render paytida ushlanmagan xato butun sahifani oq ekranga
+// tushirmasligi uchun. Bitta komponent yiqilsa, foydalanuvchiga tushunarli
+// xabar va "sahifani yangilash" tugmasi ko'rinadi. React'da xatoni faqat class
+// komponent (getDerivedStateFromError / componentDidCatch) ushlaydi.
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error, info) {
+    // Konsolga (va mavjud bo'lsa Sentry'ga) log qilamiz — diagnostika uchun.
+    try {
+      console.error('Render xatosi (ErrorBoundary):', error, info);
+      if (globalThis.Sentry?.captureException) {
+        globalThis.Sentry.captureException(error);
+      }
+    } catch {}
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="dark min-h-screen flex items-center justify-center px-6" style={{ background: '#050508' }}>
+          <div className="glass rounded-2xl p-8 max-w-md w-full text-center flex flex-col items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl gradient-bg flex items-center justify-center text-white text-2xl font-bold">!</div>
+            <div className="text-lg font-semibold text-white">Xatolik yuz berdi</div>
+            <div className="text-sm text-white/50">
+              Kutilmagan xatolik sodir bo'ldi. Iltimos, sahifani yangilang. Muammo takrorlansa, birozdan so'ng qayta urinib ko'ring.
+            </div>
+            <button
+              type="button"
+              onClick={() => { try { window.location.reload(); } catch {} }}
+              className="btn-primary px-6 py-2.5 rounded-xl text-sm font-semibold mt-1"
+            >
+              Sahifani yangilash
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 const App = () => {
   const [page, setPage] = React.useState(() => pageFromPath() || 'landing');
   const [testResult, setTestResult] = React.useState(null);
@@ -412,7 +461,7 @@ const App = () => {
     const meta = ROLE_META[role];
     const data = user.roles?.[role];
 
-    if (role === 'student' && status) {
+    if (role === 'student' && status === 'approved') {
       return (
         <StudentDashboard
           user={user}
@@ -438,7 +487,19 @@ const App = () => {
     }
 
     if (status === 'pending') {
-      const center = null;
+      // Pending foydalanuvchi qaysi markazni kutayotganini ko'rsatamiz. Markaz
+      // ma'lumoti user state'idan keladi (mapBackendUser: roles[role].centers[]
+      // yoki centerName). Hardcoded emas — mavjud bo'lmasa null qoladi va
+      // pastdagi `extra` bloki ko'rsatilmaydi.
+      const pendingCenter = data?.centers?.[0] || null;
+      const center = pendingCenter
+        ? {
+            name: pendingCenter.centerName || pendingCenter.name || data?.centerName || '',
+            city: pendingCenter.city || pendingCenter.region || '',
+          }
+        : (data?.centerName
+            ? { name: data.centerName, city: '' }
+            : null);
       const messages = {
         manager: "Manager paneliga kirish uchun arizangiz tasdiqlanishi kerak. Ariza direktorga yuborildi.",
         teacher: "Savol yaratish uchun o'qituvchi arizangiz tasdiqlanishi kerak. Ariza direktorga yuborildi.",
@@ -450,12 +511,12 @@ const App = () => {
           title={`${meta?.label || ''} arizasi kutilmoqda`}
           status="pending"
           message={messages[role] || ''}
-          extra={center && (
+          extra={center?.name && (
             <div className="glass rounded-2xl p-4 inline-flex items-center gap-3">
               <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center text-white font-bold">{center.name[0]}</div>
               <div className="text-left">
                 <div className="text-sm font-semibold text-white">{center.name}</div>
-                <div className="text-xs text-white/40">{center.city}</div>
+                {center.city && <div className="text-xs text-white/40">{center.city}</div>}
               </div>
             </div>
           )}
@@ -633,7 +694,7 @@ const App = () => {
   );
 
   return (
-    <div key={page} className="dark">
+    <div className="dark">
       {renderPage()}
       {showOnboarding && (
         <OnboardingWizard
@@ -677,7 +738,7 @@ const certVerifyUuid = (() => {
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 if (certVerifyUuid) {
-  root.render(<CertificateVerifyPage uuid={certVerifyUuid} />);
+  root.render(<ErrorBoundary><CertificateVerifyPage uuid={certVerifyUuid} /></ErrorBoundary>);
 } else {
-  root.render(<App />);
+  root.render(<ErrorBoundary><App /></ErrorBoundary>);
 }

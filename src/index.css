@@ -668,6 +668,19 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   .float-badge-3 {
     animation: none !important;
   }
+
+  /* scroll-reveal: 30+ elementda `filter: blur(4px)` + uzun `transition: filter`
+     GPU-intensiv. Harakatni kamaytirishni xohlaganlarga blur'ni va animatsiyani
+     butunlay o'chiramiz — content darrov, statik ko'rsatiladi (JS observer
+     ishlamasa ham yashirin qolmaydi). */
+  .scroll-reveal,
+  .scroll-reveal.active {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    transition: none !important;
+    will-change: auto !important;
+  }
 }
 
 /* ─── Modern Grid Backdrop and Glow Accents ─────────────────────────────── */
