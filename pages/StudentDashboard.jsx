@@ -1094,7 +1094,6 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           <WeeklyContestWidget />
           <RivalActivityWidget />
           <ProgressComparisonCard />
-          <RoadmapCard />
         </div>
       )}
 
