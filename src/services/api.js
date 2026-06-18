@@ -879,6 +879,10 @@ export const OlympyApi = {
   getCenterActivityTrend: (centerId, token, months = 6) => request(`/api/centers/${centerId}/activity-trend/?months=${months}`, { token }),
   getCenterRegionRank: (centerId, token) => request(`/api/centers/${centerId}/region-rank/`, { token }),
   getTopStudents: (centerId, token) => request(`/api/centers/${centerId}/top-students/`, { token }),
+  getGroupStats: (centerId, token, groupTag = '') => request(
+    `/api/analytics/group-stats/?center_id=${encodeURIComponent(centerId)}${groupTag ? `&group_tag=${encodeURIComponent(groupTag)}` : ''}`,
+    { token },
+  ),
   getCenterQuestionBank: (centerId, token) => request(`/api/centers/${centerId}/question-bank/`, { token }),
   addCenterQuestion: (centerId, payload, token) => request(`/api/centers/${centerId}/question-bank/`, { method: 'POST', body: payload, token }),
   deleteCenterQuestion: (centerId, qId, token) => request(`/api/centers/${centerId}/question-bank/${qId}/`, { method: 'DELETE', token }),
