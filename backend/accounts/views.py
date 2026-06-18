@@ -216,6 +216,10 @@ def register(request):
     join_role = (request.data.get('join_role') or '').strip().lower()
     join_subject = (request.data.get('join_subject') or request.data.get('subject') or '').strip()
     membership_data = None
+    # Ixtiyoriy referral kodi: foydalanuvchi `?ref=XXXX` havola orqali kelsa,
+    # ro'yxatdan o'tgach ikkala tarafga ham bonus coin beriladi (use_referral
+    # bilan bir xil logika). Bo'sh/yo'q bo'lsa jimgina o'tib ketamiz.
+    referral_code = str(request.data.get('referral_code') or '').strip().upper()
 
     # Xavfsizlik: register orqali faqat 'student' rolida ariza yuborish mumkin.
     # Manager/teacher uchun ariza alohida (faqat owner tasdiqi yo'li bilan).
@@ -242,6 +246,38 @@ def register(request):
                     verified.telegram_chat_id,
                     verified.telegram_user_id,
                 )
+            if referral_code:
+                # Referral bonusi register tranzaksiyasining bir qismi, lekin
+                # uning xatosi (masalan, noto'g'ri kod) hisob ochishni buzmasin:
+                # savepoint (nested atomic) + try/except. Yangi foydalanuvchi
+                # hali hech qanday kod ishlatmagan, shuning uchun faqat o'zining
+                # kodi emasligini va kodning mavjudligini tekshiramiz.
+                try:
+                    with transaction.atomic():
+                        from django.contrib.auth import get_user_model
+                        from .models import ReferralCode
+                        User = get_user_model()
+                        referral = (
+                            ReferralCode.objects.filter(code=referral_code)
+                            .select_related('user')
+                            .first()
+                        )
+                        if referral and referral.user_id != user.id:
+                            bonus = referral.bonus_coins or 50
+                            referral.used_by.add(user)
+                            # Lost update'ni oldini olish uchun lock bilan.
+                            inviter = User.objects.select_for_update().get(pk=referral.user_id)
+                            invited = User.objects.select_for_update().get(pk=user.pk)
+                            inviter.coins = (inviter.coins or 0) + bonus
+                            invited.coins = (invited.coins or 0) + bonus
+                            inviter.save(update_fields=['coins'])
+                            invited.save(update_fields=['coins'])
+                            user.coins = invited.coins
+                except Exception:
+                    logger.exception(
+                        'register referral bonus xatosi: code=%s user=%s',
+                        referral_code, user.id,
+                    )
             if join_center_id and join_role:
                 from centers.models import CenterMembership, EducationCenter
                 from centers.serializers import (

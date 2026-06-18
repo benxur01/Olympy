@@ -628,3 +628,31 @@ def send_payment_failed_to_user(user, support_contact=None):
         logger.exception('send_payment_failed_to_user failed user=%s', getattr(user, 'id', None))
         return False
 
+
+def send_payment_success_notification(user, plan_name, amount, end_date):
+    """To'lov muvaffaqiyatli bo'lganda foydalanuvchiga Telegram xabari.
+
+    Obuna nomi, summasi va amal qilish muddatini ko'rsatadigan batafsil xabar.
+    `send_payment_activated_to_user` umumiy "premium faollashdi" xabaridan
+    farqli ravishda bu yerda aniq plan/muddat/summa beriladi. Telegram
+    ulanmagan yoki xato bo'lsa jimgina log qoldiriladi — to'lov oqimini buzmaydi.
+    """
+    try:
+        try:
+            amount_text = f'{int(amount):,}'.replace(',', ' ')
+        except (TypeError, ValueError):
+            amount_text = str(amount)
+        end_text = end_date.strftime('%d.%m.%Y') if end_date else '—'
+        message = (
+            f"🎉 Tabriklaymiz! {plan_name} obunangiz faollashtirildi.\n"
+            f"Muddati: {end_text}\n"
+            f"Summa: {amount_text} UZS"
+        )
+        return _send_telegram_to_user(user, message)
+    except Exception:
+        logger.exception(
+            'send_payment_success_notification failed user=%s',
+            getattr(user, 'id', None),
+        )
+        return False
+

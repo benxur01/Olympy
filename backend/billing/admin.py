@@ -9,11 +9,32 @@ from .models import SubscriptionPlan, UserSubscription, PaymentTransaction
 
 @admin.register(SubscriptionPlan)
 class SubscriptionPlanAdmin(admin.ModelAdmin):
-    list_display = ('name', 'plan_type', 'price', 'duration_days', 'is_popular', 'is_active', 'created_at')
+    list_display = (
+        'name', 'plan_type', 'price', 'duration_days',
+        'limits_display', 'is_popular', 'is_active', 'created_at',
+    )
     list_filter = ('plan_type', 'is_active', 'is_popular')
     list_editable = ('is_active', 'is_popular')
     search_fields = ('name', 'description')
     ordering = ('plan_type', 'price')
+    fieldsets = (
+        (None, {
+            'fields': ('name', 'plan_type', 'price', 'duration_days', 'description',
+                       'features', 'is_popular', 'is_active'),
+        }),
+        ("Limitlar (organization)", {
+            'description': "0 = cheksiz. Faqat tashkilot (organization) planlari uchun ishlatiladi.",
+            'fields': ('max_students', 'max_teachers', 'max_olympiads_monthly'),
+        }),
+    )
+
+    @admin.display(description='Limitlar (o\'q/ust/olimp)')
+    def limits_display(self, obj):
+        def fmt(value):
+            return '∞' if value == SubscriptionPlan.UNLIMITED else str(value)
+        if obj.plan_type != 'organization':
+            return '—'
+        return f"{fmt(obj.max_students)} / {fmt(obj.max_teachers)} / {fmt(obj.max_olympiads_monthly)}"
 
 
 @admin.register(UserSubscription)

@@ -119,6 +119,9 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [plans, setPlans] = React.useState([]);
   const [plansLoading, setPlansLoading] = React.useState(true);
   const [durationFilter, setDurationFilter] = React.useState(30);
+  // Obuna limitlari + joriy foydalanish (Talabalar: 45/50, progress bar).
+  // GET /api/billing/limits/ dan yuklanadi (premium sahifasi ochilganda).
+  const [limits, setLimits] = React.useState(null);
   const [toast, setToast] = React.useState('');
   // Tasdiqlash modali — Telegram WebApp'da window.confirm() bloklanadi.
   // { title, message, confirmText, onConfirm } yoki null.
@@ -404,9 +407,21 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           if (!cancelled) setPlansLoading(false);
         }
       })();
+      // Limit indikatorlari uchun joriy foydalanish (alohida so'rov — plans
+      // yuklanmay qolsa ham limitlar ko'rinadi va aksincha).
+      if (isApi && ownerCenterId) {
+        (async () => {
+          try {
+            const data = await OlympyApi.getBillingLimits(OlympyApi.getToken(), ownerCenterId);
+            if (!cancelled) setLimits(data || null);
+          } catch {
+            if (!cancelled) setLimits(null);
+          }
+        })();
+      }
       return () => { cancelled = true; };
     }
-  }, [page]);
+  }, [page, isApi, ownerCenterId]);
 
   const handleCreatePayment = async (provider) => {
     if (!paymentPlan) return;
@@ -3137,6 +3152,54 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </div>
           </div>
         </div>
+
+        {/* Limit indikatorlari: Talabalar/Ustozlar/Olimpiadalar — joriy/limit
+            progress bar bilan. 80% dan oshganda "Limit tugayapti" ogohlantirishi. */}
+        {limits && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[
+              { key: 'students', label: "Talabalar", icon: '🎓' },
+              { key: 'teachers', label: "Ustozlar", icon: '👨‍🏫' },
+              { key: 'olympiads', label: "Olimpiadalar (oy)", icon: '🏆' },
+            ].map(({ key, label, icon }) => {
+              const b = limits[key] || {};
+              const used = b.used || 0;
+              const unlimited = !!b.unlimited;
+              const limit = b.limit;
+              const pct = (!unlimited && limit > 0) ? Math.min(100, Math.round((used / limit) * 100)) : 0;
+              const near = !!b.near_limit;
+              const full = !unlimited && limit > 0 && used >= limit;
+              const barColor = full ? 'bg-rose-500' : near ? 'bg-amber-500' : 'bg-indigo-500';
+              return (
+                <div key={key} className="glass rounded-2xl p-4 border border-white/5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white/60 flex items-center gap-1.5">
+                      <span>{icon}</span> {label}
+                    </span>
+                    <span className="text-sm font-black text-white">
+                      {used}{unlimited ? '' : ` / ${limit}`}
+                      {unlimited && <span className="ml-1 text-indigo-300">∞</span>}
+                    </span>
+                  </div>
+                  {!unlimited && (
+                    <div className="mt-2.5 h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                      <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+                    </div>
+                  )}
+                  {near && !full && (
+                    <div className="mt-2 text-[10px] font-bold text-amber-300">⚠️ Limit tugayapti</div>
+                  )}
+                  {full && (
+                    <div className="mt-2 text-[10px] font-bold text-rose-300">Limit to'ldi — tarifni yangilang</div>
+                  )}
+                  {unlimited && (
+                    <div className="mt-2 text-[10px] font-bold text-indigo-300">Cheksiz</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Muddat selectorlari (1, 3, 6, 12 oy) */}
         <div className="flex gap-2.5 flex-wrap justify-start">

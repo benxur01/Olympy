@@ -30,30 +30,21 @@ def user_can_manage_center_event(user, center):
 
 
 def center_olympiad_limit_exceeded(center):
-    """True agar bepul markaz joriy oyda olimpiada yaratish limitiga yetgan.
+    """True agar markaz joriy oyda olimpiada yaratish limitiga yetgan.
 
-    Limit `settings.FREE_OLYMPIAD_MONTHLY_LIMIT` (default 2) dan olinadi.
+    Limit logikasi billing.services.SubscriptionService'ga ko'chirildi:
+      - aktiv organization obunasi bor markaz — plan.max_olympiads_monthly;
+      - lifetime/admin premium markaz — cheksiz;
+      - bepul markaz — settings.FREE_OLYMPIAD_MONTHLY_LIMIT (default 2).
     Faqat AKTIV (soft-delete qilinmagan, is_deleted=False) olimpiadalar
-    hisoblanadi — o'chirilgan olimpiada markazga limitni "egallamasligi"
-    kerak, aks holda admin xato olimpiadani o'chirib qayta yarata olmaydi.
-    Premium markazlar uchun (kelajakda flag bilan) limit qo'llanilmaydi.
-    """
-    from django.conf import settings
-    from django.utils import timezone
+    hisoblanadi — o'chirilgan olimpiada markazga limitni "egallamasligi" kerak.
 
-    # Premium markaz tushunchasi hozircha yo'q — barchasi bepul. Kelajakda
-    # `getattr(center, 'is_premium', False)` shu yerda tekshiriladi.
-    if getattr(center, 'is_premium', False):
-        return False
-    limit = getattr(settings, 'FREE_OLYMPIAD_MONTHLY_LIMIT', 2)
-    now = timezone.now()
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    created_this_month = Olympiad.objects.filter(
-        center=center,
-        is_deleted=False,
-        created_at__gte=month_start,
-    ).count()
-    return created_this_month >= limit
+    can_create_olympiad() True qaytarsa limit oshmagan, demak bu funksiya
+    inkor (limit_exceeded) qaytaradi.
+    """
+    from billing.services import SubscriptionService
+
+    return not SubscriptionService(center).can_create_olympiad()
 
 
 def approved_membership_rows(user):

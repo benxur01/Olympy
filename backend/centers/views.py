@@ -30,6 +30,7 @@ from .serializers import (
 from .services import (
     RoleChangeError,
     change_membership_role,
+    check_teacher_limit,
     create_pending_center_for_owner,
     decide_membership,
     user_can_approve_membership,
@@ -711,6 +712,17 @@ def create_teacher(request, center_id):
     )
     if not (request.user.is_platform_admin or center.owner_id == request.user.id):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    # Obuna/plan o'qituvchi limiti. Platform admin uchun qo'llanilmaydi.
+    if not request.user.is_platform_admin:
+        try:
+            check_teacher_limit(center)
+        except ValidationError as exc:
+            return Response(
+                {'detail': str(exc.message if hasattr(exc, 'message') else exc),
+                 'upgrade_required': True},
+                status=http_status.HTTP_403_FORBIDDEN,
+            )
 
     serializer = CreateTeacherSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
