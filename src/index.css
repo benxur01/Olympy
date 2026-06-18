@@ -721,3 +721,39 @@ textarea.input-field { resize: vertical; min-height: 100px; }
 
 
 
+
+/* ─── Chek (receipt) chop etish ─────────────────────────────────────────────
+   Foydalanuvchi chek modalida "Chop etish" bosganda window.print() ishlaydi.
+   Print paytida butun sahifani emas — faqat chekni (.receipt-print) ko'rsatamiz:
+   qolgan hamma narsa yashiriladi, chek esa printerda o'qilishi uchun oq fon +
+   qora matn bilan qayta bo'yaladi (dark glass fon qog'ozda ko'rinmaydi). */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .receipt-print,
+  .receipt-print * {
+    visibility: visible;
+  }
+  .receipt-print {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    padding: 24px;
+    background: #fff !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: #000 !important;
+  }
+  /* Chek ichidagi barcha matn qora bo'lsin (oq qog'ozda ko'rinishi uchun). */
+  .receipt-print * {
+    color: #000 !important;
+    border-color: #ddd !important;
+  }
+  /* Chop etish tugmasi va boshqa interaktiv elementlar qog'ozga chiqmasin. */
+  .no-print {
+    display: none !important;
+  }
+}

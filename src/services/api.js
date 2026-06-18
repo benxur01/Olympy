@@ -785,6 +785,13 @@ export const OlympyApi = {
   // To'lovdan keyin premium holatini polling qilish uchun — webhook obunani
   // aktivlashtirgach is_premium true bo'ladi. Kesh aralashmasligi uchun _t.
   getSubscriptionStatus: (token) => request(`/api/billing/subscription/status/?_t=${Date.now()}`, { token, retryOnAuth: false }),
+  // "Mening abonementim" bloki uchun joriy faol obuna (yoki null) — plan nomi,
+  // tugash sanasi, qolgan kunlar, narx. Kesh aralashmasligi uchun _t.
+  getCurrentSubscription: (token) => request(`/api/billing/subscription/current/?_t=${Date.now()}`, { token, retryOnAuth: false }),
+  // Billing tarixi — so'nggi 20 ta to'lov tranzaksiyasi.
+  getBillingHistory: (token) => request(`/api/billing/history/?_t=${Date.now()}`, { token, retryOnAuth: false }),
+  // Bitta tranzaksiyaning cheki (faqat o'z tranzaksiyasi).
+  getReceipt: (txId, token) => request(`/api/billing/receipt/${encodeURIComponent(txId)}/`, { token, retryOnAuth: false }),
   // Parent / Ota-ona
   linkChild: (studentPhone, token) => request('/api/me/parent/link/', { method: 'POST', body: { student_phone: studentPhone }, token }),
   getChildren: (token) => request('/api/me/parent/children/', { token }),
