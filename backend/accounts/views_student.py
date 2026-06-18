@@ -6,6 +6,7 @@ faqat autentifikatsiyalangan foydalanuvchining O'Z ma'lumotlarini qaytaradi.
 from collections import OrderedDict
 from datetime import timedelta
 
+from django.db.models import Avg, Max
 from django.utils import timezone
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
@@ -408,6 +409,219 @@ def study_plan(request):
 
 
 study_plan.cls.throttle_scope = 'ai'
+
+
+# ─── Student Progress Dashboard (premium emas — retention) ──────────────────
+
+# /api/me/progress/ uchun ruxsat etilgan davr (kun). Boshqa qiymat 30 ga
+# tushiriladi. Bu endpoint premium bilan CHEKLANMAGAN — har o'quvchi o'z
+# o'sishini ko'ra olishi retention va premium sotuvni asoslaydi.
+ALLOWED_PROGRESS_PERIODS = (30, 90, 180)
+
+
+def _streak_from_attempts(user):
+    """O'quvchining ketma-ket faol kunlari (streak).
+
+    Avval User.streak_count ishlatamiz (daily-goal/kunlik faollik orqali
+    yangilanadi). Agar u 0/None bo'lsa, attempt sanalaridan oddiy ketma-ket
+    kunlar hisoblanadi: bugundan (yoki oxirgi urinish kunidan) orqaga qarab
+    uzluksiz kunlar soni.
+    """
+    existing = getattr(user, 'streak_count', 0) or 0
+    if existing:
+        return existing
+    dates = (
+        TestAttempt.objects
+        .filter(user=user, disqualified=False, olympiad__is_deleted=False,
+                submitted_at__isnull=False)
+        .order_by('-submitted_at')
+        .values_list('submitted_at', flat=True)
+    )
+    seen = set()
+    for dt in dates:
+        seen.add(timezone.localtime(dt).date())
+    if not seen:
+        return 0
+    today = timezone.localdate()
+    # Streak bugundan yoki kechagidan boshlanishi mumkin (bugun hali
+    # qatnashmagan bo'lsa ham kechagi seriya saqlanadi).
+    cursor = today if today in seen else today - timedelta(days=1)
+    streak = 0
+    while cursor in seen:
+        streak += 1
+        cursor -= timedelta(days=1)
+    return streak
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def progress_dashboard(request):
+    """GET /api/me/progress/?period=30|90|180 — o'quvchi progress paneli.
+
+    Premium TALAB QILINMAYDI. Javob:
+      {
+        period,
+        timeline: [{date, score, olympiad_name, rank}],   # davr ichida
+        subjects: [{subject, pct}],                        # fan bo'yicha o'rtacha %
+        stats: {total_olympiads, avg_score, best_score, streak},
+        trend: {direction: "o'sish"|"pasayish"|"barqaror", last, average, delta},
+      }
+    """
+    user = request.user
+    try:
+        period = int(request.query_params.get('period') or 30)
+    except (TypeError, ValueError):
+        period = 30
+    if period not in ALLOWED_PROGRESS_PERIODS:
+        period = 30
+    since = timezone.now() - timedelta(days=period)
+
+    # ── Davr ichidagi natijalar (timeline) ──────────────────────────────────
+    window_attempts = list(
+        TestAttempt.objects
+        .filter(
+            user=user,
+            disqualified=False,
+            olympiad__is_deleted=False,
+            submitted_at__gte=since,
+        )
+        .select_related('olympiad')
+        .order_by('submitted_at')  # eskidan yangiga — grafik o'sish tartibida
+    )
+    timeline = [{
+        'date': a.submitted_at.strftime('%Y-%m-%d') if a.submitted_at else '',
+        'score': a.score or 0,
+        'olympiad_name': a.olympiad.title if a.olympiad else '—',
+        'rank': a.rank,
+    } for a in window_attempts]
+
+    # ── Fanlar bo'yicha o'rtacha ball (butun tarix) ─────────────────────────
+    perf = _subject_performance(user)
+    subjects = sorted(
+        ({'subject': s, 'pct': round(p)} for s, p in perf.items()),
+        key=lambda x: -x['pct'],
+    )
+
+    # ── Umumiy statistika (butun tarix bo'yicha) ────────────────────────────
+    all_attempts = TestAttempt.objects.filter(
+        user=user, disqualified=False, olympiad__is_deleted=False,
+    )
+    agg = all_attempts.aggregate(avg=Avg('score'), best=Max('score'))
+    total_olympiads = all_attempts.count()
+    avg_score = round(agg['avg']) if agg['avg'] is not None else 0
+    best_score = agg['best'] or 0
+    streak = _streak_from_attempts(user)
+
+    # ── Trend: oxirgi 5 ta natija o'rtacha bilan solishtirilganda ────────────
+    recent5 = list(
+        TestAttempt.objects
+        .filter(user=user, disqualified=False, olympiad__is_deleted=False)
+        .order_by('-submitted_at')[:5]
+    )
+    recent5.reverse()
+    last_score = recent5[-1].score or 0 if recent5 else 0
+    if recent5:
+        recent_avg = round(sum((a.score or 0) for a in recent5) / len(recent5))
+    else:
+        recent_avg = 0
+    delta = last_score - recent_avg
+    if delta >= 3:
+        direction = "o'sish"
+    elif delta <= -3:
+        direction = 'pasayish'
+    else:
+        direction = 'barqaror'
+
+    return Response({
+        'period': period,
+        'timeline': timeline,
+        'subjects': subjects,
+        'stats': {
+            'total_olympiads': total_olympiads,
+            'avg_score': avg_score,
+            'best_score': best_score,
+            'streak': streak,
+        },
+        'trend': {
+            'direction': direction,
+            'last': last_score,
+            'average': recent_avg,
+            'delta': delta,
+        },
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def ai_advice(request):
+    """GET /api/me/ai-advice/ — oddiy (template) AI tavsiyalar.
+
+    LLM chaqiruvlarsiz va SubscriptionService.can_use_ai_generation() bilan
+    CHEKLANMAGAN — bu sof shablon matn (haqiqiy AI emas). Eng zaif fan,
+    streak va umumiy faollikka qarab undash matni qaytaradi.
+
+    Javob: {advices: [{type, tone, title, text}], weakest_subject, streak}
+    """
+    user = request.user
+    perf = _subject_performance(user)
+    streak = _streak_from_attempts(user)
+    advices = []
+
+    # 1) Eng zaif fan bo'yicha tavsiya.
+    weakest_subject = None
+    if perf:
+        weakest_subject, weakest_pct = min(perf.items(), key=lambda kv: kv[1])
+        weakest_pct = round(weakest_pct)
+        # Maqsad: joriy balldan ~15% yuqori, lekin 60..90 oralig'ida.
+        goal = max(60, min(90, weakest_pct + 15))
+        advices.append({
+            'type': 'weak_subject',
+            'tone': 'warning',  # frontend sariq kartochka
+            'title': f'{weakest_subject} bo\'yicha mashq qiling',
+            'text': (
+                f"{weakest_subject} bo'yicha ko'proq mashq qiling — sizning "
+                f"o'rtacha balingiz {weakest_pct}%, maqsad {goal}%. Har kuni "
+                f"shu fandan 20-30 daqiqa ajrating."
+            ),
+        })
+    else:
+        advices.append({
+            'type': 'start',
+            'tone': 'success',
+            'title': 'Birinchi qadamni tashlang',
+            'text': (
+                "Hali natijangiz yo'q. Birinchi olimpiada yoki testda "
+                "qatnashing — shundan keyin shaxsiy tavsiyalar paydo bo'ladi."
+            ),
+        })
+
+    # 2) Streak bo'yicha undash.
+    if streak >= 3:
+        advices.append({
+            'type': 'streak',
+            'tone': 'success',  # frontend yashil kartochka
+            'title': f'{streak} kunlik seriya!',
+            'text': (
+                f"Ajoyib! Siz {streak} kun ketma-ket faolsiz. Bugun ham bitta "
+                f"test yechib, seriyani uzmang."
+            ),
+        })
+    else:
+        advices.append({
+            'type': 'streak',
+            'tone': 'success',
+            'title': 'Kunlik odat shakllantiring',
+            'text': (
+                "Har kuni kamida bitta test yeching — ketma-ket kunlar "
+                "(streak) bilimni mustahkamlaydi va reytingingizni oshiradi."
+            ),
+        })
+
+    return Response({
+        'advices': advices,
+        'weakest_subject': weakest_subject,
+        'streak': streak,
+    })
 
 
 # ─── Helpers ───────────────────────────────────────────────────────────────

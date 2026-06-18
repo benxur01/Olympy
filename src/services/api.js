@@ -851,6 +851,10 @@ export const OlympyApi = {
   getSubjectWeakness: (token) => request('/api/me/subject-weakness/', { token }),
   getReadiness: (olympiadId, token) => request(`/api/me/readiness/?olympiad_id=${encodeURIComponent(olympiadId)}`, { token }),
   getStudyPlan: (token) => request('/api/me/study-plan/', { method: 'POST', token }),
+  // Student Progress Dashboard (premium emas). period: 30|90|180.
+  getProgress: (period, token) => request(`/api/me/progress/?period=${encodeURIComponent(period || 30)}`, { token }),
+  // Oddiy (template) AI tavsiyalar — LLM chaqiruvsiz, cheklanmagan.
+  getAiAdvice: (token) => request('/api/me/ai-advice/', { token }),
   // ─── Retention (Onboarding / Daily hooks / Long-term) ───
   completeOnboarding: (payload, token) => request('/api/me/complete-onboarding/', { method: 'POST', body: payload, token }),
   getOnboardingMiniTest: (token) => request('/api/onboarding/mini-test/', { token }),

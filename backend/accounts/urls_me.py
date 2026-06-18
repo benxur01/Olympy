@@ -53,6 +53,9 @@ urlpatterns = [
     path('me/subject-weakness/', views_student.subject_weakness, name='me-subject-weakness'),
     path('me/readiness/', views_student.readiness, name='me-readiness'),
     path('me/study-plan/', views_student.study_plan, name='me-study-plan'),
+    # Student Progress Dashboard (premium emas) + oddiy AI tavsiyalar.
+    path('me/progress/', views_student.progress_dashboard, name='me-progress'),
+    path('me/ai-advice/', views_student.ai_advice, name='me-ai-advice'),
     path('me/parent/link/', views_parent.link_child, name='parent-link-child'),
     path('me/parent/link/<int:student_id>/', views_parent.unlink_child, name='parent-unlink-child'),
     path('me/parent/children/', views_parent.list_children, name='parent-list-children'),
