@@ -931,3 +931,102 @@ def list_subscription_plans(request):
     ]
     return Response(data)
 
+
+# Plan SET_NULL bo'lib o'chirilgan bo'lsa tx.plan = None bo'ladi — UI'da bo'sh
+# satr o'rniga tushunarli matn ko'rsatamiz (tranzaksiya tarixi yo'qolmaydi).
+_DELETED_PLAN_LABEL = "Noma'lum tarif"
+
+
+def _serialize_transaction(tx):
+    """PaymentTransaction'ni billing tarixi/chek uchun JSON'ga aylantiradi.
+
+    plan SET_NULL bilan o'chirilgan bo'lishi mumkin (eski tranzaksiyalar) —
+    shu sababli plan nomini xavfsiz olamiz.
+    """
+    return {
+        'id': tx.id,
+        'plan_name': tx.plan.name if tx.plan else _DELETED_PLAN_LABEL,
+        'amount': float(tx.amount),
+        'status': tx.status,
+        'provider': tx.provider,
+        'created_at': tx.created_at,
+    }
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def billing_history(request):
+    """GET /api/billing/history/ — foydalanuvchining so'nggi 20 ta tranzaksiyasi.
+
+    Faqat o'z tranzaksiyalari (user bo'yicha filtr). plan o'chirilgan bo'lsa
+    ham tranzaksiya ko'rinadi — select_related bilan N+1 query'siz.
+    """
+    txs = (
+        PaymentTransaction.objects
+        .filter(user=request.user)
+        .select_related('plan')
+        .order_by('-created_at')[:20]
+    )
+    return Response([_serialize_transaction(tx) for tx in txs])
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def current_subscription(request):
+    """GET /api/billing/subscription/current/ — faol abonement (yoki null).
+
+    subscription_status'dan farqi: bu yerda UI "Mening abonementim" bloki uchun
+    to'liqroq ma'lumot (start_date, days_remaining, price) qaytaramiz. Eng so'nggi
+    aktiv, muddati tugamagan obunani olamiz.
+    """
+    sub = (
+        UserSubscription.objects
+        .filter(user=request.user, is_active=True, end_date__gt=timezone.now())
+        .select_related('plan')
+        .order_by('-end_date')
+        .first()
+    )
+    if not sub:
+        return Response(None)
+
+    # Qolgan kunlar — yuqoriga yaxlitlaymiz (qisman kun qolsa ham "1 kun
+    # qoldi" ko'rinishi mantiqiyroq). end_date filtr bo'yicha kelajakda,
+    # shuning uchun delta musbat; max(0, ...) chegaraviy holat himoyasi.
+    delta = sub.end_date - timezone.now()
+    days_remaining = max(0, delta.days + (1 if delta.seconds > 0 else 0))
+
+    return Response({
+        'plan_name': sub.plan.name if sub.plan else _DELETED_PLAN_LABEL,
+        'start_date': sub.start_date,
+        'end_date': sub.end_date,
+        'days_remaining': days_remaining,
+        'price': float(sub.plan.price) if sub.plan else None,
+        'is_active': bool(request.user.is_premium),
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def transaction_receipt(request, transaction_id):
+    """GET /api/billing/receipt/<transaction_id>/ — tranzaksiya cheki.
+
+    XAVFSIZLIK: faqat o'z tranzaksiyasi (user bo'yicha filtr) — boshqa
+    foydalanuvchi chekini ko'rib bo'lmaydi. Topilmasa 404.
+    """
+    tx = (
+        PaymentTransaction.objects
+        .filter(pk=transaction_id, user=request.user)
+        .select_related('plan')
+        .first()
+    )
+    if not tx:
+        return Response(
+            {'detail': "Tranzaksiya topilmadi"},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    data = _serialize_transaction(tx)
+    # Chekda foydalanuvchi ismi ham ko'rsatiladi.
+    data['user_name'] = request.user.get_full_name() or request.user.get_username()
+    return Response(data)
+

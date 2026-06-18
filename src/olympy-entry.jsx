@@ -6617,6 +6617,35 @@ const PremiumLock = ({ title = 'Bu funksiya premium o\'quvchilar uchun', onUpgra
   </div>
 );
 
+// ─── Billing UI yordamchilari ────────────────────────────────────────────────
+// Sana (ISO string) → "2026-09-15" ko'rinishi. Yaroqsiz qiymatda '—' qaytaradi.
+const fmtReceiptDate = (iso) => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+// Summa → "99 000 UZS" (ruscha guruhlash, ingichka bo'shliq ajratuvchi).
+const fmtAmount = (amount) => `${(Number(amount) || 0).toLocaleString('ru-RU').replace(/ /g, ' ')} UZS`;
+
+// Tranzaksiya holati → ruscha emas, foydalanuvchiga ko'rinadigan o'zbekcha
+// matn + emoji. Backend status kodlari: pending/success/failed/cancelled.
+const RECEIPT_STATUS = {
+  success: { label: "To'langan", icon: '✅', cls: 'text-emerald-300' },
+  pending: { label: 'Kutilmoqda', icon: '⏳', cls: 'text-amber-300' },
+  failed: { label: 'Xato', icon: '❌', cls: 'text-rose-300' },
+  cancelled: { label: 'Bekor qilingan', icon: '↩️', cls: 'text-white/50' },
+};
+const receiptStatus = (status) => RECEIPT_STATUS[status] || { label: status || '—', icon: 'ℹ️', cls: 'text-white/60' };
+
+// Provayder kodi → ko'rsatish nomi.
+const PROVIDER_LABEL = { click: 'Click', payme: 'Payme' };
+const providerLabel = (p) => PROVIDER_LABEL[p] || (p ? p[0].toUpperCase() + p.slice(1) : '—');
+
 // Mukofotlar do'koni sahifasi — alohida React component.
 // Avval bu mantiq StudentDashboard ichidagi `renderRewards` oddiy funksiyasida
 // edi va u yerda React.useState/useEffect/useCallback chaqirilardi. Bu Rules of
@@ -7067,6 +7096,16 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [plansLoading, setPlansLoading] = React.useState(true);
   const [durationFilter, setDurationFilter] = React.useState(30);
   const [olympiadFilter, setOlympiadFilter] = React.useState('Barchasi');
+  // Premium foydalanuvchining "Mening abonementim" bloki uchun joriy obuna.
+  const [currentSub, setCurrentSub] = React.useState(null);
+  const [currentSubLoading, setCurrentSubLoading] = React.useState(false);
+  // Billing tarixi modali: ochiq holati, ro'yxat va yuklanish.
+  const [historyOpen, setHistoryOpen] = React.useState(false);
+  const [billingHistory, setBillingHistory] = React.useState([]);
+  const [historyLoading, setHistoryLoading] = React.useState(false);
+  // Chek modali: tanlangan tranzaksiya tafsiloti (yoki null).
+  const [receipt, setReceipt] = React.useState(null);
+  const [receiptLoading, setReceiptLoading] = React.useState(false);
   const [apiToast, setApiToast] = React.useState('');
   const showApiToast = (m) => { setApiToast(m); setTimeout(() => setApiToast(''), 3000); };
 
@@ -7312,6 +7351,57 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       return () => { cancelled = true; };
     }
   }, [page]);
+
+  // Premium sahifa ochilganda — premium foydalanuvchi uchun "Mening
+  // abonementim" blokiga joriy faol obunani yuklaymiz. isPremium ga ham
+  // bog'liq: to'lov muvaffaqiyatli bo'lib isPremium true bo'lgach qayta yuklab,
+  // tarif kartalar o'rniga abonement holatini ko'rsatamiz.
+  const loadCurrentSubscription = React.useCallback(async () => {
+    if (!isApi) return;
+    setCurrentSubLoading(true);
+    try {
+      const data = await OlympyApi.getCurrentSubscription(OlympyApi.getToken());
+      setCurrentSub(data || null);
+    } catch {
+      setCurrentSub(null);
+    } finally {
+      setCurrentSubLoading(false);
+    }
+  }, [isApi]);
+
+  React.useEffect(() => {
+    if (page === 'premium' && isPremium) {
+      loadCurrentSubscription();
+    }
+  }, [page, isPremium, loadCurrentSubscription]);
+
+  // "Tarix" tugmasi — billing tarixini yuklab modalni ochadi.
+  const openBillingHistory = async () => {
+    setHistoryOpen(true);
+    setHistoryLoading(true);
+    try {
+      const data = await OlympyApi.getBillingHistory(OlympyApi.getToken());
+      setBillingHistory(Array.isArray(data) ? data : []);
+    } catch {
+      setBillingHistory([]);
+      showApiToast("Tarixni yuklab bo'lmadi");
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  // "Chek" tugmasi — tranzaksiya tafsilotini yuklab chek modalini ochadi.
+  const openReceipt = async (txId) => {
+    setReceiptLoading(true);
+    try {
+      const data = await OlympyApi.getReceipt(txId, OlympyApi.getToken());
+      setReceipt(data || null);
+    } catch {
+      showApiToast("Chekni yuklab bo'lmadi");
+    } finally {
+      setReceiptLoading(false);
+    }
+  };
 
   const handleCreatePayment = async (provider) => {
     if (!paymentPlan) return;
@@ -8375,6 +8465,51 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           </div>
         </div>
 
+        {/* Mening abonementim — faqat premium foydalanuvchi uchun. To'lov tarixi
+            va chekni shu yerdan ochish mumkin. */}
+        {isPremium && (
+          <div className="glass rounded-2xl p-4 md:p-6 border border-emerald-500/20 bg-gradient-to-r from-emerald-500/5 to-indigo-500/5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-2 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">👑</span>
+                  <span className="text-sm md:text-base font-black text-white">Mening abonementim</span>
+                  <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-300 bg-emerald-500/15 px-2 py-0.5 rounded-md border border-emerald-500/20">Faol</span>
+                </div>
+                {currentSubLoading ? (
+                  <div className="text-xs text-white/40 animate-pulse">Yuklanmoqda...</div>
+                ) : currentSub ? (
+                  <div className="space-y-1 text-xs md:text-sm text-white/70">
+                    <div>Tarif: <span className="font-bold text-white">{currentSub.plan_name}</span></div>
+                    <div>
+                      Muddat: <span className="font-bold text-white">{fmtReceiptDate(currentSub.end_date)}</span> gacha
+                      {typeof currentSub.days_remaining === 'number' && (
+                        <span className="text-emerald-300 font-bold"> ({currentSub.days_remaining} kun qoldi)</span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-xs text-white/40">Faol obuna ma'lumotlari topilmadi.</div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 self-start sm:self-auto flex-shrink-0">
+                <button
+                  onClick={() => { const el = document.getElementById('premium-plans'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }}
+                  className="btn-primary text-xs px-4 py-2.5 rounded-xl font-semibold min-h-[40px]"
+                >
+                  Yangilash
+                </button>
+                <button
+                  onClick={openBillingHistory}
+                  className="text-xs px-4 py-2.5 rounded-xl font-semibold min-h-[40px] bg-white/5 hover:bg-white/10 text-white/80 border border-white/5 transition-colors"
+                >
+                  Tarix
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Muddat selectorlari (1, 3, 6, 12 oy) */}
         <div className="flex gap-2.5 flex-wrap justify-start">
           {[
@@ -8405,7 +8540,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         {plansLoading ? (
           <div className="text-center py-12 text-white/40 text-sm">Tariflar yuklanmoqda...</div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+          <div id="premium-plans" className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             {activePlans.map((p, i) => {
               const priceNum = Number(p.price) || 0;
               const formattedPrice = `${priceNum.toLocaleString('ru-RU').replace(/ /g, ' ')} UZS`;
@@ -8686,6 +8821,101 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           )}
         </Modal>
       )}
+
+      {/* Billing tarixi modali — so'nggi to'lov tranzaksiyalari. Har bir
+          qatordan chekni ochish mumkin. */}
+      <Modal open={historyOpen} onClose={() => setHistoryOpen(false)} title="Billing tarixi" width="max-w-lg">
+        {historyLoading ? (
+          <div className="text-center py-10 text-white/40 text-sm">Yuklanmoqda...</div>
+        ) : billingHistory.length === 0 ? (
+          <div className="text-center py-10 text-white/40 text-sm">Hozircha to'lovlar yo'q.</div>
+        ) : (
+          <div className="space-y-2.5">
+            {billingHistory.map((tx) => {
+              const st = receiptStatus(tx.status);
+              return (
+                <div
+                  key={tx.id}
+                  className="glass rounded-2xl p-3.5 border border-white/5 flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="text-lg flex-shrink-0">📄</span>
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold text-white truncate">{tx.plan_name}</div>
+                      <div className="text-[11px] text-white/40 mt-0.5">
+                        {fmtAmount(tx.amount)} · <span className={st.cls}>{st.icon} {st.label}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => openReceipt(tx.id)}
+                    disabled={receiptLoading}
+                    className="text-xs px-3.5 py-2 rounded-xl font-semibold bg-white/5 hover:bg-white/10 text-white/80 border border-white/5 transition-colors flex-shrink-0 disabled:opacity-50"
+                  >
+                    Chek
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Modal>
+
+      {/* Chek modali — bitta tranzaksiya tafsiloti, window.print() bilan chop
+          etiladi (Telegram WebView'da ham brauzer chop dialogini ochadi). */}
+      <Modal open={!!receipt} onClose={() => setReceipt(null)} title="To'lov cheki" width="max-w-sm">
+        {receipt && (() => {
+          const st = receiptStatus(receipt.status);
+          return (
+            <div className="space-y-5">
+              <div className="receipt-print glass rounded-2xl p-5 border border-white/5 space-y-4">
+                <div className="text-center border-b border-white/10 pb-3">
+                  <div className="text-sm font-black text-white tracking-widest">TO'LOV CHEKI</div>
+                  <div className="text-[10px] text-white/30 mt-1">Olympy</div>
+                </div>
+                <div className="space-y-2.5 text-xs">
+                  {receipt.user_name && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-white/40">Foydalanuvchi</span>
+                      <span className="text-white font-semibold text-right">{receipt.user_name}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between gap-3">
+                    <span className="text-white/40">Sana</span>
+                    <span className="text-white font-semibold">{fmtReceiptDate(receipt.created_at)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-white/40">Tarif</span>
+                    <span className="text-white font-semibold text-right">{receipt.plan_name}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-white/40">Miqdor</span>
+                    <span className="text-indigo-300 font-black">{fmtAmount(receipt.amount)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-white/40">Holat</span>
+                    <span className={`font-semibold ${st.cls}`}>{st.label} {st.icon}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-white/40">Provayder</span>
+                    <span className="text-white font-semibold">{providerLabel(receipt.provider)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3 border-t border-white/10 pt-2.5">
+                    <span className="text-white/40">ID</span>
+                    <span className="text-white/70 font-mono">#TX-{receipt.id}</span>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => { try { window.print(); } catch {} }}
+                className="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold transition-colors no-print"
+              >
+                Chop etish
+              </button>
+            </div>
+          );
+        })()}
+      </Modal>
     </div>
   );
 };
@@ -9223,7 +9453,7 @@ const OlympiadCard = ({ olympiad: o, onStart, locked, readinessPct, attempted, o
 Object.assign(window, { StudentDashboard, OlympiadCard });
 
 
-Object.assign(moduleScope, { STUDENT_DASHBOARD_BASE, STUDENT_DASHBOARD_PAGES, PAGE_TO_PATH, PATH_TO_PAGE, studentPageFromPath, POLL_INTERVAL_MS, POLL_MAX_ATTEMPTS, BadgeList, PremiumLock, StudentDashboard, PracticeFlow, OlympiadCard, usePaymentPolling, RewardsPage, MistakesPage });
+Object.assign(moduleScope, { STUDENT_DASHBOARD_BASE, STUDENT_DASHBOARD_PAGES, PAGE_TO_PATH, PATH_TO_PAGE, studentPageFromPath, POLL_INTERVAL_MS, POLL_MAX_ATTEMPTS, BadgeList, PremiumLock, fmtReceiptDate, fmtAmount, RECEIPT_STATUS, receiptStatus, PROVIDER_LABEL, providerLabel, StudentDashboard, PracticeFlow, OlympiadCard, usePaymentPolling, RewardsPage, MistakesPage });
 }
 var STUDENT_DASHBOARD_BASE = moduleScope.STUDENT_DASHBOARD_BASE;
 var STUDENT_DASHBOARD_PAGES = moduleScope.STUDENT_DASHBOARD_PAGES;
@@ -9234,6 +9464,12 @@ var POLL_INTERVAL_MS = moduleScope.POLL_INTERVAL_MS;
 var POLL_MAX_ATTEMPTS = moduleScope.POLL_MAX_ATTEMPTS;
 var BadgeList = moduleScope.BadgeList;
 var PremiumLock = moduleScope.PremiumLock;
+var fmtReceiptDate = moduleScope.fmtReceiptDate;
+var fmtAmount = moduleScope.fmtAmount;
+var RECEIPT_STATUS = moduleScope.RECEIPT_STATUS;
+var receiptStatus = moduleScope.receiptStatus;
+var PROVIDER_LABEL = moduleScope.PROVIDER_LABEL;
+var providerLabel = moduleScope.providerLabel;
 var StudentDashboard = moduleScope.StudentDashboard;
 var PracticeFlow = moduleScope.PracticeFlow;
 var OlympiadCard = moduleScope.OlympiadCard;
