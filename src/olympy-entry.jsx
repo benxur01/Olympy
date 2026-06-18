@@ -6858,7 +6858,7 @@ const STUDENT_DASHBOARD_BASE = '/dashboard';
 // Dashboard sub-sahifa kalitlari (navItems'dagi `analytics`dan tashqari hammasi).
 // Yangi sahifa qo'shilsa, shu ro'yxatga kalitini qo'shish kifoya.
 const STUDENT_DASHBOARD_PAGES = [
-  'home', 'olympiads', 'practice', 'profile', 'results', 'history',
+  'home', 'olympiads', 'practice', 'profile', 'results', 'history', 'progress',
   'centers', 'leaderboard', 'mistakes', 'rewards', 'premium', 'settings',
 ];
 const PAGE_TO_PATH = STUDENT_DASHBOARD_PAGES.reduce((acc, key) => {
@@ -7567,6 +7567,18 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     () => isApi ? OlympyApi.getWeakestTopics(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi, page === 'history'],
   );
+  // ── Progress Dashboard (premium emas — har o'quvchiga ochiq) ──────────────
+  // Davr toggle: 30 kun / 3 oy / 6 oy. Faqat "progress" sahifasi ochilganda
+  // (yoki davr o'zgarganda) so'raladi. AI tavsiya alohida — bir marta yuklanadi.
+  const [progressPeriod, setProgressPeriod] = React.useState(30);
+  const apiProgressRes = useApiData(
+    () => isApi ? OlympyApi.getProgress(progressPeriod, OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, progressPeriod, page === 'progress'],
+  );
+  const apiAiAdviceRes = useApiData(
+    () => isApi ? OlympyApi.getAiAdvice(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, page === 'progress'],
+  );
   // Olimpiadaga tayyorlik badge'lari — Tadbirlar sahifasi ochilganda
   // ko'rinadigan olimpiadalar uchun yuklanadi.
   const [readinessMap, setReadinessMap] = React.useState({});
@@ -7608,6 +7620,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     olympiads: [apiOlympiadsRes],
     results: [apiResultsRes],
     history: [apiHistoryChartRes, apiWeaknessRes],
+    progress: [apiProgressRes],
     centers: [apiCentersRes],
     mistakes: [apiMistakesRes],
     rewards: [apiRewardsRes],
@@ -7641,6 +7654,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       ['activity-leaderboard', apiActivityLeaderboardRes],
       ['predictions', apiPredictionsRes],
       ['competitor-analysis', apiCompetitorRes],
+      ['ai-advice', apiAiAdviceRes],
     ];
     optional.forEach(([name, res]) => {
       if (res && res.error && !res.loading) {
@@ -7653,6 +7667,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     apiActivityLeaderboardRes.error, apiActivityLeaderboardRes.loading,
     apiPredictionsRes.error, apiPredictionsRes.loading,
     apiCompetitorRes.error, apiCompetitorRes.loading,
+    apiAiAdviceRes.error, apiAiAdviceRes.loading,
   ]);
 
   const allCenters = isApi ? (apiCenters || []) : store.centers;
@@ -7938,6 +7953,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     { key: 'profile', icon: 'user', label: 'Profil' },
     { key: 'results', icon: 'chart', label: 'Natijalar' },
     { key: 'history', icon: 'chart', label: 'Tarixim' },
+    { key: 'progress', icon: 'chart', label: "O'sishim" },
     { key: 'centers', icon: 'building', label: 'Tashkilotlar' },
     { key: 'leaderboard', icon: 'star', label: 'Reyting' },
     { key: 'analytics', icon: 'chart', label: 'Analitika' },
@@ -8841,6 +8857,169 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     );
   };
 
+  // ── O'sishim (Student Progress Dashboard) ──────────────────────────────────
+  // Premium emas — har o'quvchiga ochiq. Davr toggle, ball dinamikasi (SVG line
+  // chart), fanlar bo'yicha progress bar, umumiy stats va oddiy AI tavsiya.
+  // Telegram WebView uchun og'ir animatsiya/backdrop-blur ishlatilmaydi.
+  const renderProgress = () => {
+    const prog = apiProgressRes.data || {};
+    const stats = prog.stats || {};
+    const trend = prog.trend || {};
+    const timeline = Array.isArray(prog.timeline) ? prog.timeline : [];
+    const subjects = Array.isArray(prog.subjects) ? prog.subjects : [];
+    const advice = apiAiAdviceRes.data || {};
+    const advices = Array.isArray(advice.advices) ? advice.advices : [];
+
+    const periods = [
+      { label: '30 kun', value: 30 },
+      { label: '3 oy', value: 90 },
+      { label: '6 oy', value: 180 },
+    ];
+    // Davr ichidagi ball dinamikasi (SVG line chart formati).
+    const chartPoints = timeline.map((p) => ({
+      label: (p.date || '').slice(5),  // MM-DD
+      value: p.score || 0,
+      title: `${p.date} · ${p.olympiad_name} · ${p.score}%${p.rank ? ' · #' + p.rank : ''}`,
+    }));
+    // Fan progress-bar rangi: avval umumiy subjectColors palitrasidan solid
+    // hex chiqaramiz (gradient klass emas), bo'lmasa indeks bo'yicha palitra.
+    const SUBJECT_BAR_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#84cc16', '#f43f5e'];
+    const barColor = (subject, i) => SUBJECT_BAR_COLORS[i % SUBJECT_BAR_COLORS.length];
+    const trendMeta = {
+      "o'sish": { color: '#10b981', icon: '↗', label: "O'sish" },
+      pasayish: { color: '#ef4444', icon: '↘', label: 'Pasayish' },
+      barqaror: { color: '#f59e0b', icon: '→', label: 'Barqaror' },
+    }[trend.direction] || { color: '#94a3b8', icon: '→', label: '—' };
+
+    return (
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-lg md:text-xl font-black text-white">O'sishim</h2>
+            <p className="text-white/40 text-xs mt-0.5">Natijalaringiz dinamikasi va shaxsiy tavsiyalar</p>
+          </div>
+          {/* Davr toggle: 30 kun / 3 oy / 6 oy */}
+          <div className="flex items-center gap-1 glass rounded-xl p-1 shrink-0">
+            {periods.map((p) => (
+              <button key={p.value} onClick={() => setProgressPeriod(p.value)}
+                className={`text-[11px] md:text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${progressPeriod === p.value ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30' : 'text-white/40 hover:text-white/70'}`}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Umumiy stats kartochkalari */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+          <StatCard label="Jami olimpiada" value={stats.total_olympiads || 0} icon="trophy" color="from-indigo-500 to-purple-600" />
+          <StatCard label="O'rtacha ball" value={`${stats.avg_score || 0}%`} icon="chart" color="from-emerald-500 to-teal-600" />
+          <StatCard label="Eng yaxshi" value={`${stats.best_score || 0}%`} icon="star" color="from-amber-500 to-orange-600" />
+          <StatCard label="Streak" value={`${stats.streak || 0} kun`} sub={stats.streak ? 'Ketma-ket' : "Bugun boshlang"} icon="bolt" color="from-rose-500 to-pink-600" />
+        </div>
+
+        {/* Ball dinamikasi (chiziqli grafik) */}
+        <div className="glass rounded-2xl p-4 md:p-5">
+          <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400 shrink-0">
+                <Icon name="chart" size={16} />
+              </div>
+              <div className="min-w-0">
+                <h3 className="font-bold text-white text-sm md:text-base leading-none">Ball dinamikasi</h3>
+                <span className="text-[9px] text-white/40 mt-1 block truncate">
+                  {periods.find(p => p.value === progressPeriod)?.label} davridagi natijalar
+                </span>
+              </div>
+            </div>
+            {/* Trend belgisi (oxirgi natija o'rtachaga nisbatan) */}
+            {timeline.length > 0 && (
+              <div className="flex items-center gap-1.5 shrink-0 px-2.5 py-1 rounded-lg" style={{ background: `${trendMeta.color}1a` }}>
+                <span className="text-sm font-black" style={{ color: trendMeta.color }}>{trendMeta.icon}</span>
+                <span className="text-[10px] md:text-[11px] font-bold" style={{ color: trendMeta.color }}>{trendMeta.label}</span>
+              </div>
+            )}
+          </div>
+          {apiProgressRes.loading ? (
+            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+          ) : chartPoints.length === 0 ? (
+            <EmptyState icon="chart" title="Bu davrda natija yo'q"
+              desc="Boshqa davrni tanlang yoki yangi tadbirda qatnashing" />
+          ) : (
+            <>
+              <SvgLineChart points={chartPoints} stroke="#6366f1" />
+              <div className="mt-2 text-[11px] text-white/50 text-center">
+                Oxirgi natija: <span className="font-bold text-indigo-300">{trend.last || 0}%</span>
+                <span className="text-white/30"> · {timeline.length} ta urinish</span>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Fanlar bo'yicha o'rtacha ball (progress bar) */}
+        <div className="glass rounded-2xl p-4 md:p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-8 h-8 bg-emerald-500/20 rounded-xl flex items-center justify-center text-emerald-400 shrink-0">
+              <Icon name="award" size={16} />
+            </div>
+            <div>
+              <h3 className="font-bold text-white text-sm md:text-base leading-none">Fanlar bo'yicha</h3>
+              <span className="text-[9px] text-white/40 mt-1 block">Har bir fan bo'yicha o'rtacha balingiz</span>
+            </div>
+          </div>
+          {apiProgressRes.loading ? (
+            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+          ) : subjects.length === 0 ? (
+            <div className="text-center text-white/40 text-sm py-8">Hali fan bo'yicha ma'lumot yo'q</div>
+          ) : (
+            <div className="space-y-3">
+              {subjects.map((s, i) => (
+                <div key={s.subject || i}>
+                  <div className="flex items-center justify-between mb-1.5 text-xs md:text-sm">
+                    <span className="text-white/80 font-semibold truncate pr-2">{s.subject}</span>
+                    <span className="font-bold shrink-0" style={{ color: barColor(s.subject, i) }}>{s.pct}%</span>
+                  </div>
+                  <div className="h-2.5 rounded-full bg-white/5 overflow-hidden">
+                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(0, Math.min(100, s.pct))}%`, background: barColor(s.subject, i) }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* AI tavsiya bo'limi (template — LLMsiz) */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🤖</span>
+            <h3 className="font-bold text-white text-sm md:text-base">AI tavsiyalar</h3>
+          </div>
+          {apiAiAdviceRes.loading ? (
+            <div className="glass rounded-2xl p-4 text-center text-white/40 text-sm py-6">Yuklanmoqda...</div>
+          ) : advices.length === 0 ? (
+            <div className="glass rounded-2xl p-4 text-center text-white/40 text-sm py-6">Hozircha tavsiya yo'q</div>
+          ) : (
+            advices.map((a, i) => {
+              // tone: warning → sariq, success → yashil.
+              const isWarn = a.tone === 'warning';
+              const accent = isWarn ? '#f59e0b' : '#10b981';
+              return (
+                <div key={i} className="glass rounded-2xl p-4 border-l-4" style={{ borderLeftColor: accent }}>
+                  <div className="flex items-start gap-2.5">
+                    <span className="text-lg shrink-0">{isWarn ? '⚠️' : '✅'}</span>
+                    <div className="min-w-0">
+                      <div className="font-bold text-white text-sm mb-0.5" style={{ color: accent }}>{a.title}</div>
+                      <p className="text-white/70 text-xs md:text-sm leading-relaxed">{a.text}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const renderPremium = () => {
     const activePlans = plans.filter(p => p.duration_days === durationFilter);
     return (
@@ -8995,6 +9174,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     olympiads: renderOlympiads,
     results: renderResults,
     history: renderHistory,
+    progress: renderProgress,
     centers: renderCenters,
     mistakes: renderMistakes,
     rewards: renderRewards,
@@ -12612,6 +12792,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [aiForm, setAiForm] = React.useState({ subject:'Matematika', topic:'', count:10, level:'O\'rta', type:'Ko\'p tanlovli' });
   const [aiLoading, setAiLoading] = React.useState(false);
   const [aiResult, setAiResult] = React.useState(null);
+  // AI savollar oylik limiti: backend /api/billing/limits/ -> ai_generations bloki
+  const [aiLimits, setAiLimits] = React.useState({ used: 0, limit: 0, unlimited: false });
   const [pdfFile, setPdfFile] = React.useState(null);
   const [pdfLoading, setPdfLoading] = React.useState(false);
   const [pdfResult, setPdfResult] = React.useState(null);
@@ -12733,6 +12915,34 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     };
   };
 
+  // AI savollar oylik limitini backend'dan olib kelish. API rejimida va center
+  // aniq bo'lganda ishlaydi; mount paytida va centerId o'zgarganda qayta so'raladi.
+  React.useEffect(() => {
+    if (!isApi || !myCenterId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await OlympyApi.getBillingLimits(OlympyApi.getToken(), myCenterId);
+        const ai = res?.ai_generations;
+        if (!cancelled && ai) {
+          setAiLimits({
+            used: ai.used || 0,
+            limit: ai.limit || 0,
+            unlimited: !!ai.unlimited,
+          });
+        }
+      } catch (err) {
+        // Limit ko'rsatkichi yo'qligi AI generatsiyani bloklamasligi kerak.
+        console.warn('getBillingLimits failed:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isApi, myCenterId]);
+
+  // AI generatsiya tugmasi holati: limit to'lganda bloklash uchun.
+  const aiLimitReached = !aiLimits.unlimited && aiLimits.limit > 0 && aiLimits.used >= aiLimits.limit;
+  const aiNearLimit = !aiLimits.unlimited && aiLimits.limit > 0 && aiLimits.used >= Math.ceil(aiLimits.limit * 0.8);
+
   const generateAI = async () => {
     if (!aiForm.topic) return;
     if (!isApi) {
@@ -12754,6 +12964,9 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       }, OlympyApi.getToken());
       const generated = (response?.questions || []).map(_mapAiGeneratedQuestion);
       setAiResult(generated);
+      // Generatsiya muvaffaqiyatli — mahalliy hisoblagichni oshiramiz (backend
+      // bilan keyingi limit so'rovda to'liq sinxronlanadi). Cheksizda o'zgarmaydi.
+      setAiLimits(prev => prev.unlimited ? prev : { ...prev, used: prev.used + 1 });
     } catch (err) {
       console.warn('generateAiQuestions failed:', err);
       if (err?.status === 403 && err?.data?.upgrade_required) {
@@ -13586,7 +13799,16 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           <div className="glass rounded-2xl p-6 space-y-4 border border-indigo-500/20">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center"><Icon name="sparkles" size={18} /></div>
-              <div><div className="font-bold text-white">AI Savol Generatori</div><div className="text-xs text-white/40">Mavzu bo'yicha avtomatik savollar yaratadi</div></div>
+              <div className="flex-1"><div className="font-bold text-white">AI Savol Generatori</div><div className="text-xs text-white/40">Mavzu bo'yicha avtomatik savollar yaratadi</div></div>
+              {/* AI savollar oylik limit badge'i: cheksiz → ∞, aks holda used/limit
+                  (to'lsa qizil, 80%+ sariq, aks holda indigo). */}
+              {isApi && myCenterId && (
+                aiLimits.unlimited ? (
+                  <span className="chip text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-500/15 text-indigo-300 whitespace-nowrap">∞ AI</span>
+                ) : aiLimits.limit > 0 ? (
+                  <span className={`chip text-xs font-bold px-2.5 py-1 rounded-lg whitespace-nowrap ${aiLimitReached ? 'bg-rose-500/15 text-rose-300' : aiNearLimit ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>{aiLimits.used} / {aiLimits.limit} AI</span>
+                ) : null
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="block text-xs text-white/50 mb-1.5">Fan</label>
@@ -13621,12 +13843,16 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   {AI_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select></div>
             </div>
-            <button onClick={generateAI} disabled={!aiForm.topic || aiLoading}
-              className="btn-primary w-full py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-60">
+            <button onClick={generateAI} disabled={!aiForm.topic || aiLoading || aiLimitReached}
+              title={aiLimitReached ? 'AI limit tugadi. Tarifni yangilang.' : undefined}
+              className="btn-primary w-full py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
               {aiLoading ? (
                 <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Yaratilmoqda...</>
               ) : <><Icon name="sparkles" size={18} /> AI orqali savol yaratish</>}
             </button>
+            {aiLimitReached && (
+              <div className="text-center text-xs font-bold text-rose-300">AI limit tugadi. Tarifni yangilang.</div>
+            )}
           </div>
 
           {aiLoading && (
@@ -13965,6 +14191,150 @@ var QuestionCreatorPage = moduleScope.QuestionCreatorPage;
 const TEACHER_DASHBOARD_PAGES = ['home', 'students', 'olympiads', 'questions', 'profile'];
 const teacherDashUrl = makeDashboardUrlSync('/dashboard/teacher', TEACHER_DASHBOARD_PAGES);
 
+// Fan progress-bar ranglari — StudentDashboard'dagi palitra bilan bir xil
+// (gradient klass emas, solid hex; indeks bo'yicha aylanadi).
+const STUDENT_DRAWER_BAR_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#84cc16', '#f43f5e'];
+
+// O'quvchi ustiga bosilganda o'ngdan ochiladigan batafsil panel.
+// `student` — ro'yxatdagi qator obyekti (kamida {id, full_name, phone}).
+// Telegram WebView'da backdrop-blur va og'ir animatsiya sekin — ishlatilmadi
+// (faqat yengil `animate-in` va oddiy bg-black/50 overlay).
+const TeacherStudentDetailDrawer = ({ student, onClose }) => {
+  const detailRes = useApiData(
+    () => student?.id
+      ? OlympyApi.getMyStudentDetail(student.id, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [student?.id],
+  );
+  const d = detailRes.data;
+  // Yopishda ESC va body scroll qulflanishi — drawer ochiqligida fon
+  // aralashmasin.
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const fmtScore = (v) => (typeof v === 'number' ? Math.round(v) : (v || 0));
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
+      <div className="fixed right-0 top-0 h-full w-full max-w-[420px] glass-strong border-l border-white/10 z-50 flex flex-col animate-in">
+        {/* Yuqori: avatar + ism + telefon + yopish */}
+        <div className="flex items-start gap-3 p-5 border-b border-white/10">
+          <Avatar name={student?.full_name} src={student?.avatar_url || d?.avatar_url || ''} size={48} />
+          <div className="min-w-0 flex-1">
+            <div className="font-black text-white truncate">{d?.full_name || student?.full_name || 'Foydalanuvchi'}</div>
+            <div className="text-sm text-white/45 truncate">{d?.phone || student?.phone || '—'}</div>
+            {d?.joined_at && <div className="text-xs text-white/30 mt-0.5">Qo'shilgan: {d.joined_at}</div>}
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-1.5 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+            title="Yopish"
+          >
+            <Icon name="x" size={20} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {detailRes.loading && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-2">
+                {[0, 1, 2].map(i => <div key={i} className="h-16 rounded-xl bg-white/5 animate-pulse" />)}
+              </div>
+              <div className="h-24 rounded-xl bg-white/5 animate-pulse" />
+              <div className="h-40 rounded-xl bg-white/5 animate-pulse" />
+            </div>
+          )}
+
+          {!detailRes.loading && detailRes.error && (
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-300">
+              Ma'lumotni yuklab bo'lmadi.
+            </div>
+          )}
+
+          {!detailRes.loading && d && (
+            <>
+              {/* Stats qatori */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl glass p-3 text-center">
+                  <div className="text-lg font-black text-white">{d.total_attempts || 0}</div>
+                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">Jami urinish</div>
+                </div>
+                <div className="rounded-xl glass p-3 text-center">
+                  <div className="text-lg font-black text-indigo-300">{fmtScore(d.avg_score)}</div>
+                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">O'rtacha ball</div>
+                </div>
+                <div className="rounded-xl glass p-3 text-center">
+                  <div className="text-lg font-black text-emerald-300">{fmtScore(d.best_score)}</div>
+                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">Eng yaxshi</div>
+                </div>
+              </div>
+
+              {/* Fanlar bo'yicha o'rtacha ball */}
+              {Array.isArray(d.subjects) && d.subjects.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <Icon name="chart" size={15} className="text-white/40" />
+                    <h3 className="text-sm font-black text-white">Fanlar bo'yicha</h3>
+                  </div>
+                  <div className="space-y-2.5">
+                    {d.subjects.map((s, i) => {
+                      const pct = Math.max(0, Math.min(100, fmtScore(s.avg_score)));
+                      const color = STUDENT_DRAWER_BAR_COLORS[i % STUDENT_DRAWER_BAR_COLORS.length];
+                      return (
+                        <div key={s.subject + i}>
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="font-semibold text-white/70 truncate">{s.subject}</span>
+                            <span className="font-bold text-white/50 shrink-0 ml-2">{fmtScore(s.avg_score)} · {s.attempts || 0} ta</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-white/8 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* So'nggi urinishlar */}
+              <div>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <Icon name="clock" size={15} className="text-white/40" />
+                  <h3 className="text-sm font-black text-white">So'nggi urinishlar</h3>
+                </div>
+                {Array.isArray(d.recent_attempts) && d.recent_attempts.length > 0 ? (
+                  <div className="space-y-2">
+                    {d.recent_attempts.map((a, i) => (
+                      <div key={i} className="flex items-center gap-3 rounded-xl glass px-3.5 py-2.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold text-white truncate">{a.olympiad_title}</div>
+                          <div className="text-[11px] text-white/40 mt-0.5 flex items-center gap-2 flex-wrap">
+                            <span>{a.date || '—'}</span>
+                            {a.rank ? <span>· #{a.rank}{a.total_participants ? `/${a.total_participants}` : ''}</span> : null}
+                          </div>
+                        </div>
+                        <span className="shrink-0 rounded-lg bg-indigo-500/15 px-2.5 py-1 text-sm font-bold text-indigo-300">{fmtScore(a.score)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl glass px-4 py-6 text-center text-sm text-white/35">
+                    Hali urinishlar yo'q
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
 const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
@@ -13983,6 +14353,8 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [onlyUnused, setOnlyUnused] = React.useState(false);
   const [toast, setToast] = React.useState('');
   const [premiumModal, setPremiumModal] = React.useState('');
+  // O'quvchi ustiga bosilganda ochiladigan batafsil panel (StudentDetailDrawer).
+  const [selectedStudent, setSelectedStudent] = React.useState(null);
   const emptyEventForm = {
     eventType: 'competition',
     title: '',
@@ -14420,7 +14792,11 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             </div>
             <div className="divide-y divide-white/5">
               {teacherStudents.map(s => (
-                <div key={s.id} className="grid grid-cols-12 gap-3 px-5 py-3.5 items-center hover:bg-white/[0.02]">
+                <div
+                  key={s.id}
+                  onClick={() => setSelectedStudent(s)}
+                  className="grid grid-cols-12 gap-3 px-5 py-3.5 items-center cursor-pointer hover:bg-white/[0.04] transition-colors"
+                >
                   <div className="col-span-12 md:col-span-5 flex items-center gap-3 min-w-0">
                     <Avatar name={s.full_name} size={34} />
                     <div className="font-semibold text-white truncate">{s.full_name || 'Foydalanuvchi'}</div>
@@ -14436,6 +14812,13 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               ))}
             </div>
           </div>
+        )}
+
+        {selectedStudent && (
+          <TeacherStudentDetailDrawer
+            student={selectedStudent}
+            onClose={() => setSelectedStudent(null)}
+          />
         )}
       </div>
     );
@@ -15094,10 +15477,12 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 Object.assign(window, { TeacherDashboard });
 
 
-Object.assign(moduleScope, { TEACHER_DASHBOARD_PAGES, teacherDashUrl, TeacherDashboard });
+Object.assign(moduleScope, { TEACHER_DASHBOARD_PAGES, teacherDashUrl, STUDENT_DRAWER_BAR_COLORS, TeacherStudentDetailDrawer, TeacherDashboard });
 }
 var TEACHER_DASHBOARD_PAGES = moduleScope.TEACHER_DASHBOARD_PAGES;
 var teacherDashUrl = moduleScope.teacherDashUrl;
+var STUDENT_DRAWER_BAR_COLORS = moduleScope.STUDENT_DRAWER_BAR_COLORS;
+var TeacherStudentDetailDrawer = moduleScope.TeacherStudentDetailDrawer;
 var TeacherDashboard = moduleScope.TeacherDashboard;
 
 // pages/OlympiadTest.jsx
@@ -20360,6 +20745,142 @@ const ownerFormatDate = (value) => {
   return d.toLocaleDateString('uz-UZ', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
+// Fan progress-bar ranglari — StudentDashboard palitrasi bilan bir xil.
+const OWNER_DRAWER_BAR_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#84cc16', '#f43f5e'];
+
+// O'quvchi ustiga bosilganda o'ngdan ochiladigan batafsil panel.
+// `student` — renderStudents'dagi qator obyekti ({userId, name, phone,
+// avatarUrl}). Telegram WebView'da backdrop-blur/og'ir animatsiya YO'Q.
+const OwnerStudentDetailDrawer = ({ student, onClose }) => {
+  const detailRes = useApiData(
+    () => student?.userId
+      ? OlympyApi.getMyStudentDetail(student.userId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [student?.userId],
+  );
+  const d = detailRes.data;
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const fmtScore = (v) => (typeof v === 'number' ? Math.round(v) : (v || 0));
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
+      <div className="fixed right-0 top-0 h-full w-full max-w-[420px] glass-strong border-l border-white/10 z-50 flex flex-col animate-in">
+        <div className="flex items-start gap-3 p-5 border-b border-white/10">
+          <Avatar name={student?.name} src={student?.avatarUrl || d?.avatar_url || ''} size={48} gradient="from-emerald-500 to-teal-600" />
+          <div className="min-w-0 flex-1">
+            <div className="font-black text-white truncate">{d?.full_name || student?.name || 'Foydalanuvchi'}</div>
+            <div className="text-sm text-white/45 truncate">{d?.phone || maskPhoneDisplay(student?.phone, '') || '—'}</div>
+            {d?.joined_at && <div className="text-xs text-white/30 mt-0.5">Qo'shilgan: {d.joined_at}</div>}
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-1.5 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+            title="Yopish"
+          >
+            <Icon name="x" size={20} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {detailRes.loading && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-2">
+                {[0, 1, 2].map(i => <div key={i} className="h-16 rounded-xl bg-white/5 animate-pulse" />)}
+              </div>
+              <div className="h-24 rounded-xl bg-white/5 animate-pulse" />
+              <div className="h-40 rounded-xl bg-white/5 animate-pulse" />
+            </div>
+          )}
+
+          {!detailRes.loading && detailRes.error && (
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-300">
+              Ma'lumotni yuklab bo'lmadi.
+            </div>
+          )}
+
+          {!detailRes.loading && d && (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl glass p-3 text-center">
+                  <div className="text-lg font-black text-white">{d.total_attempts || 0}</div>
+                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">Jami urinish</div>
+                </div>
+                <div className="rounded-xl glass p-3 text-center">
+                  <div className="text-lg font-black text-indigo-300">{fmtScore(d.avg_score)}</div>
+                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">O'rtacha ball</div>
+                </div>
+                <div className="rounded-xl glass p-3 text-center">
+                  <div className="text-lg font-black text-emerald-300">{fmtScore(d.best_score)}</div>
+                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">Eng yaxshi</div>
+                </div>
+              </div>
+
+              {Array.isArray(d.subjects) && d.subjects.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <Icon name="chart" size={15} className="text-white/40" />
+                    <h3 className="text-sm font-black text-white">Fanlar bo'yicha</h3>
+                  </div>
+                  <div className="space-y-2.5">
+                    {d.subjects.map((s, i) => {
+                      const pct = Math.max(0, Math.min(100, fmtScore(s.avg_score)));
+                      const color = OWNER_DRAWER_BAR_COLORS[i % OWNER_DRAWER_BAR_COLORS.length];
+                      return (
+                        <div key={s.subject + i}>
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="font-semibold text-white/70 truncate">{s.subject}</span>
+                            <span className="font-bold text-white/50 shrink-0 ml-2">{fmtScore(s.avg_score)} · {s.attempts || 0} ta</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-white/8 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <Icon name="clock" size={15} className="text-white/40" />
+                  <h3 className="text-sm font-black text-white">So'nggi urinishlar</h3>
+                </div>
+                {Array.isArray(d.recent_attempts) && d.recent_attempts.length > 0 ? (
+                  <div className="space-y-2">
+                    {d.recent_attempts.map((a, i) => (
+                      <div key={i} className="flex items-center gap-3 rounded-xl glass px-3.5 py-2.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold text-white truncate">{a.olympiad_title}</div>
+                          <div className="text-[11px] text-white/40 mt-0.5 flex items-center gap-2 flex-wrap">
+                            <span>{a.date || '—'}</span>
+                            {a.rank ? <span>· #{a.rank}{a.total_participants ? `/${a.total_participants}` : ''}</span> : null}
+                          </div>
+                        </div>
+                        <span className="shrink-0 rounded-lg bg-indigo-500/15 px-2.5 py-1 text-sm font-bold text-indigo-300">{fmtScore(a.score)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl glass px-4 py-6 text-center text-sm text-white/35">
+                    Hali urinishlar yo'q
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
 const OwnerStatusPill = ({ status, children }) => {
   const map = {
     approved: 'badge-approved',
@@ -20513,6 +21034,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [studentActionId, setStudentActionId] = React.useState(null);
   // Guruh tegi tahrirlash holati: { membershipId, value }.
   const [groupTagEdit, setGroupTagEdit] = React.useState(null);
+  // O'quvchi ustiga bosilganda ochiladigan batafsil panel (StudentDetailDrawer).
+  const [selectedStudent, setSelectedStudent] = React.useState(null);
 
   // Live Proctoring states
   const [proctoringData, setProctoringData] = React.useState([]);
@@ -20731,6 +21254,11 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   );
   const apiRegionRankRes = useApiData(
     () => (isApi && ownerCenterId && page === 'statistics') ? OlympyApi.getCenterRegionRank(ownerCenterId, OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, ownerCenterId, page === 'statistics'],
+  );
+  // Guruh (sinf) analitikasi — har guruh bo'yicha o'rtacha ball va kuchsiz o'quvchilar.
+  const apiGroupStatsRes = useApiData(
+    () => (isApi && ownerCenterId && page === 'statistics') ? OlympyApi.getGroupStats(ownerCenterId, OlympyApi.getToken()) : Promise.resolve(null),
     [isApi, ownerCenterId, page === 'statistics'],
   );
 
@@ -22212,6 +22740,9 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const studentRows = students.map(m => ({
       id: `api:student:${m.membership_id}`,
       membershipId: m.membership_id,
+      // StudentDetailDrawer user_id bo'yicha so'rov yuboradi (markaz teacher/
+      // owner endpointi). UserSerializer `id` qaytaradi.
+      userId: m.user?.id ?? null,
       name: m.user?.full_name || m.user?.name || '—',
       phone: m.user?.normalized_phone || m.user?.phone || '—',
       avatarUrl: m.user?.avatar_url || m.user?.avatarUrl || '',
@@ -22306,10 +22837,16 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   return (
                     <tr key={row.id} className="olympy-row text-sm">
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => row.userId && setSelectedStudent(row)}
+                          disabled={!row.userId}
+                          className="flex items-center gap-3 text-left rounded-lg -mx-1 px-1 py-0.5 hover:bg-white/[0.04] transition-colors disabled:cursor-default disabled:hover:bg-transparent"
+                          title={row.userId ? 'Batafsil ko\'rish' : ''}
+                        >
                           <Avatar name={row.name} src={row.avatarUrl || ''} size={36} gradient="from-emerald-500 to-teal-600" premium={!!row.isPremium} />
                           <span className="font-black text-white">{row.isPremium && <span title="Premium o'quvchi">⭐ </span>}{row.name}</span>
-                        </div>
+                        </button>
                       </td>
                       <td className="px-5 py-4 font-mono text-xs text-white/55">
                         {maskPhoneDisplay(row.phone, '')}
@@ -22394,6 +22931,13 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </table>
           </div>
         </section>
+
+        {selectedStudent && (
+          <OwnerStudentDetailDrawer
+            student={selectedStudent}
+            onClose={() => setSelectedStudent(null)}
+          />
+        )}
       </div>
     );
   };
@@ -23045,15 +23589,22 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       region_rank: 4, region_total: 38, global_rank: 27, global_total: 540,
     };
 
+    const dummyGroups = [
+      { group_tag: '7-sinf A', student_count: 15, avg_score: 73.4, top_student: { name: 'Aliyev Vali (Teaser)', score: 95 }, weak_students: [{ name: 'Karim (Teaser)', score: 32, user_id: 1 }, { name: 'Diyor (Teaser)', score: 41, user_id: 2 }], olympiad_participations: 12 },
+      { group_tag: '8-sinf B', student_count: 12, avg_score: 61.8, top_student: { name: 'Zilola (Teaser)', score: 88 }, weak_students: [{ name: 'Sardor (Teaser)', score: 28, user_id: 3 }], olympiad_participations: 9 },
+    ];
+
     const rawDynamics = Array.isArray(apiDynamicsRes.data) ? apiDynamicsRes.data : [];
     const rawTopStudents = Array.isArray(apiTopStudentsRes.data) ? apiTopStudentsRes.data : [];
     const rawTrend = Array.isArray(apiActivityTrendRes.data) ? apiActivityTrendRes.data : [];
     const rawRegionRank = (apiRegionRankRes.data && typeof apiRegionRankRes.data === 'object') ? apiRegionRankRes.data : null;
+    const rawGroups = (apiGroupStatsRes.data && Array.isArray(apiGroupStatsRes.data.groups)) ? apiGroupStatsRes.data.groups : [];
 
     const dynamics = isStatisticsLocked ? dummyDynamics : rawDynamics;
     const topStudents = isStatisticsLocked ? dummyTopStudents : rawTopStudents;
     const trend = isStatisticsLocked ? dummyTrend : rawTrend;
     const regionRank = isStatisticsLocked ? dummyRegionRank : rawRegionRank;
+    const groups = isStatisticsLocked ? dummyGroups : rawGroups;
 
     const monthNamesShort = ['', 'Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyl', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
     // SvgLineChart [{label, value (0..100), title}] formatini kutadi.
@@ -23188,6 +23739,62 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </section>
+
+          {/* Guruhlar (sinflar) bo'yicha analitika */}
+          <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-black text-white">Guruhlar</h2>
+              <span className="text-xs font-semibold text-white/45">Sinf/guruh bo'yicha natija</span>
+            </div>
+            {apiGroupStatsRes.loading && !isStatisticsLocked ? (
+              <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+            ) : groups.length === 0 ? (
+              <EmptyState icon="users" title="Hali guruh ma'lumoti yo'q" desc="O'quvchilarga guruh tegi qo'shing va ular mashq/olimpiadalarda qatnashgach shu yerda chiqadi." />
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {groups.map((g, gi) => {
+                  const avg = g.avg_score || 0;
+                  const barColor = avg >= 70 ? 'bg-emerald-500' : avg >= 50 ? 'bg-amber-500' : 'bg-rose-500';
+                  const weak = Array.isArray(g.weak_students) ? g.weak_students.slice(0, 3) : [];
+                  return (
+                    <div key={g.group_tag || gi} className="rounded-xl bg-white/5 border border-white/8 p-4">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-black text-white">{g.group_tag || 'Guruhsiz'}</div>
+                          <div className="text-[11px] font-semibold text-white/40">{g.student_count || 0} o'quvchi · {g.olympiad_participations || 0} qatnashuv</div>
+                        </div>
+                        <div className="flex-shrink-0 text-right">
+                          <div className="text-lg font-black text-indigo-300">{avg}%</div>
+                          <div className="text-[10px] font-semibold text-white/40">o'rt. ball</div>
+                        </div>
+                      </div>
+                      <div className="mb-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.min(100, Math.max(0, avg))}%` }} />
+                      </div>
+                      {g.top_student && (
+                        <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-amber-300">
+                          <span>🏆</span>
+                          <span className="truncate">{g.top_student.name}</span>
+                          <span className="text-white/40">({g.top_student.score}%)</span>
+                        </div>
+                      )}
+                      {weak.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-rose-400/80">Yordam kerak</div>
+                          {weak.map((w, wi) => (
+                            <div key={w.user_id ?? wi} className="flex items-center justify-between rounded-lg bg-rose-500/10 px-2.5 py-1.5">
+                              <span className="truncate text-xs font-semibold text-rose-300">{w.name}</span>
+                              <span className="flex-shrink-0 text-xs font-black text-rose-400">{w.score}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>
@@ -23561,16 +24168,20 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         {/* Limit indikatorlari: Talabalar/Ustozlar/Olimpiadalar — joriy/limit
             progress bar bilan. 80% dan oshganda "Limit tugayapti" ogohlantirishi. */}
         {limits && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { key: 'students', label: "Talabalar", icon: '🎓' },
               { key: 'teachers', label: "Ustozlar", icon: '👨‍🏫' },
               { key: 'olympiads', label: "Olimpiadalar (oy)", icon: '🏆' },
+              { key: 'ai_generations', label: "AI Savollar (oy)", icon: '🤖' },
             ].map(({ key, label, icon }) => {
               const b = limits[key] || {};
               const used = b.used || 0;
               const unlimited = !!b.unlimited;
               const limit = b.limit;
+              // Rejasiz (free) tarifda AI bloki limit:0 va unlimited:false qaytadi —
+              // bu "funksiya mavjud emas" holati (ogohlantirish emas, neutral).
+              const unavailable = !unlimited && limit === 0;
               const pct = (!unlimited && limit > 0) ? Math.min(100, Math.round((used / limit) * 100)) : 0;
               const near = !!b.near_limit;
               const full = !unlimited && limit > 0 && used >= limit;
@@ -23582,23 +24193,29 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       <span>{icon}</span> {label}
                     </span>
                     <span className="text-sm font-black text-white">
-                      {used}{unlimited ? '' : ` / ${limit}`}
+                      {unavailable ? <span className="text-white/40">—</span> : <>{used}{unlimited ? '' : ` / ${limit}`}</>}
                       {unlimited && <span className="ml-1 text-indigo-300">∞</span>}
                     </span>
                   </div>
-                  {!unlimited && (
-                    <div className="mt-2.5 h-2 w-full rounded-full bg-white/5 overflow-hidden">
-                      <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
-                    </div>
-                  )}
-                  {near && !full && (
-                    <div className="mt-2 text-[10px] font-bold text-amber-300">⚠️ Limit tugayapti</div>
-                  )}
-                  {full && (
-                    <div className="mt-2 text-[10px] font-bold text-rose-300">Limit to'ldi — tarifni yangilang</div>
-                  )}
-                  {unlimited && (
-                    <div className="mt-2 text-[10px] font-bold text-indigo-300">Cheksiz</div>
+                  {unavailable ? (
+                    <div className="mt-2 text-[10px] font-bold text-rose-300">Mavjud emas — tarifni yangilang</div>
+                  ) : (
+                    <>
+                      {!unlimited && (
+                        <div className="mt-2.5 h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                          <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+                        </div>
+                      )}
+                      {near && !full && (
+                        <div className="mt-2 text-[10px] font-bold text-amber-300">⚠️ Limit tugayapti</div>
+                      )}
+                      {full && (
+                        <div className="mt-2 text-[10px] font-bold text-rose-300">Limit to'ldi — tarifni yangilang</div>
+                      )}
+                      {unlimited && (
+                        <div className="mt-2 text-[10px] font-bold text-indigo-300">Cheksiz</div>
+                      )}
+                    </>
                   )}
                 </div>
               );
@@ -24149,11 +24766,13 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 Object.assign(window, { OwnerDashboard });
 
 
-Object.assign(moduleScope, { OWNER_DASHBOARD_PAGES, ownerDashUrl, ownerFormatDate, OwnerStatusPill, OwnerMetric, OwnerSidebarItem, FALLBACK_ORGANIZATION_PRICING, OwnerDashboard });
+Object.assign(moduleScope, { OWNER_DASHBOARD_PAGES, ownerDashUrl, ownerFormatDate, OWNER_DRAWER_BAR_COLORS, OwnerStudentDetailDrawer, OwnerStatusPill, OwnerMetric, OwnerSidebarItem, FALLBACK_ORGANIZATION_PRICING, OwnerDashboard });
 }
 var OWNER_DASHBOARD_PAGES = moduleScope.OWNER_DASHBOARD_PAGES;
 var ownerDashUrl = moduleScope.ownerDashUrl;
 var ownerFormatDate = moduleScope.ownerFormatDate;
+var OWNER_DRAWER_BAR_COLORS = moduleScope.OWNER_DRAWER_BAR_COLORS;
+var OwnerStudentDetailDrawer = moduleScope.OwnerStudentDetailDrawer;
 var OwnerStatusPill = moduleScope.OwnerStatusPill;
 var OwnerMetric = moduleScope.OwnerMetric;
 var OwnerSidebarItem = moduleScope.OwnerSidebarItem;

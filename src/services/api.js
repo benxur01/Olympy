@@ -840,6 +840,13 @@ export const OlympyApi = {
   createCenterShopProduct: (body, token, centerId) => request(`/api/center/shop/products/${centerId ? '?center_id=' + encodeURIComponent(centerId) : ''}`, { method: 'POST', body, token }),
   updateCenterShopProduct: (productId, body, token, centerId) => request(`/api/center/shop/products/${productId}/${centerId ? '?center_id=' + encodeURIComponent(centerId) : ''}`, { method: 'PATCH', body, token }),
   deleteCenterShopProduct: (productId, token, centerId) => request(`/api/center/shop/products/${productId}/${centerId ? '?center_id=' + encodeURIComponent(centerId) : ''}`, { method: 'DELETE', token }),
+  // Teacher/Owner: bitta o'quvchi batafsil profili (StudentDetailDrawer).
+  // user_id bo'yicha — markaz teacher/owner'i o'z o'quvchisini ko'radi.
+  // Eslatma: yuqoridagi getStudentDetail(membershipId) — boshqa endpoint
+  // (centers/students/<membership_id>/, ManagerDashboard ishlatadi). Bu yangi
+  // metod alohida nom oladi (getMyStudentDetail), aks holda obyektda nom
+  // to'qnashib eski metod yo'qolardi.
+  getMyStudentDetail: (userId, token) => request(`/api/me/students/${userId}/`, { token }),
   // Premium o'quvchi analitikasi
   getHistoryChart: (token) => request('/api/me/history-chart/', { token }),
   // Vaqt bo'yicha reyting tarixi (oxirgi 30/90 kun). Premium bo'lmaganlarga
