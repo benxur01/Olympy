@@ -6,7 +6,7 @@ faqat autentifikatsiyalangan foydalanuvchining O'Z ma'lumotlarini qaytaradi.
 from collections import OrderedDict
 from datetime import timedelta
 
-from django.db.models import Avg, Max
+from django.db.models import Avg, Count, Max, Min
 from django.utils import timezone
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, throttle_classes
@@ -15,9 +15,10 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
 from attempts.models import TestAttempt
+from centers.models import CenterMembership
 from olympiads.models import Olympiad
 
-from .utils import is_user_premium
+from .utils import avatar_url_for, is_user_premium
 
 # Reyting tarixi (score-timeline) uchun premium bo'lmagan o'quvchiga ko'rsatiladigan
 # oyna (kun). Premium o'quvchi 30 yoki 90 kunni tanlay oladi; bepul o'quvchi faqat
@@ -621,6 +622,155 @@ def ai_advice(request):
         'advices': advices,
         'weakest_subject': weakest_subject,
         'streak': streak,
+    })
+
+
+# ─── Teacher/Owner: bitta o'quvchi batafsil profili ──────────────────────────
+
+
+def _staff_center_ids(user):
+    """So'rovchi teacher YOKI owner bo'lgan (tasdiqlangan) markaz ID'lari.
+
+    Owner ikki yo'l bilan markazga ega bo'ladi: `EducationCenter.owner` orqali
+    (asosiy egalik) yoki `CenterMembership` role=owner orqali. Teacher esa
+    faqat tasdiqlangan teacher a'zoligi bilan. Bu yerda ikkala manbani ham
+    birlashtiramiz — o'quvchi shu markazlardan birida bo'lsa ko'rsatiladi.
+    Platforma admini hech qanday markaz bilan cheklanmaydi (None qaytadi).
+    """
+    if getattr(user, 'is_platform_admin', False):
+        return None  # cheklovsiz
+    ids = set(
+        CenterMembership.objects
+        .filter(
+            user=user,
+            role__in=(CenterMembership.ROLE_TEACHER, CenterMembership.ROLE_OWNER),
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        .values_list('center_id', flat=True)
+    )
+    # `EducationCenter.owner` orqali to'g'ridan-to'g'ri egalik (membership
+    # yozuvi bo'lmasligi mumkin) — faqat tasdiqlangan markazlar.
+    from centers.models import EducationCenter
+    ids.update(
+        EducationCenter.objects
+        .filter(owner=user, status=EducationCenter.STATUS_APPROVED)
+        .values_list('id', flat=True)
+    )
+    return ids
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def student_detail(request, user_id):
+    """GET /api/me/students/<user_id>/ — Teacher/Owner uchun o'quvchi profili.
+
+    Faqat so'rovchi teacher yoki owner bo'lgan markazda tasdiqlangan student
+    bo'lgan o'quvchini ko'rsatadi. Statistika (urinishlar, o'rtacha/eng yaxshi/
+    eng past ball, fanlar kesimi, so'nggi 10 urinish) shu markaz(lar)dagi
+    diskvalifikatsiya qilinmagan attempt'lardan hisoblanadi.
+
+    Eslatma: spec `TokenAuthentication` ni so'ragan, lekin platforma JWT/cookie
+    auth ishlatadi (frontend cookie orqali yuboradi). Boshqa /api/me/
+    endpointlari kabi bu yerda ham DEFAULT_AUTHENTICATION_CLASSES (JWT+cookie)
+    ishlatiladi — aks holda cookie auth bilan kelgan so'rov 401 olardi.
+
+    Javob: {
+      id, full_name, phone, avatar_url, joined_at,
+      total_attempts, avg_score, best_score, worst_score,
+      subjects: [{subject, avg_score, attempts}],
+      recent_attempts: [{olympiad_title, score, rank, total_participants,
+                         date, event_type}],
+    }
+    """
+    center_ids = _staff_center_ids(request.user)
+    # Teacher/owner emas (va admin ham emas) — markaz yo'q.
+    if center_ids is not None and not center_ids:
+        return Response(
+            {'detail': "Bu ma'lumotni ko'rish uchun ruxsatingiz yo'q."},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+
+    # O'quvchi shu markazlardan birida tasdiqlangan student bo'lishi shart.
+    student_membership_qs = CenterMembership.objects.filter(
+        user_id=user_id,
+        role=CenterMembership.ROLE_STUDENT,
+        status=CenterMembership.STATUS_APPROVED,
+    )
+    if center_ids is not None:
+        student_membership_qs = student_membership_qs.filter(center_id__in=center_ids)
+    student_membership = (
+        student_membership_qs.select_related('user').order_by('created_at').first()
+    )
+    if student_membership is None:
+        return Response(
+            {'detail': "O'quvchi topilmadi yoki sizning markazingizda emas."},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+    student = student_membership.user
+
+    # Statistika faqat so'rovchining markaz(lar)idagi olimpiadalardan —
+    # boshqa markazlardagi natijalar bu panelda ko'rinmaydi. Admin uchun
+    # (center_ids is None) barcha attempt'lar.
+    attempts_qs = TestAttempt.objects.filter(
+        user_id=user_id,
+        disqualified=False,
+        olympiad__is_deleted=False,
+    )
+    if center_ids is not None:
+        attempts_qs = attempts_qs.filter(olympiad__center_id__in=center_ids)
+
+    agg = attempts_qs.aggregate(
+        total=Count('id'),
+        avg=Avg('score'),
+        best=Max('score'),
+        worst=Min('score'),
+    )
+    total_attempts = agg['total'] or 0
+
+    # Fanlar bo'yicha o'rtacha ball va urinishlar — bitta GROUP BY so'rovida.
+    subject_rows = (
+        attempts_qs
+        .values('olympiad__subject')
+        .annotate(avg=Avg('score'), attempts=Count('id'))
+        .order_by('-avg')
+    )
+    subjects = [{
+        'subject': (row['olympiad__subject'] or '—'),
+        'avg_score': round(row['avg'] or 0, 1),
+        'attempts': row['attempts'] or 0,
+    } for row in subject_rows]
+
+    # So'nggi 10 ta urinish (yangidan eskiga).
+    recent = (
+        attempts_qs
+        .select_related('olympiad')
+        .order_by('-submitted_at')[:10]
+    )
+    recent_attempts = [{
+        'olympiad_title': (a.olympiad.title if a.olympiad else '—'),
+        'score': a.score or 0,
+        # TestAttempt'da total_participants yo'q — null qaytaramiz (spec ruxsati).
+        'rank': a.rank,
+        'total_participants': None,
+        'event_type': (a.olympiad.event_type if a.olympiad else None),
+        'date': a.submitted_at.strftime('%Y-%m-%d') if a.submitted_at else '',
+    } for a in recent]
+
+    return Response({
+        'id': student.id,
+        'full_name': student.full_name or '',
+        'phone': student.normalized_phone or student.phone or '',
+        'avatar_url': avatar_url_for(student, request),
+        'joined_at': (
+            student_membership.created_at.strftime('%Y-%m-%d')
+            if student_membership.created_at else ''
+        ),
+        'total_attempts': total_attempts,
+        'avg_score': round(agg['avg'] or 0, 1),
+        'best_score': agg['best'] or 0,
+        'worst_score': agg['worst'] or 0,
+        'subjects': subjects,
+        'recent_attempts': recent_attempts,
     })
 
 

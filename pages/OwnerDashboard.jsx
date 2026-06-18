@@ -18,6 +18,142 @@ const ownerFormatDate = (value) => {
   return d.toLocaleDateString('uz-UZ', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
+// Fan progress-bar ranglari — StudentDashboard palitrasi bilan bir xil.
+const OWNER_DRAWER_BAR_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#84cc16', '#f43f5e'];
+
+// O'quvchi ustiga bosilganda o'ngdan ochiladigan batafsil panel.
+// `student` — renderStudents'dagi qator obyekti ({userId, name, phone,
+// avatarUrl}). Telegram WebView'da backdrop-blur/og'ir animatsiya YO'Q.
+const OwnerStudentDetailDrawer = ({ student, onClose }) => {
+  const detailRes = useApiData(
+    () => student?.userId
+      ? OlympyApi.getMyStudentDetail(student.userId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [student?.userId],
+  );
+  const d = detailRes.data;
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const fmtScore = (v) => (typeof v === 'number' ? Math.round(v) : (v || 0));
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
+      <div className="fixed right-0 top-0 h-full w-full max-w-[420px] glass-strong border-l border-white/10 z-50 flex flex-col animate-in">
+        <div className="flex items-start gap-3 p-5 border-b border-white/10">
+          <Avatar name={student?.name} src={student?.avatarUrl || d?.avatar_url || ''} size={48} gradient="from-emerald-500 to-teal-600" />
+          <div className="min-w-0 flex-1">
+            <div className="font-black text-white truncate">{d?.full_name || student?.name || 'Foydalanuvchi'}</div>
+            <div className="text-sm text-white/45 truncate">{d?.phone || maskPhoneDisplay(student?.phone, '') || '—'}</div>
+            {d?.joined_at && <div className="text-xs text-white/30 mt-0.5">Qo'shilgan: {d.joined_at}</div>}
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-1.5 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+            title="Yopish"
+          >
+            <Icon name="x" size={20} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {detailRes.loading && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-2">
+                {[0, 1, 2].map(i => <div key={i} className="h-16 rounded-xl bg-white/5 animate-pulse" />)}
+              </div>
+              <div className="h-24 rounded-xl bg-white/5 animate-pulse" />
+              <div className="h-40 rounded-xl bg-white/5 animate-pulse" />
+            </div>
+          )}
+
+          {!detailRes.loading && detailRes.error && (
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-300">
+              Ma'lumotni yuklab bo'lmadi.
+            </div>
+          )}
+
+          {!detailRes.loading && d && (
+            <>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl glass p-3 text-center">
+                  <div className="text-lg font-black text-white">{d.total_attempts || 0}</div>
+                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">Jami urinish</div>
+                </div>
+                <div className="rounded-xl glass p-3 text-center">
+                  <div className="text-lg font-black text-indigo-300">{fmtScore(d.avg_score)}</div>
+                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">O'rtacha ball</div>
+                </div>
+                <div className="rounded-xl glass p-3 text-center">
+                  <div className="text-lg font-black text-emerald-300">{fmtScore(d.best_score)}</div>
+                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">Eng yaxshi</div>
+                </div>
+              </div>
+
+              {Array.isArray(d.subjects) && d.subjects.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <Icon name="chart" size={15} className="text-white/40" />
+                    <h3 className="text-sm font-black text-white">Fanlar bo'yicha</h3>
+                  </div>
+                  <div className="space-y-2.5">
+                    {d.subjects.map((s, i) => {
+                      const pct = Math.max(0, Math.min(100, fmtScore(s.avg_score)));
+                      const color = OWNER_DRAWER_BAR_COLORS[i % OWNER_DRAWER_BAR_COLORS.length];
+                      return (
+                        <div key={s.subject + i}>
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="font-semibold text-white/70 truncate">{s.subject}</span>
+                            <span className="font-bold text-white/50 shrink-0 ml-2">{fmtScore(s.avg_score)} · {s.attempts || 0} ta</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-white/8 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <Icon name="clock" size={15} className="text-white/40" />
+                  <h3 className="text-sm font-black text-white">So'nggi urinishlar</h3>
+                </div>
+                {Array.isArray(d.recent_attempts) && d.recent_attempts.length > 0 ? (
+                  <div className="space-y-2">
+                    {d.recent_attempts.map((a, i) => (
+                      <div key={i} className="flex items-center gap-3 rounded-xl glass px-3.5 py-2.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold text-white truncate">{a.olympiad_title}</div>
+                          <div className="text-[11px] text-white/40 mt-0.5 flex items-center gap-2 flex-wrap">
+                            <span>{a.date || '—'}</span>
+                            {a.rank ? <span>· #{a.rank}{a.total_participants ? `/${a.total_participants}` : ''}</span> : null}
+                          </div>
+                        </div>
+                        <span className="shrink-0 rounded-lg bg-indigo-500/15 px-2.5 py-1 text-sm font-bold text-indigo-300">{fmtScore(a.score)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl glass px-4 py-6 text-center text-sm text-white/35">
+                    Hali urinishlar yo'q
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
 const OwnerStatusPill = ({ status, children }) => {
   const map = {
     approved: 'badge-approved',
@@ -171,6 +307,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [studentActionId, setStudentActionId] = React.useState(null);
   // Guruh tegi tahrirlash holati: { membershipId, value }.
   const [groupTagEdit, setGroupTagEdit] = React.useState(null);
+  // O'quvchi ustiga bosilganda ochiladigan batafsil panel (StudentDetailDrawer).
+  const [selectedStudent, setSelectedStudent] = React.useState(null);
 
   // Live Proctoring states
   const [proctoringData, setProctoringData] = React.useState([]);
@@ -1875,6 +2013,9 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const studentRows = students.map(m => ({
       id: `api:student:${m.membership_id}`,
       membershipId: m.membership_id,
+      // StudentDetailDrawer user_id bo'yicha so'rov yuboradi (markaz teacher/
+      // owner endpointi). UserSerializer `id` qaytaradi.
+      userId: m.user?.id ?? null,
       name: m.user?.full_name || m.user?.name || '—',
       phone: m.user?.normalized_phone || m.user?.phone || '—',
       avatarUrl: m.user?.avatar_url || m.user?.avatarUrl || '',
@@ -1969,10 +2110,16 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   return (
                     <tr key={row.id} className="olympy-row text-sm">
                       <td className="px-5 py-4">
-                        <div className="flex items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => row.userId && setSelectedStudent(row)}
+                          disabled={!row.userId}
+                          className="flex items-center gap-3 text-left rounded-lg -mx-1 px-1 py-0.5 hover:bg-white/[0.04] transition-colors disabled:cursor-default disabled:hover:bg-transparent"
+                          title={row.userId ? 'Batafsil ko\'rish' : ''}
+                        >
                           <Avatar name={row.name} src={row.avatarUrl || ''} size={36} gradient="from-emerald-500 to-teal-600" premium={!!row.isPremium} />
                           <span className="font-black text-white">{row.isPremium && <span title="Premium o'quvchi">⭐ </span>}{row.name}</span>
-                        </div>
+                        </button>
                       </td>
                       <td className="px-5 py-4 font-mono text-xs text-white/55">
                         {maskPhoneDisplay(row.phone, '')}
@@ -2057,6 +2204,13 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </table>
           </div>
         </section>
+
+        {selectedStudent && (
+          <OwnerStudentDetailDrawer
+            student={selectedStudent}
+            onClose={() => setSelectedStudent(null)}
+          />
+        )}
       </div>
     );
   };

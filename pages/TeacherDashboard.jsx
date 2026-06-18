@@ -6,6 +6,150 @@
 const TEACHER_DASHBOARD_PAGES = ['home', 'students', 'olympiads', 'questions', 'profile'];
 const teacherDashUrl = makeDashboardUrlSync('/dashboard/teacher', TEACHER_DASHBOARD_PAGES);
 
+// Fan progress-bar ranglari — StudentDashboard'dagi palitra bilan bir xil
+// (gradient klass emas, solid hex; indeks bo'yicha aylanadi).
+const STUDENT_DRAWER_BAR_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#84cc16', '#f43f5e'];
+
+// O'quvchi ustiga bosilganda o'ngdan ochiladigan batafsil panel.
+// `student` — ro'yxatdagi qator obyekti (kamida {id, full_name, phone}).
+// Telegram WebView'da backdrop-blur va og'ir animatsiya sekin — ishlatilmadi
+// (faqat yengil `animate-in` va oddiy bg-black/50 overlay).
+const TeacherStudentDetailDrawer = ({ student, onClose }) => {
+  const detailRes = useApiData(
+    () => student?.id
+      ? OlympyApi.getMyStudentDetail(student.id, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [student?.id],
+  );
+  const d = detailRes.data;
+  // Yopishda ESC va body scroll qulflanishi — drawer ochiqligida fon
+  // aralashmasin.
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const fmtScore = (v) => (typeof v === 'number' ? Math.round(v) : (v || 0));
+
+  return (
+    <>
+      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
+      <div className="fixed right-0 top-0 h-full w-full max-w-[420px] glass-strong border-l border-white/10 z-50 flex flex-col animate-in">
+        {/* Yuqori: avatar + ism + telefon + yopish */}
+        <div className="flex items-start gap-3 p-5 border-b border-white/10">
+          <Avatar name={student?.full_name} src={student?.avatar_url || d?.avatar_url || ''} size={48} />
+          <div className="min-w-0 flex-1">
+            <div className="font-black text-white truncate">{d?.full_name || student?.full_name || 'Foydalanuvchi'}</div>
+            <div className="text-sm text-white/45 truncate">{d?.phone || student?.phone || '—'}</div>
+            {d?.joined_at && <div className="text-xs text-white/30 mt-0.5">Qo'shilgan: {d.joined_at}</div>}
+          </div>
+          <button
+            onClick={onClose}
+            className="shrink-0 rounded-lg p-1.5 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+            title="Yopish"
+          >
+            <Icon name="x" size={20} />
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-5">
+          {detailRes.loading && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-3 gap-2">
+                {[0, 1, 2].map(i => <div key={i} className="h-16 rounded-xl bg-white/5 animate-pulse" />)}
+              </div>
+              <div className="h-24 rounded-xl bg-white/5 animate-pulse" />
+              <div className="h-40 rounded-xl bg-white/5 animate-pulse" />
+            </div>
+          )}
+
+          {!detailRes.loading && detailRes.error && (
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-300">
+              Ma'lumotni yuklab bo'lmadi.
+            </div>
+          )}
+
+          {!detailRes.loading && d && (
+            <>
+              {/* Stats qatori */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="rounded-xl glass p-3 text-center">
+                  <div className="text-lg font-black text-white">{d.total_attempts || 0}</div>
+                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">Jami urinish</div>
+                </div>
+                <div className="rounded-xl glass p-3 text-center">
+                  <div className="text-lg font-black text-indigo-300">{fmtScore(d.avg_score)}</div>
+                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">O'rtacha ball</div>
+                </div>
+                <div className="rounded-xl glass p-3 text-center">
+                  <div className="text-lg font-black text-emerald-300">{fmtScore(d.best_score)}</div>
+                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">Eng yaxshi</div>
+                </div>
+              </div>
+
+              {/* Fanlar bo'yicha o'rtacha ball */}
+              {Array.isArray(d.subjects) && d.subjects.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <Icon name="chart" size={15} className="text-white/40" />
+                    <h3 className="text-sm font-black text-white">Fanlar bo'yicha</h3>
+                  </div>
+                  <div className="space-y-2.5">
+                    {d.subjects.map((s, i) => {
+                      const pct = Math.max(0, Math.min(100, fmtScore(s.avg_score)));
+                      const color = STUDENT_DRAWER_BAR_COLORS[i % STUDENT_DRAWER_BAR_COLORS.length];
+                      return (
+                        <div key={s.subject + i}>
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="font-semibold text-white/70 truncate">{s.subject}</span>
+                            <span className="font-bold text-white/50 shrink-0 ml-2">{fmtScore(s.avg_score)} · {s.attempts || 0} ta</span>
+                          </div>
+                          <div className="h-2 rounded-full bg-white/8 overflow-hidden">
+                            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* So'nggi urinishlar */}
+              <div>
+                <div className="flex items-center gap-2 mb-2.5">
+                  <Icon name="clock" size={15} className="text-white/40" />
+                  <h3 className="text-sm font-black text-white">So'nggi urinishlar</h3>
+                </div>
+                {Array.isArray(d.recent_attempts) && d.recent_attempts.length > 0 ? (
+                  <div className="space-y-2">
+                    {d.recent_attempts.map((a, i) => (
+                      <div key={i} className="flex items-center gap-3 rounded-xl glass px-3.5 py-2.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold text-white truncate">{a.olympiad_title}</div>
+                          <div className="text-[11px] text-white/40 mt-0.5 flex items-center gap-2 flex-wrap">
+                            <span>{a.date || '—'}</span>
+                            {a.rank ? <span>· #{a.rank}{a.total_participants ? `/${a.total_participants}` : ''}</span> : null}
+                          </div>
+                        </div>
+                        <span className="shrink-0 rounded-lg bg-indigo-500/15 px-2.5 py-1 text-sm font-bold text-indigo-300">{fmtScore(a.score)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl glass px-4 py-6 text-center text-sm text-white/35">
+                    Hali urinishlar yo'q
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+};
+
 const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
@@ -24,6 +168,8 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [onlyUnused, setOnlyUnused] = React.useState(false);
   const [toast, setToast] = React.useState('');
   const [premiumModal, setPremiumModal] = React.useState('');
+  // O'quvchi ustiga bosilganda ochiladigan batafsil panel (StudentDetailDrawer).
+  const [selectedStudent, setSelectedStudent] = React.useState(null);
   const emptyEventForm = {
     eventType: 'competition',
     title: '',
@@ -461,7 +607,11 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             </div>
             <div className="divide-y divide-white/5">
               {teacherStudents.map(s => (
-                <div key={s.id} className="grid grid-cols-12 gap-3 px-5 py-3.5 items-center hover:bg-white/[0.02]">
+                <div
+                  key={s.id}
+                  onClick={() => setSelectedStudent(s)}
+                  className="grid grid-cols-12 gap-3 px-5 py-3.5 items-center cursor-pointer hover:bg-white/[0.04] transition-colors"
+                >
                   <div className="col-span-12 md:col-span-5 flex items-center gap-3 min-w-0">
                     <Avatar name={s.full_name} size={34} />
                     <div className="font-semibold text-white truncate">{s.full_name || 'Foydalanuvchi'}</div>
@@ -477,6 +627,13 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               ))}
             </div>
           </div>
+        )}
+
+        {selectedStudent && (
+          <TeacherStudentDetailDrawer
+            student={selectedStudent}
+            onClose={() => setSelectedStudent(null)}
+          />
         )}
       </div>
     );
