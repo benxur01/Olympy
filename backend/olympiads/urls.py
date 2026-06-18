@@ -12,7 +12,7 @@ urlpatterns = [
     path('<int:olympiad_id>/publish/', views.publish_olympiad, name='olympiad-publish'),
     path('<int:olympiad_id>/deactivate/', views.deactivate_olympiad, name='olympiad-deactivate'),
     path('<int:olympiad_id>/finish/', views.finish_olympiad, name='olympiad-finish'),
-    path('<int:olympiad_id>/export/', views.export_results, name='olympiad-export'),
+    path('<int:olympiad_id>/export/', views.export_olympiad_results, name='olympiad-export'),
     path('<int:olympiad_id>/stats/', views.olympiad_stats, name='olympiad-stats'),
     path('<int:olympiad_id>/code-submissions/', views.code_submissions, name='olympiad-code-submissions'),
 ]

@@ -5485,6 +5485,11 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
         phone: form.phone,
         password: form.password,
       };
+      // `?ref=CODE` havola orqali kelgan referral kodi (app.jsx saqlab qo'ygan):
+      // ro'yxatdan o'tishda backend'ga uzatamiz, ikkala tarafga bonus coin.
+      let pendingReferral = '';
+      try { pendingReferral = (localStorage.getItem('olympy:pendingReferral') || '').trim(); } catch {}
+      if (pendingReferral) registerPayload.referral_code = pendingReferral;
       const selectedType = registrationType;
       const organizationPayload = {
         name: newCenter.name,
@@ -5503,6 +5508,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
         });
         const mappedUser = OlympyApi.mapBackendUser(data.user);
         OlympyApi.saveAuth({ token: data.token, refresh: data.refresh, user: mappedUser, cookieAuth: data.cookie_auth });
+        if (pendingReferral) { try { localStorage.removeItem('olympy:pendingReferral'); } catch {} }
         setSuccess(true);
         setTimeout(() => onLogin(mappedUser), 1600);
         return;
@@ -5525,6 +5531,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
       const freshUser = await OlympyApi.getMe(token);
       const mappedUser = OlympyApi.mapBackendUser(freshUser);
       OlympyApi.saveAuth({ token, refresh, user: mappedUser, cookieAuth: data.cookie_auth });
+      if (pendingReferral) { try { localStorage.removeItem('olympy:pendingReferral'); } catch {} }
       setSuccess(true);
       setTimeout(() => onLogin(mappedUser), 1600);
     } catch (err) {
@@ -22438,14 +22445,15 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     <div className="flex gap-2">
                       {isApi ? (
                         <>
-                          {/* CSV — universal import (Google Sheets/Excel). XLSX —
-                              formatlangan tayyor fayl. Owner ikkala endpointga
-                              ham kira oladi (backend ruxsati bir xil rollar),
-                              shuning uchun ikkala tugma ham ko'rsatiladi. */}
+                          {/* CSV — universal/bepul import (Google Sheets/Excel).
+                              Excel (.xlsx) va PDF — formatlangan tayyor fayllar,
+                              bitta endpoint orqali (?format=) yuklanadi. Excel/PDF
+                              faqat Plus/Pro markaz uchun — backend 403 qaytarsa
+                              toast'da Plus/Pro talab xabari ko'rsatiladi. */}
                           <button
                             type="button"
                             onClick={() => {
-                              OlympyApi.exportOlympiadResults(o.id, OlympyApi.getToken())
+                              OlympyApi.downloadOlympiadResults(o.id, 'csv', OlympyApi.getToken())
                                 .then(() => showToast('✓ CSV fayl yuklandi'))
                                 .catch(err => {
                                   console.warn('csv export failed:', err);
@@ -22460,7 +22468,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                           <button
                             type="button"
                             onClick={() => {
-                              OlympyApi.exportOlympiadResultsXlsx(o.id, OlympyApi.getToken())
+                              OlympyApi.downloadOlympiadResults(o.id, 'xlsx', OlympyApi.getToken())
                                 .then(() => showToast('✓ Excel fayl yuklandi'))
                                 .catch(err => {
                                   console.warn('xlsx export failed:', err);
@@ -22468,9 +22476,24 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                                 });
                             }}
                             className="btn-ghost text-xs px-2.5 py-1.5 rounded-xl inline-flex items-center gap-1"
-                            title="Natijalarni Excel (.xlsx) faylga eksport qilish"
+                            title="Natijalar ↓ Excel (.xlsx) — Plus/Pro"
                           >
-                            <Icon name="download" size={12} /> XLSX
+                            <Icon name="download" size={12} /> Excel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              OlympyApi.downloadOlympiadResults(o.id, 'pdf', OlympyApi.getToken())
+                                .then(() => showToast('✓ PDF fayl yuklandi'))
+                                .catch(err => {
+                                  console.warn('pdf export failed:', err);
+                                  showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "PDF yuklab bo'lmadi"}`);
+                                });
+                            }}
+                            className="btn-ghost text-xs px-2.5 py-1.5 rounded-xl inline-flex items-center gap-1"
+                            title="Natijalar ↓ PDF (rasmiy varaqa) — Plus/Pro"
+                          >
+                            <Icon name="download" size={12} /> PDF
                           </button>
                         </>
                       ) : (
@@ -23488,6 +23511,53 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </div>
         </div>
 
+        {/* Talabalar limiti tugayotgan/tugagan bo'lsa — sahifa tepasida banner.
+            near_limit (80%+) → sariq, used>=limit (to'liq) → qizil. Cheksiz yoki
+            limitsiz holatda ko'rinmaydi. Upgrade tugmasi tariflar bo'limiga
+            scroll qiladi. */}
+        {(() => {
+          const s = limits?.students;
+          if (!s || s.unlimited || !s.limit) return null;
+          const full = (s.used || 0) >= s.limit;
+          const near = !!s.near_limit;
+          if (!full && !near) return null;
+          const scrollToPlans = () => {
+            const el = document.getElementById('owner-plans');
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          };
+          return (
+            <div className={`rounded-2xl p-4 md:p-5 border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+              full
+                ? 'bg-rose-500/10 border-rose-500/30'
+                : 'bg-amber-500/10 border-amber-500/30'
+            }`}>
+              <div className="flex items-start gap-3 min-w-0">
+                <span className="text-xl flex-shrink-0">{full ? '🚫' : '⚠️'}</span>
+                <div className="min-w-0">
+                  <div className={`text-sm font-black ${full ? 'text-rose-300' : 'text-amber-300'}`}>
+                    {full ? "Talabalar limiti to'ldi" : "Talabalar limiti tugayapti"}
+                  </div>
+                  <p className="text-xs text-white/60 mt-0.5">
+                    {full
+                      ? `${s.used}/${s.limit} o'quvchi. Yangi o'quvchi qo'shish uchun tarifni yangilang.`
+                      : `${s.used}/${s.limit} o'quvchi. Limit tugayapti — tarifni yangilang.`}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={scrollToPlans}
+                className={`flex-shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold transition-all self-start sm:self-auto ${
+                  full
+                    ? 'bg-rose-500 hover:bg-rose-400 text-white'
+                    : 'bg-amber-500 hover:bg-amber-400 text-amber-950'
+                }`}
+              >
+                Tarifni yangilash
+              </button>
+            </div>
+          );
+        })()}
+
         {/* Limit indikatorlari: Talabalar/Ustozlar/Olimpiadalar — joriy/limit
             progress bar bilan. 80% dan oshganda "Limit tugayapti" ogohlantirishi. */}
         {limits && (
@@ -23537,7 +23607,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         )}
 
         {/* Muddat selectorlari (1, 3, 6, 12 oy) */}
-        <div className="flex gap-2.5 flex-wrap justify-start">
+        <div id="owner-plans" className="flex gap-2.5 flex-wrap justify-start scroll-mt-4">
           {[
             { label: '1 oy', days: 30 },
             { label: '3 oy', days: 90, discount: '10%' },
@@ -25175,6 +25245,24 @@ const App = () => {
   const [bootstrapping, setBootstrapping] = React.useState(true);
 
   const user = apiUser;
+
+  // Referral havola: foydalanuvchi `?ref=CODE` bilan kelsa, kodni saqlab
+  // qo'yamiz va ro'yxatdan o'tishda backend'ga uzatamiz. URL'dan param'ni
+  // tozalab qo'yamiz (history.replaceState) — F5/qayta yuklashda takror
+  // o'qilmasligi va manzil chiroyli qolishi uchun.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const ref = (params.get('ref') || '').trim();
+      if (ref) {
+        localStorage.setItem('olympy:pendingReferral', ref);
+        params.delete('ref');
+        const qs = params.toString();
+        const newUrl = window.location.pathname + (qs ? `?${qs}` : '') + (window.location.hash || '');
+        window.history.replaceState({}, '', newUrl);
+      }
+    } catch {}
+  }, []);
 
   // K5: Submit paytida 401 olib token muddati tugagan bo'lsa, foydalanuvchi
   // saqlangan olimpiada test sahifasiga avtomatik qaytishi kerak. Aks
