@@ -595,33 +595,34 @@ export const OlympyApi = {
   finishOlympiad: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/finish/`, { method: 'POST', token }),
   // Olimpiada statistikasi va natijalar eksporti.
   //
-  // Natijalarni eksport qilishning IKKI funksiyasi bor — ataylab, ikki xil
-  // backend endpoint va ikki xil fayl format uchun:
+  // Natijalar eksporti uchun ASOSIY funksiya — downloadOlympiadResults
+  // (pastroqda). U bitta endpoint (GET /api/olympiads/{id}/export/?format=)
+  // orqali csv / xlsx / pdf ni yuklab beradi. Backend: olympiads.views.
+  // export_olympiad_results. Ruxsat: user_can_manage_center_event (owner /
+  // manager / teacher / platform admin). XLSX/PDF qo'shimcha Plus/Pro obuna
+  // talab qiladi (CSV barcha uchun ochiq). OwnerDashboard shu funksiyani
+  // ishlatadi (CSV / Excel / PDF tugmalari).
   //
-  //   1) exportOlympiadResults (shu yerda, CSV) →  GET /api/olympiads/{id}/export/
-  //      Backend: olympiads.views.export_results. Ruxsat:
-  //      user_can_manage_center_event (owner / manager / teacher / platform admin).
-  //      CSV — yengil, har joyda ochiladi, Excel/Google Sheets'ga import qilinadi.
-  //      OwnerDashboard shu funksiyani ishlatadi.
-  //
-  //   2) exportOlympiadResultsXlsx (pastroqda, XLSX) → GET /api/manager/olympiads/{id}/export/
-  //      Backend: attempts.views.export_olympiad_results_xlsx. Ruxsat:
-  //      _user_can_manage_olympiad (xuddi shu rollar — owner / manager /
-  //      teacher / platform admin). XLSX — formatlangan (header rang, ustun
-  //      kengligi), to'g'ridan-to'g'ri ochiladi. ManagerDashboard ishlatadi.
-  //
-  // Ikkala endpoint ham bir xil rollarni (owner ham) qabul qiladi, shuning
-  // uchun Owner CSV va XLSX'ni ham yuklab olishi mumkin (OwnerDashboard'da
-  // ikkala tugma ham bor). CSV — soddalik/universal import uchun; XLSX —
-  // bevosita chiroyli ko'rinish uchun.
+  // exportOlympiadResultsXlsx (eng pastda) — ManagerDashboard'dagi alohida
+  // manager endpoint'iga (GET /api/manager/olympiads/{id}/export/) tayanadigan
+  // ESKI XLSX funksiyasi. Hali ishlatiladi, shuning uchun saqlangan.
   getOlympiadStats: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/stats/`, { token }),
-  exportOlympiadResultsUrl: (olympiadId) => `${API_BASE_URL}/api/olympiads/${olympiadId}/export/`,
-  exportOlympiadResults: async (olympiadId, token) => {
-    const res = await fetch(`${API_BASE_URL}/api/olympiads/${olympiadId}/export/`, {
-      method: 'GET',
-      headers: { Authorization: token ? `Bearer ${token}` : '' },
-      credentials: 'include',
-    });
+  exportOlympiadResultsUrl: (olympiadId, format) =>
+    `${API_BASE_URL}/api/olympiads/${olympiadId}/export/${format ? `?format=${encodeURIComponent(format)}` : ''}`,
+  // Olimpiada natijalarini bitta endpoint orqali tanlangan formatda yuklab
+  // beradi: 'csv' | 'xlsx' | 'pdf'. Backend `?format=` ni o'qiydi. fetch →
+  // blob → link.click() (token Authorization header bilan, JSON xato bo'lsa
+  // serverdagi `detail` ko'rsatiladi — masalan Plus/Pro talab xabari).
+  downloadOlympiadResults: async (olympiadId, format, token) => {
+    const fmt = (format || 'csv').toLowerCase();
+    const res = await fetch(
+      `${API_BASE_URL}/api/olympiads/${olympiadId}/export/?format=${encodeURIComponent(fmt)}`,
+      {
+        method: 'GET',
+        headers: { Authorization: token ? `Bearer ${token}` : '' },
+        credentials: 'include',
+      },
+    );
     if (!res.ok) {
       let msg = "Natijalarni eksport qilib bo'lmadi";
       try { const data = await res.json(); if (data?.detail) msg = data.detail; } catch {}
@@ -631,13 +632,17 @@ export const OlympyApi = {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `olympy-results-${olympiadId}.csv`;
+    a.download = `olympy-results-${olympiadId}.${fmt}`;
     document.body.appendChild(a);
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     return true;
   },
+  // Orqaga moslik (CSV) — downloadOlympiadResults'ning csv'li o'rami. Mavjud
+  // chaqiruvchilar (OwnerDashboard "CSV" tugmasi) o'zgartirmasdan ishlayveradi.
+  exportOlympiadResults: (olympiadId, token) =>
+    OlympyApi.downloadOlympiadResults(olympiadId, 'csv', token),
   // Markaz statistikasi (Owner/Manager dashboard).
   getCenterStats: (centerId, token) => request(`/api/centers/${centerId}/stats/`, { token }),
   // Questions

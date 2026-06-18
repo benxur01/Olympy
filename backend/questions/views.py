@@ -215,14 +215,28 @@ def generate_ai_questions(request):
             status=http_status.HTTP_403_FORBIDDEN,
         )
 
-    # Premium check
+    # Premium + oylik limit check. SubscriptionService bir joyda premium
+    # holatini va plandagi oylik AI generatsiya limitini (Standart 20, Plus
+    # 100, Pro cheksiz) tekshiradi.
     from centers.models import EducationCenter
+    from billing.services import SubscriptionService
     center = EducationCenter.objects.filter(pk=center_id).first()
-    if center and not center.is_premium:
+    svc = SubscriptionService(center) if center else None
+    if svc and not svc.is_premium:
         return Response(
             {
                 'detail': "AI yordamida savol yaratish faqat premium tashkilotlar uchun. Premium obunani faollashtiring.",
                 'upgrade_required': True
+            },
+            status=http_status.HTTP_403_FORBIDDEN
+        )
+    if svc and not svc.can_use_ai_generation():
+        limit = svc.ai_generation_monthly_limit
+        return Response(
+            {
+                'detail': f"Ushbu oy uchun AI savol generatsiya limiti ({limit}) tugadi. Tarifni yangilang yoki keyingi oyni kuting.",
+                'upgrade_required': True,
+                'limit_reached': True,
             },
             status=http_status.HTTP_403_FORBIDDEN
         )
@@ -244,6 +258,13 @@ def generate_ai_questions(request):
             {'detail': result.get('error') or "AI savol yarata olmadi"},
             status=status_code,
         )
+    # Muvaffaqiyatli generatsiyani oylik limit hisobiga yozamiz (faqat haqiqiy
+    # natija bo'lganda — xato/bo'sh javob limitdan ushlab qolinmaydi).
+    if svc:
+        try:
+            svc.log_ai_generation(user=request.user, count=len(result.get('questions') or []))
+        except Exception:
+            pass
     return Response({'questions': result['questions']})
 
 

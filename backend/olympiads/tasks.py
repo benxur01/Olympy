@@ -64,6 +64,66 @@ def send_olympiad_results_email_task(olympiad_id):
         logger.exception('send_olympiad_results_email_task failed olympiad=%s', olympiad_id)
 
 
+def _notify_downgraded_centers(center_ids):
+    """Obuna tugab bepul rejimga tushgan markaz egalariga ogohlantirish.
+
+    Har bir markaz uchun yangi (bepul) limit va joriy o'quvchi/o'qituvchi sonini
+    SubscriptionService orqali hisoblaydi. Limitdan oshgan bo'lsa — owner'ning
+    Telegramiga "Obunangiz tugadi, X ta o'quvchi limitdan oshib turibdi"
+    xabarini yuboradi. Hech narsa o'chirilmaydi.
+    """
+    from centers.models import EducationCenter
+    from billing.services import SubscriptionService, UNLIMITED
+
+    centers = (
+        EducationCenter.objects
+        .filter(id__in=set(center_ids))
+        .select_related('owner')
+    )
+    for center in centers:
+        try:
+            svc = SubscriptionService(center)
+            students = svc.current_students()
+            student_limit = svc.student_limit
+            teachers = svc.current_teachers()
+            teacher_limit = svc.teacher_limit
+
+            over_students = (
+                student_limit != UNLIMITED and students > student_limit
+            )
+            over_teachers = (
+                teacher_limit != UNLIMITED and teachers > teacher_limit
+            )
+            if not over_students and not over_teachers:
+                continue
+
+            lines = [
+                f"⚠️ {center.name}: Premium obunangiz tugadi.",
+                "",
+                "Tashkilotingiz bepul rejimga qaytdi va joriy ma'lumotlar limitdan oshib turibdi:",
+            ]
+            if over_students:
+                lines.append(f"• O'quvchilar: {students} ta (bepul limit: {student_limit})")
+            if over_teachers:
+                lines.append(f"• Ustozlar: {teachers} ta (bepul limit: {teacher_limit})")
+            lines += [
+                "",
+                "Mavjud o'quvchilaringiz o'chirilmadi, lekin limit oshganligi sababli "
+                "yangilarini qo'sha olmaysiz. Tarifni yangilang.",
+            ]
+            message = "\n".join(lines)
+
+            owner = center.owner
+            if not owner:
+                continue
+            from notifications.services import _send_telegram_to_user
+            _send_telegram_to_user(owner, message)
+        except Exception:
+            logger.exception(
+                'downgrade ogohlantirishi yuborilmadi center=%s', center.id,
+            )
+
+
 @shared_task
 def finish_expired_olympiads():
     """Periodik task: muddati o'tgan olimpiadalarni yopadi + rank yangilaydi."""
@@ -89,6 +149,9 @@ def finish_expired_olympiads():
     
     expired_subs = UserSubscription.objects.filter(is_active=True, end_date__lte=now)
     expired_users = list(expired_subs.values_list('user_id', flat=True).distinct())
+    # Obunasi yangi tugab organization premiumdan tushgan markazlar — ortiqcha
+    # o'quvchi limitidan oshib turgan bo'lsa owner'ga ogohlantirish yuboramiz.
+    downgraded_center_owner_ids = []
     if expired_subs.exists():
         expired_subs.update(is_active=False)
         for uid in expired_users:
@@ -99,12 +162,27 @@ def finish_expired_olympiads():
             if not has_active:
                 u.is_premium = False
                 u.save(update_fields=['is_premium'])
-            
+
             has_active_org = UserSubscription.objects.filter(
                 user=u, is_active=True, plan__plan_type='organization', end_date__gt=now
             ).exists()
             if not has_active_org:
+                # Faqat haqiqatan premiumdan tushganlarni (avval True bo'lgan)
+                # ogohlantiramiz — allaqachon bepul bo'lganlarga takror xabar
+                # yubormaslik uchun.
+                downgraded_ids = list(
+                    EducationCenter.objects
+                    .filter(owner=u, is_premium=True)
+                    .values_list('id', flat=True)
+                )
                 EducationCenter.objects.filter(owner=u).update(is_premium=False)
+                downgraded_center_owner_ids.extend(downgraded_ids)
+
+    # Limitdan oshib turgan markaz egalariga Telegram ogohlantirishi. O'quvchilar
+    # AVTOMATIK O'CHIRILMAYDI (bu noto'g'ri bo'lardi) — faqat owner'ga tarifni
+    # yangilash kerakligi haqida xabar beriladi.
+    if downgraded_center_owner_ids:
+        _notify_downgraded_centers(downgraded_center_owner_ids)
 
     # Premium sinov muddati tugaganlarni o'chirish. Sinovli foydalanuvchida
     # odatda UserSubscription yozuvi bo'lmaydi, shuning uchun ular yuqoridagi

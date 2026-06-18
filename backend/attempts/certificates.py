@@ -55,8 +55,51 @@ def _draw_star(draw, cx, cy, R, r, color=(200, 160, 80)):
     draw.polygon(points, fill=color)
 
 
+def _draw_qr_code(img, draw, bbox, data, seed_id, color=(11, 46, 122)):
+    """bbox ichiga skanerlanadigan haqiqiy QR kod chizadi.
+
+    `qrcode` kutubxonasi mavjud bo'lsa — `data` (verify URL) ni kodlovchi real
+    QR yaratiladi va `img` ustiga joylashtiriladi. Kutubxona import bo'lmasa
+    (eski deploy, requirements yangilanmagan) — eski mock pattern'ga fallback
+    qilamiz, shunda sertifikat baribir generatsiya bo'ladi.
+    """
+    x1, y1, x2, y2 = bbox
+    # Oltin ramka (mock bilan bir xil ko'rinish).
+    draw.rectangle([x1, y1, x2, y2], outline=(200, 160, 80), width=3)
+    margin = 8
+    qx1, qy1 = x1 + margin, y1 + margin
+    qw = (x2 - margin) - qx1
+    qh = (y2 - margin) - qy1
+    side = int(min(qw, qh))
+    if side <= 0 or not data:
+        return _draw_mock_qr(draw, bbox, seed_id, color=color)
+    try:
+        import qrcode
+        from qrcode.constants import ERROR_CORRECT_M
+
+        qr = qrcode.QRCode(
+            version=None,
+            error_correction=ERROR_CORRECT_M,
+            box_size=10,
+            border=1,
+        )
+        qr.add_data(data)
+        qr.make(fit=True)
+        qr_img = qr.make_image(
+            fill_color=color, back_color='white',
+        ).convert('RGB').resize((side, side), Image.NEAREST)
+        img.paste(qr_img, (int(qx1), int(qy1)))
+    except Exception:
+        # Kutubxona yo'q yoki kutilmagan xato — eski ko'rinishga qaytamiz.
+        _draw_mock_qr(draw, bbox, seed_id, color=color)
+
+
 def _draw_mock_qr(draw, bbox, seed_id, color=(11, 46, 122)):
-    """O'ng pastki burchakda haqiqiy QR-kodga o'xshash mock tasvir chizadi."""
+    """Fallback: QR-kodga o'xshash mock tasvir (qrcode kutubxonasi bo'lmaganda).
+
+    Real QR uchun `_draw_qr_code` ishlatiladi; bu funksiya faqat kutubxona
+    import bo'lmagan eski muhitlar uchun zaxira sifatida qoldirilgan.
+    """
     x1, y1, x2, y2 = bbox
     # Oltin ramka
     draw.rectangle([x1, y1, x2, y2], outline=(200, 160, 80), width=3)
@@ -312,20 +355,26 @@ def render_certificate_png(attempt):
     center_text_on_point(350, 980, "Direktor", _load_font(16), text_muted)
     
     # --- 9. QR-kod va Sana (Bottom Right) ---
+    # QR sertifikat verify sahifasiga yo'naltiradi — telefon kamerasi bilan
+    # skanerlab haqiqiyligini tekshirish mumkin. certificate_uuid bo'lmasa
+    # (juda eski attempt) QR attempt sahifasiga emas, ID bilan mock'ga tushadi.
+    from django.conf import settings
+    site = (getattr(settings, 'SITE_URL', '') or 'https://prolymp.uz').rstrip('/')
+    cert_uuid = getattr(attempt, 'certificate_uuid', None)
+    verify_path = f"/certificates/verify/{cert_uuid}" if cert_uuid else ''
+    qr_data = f"{site}{verify_path}" if verify_path else ''
+
     qr_bbox = (1330, 840, 1480, 990)
-    _draw_mock_qr(draw, qr_bbox, attempt.id, blue_color)
+    _draw_qr_code(img, draw, qr_bbox, qr_data, attempt.id, blue_color)
 
     right_align_text(1300, 860, f"Sana: {date_str}", footer_font, text_muted)
     right_align_text(1300, 900, f"Sertifikat ID: {attempt.id}", footer_font, text_muted)
     right_align_text(1300, 940, "QR-kod orqali tekshiring", _load_font(16, bold=True), blue_color)
 
-    # --- 9b. Ommaviy tekshiruv (verify) URL ---
+    # --- 9b. Ommaviy tekshiruv (verify) URL (matn ko'rinishida) ---
     # Sertifikat haqiqiyligini istalgan kishi shu manzil orqali tekshiradi.
-    # certificate_uuid bo'lmasa (juda eski attempt) URL ko'rsatilmaydi.
-    cert_uuid = getattr(attempt, 'certificate_uuid', None)
-    if cert_uuid:
-        verify_url = f"prolymp.uz/certificates/verify/{cert_uuid}"
-        center_text(1030, verify_url, _load_font(15), text_muted)
+    if verify_path:
+        center_text(1030, f"prolymp.uz{verify_path}", _load_font(15), text_muted)
     
     # Rasmni saqlab bytes qaytarish
     buf = BytesIO()

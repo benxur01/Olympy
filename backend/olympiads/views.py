@@ -373,13 +373,231 @@ def deactivate_olympiad(request, olympiad_id):
     return Response(OlympiadSerializer(olympiad).data)
 
 
+def _safe_olympiad_filename(olympiad):
+    """Fayl nomi uchun xavfsiz title ("Matematika 2024" -> "Matematika_2024")."""
+    safe_title = ''.join(
+        ch for ch in (olympiad.title or 'olimpiada')
+        if ch.isalnum() or ch in (' ', '_', '-')
+    )[:60].strip() or 'olimpiada'
+    return safe_title.replace(' ', '_')
+
+
+def _export_attempts_queryset(olympiad):
+    """Eksport uchun saralangan attempt'lar (faqat topshirilgan, rank bo'yicha).
+
+    `submitted_at` modelda `auto_now_add` — har doim to'ldirilgan, shu sababli
+    "topshirilgan" sharti diskvalifikatsiya bo'lmagan attempt'lar bilan teng.
+    """
+    from attempts.models import TestAttempt
+    return (
+        TestAttempt.objects
+        .filter(olympiad=olympiad, disqualified=False)
+        .select_related('user')
+        .order_by('rank', '-score', 'time_spent')
+    )
+
+
+def _export_row_values(idx, attempt):
+    """Bitta attempt uchun ustun qiymatlari (CSV/XLSX/PDF — bir xil tartib).
+
+    `idx` — 1 dan boshlanadigan tartib raqami (rank bo'sh bo'lsa fallback).
+    """
+    user = attempt.user
+    full_name = getattr(user, 'full_name', '') or '—'
+    username = getattr(user, 'username', '') or '—'
+    total = attempt.total_questions or 0
+    answered = (attempt.correct_count or 0) + (attempt.wrong_count or 0)
+    pct = round((attempt.correct_count / total) * 100) if total else 0
+    minutes = round((attempt.time_spent or 0) / 60.0, 1)
+    return [
+        attempt.rank or idx,
+        full_name,
+        username,
+        attempt.score,
+        attempt.correct_count,
+        attempt.wrong_count,
+        total,
+        f'{pct}%',
+        f'{minutes} daq',
+    ]
+
+
+EXPORT_HEADERS = [
+    '#', 'Ism', 'Username', 'Ball', "To'g'ri", "Noto'g'ri", 'Jami', '%', 'Vaqt',
+]
+
+
+def _export_csv(olympiad, attempts):
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = (
+        f'attachment; filename="olympy-{_safe_olympiad_filename(olympiad)}-{olympiad.id}-results.csv"'
+    )
+    # UTF-8 BOM — Excel CSV ni avtomatik UTF-8 sifatida tan oladi.
+    response.write('﻿')
+    writer = csv.writer(response)
+    writer.writerow(EXPORT_HEADERS)
+    for idx, a in enumerate(attempts, start=1):
+        writer.writerow(_export_row_values(idx, a))
+    return response
+
+
+def _export_xlsx(olympiad, attempts):
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Alignment, Font, PatternFill
+    except ImportError:
+        return Response(
+            {'detail': "Excel eksport moduli o'rnatilmagan"},
+            status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Natijalar'
+
+    header_font = Font(bold=True, color='FFFFFF', size=11)
+    header_fill = PatternFill(start_color='4F46E5', end_color='4F46E5', fill_type='solid')
+    center_align = Alignment(horizontal='center', vertical='center')
+    for col_idx, header in enumerate(EXPORT_HEADERS, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center_align
+
+    for idx, a in enumerate(attempts, start=1):
+        values = _export_row_values(idx, a)
+        row_idx = idx + 1
+        for col_idx, value in enumerate(values, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=value)
+            if col_idx != 2:  # Ism ustunidan tashqari hammasi markazga
+                cell.alignment = center_align
+
+    # Eng pastda jami qatnashchilar soni.
+    total_row = len(attempts) + 2
+    label_cell = ws.cell(row=total_row, column=1, value='Jami qatnashchilar:')
+    label_cell.font = Font(bold=True)
+    count_cell = ws.cell(row=total_row, column=4, value=len(attempts))
+    count_cell.font = Font(bold=True)
+    count_cell.alignment = center_align
+
+    column_widths = [6, 28, 20, 8, 9, 10, 8, 8, 10]
+    for i, width in enumerate(column_widths, start=1):
+        ws.column_dimensions[chr(64 + i)].width = width
+    ws.freeze_panes = 'A2'
+
+    from io import BytesIO
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    response = HttpResponse(
+        buf.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = (
+        f'attachment; filename="olympy-{_safe_olympiad_filename(olympiad)}-{olympiad.id}-results.xlsx"'
+    )
+    return response
+
+
+def _export_pdf(olympiad, attempts):
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import cm
+        from reportlab.platypus import (
+            Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
+        )
+    except ImportError:
+        return Response(
+            {'detail': "PDF eksport moduli o'rnatilmagan"},
+            status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    from io import BytesIO
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        topMargin=1.5 * cm, bottomMargin=1.5 * cm,
+        leftMargin=1.2 * cm, rightMargin=1.2 * cm,
+        title=f'{olympiad.title} — natijalar',
+    )
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        'CenterTitle', parent=styles['Title'], fontSize=20, spaceAfter=4,
+        textColor=colors.HexColor('#1e1b4b'),
+    )
+    sub_style = ParagraphStyle(
+        'SubTitle', parent=styles['Heading2'], fontSize=13, spaceAfter=2,
+        textColor=colors.HexColor('#4f46e5'),
+    )
+    meta_style = ParagraphStyle(
+        'Meta', parent=styles['Normal'], fontSize=10,
+        textColor=colors.HexColor('#555555'),
+    )
+
+    center_name = (olympiad.center.name if olympiad.center else 'Olympy') or 'Olympy'
+    now = timezone.localtime(timezone.now())
+    elements = [
+        Paragraph(center_name, title_style),
+        Paragraph(olympiad.title or 'Olimpiada', sub_style),
+        Paragraph(f"Sana: {now.strftime('%Y-%m-%d %H:%M')}", meta_style),
+        Spacer(1, 0.5 * cm),
+    ]
+
+    data = [EXPORT_HEADERS]
+    for idx, a in enumerate(attempts, start=1):
+        data.append([str(v) for v in _export_row_values(idx, a)])
+
+    table = Table(data, repeatRows=1)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4f46e5')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 8),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (1, 1), (2, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#cccccc')),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f3f4f6')]),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    elements.append(table)
+    elements.append(Spacer(1, 0.6 * cm))
+    elements.append(Paragraph(
+        f"Jami qatnashchilar: {len(attempts)}", meta_style,
+    ))
+    elements.append(Spacer(1, 0.3 * cm))
+    elements.append(Paragraph(
+        f"Yuklab olindi: {now.strftime('%Y-%m-%d %H:%M')} · olympy.uz",
+        ParagraphStyle('Footer', parent=meta_style, fontSize=8,
+                       textColor=colors.HexColor('#888888')),
+    ))
+
+    doc.build(elements)
+    buf.seek(0)
+    response = HttpResponse(buf.getvalue(), content_type='application/pdf')
+    response['Content-Disposition'] = (
+        f'attachment; filename="olympy-{_safe_olympiad_filename(olympiad)}-{olympiad.id}-results.pdf"'
+    )
+    return response
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
-def export_results(request, olympiad_id):
-    """GET /api/olympiads/{id}/export/ — CSV format natijalar fayli.
+def export_olympiad_results(request, olympiad_id):
+    """GET /api/olympiads/{id}/export/?format=csv|xlsx|pdf — natijalar fayli.
 
-    Faqat center owner/manager/teacher va platform admin uchun.
-    Frontend "Natijalarni yuklab olish" tugmasi shu endpoint'ga ulanadi.
+    - csv (default): yengil, har joyda ochiladigan jadval (orqaga moslik —
+      eski "Natijalarni yuklab olish" tugmasi format'siz so'rab CSV oladi).
+    - xlsx: formatlangan Excel jadvali (header rang, ustun kengligi, jami).
+    - pdf: rasmiy natijalar varaqasi (markaz nomi, olimpiada, sana, jadval).
+
+    Ruxsat: center owner/manager/teacher va platform admin. Bundan tashqari
+    XLSX/PDF eksport faqat Plus/Pro obuna (yoki lifetime premium) markazlar
+    uchun — bepul/Standart markaz 403 oladi (CSV barcha uchun ochiq qoladi,
+    chunki u allaqachon mavjud bepul imkoniyat edi).
     """
     olympiad = get_object_or_404(
         Olympiad.objects.select_related('center'),
@@ -389,53 +607,36 @@ def export_results(request, olympiad_id):
         return Response({'detail': 'Forbidden'},
                         status=http_status.HTTP_403_FORBIDDEN)
 
-    # Avval attempts'larni rank tartibida olamiz. `select_related('user')`
-    # — har bir qator uchun alohida SQL urinishidan saqlaydi.
-    from attempts.models import TestAttempt
-    attempts = (
-        TestAttempt.objects
-        .filter(olympiad=olympiad)
-        .select_related('user')
-        .order_by('rank', '-score', 'time_spent')
-    )
+    fmt = (request.query_params.get('format') or 'csv').lower()
+    if fmt not in ('csv', 'xlsx', 'pdf'):
+        fmt = 'csv'
 
-    response = HttpResponse(content_type='text/csv; charset=utf-8')
-    safe_title = ''.join(
-        ch for ch in (olympiad.title or 'olimpiada')
-        if ch.isalnum() or ch in (' ', '_', '-')
-    )[:60].strip() or 'olimpiada'
-    safe_title = safe_title.replace(' ', '_')
-    response['Content-Disposition'] = (
-        f'attachment; filename="olympy-{safe_title}-{olympiad.id}-results.csv"'
-    )
-    # UTF-8 BOM — Excel CSV ni avtomatik UTF-8 sifatida tan oladi.
-    response.write('﻿')
+    # Plus/Pro tekshiruvi faqat formatlangan eksport (xlsx/pdf) uchun. Platform
+    # admin uchun limit qo'llanilmaydi.
+    if fmt in ('xlsx', 'pdf') and not request.user.is_platform_admin:
+        from billing.services import SubscriptionService
+        if olympiad.center and not SubscriptionService(olympiad.center).can_export_results():
+            return Response(
+                {
+                    'detail': 'Natijalarni yuklab olish Plus yoki Pro obunasi talab qiladi.',
+                    'upgrade_required': True,
+                },
+                status=http_status.HTTP_403_FORBIDDEN,
+            )
 
-    writer = csv.writer(response)
-    writer.writerow([
-        "O'rin",
-        'Ism',
-        'Telefon',
-        'Ball',
-        "To'g'ri javoblar",
-        "Noto'g'ri javoblar",
-        'Jami savollar',
-        'Vaqt (soniya)',
-        'Yuborilgan vaqt',
-    ])
-    for a in attempts:
-        writer.writerow([
-            a.rank or '',
-            getattr(a.user, 'full_name', '') or '',
-            getattr(a.user, 'normalized_phone', '') or getattr(a.user, 'phone', '') or '',
-            a.score,
-            a.correct_count,
-            a.wrong_count,
-            a.total_questions,
-            a.time_spent,
-            a.submitted_at.strftime('%Y-%m-%d %H:%M:%S') if a.submitted_at else '',
-        ])
-    return response
+    attempts = list(_export_attempts_queryset(olympiad))
+
+    if fmt == 'xlsx':
+        return _export_xlsx(olympiad, attempts)
+    if fmt == 'pdf':
+        return _export_pdf(olympiad, attempts)
+    return _export_csv(olympiad, attempts)
+
+
+# Orqaga moslik: eski import nomi (urls.py va boshqa modullar `export_results`
+# nomiga tayanishi mumkin). Yangi funksiya format'siz so'rovda CSV qaytaradi —
+# eski xulq-atvor saqlanadi.
+export_results = export_olympiad_results
 
 
 @api_view(['GET'])

@@ -39,6 +39,10 @@ class SubscriptionPlan(models.Model):
     max_teachers = models.PositiveIntegerField(default=UNLIMITED)
     # Joriy oyda yaratilishi mumkin bo'lgan olimpiadalar soni (organization).
     max_olympiads_monthly = models.PositiveIntegerField(default=UNLIMITED)
+    # Joriy oyda AI yordamida savol generatsiya qilish urinishlari soni
+    # (organization). 0 = cheksiz (UNLIMITED). SubscriptionService.
+    # can_use_ai_generation shu maydonga qarab cheklaydi.
+    max_ai_generations_monthly = models.PositiveIntegerField(default=UNLIMITED)
     # Landing'da "Mashhur" sifatida ajratib ko'rsatish uchun.
     is_popular = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
@@ -58,6 +62,10 @@ class SubscriptionPlan(models.Model):
     @property
     def olympiads_unlimited(self):
         return self.max_olympiads_monthly == self.UNLIMITED
+
+    @property
+    def ai_generations_unlimited(self):
+        return self.max_ai_generations_monthly == self.UNLIMITED
 
 
 class UserSubscription(models.Model):
@@ -206,4 +214,34 @@ class PaymentTransaction(models.Model):
 
     def __str__(self):
         return f"{self.provider} - {self.amount} UZS ({self.status})"
+
+
+class AiGenerationLog(models.Model):
+    """Markaz uchun AI savol generatsiyasi urinishlari hisobi.
+
+    Har muvaffaqiyatli generatsiya bir yozuv yaratadi. SubscriptionService.
+    can_use_ai_generation joriy oy ichidagi yozuvlarni sanab plan limiti
+    (SubscriptionPlan.max_ai_generations_monthly) bilan solishtiradi. Saqlash
+    arzon: faqat (center, user, count, created_at) — savol matnlari emas.
+    """
+    center = models.ForeignKey(
+        EducationCenter, on_delete=models.CASCADE, related_name='ai_generation_logs',
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='ai_generation_logs',
+    )
+    # Bitta urinishda so'ralgan savollar soni (limit "urinish" bo'yicha emas,
+    # generatsiya hodisasi bo'yicha sanaladi — har chaqiruv = 1).
+    count = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            # can_use_ai_generation: filter(center=..., created_at__gte=oy_boshi).
+            models.Index(fields=['center', 'created_at'], name='aigen_center_created_idx'),
+        ]
+
+    def __str__(self):
+        return f"AI gen {self.center_id} ({self.count}) @ {self.created_at:%Y-%m-%d}"
 

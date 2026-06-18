@@ -30,8 +30,35 @@ def _measure(draw, text, font):
     bbox = draw.textbbox((0, 0), text, font=font)
     return bbox[2] - bbox[0], bbox[3] - bbox[1]
 
+def _draw_qr_code(img, draw, bbox, data, seed_id, color=(99, 102, 241)):
+    """bbox ichiga `data` ni kodlovchi haqiqiy QR chizadi (Pillow backend).
+
+    `qrcode` kutubxonasi import bo'lmasa eski mock pattern'ga fallback qiladi —
+    shunda hisobot baribir generatsiya bo'ladi.
+    """
+    x1, y1, x2, y2 = bbox
+    draw.rectangle([x1, y1, x2, y2], outline=(99, 102, 241, 100), width=2)
+    margin = 6
+    qx1, qy1 = x1 + margin, y1 + margin
+    side = int(min((x2 - margin) - qx1, (y2 - margin) - qy1))
+    if side <= 0 or not data:
+        return _draw_mock_qr(draw, bbox, seed_id, color=color)
+    try:
+        import qrcode
+        from qrcode.constants import ERROR_CORRECT_M
+
+        qr = qrcode.QRCode(error_correction=ERROR_CORRECT_M, box_size=10, border=1)
+        qr.add_data(data)
+        qr.make(fit=True)
+        qr_img = qr.make_image(fill_color=color, back_color='white').convert('RGB')
+        qr_img = qr_img.resize((side, side), Image.NEAREST)
+        img.paste(qr_img, (int(qx1), int(qy1)))
+    except Exception:
+        _draw_mock_qr(draw, bbox, seed_id, color=color)
+
+
 def _draw_mock_qr(draw, bbox, seed_id, color=(99, 102, 241)):
-    """Ota-onalar tekshirishi uchun mock QR kod chizadi."""
+    """Fallback: mock QR pattern (qrcode kutubxonasi bo'lmaganda)."""
     x1, y1, x2, y2 = bbox
     draw.rectangle([x1, y1, x2, y2], outline=(99, 102, 241, 100), width=2)
     
@@ -324,8 +351,12 @@ def generate_monthly_report_pdf(student):
     draw.text((815, 1542), "TASDIQLANDI", fill=(34, 197, 94), font=font_body_bold)
     draw.text((815, 1568), "OLYMPY CORE", fill=(34, 197, 94), font=font_subtitle)
 
-    # QR Code Mock
-    _draw_mock_qr(draw, [1030, 1515, 1120, 1605], student.id)
+    # QR Code — platformaga (o'quvchi profili) yo'naltiradi. Ota-ona/o'quvchi
+    # telefon kamerasi bilan skanerlab Olympy'ga o'tishi mumkin.
+    from django.conf import settings
+    site = (getattr(settings, 'SITE_URL', '') or 'https://prolymp.uz').rstrip('/')
+    qr_data = f"{site}/u/{student.id}"
+    _draw_qr_code(img, draw, [1030, 1515, 1120, 1605], qr_data, student.id)
 
     # Save to PDF
     pdf_buffer = io.BytesIO()
