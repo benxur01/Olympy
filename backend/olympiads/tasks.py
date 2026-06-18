@@ -32,6 +32,132 @@ def send_olympiad_summary_task(olympiad_id):
 
 
 @shared_task
+def send_post_olympiad_summary(olympiad_id):
+    """Olimpiada yakunlangach markaz menejer/egalariga qisqa xulosa yuboradi.
+
+    `send_olympiad_summary_task` (notifications.services orqali Markdown xulosa)
+    dan FARQLI: bu task aniq olimpiadada qatnashgan markaz a'zolarini topadi,
+    50% dan past ball olgan ("yordam kerak") o'quvchilar sonini ham ko'rsatadi
+    va `MockOlympiad.source_olympiad` mavjud bo'lsa mashq (mock) olimpiada
+    yaratish taklifini qo'shadi.
+
+    Xabar fon rejimda `accounts.tasks.send_telegram_message_task` orqali
+    yuboriladi (loyhada Telegram'ga fire-and-forget yuborishning standart
+    mexanizmi — retry'li, EAGER-safe). Diskvalifikatsiya qilingan urinishlar
+    statistikaga kirmaydi.
+    """
+    try:
+        from django.db.models import Avg, Count, Max
+
+        from attempts.models import TestAttempt
+        from centers.models import CenterMembership, MockOlympiad
+        from accounts.tasks import send_telegram_message_task
+
+        olympiad = (
+            Olympiad.objects
+            .select_related('center', 'center__owner')
+            .filter(pk=olympiad_id)
+            .first()
+        )
+        if not olympiad or not olympiad.center_id:
+            return 'skipped: markazsiz olimpiada'
+        center = olympiad.center
+
+        attempts_qs = TestAttempt.objects.filter(
+            olympiad=olympiad, disqualified=False,
+        )
+        agg = attempts_qs.aggregate(
+            total=Count('id'), avg=Avg('score'), top=Max('score'),
+        )
+        total = agg['total'] or 0
+        if total == 0:
+            return 'skipped: qatnashuvchi yo\'q'
+
+        avg = round(agg['avg'] or 0)
+        top_score = agg['top'] or 0
+        weak_count = attempts_qs.filter(score__lt=50).count()
+
+        top_attempt = (
+            attempts_qs.select_related('user')
+            .order_by('-score', 'time_spent')
+            .first()
+        )
+        top_name = "O'quvchi"
+        if top_attempt and top_attempt.user:
+            top_name = (
+                top_attempt.user.full_name
+                or getattr(top_attempt.user, 'normalized_phone', '')
+                or "O'quvchi"
+            )
+
+        message_lines = [
+            f"📊 Olimpiada yakunlandi: {olympiad.title}",
+            "",
+            f"👥 Qatnashchilar: {total} ta",
+            f"⭐ O'rtacha ball: {avg}%",
+            f"🏆 Eng yaxshi: {top_name} ({top_score}%)",
+            f"⚠️ Yordam kerak: {weak_count} ta o'quvchi (50% dan past)",
+            "",
+            "Ko'proq ma'lumot: /analytics",
+        ]
+
+        # Mashq (mock) olimpiada yaratish taklifi — agar shu olimpiadadan
+        # avtomatik mashq nusxasi yaratilishi mantiqiy bo'lsa (source_olympiad
+        # shu olimpiadaga ishora qiluvchi mock hali yo'q bo'lsa).
+        has_practice_mock = MockOlympiad.objects.filter(
+            source_olympiad=olympiad,
+        ).exists()
+        if not has_practice_mock:
+            message_lines += [
+                "",
+                "💡 Shu olimpiada asosida o'quvchilaringiz uchun mashq (mock) "
+                "olimpiadasi yaratishingiz mumkin.",
+            ]
+        message = "\n".join(message_lines)
+
+        # Oluvchilar: owner + manager staff (tasdiqlangan). Dublikatsiz.
+        recipients = []
+        seen_ids = set()
+        if center.owner_id and center.owner:
+            recipients.append(center.owner)
+            seen_ids.add(center.owner_id)
+        managers = (
+            CenterMembership.objects.filter(
+                center=center,
+                role=CenterMembership.ROLE_MANAGER,
+                status=CenterMembership.STATUS_APPROVED,
+            ).select_related('user')
+        )
+        for membership in managers:
+            user = membership.user
+            if not user or user.id in seen_ids:
+                continue
+            seen_ids.add(user.id)
+            recipients.append(user)
+
+        sent = 0
+        for user in recipients:
+            chat_id = getattr(user, 'telegram_chat_id', '')
+            if not chat_id:
+                logger.info(
+                    '[post-olympiad-summary] manager=%s telegram ulanmagan (olympiad=%s)',
+                    user.id, olympiad_id,
+                )
+                continue
+            try:
+                send_telegram_message_task.delay(chat_id, message, bot='manager')
+                sent += 1
+            except Exception:
+                logger.exception(
+                    'send_post_olympiad_summary enqueue failed manager=%s olympiad=%s',
+                    user.id, olympiad_id,
+                )
+        return f'post-olympiad summary: {sent} ta menejerga yuborildi (olympiad={olympiad_id})'
+    except Exception:
+        logger.exception('send_post_olympiad_summary failed olympiad=%s', olympiad_id)
+
+
+@shared_task
 def send_olympiad_results_email_task(olympiad_id):
     """Olimpiada yakunlangach ishtirokchilarga natija email'ini yuboradi.
 

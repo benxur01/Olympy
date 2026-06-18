@@ -391,6 +391,11 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     () => (isApi && ownerCenterId && page === 'statistics') ? OlympyApi.getCenterRegionRank(ownerCenterId, OlympyApi.getToken()) : Promise.resolve(null),
     [isApi, ownerCenterId, page === 'statistics'],
   );
+  // Guruh (sinf) analitikasi — har guruh bo'yicha o'rtacha ball va kuchsiz o'quvchilar.
+  const apiGroupStatsRes = useApiData(
+    () => (isApi && ownerCenterId && page === 'statistics') ? OlympyApi.getGroupStats(ownerCenterId, OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, ownerCenterId, page === 'statistics'],
+  );
 
   React.useEffect(() => {
     if (page === 'premium') {
@@ -2703,15 +2708,22 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       region_rank: 4, region_total: 38, global_rank: 27, global_total: 540,
     };
 
+    const dummyGroups = [
+      { group_tag: '7-sinf A', student_count: 15, avg_score: 73.4, top_student: { name: 'Aliyev Vali (Teaser)', score: 95 }, weak_students: [{ name: 'Karim (Teaser)', score: 32, user_id: 1 }, { name: 'Diyor (Teaser)', score: 41, user_id: 2 }], olympiad_participations: 12 },
+      { group_tag: '8-sinf B', student_count: 12, avg_score: 61.8, top_student: { name: 'Zilola (Teaser)', score: 88 }, weak_students: [{ name: 'Sardor (Teaser)', score: 28, user_id: 3 }], olympiad_participations: 9 },
+    ];
+
     const rawDynamics = Array.isArray(apiDynamicsRes.data) ? apiDynamicsRes.data : [];
     const rawTopStudents = Array.isArray(apiTopStudentsRes.data) ? apiTopStudentsRes.data : [];
     const rawTrend = Array.isArray(apiActivityTrendRes.data) ? apiActivityTrendRes.data : [];
     const rawRegionRank = (apiRegionRankRes.data && typeof apiRegionRankRes.data === 'object') ? apiRegionRankRes.data : null;
+    const rawGroups = (apiGroupStatsRes.data && Array.isArray(apiGroupStatsRes.data.groups)) ? apiGroupStatsRes.data.groups : [];
 
     const dynamics = isStatisticsLocked ? dummyDynamics : rawDynamics;
     const topStudents = isStatisticsLocked ? dummyTopStudents : rawTopStudents;
     const trend = isStatisticsLocked ? dummyTrend : rawTrend;
     const regionRank = isStatisticsLocked ? dummyRegionRank : rawRegionRank;
+    const groups = isStatisticsLocked ? dummyGroups : rawGroups;
 
     const monthNamesShort = ['', 'Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyl', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
     // SvgLineChart [{label, value (0..100), title}] formatini kutadi.
@@ -2846,6 +2858,62 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </section>
+
+          {/* Guruhlar (sinflar) bo'yicha analitika */}
+          <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-base font-black text-white">Guruhlar</h2>
+              <span className="text-xs font-semibold text-white/45">Sinf/guruh bo'yicha natija</span>
+            </div>
+            {apiGroupStatsRes.loading && !isStatisticsLocked ? (
+              <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+            ) : groups.length === 0 ? (
+              <EmptyState icon="users" title="Hali guruh ma'lumoti yo'q" desc="O'quvchilarga guruh tegi qo'shing va ular mashq/olimpiadalarda qatnashgach shu yerda chiqadi." />
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {groups.map((g, gi) => {
+                  const avg = g.avg_score || 0;
+                  const barColor = avg >= 70 ? 'bg-emerald-500' : avg >= 50 ? 'bg-amber-500' : 'bg-rose-500';
+                  const weak = Array.isArray(g.weak_students) ? g.weak_students.slice(0, 3) : [];
+                  return (
+                    <div key={g.group_tag || gi} className="rounded-xl bg-white/5 border border-white/8 p-4">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-black text-white">{g.group_tag || 'Guruhsiz'}</div>
+                          <div className="text-[11px] font-semibold text-white/40">{g.student_count || 0} o'quvchi · {g.olympiad_participations || 0} qatnashuv</div>
+                        </div>
+                        <div className="flex-shrink-0 text-right">
+                          <div className="text-lg font-black text-indigo-300">{avg}%</div>
+                          <div className="text-[10px] font-semibold text-white/40">o'rt. ball</div>
+                        </div>
+                      </div>
+                      <div className="mb-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                        <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.min(100, Math.max(0, avg))}%` }} />
+                      </div>
+                      {g.top_student && (
+                        <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-amber-300">
+                          <span>🏆</span>
+                          <span className="truncate">{g.top_student.name}</span>
+                          <span className="text-white/40">({g.top_student.score}%)</span>
+                        </div>
+                      )}
+                      {weak.length > 0 && (
+                        <div className="space-y-1">
+                          <div className="text-[10px] font-bold uppercase tracking-wide text-rose-400/80">Yordam kerak</div>
+                          {weak.map((w, wi) => (
+                            <div key={w.user_id ?? wi} className="flex items-center justify-between rounded-lg bg-rose-500/10 px-2.5 py-1.5">
+                              <span className="truncate text-xs font-semibold text-rose-300">{w.name}</span>
+                              <span className="flex-shrink-0 text-xs font-black text-rose-400">{w.score}%</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </section>
