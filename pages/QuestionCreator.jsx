@@ -89,6 +89,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [aiForm, setAiForm] = React.useState({ subject:'Matematika', topic:'', count:10, level:'O\'rta', type:'Ko\'p tanlovli' });
   const [aiLoading, setAiLoading] = React.useState(false);
   const [aiResult, setAiResult] = React.useState(null);
+  // AI savollar oylik limiti: backend /api/billing/limits/ -> ai_generations bloki
+  const [aiLimits, setAiLimits] = React.useState({ used: 0, limit: 0, unlimited: false });
   const [pdfFile, setPdfFile] = React.useState(null);
   const [pdfLoading, setPdfLoading] = React.useState(false);
   const [pdfResult, setPdfResult] = React.useState(null);
@@ -210,6 +212,34 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     };
   };
 
+  // AI savollar oylik limitini backend'dan olib kelish. API rejimida va center
+  // aniq bo'lganda ishlaydi; mount paytida va centerId o'zgarganda qayta so'raladi.
+  React.useEffect(() => {
+    if (!isApi || !myCenterId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await OlympyApi.getBillingLimits(OlympyApi.getToken(), myCenterId);
+        const ai = res?.ai_generations;
+        if (!cancelled && ai) {
+          setAiLimits({
+            used: ai.used || 0,
+            limit: ai.limit || 0,
+            unlimited: !!ai.unlimited,
+          });
+        }
+      } catch (err) {
+        // Limit ko'rsatkichi yo'qligi AI generatsiyani bloklamasligi kerak.
+        console.warn('getBillingLimits failed:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isApi, myCenterId]);
+
+  // AI generatsiya tugmasi holati: limit to'lganda bloklash uchun.
+  const aiLimitReached = !aiLimits.unlimited && aiLimits.limit > 0 && aiLimits.used >= aiLimits.limit;
+  const aiNearLimit = !aiLimits.unlimited && aiLimits.limit > 0 && aiLimits.used >= Math.ceil(aiLimits.limit * 0.8);
+
   const generateAI = async () => {
     if (!aiForm.topic) return;
     if (!isApi) {
@@ -231,6 +261,9 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       }, OlympyApi.getToken());
       const generated = (response?.questions || []).map(_mapAiGeneratedQuestion);
       setAiResult(generated);
+      // Generatsiya muvaffaqiyatli — mahalliy hisoblagichni oshiramiz (backend
+      // bilan keyingi limit so'rovda to'liq sinxronlanadi). Cheksizda o'zgarmaydi.
+      setAiLimits(prev => prev.unlimited ? prev : { ...prev, used: prev.used + 1 });
     } catch (err) {
       console.warn('generateAiQuestions failed:', err);
       if (err?.status === 403 && err?.data?.upgrade_required) {
@@ -1063,7 +1096,16 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           <div className="glass rounded-2xl p-6 space-y-4 border border-indigo-500/20">
             <div className="flex items-center gap-3 mb-2">
               <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center"><Icon name="sparkles" size={18} /></div>
-              <div><div className="font-bold text-white">AI Savol Generatori</div><div className="text-xs text-white/40">Mavzu bo'yicha avtomatik savollar yaratadi</div></div>
+              <div className="flex-1"><div className="font-bold text-white">AI Savol Generatori</div><div className="text-xs text-white/40">Mavzu bo'yicha avtomatik savollar yaratadi</div></div>
+              {/* AI savollar oylik limit badge'i: cheksiz → ∞, aks holda used/limit
+                  (to'lsa qizil, 80%+ sariq, aks holda indigo). */}
+              {isApi && myCenterId && (
+                aiLimits.unlimited ? (
+                  <span className="chip text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-500/15 text-indigo-300 whitespace-nowrap">∞ AI</span>
+                ) : aiLimits.limit > 0 ? (
+                  <span className={`chip text-xs font-bold px-2.5 py-1 rounded-lg whitespace-nowrap ${aiLimitReached ? 'bg-rose-500/15 text-rose-300' : aiNearLimit ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>{aiLimits.used} / {aiLimits.limit} AI</span>
+                ) : null
+              )}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div><label className="block text-xs text-white/50 mb-1.5">Fan</label>
@@ -1098,12 +1140,16 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   {AI_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select></div>
             </div>
-            <button onClick={generateAI} disabled={!aiForm.topic || aiLoading}
-              className="btn-primary w-full py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-60">
+            <button onClick={generateAI} disabled={!aiForm.topic || aiLoading || aiLimitReached}
+              title={aiLimitReached ? 'AI limit tugadi. Tarifni yangilang.' : undefined}
+              className="btn-primary w-full py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
               {aiLoading ? (
                 <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Yaratilmoqda...</>
               ) : <><Icon name="sparkles" size={18} /> AI orqali savol yaratish</>}
             </button>
+            {aiLimitReached && (
+              <div className="text-center text-xs font-bold text-rose-300">AI limit tugadi. Tarifni yangilang.</div>
+            )}
           </div>
 
           {aiLoading && (

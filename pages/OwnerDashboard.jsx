@@ -3287,16 +3287,20 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         {/* Limit indikatorlari: Talabalar/Ustozlar/Olimpiadalar — joriy/limit
             progress bar bilan. 80% dan oshganda "Limit tugayapti" ogohlantirishi. */}
         {limits && (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { key: 'students', label: "Talabalar", icon: '🎓' },
               { key: 'teachers', label: "Ustozlar", icon: '👨‍🏫' },
               { key: 'olympiads', label: "Olimpiadalar (oy)", icon: '🏆' },
+              { key: 'ai_generations', label: "AI Savollar (oy)", icon: '🤖' },
             ].map(({ key, label, icon }) => {
               const b = limits[key] || {};
               const used = b.used || 0;
               const unlimited = !!b.unlimited;
               const limit = b.limit;
+              // Rejasiz (free) tarifda AI bloki limit:0 va unlimited:false qaytadi —
+              // bu "funksiya mavjud emas" holati (ogohlantirish emas, neutral).
+              const unavailable = !unlimited && limit === 0;
               const pct = (!unlimited && limit > 0) ? Math.min(100, Math.round((used / limit) * 100)) : 0;
               const near = !!b.near_limit;
               const full = !unlimited && limit > 0 && used >= limit;
@@ -3308,23 +3312,29 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       <span>{icon}</span> {label}
                     </span>
                     <span className="text-sm font-black text-white">
-                      {used}{unlimited ? '' : ` / ${limit}`}
+                      {unavailable ? <span className="text-white/40">—</span> : <>{used}{unlimited ? '' : ` / ${limit}`}</>}
                       {unlimited && <span className="ml-1 text-indigo-300">∞</span>}
                     </span>
                   </div>
-                  {!unlimited && (
-                    <div className="mt-2.5 h-2 w-full rounded-full bg-white/5 overflow-hidden">
-                      <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
-                    </div>
-                  )}
-                  {near && !full && (
-                    <div className="mt-2 text-[10px] font-bold text-amber-300">⚠️ Limit tugayapti</div>
-                  )}
-                  {full && (
-                    <div className="mt-2 text-[10px] font-bold text-rose-300">Limit to'ldi — tarifni yangilang</div>
-                  )}
-                  {unlimited && (
-                    <div className="mt-2 text-[10px] font-bold text-indigo-300">Cheksiz</div>
+                  {unavailable ? (
+                    <div className="mt-2 text-[10px] font-bold text-rose-300">Mavjud emas — tarifni yangilang</div>
+                  ) : (
+                    <>
+                      {!unlimited && (
+                        <div className="mt-2.5 h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                          <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
+                        </div>
+                      )}
+                      {near && !full && (
+                        <div className="mt-2 text-[10px] font-bold text-amber-300">⚠️ Limit tugayapti</div>
+                      )}
+                      {full && (
+                        <div className="mt-2 text-[10px] font-bold text-rose-300">Limit to'ldi — tarifni yangilang</div>
+                      )}
+                      {unlimited && (
+                        <div className="mt-2 text-[10px] font-bold text-indigo-300">Cheksiz</div>
+                      )}
+                    </>
                   )}
                 </div>
               );
