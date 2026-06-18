@@ -268,12 +268,18 @@ def _activate_subscription(user, amount, plan_id=None):
                 send_subscription_activated(user)
             except Exception:
                 pass
-            # Telegram orqali ham "Premium faollashdi" xabari (chat_id ulanган
-            # bo'lsa). Email maydoni hozircha yo'q, shuning uchun Telegram
-            # asosiy kanal — ulanmagan bo'lsa jimgina o'tib ketadi.
+            # Telegram orqali batafsil "Obuna faollashdi" xabari: plan nomi,
+            # muddati va summasi bilan (chat_id ulangan bo'lsa). Email maydoni
+            # hozircha yo'q, shuning uchun Telegram asosiy kanal — ulanmagan
+            # bo'lsa jimgina o'tib ketadi.
             try:
-                from notifications.services import send_payment_activated_to_user
-                send_payment_activated_to_user(user)
+                from notifications.services import send_payment_success_notification
+                send_payment_success_notification(
+                    user,
+                    plan_name=plan.name,
+                    amount=plan.price,
+                    end_date=end,
+                )
             except Exception:
                 pass
 
@@ -926,6 +932,11 @@ def list_subscription_plans(request):
             'description': p.description or '',
             'features': p.features if isinstance(p.features, list) else [],
             'is_popular': bool(p.is_popular),
+            # Tashkilot planlari uchun limitlar (0 = cheksiz). Tarif sahifasi
+            # "50 o'quvchi", "cheksiz" kabi ma'lumotni ko'rsatishi mumkin.
+            'max_students': p.max_students,
+            'max_teachers': p.max_teachers,
+            'max_olympiads_monthly': p.max_olympiads_monthly,
         }
         for p in plans
     ]
@@ -1029,4 +1040,62 @@ def transaction_receipt(request, transaction_id):
     # Chekda foydalanuvchi ismi ham ko'rsatiladi.
     data['user_name'] = request.user.get_full_name() or request.user.get_username()
     return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def subscription_limits(request):
+    """GET /api/billing/limits/ — markazning obuna limitlari va joriy foydalanishi.
+
+    Owner dashboard'idagi limit indikatorlari (Talabalar: 45/50, progress bar,
+    "Limit tugayapti" ogohlantirishi) shu endpoint'dan oziqlanadi.
+
+    Markaz aniqlash: `?center_id=<id>` berilsa shu markaz (foydalanuvchi uni
+    boshqara olishi shart), aks holda foydalanuvchining asosiy (owner) markazi.
+    XAVFSIZLIK: faqat o'zi boshqaradigan markaz limitlarini ko'ra oladi.
+    """
+    from centers.models import EducationCenter
+    from centers.services import primary_center_for_user, user_can_manage_center
+    from billing.services import SubscriptionService
+
+    center = None
+    center_id = request.query_params.get('center_id')
+    if center_id:
+        center = (
+            EducationCenter.objects
+            .filter(pk=center_id)
+            .first()
+        )
+        if center is None:
+            return Response(
+                {'detail': "Markaz topilmadi"},
+                status=http_status.HTTP_404_NOT_FOUND,
+            )
+        if not user_can_manage_center(request.user, center):
+            return Response(
+                {'detail': "Sizda bu markaz limitlarini ko'rish huquqi yo'q"},
+                status=http_status.HTTP_403_FORBIDDEN,
+            )
+    else:
+        # Avval egasi bo'lgan (approved) markaz — owner CenterMembership'siz
+        # ham markazga ega bo'lishi mumkin (markaz EducationCenter.owner orqali
+        # bog'lanadi), shuning uchun owned_centers'ni birinchi tekshiramiz.
+        center = (
+            EducationCenter.objects
+            .filter(owner_id=request.user.id, status=EducationCenter.STATUS_APPROVED)
+            .order_by('-created_at')
+            .first()
+        )
+        if center is None:
+            # Owner emas — manager bo'lib boshqaradigan markaz (a'zolik orqali).
+            center = primary_center_for_user(request.user)
+
+    if center is None:
+        # Foydalanuvchi hech qaysi markazni boshqarmaydi — limit ma'lumoti yo'q.
+        return Response(None)
+
+    summary = SubscriptionService(center).usage_summary()
+    summary['center_id'] = center.id
+    summary['center_name'] = center.name
+    return Response(summary)
 

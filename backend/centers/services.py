@@ -234,44 +234,37 @@ def change_membership_role(center, membership_id, new_role, actor):
 
 
 def check_student_limit(center):
-    """Checks if the center has reached its student capacity limit based on subscription plan."""
-    from billing.models import UserSubscription
-    from django.utils import timezone
-    
-    # Get active student count of the center
-    active_count = CenterMembership.objects.filter(
-        center=center,
-        role=CenterMembership.ROLE_STUDENT,
-        status=CenterMembership.STATUS_APPROVED
-    ).count()
-    
-    # Check active subscription
-    now = timezone.now()
-    active_sub = UserSubscription.objects.filter(
-        user=center.owner,
-        is_active=True,
-        plan__plan_type='organization',
-        end_date__gt=now
-    ).select_related('plan').first()
-    
-    if active_sub:
-        plan_name = active_sub.plan.name.lower()
-        if 'standart' in plan_name or 'standard' in plan_name:
-            limit = 50
-        elif 'plus' in plan_name:
-            limit = 200
-        elif 'pro' in plan_name:
-            limit = 999999
-        else:
-            limit = 50  # default fallback for any active subscription
-    else:
-        limit = 999999 if center.is_premium else 10  # Lifetime premium has no limit, otherwise Free limit of 10
+    """Markaz o'quvchi limitiga yetganini tekshiradi (yetgan bo'lsa ValidationError).
 
-        
-    if active_count >= limit:
+    Limit logikasi billing.services.SubscriptionService'ga ko'chirildi — avval
+    bu yerda plan nomini string-match qilib hardcode qilingan edi. Endi
+    obuna/tier/premium/bepul ustuvorligi bitta markaziy joyda hisoblanadi va
+    o'qituvchi/olimpiada limitlari bilan bir xil manbadan keladi.
+    """
+    from billing.services import SubscriptionService
+
+    service = SubscriptionService(center)
+    if not service.can_add_student():
+        limit = service.student_limit
         raise ValidationError(
             f"Tashkilotda o'quvchilar soni limitga yetgan (Maksimal {limit} ta). "
             "Qo'shimcha o'quvchilar qo'shish uchun tarifni premiumga yangilang."
+        )
+
+
+def check_teacher_limit(center):
+    """Markaz o'qituvchi limitiga yetganini tekshiradi (yetgan bo'lsa ValidationError).
+
+    create_teacher view'ida yangi o'qituvchi yaratishdan oldin chaqiriladi.
+    """
+    from billing.services import SubscriptionService
+
+    service = SubscriptionService(center)
+    if not service.can_add_teacher():
+        limit = service.teacher_limit
+        raise ValidationError(
+            f"Tashkilotda o'qituvchilar soni limitga yetgan (Maksimal {limit} ta). "
+            "Qo'shimcha o'qituvchi qo'shish uchun tarifni premiumga yangilang."
         )
 
 

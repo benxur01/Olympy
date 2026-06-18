@@ -792,6 +792,13 @@ export const OlympyApi = {
   getBillingHistory: (token) => request(`/api/billing/history/?_t=${Date.now()}`, { token, retryOnAuth: false }),
   // Bitta tranzaksiyaning cheki (faqat o'z tranzaksiyasi).
   getReceipt: (txId, token) => request(`/api/billing/receipt/${encodeURIComponent(txId)}/`, { token, retryOnAuth: false }),
+  // Markaz obuna limitlari va joriy foydalanish (Talabalar: 45/50, progress
+  // bar, "Limit tugayapti" ogohlantirishi). centerId berilmasa — owner'ning
+  // asosiy markazi. Markaz yo'q bo'lsa backend null qaytaradi.
+  getBillingLimits: (token, centerId) => request(
+    `/api/billing/limits/?_t=${Date.now()}${centerId ? `&center_id=${encodeURIComponent(centerId)}` : ''}`,
+    { token, retryOnAuth: false },
+  ),
   // Parent / Ota-ona
   linkChild: (studentPhone, token) => request('/api/me/parent/link/', { method: 'POST', body: { student_phone: studentPhone }, token }),
   getChildren: (token) => request('/api/me/parent/children/', { token }),

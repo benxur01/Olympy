@@ -567,6 +567,11 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
         phone: form.phone,
         password: form.password,
       };
+      // `?ref=CODE` havola orqali kelgan referral kodi (app.jsx saqlab qo'ygan):
+      // ro'yxatdan o'tishda backend'ga uzatamiz, ikkala tarafga bonus coin.
+      let pendingReferral = '';
+      try { pendingReferral = (localStorage.getItem('olympy:pendingReferral') || '').trim(); } catch {}
+      if (pendingReferral) registerPayload.referral_code = pendingReferral;
       const selectedType = registrationType;
       const organizationPayload = {
         name: newCenter.name,
@@ -585,6 +590,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
         });
         const mappedUser = OlympyApi.mapBackendUser(data.user);
         OlympyApi.saveAuth({ token: data.token, refresh: data.refresh, user: mappedUser, cookieAuth: data.cookie_auth });
+        if (pendingReferral) { try { localStorage.removeItem('olympy:pendingReferral'); } catch {} }
         setSuccess(true);
         setTimeout(() => onLogin(mappedUser), 1600);
         return;
@@ -607,6 +613,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
       const freshUser = await OlympyApi.getMe(token);
       const mappedUser = OlympyApi.mapBackendUser(freshUser);
       OlympyApi.saveAuth({ token, refresh, user: mappedUser, cookieAuth: data.cookie_auth });
+      if (pendingReferral) { try { localStorage.removeItem('olympy:pendingReferral'); } catch {} }
       setSuccess(true);
       setTimeout(() => onLogin(mappedUser), 1600);
     } catch (err) {

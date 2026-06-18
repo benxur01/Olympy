@@ -33,6 +33,7 @@ const PAGE_URLS = {
   'pending-home': '/pending',
   analytics: '/analytics',
   parent: '/dashboard/parent',
+  pricing: '/pricing',
 };
 
 // Rol dashboardlarining URL namespace'i ↔ app-level `page`. Har bir dashboard
@@ -184,6 +185,24 @@ const App = () => {
   const [bootstrapping, setBootstrapping] = React.useState(true);
 
   const user = apiUser;
+
+  // Referral havola: foydalanuvchi `?ref=CODE` bilan kelsa, kodni saqlab
+  // qo'yamiz va ro'yxatdan o'tishda backend'ga uzatamiz. URL'dan param'ni
+  // tozalab qo'yamiz (history.replaceState) — F5/qayta yuklashda takror
+  // o'qilmasligi va manzil chiroyli qolishi uchun.
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const ref = (params.get('ref') || '').trim();
+      if (ref) {
+        localStorage.setItem('olympy:pendingReferral', ref);
+        params.delete('ref');
+        const qs = params.toString();
+        const newUrl = window.location.pathname + (qs ? `?${qs}` : '') + (window.location.hash || '');
+        window.history.replaceState({}, '', newUrl);
+      }
+    } catch {}
+  }, []);
 
   // K5: Submit paytida 401 olib token muddati tugagan bo'lsa, foydalanuvchi
   // saqlangan olimpiada test sahifasiga avtomatik qaytishi kerak. Aks
@@ -551,6 +570,7 @@ const App = () => {
   const renderPage = () => {
     switch (page) {
       case 'landing':       return <LandingPage onNavigate={navigate} user={user} />;
+      case 'pricing':       return <PricingPage onNavigate={navigate} user={user} />;
       case 'login':         return <LoginPage onNavigate={navigate} onLogin={handleLogin} />;
       case 'register':      return <RegisterPage onNavigate={navigate} onLogin={handleLogin} />;
       case 'pending-home':  return <PendingHome user={user} onLogout={handleLogout} onNavigate={navigate} />;

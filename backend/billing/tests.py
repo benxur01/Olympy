@@ -667,3 +667,140 @@ class BillingSecurityTestCase(APITestCase):
         # Obuna muddati trial tugashidan keyin ham davom etishi kerak
         # (plan.duration_days=30 kun, trial 10 kun edi).
         self.assertGreater(sub.end_date, self.user.premium_trial_end)
+
+
+class SubscriptionServiceTestCase(APITestCase):
+    """SubscriptionService limit enforcement va /api/billing/limits/ endpoint."""
+
+    def setUp(self):
+        from centers.models import EducationCenter, CenterMembership
+        self.EducationCenter = EducationCenter
+        self.CenterMembership = CenterMembership
+
+        SubscriptionPlan.objects.all().delete()
+
+        self.owner = User.objects.create_user(
+            username='svc_owner', phone='+998901000001', password='pw',
+        )
+        self.center = EducationCenter.objects.create(
+            name='Svc Center',
+            city='Toshkent',
+            owner=self.owner,
+            status=EducationCenter.STATUS_APPROVED,
+            is_premium=False,
+        )
+
+    def _make_students(self, n):
+        from centers.models import CenterMembership
+        for i in range(n):
+            u = User.objects.create_user(
+                username=f'stu{i}_{self.center.id}',
+                phone=f'+99893000{i:04d}',
+                password='pw',
+            )
+            CenterMembership.objects.create(
+                user=u, center=self.center,
+                role=CenterMembership.ROLE_STUDENT,
+                status=CenterMembership.STATUS_APPROVED,
+            )
+
+    def _give_org_plan(self, max_students=50, max_teachers=5, max_olympiads=10):
+        plan = SubscriptionPlan.objects.create(
+            name='Org Standart', plan_type='organization',
+            price=Decimal('199999.00'), duration_days=30, is_active=True,
+            max_students=max_students, max_teachers=max_teachers,
+            max_olympiads_monthly=max_olympiads,
+        )
+        UserSubscription.objects.create(
+            user=self.owner, plan=plan,
+            start_date=timezone.now(),
+            end_date=timezone.now() + timedelta(days=30),
+            is_active=True,
+        )
+        return plan
+
+    def test_free_center_student_limit(self):
+        """Obunasiz, premium bo'lmagan markaz — FREE_LIMITS (10 o'quvchi)."""
+        from billing.services import SubscriptionService, FREE_LIMITS
+        svc = SubscriptionService(self.center)
+        self.assertEqual(svc.student_limit, FREE_LIMITS['students'])
+        self.assertTrue(svc.can_add_student())
+        self._make_students(FREE_LIMITS['students'])
+        # Limitga yetdi — yana qo'shib bo'lmaydi.
+        self.assertFalse(SubscriptionService(self.center).can_add_student())
+
+    def test_org_plan_uses_plan_limits(self):
+        """Aktiv organization obunasi — plan.max_students limit beradi."""
+        from billing.services import SubscriptionService
+        self._give_org_plan(max_students=50)
+        svc = SubscriptionService(self.center)
+        self.assertEqual(svc.student_limit, 50)
+        self.assertTrue(svc.can_add_student())
+
+    def test_pro_plan_unlimited(self):
+        """max_students=0 (UNLIMITED) — cheksiz, hech qachon bloklamaydi."""
+        from billing.services import SubscriptionService
+        self._give_org_plan(max_students=SubscriptionPlan.UNLIMITED)
+        self._make_students(20)
+        svc = SubscriptionService(self.center)
+        self.assertTrue(svc.student_limit == SubscriptionPlan.UNLIMITED)
+        self.assertTrue(svc.can_add_student())
+
+    def test_teacher_limit_enforced(self):
+        from billing.services import SubscriptionService
+        from centers.models import CenterMembership
+        self._give_org_plan(max_teachers=2)
+        for i in range(2):
+            u = User.objects.create_user(
+                username=f't{i}', phone=f'+99894000{i:04d}', password='pw',
+            )
+            CenterMembership.objects.create(
+                user=u, center=self.center,
+                role=CenterMembership.ROLE_TEACHER,
+                status=CenterMembership.STATUS_APPROVED,
+            )
+        svc = SubscriptionService(self.center)
+        self.assertEqual(svc.teacher_limit, 2)
+        self.assertFalse(svc.can_add_teacher())
+
+    def test_check_student_limit_raises(self):
+        """centers.services.check_student_limit yangi servicega delegatsiya qiladi."""
+        from centers.services import check_student_limit
+        from django.core.exceptions import ValidationError
+        self._make_students(10)  # FREE limit = 10
+        with self.assertRaises(ValidationError):
+            check_student_limit(self.center)
+
+    def test_limits_endpoint_owner(self):
+        """GET /api/billing/limits/ owner uchun usage_summary qaytaradi."""
+        self._give_org_plan(max_students=50, max_teachers=5, max_olympiads=10)
+        self._make_students(45)
+        self.client.force_authenticate(user=self.owner)
+        res = self.client.get('/api/billing/limits/')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        data = res.data
+        self.assertEqual(data['students']['used'], 45)
+        self.assertEqual(data['students']['limit'], 50)
+        self.assertFalse(data['students']['unlimited'])
+        # 45/50 = 90% > 80% — "limit tugayapti" ogohlantirishi.
+        self.assertTrue(data['students']['near_limit'])
+        self.assertEqual(data['center_id'], self.center.id)
+
+    def test_limits_endpoint_no_center(self):
+        """Markazi yo'q foydalanuvchi uchun null qaytariladi."""
+        nobody = User.objects.create_user(
+            username='nobody', phone='+998905000099', password='pw',
+        )
+        self.client.force_authenticate(user=nobody)
+        res = self.client.get('/api/billing/limits/')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIsNone(res.data)
+
+    def test_limits_endpoint_forbidden_other_center(self):
+        """Boshqa markaz limitlarini ko'rib bo'lmaydi (403)."""
+        intruder = User.objects.create_user(
+            username='intruder', phone='+998905000088', password='pw',
+        )
+        self.client.force_authenticate(user=intruder)
+        res = self.client.get(f'/api/billing/limits/?center_id={self.center.id}')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)

@@ -16,6 +16,12 @@ class SubscriptionPlan(models.Model):
         ('organization', 'Organization'),
     ]
 
+    # Cheksiz limitni ifodalovchi qiymat. NULL emas 0 ham emas — aniq sentinel
+    # ishlatamiz, shunda 0 ("hech narsa qo'shib bo'lmaydi") va "cheksiz"
+    # bir-biri bilan adashmaydi. SubscriptionService shu qiymatni cheksiz deb
+    # talqin qiladi.
+    UNLIMITED = 0
+
     name = models.CharField(max_length=100)
     plan_type = models.CharField(max_length=20, choices=PLAN_TYPE_CHOICES, default='student')
     price = models.DecimalField(max_digits=12, decimal_places=2)
@@ -24,6 +30,15 @@ class SubscriptionPlan(models.Model):
     # Plan imkoniyatlari ro'yxati — JSON massiv, masalan:
     # ["Cheksiz olimpiada", "AI savol yaratish", "Telegram bot"]
     features = models.JSONField(default=list, blank=True)
+    # Tashkilot (organization) planlari uchun limitlar. 0 = cheksiz (UNLIMITED).
+    # Student planlarida bu maydonlar ishlatilmaydi (individual obuna, markaz
+    # a'zolari/olimpiadalari bilan bog'liq emas) — default cheksiz qoldiriladi.
+    # SubscriptionService shu maydonlardan limitlarni o'qiydi; agar maydon 0
+    # bo'lsa (eski yozuvlar yoki cheksiz tier) — limit qo'llanilmaydi.
+    max_students = models.PositiveIntegerField(default=UNLIMITED)
+    max_teachers = models.PositiveIntegerField(default=UNLIMITED)
+    # Joriy oyda yaratilishi mumkin bo'lgan olimpiadalar soni (organization).
+    max_olympiads_monthly = models.PositiveIntegerField(default=UNLIMITED)
     # Landing'da "Mashhur" sifatida ajratib ko'rsatish uchun.
     is_popular = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
@@ -31,6 +46,18 @@ class SubscriptionPlan(models.Model):
 
     def __str__(self):
         return f"{self.name} - {self.plan_type} ({self.price} UZS)"
+
+    @property
+    def students_unlimited(self):
+        return self.max_students == self.UNLIMITED
+
+    @property
+    def teachers_unlimited(self):
+        return self.max_teachers == self.UNLIMITED
+
+    @property
+    def olympiads_unlimited(self):
+        return self.max_olympiads_monthly == self.UNLIMITED
 
 
 class UserSubscription(models.Model):
