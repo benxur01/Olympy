@@ -20,14 +20,14 @@ const escapeSvgText = (value) => String(value || '')
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&apos;');
 
-const TashkilotMockup = () => {
+const DirectorMockup = () => {
   return (
     <div className="p-5 md:p-6 text-white text-left select-none relative overflow-hidden" style={{ background: '#07080c', minHeight: '340px' }}>
       <div className="flex items-center justify-between border-b border-white/5 pb-3.5 mb-4">
         <div>
           <h4 className="text-sm md:text-base font-bold text-white flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.8)] animate-pulse" />
-            <span>ProSkill Academy</span>
+            <span>ProSkill Academy (Direktor)</span>
           </h4>
           <p className="text-[10px] md:text-xs text-white/45 mt-0.5">Tashkilot Boshqaruv & Premium Analitikasi</p>
         </div>
@@ -105,92 +105,186 @@ const TashkilotMockup = () => {
   );
 };
 
-const OtaOnaMockup = () => {
+const ManagerMockup = () => {
   return (
     <div className="p-5 md:p-6 text-white text-left select-none relative overflow-hidden" style={{ background: '#07080c', minHeight: '340px' }}>
       <div className="flex items-center justify-between border-b border-white/5 pb-3.5 mb-4">
         <div>
           <h4 className="text-sm md:text-base font-bold text-white flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)] animate-pulse" />
-            <span>Farzand: Shahzod Valiyev</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)] animate-pulse" />
+            <span>Menejer Boshqaruv Paneli</span>
           </h4>
-          <p className="text-[10px] md:text-xs text-white/45 mt-0.5">Ota-ona monitoringi va AI tahlil paneli</p>
+          <p className="text-[10px] md:text-xs text-white/45 mt-0.5">Olimpiada nazorati va arizalar</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2.5 py-0.5 rounded-lg flex items-center gap-1 font-bold">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" /> Telegram Digest Faol
-          </span>
+          <span className="text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20 px-2 py-0.5 rounded-lg font-bold">Faol Tadbir: 1 ta</span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-        {/* Success predictions */}
+        {/* Live Proctoring List */}
         <div className="md:col-span-7 glass p-3.5 rounded-xl border border-white/5">
           <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2.5 flex items-center gap-1.5">
-            <Icon name="sparkles" size={12} className="text-cyan-400" />
-            <span>AI Muvaffaqiyat Prognostikasi</span>
+            <Icon name="eye" size={12} className="text-amber-400" />
+            <span>Jonli Proctoring (Tab Nazorati)</span>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-2">
             {[
-              { label: 'Prezident maktablari imtihoni', val: 78, color: 'from-indigo-500 to-indigo-400' },
-              { label: 'Al-Xorazmiy olimpiadasi', val: 85, color: 'from-cyan-500 to-cyan-400' },
-              { label: 'DTM Davlat imtihonlari', val: 94, color: 'from-emerald-500 to-emerald-400' },
-            ].map(row => (
-              <div key={row.label} className="space-y-1">
-                <div className="flex justify-between text-[11px]">
-                  <span className="text-white/60">{row.label}</span>
-                  <span className="font-bold text-white">{row.val}% imkoniyat</span>
+              { name: 'Ali Valiyev', event: 'Matematika Live', msg: 'Tab o\'zgartirdi (2 ta ogohlantirish)', time: '12:04:15', status: 'warning', color: 'text-amber-400 border-amber-500/30 bg-amber-500/5' },
+              { name: 'Sardor Aliyev', event: 'Matematika Live', msg: 'Aloqa butunlay uzildi', time: '12:03:50', status: 'error', color: 'text-rose-400 border-rose-500/30 bg-rose-500/5' },
+              { name: 'Zuhra Karimova', event: 'Matematika Live', msg: 'Muammosiz topshirmoqda', time: '12:04:22', status: 'success', color: 'text-emerald-400 border-emerald-500/20 bg-emerald-500/5' },
+            ].map((row, idx) => (
+              <div key={idx} className={`p-2.5 rounded-xl border flex items-center justify-between text-xs ${row.color}`}>
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-white truncate">{row.name}</div>
+                  <div className="text-[9px] opacity-70 mt-0.5">{row.msg}</div>
                 </div>
-                <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                  <div className={`h-full bg-gradient-to-r ${row.color}`} style={{ width: `${row.val}%` }} />
+                <div className="text-right shrink-0 ml-2">
+                  <span className="text-[9px] font-mono opacity-50 block">{row.time}</span>
+                  {row.status === 'warning' && <span className="text-[9px] font-bold uppercase tracking-wider text-amber-300">Ogohlantirish</span>}
+                  {row.status === 'error' && <span className="text-[9px] font-bold uppercase tracking-wider text-rose-300">Offline</span>}
+                  {row.status === 'success' && <span className="text-[9px] font-bold uppercase tracking-wider text-emerald-300">Online</span>}
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Weekly stats and digest preview */}
+        {/* Requests and Shop control */}
         <div className="md:col-span-5 flex flex-col gap-3">
-          <div className="glass p-3 rounded-xl border border-white/5 flex-1 flex flex-col justify-center">
-            <div className="text-[9px] text-white/45 uppercase font-bold tracking-wider">Farzand faolligi</div>
-            <div className="text-base font-black text-orange-400 flex items-center gap-1.5 mt-1.5">
-              <span className="text-lg">🔥</span>
-              <span>7 kunlik streak</span>
+          <div className="glass p-3.5 rounded-xl border border-white/5 flex-1 text-xs">
+            <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2 flex items-center justify-between">
+              <span>Kutilayotgan arizalar</span>
+              <span className="bg-amber-400/20 text-amber-300 font-bold px-1.5 py-0.5 rounded text-[8px]">2 ta</span>
             </div>
-            <div className="text-[9px] text-white/40 mt-1">Kunlik mashq o'tash (O1)</div>
-          </div>
-          <div className="glass p-3 rounded-xl border border-white/5 flex-1 flex flex-col justify-center">
-            <div className="text-[9px] text-white/45 uppercase font-bold tracking-wider">Nishonlar (Badges)</div>
-            <div className="flex gap-2 mt-2">
-              <span title="7 kun faol" className="cursor-help w-6 h-6 bg-orange-500/10 border border-orange-500/20 rounded-full flex items-center justify-center text-xs">🔥</span>
-              <span title="10 ta test topshirgan" className="cursor-help w-6 h-6 bg-indigo-500/10 border border-indigo-500/20 rounded-full flex items-center justify-center text-xs">🎖️</span>
-              <span title="90% dan yuqori natija" className="cursor-help w-6 h-6 bg-cyan-500/10 border border-cyan-500/20 rounded-full flex items-center justify-center text-xs">🎯</span>
-              <span title="Premium talaba" className="cursor-help w-6 h-6 bg-amber-500/10 border border-amber-500/20 rounded-full flex items-center justify-center text-xs font-bold text-amber-400">👑</span>
+            <div className="space-y-2">
+              {[
+                { name: 'Sirojiddin B.', phone: '+998 90 *** 1234' },
+                { name: 'Madina K.', phone: '+998 93 *** 5678' }
+              ].map((req, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-white/5 p-2 rounded-lg border border-white/5">
+                  <div className="min-w-0">
+                    <div className="font-bold text-white truncate">{req.name}</div>
+                    <div className="text-[9px] text-white/40">{req.phone}</div>
+                  </div>
+                  <div className="flex gap-1">
+                    <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded text-[9px] font-bold">Tasdiqlash</span>
+                    <span className="bg-rose-500/10 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded text-[9px] font-bold">Rad etish</span>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="text-[9px] text-white/30 mt-1.5">Jami nishonlar: 4 ta (O5)</div>
           </div>
-        </div>
-      </div>
 
-      <div className="glass p-3 rounded-xl border border-white/5 mt-4">
-        <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2">Haftalik PDF hisobot (Pillow PDF)</div>
-        <div className="flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <Icon name="file" size={16} className="text-indigo-400 flex-shrink-0" />
-            <div className="min-w-0">
-              <div className="font-semibold text-white truncate text-xs">olympy-hisobot-Shahzod-week.pdf</div>
-              <div className="text-[9px] text-white/30">1.2 MB</div>
+          <div className="glass p-3.5 rounded-xl border border-white/5 flex-1 flex flex-col justify-center text-xs">
+            <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2 flex items-center gap-1.5">
+              <Icon name="award" size={12} className="text-yellow-400" />
+              <span>Markaz Do'koni (Mukofotlar)</span>
+            </div>
+            <div className="flex items-center justify-between bg-white/5 p-2 rounded-lg border border-white/5">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🎒</span>
+                <div>
+                  <div className="font-bold text-white">Brendli Ryukzak</div>
+                  <div className="text-[9px] text-white/40">Zaxira: 12 ta</div>
+                </div>
+              </div>
+              <span className="text-yellow-400 font-bold font-mono">250 🪙</span>
             </div>
           </div>
-          <span className="bg-indigo-500/10 text-indigo-300 text-[10px] font-bold px-3 py-1.5 rounded-lg border border-indigo-500/25 flex items-center gap-1.5 shadow-sm hover:bg-indigo-500/20 transition-all cursor-pointer">
-            <Icon name="download" size={10} />
-            <span>Yuklash</span>
-          </span>
         </div>
       </div>
     </div>
   );
 };
+
+const TeacherMockup = () => {
+  return (
+    <div className="p-5 md:p-6 text-white text-left select-none relative overflow-hidden" style={{ background: '#07080c', minHeight: '340px' }}>
+      <div className="flex items-center justify-between border-b border-white/5 pb-3.5 mb-4">
+        <div>
+          <h4 className="text-sm md:text-base font-bold text-white flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse" />
+            <span>O'qituvchi Boshqaruv Paneli</span>
+          </h4>
+          <p className="text-[10px] md:text-xs text-white/45 mt-0.5">Test yaratish, tahrirlash va baholash tizimi</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-lg font-bold">Mening Savollarim: 124 ta</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+        {/* Question Creator Mockup */}
+        <div className="md:col-span-7 glass p-3.5 rounded-xl border border-white/5">
+          <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2.5 flex items-center gap-1.5">
+            <Icon name="sparkles" size={12} className="text-emerald-400" />
+            <span>AI Savol Generatori & Savollar Banki</span>
+          </div>
+          <div className="space-y-3">
+            <div className="glass bg-white/[0.02] p-2.5 rounded-xl border border-white/5 space-y-2">
+              <div className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                <span>🪄 Gemini AI tavsiya qilgan savol</span>
+              </div>
+              <div className="text-xs text-white/80 leading-relaxed font-medium">
+                "Uchburchakning tomonlari 5, 12 va 13 bo'lsa, uning ichki chizilgan aylanasi radiusini toping."
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[10px]">
+                <div className="bg-white/5 px-2 py-1 rounded text-white/70 border border-white/5">A) 3</div>
+                <div className="bg-emerald-500/10 px-2 py-1 rounded text-emerald-300 border border-emerald-500/20 font-bold">B) 2 (To'g'ri)</div>
+                <div className="bg-white/5 px-2 py-1 rounded text-white/70 border border-white/5">C) 1.5</div>
+                <div className="bg-white/5 px-2 py-1 rounded text-white/70 border border-white/5">D) 4</div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2">
+              <span className="bg-white/5 text-white/80 border border-white/10 px-2.5 py-1.5 rounded-xl text-[10px] font-bold">Qayta yaratish</span>
+              <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-1.5 rounded-xl text-[10px] font-bold">Bankka qo'shish</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Grading and My Events */}
+        <div className="md:col-span-5 flex flex-col gap-3">
+          <div className="glass p-3.5 rounded-xl border border-white/5 flex-1 text-xs">
+            <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2 flex items-center justify-between">
+              <span>Baholash kutilmoqda (Essay)</span>
+              <span className="bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded text-[8px]">3 ta</span>
+            </div>
+            <div className="space-y-2">
+              {[
+                { student: 'Jasur Temirov', task: 'Kombinatorika algoritmlari', val: 'Java tilida recursive yechim...' },
+                { student: 'Laylo Sodiqova', task: 'Matematik isbot', val: 'Formula bo\'yicha induction usulda...' }
+              ].map((item, idx) => (
+                <div key={idx} className="flex justify-between items-center text-xs text-white/70 border-b border-white/5 pb-2 last:border-0 last:pb-0">
+                  <div className="min-w-0">
+                    <span className="font-bold text-white block truncate">{item.student}</span>
+                    <span className="text-[9px] text-white/40 block truncate">{item.task}</span>
+                  </div>
+                  <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-1 rounded text-[9px] font-bold shrink-0 ml-2">Baholash</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="glass p-3.5 rounded-xl border border-white/5 flex-1 flex flex-col justify-center text-xs">
+            <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2.5 flex items-center gap-1.5">
+              <Icon name="trophy" size={12} className="text-emerald-400" />
+              <span>Mening faol olimpiadalarim</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <div>
+                <div className="font-bold text-white text-xs">Haftalik Matematika #4</div>
+                <div className="text-[9px] text-white/40">Tugash vaqti: 18:00</div>
+              </div>
+              <span className="bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded text-[9px] border border-emerald-500/20 font-bold">Faol</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 const use3DTilt = (maxRotate = 10, scale = 1.02) => {
   const ref = React.useRef(null);
@@ -555,6 +649,7 @@ const LandingPage = ({ onNavigate, user }) => {
   const [openMobileSolutions, setOpenMobileSolutions] = React.useState(false);
   const [openFaq, setOpenFaq] = React.useState(null);
   const [activeScreen, setActiveScreen] = React.useState(0);
+  const [activeOrgRole, setActiveOrgRole] = React.useState('director');
   const [imgErrors, setImgErrors] = React.useState({});
   const [todayLabel, setTodayLabel] = React.useState(formatLandingDate);
   const [dashboardSvg, setDashboardSvg] = React.useState('');
@@ -711,15 +806,13 @@ const LandingPage = ({ onNavigate, user }) => {
   }, [dashboardSvg, todayLabel]);
 
   const screens = [
-    { label: 'Dashboard', icon: 'chart', img: dashboardImgSrc, desc: 'Tadbirlar, natijalar va sertifikatlar bir joyda', glowColor: 'rgba(99, 102, 241, 0.22)' },
-    { label: 'Olimpiada', icon: 'trophy', img: '/screenshots/test.svg', desc: 'Vaqt, savollar va javoblar uchun qulay test oynasi', glowColor: 'rgba(59, 130, 246, 0.22)' },
-    { label: 'Mashq', icon: 'bolt', img: '/screenshots/practice.svg', desc: 'Fanlar va mavzular bo\'yicha mustaqil test mashqlari', glowColor: 'rgba(16, 185, 129, 0.22)' },
-    { label: 'Reyting', icon: 'star', img: '/screenshots/leaderboard.svg', desc: 'Top o\'quvchilar va ballar bo\'yicha jonli reyting', glowColor: 'rgba(245, 158, 11, 0.22)' },
-    { label: 'Xatolar', icon: 'shield', img: '/screenshots/mistakes.svg', desc: 'Xato qilingan test savollarining sun\'iy intellekt tahlili', glowColor: 'rgba(239, 68, 68, 0.22)' },
-    { label: 'Do\'kon', icon: 'tag', img: '/screenshots/store.svg', desc: 'To\'plangan tangalar evaziga mukofotlar do\'koni', glowColor: 'rgba(234, 179, 8, 0.22)' },
-    { label: 'Profil', icon: 'award', img: '/screenshots/profile.svg', desc: 'O\'quvchi yutuqlari, progress va sertifikatlar', glowColor: 'rgba(168, 85, 247, 0.22)' },
-    { label: 'Tashkilot', icon: 'building', isMock: true, desc: 'Tashkilot premium analitikasi, o\'quvchilar taqqoslash jadvali va tahliliy hisobotlar', glowColor: 'rgba(99, 102, 241, 0.22)' },
-    { label: 'Ota-ona', icon: 'users', isMock: true, desc: 'Farzandning AI muvaffaqiyat bashorati, yutuqlari va Telegram hisobot sozlamalari', glowColor: 'rgba(6, 182, 212, 0.22)' },
+    { type: 'student', label: 'Dashboard', icon: 'chart', img: dashboardImgSrc, desc: 'Tadbirlar, natijalar va sertifikatlar bir joyda', glowColor: 'rgba(99, 102, 241, 0.22)' },
+    { type: 'student', label: 'Olimpiada', icon: 'trophy', img: '/screenshots/test.svg', desc: 'Vaqt, savollar va javoblar uchun qulay test oynasi', glowColor: 'rgba(59, 130, 246, 0.22)' },
+    { type: 'student', label: 'Mashq', icon: 'bolt', img: '/screenshots/practice.svg', desc: 'Fanlar va mavzular bo\'yicha mustaqil test mashqlari', glowColor: 'rgba(16, 185, 129, 0.22)' },
+    { type: 'student', label: 'Reyting', icon: 'star', img: '/screenshots/leaderboard.svg', desc: 'Top o\'quvchilar va ballar bo\'yicha jonli reyting', glowColor: 'rgba(245, 158, 11, 0.22)' },
+    { type: 'student', label: 'Xatolar', icon: 'shield', img: '/screenshots/mistakes.svg', desc: 'Xato qilingan test savollarining sun\'iy intellekt tahlili', glowColor: 'rgba(239, 68, 68, 0.22)' },
+    { type: 'student', label: 'Do\'kon', icon: 'tag', img: '/screenshots/store.svg', desc: 'To\'plangan tangalar evaziga mukofotlar do\'koni', glowColor: 'rgba(234, 179, 8, 0.22)' },
+    { type: 'student', label: 'Profil', icon: 'award', img: '/screenshots/profile.svg', desc: 'O\'quvchi yutuqlari, progress va sertifikatlar', glowColor: 'rgba(168, 85, 247, 0.22)' },
   ];
 
   // Hero metrikalar — CountUp bilan sanab chiqiladi (A).
@@ -743,28 +836,9 @@ const LandingPage = ({ onNavigate, user }) => {
       setActiveScreen(prev => (prev + 1) % screens.length);
     }, 4000);
     return () => clearInterval(interval);
-  }, [activeScreen, screens.length]);
-
-  // Scroll active tab into view horizontally on mobile
-  React.useEffect(() => {
-    if (!tabsContainerRef.current) return;
-    const container = tabsContainerRef.current.parentElement;
-    if (!container) return;
-    const activeChild = tabsContainerRef.current.children[activeScreen];
-    if (activeChild) {
-      const containerWidth = container.clientWidth;
-      const childLeft = activeChild.offsetLeft;
-      const childWidth = activeChild.clientWidth;
-      
-      // Center the active child tab inside the scroll container
-      const targetScrollLeft = childLeft - (containerWidth / 2) + (childWidth / 2);
-      
-      container.scrollTo({
-        left: targetScrollLeft,
-        behavior: 'smooth'
-      });
-    }
   }, [activeScreen]);
+
+
 
   const features = [
     // Center features
@@ -1247,23 +1321,28 @@ const LandingPage = ({ onNavigate, user }) => {
             <p className="text-white/45 max-w-xl mx-auto text-sm md:text-base">Dashboard, test oynasi, reyting va profil ekranlari landing ichida ko'rinadigan qilib joylandi.</p>
           </div>
 
-          {/* Tabs */}
-          <div className="mb-6 md:mb-8 overflow-x-auto -mx-4 md:-mx-6 scroll-mask" style={{ WebkitOverflowScrolling: 'touch' }}>
-            <div ref={tabsContainerRef} className="relative flex gap-2 md:gap-3 md:justify-center min-w-min px-4 md:px-6">
-              {screens.map((s, i) => {
-                const active = activeScreen === i;
-                return (
-                  <button
-                    key={i}
-                    onClick={() => setActiveScreen(i)}
-                    className={`flex-shrink-0 flex items-center gap-2 px-4 md:px-5 py-2.5 md:py-3 rounded-xl text-sm md:text-base font-semibold transition-all ${active ? 'text-white glow-blue' : 'glass text-white/60 hover:text-white'}`}
-                    style={active ? { background: 'linear-gradient(135deg, #2563eb 0%, #0891b2 55%, #10b981 100%)' } : {}}
-                  >
-                    <Icon name={s.icon} size={18} />
-                    <span>{s.label}</span>
-                  </button>
-                );
-              })}
+          {/* Sub-tabs for Student screens */}
+          <div className="mb-6 overflow-x-auto -mx-4 md:-mx-6 scroll-mask" style={{ WebkitOverflowScrolling: 'touch' }}>
+            <div className="relative flex gap-1.5 md:gap-2 justify-start md:justify-center min-w-min px-4 md:px-6 py-1">
+              {screens
+                .map((s, i) => ({ ...s, index: i }))
+                .map((s) => {
+                  const active = activeScreen === s.index;
+                  return (
+                    <button
+                      key={s.index}
+                      onClick={() => setActiveScreen(s.index)}
+                      className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs md:text-sm font-semibold transition-all ${
+                        active
+                          ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shadow-[0_0_12px_rgba(99,102,241,0.2)]'
+                          : 'bg-white/[0.02] text-white/50 border border-white/5 hover:text-white hover:bg-white/5'
+                      }`}
+                    >
+                      <Icon name={s.icon} size={14} />
+                      <span>{s.label}</span>
+                    </button>
+                  );
+                })}
             </div>
           </div>
 
@@ -1297,7 +1376,7 @@ const LandingPage = ({ onNavigate, user }) => {
                   <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full" style={{ background: '#28c840' }} />
                 </div>
                 <div className="flex-1 mx-2 md:mx-4 px-3 py-1 md:py-1.5 rounded-md text-xs text-white/40 truncate" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                  prolymp.uz/{screens[activeScreen].label.toLowerCase()}
+                  prolymp.uz/student/{screens[activeScreen].label.toLowerCase()}
                 </div>
                 <div className="hidden md:flex gap-1 text-white/20 text-xs flex-shrink-0">
                   <span>⟲</span>
@@ -1306,47 +1385,41 @@ const LandingPage = ({ onNavigate, user }) => {
 
               {/* Screen content */}
               <div className="relative tilt-inner" style={{ minHeight: '260px' }}>
-              <div
-                key={activeScreen}
-                className="screen-fade"
-                style={{ animation: 'screenFade 0.4s ease-out' }}
-              >
-                {screens[activeScreen].isMock ? (
-                  screens[activeScreen].label === 'Tashkilot' ? (
-                    <TashkilotMockup />
+                <div
+                  key={activeScreen}
+                  className="screen-fade"
+                  style={{ animation: 'screenFade 0.4s ease-out' }}
+                >
+                  {imgErrors[activeScreen] ? (
+                    <div
+                      className="flex flex-col items-center justify-center text-center px-6 py-16 md:py-24"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(168,85,247,0.08) 50%, rgba(34,211,238,0.06) 100%)',
+                        minHeight: '320px',
+                      }}
+                    >
+                      <div className="text-5xl md:text-6xl mb-4 spinner-icon" style={{ animation: 'spin 2s linear infinite', display: 'inline-block' }}>⏳</div>
+                      <div className="text-lg md:text-xl font-bold text-white/80 mb-2">Tez orada</div>
+                      <div className="text-sm text-white/40">Rasm yuklanmoqda...</div>
+                    </div>
                   ) : (
-                    <OtaOnaMockup />
-                  )
-                ) : imgErrors[activeScreen] ? (
-                  <div
-                    className="flex flex-col items-center justify-center text-center px-6 py-16 md:py-24"
-                    style={{
-                      background: 'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(168,85,247,0.08) 50%, rgba(34,211,238,0.06) 100%)',
-                      minHeight: '320px',
-                    }}
-                  >
-                    <div className="text-5xl md:text-6xl mb-4 spinner-icon" style={{ animation: 'spin 2s linear infinite', display: 'inline-block' }}>⏳</div>
-                    <div className="text-lg md:text-xl font-bold text-white/80 mb-2">Tez orada</div>
-                    <div className="text-sm text-white/40">Rasm yuklanmoqda...</div>
-                  </div>
-                ) : (
-                  <img
-                    src={screens[activeScreen].img}
-                    alt={screens[activeScreen].label}
-                    onError={() => setImgErrors(prev => ({ ...prev, [activeScreen]: true }))}
-                    className="w-full block"
-                    style={{
-                      aspectRatio: '16 / 10',
-                      objectFit: 'contain',
-                      background: '#050508',
-                      boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
-                    }}
-                  />
-                )}
+                    <img
+                      src={screens[activeScreen].img}
+                      alt={screens[activeScreen].label}
+                      onError={() => setImgErrors(prev => ({ ...prev, [activeScreen]: true }))}
+                      className="w-full block"
+                      style={{
+                        aspectRatio: '16 / 10',
+                        objectFit: 'contain',
+                        background: '#050508',
+                        boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
+                      }}
+                    />
+                  )}
+                </div>
               </div>
+            </div>
           </div>
-        </div>
-      </div>
 
           {/* Caption */}
           <div className="text-center mt-5 md:mt-6">
@@ -1417,6 +1490,123 @@ const LandingPage = ({ onNavigate, user }) => {
             100% { transform: translateX(-50%); }
           }
         `}</style>
+      </section>
+
+      {/* Tashkilot Boshqaruv Markazi (Futuristic Live Console) */}
+      <section className="py-12 md:py-24 relative overflow-hidden" style={{ background: '#050508', borderTop: '1px solid rgba(255,255,255,0.03)' }}>
+        {/* Glow grid lines in the background */}
+        <div className="absolute inset-0 grid-backdrop pointer-events-none opacity-[0.12] z-[1]" />
+        
+        <div className="max-w-6xl mx-auto px-4 md:px-6 relative z-10">
+          <div className="text-center mb-12 md:mb-18 scroll-reveal">
+            <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-indigo-300 border border-indigo-500/20">
+              <Icon name="building" size={16} className="text-indigo-400" />
+              Tashkilot Boshqaruv Markazi
+            </div>
+            <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">
+              Tashkilot Boshqaruv Konso'li
+            </h2>
+            <p className="text-white/45 max-w-xl mx-auto text-sm md:text-base">
+              Direktor, menejer va o'qituvchilar uchun alohida, lekin o'zaro mukammal bog'langan boshqaruv panellari.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            {/* Left Console: Role selectors with glowing specs */}
+            <div className="lg:col-span-5 flex flex-col gap-4">
+              {[
+                {
+                  id: 'director',
+                  label: 'Tashkilot Rahbari (Direktor)',
+                  desc: 'Tashkilot premium tahlillari, o\'quvchilar taqqoslash jadvali, oylik hisobotlar va white-label brend rangi sozlamasi.',
+                  icon: 'building',
+                  color: 'indigo',
+                  accent: 'text-indigo-400 border-indigo-500/30 bg-indigo-500/5',
+                  accentActive: 'border-indigo-500 bg-indigo-500/10 text-white shadow-[0_0_20px_rgba(99,102,241,0.2)]'
+                },
+                {
+                  id: 'manager',
+                  label: 'Tashkilot Admini (Menejer)',
+                  desc: 'Jonli proctoring (tab o\'zgarishi va aloqa uzilishi nazorati), o\'quvchi arizalarini bir tugma bilan Telegram orqali tasdiqlash va tangalar do\'koni.',
+                  icon: 'settings',
+                  color: 'amber',
+                  accent: 'text-amber-400 border-amber-500/30 bg-amber-500/5',
+                  accentActive: 'border-amber-500 bg-amber-500/10 text-white shadow-[0_0_20px_rgba(245,158,11,0.2)]'
+                },
+                {
+                  id: 'teacher',
+                  label: 'Olimpiada O\'qituvchisi',
+                  desc: 'Sun\'iy intellekt (Gemini AI) yordamida tezkor savollar generatsiyasi, topshiriqlar banki va insho/kod javoblarini baholash oynasi.',
+                  icon: 'book',
+                  color: 'emerald',
+                  accent: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/5',
+                  accentActive: 'border-emerald-500 bg-emerald-500/10 text-white shadow-[0_0_20px_rgba(16,185,129,0.2)]'
+                }
+              ].map((role) => {
+                const active = activeOrgRole === role.id;
+                return (
+                  <button
+                    key={role.id}
+                    onClick={() => setActiveOrgRole(role.id)}
+                    className={`text-left p-5 rounded-2xl border transition-all duration-300 cursor-pointer ${
+                      active ? role.accentActive : 'border-white/5 bg-white/[0.01] hover:bg-white/[0.03] hover:border-white/10'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 mb-2">
+                      <div className={`w-8 h-8 rounded-lg flex items-center justify-center border transition-all duration-300 ${active ? role.accent : 'text-white/40 border-white/10 bg-white/5'}`}>
+                        <Icon name={role.icon} size={16} />
+                      </div>
+                      <h4 className="text-sm md:text-base font-bold">{role.label}</h4>
+                    </div>
+                    <p className="text-xs text-white/45 leading-relaxed pl-11">
+                      {role.desc}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Right Console: The living terminal mockup screen */}
+            <div className="lg:col-span-7 relative">
+              <div 
+                className="aura-glow transition-all duration-500" 
+                style={{ 
+                  background: activeOrgRole === 'director' ? 'rgba(99, 102, 241, 0.15)' : activeOrgRole === 'manager' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: '105%',
+                  height: '105%',
+                  opacity: 0.3,
+                  filter: 'blur(50px)'
+                }} 
+              />
+              
+              <div className="glass rounded-2xl overflow-hidden border border-white/10 relative z-10 bg-[#0d0e12] shadow-[0_30px_60px_rgba(0,0,0,0.6)]">
+                {/* Browser bar */}
+                <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 bg-white/[0.02]">
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#ff5f57]" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#febc2e]" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#28c840]" />
+                  </div>
+                  <div className="mx-4 px-3 py-1 rounded-md text-xs text-white/30 truncate bg-white/[0.04] font-mono flex items-center gap-1.5 select-none w-full max-w-[320px] justify-center">
+                    <Icon name="shield" size={10} className="text-white/20" />
+                    <span>prolymp.uz/dashboard/{activeOrgRole}</span>
+                  </div>
+                  <div className="text-white/20 text-xs flex-shrink-0">⟲</div>
+                </div>
+
+                {/* Console content */}
+                <div className="relative" style={{ minHeight: '340px' }}>
+                  {activeOrgRole === 'director' && <DirectorMockup />}
+                  {activeOrgRole === 'manager' && <ManagerMockup />}
+                  {activeOrgRole === 'teacher' && <TeacherMockup />}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* Features */}
