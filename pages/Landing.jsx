@@ -754,6 +754,23 @@ const LandingPage = ({ onNavigate, user }) => {
 
   const mainMockupTilt = use3DTilt(5, 1.01);
 
+  const handleSolutionClick = (e, category, elementId, orgRole, isMobile = false) => {
+    e.preventDefault();
+    if (isMobile) {
+      setMobileMenu(false);
+    }
+    if (category) {
+      setSelectedCategory(category);
+    }
+    if (orgRole) {
+      setActiveOrgRole(orgRole);
+    }
+    const el = document.getElementById(elementId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
+
   React.useEffect(() => {
     const timer = setInterval(() => setTodayLabel(formatLandingDate()), 60 * 1000);
     return () => clearInterval(timer);
@@ -984,7 +1001,7 @@ const LandingPage = ({ onNavigate, user }) => {
               </button>
               <div className="absolute top-full left-1/2 -translate-x-1/2 pt-2 w-[560px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
                 <div className="glass rounded-2xl p-5 grid grid-cols-2 gap-3 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)]" style={{ background: '#0d0e12' }}>
-                  <a href="#features" className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
+                  <a href="#features" onClick={(e) => handleSolutionClick(e, 'all', 'features')} className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
                     <div className="w-9 h-9 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 group-hover/item:bg-indigo-500/20 group-hover/item:scale-105 transition-all">
                       <Icon name="sparkles" size={16} />
                     </div>
@@ -993,7 +1010,7 @@ const LandingPage = ({ onNavigate, user }) => {
                       <div className="text-[10px] text-white/40 mt-0.5">Sekundiga yuzlab test yarating</div>
                     </div>
                   </a>
-                  <a href="#features" className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
+                  <a href="#b2b-console" onClick={(e) => handleSolutionClick(e, 'center', 'b2b-console', 'manager')} className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
                     <div className="w-9 h-9 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 group-hover/item:bg-cyan-500/20 group-hover/item:scale-105 transition-all">
                       <Icon name="eye" size={16} />
                     </div>
@@ -1002,7 +1019,7 @@ const LandingPage = ({ onNavigate, user }) => {
                       <div className="text-[10px] text-white/40 mt-0.5">O'quvchilar tab nazorati</div>
                     </div>
                   </a>
-                  <a href="#features" className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
+                  <a href="#features" onClick={(e) => handleSolutionClick(e, 'parent', 'features')} className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
                     <div className="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover/item:bg-emerald-500/20 group-hover/item:scale-105 transition-all">
                       <Icon name="users" size={16} />
                     </div>
@@ -1011,7 +1028,7 @@ const LandingPage = ({ onNavigate, user }) => {
                       <div className="text-[10px] text-white/40 mt-0.5">Faollik va AI muvaffaqiyat bashorati</div>
                     </div>
                   </a>
-                  <a href="#features" className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
+                  <a href="#features" onClick={(e) => handleSolutionClick(e, 'student', 'features')} className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
                     <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400 group-hover/item:bg-amber-500/20 group-hover/item:scale-105 transition-all">
                       <Icon name="trophy" size={16} />
                     </div>
@@ -1020,7 +1037,7 @@ const LandingPage = ({ onNavigate, user }) => {
                       <div className="text-[10px] text-white/40 mt-0.5">Real vaqtda online olimpiadalar</div>
                     </div>
                   </a>
-                  <a href="#features" className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
+                  <a href="#telegram-flow" onClick={(e) => handleSolutionClick(e, null, 'telegram-flow')} className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
                     <div className="w-9 h-9 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-400 group-hover/item:bg-rose-500/20 group-hover/item:scale-105 transition-all">
                       <Icon name="send" size={16} />
                     </div>
@@ -1029,7 +1046,7 @@ const LandingPage = ({ onNavigate, user }) => {
                       <div className="text-[10px] text-white/40 mt-0.5">Managerlar uchun tasdiqlash boti</div>
                     </div>
                   </a>
-                  <a href="#features" className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
+                  <a href="#b2b-console" onClick={(e) => handleSolutionClick(e, 'center', 'b2b-console', 'director')} className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
                     <div className="w-9 h-9 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400 group-hover/item:bg-purple-500/20 group-hover/item:scale-105 transition-all">
                       <Icon name="chart" size={16} />
                     </div>
@@ -1092,23 +1109,23 @@ const LandingPage = ({ onNavigate, user }) => {
                   </button>
                   {openMobileSolutions && (
                     <div className="pl-6 pr-3 py-1 flex flex-col gap-2.5 border-l border-white/5 ml-3 my-1">
-                      <a href="#features" onClick={() => setMobileMenu(false)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
+                      <a href="#features" onClick={(e) => handleSolutionClick(e, 'all', 'features', null, true)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
                         <Icon name="sparkles" size={12} className="text-indigo-400" />
                         AI Savollar
                       </a>
-                      <a href="#features" onClick={() => setMobileMenu(false)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
+                      <a href="#b2b-console" onClick={(e) => handleSolutionClick(e, 'center', 'b2b-console', 'manager', true)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
                         <Icon name="eye" size={12} className="text-cyan-400" />
                         Jonli Proctoring
                       </a>
-                      <a href="#features" onClick={() => setMobileMenu(false)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
+                      <a href="#features" onClick={(e) => handleSolutionClick(e, 'parent', 'features', null, true)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
                         <Icon name="users" size={12} className="text-emerald-400" />
                         Ota-ona Monitoringi
                       </a>
-                      <a href="#features" onClick={() => setMobileMenu(false)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
+                      <a href="#features" onClick={(e) => handleSolutionClick(e, 'student', 'features', null, true)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
                         <Icon name="trophy" size={12} className="text-amber-400" />
                         Musobaqalar
                       </a>
-                      <a href="#features" onClick={() => setMobileMenu(false)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
+                      <a href="#telegram-flow" onClick={(e) => handleSolutionClick(e, null, 'telegram-flow', null, true)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
                         <Icon name="send" size={12} className="text-rose-400" />
                         Telegram Bot
                       </a>
@@ -1493,7 +1510,7 @@ const LandingPage = ({ onNavigate, user }) => {
       </section>
 
       {/* Tashkilot Boshqaruv Markazi (Futuristic Live Console) */}
-      <section className="py-12 md:py-24 relative overflow-hidden" style={{ background: '#050508', borderTop: '1px solid rgba(255,255,255,0.03)' }}>
+      <section id="b2b-console" className="py-12 md:py-24 relative overflow-hidden" style={{ background: '#050508', borderTop: '1px solid rgba(255,255,255,0.03)' }}>
         {/* Glow grid lines in the background */}
         <div className="absolute inset-0 grid-backdrop pointer-events-none opacity-[0.12] z-[1]" />
         
@@ -1831,7 +1848,7 @@ const LandingPage = ({ onNavigate, user }) => {
       </section>
 
       {/* Telegram flow */}
-      <section className="py-12 md:py-24 max-w-5xl mx-auto px-4 md:px-6 scroll-reveal">
+      <section id="telegram-flow" className="py-12 md:py-24 max-w-5xl mx-auto px-4 md:px-6 scroll-reveal">
         <div className="glass rounded-3xl p-5 md:p-12 flex flex-col md:flex-row items-center gap-6 md:gap-10">
           <div className="flex-1 min-w-0 text-center md:text-left">
             <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-emerald-300 border border-emerald-500/20">📱 Telegram integratsiya</div>
