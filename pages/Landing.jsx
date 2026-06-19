@@ -552,6 +552,7 @@ const LandingPage = ({ onNavigate, user }) => {
   // yuklaydi, shu sababli ularni render qilmaymiz (statik fon yetarli).
   const isLowPower = React.useMemo(() => isLowPowerEnv(), []);
   const [mobileMenu, setMobileMenu] = React.useState(false);
+  const [openMobileSolutions, setOpenMobileSolutions] = React.useState(false);
   const [openFaq, setOpenFaq] = React.useState(null);
   const [activeScreen, setActiveScreen] = React.useState(0);
   const [imgErrors, setImgErrors] = React.useState({});
@@ -901,6 +902,71 @@ const LandingPage = ({ onNavigate, user }) => {
             <BrandLogo size="md" />
           </div>
           <div className="hidden md:flex items-center gap-8 text-sm text-white/60">
+            {/* Solutions Dropdown */}
+            <div className="relative group">
+              <button className="flex items-center gap-1.5 hover:text-white transition-colors cursor-pointer py-2 text-white/60 focus:outline-none">
+                <span>Yechimlar</span>
+                <Icon name="chevronDown" size={12} className="group-hover:rotate-180 transition-transform duration-200" />
+              </button>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 pt-2 w-[560px] opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                <div className="glass rounded-2xl p-5 grid grid-cols-2 gap-3 border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)]" style={{ background: '#0d0e12' }}>
+                  <a href="#features" className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
+                    <div className="w-9 h-9 rounded-lg bg-indigo-500/10 flex items-center justify-center text-indigo-400 group-hover/item:bg-indigo-500/20 group-hover/item:scale-105 transition-all">
+                      <Icon name="sparkles" size={16} />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white group-hover/item:text-indigo-300 transition-colors">AI Savollar</div>
+                      <div className="text-[10px] text-white/40 mt-0.5">Sekundiga yuzlab test yarating</div>
+                    </div>
+                  </a>
+                  <a href="#features" className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
+                    <div className="w-9 h-9 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400 group-hover/item:bg-cyan-500/20 group-hover/item:scale-105 transition-all">
+                      <Icon name="eye" size={16} />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white group-hover/item:text-cyan-300 transition-colors">Jonli Proctoring</div>
+                      <div className="text-[10px] text-white/40 mt-0.5">O'quvchilar tab nazorati</div>
+                    </div>
+                  </a>
+                  <a href="#features" className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
+                    <div className="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover/item:bg-emerald-500/20 group-hover/item:scale-105 transition-all">
+                      <Icon name="users" size={16} />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white group-hover/item:text-emerald-300 transition-colors">Ota-ona Monitoringi</div>
+                      <div className="text-[10px] text-white/40 mt-0.5">Faollik va AI muvaffaqiyat bashorati</div>
+                    </div>
+                  </a>
+                  <a href="#features" className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
+                    <div className="w-9 h-9 rounded-lg bg-amber-500/10 flex items-center justify-center text-amber-400 group-hover/item:bg-amber-500/20 group-hover/item:scale-105 transition-all">
+                      <Icon name="trophy" size={16} />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white group-hover/item:text-amber-300 transition-colors">Musobaqalar</div>
+                      <div className="text-[10px] text-white/40 mt-0.5">Real vaqtda online olimpiadalar</div>
+                    </div>
+                  </a>
+                  <a href="#features" className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
+                    <div className="w-9 h-9 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-400 group-hover/item:bg-rose-500/20 group-hover/item:scale-105 transition-all">
+                      <Icon name="send" size={16} />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white group-hover/item:text-rose-300 transition-colors">Telegram Bot</div>
+                      <div className="text-[10px] text-white/40 mt-0.5">Managerlar uchun tasdiqlash boti</div>
+                    </div>
+                  </a>
+                  <a href="#features" className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
+                    <div className="w-9 h-9 rounded-lg bg-purple-500/10 flex items-center justify-center text-purple-400 group-hover/item:bg-purple-500/20 group-hover/item:scale-105 transition-all">
+                      <Icon name="chart" size={16} />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-white group-hover/item:text-purple-300 transition-colors">Tahliliy hisobotlar</div>
+                      <div className="text-[10px] text-white/40 mt-0.5">Haftalik PDF va Excel tahlili</div>
+                    </div>
+                  </a>
+                </div>
+              </div>
+            </div>
             <a href="#features" className="hover:text-white transition-colors cursor-pointer">Xususiyatlar</a>
             <a href="#how" className="hover:text-white transition-colors cursor-pointer">Qanday ishlaydi</a>
             <a href="#pricing" className="hover:text-white transition-colors cursor-pointer">Narxlar</a>
@@ -941,6 +1007,40 @@ const LandingPage = ({ onNavigate, user }) => {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="max-w-7xl mx-auto px-4 py-4 flex flex-col gap-1 text-sm">
+                {/* Collapsible Mobile Solutions */}
+                <div className="flex flex-col">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setOpenMobileSolutions(!openMobileSolutions); }}
+                    className="flex items-center justify-between px-3 py-3 rounded-xl text-white/80 hover:text-white hover:bg-white/5 transition-colors text-left"
+                  >
+                    <span>Yechimlar</span>
+                    <Icon name="chevronDown" size={16} className={`transition-transform duration-250 ${openMobileSolutions ? 'rotate-180' : 'rotate-0'}`} />
+                  </button>
+                  {openMobileSolutions && (
+                    <div className="pl-6 pr-3 py-1 flex flex-col gap-2.5 border-l border-white/5 ml-3 my-1">
+                      <a href="#features" onClick={() => setMobileMenu(false)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
+                        <Icon name="sparkles" size={12} className="text-indigo-400" />
+                        AI Savollar
+                      </a>
+                      <a href="#features" onClick={() => setMobileMenu(false)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
+                        <Icon name="eye" size={12} className="text-cyan-400" />
+                        Jonli Proctoring
+                      </a>
+                      <a href="#features" onClick={() => setMobileMenu(false)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
+                        <Icon name="users" size={12} className="text-emerald-400" />
+                        Ota-ona Monitoringi
+                      </a>
+                      <a href="#features" onClick={() => setMobileMenu(false)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
+                        <Icon name="trophy" size={12} className="text-amber-400" />
+                        Musobaqalar
+                      </a>
+                      <a href="#features" onClick={() => setMobileMenu(false)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
+                        <Icon name="send" size={12} className="text-rose-400" />
+                        Telegram Bot
+                      </a>
+                    </div>
+                  )}
+                </div>
                 <a
                   href="#features"
                   onClick={() => setMobileMenu(false)}
@@ -1098,6 +1198,42 @@ const LandingPage = ({ onNavigate, user }) => {
           </div>
         </div>
       </section>
+
+      {/* Marquee Banner */}
+      <div className="w-full border-y border-white/5 py-4 bg-white/[0.01] relative overflow-hidden z-20">
+        {/* Left & Right fading masks */}
+        <div className="absolute left-0 top-0 bottom-0 w-24 md:w-48 bg-gradient-to-r from-[#050508] to-transparent z-10 pointer-events-none" />
+        <div className="absolute right-0 top-0 bottom-0 w-24 md:w-48 bg-gradient-to-l from-[#050508] to-transparent z-10 pointer-events-none" />
+        
+        <div className="marquee-content flex gap-8 whitespace-nowrap min-w-full">
+          {[
+            { icon: 'sparkles', label: 'AI Savollar Generatsiyasi', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' },
+            { icon: 'file', label: 'PDF\'dan Test Yaratish', color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20' },
+            { icon: 'eye', label: 'Jonli Proctoring Nazorati', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' },
+            { icon: 'trophy', label: 'Real vaqtda Reyting & Musobaqalar', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
+            { icon: 'users', label: 'Ota-ona Monitoring Paneli', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+            { icon: 'send', label: 'Telegram orqali Tasdiqlash', color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
+            { icon: 'chart', label: 'Premium Tahliliy Hisobotlar (T2)', color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
+            { icon: 'shield', label: 'Xavfsiz Tab Nazorati Muhiti', color: 'text-teal-400 bg-teal-500/10 border-teal-500/20' },
+            { icon: 'tag', label: 'Virtual Tangalar Do\'koni', color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' },
+          ].concat([
+            { icon: 'sparkles', label: 'AI Savollar Generatsiyasi', color: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20' },
+            { icon: 'file', label: 'PDF\'dan Test Yaratish', color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20' },
+            { icon: 'eye', label: 'Jonli Proctoring Nazorati', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' },
+            { icon: 'trophy', label: 'Real vaqtda Reyting & Musobaqalar', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
+            { icon: 'users', label: 'Ota-ona Monitoring Paneli', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
+            { icon: 'send', label: 'Telegram orqali Tasdiqlash', color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
+            { icon: 'chart', label: 'Premium Tahliliy Hisobotlar (T2)', color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
+            { icon: 'shield', label: 'Xavfsiz Tab Nazorati Muhiti', color: 'text-teal-400 bg-teal-500/10 border-teal-500/20' },
+            { icon: 'tag', label: 'Virtual Tangalar Do\'koni', color: 'text-yellow-400 bg-yellow-500/10 border-yellow-500/20' },
+          ]).map((item, idx) => (
+            <div key={idx} className="inline-flex items-center gap-2 px-4 py-2 border rounded-full text-xs md:text-sm font-semibold select-none shadow-sm transition-colors duration-250 cursor-default hover:border-indigo-500/30" style={{ background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.06)' }}>
+              <Icon name={item.icon} size={15} className={item.color.split(' ')[0]} />
+              <span className="text-white/80">{item.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Platforma ko'rinishi */}
       <section className="py-12 md:py-24 relative overflow-hidden" style={{ background: 'linear-gradient(180deg, #050508 0%, rgba(20,22,28,0.9) 50%, #050508 100%)' }}>
@@ -1263,6 +1399,23 @@ const LandingPage = ({ onNavigate, user }) => {
           .float-badge-1 { animation: floatBadge1 6s ease-in-out infinite !important; }
           .float-badge-2 { animation: floatBadge2 7s ease-in-out infinite !important; }
           .float-badge-3 { animation: floatBadge3 8s ease-in-out infinite !important; }
+          
+          .marquee-content {
+            display: flex;
+            flex-shrink: 0;
+            align-items: center;
+            justify-content: space-around;
+            min-width: 100%;
+            gap: 2rem;
+            animation: marquee 35s linear infinite;
+          }
+          .marquee-content:hover {
+            animation-play-state: paused;
+          }
+          @keyframes marquee {
+            0% { transform: translateX(0); }
+            100% { transform: translateX(-50%); }
+          }
         `}</style>
       </section>
 
@@ -1301,29 +1454,132 @@ const LandingPage = ({ onNavigate, user }) => {
           </div>
         </div>
 
-        {/* Spotlight — har guruhning eng kuchli imkoniyatlari katta kartada (B) */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
-          {spotlightFeatures.map((f, i) => (
-            <GlowCard
-              key={f.title}
-              className="p-5 md:p-8 group"
-              style={{
-                animation: 'cardEntrance 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',
-                animationDelay: `${(i % 6) * 50}ms`
-              }}
-            >
-              <div className="flex items-start gap-4 relative z-10">
-                <div className={`feature-icon flex-shrink-0 bg-gradient-to-br ${f.color} flex items-center justify-center text-white/90 shadow-md shadow-black/20 group-hover:scale-110 transition-transform duration-300`}>
-                  {f.iconName ? <Icon name={f.iconName} size={22} /> : <span className="text-xl">{f.icon}</span>}
+        {/* Spotlight — har guruhning eng kuchli imkoniyatlari katta kartada (B) yoki Bento Grid (Barchasi uchun) */}
+        {selectedCategory === 'all' ? (
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-5 md:gap-6">
+            {/* Card 1: AI Savollar va PDF Import (Span 7) */}
+            <GlowCard className="p-6 md:p-8 md:col-span-7 flex flex-col justify-between group overflow-hidden border border-white/5 relative min-h-[300px]" style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.12) 0%, rgba(168,85,247,0.06) 100%)' }}>
+              <div className="relative z-10">
+                <span className="flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-3 py-1 w-fit rounded-full mb-4">
+                  <Icon name="sparkles" size={10} />
+                  AI Savol Generator & PDF Import
+                </span>
+                <h3 className="text-xl md:text-2xl font-bold text-white mb-2 group-hover:text-indigo-200 transition-colors duration-250">Sun'iy Intellekt va PDF Import</h3>
+                <p className="text-xs md:text-sm text-white/50 leading-relaxed max-w-lg">Darslik yoki PDF materiallardan avtomatik test savollarini yarating. Gemini AI yordamida soniyalarda test bazangizni shakllantiren.</p>
+              </div>
+              
+              {/* Mini AI visual mockup */}
+              <div className="mt-6 glass rounded-xl p-4 border border-white/5 bg-slate-950/40 text-left relative overflow-hidden max-w-md w-full">
+                <div className="flex items-center justify-between text-[10px] text-white/40 mb-2 border-b border-white/5 pb-2">
+                  <span>Savollar Yaratish Sandig'i</span>
+                  <span className="text-indigo-400 font-bold">Aktiv</span>
                 </div>
-                <div className="min-w-0">
-                  <h3 className="text-base md:text-xl font-bold text-white mb-1.5 md:mb-2 group-hover:text-indigo-200 transition-colors duration-250">{f.title}</h3>
-                  <p className="text-sm md:text-[15px] text-white/45 leading-relaxed group-hover:text-white/65 transition-colors duration-250">{f.desc}</p>
+                <div className="space-y-1.5">
+                  <div className="h-1.5 w-3/4 bg-indigo-500/40 rounded animate-pulse" />
+                  <div className="h-1.5 w-1/2 bg-white/10 rounded" />
+                </div>
+                <div className="flex items-center justify-between mt-4 text-[10px]">
+                  <span className="text-white/30">Haftalik PDF hisobot</span>
+                  <span className="text-emerald-400 font-bold flex items-center gap-1">✓ Tayyor</span>
                 </div>
               </div>
             </GlowCard>
-          ))}
-        </div>
+
+            {/* Card 2: Proctoring (Span 5) */}
+            <GlowCard className="p-6 md:p-8 md:col-span-5 flex flex-col justify-between group overflow-hidden border border-white/5 relative min-h-[300px]">
+              <div className="relative z-10">
+                <span className="flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1 w-fit rounded-full mb-4">
+                  <Icon name="eye" size={10} />
+                  Jonli Proctoring Nazorati
+                </span>
+                <h3 className="text-xl md:text-2xl font-bold text-white mb-2 group-hover:text-rose-200 transition-colors duration-250">Jonli Proctoring</h3>
+                <p className="text-xs md:text-sm text-white/50 leading-relaxed">Test topshirayotgan o'quvchilarning tab o'zgarishi, ping holati va faolliklarini real vaqtda kuzating.</p>
+              </div>
+
+              {/* Event stream list mockup */}
+              <div className="mt-6 space-y-2 w-full font-mono text-[9px] text-white/40">
+                <div className="flex justify-between items-center bg-white/5 p-2 rounded-lg border border-white/5">
+                  <span className="truncate max-w-[150px]">Ali Valiyev · Tab o'zgartirdi</span>
+                  <span className="text-amber-400 font-bold">Ogohlantirish</span>
+                </div>
+                <div className="flex justify-between items-center bg-white/5 p-2 rounded-lg border border-white/5">
+                  <span className="truncate max-w-[150px]">Sardor Aliyev · Aloqa uzildi</span>
+                  <span className="text-rose-400 font-bold">Offline</span>
+                </div>
+              </div>
+            </GlowCard>
+
+            {/* Card 3: O'quvchi Streak & Tangalar Do'koni (Span 4) */}
+            <GlowCard className="p-6 md:p-8 md:col-span-4 flex flex-col justify-between group border border-white/5 relative min-h-[280px]">
+              <div>
+                <span className="flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-3 py-1 w-fit rounded-full mb-4">
+                  <Icon name="tag" size={10} />
+                  O'yinlashtirilgan Tizim
+                </span>
+                <h3 className="text-lg md:text-xl font-bold text-white mb-2 group-hover:text-amber-200 transition-colors duration-250">Streak & Do'kon Tizimi</h3>
+                <p className="text-xs text-white/50 leading-relaxed">O'quvchilar testlar topshirib virtual tangalar yig'adi va nishonlar, sovg'alar olishadi.</p>
+              </div>
+              <div className="mt-6 flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5">
+                <span className="text-orange-400 font-bold text-xs flex items-center gap-1">🔥 7 kunlik streak</span>
+                <span className="text-yellow-400 font-bold text-xs flex items-center gap-1">🪙 120 tanga</span>
+              </div>
+            </GlowCard>
+
+            {/* Card 4: Ota-ona Telegram Monitoringi (Span 4) */}
+            <GlowCard className="p-6 md:p-8 md:col-span-4 flex flex-col justify-between group border border-white/5 relative min-h-[280px]">
+              <div>
+                <span className="flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 w-fit rounded-full mb-4">
+                  <Icon name="users" size={10} />
+                  Haftalik Digest
+                </span>
+                <h3 className="text-lg md:text-xl font-bold text-white mb-2 group-hover:text-emerald-200 transition-colors duration-250">Ota-ona Monitoringi</h3>
+                <p className="text-xs text-white/50 leading-relaxed">Farzand faolligi va natijalari bo'yicha Telegram xabarnomalar va tahliliy haftalik PDF.</p>
+              </div>
+              <div className="mt-6 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold px-3 py-2 rounded-xl border border-emerald-500/20 text-center">
+                💬 Telegram Digest Faol
+              </div>
+            </GlowCard>
+
+            {/* Card 5: Markaz Premium Analitikasi (Span 4) */}
+            <GlowCard className="p-6 md:p-8 md:col-span-4 flex flex-col justify-between group border border-white/5 relative min-h-[280px]" style={{ background: 'linear-gradient(135deg, rgba(34,211,238,0.08) 0%, rgba(99,102,241,0.04) 100%)' }}>
+              <div>
+                <span className="flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-3 py-1 w-fit rounded-full mb-4">
+                  <Icon name="chart" size={10} />
+                  Premium Analitika
+                </span>
+                <h3 className="text-lg md:text-xl font-bold text-white mb-2 group-hover:text-cyan-200 transition-colors duration-250">Tashkilot Analitikasi</h3>
+                <p className="text-xs text-white/50 leading-relaxed">Guruhlar tahlili, o'rtacha ballar o'sish dinamikasi va TOP o'quvchilar taqqoslash jadvali.</p>
+              </div>
+              <div className="mt-6 flex justify-between text-[11px] text-white/50 border-t border-white/5 pt-3">
+                <span>O'rtacha ball: 82.4%</span>
+                <span className="text-emerald-400 font-bold">↑ 3.2%</span>
+              </div>
+            </GlowCard>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+            {spotlightFeatures.map((f, i) => (
+              <GlowCard
+                key={f.title}
+                className="p-5 md:p-8 group"
+                style={{
+                  animation: 'cardEntrance 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+                  animationDelay: `${(i % 6) * 50}ms`
+                }}
+              >
+                <div className="flex items-start gap-4 relative z-10">
+                  <div className={`feature-icon flex-shrink-0 bg-gradient-to-br ${f.color} flex items-center justify-center text-white/90 shadow-md shadow-black/20 group-hover:scale-110 transition-transform duration-300`}>
+                    {f.iconName ? <Icon name={f.iconName} size={22} /> : <span className="text-xl">{f.icon}</span>}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="text-base md:text-xl font-bold text-white mb-1.5 md:mb-2 group-hover:text-indigo-200 transition-colors duration-250">{f.title}</h3>
+                    <p className="text-sm md:text-[15px] text-white/45 leading-relaxed group-hover:text-white/65 transition-colors duration-250">{f.desc}</p>
+                  </div>
+                </div>
+              </GlowCard>
+            ))}
+          </div>
+        )}
 
         {/* Qolgan imkoniyatlar — kichik chip qatori (B) */}
         {chipFeatures.length > 0 && (
