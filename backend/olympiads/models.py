@@ -128,5 +128,12 @@ class Olympiad(models.Model):
             models.Index(fields=['status', 'is_deleted']),
         ]
 
+    def save(self, *args, **kwargs):
+        # `subject` erkin matn — Question modeli bilan bir xil normalizatsiya:
+        # registr nomuvofiqligi va dublikat fanlarni oldini olamiz.
+        if self.subject:
+            self.subject = self.subject.strip().capitalize()
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f'{self.title} ({self.center.name})'

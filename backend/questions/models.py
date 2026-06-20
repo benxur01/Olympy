@@ -14,10 +14,12 @@ class Question(models.Model):
     SOURCE_MANUAL = 'manual'
     SOURCE_AI = 'ai'
     SOURCE_PDF = 'pdf'
+    SOURCE_IMPORT = 'import'
     SOURCE_CHOICES = [
         (SOURCE_MANUAL, "Qo'lda"),
         (SOURCE_AI, 'AI'),
         (SOURCE_PDF, 'PDF'),
+        (SOURCE_IMPORT, 'Import (Excel/CSV)'),
     ]
 
     # Savol turi: oddiy test (MCQ/True-False) yoki IT dasturlash savoli (code).
@@ -141,6 +143,16 @@ class Question(models.Model):
             # banki va olimpiada uchun savol tanlash so'rovlarida.
             models.Index(fields=['center', 'subject']),
         ]
+
+    def save(self, *args, **kwargs):
+        # `subject` erkin matn — registr (katta/kichik harf) bo'yicha tartibsiz
+        # qiymatlar dublikat fanlar va filtr nomuvofiqligiga olib keladi.
+        # Saqlashdan oldin normalize qilamiz: bo'sh joylarni olib, birinchi
+        # harfni bosh harfga keltiramiz. pdf_generation.py subject'ni .lower()
+        # bilan tekshirgani uchun bu normalizatsiya u bilan to'la mos keladi.
+        if self.subject:
+            self.subject = self.subject.strip().capitalize()
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.text[:60]

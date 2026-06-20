@@ -27,8 +27,10 @@ DIFFICULTY_ALIASES = {
     'upper-intermediate': 'upper-int',
     'upper-int': 'upper-int',
     'advanced': 'advanced',
+    # ASCII apostrof bilan bir marta. Unicode apostrofli ("o‘rta") input
+    # _normalize_difficulty ichida ASCII'ga keltirilib qidiriladi, shu sababli
+    # kalitni ikki marta yozish (Unicode dublikat) shart emas.
     "o'rta": 'medium',
-    "o‘rta": 'medium',
     'orta': 'medium',
     'medium': 'medium',
     'hard': 'hard',
@@ -468,7 +470,11 @@ def _gemini_pdf_error(last_error):
 
 
 def _normalize_difficulty(value, fallback='medium'):
+    # Unicode apostroflarni ('‘ ’ ‛ `') ASCII (') ga keltiramiz — "o‘rta"
+    # va "o'rta" bitta kalitga ('o'rta') tushadi.
     normalized = str(value or '').strip().lower()
+    for ch in ('‘', '’', '‛', '`'):
+        normalized = normalized.replace(ch, "'")
     return DIFFICULTY_ALIASES.get(normalized) or DIFFICULTY_ALIASES.get(str(fallback or '').lower()) or 'medium'
 
 

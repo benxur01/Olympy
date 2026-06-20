@@ -13,18 +13,20 @@ from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAdminUser, IsAuthenticated
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+from accounts.permissions import IsPlatformAdmin
 
 from .metrics import METRICS_CACHE_SECONDS, get_metrics
 
 
 @api_view(['GET'])
-@permission_classes([IsAdminUser])
+@permission_classes([IsPlatformAdmin])
 def metrics_dashboard(request):
     """GET /api/analytics/metrics/ — retention/conversion/premium metrikalari.
 
-    Faqat admin (is_staff) foydalanuvchilar uchun. `?refresh=1` cache'ni
+    Faqat platforma admini (is_platform_admin) uchun. `?refresh=1` cache'ni
     chetlab o'tib qayta hisoblaydi (admin dashboard bilan bir xil xulq).
     """
     force = request.GET.get('refresh') in ('1', 'true', 'True')

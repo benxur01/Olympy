@@ -51,11 +51,13 @@ def export_center_members_excel(request, center_id):
         return Response({'detail': 'Markaz topilmadi'}, status=404)
 
     # Permission tekshiruv — owner/admin/manager yoki platforma admini.
+    # `is_platform_admin` (loyiha roli) ishlatamiz, `is_staff` emas — aks holda
+    # platforma admini bo'lmagan staff foydalanuvchi eksportga kira olardi.
     membership = CenterMembership.objects.filter(
         center=center, user=request.user,
         role__in=['owner', 'admin', 'manager'], status='approved',
     ).first()
-    if not membership and not request.user.is_staff:
+    if not membership and not request.user.is_platform_admin:
         return Response({'detail': 'Ruxsat yo\'q'}, status=403)
 
     wb = openpyxl.Workbook()
@@ -98,8 +100,9 @@ def export_olympiad_results_excel(request, olympiad_id):
 
     # Permission tekshiruv — olimpiada egasi markazning owner/admin/manager'i
     # yoki platforma admini. Markazsiz (public) olimpiadalar uchun faqat
-    # platforma admini eksport qila oladi.
-    is_allowed = request.user.is_staff
+    # platforma admini eksport qila oladi. `is_platform_admin` (loyiha roli)
+    # ishlatamiz, `is_staff` emas.
+    is_allowed = request.user.is_platform_admin
     if not is_allowed and olympiad.center_id:
         from centers.models import CenterMembership
         is_allowed = CenterMembership.objects.filter(
