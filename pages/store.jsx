@@ -2,7 +2,16 @@
 
 // makeAssetUrl modul-level scope'ga chiqarildi: IIFE ham, undan keyingi
 // mapApiCenter va boshqa modul-level helper'lar ham access qila oladi.
+//
+// API base URL — YAGONA MANBA: src/services/api.js'dagi API_BASE_URL.
+// Avval bu yerda alohida hardcoded ('https://olympy-api.onrender.com')
+// takrorlanardi va ikki joyni alohida yangilash kerak edi. Bu fayl entry'ga
+// inline birlashtirilgani uchun ES `import` ishlatib bo'lmaydi (blok ichida
+// import sintaksis xatosi berardi); api.js entry top'ida import qilinib
+// globalThis.OlympyApi'ni store.jsx blokidan OLDIN o'rnatadi, shuning uchun
+// undan o'qiymiz. Fallback faqat himoya (OlympyApi mavjud bo'lmasligi kerak).
 const apiBaseUrl = (
+  globalThis.OlympyApi?.API_BASE_URL ||
   import.meta.env?.VITE_API_BASE_URL ||
   (import.meta.env?.PROD ? 'https://olympy-api.onrender.com' : 'http://localhost:8000')
 ).replace(/\/+$/, '');
@@ -176,12 +185,36 @@ const OlympyStore = (() => {
     ],
   });
 
+  // Bo'sh (demo'siz) state skeleti — barcha kolleksiyalar mavjud, lekin
+  // demo foydalanuvchilar/markazlar yo'q. API rejimida ishlatiladi: u yerda
+  // ma'lumot backend'dan keladi, mock seed faqat chalkashlik (UI'da soxta
+  // "Ali Valiyev" kabi yozuvlar) keltirardi.
+  const emptyState = () => ({
+    users: [], centers: [], requests: [],
+    subjects: ['Matematika','Ingliz tili','Ona tili','Informatika','IT','Fizika','Kimyo','Biologiya','Tarix','Geografiya'],
+    questions: [], olympiads: [], attempts: [], notifications: [],
+  });
+
+  // API rejimini aniqlash: api.js real foydalanuvchini sessionStorage'da
+  // 'currentUser' kalitida saqlaydi va u `_api: true` bo'ladi. Shu mavjud
+  // bo'lsa — demo seed o'rniga bo'sh state (Spec #13: isApi rejimida seed
+  // chaqirilmasin). Bu modul yuklanganda bir marta baholanadi.
+  const isApiSession = () => {
+    try {
+      const raw = sessionStorage.getItem('currentUser');
+      if (!raw) return false;
+      const u = JSON.parse(raw);
+      return !!(u && (u._api || u.backendId));
+    } catch { return false; }
+  };
+  const initialState = () => (isApiSession() ? emptyState() : seed());
+
   // ─── State load/save ─────────────────────────────────────────────────────
   let state;
   try {
     const raw = localStorage.getItem(KEY);
-    state = raw ? JSON.parse(raw) : seed();
-  } catch { state = seed(); }
+    state = raw ? JSON.parse(raw) : initialState();
+  } catch { state = initialState(); }
 
   const listeners = new Set();
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} };

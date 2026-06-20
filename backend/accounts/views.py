@@ -156,7 +156,10 @@ def health_check(request):
     try:
         from django.core.cache import cache
         cache.set('health', '1', 5)
-        assert cache.get('health') == '1'
+        # `assert` o'rniga oddiy tekshiruv: Python `-O` (optimized) rejimda
+        # assert'lar olib tashlanadi va tekshiruv jimgina o'tib ketardi.
+        if cache.get('health') != '1':
+            status_payload['redis'] = 'error'
     except Exception:
         status_payload['redis'] = 'error'
     # Celery worker holati: beat har 30 soniyada 'celery_heartbeat' cache

@@ -35,6 +35,11 @@ sentry-sdk[django]==2.20.0
 # Email yuborish — Mailgun backend (faqat MAILGUN_API_KEY o'rnatilganda
 # yoqiladi, aks holda console/SMTP backend ishlatiladi).
 django-anymail[mailgun]==12.0
+# AI tahlil audio (O4) — matnni ovozga aylantirish (gTTS), Telegram sendVoice
+# orqali yuboriladi. accounts.views_me_premium._try_send_voice ichida dynamic
+# import bilan ishlatiladi; o'rnatilmagan bo'lsa graceful fallback (matn
+# yuboriladi), lekin funksiya ishlashi uchun shu yerda pinlanadi.
+gTTS==2.5.4
 # Admin login brute-force himoyasi (5 xato urinishdan keyin 1 soat lock).
 # Pin: `>=6.0` deploy'dan deploy'ga boshqa versiya o'rnatib reproducible
 # build'ni buzardi. 8.3.1 — hozirgi barqaror versiya (>=6.0 bilan so'nggi

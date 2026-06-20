@@ -307,7 +307,17 @@ def _collect_wrong_question_ids(user):
     Returns: set(question_id) — noyob savollar to'plami.
     """
     wrong_ids = set()
-    attempts = TestAttempt.objects.filter(user=user).only('id', 'answers', 'olympiad_id')
+    # Xotira himoyasi: faol foydalanuvchining minglab attempt'i bo'lishi mumkin —
+    # barchasini (answers JSON bilan) RAM'ga yuklash og'ir. Eng so'nggi 500 ta
+    # urinish "noto'g'ri javoblar" mashqi uchun yetarlicha keng (foydalanuvchi
+    # bundan eskini deyarli takrorlamaydi), ammo cheksiz o'sishni to'sadi.
+    MAX_ATTEMPTS = 500
+    attempts = (
+        TestAttempt.objects
+        .filter(user=user)
+        .only('id', 'answers', 'olympiad_id', 'submitted_at')
+        .order_by('-submitted_at')[:MAX_ATTEMPTS]
+    )
     attempt_answers = []  # [(olympiad_id, {qid:int -> xom javob})]
     referenced_qids = set()
 

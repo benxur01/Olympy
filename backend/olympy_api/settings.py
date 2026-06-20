@@ -440,11 +440,20 @@ JWT_REFRESH_COOKIE_NAME = os.environ.get('JWT_REFRESH_COOKIE_NAME', 'olympy_refr
 _default_samesite = 'Lax' if DEBUG else 'None'
 JWT_COOKIE_SAMESITE = os.environ.get('OLYMPY_JWT_COOKIE_SAMESITE', _default_samesite)
 
-CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
-CELERY_RESULT_BACKEND = (
-    os.environ.get('CELERY_RESULT_BACKEND_URL')
-    or os.environ.get('CELERY_BROKER_URL')
+# Redis ulanish manzili — rate limit cache, Celery broker va result backend
+# uchun yagona manba. REDIS_URL o'rnatilmagan bo'lsa CELERY_BROKER_URL'dan,
+# u ham bo'lmasa lokal fallback'dan o'qiladi. Bitta o'zgaruvchini o'rnatish
+# barcha komponentlarni bog'lab qo'yadi (Render Redis add-on REDIS_URL beradi).
+REDIS_URL = (
+    os.environ.get('REDIS_URL', '').strip()
+    or os.environ.get('CELERY_BROKER_URL', '').strip()
     or 'redis://localhost:6379/0'
+)
+CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', '').strip() or REDIS_URL
+CELERY_RESULT_BACKEND = (
+    os.environ.get('CELERY_RESULT_BACKEND_URL', '').strip()
+    or os.environ.get('CELERY_BROKER_URL', '').strip()
+    or REDIS_URL
 )
 
 # Eager (sinxron) rejim boshqaruvi. Avval `not bool(CELERY_BROKER_URL)` edi —
@@ -462,9 +471,16 @@ CELERY_RESULT_BACKEND = (
 # ulanmagan) — task'lar broker'ga ulanolmay jim muvaffaqiyatsiz tugmasligi
 # uchun shu holatda ham eager'ga o'tamiz (eski xulq saqlanadi). Bu faqat
 # broker MUTLAQO yo'q bo'lganda ishlaydi; production'da broker doim bor.
+# Broker manbasi sifatida CELERY_BROKER_URL yoki REDIS_URL'ning birortasi
+# o'rnatilgan bo'lsa eager EMAS — task'lar worker'ga yuboriladi. Faqat ikkalasi
+# ham xom env'da yo'q bo'lganda (sof lokal dev) eager'ga o'tamiz.
+_has_real_broker = bool(
+    os.environ.get('CELERY_BROKER_URL', '').strip()
+    or os.environ.get('REDIS_URL', '').strip()
+)
 CELERY_TASK_ALWAYS_EAGER = (
     os.environ.get('CELERY_EAGER', 'false').lower() == 'true'
-    or not bool(os.environ.get('CELERY_BROKER_URL'))
+    or not _has_real_broker
 )
 # Eager rejimda (broker yo'q — dev/staging) task ichidagi istisnolar jimgina
 # yutilib ketmasligi uchun chaqiruvchiga propagate qilamiz. Aks holda task
@@ -480,13 +496,13 @@ if CELERY_TASK_ALWAYS_EAGER:
         'og\'ir task\'lar (AI tahlil, ota-ona xabarlari) so\'rovni sekinlashtiradi.'
     )
 
-# Cache — REDIS_URL bo'lsa Redis ishlatamiz, aks holda CELERY_BROKER_URL'dan
-# yoki local fallback'dan. Bu rate limit, AI model discovery cache va boshqa
-# joylarda ishlatiladi.
-_redis_url_for_cache = (
-    os.environ.get('REDIS_URL', '').strip()
-    or os.environ.get('CELERY_BROKER_URL', '').strip()
-)
+# Cache — REDIS_URL (yuqorida CELERY_BROKER_URL fallback bilan aniqlangan)
+# redis sxemasida bo'lsa Redis ishlatamiz, aks holda local memory fallback.
+# Bu rate limit, AI model discovery cache va boshqa joylarda ishlatiladi.
+# DIQQAT: faqat real redis env (xom REDIS_URL/CELERY_BROKER_URL) bo'lganda
+# yoqamiz — REDIS_URL default lokal qiymat ('redis://localhost:6379/0') olsa
+# ham, Redis ishlamayotgan dev mashinada locmem'ga tushib qolmaslik uchun.
+_redis_url_for_cache = REDIS_URL if _has_real_broker else ''
 if _redis_url_for_cache and _redis_url_for_cache.startswith('redis'):
     CACHES = {
         'default': {
@@ -626,6 +642,15 @@ for origin in ['https://prolymp.uz', 'https://www.prolymp.uz']:
 # proxy ichki manzilini ishlatib qolardi.
 USE_X_FORWARDED_HOST = True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# Reverse proxy (Render) ortida ishlaymiz: X-Forwarded-For zanjiridan haqiqiy
+# klient IP'sini olishda DRF throttling necha proxy borligini bilishi kerak.
+# Render bitta proxy qo'yadi (default 1). Noto'g'ri qiymat: 0 bo'lsa barcha
+# foydalanuvchilar proxy IP'si bilan birlashib bitta throttle bucket'ga
+# tushardi (yoki XFF'ni soxtalashtirib limitni aylanib o'tish mumkin bo'lardi).
+# REST_FRAMEWORK['NUM_PROXIES'] — throttling klient IP'sini X-Forwarded-For'dan
+# shu son bo'yicha oladi.
+NUM_PROXIES = int(os.environ.get('NUM_PROXIES', '1'))
+REST_FRAMEWORK['NUM_PROXIES'] = NUM_PROXIES
 SECURE_SSL_REDIRECT = env_bool('OLYMPY_SECURE_SSL_REDIRECT', not DEBUG)
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG

@@ -42,6 +42,10 @@ const PricingPage = ({ onNavigate, user }) => {
   const [paymentPlan, setPaymentPlan] = React.useState(null); // modal uchun tanlangan plan
   const [paying, setPaying] = React.useState(false);
   const [payError, setPayError] = React.useState('');
+  // Planlarni yuklashda xato — foydalanuvchiga ko'rsatiladi (avval catch bo'sh
+  // edi va xato jimgina yutilardi: foydalanuvchi "tariflar mavjud emas" deb
+  // o'ylab qolardi). null = xato yo'q.
+  const [loadError, setLoadError] = React.useState('');
 
   const isLoggedIn = !!(user && (user.id || user.phone));
 
@@ -53,8 +57,15 @@ const PricingPage = ({ onNavigate, user }) => {
         const data = await OlympyApi.getSubscriptionPlans();
         if (cancelled) return;
         setPlans(Array.isArray(data) ? data : []);
-      } catch {
-        if (!cancelled) setPlans([]);
+        setLoadError('');
+      } catch (err) {
+        if (!cancelled) {
+          setPlans([]);
+          setLoadError(
+            OlympyApi.toUserMessage?.(err) ||
+            "Tariflarni yuklab bo'lmadi. Internetni tekshirib, sahifani yangilang.",
+          );
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -240,6 +251,12 @@ const PricingPage = ({ onNavigate, user }) => {
         {/* Kartalar */}
         {loading ? (
           <div className="mt-12 text-center text-sm text-white/40">Tariflar yuklanmoqda...</div>
+        ) : loadError ? (
+          <div className="mt-12 text-center">
+            <div className="inline-block rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm text-red-200">
+              {loadError}
+            </div>
+          </div>
         ) : cards.length === 0 ? (
           <div className="mt-12 text-center text-sm text-white/40">
             Bu turdagi tariflar hozircha mavjud emas.
