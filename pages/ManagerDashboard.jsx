@@ -71,6 +71,11 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [essayOnlyUngraded, setEssayOnlyUngraded] = React.useState(true);
   const [essayDrafts, setEssayDrafts] = React.useState({}); // { 'attemptId:questionId': {score, feedback} }
   const [essaySavingKey, setEssaySavingKey] = React.useState('');
+  // Natijalar → "Ko'rish" modali: tadbir ishtirokchilari natijalari jadvali.
+  // page_size=200 bilan yuklanadi; 200+ bo'lsa oddiy "Keyingisi →" pagination.
+  const [resultsModal, setResultsModal] = React.useState({
+    open: false, event: null, data: [], loading: false, page: 1, total: 0,
+  });
   // Markaz do'koni (Mukofotlar) holatlari.
   const [shopProducts, setShopProducts] = React.useState([]);
   const [shopLoading, setShopLoading] = React.useState(false);
@@ -288,6 +293,35 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Bahoni saqlab bo'lmadi"}`);
       })
       .finally(() => setEssaySavingKey(''));
+  };
+
+  // Natijalar modali: tanlangan tadbirning bitta sahifasini yuklaydi.
+  // page_size 200 — 200+ ishtirokchi bo'lsa "Keyingisi →" pagination ishlaydi.
+  const RESULTS_PAGE_SIZE = 200;
+  const loadResultsPage = (olympiadBackendId, pageNum) => {
+    setResultsModal(m => ({ ...m, loading: true }));
+    OlympyApi.getLeaderboardForOlympiad(olympiadBackendId, pageNum, RESULTS_PAGE_SIZE, OlympyApi.getToken())
+      .then(res => {
+        setResultsModal(m => ({
+          ...m,
+          data: Array.isArray(res?.entries) ? res.entries : [],
+          total: res?.pagination?.total ?? (Array.isArray(res?.entries) ? res.entries.length : 0),
+          page: pageNum,
+          loading: false,
+        }));
+      })
+      .catch(err => {
+        console.warn('getLeaderboardForOlympiad failed:', err);
+        showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Natijalarni yuklab bo'lmadi"}`);
+        setResultsModal(m => ({ ...m, loading: false }));
+      });
+  };
+
+  const openResultsModal = (olympiad) => {
+    if (!isApi) { showToast('Real server rejimida ishlaydi'); return; }
+    const backendId = olympiad.backendId ?? olympiad.olympiad_id ?? olympiad.id;
+    setResultsModal({ open: true, event: olympiad, data: [], loading: true, page: 1, total: 0 });
+    loadResultsPage(backendId, 1);
   };
 
   React.useEffect(() => {
@@ -1288,6 +1322,13 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <DonutChart value={Math.round(e.average_score || 0)} size={60} />
               <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl">Reyting</button>
               <button
+                onClick={() => openResultsModal(e)}
+                className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
+                title="Ishtirokchilar natijalari jadvalini ko'rish"
+              >
+                <Icon name="eye" size={12} /> Ko'rish
+              </button>
+              <button
                 onClick={() => {
                   OlympyApi.exportOlympiadResultsXlsx(e.olympiad_id, OlympyApi.getToken())
                     .then(() => showToast('✓ Excel fayl yuklandi'))
@@ -1321,6 +1362,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             <div key={o.id} className="flex items-center gap-4 p-4 glass rounded-xl mb-3">
               <div className="flex-1"><div className="font-semibold text-white">{o.title}</div><div className="text-xs text-white/40">{[o.testLevel, testTypeLabel(o.testType)].filter(Boolean).join(' · ')}{(o.testLevel || o.testType) ? ' · ' : ''}{o.participants || 0} ishtirokchi</div></div>
               <DonutChart value={o.avgScore || 0} size={60} />
+              <button onClick={() => openResultsModal(o)} className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"><Icon name="eye" size={12} /> Ko'rish</button>
               <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl">Reyting</button>
             </div>
           ))}
@@ -2026,6 +2068,116 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             </div>
           )}
           <div className="text-[11px] text-white/30">Baho saqlangach o'quvchining umumiy foizi avtomatik qayta hisoblanadi.</div>
+        </div>
+      </Modal>
+
+      {/* Natijalar (ishtirokchilar jadvali) modali */}
+      <Modal
+        open={resultsModal.open}
+        onClose={() => setResultsModal(m => ({ ...m, open: false }))}
+        title="Tadbir natijalari"
+        width="max-w-3xl"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold text-white truncate">{resultsModal.event?.title || '—'}</div>
+              <div className="text-xs text-white/40">{resultsModal.total} ishtirokchi</div>
+            </div>
+          </div>
+          {resultsModal.loading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+          {!resultsModal.loading && resultsModal.data.length === 0 && (
+            <div className="glass rounded-2xl p-8 text-center text-sm text-white/40">
+              Bu tadbirda hali ishtirokchi natijalari yo'q.
+            </div>
+          )}
+          {resultsModal.data.length > 0 && (
+            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
+              {/* Sarlavha qatori (desktop) */}
+              <div className="hidden md:grid grid-cols-12 gap-2 px-3 text-[10px] uppercase tracking-wide text-white/35 font-bold">
+                <div className="col-span-4">O'quvchi</div>
+                <div className="col-span-2 text-center">To'g'ri</div>
+                <div className="col-span-2 text-center">Noto'g'ri</div>
+                <div className="col-span-1 text-center">Jami</div>
+                <div className="col-span-1 text-center">Ball</div>
+                <div className="col-span-2 text-center">Holat</div>
+              </div>
+              {resultsModal.data.map(row => {
+                const total = row.total_questions || ((row.correct_count || 0) + (row.wrong_count || 0));
+                const pct = typeof row.score === 'number' ? row.score : 0;
+                return (
+                  <div key={row.attempt_id} className="glass rounded-xl p-3 border border-white/5">
+                    <div className="grid grid-cols-2 md:grid-cols-12 gap-2 items-center">
+                      <div className="md:col-span-4 min-w-0 flex items-center gap-2">
+                        {!row.disqualified && (
+                          <span className="hidden md:inline-flex flex-shrink-0 h-5 min-w-5 px-1 items-center justify-center rounded-md bg-white/5 text-[10px] font-bold text-white/45">
+                            {row.rank}
+                          </span>
+                        )}
+                        <span className="text-sm font-semibold text-white truncate">{row.name || '—'}</span>
+                      </div>
+                      <div className="md:col-span-2 md:text-center">
+                        <span className="md:hidden text-[10px] uppercase text-white/35 mr-1">To'g'ri:</span>
+                        <span className="text-sm font-bold text-emerald-300">{row.correct_count ?? 0}</span>
+                      </div>
+                      <div className="md:col-span-2 md:text-center">
+                        <span className="md:hidden text-[10px] uppercase text-white/35 mr-1">Noto'g'ri:</span>
+                        <span className="text-sm font-bold text-rose-300">{row.wrong_count ?? 0}</span>
+                      </div>
+                      <div className="md:col-span-1 md:text-center">
+                        <span className="md:hidden text-[10px] uppercase text-white/35 mr-1">Jami:</span>
+                        <span className="text-sm text-white/70">{total}</span>
+                      </div>
+                      <div className="md:col-span-1 md:text-center">
+                        <span className="md:hidden text-[10px] uppercase text-white/35 mr-1">Ball:</span>
+                        <span className="text-sm font-black text-indigo-300">{pct}%</span>
+                      </div>
+                      <div className="md:col-span-2 md:text-center">
+                        {row.disqualified ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25">
+                            <Icon name="info" size={11} /> Diskvalifitsiya
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+                            <Icon name="check" size={11} /> Topshirgan
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {/* Pagination — 200+ ishtirokchi bo'lsa */}
+          {resultsModal.total > RESULTS_PAGE_SIZE && (
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <button
+                onClick={() => {
+                  const backendId = resultsModal.event?.backendId ?? resultsModal.event?.olympiad_id ?? resultsModal.event?.id;
+                  if (backendId && resultsModal.page > 1) loadResultsPage(backendId, resultsModal.page - 1);
+                }}
+                disabled={resultsModal.loading || resultsModal.page <= 1}
+                className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
+              </button>
+              <div className="text-[11px] text-white/40">
+                Sahifa {resultsModal.page} / {Math.max(1, Math.ceil(resultsModal.total / RESULTS_PAGE_SIZE))}
+              </div>
+              <button
+                onClick={() => {
+                  const backendId = resultsModal.event?.backendId ?? resultsModal.event?.olympiad_id ?? resultsModal.event?.id;
+                  const lastPage = Math.ceil(resultsModal.total / RESULTS_PAGE_SIZE);
+                  if (backendId && resultsModal.page < lastPage) loadResultsPage(backendId, resultsModal.page + 1);
+                }}
+                disabled={resultsModal.loading || resultsModal.page >= Math.ceil(resultsModal.total / RESULTS_PAGE_SIZE)}
+                className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Keyingisi <Icon name="chevronRight" size={12} />
+              </button>
+            </div>
+          )}
         </div>
       </Modal>
 

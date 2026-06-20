@@ -1580,31 +1580,50 @@ def leaderboard(request):
     visible events: public olympiads globally, center competitions for the
     user's approved centers.
     """
-    # Diskvalifitsiya bo'lgan attempt'lar leaderboard'da ko'rinmaydi —
-    # ular faqat manager statistikasi uchun yoziladi. Aks holda 0 balli
-    # ko'p qator rank'ni chalkash qilardi.
+    # Diskvalifitsiya bo'lgan attempt'lar reytingda (rank) ko'rinmaydi —
+    # aks holda 0 balli ko'p qator rank'ni chalkash qilardi. Lekin bitta
+    # olimpiada natijalarini KO'RAYOTGAN MANAGER uchun DQ qatorlar ham kerak
+    # (Natijalar → Ko'rish modali "Diskvalifitsiya" holatini ko'rsatadi).
+    # Shuning uchun `disqualified=False` filtri shartli qo'llanadi: global
+    # reyting va oddiy ishtirokchi ko'rinishida DQ chiqarib tashlanadi,
+    # manager esa o'z tadbiri DQ'larini ham ko'radi.
     qs = (
         TestAttempt.objects
-        .filter(disqualified=False, olympiad__is_deleted=False)
+        .filter(olympiad__is_deleted=False)
         .select_related('user', 'olympiad', 'olympiad__center')
         .order_by('-score', 'time_spent', 'submitted_at')
     )
     olympiad_id = request.query_params.get('olympiad')
+    # include_disqualified — faqat tanlangan olimpiada + uni boshqara oluvchi
+    # foydalanuvchida True bo'ladi (quyida aniqlanadi).
+    include_disqualified = False
     if olympiad_id:
         olympiad = get_object_or_404(Olympiad.objects.select_related('center'), pk=olympiad_id)
         if not user_can_participate_in_event(request.user, olympiad):
             return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+        can_manage = user_can_manage_center_event(request.user, olympiad.center)
         # Draft/inactive olimpiada leaderboard'i faqat manager/owner/admin
         # uchun ko'rinadi. Oddiy ishtirokchi DRAFT yoki INACTIVE tadbir
         # natijalarini ko'ra olmaydi — bu sizdirib qo'yiladigan ma'lumot.
         if olympiad.status not in (Olympiad.STATUS_ACTIVE, Olympiad.STATUS_FINISHED):
-            if not user_can_manage_center_event(request.user, olympiad.center):
+            if not can_manage:
                 return Response(
                     {'detail': 'Bu olimpiada leaderboard\'i hali ochilmagan'},
                     status=http_status.HTTP_403_FORBIDDEN,
                 )
+        include_disqualified = can_manage
         qs = qs.filter(olympiad=olympiad)
+        # Manager bo'lmasa DQ qatorlarni chiqarib tashlaymiz (oddiy reyting).
+        if not include_disqualified:
+            qs = qs.filter(disqualified=False)
+        else:
+            # DQ qatorlar reyting orasiga aralashmasin — eng oxiriga suriladi
+            # (disqualified=True > False). Reyting (rank) tabiiy ravishda DQ
+            # bo'lmaganlardan boshlanadi.
+            qs = qs.order_by('disqualified', '-score', 'time_spent', 'submitted_at')
     if not olympiad_id:
+        # Global reyting — DQ hech qachon ko'rinmaydi.
+        qs = qs.filter(disqualified=False)
         allowed_center_ids = list(CenterMembership.objects.filter(
             user=request.user, status=CenterMembership.STATUS_APPROVED,
         ).values_list('center_id', flat=True))
@@ -1695,6 +1714,10 @@ def leaderboard(request):
             'olympiad_title': a.olympiad.title,
             'olympiad_status': a.olympiad.status,
             'score': a.score,
+            'correct_count': a.correct_count,
+            'wrong_count': a.wrong_count,
+            'total_questions': a.total_questions,
+            'disqualified': a.disqualified,
             'time_spent': a.time_spent,
             'submitted_at': a.submitted_at.isoformat(),
         })
