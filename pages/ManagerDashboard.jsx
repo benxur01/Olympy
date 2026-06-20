@@ -2076,109 +2076,227 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         open={resultsModal.open}
         onClose={() => setResultsModal(m => ({ ...m, open: false }))}
         title="Tadbir natijalari"
-        width="max-w-3xl"
+        width="max-w-5xl"
+        style={{ maxWidth: 980 }}
+        contentClassName="results-modal"
       >
-        <div className="space-y-4">
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="min-w-0">
-              <div className="text-sm font-semibold text-white truncate">{resultsModal.event?.title || '—'}</div>
-              <div className="text-xs text-white/40">{resultsModal.total} ishtirokchi</div>
-            </div>
-          </div>
-          {resultsModal.loading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
-          {!resultsModal.loading && resultsModal.data.length === 0 && (
-            <div className="glass rounded-2xl p-8 text-center text-sm text-white/40">
-              Bu tadbirda hali ishtirokchi natijalari yo'q.
-            </div>
-          )}
-          {resultsModal.data.length > 0 && (
-            <div className="space-y-2 max-h-[60vh] overflow-y-auto">
-              {/* Sarlavha qatori (desktop) */}
-              <div className="hidden md:grid grid-cols-12 gap-2 px-3 text-[10px] uppercase tracking-wide text-white/35 font-bold">
-                <div className="col-span-4">O'quvchi</div>
-                <div className="col-span-2 text-center">To'g'ri</div>
-                <div className="col-span-2 text-center">Noto'g'ri</div>
-                <div className="col-span-1 text-center">Jami</div>
-                <div className="col-span-1 text-center">Ball</div>
-                <div className="col-span-2 text-center">Holat</div>
-              </div>
-              {resultsModal.data.map(row => {
-                const total = row.total_questions || ((row.correct_count || 0) + (row.wrong_count || 0));
-                const pct = typeof row.score === 'number' ? row.score : 0;
-                return (
-                  <div key={row.attempt_id} className="glass rounded-xl p-3 border border-white/5">
-                    <div className="grid grid-cols-2 md:grid-cols-12 gap-2 items-center">
-                      <div className="md:col-span-4 min-w-0 flex items-center gap-2">
-                        {!row.disqualified && (
-                          <span className="hidden md:inline-flex flex-shrink-0 h-5 min-w-5 px-1 items-center justify-center rounded-md bg-white/5 text-[10px] font-bold text-white/45">
-                            {row.rank}
-                          </span>
-                        )}
-                        <span className="text-sm font-semibold text-white truncate">{row.name || '—'}</span>
+        {(() => {
+          const rows = resultsModal.data;
+          const lastPage = Math.max(1, Math.ceil(resultsModal.total / RESULTS_PAGE_SIZE));
+          // Sahifadagi (diskvalifikatsiya qilinmaganlar bo'yicha) o'rtacha ballni hisoblaymiz.
+          const scored = rows.filter(r => !r.disqualified && typeof r.score === 'number');
+          const avgScore = scored.length
+            ? Math.round(scored.reduce((s, r) => s + (r.score || 0), 0) / scored.length)
+            : null;
+          // Ball foiziga qarab rangli badge klasslari.
+          const scoreTone = (pct) => {
+            if (pct >= 90) return { text: 'text-emerald-300', bar: 'from-emerald-500 to-emerald-400', track: 'bg-emerald-500/10', ring: 'border-emerald-500/25' };
+            if (pct >= 70) return { text: 'text-indigo-300', bar: 'from-indigo-500 to-violet-400', track: 'bg-indigo-500/10', ring: 'border-indigo-500/25' };
+            if (pct >= 50) return { text: 'text-amber-300', bar: 'from-amber-500 to-amber-400', track: 'bg-amber-500/10', ring: 'border-amber-500/25' };
+            return { text: 'text-rose-300', bar: 'from-rose-500 to-rose-400', track: 'bg-rose-500/10', ring: 'border-rose-500/25' };
+          };
+          const rankMedal = (rank) => (rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null);
+
+          return (
+            <div className="space-y-5 -mt-2">
+              {/* ── Header: tadbir ma'lumotlari + statistik kartalar ── */}
+              <div className="glass rounded-2xl p-4 sm:p-5 border border-white/5">
+                <div className="flex items-start gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-base sm:text-lg font-bold text-white leading-tight break-words">
+                      {resultsModal.event?.title || '—'}
+                    </div>
+                    {resultsModal.event?.subject && resultsModal.event.subject !== '—' && (
+                      <div className="mt-2">
+                        <SubjectBadge subject={resultsModal.event.subject} />
                       </div>
-                      <div className="md:col-span-2 md:text-center">
-                        <span className="md:hidden text-[10px] uppercase text-white/35 mr-1">To'g'ri:</span>
-                        <span className="text-sm font-bold text-emerald-300">{row.correct_count ?? 0}</span>
-                      </div>
-                      <div className="md:col-span-2 md:text-center">
-                        <span className="md:hidden text-[10px] uppercase text-white/35 mr-1">Noto'g'ri:</span>
-                        <span className="text-sm font-bold text-rose-300">{row.wrong_count ?? 0}</span>
-                      </div>
-                      <div className="md:col-span-1 md:text-center">
-                        <span className="md:hidden text-[10px] uppercase text-white/35 mr-1">Jami:</span>
-                        <span className="text-sm text-white/70">{total}</span>
-                      </div>
-                      <div className="md:col-span-1 md:text-center">
-                        <span className="md:hidden text-[10px] uppercase text-white/35 mr-1">Ball:</span>
-                        <span className="text-sm font-black text-indigo-300">{pct}%</span>
-                      </div>
-                      <div className="md:col-span-2 md:text-center">
-                        {row.disqualified ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25">
-                            <Icon name="info" size={11} /> Diskvalifitsiya
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
-                            <Icon name="check" size={11} /> Topshirgan
-                          </span>
-                        )}
-                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-4">
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold">Ishtirokchilar</div>
+                    <div className="text-lg font-black text-white mt-0.5">{resultsModal.total}</div>
+                  </div>
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold">O'rtacha ball</div>
+                    <div className={`text-lg font-black mt-0.5 ${avgScore == null ? 'text-white/40' : scoreTone(avgScore).text}`}>
+                      {avgScore == null ? '—' : `${avgScore}%`}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-          {/* Pagination — 200+ ishtirokchi bo'lsa */}
-          {resultsModal.total > RESULTS_PAGE_SIZE && (
-            <div className="flex items-center justify-between gap-3 pt-1">
-              <button
-                onClick={() => {
-                  const backendId = resultsModal.event?.backendId ?? resultsModal.event?.olympiad_id ?? resultsModal.event?.id;
-                  if (backendId && resultsModal.page > 1) loadResultsPage(backendId, resultsModal.page - 1);
-                }}
-                disabled={resultsModal.loading || resultsModal.page <= 1}
-                className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
-              </button>
-              <div className="text-[11px] text-white/40">
-                Sahifa {resultsModal.page} / {Math.max(1, Math.ceil(resultsModal.total / RESULTS_PAGE_SIZE))}
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2.5 col-span-2 sm:col-span-1">
+                    <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold">Sahifa</div>
+                    <div className="text-lg font-black text-white mt-0.5">{resultsModal.page} <span className="text-sm text-white/30 font-bold">/ {lastPage}</span></div>
+                  </div>
+                </div>
               </div>
-              <button
-                onClick={() => {
-                  const backendId = resultsModal.event?.backendId ?? resultsModal.event?.olympiad_id ?? resultsModal.event?.id;
-                  const lastPage = Math.ceil(resultsModal.total / RESULTS_PAGE_SIZE);
-                  if (backendId && resultsModal.page < lastPage) loadResultsPage(backendId, resultsModal.page + 1);
-                }}
-                disabled={resultsModal.loading || resultsModal.page >= Math.ceil(resultsModal.total / RESULTS_PAGE_SIZE)}
-                className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Keyingisi <Icon name="chevronRight" size={12} />
-              </button>
+
+              {/* ── Loading skeleton ── */}
+              {resultsModal.loading && (
+                <div className="rounded-2xl border border-white/5 overflow-hidden">
+                  <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 bg-white/[0.03] text-[10px] uppercase tracking-wide text-white/35 font-bold">
+                    <div className="col-span-1 text-center">#</div>
+                    <div className="col-span-4">O'quvchi</div>
+                    <div className="col-span-2 text-center">To'g'ri / Jami</div>
+                    <div className="col-span-3">Ball</div>
+                    <div className="col-span-2 text-center">Holat</div>
+                  </div>
+                  <div className="divide-y divide-white/5">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="flex items-center gap-3 px-4 py-3.5 animate-pulse">
+                        <div className="h-6 w-6 rounded-md bg-white/10 flex-shrink-0" />
+                        <div className="h-4 rounded bg-white/10 flex-1 max-w-[40%]" />
+                        <div className="h-4 w-16 rounded bg-white/10" />
+                        <div className="h-2.5 flex-1 rounded-full bg-white/10" />
+                        <div className="h-5 w-20 rounded-md bg-white/10" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Bo'sh holat ── */}
+              {!resultsModal.loading && rows.length === 0 && (
+                <div className="glass rounded-2xl p-10 text-center">
+                  <div className="text-3xl mb-2">📭</div>
+                  <div className="text-sm text-white/40">Bu tadbirda hali ishtirokchi natijalari yo'q.</div>
+                </div>
+              )}
+
+              {/* ── Natijalar jadvali ── */}
+              {!resultsModal.loading && rows.length > 0 && (
+                <div className="rounded-2xl border border-white/5 overflow-hidden">
+                  <div className="max-h-[58vh] overflow-y-auto">
+                    {/* Sticky sarlavha qatori (desktop) */}
+                    <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 sticky top-0 z-10 bg-[#15171f]/95 backdrop-blur-sm border-b border-white/10 text-[10px] uppercase tracking-wide text-white/40 font-bold">
+                      <div className="col-span-1 text-center">#</div>
+                      <div className="col-span-4">O'quvchi</div>
+                      <div className="col-span-2 text-center">To'g'ri / Jami</div>
+                      <div className="col-span-3">Ball</div>
+                      <div className="col-span-2 text-center">Holat</div>
+                    </div>
+                    <div>
+                      {rows.map((row, idx) => {
+                        const total = row.total_questions || ((row.correct_count || 0) + (row.wrong_count || 0));
+                        const correct = row.correct_count ?? 0;
+                        const wrong = row.wrong_count ?? 0;
+                        const pct = typeof row.score === 'number' ? row.score : 0;
+                        const tone = scoreTone(pct);
+                        const dq = row.disqualified;
+                        const medal = rankMedal(row.rank);
+                        return (
+                          <div
+                            key={row.attempt_id ?? idx}
+                            className={`animate-in grid grid-cols-2 md:grid-cols-12 gap-x-2 gap-y-2 items-center px-3 md:px-4 py-3 border-b border-white/[0.04] transition-colors ${
+                              dq
+                                ? 'bg-white/[0.015] opacity-60'
+                                : idx % 2 === 1
+                                  ? 'bg-white/[0.02] hover:bg-white/[0.04]'
+                                  : 'hover:bg-white/[0.04]'
+                            }`}
+                          >
+                            {/* Rank */}
+                            <div className="hidden md:flex md:col-span-1 justify-center">
+                              {dq ? (
+                                <span className="text-white/25 text-sm">—</span>
+                              ) : medal ? (
+                                <span className="text-xl leading-none" title={`${row.rank}-o'rin`}>{medal}</span>
+                              ) : (
+                                <span className="inline-flex h-6 min-w-6 px-1.5 items-center justify-center rounded-md bg-white/5 text-xs font-bold text-white/50">
+                                  {row.rank}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* O'quvchi */}
+                            <div className="col-span-2 md:col-span-4 min-w-0 flex items-center gap-2">
+                              <span className="md:hidden flex-shrink-0">
+                                {dq ? (
+                                  <span className="text-white/25 text-xs">—</span>
+                                ) : medal ? (
+                                  <span className="text-lg leading-none">{medal}</span>
+                                ) : (
+                                  <span className="inline-flex h-5 min-w-5 px-1 items-center justify-center rounded-md bg-white/5 text-[10px] font-bold text-white/45">{row.rank}</span>
+                                )}
+                              </span>
+                              <span className={`text-sm font-semibold truncate ${dq ? 'text-white/45 line-through' : 'text-white'}`}>
+                                {row.name || '—'}
+                              </span>
+                            </div>
+
+                            {/* To'g'ri / Jami */}
+                            <div className="md:col-span-2 md:text-center">
+                              <span className="md:hidden text-[10px] uppercase text-white/35 mr-1">Natija:</span>
+                              <span className="text-sm font-bold text-emerald-300">{correct}</span>
+                              <span className="text-sm text-white/40">/{total}</span>
+                              {wrong > 0 && (
+                                <span className="ml-1.5 text-[11px] font-semibold text-rose-300/80">−{wrong}</span>
+                              )}
+                            </div>
+
+                            {/* Ball — progress bar */}
+                            <div className="md:col-span-3 flex items-center gap-2.5">
+                              <div className={`hidden md:block flex-1 h-2 rounded-full overflow-hidden ${tone.track}`}>
+                                <div className={`h-full rounded-full bg-gradient-to-r ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+                              </div>
+                              <span className={`text-sm font-black tabular-nums ${dq ? 'text-white/40' : tone.text}`}>{pct}%</span>
+                              {/* Mobil progress bar (label ostida) */}
+                              <div className={`md:hidden flex-1 h-1.5 rounded-full overflow-hidden ${tone.track}`}>
+                                <div className={`h-full rounded-full bg-gradient-to-r ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+                              </div>
+                            </div>
+
+                            {/* Holat */}
+                            <div className="col-span-2 md:col-span-2 md:text-center">
+                              {dq ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25">
+                                  <Icon name="info" size={11} /> DQ
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+                                  <Icon name="check" size={11} /> Topshirgan
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Pagination — 200+ ishtirokchi bo'lsa ── */}
+              {resultsModal.total > RESULTS_PAGE_SIZE && (
+                <div className="flex items-center justify-center gap-2 pt-1">
+                  <button
+                    onClick={() => {
+                      const backendId = resultsModal.event?.backendId ?? resultsModal.event?.olympiad_id ?? resultsModal.event?.id;
+                      if (backendId && resultsModal.page > 1) loadResultsPage(backendId, resultsModal.page - 1);
+                    }}
+                    disabled={resultsModal.loading || resultsModal.page <= 1}
+                    className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
+                  </button>
+                  <div className="px-3 py-2 rounded-xl bg-white/5 text-[11px] font-bold text-white/60 tabular-nums">
+                    {resultsModal.page} / {lastPage}
+                  </div>
+                  <button
+                    onClick={() => {
+                      const backendId = resultsModal.event?.backendId ?? resultsModal.event?.olympiad_id ?? resultsModal.event?.id;
+                      if (backendId && resultsModal.page < lastPage) loadResultsPage(backendId, resultsModal.page + 1);
+                    }}
+                    disabled={resultsModal.loading || resultsModal.page >= lastPage}
+                    className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Keyingisi <Icon name="chevronRight" size={12} />
+                  </button>
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          );
+        })()}
       </Modal>
 
       {/* Create/edit event modal */}
