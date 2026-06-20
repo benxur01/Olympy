@@ -9,6 +9,7 @@ urlpatterns = [
     path('run-code/start/', views.run_code_start_view, name='questions-run-code-start'),
     path('run-code/status/<str:task_id>/', views.run_code_status_view, name='questions-run-code-status'),
     path('pdf-preview/', views.preview_pdf_questions, name='questions-pdf-preview'),
+    path('pdf-preview/<str:task_id>/status/', views.pdf_preview_status, name='questions-pdf-preview-status'),
     path('import/', views.import_questions_excel, name='questions-import'),
     path('delete-all/', views.delete_all_questions, name='questions-delete-all'),
     path('analytics/', views.question_analytics, name='questions-analytics'),

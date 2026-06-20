@@ -12,7 +12,6 @@ from centers.models import CenterMembership
 
 from .ai_generation import generate_questions, explain_question_ai, review_code_submission
 from .models import Question
-from .pdf_generation import extract_questions_from_pdf
 from .serializers import QuestionSerializer
 
 
@@ -303,6 +302,7 @@ def _normalize_difficulty(value):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
+@throttle_classes([AiQuestionRateThrottle])
 def import_questions_excel(request):
     """POST /api/questions/import/?center=<id>
 
@@ -335,6 +335,15 @@ def import_questions_excel(request):
     upload = request.FILES.get('file') or request.FILES.get('upload') or request.FILES.get('excel')
     if not upload:
         return Response({'detail': 'Fayl yuboring (form key: file)'}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    # Fayl hajmi cheklovi: avval Excel/CSV import'ga limit yo'q edi va katta
+    # fayl (openpyxl butun workbook'ni yuklaydi) xotirani to'ldirishi mumkin edi.
+    import_max_bytes = getattr(settings, 'AI_QUESTION_IMPORT_MAX_BYTES', 10 * 1024 * 1024)
+    if upload.size and upload.size > import_max_bytes:
+        return Response(
+            {'detail': f"Fayl juda katta. Limit: {import_max_bytes // (1024 * 1024)} MB"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
 
     filename = (getattr(upload, 'name', '') or '').lower()
     fallback_subject = (request.query_params.get('subject') or request.data.get('subject') or 'Umumiy').strip() or 'Umumiy'
@@ -461,7 +470,20 @@ def import_questions_excel(request):
 @parser_classes([MultiPartParser, FormParser])
 @throttle_classes([AiQuestionRateThrottle])
 def preview_pdf_questions(request):
-    """POST /api/questions/pdf-preview/ — extract questions from an uploaded PDF."""
+    """POST /api/questions/pdf-preview/ — PDFdan savol ajratish task'ini boshlaydi.
+
+    Avval bu view PDFni SINXRON tahlil qilardi (Gemini API 15-30 daqiqa) va
+    Gunicorn worker'ni bloklardi. Endi Celery task'ni ishga tushiradi va darhol
+    `task_id` qaytaradi; frontend `pdf-preview/<task_id>/status/` orqali polling
+    qiladi. EAGER rejimda (Redis yo'q) task `delay()` ichida sinxron bajariladi.
+    """
+    import base64 as _b64
+    import uuid
+
+    from django.core.cache import cache
+
+    from .tasks import process_pdf_questions_task
+
     center_id = request.data.get('center')
     if not center_id:
         return Response(
@@ -491,7 +513,9 @@ def preview_pdf_questions(request):
         return Response({'detail': 'PDF fayl yuboring'}, status=http_status.HTTP_400_BAD_REQUEST)
     filename = str(getattr(pdf_file, 'name', '') or '').lower()
     content_type = str(getattr(pdf_file, 'content_type', '') or '').lower()
-    if content_type != 'application/pdf' and not filename.endswith('.pdf'):
+    # Avval `AND` edi — content_type yoki kengaytma bittasi to'g'ri bo'lsa o'tib
+    # ketardi. Endi `OR`: ikkalasi ham mos kelishi shart (PDF MIME + .pdf nomi).
+    if content_type != 'application/pdf' or not filename.endswith('.pdf'):
         return Response({'detail': 'Faqat PDF fayl qabul qilinadi'}, status=http_status.HTTP_400_BAD_REQUEST)
     max_bytes = getattr(settings, 'AI_QUESTION_PDF_MAX_BYTES', 20 * 1024 * 1024)
     if pdf_file.size and pdf_file.size > max_bytes:
@@ -502,32 +526,60 @@ def preview_pdf_questions(request):
     pdf_bytes = pdf_file.read()
     if not pdf_bytes:
         return Response({'detail': "PDF fayl bo'sh"}, status=http_status.HTTP_400_BAD_REQUEST)
-    result = extract_questions_from_pdf(
-        pdf_bytes=pdf_bytes,
-        subject=request.data.get('subject') or '',
-        difficulty=request.data.get('difficulty') or 'medium',
-        question_type=request.data.get('question_type') or 'multiple_choice',
-    )
-    if not result.get('ok'):
+    # Magic bytes tekshiruvi — content_type/nom soxta bo'lishi mumkin, lekin
+    # haqiqiy PDF har doim '%PDF' bilan boshlanadi.
+    if pdf_bytes[:4] != b'%PDF':
         return Response(
-            {
-                'detail': result.get('error') or "PDFdan savollarni ajratib bo'lmadi",
-                'pdf_text_chars': result.get('pdf_text_chars', 0),
-                'page_count': result.get('page_count', 0),
-                'used_pdf_vision': bool(result.get('used_pdf_vision')),
-            },
-            status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+            {'detail': "Fayl haqiqiy PDF emas (PDF imzosi topilmadi)"},
+            status=http_status.HTTP_400_BAD_REQUEST,
         )
-    return Response({
-        'questions': result.get('questions') or [],
-        'provider': result.get('provider') or '',
-        'pdf_text_chars': result.get('pdf_text_chars', 0),
-        'page_count': result.get('page_count', 0),
-        'used_pdf_vision': bool(result.get('used_pdf_vision')),
-        'complete': result.get('complete', True),
-        'warning': result.get('warning') or '',
-        'chunks': result.get('chunks', 1),
-    })
+
+    task_id = str(uuid.uuid4())
+    cache_key = f"pdf_questions:task:{task_id}"
+    cache.set(cache_key, {'status': 'PENDING'}, timeout=900)
+    # Celery argumenti JSON-serializable bo'lishi uchun PDF baytlarini base64 qilamiz.
+    process_pdf_questions_task.delay(
+        task_id,
+        _b64.b64encode(pdf_bytes).decode('ascii'),
+        request.data.get('subject') or '',
+        request.data.get('difficulty') or 'medium',
+        request.data.get('question_type') or 'multiple_choice',
+    )
+    return Response({'task_id': task_id}, status=http_status.HTTP_202_ACCEPTED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def pdf_preview_status(request, task_id):
+    """GET /api/questions/pdf-preview/<task_id>/status/ — PDF task holatini qaytaradi.
+
+    Javob shakllari:
+      {'status': 'PENDING'}
+      {'status': 'COMPLETED', 'questions': [...], 'provider': ..., ...}
+      {'status': 'FAILED', 'detail': ...}
+    """
+    from django.core.cache import cache
+
+    state = cache.get(f"pdf_questions:task:{task_id}")
+    if not state:
+        return Response(
+            {'status': 'FAILED', 'detail': "Vazifa topilmadi yoki muddati o'tgan"},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+    status_value = state.get('status')
+    if status_value == 'COMPLETED':
+        result = state.get('result') or {}
+        return Response({'status': 'COMPLETED', **result})
+    if status_value == 'FAILED':
+        # Frontend xato xabarini `detail`/`error` orqali ko'rsatadi.
+        return Response({
+            'status': 'FAILED',
+            'detail': state.get('error') or "PDFdan savollarni ajratib bo'lmadi",
+            'pdf_text_chars': state.get('pdf_text_chars', 0),
+            'page_count': state.get('page_count', 0),
+            'used_pdf_vision': bool(state.get('used_pdf_vision')),
+        })
+    return Response({'status': 'PENDING'})
 
 
 @api_view(['GET'])

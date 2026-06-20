@@ -828,9 +828,16 @@ AI_QUESTION_MAX_COUNT = int(os.environ.get('AI_QUESTION_MAX_COUNT', '30'))
 AI_QUESTION_MAX_OUTPUT_TOKENS = int(os.environ.get('AI_QUESTION_MAX_OUTPUT_TOKENS', '12000'))
 AI_QUESTION_GEMINI_MAX_OUTPUT_TOKENS = int(os.environ.get('AI_QUESTION_GEMINI_MAX_OUTPUT_TOKENS', '8192'))
 AI_QUESTION_PDF_MAX_BYTES = int(os.environ.get('AI_QUESTION_PDF_MAX_BYTES', str(20 * 1024 * 1024)))
+# Excel/CSV savol import fayli uchun hajm cheklovi (default 10 MB) — openpyxl
+# butun workbook'ni xotiraga yuklagani uchun katta fayldan himoyalaydi.
+AI_QUESTION_IMPORT_MAX_BYTES = int(os.environ.get('AI_QUESTION_IMPORT_MAX_BYTES', str(10 * 1024 * 1024)))
 AI_QUESTION_PDF_MAX_TEXT_CHARS = int(os.environ.get('AI_QUESTION_PDF_MAX_TEXT_CHARS', '300000'))
 AI_QUESTION_PDF_CHUNK_CHARS = int(os.environ.get('AI_QUESTION_PDF_CHUNK_CHARS', '25000'))
 AI_QUESTION_PDF_MAX_CHUNKS = int(os.environ.get('AI_QUESTION_PDF_MAX_CHUNKS', '20'))
+# PDF chunk'larini Gemini'ga parallel yuborish (ThreadPoolExecutor max_workers).
+# Ketma-ket emas, parallel yuborish katta PDF tahlilini sezilarli tezlashtiradi;
+# Gemini kvotasini bosib qo'ymaslik uchun default 5.
+AI_QUESTION_PDF_MAX_PARALLEL = int(os.environ.get('AI_QUESTION_PDF_MAX_PARALLEL', '5'))
 
 # Logging: WARNING va undan yuqori darajadagi xabarlar console'ga (stderr)
 # chiqadi — Render kabi platformalar stdout/stderr'ni avtomatik yig'adi.

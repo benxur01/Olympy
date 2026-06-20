@@ -343,6 +343,69 @@ def _finalize_results(task_id, batch_results, test_cases_meta, submission_id=Non
         }, timeout=300)
 
 
+@shared_task(bind=True)
+def process_pdf_questions_task(self, task_id, pdf_b64, subject, difficulty, question_type):
+    """PDFdan savollarni AI yordamida ajratadi va natijani keshga yozadi.
+
+    Avval bu ish `preview_pdf_questions` view'da SINXRON bajarilardi va Gemini
+    API chaqiruvlari 15-30 daqiqagacha cho'zilib, Gunicorn worker'ni to'liq
+    bloklardi. Endi alohida Celery task — worker thread band qilinmaydi.
+
+    Frontend `GET /api/questions/pdf-preview/<task_id>/status/` orqali polling
+    qilib natijani oladi. EAGER rejimda (Redis yo'q dev) task sinxron bajariladi
+    va `delay()` shu yerdayoq natijani keshga yozib qaytadi — bu lokal dev uchun
+    to'g'ri (settings.CELERY_TASK_ALWAYS_EAGER boshqaradi).
+
+    PDF baytlari Celery argumenti sifatida base64 string ko'rinishida keladi
+    (broker JSON serializer'i bilan mos bo'lishi uchun).
+    """
+    import base64
+
+    from django.core.cache import cache
+    from django.db import close_old_connections
+
+    from .pdf_generation import extract_questions_from_pdf
+
+    close_old_connections()
+    cache_key = f"pdf_questions:task:{task_id}"
+    try:
+        pdf_bytes = base64.b64decode(pdf_b64) if pdf_b64 else b''
+        result = extract_questions_from_pdf(
+            pdf_bytes=pdf_bytes,
+            subject=subject or '',
+            difficulty=difficulty or 'medium',
+            question_type=question_type or 'multiple_choice',
+        )
+        if not result.get('ok'):
+            cache.set(cache_key, {
+                'status': 'FAILED',
+                'error': result.get('error') or "PDFdan savollarni ajratib bo'lmadi",
+                'pdf_text_chars': result.get('pdf_text_chars', 0),
+                'page_count': result.get('page_count', 0),
+                'used_pdf_vision': bool(result.get('used_pdf_vision')),
+            }, timeout=900)
+            return
+        cache.set(cache_key, {
+            'status': 'COMPLETED',
+            'result': {
+                'questions': result.get('questions') or [],
+                'provider': result.get('provider') or '',
+                'pdf_text_chars': result.get('pdf_text_chars', 0),
+                'page_count': result.get('page_count', 0),
+                'used_pdf_vision': bool(result.get('used_pdf_vision')),
+                'complete': result.get('complete', True),
+                'warning': result.get('warning') or '',
+                'chunks': result.get('chunks', 1),
+            },
+        }, timeout=900)
+    except Exception as exc:
+        logger.exception('PDF savol ajratish task xatosi task=%s', task_id)
+        cache.set(cache_key, {
+            'status': 'FAILED',
+            'error': str(exc) or "PDFni tahlil qilishda kutilmagan xato",
+        }, timeout=900)
+
+
 @shared_task(bind=True, max_retries=3)
 def update_question_embedding(self, question_id):
     """RAG: savol matnini vektorga aylantirib `embedding` ustuniga yozadi.
