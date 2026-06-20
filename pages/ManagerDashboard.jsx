@@ -906,7 +906,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 </div>
               </div>
             ))}
-            {pendingCount === 0 && <div className="text-sm text-white/40 px-3 py-2">Yangi arizalar yo'q</div>}
+            {pendingCount === 0 && <div className="text-sm text-white/40 text-center py-10">Yangi arizalar yo'q</div>}
           </div>
         </div>
 
