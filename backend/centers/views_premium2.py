@@ -448,18 +448,71 @@ def mock_olympiads(request, center_id):
     return Response([_serialize_mock(m) for m in items])
 
 
-@api_view(['DELETE'])
+@api_view(['PUT', 'PATCH', 'DELETE'])
 @permission_classes([IsAuthenticated])
 def mock_olympiad_delete(request, center_id, mock_id):
-    """DELETE /api/centers/<id>/mock-olympiads/<mock_id>/ — mock o'chirish."""
+    """PUT/PATCH/DELETE /api/centers/<id>/mock-olympiads/<mock_id>/
+
+    DELETE — mock o'chirish.
+    PUT/PATCH — mockni tahrirlash. Berilgan maydonlargina yangilanadi:
+      {title, subject, time_limit_minutes, is_active, question_ids: [...]}
+    `question_ids` faqat shu markazning savollaridan bo'lishi mumkin.
+    """
+    from questions.models import Question
+
     center = get_object_or_404(EducationCenter, pk=center_id)
     if not user_can_manage_center(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
     mock = MockOlympiad.objects.filter(pk=mock_id, center=center).first()
     if not mock:
         return Response({'detail': 'Topilmadi'}, status=http_status.HTTP_404_NOT_FOUND)
-    mock.delete()
-    return Response(status=http_status.HTTP_204_NO_CONTENT)
+
+    if request.method == 'DELETE':
+        mock.delete()
+        return Response(status=http_status.HTTP_204_NO_CONTENT)
+
+    # PUT/PATCH — qisman yangilash. Faqat yuborilgan maydonlarga tegamiz.
+    body = request.data or {}
+    update_fields = []
+
+    if 'title' in body:
+        title = (body.get('title') or '').strip()
+        if not title:
+            return Response({'detail': 'title bo\'sh bo\'lmasligi kerak'},
+                            status=http_status.HTTP_400_BAD_REQUEST)
+        mock.title = title[:200]
+        update_fields.append('title')
+
+    if 'subject' in body:
+        mock.subject = (body.get('subject') or '').strip()[:80]
+        update_fields.append('subject')
+
+    if 'time_limit_minutes' in body:
+        try:
+            time_limit = int(body.get('time_limit_minutes') or 30)
+        except (TypeError, ValueError):
+            time_limit = 30
+        mock.time_limit_minutes = max(1, min(time_limit, 600))
+        update_fields.append('time_limit_minutes')
+
+    if 'is_active' in body:
+        mock.is_active = bool(body.get('is_active'))
+        update_fields.append('is_active')
+
+    if update_fields:
+        mock.save(update_fields=update_fields)
+
+    # question_ids berilsa — faqat shu markazning savollarini biriktiramiz.
+    if 'question_ids' in body:
+        question_ids = body.get('question_ids') or []
+        if not isinstance(question_ids, list):
+            question_ids = []
+        valid_questions = list(
+            Question.objects.filter(center=center, pk__in=question_ids)
+        ) if question_ids else []
+        mock.questions.set(valid_questions)
+
+    return Response(_serialize_mock(mock))
 
 
 # ─── T5. Menejer faoliyat logi ───────────────────────────────────────────────

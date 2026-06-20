@@ -4,7 +4,9 @@
 const DEFAULT_API_BASE_URL = import.meta.env?.PROD
   ? 'https://olympy-api.onrender.com'
   : 'http://localhost:8000';
-const API_BASE_URL = (
+// API_BASE_URL — yagona manba (single source of truth). store.jsx ham shu
+// qiymatni import qiladi (avval ikkala faylda hardcoded takrorlanardi).
+export const API_BASE_URL = (
   import.meta.env?.VITE_API_BASE_URL ||
   DEFAULT_API_BASE_URL
 ).replace(/\/+$/, '');
@@ -808,6 +810,14 @@ export const OlympyApi = {
   linkChild: (studentPhone, token) => request('/api/me/parent/link/', { method: 'POST', body: { student_phone: studentPhone }, token }),
   getChildren: (token) => request('/api/me/parent/children/', { token }),
   unlinkChild: (studentId, token) => request(`/api/me/parent/link/${studentId}/`, { method: 'DELETE', token }),
+  // O'quvchi tomoni: o'ziga "farzand" sifatida qo'shilmoqchi bo'lgan
+  // ota-onalarning kutilayotgan so'rovlari. Backend: views_parent.
+  // list_parent_requests / respond_parent_request / confirm_parent.
+  listParentRequests: (token) => request('/api/me/parent-requests/', { token }).then(unwrapList),
+  // Bitta so'rovni tasdiqlash/rad etish (link_id URL'da). accept=true|false.
+  respondParent: (linkId, accept, token) => request(`/api/me/parent-requests/${linkId}/respond/`, { method: 'POST', body: { accept: !!accept }, token }),
+  // Qulay muqobil: link_id yoki parent_id orqali tasdiqlash/rad etish.
+  confirmParent: (payload, token) => request('/api/me/confirm-parent/', { method: 'POST', body: payload || {}, token }),
   childReportDownloadUrl: (studentId) => `${API_BASE_URL}/api/me/parent/children/${studentId}/report/`,
   downloadChildReport: async (studentId, token) => {
     const res = await fetch(`${API_BASE_URL}/api/me/parent/children/${studentId}/report/`, {

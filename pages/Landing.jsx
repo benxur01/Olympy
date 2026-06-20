@@ -1189,9 +1189,12 @@ const LandingPage = ({ onNavigate, user }) => {
             sekinlashtirmaydi). */}
         {!isLowPower && (
           <>
-            <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full filter blur-[60px] pointer-events-none" style={{ background: 'rgba(99, 102, 241, 0.18)' }} />
-            <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] rounded-full filter blur-[60px] pointer-events-none" style={{ background: 'rgba(168, 85, 247, 0.16)' }} />
-            <div className="absolute top-10 right-10 w-[250px] h-[250px] rounded-full filter blur-[40px] pointer-events-none" style={{ background: 'rgba(34, 211, 238, 0.16)' }} />
+            {/* blur radiusi 60px→40px pasaytirildi: katta blur WebView/sekin
+                GPU'da har kadrda qayta hisoblanib (composite) sekinlashtiradi.
+                will-change kompozitor qatlamiga ajratib silliqlashtiradi. */}
+            <div className="absolute top-1/4 left-1/4 w-[350px] h-[350px] rounded-full filter blur-[40px] pointer-events-none" style={{ background: 'rgba(99, 102, 241, 0.18)', willChange: 'transform' }} />
+            <div className="absolute bottom-10 right-1/4 w-[400px] h-[400px] rounded-full filter blur-[40px] pointer-events-none" style={{ background: 'rgba(168, 85, 247, 0.16)', willChange: 'transform' }} />
+            <div className="absolute top-10 right-10 w-[250px] h-[250px] rounded-full filter blur-[40px] pointer-events-none" style={{ background: 'rgba(34, 211, 238, 0.16)', willChange: 'transform' }} />
           </>
         )}
         

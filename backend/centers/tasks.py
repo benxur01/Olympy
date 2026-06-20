@@ -1,8 +1,11 @@
+import logging
+
 from celery import shared_task
 from django.contrib.auth import get_user_model
 from centers.models import EducationCenter, CenterMembership
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 @shared_task
@@ -27,13 +30,19 @@ def send_student_join_notifications_task(requester_id, center_id, membership_id)
             try:
                 send_student_join_request_notification(m.user, requester, center, membership)
             except Exception:
-                pass
+                logger.exception(
+                    "Failed to notify manager user_id=%s about student join "
+                    "(center=%s, membership=%s)", m.user_id, center_id, membership_id,
+                )
 
         if center.owner_id:
             try:
                 send_student_join_request_notification(center.owner, requester, center, membership)
             except Exception:
-                pass
+                logger.exception(
+                    "Failed to notify owner user_id=%s about student join "
+                    "(center=%s, membership=%s)", center.owner_id, center_id, membership_id,
+                )
         return f"Successfully sent join notifications for student {requester_id} in center {center_id}"
     except Exception as e:
         import logging

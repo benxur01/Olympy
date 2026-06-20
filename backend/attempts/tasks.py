@@ -61,7 +61,9 @@ def generate_attempt_ai_analysis_task(attempt_id):
                 status=AttemptAIAnalysis.STATUS_FAILED,
             )
         except Exception:
-            pass
+            logger.exception(
+                "Failed to mark AI analysis FAILED for attempt=%s", attempt_id,
+            )
 
 
 @shared_task

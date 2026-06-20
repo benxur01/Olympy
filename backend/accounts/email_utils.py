@@ -17,10 +17,39 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+# User modelida `email` maydoni bor-yo'qligini bir marta aniqlaymiz (har
+# chaqiruvda field introspection qilmaslik uchun). Maydon umuman bo'lmasa,
+# har bir `send_*` chaqiruvi jimgina no-op bo'ladi — bu holatda foydalanuvchiga
+# xabar Telegram orqali boradi (notifications.services). Konfiguratsiya
+# muammosini ko'rish uchun bir marta WARNING yoziladi.
+_EMAIL_FIELD_AVAILABLE = None
+_EMAIL_NOT_CONFIGURED_LOGGED = False
+
+
 def _user_email(user):
-    """Foydalanuvchidan email manzilini xavfsiz olish (yo'q bo'lsa None)."""
+    """Foydalanuvchidan email manzilini xavfsiz olish (yo'q bo'lsa None).
+
+    User modelida `email` maydoni mavjud bo'lmasa (autentifikatsiya telefon
+    orqali) — birinchi chaqiruvda bir marta `logger.warning` yoziladi va None
+    qaytaradi. Email kanali sozlanmagan, lekin chaqiruvchi oqim (obuna, to'lov,
+    markaz tasdig'i) buzilmaydi — xabar Telegram orqali yetkaziladi.
+    """
+    global _EMAIL_FIELD_AVAILABLE, _EMAIL_NOT_CONFIGURED_LOGGED
     email = getattr(user, 'email', None)
-    return email or None
+    if not email:
+        # Maydon umuman yo'q (None va ataylab bo'sh emas) — konfiguratsiya
+        # holatini bir marta log'ga chiqaramiz. Render stderr'ni yig'adi.
+        if _EMAIL_FIELD_AVAILABLE is None:
+            _EMAIL_FIELD_AVAILABLE = hasattr(user, 'email')
+        if not _EMAIL_FIELD_AVAILABLE and not _EMAIL_NOT_CONFIGURED_LOGGED:
+            logger.warning(
+                "Email not configured: User modelida 'email' maydoni yo'q — "
+                "email bildirishnomalari o'tkazib yuborilmoqda, xabarlar "
+                "Telegram orqali yuboriladi."
+            )
+            _EMAIL_NOT_CONFIGURED_LOGGED = True
+        return None
+    return email
 
 
 def send_async_email(subject, message, recipient_list, html_message=None):

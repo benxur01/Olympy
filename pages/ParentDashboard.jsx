@@ -42,7 +42,11 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
       if (resp) {
         setPredictionsMap(prev => ({ ...prev, [studentId]: resp }));
       }
-    } catch {}
+    } catch (err) {
+      // Avval catch bo'sh edi — bashorat yuklanmasa foydalanuvchi sababini
+      // bilmasdan qolardi. Endi qisqa toast ko'rsatamiz.
+      showToast(OlympyApi.toUserMessage?.(err) || "Bashoratni yuklab bo'lmadi");
+    }
     setPredictionsLoading(false);
   }, [token, predictionsMap]);
 

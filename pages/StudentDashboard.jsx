@@ -701,6 +701,32 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     () => isApi ? OlympyApi.getMyPredictions(OlympyApi.getToken()) : Promise.resolve({}),
     [isApi, page === 'home' || page === 'predictions'],
   );
+  // Menga kelgan kutilayotgan ota-ona so'rovlari (kimdir meni "farzand"
+  // sifatida qo'shmoqchi). Bosh sahifada banner sifatida ko'rsatamiz —
+  // o'quvchi tasdiqlaguncha ota-ona uning ma'lumotlarini ko'rmaydi.
+  const apiParentRequestsRes = useApiData(
+    () => isApi ? OlympyApi.listParentRequests(OlympyApi.getToken()) : Promise.resolve([]),
+    [isApi, page === 'home'],
+  );
+  // Tasdiqlash/rad etish jarayonidagi link_id (tugmalarni disable qilish uchun).
+  const [parentRespondingId, setParentRespondingId] = React.useState(null);
+  const respondToParentRequest = React.useCallback(async (linkId, accept) => {
+    if (!isApi || !linkId) return;
+    setParentRespondingId(linkId);
+    try {
+      await OlympyApi.respondParent(linkId, accept, OlympyApi.getToken());
+      showApiToast(accept ? "Ota-ona so'rovi tasdiqlandi" : "Ota-ona so'rovi rad etildi");
+      // Ro'yxatdan o'sha so'rovni darhol olib tashlaymiz (optimistik) va
+      // serverdan qayta yuklaymiz.
+      apiParentRequestsRes.mutate?.((prev) =>
+        Array.isArray(prev) ? prev.filter((r) => r.link_id !== linkId) : prev);
+      apiParentRequestsRes.reload?.();
+    } catch (err) {
+      showApiToast(OlympyApi.toUserMessage?.(err) || "So'rovni ko'rib chiqib bo'lmadi");
+    } finally {
+      setParentRespondingId(null);
+    }
+  }, [isApi, apiParentRequestsRes]);
   // Premium: tarixiy tahlil grafigi, raqobatchi tahlili, zaiflik xaritasi.
   // Premium bo'lmagan o'quvchida so'rov yuborilmaydi (backend 403 qaytaradi).
   const apiHistoryChartRes = useApiData(
@@ -1209,6 +1235,50 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           </div>
         )}
       </div>
+
+      {/* Kutilayotgan ota-ona so'rovlari — kimdir meni "farzand" sifatida
+          qo'shmoqchi. Tasdiqlasam, u natijalarimni ko'ra oladi. */}
+      {isApi && Array.isArray(apiParentRequestsRes.data) && apiParentRequestsRes.data.length > 0 && (
+        <div className="glass rounded-2xl p-4 md:p-5 border border-amber-500/25 bg-amber-500/[0.04] space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">👪</span>
+            <div className="text-sm font-bold text-white">Ota-ona kuzatuv so'rovlari</div>
+          </div>
+          <p className="text-xs text-white/50">
+            Quyidagi shaxslar sizni "farzand" sifatida kuzatmoqchi. Tasdiqlasangiz,
+            ular natijalaringiz va faolligingizni ko'ra oladi.
+          </p>
+          {apiParentRequestsRes.data.map((req) => (
+            <div key={req.link_id} className="flex items-center gap-3 glass rounded-xl p-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/15 flex items-center justify-center text-amber-300 font-bold flex-shrink-0 overflow-hidden">
+                {req.avatar_url
+                  ? <img src={req.avatar_url} alt="" className="w-full h-full object-cover" />
+                  : (req.parent_name || '?')[0]}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-semibold text-white truncate">{req.parent_name || 'Foydalanuvchi'}</div>
+                {req.parent_username && <div className="text-xs text-white/40 truncate">@{req.parent_username}</div>}
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                <button
+                  onClick={() => respondToParentRequest(req.link_id, true)}
+                  disabled={parentRespondingId === req.link_id}
+                  className="btn-primary text-xs px-3 py-2 rounded-lg font-semibold min-h-[40px] disabled:opacity-50"
+                >
+                  Tasdiqlash
+                </button>
+                <button
+                  onClick={() => respondToParentRequest(req.link_id, false)}
+                  disabled={parentRespondingId === req.link_id}
+                  className="btn-ghost text-xs px-3 py-2 rounded-lg font-semibold min-h-[40px] disabled:opacity-50"
+                >
+                  Rad etish
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Stats row */}
       {(() => {

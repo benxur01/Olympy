@@ -260,14 +260,18 @@ def _activate_subscription(user, amount, plan_id=None):
                 from accounts.utils import invalidate_user_subscription_cache
                 invalidate_user_subscription_cache(user.id)
             except Exception:
-                pass
+                logger.exception(
+                    "Subscription cache invalidation failed for user_id=%s", user.id,
+                )
             # Obuna faollashtirildi — foydalanuvchiga email xabar (email maydoni
             # bo'lmasa yoki yuborishda xato bo'lsa jimgina o'tib ketadi).
             try:
                 from accounts.email_utils import send_subscription_activated
                 send_subscription_activated(user)
             except Exception:
-                pass
+                logger.exception(
+                    "send_subscription_activated email failed for user_id=%s", user.id,
+                )
             # Telegram orqali batafsil "Obuna faollashdi" xabari: plan nomi,
             # muddati va summasi bilan (chat_id ulangan bo'lsa). Email maydoni
             # hozircha yo'q, shuning uchun Telegram asosiy kanal — ulanmagan
@@ -281,7 +285,9 @@ def _activate_subscription(user, amount, plan_id=None):
                     end_date=end,
                 )
             except Exception:
-                pass
+                logger.exception(
+                    "send_payment_success_notification failed for user_id=%s", user.id,
+                )
 
         transaction.on_commit(_on_subscription_committed)
         # Obuna muvaffaqiyatli yaratildi — chaqiruvchiga aniq signal.
@@ -832,7 +838,10 @@ def payme_webhook(request):
                         from accounts.utils import invalidate_user_subscription_cache
                         invalidate_user_subscription_cache(user_id)
                     except Exception:
-                        pass
+                        logger.exception(
+                            "Subscription cache invalidation failed after Payme "
+                            "refund for user_id=%s", user_id,
+                        )
                 transaction.on_commit(_invalidate_cache)
                 cancelled_state = -2
             else:
