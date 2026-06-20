@@ -2141,10 +2141,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
         {/* Umumiy stats kartochkalari */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <StatCard label="Jami olimpiada" value={stats.total_olympiads || 0} icon="trophy" color="from-indigo-500 to-purple-600" />
-          <StatCard label="O'rtacha ball" value={`${stats.avg_score || 0}%`} icon="chart" color="from-emerald-500 to-teal-600" />
-          <StatCard label="Eng yaxshi" value={`${stats.best_score || 0}%`} icon="star" color="from-amber-500 to-orange-600" />
-          <StatCard label="Streak" value={`${stats.streak || 0} kun`} sub={stats.streak ? 'Ketma-ket' : "Bugun boshlang"} icon="bolt" color="from-rose-500 to-pink-600" />
+          <StatCard label="Jami olimpiada" value={stats.total_olympiads || 0} icon={<Icon name="trophy" size={20} />} color="from-indigo-500 to-purple-600" />
+          <StatCard label="O'rtacha ball" value={`${stats.avg_score || 0}%`} icon={<Icon name="chart" size={20} />} color="from-emerald-500 to-teal-600" />
+          <StatCard label="Eng yaxshi" value={`${stats.best_score || 0}%`} icon={<Icon name="star" size={20} />} color="from-amber-500 to-orange-600" />
+          <StatCard label="Streak" value={`${stats.streak || 0} kun`} sub={stats.streak ? 'Ketma-ket' : "Bugun boshlang"} icon={<Icon name="bolt" size={20} />} color="from-rose-500 to-pink-600" />
         </div>
 
         {/* Ball dinamikasi (chiziqli grafik) */}
