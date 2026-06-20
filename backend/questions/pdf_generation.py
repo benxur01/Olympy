@@ -6,6 +6,7 @@ import re
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 from django.conf import settings
 
@@ -101,6 +102,50 @@ def _int_setting(name, default, minimum=None, maximum=None):
     if maximum is not None:
         value = min(value, maximum)
     return value
+
+
+def _pdf_max_parallel():
+    """Bir vaqtda yuboriladigan maksimal parallel Gemini so'rovi (chunk'lar uchun).
+
+    Avval chunk'lar `for` loop bilan ketma-ket yuborilardi va 30 sahifali PDF
+    Gemini'da 15-30 daqiqagacha cho'zilardi. Endi ThreadPoolExecutor bilan
+    parallel yuboramiz — Gemini kvotasini bosib qo'ymaslik uchun default 5.
+    """
+    return _int_setting('AI_QUESTION_PDF_MAX_PARALLEL', 5, 1, 10)
+
+
+def _map_chunks_parallel(chunk_count, worker):
+    """`worker(chunk_index)` ni 1..chunk_count uchun parallel chaqiradi.
+
+    Natijalarni KIRISH TARTIBIDA (chunk_index bo'yicha) ro'yxat qilib qaytaradi —
+    savollar ketma-ketligi PDFdagidek saqlanishi shart, shu sababli parallel
+    bajarsak ham tartibni buzmaymiz. Bitta chunk'da chaqiruv istisno otsa,
+    o'sha o'rin uchun None qaytadi (chaqiruvchi failed deb belgilaydi).
+    """
+    if chunk_count <= 0:
+        return []
+    if chunk_count == 1:
+        # Bitta chunk — pool ortiqcha, to'g'ridan-to'g'ri chaqiramiz.
+        try:
+            return [worker(1)]
+        except Exception:
+            logger.exception('PDF chunk #1 worker failed')
+            return [None]
+    max_workers = min(_pdf_max_parallel(), chunk_count)
+    results = [None] * chunk_count
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_index = {
+            executor.submit(worker, index): index
+            for index in range(1, chunk_count + 1)
+        }
+        for future in future_to_index:
+            index = future_to_index[future]
+            try:
+                results[index - 1] = future.result()
+            except Exception:
+                logger.exception('PDF chunk #%s worker failed', index)
+                results[index - 1] = None
+    return results
 
 
 def _extract_tables_per_page(pdf_bytes, max_pages=1000):
@@ -389,13 +434,15 @@ def _gemini_keys():
 
 
 def _gemini_models():
-    primary = getattr(settings, 'AI_QUESTION_GEMINI_MODEL', 'gemini-2.5-flash')
+    primary = getattr(settings, 'AI_QUESTION_GEMINI_MODEL', 'gemini-2.0-flash')
     fallbacks = list(getattr(settings, 'AI_QUESTION_GEMINI_FALLBACK_MODELS', []) or [])
+    # Faqat haqiqatda mavjud bo'lgan modellar. Avval bu yerda
+    # 'gemini-3.1-flash-lite' va 'gemini-3-flash-preview' bor edi — ular Google
+    # API'da yo'q va birinchi urinishda 404 qaytarib har so'rovni sekinlashtirardi.
     defaults = [
-        'gemini-3.1-flash-lite',
-        'gemini-3-flash-preview',
-        'gemini-2.5-flash',
-        'gemini-2.5-pro',
+        'gemini-2.0-flash',
+        'gemini-1.5-flash',
+        'gemini-1.5-pro',
     ]
     return list(dict.fromkeys(model for model in [primary, *fallbacks, *defaults] if model))
 
@@ -892,10 +939,10 @@ def _gemini_extract_text_chunks(pdf_text, subject, difficulty, question_type):
     if len(chunks) <= 1:
         return None
 
-    collected = []
-    failed_chunks = []
     chunk_count = len(chunks)
-    for chunk_index, chunk in enumerate(chunks, start=1):
+
+    def _run_chunk(chunk_index):
+        chunk = chunks[chunk_index - 1]
         chunk_note = (
             f"Bu PDF matnining {chunk_index}/{chunk_count}-bo'lagi. "
             "Faqat shu bo'lakda ko'ringan savollarni ajrat. "
@@ -911,19 +958,23 @@ def _gemini_extract_text_chunks(pdf_text, subject, difficulty, question_type):
             False,
             chunk_note=chunk_note,
         )
-        result = _gemini_request(
+        return _gemini_request(
             payload,
             subject,
             difficulty,
             f'text_chunk_{chunk_index}_of_{chunk_count}',
             used_pdf_vision=False,
         )
-        if result.get('ok'):
+
+    # Chunk'larni parallel yuboramiz (ThreadPoolExecutor, max 5) — tartib saqlanadi.
+    chunk_results = _map_chunks_parallel(chunk_count, _run_chunk)
+    collected = []
+    failed_chunks = []
+    for chunk_index, result in enumerate(chunk_results, start=1):
+        if result and result.get('ok'):
             collected.append(result.get('questions') or [])
-            continue
-        failed_chunks.append(chunk_index)
-        if result.get('provider_error') in ('HTTP 401', 'HTTP 403'):
-            break
+        else:
+            failed_chunks.append(chunk_index)
 
     merged = _merge_questions(collected)
     if merged:
@@ -962,10 +1013,10 @@ def _gemini_vision_chunks(pdf_bytes, pdf_text, subject, difficulty, question_typ
     if len(chunks) <= 1:
         return None
 
-    collected = []
-    failed_chunks = []
     chunk_count = len(chunks)
-    for chunk_index, chunk in enumerate(chunks, start=1):
+
+    def _run_chunk(chunk_index):
+        chunk = chunks[chunk_index - 1]
         chunk_note = (
             f"Bu PDFning {chunk_index}/{chunk_count}-bo'lagi "
             f"(sahifa {chunk.get('start_page')}–{chunk.get('end_page')}/{chunk.get('total_pages')}). "
@@ -982,19 +1033,23 @@ def _gemini_vision_chunks(pdf_bytes, pdf_text, subject, difficulty, question_typ
             True,
             chunk_note=chunk_note,
         )
-        result = _gemini_request(
+        return _gemini_request(
             payload,
             subject,
             difficulty,
             f'vision_chunk_{chunk_index}_of_{chunk_count}',
             used_pdf_vision=True,
         )
-        if result.get('ok'):
+
+    # Sahifa bo'laklarini parallel yuboramiz (ThreadPoolExecutor, max 5) — tartib saqlanadi.
+    chunk_results = _map_chunks_parallel(chunk_count, _run_chunk)
+    collected = []
+    failed_chunks = []
+    for chunk_index, result in enumerate(chunk_results, start=1):
+        if result and result.get('ok'):
             collected.append(result.get('questions') or [])
-            continue
-        failed_chunks.append(chunk_index)
-        if result.get('provider_error') in ('HTTP 401', 'HTTP 403'):
-            break
+        else:
+            failed_chunks.append(chunk_index)
 
     merged = _merge_questions(collected)
     if merged:

@@ -706,7 +706,12 @@ export const OlympyApi = {
     request(`/api/attempts/${attemptId}/essay-answers/`, { token }),
   gradeEssayAnswer: (attemptId, questionId, payload, token) =>
     request(`/api/attempts/${attemptId}/essay-answers/${questionId}/grade/`, { method: 'POST', body: payload, token }),
-  extractPdfQuestions: (pdfFile, payload, token) => {
+  extractPdfQuestions: async (pdfFile, payload, token, signal) => {
+    // Avval bu chaqiruv sinxron edi va backend Gemini API'ni kutib (15-30 daqiqa)
+    // javob qaytarardi. Endi backend Celery task'ni boshlaydi va task_id qaytaradi;
+    // bu yerda natija tayyor bo'lguncha polling qilamiz (runCode naqshiga o'xshash).
+    const aborted = () => signal && signal.aborted;
+    if (aborted()) throw new ApiError('aborted', { status: 0 });
     const fd = new FormData();
     fd.append('pdf', pdfFile);
     Object.keys(payload || {}).forEach(k => {
@@ -714,7 +719,34 @@ export const OlympyApi = {
       if (v == null) return;
       fd.append(k, String(v));
     });
-    return request('/api/questions/pdf-preview/', { method: 'POST', body: fd, token });
+    const startRes = await request('/api/questions/pdf-preview/', { method: 'POST', body: fd, token, signal });
+    const taskId = startRes?.task_id;
+    // Orqaga moslik: agar backend (eski versiya) to'g'ridan-to'g'ri natija qaytarsa,
+    // task_id bo'lmaydi — o'shani o'zini qaytaramiz.
+    if (!taskId) return startRes;
+
+    // PDF tahlil katta bo'lishi mumkin — 5 daqiqagacha (150 × 2s) polling qilamiz.
+    for (let i = 0; i < 150; i++) {
+      await new Promise((resolve, reject) => {
+        if (aborted()) return reject(new ApiError('aborted', { status: 0 }));
+        const t = setTimeout(resolve, 2000);
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            clearTimeout(t);
+            reject(new ApiError('aborted', { status: 0 }));
+          }, { once: true });
+        }
+      });
+      if (aborted()) throw new ApiError('aborted', { status: 0 });
+      const statusRes = await request(`/api/questions/pdf-preview/${taskId}/status/`, { token, signal });
+      if (statusRes?.status === 'COMPLETED') {
+        return statusRes;
+      }
+      if (statusRes?.status === 'FAILED') {
+        throw new ApiError(statusRes?.detail || statusRes?.error || "PDFdan savollarni ajratib bo'lmadi", { status: 503, data: statusRes });
+      }
+    }
+    throw new ApiError("PDF tahlil qilish vaqti tugadi (Timeout)");
   },
   updateQuestion: (questionId, payload, token) => request(`/api/questions/${questionId}/`, { method: 'PATCH', body: payload, token }),
   deleteQuestion: (questionId, token) => request(`/api/questions/${questionId}/`, { method: 'DELETE', token }),
