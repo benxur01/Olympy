@@ -799,6 +799,21 @@ export const OlympyApi = {
       }
       return { olympiad: null, entries: [], pagination: null };
     }),
+  // Bitta olimpiadaning to'liq reytingi — page/page_size bilan (ManagerDashboard
+  // "Natijalar → Ko'rish" modali). 200+ ishtirokchi bo'lsa oddiy pagination
+  // ishlatiladi. Backend shakli: { results, pagination:{total,has_next,...} }.
+  // Qatorlar va pagination'ni xom holda qaytaramiz (chaqiruvchi o'zi ishlatadi).
+  getLeaderboardForOlympiad: (olympiadId, page, pageSize, token) =>
+    request(
+      `/api/leaderboard/?olympiad=${encodeURIComponent(olympiadId)}&page=${page || 1}&page_size=${pageSize || 200}`,
+      { token },
+    ).then(res => {
+      if (Array.isArray(res)) return { entries: res, pagination: null };
+      return {
+        entries: (res && Array.isArray(res.results)) ? res.results : [],
+        pagination: (res && res.pagination) || null,
+      };
+    }),
   getManagerStats: (centerId, token) => request(`/api/manager/stats/${centerId ? '?center=' + centerId : ''}`, { token }),
   getQuestionDifficultyStats: (centerId, token) => request(`/api/manager/question-difficulty-stats/?center=${centerId}`, { token }),
   getMyMonthlyStats: (months, token) => request(`/api/results/me/monthly/${months ? '?months=' + months : ''}`, { token }),
