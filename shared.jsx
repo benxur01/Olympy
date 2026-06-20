@@ -603,11 +603,11 @@ const Topbar = ({ title, subtitle, actions, user, onMenuClick }) => {
 };
 
 // ─── Modal ─────────────────────────────────────────────────────────────────────
-const Modal = ({ open, onClose, title, children, width = 'max-w-lg' }) => {
+const Modal = ({ open, onClose, title, children, width = 'max-w-lg', style, contentClassName = '' }) => {
   if (!open) return null;
   return ReactDOM.createPortal(
     <div className="overlay" onClick={onClose}>
-      <div className={`modal ${width}`} onClick={e => e.stopPropagation()}>
+      <div className={`modal ${width} ${contentClassName}`} onClick={e => e.stopPropagation()} style={style}>
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-bold text-white">{title}</h3>
           <button onClick={onClose} className="text-white/40 hover:text-white transition-colors"><Icon name="x" size={20} /></button>
