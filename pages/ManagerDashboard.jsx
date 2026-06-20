@@ -885,10 +885,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         <StatCard label="Jami tadbirlar" value={olympiads.length} icon={<Icon name="bolt" size={20} />} color="from-emerald-500 to-teal-600" />
       </div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+      {/* O'quvchi arizalari (faqat kutilayotgan arizalar bo'lsa ko'rsatiladi) */}
+      {pendingCount > 0 && (
         <div className="glass rounded-2xl p-5 border border-amber-500/20">
           <div className="mb-4 flex items-center justify-between">
-            <h3 className="font-bold text-white">O'quvchi arizalari</h3>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+              <h3 className="font-bold text-white">O'quvchi arizalari</h3>
+            </div>
             <button onClick={() => setPage('requests')} className="text-xs text-indigo-400">Barchasi</button>
           </div>
           <div className="space-y-2">
@@ -905,9 +909,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 </div>
               </div>
             ))}
-            {pendingCount === 0 && <div className="text-sm text-white/40 px-3 py-2">Yangi arizalar yo'q</div>}
           </div>
         </div>
+      )}
+
+      {/* Tadbirlar va Eng yaxshi o'quvchilar side-by-side */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         <div className="glass rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold text-white">Tadbirlar</h3>
@@ -955,15 +962,15 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             {students.length === 0 && <div className="text-sm text-white/40">Hali tasdiqlangan o'quvchilar yo'q</div>}
           </div>
         </div>
+      </div>
 
-        {/* Haftalik faollik */}
-        <div className="glass rounded-2xl p-5">
-          <h3 className="font-bold text-white mb-4">Haftalik faollik</h3>
-          <BarChart data={[
-            { label: 'Dush', value: 42 }, { label: 'Sesh', value: 78 }, { label: 'Chor', value: 55 },
-            { label: 'Pay', value: 91 }, { label: 'Jum', value: 67 }, { label: 'Shan', value: 34 }, { label: 'Yak', value: 20 },
-          ]} />
-        </div>
+      {/* Haftalik faollik (to'liq kenglikda) */}
+      <div className="glass rounded-2xl p-5">
+        <h3 className="font-bold text-white mb-4">Haftalik faollik</h3>
+        <BarChart data={[
+          { label: 'Dush', value: 42 }, { label: 'Sesh', value: 78 }, { label: 'Chor', value: 55 },
+          { label: 'Pay', value: 91 }, { label: 'Jum', value: 67 }, { label: 'Shan', value: 34 }, { label: 'Yak', value: 20 },
+        ]} />
       </div>
     </div>
   );
