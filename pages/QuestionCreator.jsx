@@ -398,6 +398,10 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     correct_answer: q.correctAnswer ?? q.correct ?? 0,
     score: q.score ?? 3,
     difficulty: _diffToApi(q.difficulty || q.level, q.subject || aiForm.subject),
+    // PDF preview'da har savolni MCQ ↔ kod savoli sifatida belgilash mumkin
+    // (q.question_type). Belgilanmagan bo'lsa default 'mcq'. AI savollarida bu
+    // maydon yo'q — ular ham mcq bo'lib qoladi.
+    question_type: q.question_type || 'mcq',
     source: source || q.source || 'manual',
   });
 
@@ -630,6 +634,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       correctAnswer: q.correctAnswer,
       score: q.score,
       difficulty: q.difficulty,
+      questionType: q.question_type || 'mcq',
       source: q.source || 'pdf',
       createdBy: user?.id,
     })));
@@ -1266,7 +1271,9 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   <button onClick={savePdfQuestions} disabled={bulkSaving} className="btn-primary text-xs px-4 py-1.5 rounded-xl font-semibold disabled:opacity-50">Saqlash</button>
                 </div>
               </div>
-              {pdfResult.map((q,i) => (
+              {pdfResult.map((q,i) => {
+                const isCode = (q.question_type || 'mcq') === 'code';
+                return (
                 <div key={i} className="glass rounded-xl p-3 text-sm text-white/70 space-y-2">
                   <div className="flex items-start gap-2">
                     <span className="text-cyan-300 font-bold">{i+1}.</span>
@@ -1281,8 +1288,20 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                         <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
                       </div>
                     </div>
+                    {/* Savol turini MCQ ↔ kod savoli o'rtasida almashtirish.
+                        Faqat PDF preview'da; saqlashda question_type backend'ga ketadi. */}
+                    <button
+                      type="button"
+                      onClick={() => setPdfResult(prev => prev.map((item, idx) =>
+                        idx === i ? { ...item, question_type: isCode ? 'mcq' : 'code' } : item
+                      ))}
+                      title={isCode ? "Kod savoli sifatida saqlanadi — bosib MCQ ga qaytaring" : "MCQ sifatida saqlanadi — bosib kod savoliga o'tkazing"}
+                      className={`flex-shrink-0 inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg border transition-all ${isCode ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' : 'bg-white/5 text-white/40 border-white/10 hover:text-white/60'}`}
+                    >
+                      {isCode ? <>{'</> '}Kod savoli</> : 'MCQ'}
+                    </button>
                   </div>
-                  {Array.isArray(q.options) && q.options.length > 0 && (
+                  {!isCode && Array.isArray(q.options) && q.options.length > 0 && (
                     <div className="grid gap-1.5 sm:grid-cols-2">
                       {q.options.map((option, optionIndex) => (
                         <div key={optionIndex}
@@ -1292,8 +1311,12 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                       ))}
                     </div>
                   )}
+                  {isCode && (
+                    <div className="text-[11px] text-indigo-300/70 pl-6">Bu savol kod (dasturlash) savoli sifatida saqlanadi. Variantlar o'rniga o'quvchi kod yozadi.</div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
