@@ -25,12 +25,16 @@ const TYPES = [
 ];
 // AI/PDF generatori faqat klassik variantli turlarni biladi.
 const AI_TYPES = ["Ko'p tanlovli", "To'g'ri/Noto'g'ri", 'Qisqa javob'];
-// Label → backend question_type. Ko'p tanlovli/To'g'ri-Noto'g'ri/Qisqa javob
-// hammasi `mcq` (vizual rejim sifatida); qolganlari 1:1.
+// Label → backend question_type. Ko'p tanlovli/To'g'ri-Noto'g'ri `mcq` (vizual
+// rejim); qolganlari 1:1. "Qisqa javob" — bitta matnli javob, shu sababli
+// `fill_blank` (correct_text) ga maplanadi, 4 ta bo'sh variantli `mcq` emas.
+// (Eslatma: AI/PDF generatsiyasi `aiForm.type`ni to'g'ridan-to'g'ri backendga
+// yuboradi va u alohida 4-variantli testga aylantiradi — bu mapping faqat
+// qo'lda saqlashga ta'sir qiladi.)
 const TYPE_TO_BACKEND = {
   "Ko'p tanlovli": 'mcq',
   "To'g'ri/Noto'g'ri": 'mcq',
-  'Qisqa javob': 'mcq',
+  'Qisqa javob': 'fill_blank',
   'Kod (dasturlash)': 'code',
   'Bir nechta to\'g\'ri (Multiple Select)': 'multiple_select',
   "Ha / Yo'q": 'yes_no',
@@ -86,7 +90,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [mode, setMode] = React.useState('list'); // list | manual | ai | pdf
   const [filterSubject, setFilterSubject] = React.useState('');
   const [filterLevel, setFilterLevel] = React.useState('');
-  const [aiForm, setAiForm] = React.useState({ subject:'Matematika', topic:'', count:10, level:'O\'rta', type:'Ko\'p tanlovli' });
+  const [aiForm, setAiForm] = React.useState({ subject: store.subjects[0] || 'Matematika', topic:'', count:10, level:'O\'rta', type:'Ko\'p tanlovli' });
   const [aiLoading, setAiLoading] = React.useState(false);
   const [aiResult, setAiResult] = React.useState(null);
   // AI savollar oylik limiti: backend /api/billing/limits/ -> ai_generations bloki
@@ -98,7 +102,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [pdfVision, setPdfVision] = React.useState(false);
   const [pdfWarning, setPdfWarning] = React.useState('');
   const [pdfChunks, setPdfChunks] = React.useState(1);
-  const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject:'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
+  const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject: store.subjects[0] || 'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
   const [editingQuestionId, setEditingQuestionId] = React.useState(null);
   const [newSubjectModal, setNewSubjectModal] = React.useState(false);
   const [newSubject, setNewSubject] = React.useState('');
@@ -283,6 +287,13 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       // Mock rejimda PDF parse qiluvchi server yo'q — soxta "PDF dan
       // ajratilgan 1-savol" natijalar bazaga sizmasligi uchun chiqaramiz.
       showApiToast("⚠ PDF tahlil qilish uchun akkaunt bilan kirish kerak");
+      e.target.value = '';
+      return;
+    }
+    if (!myCenterId) {
+      // handleImport bilan bir xil guard — markaz aniqlanmasa, center'siz
+      // so'rov yubormaymiz.
+      showApiToast("⚠ Markaz aniqlanmadi");
       e.target.value = '';
       return;
     }
@@ -530,8 +541,19 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       if (uniq.length === 0) { showApiToast("⚠ Kamida bitta to'g'ri javobni belgilang"); return null; }
       return { ...base, options: opts, correct_answer: uniq[0], correct_text: JSON.stringify(uniq) };
     }
-    // mcq (Ko'p tanlovli / To'g'ri-Noto'g'ri / Qisqa javob)
-    return { ...base, options: newQ.options, correct_answer: newQ.correct, question_type: 'mcq' };
+    // mcq (Ko'p tanlovli / To'g'ri-Noto'g'ri)
+    // Bo'sh variantlarni olib tashlaymiz va to'g'ri javob indeksini qolgan
+    // (to'ldirilgan) variantlar ro'yxatiga moslab qayta hisoblaymiz — to'rtta
+    // bo'sh variant bilan yoki belgilangan to'g'ri javob bo'sh variantga
+    // tushib qolgan holda saqlashni oldini olamiz.
+    const mcqOpts = (newQ.options || []).filter(o => String(o).trim());
+    if (mcqOpts.length < 2) { showApiToast('⚠ Kamida 2 ta variant kiriting'); return null; }
+    const correctVal = newQ.options[newQ.correct];
+    const newCorrect = (correctVal != null && String(correctVal).trim())
+      ? mcqOpts.indexOf(correctVal)
+      : -1;
+    if (newCorrect < 0) { showApiToast("⚠ To'g'ri javobni to'ldirilgan variantlardan tanlang"); return null; }
+    return { ...base, options: mcqOpts, correct_answer: newCorrect, question_type: 'mcq' };
   };
 
   const saveQuestion = () => {
@@ -645,9 +667,21 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     setMode('list');
   };
 
-  const addCustomSubject = () => {
-    if (newSubject && !allSubjects.includes(newSubject)) {
-      OlympyStore.addSubject(newSubject);
+  const addCustomSubject = async () => {
+    const name = (newSubject || '').trim();
+    if (name && !allSubjects.includes(name)) {
+      // API rejimida fanni backendga ham yozamiz, shunda boshqa
+      // foydalanuvchilar/sahifalarda ham ko'rinadi. Lokal store'ga baribir
+      // qo'shamiz — UI darhol yangilanadi va API xatosida fan yo'qolmaydi.
+      OlympyStore.addSubject(name);
+      if (isApi) {
+        try {
+          await OlympyApi.createSubject(name, OlympyApi.getToken());
+        } catch (err) {
+          console.warn('createSubject failed:', err);
+          showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Fan serverga saqlanmadi (faqat shu qurilmada)"}`);
+        }
+      }
     }
     setNewSubjectModal(false);
     setNewSubject('');
@@ -944,13 +978,18 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               </p>
             </div>
           )}
-          {/* Bitta bo'sh joy to'ldirish */}
-          {newQ.type === "Bo'sh joy to'ldirish" && (
+          {/* Bitta bo'sh joy to'ldirish / Qisqa javob — ikkalasi ham bitta
+              matnli to'g'ri javob (fill_blank backend type). */}
+          {(newQ.type === "Bo'sh joy to'ldirish" || newQ.type === 'Qisqa javob') && (
             <div>
               <label className="block text-xs text-white/50 mb-1.5 font-medium">To'g'ri javob</label>
               <input className="input-field" placeholder="Masalan: Toshkent"
                 value={newQ.correctText} onChange={e => setNewQ({...newQ, correctText: e.target.value})} />
-              <p className="mt-2 text-[11px] text-white/35">Savol matnida bo'sh joyni <code className="text-white/50">___</code> bilan belgilashingiz mumkin. O'quvchi javobi shu matnga moslab tekshiriladi.</p>
+              <p className="mt-2 text-[11px] text-white/35">
+                {newQ.type === 'Qisqa javob'
+                  ? "O'quvchi qisqa matnli javob yozadi va u shu to'g'ri javobga moslab tekshiriladi."
+                  : <>Savol matnida bo'sh joyni <code className="text-white/50">___</code> bilan belgilashingiz mumkin. O'quvchi javobi shu matnga moslab tekshiriladi.</>}
+              </p>
             </div>
           )}
           {/* Ko'p bo'sh joy to'ldirish */}

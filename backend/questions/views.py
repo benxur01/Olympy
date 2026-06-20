@@ -180,6 +180,7 @@ def delete_all_questions(request):
             status=http_status.HTTP_403_FORBIDDEN,
         )
     ids_raw = request.query_params.get('ids')
+    selected_ids = None
     if ids_raw:
         try:
             ids = [int(x) for x in ids_raw.split(',') if x.strip()]
@@ -188,9 +189,18 @@ def delete_all_questions(request):
                 {'detail': "ids parametri butun sonlar ro'yxati bo'lishi kerak"},
                 status=http_status.HTTP_400_BAD_REQUEST,
             )
+        selected_ids = ids
         deleted_count, _ = Question.objects.filter(center_id=center_id, id__in=ids).delete()
     else:
         deleted_count, _ = Question.objects.filter(center_id=center_id).delete()
+    # Ommaviy o'chirish ham audit'ga yoziladi (yakka o'chirish question_delete
+    # bilan log qilingani kabi). Ko'p obyekt o'chirilgani uchun target=None;
+    # detallar extra'da: markaz, o'chirilgan soni va (qisman bo'lsa) ID'lar.
+    AuditLog.log(request, 'question_bulk_delete', extra={
+        'center_id': center_id,
+        'deleted_count': deleted_count,
+        'ids': selected_ids,
+    })
     return Response(
         {'detail': f"{deleted_count} ta savol muvaffaqiyatli o'chirildi", 'deleted_count': deleted_count},
         status=http_status.HTTP_200_OK,
@@ -451,7 +461,7 @@ def import_questions_excel(request):
                 correct_answer=correct_idx,
                 score=3,
                 difficulty=difficulty,
-                source=Question.SOURCE_MANUAL,
+                source=Question.SOURCE_IMPORT,
                 created_by=request.user,
             )
             created += 1
@@ -850,6 +860,12 @@ def explain_question(request, question_id):
     tashqi Gemini API'ga qimmat va sekin murojaat qiladi, abuse'dan himoyalanadi.
     """
     question = get_object_or_404(Question, pk=question_id)
+    # Center ownership tekshiruvi — istalgan foydalanuvchi boshqa markazga
+    # tegishli savol ID'sini yuborib AI tushuntirishni olmasligi uchun. Faqat
+    # shu markazda tasdiqlangan o'qituvchi/menejer/egasi (yoki platforma admini)
+    # tushuntirishni ola oladi.
+    if not _user_can_create_for_center(request.user, question.center_id):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
     if question.explanation and question.explanation.strip():
         return Response({'explanation': question.explanation})
 

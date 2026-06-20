@@ -70,13 +70,18 @@ def _gemini_api_keys():
 
 
 def _gemini_models():
+    # Bu funksiya nomlarni to'g'ridan-to'g'ri Gemini API'ga yuboradi (settings
+    # AUTO_DISCOVER kabi tekshirmaydi), shu sababli faqat haqiqatda mavjud va
+    # barqaror model nomlari bo'lishi kerak. Mavjud bo'lmagan nom 404 beradi.
     primary = getattr(settings, 'AI_QUESTION_GEMINI_MODEL', 'gemini-2.5-flash')
     fallbacks = list(getattr(settings, 'AI_QUESTION_GEMINI_FALLBACK_MODELS', []) or [])
     defaults = [
-        'gemini-3.1-flash-lite',
-        'gemini-3-flash-preview',
         'gemini-2.5-flash',
+        'gemini-2.5-flash-lite',
         'gemini-2.5-pro',
+        'gemini-2.0-flash',
+        'gemini-1.5-flash',
+        'gemini-1.5-pro',
     ]
     return list(dict.fromkeys(model for model in [primary, *fallbacks, *defaults] if model))
 

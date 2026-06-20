@@ -20,7 +20,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [telegramLink, setTelegramLink] = React.useState(null);
   const [telegramLinkLoading, setTelegramLinkLoading] = React.useState(false);
   const [telegramLinked, setTelegramLinked] = React.useState(!!user?.telegramLinked);
-  const emptyOlympiadForm = { eventType: 'competition', title: '', subject: 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft', testLevel: '', testType: '', groupFilter: '', itCategory: '', allowedLanguages: [] };
+  const emptyOlympiadForm = { eventType: 'competition', title: '', subject: store.subjects[0] || 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft', testLevel: '', testType: '', groupFilter: '', itCategory: '', allowedLanguages: [] };
   const [newOlympiad, setNewOlympiad] = React.useState(emptyOlympiadForm);
   // Premium kerak bo'lganda ko'rinadigan modal (8-funksiya — limit oshganda).
   const [premiumModal, setPremiumModal] = React.useState('');
