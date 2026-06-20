@@ -937,6 +937,33 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             {olympiads.length === 0 && <div className="text-sm text-white/40">Hali tadbir yo'q</div>}
           </div>
         </div>
+
+        {/* Eng yaxshi o'quvchilar */}
+        <div className="glass rounded-2xl p-5">
+          <h3 className="font-bold text-white mb-4">Eng yaxshi o'quvchilar</h3>
+          <div className="space-y-3">
+            {[...students].sort((a,b) => b.avgScore - a.avgScore).slice(0,4).map((s, i) => (
+              <div key={s.id} className="flex items-center gap-3">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black ${i === 0 ? 'bg-amber-500/30 text-amber-400' : i === 1 ? 'bg-slate-400/30 text-slate-300' : i === 2 ? 'bg-amber-700/30 text-amber-600' : 'glass text-white/40'}`}>
+                  {i+1}
+                </div>
+                <Avatar name={s.name} size={30} gradient={i === 0 ? 'from-amber-400 to-orange-500' : 'from-indigo-500 to-purple-600'} />
+                <div className="flex-1 min-w-0"><div className="text-sm font-medium text-white truncate">{s.name}</div></div>
+                <div className="text-sm font-bold text-white">{s.avgScore}%</div>
+              </div>
+            ))}
+            {students.length === 0 && <div className="text-sm text-white/40">Hali tasdiqlangan o'quvchilar yo'q</div>}
+          </div>
+        </div>
+
+        {/* Haftalik faollik */}
+        <div className="glass rounded-2xl p-5">
+          <h3 className="font-bold text-white mb-4">Haftalik faollik</h3>
+          <BarChart data={[
+            { label: 'Dush', value: 42 }, { label: 'Sesh', value: 78 }, { label: 'Chor', value: 55 },
+            { label: 'Pay', value: 91 }, { label: 'Jum', value: 67 }, { label: 'Shan', value: 34 }, { label: 'Yak', value: 20 },
+          ]} />
+        </div>
       </div>
     </div>
   );
