@@ -9,8 +9,12 @@ o'qishi mumkin.
 Hisoblash mantig'i bitta joyda (metrics.py) qoladi — bu view faqat shu
 funksiyani HTTP orqali taqdim etadi.
 """
-from django.db.models import Count
+from datetime import timedelta
+
+from django.db.models import Avg, Count, Sum
+from django.db.models.functions import TruncDate, TruncMonth, TruncWeek
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -242,4 +246,290 @@ def group_stats(request):
             'avg_score': overall_avg,
             'total_olympiad_participations': overall_participations,
         },
+    })
+
+
+# ─── Admin panel — kengaytirilgan analitika diagrammalari ────────────────────
+# Quyidagi endpoint'lar React admin panelining "Tahlil" tabidagi qo'shimcha
+# diagrammalarni quvvatlaydi. Hammasi faqat platforma admini uchun
+# (IsPlatformAdmin) — metrics_dashboard bilan bir xil himoya. Hisoblash oddiy
+# ORM aggregate'lari bilan bajariladi; jadval bo'sh bo'lsa bo'sh ro'yxat
+# qaytariladi (frontend graceful fallback ko'rsatadi).
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def attempts_trend(request):
+    """GET /api/analytics/attempts-trend/ — oxirgi 30 kun kunlik attempt soni.
+
+    Response: [{"date": "2026-06-01", "count": 42}, ...]. Attempt yozilmagan
+    kunlar 0 bilan to'ldiriladi (grafik uzluksiz chiziq chizishi uchun).
+    """
+    from attempts.models import TestAttempt
+
+    now = timezone.now()
+    start = (now - timedelta(days=29)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    rows = (
+        TestAttempt.objects
+        .filter(submitted_at__gte=start)
+        .annotate(day=TruncDate('submitted_at'))
+        .values('day')
+        .annotate(count=Count('id'))
+    )
+    counts = {row['day']: row['count'] for row in rows}
+
+    start_date = start.date()
+    today = now.date()
+    data = []
+    day = start_date
+    while day <= today:
+        data.append({'date': day.isoformat(), 'count': counts.get(day, 0)})
+        day += timedelta(days=1)
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def olympiad_stats(request):
+    """GET /api/analytics/olympiad-stats/ — eng ko'p ishtirokchili 10 olimpiada.
+
+    Har olimpiada uchun ishtirokchilar soni (attempt) va o'rtacha ball.
+    Response: [{"name": "...", "participants": 120, "avg_score": 74.5}, ...].
+    Diskvalifikatsiya qilingan attempt'lar hisobga olinmaydi.
+    """
+    from django.db.models import Q
+
+    from olympiads.models import Olympiad
+
+    valid = Q(attempts__disqualified=False)
+    rows = (
+        Olympiad.objects
+        .filter(is_deleted=False)
+        .annotate(
+            participants=Count('attempts', filter=valid),
+            avg_score=Avg('attempts__score', filter=valid),
+        )
+        .filter(participants__gt=0)
+        .order_by('-participants')[:10]
+        .values('title', 'participants', 'avg_score')
+    )
+    data = [
+        {
+            'name': row['title'],
+            'participants': row['participants'],
+            'avg_score': round(row['avg_score'] or 0, 1),
+        }
+        for row in rows
+    ]
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def question_stats(request):
+    """GET /api/analytics/question-stats/ — fan va manba bo'yicha savol taqsimoti.
+
+    Response: {"by_subject": [{"name": "Matematika", "count": 120}, ...],
+               "by_source": [{"name": "manual", "count": 300}, ...]}.
+    Fan bo'yicha eng ko'p 12 ta fan qaytariladi (uzun grafikni oldini olish).
+    """
+    from questions.models import Question
+
+    by_subject = [
+        {'name': row['subject'] or "Noma'lum", 'count': row['count']}
+        for row in (
+            Question.objects
+            .values('subject')
+            .annotate(count=Count('id'))
+            .order_by('-count')[:12]
+        )
+    ]
+
+    # source maydoni choice — inson o'qiy oladigan label bilan birga qaytaramiz.
+    source_labels = dict(Question.SOURCE_CHOICES)
+    by_source = [
+        {
+            'name': row['source'] or 'manual',
+            'label': source_labels.get(row['source'], row['source'] or 'manual'),
+            'count': row['count'],
+        }
+        for row in (
+            Question.objects
+            .values('source')
+            .annotate(count=Count('id'))
+            .order_by('-count')
+        )
+    ]
+
+    return Response({'by_subject': by_subject, 'by_source': by_source})
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def revenue_trend(request):
+    """GET /api/analytics/revenue-trend/ — oxirgi 12 oy oylik daromad.
+
+    Faqat muvaffaqiyatli (success) to'lovlar yig'iladi. Response:
+    [{"month": "2026-01", "amount": 450000}, ...]. To'lov bo'lmagan oylar 0.
+    PaymentTransaction bo'sh bo'lsa — barcha oylar 0 bilan qaytadi.
+    """
+    from billing.models import PaymentTransaction
+
+    now = timezone.now()
+    # 12 oylik oyna boshi (joriy oy + oldingi 11 oy).
+    start = (now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+             - timedelta(days=365))
+    start = start.replace(day=1)
+
+    rows = (
+        PaymentTransaction.objects
+        .filter(status=PaymentTransaction.STATUS_SUCCESS, created_at__gte=start)
+        .annotate(month=TruncMonth('created_at'))
+        .values('month')
+        .annotate(total=Sum('amount'))
+    )
+    totals = {row['month'].strftime('%Y-%m'): row['total'] for row in rows}
+
+    # Joriy oydan 11 oy orqaga — uzluksiz 12 ta nuqta.
+    data = []
+    year = now.year
+    month = now.month
+    months = []
+    for _ in range(12):
+        months.append(f'{year:04d}-{month:02d}')
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+    for key in reversed(months):
+        amount = totals.get(key)
+        data.append({'month': key, 'amount': int(amount) if amount else 0})
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def center_stats(request):
+    """GET /api/analytics/center-stats/ — markazlar bo'yicha kengaytirilgan analitika.
+
+    Response:
+      by_region        — viloyat bo'yicha tasdiqlangan markazlar soni
+      premium_vs_free  — oxirgi 6 oy premium va free markazlar olimpiada soni
+      dq_trend         — oxirgi 8 hafta diskvalifikatsiya/cheating attempt soni
+      top_centers_rating — eng yuqori reytingli 5 markazning rating dinamikasi
+
+    Har bo'lim mustaqil hisoblanadi; tegishli jadval bo'sh bo'lsa o'sha bo'lim
+    bo'sh ro'yxat qaytaradi (frontend "Ma'lumot yo'q" ko'rsatadi).
+    """
+    from attempts.models import TestAttempt
+    from centers.models import CenterRatingHistory, EducationCenter
+    from olympiads.models import Olympiad
+
+    now = timezone.now()
+
+    # 1) Viloyat bo'yicha tasdiqlangan markazlar.
+    by_region = [
+        {'name': row['region'] or "Belgilanmagan", 'count': row['count']}
+        for row in (
+            EducationCenter.objects
+            .filter(status=EducationCenter.STATUS_APPROVED)
+            .values('region')
+            .annotate(count=Count('id'))
+            .order_by('-count')[:12]
+        )
+    ]
+
+    # 2) Premium vs free markazlar oylik olimpiada soni (oxirgi 6 oy).
+    months_start = (now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                    - timedelta(days=160))
+    months_start = months_start.replace(day=1)
+    olymp_rows = (
+        Olympiad.objects
+        .filter(is_deleted=False, created_at__gte=months_start)
+        .annotate(month=TruncMonth('created_at'))
+        .values('month', 'center__is_premium')
+        .annotate(count=Count('id'))
+    )
+    # {month_str: {'premium': n, 'free': n}}
+    pf_map = {}
+    for row in olymp_rows:
+        key = row['month'].strftime('%Y-%m')
+        bucket = pf_map.setdefault(key, {'premium': 0, 'free': 0})
+        if row['center__is_premium']:
+            bucket['premium'] += row['count']
+        else:
+            bucket['free'] += row['count']
+    # Oxirgi 6 oyni uzluksiz tartibda chiqaramiz.
+    pf_months = []
+    year, month = now.year, now.month
+    for _ in range(6):
+        pf_months.append(f'{year:04d}-{month:02d}')
+        month -= 1
+        if month == 0:
+            month = 12
+            year -= 1
+    premium_vs_free = []
+    for key in reversed(pf_months):
+        bucket = pf_map.get(key, {'premium': 0, 'free': 0})
+        premium_vs_free.append({
+            'month': key,
+            'premium': bucket['premium'],
+            'free': bucket['free'],
+        })
+
+    # 3) Haftalik diskvalifikatsiya/cheating attempt soni (oxirgi 8 hafta).
+    weeks_start = (now - timedelta(weeks=8)).replace(
+        hour=0, minute=0, second=0, microsecond=0,
+    )
+    dq_rows = (
+        TestAttempt.objects
+        .filter(disqualified=True, submitted_at__gte=weeks_start)
+        .annotate(week=TruncWeek('submitted_at'))
+        .values('week')
+        .annotate(count=Count('id'))
+    )
+    dq_counts = {row['week'].date(): row['count'] for row in dq_rows}
+    # Hafta boshi (dushanba) bo'yicha uzluksiz 8 nuqta.
+    week_start = (now - timedelta(days=now.weekday())).date()
+    dq_trend = []
+    for i in range(7, -1, -1):
+        wk = week_start - timedelta(weeks=i)
+        dq_trend.append({'week': wk.isoformat(), 'count': dq_counts.get(wk, 0)})
+
+    # 4) Eng yuqori reytingli 5 markazning rating dinamikasi.
+    top_centers = list(
+        EducationCenter.objects
+        .filter(status=EducationCenter.STATUS_APPROVED)
+        .order_by('-rating')[:5]
+        .values('id', 'name')
+    )
+    top_ids = [c['id'] for c in top_centers]
+    rating_history = {cid: [] for cid in top_ids}
+    if top_ids:
+        history_start = (now - timedelta(days=180)).date()
+        for row in (
+            CenterRatingHistory.objects
+            .filter(center_id__in=top_ids, date__gte=history_start)
+            .order_by('date')
+            .values('center_id', 'date', 'score')
+        ):
+            rating_history[row['center_id']].append({
+                'date': row['date'].isoformat(),
+                'score': float(row['score'] or 0),
+            })
+    top_centers_rating = [
+        {
+            'center_id': c['id'],
+            'name': c['name'],
+            'points': rating_history.get(c['id'], []),
+        }
+        for c in top_centers
+    ]
+
+    return Response({
+        'by_region': by_region,
+        'premium_vs_free': premium_vs_free,
+        'dq_trend': dq_trend,
+        'top_centers_rating': top_centers_rating,
     })
