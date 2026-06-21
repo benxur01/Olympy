@@ -573,6 +573,10 @@ export const OlympyApi = {
   },
   adminSetUserActive: (userId, isActive, token) => request(`/api/admin/users/${userId}/set-active/`, { method: 'POST', body: { is_active: !!isActive }, token }),
   adminToggleUserPremium: (userId, payload, token) => request(`/api/admin/users/${userId}/toggle-premium/`, { method: 'POST', body: payload, token }),
+  // Rollarni almashtirish — system-wide rollar (markazsiz) + platform admin
+  // flag'i. roles oddiy rollar ro'yxati (student/teacher/manager/owner),
+  // is_platform_admin esa admin checkboxidan keladi.
+  adminSetUserRoles: (userId, { roles, isPlatformAdmin }, token) => request(`/api/admin/users/${userId}/set-roles/`, { method: 'PATCH', body: { roles: roles || [], is_platform_admin: !!isPlatformAdmin }, token }),
   // Subjects
   getSubjects: (token) => request('/api/subjects/', { token }),
   createSubject: (name, token) => request('/api/subjects/', { method: 'POST', body: { name }, token }),

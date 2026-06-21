@@ -1095,6 +1095,89 @@ def admin_toggle_user_premium(request, user_id):
     return Response(UserSerializer(target, context={'request': request}).data)
 
 
+# Admin paneldan boshqariladigan system-wide rollar. `admin` checkboxi
+# alohida — u User.roles listiga emas, is_platform_admin flag'iga yoziladi
+# (frontend ham roles.admin'ni is_platform_admin'dan oladi).
+ALLOWED_ROLE_KEYS = ['student', 'teacher', 'manager', 'owner']
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def admin_set_user_roles(request, user_id):
+    """PATCH /api/admin/users/{id}/set-roles/ — system-wide rollarni almashtirish.
+
+    Faqat Platform Admin uchun. Body: {"roles": ["student", "teacher", ...],
+    "is_platform_admin": true|false}. `roles` User.roles JSONField'ini
+    to'liq almashtiradi (faqat ALLOWED_ROLE_KEYS qabul qilinadi); `admin`
+    kaliti yuborilsa yoki is_platform_admin=True bo'lsa — platform admin
+    huquqi beriladi.
+
+    Eslatma: bu CenterMembership (markaz a'zoligi) tasdiqlash holatiga
+    tegmaydi — u alohida owner/manager oqimi orqali boshqariladi. Bu yerda
+    faqat foydalanuvchining markazsiz, platforma darajasidagi rollari
+    o'rnatiladi.
+    """
+    if not request.user.is_platform_admin:
+        return Response({'detail': 'Forbidden'},
+                        status=status.HTTP_403_FORBIDDEN)
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+
+    raw_roles = request.data.get('roles')
+    if not isinstance(raw_roles, list):
+        return Response({'detail': "roles ro'yxat (list) bo'lishi kerak"},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    # `admin` kaliti roles ichida kelishi yoki alohida is_platform_admin
+    # bool'i bilan yuborilishi mumkin — ikkalasini ham qo'llab-quvvatlaymiz.
+    wants_admin = ('admin' in raw_roles)
+    is_admin_flag = request.data.get('is_platform_admin')
+    if isinstance(is_admin_flag, bool):
+        wants_admin = is_admin_flag
+
+    # Ruxsat etilgan rollarni filtrlab, tartibni saqlab tozalaymiz.
+    normalized_roles = []
+    for role in raw_roles:
+        if role in ALLOWED_ROLE_KEYS and role not in normalized_roles:
+            normalized_roles.append(role)
+
+    # Xavfsizlik: admin o'zining platform admin huquqini bu yerdan olib
+    # tashlay olmaydi (o'zini tasodifan tizimdan chiqarib qo'ymasin).
+    if target.id == request.user.id and target.is_platform_admin and not wants_admin:
+        return Response(
+            {'detail': "O'zingizdan platform admin huquqini olib tashlay olmaysiz"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    update_fields = []
+    if list(target.roles or []) != normalized_roles:
+        target.roles = normalized_roles
+        update_fields.append('roles')
+    if bool(target.is_platform_admin) != bool(wants_admin):
+        target.is_platform_admin = bool(wants_admin)
+        update_fields.append('is_platform_admin')
+        # Platform admin huquqi olib tashlansa, mavjud JWT'lar darhol bekor
+        # bo'lishi uchun token_version oshiramiz (eski token bilan admin
+        # endpoint'larga kira olmasin).
+        if not wants_admin:
+            target.token_version = (target.token_version or 0) + 1
+            update_fields.append('token_version')
+
+    if update_fields:
+        target.save(update_fields=list(set(update_fields)))
+        AuditLog.log(request, 'user_role_change', target=target, extra={
+            'roles': normalized_roles,
+            'is_platform_admin': bool(wants_admin),
+        })
+
+    return Response(UserSerializer(target, context={'request': request}).data)
+
+
 def _make_otp():
     return f'{secrets.randbelow(1_000_000):06d}'
 
