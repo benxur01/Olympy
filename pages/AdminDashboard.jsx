@@ -198,6 +198,177 @@ const AdminDonut = ({ segments }) => {
   );
 };
 
+// ─── Recharts-asoslangan Tahlil diagrammalari ──────────────────────────────
+// Komponentlar `globalThis.Recharts` (generate-vite-entry orqali ulangan)
+// dan destructure qilinadi — pages/*.jsx ESM import qila olmaydi (blok ichida
+// konkatenatsiya qilinadi), shuning uchun React/OlympyApi bilan bir xil global
+// pattern ishlatiladi.
+const {
+  ResponsiveContainer: RC,
+  AreaChart: ReAreaChart,
+  Area: ReArea,
+  BarChart: ReBarChart,
+  Bar: ReBar,
+  PieChart: RePieChart,
+  Pie: RePie,
+  Cell: ReCell,
+  XAxis: ReXAxis,
+  YAxis: ReYAxis,
+  CartesianGrid: ReGrid,
+  Tooltip: ReTooltip,
+  LabelList: ReLabelList,
+} = (typeof globalThis !== 'undefined' && globalThis.Recharts) || {};
+
+// Dark tema tooltip — barcha diagrammalarda bir xil ko'rinish.
+const ChartTooltip = ({ active, payload, label, suffix = '', valueLabel }) => {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div className="rounded-lg bg-slate-800 border border-white/10 px-3 py-2 shadow-xl">
+      {label != null && label !== '' && (
+        <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
+      )}
+      {payload.map((p, i) => (
+        <div key={i} className="flex items-center gap-2 text-xs font-bold text-white">
+          <span className="h-2 w-2 rounded-full" style={{ background: p.color || p.fill || '#6366f1' }} />
+          <span className="text-slate-300">{valueLabel || p.name}:</span>
+          <span className="font-mono">{p.value}{suffix}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Diagramma sarlavhasi + bo'sh/yo'q holatlari uchun yengil wrapper.
+const ChartCard = ({ title, subtitle, children, empty, emptyText = "Ma'lumot yo'q" }) => (
+  <section className="admin-card p-5">
+    <div className="mb-4 flex items-start justify-between gap-3">
+      <div>
+        <h2 className="text-[11px] font-black tracking-wider uppercase text-slate-300">{title}</h2>
+        {subtitle && <p className="mt-1 text-[10px] font-semibold text-slate-500">{subtitle}</p>}
+      </div>
+    </div>
+    {empty ? (
+      <div className="flex h-[180px] flex-col items-center justify-center gap-2 text-slate-500">
+        <Icon name="chart" size={22} className="opacity-40" />
+        <span className="text-[11px] font-bold">{emptyText}</span>
+      </div>
+    ) : children}
+  </section>
+);
+
+// Diagramma 1 — Foydalanuvchi o'sishi (AreaChart, indigo gradient).
+const UserGrowthArea = ({ data }) => {
+  if (!RC) return null;
+  return (
+    <div className="h-[200px] w-full">
+      <RC width="100%" height="100%">
+        <ReAreaChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
+          <defs>
+            <linearGradient id="growthFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#6366f1" stopOpacity={0.5} />
+              <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+          <ReXAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} />
+          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={34} />
+          <ReTooltip content={<ChartTooltip valueLabel="Yangi" />} cursor={{ stroke: 'rgba(99,102,241,0.3)' }} />
+          <ReArea type="monotone" dataKey="count" name="Yangi" stroke="#818cf8" strokeWidth={2.5}
+            fill="url(#growthFill)" dot={{ r: 3, fill: '#6366f1', strokeWidth: 0 }}
+            activeDot={{ r: 5, fill: '#a5b4fc', stroke: '#6366f1', strokeWidth: 2 }} />
+        </ReAreaChart>
+      </RC>
+    </div>
+  );
+};
+
+// Diagramma 2 (chap) — Premium breakdown (PieChart: paid / trial / bepul).
+const PremiumPie = ({ data, total }) => {
+  if (!RC) return null;
+  return (
+    <div className="flex flex-col items-center gap-4 sm:flex-row">
+      <div className="relative h-[150px] w-[150px] shrink-0">
+        <RC width="100%" height="100%">
+          <RePieChart>
+            <RePie data={data} dataKey="value" nameKey="label" cx="50%" cy="50%"
+              innerRadius={48} outerRadius={68} paddingAngle={3} stroke="none">
+              {data.map((d, i) => <ReCell key={i} fill={d.color} />)}
+            </RePie>
+            <ReTooltip content={<ChartTooltip suffix=" ta" />} />
+          </RePieChart>
+        </RC>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Jami</span>
+          <span className="text-lg font-black text-white">{total}</span>
+        </div>
+      </div>
+      <div className="w-full flex-1 space-y-2">
+        {data.map(d => (
+          <div key={d.label} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-white/5 p-2 text-xs font-bold">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full shadow-[0_0_8px_currentColor]" style={{ background: d.color, color: d.color }} />
+              <span className="font-semibold text-slate-400">{d.label}</span>
+            </div>
+            <span className="font-mono text-white">{d.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Diagramma 2 (o'ng) — Retention D1/D7/D30 (vertikal BarChart, emerald).
+const RetentionBars = ({ data }) => {
+  if (!RC) return null;
+  return (
+    <div className="h-[174px] w-full">
+      <RC width="100%" height="100%">
+        <ReBarChart data={data} margin={{ top: 16, right: 8, left: -22, bottom: 0 }}>
+          <defs>
+            <linearGradient id="retentionFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#34d399" stopOpacity={1} />
+              <stop offset="100%" stopColor="#059669" stopOpacity={0.85} />
+            </linearGradient>
+          </defs>
+          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+          <ReXAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} />
+          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} width={36} />
+          <ReTooltip content={<ChartTooltip suffix="%" valueLabel="Qaytgan" />} cursor={{ fill: 'rgba(52,211,153,0.08)' }} />
+          <ReBar dataKey="pct" name="Qaytgan" fill="url(#retentionFill)" radius={[5, 5, 0, 0]} maxBarSize={40}>
+            <ReLabelList dataKey="pct" position="top" formatter={(v) => `${v}%`} fill="#cbd5e1" fontSize={10} fontWeight={700} />
+          </ReBar>
+        </ReBarChart>
+      </RC>
+    </div>
+  );
+};
+
+// Diagramma 3 — Konversiya funnel (horizontal BarChart).
+const ConversionFunnel = ({ data }) => {
+  if (!RC) return null;
+  return (
+    <div className="h-[200px] w-full">
+      <RC width="100%" height="100%">
+        <ReBarChart data={data} layout="vertical" margin={{ top: 4, right: 56, left: 8, bottom: 4 }}>
+          <defs>
+            <linearGradient id="funnelFill" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#a855f7" stopOpacity={0.95} />
+              <stop offset="100%" stopColor="#6366f1" stopOpacity={0.95} />
+            </linearGradient>
+          </defs>
+          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
+          <ReXAxis type="number" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+          <ReYAxis type="category" dataKey="label" tick={{ fill: '#cbd5e1', fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} width={132} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" />} cursor={{ fill: 'rgba(168,85,247,0.08)' }} />
+          <ReBar dataKey="value" name="Foydalanuvchi" fill="url(#funnelFill)" radius={[0, 6, 6, 0]} maxBarSize={34}>
+            <ReLabelList dataKey="value" position="right" fill="#e2e8f0" fontSize={11} fontWeight={800} />
+          </ReBar>
+        </ReBarChart>
+      </RC>
+    </div>
+  );
+};
+
 
 const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
@@ -337,6 +508,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   );
   const apiSubjectsRes = useApiData(
     () => isApi ? OlympyApi.getSubjects(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  // Tahlil tabi uchun backend metrikalari (retention/conversion/premium).
+  // Faqat platforma admini ko'ra oladi — 403 bo'lsa graceful fallback
+  // (diagrammalar o'rniga "Ma'lumot yo'q") renderAnalytics ichida boshqariladi.
+  const apiMetricsRes = useApiData(
+    () => isApi ? OlympyApi.getAdminMetrics(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
 
@@ -1275,28 +1453,116 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     </div>
   );
 
-  const renderAnalytics = () => (
-    <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
-      <div>
-        <h1 className="text-[20px] font-black leading-tight text-white">Tahlil</h1>
-        <p className="mt-1 text-[11px] font-bold text-slate-400">Platforma statistikasi.</p>
+  const renderAnalytics = () => {
+    const metrics = isApi ? apiMetricsRes.data : null;
+    const metricsLoading = isApi && apiMetricsRes.loading;
+    // 403 (admin emas) yoki boshqa xato — backend diagrammalar o'rniga
+    // "Ma'lumot yo'q" ko'rsatamiz. Foydalanuvchi o'sishi (frontend hisob)
+    // baribir ishlaydi.
+    const metricsFailed = isApi && !!apiMetricsRes.error;
+    const hasMetrics = !!metrics && !metricsFailed;
+
+    const prem = metrics?.premium || {};
+    const conv = metrics?.conversion || {};
+    const ret = metrics?.retention || {};
+    const signups = metrics?.signups || {};
+
+    // AreaChart datasi — userGrowthChart (allUsers'dan frontend'da hisoblangan).
+    const growthData = userGrowthChart.labels.map((label, i) => ({
+      label,
+      count: userGrowthChart.values[i] || 0,
+    }));
+
+    // Yuqori metrik kartalar.
+    const totalUsers = hasMetrics ? (prem.total_users || 0) : allUsers.length;
+    const todayNew = hasMetrics ? (signups.last_1d || 0) : 0;
+    const premiumPct = hasMetrics ? (prem.premium_pct || 0) : 0;
+    const trialToPaidPct = hasMetrics ? (conv.trial_to_paid_pct || 0) : 0;
+
+    // Premium breakdown (Pie): paid / faqat-trial / bepul.
+    const paidFlag = prem.paid_flag || 0;
+    const trialOnly = prem.trial_only || 0;
+    const freeUsers = Math.max(0, (prem.total_users || 0) - paidFlag - trialOnly);
+    const premiumPieData = [
+      { label: 'Pullik', value: paidFlag, color: '#6366f1' },
+      { label: 'Faqat trial', value: trialOnly, color: '#a855f7' },
+      { label: 'Bepul', value: freeUsers, color: '#334155' },
+    ];
+    const premiumPieEmpty = !hasMetrics || (paidFlag + trialOnly + freeUsers) === 0;
+
+    // Retention D1/D7/D30.
+    const retentionData = [
+      { label: 'D1', pct: ret.d1?.pct || 0 },
+      { label: 'D7', pct: ret.d7?.pct || 0 },
+      { label: 'D30', pct: ret.d30?.pct || 0 },
+    ];
+
+    // Konversiya funnel: Ro'yxatdan → Trial → Paid.
+    const funnelData = [
+      { label: "Ro'yxatdan o'tgan", value: prem.total_users || 0 },
+      { label: 'Trial boshlagan', value: conv.trial_started || 0 },
+      { label: "Paid bo'lgan", value: conv.paid_total || 0 },
+    ];
+
+    return (
+      <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
+        <div>
+          <h1 className="text-[20px] font-black leading-tight text-white">Tahlil</h1>
+          <p className="mt-1 text-[11px] font-bold text-slate-400">Platforma statistikasi, o'sish va konversiya ko'rsatkichlari.</p>
+        </div>
+
+        {/* Yuqori metrik kartalar */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <AdminMetricCard label="Jami foydalanuvchilar" value={totalUsers.toLocaleString()} delta={hasMetrics ? `${prem.active_users || 0} ta faol` : 'Mahalliy hisob'} icon={<Icon name="users" size={16} />} tone="indigo" />
+          <AdminMetricCard label="Bugun yangi" value={hasMetrics ? todayNew.toLocaleString() : '—'} delta={hasMetrics ? `7 kunda ${signups.last_7d || 0} ta` : "Ma'lumot yo'q"} icon={<Icon name="chart" size={16} />} tone="emerald" />
+          <AdminMetricCard label="Premium %" value={hasMetrics ? `${premiumPct}%` : '—'} delta={hasMetrics ? `${prem.premium_active || 0} ta faol premium` : "Ma'lumot yo'q"} icon={<Icon name="star" size={16} />} tone="amber" />
+          <AdminMetricCard label="Trial → Paid" value={hasMetrics ? `${trialToPaidPct}%` : '—'} delta={hasMetrics ? `${conv.trial_to_paid || 0} / ${conv.trial_started || 0}` : "Ma'lumot yo'q"} icon={<Icon name="chart" size={16} />} tone="rose" />
+        </div>
+
+        {/* Diagramma 1 — Foydalanuvchi o'sishi (AreaChart) */}
+        <ChartCard title="Foydalanuvchi o'sishi" subtitle="Oxirgi 6 oy bo'yicha yangi ro'yxatlar">
+          <UserGrowthArea data={growthData} />
+        </ChartCard>
+
+        {/* Diagramma 2 — Premium breakdown + Retention */}
+        <div className="grid gap-5 xl:grid-cols-2">
+          <ChartCard
+            title="Premium taqsimoti"
+            subtitle="Pullik / faqat trial / bepul nisbati"
+            empty={!metricsLoading && premiumPieEmpty}
+            emptyText={metricsFailed ? "Ma'lumot yo'q (admin huquqi kerak)" : "Ma'lumot yo'q"}
+          >
+            {metricsLoading
+              ? <div className="flex h-[180px] items-center justify-center text-[11px] font-bold text-slate-500">Yuklanmoqda...</div>
+              : <PremiumPie data={premiumPieData} total={(paidFlag + trialOnly + freeUsers).toLocaleString()} />}
+          </ChartCard>
+
+          <ChartCard
+            title="Retention (D1 / D7 / D30)"
+            subtitle="Ro'yxatdan o'tib N kundan keyin qaytganlar"
+            empty={!metricsLoading && !hasMetrics}
+            emptyText={metricsFailed ? "Ma'lumot yo'q (admin huquqi kerak)" : "Ma'lumot yo'q"}
+          >
+            {metricsLoading
+              ? <div className="flex h-[174px] items-center justify-center text-[11px] font-bold text-slate-500">Yuklanmoqda...</div>
+              : <RetentionBars data={retentionData} />}
+          </ChartCard>
+        </div>
+
+        {/* Diagramma 3 — Konversiya funnel */}
+        <ChartCard
+          title="Konversiya funnel"
+          subtitle="Ro'yxatdan o'tgan → Trial boshlagan → Paid bo'lgan"
+          empty={!metricsLoading && !hasMetrics}
+          emptyText={metricsFailed ? "Ma'lumot yo'q (admin huquqi kerak)" : "Ma'lumot yo'q"}
+        >
+          {metricsLoading
+            ? <div className="flex h-[200px] items-center justify-center text-[11px] font-bold text-slate-500">Yuklanmoqda...</div>
+            : <ConversionFunnel data={funnelData} />}
+        </ChartCard>
       </div>
-      <div className="grid gap-5 xl:grid-cols-2">
-        <section className="admin-card p-5">
-          <h2 className="mb-5 text-[11px] font-black tracking-wider uppercase text-slate-300">Foydalanuvchi o'sishi</h2>
-          <AdminBarChart values={userGrowthChart.values} labels={userGrowthChart.labels} />
-        </section>
-        <section className="admin-card p-5">
-          <h2 className="mb-5 text-[11px] font-black tracking-wider uppercase text-slate-300">Tashkilotlar holati</h2>
-          <AdminDonut segments={[
-            { label: 'Tasdiqlangan', value: approvedCenterPct, color: '#6366f1' },
-            { label: 'Kutilmoqda', value: pendingCenterPct, color: '#f59e0b' },
-            { label: 'Boshqa', value: otherCenterPct, color: '#10b981' },
-          ]} />
-        </section>
-      </div>
-    </div>
-  );
+    );
+  };
 
   const renderOlympiads = () => (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
