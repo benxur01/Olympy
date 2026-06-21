@@ -1311,59 +1311,69 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           <StatCard label="Eng yuqori" value={bestVal} icon={<Icon name="trophy" size={18} />} color="from-amber-500 to-orange-500" />
           <StatCard label="Qatnashuvchilar" value={participantsVal} icon={<Icon name="users" size={18} />} color="from-cyan-500 to-blue-600" />
         </div>
-        <div className="glass rounded-2xl p-5">
+        <div className="glass rounded-2xl p-4 sm:p-5">
           <h3 className="font-bold text-white mb-4">Tadbir natijalari</h3>
           {isApi && apiEvents.length > 0 && apiEvents.filter(e => (e.participants || 0) > 0).map(e => (
-            <div key={e.olympiad_id} className="flex items-center gap-4 p-4 glass rounded-xl mb-3">
-              <div className="flex-1">
-                <div className="font-semibold text-white">{e.title}</div>
-                <div className="text-xs text-white/40">{e.subject} · {e.participants} ishtirokchi · eng yuqori {e.best_score}%</div>
+            <div key={e.olympiad_id} className="p-4 glass rounded-xl mb-3">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-white break-words">{e.title}</div>
+                  <div className="text-xs text-white/40 mt-0.5">{e.subject} · {e.participants} ishtirokchi · eng yuqori {e.best_score}%</div>
+                </div>
+                <DonutChart value={Math.round(e.average_score || 0)} size={56} />
               </div>
-              <DonutChart value={Math.round(e.average_score || 0)} size={60} />
-              <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl">Reyting</button>
-              <button
-                onClick={() => openResultsModal(e)}
-                className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
-                title="Ishtirokchilar natijalari jadvalini ko'rish"
-              >
-                <Icon name="eye" size={12} /> Ko'rish
-              </button>
-              <button
-                onClick={() => {
-                  OlympyApi.exportOlympiadResultsXlsx(e.olympiad_id, OlympyApi.getToken())
-                    .then(() => showToast('✓ Excel fayl yuklandi'))
-                    .catch(err => {
-                      console.warn('xlsx export failed:', err);
-                      showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Excel yuklab bo'lmadi"}`);
-                    });
-                }}
-                className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
-                title="Natijalarni Excel (.xlsx) faylga eksport qilish"
-              >
-                <Icon name="download" size={12} /> Excel
-              </button>
-              <button
-                onClick={() => openCodeSubmissions(e)}
-                className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
-                title="IT (kod) javoblari va AI tavsiyalari"
-              >
-                <Icon name="brain" size={12} /> Kod javoblari
-              </button>
-              <button
-                onClick={() => openEssayGrading(e)}
-                className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
-                title="Essay javoblarni qo'lda baholash"
-              >
-                <Icon name="edit" size={12} /> Essay baholash
-              </button>
+              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/5">
+                <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1">
+                  <Icon name="trophy" size={12} /> Reyting
+                </button>
+                <button
+                  onClick={() => openResultsModal(e)}
+                  className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
+                  title="Ishtirokchilar natijalari jadvalini ko'rish"
+                >
+                  <Icon name="eye" size={12} /> Ko'rish
+                </button>
+                <button
+                  onClick={() => {
+                    OlympyApi.exportOlympiadResultsXlsx(e.olympiad_id, OlympyApi.getToken())
+                      .then(() => showToast('✓ Excel fayl yuklandi'))
+                      .catch(err => {
+                        console.warn('xlsx export failed:', err);
+                        showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Excel yuklab bo'lmadi"}`);
+                      });
+                  }}
+                  className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
+                  title="Natijalarni Excel (.xlsx) faylga eksport qilish"
+                >
+                  <Icon name="download" size={12} /> Excel
+                </button>
+                <button
+                  onClick={() => openCodeSubmissions(e)}
+                  className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
+                  title="IT (kod) javoblari va AI tavsiyalari"
+                >
+                  <Icon name="brain" size={12} /> Kod javoblari
+                </button>
+                <button
+                  onClick={() => openEssayGrading(e)}
+                  className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
+                  title="Essay javoblarni qo'lda baholash"
+                >
+                  <Icon name="edit" size={12} /> Essay baholash
+                </button>
+              </div>
             </div>
           ))}
           {!isApi && localFinished.map(o => (
-            <div key={o.id} className="flex items-center gap-4 p-4 glass rounded-xl mb-3">
-              <div className="flex-1"><div className="font-semibold text-white">{o.title}</div><div className="text-xs text-white/40">{[o.testLevel, testTypeLabel(o.testType)].filter(Boolean).join(' · ')}{(o.testLevel || o.testType) ? ' · ' : ''}{o.participants || 0} ishtirokchi</div></div>
-              <DonutChart value={o.avgScore || 0} size={60} />
-              <button onClick={() => openResultsModal(o)} className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"><Icon name="eye" size={12} /> Ko'rish</button>
-              <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl">Reyting</button>
+            <div key={o.id} className="p-4 glass rounded-xl mb-3">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="flex-1 min-w-0"><div className="font-semibold text-white break-words">{o.title}</div><div className="text-xs text-white/40 mt-0.5">{[o.testLevel, testTypeLabel(o.testType)].filter(Boolean).join(' · ')}{(o.testLevel || o.testType) ? ' · ' : ''}{o.participants || 0} ishtirokchi</div></div>
+                <DonutChart value={o.avgScore || 0} size={56} />
+              </div>
+              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/5">
+                <button onClick={() => openResultsModal(o)} className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"><Icon name="eye" size={12} /> Ko'rish</button>
+                <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"><Icon name="trophy" size={12} /> Reyting</button>
+              </div>
             </div>
           ))}
           {((isApi && apiEvents.filter(e => (e.participants || 0) > 0).length === 0)
@@ -2187,7 +2197,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                         return (
                           <div
                             key={row.attempt_id ?? idx}
-                            className={`animate-in grid grid-cols-2 md:grid-cols-12 gap-x-2 gap-y-2 items-center px-3 md:px-4 py-3 border-b border-white/[0.04] transition-colors ${
+                            className={`animate-in flex flex-col gap-2 md:grid md:grid-cols-12 md:gap-x-2 md:gap-y-0 md:items-center px-3 md:px-4 py-3 border-b border-white/[0.04] transition-colors ${
                               dq
                                 ? 'bg-white/[0.015] opacity-60'
                                 : idx % 2 === 1
@@ -2195,7 +2205,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                                   : 'hover:bg-white/[0.04]'
                             }`}
                           >
-                            {/* Rank */}
+                            {/* Rank (desktop ustun) */}
                             <div className="hidden md:flex md:col-span-1 justify-center">
                               {dq ? (
                                 <span className="text-white/25 text-sm">—</span>
@@ -2208,8 +2218,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                               )}
                             </div>
 
-                            {/* O'quvchi */}
-                            <div className="col-span-2 md:col-span-4 min-w-0 flex items-center gap-2">
+                            {/* Mobil: 1-qator → rank + ism (chap) | ball foizi (o'ng) */}
+                            <div className="flex items-center gap-2 md:contents">
                               <span className="md:hidden flex-shrink-0">
                                 {dq ? (
                                   <span className="text-white/25 text-xs">—</span>
@@ -2219,44 +2229,51 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                                   <span className="inline-flex h-5 min-w-5 px-1 items-center justify-center rounded-md bg-white/5 text-[10px] font-bold text-white/45">{row.rank}</span>
                                 )}
                               </span>
-                              <span className={`text-sm font-semibold truncate ${dq ? 'text-white/45 line-through' : 'text-white'}`}>
-                                {row.name || '—'}
-                              </span>
-                            </div>
-
-                            {/* To'g'ri / Jami */}
-                            <div className="md:col-span-2 md:text-center">
-                              <span className="md:hidden text-[10px] uppercase text-white/35 mr-1">Natija:</span>
-                              <span className="text-sm font-bold text-emerald-300">{correct}</span>
-                              <span className="text-sm text-white/40">/{total}</span>
-                              {wrong > 0 && (
-                                <span className="ml-1.5 text-[11px] font-semibold text-rose-300/80">−{wrong}</span>
-                              )}
-                            </div>
-
-                            {/* Ball — progress bar */}
-                            <div className="md:col-span-3 flex items-center gap-2.5">
-                              <div className={`hidden md:block flex-1 h-2 rounded-full overflow-hidden ${tone.track}`}>
-                                <div className={`h-full rounded-full bg-gradient-to-r ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
-                              </div>
-                              <span className={`text-sm font-black tabular-nums ${dq ? 'text-white/40' : tone.text}`}>{pct}%</span>
-                              {/* Mobil progress bar (label ostida) */}
-                              <div className={`md:hidden flex-1 h-1.5 rounded-full overflow-hidden ${tone.track}`}>
-                                <div className={`h-full rounded-full bg-gradient-to-r ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
-                              </div>
-                            </div>
-
-                            {/* Holat */}
-                            <div className="col-span-2 md:col-span-2 md:text-center">
-                              {dq ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25">
-                                  <Icon name="info" size={11} /> DQ
+                              {/* O'quvchi */}
+                              <div className="min-w-0 flex-1 md:col-span-4 flex items-center">
+                                <span className={`text-sm font-semibold truncate ${dq ? 'text-white/45 line-through' : 'text-white'}`}>
+                                  {row.name || '—'}
                                 </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
-                                  <Icon name="check" size={11} /> Topshirgan
-                                </span>
-                              )}
+                              </div>
+                              {/* Mobil: ball foizi (o'ngga) */}
+                              <span className={`md:hidden flex-shrink-0 text-sm font-black tabular-nums ${dq ? 'text-white/40' : tone.text}`}>{pct}%</span>
+                            </div>
+
+                            {/* Mobil: 2-qator → Natija + Holat (bir qator) + progress bar (pastda) */}
+                            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2 pl-7 md:contents md:pl-0">
+                              {/* To'g'ri / Jami */}
+                              <div className="flex items-center flex-shrink-0 md:col-span-2 md:justify-center">
+                                <span className="text-sm font-bold text-emerald-300">{correct}</span>
+                                <span className="text-sm text-white/40">/{total}</span>
+                                {wrong > 0 && (
+                                  <span className="ml-1.5 text-[11px] font-semibold text-rose-300/80">−{wrong}</span>
+                                )}
+                              </div>
+
+                              {/* Ball — progress bar (desktop'da foiz bilan) */}
+                              <div className="md:col-span-3 flex items-center gap-2.5 flex-1 md:flex-none order-3 md:order-none w-full md:w-auto basis-full md:basis-auto">
+                                <div className={`hidden md:block flex-1 h-2 rounded-full overflow-hidden ${tone.track}`}>
+                                  <div className={`h-full rounded-full bg-gradient-to-r ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+                                </div>
+                                <span className={`hidden md:inline text-sm font-black tabular-nums ${dq ? 'text-white/40' : tone.text}`}>{pct}%</span>
+                                {/* Mobil progress bar (to'liq qatorda, pastda) */}
+                                <div className={`md:hidden flex-1 h-1.5 rounded-full overflow-hidden ${tone.track}`}>
+                                  <div className={`h-full rounded-full bg-gradient-to-r ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+                                </div>
+                              </div>
+
+                              {/* Holat */}
+                              <div className="flex-shrink-0 md:col-span-2 md:text-center">
+                                {dq ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25">
+                                    <Icon name="info" size={11} /> DQ
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+                                    <Icon name="check" size={11} /> Topshirgan
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           </div>
                         );
