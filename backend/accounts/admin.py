@@ -1,11 +1,13 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
+from .forms import UserAdminForm
 from .models import PhoneVerification, User, RewardProduct, RewardRedemption
 
 
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
+    form = UserAdminForm
     list_display = (
         'full_name', 'normalized_phone', 'telegram_linked_at',
         'is_platform_admin', 'is_premium', 'is_active', 'created_at',
