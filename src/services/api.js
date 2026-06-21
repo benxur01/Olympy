@@ -1032,6 +1032,11 @@ export const OlympyApi = {
   submitMockOlympiad: (mockId, body, token) => request(`/api/mock-olympiads/${mockId}/submit/`, { method: 'POST', body: body || {}, token }),
   // O'qituvchi/Manager analitikasi — eng ko'p noto'g'ri savollar.
   getQuestionAnalytics: (centerId, token) => request(`/api/questions/analytics/?center=${centerId}`, { token }),
+  // Platforma admini — retention/conversion/premium metrikalari (Tahlil tabi).
+  // Faqat is_platform_admin uchun (403 boshqa rollarga). `refresh=1` cache'ni
+  // chetlab o'tib qayta hisoblaydi.
+  getAdminMetrics: (token, { refresh = false } = {}) =>
+    request(`/api/analytics/metrics/${refresh ? '?refresh=1' : ''}`, { token }),
   // ─── B2B / O'sish (growth) funksiyalari ───
   // Feature #1: B2B markaz onboarding — owner sehrgarini tugatish/o'tkazib yuborish.
   completeCenterOnboarding: (token) => request('/api/me/center-onboarding/', { method: 'PATCH', token }),

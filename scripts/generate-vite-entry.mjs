@@ -42,6 +42,7 @@ let entry = `import * as React from 'react';\n`;
 entry += `import * as ReactDOMClient from 'react-dom/client';\n`;
 entry += `import { createPortal } from 'react-dom';\n\n`;
 entry += `import * as Sentry from '@sentry/react';\n`;
+entry += `import * as Recharts from 'recharts';\n`;
 entry += `import { OlympyApi } from './services/api.js';\n`;
 entry += `import DOMPurify from 'dompurify';\n`;
 entry += `import './services/codemirror-loader.js';\n`;
@@ -65,7 +66,8 @@ entry += `}\n\n`;
 entry += `globalThis.React = React;\n`;
 entry += `globalThis.ReactDOM = { ...ReactDOMClient, createPortal };\n\n`;
 entry += `globalThis.OlympyApi = OlympyApi;\n`;
-entry += `globalThis.DOMPurify = DOMPurify;\n\n`;
+entry += `globalThis.DOMPurify = DOMPurify;\n`;
+entry += `globalThis.Recharts = Recharts;\n\n`;
 
 // PWA: service worker'ni ro'yxatdan o'tkazish (oflayn rejim + kesh).
 // Faqat brauzer qo'llasa va xavfsiz kontekstda (https/localhost) ishlaydi;
