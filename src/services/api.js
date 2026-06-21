@@ -708,6 +708,10 @@ export const OlympyApi = {
     request(`/api/manager/olympiads/${olympiadId}/essay-answers/${onlyUngraded ? '?only_ungraded=1' : ''}`, { token }),
   getAttemptEssayAnswers: (attemptId, token) =>
     request(`/api/attempts/${attemptId}/essay-answers/`, { token }),
+  // Manager natijalar modalida o'quvchi qatoriga bosilganda: o'sha o'quvchining
+  // tadbirdagi har bir savol bo'yicha javobi (to'g'ri/xato bilan).
+  getEventUserAnswers: (olympiadId, userId, token) =>
+    request(`/api/manager/event-results/${olympiadId}/user/${userId}/`, { token }),
   gradeEssayAnswer: (attemptId, questionId, payload, token) =>
     request(`/api/attempts/${attemptId}/essay-answers/${questionId}/grade/`, { method: 'POST', body: payload, token }),
   extractPdfQuestions: async (pdfFile, payload, token, signal) => {
