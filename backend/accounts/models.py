@@ -892,6 +892,7 @@ class AuditLog(models.Model):
     ACTION_CHOICES = [
         ('user_premium_toggle', "Premium holat o'zgardi"),
         ('user_block', 'Foydalanuvchi bloklandi'),
+        ('user_role_change', "Foydalanuvchi rollari o'zgardi"),
         ('account_delete', "Hisob o'chirildi"),
         ('center_approve', 'Markaz tasdiqlandi'),
         ('center_reject', 'Markaz rad etildi'),

@@ -8,6 +8,17 @@ const ADMIN_DASHBOARD_PAGES = [
 ];
 const adminDashUrl = makeDashboardUrlSync('/dashboard/admin', ADMIN_DASHBOARD_PAGES);
 
+// Rol o'zgartirish modalidagi checkboxlar. `admin` — platform admin huquqi
+// (User.roles emas, is_platform_admin flag'i); qolganlari markazsiz
+// system-wide rollar (backend ALLOWED_ROLE_KEYS bilan mos).
+const ROLE_MODAL_KEYS = [
+  { value: 'student', label: "O'quvchi (Student)" },
+  { value: 'teacher', label: "O'qituvchi (Teacher)" },
+  { value: 'manager', label: 'Manager' },
+  { value: 'owner', label: 'Direktor (Owner)' },
+  { value: 'admin', label: 'Platform Admin' },
+];
+
 const formatAdminDate = (value) => {
   if (!value) return '';
   const d = new Date(value);
@@ -197,6 +208,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [blockModal, setBlockModal] = React.useState(null);
   const [blockedIds, setBlockedIds] = React.useState({});
   const [premiumUser, setPremiumUser] = React.useState(null);
+  const [roleModal, setRoleModal] = React.useState(null);
+  const [roleSelection, setRoleSelection] = React.useState([]);
+  const [roleSaving, setRoleSaving] = React.useState(false);
   const [premiumDuration, setPremiumDuration] = React.useState(30);
   const [premiumPlanType, setPremiumPlanType] = React.useState('student');
   const [premiumPlanName, setPremiumPlanName] = React.useState('Pro');
@@ -506,6 +520,45 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .finally(() => setPremiumSaving(false));
   };
 
+  // Rol modali: foydalanuvchining joriy rollarini (admin = platform admin
+  // flag'i) checkboxlar uchun boshlang'ich tanlovga aylantiramiz.
+  const openRoleModal = (row) => {
+    const selected = (row.roleKeys || []).filter(r => ROLE_MODAL_KEYS.some(k => k.value === r));
+    if (row.isPlatformAdmin && !selected.includes('admin')) selected.push('admin');
+    setRoleSelection(selected);
+    setRoleModal(row);
+  };
+
+  const toggleRoleCheckbox = (value) => {
+    setRoleSelection(prev => prev.includes(value)
+      ? prev.filter(r => r !== value)
+      : [...prev, value]);
+  };
+
+  const handleSaveRoles = () => {
+    if (!roleModal) return;
+    if (!isApi) { showToast('Rollar faqat API rejimida boshqariladi'); return; }
+    const numericUserId = roleModal?.backendId ?? (typeof roleModal?.id === 'string' && roleModal.id.startsWith('api:') ? Number(roleModal.id.slice(4)) : null);
+    if (!numericUserId) { showToast('Backend ID topilmadi'); return; }
+
+    // `admin` checkboxi User.roles ga emas, is_platform_admin flag'iga ketadi.
+    const isPlatformAdmin = roleSelection.includes('admin');
+    const roles = roleSelection.filter(r => r !== 'admin');
+
+    setRoleSaving(true);
+    OlympyApi.adminSetUserRoles(numericUserId, { roles, isPlatformAdmin }, OlympyApi.getToken())
+      .then(() => {
+        showToast('Rollar yangilandi');
+        setRoleModal(null);
+        apiUsersRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminSetUserRoles failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setRoleSaving(false));
+  };
+
   const userRows = allUsers.map(u => {
     const approved = getApprovedRoles(u);
     // Avval foydalanuvchi tasdiqlanmagan rollarda bo'lsa, fallback "student"
@@ -532,6 +585,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       status: (isApi ? apiBlocked : !!blockedIds[u.id]) ? 'Bloklangan' : 'Faol',
       isPremium: !!(u.isPremium ?? u.is_premium),
       isStudent: approved.includes('student') || primary === 'student',
+      // Rol o'zgartirish modali uchun: foydalanuvchidagi xom rol kalitlari va
+      // platform admin flag'i (checkboxlarni joriy holat bo'yicha belgilaymiz).
+      roleKeys: Object.keys(u.roles || {}),
+      isPlatformAdmin: !!(u.isPlatformAdmin ?? u.is_platform_admin),
     };
   });
 
@@ -1029,9 +1086,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     )}
                   </td>
                   <td className="px-5 py-4">
-                    <button onClick={() => setBlockModal(row)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${row.status === 'Bloklangan' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'}`}>
-                      {row.status === 'Bloklangan' ? 'Ochish' : 'Bloklash'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button onClick={() => openRoleModal(row)} className="rounded-lg bg-indigo-500/10 px-3 py-1.5 text-[11px] font-bold text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition">
+                        Rol
+                      </button>
+                      <button onClick={() => setBlockModal(row)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${row.status === 'Bloklangan' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'}`}>
+                        {row.status === 'Bloklangan' ? 'Ochish' : 'Bloklash'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
                 ));
@@ -1055,6 +1117,54 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             {blockModal?.status === 'Bloklangan' ? 'Blokni ochish' : 'Bloklash'}
           </button>
         </div>
+      </Modal>
+
+      {/* Rol o'zgartirish modali */}
+      <Modal open={!!roleModal} onClose={() => setRoleModal(null)} title="Rol o'zgartirish">
+        {roleModal && (
+          <div className="space-y-5">
+            <div className="flex items-center gap-3 rounded-xl bg-white/5 p-3">
+              <Avatar name={roleModal.name || ''} size={36} />
+              <div>
+                <div className="text-sm font-semibold text-white">{roleModal.name}</div>
+                <div className="text-xs text-white/40">{roleModal.phone}</div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-white/50 mb-2 font-medium">Rollar</label>
+              <div className="space-y-2">
+                {ROLE_MODAL_KEYS.map(opt => {
+                  const checked = roleSelection.includes(opt.value);
+                  return (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => toggleRoleCheckbox(opt.value)}
+                      className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-xs font-bold transition-all ${
+                        checked
+                          ? 'bg-indigo-500/15 text-white border-indigo-500/40'
+                          : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                      }`}
+                    >
+                      <span className={`flex h-4 w-4 items-center justify-center rounded border transition ${checked ? 'bg-indigo-500 border-indigo-500' : 'border-white/25'}`}>
+                        {checked && <Icon name="check" size={12} />}
+                      </span>
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setRoleModal(null)} className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold">Bekor qilish</button>
+              <button onClick={handleSaveRoles} disabled={roleSaving} className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">
+                {roleSaving ? 'Saqlanmoqda...' : 'Saqlash'}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Premium sozlash modali */}
