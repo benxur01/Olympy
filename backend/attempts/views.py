@@ -961,6 +961,145 @@ def attempt_detail(request, attempt_id):
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
+def event_user_answers(request, olympiad_id, user_id):
+    """GET /api/manager/event-results/<olympiad_id>/user/<user_id>/
+
+    Manager paneli "Tadbir natijalari" → o'quvchi qatoriga bosilganda
+    chaqiriladi: o'sha o'quvchining shu olimpiadadagi har bir savol bo'yicha
+    javobini (savol matni, tanlagan javobi, to'g'ri javob, is_correct) qaytaradi.
+
+    To'g'ri/xato hisoblash o'quvchining real balli bilan to'liq mos kelishi
+    uchun `score_session_answers` bilan bir xil de-shuffle logikasidan
+    foydalaniladi (shuffle qilingan indeks asl indeksga o'giriladi, so'ng
+    `grade_answer` baholaydi). Faqat shu markazni boshqara oluvchi (manager/
+    owner/teacher) yoki platforma admini ko'ra oladi.
+    """
+    from questions.grading import _parse_correct_text
+
+    from .session_utils import _deshuffle_index, _deshuffle_multi
+
+    olympiad = get_object_or_404(
+        Olympiad.objects.select_related('center').filter(is_deleted=False),
+        pk=olympiad_id,
+    )
+    if not _user_can_manage_olympiad(request.user, olympiad):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    attempt = (
+        TestAttempt.objects
+        .filter(olympiad=olympiad, user_id=user_id)
+        .select_related('user')
+        .prefetch_related('code_submissions', 'essay_grades')
+        .first()
+    )
+    if not attempt:
+        return Response(
+            {'detail': "Bu o'quvchining tadbirda topshirgan natijasi topilmadi"},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    answers = attempt.answers or {}
+    # Shuffle qilingan indeksni asl indeksga o'girish uchun sessiya tartiblari.
+    session = TestSession.objects.filter(
+        user_id=user_id, olympiad=olympiad,
+    ).only('option_orders').first()
+    option_orders = (session.option_orders if session else {}) or {}
+    code_subs = {cs.question_id: cs for cs in attempt.code_submissions.all()}
+    essay_grades = {g.question_id: g for g in attempt.essay_grades.all()}
+
+    questions = []
+    for q in olympiad.questions.all().order_by('id'):
+        q_type = getattr(q, 'question_type', 'mcq') or 'mcq'
+        options = list(q.options or [])
+        order = option_orders.get(str(q.id)) or list(range(len(options)))
+
+        raw_chosen = answers.get(str(q.id))
+        if raw_chosen is None:
+            raw_chosen = answers.get(q.id)
+
+        item = {
+            'id': q.id,
+            'text': q.text,
+            'options': options,
+            'question_type': q_type,
+            'score': q.score,
+        }
+
+        if q_type == 'code':
+            # Kod (IT) — Judge0 test caslari bo'yicha avtomatik baholanadi.
+            cs = code_subs.get(q.id)
+            item['submitted_code'] = cs.submitted_code if cs else ''
+            item['code_language'] = cs.code_language if cs else ''
+            item['ai_code_score'] = cs.ai_code_score if cs else None
+            if cs is None:
+                item['is_correct'] = None  # javob berilmagan
+            elif cs.all_tests_passed is None:
+                item['is_correct'] = None  # hali tekshirilmoqda
+            else:
+                item['is_correct'] = bool(cs.all_tests_passed)
+            questions.append(item)
+            continue
+
+        chosen = _extract_review_chosen(raw_chosen, q_type)
+        # Variant indeksli turlar — shuffle qilingan indeksni asl indeksga
+        # o'giramiz (score_session_answers bilan bir xil).
+        if q_type in ('mcq', 'yes_no'):
+            chosen = _deshuffle_index(chosen, order)
+        elif q_type == 'multiple_select':
+            chosen = _deshuffle_multi(chosen, order)
+
+        if q_type in ('mcq', 'yes_no'):
+            item['chosen_answer'] = chosen
+            item['correct_answer'] = q.correct_answer
+            item['is_correct'] = (
+                chosen is not None and chosen == q.correct_answer
+            )
+        elif q_type == 'essay':
+            # Qo'lda baholanadi — ustoz baho qo'ymaguncha is_correct=None.
+            item['chosen_answer'] = chosen
+            grade = essay_grades.get(q.id)
+            if grade is not None:
+                item['essay_score'] = grade.score
+                item['essay_feedback'] = grade.feedback or ''
+                item['is_correct'] = grade.score >= q.score
+            else:
+                item['pending_review'] = True
+                item['is_correct'] = None
+        else:
+            # multiple_select / fill_blank / fill_blanks — server baholaydi.
+            result = grade_answer(q, chosen)
+            item['chosen_answer'] = chosen
+            item['is_correct'] = (result == RESULT_CORRECT)
+            if q_type == 'multiple_select':
+                correct_raw = _parse_correct_text(getattr(q, 'correct_text', ''))
+                if isinstance(correct_raw, (list, tuple)):
+                    try:
+                        item['correct_answer_set'] = [int(x) for x in correct_raw]
+                    except (TypeError, ValueError):
+                        item['correct_answer_set'] = []
+            else:
+                item['correct_text'] = _parse_correct_text(
+                    getattr(q, 'correct_text', ''),
+                )
+        questions.append(item)
+
+    return Response({
+        'attempt_id': attempt.id,
+        'student_id': attempt.user_id,
+        'student_name': (
+            attempt.user.full_name or getattr(attempt.user, 'phone', '') or "O'quvchi"
+        ),
+        'score': attempt.score,
+        'correct_count': attempt.correct_count,
+        'wrong_count': attempt.wrong_count,
+        'total_questions': attempt.total_questions,
+        'disqualified': attempt.disqualified,
+        'questions': questions,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def attempt_ai_analysis(request, attempt_id):
     """GET /api/attempts/<id>/ai-analysis/ — saqlangan AI tahlilini qaytaradi (O4).
 
@@ -1599,9 +1738,9 @@ def leaderboard(request):
     include_disqualified = False
     if olympiad_id:
         olympiad = get_object_or_404(Olympiad.objects.select_related('center'), pk=olympiad_id)
-        if not user_can_participate_in_event(request.user, olympiad):
-            return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
         can_manage = user_can_manage_center_event(request.user, olympiad.center)
+        if not can_manage and not user_can_participate_in_event(request.user, olympiad):
+            return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
         # Draft/inactive olimpiada leaderboard'i faqat manager/owner/admin
         # uchun ko'rinadi. Oddiy ishtirokchi DRAFT yoki INACTIVE tadbir
         # natijalarini ko'ra olmaydi — bu sizdirib qo'yiladigan ma'lumot.

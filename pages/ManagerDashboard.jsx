@@ -76,6 +76,11 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [resultsModal, setResultsModal] = React.useState({
     open: false, event: null, data: [], loading: false, page: 1, total: 0,
   });
+  // Natijalar jadvalidan o'quvchi qatoriga bosilganda ochiladigan "O'quvchi
+  // tahlili" modali: o'sha o'quvchining har bir savol bo'yicha javobi.
+  const [studentReviewModal, setStudentReviewModal] = React.useState({
+    open: false, studentName: '', data: null, loading: false, error: '',
+  });
   // Markaz do'koni (Mukofotlar) holatlari.
   const [shopProducts, setShopProducts] = React.useState([]);
   const [shopLoading, setShopLoading] = React.useState(false);
@@ -322,6 +327,35 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     const backendId = olympiad.backendId ?? olympiad.olympiad_id ?? olympiad.id;
     setResultsModal({ open: true, event: olympiad, data: [], loading: true, page: 1, total: 0 });
     loadResultsPage(backendId, 1);
+  };
+
+  // Natijalar jadvalidan o'quvchi qatoriga bosilganda chaqiriladi: o'sha
+  // o'quvchining tadbirdagi har bir savol bo'yicha javobini yuklaydi.
+  const openStudentReview = (row) => {
+    if (!isApi) { showToast('Real server rejimida ishlaydi'); return; }
+    const olympiadBackendId = resultsModal.event?.backendId ?? resultsModal.event?.olympiad_id ?? resultsModal.event?.id;
+    const userId = row?.user_id;
+    if (!olympiadBackendId || !userId) return;
+    setStudentReviewModal({
+      open: true, studentName: row.name || "O'quvchi", data: null, loading: true, error: '',
+    });
+    OlympyApi.getEventUserAnswers(olympiadBackendId, userId, OlympyApi.getToken())
+      .then(res => {
+        setStudentReviewModal(m => ({
+          ...m,
+          data: res || null,
+          studentName: res?.student_name || m.studentName,
+          loading: false,
+        }));
+      })
+      .catch(err => {
+        console.warn('getEventUserAnswers failed:', err);
+        setStudentReviewModal(m => ({
+          ...m,
+          loading: false,
+          error: OlympyApi.toUserMessage?.(err) || "Javoblarni yuklab bo'lmadi",
+        }));
+      });
   };
 
   React.useEffect(() => {
@@ -2197,12 +2231,17 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                         return (
                           <div
                             key={row.attempt_id ?? idx}
-                            className={`animate-in flex flex-col gap-2 md:grid md:grid-cols-12 md:gap-x-2 md:gap-y-0 md:items-center px-3 md:px-4 py-3 border-b border-white/[0.04] transition-colors ${
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => openStudentReview(row)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openStudentReview(row); } }}
+                            title="Javoblarini ko'rish"
+                            className={`animate-in flex flex-col gap-2 md:grid md:grid-cols-12 md:gap-x-2 md:gap-y-0 md:items-center px-3 md:px-4 py-3 border-b border-white/[0.04] transition-colors cursor-pointer hover:bg-white/[0.06] focus:bg-white/[0.06] focus:outline-none ${
                               dq
                                 ? 'bg-white/[0.015] opacity-60'
                                 : idx % 2 === 1
-                                  ? 'bg-white/[0.02] hover:bg-white/[0.04]'
-                                  : 'hover:bg-white/[0.04]'
+                                  ? 'bg-white/[0.02]'
+                                  : ''
                             }`}
                           >
                             {/* Rank (desktop ustun) */}
@@ -2309,6 +2348,183 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   >
                     Keyingisi <Icon name="chevronRight" size={12} />
                   </button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* O'quvchi tahlili modali — natijalar jadvalidan o'quvchi tanlanganda */}
+      <Modal
+        open={studentReviewModal.open}
+        onClose={() => setStudentReviewModal(m => ({ ...m, open: false }))}
+        title="O'quvchi tahlili"
+        width="max-w-3xl"
+      >
+        {(() => {
+          const review = studentReviewModal.data;
+          // mcq/yes_no/multiple_select uchun option matnini xavfsiz olish.
+          const optAt = (options, i) => {
+            if (i === null || i === undefined) return null;
+            const o = (options || [])[i];
+            return o === undefined || o === null ? null : String(o);
+          };
+          // O'quvchining javobini turiga qarab matn(lar)ga aylantiradi.
+          const renderChosen = (q) => {
+            const t = q.question_type;
+            if (t === 'mcq' || t === 'yes_no') {
+              const txt = optAt(q.options, q.chosen_answer);
+              return txt == null ? "Javob berilmagan" : txt;
+            }
+            if (t === 'multiple_select') {
+              const arr = Array.isArray(q.chosen_answer) ? q.chosen_answer : [];
+              if (!arr.length) return "Javob berilmagan";
+              return arr.map(i => optAt(q.options, i)).filter(Boolean).join(', ');
+            }
+            if (t === 'fill_blank') {
+              return q.chosen_answer ? String(q.chosen_answer) : "Javob berilmagan";
+            }
+            if (t === 'fill_blanks') {
+              const c = q.chosen_answer;
+              if (c && typeof c === 'object') {
+                const parts = Object.keys(c).map(k => String(c[k])).filter(Boolean);
+                return parts.length ? parts.join(', ') : "Javob berilmagan";
+              }
+              return c ? String(c) : "Javob berilmagan";
+            }
+            if (t === 'essay') {
+              return q.chosen_answer ? String(q.chosen_answer) : "Javob berilmagan";
+            }
+            if (t === 'code') {
+              return q.submitted_code ? String(q.submitted_code) : "Javob berilmagan";
+            }
+            return "—";
+          };
+          // To'g'ri javobni turiga qarab matn(lar)ga aylantiradi.
+          const renderCorrect = (q) => {
+            const t = q.question_type;
+            if (t === 'mcq' || t === 'yes_no') return optAt(q.options, q.correct_answer);
+            if (t === 'multiple_select') {
+              const arr = Array.isArray(q.correct_answer_set) ? q.correct_answer_set : [];
+              return arr.map(i => optAt(q.options, i)).filter(Boolean).join(', ') || null;
+            }
+            if (t === 'fill_blank') {
+              return q.correct_text ? String(q.correct_text) : null;
+            }
+            if (t === 'fill_blanks') {
+              const c = q.correct_text;
+              if (c && typeof c === 'object') {
+                return Object.keys(c).map(k => String(c[k])).filter(Boolean).join(', ') || null;
+              }
+              return c ? String(c) : null;
+            }
+            return null; // essay/code — qat'iy "to'g'ri javob" yo'q
+          };
+
+          return (
+            <div className="space-y-4 -mt-1">
+              {/* Sarlavha: o'quvchi ismi + umumiy natija */}
+              <div className="glass rounded-2xl p-4 border border-white/10 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center flex-shrink-0">
+                  <Icon name="user" size={18} className="text-indigo-300" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-bold text-white truncate">{studentReviewModal.studentName || "O'quvchi"}</div>
+                  {review && (
+                    <div className="text-[11px] text-white/45 mt-0.5">
+                      To'g'ri: <span className="text-emerald-300 font-semibold">{review.correct_count ?? 0}</span>
+                      {' · '}Xato: <span className="text-rose-300 font-semibold">{review.wrong_count ?? 0}</span>
+                      {' · '}Ball: <span className="text-white/70 font-semibold">{review.score ?? 0}%</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Loading */}
+              {studentReviewModal.loading && (
+                <div className="space-y-2.5">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="h-16 rounded-xl bg-white/[0.04] border border-white/5 animate-pulse" />
+                  ))}
+                </div>
+              )}
+
+              {/* Xato */}
+              {!studentReviewModal.loading && studentReviewModal.error && (
+                <div className="glass rounded-2xl p-8 text-center border border-rose-500/15">
+                  <div className="text-3xl mb-2">⚠️</div>
+                  <div className="text-sm text-rose-200/80">{studentReviewModal.error}</div>
+                </div>
+              )}
+
+              {/* Bo'sh */}
+              {!studentReviewModal.loading && !studentReviewModal.error && review && (review.questions || []).length === 0 && (
+                <div className="glass rounded-2xl p-8 text-center">
+                  <div className="text-3xl mb-2">📭</div>
+                  <div className="text-sm text-white/40">Bu tadbirda savollar topilmadi.</div>
+                </div>
+              )}
+
+              {/* Savollar ro'yxati */}
+              {!studentReviewModal.loading && !studentReviewModal.error && review && (review.questions || []).length > 0 && (
+                <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-0.5">
+                  {(review.questions || []).map((q, i) => {
+                    const correct = q.is_correct === true;
+                    const wrong = q.is_correct === false;
+                    // is_correct === null → essay/kod tekshirilmoqda (neytral).
+                    const tone = correct
+                      ? 'bg-emerald-500/[0.07] border-emerald-500/25'
+                      : wrong
+                        ? 'bg-rose-500/[0.07] border-rose-500/25'
+                        : 'bg-white/[0.03] border-white/10';
+                    const chosenTxt = renderChosen(q);
+                    const correctTxt = renderCorrect(q);
+                    return (
+                      <div key={q.id ?? i} className={`rounded-xl p-3 sm:p-3.5 border ${tone}`}>
+                        <div className="flex items-start gap-2.5">
+                          <span className="inline-flex h-6 min-w-6 px-1.5 items-center justify-center rounded-md bg-white/10 text-[11px] font-bold text-white/60 flex-shrink-0 mt-0.5">
+                            {i + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[13px] text-white/90 font-medium break-words leading-snug">
+                              {q.text || '—'}
+                            </div>
+                            <div className="mt-2 space-y-1">
+                              {/* O'quvchining javobi */}
+                              <div className="text-[12px] flex flex-wrap gap-x-1.5">
+                                <span className="text-white/40">Javobi:</span>
+                                <span className={`font-semibold break-words ${correct ? 'text-emerald-200' : wrong ? 'text-rose-200' : 'text-white/70'}`}>
+                                  {chosenTxt}
+                                </span>
+                              </div>
+                              {/* To'g'ri javob — faqat xato bo'lsa va mavjud bo'lsa ko'rsatamiz */}
+                              {wrong && correctTxt && (
+                                <div className="text-[12px] flex flex-wrap gap-x-1.5">
+                                  <span className="text-white/40">To'g'ri javob:</span>
+                                  <span className="font-semibold text-emerald-200 break-words">{correctTxt}</span>
+                                </div>
+                              )}
+                              {/* Essay/kod baholanmagan bo'lsa izoh */}
+                              {q.is_correct === null && (
+                                <div className="text-[11px] text-amber-300/80">
+                                  {q.question_type === 'essay'
+                                    ? 'Qo\'lda baholanadi (hali baholanmagan)'
+                                    : q.question_type === 'code'
+                                      ? 'Kod tekshirilmoqda'
+                                      : 'Baholanmagan'}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {/* To'g'ri / xato belgisi */}
+                          <span className="flex-shrink-0 text-base leading-none mt-0.5">
+                            {correct ? '✅' : wrong ? '❌' : '⏳'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
