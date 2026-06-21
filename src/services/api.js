@@ -1037,6 +1037,17 @@ export const OlympyApi = {
   // chetlab o'tib qayta hisoblaydi.
   getAdminMetrics: (token, { refresh = false } = {}) =>
     request(`/api/analytics/metrics/${refresh ? '?refresh=1' : ''}`, { token }),
+  // Admin panel "Tahlil" tabidagi kengaytirilgan diagrammalar (faqat admin).
+  // Har biri alohida endpoint — bo'sh jadvalda backend bo'sh massiv qaytaradi.
+  getAttemptsTrend: (token) => request('/api/analytics/attempts-trend/', { token }),
+  // Eslatma: yuqorida `getOlympiadStats(olympiadId, token)` allaqachon mavjud
+  // (bitta olimpiada statistikasi — OwnerDashboard/ManagerDashboard ishlatadi).
+  // Bu admin analitikasi alohida nom oladi (getOlympiadAnalytics), aks holda
+  // obyektda nom to'qnashib eski metod yo'qolardi.
+  getOlympiadAnalytics: (token) => request('/api/analytics/olympiad-stats/', { token }),
+  getQuestionStats: (token) => request('/api/analytics/question-stats/', { token }),
+  getRevenueTrend: (token) => request('/api/analytics/revenue-trend/', { token }),
+  getCenterAnalytics: (token) => request('/api/analytics/center-stats/', { token }),
   // ─── B2B / O'sish (growth) funksiyalari ───
   // Feature #1: B2B markaz onboarding — owner sehrgarini tugatish/o'tkazib yuborish.
   completeCenterOnboarding: (token) => request('/api/me/center-onboarding/', { method: 'PATCH', token }),

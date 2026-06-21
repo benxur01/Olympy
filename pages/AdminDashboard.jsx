@@ -209,6 +209,8 @@ const {
   Area: ReArea,
   BarChart: ReBarChart,
   Bar: ReBar,
+  LineChart: ReLineChart,
+  Line: ReLine,
   PieChart: RePieChart,
   Pie: RePie,
   Cell: ReCell,
@@ -216,8 +218,27 @@ const {
   YAxis: ReYAxis,
   CartesianGrid: ReGrid,
   Tooltip: ReTooltip,
+  Legend: ReLegend,
   LabelList: ReLabelList,
 } = (typeof globalThis !== 'undefined' && globalThis.Recharts) || {};
+
+// So'm formatlash — daromad diagrammasi tooltip va o'qlarida ishlatiladi.
+// 1 250 000 → "1.25M", 450 000 → "450K", kichik son shundayligicha.
+const formatSom = (v) => {
+  const n = Number(v) || 0;
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`;
+  if (n >= 1_000) return `${Math.round(n / 1_000)}K`;
+  return String(n);
+};
+
+// Sana yorlig'ini qisqartirish (YYYY-MM-DD → "01.06" yoki YYYY-MM → "06.25").
+const shortDay = (iso) => {
+  if (!iso) return '';
+  const parts = String(iso).split('-');
+  if (parts.length === 3) return `${parts[2]}.${parts[1]}`;
+  if (parts.length === 2) return `${parts[1]}.${parts[0].slice(2)}`;
+  return String(iso);
+};
 
 // Dark tema tooltip — barcha diagrammalarda bir xil ko'rinish.
 const ChartTooltip = ({ active, payload, label, suffix = '', valueLabel }) => {
@@ -369,6 +390,276 @@ const ConversionFunnel = ({ data }) => {
   );
 };
 
+// ─── Sektion 2: Platforma faoliyati ────────────────────────────────────────
+
+// Oxirgi 30 kun kunlik attemptlar (LineChart, indigo/purple).
+const AttemptsTrendChart = ({ data }) => {
+  if (!RC) return null;
+  return (
+    <div className="h-[220px] w-full">
+      <RC width="100%" height="100%">
+        <ReLineChart data={data} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
+          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+          <ReXAxis dataKey="date" tickFormatter={shortDay} tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} interval={4} minTickGap={12} />
+          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="Attempt" />} cursor={{ stroke: 'rgba(129,140,248,0.3)' }} labelFormatter={shortDay} />
+          <ReLine type="monotone" dataKey="count" name="Attempt" stroke="#818cf8" strokeWidth={2.5}
+            dot={false} activeDot={{ r: 5, fill: '#a5b4fc', stroke: '#6366f1', strokeWidth: 2 }} />
+        </ReLineChart>
+      </RC>
+    </div>
+  );
+};
+
+// Top-10 olimpiada — ishtirokchilar soni (horizontal BarChart, purple).
+const OlympiadParticipationChart = ({ data }) => {
+  if (!RC) return null;
+  return (
+    <div className="w-full" style={{ height: `${Math.max(200, data.length * 30 + 24)}px` }}>
+      <RC width="100%" height="100%">
+        <ReBarChart data={data} layout="vertical" margin={{ top: 4, right: 52, left: 8, bottom: 4 }}>
+          <defs>
+            <linearGradient id="olympPartFill" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#a855f7" stopOpacity={0.95} />
+              <stop offset="100%" stopColor="#6366f1" stopOpacity={0.95} />
+            </linearGradient>
+          </defs>
+          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
+          <ReXAxis type="number" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+          <ReYAxis type="category" dataKey="name" tick={{ fill: '#cbd5e1', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} width={120} tickFormatter={(v) => (v && v.length > 16 ? v.slice(0, 15) + '…' : v)} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="Ishtirokchi" />} cursor={{ fill: 'rgba(168,85,247,0.08)' }} />
+          <ReBar dataKey="participants" name="Ishtirokchi" fill="url(#olympPartFill)" radius={[0, 6, 6, 0]} maxBarSize={26}>
+            <ReLabelList dataKey="participants" position="right" fill="#e2e8f0" fontSize={11} fontWeight={800} />
+          </ReBar>
+        </ReBarChart>
+      </RC>
+    </div>
+  );
+};
+
+// ─── Sektion 3: Kontent tahlil ─────────────────────────────────────────────
+
+// Fan bo'yicha savol soni (horizontal BarChart, amber).
+const QuestionBySubjectChart = ({ data }) => {
+  if (!RC) return null;
+  return (
+    <div className="w-full" style={{ height: `${Math.max(200, data.length * 28 + 24)}px` }}>
+      <RC width="100%" height="100%">
+        <ReBarChart data={data} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
+          <defs>
+            <linearGradient id="qSubjectFill" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.95} />
+              <stop offset="100%" stopColor="#f97316" stopOpacity={0.95} />
+            </linearGradient>
+          </defs>
+          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
+          <ReXAxis type="number" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+          <ReYAxis type="category" dataKey="name" tick={{ fill: '#cbd5e1', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} width={110} tickFormatter={(v) => (v && v.length > 14 ? v.slice(0, 13) + '…' : v)} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="Savol" />} cursor={{ fill: 'rgba(245,158,11,0.08)' }} />
+          <ReBar dataKey="count" name="Savol" fill="url(#qSubjectFill)" radius={[0, 6, 6, 0]} maxBarSize={24}>
+            <ReLabelList dataKey="count" position="right" fill="#e2e8f0" fontSize={11} fontWeight={800} />
+          </ReBar>
+        </ReBarChart>
+      </RC>
+    </div>
+  );
+};
+
+// Savol manbai taqsimoti (PieChart: manual/ai/pdf/import).
+const QUESTION_SOURCE_COLORS = ['#6366f1', '#a855f7', '#34d399', '#f59e0b', '#f43f5e'];
+const QuestionBySourceChart = ({ data }) => {
+  if (!RC) return null;
+  const total = data.reduce((s, d) => s + (d.count || 0), 0);
+  return (
+    <div className="flex flex-col items-center gap-4 sm:flex-row">
+      <div className="relative h-[150px] w-[150px] shrink-0">
+        <RC width="100%" height="100%">
+          <RePieChart>
+            <RePie data={data} dataKey="count" nameKey="label" cx="50%" cy="50%"
+              innerRadius={48} outerRadius={68} paddingAngle={3} stroke="none">
+              {data.map((d, i) => <ReCell key={i} fill={QUESTION_SOURCE_COLORS[i % QUESTION_SOURCE_COLORS.length]} />)}
+            </RePie>
+            <ReTooltip content={<ChartTooltip suffix=" ta" />} />
+          </RePieChart>
+        </RC>
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Jami</span>
+          <span className="text-lg font-black text-white">{total.toLocaleString()}</span>
+        </div>
+      </div>
+      <div className="w-full flex-1 space-y-2">
+        {data.map((d, i) => (
+          <div key={d.name} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-white/5 p-2 text-xs font-bold">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full shadow-[0_0_8px_currentColor]" style={{ background: QUESTION_SOURCE_COLORS[i % QUESTION_SOURCE_COLORS.length], color: QUESTION_SOURCE_COLORS[i % QUESTION_SOURCE_COLORS.length] }} />
+              <span className="font-semibold text-slate-400">{d.label || d.name}</span>
+            </div>
+            <span className="font-mono text-white">{d.count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// ─── Sektion 4: Moliya ─────────────────────────────────────────────────────
+
+// Daromad tooltip — so'm bilan to'liq formatlangan qiymat.
+const RevenueTooltip = ({ active, payload, label }) => {
+  if (!active || !payload || !payload.length) return null;
+  const v = Number(payload[0].value) || 0;
+  return (
+    <div className="rounded-lg bg-slate-800 border border-white/10 px-3 py-2 shadow-xl">
+      <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">{shortDay(label)}</div>
+      <div className="flex items-center gap-2 text-xs font-bold text-white">
+        <span className="h-2 w-2 rounded-full" style={{ background: '#34d399' }} />
+        <span className="text-slate-300">Daromad:</span>
+        <span className="font-mono">{v.toLocaleString('uz-UZ')} so'm</span>
+      </div>
+    </div>
+  );
+};
+
+// Oylik daromad (AreaChart, emerald).
+const RevenueTrendChart = ({ data }) => {
+  if (!RC) return null;
+  return (
+    <div className="h-[220px] w-full">
+      <RC width="100%" height="100%">
+        <ReAreaChart data={data} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
+          <defs>
+            <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#34d399" stopOpacity={0.5} />
+              <stop offset="100%" stopColor="#34d399" stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+          <ReXAxis dataKey="month" tickFormatter={shortDay} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
+          <ReYAxis tickFormatter={formatSom} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} width={42} />
+          <ReTooltip content={<RevenueTooltip />} cursor={{ stroke: 'rgba(52,211,153,0.3)' }} />
+          <ReArea type="monotone" dataKey="amount" name="Daromad" stroke="#10b981" strokeWidth={2.5}
+            fill="url(#revenueFill)" dot={{ r: 3, fill: '#059669', strokeWidth: 0 }}
+            activeDot={{ r: 5, fill: '#6ee7b7', stroke: '#059669', strokeWidth: 2 }} />
+        </ReAreaChart>
+      </RC>
+    </div>
+  );
+};
+
+// ─── Sektion 5: Markazlar ──────────────────────────────────────────────────
+
+// Viloyat bo'yicha markazlar soni (horizontal BarChart, indigo).
+const CentersByRegionChart = ({ data }) => {
+  if (!RC) return null;
+  return (
+    <div className="w-full" style={{ height: `${Math.max(200, data.length * 28 + 24)}px` }}>
+      <RC width="100%" height="100%">
+        <ReBarChart data={data} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
+          <defs>
+            <linearGradient id="regionFill" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stopColor="#6366f1" stopOpacity={0.95} />
+              <stop offset="100%" stopColor="#818cf8" stopOpacity={0.95} />
+            </linearGradient>
+          </defs>
+          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
+          <ReXAxis type="number" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+          <ReYAxis type="category" dataKey="name" tick={{ fill: '#cbd5e1', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} width={120} tickFormatter={(v) => (v && v.length > 16 ? v.slice(0, 15) + '…' : v)} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="Markaz" />} cursor={{ fill: 'rgba(99,102,241,0.08)' }} />
+          <ReBar dataKey="count" name="Markaz" fill="url(#regionFill)" radius={[0, 6, 6, 0]} maxBarSize={24}>
+            <ReLabelList dataKey="count" position="right" fill="#e2e8f0" fontSize={11} fontWeight={800} />
+          </ReBar>
+        </ReBarChart>
+      </RC>
+    </div>
+  );
+};
+
+// Premium vs Free markazlar oylik olimpiada soni (grouped BarChart).
+const PremiumVsFreeChart = ({ data }) => {
+  if (!RC) return null;
+  return (
+    <div className="h-[220px] w-full">
+      <RC width="100%" height="100%">
+        <ReBarChart data={data} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
+          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+          <ReXAxis dataKey="month" tickFormatter={shortDay} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
+          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" />} cursor={{ fill: 'rgba(148,163,184,0.06)' }} labelFormatter={shortDay} />
+          {ReLegend && <ReLegend wrapperStyle={{ fontSize: 10, fontWeight: 700, paddingTop: 4 }} iconType="circle" iconSize={8} />}
+          <ReBar dataKey="premium" name="Premium" fill="#a855f7" radius={[4, 4, 0, 0]} maxBarSize={18} />
+          <ReBar dataKey="free" name="Bepul" fill="#475569" radius={[4, 4, 0, 0]} maxBarSize={18} />
+        </ReBarChart>
+      </RC>
+    </div>
+  );
+};
+
+// Haftalik diskvalifikatsiya/cheating holatlari (LineChart, rose).
+const DqTrendChart = ({ data }) => {
+  if (!RC) return null;
+  return (
+    <div className="h-[220px] w-full">
+      <RC width="100%" height="100%">
+        <ReLineChart data={data} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
+          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+          <ReXAxis dataKey="week" tickFormatter={shortDay} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
+          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={30} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="DQ" />} cursor={{ stroke: 'rgba(244,63,94,0.3)' }} labelFormatter={shortDay} />
+          <ReLine type="monotone" dataKey="count" name="DQ" stroke="#f43f5e" strokeWidth={2.5}
+            dot={{ r: 3, fill: '#e11d48', strokeWidth: 0 }}
+            activeDot={{ r: 5, fill: '#fb7185', stroke: '#e11d48', strokeWidth: 2 }} />
+        </ReLineChart>
+      </RC>
+    </div>
+  );
+};
+
+// Top-5 markaz rating dinamikasi (ko'p chiziqli LineChart).
+const TOP_CENTER_COLORS = ['#6366f1', '#34d399', '#f59e0b', '#a855f7', '#f43f5e'];
+const TopCentersRatingChart = ({ series }) => {
+  if (!RC) return null;
+  // Har markaz {points:[{date,score}]} — barcha sanalarni birlashtirib, har
+  // sana uchun {date, [center_id]: score} qatorlarini tuzamiz (recharts
+  // ko'p chiziq uchun bitta umumiy data massivini kutadi).
+  const dateSet = new Set();
+  series.forEach(s => (s.points || []).forEach(p => dateSet.add(p.date)));
+  const dates = [...dateSet].sort();
+  const rows = dates.map(date => {
+    const row = { date };
+    series.forEach(s => {
+      const pt = (s.points || []).find(p => p.date === date);
+      if (pt) row[`c${s.center_id}`] = pt.score;
+    });
+    return row;
+  });
+  return (
+    <div className="h-[240px] w-full">
+      <RC width="100%" height="100%">
+        <ReLineChart data={rows} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
+          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+          <ReXAxis dataKey="date" tickFormatter={shortDay} tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} minTickGap={20} />
+          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+          <ReTooltip content={<ChartTooltip suffix=" ball" />} cursor={{ stroke: 'rgba(148,163,184,0.2)' }} labelFormatter={shortDay} />
+          {ReLegend && <ReLegend wrapperStyle={{ fontSize: 9, fontWeight: 700, paddingTop: 4 }} iconType="circle" iconSize={7} />}
+          {series.map((s, i) => (
+            <ReLine
+              key={s.center_id}
+              type="monotone"
+              dataKey={`c${s.center_id}`}
+              name={s.name && s.name.length > 14 ? s.name.slice(0, 13) + '…' : s.name}
+              stroke={TOP_CENTER_COLORS[i % TOP_CENTER_COLORS.length]}
+              strokeWidth={2}
+              dot={false}
+              connectNulls
+              activeDot={{ r: 4 }}
+            />
+          ))}
+        </ReLineChart>
+      </RC>
+    </div>
+  );
+};
+
 
 const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
@@ -515,6 +806,30 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   // (diagrammalar o'rniga "Ma'lumot yo'q") renderAnalytics ichida boshqariladi.
   const apiMetricsRes = useApiData(
     () => isApi ? OlympyApi.getAdminMetrics(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  // Tahlil tabi — kengaytirilgan diagrammalar uchun alohida backend
+  // endpoint'lari. Har biri mustaqil fetch qiladi; faqat platforma admini
+  // ko'radi (403 → graceful fallback renderAnalytics ichida). Bo'sh jadvalda
+  // backend bo'sh massiv qaytaradi.
+  const apiAttemptsTrendRes = useApiData(
+    () => isApi ? OlympyApi.getAttemptsTrend(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiOlympiadStatsRes = useApiData(
+    () => isApi ? OlympyApi.getOlympiadAnalytics(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiQuestionStatsRes = useApiData(
+    () => isApi ? OlympyApi.getQuestionStats(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiRevenueTrendRes = useApiData(
+    () => isApi ? OlympyApi.getRevenueTrend(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+  const apiCenterAnalyticsRes = useApiData(
+    () => isApi ? OlympyApi.getCenterAnalytics(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
 
@@ -1504,6 +1819,40 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       { label: "Paid bo'lgan", value: conv.paid_total || 0 },
     ];
 
+    // ─── Kengaytirilgan diagrammalar uchun backend datasi ───
+    // Har bir endpoint mustaqil: loading/error/empty alohida boshqariladi.
+    // 403 (admin emas) yoki tarmoq xatosi → "Ma'lumot yo'q" ko'rsatamiz.
+    const attemptsTrend = Array.isArray(apiAttemptsTrendRes.data) ? apiAttemptsTrendRes.data : [];
+    const attemptsLoading = isApi && apiAttemptsTrendRes.loading;
+    const attemptsEmpty = !attemptsTrend.length || attemptsTrend.every(d => !d.count);
+
+    const olympiadStats = Array.isArray(apiOlympiadStatsRes.data) ? apiOlympiadStatsRes.data : [];
+    const olympiadStatsLoading = isApi && apiOlympiadStatsRes.loading;
+
+    const qStats = apiQuestionStatsRes.data || {};
+    const qBySubject = Array.isArray(qStats.by_subject) ? qStats.by_subject : [];
+    const qBySource = Array.isArray(qStats.by_source) ? qStats.by_source : [];
+    const qStatsLoading = isApi && apiQuestionStatsRes.loading;
+
+    const revenueTrend = Array.isArray(apiRevenueTrendRes.data) ? apiRevenueTrendRes.data : [];
+    const revenueLoading = isApi && apiRevenueTrendRes.loading;
+    const revenueEmpty = !revenueTrend.length || revenueTrend.every(d => !d.amount);
+
+    const centerAnalytics = apiCenterAnalyticsRes.data || {};
+    const byRegion = Array.isArray(centerAnalytics.by_region) ? centerAnalytics.by_region : [];
+    const premiumVsFree = Array.isArray(centerAnalytics.premium_vs_free) ? centerAnalytics.premium_vs_free : [];
+    const dqTrend = Array.isArray(centerAnalytics.dq_trend) ? centerAnalytics.dq_trend : [];
+    const topCentersRating = Array.isArray(centerAnalytics.top_centers_rating) ? centerAnalytics.top_centers_rating : [];
+    const centerAnalyticsLoading = isApi && apiCenterAnalyticsRes.loading;
+    const pvfEmpty = !premiumVsFree.length || premiumVsFree.every(d => !d.premium && !d.free);
+    const dqEmpty = !dqTrend.length || dqTrend.every(d => !d.count);
+    const ratingEmpty = !topCentersRating.length || topCentersRating.every(s => !(s.points || []).length);
+
+    // Loading spinner — diagrammalar uchun bir xil ko'rinish (DRY).
+    const loadingBox = (h = 200) => (
+      <div className="flex items-center justify-center text-[11px] font-bold text-slate-500" style={{ height: `${h}px` }}>Yuklanmoqda...</div>
+    );
+
     return (
       <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
         <div>
@@ -1560,6 +1909,101 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             ? <div className="flex h-[200px] items-center justify-center text-[11px] font-bold text-slate-500">Yuklanmoqda...</div>
             : <ConversionFunnel data={funnelData} />}
         </ChartCard>
+
+        {/* ─── Sektion 2: Platforma faoliyati ─── */}
+        <div className="space-y-[14px]">
+          <h2 className="text-[13px] font-black uppercase tracking-wider text-slate-500">Platforma faoliyati</h2>
+
+          {/* Kunlik attemptlar — to'liq kenglik */}
+          <ChartCard
+            title="Kunlik test urinishlari"
+            subtitle="Oxirgi 30 kun bo'yicha topshirilgan testlar"
+            empty={!attemptsLoading && attemptsEmpty}
+          >
+            {attemptsLoading ? loadingBox(220) : <AttemptsTrendChart data={attemptsTrend} />}
+          </ChartCard>
+
+          {/* Top-10 olimpiada ishtiroki */}
+          <ChartCard
+            title="Eng faol olimpiadalar"
+            subtitle="Ishtirokchilar soni bo'yicha top-10"
+            empty={!olympiadStatsLoading && !olympiadStats.length}
+          >
+            {olympiadStatsLoading ? loadingBox(220) : <OlympiadParticipationChart data={olympiadStats} />}
+          </ChartCard>
+        </div>
+
+        {/* ─── Sektion 3: Kontent tahlil ─── */}
+        <div className="space-y-[14px]">
+          <h2 className="text-[13px] font-black uppercase tracking-wider text-slate-500">Kontent tahlil</h2>
+          <div className="grid gap-5 xl:grid-cols-2">
+            <ChartCard
+              title="Fan bo'yicha savollar"
+              subtitle="Eng ko'p savol bo'lgan fanlar"
+              empty={!qStatsLoading && !qBySubject.length}
+            >
+              {qStatsLoading ? loadingBox(200) : <QuestionBySubjectChart data={qBySubject} />}
+            </ChartCard>
+
+            <ChartCard
+              title="Savol manbalari"
+              subtitle="Qo'lda / AI / PDF / Import nisbati"
+              empty={!qStatsLoading && !qBySource.length}
+            >
+              {qStatsLoading ? loadingBox(200) : <QuestionBySourceChart data={qBySource} />}
+            </ChartCard>
+          </div>
+        </div>
+
+        {/* ─── Sektion 4: Moliya ─── */}
+        <div className="space-y-[14px]">
+          <h2 className="text-[13px] font-black uppercase tracking-wider text-slate-500">Moliya</h2>
+          <ChartCard
+            title="Oylik daromad"
+            subtitle="Oxirgi 12 oy muvaffaqiyatli to'lovlar (so'm)"
+            empty={!revenueLoading && revenueEmpty}
+          >
+            {revenueLoading ? loadingBox(220) : <RevenueTrendChart data={revenueTrend} />}
+          </ChartCard>
+        </div>
+
+        {/* ─── Sektion 5: Markazlar ─── */}
+        <div className="space-y-[14px]">
+          <h2 className="text-[13px] font-black uppercase tracking-wider text-slate-500">Markazlar</h2>
+          <div className="grid gap-5 xl:grid-cols-2">
+            <ChartCard
+              title="Viloyat bo'yicha markazlar"
+              subtitle="Tasdiqlangan markazlar soni"
+              empty={!centerAnalyticsLoading && !byRegion.length}
+            >
+              {centerAnalyticsLoading ? loadingBox(200) : <CentersByRegionChart data={byRegion} />}
+            </ChartCard>
+
+            <ChartCard
+              title="Premium vs Bepul faollik"
+              subtitle="Oxirgi 6 oy oylik olimpiada soni"
+              empty={!centerAnalyticsLoading && pvfEmpty}
+            >
+              {centerAnalyticsLoading ? loadingBox(220) : <PremiumVsFreeChart data={premiumVsFree} />}
+            </ChartCard>
+
+            <ChartCard
+              title="Diskvalifikatsiya dinamikasi"
+              subtitle="Oxirgi 8 hafta cheating/DQ holatlari"
+              empty={!centerAnalyticsLoading && dqEmpty}
+            >
+              {centerAnalyticsLoading ? loadingBox(220) : <DqTrendChart data={dqTrend} />}
+            </ChartCard>
+
+            <ChartCard
+              title="Top markazlar reytingi"
+              subtitle="Eng yuqori 5 markaz rating dinamikasi"
+              empty={!centerAnalyticsLoading && ratingEmpty}
+            >
+              {centerAnalyticsLoading ? loadingBox(240) : <TopCentersRatingChart series={topCentersRating} />}
+            </ChartCard>
+          </div>
+        </div>
       </div>
     );
   };
