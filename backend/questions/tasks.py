@@ -406,6 +406,100 @@ def process_pdf_questions_task(self, task_id, pdf_b64, subject, difficulty, ques
         }, timeout=900)
 
 
+@shared_task(bind=True)
+def process_word_ai_questions_task(self, task_id, word_b64, subject, difficulty, question_type):
+    """Word (.docx) matnidan savollarni AI yordamida ajratadi va keshga yozadi.
+
+    PDF oqimining ayni nusxasi (process_pdf_questions_task), faqat manba .docx:
+    docx'dan barcha matn (paragraflar + jadval kataklari) chiqarilib, PDF bilan
+    bir xil AI logikasiga (extract_questions_from_text) beriladi. Kesh kaliti
+    PDF bilan bir xil pattern — `pdf_questions:task:{task_id}` — shu sababli
+    mavjud `pdf-preview/<task_id>/status/` endpointi o'zgartirilmasdan ishlaydi.
+
+    Word baytlari Celery argumenti sifatida base64 string ko'rinishida keladi
+    (broker JSON serializer'i bilan mos bo'lishi uchun). EAGER rejimda (Redis yo'q
+    dev) task sinxron bajariladi.
+    """
+    import base64
+    import io
+
+    from django.core.cache import cache
+    from django.db import close_old_connections
+
+    from .pdf_generation import extract_questions_from_text
+
+    close_old_connections()
+    cache_key = f"pdf_questions:task:{task_id}"
+    try:
+        word_bytes = base64.b64decode(word_b64) if word_b64 else b''
+        try:
+            from docx import Document
+        except ImportError:
+            cache.set(cache_key, {
+                'status': 'FAILED',
+                'error': "python-docx o'rnatilmagan. Iltimos administratorga xabar bering.",
+            }, timeout=900)
+            return
+
+        # Hujjatdagi barcha matnni chiqaramiz: avval paragraflar, keyin jadval
+        # kataklari (savollar jadvalda ham, erkin matnda ham bo'lishi mumkin).
+        document = Document(io.BytesIO(word_bytes))
+        parts = []
+        for para in document.paragraphs:
+            t = (para.text or '').strip()
+            if t:
+                parts.append(t)
+        for table in document.tables:
+            for row in table.rows:
+                # Bitta katak gorizontal birlashtirilgan bo'lsa, cell bir necha
+                # marta takrorlanishi mumkin — id(cell._tc) bilan dedup qilamiz.
+                seen_tc = set()
+                for cell in row.cells:
+                    tc_id = id(cell._tc)
+                    if tc_id in seen_tc:
+                        continue
+                    seen_tc.add(tc_id)
+                    t = (cell.text or '').strip()
+                    if t:
+                        parts.append(t)
+        text = '\n'.join(parts).strip()
+
+        result = extract_questions_from_text(
+            text=text,
+            subject=subject or '',
+            difficulty=difficulty or 'medium',
+            question_type=question_type or 'multiple_choice',
+        )
+        if not result.get('ok'):
+            cache.set(cache_key, {
+                'status': 'FAILED',
+                'error': result.get('error') or "Word matnidan savollarni ajratib bo'lmadi",
+                'pdf_text_chars': result.get('pdf_text_chars', 0),
+                'page_count': result.get('page_count', 0),
+                'used_pdf_vision': bool(result.get('used_pdf_vision')),
+            }, timeout=900)
+            return
+        cache.set(cache_key, {
+            'status': 'COMPLETED',
+            'result': {
+                'questions': result.get('questions') or [],
+                'provider': result.get('provider') or '',
+                'pdf_text_chars': result.get('pdf_text_chars', 0),
+                'page_count': result.get('page_count', 0),
+                'used_pdf_vision': bool(result.get('used_pdf_vision')),
+                'complete': result.get('complete', True),
+                'warning': result.get('warning') or '',
+                'chunks': result.get('chunks', 1),
+            },
+        }, timeout=900)
+    except Exception as exc:
+        logger.exception('Word AI savol ajratish task xatosi task=%s', task_id)
+        cache.set(cache_key, {
+            'status': 'FAILED',
+            'error': str(exc) or "Word faylni tahlil qilishda kutilmagan xato",
+        }, timeout=900)
+
+
 @shared_task(bind=True, max_retries=3)
 def update_question_embedding(self, question_id):
     """RAG: savol matnini vektorga aylantirib `embedding` ustuniga yozadi.

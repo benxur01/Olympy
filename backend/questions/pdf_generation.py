@@ -1150,6 +1150,110 @@ def _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type):
     return {'ok': False, 'error': _gemini_pdf_error(last_error), 'provider_error': last_error, 'questions': []}
 
 
+def extract_questions_from_text(text, subject, difficulty='medium', question_type='multiple_choice'):
+    """Tayyor matndan (PDF baytlari emas) AI yordamida savollarni ajratadi.
+
+    Word (.docx) matni shu yo'l orqali o'tadi: docx'dan ajratilgan matn to'g'ridan-
+    to'g'ri uzatiladi va PDF oqimidagi xuddi shu AI logikasi (OpenAI/Gemini matn
+    rejimi + regex parser fallback) qayta ishlatiladi. PDF baytlari yo'qligi
+    sababli vision/inline-PDF rejimi ishlatilmaydi, `page_count=0` va
+    `used_pdf_vision=False`. Qaytadigan dict shakli extract_questions_from_pdf
+    bilan bir xil — mavjud status endpoint va frontend o'zgartirilmasdan ishlaydi.
+    """
+    source_text = str(text or '').strip()
+    text_chunk_count = len(_split_pdf_text_chunks(source_text)) if source_text else 0
+
+    if not source_text:
+        return {
+            'ok': False,
+            'error': "Word faylda matn topilmadi. Hujjatda savollar matn ko'rinishida ekanini tekshiring.",
+            'questions': [],
+            'pdf_text_chars': 0,
+            'page_count': 0,
+            'used_pdf_vision': False,
+        }
+
+    has_openai = bool(_openai_keys())
+    has_gemini = bool(_gemini_keys())
+
+    openai_result = {'ok': False}
+    gemini_result = {'ok': False}
+
+    if has_openai or has_gemini:
+        if has_openai:
+            openai_result = _openai_from_text(source_text, subject, difficulty, question_type)
+            if openai_result.get('ok') and text_chunk_count <= 1:
+                openai_result['pdf_text_chars'] = len(source_text)
+                openai_result['page_count'] = 0
+                openai_result['used_pdf_vision'] = False
+                openai_result['complete'] = True
+                return openai_result
+
+        if has_gemini:
+            # pdf_bytes=None — Gemini faqat matn rejimida ishlaydi (vision yo'q).
+            gemini_result = _gemini_extract(None, source_text, subject, difficulty, question_type)
+            if gemini_result.get('ok'):
+                if openai_result.get('ok') and len(openai_result.get('questions') or []) > len(gemini_result.get('questions') or []):
+                    openai_result['pdf_text_chars'] = len(source_text)
+                    openai_result['page_count'] = 0
+                    openai_result['used_pdf_vision'] = False
+                    openai_result['complete'] = False
+                    openai_result['warning'] = "Katta hujjat bir martada ajratildi. Natijani asl fayl bilan solishtirib tekshiring."
+                    openai_result['chunks'] = text_chunk_count
+                    return openai_result
+                gemini_result['pdf_text_chars'] = len(source_text)
+                gemini_result['page_count'] = 0
+                gemini_result['used_pdf_vision'] = False
+                gemini_result['complete'] = gemini_result.get('complete', True)
+                gemini_result['chunks'] = gemini_result.get('chunks') or max(text_chunk_count, 1)
+                return gemini_result
+
+        if openai_result.get('ok'):
+            openai_result['pdf_text_chars'] = len(source_text)
+            openai_result['page_count'] = 0
+            openai_result['used_pdf_vision'] = False
+            openai_result['complete'] = False
+            openai_result['warning'] = "Katta hujjat bo'lgani uchun barcha savollar chiqqanini asl fayl bilan solishtirib tekshiring."
+            openai_result['chunks'] = text_chunk_count
+            return openai_result
+
+    # Fallback: AI yo'q/ishlamadi — mahalliy regex parser.
+    parser_questions = _parse_questions_from_text(source_text, subject, difficulty, question_type)
+    if parser_questions:
+        return {
+            'ok': True,
+            'provider': 'parser',
+            'questions': parser_questions,
+            'pdf_text_chars': len(source_text),
+            'page_count': 0,
+            'used_pdf_vision': False,
+            'complete': True,
+            'chunks': max(text_chunk_count, 1),
+            'warning': (
+                "Savollar matndan tez ajratildi. "
+                "Javoblar topilmagan savollar saqlashdan oldin tekshirilishi kerak."
+            ),
+        }
+
+    detail = (
+        "Word matni o'qildi, lekin savol va variantlar aniq ajratilmadi. "
+        "Savollar 1., 2. va variantlar A), B), C), D) kabi ko'rinishda ekanini tekshiring."
+    )
+    if gemini_result.get('error') or gemini_result.get('provider_error'):
+        detail = f"{detail} / {gemini_result.get('error') or gemini_result.get('provider_error')}"
+    elif openai_result.get('error') or openai_result.get('provider_error'):
+        detail = f"{detail} / {openai_result.get('error') or openai_result.get('provider_error')}"
+
+    return {
+        'ok': False,
+        'error': detail,
+        'questions': [],
+        'pdf_text_chars': len(source_text),
+        'page_count': 0,
+        'used_pdf_vision': False,
+    }
+
+
 def extract_questions_from_pdf(pdf_bytes, subject, difficulty='medium', question_type='multiple_choice'):
     pdf_text, page_count = _extract_pdf_text(pdf_bytes)
     text_chunk_count = len(_split_pdf_text_chunks(pdf_text)) if pdf_text else 0

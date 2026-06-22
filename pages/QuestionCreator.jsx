@@ -102,6 +102,13 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [pdfVision, setPdfVision] = React.useState(false);
   const [pdfWarning, setPdfWarning] = React.useState('');
   const [pdfChunks, setPdfChunks] = React.useState(1);
+  // Word (AI) — Worddagi matndan AI savol ajratish (PDF oqimining .docx varianti)
+  const [wordAiFile, setWordAiFile] = React.useState(null);
+  const [wordAiLoading, setWordAiLoading] = React.useState(false);
+  const [wordAiResult, setWordAiResult] = React.useState(null);
+  const [wordAiProvider, setWordAiProvider] = React.useState('');
+  const [wordAiWarning, setWordAiWarning] = React.useState('');
+  const [wordAiChunks, setWordAiChunks] = React.useState(1);
   const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject: store.subjects[0] || 'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
   const [editingQuestionId, setEditingQuestionId] = React.useState(null);
   const [newSubjectModal, setNewSubjectModal] = React.useState(false);
@@ -201,6 +208,26 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   };
 
   const _mapPdfGeneratedQuestion = (q, i) => {
+    const subj = q.subject || aiForm.subject;
+    return {
+      _tmpId: Date.now() + i,
+      text: q.text,
+      subject: subj,
+      difficulty: _diffFromApi(q.difficulty, subj, aiForm.level) || aiForm.level,
+      score: q.score ?? 3,
+      options: Array.isArray(q.options) ? q.options : [],
+      correctAnswer: q.correct_answer ?? q.correctAnswer ?? 0,
+      source: 'pdf',
+      originalNumber: q.original_number || q.order || i + 1,
+      answerSource: q.answer_source || 'missing',
+      needsReview: !!q.needs_review,
+    };
+  };
+
+  // Word (AI) preview mapperi — PDF mapperining aynan nusxasi. Manba .docx matni
+  // bo'lsa-da, AI bilan ajratilgani uchun backend `source='pdf'` saqlanadi
+  // (SOURCE enum'da alohida 'word' qiymati yo'q; bu PDF oqimining matn varianti).
+  const _mapWordAiGeneratedQuestion = (q, i) => {
     const subj = q.subject || aiForm.subject;
     return {
       _tmpId: Date.now() + i,
@@ -328,6 +355,53 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       }
     } finally {
       setPdfLoading(false);
+      e.target.value = '';
+    }
+  };
+
+  // Word (AI) handler — handlePDF bilan bir xil oqim, faqat .docx fayl va
+  // extractWordAiQuestions API funksiyasi (matn AI ga beriladi, jadval shart emas).
+  const handleWordAi = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!isApi) {
+      showApiToast("⚠ Word tahlil qilish uchun akkaunt bilan kirish kerak");
+      e.target.value = '';
+      return;
+    }
+    if (!myCenterId) {
+      showApiToast("⚠ Markaz aniqlanmadi");
+      e.target.value = '';
+      return;
+    }
+    setWordAiFile(f.name);
+    setWordAiLoading(true);
+    setWordAiResult(null);
+    setWordAiProvider('');
+    setWordAiWarning('');
+    setWordAiChunks(1);
+    try {
+      const response = await OlympyApi.extractWordAiQuestions(f, {
+        center: myCenter?.backendId ?? myCenterId,
+        subject: aiForm.subject,
+        difficulty: _diffToApi(aiForm.level, aiForm.subject),
+        question_type: aiForm.type,
+      }, OlympyApi.getToken());
+      const extracted = (response?.questions || []).map(_mapWordAiGeneratedQuestion);
+      setWordAiResult(extracted);
+      setWordAiProvider(response?.provider || '');
+      setWordAiWarning(response?.warning || (response?.complete === false ? "Word qisman ajratildi. Saqlashdan oldin asl fayl bilan solishtirib tekshiring." : ''));
+      setWordAiChunks(response?.chunks || 1);
+      if (!extracted.length) showApiToast("⚠ Word matnidan savol topilmadi");
+    } catch (err) {
+      console.warn('extractWordAiQuestions failed:', err);
+      if (err?.status === 403 && err?.data?.upgrade_required) {
+        setPremiumLockDetail(err.data.detail || "Word matnidan AI savollar ajratish faqat premium tashkilotlar uchun. Premium obunani faollashtiring.");
+      } else {
+        showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Word tahlil qilinmadi"}`);
+      }
+    } finally {
+      setWordAiLoading(false);
       e.target.value = '';
     }
   };
@@ -713,6 +787,34 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     setMode('list');
   };
 
+  const saveWordAiQuestions = () => {
+    if (!wordAiResult || wordAiResult.length === 0) return;
+    if (isApi) {
+      setBulkSaving(true);
+      _createApiBulk(wordAiResult, 'pdf')
+        .then(() => { apiQuestionsRes.reload(); setWordAiResult(null); setWordAiFile(null); setWordAiProvider(''); setMode('list'); })
+        .catch(err => { console.warn('createQuestion (word_ai) failed:', err); showApiToast("⚠ Savollar saqlab bo'lmadi"); })
+        .finally(() => setBulkSaving(false));
+      return;
+    }
+    OlympyStore.createQuestionsBulk(wordAiResult.map(q => ({
+      centerId: myCenterId,
+      subject: q.subject,
+      text: q.text,
+      options: q.options,
+      correctAnswer: q.correctAnswer,
+      score: q.score,
+      difficulty: q.difficulty,
+      questionType: q.question_type || 'mcq',
+      source: q.source || 'pdf',
+      createdBy: user?.id,
+    })));
+    setWordAiResult(null);
+    setWordAiFile(null);
+    setWordAiProvider('');
+    setMode('list');
+  };
+
   const addCustomSubject = async () => {
     const name = (newSubject || '').trim();
     if (name && !allSubjects.includes(name)) {
@@ -754,6 +856,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             <button onClick={() => setMode('manual')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5"><Icon name="edit" size={14} /> <span className="hidden sm:inline">Qo'lda yaratish</span><span className="sm:hidden">Qo'lda</span></button>
             <button onClick={() => setMode('ai')} className="btn-primary text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5"><Icon name="sparkles" size={14} /> <span className="hidden sm:inline">AI orqali</span><span className="sm:hidden">AI</span></button>
             <button onClick={() => setMode('pdf')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-cyan-500/30 text-cyan-300"><Icon name="upload" size={14} /> <span className="hidden sm:inline">PDF dan</span><span className="sm:hidden">PDF</span></button>
+            <button onClick={() => setMode('word_ai')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-sky-500/30 text-sky-300"><Icon name="sparkles" size={14} /> <span className="hidden sm:inline">Word (AI)</span><span className="sm:hidden">W·AI</span></button>
             <button
               onClick={() => importInputRef.current?.click()}
               disabled={importLoading}
@@ -806,7 +909,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             />
           </div>
         )}
-        {mode !== 'list' && <button onClick={() => { setMode('list'); setAiResult(null); setPdfResult(null); setPdfProvider(''); setPdfVision(false); setEditingQuestionId(null); }} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 w-full md:w-auto"><Icon name="arrowLeft" size={14} /> Orqaga</button>}
+        {mode !== 'list' && <button onClick={() => { setMode('list'); setAiResult(null); setPdfResult(null); setPdfProvider(''); setPdfVision(false); setWordAiResult(null); setWordAiProvider(''); setEditingQuestionId(null); }} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 w-full md:w-auto"><Icon name="arrowLeft" size={14} /> Orqaga</button>}
       </div>
 
       {/* Import natijasi banner */}
@@ -1403,6 +1506,115 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                     <button
                       type="button"
                       onClick={() => setPdfResult(prev => prev.map((item, idx) =>
+                        idx === i ? { ...item, question_type: isCode ? 'mcq' : 'code' } : item
+                      ))}
+                      title={isCode ? "Kod savoli sifatida saqlanadi — bosib MCQ ga qaytaring" : "MCQ sifatida saqlanadi — bosib kod savoliga o'tkazing"}
+                      className={`flex-shrink-0 inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg border transition-all ${isCode ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' : 'bg-white/5 text-white/40 border-white/10 hover:text-white/60'}`}
+                    >
+                      {isCode ? <>{'</> '}Kod savoli</> : 'MCQ'}
+                    </button>
+                  </div>
+                  {!isCode && Array.isArray(q.options) && q.options.length > 0 && (
+                    <div className="grid gap-1.5 sm:grid-cols-2">
+                      {q.options.map((option, optionIndex) => (
+                        <div key={optionIndex}
+                          className={`rounded-lg px-2 py-1 text-xs ${optionIndex === q.correctAnswer ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'bg-white/5 text-white/50'}`}>
+                          {String.fromCharCode(65 + optionIndex)}. {option}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {isCode && (
+                    <div className="text-[11px] text-indigo-300/70 pl-6">Bu savol kod (dasturlash) savoli sifatida saqlanadi. Variantlar o'rniga o'quvchi kod yozadi.</div>
+                  )}
+                </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* WORD (AI) MODE — Worddagi matndan AI savol ajratish (PDF MODE'ning .docx varianti) */}
+      {mode === 'word_ai' && (
+        <div className="space-y-5 animate-in">
+          <div className="glass rounded-2xl p-6 border border-sky-500/20">
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-10 h-10 bg-sky-500/15 rounded-xl flex items-center justify-center text-sky-400"><Icon name="sparkles" size={18} /></div>
+              <div><div className="font-bold text-white">Word matnidan AI savol</div><div className="text-xs text-white/40">.docx yuklang — AI matnni o'qib savollar ajratadi (jadval shart emas)</div></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <div><label className="block text-xs text-white/50 mb-1.5">Fan</label>
+                <select className="input-field" value={aiForm.subject} onChange={e => {
+                  const newSubj = e.target.value;
+                  let newLevel = aiForm.level;
+                  if (newSubj === 'Ingliz tili') {
+                    if (!ENGLISH_LEVELS.includes(newLevel)) {
+                      newLevel = 'Beginner';
+                    }
+                  } else {
+                    if (!LEVELS.includes(newLevel)) {
+                      newLevel = "O'rta";
+                    }
+                  }
+                  setAiForm({...aiForm, subject: newSubj, level: newLevel});
+                }}>
+                  {allSubjects.map(s => <option key={s}>{s}</option>)}
+                </select></div>
+              <div><label className="block text-xs text-white/50 mb-1.5">Qiyinlik</label>
+                <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
+                  {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
+                </select></div>
+            </div>
+            <label className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-white/10 hover:border-sky-500/30 transition-all cursor-pointer group">
+              <div className="text-4xl mb-3 group-hover:scale-110 transition-transform">📝</div>
+              <div className="text-sm font-medium text-white/60 mb-1">{wordAiFile || 'Word (.docx) faylni shu yerga tashlang'}</div>
+              <div className="text-xs text-white/30">yoki bosib tanlang</div>
+              <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={handleWordAi} />
+            </label>
+            {wordAiLoading && (
+              <div className="mt-4 space-y-2 ai-shimmer rounded-xl p-4">
+                <div className="text-xs text-sky-400 mb-2">Word tahlil qilinmoqda...</div>
+                {[80,60,70].map((w,i) => <div key={i} className="h-3 rounded bg-white/10" style={{width:`${w}%`}} />)}
+              </div>
+            )}
+          </div>
+          {wordAiResult && !wordAiLoading && (
+            <div className="glass rounded-2xl p-5 space-y-3 animate-in">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-sm font-bold text-white">{wordAiResult.length} ta savol ajratildi</div>
+                  <div className="text-xs text-white/35">
+                    {wordAiProvider ? `${wordAiProvider === 'openai' ? 'OpenAI' : wordAiProvider === 'gemini' ? 'Gemini' : wordAiProvider === 'parser' ? 'Matn parser' : 'Demo'} tahlil qildi` : 'AI tahlil qildi'}
+                    {wordAiChunks > 1 ? ` · ${wordAiChunks} bo'lak` : ''}
+                  </div>
+                  {wordAiWarning && <div className="mt-1 text-[11px] text-amber-300">{wordAiWarning}</div>}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={saveWordAiQuestions} disabled={bulkSaving} className="btn-primary text-xs px-4 py-1.5 rounded-xl font-semibold disabled:opacity-50">Saqlash</button>
+                </div>
+              </div>
+              {wordAiResult.map((q,i) => {
+                const isCode = (q.question_type || 'mcq') === 'code';
+                return (
+                <div key={i} className="glass rounded-xl p-3 text-sm text-white/70 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-sky-300 font-bold">{i+1}.</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="leading-relaxed">{q.text}</div>
+                      {q.needsReview && (
+                        <div className="mt-1 text-[11px] text-amber-300">Javob AI tomonidan taxmin qilindi, saqlashdan oldin tekshiring</div>
+                      )}
+                      <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mt-2">
+                        <SubjectBadge subject={q.subject} />
+                        <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
+                        <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
+                      </div>
+                    </div>
+                    {/* Savol turini MCQ ↔ kod savoli o'rtasida almashtirish (PDF preview bilan bir xil). */}
+                    <button
+                      type="button"
+                      onClick={() => setWordAiResult(prev => prev.map((item, idx) =>
                         idx === i ? { ...item, question_type: isCode ? 'mcq' : 'code' } : item
                       ))}
                       title={isCode ? "Kod savoli sifatida saqlanadi — bosib MCQ ga qaytaring" : "MCQ sifatida saqlanadi — bosib kod savoliga o'tkazing"}

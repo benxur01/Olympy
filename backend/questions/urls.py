@@ -10,6 +10,7 @@ urlpatterns = [
     path('run-code/status/<str:task_id>/', views.run_code_status_view, name='questions-run-code-status'),
     path('pdf-preview/', views.preview_pdf_questions, name='questions-pdf-preview'),
     path('pdf-preview/<str:task_id>/status/', views.pdf_preview_status, name='questions-pdf-preview-status'),
+    path('word-ai-preview/', views.word_ai_preview, name='questions-word-ai-preview'),
     path('import/', views.import_questions_excel, name='questions-import'),
     path('import-word/', views.import_questions_word, name='questions-import-word'),
     path('word-template/', views.download_word_template, name='questions-word-template'),
