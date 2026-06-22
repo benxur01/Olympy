@@ -603,7 +603,7 @@ def _clean_question_text(text):
         text,
         flags=re.IGNORECASE,
     )
-    return re.sub(r'\s+', ' ', text).strip()
+    return re.sub(r'[ \t]+', ' ', text).strip()
 
 
 def _parse_answer_key(pdf_text):

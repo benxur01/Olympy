@@ -1739,7 +1739,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           <div className="glass rounded-2xl p-6 border border-sky-500/20">
             <div className="flex items-center gap-3 mb-5">
               <div className="w-10 h-10 bg-sky-500/15 rounded-xl flex items-center justify-center text-sky-400"><Icon name="sparkles" size={18} /></div>
-              <div><div className="font-bold text-white">Word matnidan AI savol</div><div className="text-xs text-white/40">.docx yuklang — AI matnni o'qib savollar ajratadi (jadval shart emas)</div></div>
+              <div><div className="font-bold text-white">Word matnidan AI savol</div><div className="text-xs text-white/40">.docx, .txt, .pdf yuklang — AI matnni o'qib savollar ajratadi (jadval shart emas)</div></div>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-4">
               <div><label className="block text-xs text-white/50 mb-1.5">Fan</label>
@@ -1766,9 +1766,9 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             </div>
             <label className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-white/10 hover:border-sky-500/30 transition-all cursor-pointer group">
               <div className="text-4xl mb-3 group-hover:scale-110 transition-transform">📝</div>
-              <div className="text-sm font-medium text-white/60 mb-1">{wordAiFile || 'Word (.docx) faylni shu yerga tashlang'}</div>
+              <div className="text-sm font-medium text-white/60 mb-1">{wordAiFile || '.docx, .txt, .pdf faylni shu yerga tashlang'}</div>
               <div className="text-xs text-white/30">yoki bosib tanlang</div>
-              <input type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={handleWordAi} />
+              <input type="file" accept=".docx,.txt,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,application/pdf" className="hidden" onChange={handleWordAi} />
             </label>
             {wordAiLoading && (
               <div className="mt-4 space-y-2 ai-shimmer rounded-xl p-4">

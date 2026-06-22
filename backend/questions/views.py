@@ -1129,11 +1129,17 @@ def word_ai_preview(request):
 
     word_file = request.FILES.get('word') or request.FILES.get('file') or request.FILES.get('document')
     if not word_file:
-        return Response({'detail': 'Word (.docx) fayl yuboring'}, status=http_status.HTTP_400_BAD_REQUEST)
+        return Response({'detail': "Fayl yuboring (.docx, .txt yoki .pdf)"}, status=http_status.HTTP_400_BAD_REQUEST)
     filename = str(getattr(word_file, 'name', '') or '').lower()
-    if not filename.endswith('.docx'):
-        return Response({'detail': "Faqat .docx fayl qabul qilinadi"}, status=http_status.HTTP_400_BAD_REQUEST)
-    # Word import'i bilan bir xil limit (python-docx butun hujjatni xotiraga yuklaydi).
+    # Qo'llab-quvvatlanadigan formatlar: .docx (python-docx), .txt (oddiy matn),
+    # .pdf (pypdf/pdfplumber).
+    allowed_ext = ('.docx', '.txt', '.pdf')
+    if not filename.endswith(allowed_ext):
+        return Response(
+            {'detail': "Faqat .docx, .txt yoki .pdf fayl qabul qilinadi"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    # Word import'i bilan bir xil limit (python-docx/pypdf butun hujjatni xotiraga yuklaydi).
     max_bytes = getattr(settings, 'AI_QUESTION_IMPORT_MAX_BYTES', 10 * 1024 * 1024)
     if word_file.size and word_file.size > max_bytes:
         return Response(
@@ -1142,24 +1148,40 @@ def word_ai_preview(request):
         )
     word_bytes = word_file.read()
     if not word_bytes:
-        return Response({'detail': "Word fayl bo'sh"}, status=http_status.HTTP_400_BAD_REQUEST)
-    # Magic bytes: .docx — ZIP arxivi, har doim 'PK' (PK\x03\x04) bilan boshlanadi.
-    if word_bytes[:2] != b'PK':
+        return Response({'detail': "Fayl bo'sh"}, status=http_status.HTTP_400_BAD_REQUEST)
+    # Magic bytes bilan format imzosini tekshiramiz (kengaytma yolg'on bo'lishi mumkin).
+    if filename.endswith('.docx') and word_bytes[:2] != b'PK':
+        # .docx — ZIP arxivi, har doim 'PK' (PK\x03\x04) bilan boshlanadi.
         return Response(
             {'detail': "Fayl haqiqiy .docx emas (Word imzosi topilmadi)"},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
+    if filename.endswith('.pdf') and word_bytes[:4] != b'%PDF':
+        # .pdf — har doim '%PDF' imzosi bilan boshlanadi.
+        return Response(
+            {'detail': "Fayl haqiqiy .pdf emas (PDF imzosi topilmadi)"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Fayl turini task'ga uzatamiz — qaysi parser ishlatilishini aniqlash uchun.
+    if filename.endswith('.txt'):
+        file_kind = 'txt'
+    elif filename.endswith('.pdf'):
+        file_kind = 'pdf'
+    else:
+        file_kind = 'docx'
 
     task_id = str(uuid.uuid4())
     cache_key = f"pdf_questions:task:{task_id}"
     cache.set(cache_key, {'status': 'PENDING'}, timeout=900)
-    # Celery argumenti JSON-serializable bo'lishi uchun Word baytlarini base64 qilamiz.
+    # Celery argumenti JSON-serializable bo'lishi uchun fayl baytlarini base64 qilamiz.
     process_word_ai_questions_task.delay(
         task_id,
         _b64.b64encode(word_bytes).decode('ascii'),
         request.data.get('subject') or '',
         request.data.get('difficulty') or 'medium',
         request.data.get('question_type') or 'multiple_choice',
+        file_kind,
     )
     return Response({'task_id': task_id}, status=http_status.HTTP_202_ACCEPTED)
 

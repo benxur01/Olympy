@@ -406,22 +406,76 @@ def process_pdf_questions_task(self, task_id, pdf_b64, subject, difficulty, ques
         }, timeout=900)
 
 
+def _extract_docx_text(word_bytes):
+    """.docx faylidan barcha matnni chiqaradi (paragraflar + jadval kataklari).
+
+    Qaytadi: matn (str). python-docx o'rnatilmagan bo'lsa ValueError ko'taradi.
+    """
+    import io
+
+    try:
+        from docx import Document
+    except ImportError:
+        raise ValueError("python-docx o'rnatilmagan. Iltimos administratorga xabar bering.")
+
+    # Hujjatdagi barcha matnni chiqaramiz: avval paragraflar, keyin jadval
+    # kataklari (savollar jadvalda ham, erkin matnda ham bo'lishi mumkin).
+    document = Document(io.BytesIO(word_bytes))
+    parts = []
+    for para in document.paragraphs:
+        t = (para.text or '').strip()
+        if t:
+            parts.append(t)
+    for table in document.tables:
+        for row in table.rows:
+            # Bitta katak gorizontal birlashtirilgan bo'lsa, cell bir necha
+            # marta takrorlanishi mumkin — id(cell._tc) bilan dedup qilamiz.
+            seen_tc = set()
+            for cell in row.cells:
+                tc_id = id(cell._tc)
+                if tc_id in seen_tc:
+                    continue
+                seen_tc.add(tc_id)
+                t = (cell.text or '').strip()
+                if t:
+                    parts.append(t)
+    return '\n'.join(parts).strip()
+
+
+def _extract_txt_text(word_bytes):
+    """.txt faylidan matnni chiqaradi (utf-8, fallback cp1251/latin-1)."""
+    if not word_bytes:
+        return ''
+    # Avval utf-8 (eng keng tarqalgan), so'ng kirill uchun cp1251, oxirida
+    # ma'lumot yo'qotmasdan latin-1 (har qanday baytni qabul qiladi).
+    for enc in ('utf-8-sig', 'utf-8', 'cp1251'):
+        try:
+            return word_bytes.decode(enc).strip()
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return word_bytes.decode('latin-1', errors='replace').strip()
+
+
 @shared_task(bind=True)
-def process_word_ai_questions_task(self, task_id, word_b64, subject, difficulty, question_type):
-    """Word (.docx) matnidan savollarni AI yordamida ajratadi va keshga yozadi.
+def process_word_ai_questions_task(self, task_id, word_b64, subject, difficulty, question_type, file_kind='docx'):
+    """Hujjat matnidan savollarni AI yordamida ajratadi va keshga yozadi.
 
-    PDF oqimining ayni nusxasi (process_pdf_questions_task), faqat manba .docx:
-    docx'dan barcha matn (paragraflar + jadval kataklari) chiqarilib, PDF bilan
-    bir xil AI logikasiga (extract_questions_from_text) beriladi. Kesh kaliti
-    PDF bilan bir xil pattern — `pdf_questions:task:{task_id}` — shu sababli
-    mavjud `pdf-preview/<task_id>/status/` endpointi o'zgartirilmasdan ishlaydi.
+    PDF oqimining ayni nusxasi (process_pdf_questions_task), faqat manba turli
+    formatlar bo'lishi mumkin (`file_kind`):
+      - 'docx' → python-docx (paragraflar + jadval kataklari)
+      - 'txt'  → oddiy matn (utf-8 dekod)
+      - 'pdf'  → pypdf/pdfplumber (mavjud _extract_pdf_text)
+    Chiqarilgan matn PDF bilan bir xil AI logikasiga (extract_questions_from_text)
+    beriladi. Kesh kaliti PDF bilan bir xil pattern — `pdf_questions:task:{task_id}`
+    — shu sababli mavjud `pdf-preview/<task_id>/status/` endpointi
+    o'zgartirilmasdan ishlaydi.
 
-    Word baytlari Celery argumenti sifatida base64 string ko'rinishida keladi
+    Fayl baytlari Celery argumenti sifatida base64 string ko'rinishida keladi
     (broker JSON serializer'i bilan mos bo'lishi uchun). EAGER rejimda (Redis yo'q
-    dev) task sinxron bajariladi.
+    dev) task sinxron bajariladi. `file_kind` default 'docx' — eski navbatdagi
+    task chaqiruvlari bilan moslik uchun.
     """
     import base64
-    import io
 
     from django.core.cache import cache
     from django.db import close_old_connections
@@ -432,37 +486,30 @@ def process_word_ai_questions_task(self, task_id, word_b64, subject, difficulty,
     cache_key = f"pdf_questions:task:{task_id}"
     try:
         word_bytes = base64.b64decode(word_b64) if word_b64 else b''
+
+        # Formatga qarab matnni chiqaramiz.
         try:
-            from docx import Document
-        except ImportError:
+            if file_kind == 'txt':
+                text = _extract_txt_text(word_bytes)
+            elif file_kind == 'pdf':
+                from .pdf_generation import _extract_pdf_text
+                text, _page_count = _extract_pdf_text(word_bytes)
+                text = (text or '').strip()
+            else:
+                text = _extract_docx_text(word_bytes)
+        except ValueError as ve:
             cache.set(cache_key, {
                 'status': 'FAILED',
-                'error': "python-docx o'rnatilmagan. Iltimos administratorga xabar bering.",
+                'error': str(ve),
             }, timeout=900)
             return
 
-        # Hujjatdagi barcha matnni chiqaramiz: avval paragraflar, keyin jadval
-        # kataklari (savollar jadvalda ham, erkin matnda ham bo'lishi mumkin).
-        document = Document(io.BytesIO(word_bytes))
-        parts = []
-        for para in document.paragraphs:
-            t = (para.text or '').strip()
-            if t:
-                parts.append(t)
-        for table in document.tables:
-            for row in table.rows:
-                # Bitta katak gorizontal birlashtirilgan bo'lsa, cell bir necha
-                # marta takrorlanishi mumkin — id(cell._tc) bilan dedup qilamiz.
-                seen_tc = set()
-                for cell in row.cells:
-                    tc_id = id(cell._tc)
-                    if tc_id in seen_tc:
-                        continue
-                    seen_tc.add(tc_id)
-                    t = (cell.text or '').strip()
-                    if t:
-                        parts.append(t)
-        text = '\n'.join(parts).strip()
+        if not text:
+            cache.set(cache_key, {
+                'status': 'FAILED',
+                'error': "Fayldan matn topilmadi. Fayl bo'sh yoki faqat rasmlardan iborat bo'lishi mumkin.",
+            }, timeout=900)
+            return
 
         result = extract_questions_from_text(
             text=text,
@@ -473,7 +520,7 @@ def process_word_ai_questions_task(self, task_id, word_b64, subject, difficulty,
         if not result.get('ok'):
             cache.set(cache_key, {
                 'status': 'FAILED',
-                'error': result.get('error') or "Word matnidan savollarni ajratib bo'lmadi",
+                'error': result.get('error') or "Hujjat matnidan savollarni ajratib bo'lmadi",
                 'pdf_text_chars': result.get('pdf_text_chars', 0),
                 'page_count': result.get('page_count', 0),
                 'used_pdf_vision': bool(result.get('used_pdf_vision')),
@@ -496,7 +543,7 @@ def process_word_ai_questions_task(self, task_id, word_b64, subject, difficulty,
         logger.exception('Word AI savol ajratish task xatosi task=%s', task_id)
         cache.set(cache_key, {
             'status': 'FAILED',
-            'error': str(exc) or "Word faylni tahlil qilishda kutilmagan xato",
+            'error': str(exc) or "Faylni tahlil qilishda kutilmagan xato",
         }, timeout=900)
 
 
