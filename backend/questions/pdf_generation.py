@@ -51,16 +51,21 @@ QUALITY_PROMPT = (
 )
 
 MATH_PROMPT_ADDITION = (
-    "\nMatematik iboralar uchun LaTeX notatsiyasidan foydalan (platforma KaTeX "
-    "orqali chiroyli render qiladi):\n"
-    "- Kasrlar \\frac{a}{b}, ildizlar \\sqrt{x}, darajalar x^{2}, "
-    "indekslar x_{1}, ko'paytma \\cdot, bo'linma \\div, tenglik/tengsizlik "
-    "\\leq \\geq \\neq, yig'indi \\sum, integral \\int, cheksizlik \\infty.\n"
-    "- Inline matematik ifodalarni $...$ ichida, alohida formulalarni $$...$$ "
-    "ichida yoz. Faqat matematik qismni $ ichiga ol, oddiy matnni emas.\n"
+    "\nMUHIM — MATEMATIK FORMATLASH (MAJBURIY, platforma KaTeX render qiladi):\n"
+    "Barcha matematik ifodalar $...$ (inline) yoki $$...$$ (blok) ichida bo'lsin.\n"
+    "- kasr: $\\frac{3}{4}$ — HECH QACHON '3/4' deb yozma\n"
+    "- daraja: $x^{2}$, $2^{10}$\n"
+    "- kvadrat ildiz: $\\sqrt{16}$, $\\sqrt{x+1}$\n"
+    "- n-chi ildiz: $\\sqrt[3]{8}$, $\\sqrt[n]{x}$\n"
+    "- ko'paytma/bo'linma: $3 \\cdot 5$, $\\frac{10}{2}$, $10 \\div 2$\n"
+    "- tengsizlik: $x \\leq 5$, $a \\neq b$\n"
+    "- mutlaq qiymat: $|x-3|$\n"
+    "- logarifm: $\\log_{2}{8}$, $\\ln{x}$\n"
+    "- trigonometriya: $\\sin{x}$, $\\cos{60^{\\circ}}$, $\\tan{\\frac{\\pi}{4}}$\n"
+    "- yig'indi/integral: $\\sum_{i=1}^{n}$, $\\int_{0}^{1}$\n"
+    "- sistema: $$\\begin{cases} 2x+y=5 \\\\ x-y=1 \\end{cases}$$\n"
     "- Belgi noto'g'ri o'qilgan bo'lsa, kontekstdan tushunib to'g'rilab yoz.\n"
-    "- Formulani umuman o'qib bo'lmasa, savol matnida [formula] deb yoz va "
-    "needs_review=true qo'y.\n"
+    "- Formulani umuman o'qib bo'lmasa, [formula] deb yoz va needs_review=true qo'y.\n"
 )
 
 VISION_PROMPT_ADDITION = (

@@ -30,11 +30,25 @@ TYPE_SHORT_ANSWER = 'Qisqa javob'
 # yozdiramiz — frontend (MathText/KaTeX) ularni chiroyli matematik ko'rinishda
 # render qiladi. Inline ifodalar $...$, blok ifodalar $$...$$ ichida bo'ladi.
 MATH_PROMPT_ADDITION = (
-    "\nMatematik iboralar uchun LaTeX notatsiyasidan foydalan: "
-    "kasrlar \\frac{a}{b}, ildizlar \\sqrt{x}, darajalar x^{2}, "
-    "ko'paytma \\cdot, bo'linma \\div, tenglik \\leq \\geq. "
-    "Inline ifodalar $...$ ichida, blok ifodalar $$...$$ ichida bo'lsin. "
-    "Faqat matematik qismlarni $ belgilari ichiga ol, oddiy matnni emas."
+    "\nMUHIM — MATEMATIK FORMATLASH (MAJBURIY):\n"
+    "Barcha matematik ifodalar LaTeX notatsiyasida $...$ ichida bo'lishi SHART. "
+    "Oddiy so'zlar va gaplar $ ichiga olinmasin.\n"
+    "Misollar:\n"
+    "  - kasr: $\\frac{3}{4}$ (HECH QACHON '3/4' deb yozma)\n"
+    "  - daraja: $x^{2}$, $2^{10}$ (HECH QACHON 'x^2' yoki 'x kvadrat' dema)\n"
+    "  - kvadrat ildiz: $\\sqrt{16}$, $\\sqrt{x+1}$ (HECH QACHON 'sqrt(16)' dema)\n"
+    "  - n-chi ildiz: $\\sqrt[3]{8}$, $\\sqrt[n]{x}$\n"
+    "  - ko'paytma: $3 \\cdot 5$ yoki $3 \\times 5$\n"
+    "  - bo'linma: $\\frac{10}{2}$ yoki $10 \\div 2$\n"
+    "  - tengsizlik: $x \\leq 5$, $y \\geq 0$, $a \\neq b$\n"
+    "  - mutlaq qiymat: $|x-3|$\n"
+    "  - logarifm: $\\log_{2}{8}$, $\\ln{x}$\n"
+    "  - trigonometriya: $\\sin{x}$, $\\cos{60^{\\circ}}$, $\\tan{\\frac{\\pi}{4}}$\n"
+    "  - murakkab: $\\frac{x^{2}+1}{\\sqrt{x}}$\n"
+    "  - sistema (cases): $$\\begin{cases} 2x+y=5 \\\\ x-y=1 \\end{cases}$$\n"
+    "  - savol matni misoli: 'Agar $x = \\frac{3}{4}$ bo\\'lsa, $2x$ nechaga teng?'\n"
+    "  - variant misoli: '$\\frac{3}{2}$' (faqat ifoda)\n"
+    "Sistema va ko'p qatorli formulalar uchun $$...$$ (blok) ishlatilsin.\n"
 )
 
 # Fan matematik bo'lsa savollarni LaTeX formatda so'raymiz.
@@ -179,6 +193,7 @@ def _prompt(subject, topic, count, difficulty, question_type, use_rag=False):
     rag_block = _rag_examples_block(subject, topic) if use_rag else ''
     math_block = MATH_PROMPT_ADDITION if _is_math_subject(subject) else ''
     return (
+        f"{math_block}"
         "O'zbek tilida ta'lim tashkiloti olimpiadasi uchun original test savollarini tuz.\n"
         f"Fan: {subject}\n"
         f"Mavzu: {topic}\n"
@@ -189,7 +204,6 @@ def _prompt(subject, topic, count, difficulty, question_type, use_rag=False):
         "Savollar aniq, tekshiriladigan va yoshga mos bo'lsin. "
         "'Hammasi to'g'ri', 'yuqoridagilarning barchasi' kabi noaniq variantlardan foydalanma. "
         "Variantlarni takrorlama. Natijani faqat JSON schema bo'yicha qaytar."
-        f"{math_block}"
         f"{rag_block}"
     )
 
