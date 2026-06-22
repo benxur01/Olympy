@@ -252,6 +252,64 @@ const Icon = ({ name, size = 18, className = '' }) => {
   );
 };
 
+// ─── MathText — matematik ifodalarni KaTeX bilan render qiladi ────────────────
+// AI savollarda matematik iboralar LaTeX formatda keladi: inline $...$, blok
+// $$...$$. MathText ularni chiroyli matematik notatsiyaga aylantiradi, qolgan
+// oddiy matnni o'zgartirmasdan ko'rsatadi. LaTeX bo'lmasa (eski savollar:
+// 1/2, x^2) — oddiy matn chiqadi. KaTeX (global `katex`) entry'da yuklanadi.
+// Render xatosi hech qachon savol ko'rsatishni buzmaydi (asl matn fallback).
+const MATH_SPLIT_RE = /(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g;
+
+const MathText = ({ text, className }) => {
+  const raw = text == null ? '' : String(text);
+  if (!raw) {
+    return className ? <span className={className} /> : null;
+  }
+
+  const k = (typeof katex !== 'undefined' && katex) || (typeof window !== 'undefined' && window.katex);
+  // Matnda '$' bo'lmasa yoki KaTeX yuklanmagan bo'lsa — oddiy matn.
+  if (!k || raw.indexOf('$') === -1) {
+    return <span className={className}>{raw}</span>;
+  }
+
+  const nodes = [];
+  const parts = raw.split(MATH_SPLIT_RE);
+
+  parts.forEach((part, index) => {
+    if (!part) return;
+
+    const isBlock = part.length >= 4 && part.startsWith('$$') && part.endsWith('$$');
+    const isInline = !isBlock && part.length >= 2 && part.startsWith('$') && part.endsWith('$');
+
+    if (isBlock || isInline) {
+      const latex = isBlock ? part.slice(2, -2) : part.slice(1, -1);
+      try {
+        const html = k.renderToString(latex, {
+          displayMode: isBlock,
+          throwOnError: false,
+          strict: false,
+        });
+        nodes.push(
+          <span
+            key={index}
+            className={isBlock ? 'katex-block' : 'katex-inline'}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />,
+        );
+        return;
+      } catch (err) {
+        // Render bo'lmasa — asl matnni ($...$ bilan) ko'rsatamiz.
+        nodes.push(<React.Fragment key={index}>{part}</React.Fragment>);
+        return;
+      }
+    }
+
+    nodes.push(<React.Fragment key={index}>{part}</React.Fragment>);
+  });
+
+  return <span className={className}>{nodes}</span>;
+};
+
 const BRAND_ASSET_BASE = window.location.protocol === 'file:' ? 'public/brand' : '/brand';
 const BRAND_LOGO_SRC = `${BRAND_ASSET_BASE}/olympy-brand.png`;
 const BRAND_LOGO_SRC_WEBP = `${BRAND_ASSET_BASE}/olympy-brand.webp`;

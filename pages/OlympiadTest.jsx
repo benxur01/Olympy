@@ -84,7 +84,7 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
             <button key={i} onClick={() => onYesNo(i)}
               className={`flex items-center justify-center gap-2 p-4 rounded-2xl font-semibold text-sm md:text-base transition-all min-h-[64px] ${selected ? (i === 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40') : 'glass text-white/70 border border-transparent hover:border-white/10'}`}>
               <span className="text-lg">{i === 0 ? '✓' : '✗'}</span>
-              {label}
+              <MathText text={label} />
             </button>
           );
         })}
@@ -105,7 +105,7 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
               <div className={`w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${checked ? 'gradient-bg text-white' : 'glass text-white/30 border border-white/15'}`}>
                 {checked && <Icon name="check" size={16} />}
               </div>
-              <span className={`font-medium text-sm md:text-base break-words min-w-0 ${checked ? 'text-white' : 'text-white/70'}`}>{opt}</span>
+              <MathText className={`font-medium text-sm md:text-base break-words min-w-0 ${checked ? 'text-white' : 'text-white/70'}`} text={opt} />
             </button>
           );
         })}
@@ -125,7 +125,7 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
             <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50'}`}>
               {isTrueFalse ? (i === 0 ? '✓' : '✗') : String.fromCharCode(65 + i)}
             </div>
-            <span className={`font-medium text-sm md:text-base break-words min-w-0 ${selected ? 'text-white' : 'text-white/70'}`}>{opt}</span>
+            <MathText className={`font-medium text-sm md:text-base break-words min-w-0 ${selected ? 'text-white' : 'text-white/70'}`} text={opt} />
             {selected && <Icon name="check" size={16} className="ml-auto text-indigo-400 flex-shrink-0" />}
           </button>
         );
@@ -1497,7 +1497,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
               )}
 
               {/* Savol matni */}
-              <p className="text-white text-sm md:text-base leading-relaxed whitespace-pre-wrap break-words mb-4">{q.text}</p>
+              <p className="text-white text-sm md:text-base leading-relaxed whitespace-pre-wrap break-words mb-4"><MathText text={q.text} /></p>
 
               {/* Boshlang'ich kod skelet (faqat o'qish) */}
               {(q.codeTemplate || q.code_template) ? (
@@ -1698,7 +1698,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
               <>
                 {/* Question text */}
                 <div className="glass-strong rounded-2xl p-4 md:p-6 mb-5 md:mb-6">
-                  <p className="text-white text-base md:text-lg leading-relaxed font-medium break-words">{q.text}</p>
+                  <p className="text-white text-base md:text-lg leading-relaxed font-medium break-words whitespace-pre-wrap"><MathText text={q.text} /></p>
                 </div>
 
                 {/* Answer area — savol turiga qarab UI. */}

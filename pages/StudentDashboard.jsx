@@ -3007,7 +3007,7 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
 
               <div className="glass border-white/5 rounded-2xl p-4 md:p-5">
                 <div className="text-[10px] text-indigo-300 font-bold uppercase tracking-wider mb-1.5">Savol {currentIdx + 1} / {total}</div>
-                <div className="text-white text-base font-semibold leading-relaxed break-words">{q.text}</div>
+                <div className="text-white text-base font-semibold leading-relaxed break-words whitespace-pre-wrap"><MathText text={q.text} /></div>
               </div>
 
               <div className="space-y-2">
@@ -3022,7 +3022,7 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
                       <span className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs flex-shrink-0 transition-colors duration-200 ${isChosen ? 'bg-indigo-500 text-white shadow-[0_0_10px_rgba(99,102,241,0.5)]' : 'bg-white/5 text-white/40'}`}>
                         {String.fromCharCode(65 + oi)}
                       </span>
-                      <span className="flex-1 break-words">{String(opt)}</span>
+                      <MathText className="flex-1 break-words" text={String(opt)} />
                       {isChosen && <Icon name="check" size={14} className="text-indigo-300 flex-shrink-0 animate-pulse" />}
                     </button>
                   );

@@ -3182,11 +3182,11 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 <div key={q.id} className="rounded-xl bg-white/5 border border-white/5 p-3.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-bold text-white break-words">{q.text}</div>
+                      <div className="text-sm font-bold text-white break-words whitespace-pre-wrap"><MathText text={q.text} /></div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {(q.options || []).map((o, i) => (
                           <span key={i} className={`rounded-lg px-2 py-1 text-[11px] font-semibold ${o.correct ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/5 text-white/50'}`}>
-                            {o.correct ? '✓ ' : ''}{o.text}
+                            {o.correct ? '✓ ' : ''}<MathText text={o.text} />
                           </span>
                         ))}
                       </div>

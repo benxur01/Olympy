@@ -643,7 +643,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           <div className="space-y-3">
             {questions.slice(0, 4).map(q => (
               <div key={q.id} className="rounded-xl glass p-3">
-                <div className="line-clamp-2 text-sm text-white/80">{q.text}</div>
+                <div className="line-clamp-2 text-sm text-white/80"><MathText text={q.text} /></div>
                 <div className="mt-2 flex items-center gap-2 text-xs text-white/40">
                   <SubjectBadge subject={q.subject} />
                   <span>{testTypeLabel(inferQuestionTestType(q))}</span>
@@ -1360,7 +1360,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   <label key={q.id} className="flex items-start gap-3 p-3 rounded-xl glass cursor-pointer hover:bg-white/5">
                     <input type="checkbox" checked={assigned.has(q.id)} onChange={() => toggle(q.id)} className="mt-1" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm text-white">{q.text}</div>
+                      <div className="text-sm text-white whitespace-pre-wrap"><MathText text={q.text} /></div>
                       <div className="text-xs text-white/40 mt-1">
                         {testTypeLabel(inferQuestionTestType(q))} · {q.difficulty} · {q.score} ball · {q.source}
                         {otherOlympiadQuestionIds.has(String(q.id)) && (
@@ -1375,7 +1375,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   <label key={q.id} className="flex items-start gap-3 p-3 rounded-xl glass cursor-pointer hover:bg-white/5 opacity-70">
                     <input type="checkbox" checked={assigned.has(q.id)} onChange={() => toggle(q.id)} className="mt-1" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm text-white">{q.text}</div>
+                      <div className="text-sm text-white whitespace-pre-wrap"><MathText text={q.text} /></div>
                       <div className="text-xs text-white/40 mt-1">
                         {q.subject} · {testTypeLabel(inferQuestionTestType(q))} · {q.difficulty} · {q.score} ball
                         {otherOlympiadQuestionIds.has(String(q.id)) && (
@@ -1803,22 +1803,20 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                             {i + 1}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <div className="text-[13px] text-white/90 font-medium break-words leading-snug">
-                              {q.text || '—'}
+                            <div className="text-[13px] text-white/90 font-medium break-words leading-snug whitespace-pre-wrap">
+                              {q.text ? <MathText text={q.text} /> : '—'}
                             </div>
                             <div className="mt-2 space-y-1">
                               {/* O'quvchining javobi */}
                               <div className="text-[12px] flex flex-wrap gap-x-1.5">
                                 <span className="text-white/40">Javobi:</span>
-                                <span className={`font-semibold break-words ${correct ? 'text-emerald-200' : wrong ? 'text-rose-200' : 'text-white/70'}`}>
-                                  {chosenTxt}
-                                </span>
+                                <MathText className={`font-semibold break-words ${correct ? 'text-emerald-200' : wrong ? 'text-rose-200' : 'text-white/70'}`} text={chosenTxt} />
                               </div>
                               {/* To'g'ri javob — faqat xato bo'lsa va mavjud bo'lsa ko'rsatamiz */}
                               {wrong && correctTxt && (
                                 <div className="text-[12px] flex flex-wrap gap-x-1.5">
                                   <span className="text-white/40">To'g'ri javob:</span>
-                                  <span className="font-semibold text-emerald-200 break-words">{correctTxt}</span>
+                                  <MathText className="font-semibold text-emerald-200 break-words" text={correctTxt} />
                                 </div>
                               )}
                               {/* Essay/kod baholanmagan bo'lsa izoh */}

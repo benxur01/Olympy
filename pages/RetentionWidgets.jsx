@@ -109,7 +109,7 @@ const DailyQuestionsWidget = ({ user }) => {
           <div key={dq.id} className="rounded-xl bg-white/[0.03] border border-white/5 p-3">
             <div className="text-sm font-semibold text-white mb-2 flex items-start gap-1.5">
               <span className="text-white/40">{qi + 1}.</span>
-              <span className="flex-1">{dq.text}</span>
+              <MathText className="flex-1" text={dq.text} />
               {dq.answered && (
                 <span className={dq.is_correct ? 'text-emerald-400' : 'text-rose-400'}>
                   <Icon name={dq.is_correct ? 'check' : 'x'} size={16} />
@@ -132,7 +132,7 @@ const DailyQuestionsWidget = ({ user }) => {
                     onClick={() => handleAnswer(dq, idx)}
                     className={`text-left rounded-lg px-3 py-2 text-xs transition-all ${cls}`}
                   >
-                    {opt}
+                    <MathText text={opt} />
                   </button>
                 );
               })}

@@ -135,7 +135,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
             return (
               <div key={oi} className={`rounded-xl px-3 py-2 text-xs md:text-sm border flex items-center gap-2 ${cls}`}>
                 <span className="text-white/40 font-bold flex-shrink-0">{String.fromCharCode(65 + oi)}.</span>
-                <span className="flex-1 break-words">{String(opt)}</span>
+                <MathText className="flex-1 break-words" text={String(opt)} />
                 {isChosen && <span className="text-[10px] text-white/40 flex-shrink-0">tanlangan</span>}
                 {isCorrect && <Icon name="check" size={12} className="text-emerald-400 flex-shrink-0" />}
                 {isChosen && !isCorrect && <Icon name="x" size={12} className="text-rose-400 flex-shrink-0" />}
@@ -475,7 +475,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                             <span className="chip text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold">AI: {q.ai_code_score}/100</span>
                           )}
                         </div>
-                        <div className="text-white text-sm font-medium mb-3 break-words whitespace-pre-wrap">{q.text}</div>
+                        <div className="text-white text-sm font-medium mb-3 break-words whitespace-pre-wrap"><MathText text={q.text} /></div>
                         <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">Sizning kodingiz</div>
                         <pre className="text-xs text-white/80 bg-black/30 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap break-words border border-white/5">{q.submitted_code || '(kod yuborilmagan)'}</pre>
                         {q.ai_code_review && (
@@ -501,7 +501,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                           {q.is_correct ? "✓ To'g'ri" : (q.chosen_answer == null ? "Bo'sh" : "✗ Noto'g'ri")}
                         </span>
                       </div>
-                      <div className="text-white text-sm font-medium mb-3 break-words">{q.text}</div>
+                      <div className="text-white text-sm font-medium mb-3 break-words whitespace-pre-wrap"><MathText text={q.text} /></div>
                       {renderReviewAnswer(q)}
 
                       {/* AI Explanation Button & Content */}

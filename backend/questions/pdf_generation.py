@@ -51,12 +51,16 @@ QUALITY_PROMPT = (
 )
 
 MATH_PROMPT_ADDITION = (
-    "\nMatematik belgilar uchun qoidalar:\n"
-    "- ∑ → \"yig'indisi\", ∫ → \"integrali\", √ → \"ildiz\", ^ → \"darajasi\".\n"
+    "\nMatematik iboralar uchun LaTeX notatsiyasidan foydalan (platforma KaTeX "
+    "orqali chiroyli render qiladi):\n"
+    "- Kasrlar \\frac{a}{b}, ildizlar \\sqrt{x}, darajalar x^{2}, "
+    "indekslar x_{1}, ko'paytma \\cdot, bo'linma \\div, tenglik/tengsizlik "
+    "\\leq \\geq \\neq, yig'indi \\sum, integral \\int, cheksizlik \\infty.\n"
+    "- Inline matematik ifodalarni $...$ ichida, alohida formulalarni $$...$$ "
+    "ichida yoz. Faqat matematik qismni $ ichiga ol, oddiy matnni emas.\n"
     "- Belgi noto'g'ri o'qilgan bo'lsa, kontekstdan tushunib to'g'rilab yoz.\n"
-    "- Formulani o'qib bo'lmasa, savol matnida [formula] deb yoz va needs_review=true qo'y.\n"
-    "- Kasrlarni a/b shaklida yoz (masalan 3/4).\n"
-    "- LaTeX formatini oddiy matnga aylantir: \\frac{a}{b} → a/b.\n"
+    "- Formulani umuman o'qib bo'lmasa, savol matnida [formula] deb yoz va "
+    "needs_review=true qo'y.\n"
 )
 
 VISION_PROMPT_ADDITION = (

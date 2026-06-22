@@ -26,6 +26,28 @@ TYPE_MULTIPLE_CHOICE = "Ko'p tanlovli"
 TYPE_TRUE_FALSE = "To'g'ri/Noto'g'ri"
 TYPE_SHORT_ANSWER = 'Qisqa javob'
 
+# Matematik fanlar uchun savol matni va variantlarini LaTeX notatsiyasida
+# yozdiramiz — frontend (MathText/KaTeX) ularni chiroyli matematik ko'rinishda
+# render qiladi. Inline ifodalar $...$, blok ifodalar $$...$$ ichida bo'ladi.
+MATH_PROMPT_ADDITION = (
+    "\nMatematik iboralar uchun LaTeX notatsiyasidan foydalan: "
+    "kasrlar \\frac{a}{b}, ildizlar \\sqrt{x}, darajalar x^{2}, "
+    "ko'paytma \\cdot, bo'linma \\div, tenglik \\leq \\geq. "
+    "Inline ifodalar $...$ ichida, blok ifodalar $$...$$ ichida bo'lsin. "
+    "Faqat matematik qismlarni $ belgilari ichiga ol, oddiy matnni emas."
+)
+
+# Fan matematik bo'lsa savollarni LaTeX formatda so'raymiz.
+_MATH_SUBJECTS = (
+    'matematika', 'matematik', 'fizika', 'kimyo',
+    'algebra', 'geometriya', 'math', 'physics', 'chemistry',
+)
+
+
+def _is_math_subject(subject):
+    subject_lower = str(subject or '').strip().lower()
+    return any(key in subject_lower for key in _MATH_SUBJECTS)
+
 
 def _json_from_ai_text(text):
     cleaned = str(text or '').strip()
@@ -155,6 +177,7 @@ def _prompt(subject, topic, count, difficulty, question_type, use_rag=False):
                 "mos mazmunni 4 variantli testga aylantir."
             )
     rag_block = _rag_examples_block(subject, topic) if use_rag else ''
+    math_block = MATH_PROMPT_ADDITION if _is_math_subject(subject) else ''
     return (
         "O'zbek tilida ta'lim tashkiloti olimpiadasi uchun original test savollarini tuz.\n"
         f"Fan: {subject}\n"
@@ -166,6 +189,7 @@ def _prompt(subject, topic, count, difficulty, question_type, use_rag=False):
         "Savollar aniq, tekshiriladigan va yoshga mos bo'lsin. "
         "'Hammasi to'g'ri', 'yuqoridagilarning barchasi' kabi noaniq variantlardan foydalanma. "
         "Variantlarni takrorlama. Natijani faqat JSON schema bo'yicha qaytar."
+        f"{math_block}"
         f"{rag_block}"
     )
 
