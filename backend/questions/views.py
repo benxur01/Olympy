@@ -332,6 +332,46 @@ def _row_looks_like_header(row):
     return True
 
 
+# Header orqali ustunlarni aniqlash uchun alias ro'yxati. Foydalanuvchilar
+# o'z Word/Excel jadvallarini turli ustun nomlari va tartibi bilan yaratadilar;
+# birinchi qator sarlavha bo'lsa, ustun nomini pastdagi aliaslar bilan
+# solishtirib mapping quramiz (katta/kichik harfga e'tibor bermay).
+COLUMN_ALIASES = {
+    'text':       ['savol', 'savol matni', 'savol_matni', 'question', 'matn', 'text'],
+    'option_a':   ['variant_a', 'a', 'a_variant', 'javob_a', 'a variant', '1-variant', '1 variant'],
+    'option_b':   ['variant_b', 'b', 'b_variant', 'javob_b', 'b variant', '2-variant', '2 variant'],
+    'option_c':   ['variant_c', 'c', 'c_variant', 'javob_c', 'c variant', '3-variant', '3 variant'],
+    'option_d':   ['variant_d', 'd', 'd_variant', 'javob_d', 'd variant', '4-variant', '4 variant'],
+    'correct':    ['togri_javob', "to'g'ri_javob", "to'g'ri javob", 'javob', 'answer', 'correct', 'togri javob', "to'g'ri"],
+    'difficulty': ['qiyinlik', 'difficulty', 'daraja', 'level'],
+    'subject':    ['fan', 'subject', 'fani', 'mavzu'],
+}
+
+
+def _detect_column_map(header_row):
+    """Sarlavha qatoridan {maydon: indeks} mapping quradi.
+
+    Har bir katakni COLUMN_ALIASES bilan solishtiradi (strip + lower). Topilgan
+    maydonlarni qaytaradi. Minimal talab (text, correct, kamida 2 ta option)
+    bajarilmasa — None qaytaradi, shunda chaqiruvchi positional mapping'ga
+    qaytadi. Bir aliasga bir nechta katak mos kelsa, birinchisi olinadi.
+    """
+    if not header_row:
+        return None
+    cells = [('' if c is None else str(c).strip().lower()) for c in header_row]
+    mapping = {}
+    for field, aliases in COLUMN_ALIASES.items():
+        alias_set = {a.strip().lower() for a in aliases}
+        for i, cell in enumerate(cells):
+            if cell and cell in alias_set and field not in mapping:
+                mapping[field] = i
+                break
+    option_count = sum(1 for k in ('option_a', 'option_b', 'option_c', 'option_d') if k in mapping)
+    if 'text' in mapping and 'correct' in mapping and option_count >= 2:
+        return mapping
+    return None
+
+
 def _create_questions_from_rows(rows, center_id, user, fallback_subject):
     """Xom qatorlar ro'yxatidan (har biri ustunlar list'i) Question yaratadi.
 
@@ -339,12 +379,18 @@ def _create_questions_from_rows(rows, center_id, user, fallback_subject):
     uchun ajratilgan umumiy yadro. Avval bu mantiq faqat import_questions_excel
     ichida edi. Qaytaradi: (created_count, errors_list).
     `rows` — birinchi qator sarlavha bo'lishi mumkin (heuristic'da tashlanadi).
+
+    Ustun aniqlash ikki rejimda: agar birinchi qator sarlavha bo'lib, undagi
+    nomlar COLUMN_ALIASES orqali tanib olinsa — header mapping (ustun tartibi
+    ixtiyoriy). Aks holda avvalgi qat'iy positional (tartib bo'yicha) mapping.
     """
     errors = []
     if not rows:
         return 0, errors
 
     is_header = _row_looks_like_header(rows[0])
+    # Header orqali moslashuvchan mapping faqat birinchi qator sarlavha bo'lsa.
+    col_map = _detect_column_map(rows[0]) if is_header else None
     data_rows = rows[1:] if is_header else rows
 
     created = 0
@@ -355,25 +401,57 @@ def _create_questions_from_rows(rows, center_id, user, fallback_subject):
         normalized = [('' if v is None else str(v).strip()) for v in raw_row]
         if not any(normalized):
             continue
-        if len(normalized) < 6:
-            errors.append({'row': idx, 'detail': "Yetarli ustun yo'q (kamida 6 ta kerak)"})
-            continue
-        text = normalized[0]
-        if not text:
-            errors.append({'row': idx, 'detail': "Savol matni bo'sh"})
-            continue
-        # variantlar: A, B, C, D (D ixtiyoriy bo'lsa ham — kamida 2 ta variant)
-        options_raw = [normalized[1], normalized[2], normalized[3], normalized[4] if len(normalized) > 4 else '']
-        options = [o for o in options_raw if o]
-        if len(options) < 2:
-            errors.append({'row': idx, 'detail': "Kamida 2 ta javob varianti kerak"})
-            continue
-        correct_idx = _normalize_correct_answer(normalized[5])
-        if correct_idx is None or correct_idx >= len(options):
-            errors.append({'row': idx, 'detail': f"To'g'ri javob ko'rsatkichi noto'g'ri: {normalized[5]}"})
-            continue
-        difficulty = _normalize_difficulty(normalized[6] if len(normalized) > 6 else '')
-        subject = (normalized[7] if len(normalized) > 7 else '').strip() or fallback_subject
+
+        if col_map is not None:
+            # Header mapping rejimi: indekslarni nomlar orqali olamiz.
+            def _at(field):
+                i = col_map.get(field)
+                if i is None or i >= len(normalized):
+                    return ''
+                return normalized[i]
+
+            text = _at('text')
+            if not text:
+                errors.append({'row': idx, 'detail': "Savol matni bo'sh"})
+                continue
+            options_raw = [_at('option_a'), _at('option_b'), _at('option_c'), _at('option_d')]
+            options = [o for o in options_raw if o]
+            if len(options) < 2:
+                errors.append({'row': idx, 'detail': "Kamida 2 ta javob varianti kerak"})
+                continue
+            correct_raw = _at('correct')
+            correct_idx = _normalize_correct_answer(correct_raw)
+            if correct_idx is None or correct_idx >= len(options):
+                errors.append({'row': idx, 'detail': f"To'g'ri javob ko'rsatkichi noto'g'ri: {correct_raw}"})
+                continue
+            difficulty = _normalize_difficulty(_at('difficulty'))
+            subject = _at('subject').strip() or fallback_subject
+        else:
+            # Positional rejim: avvalgi qat'iy tartib bo'yicha mapping.
+            if len(normalized) < 6:
+                errors.append({'row': idx, 'detail': (
+                    f"Yetarli ustun yo'q: {len(normalized)} ta topildi, kamida 6 ta kerak. "
+                    "Format: savol | variant_a | variant_b | variant_c | variant_d | togri_javob | qiyinlik | fan. "
+                    "Word namuna shablonini yuklab oling."
+                )})
+                continue
+            text = normalized[0]
+            if not text:
+                errors.append({'row': idx, 'detail': "Savol matni bo'sh"})
+                continue
+            # variantlar: A, B, C, D (D ixtiyoriy bo'lsa ham — kamida 2 ta variant)
+            options_raw = [normalized[1], normalized[2], normalized[3], normalized[4] if len(normalized) > 4 else '']
+            options = [o for o in options_raw if o]
+            if len(options) < 2:
+                errors.append({'row': idx, 'detail': "Kamida 2 ta javob varianti kerak"})
+                continue
+            correct_idx = _normalize_correct_answer(normalized[5])
+            if correct_idx is None or correct_idx >= len(options):
+                errors.append({'row': idx, 'detail': f"To'g'ri javob ko'rsatkichi noto'g'ri: {normalized[5]}"})
+                continue
+            difficulty = _normalize_difficulty(normalized[6] if len(normalized) > 6 else '')
+            subject = (normalized[7] if len(normalized) > 7 else '').strip() or fallback_subject
+
         try:
             Question.objects.create(
                 center_id=center_id,
