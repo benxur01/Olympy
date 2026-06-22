@@ -70,7 +70,68 @@ def _json_from_ai_text(text):
     if cleaned.startswith('```'):
         cleaned = re.sub(r"^```(?:json)?\s*", '', cleaned, flags=re.IGNORECASE)
         cleaned = re.sub(r"\s*```$", '', cleaned)
-    return json.loads(cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        # Gemini/OpenAI javobi maxOutputTokens chegarasida o'rtada kesilishi
+        # mumkin (ayniqsa LaTeX'da har '\' JSON'da '\\' bo'lib token sarfini
+        # oshiradi). Kesilgan JSON'dan to'liq tushgan savol obyektlarini
+        # qutqaramiz — aks holda butun ajratish bo'sh qaytib, buzuq regex
+        # fallback ishga tushadi.
+        salvaged = _salvage_truncated_questions(cleaned)
+        if salvaged is not None:
+            return salvaged
+        raise
+
+
+def _salvage_truncated_questions(text):
+    """Kesilgan JSON matnidan butun "questions" obyektlarini ajratib oladi.
+
+    Faqat to'liq yopilgan {...} obyektlarni oladi (qavslarni stringlarni va
+    escape'larni hisobga olgan holda sanaydi), oxirgi chala obyektni tashlaydi.
+    Hech narsa qutqarib bo'lmasa None qaytaradi.
+    """
+    start = text.find('"questions"')
+    if start < 0:
+        return None
+    bracket = text.find('[', start)
+    if bracket < 0:
+        return None
+    objects = []
+    depth = 0
+    in_string = False
+    escape = False
+    obj_start = -1
+    for i in range(bracket + 1, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == '\\':
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == '{':
+            if depth == 0:
+                obj_start = i
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0 and obj_start >= 0:
+                fragment = text[obj_start:i + 1]
+                try:
+                    objects.append(json.loads(fragment))
+                except json.JSONDecodeError:
+                    pass
+                obj_start = -1
+        elif ch == ']' and depth == 0:
+            break
+    if not objects:
+        return None
+    return {'questions': objects}
 
 
 def _extract_output_text(raw):

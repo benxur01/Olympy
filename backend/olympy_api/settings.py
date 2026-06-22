@@ -826,7 +826,11 @@ AI_QUESTION_GEMINI_FALLBACK_MODELS = [
 ]
 AI_QUESTION_MAX_COUNT = int(os.environ.get('AI_QUESTION_MAX_COUNT', '30'))
 AI_QUESTION_MAX_OUTPUT_TOKENS = int(os.environ.get('AI_QUESTION_MAX_OUTPUT_TOKENS', '12000'))
-AI_QUESTION_GEMINI_MAX_OUTPUT_TOKENS = int(os.environ.get('AI_QUESTION_GEMINI_MAX_OUTPUT_TOKENS', '8192'))
+# Matematik savollarda LaTeX (har '\' JSON'da '\\') token sarfini oshiradi —
+# 8192 ko'p savolli chunk'da javobni o'rtada kesib qo'yardi. 16384 ga ko'tardik
+# (gemini-2.5-flash 65536 gacha qo'llaydi). Kesilsa ham endi qisman JSON
+# qutqariladi (_salvage_truncated_questions).
+AI_QUESTION_GEMINI_MAX_OUTPUT_TOKENS = int(os.environ.get('AI_QUESTION_GEMINI_MAX_OUTPUT_TOKENS', '16384'))
 AI_QUESTION_PDF_MAX_BYTES = int(os.environ.get('AI_QUESTION_PDF_MAX_BYTES', str(20 * 1024 * 1024)))
 # Excel/CSV savol import fayli uchun hajm cheklovi (default 10 MB) — openpyxl
 # butun workbook'ni xotiraga yuklagani uchun katta fayldan himoyalaydi.
