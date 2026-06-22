@@ -278,21 +278,70 @@ def generate_ai_questions(request):
 
 
 def _normalize_correct_answer(value):
-    """A/B/C/D yoki 0/1/2/3 → indeks (0-based). Noma'lum qiymatda None."""
+    """To'g'ri javob qiymatini 0-based indeksga aylantiradi. Noma'lumda None.
+
+    Qo'llab-quvvatlanadigan ko'rinishlar (katta/kichik harf farqsiz):
+      - A/B/C/D/E/F        → 0..5
+      - 0..9               → o'sha son
+      - "1.", "2." …       → 0,1 … (nuqtali tartib raqami, 1-based deb olinadi)
+      - "1-variant", "2 variant", "variant a", "variant 1" → 0,1 …
+      - "birinchi"/"ikkinchi"/"uchinchi"/"to'rtinchi"      → 0,1,2,3
+    Foydalanuvchilar Word/Excel jadvallarida to'g'ri javobni juda turli
+    ko'rinishda yozadilar — shu sababli keng tahlil qilamiz.
+    """
     if value is None:
         return None
-    s = str(value).strip().upper()
+    s = str(value).strip()
     if not s:
         return None
+    up = s.upper()
+
     letter_map = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4, 'F': 5}
-    if s in letter_map:
-        return letter_map[s]
+    if up in letter_map:
+        return letter_map[up]
+
+    # Sof son: "0", "1" … (0-based deb qabul qilamiz — eski xulq saqlanadi).
     try:
-        i = int(s)
+        i = int(up)
         if 0 <= i <= 9:
             return i
     except (TypeError, ValueError):
         pass
+
+    low = s.lower()
+
+    # So'z bilan yozilgan tartib ("birinchi" … "to'rtinchi"). Apostrofning
+    # turli ko'rinishlarini (' ` ’) bir xil normaga keltiramiz.
+    low_norm = low.replace('`', "'").replace('’', "'")
+    word_map = {
+        'birinchi': 0, 'ikkinchi': 1, 'uchinchi': 2,
+        "to'rtinchi": 3, 'beshinchi': 4, 'oltinchi': 5,
+    }
+    if low_norm in word_map:
+        return word_map[low_norm]
+
+    # "variant a" / "variant b" ko'rinishi — oxiridagi harfdan indeks.
+    if low_norm.startswith('variant'):
+        tail = low_norm[len('variant'):].strip(' .-:').upper()
+        if tail in letter_map:
+            return letter_map[tail]
+        # "variant 1" / "variant 2" — 1-based tartib raqami.
+        try:
+            n = int(tail)
+            if 1 <= n <= 9:
+                return n - 1
+        except (TypeError, ValueError):
+            pass
+
+    # Boshida tartib raqami bo'lgan ko'rinishlar: "1.", "2)", "1-variant",
+    # "2 variant", "1-javob" … — birinchi sonni ajratib, 1-based deb olamiz.
+    import re
+    m = re.match(r'^\s*(\d+)', low_norm)
+    if m:
+        n = int(m.group(1))
+        if 1 <= n <= 9:
+            return n - 1
+
     return None
 
 
@@ -372,6 +421,175 @@ def _detect_column_map(header_row):
     return None
 
 
+# Data-based aniqlash uchun qiyinlik so'zlari (header bo'lmaganda ustun rolini
+# topish uchun). _normalize_difficulty aliaslari bilan mos.
+_DIFFICULTY_TOKENS = {
+    'easy', 'medium', 'hard', 'beginner', 'elementary', 'intermediate',
+    'advanced', 'int', 'pre-int', 'upper-int',
+    'oson', "o'rta", 'orta', "o`rta", 'qiyin',
+}
+
+
+def _infer_columns_from_data(rows):
+    """Ustun nomi (header) bo'lmaganda, ma'lumotning o'zidan ustun rolini topadi.
+
+    Har bir ustunni barcha qatorlar bo'yicha skanlaymiz va shu mezonlar bilan
+    rol beramiz:
+      - correct:    qiymatlar deyarli butunlay A/B/C/D yoki 0/1/2/3 (ya'ni
+                    _normalize_correct_answer tanийdigan) bo'lsa
+      - difficulty: qiymatlar deyarli butunlay qiyinlik so'zlari bo'lsa
+      - subject:    qisqa (1-3 so'z), takrorlanuvchi qiymatli ustun (fan nomi
+                    odatda butun faylda bir xil yoki bir nechta marta takror)
+      - text:       o'rtacha matn uzunligi eng katta ustun (savol matni)
+      - options:    qolgan ustunlar, chapdan o'ngga A,B,C,D tartibida
+
+    Minimal talab: text + correct + kamida 2 ta option topilsa — col_map dict
+    qaytaradi (xuddi _detect_column_map kabi {field: index}). Aks holda None.
+    Header tashlanmaydi — bu rejim faqat header yo'qligida chaqiriladi, demak
+    barcha qatorlar ma'lumot.
+    """
+    if not rows:
+        return None
+
+    # Ustunlar sonini eng keng qatorga qarab aniqlaymiz.
+    n_cols = max((len(r) for r in rows if r), default=0)
+    if n_cols < 4:
+        # text + correct + 2 option uchun kamida 4 ustun kerak.
+        return None
+
+    # Har bir ustun bo'yicha statistika yig'amiz.
+    col_values = [[] for _ in range(n_cols)]
+    for row in rows:
+        if not row:
+            continue
+        for c in range(n_cols):
+            val = '' if c >= len(row) or row[c] is None else str(row[c]).strip()
+            col_values[c].append(val)
+
+    col_stats = []
+    for c in range(n_cols):
+        vals = [v for v in col_values[c] if v]
+        total = len(vals)
+        if total == 0:
+            col_stats.append({
+                'index': c, 'total': 0, 'correct_ratio': 0.0,
+                'letter_ratio': 0.0, 'difficulty_ratio': 0.0, 'avg_len': 0.0,
+                'distinct_ratio': 1.0, 'short_ratio': 0.0, 'question_ratio': 0.0,
+            })
+            continue
+        correct_hits = sum(1 for v in vals if _normalize_correct_answer(v) is not None)
+        # Harfiy (A-F) correct belgisi: sof sonli option ustunidan (variantlar
+        # 1,2,3,4 bo'lishi mumkin) farqlash uchun alohida hisoblaymiz.
+        letter_hits = sum(1 for v in vals if v.strip().upper() in ('A', 'B', 'C', 'D', 'E', 'F'))
+        diff_hits = sum(1 for v in vals if v.lower().replace('`', "'").replace('’', "'") in _DIFFICULTY_TOKENS)
+        avg_len = sum(len(v) for v in vals) / total
+        distinct_ratio = len(set(v.lower() for v in vals)) / total
+        short_hits = sum(1 for v in vals if len(v.split()) <= 3 and len(v) <= 30)
+        # "Savolga o'xshashlik": savol matni odatda jumla — ko'p so'zli yoki '?'
+        # bilan tugaydi. Fan nomi esa bitta so'z. Bu signal fan ustunidan qisqaroq
+        # savolni (qisqa fayllarda) ham to'g'ri ajratishga yordam beradi.
+        question_hits = sum(1 for v in vals if ('?' in v) or len(v.split()) >= 3)
+        col_stats.append({
+            'index': c,
+            'total': total,
+            'correct_ratio': correct_hits / total,
+            'letter_ratio': letter_hits / total,
+            'difficulty_ratio': diff_hits / total,
+            'avg_len': avg_len,
+            'distinct_ratio': distinct_ratio,
+            'short_ratio': short_hits / total,
+            'question_ratio': question_hits / total,
+        })
+
+    assigned = {}  # index -> field, qaysi ustun band bo'lganini kuzatamiz
+    mapping = {}
+
+    # 1) correct ustun. Eng ishonchli belgi — harfiy A/B/C/D ustun: avval shularni
+    #    ko'rib chiqamiz. Sof sonli ustun ham correct bo'lishi mumkin (0/1/2/3),
+    #    lekin variantlar ham sof son bo'lishi mumkin ('3','4','5'), shuning uchun
+    #    sonli holatda ustunni eng o'ng tomondan tanlaymiz — to'g'ri javob odatda
+    #    variantlardan keyin, oxirgi ustunlarda turadi.
+    letter_candidates = [s for s in col_stats if s['letter_ratio'] >= 0.8]
+    if letter_candidates:
+        # Bir nechta harfiy ustun bo'lsa (kam uchraydi), eng o'ngdagisini olamiz.
+        letter_candidates.sort(key=lambda s: (-s['letter_ratio'], -s['index']))
+        ci = letter_candidates[0]['index']
+        mapping['correct'] = ci
+        assigned[ci] = 'correct'
+    else:
+        correct_candidates = [s for s in col_stats if s['correct_ratio'] >= 0.8]
+        if correct_candidates:
+            # Sonli/aralash: eng o'ngdagi mos ustunni olamiz (to'g'ri javob
+            # ustuni variantlardan keyin keladi), ratio teng bo'lsa.
+            correct_candidates.sort(key=lambda s: (-s['correct_ratio'], -s['index']))
+            ci = correct_candidates[0]['index']
+            mapping['correct'] = ci
+            assigned[ci] = 'correct'
+
+    # 2) difficulty ustun: difficulty_ratio >= 0.6 bo'lgan, hali band bo'lmagan.
+    diff_candidates = [s for s in col_stats if s['index'] not in assigned and s['difficulty_ratio'] >= 0.6]
+    if diff_candidates:
+        diff_candidates.sort(key=lambda s: -s['difficulty_ratio'])
+        di = diff_candidates[0]['index']
+        mapping['difficulty'] = di
+        assigned[di] = 'difficulty'
+
+    # 3) subject ustun: text'dan OLDIN aniqlaymiz — aks holda takrorlanuvchi fan
+    #    nomi (savol matnidan uzunroq bo'lsa) noto'g'ri text deb tanlanishi mumkin.
+    #    Fan nomi butun faylda bir xil yoki kam o'zgaradi. Faqat takror bo'lsa
+    #    (distinct_ratio < 0.6) va asosan qisqa (short_ratio >= 0.6) bo'lsa subject.
+    #    Savol matnlari odatda har xil (yuqori distinct) — bu mezonга tushmaydi.
+    subj_candidates = [
+        s for s in col_stats
+        if s['index'] not in assigned and s['total'] > 0
+        and s['distinct_ratio'] < 0.6 and s['short_ratio'] >= 0.6
+    ]
+    if subj_candidates:
+        # Eng takrorlanuvchi (eng kam distinct) ustun fan bo'lishi ehtimoli yuqori.
+        subj_candidates.sort(key=lambda s: (s['distinct_ratio'], s['avg_len']))
+        si = subj_candidates[0]['index']
+        mapping['subject'] = si
+        assigned[si] = 'subject'
+
+    # 4) text ustun: savol matni. Ikki belgi muhim — (a) o'rtacha uzunligi katta,
+    #    (b) qiymatlar deyarli har xil (savollar takrorlanmaydi → yuqori
+    #    distinct_ratio). Avval distinct (>= 0.5) ustunlar ichidan eng uzunini
+    #    tanlaymiz; bunday ustun bo'lmasa — oddiy eng uzun avg_len. Bu fan nomi
+    #    (qisqa fayllarda savoldan uzunroq bo'lib qolishi mumkin) bilan savol
+    #    matnini chalkashtirib yubormaslik uchun.
+    text_pool = [s for s in col_stats if s['index'] not in assigned and s['total'] > 0]
+    if text_pool:
+        # Avvalo "jumla"ga o'xshagan (question_ratio >= 0.5) distinct ustunlarni
+        # ko'rib chiqamiz — savol matni '?' yoki ko'p so'zli bo'ladi, fan emas.
+        question_pool = [s for s in text_pool if s['question_ratio'] >= 0.5 and s['distinct_ratio'] >= 0.5]
+        if question_pool:
+            question_pool.sort(key=lambda s: (-s['question_ratio'], -s['avg_len']))
+            ti = question_pool[0]['index']
+        else:
+            # Jumla signali yo'q — distinct (savollar har xil) ustunlar ichidan
+            # eng uzunini, ular ham bo'lmasa oddiy eng uzun avg_len.
+            distinct_pool = [s for s in text_pool if s['distinct_ratio'] >= 0.5]
+            chosen_pool = distinct_pool or text_pool
+            chosen_pool.sort(key=lambda s: -s['avg_len'])
+            ti = chosen_pool[0]['index']
+        mapping['text'] = ti
+        assigned[ti] = 'text'
+
+    # 5) options: qolgan barcha ustunlar, chapdan o'ngga A,B,C,D.
+    option_fields = ['option_a', 'option_b', 'option_c', 'option_d']
+    remaining = sorted(s['index'] for s in col_stats if s['index'] not in assigned and s['total'] > 0)
+    for i, col_idx in enumerate(remaining):
+        if i >= len(option_fields):
+            break
+        mapping[option_fields[i]] = col_idx
+        assigned[col_idx] = option_fields[i]
+
+    option_count = sum(1 for k in option_fields if k in mapping)
+    if 'text' in mapping and 'correct' in mapping and option_count >= 2:
+        return mapping
+    return None
+
+
 def _create_questions_from_rows(rows, center_id, user, fallback_subject):
     """Xom qatorlar ro'yxatidan (har biri ustunlar list'i) Question yaratadi.
 
@@ -380,18 +598,40 @@ def _create_questions_from_rows(rows, center_id, user, fallback_subject):
     ichida edi. Qaytaradi: (created_count, errors_list).
     `rows` — birinchi qator sarlavha bo'lishi mumkin (heuristic'da tashlanadi).
 
-    Ustun aniqlash ikki rejimda: agar birinchi qator sarlavha bo'lib, undagi
-    nomlar COLUMN_ALIASES orqali tanib olinsa — header mapping (ustun tartibi
-    ixtiyoriy). Aks holda avvalgi qat'iy positional (tartib bo'yicha) mapping.
+    Ustun aniqlash uch bosqichda:
+      1) Header-based: birinchi qator sarlavha bo'lib, nomlar COLUMN_ALIASES
+         orqali tanib olinsa — header mapping (ustun tartibi ixtiyoriy).
+      2) Data-based: header topilmasa, _infer_columns_from_data barcha
+         qatorlardan ustun rolini chiqaradi (ustun nomi shart emas).
+      3) Positional: 1 va 2 ishlamasa — qat'iy tartib (6+ ustun talab).
     """
     errors = []
     if not rows:
         return 0, errors
 
-    is_header = _row_looks_like_header(rows[0])
-    # Header orqali moslashuvchan mapping faqat birinchi qator sarlavha bo'lsa.
-    col_map = _detect_column_map(rows[0]) if is_header else None
-    data_rows = rows[1:] if is_header else rows
+    # Bosqich 1 — header: avval _detect_column_map bilan birinchi qatorni
+    # sarlavha sifatida sinab ko'ramiz (ustun soni 6 dan kam bo'lsa ham).
+    col_map = _detect_column_map(rows[0])
+    if col_map is not None:
+        # Header topildi — birinchi qator (sarlavha) tashlanadi.
+        data_rows = rows[1:]
+        is_header = True
+    else:
+        # Bosqich 2 — data-based: header topilmadi, ma'lumotning o'zidan ustun
+        # rolini chiqarishga harakat qilamiz. MUHIM: bu yerda butun `rows` ustida
+        # ishlaymiz va birinchi qatorni TASHLAMAYMIZ — chunki header yo'q, birinchi
+        # qator ham haqiqiy savol. (_row_looks_like_header birinchi data qatorini
+        # noto'g'ri sarlavha deb tashlab yuborishi mumkin edi.)
+        inferred = _infer_columns_from_data(rows)
+        if inferred is not None:
+            col_map = inferred
+            data_rows = rows
+            is_header = False
+        else:
+            # Bosqich 3 — positional fallback: 1 va 2 ishlamadi. Faqat shu yerda
+            # eski heuristic bilan birinchi qatorni sarlavha bo'lsa tashlaymiz.
+            is_header = _row_looks_like_header(rows[0])
+            data_rows = rows[1:] if is_header else rows
 
     created = 0
     for idx, raw_row in enumerate(data_rows, start=2 if is_header else 1):
