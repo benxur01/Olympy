@@ -342,6 +342,12 @@ def _normalize_correct_answer(value):
         if 1 <= n <= 9:
             return n - 1
 
+    # So'nggi urinish: "(A)", "javob: B", "A)", "[C]", "to'g'ri: A" kabi
+    # izolyatsiyalangan A-F harfni topamiz — harf atrofida harf bo'lmasin.
+    m = re.search(r'(?:^|[^a-zA-Z])([A-Fa-f])(?:[^a-zA-Z]|$)', s)
+    if m:
+        return letter_map.get(m.group(1).upper())
+
     return None
 
 
@@ -366,17 +372,18 @@ IMPORT_SAMPLE_ROW = ['2+2 nechaga teng?', '3', '4', '5', '6', 'B', 'easy', 'Mate
 
 
 def _row_looks_like_header(row):
-    """Birinchi qator sarlavhami? 6-ustun (togri_javob) A-F/0-5 emas, matn bo'lsa header.
+    """Birinchi qator sarlavhami? togri_javob ustunida A-F/0-5 emas, matn bo'lsa header.
 
-    Excel import'da ishlatilgan _is_header bilan bir xil heuristic — Word va
-    Excel bir xil tarzda birinchi qatorni tashlashi uchun umumlashtirildi.
+    5-ustunli format (savol|A|B|C|togri_javob) va 6+ ustunli format ikkalasini
+    qo'llab-quvvatlaydi. togri_javob indeksi: 5-col→4, 6+col→5.
     """
-    if not row or len(row) < 6:
+    if not row or len(row) < 5:
         return False
-    s5 = str(row[5] or '').strip().upper()
-    if not s5:
+    check_idx = 5 if len(row) >= 6 else 4
+    s = str(row[check_idx] or '').strip().upper()
+    if not s:
         return True
-    if s5 in ('A', 'B', 'C', 'D', 'E', 'F', '0', '1', '2', '3', '4', '5'):
+    if s in ('A', 'B', 'C', 'D', 'E', 'F', '0', '1', '2', '3', '4', '5'):
         return False
     return True
 
@@ -519,9 +526,9 @@ def _infer_columns_from_data(rows):
     else:
         correct_candidates = [s for s in col_stats if s['correct_ratio'] >= 0.8]
         if correct_candidates:
-            # Sonli/aralash: eng o'ngdagi mos ustunni olamiz (to'g'ri javob
-            # ustuni variantlardan keyin keladi), ratio teng bo'lsa.
-            correct_candidates.sort(key=lambda s: (-s['correct_ratio'], -s['index']))
+            # Sonli variantlar (1,2,3,4) ham correct_ratio yuqori chiqishi mumkin.
+            # Haqiqiy correct ustun: eng qisqa qiymatli (avg_len kichik) va o'ng tomonda.
+            correct_candidates.sort(key=lambda s: (-s['correct_ratio'], s['avg_len'], -s['index']))
             ci = correct_candidates[0]['index']
             mapping['correct'] = ci
             assigned[ci] = 'correct'
@@ -667,11 +674,14 @@ def _create_questions_from_rows(rows, center_id, user, fallback_subject):
             difficulty = _normalize_difficulty(_at('difficulty'))
             subject = _at('subject').strip() or fallback_subject
         else:
-            # Positional rejim: avvalgi qat'iy tartib bo'yicha mapping.
-            if len(normalized) < 6:
+            # Positional rejim: qat'iy tartib bo'yicha mapping.
+            # 5-col format: savol | A | B | C | togri_javob  (variant D yo'q)
+            # 6+ col format: savol | A | B | C | D | togri_javob | (qiyinlik) | (fan)
+            if len(normalized) < 5:
                 errors.append({'row': idx, 'detail': (
-                    f"Yetarli ustun yo'q: {len(normalized)} ta topildi, kamida 6 ta kerak. "
-                    "Format: savol | variant_a | variant_b | variant_c | variant_d | togri_javob | qiyinlik | fan. "
+                    f"Yetarli ustun yo'q: {len(normalized)} ta topildi, kamida 5 ta kerak. "
+                    "Format: savol | variant_a | variant_b | variant_c | togri_javob "
+                    "(yoki 6-ustunli: savol | A | B | C | D | togri_javob). "
                     "Word namuna shablonini yuklab oling."
                 )})
                 continue
@@ -679,18 +689,24 @@ def _create_questions_from_rows(rows, center_id, user, fallback_subject):
             if not text:
                 errors.append({'row': idx, 'detail': "Savol matni bo'sh"})
                 continue
-            # variantlar: A, B, C, D (D ixtiyoriy bo'lsa ham — kamida 2 ta variant)
-            options_raw = [normalized[1], normalized[2], normalized[3], normalized[4] if len(normalized) > 4 else '']
+            if len(normalized) == 5:
+                # savol | A | B | C | togri_javob
+                options_raw = [normalized[1], normalized[2], normalized[3], '']
+                correct_col = 4
+            else:
+                # savol | A | B | C | D | togri_javob | (qiyinlik) | (fan)
+                options_raw = [normalized[1], normalized[2], normalized[3], normalized[4]]
+                correct_col = 5
             options = [o for o in options_raw if o]
             if len(options) < 2:
                 errors.append({'row': idx, 'detail': "Kamida 2 ta javob varianti kerak"})
                 continue
-            correct_idx = _normalize_correct_answer(normalized[5])
+            correct_idx = _normalize_correct_answer(normalized[correct_col] if len(normalized) > correct_col else '')
             if correct_idx is None or correct_idx >= len(options):
-                errors.append({'row': idx, 'detail': f"To'g'ri javob ko'rsatkichi noto'g'ri: {normalized[5]}"})
+                errors.append({'row': idx, 'detail': f"To'g'ri javob ko'rsatkichi noto'g'ri: {normalized[correct_col] if len(normalized) > correct_col else ''}"})
                 continue
-            difficulty = _normalize_difficulty(normalized[6] if len(normalized) > 6 else '')
-            subject = (normalized[7] if len(normalized) > 7 else '').strip() or fallback_subject
+            difficulty = _normalize_difficulty(normalized[correct_col + 1] if len(normalized) > correct_col + 1 else '')
+            subject = (normalized[correct_col + 2] if len(normalized) > correct_col + 2 else '').strip() or fallback_subject
 
         try:
             Question.objects.create(
@@ -891,7 +907,15 @@ def import_questions_word(request):
         # uchun ham amal qiladi (umumiy yadro birinchi qatorni tashlaydi).
         for table in document.tables:
             for cell_row in table.rows:
-                rows.append([cell.text for cell in cell_row.cells])
+                seen_tc = set()
+                row_cells = []
+                for cell in cell_row.cells:
+                    tc_id = id(cell._tc)
+                    if tc_id not in seen_tc:
+                        seen_tc.add(tc_id)
+                        row_cells.append(cell.text.strip())
+                if row_cells:
+                    rows.append(row_cells)
     except Exception as exc:
         return Response(
             {'detail': f"Word faylni o'qib bo'lmadi: {exc}"},
