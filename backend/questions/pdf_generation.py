@@ -69,7 +69,9 @@ MATH_PROMPT_ADDITION = (
     "- logarifm: $\\log_{2}{8}$, $\\ln{x}$\n"
     "- trigonometriya: $\\sin{x}$, $\\cos{60^{\\circ}}$, $\\tan{\\frac{\\pi}{4}}$\n"
     "- yig'indi/integral: $\\sum_{i=1}^{n}$, $\\int_{0}^{1}$\n"
-    "- sistema: $$\\begin{cases} 2x+y=5 \\\\ x-y=1 \\end{cases}$$\n"
+    "- sistema (tenglamalar sistemasi): matnda '{' belgisi bilan yoki ketma-ket '=' li qatorlar "
+    "sistema bo'lsa — $$\\begin{cases} 4x-3y=7 \\\\ 3x+4y=34 \\end{cases}$$ ko'rinishida yoz. "
+    "HAR BIR satr uchun alohida '{' QOLDIRMA — faqat bitta \\begin{cases}...\\end{cases} blok.\n"
     "- Belgi noto'g'ri o'qilgan bo'lsa, kontekstdan tushunib to'g'rilab yoz.\n"
     "- Formulani umuman o'qib bo'lmasa, [formula] deb yoz va needs_review=true qo'y.\n"
 )
@@ -93,7 +95,7 @@ NO_ANSWER_PROMPT_ADDITION = (
 )
 
 # Matnda matematik belgilar ko'pligini aniqlash uchun.
-_MATH_SYMBOLS = ('∑', '∫', '√', '∏', '≈', '≤', '≥', '≠', '∞', '∂', 'π', '±', '×', '÷', '°', '^', '\\frac', '\\sqrt', '\\sum', '\\int')
+_MATH_SYMBOLS = ('∑', '∫', '√', '∏', '≈', '≤', '≥', '≠', '∞', '∂', 'π', '±', '×', '÷', '°', '^', '\\frac', '\\sqrt', '\\sum', '\\int', '−')
 _MATH_SUBJECTS = ('matematika', 'matematik', 'fizika', 'kimyo', 'algebra', 'geometriya', 'math', 'physics', 'chemistry')
 
 # ASCII ko'rinishidagi matematik naqshlar (formulalar Unicode emas, oddiy matn
@@ -105,6 +107,7 @@ _MATH_ASCII_PATTERNS = (
     re.compile(r'\bsqrt\s*\('),                               # sqrt(16)
     re.compile(r'\b\d+\s+\d+\s*/\s*\d+\b'),                   # aralash son: 2 1/2
     re.compile(r'[<>]=|!=|\\(?:frac|sqrt|sum|int|cdot|times|div|leq|geq|neq|le|ge)\b'),
+    re.compile(r'^\s*\{.*=', re.MULTILINE),          # sistema: {4x-3y=7
 )
 
 
@@ -116,6 +119,8 @@ def _looks_mathematical(subject, pdf_text):
     text = str(pdf_text or '')
     if not text:
         return False
+    if re.search(r'^\s*\{.+=', text, re.MULTILINE):
+        return True
     hits = sum(text.count(symbol) for symbol in _MATH_SYMBOLS)
     if hits >= 3:
         return True
