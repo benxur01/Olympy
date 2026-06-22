@@ -117,6 +117,44 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [deleteAllConfirm, setDeleteAllConfirm] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState([]);
   const [bulkSaving, setBulkSaving] = React.useState(false);
+  // ─── Preview inline-edit state ──────────────────────────────────────────
+  // Generatsiya preview'larida (AI / PDF / Word AI) savolni saqlashdan OLDIN
+  // to'g'ridan-to'g'ri tahrirlash. Bir vaqtning o'zida faqat bitta savol edit
+  // rejimida bo'ladi: `type` qaysi preview ('ai'|'pdf'|'word_ai'), `index` esa
+  // o'sha preview ichidagi savol indeksi. `draft` — tahrir qilinayotgan nusxa.
+  const [editingPreview, setEditingPreview] = React.useState({ type: null, index: null });
+  const [previewDraft, setPreviewDraft] = React.useState(null);
+  // Preview tahririni boshlash — savol nusxasini draft'ga ko'chiramiz.
+  const startPreviewEdit = (type, index, q) => {
+    setEditingPreview({ type, index });
+    setPreviewDraft({
+      ...q,
+      text: q.text || '',
+      options: Array.isArray(q.options) && q.options.length > 0
+        ? [...q.options]
+        : ['', '', '', ''],
+      correctAnswer: typeof q.correctAnswer === 'number' ? q.correctAnswer : 0,
+    });
+  };
+  const cancelPreviewEdit = () => {
+    setEditingPreview({ type: null, index: null });
+    setPreviewDraft(null);
+  };
+  // Draft'ni tegishli result state'iga yozish (faqat local state, backendga emas).
+  const savePreviewEdit = () => {
+    const { type, index } = editingPreview;
+    if (type == null || index == null || !previewDraft) return;
+    const setter = type === 'ai' ? setAiResult : type === 'pdf' ? setPdfResult : setWordAiResult;
+    const clean = {
+      ...previewDraft,
+      text: (previewDraft.text || '').trim(),
+      options: (previewDraft.options || []).map(o => (o || '').trim()),
+    };
+    setter(prev => (Array.isArray(prev)
+      ? prev.map((item, idx) => (idx === index ? clean : item))
+      : prev));
+    cancelPreviewEdit();
+  };
   // Excel/CSV/Word import state'lari (natija banneri ikkala format uchun umumiy)
   const [importLoading, setImportLoading] = React.useState(false);
   const [importResult, setImportResult] = React.useState(null);
@@ -815,6 +853,125 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     setMode('list');
   };
 
+  // ─── Preview inline-edit UI helperlari ──────────────────────────────────
+  // Faqat o'ng yuqori burchakdagi qalam tugmasi. Bosilganda shu savol edit
+  // rejimiga o'tadi (boshqasi ochiq bo'lsa avtomatik yopiladi, chunki
+  // editingPreview bitta {type,index} saqlaydi). accent — preview rangi.
+  // Eslatma: Tailwind build paytida purge qiladi, shuning uchun rang klasslari
+  // string-interpolation bilan emas, to'liq statik ko'rinishda yoziladi.
+  const PREVIEW_EDIT_BTN_HOVER = {
+    indigo: 'hover:text-indigo-300 hover:border-indigo-500/30',
+    cyan: 'hover:text-cyan-300 hover:border-cyan-500/30',
+    sky: 'hover:text-sky-300 hover:border-sky-500/30',
+  };
+  const renderPreviewEditButton = (type, index, q, accent = 'indigo') => (
+    <button
+      type="button"
+      onClick={() => startPreviewEdit(type, index, q)}
+      title="Savolni tahrirlash"
+      className={`flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg border transition-all bg-white/5 text-white/40 border-white/10 ${PREVIEW_EDIT_BTN_HOVER[accent] || PREVIEW_EDIT_BTN_HOVER.indigo}`}
+    >
+      <Icon name="edit" size={13} />
+    </button>
+  );
+
+  // Edit rejimidagi savol kartasining ichki qismi (matn + variantlar + to'g'ri
+  // javob belgilash + Saqlash/Bekor). `accent` preview rangiga moslashish uchun.
+  const renderPreviewEditor = (accent = 'indigo') => {
+    if (!previewDraft) return null;
+    const draft = previewDraft;
+    const setText = (text) => setPreviewDraft(d => ({ ...d, text }));
+    const setOption = (idx, val) => setPreviewDraft(d => ({
+      ...d,
+      options: (d.options || []).map((o, i) => (i === idx ? val : o)),
+    }));
+    const setCorrect = (idx) => setPreviewDraft(d => ({ ...d, correctAnswer: idx }));
+    const addOption = () => setPreviewDraft(d => ({ ...d, options: [...(d.options || []), ''] }));
+    const removeOption = (idx) => setPreviewDraft(d => {
+      const options = (d.options || []).filter((_, i) => i !== idx);
+      let correctAnswer = d.correctAnswer;
+      if (correctAnswer === idx) correctAnswer = 0;
+      else if (correctAnswer > idx) correctAnswer -= 1;
+      return { ...d, options, correctAnswer };
+    });
+    const options = Array.isArray(draft.options) ? draft.options : [];
+    return (
+      <div className="space-y-3">
+        <div>
+          <label className="block text-[11px] text-white/45 mb-1">Savol matni</label>
+          <textarea
+            value={draft.text}
+            onChange={e => setText(e.target.value)}
+            rows={Math.max(2, (draft.text || '').split('\n').length)}
+            className="input-field text-sm leading-relaxed resize-y min-h-[3.5rem]"
+            placeholder="Savol matni"
+          />
+        </div>
+        <div>
+          <label className="block text-[11px] text-white/45 mb-1">Variantlar — to'g'ri javobni belgilang</label>
+          <div className="space-y-1.5">
+            {options.map((option, optionIndex) => {
+              const isCorrect = optionIndex === draft.correctAnswer;
+              return (
+                <div key={optionIndex} className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setCorrect(optionIndex)}
+                    title={isCorrect ? "To'g'ri javob" : "To'g'ri javob deb belgilash"}
+                    className={`flex-shrink-0 w-6 h-6 rounded-md border flex items-center justify-center text-[11px] font-bold transition-all ${isCorrect ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' : 'bg-white/5 border-white/10 text-white/40 hover:text-white/70'}`}
+                  >
+                    {isCorrect ? <Icon name="check" size={12} /> : String.fromCharCode(65 + optionIndex)}
+                  </button>
+                  <input
+                    value={option}
+                    onChange={e => setOption(optionIndex, e.target.value)}
+                    className={`input-field flex-1 text-sm py-1.5 ${isCorrect ? 'border-emerald-500/30' : ''}`}
+                    placeholder={`${String.fromCharCode(65 + optionIndex)} varianti`}
+                  />
+                  {options.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => removeOption(optionIndex)}
+                      title="Variantni o'chirish"
+                      className="flex-shrink-0 w-6 h-6 rounded-md text-white/30 hover:text-rose-400 hover:bg-white/5 flex items-center justify-center transition-colors"
+                    >
+                      <Icon name="x" size={13} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {options.length < 6 && (
+            <button
+              type="button"
+              onClick={addOption}
+              className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-white/45 hover:text-white/70 transition-colors"
+            >
+              <Icon name="plus" size={12} /> Variant qo'shish
+            </button>
+          )}
+        </div>
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <button
+            type="button"
+            onClick={cancelPreviewEdit}
+            className="btn-ghost inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg"
+          >
+            <Icon name="x" size={13} /> Bekor qilish
+          </button>
+          <button
+            type="button"
+            onClick={savePreviewEdit}
+            className="btn-primary inline-flex items-center gap-1 text-xs px-3.5 py-1.5 rounded-lg font-semibold"
+          >
+            <Icon name="check" size={13} /> Saqlash
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const addCustomSubject = async () => {
     const name = (newSubject || '').trim();
     if (name && !allSubjects.includes(name)) {
@@ -1393,20 +1550,27 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 </div>
               </div>
               <div className="space-y-2.5 max-h-[25rem] overflow-y-auto pr-1">
-                {aiResult.map((q,i) => (
+                {aiResult.map((q,i) => {
+                  const isEditing = editingPreview.type === 'ai' && editingPreview.index === i;
+                  return (
                   <div key={i} className="glass rounded-xl p-3 text-sm text-white/70 space-y-2">
                     <div className="flex items-start gap-2">
                       <span className="text-indigo-300 font-bold">{i+1}.</span>
                       <div className="flex-1 min-w-0">
-                        <div className="leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></div>
-                        <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mt-2">
-                          <SubjectBadge subject={q.subject} />
-                          <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
-                          <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
-                        </div>
+                        {isEditing ? renderPreviewEditor('indigo') : (
+                          <>
+                            <div className="leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></div>
+                            <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mt-2">
+                              <SubjectBadge subject={q.subject} />
+                              <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
+                              <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
+                            </div>
+                          </>
+                        )}
                       </div>
+                      {!isEditing && renderPreviewEditButton('ai', i, q, 'indigo')}
                     </div>
-                    {Array.isArray(q.options) && q.options.length > 0 && (
+                    {!isEditing && Array.isArray(q.options) && q.options.length > 0 && (
                       <div className="grid gap-1.5 sm:grid-cols-2 mt-1">
                         {q.options.map((option, optionIndex) => (
                           <div key={optionIndex}
@@ -1417,7 +1581,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                       </div>
                     )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -1486,35 +1651,46 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               </div>
               {pdfResult.map((q,i) => {
                 const isCode = (q.question_type || 'mcq') === 'code';
+                const isEditing = editingPreview.type === 'pdf' && editingPreview.index === i;
                 return (
                 <div key={i} className="glass rounded-xl p-3 text-sm text-white/70 space-y-2">
                   <div className="flex items-start gap-2">
                     <span className="text-cyan-300 font-bold">{i+1}.</span>
                     <div className="flex-1 min-w-0">
-                      <div className="leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></div>
-                      {q.needsReview && (
-                        <div className="mt-1 text-[11px] text-amber-300">Javob AI tomonidan taxmin qilindi, saqlashdan oldin tekshiring</div>
+                      {isEditing ? renderPreviewEditor('cyan') : (
+                        <>
+                          <div className="leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></div>
+                          {q.needsReview && (
+                            <div className="mt-1 text-[11px] text-amber-300">Javob AI tomonidan taxmin qilindi, saqlashdan oldin tekshiring</div>
+                          )}
+                          <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mt-2">
+                            <SubjectBadge subject={q.subject} />
+                            <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
+                            <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
+                          </div>
+                        </>
                       )}
-                      <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mt-2">
-                        <SubjectBadge subject={q.subject} />
-                        <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
-                        <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
-                      </div>
                     </div>
-                    {/* Savol turini MCQ ↔ kod savoli o'rtasida almashtirish.
-                        Faqat PDF preview'da; saqlashda question_type backend'ga ketadi. */}
-                    <button
-                      type="button"
-                      onClick={() => setPdfResult(prev => prev.map((item, idx) =>
-                        idx === i ? { ...item, question_type: isCode ? 'mcq' : 'code' } : item
-                      ))}
-                      title={isCode ? "Kod savoli sifatida saqlanadi — bosib MCQ ga qaytaring" : "MCQ sifatida saqlanadi — bosib kod savoliga o'tkazing"}
-                      className={`flex-shrink-0 inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg border transition-all ${isCode ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' : 'bg-white/5 text-white/40 border-white/10 hover:text-white/60'}`}
-                    >
-                      {isCode ? <>{'</> '}Kod savoli</> : 'MCQ'}
-                    </button>
+                    {!isEditing && (
+                      <div className="flex-shrink-0 flex items-center gap-1.5">
+                        {/* Faqat MCQ savollarni inline tahrirlaymiz; kod savolida variant yo'q. */}
+                        {!isCode && renderPreviewEditButton('pdf', i, q, 'cyan')}
+                        {/* Savol turini MCQ ↔ kod savoli o'rtasida almashtirish.
+                            Faqat PDF preview'da; saqlashda question_type backend'ga ketadi. */}
+                        <button
+                          type="button"
+                          onClick={() => setPdfResult(prev => prev.map((item, idx) =>
+                            idx === i ? { ...item, question_type: isCode ? 'mcq' : 'code' } : item
+                          ))}
+                          title={isCode ? "Kod savoli sifatida saqlanadi — bosib MCQ ga qaytaring" : "MCQ sifatida saqlanadi — bosib kod savoliga o'tkazing"}
+                          className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg border transition-all ${isCode ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' : 'bg-white/5 text-white/40 border-white/10 hover:text-white/60'}`}
+                        >
+                          {isCode ? <>{'</> '}Kod savoli</> : 'MCQ'}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {!isCode && Array.isArray(q.options) && q.options.length > 0 && (
+                  {!isEditing && !isCode && Array.isArray(q.options) && q.options.length > 0 && (
                     <div className="grid gap-1.5 sm:grid-cols-2">
                       {q.options.map((option, optionIndex) => (
                         <div key={optionIndex}
@@ -1524,7 +1700,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                       ))}
                     </div>
                   )}
-                  {isCode && (
+                  {!isEditing && isCode && (
                     <div className="text-[11px] text-indigo-300/70 pl-6">Bu savol kod (dasturlash) savoli sifatida saqlanadi. Variantlar o'rniga o'quvchi kod yozadi.</div>
                   )}
                 </div>
@@ -1596,34 +1772,45 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               </div>
               {wordAiResult.map((q,i) => {
                 const isCode = (q.question_type || 'mcq') === 'code';
+                const isEditing = editingPreview.type === 'word_ai' && editingPreview.index === i;
                 return (
                 <div key={i} className="glass rounded-xl p-3 text-sm text-white/70 space-y-2">
                   <div className="flex items-start gap-2">
                     <span className="text-sky-300 font-bold">{i+1}.</span>
                     <div className="flex-1 min-w-0">
-                      <div className="leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></div>
-                      {q.needsReview && (
-                        <div className="mt-1 text-[11px] text-amber-300">Javob AI tomonidan taxmin qilindi, saqlashdan oldin tekshiring</div>
+                      {isEditing ? renderPreviewEditor('sky') : (
+                        <>
+                          <div className="leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></div>
+                          {q.needsReview && (
+                            <div className="mt-1 text-[11px] text-amber-300">Javob AI tomonidan taxmin qilindi, saqlashdan oldin tekshiring</div>
+                          )}
+                          <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mt-2">
+                            <SubjectBadge subject={q.subject} />
+                            <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
+                            <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
+                          </div>
+                        </>
                       )}
-                      <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mt-2">
-                        <SubjectBadge subject={q.subject} />
-                        <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
-                        <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
-                      </div>
                     </div>
-                    {/* Savol turini MCQ ↔ kod savoli o'rtasida almashtirish (PDF preview bilan bir xil). */}
-                    <button
-                      type="button"
-                      onClick={() => setWordAiResult(prev => prev.map((item, idx) =>
-                        idx === i ? { ...item, question_type: isCode ? 'mcq' : 'code' } : item
-                      ))}
-                      title={isCode ? "Kod savoli sifatida saqlanadi — bosib MCQ ga qaytaring" : "MCQ sifatida saqlanadi — bosib kod savoliga o'tkazing"}
-                      className={`flex-shrink-0 inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg border transition-all ${isCode ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' : 'bg-white/5 text-white/40 border-white/10 hover:text-white/60'}`}
-                    >
-                      {isCode ? <>{'</> '}Kod savoli</> : 'MCQ'}
-                    </button>
+                    {!isEditing && (
+                      <div className="flex-shrink-0 flex items-center gap-1.5">
+                        {/* Faqat MCQ savollarni inline tahrirlaymiz; kod savolida variant yo'q. */}
+                        {!isCode && renderPreviewEditButton('word_ai', i, q, 'sky')}
+                        {/* Savol turini MCQ ↔ kod savoli o'rtasida almashtirish (PDF preview bilan bir xil). */}
+                        <button
+                          type="button"
+                          onClick={() => setWordAiResult(prev => prev.map((item, idx) =>
+                            idx === i ? { ...item, question_type: isCode ? 'mcq' : 'code' } : item
+                          ))}
+                          title={isCode ? "Kod savoli sifatida saqlanadi — bosib MCQ ga qaytaring" : "MCQ sifatida saqlanadi — bosib kod savoliga o'tkazing"}
+                          className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg border transition-all ${isCode ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' : 'bg-white/5 text-white/40 border-white/10 hover:text-white/60'}`}
+                        >
+                          {isCode ? <>{'</> '}Kod savoli</> : 'MCQ'}
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {!isCode && Array.isArray(q.options) && q.options.length > 0 && (
+                  {!isEditing && !isCode && Array.isArray(q.options) && q.options.length > 0 && (
                     <div className="grid gap-1.5 sm:grid-cols-2">
                       {q.options.map((option, optionIndex) => (
                         <div key={optionIndex}
@@ -1633,7 +1820,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                       ))}
                     </div>
                   )}
-                  {isCode && (
+                  {!isEditing && isCode && (
                     <div className="text-[11px] text-indigo-300/70 pl-6">Bu savol kod (dasturlash) savoli sifatida saqlanadi. Variantlar o'rniga o'quvchi kod yozadi.</div>
                   )}
                 </div>
