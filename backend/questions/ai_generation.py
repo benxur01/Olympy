@@ -35,6 +35,8 @@ MATH_PROMPT_ADDITION = (
     "Oddiy so'zlar va gaplar $ ichiga olinmasin.\n"
     "Misollar:\n"
     "  - kasr: $\\frac{3}{4}$ (HECH QACHON '3/4' deb yozma)\n"
+    "  - aralash son: $2\\frac{1}{2}$ yoki $\\frac{5}{2}$ "
+    "(HECH QACHON '2 1/2', '2_1/2', '2½' deb yozma)\n"
     "  - daraja: $x^{2}$, $2^{10}$ (HECH QACHON 'x^2' yoki 'x kvadrat' dema)\n"
     "  - kvadrat ildiz: $\\sqrt{16}$, $\\sqrt{x+1}$ (HECH QACHON 'sqrt(16)' dema)\n"
     "  - n-chi ildiz: $\\sqrt[3]{8}$, $\\sqrt[n]{x}$\n"
