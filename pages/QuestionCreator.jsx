@@ -875,6 +875,22 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     </button>
   );
 
+  // Preview kartasidagi o'chirish tugmasi: saqlashdan oldin kerakmas savolni
+  // ro'yxatdan olib tashlaydi. type → tegishli setter (ai/pdf/word_ai).
+  const renderPreviewDeleteButton = (type, index, accent = 'indigo') => {
+    const setter = type === 'ai' ? setAiResult : type === 'pdf' ? setPdfResult : setWordAiResult;
+    return (
+      <button
+        type="button"
+        onClick={() => setter(prev => prev.filter((_, idx) => idx !== index))}
+        title="Savolni o'chirish"
+        className="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg border transition-all bg-white/5 text-white/40 border-white/10 hover:text-rose-400 hover:border-rose-500/30"
+      >
+        <Icon name="trash" size={13} />
+      </button>
+    );
+  };
+
   // Edit rejimidagi savol kartasining ichki qismi (matn + variantlar + to'g'ri
   // javob belgilash + Saqlash/Bekor). `accent` preview rangiga moslashish uchun.
   const renderPreviewEditor = (accent = 'indigo') => {
@@ -1568,7 +1584,12 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                           </>
                         )}
                       </div>
-                      {!isEditing && renderPreviewEditButton('ai', i, q, 'indigo')}
+                      {!isEditing && (
+                        <div className="flex-shrink-0 flex items-center gap-1.5">
+                          {renderPreviewEditButton('ai', i, q, 'indigo')}
+                          {renderPreviewDeleteButton('ai', i, 'indigo')}
+                        </div>
+                      )}
                     </div>
                     {!isEditing && Array.isArray(q.options) && q.options.length > 0 && (
                       <div className="grid gap-1.5 sm:grid-cols-2 mt-1">
@@ -1687,6 +1708,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                         >
                           {isCode ? <>{'</> '}Kod savoli</> : 'MCQ'}
                         </button>
+                        {renderPreviewDeleteButton('pdf', i, 'cyan')}
                       </div>
                     )}
                   </div>
@@ -1807,6 +1829,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                         >
                           {isCode ? <>{'</> '}Kod savoli</> : 'MCQ'}
                         </button>
+                        {renderPreviewDeleteButton('word_ai', i, 'sky')}
                       </div>
                     )}
                   </div>
