@@ -812,7 +812,12 @@ AI_QUESTION_GEMINI_API_KEYS = [
 if AI_QUESTION_GEMINI_API_KEY:
     AI_QUESTION_GEMINI_API_KEYS.append(AI_QUESTION_GEMINI_API_KEY)
 AI_QUESTION_GEMINI_API_KEYS = list(dict.fromkeys(AI_QUESTION_GEMINI_API_KEYS))
-AI_QUESTION_GEMINI_MODEL = os.environ.get('AI_QUESTION_GEMINI_MODEL', AI_MANAGER_BOT_GEMINI_MODEL)
+# Savol ajratish/generatsiya uchun Gemini modeli. Avval bu AI_MANAGER_BOT_GEMINI_MODEL
+# (roster .env'idan 'gemini-1.5-flash') ga tushardi — u DEPRECATED va har so'rovda
+# 404 qaytarib birinchi urinishni behuda sarflardi (keyin fallback ishlardi, lekin
+# sekin va ishonchsiz). Endi to'g'ridan-to'g'ri ishonchli 'gemini-2.5-flash' default.
+# Render/env'da AI_QUESTION_GEMINI_MODEL o'rnatilsa, u ustun bo'ladi.
+AI_QUESTION_GEMINI_MODEL = os.environ.get('AI_QUESTION_GEMINI_MODEL', 'gemini-2.5-flash')
 AI_QUESTION_GEMINI_FALLBACK_MODELS = [
     model.strip() for model in os.environ.get(
         'AI_QUESTION_GEMINI_FALLBACK_MODELS',

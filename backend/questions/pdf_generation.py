@@ -523,6 +523,22 @@ def _letter_to_index(value):
         return 0
 
 
+# Variant boshidagi "A) ", "B.", "C:" kabi belgini olib tashlaydi. AYNAN bitta
+# harfdan keyin ), . yoki : (haqiqiy variant ajratuvchisi) kelganda va undan
+# keyin matn bo'lganda ishlaydi. MUHIM: ' ' yoki '-' yoki '/' ajratuvchi sifatida
+# QABUL QILINMAYDI — aks holda matematik variant ('a + b', 'c - 3', 'x/b') boshidagi
+# harf "belgi" deb kesilib, '+ b', '3', '/b' kabi buzuq matn qolardi (foydalanuvchi
+# ko'rgan "A. /b + (x" muammosining ildizi shu edi).
+def _strip_option_label(option):
+    text = str(option or '').strip()
+    if not text:
+        return ''
+    # Belgi (A-H, katta/kichik) + biri )/./: + so'ng bo'sh joy yoki matn boshi.
+    # Belgidan keyin matematik operator (+ - * / ^) kelsa BU BELGI EMAS — masalan
+    # "C) a + b" da faqat "C)" olinadi, keyingi "a + b" buzilmaydi.
+    return re.sub(r'^\s*[A-Ha-h]\s*[\).:](?=\s|$|[^+\-*/^=])\s*', '', text, count=1).strip()
+
+
 def _normalize_questions(parsed, subject, difficulty):
     questions = []
     seen = set()
@@ -534,7 +550,7 @@ def _normalize_questions(parsed, subject, difficulty):
         if len(text) < 5:
             continue
         options = [
-            re.sub(r'^\s*[A-H][\).\s-]+', '', str(option or '').strip(), flags=re.IGNORECASE)
+            _strip_option_label(str(option or '').strip())
             for option in (item.get('options') or [])
             if str(option or '').strip()
         ]
@@ -740,7 +756,11 @@ def _options_from_block(block):
             r'(?i)\b(?:javoblar|to\s*[\'‘’`]?g\s*[\'‘’`]?ri\s+javob|answer key|answers)\b',
             option,
         )[0]
-        option = re.sub(r'\s+', ' ', option).strip(' .;,-')
+        option = re.sub(r'\s+', ' ', option)
+        # Boshidan: faqat bo'sh joy va tinish belgilari (. ; ,) — lekin '-' EMAS
+        # (manfiy son '-4', '-x' boshidagi minus saqlanishi shart). Oxiridan:
+        # bo'sh joy, nuqta, vergul, nuqtali vergul (matematik bo'lmagan dum).
+        option = option.lstrip(' .;,').rstrip(' .;,').strip()
         if option:
             options.append(option)
     return question_text, options
