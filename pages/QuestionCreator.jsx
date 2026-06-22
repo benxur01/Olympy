@@ -110,11 +110,12 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [deleteAllConfirm, setDeleteAllConfirm] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState([]);
   const [bulkSaving, setBulkSaving] = React.useState(false);
-  // Excel/CSV import state'lari
+  // Excel/CSV/Word import state'lari (natija banneri ikkala format uchun umumiy)
   const [importLoading, setImportLoading] = React.useState(false);
   const [importResult, setImportResult] = React.useState(null);
   const [importErrorsOpen, setImportErrorsOpen] = React.useState(false);
   const importInputRef = React.useRef(null);
+  const wordInputRef = React.useRef(null);
 
   const toggleSelectQuestion = (id) => {
     setSelectedIds(prev =>
@@ -365,6 +366,41 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     }
   };
 
+  // Word (.docx) import handler — Excel handler bilan bir xil oqim, faqat
+  // boshqa API funksiyasi (importQuestionsWord). Natija banneri umumiy.
+  const handleImportWord = async (e) => {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (!isApi) {
+      showApiToast("⚠ Import faqat akkaunt bilan kirgan rejimda ishlaydi");
+      e.target.value = '';
+      return;
+    }
+    if (!myCenterId) {
+      showApiToast("⚠ Markaz aniqlanmadi");
+      e.target.value = '';
+      return;
+    }
+    setImportLoading(true);
+    setImportResult(null);
+    setImportErrorsOpen(false);
+    try {
+      const backendCenterId = myCenter?.backendId ?? myCenterId;
+      const res = await OlympyApi.importQuestionsWord(backendCenterId, f, OlympyApi.getToken());
+      setImportResult(res);
+      // Savollar ro'yxatini qayta yuklash
+      if (apiQuestionsRes.reload) apiQuestionsRes.reload();
+      const msg = `${res.created || 0} ta savol qo'shildi`;
+      const errCount = res.error_count || (res.errors || []).length;
+      showApiToast(errCount ? `${msg}. ${errCount} ta xatolik bor.` : msg);
+    } catch (err) {
+      showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Import bo'lmadi"}`);
+    } finally {
+      setImportLoading(false);
+      e.target.value = '';
+    }
+  };
+
   // Namuna CSV template yuklab berish
   const downloadImportTemplate = () => {
     const header = "savol,variant_a,variant_b,variant_c,variant_d,togri_javob,qiyinlik,fan";
@@ -379,6 +415,16 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  // Word namuna (.docx) shablonini yuklab berish — backend python-docx bilan
+  // jadval generatsiya qiladi (endpoint JWT himoyalangan, blob orqali keladi).
+  const downloadWordTemplate = async () => {
+    try {
+      await OlympyApi.downloadWordTemplate(OlympyApi.getToken());
+    } catch (err) {
+      showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Word namunani yuklab bo'lmadi"}`);
+    }
   };
 
   const _diffToApi = (level, subject) => {
@@ -726,12 +772,37 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               <span className="hidden sm:inline">Namuna</span>
               <span className="sm:hidden">CSV</span>
             </button>
+            <button
+              onClick={() => wordInputRef.current?.click()}
+              disabled={importLoading}
+              className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-blue-500/30 text-blue-300 disabled:opacity-50"
+            >
+              <Icon name="upload" size={14} />
+              <span className="hidden sm:inline">{importLoading ? 'Yuklanmoqda...' : 'Word import'}</span>
+              <span className="sm:hidden">{importLoading ? '...' : 'Word'}</span>
+            </button>
+            <button
+              onClick={downloadWordTemplate}
+              className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-white/10 text-white/60"
+              title="Word namuna (.docx) yuklab olish"
+            >
+              <Icon name="download" size={14} />
+              <span className="hidden sm:inline">Word namuna</span>
+              <span className="sm:hidden">Word</span>
+            </button>
             <input
               ref={importInputRef}
               type="file"
               accept=".xlsx,.xlsm,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
               className="hidden"
               onChange={handleImport}
+            />
+            <input
+              ref={wordInputRef}
+              type="file"
+              accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              className="hidden"
+              onChange={handleImportWord}
             />
           </div>
         )}

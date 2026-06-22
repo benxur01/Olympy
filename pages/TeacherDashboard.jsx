@@ -3,7 +3,7 @@
 // Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/teacher/<key>`
 // manziliga bog'lanadi (home → /dashboard/teacher). Namuna StudentDashboard'dan,
 // umumiy yordamchi shared.jsx'dagi makeDashboardUrlSync.
-const TEACHER_DASHBOARD_PAGES = ['home', 'students', 'olympiads', 'questions', 'profile'];
+const TEACHER_DASHBOARD_PAGES = ['home', 'students', 'olympiads', 'questions', 'results', 'profile'];
 const teacherDashUrl = makeDashboardUrlSync('/dashboard/teacher', TEACHER_DASHBOARD_PAGES);
 
 // Fan progress-bar ranglari — StudentDashboard'dagi palitra bilan bir xil
@@ -170,6 +170,16 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [premiumModal, setPremiumModal] = React.useState('');
   // O'quvchi ustiga bosilganda ochiladigan batafsil panel (StudentDetailDrawer).
   const [selectedStudent, setSelectedStudent] = React.useState(null);
+  // Natijalar → "Ko'rish" modali: tadbir ishtirokchilari natijalari jadvali.
+  // page_size=200 bilan yuklanadi; 200+ bo'lsa oddiy "Keyingisi →" pagination.
+  const [resultsModal, setResultsModal] = React.useState({
+    open: false, event: null, data: [], loading: false, page: 1, total: 0,
+  });
+  // Natijalar jadvalidan o'quvchi qatoriga bosilganda ochiladigan "O'quvchi
+  // tahlili" modali: o'sha o'quvchining har bir savol bo'yicha javobi.
+  const [studentReviewModal, setStudentReviewModal] = React.useState({
+    open: false, studentName: '', data: null, loading: false, error: '',
+  });
   const emptyEventForm = {
     eventType: 'competition',
     title: '',
@@ -214,6 +224,15 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const apiTeacherOlympiadsRes = useApiData(
     () => isApi ? OlympyApi.teacherOlympiads(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
+  );
+  // Natijalar sahifasi statistikasi: backend GET /api/manager/stats/ — center
+  // bo'yicha o'rtacha ball, eng yuqori, qatnashuvchilar va tadbirlar breakdown.
+  // Endpoint teacher rolini ham qabul qiladi (Manager paneldagi bilan bir xil).
+  const teacherStatsRes = useApiData(
+    () => (isApi && centerId)
+      ? OlympyApi.getManagerStats(centerId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, centerId],
   );
 
   React.useEffect(() => {
@@ -269,8 +288,20 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     { key: 'students', icon: 'users', label: "O'quvchilar" },
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
     { key: 'questions', icon: 'book', label: 'Savollar' },
+    { key: 'results', icon: 'chart', label: 'Natijalar' },
     { key: 'profile', icon: 'user', label: 'Profil' },
   ];
+
+  // MobileBottomNav faqat dastlabki 5 ta elementni oladi. Natijalar
+  // qo'shilgach navItems 6 ta bo'ldi — mobil panel uchun alohida ro'yxat:
+  // savollar o'rniga natijalar, oxirida profil (Manager paneldagi naqsh).
+  const mobileNavItems = [
+    navItems.find(n => n.key === 'home'),
+    navItems.find(n => n.key === 'students'),
+    navItems.find(n => n.key === 'olympiads'),
+    navItems.find(n => n.key === 'results'),
+    navItems.find(n => n.key === 'profile'),
+  ].filter(Boolean);
 
   const formStartIso = (form) => {
     if (!form.startDate) return null;
@@ -509,6 +540,65 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     setDeleteEventId(null);
   };
 
+  // ─── Natijalar: tadbir ishtirokchilari jadvali + o'quvchi tahlili ───
+  // Natijalar modali: tanlangan tadbirning bitta sahifasini yuklaydi.
+  // page_size 200 — 200+ ishtirokchi bo'lsa "Keyingisi →" pagination ishlaydi.
+  const RESULTS_PAGE_SIZE = 200;
+  const loadResultsPage = (olympiadBackendId, pageNum) => {
+    setResultsModal(m => ({ ...m, loading: true }));
+    OlympyApi.getLeaderboardForOlympiad(olympiadBackendId, pageNum, RESULTS_PAGE_SIZE, OlympyApi.getToken())
+      .then(res => {
+        setResultsModal(m => ({
+          ...m,
+          data: Array.isArray(res?.entries) ? res.entries : [],
+          total: res?.pagination?.total ?? (Array.isArray(res?.entries) ? res.entries.length : 0),
+          page: pageNum,
+          loading: false,
+        }));
+      })
+      .catch(err => {
+        console.warn('getLeaderboardForOlympiad failed:', err);
+        showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Natijalarni yuklab bo'lmadi"}`);
+        setResultsModal(m => ({ ...m, loading: false }));
+      });
+  };
+
+  const openResultsModal = (olympiad) => {
+    if (!isApi) { showToast('Real server rejimida ishlaydi'); return; }
+    const backendId = olympiad.backendId ?? olympiad.olympiad_id ?? olympiad.id;
+    setResultsModal({ open: true, event: olympiad, data: [], loading: true, page: 1, total: 0 });
+    loadResultsPage(backendId, 1);
+  };
+
+  // Natijalar jadvalidan o'quvchi qatoriga bosilganda chaqiriladi: o'sha
+  // o'quvchining tadbirdagi har bir savol bo'yicha javobini yuklaydi.
+  const openStudentReview = (row) => {
+    if (!isApi) { showToast('Real server rejimida ishlaydi'); return; }
+    const olympiadBackendId = resultsModal.event?.backendId ?? resultsModal.event?.olympiad_id ?? resultsModal.event?.id;
+    const userId = row?.user_id;
+    if (!olympiadBackendId || !userId) return;
+    setStudentReviewModal({
+      open: true, studentName: row.name || "O'quvchi", data: null, loading: true, error: '',
+    });
+    OlympyApi.getEventUserAnswers(olympiadBackendId, userId, OlympyApi.getToken())
+      .then(res => {
+        setStudentReviewModal(m => ({
+          ...m,
+          data: res || null,
+          studentName: res?.student_name || m.studentName,
+          loading: false,
+        }));
+      })
+      .catch(err => {
+        console.warn('getEventUserAnswers failed:', err);
+        setStudentReviewModal(m => ({
+          ...m,
+          loading: false,
+          error: OlympyApi.toUserMessage?.(err) || "Javoblarni yuklab bo'lmadi",
+        }));
+      });
+  };
+
   const renderHome = () => (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -743,10 +833,101 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     </div>
   );
 
+  // Natijalar tab — markaz tadbirlari natijalari (Manager paneldagi bilan
+  // bir xil). API rejimida real raqamlar (teacherStatsRes); mock rejimda
+  // lokal finished olimpiada fallback.
+  const renderResults = () => {
+    const apiData = isApi ? teacherStatsRes.data : null;
+    const apiLoading = isApi && teacherStatsRes.loading && !apiData;
+    const localFinished = olympiads.filter(o => o.status === 'finished');
+    const avgVal = apiData
+      ? `${apiData.average_score || 0}%`
+      : localFinished.length
+        ? `${Math.round(localFinished.reduce((s, o) => s + (o.avgScore || 0), 0) / localFinished.length)}%`
+        : '—';
+    const bestVal = apiData
+      ? `${apiData.best_score || 0}%`
+      : (localFinished.length ? `${Math.max(...localFinished.map(o => o.avgScore || 0))}%` : '—');
+    const participantsVal = apiData
+      ? String(apiData.participants || 0)
+      : String(olympiads.reduce((s, o) => s + (o.participants || 0), 0) || 0);
+
+    const apiEvents = Array.isArray(apiData?.events) ? apiData.events : [];
+
+    return (
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+        <h2 className="text-lg md:text-xl font-black text-white">Natijalar</h2>
+        {apiLoading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
+          <StatCard label="O'rtacha ball" value={avgVal} icon={<Icon name="chart" size={18} />} color="from-indigo-500 to-purple-600" />
+          <StatCard label="Eng yuqori" value={bestVal} icon={<Icon name="trophy" size={18} />} color="from-amber-500 to-orange-500" />
+          <StatCard label="Qatnashuvchilar" value={participantsVal} icon={<Icon name="users" size={18} />} color="from-cyan-500 to-blue-600" />
+        </div>
+        <div className="glass rounded-2xl p-4 sm:p-5">
+          <h3 className="font-bold text-white mb-4">Tadbir natijalari</h3>
+          {isApi && apiEvents.length > 0 && apiEvents.filter(e => (e.participants || 0) > 0).map(e => (
+            <div key={e.olympiad_id} className="p-4 glass rounded-xl mb-3">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-white break-words">{e.title}</div>
+                  <div className="text-xs text-white/40 mt-0.5">{e.subject} · {e.participants} ishtirokchi · eng yuqori {e.best_score}%</div>
+                </div>
+                <DonutChart value={Math.round(e.average_score || 0)} size={56} />
+              </div>
+              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/5">
+                <button
+                  onClick={() => openResultsModal(e)}
+                  className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
+                  title="Ishtirokchilar natijalari jadvalini ko'rish"
+                >
+                  <Icon name="eye" size={12} /> Ko'rish
+                </button>
+                <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1">
+                  <Icon name="trophy" size={12} /> Reyting
+                </button>
+                <button
+                  onClick={() => {
+                    OlympyApi.exportOlympiadResultsXlsx(e.olympiad_id, OlympyApi.getToken())
+                      .then(() => showToast('✓ Excel fayl yuklandi'))
+                      .catch(err => {
+                        console.warn('xlsx export failed:', err);
+                        showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Excel yuklab bo'lmadi"}`);
+                      });
+                  }}
+                  className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
+                  title="Natijalarni Excel (.xlsx) faylga eksport qilish"
+                >
+                  <Icon name="download" size={12} /> Excel
+                </button>
+              </div>
+            </div>
+          ))}
+          {!isApi && localFinished.map(o => (
+            <div key={o.id} className="p-4 glass rounded-xl mb-3">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="flex-1 min-w-0"><div className="font-semibold text-white break-words">{o.title}</div><div className="text-xs text-white/40 mt-0.5">{[o.testLevel, testTypeLabel(o.testType)].filter(Boolean).join(' · ')}{(o.testLevel || o.testType) ? ' · ' : ''}{o.participants || 0} ishtirokchi</div></div>
+                <DonutChart value={o.avgScore || 0} size={56} />
+              </div>
+              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/5">
+                <button onClick={() => openResultsModal(o)} className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"><Icon name="eye" size={12} /> Ko'rish</button>
+                <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"><Icon name="trophy" size={12} /> Reyting</button>
+              </div>
+            </div>
+          ))}
+          {((isApi && apiEvents.filter(e => (e.participants || 0) > 0).length === 0)
+            || (!isApi && localFinished.length === 0)) && (
+            <div className="text-sm text-white/40 px-3 py-2">Hali natijasi bor tadbirlar yo'q</div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   const pagesMap = {
     home: renderHome,
     students: renderStudents,
     olympiads: renderOlympiads,
+    results: renderResults,
     questions: () => <QuestionCreatorPage embedded user={user} onOpenSwitcher={onOpenSwitcher} onNavigate={onNavigate} />,
     profile: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} />,
   };
@@ -785,7 +966,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         <main className="flex-1 overflow-x-hidden overflow-y-auto">
           {(pagesMap[page] || renderHome)()}
         </main>
-        <MobileBottomNav items={navItems} activePage={page} setPage={setPage} />
+        <MobileBottomNav items={mobileNavItems} activePage={page} setPage={setPage} />
       </div>
 
       <Modal open={createModal} onClose={closeEventModal} title={editingEventId ? 'Tadbirni tahrirlash' : 'Tadbir yaratish'} width="max-w-2xl">
@@ -1245,6 +1426,423 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   {eventSaving ? "O'chirilmoqda..." : "Ha, o'chirish"}
                 </button>
               </div>
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* Natijalar (ishtirokchilar jadvali) modali */}
+      <Modal
+        open={resultsModal.open}
+        onClose={() => setResultsModal(m => ({ ...m, open: false }))}
+        title="Tadbir natijalari"
+        width="max-w-5xl"
+        style={{ maxWidth: 980 }}
+        contentClassName="results-modal"
+      >
+        {(() => {
+          const rows = resultsModal.data;
+          const lastPage = Math.max(1, Math.ceil(resultsModal.total / RESULTS_PAGE_SIZE));
+          // Sahifadagi (diskvalifikatsiya qilinmaganlar bo'yicha) o'rtacha ballni hisoblaymiz.
+          const scored = rows.filter(r => !r.disqualified && typeof r.score === 'number');
+          const avgScore = scored.length
+            ? Math.round(scored.reduce((s, r) => s + (r.score || 0), 0) / scored.length)
+            : null;
+          // Ball foiziga qarab rangli badge klasslari.
+          const scoreTone = (pct) => {
+            if (pct >= 90) return { text: 'text-emerald-300', bar: 'from-emerald-500 to-emerald-400', track: 'bg-emerald-500/10', ring: 'border-emerald-500/25' };
+            if (pct >= 70) return { text: 'text-indigo-300', bar: 'from-indigo-500 to-violet-400', track: 'bg-indigo-500/10', ring: 'border-indigo-500/25' };
+            if (pct >= 50) return { text: 'text-amber-300', bar: 'from-amber-500 to-amber-400', track: 'bg-amber-500/10', ring: 'border-amber-500/25' };
+            return { text: 'text-rose-300', bar: 'from-rose-500 to-rose-400', track: 'bg-rose-500/10', ring: 'border-rose-500/25' };
+          };
+          const rankMedal = (rank) => (rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null);
+
+          return (
+            <div className="space-y-5 -mt-2">
+              {/* ── Header: tadbir ma'lumotlari + statistik kartalar ── */}
+              <div className="glass rounded-2xl p-4 sm:p-5 border border-white/5">
+                <div className="flex items-start gap-3 flex-wrap">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-base sm:text-lg font-bold text-white leading-tight break-words">
+                      {resultsModal.event?.title || '—'}
+                    </div>
+                    {resultsModal.event?.subject && resultsModal.event.subject !== '—' && (
+                      <div className="mt-2">
+                        <SubjectBadge subject={resultsModal.event.subject} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-4">
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold">Ishtirokchilar</div>
+                    <div className="text-lg font-black text-white mt-0.5">{resultsModal.total}</div>
+                  </div>
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold">O'rtacha ball</div>
+                    <div className={`text-lg font-black mt-0.5 ${avgScore == null ? 'text-white/40' : scoreTone(avgScore).text}`}>
+                      {avgScore == null ? '—' : `${avgScore}%`}
+                    </div>
+                  </div>
+                  <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2.5 col-span-2 sm:col-span-1">
+                    <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold">Sahifa</div>
+                    <div className="text-lg font-black text-white mt-0.5">{resultsModal.page} <span className="text-sm text-white/30 font-bold">/ {lastPage}</span></div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Loading skeleton ── */}
+              {resultsModal.loading && (
+                <div className="rounded-2xl border border-white/5 overflow-hidden">
+                  <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 bg-white/[0.03] text-[10px] uppercase tracking-wide text-white/35 font-bold">
+                    <div className="col-span-1 text-center">#</div>
+                    <div className="col-span-4">O'quvchi</div>
+                    <div className="col-span-2 text-center">To'g'ri / Jami</div>
+                    <div className="col-span-3">Ball</div>
+                    <div className="col-span-2 text-center">Holat</div>
+                  </div>
+                  <div className="divide-y divide-white/5">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <div key={i} className="flex items-center gap-3 px-4 py-3.5 animate-pulse">
+                        <div className="h-6 w-6 rounded-md bg-white/10 flex-shrink-0" />
+                        <div className="h-4 rounded bg-white/10 flex-1 max-w-[40%]" />
+                        <div className="h-4 w-16 rounded bg-white/10" />
+                        <div className="h-2.5 flex-1 rounded-full bg-white/10" />
+                        <div className="h-5 w-20 rounded-md bg-white/10" />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Bo'sh holat ── */}
+              {!resultsModal.loading && rows.length === 0 && (
+                <div className="glass rounded-2xl p-10 text-center">
+                  <div className="text-3xl mb-2">📭</div>
+                  <div className="text-sm text-white/40">Bu tadbirda hali ishtirokchi natijalari yo'q.</div>
+                </div>
+              )}
+
+              {/* ── Natijalar jadvali ── */}
+              {!resultsModal.loading && rows.length > 0 && (
+                <div className="rounded-2xl border border-white/5 overflow-hidden">
+                  <div className="max-h-[58vh] overflow-y-auto">
+                    {/* Sticky sarlavha qatori (desktop) */}
+                    <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 sticky top-0 z-10 bg-[#15171f]/95 backdrop-blur-sm border-b border-white/10 text-[10px] uppercase tracking-wide text-white/40 font-bold">
+                      <div className="col-span-1 text-center">#</div>
+                      <div className="col-span-4">O'quvchi</div>
+                      <div className="col-span-2 text-center">To'g'ri / Jami</div>
+                      <div className="col-span-3">Ball</div>
+                      <div className="col-span-2 text-center">Holat</div>
+                    </div>
+                    <div>
+                      {rows.map((row, idx) => {
+                        const total = row.total_questions || ((row.correct_count || 0) + (row.wrong_count || 0));
+                        const correct = row.correct_count ?? 0;
+                        const wrong = row.wrong_count ?? 0;
+                        const pct = typeof row.score === 'number' ? row.score : 0;
+                        const tone = scoreTone(pct);
+                        const dq = row.disqualified;
+                        const medal = rankMedal(row.rank);
+                        return (
+                          <div
+                            key={row.attempt_id ?? idx}
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => openStudentReview(row)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openStudentReview(row); } }}
+                            title="Javoblarini ko'rish"
+                            className={`animate-in flex flex-col gap-2 md:grid md:grid-cols-12 md:gap-x-2 md:gap-y-0 md:items-center px-3 md:px-4 py-3 border-b border-white/[0.04] transition-colors cursor-pointer hover:bg-white/[0.06] focus:bg-white/[0.06] focus:outline-none ${
+                              dq
+                                ? 'bg-white/[0.015] opacity-60'
+                                : idx % 2 === 1
+                                  ? 'bg-white/[0.02]'
+                                  : ''
+                            }`}
+                          >
+                            {/* Rank (desktop ustun) */}
+                            <div className="hidden md:flex md:col-span-1 justify-center">
+                              {dq ? (
+                                <span className="text-white/25 text-sm">—</span>
+                              ) : medal ? (
+                                <span className="text-xl leading-none" title={`${row.rank}-o'rin`}>{medal}</span>
+                              ) : (
+                                <span className="inline-flex h-6 min-w-6 px-1.5 items-center justify-center rounded-md bg-white/5 text-xs font-bold text-white/50">
+                                  {row.rank}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Mobil: 1-qator → rank + ism (chap) | ball foizi (o'ng) */}
+                            <div className="flex items-center gap-2 md:contents">
+                              <span className="md:hidden flex-shrink-0">
+                                {dq ? (
+                                  <span className="text-white/25 text-xs">—</span>
+                                ) : medal ? (
+                                  <span className="text-lg leading-none">{medal}</span>
+                                ) : (
+                                  <span className="inline-flex h-5 min-w-5 px-1 items-center justify-center rounded-md bg-white/5 text-[10px] font-bold text-white/45">{row.rank}</span>
+                                )}
+                              </span>
+                              {/* O'quvchi */}
+                              <div className="min-w-0 flex-1 md:col-span-4 flex items-center">
+                                <span className={`text-sm font-semibold truncate ${dq ? 'text-white/45 line-through' : 'text-white'}`}>
+                                  {row.name || '—'}
+                                </span>
+                              </div>
+                              {/* Mobil: ball foizi (o'ngga) */}
+                              <span className={`md:hidden flex-shrink-0 text-sm font-black tabular-nums ${dq ? 'text-white/40' : tone.text}`}>{pct}%</span>
+                            </div>
+
+                            {/* Mobil: 2-qator → Natija + Holat (bir qator) + progress bar (pastda) */}
+                            <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2 pl-7 md:contents md:pl-0">
+                              {/* To'g'ri / Jami */}
+                              <div className="flex items-center flex-shrink-0 md:col-span-2 md:justify-center">
+                                <span className="text-sm font-bold text-emerald-300">{correct}</span>
+                                <span className="text-sm text-white/40">/{total}</span>
+                                {wrong > 0 && (
+                                  <span className="ml-1.5 text-[11px] font-semibold text-rose-300/80">−{wrong}</span>
+                                )}
+                              </div>
+
+                              {/* Ball — progress bar (desktop'da foiz bilan) */}
+                              <div className="md:col-span-3 flex items-center gap-2.5 flex-1 md:flex-none order-3 md:order-none w-full md:w-auto basis-full md:basis-auto">
+                                <div className={`hidden md:block flex-1 h-2 rounded-full overflow-hidden ${tone.track}`}>
+                                  <div className={`h-full rounded-full bg-gradient-to-r ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+                                </div>
+                                <span className={`hidden md:inline text-sm font-black tabular-nums ${dq ? 'text-white/40' : tone.text}`}>{pct}%</span>
+                                {/* Mobil progress bar (to'liq qatorda, pastda) */}
+                                <div className={`md:hidden flex-1 h-1.5 rounded-full overflow-hidden ${tone.track}`}>
+                                  <div className={`h-full rounded-full bg-gradient-to-r ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+                                </div>
+                              </div>
+
+                              {/* Holat */}
+                              <div className="flex-shrink-0 md:col-span-2 md:text-center">
+                                {dq ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25">
+                                    <Icon name="info" size={11} /> DQ
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+                                    <Icon name="check" size={11} /> Topshirgan
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Pagination — 200+ ishtirokchi bo'lsa ── */}
+              {resultsModal.total > RESULTS_PAGE_SIZE && (
+                <div className="flex items-center justify-center gap-2 pt-1">
+                  <button
+                    onClick={() => {
+                      const backendId = resultsModal.event?.backendId ?? resultsModal.event?.olympiad_id ?? resultsModal.event?.id;
+                      if (backendId && resultsModal.page > 1) loadResultsPage(backendId, resultsModal.page - 1);
+                    }}
+                    disabled={resultsModal.loading || resultsModal.page <= 1}
+                    className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
+                  </button>
+                  <div className="px-3 py-2 rounded-xl bg-white/5 text-[11px] font-bold text-white/60 tabular-nums">
+                    {resultsModal.page} / {lastPage}
+                  </div>
+                  <button
+                    onClick={() => {
+                      const backendId = resultsModal.event?.backendId ?? resultsModal.event?.olympiad_id ?? resultsModal.event?.id;
+                      if (backendId && resultsModal.page < lastPage) loadResultsPage(backendId, resultsModal.page + 1);
+                    }}
+                    disabled={resultsModal.loading || resultsModal.page >= lastPage}
+                    className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Keyingisi <Icon name="chevronRight" size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </Modal>
+
+      {/* O'quvchi tahlili modali — natijalar jadvalidan o'quvchi tanlanganda */}
+      <Modal
+        open={studentReviewModal.open}
+        onClose={() => setStudentReviewModal(m => ({ ...m, open: false }))}
+        title="O'quvchi tahlili"
+        width="max-w-3xl"
+      >
+        {(() => {
+          const review = studentReviewModal.data;
+          // mcq/yes_no/multiple_select uchun option matnini xavfsiz olish.
+          const optAt = (options, i) => {
+            if (i === null || i === undefined) return null;
+            const o = (options || [])[i];
+            return o === undefined || o === null ? null : String(o);
+          };
+          // O'quvchining javobini turiga qarab matn(lar)ga aylantiradi.
+          const renderChosen = (q) => {
+            const t = q.question_type;
+            if (t === 'mcq' || t === 'yes_no') {
+              const txt = optAt(q.options, q.chosen_answer);
+              return txt == null ? "Javob berilmagan" : txt;
+            }
+            if (t === 'multiple_select') {
+              const arr = Array.isArray(q.chosen_answer) ? q.chosen_answer : [];
+              if (!arr.length) return "Javob berilmagan";
+              return arr.map(i => optAt(q.options, i)).filter(Boolean).join(', ');
+            }
+            if (t === 'fill_blank') {
+              return q.chosen_answer ? String(q.chosen_answer) : "Javob berilmagan";
+            }
+            if (t === 'fill_blanks') {
+              const c = q.chosen_answer;
+              if (c && typeof c === 'object') {
+                const parts = Object.keys(c).map(k => String(c[k])).filter(Boolean);
+                return parts.length ? parts.join(', ') : "Javob berilmagan";
+              }
+              return c ? String(c) : "Javob berilmagan";
+            }
+            if (t === 'essay') {
+              return q.chosen_answer ? String(q.chosen_answer) : "Javob berilmagan";
+            }
+            if (t === 'code') {
+              return q.submitted_code ? String(q.submitted_code) : "Javob berilmagan";
+            }
+            return "—";
+          };
+          // To'g'ri javobni turiga qarab matn(lar)ga aylantiradi.
+          const renderCorrect = (q) => {
+            const t = q.question_type;
+            if (t === 'mcq' || t === 'yes_no') return optAt(q.options, q.correct_answer);
+            if (t === 'multiple_select') {
+              const arr = Array.isArray(q.correct_answer_set) ? q.correct_answer_set : [];
+              return arr.map(i => optAt(q.options, i)).filter(Boolean).join(', ') || null;
+            }
+            if (t === 'fill_blank') {
+              return q.correct_text ? String(q.correct_text) : null;
+            }
+            if (t === 'fill_blanks') {
+              const c = q.correct_text;
+              if (c && typeof c === 'object') {
+                return Object.keys(c).map(k => String(c[k])).filter(Boolean).join(', ') || null;
+              }
+              return c ? String(c) : null;
+            }
+            return null; // essay/code — qat'iy "to'g'ri javob" yo'q
+          };
+
+          return (
+            <div className="space-y-4 -mt-1">
+              {/* Sarlavha: o'quvchi ismi + umumiy natija */}
+              <div className="glass rounded-2xl p-4 border border-white/10 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center flex-shrink-0">
+                  <Icon name="user" size={18} className="text-indigo-300" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-bold text-white truncate">{studentReviewModal.studentName || "O'quvchi"}</div>
+                  {review && (
+                    <div className="text-[11px] text-white/45 mt-0.5">
+                      To'g'ri: <span className="text-emerald-300 font-semibold">{review.correct_count ?? 0}</span>
+                      {' · '}Xato: <span className="text-rose-300 font-semibold">{review.wrong_count ?? 0}</span>
+                      {' · '}Ball: <span className="text-white/70 font-semibold">{review.score ?? 0}%</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Loading */}
+              {studentReviewModal.loading && (
+                <div className="space-y-2.5">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="h-16 rounded-xl bg-white/[0.04] border border-white/5 animate-pulse" />
+                  ))}
+                </div>
+              )}
+
+              {/* Xato */}
+              {!studentReviewModal.loading && studentReviewModal.error && (
+                <div className="glass rounded-2xl p-8 text-center border border-rose-500/15">
+                  <div className="text-3xl mb-2">⚠️</div>
+                  <div className="text-sm text-rose-200/80">{studentReviewModal.error}</div>
+                </div>
+              )}
+
+              {/* Bo'sh */}
+              {!studentReviewModal.loading && !studentReviewModal.error && review && (review.questions || []).length === 0 && (
+                <div className="glass rounded-2xl p-8 text-center">
+                  <div className="text-3xl mb-2">📭</div>
+                  <div className="text-sm text-white/40">Bu tadbirda savollar topilmadi.</div>
+                </div>
+              )}
+
+              {/* Savollar ro'yxati */}
+              {!studentReviewModal.loading && !studentReviewModal.error && review && (review.questions || []).length > 0 && (
+                <div className="space-y-2.5 max-h-[60vh] overflow-y-auto pr-0.5">
+                  {(review.questions || []).map((q, i) => {
+                    const correct = q.is_correct === true;
+                    const wrong = q.is_correct === false;
+                    // is_correct === null → essay/kod tekshirilmoqda (neytral).
+                    const tone = correct
+                      ? 'bg-emerald-500/[0.07] border-emerald-500/25'
+                      : wrong
+                        ? 'bg-rose-500/[0.07] border-rose-500/25'
+                        : 'bg-white/[0.03] border-white/10';
+                    const chosenTxt = renderChosen(q);
+                    const correctTxt = renderCorrect(q);
+                    return (
+                      <div key={q.id ?? i} className={`rounded-xl p-3 sm:p-3.5 border ${tone}`}>
+                        <div className="flex items-start gap-2.5">
+                          <span className="inline-flex h-6 min-w-6 px-1.5 items-center justify-center rounded-md bg-white/10 text-[11px] font-bold text-white/60 flex-shrink-0 mt-0.5">
+                            {i + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-[13px] text-white/90 font-medium break-words leading-snug">
+                              {q.text || '—'}
+                            </div>
+                            <div className="mt-2 space-y-1">
+                              {/* O'quvchining javobi */}
+                              <div className="text-[12px] flex flex-wrap gap-x-1.5">
+                                <span className="text-white/40">Javobi:</span>
+                                <span className={`font-semibold break-words ${correct ? 'text-emerald-200' : wrong ? 'text-rose-200' : 'text-white/70'}`}>
+                                  {chosenTxt}
+                                </span>
+                              </div>
+                              {/* To'g'ri javob — faqat xato bo'lsa va mavjud bo'lsa ko'rsatamiz */}
+                              {wrong && correctTxt && (
+                                <div className="text-[12px] flex flex-wrap gap-x-1.5">
+                                  <span className="text-white/40">To'g'ri javob:</span>
+                                  <span className="font-semibold text-emerald-200 break-words">{correctTxt}</span>
+                                </div>
+                              )}
+                              {/* Essay/kod baholanmagan bo'lsa izoh */}
+                              {q.is_correct === null && (
+                                <div className="text-[11px] text-amber-300/80">
+                                  {q.question_type === 'essay'
+                                    ? 'Qo\'lda baholanadi (hali baholanmagan)'
+                                    : q.question_type === 'code'
+                                      ? 'Kod tekshirilmoqda'
+                                      : 'Baholanmagan'}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          {/* To'g'ri / xato belgisi */}
+                          <span className="flex-shrink-0 text-base leading-none mt-0.5">
+                            {correct ? '✅' : wrong ? '❌' : '⏳'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           );
         })()}

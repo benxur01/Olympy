@@ -309,6 +309,90 @@ def _normalize_difficulty(value):
     return aliases.get(s, Question.DIFFICULTY_MEDIUM)
 
 
+# Excel/CSV va Word import uchun umumiy ustun sarlavhalari va namuna qatori.
+# Bitta joyda saqlanadi — Excel namuna (frontend CSV), Word shablon va
+# hujjatlardagi format tavsifi bir xil bo'lib qolishi uchun.
+IMPORT_HEADER = ['savol', 'variant_a', 'variant_b', 'variant_c', 'variant_d', 'togri_javob', 'qiyinlik', 'fan']
+IMPORT_SAMPLE_ROW = ['2+2 nechaga teng?', '3', '4', '5', '6', 'B', 'easy', 'Matematika']
+
+
+def _row_looks_like_header(row):
+    """Birinchi qator sarlavhami? 6-ustun (togri_javob) A-F/0-5 emas, matn bo'lsa header.
+
+    Excel import'da ishlatilgan _is_header bilan bir xil heuristic — Word va
+    Excel bir xil tarzda birinchi qatorni tashlashi uchun umumlashtirildi.
+    """
+    if not row or len(row) < 6:
+        return False
+    s5 = str(row[5] or '').strip().upper()
+    if not s5:
+        return True
+    if s5 in ('A', 'B', 'C', 'D', 'E', 'F', '0', '1', '2', '3', '4', '5'):
+        return False
+    return True
+
+
+def _create_questions_from_rows(rows, center_id, user, fallback_subject):
+    """Xom qatorlar ro'yxatidan (har biri ustunlar list'i) Question yaratadi.
+
+    Excel/CSV va Word import bir xil validatsiya va xato handling ishlatishi
+    uchun ajratilgan umumiy yadro. Avval bu mantiq faqat import_questions_excel
+    ichida edi. Qaytaradi: (created_count, errors_list).
+    `rows` — birinchi qator sarlavha bo'lishi mumkin (heuristic'da tashlanadi).
+    """
+    errors = []
+    if not rows:
+        return 0, errors
+
+    is_header = _row_looks_like_header(rows[0])
+    data_rows = rows[1:] if is_header else rows
+
+    created = 0
+    for idx, raw_row in enumerate(data_rows, start=2 if is_header else 1):
+        if not raw_row:
+            continue
+        # Bo'sh qatorlarni o'tkazib yuboramiz.
+        normalized = [('' if v is None else str(v).strip()) for v in raw_row]
+        if not any(normalized):
+            continue
+        if len(normalized) < 6:
+            errors.append({'row': idx, 'detail': "Yetarli ustun yo'q (kamida 6 ta kerak)"})
+            continue
+        text = normalized[0]
+        if not text:
+            errors.append({'row': idx, 'detail': "Savol matni bo'sh"})
+            continue
+        # variantlar: A, B, C, D (D ixtiyoriy bo'lsa ham — kamida 2 ta variant)
+        options_raw = [normalized[1], normalized[2], normalized[3], normalized[4] if len(normalized) > 4 else '']
+        options = [o for o in options_raw if o]
+        if len(options) < 2:
+            errors.append({'row': idx, 'detail': "Kamida 2 ta javob varianti kerak"})
+            continue
+        correct_idx = _normalize_correct_answer(normalized[5])
+        if correct_idx is None or correct_idx >= len(options):
+            errors.append({'row': idx, 'detail': f"To'g'ri javob ko'rsatkichi noto'g'ri: {normalized[5]}"})
+            continue
+        difficulty = _normalize_difficulty(normalized[6] if len(normalized) > 6 else '')
+        subject = (normalized[7] if len(normalized) > 7 else '').strip() or fallback_subject
+        try:
+            Question.objects.create(
+                center_id=center_id,
+                subject=subject[:80],
+                text=text,
+                options=options,
+                correct_answer=correct_idx,
+                score=3,
+                difficulty=difficulty,
+                source=Question.SOURCE_IMPORT,
+                created_by=user,
+            )
+            created += 1
+        except Exception as exc:
+            errors.append({'row': idx, 'detail': f"DB xatosi: {exc}"})
+
+    return created, errors
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 @parser_classes([MultiPartParser, FormParser])
@@ -359,7 +443,6 @@ def import_questions_excel(request):
     fallback_subject = (request.query_params.get('subject') or request.data.get('subject') or 'Umumiy').strip() or 'Umumiy'
 
     rows = []
-    errors = []
     try:
         if filename.endswith('.csv'):
             import csv
@@ -409,70 +492,163 @@ def import_questions_excel(request):
     if not rows:
         return Response({'detail': "Faylda satr topilmadi"}, status=http_status.HTTP_400_BAD_REQUEST)
 
-    # Birinchi qatorni heuristic'da header deb tashlaymiz: agar 6-ustun A-F
-    # harf yoki 0-9 raqamga emas, balki matnga o'xshasa.
-    first = rows[0]
-
-    def _is_header(row):
-        if not row or len(row) < 6:
-            return False
-        s5 = str(row[5] or '').strip().upper()
-        if not s5:
-            return True
-        if s5 in ('A', 'B', 'C', 'D', 'E', 'F', '0', '1', '2', '3', '4', '5'):
-            return False
-        return True
-
-    data_rows = rows[1:] if _is_header(first) else rows
-
-    created = 0
-    for idx, raw_row in enumerate(data_rows, start=2 if _is_header(first) else 1):
-        if not raw_row:
-            continue
-        # Bo'sh qatorlarni o'tkazib yuboramiz.
-        normalized = [('' if v is None else str(v).strip()) for v in raw_row]
-        if not any(normalized):
-            continue
-        if len(normalized) < 6:
-            errors.append({'row': idx, 'detail': "Yetarli ustun yo'q (kamida 6 ta kerak)"})
-            continue
-        text = normalized[0]
-        if not text:
-            errors.append({'row': idx, 'detail': "Savol matni bo'sh"})
-            continue
-        # variantlar: A, B, C, D (D ixtiyoriy bo'lsa ham — kamida 2 ta variant)
-        options_raw = [normalized[1], normalized[2], normalized[3], normalized[4] if len(normalized) > 4 else '']
-        options = [o for o in options_raw if o]
-        if len(options) < 2:
-            errors.append({'row': idx, 'detail': "Kamida 2 ta javob varianti kerak"})
-            continue
-        correct_idx = _normalize_correct_answer(normalized[5])
-        if correct_idx is None or correct_idx >= len(options):
-            errors.append({'row': idx, 'detail': f"To'g'ri javob ko'rsatkichi noto'g'ri: {normalized[5]}"})
-            continue
-        difficulty = _normalize_difficulty(normalized[6] if len(normalized) > 6 else '')
-        subject = (normalized[7] if len(normalized) > 7 else '').strip() or fallback_subject
-        try:
-            Question.objects.create(
-                center_id=center_id,
-                subject=subject[:80],
-                text=text,
-                options=options,
-                correct_answer=correct_idx,
-                score=3,
-                difficulty=difficulty,
-                source=Question.SOURCE_IMPORT,
-                created_by=request.user,
-            )
-            created += 1
-        except Exception as exc:
-            errors.append({'row': idx, 'detail': f"DB xatosi: {exc}"})
+    # Qatorlarni Question'larga aylantirish — Word import bilan umumiy yadro.
+    created, errors = _create_questions_from_rows(rows, center_id, request.user, fallback_subject)
 
     return Response({
         'created': created,
         'errors': errors[:50],  # Frontend'da ko'p xato ko'rsatmaslik uchun cheklov
         'error_count': len(errors),
     })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+@throttle_classes([AiQuestionRateThrottle])
+def import_questions_word(request):
+    """POST /api/questions/import-word/?center=<id>
+
+    Word (.docx) faylidan savollar import qiladi. Fayl ichida JADVAL (table)
+    bo'lishi shart — xuddi Excel shablonidagidek ustunlar bilan:
+        savol | variant_a | variant_b | variant_c | variant_d | togri_javob | qiyinlik | fan
+    Birinchi qator sarlavha (header) deb tashlanadi, qolgan qatorlar — savollar.
+    Erkin matn parse qilinmaydi — faqat jadval o'qiladi.
+    Validatsiya va xato handling Excel import bilan bir xil (umumiy yadro).
+    """
+    raw_center = request.query_params.get('center') or request.data.get('center')
+    if not raw_center:
+        return Response(
+            {'detail': 'center query parametri majburiy'},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        center_id = int(raw_center)
+    except (TypeError, ValueError):
+        return Response(
+            {'detail': "center parametri son bo'lishi kerak"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if not _user_can_create_for_center(request.user, center_id):
+        return Response(
+            {'detail': "Savol yaratish uchun o'qituvchi/manager arizangiz tasdiqlanishi kerak"},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+
+    upload = request.FILES.get('file') or request.FILES.get('upload') or request.FILES.get('word')
+    if not upload:
+        return Response({'detail': 'Fayl yuboring (form key: file)'}, status=http_status.HTTP_400_BAD_REQUEST)
+
+    # Fayl hajmi cheklovi — Excel import bilan bir xil limit (python-docx butun
+    # hujjatni xotiraga yuklaydi).
+    import_max_bytes = getattr(settings, 'AI_QUESTION_IMPORT_MAX_BYTES', 10 * 1024 * 1024)
+    if upload.size and upload.size > import_max_bytes:
+        return Response(
+            {'detail': f"Fayl juda katta. Limit: {import_max_bytes // (1024 * 1024)} MB"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    filename = (getattr(upload, 'name', '') or '').lower()
+    if not filename.endswith('.docx'):
+        return Response(
+            {'detail': "Faqat .docx fayl qabul qilinadi"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    fallback_subject = (request.query_params.get('subject') or request.data.get('subject') or 'Umumiy').strip() or 'Umumiy'
+
+    try:
+        from docx import Document
+    except ImportError:
+        return Response(
+            {'detail': "python-docx o'rnatilmagan. Iltimos administratorga xabar bering."},
+            status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    rows = []
+    try:
+        document = Document(upload)
+        # Faqat jadval(lar)dan qatorlarni yig'amiz. Bir nechta jadval bo'lsa
+        # hammasini ketma-ket qo'shamiz — birinchi jadvalning header'i qolganlar
+        # uchun ham amal qiladi (umumiy yadro birinchi qatorni tashlaydi).
+        for table in document.tables:
+            for cell_row in table.rows:
+                rows.append([cell.text for cell in cell_row.cells])
+    except Exception as exc:
+        return Response(
+            {'detail': f"Word faylni o'qib bo'lmadi: {exc}"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not rows:
+        return Response(
+            {'detail': "Word faylda jadval topilmadi. Savollar jadval (table) ko'rinishida bo'lishi kerak — namunani yuklab oling."},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Qatorlarni Question'larga aylantirish — Excel import bilan umumiy yadro.
+    created, errors = _create_questions_from_rows(rows, center_id, request.user, fallback_subject)
+
+    return Response({
+        'created': created,
+        'errors': errors[:50],  # Frontend'da ko'p xato ko'rsatmaslik uchun cheklov
+        'error_count': len(errors),
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def download_word_template(request):
+    """GET /api/questions/word-template/ — savol import uchun namuna .docx fayl.
+
+    Foydalanuvchi yuklab oladi, jadvalni to'ldiradi va import-word/ ga yuklaydi.
+    Excel namunasi (frontend CSV) bilan bir xil ustunlar — IMPORT_HEADER.
+    """
+    try:
+        from docx import Document
+    except ImportError:
+        return Response(
+            {'detail': "python-docx o'rnatilmagan. Iltimos administratorga xabar bering."},
+            status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    import io
+
+    from django.http import HttpResponse
+
+    document = Document()
+    document.add_heading('Olympy — savollar import shabloni', level=1)
+    document.add_paragraph(
+        "Quyidagi jadvalni to'ldiring. Birinchi qator (sarlavha) o'zgartirilmasin. "
+        "Har bir qatorga bitta savol yozing. To'g'ri javob: A/B/C/D yoki 0/1/2/3. "
+        "Qiyinlik: easy/medium/hard yoki Oson/O'rta/Qiyin. "
+        "Fan bo'sh bo'lsa, import paytidagi fan yoki \"Umumiy\" ishlatiladi."
+    )
+
+    table = document.add_table(rows=1, cols=len(IMPORT_HEADER))
+    try:
+        table.style = 'Table Grid'
+    except Exception:
+        # Ba'zi shablon-siz hujjatlarda 'Table Grid' stili bo'lmasligi mumkin —
+        # stilsiz ham jadval to'g'ri ishlaydi.
+        pass
+    header_cells = table.rows[0].cells
+    for i, col in enumerate(IMPORT_HEADER):
+        header_cells[i].text = col
+    # Namuna qator
+    sample_cells = table.add_row().cells
+    for i, val in enumerate(IMPORT_SAMPLE_ROW):
+        sample_cells[i].text = val
+
+    buffer = io.BytesIO()
+    document.save(buffer)
+    buffer.seek(0)
+    response = HttpResponse(
+        buffer.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    )
+    response['Content-Disposition'] = 'attachment; filename="olympy-savollar-namuna.docx"'
+    return response
 
 
 @api_view(['POST'])
