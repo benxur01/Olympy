@@ -42,9 +42,13 @@ DIFFICULTY_ALIASES = {
 
 QUALITY_PROMPT = (
     "\nSifat qoidalari:\n"
-    "- Savol matnini PDFdagidek aniq saqla, qisqartirma yoki o'zgartirma.\n"
+    "- Savol matnini PDFdagidek TO'LIQ va aniq saqla, qisqartirma yoki o'zgartirma.\n"
     "- Imlo xatosi bo'lsa tuzat, lekin savol ma'nosini o'zgartirma.\n"
-    "- Variant matnini saqla (A, B, C, D harflarini olib tashlab, matnini qoldir).\n"
+    "- HAR BIR variant matnini TO'LIQ ko'chir — boshini yoki oxirini KESMA. "
+    "Faqat boshidagi A) B) C) D) (yoki A. B.) belgisini olib tashla, qolgan "
+    "matnni to'liq qoldir.\n"
+    "- Variant ichidagi matematik ifodani buzma: '/b + (x' kabi chala/buzuq "
+    "ko'rinishda QOLDIRMA — to'liq, to'g'ri ifoda sifatida yoz.\n"
     "- Bir xil savolni ikki marta chiqarma (dublikatlarni tashlab ket).\n"
     "- Savol to'liq bo'lmasa yoki matn kesilgan bo'lsa — needs_review=true qo'y.\n"
     "- Bo'sh yoki ma'nosiz savollarni umuman chiqarma.\n"
@@ -92,6 +96,17 @@ NO_ANSWER_PROMPT_ADDITION = (
 _MATH_SYMBOLS = ('∑', '∫', '√', '∏', '≈', '≤', '≥', '≠', '∞', '∂', 'π', '±', '×', '÷', '°', '^', '\\frac', '\\sqrt', '\\sum', '\\int')
 _MATH_SUBJECTS = ('matematika', 'matematik', 'fizika', 'kimyo', 'algebra', 'geometriya', 'math', 'physics', 'chemistry')
 
+# ASCII ko'rinishidagi matematik naqshlar (formulalar Unicode emas, oddiy matn
+# bilan yozilgan docx/txt fayllarni ham aniqlash uchun): daraja x^2, kasr a/b,
+# sqrt(...), aralash son "2 1/2", tengsizlik <= >=, LaTeX buyruqlari.
+_MATH_ASCII_PATTERNS = (
+    re.compile(r'[A-Za-z0-9\)\}]\s*\^\s*[A-Za-z0-9\(\{]'),   # daraja: x^2, 2^10
+    re.compile(r'(?<![A-Za-z])\d+\s*/\s*\d+'),               # kasr: 3/4
+    re.compile(r'\bsqrt\s*\('),                               # sqrt(16)
+    re.compile(r'\b\d+\s+\d+\s*/\s*\d+\b'),                   # aralash son: 2 1/2
+    re.compile(r'[<>]=|!=|\\(?:frac|sqrt|sum|int|cdot|times|div|leq|geq|neq|le|ge)\b'),
+)
+
 
 def _looks_mathematical(subject, pdf_text):
     """Fan matematik bo'lsa yoki matnda formula belgilari ko'p bo'lsa True."""
@@ -102,7 +117,11 @@ def _looks_mathematical(subject, pdf_text):
     if not text:
         return False
     hits = sum(text.count(symbol) for symbol in _MATH_SYMBOLS)
-    return hits >= 5
+    if hits >= 3:
+        return True
+    # Unicode belgilar kam — ASCII matematik naqshlarni ham hisobga olamiz.
+    ascii_hits = sum(len(pattern.findall(text)) for pattern in _MATH_ASCII_PATTERNS)
+    return (hits + ascii_hits) >= 3
 
 
 def _int_setting(name, default, minimum=None, maximum=None):
@@ -409,8 +428,10 @@ def _prompt(subject, difficulty, question_type, has_extracted_text, pdf_text='')
         "Har bir savol uchun:\n"
         "- original_number: PDFdagi savol raqami yoki bo'sh string.\n"
         "- text: savol matni; raqamni saqlash mumkin, lekin javob variantlarini text ichiga qo'shma.\n"
-        "- options: PDFdagi variantlarni aynan tartibida yoz. A/B/C/D belgilarini olib tashlab, matnini saqla. "
-        "Agar variant yo'q bo'lsa, savol mazmunidan 4 ta variant tuz va needs_review=true qil.\n"
+        "- options: PDFdagi variantlarni AYNAN soni va tartibida yoz — na ko'p, na kam. "
+        "A/B/C/D belgilarini olib tashlab, matnini to'liq saqla. "
+        "MUHIM: fayldagi variantlardan ko'proq yoki kamroq variant QO'SHMA. "
+        "Agar variant yo'q bo'lsa, 4 ta variant tuz va needs_review=true qil.\n"
         "- correct_answer: options ichidagi to'g'ri variant indeksi, 0 dan boshlanadi.\n"
         "- answer_source: javob PDFda yoki answer keyda bo'lsa 'pdf'; AI aniqlasa 'inferred'; topilmasa 'missing'.\n"
         "- needs_review: answer_source 'pdf' bo'lmasa true.\n"
@@ -530,7 +551,9 @@ def _normalize_questions(parsed, subject, difficulty):
             deduped_options.append(option[:500])
         if len(deduped_options) < 2:
             continue
-        deduped_options = deduped_options[:8]
+        # Olympy platformasida barcha MCQ savollar 4 variantli — AI ortiqcha variant
+        # qo'shib yuborsa ham 4 ta bilan chegaralaymiz.
+        deduped_options = deduped_options[:4]
         correct_answer = _letter_to_index(item.get('correct_answer'))
         if correct_answer < 0 or correct_answer >= len(deduped_options):
             correct_answer = 0
@@ -663,7 +686,49 @@ def _question_blocks_from_text(pdf_text):
 
 def _options_from_block(block):
     option_pattern = re.compile(r'(?im)(?:^|(?<=\s))([A-H])\s*[\)\.\:\-]\s*')
-    matches = list(option_pattern.finditer(block))
+    all_matches = list(option_pattern.finditer(block))
+    if len(all_matches) < 2:
+        return '', []
+    # Matn ichida tasodifiy "A." / "B." bo'lishi mumkin (masalan "Nuqta A. dan
+    # B. gacha") — bularni variant deb olsak, matematik variantlar (`/b + (x`
+    # kabi) kesilib buziladi. Shu sababli faqat ketma-ket harf zanjirini
+    # (A, B, C, D, ...) variant deb qabul qilamiz. Har bir 'A' nomzodidan
+    # boshlab eng uzun zanjirni quramiz va eng ko'p variant beradiganini
+    # tanlaymiz — haqiqiy variant bloki har doim eng uzun to'liq zanjirdir.
+    def _chain_from(start_idx):
+        chain = [all_matches[start_idx]]
+        expected = ord('A') + 1
+        for m in all_matches[start_idx + 1:]:
+            if ord(m.group(1).upper()) == expected:
+                chain.append(m)
+                expected += 1
+        return chain
+
+    def _line_start_count(chain):
+        # Zanjirning nechta a'zosi qator boshida turibdi (oldida \n yoki matn
+        # boshi). Haqiqiy variantlar odatda yangi qatorda boshlanadi; matn
+        # ichidagi tasodifiy "A." esa o'rtada bo'ladi.
+        count = 0
+        for m in chain:
+            s = m.start()
+            if s == 0 or block[s - 1] == '\n':
+                count += 1
+        return count
+
+    best_chain = []
+    best_key = (-1, -1)
+    for idx, m in enumerate(all_matches):
+        if m.group(1).upper() != 'A':
+            continue
+        chain = _chain_from(idx)
+        # Avval uzunlik, tenglikda qator boshidagi a'zolar soni bo'yicha
+        # afzal ko'ramiz (docx variantlari yangi qatorda — yolg'on "A." ni
+        # matn ichida qoldiradi).
+        key = (len(chain), _line_start_count(chain))
+        if key > best_key:
+            best_key = key
+            best_chain = chain
+    matches = best_chain
     if len(matches) < 2:
         return '', []
     question_text = block[:matches[0].start()]
