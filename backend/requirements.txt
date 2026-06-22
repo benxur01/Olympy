@@ -12,6 +12,9 @@ qrcode==8.2
 pypdf==6.12.2
 pdfplumber==0.11.4
 openpyxl==3.1.5
+# Word (.docx) savol import va namuna shabloni (questions.views import_questions_word,
+# download_word_template). Jadval formatidagi .docx faylni o'qiydi/yaratadi.
+python-docx==1.1.2
 # Excel/PDF eksport (markaz a'zolari, olimpiada natijalari).
 reportlab==4.4.1
 celery==5.3.6

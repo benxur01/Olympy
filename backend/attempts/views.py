@@ -1393,6 +1393,7 @@ def manager_stats(request):
                 role__in=[
                     CenterMembership.ROLE_MANAGER,
                     CenterMembership.ROLE_OWNER,
+                    CenterMembership.ROLE_TEACHER,
                 ],
                 status=CenterMembership.STATUS_APPROVED,
             )
@@ -1411,12 +1412,16 @@ def manager_stats(request):
             status=http_status.HTTP_400_BAD_REQUEST,
         )
     center = get_object_or_404(EducationCenter, pk=center_id)
-    # Auth check: faqat manager/owner/admin
+    # Auth check: manager/owner/teacher/admin (teacher ham o'z markazi
+    # natijalarini ko'radi — leaderboard/export bilan bir xil ruxsat).
     is_admin = request.user.is_platform_admin
     is_owner = center.owner_id == request.user.id
     is_manager = CenterMembership.objects.filter(
         user=request.user, center=center,
-        role=CenterMembership.ROLE_MANAGER,
+        role__in=[
+            CenterMembership.ROLE_MANAGER,
+            CenterMembership.ROLE_TEACHER,
+        ],
         status=CenterMembership.STATUS_APPROVED,
     ).exists()
     if not (is_admin or is_owner or is_manager):

@@ -833,6 +833,40 @@ export const OlympyApi = {
     if (subject) qs.set('subject', String(subject));
     return request(`/api/questions/import/?${qs.toString()}`, { method: 'POST', body: fd, token });
   },
+  // Word (.docx) savol import — jadval (table) formatidagi fayl. Backend
+  // import_questions_excel bilan bir xil javob shakli: { created, errors, error_count }.
+  importQuestionsWord: (centerId, file, token, subject) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    const qs = new URLSearchParams({ center: String(centerId) });
+    if (subject) qs.set('subject', String(subject));
+    return request(`/api/questions/import-word/?${qs.toString()}`, { method: 'POST', body: fd, token });
+  },
+  // Word namuna (.docx) shablonini yuklab beradi. Endpoint JWT himoyalangan,
+  // shu sababli fetch → blob → link.click() (Authorization header bilan) —
+  // downloadOlympiadResults bilan bir xil naqsh.
+  downloadWordTemplate: async (token) => {
+    const res = await fetch(`${API_BASE_URL}/api/questions/word-template/`, {
+      method: 'GET',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      let msg = "Word namunani yuklab bo'lmadi";
+      try { const data = await res.json(); if (data?.detail) msg = data.detail; } catch {}
+      throw new ApiError(msg, { status: res.status });
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'olympy-savollar-namuna.docx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  },
   // Practice / Mashq rejimi
   getPracticeSubjects: (centerId, token) => request(`/api/practice/subjects/?center=${centerId}`, { token }),
   startPractice: (body, token) => request('/api/practice/start/', { method: 'POST', body, token }),
