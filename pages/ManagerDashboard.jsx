@@ -40,7 +40,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [assignmentLevel, setAssignmentLevel] = React.useState('');
   const [assignmentType, setAssignmentType] = React.useState('');
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
-  const [onlyUnused, setOnlyUnused] = React.useState(false);
+  const [onlyUnused, setOnlyUnused] = React.useState(true);
   const [deleteEventId, setDeleteEventId] = React.useState(null);
   // Studentlar ro'yxati uchun qidiruv: ism yoki telefon raqamga ko'ra
   // filter. Avval input value/onChange'siz mavjud edi — foydalanuvchi
@@ -376,7 +376,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     setAssignedQuestionIds(assignModal?.questionIds || []);
     setAssignmentLevel(assignModal?.testLevel || '');
     setAssignmentType(assignModal?.testType || '');
-    setOnlyUnused(false);
+    setOnlyUnused(true);
   }, [assignModal?.id]);
 
   // ─── API rejimida olimpiada/savol/markazlarni real backend'dan olish ───
@@ -2851,14 +2851,16 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             }
             return diff.includes(lvl) || lvl.includes(diff);
           };
+          const assigned = new Set(isApi ? assignedQuestionIds : (liveOlympiad.questionIds || []));
           const matchesUnused = (q) => {
             if (!onlyUnused) return true;
+            // Joriy tadbirga allaqachon tanlangan savol doim ko'rinsin
+            if (assigned.has(q.id)) return true;
             return !otherOlympiadQuestionIds.has(String(q.id));
           };
           const subjectQs = centerQuestions.filter(q => q.subject === liveOlympiad.subject && matchesLevel(q) && matchesUnused(q));
           const otherQs = centerQuestions.filter(q => q.subject !== liveOlympiad.subject && matchesLevel(q) && matchesUnused(q));
           const filteredCount = subjectQs.length + otherQs.length;
-          const assigned = new Set(isApi ? assignedQuestionIds : (liveOlympiad.questionIds || []));
           const selectedQuestions = [...assigned]
             .map(id => centerQuestions.find(q => String(q.id) === String(id)))
             .filter(Boolean);

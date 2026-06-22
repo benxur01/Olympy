@@ -165,7 +165,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [eventSaving, setEventSaving] = React.useState(false);
   const [deleteEventId, setDeleteEventId] = React.useState(null);
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
-  const [onlyUnused, setOnlyUnused] = React.useState(false);
+  const [onlyUnused, setOnlyUnused] = React.useState(true);
   const [toast, setToast] = React.useState('');
   const [premiumModal, setPremiumModal] = React.useState('');
   // O'quvchi ustiga bosilganda ochiladigan batafsil panel (StudentDetailDrawer).
@@ -247,7 +247,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     setAssignedQuestionIds(assignModal?.questionIds || []);
     setAssignmentLevel(assignModal?.testLevel || '');
     setAssignmentType(assignModal?.testType || '');
-    setOnlyUnused(false);
+    setOnlyUnused(true);
   }, [assignModal?.id]);
 
   const apiCenters = isApi && Array.isArray(apiCentersRes.data) ? apiCentersRes.data.map(mapApiCenter) : null;
@@ -1192,14 +1192,16 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             }
             return diff.includes(lvl) || lvl.includes(diff);
           };
+          const assigned = new Set(isApi ? assignedQuestionIds : (liveEvent.questionIds || []));
           const matchesUnused = (q) => {
             if (!onlyUnused) return true;
+            // Joriy tadbirga allaqachon tanlangan savol doim ko'rinsin
+            if (assigned.has(q.id)) return true;
             return !otherOlympiadQuestionIds.has(String(q.id));
           };
           const subjectQs = questions.filter(q => q.subject === liveEvent.subject && matchesLevel(q) && matchesUnused(q));
           const otherQs = questions.filter(q => q.subject !== liveEvent.subject && matchesLevel(q) && matchesUnused(q));
           const filteredCount = subjectQs.length + otherQs.length;
-          const assigned = new Set(isApi ? assignedQuestionIds : (liveEvent.questionIds || []));
           const selectedQuestions = [...assigned]
             .map(id => questions.find(q => String(q.id) === String(id)))
             .filter(Boolean);
