@@ -333,9 +333,14 @@ def _normalize_correct_answer(value):
         except (TypeError, ValueError):
             pass
 
+    # "4-B", "9-A", "4.B", "4/B" — son+ajratuvchi+harf: harfni olamiz.
+    import re
+    m = re.match(r'^\s*\d+\s*[-./]\s*([A-Fa-f])\s*$', s, re.IGNORECASE)
+    if m:
+        return letter_map.get(m.group(1).upper())
+
     # Boshida tartib raqami bo'lgan ko'rinishlar: "1.", "2)", "1-variant",
     # "2 variant", "1-javob" … — birinchi sonni ajratib, 1-based deb olamiz.
-    import re
     m = re.match(r'^\s*(\d+)', low_norm)
     if m:
         n = int(m.group(1))
@@ -1069,6 +1074,89 @@ def preview_pdf_questions(request):
     process_pdf_questions_task.delay(
         task_id,
         _b64.b64encode(pdf_bytes).decode('ascii'),
+        request.data.get('subject') or '',
+        request.data.get('difficulty') or 'medium',
+        request.data.get('question_type') or 'multiple_choice',
+    )
+    return Response({'task_id': task_id}, status=http_status.HTTP_202_ACCEPTED)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser])
+@throttle_classes([AiQuestionRateThrottle])
+def word_ai_preview(request):
+    """POST /api/questions/word-ai-preview/ — Word matnidan AI savol ajratish task'ini boshlaydi.
+
+    preview_pdf_questions bilan bir xil oqim: Celery task'ni ishga tushiradi va
+    darhol `task_id` qaytaradi. Kesh kaliti PDF bilan bir xil pattern bo'lgani
+    uchun (`pdf_questions:task:{task_id}`), frontend status'ni mavjud
+    `pdf-preview/<task_id>/status/` endpointi orqali polling qiladi. Farqi:
+    bu yerda .docx fayl qabul qilinadi va jadval emas, butun matn AI ga beriladi
+    (import-word/ jadval formatini talab qiladi; bu esa erkin matnni ham ajratadi).
+    EAGER rejimda (Redis yo'q) task `delay()` ichida sinxron bajariladi.
+    """
+    import base64 as _b64
+    import uuid
+
+    from django.core.cache import cache
+
+    from .tasks import process_word_ai_questions_task
+
+    center_id = request.data.get('center')
+    if not center_id:
+        return Response(
+            {'detail': 'center majburiy'},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    if not _user_can_create_for_center(request.user, center_id):
+        return Response(
+            {'detail': "Savol yaratish uchun o'qituvchi/manager arizangiz tasdiqlanishi kerak"},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+
+    # Premium check — PDF tahlil bilan bir xil shart (AI tashqi xizmatga qimmat).
+    from centers.models import EducationCenter
+    center = EducationCenter.objects.filter(pk=center_id).first()
+    if center and not center.is_premium:
+        return Response(
+            {
+                'detail': "Word matnidan AI savollar ajratish faqat premium tashkilotlar uchun. Premium obunani faollashtiring.",
+                'upgrade_required': True
+            },
+            status=http_status.HTTP_403_FORBIDDEN
+        )
+
+    word_file = request.FILES.get('word') or request.FILES.get('file') or request.FILES.get('document')
+    if not word_file:
+        return Response({'detail': 'Word (.docx) fayl yuboring'}, status=http_status.HTTP_400_BAD_REQUEST)
+    filename = str(getattr(word_file, 'name', '') or '').lower()
+    if not filename.endswith('.docx'):
+        return Response({'detail': "Faqat .docx fayl qabul qilinadi"}, status=http_status.HTTP_400_BAD_REQUEST)
+    # Word import'i bilan bir xil limit (python-docx butun hujjatni xotiraga yuklaydi).
+    max_bytes = getattr(settings, 'AI_QUESTION_IMPORT_MAX_BYTES', 10 * 1024 * 1024)
+    if word_file.size and word_file.size > max_bytes:
+        return Response(
+            {'detail': f"Fayl juda katta. Limit: {max_bytes // (1024 * 1024)} MB"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    word_bytes = word_file.read()
+    if not word_bytes:
+        return Response({'detail': "Word fayl bo'sh"}, status=http_status.HTTP_400_BAD_REQUEST)
+    # Magic bytes: .docx — ZIP arxivi, har doim 'PK' (PK\x03\x04) bilan boshlanadi.
+    if word_bytes[:2] != b'PK':
+        return Response(
+            {'detail': "Fayl haqiqiy .docx emas (Word imzosi topilmadi)"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    task_id = str(uuid.uuid4())
+    cache_key = f"pdf_questions:task:{task_id}"
+    cache.set(cache_key, {'status': 'PENDING'}, timeout=900)
+    # Celery argumenti JSON-serializable bo'lishi uchun Word baytlarini base64 qilamiz.
+    process_word_ai_questions_task.delay(
+        task_id,
+        _b64.b64encode(word_bytes).decode('ascii'),
         request.data.get('subject') or '',
         request.data.get('difficulty') or 'medium',
         request.data.get('question_type') or 'multiple_choice',

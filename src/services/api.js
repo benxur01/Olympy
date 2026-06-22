@@ -756,6 +756,46 @@ export const OlympyApi = {
     }
     throw new ApiError("PDF tahlil qilish vaqti tugadi (Timeout)");
   },
+  // Word (.docx) matnidan AI yordamida savol ajratish. extractPdfQuestions bilan
+  // bir xil oqim (Celery task → status polling); backend kesh kaliti PDF bilan
+  // bir xil bo'lgani uchun status mavjud pdf-preview/<task_id>/status/ orqali
+  // o'qiladi. Farqi: .docx fayl `word` form key bilan yuboriladi.
+  extractWordAiQuestions: async (wordFile, payload, token, signal) => {
+    const aborted = () => signal && signal.aborted;
+    if (aborted()) throw new ApiError('aborted', { status: 0 });
+    const fd = new FormData();
+    fd.append('word', wordFile);
+    Object.keys(payload || {}).forEach(k => {
+      const v = payload[k];
+      if (v == null) return;
+      fd.append(k, String(v));
+    });
+    const startRes = await request('/api/questions/word-ai-preview/', { method: 'POST', body: fd, token, signal });
+    const taskId = startRes?.task_id;
+    if (!taskId) return startRes;
+
+    for (let i = 0; i < 150; i++) {
+      await new Promise((resolve, reject) => {
+        if (aborted()) return reject(new ApiError('aborted', { status: 0 }));
+        const t = setTimeout(resolve, 2000);
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            clearTimeout(t);
+            reject(new ApiError('aborted', { status: 0 }));
+          }, { once: true });
+        }
+      });
+      if (aborted()) throw new ApiError('aborted', { status: 0 });
+      const statusRes = await request(`/api/questions/pdf-preview/${taskId}/status/`, { token, signal });
+      if (statusRes?.status === 'COMPLETED') {
+        return statusRes;
+      }
+      if (statusRes?.status === 'FAILED') {
+        throw new ApiError(statusRes?.detail || statusRes?.error || "Word matnidan savollarni ajratib bo'lmadi", { status: 503, data: statusRes });
+      }
+    }
+    throw new ApiError("Word tahlil qilish vaqti tugadi (Timeout)");
+  },
   updateQuestion: (questionId, payload, token) => request(`/api/questions/${questionId}/`, { method: 'PATCH', body: payload, token }),
   deleteQuestion: (questionId, token) => request(`/api/questions/${questionId}/`, { method: 'DELETE', token }),
   deleteAllQuestions: (centerId, token, ids) => {
