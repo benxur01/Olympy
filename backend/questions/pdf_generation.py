@@ -442,8 +442,8 @@ def _gemini_models():
     # 'gemini-3.1-flash-lite' va 'gemini-3-flash-preview' bor edi — ular Google
     # API'da yo'q va birinchi urinishda 404 qaytarib har so'rovni sekinlashtirardi.
     defaults = [
+        'gemini-2.5-flash',
         'gemini-2.0-flash',
-        'gemini-1.5-flash',
         'gemini-1.5-pro',
     ]
     return list(dict.fromkeys(model for model in [primary, *fallbacks, *defaults] if model))
