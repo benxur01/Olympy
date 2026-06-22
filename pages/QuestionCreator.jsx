@@ -1016,7 +1016,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white/90 mb-2 leading-relaxed">{q.text}</p>
+                  <p className="text-sm text-white/90 mb-2 leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></p>
                   <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
                     <SubjectBadge subject={q.subject} />
                     {(q.questionType === 'code' || q.question_type === 'code') && (
@@ -1031,7 +1031,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   {(q.options || []).length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {q.options.map((o, i) => (
-                        <span key={i} className={`text-xs px-2 py-0.5 rounded-lg ${i === q.correctAnswer ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'glass text-white/40'}`}>{o}</span>
+                        <MathText key={i} className={`text-xs px-2 py-0.5 rounded-lg ${i === q.correctAnswer ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'glass text-white/40'}`} text={o} />
                       ))}
                     </div>
                   )}
@@ -1398,7 +1398,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                     <div className="flex items-start gap-2">
                       <span className="text-indigo-300 font-bold">{i+1}.</span>
                       <div className="flex-1 min-w-0">
-                        <div className="leading-relaxed">{q.text}</div>
+                        <div className="leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></div>
                         <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mt-2">
                           <SubjectBadge subject={q.subject} />
                           <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
@@ -1411,8 +1411,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                         {q.options.map((option, optionIndex) => (
                           <div key={optionIndex}
                             className={`rounded-lg px-2 py-1 text-xs ${optionIndex === q.correctAnswer ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'bg-white/5 text-white/50'}`}>
-                            {String.fromCharCode(65 + optionIndex)}. {option}
-                          </div>
+                            {String.fromCharCode(65 + optionIndex)}. <MathText text={option} />
+</div>
                         ))}
                       </div>
                     )}
@@ -1491,7 +1491,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   <div className="flex items-start gap-2">
                     <span className="text-cyan-300 font-bold">{i+1}.</span>
                     <div className="flex-1 min-w-0">
-                      <div className="leading-relaxed">{q.text}</div>
+                      <div className="leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></div>
                       {q.needsReview && (
                         <div className="mt-1 text-[11px] text-amber-300">Javob AI tomonidan taxmin qilindi, saqlashdan oldin tekshiring</div>
                       )}
@@ -1519,7 +1519,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                       {q.options.map((option, optionIndex) => (
                         <div key={optionIndex}
                           className={`rounded-lg px-2 py-1 text-xs ${optionIndex === q.correctAnswer ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'bg-white/5 text-white/50'}`}>
-                          {String.fromCharCode(65 + optionIndex)}. {option}
+                          {String.fromCharCode(65 + optionIndex)}. <MathText text={option} />
                         </div>
                       ))}
                     </div>
@@ -1601,7 +1601,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   <div className="flex items-start gap-2">
                     <span className="text-sky-300 font-bold">{i+1}.</span>
                     <div className="flex-1 min-w-0">
-                      <div className="leading-relaxed">{q.text}</div>
+                      <div className="leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></div>
                       {q.needsReview && (
                         <div className="mt-1 text-[11px] text-amber-300">Javob AI tomonidan taxmin qilindi, saqlashdan oldin tekshiring</div>
                       )}
@@ -1628,7 +1628,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                       {q.options.map((option, optionIndex) => (
                         <div key={optionIndex}
                           className={`rounded-lg px-2 py-1 text-xs ${optionIndex === q.correctAnswer ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'bg-white/5 text-white/50'}`}>
-                          {String.fromCharCode(65 + optionIndex)}. {option}
+                          {String.fromCharCode(65 + optionIndex)}. <MathText text={option} />
                         </div>
                       ))}
                     </div>
