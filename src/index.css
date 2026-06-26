@@ -778,3 +778,61 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   color: inherit;
   font-size: 1.05em;
 }
+
+/* ─── Kod bloklari (dasturlash kodi) ──────────────────────────────────────
+   MathText ```...``` uchun .code-block, `...` uchun .code-inline chiqaradi.
+   Kod o'z to'q foni bilan ko'rsatiladi — och ham, to'q ham kontekstda
+   (oq dashboard matni / yashil variantlar) bir xil o'qiladi. Telegram
+   WebView'da yengil ishlashi uchun blur/og'ir animatsiya ishlatilmaydi. */
+.code-block {
+  position: relative;
+  display: block;
+  margin: 0.55em 0;
+  padding: 0.85em 0.95em;
+  background: #1e242b;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  white-space: pre;
+  line-height: 1.55;
+  tab-size: 2;
+}
+.code-block code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', ui-monospace, monospace;
+  font-size: 0.86em;
+  color: #c9d1d9;
+  background: none;
+  padding: 0;
+  white-space: pre;
+}
+/* Til yorlig'i (```python -> "python") — yuqori o'ng burchakda. */
+.code-block .code-lang {
+  position: absolute;
+  top: 6px;
+  right: 10px;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', ui-monospace, monospace;
+  font-size: 0.62em;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: rgba(201, 209, 217, 0.45);
+  user-select: none;
+  pointer-events: none;
+}
+.code-inline {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', ui-monospace, monospace;
+  font-size: 0.85em;
+  background: rgba(135, 131, 120, 0.22);
+  color: #e06c75;
+  padding: 0.1em 0.4em;
+  border-radius: 5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* Sintaksis tokenlari — one-dark uslubidagi palitra. */
+.code-block .tok-keyword  { color: #c678dd; }
+.code-block .tok-string   { color: #98c379; }
+.code-block .tok-comment  { color: #7f848e; font-style: italic; }
+.code-block .tok-number   { color: #d19a66; }
+.code-block .tok-function { color: #61afef; }
