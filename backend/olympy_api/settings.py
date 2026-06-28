@@ -577,7 +577,12 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'accounts.send_trial_ending_reminders',
         'schedule': crontab(hour=9, minute=0, nowfun=lambda: datetime.now(dt_timezone.utc)),
     },
+    'send-starting-soon-reminders': {
+        'task': 'olympiads.tasks.send_starting_soon_reminders',
+        'schedule': timedelta(minutes=1),
+    },
 }
+
 
 # Markaz tasdiqlanganda beriladigan trial obuna muddati (kun). Avval
 # centers/views.py'da hardcoded 14 edi — endi env orqali sozlanadi.

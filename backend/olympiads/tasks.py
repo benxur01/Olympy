@@ -329,3 +329,60 @@ def finish_expired_olympiads():
             u.save(update_fields=['is_premium'])
 
     return f'{count} ta olimpiada yakunlandi va obunalar yangilandi'
+
+
+@shared_task
+def send_starting_soon_reminders():
+    """Periodik task: 5 daqiqadan so'ng boshlanadigan olimpiadalarni aniqlab,
+    o'quvchilarga eslatma (Telegram, In-App va Web Push) yuboradi.
+    """
+    now = timezone.now()
+    five_minutes_later = now + timedelta(minutes=5)
+
+    starting_soon = Olympiad.objects.filter(
+        status=Olympiad.STATUS_ACTIVE,
+        is_deleted=False,
+        start_datetime__isnull=False,
+        start_datetime__gte=now,
+        start_datetime__lte=five_minutes_later,
+        start_reminder_sent=False,
+    )
+
+    count = 0
+    for olympiad in starting_soon:
+        event_label = 'olimpiada' if olympiad.event_type == Olympiad.EVENT_TYPE_OLYMPIAD else 'musobaqa'
+        title = f"{event_label.capitalize()} boshlanmoqda!"
+        message = (
+            f"Diqqat! {olympiad.center.name} tashkilotida '{olympiad.title}' nomli "
+            f"{event_label} 5 daqiqadan so'ng (soat {timezone.localtime(olympiad.start_datetime).strftime('%H:%M')} da) boshlanadi. "
+            f"Platformaga kiring va tayyor turing!"
+        )
+
+        from centers.models import CenterMembership
+        from notifications.models import Notification
+        from notifications.services import send_web_push_to_user, _send_telegram_to_user
+
+        approved_students = CenterMembership.objects.filter(
+            center=olympiad.center,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED,
+        ).select_related('user')
+
+        for membership in approved_students:
+            student = membership.user
+            Notification.objects.create(
+                user=student,
+                center=olympiad.center,
+                type=Notification.TYPE_OLYMPIAD_PUBLISHED,
+                title=title,
+                message=message,
+            )
+            _send_telegram_to_user(student, message)
+            send_web_push_to_user(student, title, message, url='/student')
+
+        olympiad.start_reminder_sent = True
+        olympiad.save(update_fields=['start_reminder_sent'])
+        count += 1
+
+    return f"{count} ta olimpiada uchun eslatma yuborildi"
+
