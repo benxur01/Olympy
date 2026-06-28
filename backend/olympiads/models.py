@@ -96,6 +96,8 @@ class Olympiad(models.Model):
     # Guruh olimpiadasi filtri — to'ldirilgan bo'lsa, faqat shu markazda
     # mos `CenterMembership.group_tag` ga ega o'quvchilar qatnasha oladi.
     group_filter = models.CharField(max_length=50, blank=True, default='')
+    start_reminder_sent = models.BooleanField(default=False, db_index=True)
+
     # IT (dasturlash) olimpiadasi sozlamalari. allowed_languages bo'sh bo'lsa
     # barcha til ruxsat etiladi; aks holda faqat ro'yxatdagi tillardan biriga
     # kod yuborish mumkin (backend submit'da tekshiriladi). it_category — UI'da

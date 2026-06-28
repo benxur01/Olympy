@@ -191,3 +191,50 @@ class OlympiadParticipationTestCase(APITestCase):
         url = reverse('olympiad-questions', args=[self.olympiad.id])
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class OlympiadReminderTestCase(APITestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            phone='+998901300020', password='StrongPass123', full_name='Owner',
+        )
+        self.center = EducationCenter.objects.create(
+            name='Reminder Center', city='Toshkent', owner=self.owner,
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.student = User.objects.create_user(
+            phone='+998901300021', password='StrongPass123', full_name="Student",
+        )
+        CenterMembership.objects.create(
+            user=self.student, center=self.center,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        # Rejalashtirilgan olimpiada — 4 daqiqa qoldi
+        self.olympiad = Olympiad.objects.create(
+            center=self.center,
+            title='Tezkor Musobaqa',
+            subject='Informatika',
+            event_type=Olympiad.EVENT_TYPE_COMPETITION,
+            status=Olympiad.STATUS_ACTIVE,
+            start_datetime=timezone.now() + timezone.timedelta(minutes=4),
+            duration_minutes=60,
+            start_reminder_sent=False
+        )
+
+    @patch('notifications.services.send_web_push_to_user')
+    @patch('notifications.services._send_telegram_to_user')
+    def test_reminder_sent_within_timeframe(self, mock_telegram, mock_push):
+        from olympiads.tasks import send_starting_soon_reminders
+        result = send_starting_soon_reminders()
+        self.assertIn("1 ta olimpiada uchun eslatma yuborildi", result)
+        
+        self.olympiad.refresh_from_db()
+        self.assertTrue(self.olympiad.start_reminder_sent)
+        mock_telegram.assert_called_once()
+        mock_push.assert_called_once()
+
+        # Keyingi chaqiriqda takroran yuborilmasligi kerak
+        result_again = send_starting_soon_reminders()
+        self.assertIn("0 ta olimpiada uchun eslatma yuborildi", result_again)
+
