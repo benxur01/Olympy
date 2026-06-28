@@ -801,26 +801,36 @@ const App = () => {
         onNavigate={navigate}
       />
       {showPushPrompt && (
-        <div className="fixed bottom-6 right-6 z-[9999] max-w-sm w-full p-5 rounded-2xl glass-strong border border-indigo-500/20 shadow-2xl text-white" style={{ animation: 'slideUp 0.3s ease-out' }}>
+        <div className="fixed bottom-6 right-6 z-[9999] max-w-sm w-full p-5 rounded-2xl text-white shadow-2xl" 
+             style={{ 
+               animation: 'slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1)', 
+               background: 'rgba(9, 10, 15, 0.97)', 
+               backdropFilter: 'blur(20px)', 
+               border: '1px solid rgba(99, 102, 241, 0.25)' 
+             }}>
           <div className="flex gap-4">
-            <div className="text-3xl">🔔</div>
-            <div>
-              <h4 className="font-bold text-sm mb-1 text-indigo-300">Bildirishnomalarni yoqasizmi?</h4>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0"
+                 style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(168,85,247,0.15) 100%)', border: '1px solid rgba(99,102,241,0.2)' }}>
+              🔔
+            </div>
+            <div className="flex-1">
+              <h4 className="font-extrabold text-sm mb-1 text-white tracking-tight">Bildirishnomalarni yoqasizmi?</h4>
               <p className="text-xs text-white/60 leading-relaxed mb-4">
                 Yangi olimpiadalar, musobaqalar va natijalaringiz haqidagi xabarlarni sayt yopiq bo'lsa ham birinchilardan bo'lib bilib olasiz.
               </p>
-              <div className="flex gap-3 justify-end">
+              <div className="flex gap-2 justify-end">
                 <button
                   type="button"
                   onClick={handlePushDecline}
-                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white/50 hover:text-white transition-colors"
+                  className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white/50 hover:text-white hover:bg-white/5 transition-all"
                 >
                   Keyinroq
                 </button>
                 <button
                   type="button"
                   onClick={handlePushAccept}
-                  className="px-4 py-1.5 rounded-lg text-xs font-bold btn-primary transition-all flex items-center gap-1.5"
+                  className="px-4 py-1.5 rounded-xl text-xs font-bold transition-all text-white shadow-lg hover:shadow-indigo-500/20 active:scale-[0.97] duration-150"
+                  style={{ background: 'linear-gradient(135deg, #6366f1, #a855f7)' }}
                 >
                   Ha, yoqish
                 </button>
@@ -829,6 +839,7 @@ const App = () => {
           </div>
         </div>
       )}
+
     </div>
   );
 };
