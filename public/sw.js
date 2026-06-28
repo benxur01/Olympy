@@ -152,3 +152,52 @@ self.addEventListener('fetch', (e) => {
     })
   );
 });
+
+
+// Web Push notification handler
+self.addEventListener('push', function(event) {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (e) {
+    data = { body: event.data ? event.data.text() : '' };
+  }
+
+  const title = data.title || "Yangi olimpiada!";
+  const options = {
+    body: data.body || "Batafsil ma'lumot olish uchun platformaga kiring.",
+    icon: '/icons/brand-logo-192.png',
+    badge: '/icons/badge.png',
+    data: {
+      url: data.url || '/'
+    }
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(title, options)
+  );
+});
+
+
+// Handle clicking on notifications
+self.addEventListener('notificationclick', function(event) {
+  event.notification.close();
+  const urlToOpen = new URL(event.notification.data?.url || '/', self.location.origin).href;
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(windowClients) {
+      // If the page is already open, focus it
+      for (let i = 0; i < windowClients.length; i++) {
+        let client = windowClients[i];
+        if (client.url === urlToOpen && 'focus' in client) {
+          return client.focus();
+        }
+      }
+      // Otherwise open a new window/tab
+      if (clients.openWindow) {
+        return clients.openWindow(urlToOpen);
+      }
+    })
+  );
+});
+

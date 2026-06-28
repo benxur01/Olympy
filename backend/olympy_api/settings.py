@@ -699,6 +699,18 @@ PHONE_VERIFICATION_MAX_ATTEMPTS = int(
     os.environ.get('PHONE_VERIFICATION_MAX_ATTEMPTS', '5')
 )
 
+# Web Push VAPID keys
+VAPID_PUBLIC_KEY = os.environ.get(
+    'VAPID_PUBLIC_KEY',
+    'BD9_OMAXcl4b5FYa6vk8WXkRGxZiiELY3wdujM8UJ7iwEuClqeaVtum5zIfga-IwqenvnRKn7-CyxwXWlZIe3zY'
+)
+VAPID_PRIVATE_KEY = os.environ.get(
+    'VAPID_PRIVATE_KEY',
+    '-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgx9qeZGwVz9lVtkK0\nNXDrTFE7aAyW88eQwSbGH75fRjqhRANCAAQ/fzjAF3JeG+RWGur5PFl5ERsWYohC\n2N8HbozPFCe4sBLgpanmlbbpucyH4GviMKnp750Sp+/gsscF1pWSHt82\n-----END PRIVATE KEY-----'
+)
+VAPID_CLAIMS_SUB = os.environ.get('VAPID_CLAIMS_SUB', 'mailto:admin@olympy.uz')
+
+
 # Judge0 kod runner (IT/dasturlash savollari uchun "Ishga tushirish").
 # JUDGE0_URL — self-hosted Judge0 instansiyasi yoki public CE API. JUDGE0_API_KEY
 # — RapidAPI kaliti (judge0-ce.p.rapidapi.com uchun). Kalit bo'lmasa ham

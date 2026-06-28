@@ -183,8 +183,67 @@ const App = () => {
   // bayrog'i: true bo'lsa, butun ekran loaderda turadi va shundan so'nggina
   // haqiqiy sahifa render bo'ladi.
   const [bootstrapping, setBootstrapping] = React.useState(true);
+  const [showPushPrompt, setShowPushPrompt] = React.useState(false);
 
   const user = apiUser;
+
+  const subscribeUserToPush = async () => {
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      const publicVapidKey = 'BD9_OMAXcl4b5FYa6vk8WXkRGxZiiELY3wdujM8UJ7iwEuClqeaVtum5zIfga-IwqenvnRKn7-CyxwXWlZIe3zY';
+      
+      const padding = '='.repeat((4 - publicVapidKey.length % 4) % 4);
+      const base64 = (publicVapidKey + padding).replace(/\-/g, '+').replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+
+      const subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: outputArray
+      });
+
+      const token = globalThis.OlympyApi?.getToken?.() || globalThis.OlympyApi?.loadAuth?.()?.token;
+      await globalThis.OlympyApi?.subscribePush?.(subscription, token);
+      console.log('Web Push subscribed successfully');
+    } catch (e) {
+      console.error('Failed to subscribe to Web Push:', e);
+    }
+  };
+
+  const handlePushAccept = async () => {
+    setShowPushPrompt(false);
+    const permission = await Notification.requestPermission();
+    if (permission === 'granted') {
+      await subscribeUserToPush();
+    } else {
+      sessionStorage.setItem('push_prompt_dismissed', 'true');
+    }
+  };
+
+  const handlePushDecline = () => {
+    setShowPushPrompt(false);
+    sessionStorage.setItem('push_prompt_dismissed', 'true');
+  };
+
+  React.useEffect(() => {
+    if (user && 'serviceWorker' in navigator && 'PushManager' in window) {
+      if (Notification.permission === 'granted') {
+        subscribeUserToPush();
+      } else if (Notification.permission === 'default') {
+        const timer = setTimeout(() => {
+          const dismissed = sessionStorage.getItem('push_prompt_dismissed');
+          if (!dismissed) {
+            setShowPushPrompt(true);
+          }
+        }, 3000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [user]);
+
 
   // Referral havola: foydalanuvchi `?ref=CODE` bilan kelsa, kodni saqlab
   // qo'yamiz va ro'yxatdan o'tishda backend'ga uzatamiz. URL'dan param'ni
@@ -741,9 +800,39 @@ const App = () => {
         onLogout={handleLogout}
         onNavigate={navigate}
       />
+      {showPushPrompt && (
+        <div className="fixed bottom-6 right-6 z-[9999] max-w-sm w-full p-5 rounded-2xl glass-strong border border-indigo-500/20 shadow-2xl text-white" style={{ animation: 'slideUp 0.3s ease-out' }}>
+          <div className="flex gap-4">
+            <div className="text-3xl">🔔</div>
+            <div>
+              <h4 className="font-bold text-sm mb-1 text-indigo-300">Bildirishnomalarni yoqasizmi?</h4>
+              <p className="text-xs text-white/60 leading-relaxed mb-4">
+                Yangi olimpiadalar, musobaqalar va natijalaringiz haqidagi xabarlarni sayt yopiq bo'lsa ham birinchilardan bo'lib bilib olasiz.
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={handlePushDecline}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white/50 hover:text-white transition-colors"
+                >
+                  Keyinroq
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePushAccept}
+                  className="px-4 py-1.5 rounded-lg text-xs font-bold btn-primary transition-all flex items-center gap-1.5"
+                >
+                  Ha, yoqish
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
 
 // Public sertifikat tekshirish sahifasi (Feature #5) — App'dan TASHQARIDA
 // ishlaydi, shuning uchun JWT restore/auth guard umuman ishga tushmaydi

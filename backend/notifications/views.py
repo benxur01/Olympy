@@ -3,8 +3,31 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from .models import Notification
+from .models import Notification, PushSubscription
 from .serializers import NotificationSerializer
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def subscribe_push(request):
+    endpoint = request.data.get('endpoint')
+    keys = request.data.get('keys', {})
+    p256dh = keys.get('p256dh')
+    auth = keys.get('auth')
+
+    if not endpoint or not p256dh or not auth:
+        return Response({'detail': "Noto'g'ri parametrlar"}, status=400)
+
+    PushSubscription.objects.update_or_create(
+        endpoint=endpoint,
+        defaults={
+            'user': request.user,
+            'p256dh': p256dh,
+            'auth': auth,
+        }
+    )
+    return Response({'ok': True})
+
 
 
 @api_view(['GET'])

@@ -1071,6 +1071,8 @@ export const OlympyApi = {
   getNotifications: (token) => request('/api/notifications/', { token }).then(unwrapList),
   markNotificationRead: (id, token) => request(`/api/notifications/${id}/read/`, { method: 'POST', token }),
   markAllNotificationsRead: (token) => request('/api/notifications/read-all/', { method: 'POST', token }),
+  subscribePush: (subscription, token) => request('/api/notifications/subscribe/', { method: 'POST', body: subscription, token }),
+
   // Excel (XLSX) eksport — formatlangan fayl, alohida manager endpoint'da.
   // Yuqoridagi exportOlympiadResults (CSV) bilan juftlik haqida to'liq izoh
   // getOlympiadStats yonida. Ruxsat: owner / manager / teacher / admin —
