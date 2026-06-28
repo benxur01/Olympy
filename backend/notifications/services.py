@@ -78,6 +78,50 @@ def _send_telegram_to_user(user, message, reply_markup=None):
     return _telegram_api_post('sendMessage', payload)
 
 
+def send_web_push(subscription_model, title, message, url='/'):
+    from pywebpush import webpush, WebPushException
+    try:
+        subscription_info = {
+            'endpoint': subscription_model.endpoint,
+            'keys': {
+                'p256dh': subscription_model.p256dh,
+                'auth': subscription_model.auth,
+            }
+        }
+        payload = json.dumps({
+            'title': title,
+            'body': message,
+            'url': url,
+        })
+        webpush(
+            subscription_info=subscription_info,
+            data=payload,
+            vapid_private_key=settings.VAPID_PRIVATE_KEY,
+            vapid_claims={"sub": settings.VAPID_CLAIMS_SUB},
+        )
+        return True
+    except WebPushException as ex:
+        # If subscription is invalid (expired/gone), remove it
+        if ex.response is not None and ex.response.status_code in [404, 410]:
+            subscription_model.delete()
+        logger.warning("WebPush failed: %s", ex)
+        return False
+    except Exception as ex:
+        logger.exception("WebPush unexpected error: %s", ex)
+        return False
+
+
+def send_web_push_to_user(user, title, message, url='/'):
+    from .models import PushSubscription
+    subs = PushSubscription.objects.filter(user=user)
+    sent_count = 0
+    for sub in subs:
+        if send_web_push(sub, title, message, url):
+            sent_count += 1
+    return sent_count
+
+
+
 def _student_join_keyboard(membership):
     if not membership:
         return None
@@ -221,6 +265,7 @@ def send_olympiad_published_notification(student, olympiad, center):
     )
     sent = _send_telegram_to_user(student, message)
     logger.info('[telegram] → %s sent=%s : %s', student.normalized_phone, sent, message)
+    send_web_push_to_user(student, title, message, url='/student')
 
 
 def send_olympiad_published_bulk(students, olympiad, center):
@@ -240,6 +285,9 @@ def send_olympiad_published_bulk(students, olympiad, center):
         for s in students
     ])
     logger.info('[telegram-mock] olympiad %s → %d students', olympiad.id, len(students))
+    for s in students:
+        send_web_push_to_user(s, title, message, url='/student')
+
 
 
 def send_membership_decision_notification(membership, approved):

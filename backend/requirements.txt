@@ -48,3 +48,4 @@ gTTS==2.5.4
 # build'ni buzardi. 8.3.1 — hozirgi barqaror versiya (>=6.0 bilan so'nggi
 # deploylar ham shu major'ni o'rnatgan).
 django-axes==8.3.1
+pywebpush==2.3.0
