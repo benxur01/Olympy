@@ -801,7 +801,7 @@ const App = () => {
         onNavigate={navigate}
       />
       {showPushPrompt && (
-        <div className="fixed bottom-6 right-6 z-[9999] max-w-sm w-full p-5 rounded-2xl text-white shadow-2xl" 
+        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:bottom-6 md:right-6 z-[9999] max-w-sm md:w-[384px] p-5 rounded-2xl text-white shadow-2xl" 
              style={{ 
                animation: 'slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1)', 
                background: 'rgba(9, 10, 15, 0.97)', 
