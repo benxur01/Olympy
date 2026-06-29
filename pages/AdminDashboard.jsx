@@ -702,8 +702,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   React.useEffect(() => {
     if (user) {
-      setEditFirstName(user.first_name || '');
-      setEditLastName(user.last_name || '');
+      setEditFirstName(user.firstName || user.first_name || '');
+      setEditLastName(user.lastName || user.last_name || '');
       setEditUsername(user.username || '');
     }
   }, [user]);
