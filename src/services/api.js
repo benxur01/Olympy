@@ -225,7 +225,8 @@ const request = async (
   // multipart boundary; do not set Content-Type and do not stringify.
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
   if (body !== undefined && !isFormData) requestHeaders['Content-Type'] = 'application/json';
-  if (token) requestHeaders.Authorization = `Bearer ${token}`;
+  const activeToken = token || _readAuth(AUTH_TOKEN_KEY);
+  if (activeToken) requestHeaders.Authorization = `Bearer ${activeToken}`;
 
   let response;
   try {

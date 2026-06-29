@@ -1191,6 +1191,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           if (me) {
             const next = OlympyApi.mapBackendUser(me);
             try { OlympyApi.saveAuth({ token, user: next }); } catch {}
+            if (onUserUpdate) onUserUpdate(next);
           }
           setCenterModal(null);
           setJoinModal(true);
