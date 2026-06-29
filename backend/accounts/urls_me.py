@@ -8,6 +8,7 @@ from . import views_me_premium
 from . import views_parent
 from . import views_retention
 from . import views_student
+from . import views_support
 
 urlpatterns = [
     path('me/', views.me, name='me'),
@@ -86,5 +87,9 @@ urlpatterns = [
     path('admin/users/<int:user_id>/set-roles/', views.admin_set_user_roles,
          name='admin-set-user-roles'),
     path('admin/audit-log/', views.audit_log_list, name='admin-audit-log'),
+    path('support/chat/', views_support.support_chat, name='support-chat'),
+    path('admin/support/chats/', views_support.admin_support_threads, name='admin-support-chats'),
+    path('admin/support/chats/<str:chat_key>/', views_support.admin_support_thread_detail, name='admin-support-chat-detail'),
+    path('admin/support/chats/<str:chat_key>/reply/', views_support.admin_support_send_reply, name='admin-support-chat-reply'),
 ]
 

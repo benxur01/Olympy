@@ -1147,6 +1147,12 @@ export const OlympyApi = {
   // Feature #7: Referral — o'z kodi/statistikasi va boshqa kodni ishlatish.
   getReferral: (token) => request('/api/me/referral/', { token }),
   useReferral: (code, token) => request('/api/me/referral/use/', { method: 'POST', body: { code }, token }),
+  // AI Support Chatbot
+  sendSupportChat: (messages, token, sessionId) => request('/api/support/chat/', { method: 'POST', body: { messages, session_id: sessionId }, token }),
+  getSupportChatHistory: (token, sessionId) => request(`/api/support/chat/?session_id=${sessionId || ''}`, { token }),
+  getAdminSupportChats: (token) => request('/api/admin/support/chats/', { token }),
+  getAdminSupportChatDetail: (chatKey, token) => request(`/api/admin/support/chats/${chatKey}/`, { token }),
+  sendAdminSupportReply: (chatKey, text, token) => request(`/api/admin/support/chats/${chatKey}/reply/`, { method: 'POST', body: { text }, token }),
 };
 
 Object.assign(globalThis, { OlympyApi });

@@ -4,7 +4,7 @@
 // manziliga bog'lanadi (home → /dashboard/admin).
 const ADMIN_DASHBOARD_PAGES = [
   'home', 'users', 'centers', 'olympiads', 'requests',
-  'subjects', 'analytics', 'settings', 'myprofile',
+  'subjects', 'analytics', 'settings', 'myprofile', 'support',
 ];
 const adminDashUrl = makeDashboardUrlSync('/dashboard/admin', ADMIN_DASHBOARD_PAGES);
 
@@ -1148,6 +1148,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'analytics', icon: 'chart', label: 'Tahlil' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
     { key: 'myprofile', icon: 'user', label: 'Mening profilim' },
+    { key: 'support', icon: 'sparkles', label: 'AI Support' },
   ];
 
   const dashboardCenters = (approvedCenters.length ? approvedCenters : centers).slice(0, 5);
@@ -2092,6 +2093,211 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     </div>
   );
 
+  // AI Support States & Hooks
+  const [supportThreads, setSupportThreads] = React.useState([]);
+  const [selectedThread, setSelectedThread] = React.useState(null);
+  const [threadMessages, setThreadMessages] = React.useState([]);
+  const [loadingThreads, setLoadingThreads] = React.useState(false);
+  const [loadingMessages, setLoadingMessages] = React.useState(false);
+  const [adminReplyText, setAdminReplyText] = React.useState('');
+  const [sendingAdminReply, setSendingAdminReply] = React.useState(false);
+
+  const handleSendAdminReply = async (e) => {
+    if (e) e.preventDefault();
+    if (!adminReplyText.trim() || !selectedThread) return;
+    setSendingAdminReply(true);
+    const token = OlympyApi.getToken();
+    try {
+      await OlympyApi.sendAdminSupportReply(selectedThread.chat_key, adminReplyText, token);
+      setAdminReplyText('');
+      // Xabarlar ro'yxatini yangilaymiz
+      loadThreadDetail(selectedThread.chat_key);
+    } catch (err) {
+      console.error('Failed to send admin reply:', err);
+      alert('Javob yuborishda xatolik yuz berdi.');
+    } finally {
+      setSendingAdminReply(false);
+    }
+  };
+
+  const loadSupportThreads = React.useCallback(() => {
+    setLoadingThreads(true);
+    const token = OlympyApi.getToken();
+    OlympyApi.getAdminSupportChats(token)
+      .then(res => {
+        setSupportThreads(res.threads || []);
+      })
+      .catch(err => {
+        console.error('Failed to load support threads:', err);
+      })
+      .finally(() => {
+        setLoadingThreads(false);
+      });
+  }, []);
+
+  const loadThreadDetail = React.useCallback((userId) => {
+    setLoadingMessages(true);
+    const token = OlympyApi.getToken();
+    OlympyApi.getAdminSupportChatDetail(userId, token)
+      .then(res => {
+        setThreadMessages(res.messages || []);
+      })
+      .catch(err => {
+        console.error('Failed to load thread detail:', err);
+      })
+      .finally(() => {
+        setLoadingMessages(false);
+      });
+  }, []);
+
+  React.useEffect(() => {
+    if (page === 'support') {
+      loadSupportThreads();
+    }
+  }, [page, loadSupportThreads]);
+
+  React.useEffect(() => {
+    if (selectedThread) {
+      loadThreadDetail(selectedThread.chat_key);
+    } else {
+      setThreadMessages([]);
+    }
+  }, [selectedThread, loadThreadDetail]);
+
+  const renderSupport = () => (
+    <div className="min-h-[calc(100vh-54px)] p-[18px] flex flex-col space-y-[14px]">
+      <div>
+        <h1 className="text-[20px] font-black leading-tight text-white">AI Support Yozishmalari</h1>
+        <p className="mt-1 text-[11px] font-bold text-slate-400">Foydalanuvchilarning sun'iy intellekt yordamchisi bilan qilgan suhbatlari tarixi.</p>
+      </div>
+
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 min-h-[500px]">
+        {/* Thread list */}
+        <div className="admin-card p-4 flex flex-col h-[600px] overflow-hidden">
+          <h2 className="text-xs font-black tracking-wider uppercase text-slate-300 mb-3 flex items-center justify-between">
+            Suhbatlar
+            <button onClick={loadSupportThreads} className="p-1 rounded bg-white/5 hover:bg-white/10 text-indigo-400 transition cursor-pointer" title="Yangilash">
+              <Icon name="chevronRight" size={12} className="rotate-90" />
+            </button>
+          </h2>
+
+          <div className="flex-1 overflow-y-auto space-y-2 pr-1 admin-scroll">
+            {loadingThreads ? (
+              <div className="py-8 text-center text-xs text-slate-500 font-semibold">Yuklanmoqda...</div>
+            ) : supportThreads.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-500 font-semibold">Murojaatlar topilmadi</div>
+            ) : (
+              supportThreads.map(t => {
+                const isSelected = selectedThread?.chat_key === t.chat_key;
+                return (
+                  <button
+                    key={t.chat_key}
+                    onClick={() => setSelectedThread(t)}
+                    className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-indigo-600/10 border-indigo-500/30 text-white'
+                        : 'bg-white/[0.01] border-white/5 hover:border-white/10 text-slate-300'
+                    }`}
+                  >
+                    <div className="font-bold text-xs truncate">{t.full_name || 'Noma\'lum user'}</div>
+                    <div className="text-[10px] text-slate-500 font-medium mt-0.5">{t.phone}</div>
+                    <div className="text-[11px] text-slate-400 truncate mt-1.5 font-medium">
+                      <span className="text-[9px] font-extrabold uppercase mr-1 opacity-70">
+                        {t.last_message_role === 'user' ? 'Foydalanuvchi' : 'AI Yordamchi'}:
+                      </span>
+                      {t.last_message}
+                    </div>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Conversation pane */}
+        <div className="admin-card flex flex-col h-[600px] overflow-hidden p-0">
+          {selectedThread ? (
+            <>
+              {/* Header */}
+              <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between bg-white/[0.01]">
+                <div>
+                  <h3 className="text-sm font-extrabold text-white">{selectedThread.full_name}</h3>
+                  <p className="text-[10px] text-slate-400 font-bold mt-0.5">{selectedThread.phone}</p>
+                </div>
+                <button
+                  onClick={() => loadThreadDetail(selectedThread.chat_key)}
+                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 text-xs font-bold text-indigo-400 transition cursor-pointer"
+                >
+                  Yangilash
+                </button>
+              </div>
+
+              {/* Message history */}
+              <div className="flex-1 overflow-y-auto p-5 space-y-4 admin-scroll">
+                {loadingMessages ? (
+                  <div className="h-full flex items-center justify-center text-xs text-slate-500 font-semibold">Yuklanmoqda...</div>
+                ) : (
+                  threadMessages.map((m, idx) => {
+                    const isUser = m.role === 'user';
+                    const isAdmin = m.role === 'admin';
+                    return (
+                      <div key={idx} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+                        <div
+                          className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed ${
+                            isUser
+                              ? 'bg-indigo-600 text-white rounded-tr-none'
+                              : isAdmin
+                              ? 'bg-amber-600/10 text-amber-200 border border-amber-500/20 rounded-tl-none font-semibold'
+                              : 'bg-white/5 text-slate-300 border border-white/5 rounded-tl-none'
+                          }`}
+                        >
+                          <div className="font-semibold mb-1 opacity-60 text-[9px] uppercase tracking-wider">
+                            {isUser ? 'Foydalanuvchi' : isAdmin ? 'Platform Admin (Siz)' : 'AI Yordamchi'} · {new Date(m.created_at).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                          {m.text.split('\n').map((line, lIdx) => (
+                            <React.Fragment key={lIdx}>
+                              {line}
+                              {lIdx < m.text.split('\n').length - 1 && <br />}
+                            </React.Fragment>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Reply Form */}
+              <form onSubmit={handleSendAdminReply} className="p-4 border-t border-white/5 bg-white/[0.01] flex gap-2">
+                <input
+                  type="text"
+                  value={adminReplyText}
+                  onChange={e => setAdminReplyText(e.target.value)}
+                  className="flex-1 h-9 px-3 bg-white/5 border border-white/5 rounded-xl text-xs text-white outline-none focus:border-indigo-500/30 transition"
+                  placeholder="Foydalanuvchiga javob yozing..."
+                  disabled={sendingAdminReply}
+                />
+                <button
+                  type="submit"
+                  disabled={sendingAdminReply || !adminReplyText.trim()}
+                  className="h-9 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white transition disabled:opacity-50 flex items-center justify-center cursor-pointer"
+                >
+                  {sendingAdminReply ? 'Yuborilmoqda...' : 'Yuborish'}
+                </button>
+              </form>
+            </>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-500">
+              <span className="text-4xl mb-3">💬</span>
+              <h3 className="text-sm font-extrabold text-slate-400">Suhbat tanlanmagan</h3>
+              <p className="text-[10px] text-slate-500 max-w-xs mt-1 font-semibold">Foydalanuvchilar suhbat tarixini ko'rish uchun chap tomondagi ro'yxatdan birorta suhbatni tanlang.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   const renderSettings = () => (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div>
@@ -2218,6 +2424,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     olympiads: renderOlympiads,
     subjects: renderSubjects,
     settings: renderSettings,
+    support: renderSupport,
     myprofile: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} />,
   };
 
