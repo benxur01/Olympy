@@ -70,8 +70,10 @@ const LoginPage = ({ onNavigate, onLogin }) => {
       }
       finishLogin(data);
     } catch (err) {
-      setError(OlympyApi.toUserMessage(err));
+      const errorMsg = OlympyApi.toUserMessage(err);
+      setError(errorMsg);
       setLoading(false);
+      window.dispatchEvent(new CustomEvent('olympy:auth_error', { detail: { error: errorMsg, type: 'login' } }));
     }
   };
 
@@ -94,8 +96,10 @@ const LoginPage = ({ onNavigate, onLogin }) => {
       }
       finishLogin(data);
     } catch (err) {
-      setError(OlympyApi.toUserMessage(err));
+      const errorMsg = OlympyApi.toUserMessage(err);
+      setError(errorMsg);
       setLoading(false);
+      window.dispatchEvent(new CustomEvent('olympy:auth_error', { detail: { error: errorMsg, type: '2fa' } }));
     }
   };
 
@@ -617,8 +621,10 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
       setSuccess(true);
       setTimeout(() => onLogin(mappedUser), 1600);
     } catch (err) {
-      setPhoneError(OlympyApi.toUserMessage(err));
+      const errorMsg = OlympyApi.toUserMessage(err);
+      setPhoneError(errorMsg);
       setLoading(false);
+      window.dispatchEvent(new CustomEvent('olympy:auth_error', { detail: { error: errorMsg, type: 'register' } }));
     }
   };
 

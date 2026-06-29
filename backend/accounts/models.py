@@ -979,3 +979,23 @@ class ReferralCode(models.Model):
 
     def __str__(self):
         return f'referral:{self.user_id}={self.code}'
+
+
+class SupportMessage(models.Model):
+    """AI Support yordamchi bilan foydalanuvchilar o'rtasidagi chat xabarlari.
+
+    Ushbu ma'lumotlar Admin panelda "Support" (Murojaatlar) bo'limida ko'rinadi.
+    """
+    user = models.ForeignKey('accounts.User', on_delete=models.CASCADE, related_name='support_messages', null=True, blank=True)
+    session_id = models.CharField(max_length=40, null=True, blank=True, db_index=True)
+    role = models.CharField(max_length=10, choices=[('user', 'Foydalanuvchi'), ('model', 'AI Yordamchi'), ('admin', 'Platform Admin')])
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        user_part = self.user_id if self.user_id else f'guest:{self.session_id[:8]}'
+        return f'{user_part}:{self.role} -> {self.text[:30]}'
+

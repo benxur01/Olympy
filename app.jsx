@@ -800,6 +800,7 @@ const App = () => {
         onLogout={handleLogout}
         onNavigate={navigate}
       />
+      <AISupportWidget user={user} />
       {showPushPrompt && (
         <div className="fixed bottom-4 left-4 right-4 md:left-auto md:bottom-6 md:right-6 z-[9999] max-w-sm md:w-[384px] p-5 rounded-2xl text-white shadow-2xl" 
              style={{ 
