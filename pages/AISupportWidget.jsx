@@ -20,7 +20,7 @@ const AISupportWidget = ({ user }) => {
   }, [user]);
 
   const welcomeText = user
-    ? `Salom, ${user.first_name || user.full_name.split(' ')[0]}! Men Olympy AI virtual yordamchisiman. Sizga qanday yordam bera olaman?`
+    ? `Salom, ${user.firstName || user.first_name || (user.name || user.full_name || '').split(' ')[0] || 'Foydalanuvchi'}! Men Olympy AI virtual yordamchisiman. Sizga qanday yordam bera olaman?`
     : `Salom! Men Olympy AI virtual yordamchisiman. Kirish yoki ro'yxatdan o'tishda muammo bo'ldimi? Sizga qanday yordam bera olaman?`;
 
   const [messages, setMessages] = React.useState([
