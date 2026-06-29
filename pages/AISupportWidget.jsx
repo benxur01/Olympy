@@ -141,7 +141,7 @@ const AISupportWidget = ({ user }) => {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-[999] w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-white shadow-lg hover:scale-110 active:scale-95 transition-all duration-200 border border-white/10 cursor-pointer"
+        className="fixed bottom-20 right-6 md:bottom-6 z-[999] w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-white shadow-lg hover:scale-110 active:scale-95 transition-all duration-200 border border-white/10 cursor-pointer"
         title="AI Support"
       >
         <Icon name="sparkles" size={24} />
@@ -152,12 +152,12 @@ const AISupportWidget = ({ user }) => {
 
   // Size classes based on isExpanded
   const sizeClasses = isExpanded
-    ? "fixed inset-4 md:inset-auto md:bottom-6 md:right-6 md:w-[640px] md:h-[780px] md:max-h-[85vh] w-[95vw] h-[85vh]"
-    : "fixed bottom-6 right-6 w-[95vw] h-[550px] max-h-[80vh] md:w-[384px]";
+    ? "fixed inset-0 md:inset-auto md:bottom-6 md:right-6 w-full h-full md:w-[640px] md:h-[780px] md:max-h-[85vh] rounded-none md:rounded-3xl border-0 md:border"
+    : "fixed inset-0 md:inset-auto md:bottom-6 md:right-6 w-full h-full md:w-[384px] md:h-[550px] md:max-h-[80vh] rounded-none md:rounded-3xl border-0 md:border";
 
   return (
     <div
-      className={`${sizeClasses} z-[999] rounded-3xl flex flex-col overflow-hidden shadow-2xl border transition-all duration-300`}
+      className={`${sizeClasses} z-[999] flex flex-col overflow-hidden shadow-2xl transition-all duration-300`}
       style={{
         background: '#0e1017',
         borderColor: 'rgba(255, 255, 255, 0.08)',
