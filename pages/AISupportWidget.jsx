@@ -141,7 +141,7 @@ const AISupportWidget = ({ user }) => {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-20 right-6 md:bottom-6 z-[999] w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-white shadow-lg hover:scale-110 active:scale-95 transition-all duration-200 border border-white/10 cursor-pointer"
+        className="fixed bottom-6 right-6 z-[999] w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-white shadow-lg hover:scale-110 active:scale-95 transition-all duration-200 border border-white/10 cursor-pointer"
         title="AI Support"
       >
         <Icon name="sparkles" size={24} />
