@@ -87,6 +87,16 @@ const _clearCachedUser = () => {
 
 let _activeAuthStore = _defaultAuthStore;
 const _setActiveStore = (store) => { _activeAuthStore = store || _defaultAuthStore; };
+
+// Tizim yuklanganda saqlangan tokenni qidirib, _activeAuthStore'ni moslashtiramiz (iOS va boshqa brauzer reloadlari uchun).
+try {
+  if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(AUTH_TOKEN_KEY)) {
+    _activeAuthStore = sessionStorage;
+  } else if (typeof localStorage !== 'undefined' && localStorage.getItem(AUTH_TOKEN_KEY)) {
+    _activeAuthStore = localStorage;
+  }
+} catch {}
+
 const _readAuth = (key) => {
   // XAVFSIZLIK: token endi yagona manbadan — aktiv store'dan o'qiladi. Avval
   // active + local + session uchtasidan qidirilardi (ikki/uch kanal), bu esa
@@ -186,15 +196,15 @@ const _refreshTokens = () => {
     });
     const nextToken = refreshed?.access || refreshed?.token || null;
     const nextRefresh = refreshed?.refresh || refresh || null;
-    if (nextToken || refreshed?.cookie_auth) {
-      if (refreshed?.cookie_auth) {
-        _removeAuth(AUTH_TOKEN_KEY);
-        _removeAuth(AUTH_REFRESH_KEY);
-      } else {
-        if (nextToken) _writeAuth(AUTH_TOKEN_KEY, nextToken);
-        if (nextRefresh) _writeAuth(AUTH_REFRESH_KEY, nextRefresh);
-      }
+    if (nextToken) {
+      _writeAuth(AUTH_TOKEN_KEY, nextToken);
+      if (nextRefresh) _writeAuth(AUTH_REFRESH_KEY, nextRefresh);
       return { token: nextToken };
+    }
+    if (refreshed?.cookie_auth) {
+      _removeAuth(AUTH_TOKEN_KEY);
+      _removeAuth(AUTH_REFRESH_KEY);
+      return { token: null };
     }
     throw new ApiError('Refresh failed', { status: 401 });
   })().finally(() => {
@@ -410,10 +420,14 @@ const saveAuth = ({ token, refresh, user, cookieAuth, persistent } = {}) => {
   } else {
     _setActiveStore(_defaultAuthStore);
   }
-  // XAVFSIZLIK: Token va refresh tokenlarni localStorage/sessionStorage'da saqlamaymiz.
-  // Ular faqat HttpOnly Secure cookie qatlami orqali brauzer tomonidan avtomatik yuboriladi.
-  _removeAuth(AUTH_TOKEN_KEY);
-  _removeAuth(AUTH_REFRESH_KEY);
+  // iOS va uchinchi tomon cookie taqiqlangan brauzerlarda (Telegram WebApp kabi)
+  // Authorization sarlavhasi (Bearer token) orqali ishlay olishi uchun tokenni storage'da saqlaymiz.
+  if (token) {
+    _writeAuth(AUTH_TOKEN_KEY, token);
+  }
+  if (refresh) {
+    _writeAuth(AUTH_REFRESH_KEY, refresh);
+  }
   // Migratsiya: eski versiyalar user obyektini 'olympy_api_user' kalitida
   // storage'ga yozardi. Endi storage'da saqlamaymiz — qolib ketgan stale
   // qiymatni bir martalik tozalaymiz, aks holda u keraksiz holda turaveradi.
@@ -429,10 +443,7 @@ const loadAuth = () => {
   // yangilangach in-memory yo'qoladi, lekin kesh saqlanib qoladi).
   const user = _readCachedUser();
   if (!user) return null;
-  // token/refresh har doim null — ular cookie'da yashaydi. Eski chaqiruvchilar
-  // `loadAuth()?.token` kutgani uchun shaklni saqlab qolamiz (ular allaqachon
-  // null token bilan cookie auth orqali ishlaydi).
-  return { token: null, refresh: null, user };
+  return { token: _readAuth(AUTH_TOKEN_KEY), refresh: _readAuth(AUTH_REFRESH_KEY), user };
 };
 
 // Service worker'dagi API keshini tozalash — logout'dan keyin eski
@@ -455,7 +466,7 @@ const clearAuth = async () => {
   try { await request('/api/auth/logout/', { method: 'POST', retryOnAuth: false }); } catch {}
 };
 
-const getToken = () => null;
+const getToken = () => _readAuth(AUTH_TOKEN_KEY);
 
 export const OlympyApi = {
   API_BASE_URL,
