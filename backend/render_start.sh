@@ -16,6 +16,14 @@ if [ "${DEBUG:-}" != "True" ] && [ "${DEBUG:-}" != "true" ] && [ "${DEBUG:-}" !=
     fi
 fi
 
+# Start Celery worker in background (limit concurrency to 1 to save memory)
+echo "=== Starting Celery Worker ==="
+celery -A olympy_api worker -l info -c 1 --pidfile=/tmp/celeryworker.pid &
+
+# Start Celery Beat scheduler in background
+echo "=== Starting Celery Beat ==="
+celery -A olympy_api beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler --pidfile=/tmp/celerybeat.pid &
+
 # gthread worker class — har worker ko'p thread bilan bir vaqtda I/O-bound
 # so'rovlarni (DB, tashqi API) parallel ishlaydi. Render Standard (0.5-1 CPU)
 # uchun (2 × CPU) + 1 = 3 worker overcommit'siz muvozanatli; oldingi 4 worker
@@ -28,7 +36,7 @@ fi
 # so'rovlarni bloklamaydi).
 exec gunicorn olympy_api.wsgi:application \
     --bind "0.0.0.0:${PORT:-10000}" \
-    --workers "${GUNICORN_WORKERS:-3}" \
+    --workers "${GUNICORN_WORKERS:-2}" \
     --threads "${GUNICORN_THREADS:-2}" \
     --worker-class gthread \
     --timeout 300 \
