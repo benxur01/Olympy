@@ -1197,7 +1197,16 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           setJoinModal(true);
           setTimeout(() => setJoinModal(false), 3000);
         })
-        .catch(err => { console.warn('joinCenter failed:', err); showApiToast("Ariza yuborib bo'lmadi"); });
+        .catch(err => {
+          console.warn('joinCenter failed:', err);
+          showApiToast("Ariza yuborib bo'lmadi");
+          // Markazga qo'shilish (ariza) xatosi — AI yordamni avtomatik ochamiz.
+          try {
+            window.dispatchEvent(new CustomEvent('olympy:support_needed', {
+              detail: { reason: 'join_error', message: OlympyApi.toUserMessage?.(err) || "Ariza yuborib bo'lmadi" },
+            }));
+          } catch {}
+        });
       return;
     }
     // Reuse pending request if any, otherwise create one

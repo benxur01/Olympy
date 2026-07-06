@@ -178,6 +178,30 @@ const toUserMessage = (error) => {
   return error?.message || "Server bilan bog‘lanishda xatolik yuz berdi";
 };
 
+// ─── AI Support avtomatik trigger ────────────────────────────────────────────
+// Server ichki xatosi (5xx) yoki tarmoq xatosi (status 0, ataylab abort emas)
+// yuz berganda AI yordam widjetini avtomatik ochish uchun umumiy
+// `olympy:support_needed` eventini dispatch qilamiz. Widget
+// (pages/AISupportWidget.jsx) shu eventni tinglaydi va o'zini ko'rsatadi.
+//
+// Throttle (15s): dashboard bir vaqtning o'zida bir nechta endpointni parallel
+// chaqiradi — server o'chgan bo'lsa ularning hammasi ketma-ket qulaydi. Har
+// biriga alohida event yuborsak widget qayta-qayta ochilib foydalanuvchini
+// bezovta qiladi. Shu sababli oynani qisqa muddat ichida faqat bir marta
+// ochamiz.
+let _lastSupportDispatchAt = 0;
+const dispatchSupportNeeded = (reason, message) => {
+  try {
+    if (typeof window === 'undefined') return;
+    const now = Date.now();
+    if (now - _lastSupportDispatchAt < 15000) return;
+    _lastSupportDispatchAt = now;
+    window.dispatchEvent(new CustomEvent('olympy:support_needed', {
+      detail: { reason: reason || 'api_error', message: message || '' },
+    }));
+  } catch {}
+};
+
 // ─── Token refresh "single-flight" ──────────────────────────────────────────
 // Parallel so'rovlar bir vaqtda 401 olsa, har biri alohida refresh chaqirardi.
 // Birinchi refresh tokenni rotate qilib eski refresh tokenni blacklist qiladi,
@@ -247,6 +271,9 @@ const request = async (
     if (error?.name === 'AbortError') {
       throw new ApiError('aborted', { status: 0 });
     }
+    // Haqiqiy tarmoq xatosi (internet yo'q / server o'chiq / timeout) — AI
+    // yordam widjetini avtomatik ochamiz.
+    dispatchSupportNeeded('network_error', "Server bilan bog‘lanishda xatolik yuz berdi");
     throw new ApiError("Server bilan bog‘lanishda xatolik yuz berdi", { status: 0 });
   }
 
@@ -294,6 +321,11 @@ const request = async (
       _clearSwApiCache();
       try { window.dispatchEvent(new CustomEvent('olympy:logout')); } catch {}
       throw new ApiError('Session expired', { status: 401, data });
+    }
+    // Server ichki xatosi (5xx) — AI yordam widjetini avtomatik ochamiz. 4xx
+    // (validatsiya / ruxsat / topilmadi) oddiy holatlar, ular uchun ochmaymiz.
+    if (response.status >= 500) {
+      dispatchSupportNeeded('api_error', extractErrorMessage(data) || response.statusText || 'Server xatosi');
     }
     throw new ApiError(extractErrorMessage(data) || response.statusText, {
       status: response.status,

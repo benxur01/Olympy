@@ -1,6 +1,10 @@
 // pages/AISupportWidget.jsx — AI Support Floating chat widget with Expand capability
 
 const AISupportWidget = ({ user }) => {
+  // visible — widget umuman ko'rinadimi. Default: false (butunlay yashirin).
+  // Faqat "muammo" eventi (olympy:support_needed yoki olympy:auth_error)
+  // kelganda true bo'ladi; foydalanuvchi yopganda yana false'ga qaytadi.
+  const [visible, setVisible] = React.useState(false);
   const [isOpen, setIsOpen] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(false);
 
@@ -59,12 +63,26 @@ const AISupportWidget = ({ user }) => {
     loadHistory();
   }, [sessionId, welcomeText]);
 
-  // Login/Register xatoliklarini tinglash va avtomatik yordam oynasini ochish
+  // "Muammo" eventlarini tinglab AI yordam oynasini avtomatik ko'rsatamiz.
+  // Ikkita event qo'llab-quvvatlanadi:
+  //   - olympy:auth_error    — eski (login/register/2fa xatosi). Eski dispatch
+  //                            joylari (Auth.jsx) buzilmasin uchun saqlanadi.
+  //   - olympy:support_needed — yangi umumiy event. detail: { reason, message }.
+  //     reason: 'api_error' | 'network_error' | 'payment_error' | 'join_error'
+  //             | 'form_errors' | 'auth_error'.
+  // Widget default holatda butunlay yashirin (visible=false); shu eventlardan
+  // biri kelganda ko'rinadi va ochiladi.
   React.useEffect(() => {
+    const openWithContext = (text) => {
+      setVisible(true);
+      setIsOpen(true);
+      if (text) {
+        setMessages(prev => [...prev, { role: 'model', parts: [{ text }] }]);
+      }
+    };
+
     const handleAuthError = (e) => {
       const { error, type } = e.detail || {};
-      setIsOpen(true);
-
       let contextTip = "";
       if (type === 'login') {
         contextTip = `Tizimga kirishda xatolik yuz berdi: "${error}".\nUshbu muammoni hal qilish yoki parolni tiklash bo'yicha yordam kerakmi?`;
@@ -75,18 +93,46 @@ const AISupportWidget = ({ user }) => {
       } else {
         contextTip = `Muammo yuz berdi: "${error}". Sizga qanday yordam bera olaman?`;
       }
+      openWithContext(contextTip);
+    };
 
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'model',
-          parts: [{ text: contextTip }]
-        }
-      ]);
+    const handleSupportNeeded = (e) => {
+      const { reason, message } = e.detail || {};
+      const detailSuffix = message ? `: "${message}"` : '';
+      let contextTip;
+      switch (reason) {
+        case 'api_error':
+          contextTip = `Serverda xatolik yuz berdi${detailSuffix}.\nBu vaqtincha muammo bo'lishi mumkin. Nima qilmoqchi edingiz — yordam beraymi?`;
+          break;
+        case 'network_error':
+          contextTip = `Server bilan bog'lanishda muammo bo'ldi${detailSuffix}.\nInternet aloqangizni tekshiring yoki bir ozdan so'ng qayta urinib ko'ring. Yordam kerakmi?`;
+          break;
+        case 'payment_error':
+          contextTip = `To'lov / tarifni rasmiylashtirishda xatolik yuz berdi${detailSuffix}.\nTo'lov bo'yicha yordam beraymi?`;
+          break;
+        case 'join_error':
+          contextTip = `Markazga qo'shilish (ariza yuborish) da xatolik yuz berdi${detailSuffix}.\nBu bo'yicha yordam beraymi?`;
+          break;
+        case 'form_errors':
+          contextTip = `Formani to'ldirishda xatolik bor${detailSuffix}.\nQaysi maydonni to'g'rilash kerakligini tushuntirib beraymi?`;
+          break;
+        case 'auth_error':
+          contextTip = `Kirish / ro'yxatdan o'tishda xatolik yuz berdi${detailSuffix}.\nSizga qanday yordam bera olaman?`;
+          break;
+        default:
+          contextTip = message
+            ? `Muammo yuz berdi: "${message}". Sizga qanday yordam bera olaman?`
+            : `Muammo yuz berdi. Sizga qanday yordam bera olaman?`;
+      }
+      openWithContext(contextTip);
     };
 
     window.addEventListener('olympy:auth_error', handleAuthError);
-    return () => window.removeEventListener('olympy:auth_error', handleAuthError);
+    window.addEventListener('olympy:support_needed', handleSupportNeeded);
+    return () => {
+      window.removeEventListener('olympy:auth_error', handleAuthError);
+      window.removeEventListener('olympy:support_needed', handleSupportNeeded);
+    };
   }, []);
 
   const handleSend = async (textToSend) => {
@@ -136,6 +182,10 @@ const AISupportWidget = ({ user }) => {
     { text: "💳 Plus/Pro tariflar", query: "Plus va Pro tariflarining narxi va imkoniyatlari qanday?" },
     { text: "🔑 Parolni o'zgartirish", query: "Parolimni qanday o'zgartirsam bo'ladi?" }
   ];
+
+  // Default holatda butunlay yashirin — foydalanuvchini bezovta qilmasin. Faqat
+  // "muammo" eventi kelib visible=true bo'lgandagina biror narsa render bo'ladi.
+  if (!visible) return null;
 
   if (!isOpen) {
     return (
@@ -199,8 +249,11 @@ const AISupportWidget = ({ user }) => {
           {/* Close button */}
           <button
             onClick={() => {
+              // Yopilganda widget yana to'liq yashirin holatga qaytadi —
+              // keyingi "muammo" eventi kelmaguncha ko'rinmaydi.
               setIsOpen(false);
               setIsExpanded(false);
+              setVisible(false);
             }}
             className="p-2 rounded-xl text-white/50 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
             title="Yopish"

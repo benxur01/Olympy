@@ -146,7 +146,16 @@ const PricingPage = ({ onNavigate, user }) => {
         throw new Error("To'lov havolasini olishda xatolik yuz berdi");
       }
     } catch (err) {
-      setPayError(OlympyApi.toUserMessage?.(err) || "To'lov havolasini generatsiya qilib bo'lmadi");
+      const payMsg = OlympyApi.toUserMessage?.(err) || "To'lov havolasini generatsiya qilib bo'lmadi";
+      setPayError(payMsg);
+      // To'lov oqimida xatolik — AI yordamni avtomatik ochamiz (server 5xx/tarmoq
+      // xatosi bo'lsa api.js allaqachon yuboradi; bu esa 4xx/biznes xatolarini
+      // ham qamrab oladi).
+      try {
+        window.dispatchEvent(new CustomEvent('olympy:support_needed', {
+          detail: { reason: 'payment_error', message: payMsg },
+        }));
+      } catch {}
     } finally {
       setPaying(false);
     }
