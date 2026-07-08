@@ -59,7 +59,7 @@ def start_mock(request, mock_id):
     """POST /api/mock-olympiads/<mock_id>/start/ — o'quvchi mock'ni boshlaydi.
 
     MockAttempt yaratadi (idempotent: allaqachon bor bo'lsa o'shani qaytaradi).
-    Javob: {attempt_id, title, time_limit_minutes, started_at,
+    Javob: {attempt_id, title, time_limit_minutes, started_at, server_now,
             questions: [{id, text, options, subject}]}
     Savollarning to'g'ri javobi YUBORILMAYDI (xavfsizlik).
     """
@@ -122,6 +122,10 @@ def start_mock(request, mock_id):
         'subject': mock.subject or '',
         'time_limit_minutes': mock.time_limit_minutes,
         'started_at': attempt.started_at.isoformat() if attempt.started_at else None,
+        # Frontend qurilma soati bilan server soati orasidagi farqni (drift)
+        # hisoblab, qolgan vaqtni `started_at + time_limit_minutes - now()`
+        # formulasi bilan aniq hisoblashi uchun.
+        'server_now': timezone.now().isoformat(),
         'questions': questions,
     })
 

@@ -209,6 +209,24 @@ const dispatchSupportNeeded = (reason, message) => {
 // foydalanuvchi logout bo'lardi. Yechim: bitta shared in-flight Promise —
 // barcha 401 olgan so'rovlar bitta refresh natijasini kutadi.
 let _refreshInFlight = null;
+
+// ─── Olimpiada rejimi bayrog'i ───────────────────────────────────────────────
+// Ilgari faqat `/attempts/` yozuv endpointlari (submit/ping/cheating) 401'da
+// majburiy global logout'dan himoyalangan edi. Lekin test paytida OlympiadTest
+// yana boshqa endpoint'larni ham chaqiradi — savol yuklash (getOlympiadQuestions),
+// kod ishga tushirish/tekshirish (runCode, reviewCode). Ular `/attempts/` ostida
+// emas, shuning uchun ular 401 qaytarsa (masalan uzoq test davomida access token
+// muddati tugab, silent refresh muvaffaqiyatsiz bo'lsa — masalan Telegram
+// WebApp/iOS Safari'da cross-site cookie yo'qolgan holatda) butun ilova majburan
+// logout qilib, foydalanuvchini test sahifasidan bosh sahifaga otib yuborardi —
+// aynan shu "musobaqa paytida o'zidan-o'zi chiqib ketish" bug'i shu yerdan kelib
+// chiqadi. OlympiadTest komponenti faol test davomida `setExamMode(true)`
+// chaqiradi (yakunlanganda/unmount'da false) — shu bayroq true bo'lganda HECH
+// QANDAY so'rov global logout'ni trigger qilmaydi, xatolik faqat chaqiruvchi
+// komponentga (mahalliy holatda) qaytariladi.
+let _examModeActive = false;
+const setExamMode = (active) => { _examModeActive = !!active; };
+
 const _refreshTokens = () => {
   if (_refreshInFlight) return _refreshInFlight;
   const refresh = _readAuth(AUTH_REFRESH_KEY);
@@ -303,10 +321,14 @@ const request = async (
       // Submit/cheating endpoint'lari uchun MAJBURIY logout qilmaymiz —
       // foydalanuvchi olimpiada vaqtida tasodifan hisobdan chiqarilmasin
       // va javoblari yo'qolmasin. Submit'da token muddati tugagan bo'lsa
-      // frontend dialog ko'rsatib qayta login so'raydi.
+      // frontend dialog ko'rsatib qayta login so'raydi. `_examModeActive` —
+      // OlympiadTest faol bo'lganda BARCHA so'rovlar (savol yuklash, kod
+      // ishga tushirish/tekshirish ham) shu himoyani oladi, faqat
+      // `/attempts/` yozuvlari emas (yuqoridagi izohga qarang).
       const isExamWritePath = (
         path.includes('/attempts/')
         || path.startsWith('/api/attempts')
+        || _examModeActive
       );
       if (isExamWritePath) {
         throw new ApiError('Session expired', {
@@ -511,6 +533,7 @@ export const OlympyApi = {
   loadAuth,
   clearAuth,
   getToken,
+  setExamMode,
   // Auth
   login: (payload) => request('/api/auth/login/', { method: 'POST', body: payload, retryOnAuth: false }),
   register: (payload) => request('/api/auth/register/', { method: 'POST', body: payload, retryOnAuth: false }),

@@ -320,6 +320,34 @@ const App = () => {
     }).catch(() => false);
   };
 
+  // Cookie orqali tiklangan sessiyada (auth.user cache'da yo'q — masalan tab
+  // qayta ochilganda sessionStorage tozalangan holatda) storage'da Bearer
+  // token bo'lmaydi va sahifa butunlay HttpOnly cookie'ga qaram bo'lib qoladi.
+  // Bu ayniqsa uzoq davom etadigan olimpiada sessiyalarida xavfli: Telegram
+  // WebApp yoki iOS Safari'da cross-site cookie fon so'rovlarida (masalan
+  // 15 soniyalik ping yoki savol yuklash) doim ishonchli yetib bormasligi
+  // mumkin — natijada access token muddati tugaganda silent refresh cookie
+  // orqali muvaffaqiyatsiz bo'lib, foydalanuvchi musobaqa o'rtasida hisobdan
+  // chiqarib yuboriladi (58a1fbe / e474486'da qisman tuzatilgan muammoning
+  // davomi). Shu sababli bootstrap paytida — cookie ishlayotganini bilgach —
+  // darhol haqiqiy Bearer token+refresh juftligini olib storage'ga yozamiz,
+  // shunda shu tab keyingi barcha so'rovlarni Authorization header orqali
+  // yuboradi va cross-site cookie ishonchliligiga qaram bo'lmaydi. Best-effort:
+  // muvaffaqiyatsiz bo'lsa jimgina eski cookie-only rejimda davom etadi.
+  const hydrateBearerTokenIfMissing = async () => {
+    try {
+      if (globalThis.OlympyApi?.getToken?.()) return; // allaqachon bor
+      const resp = await globalThis.OlympyApi?.refreshToken?.();
+      const token = resp?.access || resp?.token;
+      if (token) {
+        globalThis.OlympyApi.saveAuth({ token, refresh: resp?.refresh });
+      }
+    } catch {
+      // Cookie ham ishlamasa — jimgina davom etamiz, getMe() muvaffaqiyati
+      // shu tab hozircha cookie orqali ishlayotganini bildiradi.
+    }
+  };
+
   // Persist backend JWT session only.
   useEffect(() => {
     let cancelled = false;
@@ -336,6 +364,7 @@ const App = () => {
           if (!freshUser || cancelled) throw new Error('Stale session');
           const mappedUser = globalThis.OlympyApi.mapBackendUser(freshUser);
           globalThis.OlympyApi.saveAuth({ user: mappedUser, cookieAuth: true });
+          await hydrateBearerTokenIfMissing();
           setApiUser(mappedUser);
           // F5'dan keyin test sahifasida bo'lsak — sessiyani tiklaymiz.
           if (requestedPage === 'test') {
@@ -362,6 +391,7 @@ const App = () => {
         if (!freshUser || cancelled) throw new Error('No cookie session');
         const mappedUser = globalThis.OlympyApi.mapBackendUser(freshUser);
         globalThis.OlympyApi.saveAuth({ user: mappedUser, cookieAuth: true });
+        await hydrateBearerTokenIfMissing();
         setApiUser(mappedUser);
         if (requestedPage === 'test') {
           const restored = await tryRestoreActiveTest(mappedUser, urlTestId);

@@ -150,6 +150,13 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
   const [title, setTitle] = React.useState(mock?.title || 'Mashq');
   const [timeLimit, setTimeLimit] = React.useState((mock?.duration || 30) * 60);
   const [timeLeft, setTimeLeft] = React.useState((mock?.duration || 30) * 60);
+  // Server tomonidan qaytarilgan attempt.started_at (ms) — sahifa qayta
+  // ochilganda/yangilanganda qolgan vaqt shundan hisoblanadi, timer har safar
+  // to'liq davomiylikdan qayta boshlamaydi. serverClockSkewMs — foydalanuvchi
+  // qurilmasi soati bilan server soati orasidagi farq (drift'ni yo'qotish
+  // uchun, real OlympiadTestPage'dagi bilan bir xil yondashuv).
+  const [serverExpiresAtMs, setServerExpiresAtMs] = React.useState(null);
+  const [serverClockSkewMs, setServerClockSkewMs] = React.useState(0);
   const [current, setCurrent] = React.useState(0);
   // answers: { [questionId]: chosenPayload } — submit_mock kutgan formatda.
   const [answers, setAnswers] = React.useState({});
@@ -181,7 +188,24 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
         if (resp?.title) setTitle(resp.title);
         const mins = Number(resp?.time_limit_minutes) || (mock?.duration || 30);
         setTimeLimit(mins * 60);
-        setTimeLeft(mins * 60);
+        // Qolgan vaqtni to'liq davomiylikdan emas, server qaytargan
+        // `started_at`dan hisoblaymiz — shu tariqa sahifa qayta ochilganda
+        // (yoki yangilanganda) allaqachon o'tgan vaqt hisobga olinadi.
+        // `started_at` kelmasa (eski backend) — avvalgidek to'liq vaqtdan
+        // boshlanadi (fallback).
+        let skewMs = 0;
+        if (resp?.server_now) {
+          skewMs = Date.now() - new Date(resp.server_now).getTime();
+          setServerClockSkewMs(skewMs);
+        }
+        if (resp?.started_at) {
+          const expiresAtMs = new Date(resp.started_at).getTime() + mins * 60000;
+          setServerExpiresAtMs(expiresAtMs);
+          const remaining = Math.max(0, Math.floor((expiresAtMs - (Date.now() - skewMs)) / 1000));
+          setTimeLeft(remaining);
+        } else {
+          setTimeLeft(mins * 60);
+        }
         setLoading(false);
       })
       .catch(err => {
@@ -196,6 +220,14 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
   }, [mockId]);
 
   const TOTAL = questions.length;
+  // OlympiadTestPage'dagi kabi — mashq faol bo'lganda 401'lar butun ilovani
+  // majburan logout qilmasin (uzoq mashqda access token muddati tugashi
+  // mumkin).
+  React.useEffect(() => {
+    const examActive = !loading && !submitted && !loadError && TOTAL > 0;
+    globalThis.OlympyApi?.setExamMode?.(examActive);
+    return () => { globalThis.OlympyApi?.setExamMode?.(false); };
+  }, [loading, submitted, loadError, TOTAL]);
   const q = questions[current] || null;
   const qType = (q?.question_type || q?.questionType || 'mcq');
   const isTrueFalse = qType === 'yes_no'
@@ -256,18 +288,29 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
   }, [submitting, submitted, mockId, TOTAL, title, mock, onFinish]);
 
   // Timer — mashqda yumshoq cheklov: vaqt tugaganda avto-submit. Savollar
-  // yuklanmaguncha (loading) yoki yuborilgach to'xtaydi.
+  // yuklanmaguncha (loading) yoki yuborilgach to'xtaydi. serverExpiresAtMs
+  // mavjud bo'lsa har tikda undan qolgan vaqt qayta hisoblanadi (real
+  // OlympiadTestPage'dagi kabi) — bu sahifa background'da uzoq turib
+  // qolgan taqdirda ham (tab uxlab qolishi) drift bo'lmasligini ta'minlaydi.
+  // serverExpiresAtMs yo'q bo'lsa (eski backend fallback) — oddiy teskari
+  // sanash ishlatiladi.
   React.useEffect(() => {
     if (loading || submitted || loadError || TOTAL === 0) return undefined;
     if (timeLeft <= 0) { handleSubmit(); return undefined; }
     const t = setInterval(() => {
+      if (serverExpiresAtMs) {
+        const remaining = Math.max(0, Math.floor((serverExpiresAtMs - (Date.now() - serverClockSkewMs)) / 1000));
+        setTimeLeft(remaining);
+        if (remaining <= 0) { clearInterval(t); handleSubmit(); }
+        return;
+      }
       setTimeLeft(prev => {
         if (prev <= 1) { clearInterval(t); handleSubmit(); return 0; }
         return prev - 1;
       });
     }, 1000);
     return () => clearInterval(t);
-  }, [loading, submitted, loadError, TOTAL, timeLeft <= 0, handleSubmit]);
+  }, [loading, submitted, loadError, TOTAL, timeLeft <= 0, handleSubmit, serverExpiresAtMs, serverClockSkewMs]);
 
   const fmtTime = (s) => {
     const m = Math.floor(Math.max(0, s) / 60);
@@ -567,6 +610,19 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [submitError, setSubmitError] = React.useState('');
   const [cheated, setCheated] = React.useState(false);
   const [cheatMessage, setCheatMessage] = React.useState('');
+  // Musobaqa faol bo'lganda api.js'ga xabar beramiz: shu davrda hech qanday
+  // so'rov (savol yuklash, kod ishga tushirish/tekshirish va h.k.) 401
+  // qaytarsa ham butun ilovani majburan logout qilib bosh sahifaga
+  // otmasin — foydalanuvchi olimpiada o'rtasida uzoq access token muddati
+  // tugashi yoki vaqtinchalik tarmoq/cookie muammosi tufayli hisobdan
+  // chiqarib yuborilmasligi kerak. Yakunlangach (submit/cheat) yoki
+  // sahifadan chiqilganda o'chiramiz — bu paytdan keyingi 401'lar odatiy
+  // (butun ilova) logout xatti-harakatiga qaytadi.
+  React.useEffect(() => {
+    const examActive = !!(user?._api && liveOlympiad?.backendId && !submitted && !cheated);
+    globalThis.OlympyApi?.setExamMode?.(examActive);
+    return () => { globalThis.OlympyApi?.setExamMode?.(false); };
+  }, [user?._api, liveOlympiad?.backendId, submitted, cheated]);
   // Tab birinchi marta yashirilganda — disqualifikatsiya o'rniga
   // ogohlantirish ko'rsatamiz. Ikkinchi marta chiqishda — DQ.
   const [cheatWarning, setCheatWarning] = React.useState('');
