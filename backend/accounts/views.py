@@ -2429,7 +2429,13 @@ def get_my_predictions(request):
     return Response(res)
 
 
-get_my_predictions.cls.throttle_scope = 'ai'
+# Alohida 'ai_predictions' scope — 'ai' (10/day, explain_question/
+# explain_all_mistakes uchun) bilan bo'lishilmaydi. Bu passiv dashboard
+# widget bo'lib, har "bosh sahifa" ochilganda avtomatik so'raladi; ilgari
+# umumiy 'ai' byudjetini tez tugatib, o'quvchiga BUTUN AI tizimi ishlamayapti
+# degan taassurot qoldirardi (ko'rinishda bog'liq bo'lmagan explain
+# funksiyalari ham shu bilan birga bloklanardi).
+get_my_predictions.cls.throttle_scope = 'ai_predictions'
 
 
 # ---------------------------------------------------------------------------
