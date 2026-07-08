@@ -792,9 +792,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // ko'rsatadigan) so'rovlar kiritiladi. Optional widget'lar (AI bashorat,
   // faollik reytingi, raqobatchi tahlili kabi — ma'lumoti bo'lmasa bloki
   // umuman ko'rsatilmaydigan) banner hisobidan CHIQARILDI. Aks holda:
-  //   • `/api/me/predictions/` AI endpoint'i `ai` throttle scope'iga kiradi
-  //     (kuniga 10 ta) — o'quvchi home'ni 10 martadan ko'p ochsa/yangilasa
-  //     so'rov 429 qaytaradi va asosiy ma'lumotlar (ball, natijalar) joyida
+  //   • `/api/me/predictions/` AI endpoint'i `ai_predictions` throttle
+  //     scope'iga kiradi (kuniga 50 ta, alohida `ai` — explain_question/
+  //     explain_all_mistakes — byudjetidan mustaqil) — baribir limit
+  //     tugasa 429 qaytaradi va asosiy ma'lumotlar (ball, natijalar) joyida
   //     bo'lsa ham "Ba'zi ma'lumotlar yuklanmadi" banner chiqib qolardi.
   //   • Faollik reytingi (`activity-leaderboard`) ham home pastidagi
   //     ixtiyoriy blok — uning xatosi bannerda aks etmasligi kerak.

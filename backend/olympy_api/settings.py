@@ -368,11 +368,23 @@ REST_FRAMEWORK = {
         # yuboradi. 60/min normal foydalanuvchi uchun yetarli keng, ammo
         # skript-based DoS'ni to'sadi.
         'ping': '60/min',
-        # AI endpointlari (xatolarni tushuntirish, bashorat, o'quv rejasi)
-        # tashqi Gemini API'ga murojaat qiladi — qimmat va sekin. Spec bo'yicha
+        # AI endpointlari (xatolarni tushuntirish, o'quv rejasi) tashqi
+        # Gemini API'ga murojaat qiladi — qimmat va sekin. Spec bo'yicha
         # foydalanuvchi kuniga maksimal 10 ta so'rov yubora oladi; ortig'i
         # abuse hisoblanadi va 429 qaytariladi.
         'ai': '10/day',
+        # AI bashorat (get_my_predictions) — bu passiv dashboard widget,
+        # foydalanuvchi "AI ishlat" tugmasini bosmaydi, sahifa har ochilganda
+        # avtomatik so'raladi. Avval 'ai' scope'ini (10/day) explain_question
+        # va explain_all_mistakes bilan BIRGA ishlatardi — natijada o'quvchi
+        # bosh sahifani ~10 marta ochsa/yangilasa (oddiy navigatsiya bilan ham
+        # oson yetadi) kunning qolgan qismida HAMMA AI funksiyalari (bashorat
+        # ham, tushuntirish ham) "ishlamay qoladi" va foydalanuvchi buni butun
+        # AI tizimi buzilgan deb tushunadi. Natija allaqachon 5 daqiqaga
+        # cache'langani uchun (calculate_predictions_for_user) haqiqiy AI
+        # so'rovlar soni tabiiy ravishda cheklangan — shu sababli alohida,
+        # kengroq kunlik limit xavfsiz.
+        'ai_predictions': '50/day',
         # AI tahlil audio (O4) — gTTS + Telegram, qimmat va sekin. Spec
         # bo'yicha kuniga 3 ta.
         'ai_audio': '3/day',
