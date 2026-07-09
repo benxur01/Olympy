@@ -258,7 +258,7 @@ function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate, user, on
         onUserUpdate({ coins: resp.coins });
       }
     } catch (err) {
-      showApiToast(err.message || "Xarid qilishda xato");
+      showApiToast(OlympyApi.toUserMessage?.(err) || "Xarid qilishda xato");
     } finally {
       setBuyingId(null);
     }
@@ -465,7 +465,7 @@ function MistakesPage({ apiMistakesRes, showApiToast }) {
         showApiToast("Tushuntirish olib bo'lmadi.");
       }
     } catch (err) {
-      showApiToast(err.message || "Xatolik yuz berdi");
+      showApiToast(OlympyApi.toUserMessage?.(err) || "Xatolik yuz berdi");
     } finally {
       setExplainingId(null);
     }
@@ -481,7 +481,7 @@ function MistakesPage({ apiMistakesRes, showApiToast }) {
         showApiToast("Tahlil olib bo'lmadi.");
       }
     } catch (err) {
-      showApiToast(err.message || "Xatolik yuz berdi");
+      showApiToast(OlympyApi.toUserMessage?.(err) || "Xatolik yuz berdi");
     } finally {
       setAnalyzing(false);
     }
@@ -631,6 +631,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   const [centerModal, setCenterModal] = React.useState(null);
+  // "Ariza yuborish" so'rovi davomida true — boshqa shu turdagi tugmalar
+  // kabi (masalan RewardsPage.handleBuy) busy holatida disabled bo'lishi
+  // kerak, aks holda ikki marta bosilib dublikat ariza yuborilishi mumkin.
+  const [sendingRequest, setSendingRequest] = React.useState(false);
   const [centerSearch, setCenterSearch] = React.useState('');
   // Debounce: markaz qidiruvi har bosishda emas, foydalanuvchi to'xtaganidan
   // keyin filtrlaydi (markazlar ro'yxati uzun bo'lishi mumkin).
@@ -639,6 +643,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [activeOlympiad, setActiveOlympiad] = React.useState(null);
   const [joinModal, setJoinModal] = React.useState(false);
   const [centerConfirmOlympiad, setCenterConfirmOlympiad] = React.useState(null);
+  // "Ha" tugmasi bosilganda joinCenter yakunlanmaguncha true — ikki marta
+  // bosilib qayta-qayta so'rov ketmasligi uchun.
+  const [joiningConfirmedCenter, setJoiningConfirmedCenter] = React.useState(false);
   const [calendarOpen, setCalendarOpen] = React.useState(false);
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [paymentPlan, setPaymentPlan] = React.useState(null);
@@ -1183,9 +1190,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   };
 
   const sendRequest = (center) => {
+    if (sendingRequest) return;
     if (isApi) {
       const token = OlympyApi.getToken();
       const backendCenterId = center.backendId ?? center.id;
+      setSendingRequest(true);
       OlympyApi.joinCenter(backendCenterId, { subject: '' }, token)
         .then(() => OlympyApi.getMe(token))
         .then(me => {
@@ -1207,7 +1216,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               detail: { reason: 'join_error', message: OlympyApi.toUserMessage?.(err) || "Ariza yuborib bo'lmadi" },
             }));
           } catch {}
-        });
+        })
+        .finally(() => setSendingRequest(false));
       return;
     }
     // Reuse pending request if any, otherwise create one
@@ -1808,8 +1818,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 <TelegramMockup studentName={user.name} centerName={centerModal.name} onApprove={() => {}} onReject={() => {}} />
               </div>
               <div className="flex gap-3">
-                <button onClick={() => setCenterModal(null)} className="btn-ghost flex-1 py-3 rounded-xl min-h-[44px]">Bekor qilish</button>
-                <button onClick={() => sendRequest(centerModal)} className="btn-primary flex-1 py-3 rounded-xl font-semibold min-h-[44px]">Ariza yuborish</button>
+                <button onClick={() => setCenterModal(null)} disabled={sendingRequest} className="btn-ghost flex-1 py-3 rounded-xl min-h-[44px] disabled:opacity-50">Bekor qilish</button>
+                <button onClick={() => sendRequest(centerModal)} disabled={sendingRequest} className="btn-primary flex-1 py-3 rounded-xl font-semibold min-h-[44px] disabled:opacity-50">{sendingRequest ? '...' : 'Ariza yuborish'}</button>
               </div>
             </div>
           )}
@@ -2478,35 +2488,46 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         <div className="fixed bottom-20 md:bottom-6 right-3 md:right-6 left-3 md:left-auto z-50 glass-strong rounded-2xl px-5 py-3.5 border border-rose-500/30 animate-in text-sm font-medium text-white md:max-w-sm">{apiToast}</div>
       )}
 
-      {centerConfirmOlympiad && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 md:p-4">
-          <div className="glass rounded-2xl p-5 md:p-6 max-w-sm w-full border border-white/10">
-            <h3 className="text-white font-semibold text-base mb-2">Markaz tasdiqlash</h3>
-            <p className="text-white/70 text-sm mb-5 md:mb-6 break-words">
-              Siz <span className="text-white font-medium">{centerConfirmOlympiad.centerName}</span> o'quv markazining o'quvchisimisiz?
-            </p>
-            <div className="flex gap-3">
-              <button
-                className="flex-1 btn-primary py-2.5 rounded-xl text-sm font-semibold min-h-[44px]"
-                onClick={async () => {
-                  const token = OlympyApi.getToken?.();
-                  try {
-                    await OlympyApi.joinCenter(centerConfirmOlympiad.centerId, { role: 'student' }, token);
-                  } catch (e) { /* allaqachon a'zo bo'lsa ham davom etsin */ }
-                  const o = centerConfirmOlympiad.olympiad;
-                  setCenterConfirmOlympiad(null);
-                  setActiveOlympiad(o);
-                  onNavigate('test', o);
-                }}
-              >Ha</button>
-              <button
-                className="flex-1 glass border border-white/10 py-2.5 rounded-xl text-sm text-white/70 hover:text-white transition-colors min-h-[44px]"
-                onClick={() => setCenterConfirmOlympiad(null)}
-              >Yo'q</button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Avval bu dialog o'zining raw `fixed inset-0` div'i bilan yasalgan
+          edi — portal orqali render qilinmasdi (ota elementga qisilib
+          qolishi mumkin edi) va backdrop bosilganda yopilmasdi, ilovadagi
+          boshqa modallar (ConfirmModal) bilan bir xil xatti-harakat bermasdi. */}
+      <ConfirmModal
+        open={!!centerConfirmOlympiad}
+        onClose={() => !joiningConfirmedCenter && setCenterConfirmOlympiad(null)}
+        onConfirm={async () => {
+          if (joiningConfirmedCenter) return;
+          setJoiningConfirmedCenter(true);
+          const token = OlympyApi.getToken?.();
+          try {
+            await OlympyApi.joinCenter(centerConfirmOlympiad.centerId, { role: 'student' }, token);
+          } catch (e) {
+            // Faqat "allaqachon a'zo" (400, backend get_or_create bo'yicha
+            // idempotent) holatini e'tiborsiz qoldiramiz. Boshqa har qanday
+            // xato (tarmoq, server, ruxsat) avval ham xuddi shu tarzda
+            // yutilardi — talaba "muvaffaqiyatli qo'shildi" deb o'ylab
+            // testga kirar, keyin sababsiz muammolarga duch kelardi.
+            const isAlreadyMember = e?.status === 400 && /allaqachon/i.test(e?.data?.detail || e?.message || '');
+            if (!isAlreadyMember) {
+              setJoiningConfirmedCenter(false);
+              showApiToast(OlympyApi.toUserMessage?.(e) || "Markazga a'zo bo'lib bo'lmadi. Qayta urinib ko'ring.");
+              return;
+            }
+          }
+          const o = centerConfirmOlympiad.olympiad;
+          setJoiningConfirmedCenter(false);
+          setCenterConfirmOlympiad(null);
+          setActiveOlympiad(o);
+          onNavigate('test', o);
+        }}
+        title="Markaz tasdiqlash"
+        message={centerConfirmOlympiad && (
+          <>Siz <span className="text-white font-medium">{centerConfirmOlympiad.centerName}</span> o'quv markazining o'quvchisimisiz?</>
+        )}
+        confirmText="Ha"
+        cancelText="Yo'q"
+        busy={joiningConfirmedCenter}
+      />
 
       {/* LT1: Olimpiada kalendari modali */}
       <OlympiadCalendarModal

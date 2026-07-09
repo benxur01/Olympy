@@ -12,7 +12,9 @@ const AISupportWidget = ({ user }) => {
   const getGuestSessionId = () => {
     let sessId = localStorage.getItem('olympy:guestSupportSessionId');
     if (!sessId) {
-      sessId = 'guest_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      sessId = 'guest_' + ((typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `${Date.now()}_${Math.random().toString(36).slice(2)}`);
       localStorage.setItem('olympy:guestSupportSessionId', sessId);
     }
     return sessId;
@@ -193,6 +195,7 @@ const AISupportWidget = ({ user }) => {
         onClick={() => setIsOpen(true)}
         className="fixed bottom-6 right-6 z-[999] w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-white shadow-lg hover:scale-110 active:scale-95 transition-all duration-200 border border-white/10 cursor-pointer"
         title="AI Support"
+        aria-label="AI yordamchini ochish"
       >
         <Icon name="sparkles" size={24} />
         <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-[#050508] animate-pulse" />
@@ -235,6 +238,7 @@ const AISupportWidget = ({ user }) => {
             onClick={() => setIsExpanded(!isExpanded)}
             className="p-2 rounded-xl text-white/50 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
             title={isExpanded ? "Kichraytirish" : "Kengaytirish"}
+            aria-label={isExpanded ? "Kichraytirish" : "Kengaytirish"}
           >
             {isExpanded ? (
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -257,6 +261,7 @@ const AISupportWidget = ({ user }) => {
             }}
             className="p-2 rounded-xl text-white/50 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
             title="Yopish"
+            aria-label="Yopish"
           >
             <Icon name="x" size={15} />
           </button>
@@ -344,6 +349,7 @@ const AISupportWidget = ({ user }) => {
           type="submit"
           disabled={loading || !inputValue.trim()}
           className="w-11 h-11 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shrink-0 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          aria-label="Yuborish"
         >
           <Icon name="send" size={16} />
         </button>

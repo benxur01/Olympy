@@ -111,7 +111,9 @@ function renderMathParts(raw, keyBase) {
   return nodes;
 }
 
-export default function MathText({ text, className }) {
+// React.memo — `text`/`className` o'zgarmasa KaTeX/highlight qayta ishlamaydi
+// (masalan parent har sekund timer tufayli qayta render bo'lsa ham).
+function MathTextImpl({ text, className }) {
   const raw = text == null ? '' : String(text);
   if (!raw) {
     return className ? <span className={className} /> : null;
@@ -176,3 +178,6 @@ export default function MathText({ text, className }) {
 
   return <span className={className}>{nodes}</span>;
 }
+
+const MathText = React.memo(MathTextImpl);
+export default MathText;

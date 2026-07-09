@@ -16,30 +16,48 @@ const LANG_LABELS = {
 const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBlank, onMultiToggle, onYesNo }) => {
   const inputCls = 'w-full glass rounded-2xl px-4 py-3 text-white text-sm md:text-base placeholder-white/30 border border-white/10 focus:border-indigo-500 focus:outline-none transition-all';
 
+  // Matn kiritilgan bo'lsa kichik "Saqlandi" belgisi — MCQ/yes_no/multiple_select
+  // uchun tanlangan variant o'zi rangi bilan aniq ko'rinadi, lekin matnli
+  // javoblarda (fill_blank/essay/fill_blanks) hech qanday tasdiq belgisi
+  // yo'q edi: stressli talaba javob "ketdimi yo'qmi" bilmay qolardi.
+  const SavedTag = () => (
+    <div className="flex items-center gap-1.5 text-xs text-emerald-400/90 mt-2">
+      <Icon name="check" size={12} /> Saqlandi
+    </div>
+  );
+
   // fill_blank — bitta qator matn kiritish.
   if (qType === 'fill_blank') {
+    const text = (value && typeof value === 'object' ? value.text : '') || '';
     return (
-      <input
-        type="text"
-        value={(value && typeof value === 'object' ? value.text : '') || ''}
-        onChange={(e) => onText(e.target.value)}
-        placeholder="Javobingizni kiriting..."
-        className={inputCls}
-        autoComplete="off"
-      />
+      <div>
+        <input
+          type="text"
+          value={text}
+          onChange={(e) => onText(e.target.value)}
+          placeholder="Javobingizni kiriting..."
+          className={inputCls}
+          autoComplete="off"
+        />
+        {text.trim() && <SavedTag />}
+      </div>
     );
   }
 
   // essay — katta matn maydoni.
   if (qType === 'essay') {
+    const text = (value && typeof value === 'object' ? value.text : '') || '';
     return (
-      <textarea
-        value={(value && typeof value === 'object' ? value.text : '') || ''}
-        onChange={(e) => onText(e.target.value)}
-        placeholder="Javobingizni batafsil yozing..."
-        rows={8}
-        className={`${inputCls} resize-y min-h-[160px] leading-relaxed`}
-      />
+      <div>
+        <textarea
+          value={text}
+          onChange={(e) => onText(e.target.value)}
+          placeholder="Javobingizni batafsil yozing..."
+          rows={8}
+          className={`${inputCls} resize-y min-h-[160px] leading-relaxed`}
+        />
+        {text.trim() && <SavedTag />}
+      </div>
     );
   }
 
@@ -51,6 +69,7 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
       <div className="space-y-3">
         {Array.from({ length: count }).map((_, i) => {
           const key = String(i + 1);
+          const filled = String(blanks[key] || '').trim().length > 0;
           return (
             <div key={key} className="flex items-center gap-3">
               <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 glass text-white/50">
@@ -64,6 +83,7 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
                 className={inputCls}
                 autoComplete="off"
               />
+              {filled && <Icon name="check" size={16} className="text-emerald-400/90 flex-shrink-0" />}
             </div>
           );
         })}
@@ -166,6 +186,9 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
   const [submitted, setSubmitted] = React.useState(false);
   const [submitError, setSubmitError] = React.useState('');
   const [confirmModal, setConfirmModal] = React.useState(false);
+  // Vaqt tugab avto-submit bo'lganda true — savol ekrani o'rniga aniq
+  // "Vaqt tugadi" o'tish ekrani ko'rsatiladi.
+  const [timeUp, setTimeUp] = React.useState(false);
   // timeLeft'ni handleSubmit closure'iga har sekund bog'lab interval'ni qayta
   // o'rnatmaslik uchun ref orqali o'qiymiz (sarflangan vaqtni hisoblashda).
   const timeLeftRef = React.useRef(timeLeft);
@@ -301,11 +324,11 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
       if (serverExpiresAtMs) {
         const remaining = Math.max(0, Math.floor((serverExpiresAtMs - (Date.now() - serverClockSkewMs)) / 1000));
         setTimeLeft(remaining);
-        if (remaining <= 0) { clearInterval(t); handleSubmit(); }
+        if (remaining <= 0) { clearInterval(t); setTimeUp(true); handleSubmit(); }
         return;
       }
       setTimeLeft(prev => {
-        if (prev <= 1) { clearInterval(t); handleSubmit(); return 0; }
+        if (prev <= 1) { clearInterval(t); setTimeUp(true); handleSubmit(); return 0; }
         return prev - 1;
       });
     }, 1000);
@@ -357,6 +380,18 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
     );
   }
 
+  if (timeUp && submitting) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+        <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
+          <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto" />
+          <h2 className="text-lg font-black text-white">Vaqt tugadi</h2>
+          <p className="text-white/50 text-sm">Javoblaringiz avtomatik yuborilmoqda, iltimos kuting...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen" style={{ background: '#050508' }}>
       {/* Header */}
@@ -370,7 +405,11 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
             <span className="truncate">{title}</span>
           </div>
         </div>
-        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold flex-shrink-0 ${timeLeft < 60 ? 'bg-rose-500/15 text-rose-300' : 'glass text-white/70'}`}>
+        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold flex-shrink-0 ${
+          timeLeft < 60 ? 'bg-rose-500/15 text-rose-300 animate-pulse'
+            : timeLeft < 300 ? 'bg-amber-500/10 text-amber-300'
+            : 'glass text-white/70'
+        }`}>
           <Icon name="clock" size={14} /> {fmtTime(timeLeft)}
         </div>
       </div>
@@ -551,12 +590,18 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
   // To'q qora spinnerda cheksiz qolib ketmaslik uchun timeout. isBeforeStart
   // noto'g'ri false bo'lib qolgan holatlarda savol so'rovi 400 qaytaradi —
-  // 4 soniyadan keyin foydalanuvchiga aniq xabar ko'rsatamiz.
+  // muayyan vaqtdan keyin foydalanuvchiga aniq xabar ko'rsatamiz.
+  // Avval qattiq chegara 4s edi — 3G/qishloq internetida bu vaqt ichida
+  // ulanish hali ishlayotgan bo'lsa ham "muammo" xabari ko'rsatib, talabani
+  // keraksiz sahifa yangilashga undardi. Endi 4s'da yumshoq "sekin
+  // yuklanmoqda" xabari, 9s'da esa haqiqiy xatolik ko'rsatiladi.
+  const [slowLoading, setSlowLoading] = React.useState(false);
   const [loadingTimeout, setLoadingTimeout] = React.useState(false);
   React.useEffect(() => {
-    if (!initialQuestionsLoading) { setLoadingTimeout(false); return undefined; }
-    const t = setTimeout(() => setLoadingTimeout(true), 4000);
-    return () => clearTimeout(t);
+    if (!initialQuestionsLoading) { setSlowLoading(false); setLoadingTimeout(false); return undefined; }
+    const softTimer = setTimeout(() => setSlowLoading(true), 4000);
+    const hardTimer = setTimeout(() => setLoadingTimeout(true), 9000);
+    return () => { clearTimeout(softTimer); clearTimeout(hardTimer); };
   }, [initialQuestionsLoading]);
 
   // Refresh yoki crashdan keyin javoblarni yo'qotmaslik uchun localStorage
@@ -608,6 +653,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [submitted, setSubmitted] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState('');
+  // Vaqt tugab avto-submit bo'lganda true — bu holatda foydalanuvchiga
+  // savol o'rniga "Vaqt tugadi, yuborilmoqda" ekrani ko'rsatiladi. Avval
+  // sanoqchi 0:00 ga yetganda hech qanday o'tish ekrani bo'lmasdi, talaba
+  // yozayotgan payti to'satdan kontrol tortib olinardi.
+  const [timeUp, setTimeUp] = React.useState(false);
   const [cheated, setCheated] = React.useState(false);
   const [cheatMessage, setCheatMessage] = React.useState('');
   // Musobaqa faol bo'lganda api.js'ga xabar beramiz: shu davrda hech qanday
@@ -832,6 +882,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             // keyin yetib borib 400 qaytarsa, javoblar saqlanib qolishi
             // kerak — handleSubmit faqat MUVAFFAQIYATLI submit'dan keyin
             // clearPersistedAnswers() chaqiradi.
+            setTimeUp(true);
             handleSubmit();
             return 0;
           }
@@ -844,6 +895,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             clearInterval(t);
             // Vaqt tugadi — submit. Draft faqat muvaffaqiyatli submit'da
             // tozalanadi (handleSubmit ichida).
+            setTimeUp(true);
             handleSubmit();
             return 0;
           }
@@ -1040,7 +1092,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   ]);
   const answered = answeredIndexes.size;
   const progress = TOTAL ? (answered / TOTAL) * 100 : 0;
-  const isUrgent = timeLeft < 120;
+  // 3 bosqichli ogohlantirish: avval (>5 daqiqa) oddiy, keyin (5 daqiqadan
+  // kam) och sariq ogohlantirish, oxirida (1 daqiqadan kam) qizil + pulse —
+  // avval faqat 2 daqiqada bitta statik rang o'zgarishi bo'lardi, stressli
+  // talaba buni osongina payqamay qolishi mumkin edi.
+  const isWarning = timeLeft < 300 && timeLeft >= 60;
+  const isUrgent = timeLeft < 60;
 
   // MCQ/yes_no: option indeksini saqlaymiz (orqaga-moslik uchun oddiy son).
   const handleAnswer = (optIdx) => setAnswers(prev => ({ ...prev, [current]: optIdx }));
@@ -1402,6 +1459,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         <div className="flex flex-col items-center gap-4 text-white/70">
           <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-white animate-spin" />
           <div className="text-sm font-semibold">Savollar yuklanmoqda...</div>
+          {slowLoading && (
+            <div className="text-xs text-white/40 max-w-xs text-center">
+              Internet sekinroq bo'lishi mumkin, biroz kuting...
+            </div>
+          )}
         </div>
       </div>
     );
@@ -1428,6 +1490,22 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       status="rejected"
       message={questionsError || "Olimpiada savollari hozircha mavjud emas. Iltimos, keyinroq urinib ko'ring."}
       onBack={() => onNavigate('student')} />;
+  }
+
+  // Vaqt tugab avto-submit ketayotgan payt — savol ekranini emas, aniq
+  // "Vaqt tugadi" o'tish ekranini ko'rsatamiz. submit muvaffaqiyatsiz
+  // bo'lsa (submitting false'ga qaytadi) savol ekrani submitError banner
+  // bilan qaytadi, foydalanuvchi qayta urinishi mumkin.
+  if (timeUp && submitting) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+        <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
+          <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto" />
+          <h2 className="text-lg font-black text-white">Vaqt tugadi</h2>
+          <p className="text-white/50 text-sm">Javoblaringiz avtomatik yuborilmoqda, iltimos kuting...</p>
+        </div>
+      </div>
+    );
   }
 
   const q = TEST_QUESTIONS[current];
@@ -1458,8 +1536,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           </div>
         </div>
 
-        <div className={`flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-xl md:rounded-2xl font-mono text-sm md:text-lg font-black transition-all flex-shrink-0 ${isUrgent ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' : 'glass text-white'}`}>
-          <Icon name="clock" size={14} className={isUrgent ? 'text-rose-400' : 'text-white/50'} />
+        <div className={`flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-xl md:rounded-2xl font-mono text-sm md:text-lg font-black transition-all flex-shrink-0 ${
+          isUrgent ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse'
+            : isWarning ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+            : 'glass text-white'
+        }`}>
+          <Icon name="clock" size={14} className={isUrgent ? 'text-rose-400' : isWarning ? 'text-amber-400' : 'text-white/50'} />
           {formatTime(timeLeft)}
         </div>
 

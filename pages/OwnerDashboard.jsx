@@ -1658,17 +1658,26 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             <Icon name="users" size={13} /><span className="hidden md:inline">Rolni almashtirish</span>
           </button>
         )}
-        <button
-          onClick={() => setPage('requests')}
-          className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
-        >
-          <Icon name="bell" size={18} />
-          {pendingCount > 0 && (
-            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-500 px-1 text-[10px] font-black text-white shadow-lg shadow-amber-900/40">
-              {pendingCount}
-            </span>
-          )}
-        </button>
+        {/* Avval statik qo'ng'iroq belgisi faqat markaz arizalari sonini
+            ko'rsatib "requests" tabiga otardi — haqiqiy bildirishnomalar
+            (NotificationsBell, ManagerDashboard shared Topbar orqali oladigan)
+            Owner uchun umuman ko'rinmasdi. Shu komponentni to'g'ridan-to'g'ri
+            ishlatib, ikkala rol ham bir xil tajriba olishi ta'minlandi. */}
+        {typeof NotificationsBell !== 'undefined' ? (
+          <NotificationsBell user={user} />
+        ) : (
+          <button
+            onClick={() => setPage('requests')}
+            className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
+          >
+            <Icon name="bell" size={18} />
+            {pendingCount > 0 && (
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-500 px-1 text-[10px] font-black text-white shadow-lg shadow-amber-900/40">
+                {pendingCount}
+              </span>
+            )}
+          </button>
+        )}
         <div className="ml-2 flex items-center gap-2">
           <Avatar name={user?.name || 'Director'} src={user?.avatarUrl || ''} size={34} />
           <div className="hidden text-right sm:block">

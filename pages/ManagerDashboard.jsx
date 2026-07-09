@@ -42,6 +42,11 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
   const [onlyUnused, setOnlyUnused] = React.useState(true);
   const [deleteEventId, setDeleteEventId] = React.useState(null);
+  // window.confirm() Telegram WebApp ichida bloklangan/ishonchsiz — shop
+  // mahsulotini o'chirishda ham (boshqa o'chirish oqimlari kabi) inline
+  // ConfirmModal ishlatiladi.
+  const [deleteProductId, setDeleteProductId] = React.useState(null);
+  const [shopDeleting, setShopDeleting] = React.useState(false);
   // Studentlar ro'yxati uchun qidiruv: ism yoki telefon raqamga ko'ra
   // filter. Avval input value/onChange'siz mavjud edi — foydalanuvchi
   // yozardi lekin natija filterlanmasdi.
@@ -647,11 +652,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const deleteShopProduct = (productId) => {
     if (!isApi || !managerCenterId) return;
-    if (!window.confirm("Mahsulotni do'kondan o'chirasizmi?")) return;
+    setShopDeleting(true);
     OlympyApi.deleteCenterShopProduct(productId, OlympyApi.getToken(), managerCenterId)
       .then(() => loadShopProducts())
-      .then(() => showToast("Mahsulot o'chirildi"))
-      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi"));
+      .then(() => { showToast("Mahsulot o'chirildi"); setDeleteProductId(null); })
+      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi"))
+      .finally(() => setShopDeleting(false));
   };
 
   const toggleShopActive = (product) => {
@@ -1812,7 +1818,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                       <button onClick={() => toggleShopActive(p)} className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/70 hover:bg-white/10" title={p.is_active ? 'Nofaol qilish' : 'Faollashtirish'}>
                         {p.is_active ? 'Yashirish' : "Ko'rsatish"}
                       </button>
-                      <button onClick={() => deleteShopProduct(p.id)} className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20">
+                      <button onClick={() => setDeleteProductId(p.id)} className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20">
                         <Icon name="x" size={14} />
                       </button>
                     </div>
@@ -3155,6 +3161,17 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           );
         })()}
       </Modal>
+
+      <ConfirmModal
+        open={!!deleteProductId}
+        onClose={() => setDeleteProductId(null)}
+        onConfirm={() => deleteShopProduct(deleteProductId)}
+        title="Mahsulotni o'chirish"
+        message="Mahsulotni do'kondan o'chirasizmi? Bu amalni ortga qaytarib bo'lmaydi."
+        confirmText="Ha, o'chirish"
+        danger
+        busy={shopDeleting}
+      />
 
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 glass-strong rounded-2xl px-5 py-3.5 border border-indigo-500/30 animate-in text-sm font-medium text-white">{toast}</div>

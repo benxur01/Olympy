@@ -1418,9 +1418,13 @@ const LandingPage = ({ onNavigate, user }) => {
                         minHeight: '320px',
                       }}
                     >
-                      <div className="text-5xl md:text-6xl mb-4 spinner-icon" style={{ animation: 'spin 2s linear infinite', display: 'inline-block' }}>⏳</div>
-                      <div className="text-lg md:text-xl font-bold text-white/80 mb-2">Tez orada</div>
-                      <div className="text-sm text-white/40">Rasm yuklanmoqda...</div>
+                      {/* Bu onError'dan keyin, ya'ni rasm YUKLANMAY QOLGANDA ko'rinadi
+                          (hali yuklanayotganda emas) — avval "Tez orada"/"Rasm
+                          yuklanmoqda..." aylanuvchi belgi bilan ko'rsatilardi, bu esa
+                          buzilgan rasmni "hali tayyor emas" degan taassurot berardi. */}
+                      <div className="text-5xl md:text-6xl mb-4" style={{ display: 'inline-block' }}>🖼️</div>
+                      <div className="text-lg md:text-xl font-bold text-white/80 mb-2">Rasm mavjud emas</div>
+                      <div className="text-sm text-white/40">Skrinshot vaqtincha ko'rsatilmayapti</div>
                     </div>
                   ) : (
                     <img

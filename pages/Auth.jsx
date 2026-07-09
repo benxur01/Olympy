@@ -286,10 +286,10 @@ const LoginPage = ({ onNavigate, onLogin }) => {
               />
               <p className="text-white/30 text-xs mt-2">Authenticator (Google/Microsoft Authenticator, Authy) ilovasini oching</p>
             </div>
-            {error && <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 rounded-xl px-4 py-3"><Icon name="info" size={16} />{error}</div>}
+            {error && <ErrorBanner message={<span className="flex items-center gap-2"><Icon name="info" size={16} />{error}</span>} />}
             <button type="submit" disabled={loading || totpCode.length < 6}
               className="btn-primary w-full py-3.5 rounded-2xl font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
-              {loading ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Tekshirilmoqda...</> : 'Tasdiqlash'}
+              {loading ? <><Spinner size={20} /> Tekshirilmoqda...</> : 'Tasdiqlash'}
             </button>
             <button type="button" onClick={backToLogin}
               className="btn-ghost w-full py-3 rounded-2xl font-semibold">← Orqaga</button>
@@ -307,7 +307,8 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                 value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} required />
               <button type="button" onClick={() => setShowPass(!showPass)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors"
-                title={showPass ? "Parolni yashirish" : "Parolni ko'rsatish"}>
+                title={showPass ? "Parolni yashirish" : "Parolni ko'rsatish"}
+                aria-label={showPass ? "Parolni yashirish" : "Parolni ko'rsatish"}>
                 <Icon name={showPass ? 'eyeOff' : 'eye'} size={18} />
               </button>
             </div>
@@ -323,7 +324,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
           </div>
           <button type="submit" disabled={loading}
             className="btn-primary w-full py-3.5 rounded-2xl font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
-            {loading ? <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Kirish...</> : 'Kirish'}
+            {loading ? <><Spinner size={20} /> Kirish...</> : 'Kirish'}
           </button>
         </form>
         )}
@@ -335,11 +336,12 @@ const LoginPage = ({ onNavigate, onLogin }) => {
         </p>
         )}
       </div>
-      {forgotOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.75)' }}>
-          <div className="rounded-3xl p-6 max-w-md w-full border border-white/15" style={{ background: '#12141a' }}>
-            <div className="text-3xl mb-3">🔐</div>
-            <h3 className="text-xl font-black text-white mb-2">Parolni tiklash</h3>
+      {/* Avval bu modal o'zining raw `fixed inset-0` overlay'ini hardcoded
+          rangi (#12141a) bilan yasagan edi — ilovadagi boshqa modallar
+          (Modal komponenti) bilan bir xil portal/backdrop-close xatti-
+          harakatini olmasdi. */}
+      <Modal open={forgotOpen} onClose={closeForgotModal} title="🔐 Parolni tiklash" width="max-w-md">
+        <>
             {forgot.step === 'phone' && (
               <div className="space-y-4">
                 <p className="text-white/60 text-sm leading-relaxed">
@@ -457,9 +459,8 @@ const LoginPage = ({ onNavigate, onLogin }) => {
                 </div>
               </div>
             )}
-          </div>
-        </div>
-      )}
+        </>
+      </Modal>
     </div>
   );
 };
@@ -817,11 +818,11 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
                 <Icon name="info" size={14} /> Ariza managerga yuboriladi va tasdiqlanishi kutiladi
               </div>
             )}
-            {phoneError && <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 rounded-xl px-4 py-3"><Icon name="info" size={16} />{phoneError}</div>}
+            {phoneError && <ErrorBanner message={<span className="flex items-center gap-2"><Icon name="info" size={16} />{phoneError}</span>} />}
             <div className="flex gap-3">
               <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
               <button onClick={submit} disabled={loading} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2">
-                {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : "Ro'yxatdan o'tish"}
+                {loading ? <Spinner size={16} /> : "Ro'yxatdan o'tish"}
               </button>
             </div>
           </div>
@@ -894,11 +895,11 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
             <div className="glass rounded-xl p-3 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
               <Icon name="info" size={14} /> Tashkilot Platform Admin tomonidan tasdiqlangach faollashadi.
             </div>
-            {phoneError && <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 rounded-xl px-4 py-3"><Icon name="info" size={16} />{phoneError}</div>}
+            {phoneError && <ErrorBanner message={<span className="flex items-center gap-2"><Icon name="info" size={16} />{phoneError}</span>} />}
             <div className="flex gap-3">
               <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
               <button onClick={submit} disabled={loading || !newCenterTypeValid || !newCenterLocationValid || !newCenter.name} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
-                {loading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Arizani yuborish'}
+                {loading ? <Spinner size={16} /> : 'Arizani yuborish'}
               </button>
             </div>
           </div>
