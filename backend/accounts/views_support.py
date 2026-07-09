@@ -1,21 +1,35 @@
 import json
 import logging
+import time
 import urllib.parse
 import urllib.request
 from django.conf import settings
 from rest_framework import status as http_status
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.throttling import ScopedRateThrottle
+
 from rest_framework.response import Response
 
+from accounts.permissions import IsPlatformAdmin
 from questions.ai_generation import _gemini_api_keys, _gemini_models
 from .models import SupportMessage
 
 logger = logging.getLogger('accounts.views_support')
 
+# Gemini fallback loop (model x kalit) uchun qattiq umumiy vaqt byudjeti va
+# har bir urinish uchun timeout. Bu qiymatlar bo'lmasa, ko'p model/kalit
+# sozlangan holatda bitta so'rov gunicorn thread'ini minutlab band qilib
+# qo'yishi mumkin edi (support_chat AllowAny bo'lgani uchun bu boshqa AI
+# endpointlaridan farqli — pastdagi throttle_scope bilan birga DoS xavfini
+# cheklaydi).
+_SUPPORT_CHAT_PER_REQUEST_TIMEOUT = 10
+_SUPPORT_CHAT_TOTAL_TIME_BUDGET = 25
+
 
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
+@throttle_classes([ScopedRateThrottle])
 def support_chat(request):
     """GET/POST /api/support/chat/ — Gemini orqali AI yordamchi bilan suhbat endpointi (ommaviy).
 
@@ -133,11 +147,16 @@ def support_chat(request):
 
     body = json.dumps(payload).encode('utf-8')
     last_error = ''
+    loop_start = time.monotonic()
 
     for model in _gemini_models():
+        if time.monotonic() - loop_start > _SUPPORT_CHAT_TOTAL_TIME_BUDGET:
+            break
         model_path = urllib.parse.quote(model, safe='-_.~/')
         url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
         for api_key in keys:
+            if time.monotonic() - loop_start > _SUPPORT_CHAT_TOTAL_TIME_BUDGET:
+                break
             req = urllib.request.Request(
                 url,
                 data=body,
@@ -148,7 +167,7 @@ def support_chat(request):
                 },
             )
             try:
-                with urllib.request.urlopen(req, timeout=30) as response:
+                with urllib.request.urlopen(req, timeout=_SUPPORT_CHAT_PER_REQUEST_TIMEOUT) as response:
                     raw = json.loads(response.read().decode('utf-8'))
                 parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
                 reply = ''.join(part.get('text') or '' for part in parts)
@@ -169,15 +188,13 @@ def support_chat(request):
     )
 
 
+support_chat.cls.throttle_scope = 'support_chat'
+
+
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsPlatformAdmin])
 def admin_support_threads(request):
     """GET /api/admin/support/chats/ — Barcha yordam so'ragan foydalanuvchilar (shu jumladan mehmonlar)."""
-    user = request.user
-    is_admin = user.is_platform_admin or (hasattr(user, 'roles') and 'admin' in user.roles) or (hasattr(user, 'roles_detail') and 'admin' in user.roles_detail)
-    if not is_admin:
-        return Response({'detail': "Ruxsat etilmagan."}, status=http_status.HTTP_403_FORBIDDEN)
-
     from django.db.models import Max
     from accounts.models import User
 
@@ -233,14 +250,9 @@ def admin_support_threads(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsPlatformAdmin])
 def admin_support_thread_detail(request, chat_key):
     """GET /api/admin/support/chats/<str:chat_key>/ — Tanlangan suhbatning to'liq chat tarixi."""
-    user = request.user
-    is_admin = user.is_platform_admin or (hasattr(user, 'roles') and 'admin' in user.roles) or (hasattr(user, 'roles_detail') and 'admin' in user.roles_detail)
-    if not is_admin:
-        return Response({'detail': "Ruxsat etilmagan."}, status=http_status.HTTP_403_FORBIDDEN)
-
     # Agar chat_key UUID bo'lsa yoki guest kaliti bo'lsa session_id bo'yicha filterlaymiz
     if '-' in chat_key or len(chat_key) > 10:
         db_messages = SupportMessage.objects.filter(session_id=chat_key).order_by('created_at')
@@ -263,14 +275,9 @@ def admin_support_thread_detail(request, chat_key):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsPlatformAdmin])
 def admin_support_send_reply(request, chat_key):
     """POST /api/admin/support/chats/<str:chat_key>/reply/ — Admin tomonidan foydalanuvchiga javob yozish."""
-    user = request.user
-    is_admin = user.is_platform_admin or (hasattr(user, 'roles') and 'admin' in user.roles) or (hasattr(user, 'roles_detail') and 'admin' in user.roles_detail)
-    if not is_admin:
-        return Response({'detail': "Ruxsat etilmagan."}, status=http_status.HTTP_403_FORBIDDEN)
-
     reply_text = request.data.get('text', '').strip()
     if not reply_text:
         return Response({'detail': "Xabar matni bo'sh bo'lishi mumkin emas."}, status=http_status.HTTP_400_BAD_REQUEST)

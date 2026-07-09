@@ -4,6 +4,7 @@ from rest_framework import serializers
 
 from accounts.utils import normalize_phone
 from .models import CenterMembership, EducationCenter
+from .uzbekistan_regions import UZBEKISTAN_DISTRICTS, UZBEKISTAN_REGIONS
 
 
 class EducationCenterSerializer(serializers.ModelSerializer):
@@ -139,6 +140,16 @@ class CenterRegisterSerializer(serializers.Serializer):
         city = str(attrs.get('city') or '').strip()
         region = str(attrs.get('region') or '').strip()
         district = str(attrs.get('district') or '').strip()
+
+        # region/district frontend'da UZBEKISTAN_DISTRICTS ro'yxatidan tanlanadi
+        # (erkin matn emas). To'g'ridan-to'g'ri API so'rovi orqali ro'yxatdan
+        # tashqari qiymat yuborilmasligi uchun server tomonda ham shu ro'yxat
+        # bilan tekshiramiz.
+        if region and region not in UZBEKISTAN_REGIONS:
+            raise serializers.ValidationError({'region': "Noma'lum viloyat/hudud tanlandi."})
+        if district and district not in UZBEKISTAN_DISTRICTS.get(region, []):
+            raise serializers.ValidationError({'district': "Tanlangan tuman/shahar viloyatga mos kelmaydi."})
+
         if not city:
             city = district or region
         if not city:
