@@ -972,12 +972,19 @@ def admin_toggle_user_premium(request, user_id):
         # yangilanishlari yarmida xatolik bo'lsa nomuvofiq holat qolmasin.
         with transaction.atomic():
             target.is_premium = not target.is_premium
-            target.save(update_fields=['is_premium'])
+            update_fields = ['is_premium']
             if target.is_premium:
                 EducationCenter.objects.filter(owner=target).update(is_premium=True)
             else:
                 EducationCenter.objects.filter(owner=target).update(is_premium=False)
                 UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
+                # Trial muddati hali tugamagan bo'lsa `is_premium_active`
+                # (is_premium OR trial_active) hamon True qaytarardi va
+                # frontend bekor qilingandan keyin ham "Premium" ko'rsatardi.
+                if target.premium_trial_end and target.premium_trial_end > timezone.now():
+                    target.premium_trial_end = timezone.now()
+                    update_fields.append('premium_trial_end')
+            target.save(update_fields=update_fields)
         from .utils import invalidate_user_subscription_cache
         invalidate_user_subscription_cache(target.id)
         AuditLog.log(request, 'user_premium_toggle', target=target, extra={
@@ -997,7 +1004,15 @@ def admin_toggle_user_premium(request, user_id):
         # holat (masalan flag o'chgan, lekin obuna aktivligicha) qolmasin.
         with transaction.atomic():
             target.is_premium = False
-            target.save(update_fields=['is_premium'])
+            update_fields = ['is_premium']
+            # Trial muddati hali tugamagan bo'lsa `is_premium_active` property
+            # (is_premium OR trial_active) hamon True qaytarardi va admin
+            # "bekor qilgan"dan keyin ham foydalanuvchi Premium bo'lib
+            # ko'rinaverardi (frontend shu maydondan foydalanadi).
+            if target.premium_trial_end and target.premium_trial_end > timezone.now():
+                target.premium_trial_end = timezone.now()
+                update_fields.append('premium_trial_end')
+            target.save(update_fields=update_fields)
             UserSubscription.objects.filter(user=target, is_active=True).update(is_active=False, end_date=timezone.now())
             EducationCenter.objects.filter(owner=target).update(is_premium=False)
     elif duration == 0:
