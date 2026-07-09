@@ -665,10 +665,15 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const store = useStore();
   const isApi = !!user?._api;
   const [page, setPage] = adminDashUrl.usePageState();
-  const [toast, setToast] = React.useState('');
   const [mobileMenu, setMobileMenu] = React.useState(false);
   const [blockModal, setBlockModal] = React.useState(null);
+  const [blocking, setBlocking] = React.useState(false);
   const [blockedIds, setBlockedIds] = React.useState({});
+  // Markaz rad etish / premium bekor qilish — destruktiv/qaytarib
+  // bo'lmaydigan amallar avval tasdiqlashsiz zudlik bilan bajarilardi.
+  const [rejectCenterConfirm, setRejectCenterConfirm] = React.useState(null);
+  const [revokePremiumConfirm, setRevokePremiumConfirm] = React.useState(null);
+  const [centerActionBusy, setCenterActionBusy] = React.useState(false);
   const [premiumUser, setPremiumUser] = React.useState(null);
   const [roleModal, setRoleModal] = React.useState(null);
   const [roleSelection, setRoleSelection] = React.useState([]);
@@ -729,7 +734,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         showToast("Profil ma'lumotlari yangilandi (Mock)!");
       }
     } catch (err) {
-      const errMsg = err?.message || err?.detail || "Xatolik yuz berdi";
+      const errMsg = OlympyApi.toUserMessage?.(err) || err?.detail || "Xatolik yuz berdi";
       showToast(`Xatolik: ${errMsg}`);
     } finally {
       setSavingProfile(false);
@@ -769,17 +774,19 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         setConfirmPassword('');
       }
     } catch (err) {
-      const errMsg = err?.message || err?.detail || "Xatolik yuz berdi";
+      const errMsg = OlympyApi.toUserMessage?.(err) || err?.detail || "Xatolik yuz berdi";
       showToast(`Xatolik: ${errMsg}`);
     } finally {
       setSavingPassword(false);
     }
   };
 
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(''), 3000);
-  };
+  // Avval bitta string state + bitta setTimeout bilan yasalgan edi: ikkinchi
+  // toast 3s ichida kelsa, birinchi toastning eski setTimeout'i uni
+  // muddatidan oldin yashirib yuborardi. shared.jsx'dagi useToast() buni
+  // stacked, id-based ro'yxat bilan hal qiladi — imzosi bir xil (showToast(msg))
+  // bo'lgani uchun quyidagi 38 ta chaqiruv joyi o'zgarishsiz ishlayveradi.
+  const { showToast, ToastHost } = useToast();
 
   const apiCentersRes = useApiData(
     () => isApi ? OlympyApi.getAdminCenters(null, OlympyApi.getToken()) : Promise.resolve(null),
@@ -840,8 +847,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const centers = rawCenters.filter(c => c.status !== 'rejected');
   const approvedCenters = centers.filter(c => c.status === 'approved');
   const pendingCenters = centers.filter(c => c.status === 'pending');
-  // getAdminUsers endi {results, count, next} qaytaradi (pagination
-  // ma'lumotlari saqlanishi uchun). results massivni map qilamiz.
+  // getAdminUsers backend sahifalarini yig'ib {results, count} qaytaradi —
+  // allUsers global statistika/qidiruv uchun TO'LIQ ro'yxatga tayanadi.
   const apiUsersList = isApi && apiUsersRes.data && Array.isArray(apiUsersRes.data.results)
     ? apiUsersRes.data.results
     : (isApi && Array.isArray(apiUsersRes.data) ? apiUsersRes.data : null);
@@ -915,7 +922,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     if (isApi) {
       const backendCenterId = center?.backendId;
       if (!backendCenterId) { showToast('Tashkilot ID topilmadi'); return; }
-      OlympyApi.adminRejectCenter(backendCenterId, OlympyApi.getToken())
+      return OlympyApi.adminRejectCenter(backendCenterId, OlympyApi.getToken())
         .then(() => { showToast('Tashkilot rad etildi va ro\'yxatlardan olib tashlandi'); reloadAdminData(); })
         .catch(err => { console.warn('adminRejectCenter failed:', err); showToast('Rad etib bo\'lmadi'); });
       return;
@@ -939,7 +946,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     apiCentersRes.mutate(prev => Array.isArray(prev)
       ? prev.map(c => (c?.id === backendCenterId ? { ...c, is_premium: next } : c))
       : prev);
-    OlympyApi.updateCenter(backendCenterId, { is_premium: next }, OlympyApi.getToken())
+    return OlympyApi.updateCenter(backendCenterId, { is_premium: next }, OlympyApi.getToken())
       .then(() => {
         showToast(next ? 'Premium berildi' : 'Premium bekor qilindi');
         apiCentersRes.reload();
@@ -964,14 +971,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   };
 
   const toggleBlock = (row) => {
+    if (blocking) return;
     if (isApi) {
       const numericUserId = row?.backendId ?? (typeof row?.id === 'string' && row.id.startsWith('api:') ? Number(row.id.slice(4)) : null);
       if (!numericUserId) { showToast("Backend ID topilmadi"); setBlockModal(null); return; }
       const nextActive = row.status === 'Bloklangan';
+      setBlocking(true);
       OlympyApi.adminSetUserActive(numericUserId, nextActive, OlympyApi.getToken())
         .then(() => { showToast('Foydalanuvchi holati yangilandi'); apiUsersRes.reload(); })
         .catch(err => { console.warn('adminSetUserActive failed:', err); showToast(OlympyApi.toUserMessage(err)); })
-        .finally(() => setBlockModal(null));
+        .finally(() => { setBlocking(false); setBlockModal(null); });
       return;
     }
     setBlockedIds(prev => ({ ...prev, [row.id]: !prev[row.id] }));
@@ -1496,7 +1505,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                           <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">
                             <Icon name="check" size={11} /> Premium
                           </span>
-                          <button onClick={() => togglePremium(center)} className="rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] font-bold text-rose-400 ring-1 ring-rose-500/20 hover:bg-rose-500/10 transition">Bekor qilish</button>
+                          <button onClick={() => setRevokePremiumConfirm(center)} className="rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] font-bold text-rose-400 ring-1 ring-rose-500/20 hover:bg-rose-500/10 transition">Bekor qilish</button>
                         </div>
                       ) : (
                         <button onClick={() => togglePremium(center)} className="rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-400 ring-1 ring-amber-500/20 hover:bg-amber-500/20 transition">Premium berish</button>
@@ -1506,10 +1515,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       {center.status === 'pending' ? (
                         <div className="flex gap-2">
                           <button onClick={() => approveCenterDirect(center)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)] transition">Qabul</button>
-                          <button onClick={() => rejectCenterDirect(center)} className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-[11px] font-bold text-rose-400 ring-1 ring-rose-500/20 hover:bg-rose-500/20 transition">Rad</button>
+                          <button onClick={() => setRejectCenterConfirm(center)} className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-[11px] font-bold text-rose-400 ring-1 ring-rose-500/20 hover:bg-rose-500/20 transition">Rad</button>
                         </div>
                       ) : (
-                        <button onClick={() => rejectCenterDirect(center)} className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 hover:bg-white/10 hover:text-white transition">
+                        <button onClick={() => setRejectCenterConfirm(center)} className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 hover:bg-white/10 hover:text-white transition">
                           Ro'yxatdan olish
                         </button>
                       )}
@@ -1597,7 +1606,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
       </section>
 
-      <Modal open={!!blockModal} onClose={() => setBlockModal(null)} title={blockModal?.status === 'Bloklangan' ? 'Blokni ochish' : 'Foydalanuvchini bloklash'}>
+
+      <Modal open={!!blockModal} onClose={() => !blocking && setBlockModal(null)} title={blockModal?.status === 'Bloklangan' ? 'Blokni ochish' : 'Foydalanuvchini bloklash'}>
         <div className="mb-5">
           <div className="mb-4 flex items-center gap-3 rounded-xl bg-white/5 p-3">
             <Avatar name={blockModal?.name || ''} size={36} />
@@ -1606,12 +1616,42 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <p className="text-sm text-white/60">{blockModal?.status === 'Bloklangan' ? 'Bu foydalanuvchining blokini ochasizmi?' : 'Bu foydalanuvchini bloklamoqchimisiz?'}</p>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => setBlockModal(null)} className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold">Bekor qilish</button>
-          <button onClick={() => toggleBlock(blockModal)} className={`flex-1 rounded-xl py-3 font-semibold text-xs font-bold ${blockModal?.status === 'Bloklangan' ? 'btn-success' : 'btn-danger'}`}>
-            {blockModal?.status === 'Bloklangan' ? 'Blokni ochish' : 'Bloklash'}
+          <button onClick={() => setBlockModal(null)} disabled={blocking} className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">Bekor qilish</button>
+          <button onClick={() => toggleBlock(blockModal)} disabled={blocking} className={`flex-1 rounded-xl py-3 font-semibold text-xs font-bold disabled:opacity-50 ${blockModal?.status === 'Bloklangan' ? 'btn-success' : 'btn-danger'}`}>
+            {blocking ? '...' : (blockModal?.status === 'Bloklangan' ? 'Blokni ochish' : 'Bloklash')}
           </button>
         </div>
       </Modal>
+
+      <ConfirmModal
+        open={!!rejectCenterConfirm}
+        onClose={() => !centerActionBusy && setRejectCenterConfirm(null)}
+        onConfirm={() => {
+          setCenterActionBusy(true);
+          Promise.resolve(rejectCenterDirect(rejectCenterConfirm))
+            .finally(() => { setCenterActionBusy(false); setRejectCenterConfirm(null); });
+        }}
+        title="Tashkilotni rad etish"
+        message={`"${rejectCenterConfirm?.name || ''}" tashkilotini rad etasizmi? U darhol ro'yxatlardan olib tashlanadi.`}
+        confirmText="Ha, rad etish"
+        danger
+        busy={centerActionBusy}
+      />
+
+      <ConfirmModal
+        open={!!revokePremiumConfirm}
+        onClose={() => !centerActionBusy && setRevokePremiumConfirm(null)}
+        onConfirm={() => {
+          setCenterActionBusy(true);
+          Promise.resolve(togglePremium(revokePremiumConfirm))
+            .finally(() => { setCenterActionBusy(false); setRevokePremiumConfirm(null); });
+        }}
+        title="Premiumni bekor qilish"
+        message={`"${revokePremiumConfirm?.name || ''}" tashkilotining premium holatini bekor qilasizmi?`}
+        confirmText="Ha, bekor qilish"
+        danger
+        busy={centerActionBusy}
+      />
 
       {/* Rol o'zgartirish modali */}
       <Modal open={!!roleModal} onClose={() => setRoleModal(null)} title="Rol o'zgartirish">
@@ -2114,7 +2154,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       loadThreadDetail(selectedThread.chat_key);
     } catch (err) {
       console.error('Failed to send admin reply:', err);
-      alert('Javob yuborishda xatolik yuz berdi.');
+      // Telegram WebView'da alert() window.confirm() kabi ishonchsiz —
+      // boshqa xato holatlari kabi toast ishlatiladi.
+      showToast(OlympyApi.toUserMessage?.(err) || 'Javob yuborishda xatolik yuz berdi.');
     } finally {
       setSendingAdminReply(false);
     }
@@ -2448,11 +2490,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <MobileBottomNav items={mobileNavItems} activePage={page} setPage={setPage} />
         </div>
       </div>
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-lg bg-slate-900 px-4 py-3 text-xs font-bold text-white shadow-xl border border-white/5">
-          {toast}
-        </div>
-      )}
+      <ToastHost />
     </div>
   );
 };

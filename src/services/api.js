@@ -615,28 +615,28 @@ export const OlympyApi = {
   approveManager: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-manager/`, { method: 'POST', body: payload, token }),
   removeMembership: (centerId, membershipId, token) => request(`/api/centers/${centerId}/memberships/${membershipId}/`, { method: 'DELETE', token }),
   changeMemberRole: (centerId, membershipId, role, token) => request(`/api/centers/${centerId}/members/${membershipId}/change-role/`, { method: 'POST', body: { role }, token }),
-  getAdminCenters: (statusFilter, token) => request(`/api/admin/centers/${statusFilter ? '?status=' + statusFilter : ''}`, { token }).then(unwrapList),
+  // Backend admin_list_centers 100 tadan sahifalab qaytaradi (LargePageNumberPagination),
+  // lekin avval bu yerda unwrapList bilan faqat 1-sahifa olinardi — 100 tadan
+  // ortiq tashkilot bo'lsa, qolganlari admin panelida umuman ko'rinmasdi.
+  // requestAllPages barcha sahifalarni ketma-ket yig'ib beradi (boshqa admin
+  // ro'yxatlarida allaqachon ishlatilgan naqsh).
+  getAdminCenters: (statusFilter, token) => requestAllPages(
+    `/api/admin/centers/${statusFilter ? '?status=' + statusFilter : ''}`,
+    { token, pageSize: 100 },
+  ),
   adminApproveCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/approve/`, { method: 'POST', token }),
   adminRejectCenter: (centerId, token) => request(`/api/admin/centers/${centerId}/reject/`, { method: 'POST', token }),
   // Admin users
-  // Raw paginated response qaytaramiz — count/next ma'lumotlari admin
-  // panelida pagination uchun kerak. unwrapList ularni yo'qotardi.
-  // Backend page'ni ?page= / ?search= bilan qabul qiladi.
-  getAdminUsers: (token, { page, search } = {}) => {
-    const params = new URLSearchParams();
-    if (page) params.set('page', page);
-    if (search) params.set('search', search);
-    const qs = params.toString();
-    return request(`/api/admin/users/${qs ? '?' + qs : ''}`, { token })
-      .then((res) => {
-        if (Array.isArray(res)) return { results: res, count: res.length, next: null, previous: null };
-        return {
-          results: (res && res.results) || [],
-          count: (res && res.count) || 0,
-          next: (res && res.next) || null,
-          previous: (res && res.previous) || null,
-        };
-      });
+  // AdminDashboard'da `allUsers` bu ro'yxatga tayanib global statistika
+  // (faol/talaba soni, "Foydalanuvchilar" stat karta) va owner/so'rov
+  // egasini ID bo'yicha qidiradi — shu sabab bu yerda "faqat 1-sahifa"
+  // emas, TO'LIQ ro'yxat kerak (aks holda statistika va qidiruv sahifa
+  // ortidagi foydalanuvchilar uchun noto'g'ri/bo'sh chiqib qolardi).
+  // Backend ?page= bilan sahifalab qaytaradi (avval shu sabab faqat
+  // birinchi sahifa ko'rinardi) — requestAllPages barchasini yig'ib beradi.
+  getAdminUsers: async (token) => {
+    const results = await requestAllPages('/api/admin/users/', { token, pageSize: 100 });
+    return { results, count: results.length, next: null, previous: null };
   },
   adminSetUserActive: (userId, isActive, token) => request(`/api/admin/users/${userId}/set-active/`, { method: 'POST', body: { is_active: !!isActive }, token }),
   adminToggleUserPremium: (userId, payload, token) => request(`/api/admin/users/${userId}/toggle-premium/`, { method: 'POST', body: payload, token }),

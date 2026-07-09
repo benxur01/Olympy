@@ -363,7 +363,11 @@ const renderMathParts = (raw, keyBase) => {
   return nodes;
 };
 
-const MathText = ({ text, className }) => {
+// React.memo — OlympiadTest.jsx'da har sekundlik timer tick butun daraxtni
+// qayta render qiladi; savol matni/variantlar o'zgarmagan bo'lsa ham MathText
+// memo qilinmagan holda har safar KaTeX'ni qaytadan renderToString qilardi
+// (og'ir, sinxron). Memo bilan `text`/`className` o'zgarmasa qayta hisoblanmaydi.
+const MathText = React.memo(({ text, className }) => {
   const raw = text == null ? '' : String(text);
   if (!raw) {
     return className ? <span className={className} /> : null;
@@ -430,7 +434,7 @@ const MathText = ({ text, className }) => {
   });
 
   return <span className={className}>{nodes}</span>;
-};
+});
 
 const BRAND_ASSET_BASE = window.location.protocol === 'file:' ? 'public/brand' : '/brand';
 const BRAND_LOGO_SRC = `${BRAND_ASSET_BASE}/olympy-brand.png`;
@@ -657,7 +661,11 @@ const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick,
     <div className={`relative flex items-center py-5 border-b border-white/5 cursor-pointer flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'}`} onClick={logoClick}>
       <BrandLogo compact={collapsed} size={collapsed ? 'sm' : 'md'} />
       {setCollapsed && (
-        <button className={`${collapsed ? 'absolute right-1 bottom-1' : 'ml-auto'} text-white/30 hover:text-white/70 transition-colors`} onClick={e => { e.stopPropagation(); setCollapsed(!collapsed); }}>
+        <button
+          className={`${collapsed ? 'absolute right-1 bottom-1' : 'ml-auto'} text-white/30 hover:text-white/70 transition-colors`}
+          onClick={e => { e.stopPropagation(); setCollapsed(!collapsed); }}
+          aria-label={collapsed ? 'Panelni kengaytirish' : 'Panelni yig\'ish'}
+        >
           <Icon name="menu" size={16} />
         </button>
       )}
@@ -701,7 +709,7 @@ const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick,
           </div>
         )}
         {!collapsed && (
-          <button onClick={onLogout} className="text-white/30 hover:text-red-400 transition-colors p-1">
+          <button onClick={onLogout} className="text-white/30 hover:text-red-400 transition-colors p-1" aria-label="Chiqish">
             <Icon name="logout" size={16} />
           </button>
         )}
@@ -763,7 +771,7 @@ const Topbar = ({ title, subtitle, actions, user, onMenuClick }) => {
   return (
     <header className="glass border-b border-white/5 px-6 py-4 flex items-center justify-between sticky top-0 z-30">
       <div className="flex min-w-0 items-center gap-3">
-        <button className="lg:hidden flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-white/50 hover:bg-white/5 hover:text-white" onClick={onMenuClick}><Icon name="menu" size={20} /></button>
+        <button className="lg:hidden flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-white/50 hover:bg-white/5 hover:text-white" onClick={onMenuClick} aria-label="Menyu"><Icon name="menu" size={20} /></button>
         <div className="min-w-0">
           <h1 className="truncate text-lg font-bold text-white">{title}</h1>
           {subtitle && <p className="truncate text-xs text-white/40">{subtitle}</p>}
@@ -772,7 +780,7 @@ const Topbar = ({ title, subtitle, actions, user, onMenuClick }) => {
       <div className="flex flex-shrink-0 items-center gap-3">
         {actions}
         {user && Bell ? <Bell user={user} /> : (
-          <button className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-white/50 transition-colors hover:bg-white/5 hover:text-white">
+          <button className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-white/50 transition-colors hover:bg-white/5 hover:text-white" aria-label="Bildirishnomalar">
             <Icon name="bell" size={20} />
             <span className="absolute -top-1 -right-1 w-2 h-2 bg-indigo-500 rounded-full"></span>
           </button>
@@ -790,7 +798,7 @@ const Modal = ({ open, onClose, title, children, width = 'max-w-lg', style, cont
       <div className={`modal ${width} ${contentClassName}`} onClick={e => e.stopPropagation()} style={style}>
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-lg font-bold text-white">{title}</h3>
-          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors"><Icon name="x" size={20} /></button>
+          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors" aria-label="Yopish"><Icon name="x" size={20} /></button>
         </div>
         {children}
       </div>
@@ -1017,10 +1025,11 @@ const AvatarCropModal = ({ open, onClose, imageSrc, onCropComplete }) => {
             <span>{Math.round(scale * 100)}%</span>
           </div>
           <div className="flex items-center gap-3">
-            <button 
-              type="button" 
-              onClick={() => handleScaleChange(Math.max(1, scale - 0.2))} 
+            <button
+              type="button"
+              onClick={() => handleScaleChange(Math.max(1, scale - 0.2))}
               className="text-white/40 hover:text-white transition-colors"
+              aria-label="Kichraytirish"
             >
               <Icon name="search" size={16} />
             </button>
@@ -1033,10 +1042,11 @@ const AvatarCropModal = ({ open, onClose, imageSrc, onCropComplete }) => {
               onChange={(e) => handleScaleChange(parseFloat(e.target.value))}
               className="flex-1 accent-indigo-500 bg-white/10 h-1.5 rounded-lg appearance-none cursor-pointer"
             />
-            <button 
-              type="button" 
-              onClick={() => handleScaleChange(Math.min(3, scale + 0.2))} 
+            <button
+              type="button"
+              onClick={() => handleScaleChange(Math.min(3, scale + 0.2))}
               className="text-white/40 hover:text-white transition-colors"
+              aria-label="Kattalashtirish"
             >
               <Icon name="plus" size={16} />
             </button>
@@ -1063,6 +1073,79 @@ const AvatarCropModal = ({ open, onClose, imageSrc, onCropComplete }) => {
       </div>
     </Modal>
   );
+};
+
+// ─── Spinner ───────────────────────────────────────────────────────────────────
+const Spinner = ({ size = 20, className = '' }) => (
+  <span
+    className={`inline-block flex-shrink-0 rounded-full border-2 border-white/20 border-t-white animate-spin ${className}`}
+    style={{ width: size, height: size }}
+    aria-hidden="true"
+  />
+);
+
+// ─── Button ──────────────────────────────────────────────────────────────────
+// `loading` true bo'lsa: (1) tugma avtomatik disabled bo'ladi (double-submit
+// himoyasi — bir nechta joyda buni qo'lda unutib qo'yishardi), (2) spinner
+// ko'rsatiladi. `variant` — 'primary' | 'ghost' | 'danger'.
+const BUTTON_VARIANTS = {
+  primary: 'gradient-bg text-white',
+  ghost: 'btn-ghost',
+  danger: 'bg-rose-500/20 text-rose-200 border border-rose-500/30 hover:bg-rose-500/30',
+};
+const Button = ({
+  children, onClick, type = 'button', loading = false, disabled = false,
+  variant = 'primary', className = '', ...rest
+}) => (
+  <button
+    type={type}
+    onClick={onClick}
+    disabled={disabled || loading}
+    className={`inline-flex items-center justify-center gap-2 rounded-xl font-semibold text-sm px-5 py-2.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${BUTTON_VARIANTS[variant] || BUTTON_VARIANTS.primary} ${className}`}
+    {...rest}
+  >
+    {loading && <Spinner size={14} className="border-white/30 border-t-white" />}
+    {children}
+  </button>
+);
+
+// ─── ErrorBanner ────────────────────────────────────────────────────────────
+const ErrorBanner = ({ message, className = '' }) => {
+  if (!message) return null;
+  return (
+    <div className={`rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-200 text-sm px-4 py-3 ${className}`} role="alert">
+      {message}
+    </div>
+  );
+};
+
+// ─── useToast ────────────────────────────────────────────────────────────────
+// Ko'p joyda (AdminDashboard va h.k.) toast bitta string state + bitta
+// setTimeout bilan yasalgan edi: ikkinchi toast 3s ichida kelsa, birinchi
+// toastning eski setTimeout'i uni muddatidan oldin yashirib yuborardi.
+// useToast() bir nechta toastni id bo'yicha alohida kuzatadi — stacked
+// ko'rsatiladi, biri ikkinchisini o'chirmaydi.
+let _toastSeq = 0;
+const useToast = () => {
+  const [toasts, setToasts] = React.useState([]);
+  const showToast = React.useCallback((message, { duration = 3000, variant = 'default' } = {}) => {
+    const id = ++_toastSeq;
+    setToasts(prev => [...prev, { id, message, variant }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), duration);
+  }, []);
+  const ToastHost = () => (
+    <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2 items-end pointer-events-none">
+      {toasts.map(t => (
+        <div
+          key={t.id}
+          className={`glass rounded-xl px-4 py-3 text-sm text-white shadow-2xl max-w-sm ${t.variant === 'error' ? 'border border-rose-500/30' : 'border border-white/10'}`}
+        >
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+  return { showToast, ToastHost };
 };
 
 // ─── Empty State ───────────────────────────────────────────────────────────────
@@ -1285,4 +1368,4 @@ function VirtualList({ items, itemHeight = 60, containerHeight = 400, renderItem
 }
 
 // Export all
-Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, ConfirmModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList, formatUzPhoneInput, formatPhoneInput, detectDialCode, maskPhoneDisplay, COUNTRY_DIAL_CODES, PhoneField });
+Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, ConfirmModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList, formatUzPhoneInput, formatPhoneInput, detectDialCode, maskPhoneDisplay, COUNTRY_DIAL_CODES, PhoneField, Spinner, Button, ErrorBanner, useToast });

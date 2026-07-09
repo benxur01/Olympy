@@ -111,12 +111,20 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [wordAiChunks, setWordAiChunks] = React.useState(1);
   const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject: store.subjects[0] || 'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
   const [editingQuestionId, setEditingQuestionId] = React.useState(null);
+  // saveQuestion tugmasi so'rov davomida disabled bo'lishi uchun — avval
+  // hech qanday busy holat yo'q edi, ikki marta bosilsa dublikat savol
+  // yaratilishi mumkin edi.
+  const [savingQuestion, setSavingQuestion] = React.useState(false);
   const [newSubjectModal, setNewSubjectModal] = React.useState(false);
   const [newSubject, setNewSubject] = React.useState('');
   const [deleteId, setDeleteId] = React.useState(null);
   const [deleteAllConfirm, setDeleteAllConfirm] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState([]);
   const [bulkSaving, setBulkSaving] = React.useState(false);
+  // O'chirish tugmalari so'rov davomida disabled bo'lishi uchun — ayniqsa
+  // bulk-delete qaytarib bo'lmaydigan amal, ikki marta bosilishi xavfli.
+  const [deletingQuestion, setDeletingQuestion] = React.useState(false);
+  const [deletingAll, setDeletingAll] = React.useState(false);
   // ─── Preview inline-edit state ──────────────────────────────────────────
   // Generatsiya preview'larida (AI / PDF / Word AI) savolni saqlashdan OLDIN
   // to'g'ridan-to'g'ri tahrirlash. Bir vaqtning o'zida faqat bitta savol edit
@@ -715,7 +723,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   };
 
   const saveQuestion = () => {
-    if (!newQ.text) return;
+    if (!newQ.text || savingQuestion) return;
     const backendType = TYPE_TO_BACKEND[newQ.type] || 'mcq';
     // Kod savol uchun dasturlash tili majburiy.
     if (backendType === 'code' && !String(newQ.programmingLanguage || '').trim()) {
@@ -727,6 +735,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       const payload = _buildManualPayload();
       if (!payload) return;
       const token = OlympyApi.getToken();
+      setSavingQuestion(true);
       const promise = isEditing
         ? OlympyApi.updateQuestion(editingQuestionId, payload, token)
         : OlympyApi.createQuestion({
@@ -735,12 +744,21 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             source: 'manual',
           }, token);
       promise
-        .then(() => { apiQuestionsRes.reload(); setMode('list'); setEditingQuestionId(null); })
+        .then(() => {
+          apiQuestionsRes.reload();
+          setMode('list');
+          setEditingQuestionId(null);
+          // Faqat muvaffaqiyatli saqlangandan keyin formani tozalaymiz —
+          // avval so'rov dispatch qilingandan keyin darhol tozalanardi,
+          // saqlash xato bilan tugasa ham (tarmoq, validatsiya) o'qituvchi
+          // butun formani (savol matni, variantlar, test case'lar) yo'qotardi.
+          setNewQ(_resetQ());
+        })
         .catch(err => {
           console.warn('saveQuestion failed:', err);
           showApiToast(`⚠ ${isEditing ? "Tahrirlab" : "Saqlab"} bo'lmadi`);
-        });
-      setNewQ(_resetQ());
+        })
+        .finally(() => setSavingQuestion(false));
       return;
     }
     // ─── Mock (lokal) rejim — backend yo'q, store'ga yangi turlar bilan yozamiz.
@@ -1082,7 +1100,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             />
           </div>
         )}
-        {mode !== 'list' && <button onClick={() => { setMode('list'); setAiResult(null); setPdfResult(null); setPdfProvider(''); setPdfVision(false); setWordAiResult(null); setWordAiProvider(''); setEditingQuestionId(null); }} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 w-full md:w-auto"><Icon name="arrowLeft" size={14} /> Orqaga</button>}
+        {mode !== 'list' && <button onClick={() => { setMode('list'); setAiResult(null); setPdfResult(null); setPdfProvider(''); setPdfVision(false); setWordAiResult(null); setWordAiProvider(''); setEditingQuestionId(null); setNewQ(_resetQ()); }} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 w-full md:w-auto"><Icon name="arrowLeft" size={14} /> Orqaga</button>}
       </div>
 
       {/* Import natijasi banner */}
@@ -1475,8 +1493,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             </div>
           )}
           <div className="flex gap-3">
-            <button onClick={() => { setMode('list'); setEditingQuestionId(null); }} className="btn-ghost flex-1 py-3 rounded-xl">Bekor qilish</button>
-            <button onClick={saveQuestion} disabled={!newQ.text} className="btn-primary flex-1 py-3 rounded-xl font-semibold disabled:opacity-50">{editingQuestionId ? "Saqlash" : "Yaratish"}</button>
+            <button onClick={() => { setMode('list'); setEditingQuestionId(null); setNewQ(_resetQ()); }} className="btn-ghost flex-1 py-3 rounded-xl">Bekor qilish</button>
+            <button onClick={saveQuestion} disabled={!newQ.text || savingQuestion} className="btn-primary flex-1 py-3 rounded-xl font-semibold disabled:opacity-50">{savingQuestion ? '...' : (editingQuestionId ? "Saqlash" : "Yaratish")}</button>
           </div>
         </div>
       )}
@@ -1855,45 +1873,52 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       )}
 
       {/* Delete confirm */}
-      <Modal open={!!deleteId} onClose={() => setDeleteId(null)} title="Savolni o'chirish">
+      <Modal open={!!deleteId} onClose={() => !deletingQuestion && setDeleteId(null)} title="Savolni o'chirish">
         <p className="text-white/60 mb-5">Bu savolni o'chirishni tasdiqlaysizmi?</p>
         <div className="flex gap-3">
-          <button onClick={() => setDeleteId(null)} className="btn-ghost flex-1 py-3 rounded-xl">Bekor qilish</button>
+          <button onClick={() => setDeleteId(null)} disabled={deletingQuestion} className="btn-ghost flex-1 py-3 rounded-xl disabled:opacity-50">Bekor qilish</button>
           <button onClick={() => {
+            if (deletingQuestion) return;
             if (isApi) {
+              setDeletingQuestion(true);
               const target = questions.find(q => String(q.id) === String(deleteId));
               const backendId = target?.backendId ?? deleteId;
               OlympyApi.deleteQuestion(backendId, OlympyApi.getToken())
                 .then(() => { apiQuestionsRes.reload(); setDeleteId(null); })
-                .catch(err => { console.warn('deleteQuestion failed:', err); showApiToast("⚠ O'chirib bo'lmadi"); setDeleteId(null); });
+                .catch(err => { console.warn('deleteQuestion failed:', err); showApiToast("⚠ O'chirib bo'lmadi"); })
+                .finally(() => setDeletingQuestion(false));
               return;
             }
             OlympyStore.deleteQuestion(deleteId);
             setDeleteId(null);
-          }} className="btn-danger flex-1 py-3 rounded-xl font-semibold">O'chirish</button>
+          }} disabled={deletingQuestion} className="btn-danger flex-1 py-3 rounded-xl font-semibold disabled:opacity-50">{deletingQuestion ? "O'chirilmoqda..." : "O'chirish"}</button>
         </div>
       </Modal>
 
       {/* Delete all confirm */}
-      <Modal open={deleteAllConfirm} onClose={() => setDeleteAllConfirm(false)} title={selectedIds.length > 0 ? "Tanlangan savollarni o'chirish" : "Barcha savollarni o'chirish"}>
+      <Modal open={deleteAllConfirm} onClose={() => !deletingAll && setDeleteAllConfirm(false)} title={selectedIds.length > 0 ? "Tanlangan savollarni o'chirish" : "Barcha savollarni o'chirish"}>
         <div className="space-y-4">
           <p className="text-white/80 text-sm font-semibold leading-relaxed">
             {selectedIds.length > 0 ? `${selectedIds.length} ta tanlangan savol o'chirilsinmi?` : "Hamma savollar o'chirilsinmi?"}
           </p>
           <p className="text-white/60 text-xs leading-relaxed">
-            {selectedIds.length > 0
-              ? `Ushbu markazga tegishli **tanlangan ${selectedIds.length} ta savol** o'chirib tashlanadi.`
-              : `Ushbu markazga tegishli **barcha ${questions.length} ta savol** o'chirib tashlanadi.`}
+            {selectedIds.length > 0 ? (
+              <>Ushbu markazga tegishli <strong>tanlangan {selectedIds.length} ta savol</strong> o'chirib tashlanadi.</>
+            ) : (
+              <>Ushbu markazga tegishli <strong>barcha {questions.length} ta savol</strong> o'chirib tashlanadi.</>
+            )}
           </p>
           <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs leading-relaxed">
             ⚠️ <strong>DIQQAT:</strong> Ushbu amalni ortga qaytarib bo'lmaydi!
           </div>
           <div className="flex gap-3 pt-2">
-            <button onClick={() => setDeleteAllConfirm(false)} className="btn-ghost flex-1 py-3 rounded-xl">
+            <button onClick={() => setDeleteAllConfirm(false)} disabled={deletingAll} className="btn-ghost flex-1 py-3 rounded-xl disabled:opacity-50">
               Yo'q
             </button>
             <button
               onClick={async () => {
+                if (deletingAll) return;
+                setDeletingAll(true);
                 const targetIds = selectedIds.length > 0 ? selectedIds : null;
                 if (isApi) {
                   try {
@@ -1918,11 +1943,13 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   );
                   setSelectedIds([]);
                 }
+                setDeletingAll(false);
                 setDeleteAllConfirm(false);
               }}
-              className="btn-danger flex-1 py-3 rounded-xl font-semibold"
+              disabled={deletingAll}
+              className="btn-danger flex-1 py-3 rounded-xl font-semibold disabled:opacity-50"
             >
-              Ha
+              {deletingAll ? "O'chirilmoqda..." : 'Ha'}
             </button>
           </div>
         </div>
