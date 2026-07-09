@@ -391,6 +391,17 @@ REST_FRAMEWORK = {
         # Olimpiada tayyorgarlik rejasi (O6) — Gemini'ga uzun JSON so'rov.
         # Spec bo'yicha kuniga 5 ta.
         'ai_prep': '5/day',
+        # AI support chat (/api/support/chat/) — AllowAny (login talab
+        # qilmaydi), shu sababli boshqa AI endpointlaridan farqli o'laroq
+        # per-user kunlik limit bilan emas, IP/foydalanuvchi bo'yicha
+        # daqiqalik limit bilan cheklanadi. Har bir so'rov Gemini'ga sinxron,
+        # bloklovchi tarzda murojaat qiladi (bir nechta model/kalit fallback
+        # bilan) — throttle qilinmasa, kimdir hisobsiz ko'p so'rov yuborib
+        # backend'ning barcha gunicorn thread'larini (standart: 1 worker x 3
+        # thread) minutlab band qilib qo'yishi mumkin edi (DoS). 6/min —
+        # oddiy foydalanuvchi uchun tabiiy suhbat almashinuvi (savol-javob)
+        # yetarli keng, lekin abuse xarajatini keskin cheklaydi.
+        'support_chat': '6/min',
 
         # Parol o'zgartirish — autentifikatsiyalangan FOYDALANUVCHI bo'yicha.
         # Soatiga ko'pi bilan 5 marta (accounts.throttling).

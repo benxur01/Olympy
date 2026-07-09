@@ -35,7 +35,7 @@ class CenterCreateTestCase(APITestCase):
         response = self.client.post(url, {
             'name': 'Yangi Markaz',
             'city': 'Toshkent',
-            'region': 'Toshkent',
+            'region': 'Toshkent shahri',
             'district': 'Yunusobod',
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)

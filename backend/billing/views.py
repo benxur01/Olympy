@@ -450,13 +450,16 @@ def click_webhook(request):
                 tx = PaymentTransaction.objects.get(pk=merchant_trans_id)
                 tx.status = PaymentTransaction.STATUS_FAILED
                 tx.save()
-            except PaymentTransaction.DoesNotExist:
+            except (PaymentTransaction.DoesNotExist, ValueError, TypeError):
                 pass
         return JsonResponse({'error': -9, 'error_note': 'Transaction failed from Click'})
 
+    # merchant_trans_id raqam bo'lmasa (masalan buzuq/qalbaki so'rov) pk
+    # lookup ValueError otadi — DoesNotExist bilan bir xil "topilmadi"
+    # javobi qaytariladi, 500 o'rniga.
     try:
         tx = PaymentTransaction.objects.get(pk=merchant_trans_id)
-    except PaymentTransaction.DoesNotExist:
+    except (PaymentTransaction.DoesNotExist, ValueError, TypeError):
         return JsonResponse({'error': -5, 'error_note': 'Transaction not found'})
 
     # amount None yoki vergulli ("123,456") kelsa Decimal() InvalidOperation
@@ -611,11 +614,13 @@ def payme_webhook(request):
         tx_id = account.get('transaction_id')
         amount = params.get('amount') # in tiyins (1/100 of UZS)
         
+        # tx_id raqam bo'lmasa pk lookup ValueError otadi — DoesNotExist
+        # bilan bir xil "topilmadi" javobi qaytariladi, 500 o'rniga.
         try:
             tx = PaymentTransaction.objects.get(pk=tx_id)
-        except PaymentTransaction.DoesNotExist:
+        except (PaymentTransaction.DoesNotExist, ValueError, TypeError):
             return rpc_error(-31050, "Tranzaksiya topilmadi", "Транзакция не найдена")
-            
+
         if tx.status != PaymentTransaction.STATUS_PENDING:
             return rpc_error(-31051, "Tranzaksiya faol emas", "Транзакция не активна")
             
@@ -656,7 +661,7 @@ def payme_webhook(request):
         with transaction.atomic():
             try:
                 tx = PaymentTransaction.objects.select_for_update().get(pk=tx_id)
-            except PaymentTransaction.DoesNotExist:
+            except (PaymentTransaction.DoesNotExist, ValueError, TypeError):
                 return rpc_error(-31050, "Tranzaksiya topilmadi", "Транзакция не найдена")
 
             # amount tiyinda — CheckPerformTransaction'dagi kabi aniq Decimal
