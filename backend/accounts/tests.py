@@ -533,7 +533,15 @@ class TrialEndingRemindersTestCase(APITestCase):
     `trial_reminder_sent_at`'ni o'rnatishini tekshiradi. Trial davrida user
     `is_premium=True` bo'lgani uchun (ro'yxatdan o'tishda shunday qo'yiladi)
     tanlash aynan `premium_trial_end` maydoniga qarab amalga oshadi.
-    `_send_telegram_message` mock qilinadi — haqiqiy Telegram chaqirilmaydi.
+
+    Haqiqiy yuborish endi `select_for_update()` qulfi tashqarisida, alohida
+    `send_telegram_otp_task` Celery subtask'iga ko'chirilgan (lock contention
+    oldini olish uchun) — shu sabab `_send_telegram_message`ni emas, aynan
+    shu subtask'ning `.delay()` chaqiruvini mock qilamiz. Eslatma: token yo'q
+    muhitda (CI) `_send_telegram_message`ni to'g'ridan-to'g'ri mock qilish
+    ishlamaydi — `send_telegram_otp_task` ichida `_telegram_bot_token()`
+    tekshiruvi ishlamay qolgan tokendan oldinroq `no_token` bilan chiqib
+    ketadi va mock hech qachon chaqirilmaydi.
     """
 
     def _make_attempt(self, user, score, days_ago=2):
@@ -560,8 +568,8 @@ class TrialEndingRemindersTestCase(APITestCase):
         )
         return attempt
 
-    @patch('accounts.views._send_telegram_message', return_value=True)
-    def test_reminder_sent_for_ending_trial(self, mock_send):
+    @patch('accounts.tasks.send_telegram_otp_task.delay')
+    def test_reminder_sent_for_ending_trial(self, mock_delay):
         """Sinovi 2 kun ichida tugaydigan, telegram bog'langan, aktiv trial
         userga eslatma yuboriladi va trial_reminder_sent_at o'rnatiladi.
         Trial davrida user is_premium=True bo'ladi — aynan shu holat avval
@@ -580,15 +588,15 @@ class TrialEndingRemindersTestCase(APITestCase):
         result = send_trial_ending_reminders()
 
         self.assertEqual(result, {'sent': 1, 'skipped': 0})
-        mock_send.assert_called_once()
+        mock_delay.assert_called_once()
         # Xabarda real statistika (test soni / o'rtacha ball) bo'lishi kerak.
-        sent_text = mock_send.call_args.args[1]
+        sent_text = mock_delay.call_args.args[1]
         self.assertIn('1 ta test', sent_text)
         user.refresh_from_db()
         self.assertIsNotNone(user.trial_reminder_sent_at)
 
-    @patch('accounts.views._send_telegram_message', return_value=True)
-    def test_no_trial_user_skipped(self, mock_send):
+    @patch('accounts.tasks.send_telegram_otp_task.delay')
+    def test_no_trial_user_skipped(self, mock_delay):
         """Trial muddati yo'q (premium_trial_end IS NULL) userga yuborilmaydi —
         eslatma faqat amal qiluvchi trial muddatiga bog'lanadi, sof pullik /
         oddiy userlarga emas."""
@@ -605,12 +613,12 @@ class TrialEndingRemindersTestCase(APITestCase):
         result = send_trial_ending_reminders()
 
         self.assertEqual(result, {'sent': 0, 'skipped': 0})
-        mock_send.assert_not_called()
+        mock_delay.assert_not_called()
         user.refresh_from_db()
         self.assertIsNone(user.trial_reminder_sent_at)
 
-    @patch('accounts.views._send_telegram_message', return_value=True)
-    def test_inactive_user_skipped(self, mock_send):
+    @patch('accounts.tasks.send_telegram_otp_task.delay')
+    def test_inactive_user_skipped(self, mock_delay):
         """is_active=False (bloklangan/o'chirilgan) userga yuborilmaydi."""
         from accounts.tasks import send_trial_ending_reminders
 
@@ -626,12 +634,12 @@ class TrialEndingRemindersTestCase(APITestCase):
         result = send_trial_ending_reminders()
 
         self.assertEqual(result, {'sent': 0, 'skipped': 0})
-        mock_send.assert_not_called()
+        mock_delay.assert_not_called()
         user.refresh_from_db()
         self.assertIsNone(user.trial_reminder_sent_at)
 
-    @patch('accounts.views._send_telegram_message', return_value=True)
-    def test_far_trial_skipped(self, mock_send):
+    @patch('accounts.tasks.send_telegram_otp_task.delay')
+    def test_far_trial_skipped(self, mock_delay):
         """Sinovi 10 kundan keyin tugaydigan userga hali yuborilmaydi."""
         from accounts.tasks import send_trial_ending_reminders
 
@@ -646,10 +654,10 @@ class TrialEndingRemindersTestCase(APITestCase):
         result = send_trial_ending_reminders()
 
         self.assertEqual(result, {'sent': 0, 'skipped': 0})
-        mock_send.assert_not_called()
+        mock_delay.assert_not_called()
 
-    @patch('accounts.views._send_telegram_message', return_value=True)
-    def test_already_reminded_not_resent(self, mock_send):
+    @patch('accounts.tasks.send_telegram_otp_task.delay')
+    def test_already_reminded_not_resent(self, mock_delay):
         """trial_reminder_sent_at allaqachon o'rnatilgan userga qayta yuborilmaydi."""
         from accounts.tasks import send_trial_ending_reminders
 
@@ -666,13 +674,13 @@ class TrialEndingRemindersTestCase(APITestCase):
         result = send_trial_ending_reminders()
 
         self.assertEqual(result, {'sent': 0, 'skipped': 0})
-        mock_send.assert_not_called()
+        mock_delay.assert_not_called()
         user.refresh_from_db()
         # Eski vaqt o'zgarmasligi kerak.
         self.assertEqual(user.trial_reminder_sent_at, already)
 
-    @patch('accounts.views._send_telegram_message', return_value=True)
-    def test_no_telegram_skipped(self, mock_send):
+    @patch('accounts.tasks.send_telegram_otp_task.delay')
+    def test_no_telegram_skipped(self, mock_delay):
         """telegram_chat_id bo'sh user — yuborilmaydi (skip)."""
         from accounts.tasks import send_trial_ending_reminders
 
@@ -687,12 +695,12 @@ class TrialEndingRemindersTestCase(APITestCase):
         result = send_trial_ending_reminders()
 
         self.assertEqual(result, {'sent': 0, 'skipped': 0})
-        mock_send.assert_not_called()
+        mock_delay.assert_not_called()
         user.refresh_from_db()
         self.assertIsNone(user.trial_reminder_sent_at)
 
-    @patch('accounts.views._send_telegram_message', return_value=True)
-    def test_no_attempts_uses_generic_message(self, mock_send):
+    @patch('accounts.tasks.send_telegram_otp_task.delay')
+    def test_no_attempts_uses_generic_message(self, mock_delay):
         """Bu oy test ishlamagan userga umumiy (soxta raqamsiz) matn yuboriladi."""
         from accounts.tasks import send_trial_ending_reminders
 
@@ -707,7 +715,7 @@ class TrialEndingRemindersTestCase(APITestCase):
         result = send_trial_ending_reminders()
 
         self.assertEqual(result, {'sent': 1, 'skipped': 0})
-        sent_text = mock_send.call_args.args[1]
+        sent_text = mock_delay.call_args.args[1]
         # Statistika yo'q — "N ta test" iborasi bo'lmasligi kerak.
         self.assertNotIn('ta test ishladingiz', sent_text)
         user.refresh_from_db()
