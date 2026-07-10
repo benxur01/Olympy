@@ -452,6 +452,11 @@ const mapBackendUser = (user) => {
     // eski javobda maydon bo'lmasa (undefined) modal ochilmasligi uchun
     // OwnerDashboard aniq `=== false` tekshiradi.
     onboardingCenterCompleted: user.onboarding_center_completed,
+    // Manager va o'qituvchi onboarding bannerlari (yengil orientatsiya). Backend
+    // har doim boolean qaytaradi; eski javobda maydon bo'lmasa (undefined) banner
+    // ochilmasligi uchun dashboardlar aniq `=== false` tekshiradi.
+    onboardingManagerCompleted: user.onboarding_manager_completed,
+    onboardingTeacherCompleted: user.onboarding_teacher_completed,
     // Tanga balansi (referral/mukofotlar uchun). Serializer qaytarmasa 0.
     coins: typeof user.coins === 'number' ? user.coins : 0,
     onboardingGrade: user.onboarding_grade || null,
@@ -1198,6 +1203,9 @@ export const OlympyApi = {
   // ─── B2B / O'sish (growth) funksiyalari ───
   // Feature #1: B2B markaz onboarding — owner sehrgarini tugatish/o'tkazib yuborish.
   completeCenterOnboarding: (token) => request('/api/me/center-onboarding/', { method: 'PATCH', token }),
+  // Manager va o'qituvchi onboarding bannerlarini tugatish (yengil orientatsiya).
+  completeManagerOnboarding: (token) => request('/api/me/manager-onboarding/', { method: 'PATCH', token }),
+  completeTeacherOnboarding: (token) => request('/api/me/teacher-onboarding/', { method: 'PATCH', token }),
   // Feature #3: O'qituvchi paneli — markaz o'quvchilari va olimpiadalari.
   // { count, results: [...] } qaytaradi (raw — chaqiruvchi results'ni oladi).
   teacherStudents: (token) => request('/api/me/teacher/students/', { token }),

@@ -33,6 +33,7 @@ class UserSerializer(serializers.ModelSerializer):
                   'onboarding_completed', 'onboarding_grade',
                   'onboarding_subjects', 'onboarding_goal',
                   'onboarding_center_completed',
+                  'onboarding_manager_completed', 'onboarding_teacher_completed',
                   'subject_levels', 'level_streak', 'totp_enabled']
         # Xavfsizlik (privilege escalation / IDOR himoyasi): `roles`,
         # `is_platform_admin`, `is_premium`, `is_active` — bular foydalanuvchi
@@ -53,6 +54,7 @@ class UserSerializer(serializers.ModelSerializer):
                             'onboarding_completed', 'onboarding_grade',
                             'onboarding_subjects', 'onboarding_goal',
                             'onboarding_center_completed',
+                            'onboarding_manager_completed', 'onboarding_teacher_completed',
                             'subject_levels', 'level_streak', 'totp_enabled']
 
     def get_badges(self, obj):

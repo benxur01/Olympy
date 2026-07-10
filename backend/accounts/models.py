@@ -105,6 +105,13 @@ class User(AbstractBaseUser, PermissionsMixin):
     # completed` True bo'lguncha frontend bu modalni ochadi. Student onboarding
     # (`onboarding_completed`) dan mustaqil — owner ham, student ham bo'lishi mumkin.
     onboarding_center_completed = models.BooleanField(default=False)
+    # B2B onboarding (manager va o'qituvchi uchun): manager birinchi marta
+    # paneliga kirganda uy tabida yengil orientatsiya banneri ko'rsatiladi
+    # (arizalarni ko'rib chiqish → birinchi tadbir yaratish); o'qituvchiga esa
+    # birinchi savol yaratishga yo'naltiruvchi banner. Center onboarding'dan
+    # mustaqil — har biri o'z roli uchun bir marta ko'rsatiladi.
+    onboarding_manager_completed = models.BooleanField(default=False)
+    onboarding_teacher_completed = models.BooleanField(default=False)
     # Adaptiv daraja tizimi (ELO'ga o'xshash): har fan uchun joriy daraja va
     # ketma-ket urinish seriyasi. `subject_levels` — {fan: daraja}, masalan
     # {"Ingliz tili": "B1", "Matematika": "O'rta"}. `level_streak` — har fan

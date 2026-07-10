@@ -30,7 +30,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [assignModal, setAssignModal] = React.useState(null);
   const [toast, setToast] = React.useState('');
   const [mobileMenu, setMobileMenu] = React.useState(false);
+  // Manager onboarding banneri (yengil orientatsiya, bir marta). Backend
+  // `onboardingManagerCompleted === false` bo'lsa uy tabida ko'rsatiladi.
+  // Yopilganda API chaqiriladi va user state onUserUpdate orqali yangilanadi;
+  // `onboardingDismissed` — API javobini kutmasdan darhol yashirish uchun.
+  const [onboardingDismissed, setOnboardingDismissed] = React.useState(false);
+  const [onboardingSaving, setOnboardingSaving] = React.useState(false);
   const [pendingStudents, setPendingStudents] = React.useState([]);
+  const [pendingTeachers, setPendingTeachers] = React.useState([]);
   const [approvedStudents, setApprovedStudents] = React.useState([]);
   const [studentDetailMembership, setStudentDetailMembership] = React.useState(null);
   const [studentDetail, setStudentDetail] = React.useState(null);
@@ -175,6 +182,17 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       .then(rows => setPendingStudents(Array.isArray(rows) ? rows : []));
   }, [isApi, managerCenterId]);
 
+  // O'qituvchi arizalari ham manager arizalar bo'limida ko'rsatiladi/tasdiqlanadi
+  // (onboarding banneri "o'quvchi va o'qituvchi arizalari" deb va'da beradi).
+  const loadPendingTeachers = React.useCallback(() => {
+    if (!isApi || !managerCenterId) {
+      setPendingTeachers([]);
+      return Promise.resolve();
+    }
+    return OlympyApi.getPendingMemberships(managerCenterId, 'teacher', OlympyApi.getToken())
+      .then(rows => setPendingTeachers(Array.isArray(rows) ? rows : []));
+  }, [isApi, managerCenterId]);
+
   const loadApprovedStudents = React.useCallback(() => {
     if (!isApi || !managerCenterId) {
       setApprovedStudents([]);
@@ -191,6 +209,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         if (!cancelled) {
           console.warn('getPendingMemberships failed:', err);
           setPendingStudents([]);
+        }
+      });
+      loadPendingTeachers().catch(err => {
+        if (!cancelled) {
+          console.warn('getPendingMemberships(teacher) failed:', err);
+          setPendingTeachers([]);
         }
       });
       loadApprovedStudents().catch(err => {
@@ -474,16 +498,18 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         status: 'Tasdiqlandi',
       }));
 
-  // Live student-join requests at this center
-  const mockRequests = store.requests.filter(r => r.type === 'student' && r.centerId === centerId).map(r => {
+  // Live student/teacher-join requests at this center (rol ikkalasi ham
+  // manager "Arizalar" bo'limida bir xil ro'yxatda ko'rsatiladi).
+  const mockRequests = store.requests.filter(r => (r.type === 'student' || r.type === 'teacher') && r.centerId === centerId).map(r => {
     const u = store.users.find(x => x.id === r.userId);
     return {
       id: r.id,
+      role: r.type,
       name: u?.name || '—',
       phone: u?.phone || '—',
       avatarUrl: u?.avatarUrl || '',
       date: r.date,
-      subject: u?.roles?.student?.subject || r.subject || '—',
+      subject: u?.roles?.[r.type]?.subject || r.subject || '—',
       approvalCode: '',
       status: statusLabel(r.status),
       _raw: r,
@@ -491,6 +517,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   });
   const apiRequests = pendingStudents.map(m => ({
     id: `api:student:${m.membership_id}`,
+    role: 'student',
     name: m.user?.full_name || m.user?.name || '—',
     phone: m.user?.normalized_phone || m.user?.phone || '—',
     avatarUrl: m.user?.avatar_url || m.user?.avatarUrl || '',
@@ -500,7 +527,19 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     status: 'Kutilmoqda',
     _raw: m,
   }));
-  const requests = isApi ? apiRequests : mockRequests;
+  const apiTeacherRequests = pendingTeachers.map(m => ({
+    id: `api:teacher:${m.membership_id}`,
+    role: 'teacher',
+    name: m.user?.full_name || m.user?.name || '—',
+    phone: m.user?.normalized_phone || m.user?.phone || '—',
+    avatarUrl: m.user?.avatar_url || m.user?.avatarUrl || '',
+    date: (m.created_at || '').slice(0, 10),
+    subject: m.subject || '—',
+    approvalCode: m.approval_code || '',
+    status: 'Kutilmoqda',
+    _raw: m,
+  }));
+  const requests = isApi ? [...apiRequests, ...apiTeacherRequests] : mockRequests;
 
   const openStudentDetail = (studentRow) => {
     if (!isApi) {
@@ -545,21 +584,24 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const handleRequest = (id, action, raw) => {
     if (isApi) {
       const token = OlympyApi.getToken();
-      const requestRow = raw || requests.find(r => r.id === id)?._raw;
+      const requestEntry = requests.find(r => r.id === id);
+      const requestRow = raw || requestEntry?._raw;
       const membershipId = requestRow?.membership_id ?? requestRow?.membershipId ?? requestRow?.backendId;
       if (!membershipId || !centerId) {
         showToast('⚠ API rejimida ariza ma\'lumoti yetarli emas');
         return;
       }
       const backendCenterId = center?.backendId ?? centerId;
-      OlympyApi.approveStudent(
+      const isTeacherRequest = requestEntry?.role === 'teacher';
+      const approveFn = isTeacherRequest ? OlympyApi.approveTeacher : OlympyApi.approveStudent;
+      approveFn(
         backendCenterId,
         { membership_id: membershipId, decision: action === 'approve' ? 'approved' : 'rejected' },
         token,
       )
-        .then(() => loadPendingStudents())
+        .then(() => isTeacherRequest ? loadPendingTeachers() : loadPendingStudents())
         .then(() => showToast(action === 'approve' ? '✓ Ariza tasdiqlandi' : '✗ Ariza rad etildi'))
-        .catch(err => { console.warn('approveStudent failed:', err); showToast("⚠ Tasdiqlab bo'lmadi"); });
+        .catch(err => { console.warn('approveStudent/approveTeacher failed:', err); showToast("⚠ Tasdiqlab bo'lmadi"); });
       return;
     }
     if (action === 'approve') OlympyStore.approveRequest(id);
@@ -720,6 +762,20 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     setEditingOlympiadId(null);
     setNewOlympiad({ ...emptyOlympiadForm });
     setCreateModal(true);
+  };
+
+  // Manager onboarding bannerini yopish — backendni yangilab, user state'ni
+  // ham (onUserUpdate orqali) sinxronlaymiz. Idempotent — xato bo'lsa ham
+  // bannerni yashiramiz (keyingi getMe'da to'g'ri holat keladi).
+  const dismissOnboarding = () => {
+    setOnboardingSaving(true);
+    setOnboardingDismissed(true);
+    OlympyApi.completeManagerOnboarding(OlympyApi.getToken())
+      .then(() => {
+        if (onUserUpdate) onUserUpdate({ ...user, onboardingManagerCompleted: true });
+      })
+      .catch(err => { console.warn('completeManagerOnboarding failed:', err); })
+      .finally(() => setOnboardingSaving(false));
   };
 
   const openEditEvent = (event) => {
@@ -942,6 +998,40 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const renderHome = () => (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
+      {user?.onboardingManagerCompleted === false && !onboardingDismissed && (
+        <div className="glass rounded-2xl p-5 border border-indigo-500/30 glow-blue">
+          <div className="flex items-start gap-4">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+              <Icon name="sparkles" size={22} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-bold text-white">Manager paneliga xush kelibsiz!</h3>
+              <p className="text-white/50 text-sm mt-0.5">Ish boshlash uchun ikki asosiy qadam:</p>
+              <ul className="mt-3 space-y-2">
+                <li className="flex items-center gap-2 text-sm text-white/80">
+                  <Icon name="check" size={15} className="text-indigo-400 flex-shrink-0" />
+                  O'quvchi va o'qituvchi arizalarini ko'rib chiqing
+                </li>
+                <li className="flex items-center gap-2 text-sm text-white/80">
+                  <Icon name="check" size={15} className="text-indigo-400 flex-shrink-0" />
+                  Birinchi tadbir/olimpiada yarating
+                </li>
+              </ul>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button onClick={() => { setPage('requests'); dismissOnboarding(); }}
+                  className="btn-primary px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2">
+                  <Icon name="bell" size={15} /> Arizalarni ko'rish
+                </button>
+                <button onClick={dismissOnboarding} disabled={onboardingSaving}
+                  className="btn-ghost px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                  Yopish
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h2 className="text-2xl font-black text-white">{centerName}</h2>
@@ -960,10 +1050,20 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-        {/* O'quvchi arizalari (doim ko'rinadi) */}
-        <div className="glass rounded-2xl p-5 border border-amber-500/20">
+        {/* O'quvchi va o'qituvchi arizalari (doim ko'rinadi). Kutilayotgan
+            arizalar bo'lsa — amal talab qiladigan yagona element sifatida
+            to'liq kenglikda va vizual jihatdan ustuvor ko'rsatiladi;
+            read-only kartalar pastda teng qatorda qoladi. */}
+        <div className={`glass rounded-2xl p-5 ${pendingCount > 0 ? 'xl:col-span-2 border border-amber-500/40 glow-blue' : 'border border-amber-500/20'}`}>
           <div className="mb-4 flex items-center justify-between">
-            <h3 className="font-bold text-white">O'quvchi arizalari</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="font-bold text-white">Arizalar</h3>
+              {pendingCount > 0 && (
+                <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 bg-amber-500/15 border border-amber-500/30 rounded-full px-2 py-0.5">
+                  {pendingCount} ta amal talab qiladi
+                </span>
+              )}
+            </div>
             <button onClick={() => setPage('requests')} className="text-xs text-indigo-400">Barchasi</button>
           </div>
           <div className="space-y-2">
@@ -971,7 +1071,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl glass">
                 <Avatar name={r.name} size={36} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-white">{r.name}</div>
+                  <div className="text-sm font-semibold text-white flex items-center gap-1.5">
+                    {r.name}
+                    <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full ${r.role === 'teacher' ? 'text-sky-300 bg-sky-500/15 border border-sky-500/30' : 'text-indigo-300 bg-indigo-500/15 border border-indigo-500/30'}`}>
+                      {r.role === 'teacher' ? "O'qituvchi" : "O'quvchi"}
+                    </span>
+                  </div>
                   <div className="text-xs text-white/40">{r.date} · {r.subject}</div>
                 </div>
                 <div className="flex gap-2">
@@ -1031,15 +1136,6 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             ))}
             {students.length === 0 && <div className="text-sm text-white/40">Hali tasdiqlangan o'quvchilar yo'q</div>}
           </div>
-        </div>
-
-        {/* Haftalik faollik */}
-        <div className="glass rounded-2xl p-5">
-          <h3 className="font-bold text-white mb-4">Haftalik faollik</h3>
-          <BarChart data={[
-            { label: 'Dush', value: 42 }, { label: 'Sesh', value: 78 }, { label: 'Chor', value: 55 },
-            { label: 'Pay', value: 91 }, { label: 'Jum', value: 67 }, { label: 'Shan', value: 34 }, { label: 'Yak', value: 20 },
-          ]} />
         </div>
       </div>
     </div>
@@ -1170,7 +1266,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px]">
           <thead><tr className="border-b border-white/5">
-            {['O\'quvchi', 'Telefon', 'Ariza sanasi', 'Fan', 'Kod', 'Holat', 'Amal'].map(h => (
+            {['Ism', 'Rol', 'Telefon', 'Ariza sanasi', 'Fan', 'Kod', 'Holat', 'Amal'].map(h => (
               <th key={h} className="text-left px-4 py-3 text-xs text-white/40 font-medium">{h}</th>
             ))}
           </tr></thead>
@@ -1178,6 +1274,11 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             {requests.map(r => (
               <tr key={r.id} className="olympy-row">
                 <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={r.name} src={r.avatarUrl || ''} size={32} /><span className="text-sm font-medium text-white">{r.name}</span></div></td>
+                <td className="px-4 py-3">
+                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${r.role === 'teacher' ? 'text-sky-300 bg-sky-500/15 border border-sky-500/30' : 'text-indigo-300 bg-indigo-500/15 border border-indigo-500/30'}`}>
+                    {r.role === 'teacher' ? "O'qituvchi" : "O'quvchi"}
+                  </span>
+                </td>
                 <td className="px-4 py-3 text-sm text-white/60">{maskPhoneDisplay(r.phone, '')}</td>
                 <td className="px-4 py-3 text-sm text-white/60">{r.date}</td>
                 <td className="px-4 py-3">{r.subject && r.subject !== '—' ? <SubjectBadge subject={r.subject} /> : <span className="text-xs text-white/30">—</span>}</td>
@@ -1194,7 +1295,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               </tr>
             ))}
             {requests.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-white/40 text-sm">Arizalar yo'q</td></tr>
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-white/40 text-sm">Arizalar yo'q</td></tr>
             )}
           </tbody>
         </table>
