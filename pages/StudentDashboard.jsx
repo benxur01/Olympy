@@ -1160,6 +1160,17 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const hasCenter = isCenterApproved;
 
+  // Yangi o'quvchi: hali tashkilotga qo'shilmagan VA birorta test topshirmagan.
+  // Bunday foydalanuvchi uchun home tabidagi bo'sh/nol ko'rsatkichli bloklarni
+  // (statistika qatori, fan kesimidagi natijalar, so'nggi natijalar, faollik
+  // reytingi) ko'rsatmaymiz — ular faqat chalg'itadi. Bugungi tadbirlar va
+  // tashkilot topish CTA'si esa doim ko'rinadi (yagona amal qilinadigan bloklar).
+  const isNewStudent = !hasCenter && myResults.length === 0;
+  // Foydalanuvchining o'zida faollik (streak yoki topshirilgan test) bo'lsagina
+  // "Haftalik eng faol o'quvchilar" reytingini ko'rsatamiz — nol faollikdagi
+  // o'quvchiga boshqalarning streak'ini ko'rsatish ruhlantiruvchi emas.
+  const hasOwnActivity = (user?.streakCount || 0) > 0 || myResults.length > 0;
+
   // Mashq rejimi (3-funksiya): o'tib ketgan olimpiadani mashq sifatida ochish.
   // Backend MockOlympiad nusxasini get-or-create qiladi (reytingga ta'sir
   // qilmaydi), so'ng mock test sahifasiga o'tamiz. Faqat API rejimida ishlaydi.
@@ -1301,8 +1312,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </div>
       )}
 
-      {/* Stats row */}
-      {(() => {
+      {/* Stats row — yangi o'quvchida barcha qiymatlar nol/— bo'lgani uchun
+          ko'rsatilmaydi. */}
+      {!isNewStudent && (() => {
         const statsData = isApi ? apiStatsRes.data : null;
         const avg = statsData?.average_score
           ?? (myResults.length ? Math.round(myResults.reduce((s, r) => s + (r.score || 0), 0) / myResults.length * 10) / 10 : 0);
@@ -1475,7 +1487,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </div>
       )}
 
-      {/* Subject performance */}
+      {/* Subject performance + so'nggi natijalar — yangi o'quvchida ikkalasi
+          ham bo'sh ("Hali ... yo'q") bo'lgani uchun butun blok yashiriladi. */}
+      {!isNewStudent && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         <div className="glass rounded-2xl p-4 md:p-5">
           <h3 className="font-bold text-white mb-3 md:mb-4 text-sm md:text-base">Fanlar bo'yicha natijalar</h3>
@@ -1520,6 +1534,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           </div>
         </div>
       </div>
+      )}
 
       {/* AI Success Predictor */}
       {(() => {
@@ -1572,8 +1587,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         );
       })()}
 
-      {/* Activity Leaderboard */}
-      {isApi && activityLeaderboard.length > 0 && (
+      {/* Activity Leaderboard — faqat o'zida faollik bor o'quvchiga ko'rsatiladi. */}
+      {isApi && hasOwnActivity && activityLeaderboard.length > 0 && (
         <div className="glass rounded-2xl p-4 md:p-5">
           <div className="flex items-center justify-between mb-3 md:mb-4 gap-2">
             <h3 className="font-bold text-white text-sm md:text-base flex items-center gap-1.5">

@@ -46,6 +46,40 @@ def center_onboarding(request):
     return Response({'onboarding_center_completed': True})
 
 
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def manager_onboarding(request):
+    """PATCH /api/me/manager-onboarding/ — manager onboarding bannerini tugatish.
+
+    Manager birinchi marta panelga kirganda ko'rsatiladigan yengil orientatsiya
+    bannerini yopganda chaqiriladi: `onboarding_manager_completed=True` qiladi.
+    Idempotent — qayta chaqirilsa ham bir xil natija. Faqat shu maydonni
+    yangilaymiz (save() ichidagi ortiqcha normalize logikasini chetlab).
+    """
+    user = request.user
+    if not user.onboarding_manager_completed:
+        user.onboarding_manager_completed = True
+        user.save(update_fields=['onboarding_manager_completed'])
+    return Response({'onboarding_manager_completed': True})
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+def teacher_onboarding(request):
+    """PATCH /api/me/teacher-onboarding/ — o'qituvchi onboarding bannerini tugatish.
+
+    O'qituvchi birinchi marta panelga kirganda ko'rsatiladigan yengil
+    orientatsiya bannerini yopganda chaqiriladi: `onboarding_teacher_completed=
+    True` qiladi. Idempotent — qayta chaqirilsa ham bir xil natija. Faqat shu
+    maydonni yangilaymiz (save() ichidagi ortiqcha normalize logikasini chetlab).
+    """
+    user = request.user
+    if not user.onboarding_teacher_completed:
+        user.onboarding_teacher_completed = True
+        user.save(update_fields=['onboarding_teacher_completed'])
+    return Response({'onboarding_teacher_completed': True})
+
+
 # ─── Feature #3: O'qituvchi (teacher) roli ───────────────────────────────────
 
 

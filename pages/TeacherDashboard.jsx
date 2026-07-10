@@ -168,6 +168,12 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [onlyUnused, setOnlyUnused] = React.useState(true);
   const [toast, setToast] = React.useState('');
   const [premiumModal, setPremiumModal] = React.useState('');
+  // O'qituvchi onboarding banneri (yengil orientatsiya, bir marta). Backend
+  // `onboardingTeacherCompleted === false` bo'lsa uy tabida ko'rsatiladi.
+  // Yopilganda API chaqiriladi va user state onUserUpdate orqali yangilanadi;
+  // `onboardingDismissed` — API javobini kutmasdan darhol yashirish uchun.
+  const [onboardingDismissed, setOnboardingDismissed] = React.useState(false);
+  const [onboardingSaving, setOnboardingSaving] = React.useState(false);
   // O'quvchi ustiga bosilganda ochiladigan batafsil panel (StudentDetailDrawer).
   const [selectedStudent, setSelectedStudent] = React.useState(null);
   // Natijalar → "Ko'rish" modali: tadbir ishtirokchilari natijalari jadvali.
@@ -330,6 +336,20 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     setEditingEventId(null);
     setNewEvent({ ...emptyEventForm });
     setCreateModal(true);
+  };
+
+  // O'qituvchi onboarding bannerini yopish — backendni yangilab, user state'ni
+  // ham (onUserUpdate orqali) sinxronlaymiz. Idempotent — xato bo'lsa ham
+  // bannerni yashiramiz (keyingi getMe'da to'g'ri holat keladi).
+  const dismissOnboarding = () => {
+    setOnboardingSaving(true);
+    setOnboardingDismissed(true);
+    OlympyApi.completeTeacherOnboarding(OlympyApi.getToken())
+      .then(() => {
+        if (onUserUpdate) onUserUpdate({ ...user, onboardingTeacherCompleted: true });
+      })
+      .catch(err => { console.warn('completeTeacherOnboarding failed:', err); })
+      .finally(() => setOnboardingSaving(false));
   };
 
   const openEditEvent = (event) => {
@@ -601,6 +621,30 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const renderHome = () => (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+      {user?.onboardingTeacherCompleted === false && !onboardingDismissed && (
+        <div className="glass rounded-2xl p-5 border border-indigo-500/30 glow-blue">
+          <div className="flex items-start gap-4">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+              <Icon name="sparkles" size={22} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-bold text-white">Ustoz paneliga xush kelibsiz!</h3>
+              <p className="text-white/50 text-sm mt-0.5">Boshlash uchun birinchi savolingizni yarating — keyin uni tadbirlarga qo'shishingiz mumkin.</p>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button onClick={() => { setPage('questions'); dismissOnboarding(); }}
+                  className="btn-primary px-4 py-2 rounded-xl text-sm font-semibold flex items-center gap-2">
+                  <Icon name="plus" size={15} /> Savol yaratish
+                </button>
+                <button onClick={dismissOnboarding} disabled={onboardingSaving}
+                  className="btn-ghost px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50">
+                  Yopish
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h2 className="text-2xl font-black text-white">{centerName}</h2>
