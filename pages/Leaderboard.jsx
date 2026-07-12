@@ -86,6 +86,9 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
         .sort((a, b) => b.score - a.score)
         .map((d, i) => ({ ...d, rank: i + 1, badge: i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '' }));
   const apiLoading = isApi && apiLbRes.loading && !apiEntries;
+  // Server xatosi (tarmoq, 500, token muddati) — "haqiqatan bo'sh" holatdan
+  // farqlanadi: aks holda foydalanuvchi xatoni "natijam yo'q" deb tushunadi.
+  const apiError = isApi && !apiLbRes.loading && !apiEntries ? apiLbRes.error : null;
 
   const subjects = [...new Set(merged.map(d => d.subject))].filter(Boolean);
   const cities = [...new Set(merged.map(d => d.city))].filter(Boolean);
@@ -171,7 +174,16 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
         <div className="glass rounded-2xl p-6 text-center text-white/50 text-sm">Reyting yuklanmoqda...</div>
       )}
 
-      {activeTab !== 'classmates' && (
+      {activeTab !== 'classmates' && !apiLoading && apiError && (
+        <div className="glass rounded-2xl p-6 text-center">
+          <div className="text-rose-300 text-sm font-semibold mb-3">
+            {OlympyApi.toUserMessage?.(apiError) || "Reytingni yuklab bo'lmadi. Qayta urinib ko'ring."}
+          </div>
+          <button onClick={() => apiLbRes.reload()} className="btn-ghost text-xs px-4 py-2 rounded-xl">Qayta yuklash</button>
+        </div>
+      )}
+
+      {activeTab !== 'classmates' && !apiError && (
       <>
       {/* Top 3 podium — podium tartibi (silver-gold-bronze) saqlanadi, lekin mobile'da kompakt */}
       <div className="grid grid-cols-3 gap-1.5 md:gap-3">
@@ -263,12 +275,23 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
 
 // LT4: Sinfdoshlar reytingi — onboarding_grade bo'yicha (yo'q bo'lsa umumiy).
 const ClassmatesLeaderboard = () => {
-  const { data, loading } = useApiData(
+  const { data, loading, error, reload } = useApiData(
     () => OlympyApi.getClassmatesLeaderboard(OlympyApi.getToken()),
     [],
   );
   if (loading) {
     return <div className="glass rounded-2xl p-6 text-center text-white/50 text-sm">Yuklanmoqda...</div>;
+  }
+  // Xato bo'lsa "bo'sh" xabari o'rniga aniq xato + qayta urinish ko'rsatamiz.
+  if (error) {
+    return (
+      <div className="glass rounded-2xl p-6 text-center">
+        <div className="text-rose-300 text-sm font-semibold mb-3">
+          {OlympyApi.toUserMessage?.(error) || "Sinfdoshlar reytingini yuklab bo'lmadi. Qayta urinib ko'ring."}
+        </div>
+        <button onClick={() => reload()} className="btn-ghost text-xs px-4 py-2 rounded-xl">Qayta yuklash</button>
+      </div>
+    );
   }
   const rows = Array.isArray(data) ? data : [];
   if (!rows.length) {

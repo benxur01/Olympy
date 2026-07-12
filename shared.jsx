@@ -1367,5 +1367,96 @@ function VirtualList({ items, itemHeight = 60, containerHeight = 400, renderItem
   );
 }
 
+// ─── To'lov tasdiqlash polling hook'i ─────────────────────────────────────────
+// Foydalanuvchi to'lovni amalga oshirgach (Click/Payme), provayder webhook'i
+// obunani aktivlashtirgancha bir necha soniya/daqiqa ketishi mumkin. Bu hook
+// backend /api/billing/subscription/status/ ni davriy so'rab, premium faollashgani
+// bilinishi bilan modal holatini 'success' ga o'tkazadi — foydalanuvchi reload
+// qilmasdan natijani ko'radi.
+//
+// Holatlar: 'idle' (boshlanmagan) | 'checking' (tekshirilmoqda) |
+//           'success' (premium faollashdi) | 'timeout' (vaqt tugadi, hali yo'q).
+//
+// start(onSuccess): pollingni boshlaydi. onSuccess — premium faollashganda bir
+//   marta chaqiriladi (user state'ini yangilash uchun). reset(): holatni tozalab,
+//   intervalni to'xtatadi (modal yopilganda). Component unmount bo'lganda interval
+//   avtomatik tozalanadi.
+const POLL_INTERVAL_MS = 3000;   // har 3 soniyada
+const POLL_MAX_ATTEMPTS = 40;    // 40 × 3s = 2 daqiqa
+function usePaymentPolling() {
+  const [status, setStatus] = React.useState('idle');
+  // setInterval id, urinishlar soni va parallel so'rovga qarshi guard'ni
+  // ref'da saqlaymiz — bular qayta render keltirib chiqarmasligi kerak.
+  const intervalRef = React.useRef(null);
+  const attemptsRef = React.useRef(0);
+  const inFlightRef = React.useRef(false);
+  const onSuccessRef = React.useRef(null);
+
+  const stop = React.useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  }, []);
+
+  const reset = React.useCallback(() => {
+    stop();
+    attemptsRef.current = 0;
+    inFlightRef.current = false;
+    onSuccessRef.current = null;
+    setStatus('idle');
+  }, [stop]);
+
+  const start = React.useCallback((onSuccess) => {
+    // Avvalgi sessiya qolgan bo'lsa tozalaymiz.
+    stop();
+    attemptsRef.current = 0;
+    inFlightRef.current = false;
+    onSuccessRef.current = typeof onSuccess === 'function' ? onSuccess : null;
+    setStatus('checking');
+
+    const tick = async () => {
+      // Oldingi so'rov hali tugamagan bo'lsa bu turni o'tkazib yuboramiz —
+      // sekin tarmoqda so'rovlar bir-birining ustiga chiqib ketmasin.
+      if (inFlightRef.current) return;
+      attemptsRef.current += 1;
+      inFlightRef.current = true;
+      try {
+        const token = OlympyApi.getToken();
+        const res = await OlympyApi.getSubscriptionStatus(token);
+        if (res && res.is_premium) {
+          stop();
+          setStatus('success');
+          if (onSuccessRef.current) {
+            try { onSuccessRef.current(res); } catch {}
+            onSuccessRef.current = null;
+          }
+          return;
+        }
+      } catch {
+        // Tarmoq/serverda vaqtinchalik xato — pollingni to'xtatmaymiz, keyingi
+        // urinishda qayta so'raymiz (urinishlar limiti baribir ishlaydi).
+      } finally {
+        inFlightRef.current = false;
+      }
+      if (attemptsRef.current >= POLL_MAX_ATTEMPTS) {
+        stop();
+        setStatus('timeout');
+      }
+    };
+
+    // Darhol bir marta tekshiramiz (webhook tez kelgan bo'lishi mumkin),
+    // keyin har POLL_INTERVAL_MS da takrorlaymiz.
+    tick();
+    intervalRef.current = setInterval(tick, POLL_INTERVAL_MS);
+  }, [stop]);
+
+  // Unmount bo'lganda intervalni tozalaymiz (memory leak / setState-after-unmount
+  // bo'lmasin).
+  React.useEffect(() => stop, [stop]);
+
+  return { status, start, reset };
+}
+
 // Export all
-Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, ConfirmModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList, formatUzPhoneInput, formatPhoneInput, detectDialCode, maskPhoneDisplay, COUNTRY_DIAL_CODES, PhoneField, Spinner, Button, ErrorBanner, useToast });
+Object.assign(window, { Icon, BrandLogo, Avatar, Badge, StatCard, Sidebar, MobileBottomNav, Topbar, Modal, ConfirmModal, EmptyState, DonutChart, BarChart, SvgLineChart, MonthBarChart, SubjectBadge, TelegramMockup, subjectColors, useApiData, AvatarCropModal, useDebounce, VirtualList, formatUzPhoneInput, formatPhoneInput, detectDialCode, maskPhoneDisplay, COUNTRY_DIAL_CODES, PhoneField, Spinner, Button, ErrorBanner, useToast, usePaymentPolling });

@@ -535,6 +535,22 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     [isApi, ownerCenterId, page === 'statistics'],
   );
 
+  // To'lov tasdiqlash polling'i (shared.jsx'dagi umumiy hook) — to'lov havolasi
+  // ochilgach backend webhook'i obunani faollashtirishini kutadi.
+  const payPolling = usePaymentPolling();
+
+  // Limit indikatorlari uchun joriy foydalanishni yuklash — premium sahifa
+  // ochilganda (useEffect) va to'lov tasdiqlangach (polling success) chaqiriladi.
+  const reloadBillingLimits = React.useCallback(async () => {
+    if (!isApi || !ownerCenterId) return;
+    try {
+      const data = await OlympyApi.getBillingLimits(OlympyApi.getToken(), ownerCenterId);
+      setLimits(data || null);
+    } catch {
+      setLimits(null);
+    }
+  }, [isApi, ownerCenterId]);
+
   React.useEffect(() => {
     if (page === 'premium') {
       let cancelled = false;
@@ -552,19 +568,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       })();
       // Limit indikatorlari uchun joriy foydalanish (alohida so'rov — plans
       // yuklanmay qolsa ham limitlar ko'rinadi va aksincha).
-      if (isApi && ownerCenterId) {
-        (async () => {
-          try {
-            const data = await OlympyApi.getBillingLimits(OlympyApi.getToken(), ownerCenterId);
-            if (!cancelled) setLimits(data || null);
-          } catch {
-            if (!cancelled) setLimits(null);
-          }
-        })();
-      }
+      reloadBillingLimits();
       return () => { cancelled = true; };
     }
-  }, [page, isApi, ownerCenterId]);
+  }, [page, isApi, ownerCenterId, reloadBillingLimits]);
 
   const handleCreatePayment = async (provider) => {
     if (!paymentPlan) return;
@@ -578,6 +585,25 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       }, token);
       if (res && res.payment_url) {
         openExternalLink(res.payment_url);
+        // To'lov sahifasi ochildi — backend webhook'i obunani faollashtirishini
+        // polling orqali kutamiz (modal "tekshirilmoqda" holatiga o'tadi).
+        payPolling.start(async () => {
+          // Premium faollashdi. user state'ini yangilaymiz: avval optimistik
+          // is_premium=true, keyin serverdan to'liq /me ni olib keshga yozamiz
+          // (boshqa premium maydonlar ham sinxron bo'lsin).
+          if (onUserUpdate) onUserUpdate({ isPremium: true, is_premium: true });
+          try {
+            const token2 = OlympyApi.getToken();
+            const me = await OlympyApi.getMe(token2);
+            if (me) {
+              const next = OlympyApi.mapBackendUser(me);
+              try { OlympyApi.saveAuth({ token: token2, user: next }); } catch {}
+              if (onUserUpdate) onUserUpdate(next);
+            }
+          } catch {}
+          // Yangi tarifga mos limit indikatorlari ham yangilansin.
+          reloadBillingLimits();
+        });
       } else {
         throw new Error("To'lov havolasini olishda xatolik yuz berdi");
       }
@@ -587,6 +613,19 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       setPaymentLoading(false);
     }
   };
+
+  // To'lov muvaffaqiyatli tasdiqlangach modalni 2 soniyadan keyin avtomatik
+  // yopamiz (foydalanuvchi "muvaffaqiyatli" xabarini ko'rib ulguradi).
+  React.useEffect(() => {
+    if (payPolling.status !== 'success') return;
+    const t = setTimeout(() => {
+      setPaymentPlan(null);
+      setPaymentError('');
+      payPolling.reset();
+    }, 2000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payPolling.status]);
   const applyCenterImageOverride = (c) => {
     const override = centerImageOverrides[String(c.id)] || centerImageOverrides[String(c.backendId)];
     return override ? { ...c, imageUrl: override } : c;
@@ -3988,12 +4027,78 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       })()}
 
       {paymentPlan && (
-        <Modal 
-          open={!!paymentPlan} 
-          onClose={() => { setPaymentPlan(null); setPaymentError(''); }} 
-          title="To'lov usulini tanlang"
+        <Modal
+          open={!!paymentPlan}
+          onClose={() => { setPaymentPlan(null); setPaymentError(''); payPolling.reset(); }}
+          title={
+            payPolling.status === 'success' ? "To'lov muvaffaqiyatli!"
+              : payPolling.status === 'timeout' ? "To'lov tekshirilmoqda"
+              : payPolling.status === 'checking' ? "To'lov tekshirilmoqda..."
+              : "To'lov usulini tanlang"
+          }
           width="max-w-md"
         >
+          {payPolling.status === 'success' ? (
+            // Premium faollashdi — 2 soniyadan keyin modal avtomatik yopiladi.
+            <div className="space-y-5 text-center py-2">
+              <div className="mx-auto w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                <span className="text-3xl">✅</span>
+              </div>
+              <div className="space-y-2">
+                <p className="text-base font-bold text-white">To'lov muvaffaqiyatli!</p>
+                <p className="text-sm text-white/60 leading-relaxed">
+                  Obunangiz faollashtirildi. Endi tarifingizga mos barcha
+                  imkoniyatlardan foydalanishingiz mumkin.
+                </p>
+              </div>
+              <button
+                onClick={() => { setPaymentPlan(null); setPaymentError(''); payPolling.reset(); }}
+                className="w-full py-3 rounded-2xl bg-emerald-500/90 hover:bg-emerald-500 text-white text-sm font-bold transition-colors"
+              >
+                Yopish
+              </button>
+            </div>
+          ) : payPolling.status === 'timeout' ? (
+            // 2 daqiqa o'tdi, hali tasdiqlanmadi.
+            <div className="space-y-5 text-center py-2">
+              <div className="mx-auto w-14 h-14 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
+                <span className="text-3xl">⏳</span>
+              </div>
+              <div className="space-y-2">
+                <p className="text-base font-bold text-white">To'lov hali tasdiqlanmadi</p>
+                <p className="text-sm text-white/60 leading-relaxed">
+                  Bir oz kuting yoki qo'llab-quvvatlash bilan bog'laning. Obunangiz
+                  tasdiqlangach sahifani yangilaganingizda faol bo'ladi.
+                </p>
+              </div>
+              <button
+                onClick={() => { setPaymentPlan(null); setPaymentError(''); payPolling.reset(); }}
+                className="w-full py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white text-sm font-bold transition-colors"
+              >
+                Yopish
+              </button>
+            </div>
+          ) : payPolling.status === 'checking' ? (
+            // To'lov sahifasi ochildi — tasdiqlanishini kutmoqdamiz (polling).
+            <div className="space-y-5 text-center py-2">
+              <div className="mx-auto w-14 h-14 rounded-full bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center">
+                <span className="text-3xl animate-spin">⏳</span>
+              </div>
+              <div className="space-y-2">
+                <p className="text-base font-bold text-white">To'lov tekshirilmoqda...</p>
+                <p className="text-sm text-white/60 leading-relaxed">
+                  To'lovingiz qabul qilindi. Obunangiz tasdiqlanishini kutmoqdamiz —
+                  bu odatda bir necha soniya davom etadi.
+                </p>
+              </div>
+              <button
+                onClick={() => { setPaymentPlan(null); setPaymentError(''); payPolling.reset(); }}
+                className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-sm font-bold transition-colors"
+              >
+                Yopish
+              </button>
+            </div>
+          ) : (
           <div className="space-y-6 text-left">
             <div className="rounded-2xl bg-white/5 p-4 border border-white/10">
               <div className="flex justify-between items-center mb-1">
@@ -4039,6 +4144,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               <div className="text-center text-xs text-white/40 animate-pulse">To'lov sahifasiga yo'naltirilmoqda...</div>
             )}
           </div>
+          )}
         </Modal>
       )}
     </div>

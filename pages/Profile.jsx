@@ -521,7 +521,14 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
         <div className="glass rounded-2xl p-5">
           <h3 className="font-bold text-white mb-4">Fanlar bo'yicha</h3>
           <div className="space-y-3">
-            {subjectStats.length === 0 && (
+            {/* Xato bo'lsa "bo'sh" o'rniga aniq xabar + qayta urinish. */}
+            {subjectStats.length === 0 && isApi && apiStatsRes.error && (
+              <div className="text-sm text-rose-300">
+                {OlympyApi.toUserMessage?.(apiStatsRes.error) || "Fan kesimini yuklab bo'lmadi."}{' '}
+                <button onClick={() => apiStatsRes.reload()} className="underline hover:text-rose-200">Qayta urinish</button>
+              </div>
+            )}
+            {subjectStats.length === 0 && !(isApi && apiStatsRes.error) && (
               <div className="text-sm text-white/40">Hali fan kesimida natijalar yo'q.</div>
             )}
             {subjectStats.map((x, i) => (
@@ -547,6 +554,15 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             if (isApi && apiMonthlyRes.loading && !apiMonthlyRes.data) {
               return <div className="text-xs text-white/40">Yuklanmoqda...</div>;
             }
+            // Xato bo'lsa "to'planmagan" o'rniga aniq xabar + qayta urinish.
+            if (isApi && apiMonthlyRes.error && !apiMonthlyRes.data) {
+              return (
+                <div className="text-xs text-rose-300">
+                  {OlympyApi.toUserMessage?.(apiMonthlyRes.error) || "Oylik dinamikani yuklab bo'lmadi."}{' '}
+                  <button onClick={() => apiMonthlyRes.reload()} className="underline hover:text-rose-200">Qayta urinish</button>
+                </div>
+              );
+            }
             if (!isApi || !hasAny) {
               return <div className="text-xs text-white/40">Hali oylik natijalar to'planmagan.</div>;
             }
@@ -566,7 +582,16 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
 
       {tab === 'results' && (
         <div className="space-y-3">
-          {myResults.length === 0 && <div className="text-center text-white/40 text-sm py-6 glass rounded-2xl">Hali natijalar yo'q</div>}
+          {/* Xato bo'lsa "natijalar yo'q" o'rniga aniq xabar + qayta yuklash. */}
+          {myResults.length === 0 && isApi && apiResultsRes.error && (
+            <div className="text-center text-sm py-6 glass rounded-2xl">
+              <div className="text-rose-300 font-semibold mb-3">
+                {OlympyApi.toUserMessage?.(apiResultsRes.error) || "Natijalarni yuklab bo'lmadi. Qayta urinib ko'ring."}
+              </div>
+              <button onClick={() => apiResultsRes.reload()} className="btn-ghost text-xs px-4 py-2 rounded-xl">Qayta yuklash</button>
+            </div>
+          )}
+          {myResults.length === 0 && !(isApi && apiResultsRes.error) && <div className="text-center text-white/40 text-sm py-6 glass rounded-2xl">Hali natijalar yo'q</div>}
           {myResults.map(r => (
             <div key={r.id} className="glass rounded-2xl p-4 flex items-center gap-4 cursor-pointer hover:bg-white/5"
               onClick={() => onNavigate && onNavigate('results', { ...r.attempt, olympiad: baseOlympiads.find(o => String(o.id) === String(r.attempt.olympiadId)) })}>
@@ -595,6 +620,17 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             const list = cid
               ? allOlympiads.filter(o => String(o.centerId) === String(cid)).slice(0, 5)
               : allOlympiads.slice(0, 3);
+            // Xato bo'lsa "Olimpiadalar yo'q" o'rniga aniq xabar + qayta yuklash.
+            if (list.length === 0 && isApi && apiOlympiadsRes.error) {
+              return (
+                <div className="text-center text-sm py-6 glass rounded-2xl">
+                  <div className="text-rose-300 font-semibold mb-3">
+                    {OlympyApi.toUserMessage?.(apiOlympiadsRes.error) || "Olimpiadalarni yuklab bo'lmadi. Qayta urinib ko'ring."}
+                  </div>
+                  <button onClick={() => apiOlympiadsRes.reload()} className="btn-ghost text-xs px-4 py-2 rounded-xl">Qayta yuklash</button>
+                </div>
+              );
+            }
             if (list.length === 0) return <div className="text-center text-white/40 text-sm py-6 glass rounded-2xl">Olimpiadalar yo'q</div>;
             return list.map(o => (
               <div key={o.id} className="glass rounded-2xl p-4 flex items-center gap-4">

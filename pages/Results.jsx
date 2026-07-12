@@ -417,7 +417,15 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
           {isApi && apiStatsRes.loading && (
             <div className="text-xs text-white/40">Yuklanmoqda...</div>
           )}
-          {isApi && !apiStatsRes.loading && subjectBreakdown.length === 0 && (
+          {/* Server xatosi va "chindan bo'sh" holatlari farqlanadi — xato
+              bo'lsa aniq xabar + qayta urinish, aks holda bo'sh-holat matni. */}
+          {isApi && !apiStatsRes.loading && apiStatsRes.error && (
+            <div className="text-xs text-rose-300">
+              {OlympyApi.toUserMessage?.(apiStatsRes.error) || "Fan kesimini yuklab bo'lmadi."}{' '}
+              <button onClick={() => apiStatsRes.reload()} className="underline hover:text-rose-200">Qayta urinish</button>
+            </div>
+          )}
+          {isApi && !apiStatsRes.loading && !apiStatsRes.error && subjectBreakdown.length === 0 && (
             <div className="text-xs text-white/40">Hali fan kesimida natijalar yo'q.</div>
           )}
           {!isApi && (

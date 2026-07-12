@@ -239,6 +239,19 @@ const NotificationsBell = ({ user }) => {
     return () => document.removeEventListener('mousedown', onDoc);
   }, []);
 
+  // Davriy polling: API rejimda har 30 soniyada bildirishnomalarni yangilab
+  // turadi (tab fonda bo'lsa keraksiz so'rov yubormaslik uchun visibility guard).
+  const reloadNotifications = apiRes.reload;
+  React.useEffect(() => {
+    if (!isApi) return undefined;
+    const interval = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        reloadNotifications();
+      }
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isApi, reloadNotifications]);
+
   if (!user) return null;
   const list = isApi
     ? (Array.isArray(apiRes.data) ? apiRes.data.map(mapApiNotification).slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')) : [])

@@ -472,13 +472,16 @@ const mapBackendUser = (user) => {
 const saveAuth = ({ token, refresh, user, cookieAuth, persistent } = {}) => {
   // persistent === false — login formada "Meni eslab qolish" tasdiqlanmagan:
   // token va user faqat sessionStorage'da yashaydi, brauzer yopilganda
-  // tozalanadi. Default true (avvalgi xatti-harakat).
+  // tozalanadi. persistent === true — localStorage. persistent berilmagan
+  // (undefined) chaqiruvlarda aktiv store'ga TEGILMAYDI: u modul yuklanganda
+  // haqiqiy token qaysi storage'da ekaniga qarab to'g'ri o'rnatilgan va
+  // oldingi aniq persistent chaqiruvlari orqali saqlanib qolgan. Aks holda
+  // bootstrap'dagi persistentsiz saveAuth chaqiruvi localStorage'dagi
+  // tokenni "yetim" qoldirib, keyingi yozuvlarni sessionStorage'ga burardi.
   if (persistent === false && _sessionStore) {
     _setActiveStore(_sessionStore);
   } else if (persistent === true && _localStore) {
     _setActiveStore(_localStore);
-  } else {
-    _setActiveStore(_defaultAuthStore);
   }
   // iOS va uchinchi tomon cookie taqiqlangan brauzerlarda (Telegram WebApp kabi)
   // Authorization sarlavhasi (Bearer token) orqali ishlay olishi uchun tokenni storage'da saqlaymiz.
