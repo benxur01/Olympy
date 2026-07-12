@@ -33,7 +33,7 @@ const TIER_LABELS = {
 
 const _fmtUZS = (n) => `${(Number(n) || 0).toLocaleString('ru-RU').replace(/ /g, ' ')} so'm`;
 
-const PricingPage = ({ onNavigate, user }) => {
+const PricingPage = ({ onNavigate, user, onUserUpdate }) => {
   const [plans, setPlans] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [planType, setPlanType] = React.useState('student'); // 'student' | 'organization'
@@ -48,6 +48,9 @@ const PricingPage = ({ onNavigate, user }) => {
   const [loadError, setLoadError] = React.useState('');
 
   const isLoggedIn = !!(user && (user.id || user.phone));
+  // To'lov tasdiqlash polling'i (shared.jsx'dagi umumiy hook) — to'lov havolasi
+  // ochilgach backend webhook'i obunani faollashtirishini kutadi.
+  const payPolling = usePaymentPolling();
 
   // Planlarni yuklash.
   React.useEffect(() => {
@@ -73,21 +76,21 @@ const PricingPage = ({ onNavigate, user }) => {
     return () => { cancelled = true; };
   }, []);
 
-  // Joriy obuna (faqat login bo'lganda) — "Joriy plan" badge'i uchun.
-  React.useEffect(() => {
+  // Joriy obunani yuklash/yangilash — "Joriy plan" badge'i uchun. Birinchi
+  // renderda (useEffect) va to'lov tasdiqlangach (polling success) chaqiriladi.
+  const refreshCurrent = React.useCallback(async () => {
     if (!isLoggedIn) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const token = OlympyApi.getToken();
-        const res = await OlympyApi.getCurrentSubscription(token);
-        if (!cancelled) setCurrent(res || null);
-      } catch {
-        if (!cancelled) setCurrent(null);
-      }
-    })();
-    return () => { cancelled = true; };
+    try {
+      const token = OlympyApi.getToken();
+      const res = await OlympyApi.getCurrentSubscription(token);
+      setCurrent(res || null);
+    } catch {
+      setCurrent(null);
+    }
   }, [isLoggedIn]);
+
+  // Joriy obuna (faqat login bo'lganda).
+  React.useEffect(() => { refreshCurrent(); }, [refreshCurrent]);
 
   const durationDays = billingCycle === 'yearly' ? 365 : 30;
 
@@ -142,6 +145,25 @@ const PricingPage = ({ onNavigate, user }) => {
       );
       if (res && res.payment_url) {
         openExternalLink(res.payment_url);
+        // To'lov sahifasi ochildi — backend webhook'i obunani faollashtirishini
+        // polling orqali kutamiz (modal "tekshirilmoqda" holatiga o'tadi).
+        payPolling.start(async () => {
+          // Premium faollashdi. user state'ini yangilaymiz: avval optimistik
+          // is_premium=true, keyin serverdan to'liq /me ni olib keshga yozamiz
+          // (boshqa premium maydonlar ham sinxron bo'lsin).
+          if (onUserUpdate) onUserUpdate({ isPremium: true, is_premium: true });
+          try {
+            const token2 = OlympyApi.getToken();
+            const me = await OlympyApi.getMe(token2);
+            if (me) {
+              const next = OlympyApi.mapBackendUser(me);
+              try { OlympyApi.saveAuth({ token: token2, user: next }); } catch {}
+              if (onUserUpdate) onUserUpdate(next);
+            }
+          } catch {}
+          // "Joriy plan" badge'i ham yangi obunani ko'rsatsin.
+          refreshCurrent();
+        });
       } else {
         throw new Error("To'lov havolasini olishda xatolik yuz berdi");
       }
@@ -159,6 +181,26 @@ const PricingPage = ({ onNavigate, user }) => {
     } finally {
       setPaying(false);
     }
+  };
+
+  // To'lov muvaffaqiyatli tasdiqlangach modalni 2 soniyadan keyin avtomatik
+  // yopamiz (foydalanuvchi "muvaffaqiyatli" xabarini ko'rib ulguradi).
+  React.useEffect(() => {
+    if (payPolling.status !== 'success') return;
+    const t = setTimeout(() => {
+      setPaymentPlan(null);
+      setPayError('');
+      payPolling.reset();
+    }, 2000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payPolling.status]);
+
+  // Modal yopish — polling holatini ham tozalaymiz.
+  const closePaymentModal = () => {
+    setPaymentPlan(null);
+    setPayError('');
+    payPolling.reset();
   };
 
   return (
@@ -362,7 +404,7 @@ const PricingPage = ({ onNavigate, user }) => {
               </div>
               <button
                 type="button"
-                onClick={() => { setPaymentPlan(null); setPayError(''); }}
+                onClick={closePaymentModal}
                 className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white"
               >
                 <Icon name="x" size={18} />
@@ -375,28 +417,94 @@ const PricingPage = ({ onNavigate, user }) => {
               </div>
             )}
 
-            <div className="space-y-3">
-              <button
-                type="button"
-                disabled={paying}
-                onClick={() => handleCreatePayment('payme')}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#00ccc0] py-3 text-sm font-black text-[#003d3a] transition-opacity hover:opacity-90 disabled:opacity-50"
-              >
-                {paying ? 'Yuklanmoqda...' : 'Payme orqali to\'lash'}
-              </button>
-              <button
-                type="button"
-                disabled={paying}
-                onClick={() => handleCreatePayment('click')}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0d9bf5] py-3 text-sm font-black text-white transition-opacity hover:opacity-90 disabled:opacity-50"
-              >
-                {paying ? 'Yuklanmoqda...' : 'Click orqali to\'lash'}
-              </button>
-            </div>
+            {payPolling.status === 'success' ? (
+              // Premium faollashdi — 2 soniyadan keyin modal avtomatik yopiladi.
+              <div className="space-y-4 py-2 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15">
+                  <span className="text-3xl">✅</span>
+                </div>
+                <div>
+                  <p className="text-base font-black text-white">To'lov muvaffaqiyatli!</p>
+                  <p className="mt-1.5 text-xs text-white/50">
+                    Obunangiz faollashtirildi. Endi barcha imkoniyatlardan foydalanishingiz mumkin.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closePaymentModal}
+                  className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-black text-white transition-colors hover:bg-emerald-700"
+                >
+                  Yopish
+                </button>
+              </div>
+            ) : payPolling.status === 'timeout' ? (
+              // 2 daqiqa o'tdi, hali tasdiqlanmadi.
+              <div className="space-y-4 py-2 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-amber-500/30 bg-amber-500/15">
+                  <span className="text-3xl">⏳</span>
+                </div>
+                <div>
+                  <p className="text-base font-black text-white">To'lov hali tasdiqlanmadi</p>
+                  <p className="mt-1.5 text-xs text-white/50">
+                    Biroz kuting yoki qo'llab-quvvatlash bilan bog'laning. Obunangiz
+                    tasdiqlangach sahifani yangilaganingizda faol bo'ladi.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closePaymentModal}
+                  className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-black text-white transition-colors hover:bg-indigo-700"
+                >
+                  Yopish
+                </button>
+              </div>
+            ) : payPolling.status === 'checking' ? (
+              // To'lov sahifasi ochildi — tasdiqlanishini kutmoqdamiz.
+              <div className="space-y-4 py-2 text-center">
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-indigo-500/30 bg-indigo-500/15">
+                  <span className="text-3xl animate-spin">⏳</span>
+                </div>
+                <div>
+                  <p className="text-base font-black text-white">To'lov tekshirilmoqda...</p>
+                  <p className="mt-1.5 text-xs text-white/50">
+                    To'lovingiz qabul qilindi. Obunangiz tasdiqlanishini kutmoqdamiz —
+                    bu odatda bir necha soniya davom etadi.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closePaymentModal}
+                  className="w-full rounded-xl border border-white/15 bg-white/5 py-3 text-sm font-black text-white transition-colors hover:bg-white/10"
+                >
+                  Yopish
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  <button
+                    type="button"
+                    disabled={paying}
+                    onClick={() => handleCreatePayment('payme')}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#00ccc0] py-3 text-sm font-black text-[#003d3a] transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {paying ? 'Yuklanmoqda...' : 'Payme orqali to\'lash'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={paying}
+                    onClick={() => handleCreatePayment('click')}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0d9bf5] py-3 text-sm font-black text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {paying ? 'Yuklanmoqda...' : 'Click orqali to\'lash'}
+                  </button>
+                </div>
 
-            <p className="mt-4 text-center text-[11px] text-white/30">
-              To'lov tashqi xavfsiz sahifada amalga oshiriladi.
-            </p>
+                <p className="mt-4 text-center text-[11px] text-white/30">
+                  To'lov tashqi xavfsiz sahifada amalga oshiriladi.
+                </p>
+              </>
+            )}
           </div>
         </div>
       )}

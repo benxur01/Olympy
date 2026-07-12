@@ -658,8 +658,8 @@ const App = () => {
   // ─── Page renderer ────────────────────────────────────────────────────────
   const renderPage = () => {
     switch (page) {
-      case 'landing':       return <LandingPage onNavigate={navigate} user={user} />;
-      case 'pricing':       return <PricingPage onNavigate={navigate} user={user} />;
+      case 'landing':       return <LandingPage onNavigate={navigate} user={user} onUserUpdate={updateCurrentUser} />;
+      case 'pricing':       return <PricingPage onNavigate={navigate} user={user} onUserUpdate={updateCurrentUser} />;
       case 'login':         return <LoginPage onNavigate={navigate} onLogin={handleLogin} />;
       case 'register':      return <RegisterPage onNavigate={navigate} onLogin={handleLogin} />;
       case 'pending-home':  return <PendingHome user={user} onLogout={handleLogout} onNavigate={navigate} />;
@@ -772,7 +772,7 @@ const App = () => {
         return <AnalyticsPage user={apiUser || user} onNavigate={navigate} />;
       case 'parent':
         return <ParentDashboard user={apiUser || user} onNavigate={navigate} onLogout={handleLogout} />;
-      default: return <LandingPage onNavigate={navigate} user={user} />;
+      default: return <LandingPage onNavigate={navigate} user={user} onUserUpdate={updateCurrentUser} />;
     }
   };
 

@@ -453,8 +453,13 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
         </div>
 
         {submitError && (
-          <div className="glass rounded-xl px-4 py-3 text-sm text-rose-300 border border-rose-500/20 flex items-center gap-2">
-            <Icon name="info" size={15} /> {submitError}
+          <div className="glass rounded-xl px-4 py-3 text-sm text-rose-300 border border-rose-500/20 flex items-center justify-between gap-3">
+            <span className="flex items-center gap-2"><Icon name="info" size={15} /> {submitError}</span>
+            {/* To'g'ridan-to'g'ri qayta yuborish — confirmModal'ni qayta ochmasdan */}
+            <button onClick={handleSubmit} disabled={submitting}
+              className="btn-ghost text-xs px-3 py-1.5 rounded-lg flex-shrink-0 disabled:opacity-50">
+              {submitting ? 'Yuborilmoqda...' : 'Qayta yuborish'}
+            </button>
           </div>
         )}
 
@@ -1629,8 +1634,13 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
               </div>
 
               {submitError && (
-                <div className="mb-4 flex items-center gap-2 bg-rose-500/10 text-rose-300 rounded-xl px-3 py-3 text-xs border border-rose-500/20">
-                  <Icon name="info" size={15} /> {submitError}
+                <div className="mb-4 flex items-center justify-between gap-3 bg-rose-500/10 text-rose-300 rounded-xl px-3 py-3 text-xs border border-rose-500/20">
+                  <span className="flex items-center gap-2"><Icon name="info" size={15} /> {submitError}</span>
+                  {/* To'g'ridan-to'g'ri qayta yuborish — confirmModal'ni qayta ochmasdan */}
+                  <button onClick={handleSubmit} disabled={submitting}
+                    className="btn-ghost text-xs px-3 py-1.5 rounded-lg flex-shrink-0 disabled:opacity-50">
+                    {submitting ? 'Yuborilmoqda...' : 'Qayta yuborish'}
+                  </button>
                 </div>
               )}
 
@@ -1821,8 +1831,13 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             </div>
 
             {submitError && (
-              <div className="mb-4 md:mb-6 flex items-center gap-2 bg-rose-500/10 text-rose-300 rounded-xl px-3 md:px-4 py-3 text-xs md:text-sm border border-rose-500/20">
-                <Icon name="info" size={15} /> {submitError}
+              <div className="mb-4 md:mb-6 flex items-center justify-between gap-3 bg-rose-500/10 text-rose-300 rounded-xl px-3 md:px-4 py-3 text-xs md:text-sm border border-rose-500/20">
+                <span className="flex items-center gap-2"><Icon name="info" size={15} /> {submitError}</span>
+                {/* To'g'ridan-to'g'ri qayta yuborish — confirmModal'ni qayta ochmasdan */}
+                <button onClick={handleSubmit} disabled={submitting}
+                  className="btn-ghost text-xs px-3 py-1.5 rounded-lg flex-shrink-0 disabled:opacity-50">
+                  {submitting ? 'Yuborilmoqda...' : 'Qayta yuborish'}
+                </button>
               </div>
             )}
 

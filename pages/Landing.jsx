@@ -641,7 +641,7 @@ const trackAbEvent = (variant, event) => {
   } catch {}
 };
 
-const LandingPage = ({ onNavigate, user }) => {
+const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
   // Telegram WebView / touch qurilma — og'ir blur orblari GPU'ni to'liq
   // yuklaydi, shu sababli ularni render qilmaymiz (statik fon yetarli).
   const isLowPower = React.useMemo(() => isLowPowerEnv(), []);
@@ -659,6 +659,9 @@ const LandingPage = ({ onNavigate, user }) => {
   const [paymentPlan, setPaymentPlan] = React.useState(null);
   const [paymentLoading, setPaymentLoading] = React.useState(false);
   const [paymentError, setPaymentError] = React.useState('');
+  // To'lov tasdiqlash polling'i (shared.jsx'dagi umumiy hook) — to'lov havolasi
+  // ochilgach backend webhook'i obunani faollashtirishini kutadi.
+  const payPolling = usePaymentPolling();
   // Obuna rejalari backenddan yuklanadi. Yuklanmaguncha skeleton, xato bo'lsa
   // FALLBACK_PRICING ko'rsatiladi (pastdagi `pricing` ga qarang).
   const [plans, setPlans] = React.useState(null);
@@ -695,6 +698,23 @@ const LandingPage = ({ onNavigate, user }) => {
       }, token);
       if (res && res.payment_url) {
         openExternalLink(res.payment_url);
+        // To'lov sahifasi ochildi — backend webhook'i obunani faollashtirishini
+        // polling orqali kutamiz (modal "tekshirilmoqda" holatiga o'tadi).
+        payPolling.start(async () => {
+          // Premium faollashdi. user state'ini yangilaymiz: avval optimistik
+          // is_premium=true, keyin serverdan to'liq /me ni olib keshga yozamiz
+          // (boshqa premium maydonlar ham sinxron bo'lsin).
+          if (onUserUpdate) onUserUpdate({ isPremium: true, is_premium: true });
+          try {
+            const token2 = OlympyApi.getToken();
+            const me = await OlympyApi.getMe(token2);
+            if (me) {
+              const next = OlympyApi.mapBackendUser(me);
+              try { OlympyApi.saveAuth({ token: token2, user: next }); } catch {}
+              if (onUserUpdate) onUserUpdate(next);
+            }
+          } catch {}
+        });
       } else {
         throw new Error("To'lov havolasini olishda xatolik yuz berdi");
       }
@@ -704,6 +724,19 @@ const LandingPage = ({ onNavigate, user }) => {
       setPaymentLoading(false);
     }
   };
+
+  // To'lov muvaffaqiyatli tasdiqlangach modalni 2 soniyadan keyin avtomatik
+  // yopamiz (foydalanuvchi "muvaffaqiyatli" xabarini ko'rib ulguradi).
+  React.useEffect(() => {
+    if (payPolling.status !== 'success') return;
+    const t = setTimeout(() => {
+      setPaymentPlan(null);
+      setPaymentError('');
+      payPolling.reset();
+    }, 2000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payPolling.status]);
 
   // Obuna rejalarini backenddan yuklash. Narx raqam ('99000') ko'rinishida
   // keladi — uni '99 000 UZS' formatiga o'tkazamiz. Bepul reja (0) uchun
@@ -2230,17 +2263,83 @@ const LandingPage = ({ onNavigate, user }) => {
             <div className="relative z-10">
               <div className="flex justify-between items-start mb-6">
                 <div>
-                  <h3 className="text-xl font-bold text-white mb-1">To'lov usulini tanlang</h3>
+                  <h3 className="text-xl font-bold text-white mb-1">
+                    {payPolling.status === 'success' ? "To'lov muvaffaqiyatli!"
+                      : payPolling.status === 'timeout' ? "To'lov tekshirilmoqda"
+                      : payPolling.status === 'checking' ? "To'lov tekshirilmoqda..."
+                      : "To'lov usulini tanlang"}
+                  </h3>
                   <p className="text-xs text-white/50">"{paymentPlan.name}" obunasi uchun to'lov</p>
                 </div>
-                <button 
-                  onClick={() => { setPaymentPlan(null); setPaymentError(''); }}
+                <button
+                  onClick={() => { setPaymentPlan(null); setPaymentError(''); payPolling.reset(); }}
                   className="text-white/40 hover:text-white transition-colors text-xl font-semibold outline-none"
                 >
                   ✕
                 </button>
               </div>
 
+              {payPolling.status === 'success' ? (
+                // Premium faollashdi — 2 soniyadan keyin modal avtomatik yopiladi.
+                <div className="space-y-4 py-2 text-center">
+                  <div className="mx-auto w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+                    <span className="text-3xl">✅</span>
+                  </div>
+                  <div>
+                    <p className="text-base font-bold text-white">To'lov muvaffaqiyatli!</p>
+                    <p className="mt-1.5 text-sm text-white/60">
+                      Obunangiz faollashtirildi. Endi barcha imkoniyatlardan foydalanishingiz mumkin.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => { setPaymentPlan(null); setPaymentError(''); payPolling.reset(); }}
+                    className="w-full py-3 rounded-2xl bg-emerald-500/90 hover:bg-emerald-500 text-white text-sm font-bold transition-colors"
+                  >
+                    Yopish
+                  </button>
+                </div>
+              ) : payPolling.status === 'timeout' ? (
+                // 2 daqiqa o'tdi, hali tasdiqlanmadi.
+                <div className="space-y-4 py-2 text-center">
+                  <div className="mx-auto w-14 h-14 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
+                    <span className="text-3xl">⏳</span>
+                  </div>
+                  <div>
+                    <p className="text-base font-bold text-white">To'lov hali tasdiqlanmadi</p>
+                    <p className="mt-1.5 text-sm text-white/60">
+                      Bir oz kuting yoki qo'llab-quvvatlash bilan bog'laning. Obunangiz
+                      tasdiqlangach sahifani yangilaganingizda faol bo'ladi.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => { setPaymentPlan(null); setPaymentError(''); payPolling.reset(); }}
+                    className="w-full py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white text-sm font-bold transition-colors"
+                  >
+                    Yopish
+                  </button>
+                </div>
+              ) : payPolling.status === 'checking' ? (
+                // To'lov sahifasi ochildi — tasdiqlanishini kutmoqdamiz (polling).
+                <div className="space-y-4 py-2 text-center">
+                  <div className="mx-auto w-14 h-14 rounded-full bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center">
+                    <span className="text-3xl animate-spin">⏳</span>
+                  </div>
+                  <div>
+                    <p className="text-base font-bold text-white">To'lov tekshirilmoqda...</p>
+                    <p className="mt-1.5 text-sm text-white/60">
+                      To'lovingiz qabul qilindi. Obunangiz tasdiqlanishini kutmoqdamiz —
+                      bu odatda bir necha soniya davom etadi.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => { setPaymentPlan(null); setPaymentError(''); payPolling.reset(); }}
+                    className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-sm font-bold transition-colors"
+                  >
+                    Yopish
+                  </button>
+                </div>
+              ) : (
+              <>
               <div className="bg-white/5 border border-white/10 rounded-2xl p-4 mb-6">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-white/60">Tanlangan reja:</span>
@@ -2287,6 +2386,8 @@ const LandingPage = ({ onNavigate, user }) => {
                   <div className="w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
                   <span>To'lov havolasi yuklanmoqda...</span>
                 </div>
+              )}
+              </>
               )}
             </div>
           </div>
