@@ -15,7 +15,6 @@ const LoginPage = ({ onNavigate, onLogin }) => {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState('');
   const [showPass, setShowPass] = React.useState(false);
-  const [rememberMe, setRememberMe] = React.useState(true);
   // 2FA holati: backend `requires_2fa` qaytarsa, parol+telefonni saqlab,
   // foydalanuvchidan autentifikator kodini so'raymiz va qayta yuboramiz.
   const [step, setStep] = React.useState('login'); // 'login' | '2fa'
@@ -43,9 +42,10 @@ const LoginPage = ({ onNavigate, onLogin }) => {
       refresh: data.refresh,
       user: mappedUser,
       cookieAuth: data.cookie_auth,
-      // "Meni eslab qolish" tasdiqlanmagan bo'lsa, token sessionStorage'da
-      // saqlanadi va brauzer yopilganda tozalanadi.
-      persistent: rememberMe,
+      // Har bir foydalanuvchi login/register qilgach avtomatik "eslab
+      // qolinadi" — checkbox yo'q, token har doim localStorage'da saqlanadi
+      // va brauzer yopilib-ochilganda ham sessiya davom etadi.
+      persistent: true,
     });
     onLogin(mappedUser);
   };
@@ -227,7 +227,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
         refresh: data.refresh,
         user: mappedUser,
         cookieAuth: data.cookie_auth,
-        persistent: rememberMe,
+        persistent: true,
       });
       onLogin(mappedUser);
     } catch (err) {
@@ -314,12 +314,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
             </div>
           </div>
           {error && <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 rounded-xl px-4 py-3"><Icon name="info" size={16} />{error}</div>}
-          <div className="flex items-center justify-between text-sm">
-            <label className="flex items-center gap-2 text-white/50 cursor-pointer">
-              <input type="checkbox" className="rounded"
-                checked={rememberMe}
-                onChange={e => setRememberMe(e.target.checked)} /> Meni eslab qolish
-            </label>
+          <div className="flex items-center justify-end text-sm">
             <button type="button" onClick={openForgotModal} className="text-indigo-400 hover:text-indigo-300 transition-colors">Parolni unutdingizmi?</button>
           </div>
           <button type="submit" disabled={loading}
@@ -594,7 +589,11 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
           center: organizationPayload,
         });
         const mappedUser = OlympyApi.mapBackendUser(data.user);
-        OlympyApi.saveAuth({ token: data.token, refresh: data.refresh, user: mappedUser, cookieAuth: data.cookie_auth });
+        // Login sahifasidagi "Meni eslab qolish" defolt yoqilgani kabi —
+        // ro'yxatdan o'tgan foydalanuvchi ham keyingi tashrifda qayta login
+        // qilmasin (avval persistent belgilanmagani uchun sessionStorage'ga
+        // tushib, brauzer yopilganda sessiya yo'qolardi).
+        OlympyApi.saveAuth({ token: data.token, refresh: data.refresh, user: mappedUser, cookieAuth: data.cookie_auth, persistent: true });
         if (pendingReferral) { try { localStorage.removeItem('olympy:pendingReferral'); } catch {} }
         setSuccess(true);
         setTimeout(() => onLogin(mappedUser), 1600);
@@ -617,7 +616,7 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
 
       const freshUser = await OlympyApi.getMe(token);
       const mappedUser = OlympyApi.mapBackendUser(freshUser);
-      OlympyApi.saveAuth({ token, refresh, user: mappedUser, cookieAuth: data.cookie_auth });
+      OlympyApi.saveAuth({ token, refresh, user: mappedUser, cookieAuth: data.cookie_auth, persistent: true });
       if (pendingReferral) { try { localStorage.removeItem('olympy:pendingReferral'); } catch {} }
       setSuccess(true);
       setTimeout(() => onLogin(mappedUser), 1600);
