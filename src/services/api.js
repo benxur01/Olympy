@@ -311,7 +311,22 @@ const request = async (
             retryOnAuth: false,
             signal,
           });
-        } catch {}
+        } catch (refreshError) {
+          // Refresh so'rovi tarmoq xatosi yoki serverning vaqtincha
+          // ishlamayotgani (masalan, Render bepul hosting cold-start,
+          // 30-60s) tufayli muvaffaqiyatsiz bo'lgan bo'lishi mumkin — bu
+          // refresh token'ning haqiqatan yaroqsiz ekanini bildirmaydi.
+          // Faqat backend aniq 401/400 bilan "refresh yaroqsiz" desa
+          // logout qilamiz; aks holda tokenlarni saqlab qolamiz, keyingi
+          // urinishda (server uyg'ongach) sessiya tiklanadi.
+          const isDefinitiveAuthFailure = refreshError?.status === 401 || refreshError?.status === 400;
+          if (!isDefinitiveAuthFailure) {
+            throw new ApiError('Session expired', {
+              status: 401,
+              data: { code: 'refresh_unavailable' },
+            });
+          }
+        }
       }
       // retryOnAuth=false bo'lsa (login, register kabi public endpoint'lar):
       // logout qilmaymiz, serverdan kelgan xato xabarini ko'rsatamiz.
