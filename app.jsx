@@ -229,6 +229,11 @@ const App = () => {
   };
 
   React.useEffect(() => {
+    // Olimpiada/musobaqa testi (`page === 'test'`) davomida bildirishnoma
+    // so'rovi ko'rsatilmasin — test ustiga chiqib e'tiborni chalg'itmasin.
+    // Foydalanuvchi testdan chiqishi bilan (`page` o'zgarishi bilan effekt
+    // qayta ishga tushadi) so'rov odatdagidek 3s'dan keyin ko'rsatiladi.
+    if (page === 'test') return;
     if (user && 'serviceWorker' in navigator && 'PushManager' in window) {
       if (Notification.permission === 'granted') {
         subscribeUserToPush();
@@ -242,7 +247,7 @@ const App = () => {
         return () => clearTimeout(timer);
       }
     }
-  }, [user]);
+  }, [user, page]);
 
 
   // Referral havola: foydalanuvchi `?ref=CODE` bilan kelsa, kodni saqlab
@@ -831,7 +836,7 @@ const App = () => {
         onNavigate={navigate}
       />
       <AISupportWidget user={user} />
-      {showPushPrompt && (
+      {showPushPrompt && page !== 'test' && (
         <div className="fixed bottom-4 left-4 right-4 md:left-auto md:bottom-6 md:right-6 z-[9999] max-w-sm md:w-[384px] p-5 rounded-2xl text-white shadow-2xl" 
              style={{ 
                animation: 'slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1)', 
