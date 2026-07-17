@@ -756,10 +756,15 @@ def student_detail(request, user_id):
         'date': a.submitted_at.strftime('%Y-%m-%d') if a.submitted_at else '',
     } for a in recent]
 
+    # Minimal disclosure: o'quvchi telefonini to'liq qaytarmaymiz (bolalar PII).
+    # Masklangan shakl yetarli; to'liq raqam faqat owner uchun kerak bo'lsa
+    # alohida auditli endpoint qo'shiladi.
+    from accounts.utils import mask_phone
+    raw_phone = student.normalized_phone or student.phone or ''
     return Response({
         'id': student.id,
         'full_name': student.full_name or '',
-        'phone': student.normalized_phone or student.phone or '',
+        'phone': mask_phone(raw_phone),
         'avatar_url': avatar_url_for(student, request),
         'joined_at': (
             student_membership.created_at.strftime('%Y-%m-%d')

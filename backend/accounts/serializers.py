@@ -151,6 +151,17 @@ class RegisterSerializer(serializers.Serializer):
     phone = serializers.CharField(max_length=20)
     password = serializers.CharField(write_only=True, min_length=8)
     role = serializers.ChoiceField(choices=['student'], required=False)
+    # Yosh siyosati (minors): 13+ rozilik yoki ota-ona tasdig'i.
+    # Majburiy boolean — false/yo'q bo'lsa register rad etiladi.
+    age_confirmed = serializers.BooleanField(required=False, default=False)
+
+    def validate_age_confirmed(self, value):
+        if value is not True:
+            raise serializers.ValidationError(
+                "Ro'yxatdan o'tish uchun 13 yoshdan katta ekanligingizni "
+                "yoki ota-ona/vasiy roziligini tasdiqlang"
+            )
+        return value
 
     def validate_phone(self, value):
         norm = normalize_phone(value)
@@ -172,6 +183,7 @@ class RegisterSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         role = validated_data.pop('role', None)
+        validated_data.pop('age_confirmed', None)
         user = User.objects.create_user(
             phone=validated_data['phone'],
             password=validated_data['password'],

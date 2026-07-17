@@ -62,6 +62,9 @@ services:
     # URL: https://prolymp.uz/api/health/ — 5 daqiqada bir tekshiradi
     # Alert: Telegram yoki email orqali xabar beradi
     envVars:
+      # Alohida celery worker (olympy-celery) yoqilganda 1 qiling — web OOM kamayadi.
+      - key: CELERY_EXTERNAL_WORKER
+        value: "0"
       - key: REDIS_URL
         sync: false
       - key: CELERY_BROKER_URL
@@ -107,6 +110,11 @@ services:
       # Sentry backend DSN — bo'sh bo'lsa monitoring o'chiq qoladi.
       - key: SENTRY_DSN
         sync: false
+      # Web Push — bo'sh bo'lsa push o'chiq (private key repoda bo'lmasin).
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
       # Email — MAILGUN_API_KEY o'rnatilsa Mailgun backend yoqiladi, aks holda
       # console backend (email yuborilmaydi). Barchasi ixtiyoriy.
       - key: EMAIL_BACKEND
@@ -128,6 +136,49 @@ services:
       - key: PAYME_MERCHANT_ID
         sync: false
       - key: PAYME_SECRET_KEY
+        sync: false
+
+  # ── Celery worker (ixtiyoriy ajratish) ─────────────────────────────────────
+  # Yoqish: shu service'ni create + olympy-api da CELERY_EXTERNAL_WORKER=1.
+  # Default o'chiq bo'lishi mumkin (plan); qo'lda enable qiling.
+  - type: worker
+    name: olympy-celery
+    repo: https://github.com/benxur01/Olympy
+    rootDir: backend
+    env: python
+    region: ohio
+    plan: starter
+    branch: main
+    buildCommand: ./render_build.sh
+    startCommand: celery -A olympy_api worker -B -l info -c 1 --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    envVars:
+      - key: REDIS_URL
+        sync: false
+      - key: CELERY_BROKER_URL
+        sync: false
+      - key: CELERY_RESULT_BACKEND_URL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: OLYMPY_SECRET_KEY
+        sync: false
+      - key: OLYMPY_ALLOWED_HOSTS
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: TELEGRAM_AUTH_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_MANAGER_BOT_TOKEN
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
         sync: false
 
 # Database va Redis allaqachon Render dashboard'da yaratilgan.

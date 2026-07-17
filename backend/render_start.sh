@@ -16,21 +16,18 @@ if [ "${DEBUG:-}" != "True" ] && [ "${DEBUG:-}" != "true" ] && [ "${DEBUG:-}" !=
     fi
 fi
 
-# Celery worker + Beat bitta jarayonda (-B flag — embedded beat scheduler).
-# SABAB: web service 512MB RAM'da ishlaydi. Avval alohida worker VA alohida
-# beat processi ishga tushirilardi — har biri to'liq Django/Celery'ni xotiraga
-# yuklaydi (~120-180MB har biri). 2 ta gunicorn worker + celery worker + celery
-# beat = 4 ta to'liq Python/Django jarayoni bir vaqtda — bu 512MB limitni
-# osonlik bilan oshirib yuborib, "Ran out of memory (used over 512MB)" xatosiga
-# olib keldi. -B bilan beat scheduler worker jarayoni ICHIDA embedded thread
-# sifatida ishlaydi — alohida jarayon shart emas. DIQQAT: bir nechta celery
-# worker instance (masalan numInstances>1) bo'lsa -B ishlatilmaydi (beat bir
-# nechta joyda bir vaqtda ishlab, task'lar takrorlanib qoladi) — lekin bu
-# servis numInstances: 1 bilan ishlaydi, shu sababli xavfsiz.
-echo "=== Starting Celery Worker (+ embedded Beat) ==="
-celery -A olympy_api worker -B -l info -c 1 \
-    --scheduler django_celery_beat.schedulers:DatabaseScheduler \
-    --pidfile=/tmp/celeryworker.pid &
+# Celery: default embedded (web bilan birga). Agar alohida Background Worker
+# (render.yaml: olympy-celery) ishlatilsa, web'da CELERY_EXTERNAL_WORKER=1
+# o'rnating — o'shanda web faqat Gunicorn ishga tushadi (OOM xavfi pastroq).
+if [ "${CELERY_EXTERNAL_WORKER:-0}" = "1" ] || [ "${CELERY_EXTERNAL_WORKER:-}" = "true" ]; then
+    echo "=== Celery external worker rejimi — web ichida Celery ishga tushirilmaydi ==="
+else
+    # Celery worker + Beat bitta jarayonda (-B). numInstances:1 bo'lganda xavfsiz.
+    echo "=== Starting Celery Worker (+ embedded Beat) ==="
+    celery -A olympy_api worker -B -l info -c 1 \
+        --scheduler django_celery_beat.schedulers:DatabaseScheduler \
+        --pidfile=/tmp/celeryworker.pid &
+fi
 
 # gthread worker class — har worker ko'p thread bilan bir vaqtda I/O-bound
 # so'rovlarni (DB, tashqi API) parallel ishlaydi. Xotira tejash uchun default

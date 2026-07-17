@@ -72,6 +72,35 @@ def _jwt_payload(user):
     }
 
 
+def _should_expose_tokens_in_body(request):
+    """JWT body'da qaytarilsinmi?
+
+    Production default: faqat HttpOnly cookie (XSS blast radius'ni kamaytiradi).
+    DEBUG yoki JWT_EXPOSE_TOKENS_IN_BODY=1 yoki klient header
+    `X-Olympy-Auth-Storage: 1` (Telegram WebView cookie-less) — body'da ham.
+    """
+    if getattr(settings, 'JWT_EXPOSE_TOKENS_IN_BODY', False):
+        return True
+    header = (request.headers.get('X-Olympy-Auth-Storage') or '').strip().lower()
+    return header in ('1', 'true', 'yes', 'bearer')
+
+
+def _auth_response(request, user, *, extra=None, status_code=status.HTTP_200_OK):
+    """Cookie o'rnatadi; tokenlarni body'da faqat kerak bo'lganda qaytaradi."""
+    payload = _jwt_payload(user)
+    body = {
+        'cookie_auth': True,
+        'user': UserSerializer(user, context={'request': request}).data,
+    }
+    if extra:
+        body.update(extra)
+    if _should_expose_tokens_in_body(request):
+        body['token'] = payload['token']
+        body['refresh'] = payload['refresh']
+    response = Response(body, status=status_code)
+    return _set_auth_cookies(response, payload)
+
+
 def bump_token_version(user):
     """Foydalanuvchining barcha mavjud JWT'larini bekor qilish.
 
@@ -379,15 +408,10 @@ def register(request):
     # qayta register-organization yoki parallel hisob ochilmasin.
     _consume_phone_verification(verified)
 
-    payload = _jwt_payload(user)
-    body = {
-        **payload,
-        'user': UserSerializer(user, context={'request': request}).data,
-    }
+    extra = {}
     if membership_data:
-        body['membership'] = membership_data
-    response = Response(body, status=status.HTTP_201_CREATED)
-    return _set_auth_cookies(response, payload)
+        extra['membership'] = membership_data
+    return _auth_response(request, user, extra=extra or None, status_code=status.HTTP_201_CREATED)
 
 
 register.cls.throttle_scope = 'register'
@@ -408,6 +432,7 @@ def register_organization(request):
         'full_name': request.data.get('full_name'),
         'phone': request.data.get('phone'),
         'password': request.data.get('password'),
+        'age_confirmed': request.data.get('age_confirmed', False),
     })
     user_serializer.is_valid(raise_exception=True)
 
@@ -440,13 +465,12 @@ def register_organization(request):
 
     _consume_phone_verification(verified)
 
-    payload = _jwt_payload(user)
-    response = Response({
-        **payload,
-        'user': UserSerializer(user, context={'request': request}).data,
-        'center': EducationCenterSerializer(center).data,
-    }, status=status.HTTP_201_CREATED)
-    return _set_auth_cookies(response, payload)
+    return _auth_response(
+        request,
+        user,
+        extra={'center': EducationCenterSerializer(center).data},
+        status_code=status.HTTP_201_CREATED,
+    )
 
 
 register_organization.cls.throttle_scope = 'register'
@@ -483,12 +507,7 @@ def login(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-    payload = _jwt_payload(user)
-    response = Response({
-        **payload,
-        'user': UserSerializer(user, context={'request': request}).data,
-    })
-    return _set_auth_cookies(response, payload)
+    return _auth_response(request, user)
 
 
 login.cls.throttle_scope = 'auth'
@@ -533,12 +552,19 @@ def refresh_token(request):
     payload = serializer.validated_data
     if 'refresh' not in payload:
         payload['refresh'] = refresh
-    payload['cookie_auth'] = True
-    response = Response(payload)
-    return _set_auth_cookies(response, {
+    cookie_payload = {
         'token': payload['access'],
         'refresh': payload['refresh'],
-    })
+    }
+    body = {'cookie_auth': True}
+    # Access yangilanganini klient bilishi uchun (storage fallback).
+    # Production cookie-only: tokenlarni body'dan yashiramiz.
+    if _should_expose_tokens_in_body(request):
+        body['access'] = payload['access']
+        body['refresh'] = payload['refresh']
+        body['token'] = payload['access']
+    response = Response(body)
+    return _set_auth_cookies(response, cookie_payload)
 
 
 refresh_token.cls.throttle_scope = 'auth'
@@ -753,24 +779,18 @@ def change_my_password(request):
         bump_token_version(locked)
         user = locked
 
-    payload = _jwt_payload(user)
-    response = Response({
-        **payload,
-        'user': UserSerializer(user, context={'request': request}).data,
-        'password_changed': True,
-    })
-    return _set_auth_cookies(response, payload)
+    return _auth_response(request, user, extra={'password_changed': True})
 
 
 @api_view(['DELETE'])
 @permission_classes([IsAuthenticated])
 def delete_my_account(request):
-    """DELETE /api/auth/me/ — foydalanuvchi o'z hisobini butunlay o'chiradi.
+    """DELETE /api/auth/me/ — foydalanuvchi o'z hisobini o'chiradi.
 
-    request.user.delete() CASCADE orqali barcha bog'liq ma'lumotlarni
-    (TestAttempt, CenterMembership va h.k.) o'chiradi. O'chirishdan OLDIN
-    audit log yoziladi (keyin user yo'q bo'ladi va actor=NULL bo'lib qoladi).
-    Javobda auth cookie'lar logout view'idagi kabi tozalanadi.
+    Xavfsizlik: parol (va 2FA yoqilgan bo'lsa TOTP) majburiy — o'g'irlangan
+    access token bilan hisobni yo'q qilishning oldini oladi.
+    To'lov yozuvlari saqlanadi (user SET_NULL); boshqa bog'liq ma'lumotlar
+    CASCADE bilan o'chadi. Audit log o'chirishdan OLDIN yoziladi.
     """
     if not request.user.is_active:
         return Response({'detail': 'Hisob bloklangan'}, status=status.HTTP_401_UNAUTHORIZED)
@@ -780,6 +800,38 @@ def delete_my_account(request):
             {'detail': "Platform admin o'z hisobini o'chira olmaydi"},
             status=status.HTTP_403_FORBIDDEN,
         )
+
+    password = (request.data.get('password') or '').strip()
+    if not password:
+        return Response(
+            {'detail': "Hisobni o'chirish uchun parolni tasdiqlang"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not request.user.check_password(password):
+        security_logger.warning(
+            'account_delete failed (wrong password) user_id=%s', request.user.pk,
+        )
+        return Response(
+            {'detail': "Parol noto'g'ri"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if request.user.totp_enabled and request.user.totp_secret:
+        totp_code = str(request.data.get('totp_code') or request.data.get('code') or '').strip()
+        if not totp_code:
+            return Response(
+                {'detail': "2FA kodi talab qilinadi", 'requires_2fa': True},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        import pyotp
+        if not pyotp.TOTP(request.user.totp_secret).verify(totp_code, valid_window=1):
+            security_logger.warning(
+                'account_delete failed (wrong 2FA) user_id=%s', request.user.pk,
+            )
+            return Response(
+                {'detail': "Noto'g'ri 2FA kod", 'requires_2fa': True},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
     # Markaz egasi (owner) o'z hisobini o'chira olmaydi — EducationCenter.owner
     # endi PROTECT, demak o'chirish ProtectedError (500) chiqarardi va markaz
@@ -1750,13 +1802,7 @@ def confirm_password_reset(request):
         ).exclude(pk=verification.pk).delete()
     cache.delete(LoginSerializer._failed_cache_key(normalized_phone))
 
-    payload = _jwt_payload(user)
-    response = Response({
-        **payload,
-        'user': UserSerializer(user, context={'request': request}).data,
-        'password_reset': True,
-    })
-    return _set_auth_cookies(response, payload)
+    return _auth_response(request, user, extra={'password_reset': True})
 
 
 confirm_password_reset.cls.throttle_scope = 'auth'
@@ -2119,9 +2165,12 @@ def _telegram_webhook_response(request, bot='auth'):
             logger.error('TELEGRAM_WEBHOOK_SECRET is required in production')
             return Response({'detail': 'Server misconfigured'},
                             status=status.HTTP_503_SERVICE_UNAVAILABLE)
-    elif request.headers.get('X-Telegram-Bot-Api-Secret-Token', '') != secret:
-        # Secret sozlangan — har bir so'rovda header aynan mos kelishi shart.
-        return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
+    else:
+        # Secret sozlangan — timing-safe taqqoslash (hmac.compare_digest).
+        import hmac as _hmac
+        provided = request.headers.get('X-Telegram-Bot-Api-Secret-Token', '') or ''
+        if not _hmac.compare_digest(str(provided), str(secret)):
+            return Response({'detail': 'Forbidden'}, status=status.HTTP_403_FORBIDDEN)
 
     update = request.data if isinstance(request.data, dict) else {}
     if not update and request.body:

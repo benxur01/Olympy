@@ -61,6 +61,7 @@ entry += `    dsn: SENTRY_DSN,\n`;
 entry += `    environment: import.meta.env.MODE,\n`;
 entry += `    tracesSampleRate: 0.1,\n`;
 entry += `    replaysSessionSampleRate: 0,\n`;
+entry += `    sendDefaultPii: false,\n`;
 entry += `  });\n`;
 entry += `}\n\n`;
 

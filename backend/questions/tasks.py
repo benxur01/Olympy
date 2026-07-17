@@ -15,6 +15,14 @@ def _normalize_output(val):
     return str(val).strip().replace('\r\n', '\n').replace('\r', '\n')
 
 
+def _cache_set_preserve_owner(key, payload, timeout):
+    """Task natijasini yozganda `user_id` ownership'ni saqlab qoladi."""
+    prev = cache.get(key) or {}
+    if isinstance(prev, dict) and 'user_id' in prev and 'user_id' not in payload:
+        payload = {**payload, 'user_id': prev['user_id']}
+    cache.set(key, payload, timeout=timeout)
+
+
 def _build_batch(source_code, language, stdin, question_id):
     """Test caslarni yig'ib Judge0 batch so'rovini va meta ma'lumotni tuzadi."""
     test_cases = []
@@ -75,6 +83,14 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
     from django.db import close_old_connections
     close_old_connections()
 
+    def _set_run_state(payload, timeout=300):
+        """user_id ownership'ni saqlab qolgan holda keshni yangilaydi."""
+        key = f"run_code:task:{task_id}"
+        prev = cache.get(key) or {}
+        if 'user_id' in prev and 'user_id' not in payload:
+            payload = {**payload, 'user_id': prev['user_id']}
+        cache.set(key, payload, timeout=timeout)
+
     eager = getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False)
 
     try:
@@ -83,10 +99,10 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
             batch_subs, test_cases_meta = _build_batch(source_code, language, stdin, question_id)
             sub_res = submit_code_batch(batch_subs)
             if not sub_res.get('ok'):
-                cache.set(f"run_code:task:{task_id}", {
+                _set_run_state({
                     'status': 'FAILED',
                     'error': sub_res.get('error') or "Kodni ishga tushirib bo'lmadi",
-                }, timeout=300)
+                })
                 return
 
             tokens = sub_res['tokens']
@@ -96,19 +112,19 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
             for _ in range(30):
                 status_res = check_batch_status(tokens, valid_indices, len(test_cases_meta))
                 if not status_res.get('ok'):
-                    cache.set(f"run_code:task:{task_id}", {
+                    _set_run_state({
                         'status': 'FAILED',
                         'error': status_res.get('error') or "Kodni ishga tushirib bo'lmadi",
-                    }, timeout=300)
+                    })
                     return
                 if status_res.get('status') != 'PENDING':
                     break
                 time.sleep(1)
             else:
-                cache.set(f"run_code:task:{task_id}", {
+                _set_run_state({
                     'status': 'FAILED',
                     'error': "Kod bajarilishini tekshirish vaqti tugadi (Timeout)",
-                }, timeout=300)
+                })
                 return
 
             _finalize_results(task_id, status_res['results'], test_cases_meta, submission_id)
@@ -122,10 +138,10 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
             # Submit batch
             sub_res = submit_code_batch(batch_subs)
             if not sub_res.get('ok'):
-                cache.set(f"run_code:task:{task_id}", {
+                _set_run_state({
                     'status': 'FAILED',
                     'error': sub_res.get('error') or "Kodni ishga tushirib bo'lmadi"
-                }, timeout=300)
+                })
                 return
 
             tokens = sub_res['tokens']
@@ -138,10 +154,10 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
         # Step 2: Retrieve batch results
         status_res = check_batch_status(tokens, valid_indices, len(test_cases_meta))
         if not status_res.get('ok'):
-            cache.set(f"run_code:task:{task_id}", {
+            _set_run_state({
                 'status': 'FAILED',
                 'error': status_res.get('error') or "Kodni ishga tushirib bo'lmadi"
-            }, timeout=300)
+            })
             return
 
         # If still pending, retry after 1 second
@@ -153,16 +169,16 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
         _finalize_results(task_id, status_res['results'], test_cases_meta, submission_id)
 
     except self.MaxRetriesExceededError:
-        cache.set(f"run_code:task:{task_id}", {
+        _set_run_state({
             'status': 'FAILED',
             'error': "Kod bajarilishini tekshirish vaqti tugadi (Timeout)"
-        }, timeout=300)
+        })
     except Exception as e:
         logger.exception(f"Async run code task failed: {e}")
-        cache.set(f"run_code:task:{task_id}", {
+        _set_run_state({
             'status': 'FAILED',
             'error': str(e)
-        }, timeout=300)
+        })
 
 
 def _update_submission_tests_passed(submission_id, passed_all):
@@ -245,7 +261,7 @@ def _finalize_results(task_id, batch_results, test_cases_meta, submission_id=Non
         if len(test_cases_meta) == 1 and test_cases_meta[0].get('is_single'):
             result = batch_results[0]
             if not result.get('ok'):
-                cache.set(f"run_code:task:{task_id}", {
+                _cache_set_preserve_owner(f"run_code:task:{task_id}", {
                     'status': 'FAILED',
                     'error': result.get('error') or "Kodni ishga tushirib bo'lmadi"
                 }, timeout=300)
@@ -253,7 +269,7 @@ def _finalize_results(task_id, batch_results, test_cases_meta, submission_id=Non
             # Test caslar yo'q savol — kutilgan natija bilan solishtirilmaydi,
             # shu sababli avtomatik ball berilmaydi (all_tests_passed=False).
             _update_submission_tests_passed(submission_id, False)
-            cache.set(f"run_code:task:{task_id}", {
+            _cache_set_preserve_owner(f"run_code:task:{task_id}", {
                 'status': 'COMPLETED',
                 'result': {
                     'stdout': result.get('stdout', ''),
@@ -282,7 +298,7 @@ def _finalize_results(task_id, batch_results, test_cases_meta, submission_id=Non
             
             result = batch_results[idx]
             if not result.get('ok'):
-                cache.set(f"run_code:task:{task_id}", {
+                _cache_set_preserve_owner(f"run_code:task:{task_id}", {
                     'status': 'FAILED',
                     'error': result.get('error') or "Kodni ishga tushirib bo'lmadi"
                 }, timeout=300)
@@ -322,7 +338,7 @@ def _finalize_results(task_id, batch_results, test_cases_meta, submission_id=Non
         # (passed_all) ni CodeSubmission yozuviga yozamiz. Avtomatik ball
         # hisoblash (score_session_answers) shu maydonga tayanadi.
         _update_submission_tests_passed(submission_id, passed_all)
-        cache.set(f"run_code:task:{task_id}", {
+        _cache_set_preserve_owner(f"run_code:task:{task_id}", {
             'status': 'COMPLETED',
             'result': {
                 'stdout': '',
@@ -337,7 +353,7 @@ def _finalize_results(task_id, batch_results, test_cases_meta, submission_id=Non
 
     except Exception as e:
         logger.exception(f"Run code natijalarini hisoblashda xato: {e}")
-        cache.set(f"run_code:task:{task_id}", {
+        _cache_set_preserve_owner(f"run_code:task:{task_id}", {
             'status': 'FAILED',
             'error': str(e)
         }, timeout=300)
@@ -377,7 +393,7 @@ def process_pdf_questions_task(self, task_id, pdf_b64, subject, difficulty, ques
             question_type=question_type or 'multiple_choice',
         )
         if not result.get('ok'):
-            cache.set(cache_key, {
+            _cache_set_preserve_owner(cache_key, {
                 'status': 'FAILED',
                 'error': result.get('error') or "PDFdan savollarni ajratib bo'lmadi",
                 'pdf_text_chars': result.get('pdf_text_chars', 0),
@@ -385,7 +401,7 @@ def process_pdf_questions_task(self, task_id, pdf_b64, subject, difficulty, ques
                 'used_pdf_vision': bool(result.get('used_pdf_vision')),
             }, timeout=900)
             return
-        cache.set(cache_key, {
+        _cache_set_preserve_owner(cache_key, {
             'status': 'COMPLETED',
             'result': {
                 'questions': result.get('questions') or [],
@@ -400,7 +416,7 @@ def process_pdf_questions_task(self, task_id, pdf_b64, subject, difficulty, ques
         }, timeout=900)
     except Exception as exc:
         logger.exception('PDF savol ajratish task xatosi task=%s', task_id)
-        cache.set(cache_key, {
+        _cache_set_preserve_owner(cache_key, {
             'status': 'FAILED',
             'error': str(exc) or "PDFni tahlil qilishda kutilmagan xato",
         }, timeout=900)
@@ -498,14 +514,14 @@ def process_word_ai_questions_task(self, task_id, word_b64, subject, difficulty,
             else:
                 text = _extract_docx_text(word_bytes)
         except ValueError as ve:
-            cache.set(cache_key, {
+            _cache_set_preserve_owner(cache_key, {
                 'status': 'FAILED',
                 'error': str(ve),
             }, timeout=900)
             return
 
         if not text:
-            cache.set(cache_key, {
+            _cache_set_preserve_owner(cache_key, {
                 'status': 'FAILED',
                 'error': "Fayldan matn topilmadi. Fayl bo'sh yoki faqat rasmlardan iborat bo'lishi mumkin.",
             }, timeout=900)
@@ -518,7 +534,7 @@ def process_word_ai_questions_task(self, task_id, word_b64, subject, difficulty,
             question_type=question_type or 'multiple_choice',
         )
         if not result.get('ok'):
-            cache.set(cache_key, {
+            _cache_set_preserve_owner(cache_key, {
                 'status': 'FAILED',
                 'error': result.get('error') or "Hujjat matnidan savollarni ajratib bo'lmadi",
                 'pdf_text_chars': result.get('pdf_text_chars', 0),
@@ -526,7 +542,7 @@ def process_word_ai_questions_task(self, task_id, word_b64, subject, difficulty,
                 'used_pdf_vision': bool(result.get('used_pdf_vision')),
             }, timeout=900)
             return
-        cache.set(cache_key, {
+        _cache_set_preserve_owner(cache_key, {
             'status': 'COMPLETED',
             'result': {
                 'questions': result.get('questions') or [],
@@ -541,7 +557,7 @@ def process_word_ai_questions_task(self, task_id, word_b64, subject, difficulty,
         }, timeout=900)
     except Exception as exc:
         logger.exception('Word AI savol ajratish task xatosi task=%s', task_id)
-        cache.set(cache_key, {
+        _cache_set_preserve_owner(cache_key, {
             'status': 'FAILED',
             'error': str(exc) or "Faylni tahlil qilishda kutilmagan xato",
         }, timeout=900)

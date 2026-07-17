@@ -24,6 +24,9 @@ const makeAssetUrl = (url) => {
 };
 
 const OlympyStore = (() => {
+  // Production build'da mock store yozuvlari o'chiriladi — API asosiy manba.
+  // Dev/preview'da localStorage seed fallback saqlanadi (dashboardlar isApi=false).
+  const MOCK_DISABLED = !!(import.meta.env?.PROD);
   const KEY = 'olympy_store_v4';
 
   // ─── Phone normalization ─────────────────────────────────────────────────
@@ -207,17 +210,24 @@ const OlympyStore = (() => {
       return !!(u && (u._api || u.backendId));
     } catch { return false; }
   };
-  const initialState = () => (isApiSession() ? emptyState() : seed());
+  const initialState = () => ((MOCK_DISABLED || isApiSession()) ? emptyState() : seed());
 
   // ─── State load/save ─────────────────────────────────────────────────────
   let state;
   try {
-    const raw = localStorage.getItem(KEY);
-    state = raw ? JSON.parse(raw) : initialState();
+    if (MOCK_DISABLED) {
+      state = emptyState();
+    } else {
+      const raw = localStorage.getItem(KEY);
+      state = raw ? JSON.parse(raw) : initialState();
+    }
   } catch { state = initialState(); }
 
   const listeners = new Set();
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} };
+  const save = () => {
+    if (MOCK_DISABLED) return;
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+  };
   const notify = () => listeners.forEach(fn => { try { fn(); } catch {} });
   const set = (mutator) => {
     state = typeof mutator === 'function' ? mutator(state) : { ...state, ...mutator };

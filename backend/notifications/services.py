@@ -80,6 +80,10 @@ def _send_telegram_to_user(user, message, reply_markup=None):
 
 def send_web_push(subscription_model, title, message, url='/'):
     from pywebpush import webpush, WebPushException
+    # VAPID private key bo'lmasa push o'chiq — hardcoded default ishlatilmaydi.
+    if not getattr(settings, 'VAPID_PRIVATE_KEY', None):
+        logger.info('[webpush-skip] VAPID_PRIVATE_KEY sozlanmagan')
+        return False
     try:
         subscription_info = {
             'endpoint': subscription_model.endpoint,

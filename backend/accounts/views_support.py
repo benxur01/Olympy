@@ -1,5 +1,6 @@
 import json
 import logging
+import secrets
 import time
 import urllib.parse
 import urllib.request
@@ -26,6 +27,43 @@ logger = logging.getLogger('accounts.views_support')
 _SUPPORT_CHAT_PER_REQUEST_TIMEOUT = 10
 _SUPPORT_CHAT_TOTAL_TIME_BUDGET = 25
 
+# Mehmon chat sessiyasi — server tomonida cryptographically random cookie.
+# Klient `session_id` ni erkin yuborib boshqa mehmon chatini o'qiy olmasin.
+GUEST_SUPPORT_COOKIE = 'olympy_support_sid'
+GUEST_SUPPORT_COOKIE_MAX_AGE = 60 * 60 * 24 * 7  # 7 kun
+
+
+def _valid_guest_session_id(value):
+    """Faqat server chiqargan token_urlsafe formatini qabul qilamiz."""
+    if not value or not isinstance(value, str):
+        return False
+    # secrets.token_urlsafe(32) ~ 43 belgi; 20..64 oralig'i + xavfsiz alfavit.
+    if len(value) < 20 or len(value) > 64:
+        return False
+    allowed = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_')
+    return all(c in allowed for c in value)
+
+
+def _guest_session_from_request(request):
+    """Cookie'dan guest session o'qiydi (query/body session_id e'tiborsiz)."""
+    sid = request.COOKIES.get(GUEST_SUPPORT_COOKIE) or ''
+    return sid if _valid_guest_session_id(sid) else None
+
+
+def _set_guest_session_cookie(response, session_id):
+    same_site = getattr(settings, 'JWT_COOKIE_SAMESITE', 'Lax')
+    secure = (not settings.DEBUG) or (str(same_site).lower() == 'none')
+    response.set_cookie(
+        GUEST_SUPPORT_COOKIE,
+        session_id,
+        max_age=GUEST_SUPPORT_COOKIE_MAX_AGE,
+        httponly=True,
+        secure=secure,
+        samesite=same_site,
+        path='/',
+    )
+    return response
+
 
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
@@ -33,18 +71,20 @@ _SUPPORT_CHAT_TOTAL_TIME_BUDGET = 25
 def support_chat(request):
     """GET/POST /api/support/chat/ — Gemini orqali AI yordamchi bilan suhbat endpointi (ommaviy).
 
-    GET: Foydalanuvchining avvalgi chat tarixi (token bo'lsa user bo'yicha, bo'lmasa session_id bo'yicha).
+    GET: Foydalanuvchining avvalgi chat tarixi (token bo'lsa user bo'yicha,
+         mehmon uchun faqat HttpOnly cookie session).
     POST: Foydalanuvchining yangi savolini qabul qilib DB'ga yozadi, keyin Gemini orqali javob oladi.
     """
     user = request.user if request.user.is_authenticated else None
-    session_id = request.GET.get('session_id') or request.data.get('session_id')
+    guest_session_id = None if user else _guest_session_from_request(request)
+    new_guest_cookie = None
 
     # ─── GET: Chat tarixini yuklash ───
     if request.method == 'GET':
         if user:
             db_messages = SupportMessage.objects.filter(user=user).order_by('created_at')
-        elif session_id:
-            db_messages = SupportMessage.objects.filter(session_id=session_id).order_by('created_at')
+        elif guest_session_id:
+            db_messages = SupportMessage.objects.filter(session_id=guest_session_id).order_by('created_at')
         else:
             db_messages = []
 
@@ -73,6 +113,12 @@ def support_chat(request):
             status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
+    # Mehmon: cookie yo'q bo'lsa yangi sessiya chiqaramiz (klient session_id yubormaydi).
+    if not user:
+        if not guest_session_id:
+            guest_session_id = secrets.token_urlsafe(32)
+            new_guest_cookie = guest_session_id
+
     # Foydalanuvchining eng oxirgi yozgan savolini DB'ga saqlaymiz
     user_new_text = ""
     if messages and messages[-1].get('role') == 'user':
@@ -82,10 +128,10 @@ def support_chat(request):
     if user_new_text:
         if user:
             SupportMessage.objects.create(user=user, role='user', text=user_new_text)
-        elif session_id:
-            SupportMessage.objects.create(session_id=session_id, role='user', text=user_new_text)
+        elif guest_session_id:
+            SupportMessage.objects.create(session_id=guest_session_id, role='user', text=user_new_text)
 
-    # Foydalanuvchi ma'lumotlarini kontekst uchun yig'amiz
+    # Foydalanuvchi konteksti — PII (telefon, email, to'liq ID) AI'ga yuborilMAYDI.
     if user:
         roles_list = []
         centers_list = []
@@ -96,24 +142,25 @@ def support_chat(request):
             if m.center:
                 org_type = m.center.organization_type or "O'quv markaz"
                 centers_list.append(
-                    f"- Markaz ID: {m.center_id}, Nomi: '{m.center.name}', "
+                    f"- Markaz: '{m.center.name}', "
                     f"Turi: {org_type}, "
                     f"Markaz arizasi holati: {m.center.status or 'pending'}."
                 )
 
         roles_str = ", ".join(roles_list) if roles_list else "Hech qanday rol biriktirilmagan"
         centers_str = "\n".join(centers_list) if centers_list else "- Bog'langan o'quv markazlar yo'q"
+        display_name = (user.first_name or '').strip() or (user.full_name or '').split()[:1]
+        if isinstance(display_name, list):
+            display_name = display_name[0] if display_name else 'Foydalanuvchi'
 
         user_info_prompt = (
-            f"- Foydalanuvchi ismi: {user.first_name} {user.last_name} ({user.phone})\n"
+            f"- Foydalanuvchi ismi (faqat ko'rsatish uchun): {display_name}\n"
             f"- Tizimdagi rollari va arizalari: {roles_str}\n"
             f"- Biriktirilgan o'quv markazlari holati:\n{centers_str}\n\n"
         )
     else:
-        sess_name = session_id or "noma'lum"
         user_info_prompt = (
             "- Foydalanuvchi turi: Mehmon (Tizimga kirmagan/Ro'yxatdan o'tmagan)\n"
-            f"- Anonim sessiya ID: {sess_name}\n"
             "Foydalanuvchi login qila olmayotgan yoki ro'yxatdan o'ta olmayotgan bo'lishi mumkin. "
             "Unga ro'yxatdan o'tish jarayoni, login qilish, parolni tiklash yoki OTP tasdiq olish haqidagi savollarda yordam bering.\n\n"
         )
@@ -131,7 +178,8 @@ def support_chat(request):
         "3. Talabalar (student) o'quv markazi tomonidan tashkil etilgan musobaqalarda qatnashish uchun markaz tomonidan tasdiqlanishi kerak.\n"
         "4. Platformadagi boshqa barcha muammolar yoki billing/to'lovlar bo'yicha savollarga yordam bering.\n"
         "5. Mehmonlar tizimga kirish uchun telefon raqami va parolidan foydalanishlari kerak. Agar parolini unutgan bo'lsa, parolni tiklash tugmasi orqali OTP kod yuborib tiklashi mumkin.\n\n"
-        "DIQQAT: Faqat Olympy platformasiga tegishli savollarga javob bering. Chet mavzudagi (masalan, ovqat tayyorlash, dasturlash kodi yozish, matematika yechish va h.k.) savollarga muloyimlik bilan faqat Olympy tizimiga oid savollarga yordam bera olishingizni aytib javob bering."
+        "DIQQAT: Faqat Olympy platformasiga tegishli savollarga javob bering. Chet mavzudagi (masalan, ovqat tayyorlash, dasturlash kodi yozish, matematika yechish va h.k.) savollarga muloyimlik bilan faqat Olympy tizimiga oid savollarga yordam bera olishingizni aytib javob bering. "
+        "Hech qachon foydalanuvchidan to'liq telefon raqami, parol yoki OTP so'ramang va ularni takrorlamang."
     )
 
     payload = {
@@ -148,6 +196,11 @@ def support_chat(request):
     body = json.dumps(payload).encode('utf-8')
     last_error = ''
     loop_start = time.monotonic()
+
+    def _finalize(resp):
+        if new_guest_cookie:
+            _set_guest_session_cookie(resp, new_guest_cookie)
+        return resp
 
     for model in _gemini_models():
         if time.monotonic() - loop_start > _SUPPORT_CHAT_TOTAL_TIME_BUDGET:
@@ -175,17 +228,17 @@ def support_chat(request):
                     # AI javobini ham DB'ga saqlaymiz
                     if user:
                         SupportMessage.objects.create(user=user, role='model', text=reply)
-                    elif session_id:
-                        SupportMessage.objects.create(session_id=session_id, role='model', text=reply)
-                    return Response({'reply': reply})
+                    elif guest_session_id:
+                        SupportMessage.objects.create(session_id=guest_session_id, role='model', text=reply)
+                    return _finalize(Response({'reply': reply}))
             except Exception as e:
                 last_error = str(e)
                 logger.warning("Support AI Gemini call failed: %s", last_error)
 
-    return Response(
+    return _finalize(Response(
         {'reply': "Kechirasiz, javob olishda xatolik yuz berdi. Iltimos, birozdan so'ng qayta urinib ko'ring."},
         status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
-    )
+    ))
 
 
 support_chat.cls.throttle_scope = 'support_chat'
@@ -197,6 +250,7 @@ def admin_support_threads(request):
     """GET /api/admin/support/chats/ — Barcha yordam so'ragan foydalanuvchilar (shu jumladan mehmonlar)."""
     from django.db.models import Max
     from accounts.models import User
+    from accounts.utils import mask_phone
 
     # Ro'yxatdan o'tganlar yozishmalari
     user_threads = SupportMessage.objects.filter(user__isnull=False).values('user').annotate(latest_message_time=Max('created_at'))
@@ -217,7 +271,7 @@ def admin_support_threads(request):
             'chat_key': str(u.id),
             'is_guest': False,
             'full_name': f"{u.first_name} {u.last_name}" if u.first_name else u.full_name,
-            'phone': u.phone,
+            'phone': mask_phone(u.normalized_phone or u.phone or ''),
             'last_message': last_msg.text if last_msg else '',
             'last_message_role': last_msg.role if last_msg else '',
             'updated_at': item['latest_message_time']
@@ -297,4 +351,3 @@ def admin_support_send_reply(request, chat_key):
             SupportMessage.objects.create(session_id=chat_key, role='admin', text=reply_text)
 
     return Response({'status': 'sent', 'message': reply_text})
-
