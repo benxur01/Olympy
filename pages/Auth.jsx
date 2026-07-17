@@ -21,6 +21,10 @@ const LoginPage = ({ onNavigate, onLogin }) => {
   const [totpCode, setTotpCode] = React.useState('');
   const [pendingPhone, setPendingPhone] = React.useState('');
   const [pendingPassword, setPendingPassword] = React.useState('');
+  // Soft-deleted hisob: login o'rniga tiklash UI.
+  const [restoreMode, setRestoreMode] = React.useState(false);
+  const [restoreTotp, setRestoreTotp] = React.useState('');
+  const [restoreBusy, setRestoreBusy] = React.useState(false);
   const [forgotOpen, setForgotOpen] = React.useState(false);
   const [forgot, setForgot] = React.useState({
     step: 'phone',
@@ -70,10 +74,35 @@ const LoginPage = ({ onNavigate, onLogin }) => {
       }
       finishLogin(data);
     } catch (err) {
+      const data = err?.data || {};
+      const deleted = !!(data.account_deleted || data.restorable
+        || (typeof data.detail === 'object' && data.detail?.account_deleted));
+      if (deleted) {
+        setRestoreMode(true);
+        setError(OlympyApi.toUserMessage(err) || "Hisob o'chirilgan — 30 kun ichida tiklash mumkin");
+        setLoading(false);
+        return;
+      }
       const errorMsg = OlympyApi.toUserMessage(err);
       setError(errorMsg);
       setLoading(false);
       window.dispatchEvent(new CustomEvent('olympy:auth_error', { detail: { error: errorMsg, type: 'login' } }));
+    }
+  };
+
+  const handleRestoreAccount = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (restoreBusy) return;
+    setRestoreBusy(true);
+    setError('');
+    try {
+      const payload = { phone: form.phone, password: form.password };
+      if (restoreTotp.trim()) payload.totp_code = restoreTotp.trim();
+      const data = await OlympyApi.restoreMyAccount(payload);
+      finishLogin(data);
+    } catch (err) {
+      setError(OlympyApi.toUserMessage(err) || "Tiklash muvaffaqiyatsiz");
+      setRestoreBusy(false);
     }
   };
 
@@ -295,7 +324,12 @@ const LoginPage = ({ onNavigate, onLogin }) => {
               className="btn-ghost w-full py-3 rounded-2xl font-semibold">← Orqaga</button>
           </form>
         ) : (
-        <form onSubmit={handleLogin} className="space-y-4">
+        <form onSubmit={restoreMode ? handleRestoreAccount : handleLogin} className="space-y-4">
+          {restoreMode && (
+            <div className="text-sm text-amber-200/90 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
+              Hisobingiz o&apos;chirilgan. 30 kun ichida telefon va parol bilan tiklashingiz mumkin.
+            </div>
+          )}
           <div>
             <label className="block text-sm text-white/60 mb-2 font-medium">Telefon raqam</label>
             <PhoneField value={form.phone} onChange={phone => setForm(f => ({ ...f, phone }))} />
@@ -313,14 +347,34 @@ const LoginPage = ({ onNavigate, onLogin }) => {
               </button>
             </div>
           </div>
+          {restoreMode && (
+            <div>
+              <label className="block text-sm text-white/60 mb-2 font-medium">2FA kod (agar yoqilgan bo‘lsa)</label>
+              <input
+                className="input-field text-center font-mono tracking-widest"
+                value={restoreTotp}
+                onChange={e => setRestoreTotp(e.target.value)}
+                placeholder="000000"
+                inputMode="numeric"
+              />
+            </div>
+          )}
           {error && <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 rounded-xl px-4 py-3"><Icon name="info" size={16} />{error}</div>}
+          {!restoreMode && (
           <div className="flex items-center justify-end text-sm">
             <button type="button" onClick={openForgotModal} className="text-indigo-400 hover:text-indigo-300 transition-colors">Parolni unutdingizmi?</button>
           </div>
-          <button type="submit" disabled={loading}
+          )}
+          <button type="submit" disabled={loading || restoreBusy}
             className="btn-primary w-full py-3.5 rounded-2xl font-bold text-base flex items-center justify-center gap-2 disabled:opacity-60">
-            {loading ? <><Spinner size={20} /> Kirish...</> : 'Kirish'}
+            {restoreMode
+              ? (restoreBusy ? <><Spinner size={20} /> Tiklanmoqda...</> : 'Hisobni tiklash')
+              : (loading ? <><Spinner size={20} /> Kirish...</> : 'Kirish')}
           </button>
+          {restoreMode && (
+            <button type="button" onClick={() => { setRestoreMode(false); setError(''); setRestoreTotp(''); }}
+              className="btn-ghost w-full py-3 rounded-2xl font-semibold">← Oddiy kirish</button>
+          )}
         </form>
         )}
 

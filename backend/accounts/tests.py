@@ -101,6 +101,46 @@ class RegistrationTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
+class SoftDeleteRestoreTestCase(APITestCase):
+    """Soft-delete + restore grace period."""
+
+    def setUp(self):
+        self.phone = '+998907778899'
+        self.password = 'StrongPass123'
+        self.user = User.objects.create_user(
+            phone=self.phone, password=self.password, full_name='Soft Del',
+        )
+
+    def test_soft_delete_and_restore(self):
+        self.client.force_authenticate(user=self.user)
+        del_url = reverse('delete-my-account')
+        response = self.client.delete(del_url, {'password': self.password}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get('soft_deleted'))
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+        self.assertIsNotNone(self.user.deleted_at)
+
+        # Login blocked with restorable flag
+        login_url = reverse('login')
+        self.client.force_authenticate(user=None)
+        bad = self.client.post(login_url, {
+            'phone': self.phone, 'password': self.password,
+        }, format='json')
+        self.assertEqual(bad.status_code, status.HTTP_400_BAD_REQUEST)
+
+        # Restore
+        restore_url = reverse('restore-my-account')
+        ok = self.client.post(restore_url, {
+            'phone': self.phone, 'password': self.password,
+        }, format='json')
+        self.assertEqual(ok.status_code, status.HTTP_200_OK)
+        self.assertTrue(ok.data.get('restored') or ok.data.get('user'))
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_active)
+        self.assertIsNone(self.user.deleted_at)
+
+
 class LoginLogoutTestCase(APITestCase):
     """POST /api/auth/login/ va /api/auth/logout/."""
 

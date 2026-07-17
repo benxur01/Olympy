@@ -573,6 +573,11 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'accounts.tasks.cleanup_phone_verifications',
         'schedule': timedelta(hours=1),
     },
+    # Soft-delete grace muddati o'tgan hisoblarni hard-delete.
+    'purge-soft-deleted-accounts': {
+        'task': 'accounts.purge_soft_deleted_accounts',
+        'schedule': crontab(hour=3, minute=15, nowfun=lambda: datetime.now(dt_timezone.utc)),
+    },
     # Har 30 soniyada worker tirikligini cache'ga yozadi — /api/health/
     # shu timestamp orqali Celery holatini ("ok"/"down") aniqlaydi.
     'celery-heartbeat': {
@@ -611,6 +616,9 @@ CELERY_BEAT_SCHEDULE = {
 # Markaz tasdiqlanganda beriladigan trial obuna muddati (kun). Avval
 # centers/views.py'da hardcoded 14 edi — endi env orqali sozlanadi.
 TRIAL_SUBSCRIPTION_DAYS = int(os.environ.get('TRIAL_SUBSCRIPTION_DAYS', 14))
+
+# Soft-delete grace: hisob o'chirilgandan keyin necha kun ichida tiklash mumkin.
+ACCOUNT_DELETE_GRACE_DAYS = int(os.environ.get('ACCOUNT_DELETE_GRACE_DAYS', '30'))
 
 # CORS — production rejimida faqat aniq ro'yxatdagi originlar.
 CORS_ALLOW_ALL_ORIGINS = False

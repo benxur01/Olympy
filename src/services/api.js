@@ -621,7 +621,7 @@ export const OlympyApi = {
   deleteMyAvatar: (token) => {
     return request('/api/auth/me/avatar/', { method: 'DELETE', token });
   },
-  // Hisobni o'chirish — parol (va ixtiyoriy 2FA) majburiy.
+  // Hisobni soft-delete — parol (va ixtiyoriy 2FA) majburiy.
   // credentials: { password, totp_code? }
   deleteMyAccount: (credentials, token) => {
     return request('/api/auth/me/', {
@@ -631,6 +631,12 @@ export const OlympyApi = {
       retryOnAuth: false,
     });
   },
+  // Soft-deleted hisobni grace ichida tiklash: { phone, password, totp_code? }
+  restoreMyAccount: (payload) => request('/api/auth/restore/', {
+    method: 'POST',
+    body: payload || {},
+    retryOnAuth: false,
+  }),
   // Centers
   getCenters: () => request('/api/centers/').then(unwrapList),
   getCenterRatings: (params, token) => {

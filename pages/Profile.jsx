@@ -977,8 +977,8 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             <h3 className="font-bold text-rose-300">Xavfli zona</h3>
           </div>
           <p className="text-sm text-white/50 mb-4">
-            Hisobni o'chirish qaytarib bo'lmaydi. Barcha ma'lumotlaringiz, olimpiada
-            natijalari va markaz a'zoliklaringiz butunlay o'chiriladi.
+            Hisob o&apos;chirilgach 30 kun ichida telefon va parol bilan tiklash mumkin.
+            Muddatdan keyin ma&apos;lumotlar butunlay o&apos;chiriladi.
           </p>
           {deleteError && (
             <div className="text-xs font-semibold text-rose-300 mb-3">{deleteError}</div>
@@ -1028,8 +1028,8 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
         title="Hisobni o'chirish"
       >
         <p className="text-sm text-white/60 mb-4">
-          Bu amalni qaytarib bo&apos;lmaydi. Davom etish uchun parolingizni tasdiqlang.
-          To&apos;lov yozuvlari audit uchun saqlanadi; boshqa shaxsiy ma&apos;lumotlar o&apos;chiriladi.
+          30 kun ichida tiklash mumkin. Davom etish uchun parolingizni tasdiqlang.
+          Muddatdan keyin hisob butunlay o&apos;chiriladi.
         </p>
         <label className="block text-xs text-white/40 mb-1">Parol</label>
         <input
