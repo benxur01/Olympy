@@ -1010,3 +1010,13 @@ if os.environ.get('MAILGUN_API_KEY'):
         'MAILGUN_SENDER_DOMAIN': os.environ.get('MAILGUN_SENDER_DOMAIN', 'prolymp.uz'),
     }
 
+
+# ─── Test rejimida throttle juda yuqori (rate-limit 429 testlarni buzmasin) ───
+import sys as _sys
+if 'test' in _sys.argv or os.environ.get('OLYMPY_DISABLE_THROTTLE') == '1':
+    REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
+        key: '10000/min' for key in REST_FRAMEWORK.get('DEFAULT_THROTTLE_RATES', {})
+    }
+    # scope'lar ham to'liq bo'lishi uchun
+    for _scope in ('anon', 'user', 'auth', 'register', 'ai_question', 'submit', 'ai', 'ai_prep', 'ai_predictions'):
+        REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'].setdefault(_scope, '10000/min')

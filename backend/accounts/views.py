@@ -23,6 +23,7 @@ from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import AuditLog, PhoneVerification
+from .permissions import IsPlatformAdmin
 from .throttling import PasswordChangePerUserThrottle
 from .serializers import (
     ChangePasswordSerializer,
@@ -127,13 +128,50 @@ def _clear_auth_cookies(response):
 
 
 def _recent_verified_phone(normalized_phone):
+    """So'nggi 10 daqiqada REGISTRATION maqsadida OTP orqali tasdiqlangan telefon.
+
+    `consumed_at` bo'sh bo'lgan yozuvlar hisobga olinadi — register muvaffaqiyatli
+    bo'lgach verification iste'mol qilinadi (qayta ishlatib bo'lmaydi).
+    """
     recent_window = timezone.now() - timedelta(minutes=10)
-    return PhoneVerification.objects.filter(
+    qs = PhoneVerification.objects.filter(
         normalized_phone=normalized_phone,
         purpose=PhoneVerification.PURPOSE_REGISTRATION,
         verified_at__isnull=False,
         verified_at__gte=recent_window,
-    ).order_by('-verified_at').first()
+    )
+    # Agar modelda consumed_at bo'lsa — faqat iste'mol qilinmaganlarni olamiz.
+    if hasattr(PhoneVerification, 'consumed_at'):
+        qs = qs.filter(consumed_at__isnull=True)
+    return qs.order_by('-verified_at').first()
+
+
+def _consume_phone_verification(verification):
+    """Register muvaffaqiyatidan keyin OTP tasdiqini bir martalik qilish.
+
+    Avval verification qatorini o'chirish o'rniga `consumed_at` yoziladi
+    (migration mavjud bo'lsa). Yo'q bo'lsa — qator o'chiriladi yoki
+    verified_at eskiqilinadi (qayta ishlatib bo'lmasin).
+    """
+    if not verification:
+        return
+    try:
+        if hasattr(verification, 'consumed_at'):
+            verification.consumed_at = timezone.now()
+            verification.save(update_fields=['consumed_at', 'updated_at'])
+            return
+    except Exception:
+        pass
+    # Fallback: tasdiq oynasidan tashqariga surib, qayta register'da
+    # _recent_verified_phone topa olmasin.
+    try:
+        verification.verified_at = timezone.now() - timedelta(minutes=30)
+        verification.save(update_fields=['verified_at', 'updated_at'])
+    except Exception:
+        try:
+            verification.delete()
+        except Exception:
+            pass
 
 
 @api_view(['GET'])
@@ -337,6 +375,10 @@ def register(request):
         detail = '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc)
         return Response({'detail': detail}, status=status.HTTP_400_BAD_REQUEST)
 
+    # OTP tasdiqini bir martalik qilish — xuddi shu verified yozuv bilan
+    # qayta register-organization yoki parallel hisob ochilmasin.
+    _consume_phone_verification(verified)
+
     payload = _jwt_payload(user)
     body = {
         **payload,
@@ -395,6 +437,8 @@ def register_organization(request):
         from centers.services import create_pending_center_for_owner
 
         center = create_pending_center_for_owner(user, center_serializer.validated_data)
+
+    _consume_phone_verification(verified)
 
     payload = _jwt_payload(user)
     response = Response({
@@ -810,7 +854,7 @@ def update_my_avatar(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsPlatformAdmin])
 def admin_users_list(request):
     """GET /api/admin/users/ — Platform Admin only.
 
@@ -819,9 +863,6 @@ def admin_users_list(request):
     Pagination majburiy: 10K+ foydalanuvchi bo'lsa to'liq ro'yxat 1+ MB
     response qaytarib brauzerni bog'lab qo'yardi.
     """
-    if not request.user.is_platform_admin:
-        return Response({'detail': 'Forbidden'},
-                        status=status.HTTP_403_FORBIDDEN)
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
@@ -899,16 +940,13 @@ def admin_users_list(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsPlatformAdmin])
 def admin_set_user_active(request, user_id):
     """POST /api/admin/users/{id}/set-active/ — block or unblock a user.
 
     Body: {"is_active": true|false}. Platform Admin only. Cannot disable
     yourself or another platform admin (defensive).
     """
-    if not request.user.is_platform_admin:
-        return Response({'detail': 'Forbidden'},
-                        status=status.HTTP_403_FORBIDDEN)
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
@@ -942,17 +980,13 @@ def admin_set_user_active(request, user_id):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsPlatformAdmin])
 def admin_toggle_user_premium(request, user_id):
     """POST /api/admin/users/{id}/toggle-premium/ — premium holatini boshqarish.
 
     Faqat Platform Admin uchun.
     Payload: { "duration": 30|90|180|365|0|-1, "plan_type": "student"|"organization" }
     """
-    if not request.user.is_platform_admin:
-        return Response({'detail': 'Forbidden'},
-                        status=status.HTTP_403_FORBIDDEN)
-    
     from django.contrib.auth import get_user_model
     from billing.models import SubscriptionPlan, UserSubscription
     from centers.models import EducationCenter
@@ -1117,7 +1151,7 @@ ALLOWED_ROLE_KEYS = ['student', 'teacher', 'manager', 'owner']
 
 
 @api_view(['PATCH'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsPlatformAdmin])
 def admin_set_user_roles(request, user_id):
     """PATCH /api/admin/users/{id}/set-roles/ — system-wide rollarni almashtirish.
 
@@ -1132,9 +1166,6 @@ def admin_set_user_roles(request, user_id):
     faqat foydalanuvchining markazsiz, platforma darajasidagi rollari
     o'rnatiladi.
     """
-    if not request.user.is_platform_admin:
-        return Response({'detail': 'Forbidden'},
-                        status=status.HTTP_403_FORBIDDEN)
     from django.contrib.auth import get_user_model
 
     User = get_user_model()
@@ -2458,11 +2489,9 @@ get_my_predictions.cls.throttle_scope = 'ai_predictions'
 # ---------------------------------------------------------------------------
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsPlatformAdmin])
 def audit_log_list(request):
     """GET /api/admin/audit-log/ — oxirgi 100 ta audit yozuvi (faqat platform admin)."""
-    if not request.user.is_platform_admin:
-        return Response({'detail': "Ruxsat yo'q"}, status=status.HTTP_403_FORBIDDEN)
     logs = AuditLog.objects.select_related('actor').order_by('-created_at')[:100]
     data = [{
         'id': l.id,

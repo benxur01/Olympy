@@ -15,6 +15,7 @@ from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnl
 from rest_framework.response import Response
 
 from accounts.models import AuditLog
+from accounts.permissions import IsPlatformAdmin
 from .models import CenterMembership, CenterQuestion, EducationCenter
 from .serializers import (
     AdminEducationCenterSerializer,
@@ -880,7 +881,7 @@ def change_member_role(request, center_id, membership_id):
 # ─── Platform admin: center approval ──────────────────────────────────────────
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsPlatformAdmin])
 def admin_list_centers(request):
     """GET /api/admin/centers/?status=<status> — Platform Admin only.
 
@@ -888,9 +889,6 @@ def admin_list_centers(request):
     surfaces every center so admins can see and act on pending and
     rejected ones too. Optional ``status`` query param narrows the list.
     """
-    if not request.user.is_platform_admin:
-        return Response({'detail': 'Forbidden'},
-                        status=http_status.HTTP_403_FORBIDDEN)
     qs = EducationCenter.objects.all().order_by('-created_at')
     status_filter = request.query_params.get('status')
     if status_filter:
@@ -914,12 +912,9 @@ def admin_list_centers(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsPlatformAdmin])
 def admin_approve_center(request, center_id):
     """POST /api/admin/centers/{id}/approve/ — Platform Admin only."""
-    if not request.user.is_platform_admin:
-        return Response({'detail': 'Forbidden'},
-                        status=http_status.HTTP_403_FORBIDDEN)
     center = get_object_or_404(EducationCenter, pk=center_id)
     with transaction.atomic():
         center.status = EducationCenter.STATUS_APPROVED
@@ -1006,12 +1001,9 @@ def admin_approve_center(request, center_id):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsPlatformAdmin])
 def admin_reject_center(request, center_id):
     """POST /api/admin/centers/{id}/reject/ — Platform Admin only."""
-    if not request.user.is_platform_admin:
-        return Response({'detail': 'Forbidden'},
-                        status=http_status.HTTP_403_FORBIDDEN)
     center = get_object_or_404(EducationCenter, pk=center_id)
     with transaction.atomic():
         center.status = EducationCenter.STATUS_REJECTED

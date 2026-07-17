@@ -16,6 +16,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.permissions import IsPlatformAdmin
 from questions.models import Question
 
 from .models import Olympiad
@@ -53,11 +54,15 @@ def _collect_subjects():
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 def subjects_list_create(request):
+    """GET — har qanday auth user; POST (yangi fan) — faqat platform admin."""
     if request.method == 'GET':
         return Response(_collect_subjects())
-    if not request.user.is_platform_admin:
-        return Response({'detail': 'Forbidden'},
-                        status=http_status.HTTP_403_FORBIDDEN)
+    # POST: IsPlatformAdmin mantiqi (has_permission) — 403 aniq qaytariladi.
+    if not IsPlatformAdmin().has_permission(request, None):
+        return Response(
+            {'detail': IsPlatformAdmin.message},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
     name = (request.data or {}).get('name', '').strip()
     if not name:
         return Response({'detail': 'name majburiy'},
