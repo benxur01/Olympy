@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Maxfiylik siyosati — Olympy (Prolymp)</title>
+  <meta name="description" content="Olympy (prolymp.uz) maxfiylik siyosati. Google Play va foydalanuvchilar uchun shaxsiy ma'lumotlar qanday yig'ilishi, ishlatilishi va himoya qilinishi." />
+  <meta name="robots" content="index,follow" />
+  <link rel="canonical" href="https://prolymp.uz/privacy.html" />
+  <link rel="icon" href="/favicon.ico" />
+  <style>
+    :root {
+      --bg: #07080c;
+      --card: #0f1117;
+      --text: #e8eaf0;
+      --muted: #9aa3b5;
+      --accent: #818cf8;
+      --border: rgba(255,255,255,0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 16px;
+    }
+    .wrap {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 2rem 1.25rem 4rem;
+    }
+    header {
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.5rem;
+      margin-bottom: 2rem;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 700;
+      font-size: 1.15rem;
+    }
+    .brand img { width: 36px; height: 36px; border-radius: 8px; }
+    h1 {
+      font-size: clamp(1.5rem, 4vw, 2rem);
+      margin: 1.25rem 0 0.5rem;
+      line-height: 1.25;
+    }
+    .meta { color: var(--muted); font-size: 0.9rem; }
+    .lang-switch {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1rem;
+      flex-wrap: wrap;
+    }
+    .lang-switch button {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.4rem 0.9rem;
+      border-radius: 999px;
+      cursor: pointer;
+      font-size: 0.85rem;
+    }
+    .lang-switch button.active {
+      background: rgba(129, 140, 248, 0.15);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    section { margin-bottom: 1.75rem; }
+    h2 {
+      font-size: 1.15rem;
+      margin: 0 0 0.65rem;
+      color: #fff;
+    }
+    h3 {
+      font-size: 1rem;
+      margin: 1rem 0 0.4rem;
+      color: #c7d0e0;
+    }
+    p, li { color: var(--muted); }
+    p { margin: 0 0 0.75rem; }
+    ul { margin: 0.4rem 0 0.9rem; padding-left: 1.25rem; }
+    li { margin-bottom: 0.35rem; }
+    a { color: var(--accent); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1rem 1.15rem;
+      margin: 1rem 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+      margin: 0.75rem 0 1rem;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.55rem 0.65rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: rgba(255,255,255,0.03); color: #fff; font-weight: 600; }
+    td { color: var(--muted); }
+    footer {
+      margin-top: 2.5rem;
+      padding-top: 1.25rem;
+      border-top: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .hidden { display: none; }
+    strong { color: #d4dae8; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <a class="brand" href="https://prolymp.uz/">
+        <img src="/icons/icon-192x192.png" alt="Olympy" width="36" height="36" />
+        <span>Olympy</span>
+      </a>
+      <h1 id="page-title">Maxfiylik siyosati</h1>
+      <p class="meta">
+        <span id="meta-line">Oxirgi yangilanish: 17-iyul 2026 · Amal qiladi: Olympy veb va mobil ilovalari (prolymp.uz)</span>
+      </p>
+      <div class="lang-switch" role="tablist" aria-label="Language">
+        <button type="button" id="btn-uz" class="active" onclick="setLang('uz')">O‘zbekcha</button>
+        <button type="button" id="btn-en" onclick="setLang('en')">English</button>
+      </div>
+    </header>
+
+    <!-- ===================== UZBEK ===================== -->
+    <main id="lang-uz">
+      <section>
+        <h2>1. Kirish</h2>
+        <p>
+          Ushbu Maxfiylik siyosati <strong>Olympy</strong> (brend/sayt: <strong>prolymp.uz</strong>) onlayn olimpiada va ta’lim platformasi
+          foydalanuvchilarining shaxsiy ma’lumotlarini qanday yig‘ishimiz, ishlatishimiz, saqlashimiz va himoya qilishimizni tushuntiradi.
+          Platformadan foydalanish orqali siz ushbu siyosat shartlariga rozilik bildirasiz.
+        </p>
+        <div class="card">
+          <p style="margin:0"><strong>Operator / ishlab chiquvchi:</strong> Olympy (Prolymp)</p>
+          <p style="margin:0.4rem 0 0"><strong>Veb-sayt:</strong> <a href="https://prolymp.uz/">https://prolymp.uz</a></p>
+          <p style="margin:0.4rem 0 0"><strong>Aloqa:</strong> <a href="mailto:sanjarruzmetov017@gmail.com">sanjarruzmetov017@gmail.com</a></p>
+          <p style="margin:0.4rem 0 0"><strong>Telegram:</strong> <a href="https://t.me/proskilluz" target="_blank" rel="noopener">@proskilluz</a></p>
+        </div>
+      </section>
+
+      <section>
+        <h2>2. Qanday ma’lumotlarni yig‘amiz</h2>
+        <p>Biz faqat platformani ishlatish uchun zarur bo‘lgan ma’lumotlarni yig‘amiz.</p>
+
+        <h3>2.1. Siz taqdim etadigan ma’lumotlar</h3>
+        <ul>
+          <li><strong>Hisob ma’lumotlari:</strong> telefon raqami (asosiy identifikator), to‘liq ism, ixtiyoriy username, parol (xeshlab saqlanadi).</li>
+          <li><strong>Profil:</strong> avatar rasmi, fanlar, sinf/bosqich, o‘quv maqsadlari, onboarding sozlamalari.</li>
+          <li><strong>Telegram bog‘lanishi:</strong> telefon tasdiqlash, parol tiklash va bildirishnomalar uchun Telegram foydalanuvchi/chat identifikatorlari.</li>
+          <li><strong>Ta’lim faoliyati:</strong> olimpiada/test urinishlari, javoblar, ballar, reyting, sertifikatlar, amaliyot natijalari, kod yechimlari.</li>
+          <li><strong>Tashkilot ma’lumotlari:</strong> o‘quv markazi nomi, manzil/hudud, a’zolik (o‘quvchi, o‘qituvchi, menejer, direktor), markaz rasmlari.</li>
+          <li><strong>Ota-ona bog‘lanishi:</strong> ota-ona farzand hisobiga telefon orqali so‘rov yuboradi; farzand tasdiqlagach, progress ko‘rinadi (farzand telefoni ota-onaga qaytarilmaydi).</li>
+          <li><strong>To‘lovlar:</strong> obuna reja, summa, to‘lov holati va provayder tranzaksiya ID (Click / Payme). Karta raqami bizning serverlarimizda saqlanmaydi.</li>
+          <li><strong>Qo‘llab-quvvatlash:</strong> AI yordamchi va admin chat xabarlari.</li>
+          <li><strong>2FA (ixtiyoriy):</strong> TOTP maxfiy kaliti shifrlangan holda saqlanadi.</li>
+        </ul>
+
+        <h3>2.2. Avtomatik yig‘iladigan ma’lumotlar</h3>
+        <ul>
+          <li>Autentifikatsiya cookie’lari (JWT) va brauzer/ilova xotirasi (localStorage/sessionStorage) — sessiya, token va vaqtinchalik test holati.</li>
+          <li>Xavfsizlik loglari: muvaffaqiyatsiz login urinishlari, IP asosidagi himoya (brute-force oldini olish).</li>
+          <li>Texnik xatolik monitoringi (Sentry): qurilma/brauzer haqida cheklangan diagnostika ma’lumotlari.</li>
+          <li>Foydalanish metrikalar: streak, coin, faollik sanalari, analitika (admin/markaz panellari uchun agregat ko‘rsatkichlar).</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>3. Ma’lumotlardan qanday foydalanamiz</h2>
+        <ul>
+          <li>Hisob yaratish, telefon orqali kirish va xavfsizlikni ta’minlash.</li>
+          <li>Olimpiadalar, testlar, liderbord, sertifikatlar va o‘quv progressini ko‘rsatish.</li>
+          <li>Markazlar, o‘qituvchilar va ota-onalar uchun boshqaruv panellari va hisobotlar.</li>
+          <li>Premium/obuna xizmatlari va to‘lovlarni qayta ishlash.</li>
+          <li>Telegram orqali OTP, eslatma va xizmat bildirishnomalari yuborish.</li>
+          <li>AI yordamida savol generatsiyasi, PDF import, yordamchi chat va menejer bot funksiyalari.</li>
+          <li>Xavfsizlik, firibgarlik oldini olish, xatoliklarni tuzatish va xizmat sifatini yaxshilash.</li>
+          <li>Qonuniy majburiyatlarni bajarish.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>4. Uchinchi tomon xizmatlari</h2>
+        <p>Xizmatni taqdim etish uchun ishonchli provayderlar bilan ishlaymiz. Ular faqat o‘z vazifasi doirasida ma’lumot oladi:</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Xizmat</th>
+              <th>Maqsad</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Telegram</td>
+              <td>Telefon tasdiqlash, parol tiklash, bildirishnomalar, bot integratsiyasi</td>
+            </tr>
+            <tr>
+              <td>Click / Payme</td>
+              <td>Obuna to‘lovlarini qabul qilish (to‘lov ma’lumotlari provayderda qayta ishlanadi)</td>
+            </tr>
+            <tr>
+              <td>OpenAI / Google Gemini</td>
+              <td>AI savol generatsiyasi, PDF tahlili, yordamchi chat, menejer bot</td>
+            </tr>
+            <tr>
+              <td>Cloudinary</td>
+              <td>Avatar va markaz rasmlarini saqlash</td>
+            </tr>
+            <tr>
+              <td>Sentry</td>
+              <td>Ilova xatoliklarini monitoring qilish</td>
+            </tr>
+            <tr>
+              <td>Judge0</td>
+              <td>Dasturlash savollari uchun kodni ishga tushirish</td>
+            </tr>
+            <tr>
+              <td>Mailgun (ixtiyoriy)</td>
+              <td>Xizmat xabarlari (agar email sozlangan bo‘lsa)</td>
+            </tr>
+            <tr>
+              <td>Hosting / DB / CDN</td>
+              <td>Render, PostgreSQL/Supabase, Redis, Cloudflare va boshqa infratuzilma</td>
+            </tr>
+            <tr>
+              <td>Google Fonts</td>
+              <td>Interfeys shriftlarini yuklash</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>Biz shaxsiy ma’lumotlarni reklama tarmoqlariga sotmaymiz.</p>
+      </section>
+
+      <section>
+        <h2>5. Cookie va mahalliy saqlash</h2>
+        <ul>
+          <li><strong>HttpOnly cookie’lar:</strong> autentifikatsiya (kirish sessiyasi).</li>
+          <li><strong>localStorage / sessionStorage:</strong> token, foydalanuvchi sessiyasi, test holati, yo‘naltirish va UI sozlamalari.</li>
+          <li>Bu ma’lumotlar asosan xizmat ishlashi uchun kerak; brauzer sozlamalaridan cookie’larni o‘chirishingiz mumkin (bunda qayta kirish talab qilinadi).</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>6. Ma’lumotlarni saqlash muddati</h2>
+        <ul>
+          <li>Hisob ma’lumotlari — hisob faol bo‘lgan davrda va o‘chirish so‘rovidan keyin tizimdan olib tashlanguncha.</li>
+          <li>Test natijalari va reyting — ta’lim tarixi va hisobotlar uchun saqlanadi (hisob o‘chirilganda bog‘liq yozuvlar odatda o‘chiriladi).</li>
+          <li>To‘lov yozuvlari — buxgalteriya va nizolarni hal qilish uchun qonuniy muddat davomida saqlanishi mumkin.</li>
+          <li>Xavfsizlik va audit loglari — cheklangan muddatga saqlanadi.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>7. Xavfsizlik</h2>
+        <p>Biz quyidagi himoya choralarini qo‘llaymiz (to‘liq ro‘yxat emas):</p>
+        <ul>
+          <li>Parollarni xeshlash; JWT cookie autentifikatsiyasi; ixtiyoriy 2FA (TOTP, shifrlangan kalit).</li>
+          <li>HTTPS, xavfsizlik headerlari, CSRF himoyasi, so‘rov cheklovlari (rate limit), admin brute-force himoyasi.</li>
+          <li>Telefon raqamlarini loglarda maskalash; rasm yuklash validatsiyasi.</li>
+        </ul>
+        <p>Internet orqali uzatish 100% xavfsiz bo‘lishi kafolatlanmaydi. Shubhali faoliyatni darhol bizga xabar bering.</p>
+      </section>
+
+      <section>
+        <h2>8. Bolalar va o‘quvchilar</h2>
+        <p>
+          Olympy ta’lim platformasi bo‘lib, maktab o‘quvchilari undan foydalanishi mumkin.
+          Ota-ona/vasiy farzand progressini kuzatishi uchun bog‘lanish funksiyasi mavjud; bog‘lanish farzand tasdig‘ini talab qiladi.
+          Agar bolaning ma’lumotlari ota-ona roziligisiz yig‘ilgan deb hisoblasangiz, biz bilan bog‘laning — tegishli choralarni ko‘ramiz.
+        </p>
+      </section>
+
+      <section>
+        <h2>9. Sizning huquqlaringiz</h2>
+        <ul>
+          <li><strong>Kirish va tuzatish:</strong> profil va sozlamalar orqali ma’lumotlaringizni ko‘rish/yangilash.</li>
+          <li><strong>Hisobni o‘chirish:</strong> autentifikatsiya qilingan foydalanuvchi hisobini o‘chirish mumkin (markaz egasi avval egalikni o‘tkazishi kerak; platforma admini o‘z hisobini o‘chira olmaydi).</li>
+          <li><strong>Telegram bog‘lanishini bekor qilish</strong> va ota-ona bog‘lanishini uzish.</li>
+          <li><strong>Eksport:</strong> markaz rahbarlari a’zolar/natijalarni Excel ko‘rinishida yuklab olishi mumkin (ruxsat doirasida).</li>
+        </ul>
+        <p>So‘rov uchun: <a href="mailto:sanjarruzmetov017@gmail.com">sanjarruzmetov017@gmail.com</a></p>
+      </section>
+
+      <section>
+        <h2>10. Ma’lumotlarni oshkor qilish</h2>
+        <p>Shaxsiy ma’lumotlaringizni quyidagi holatlarda ulashishimiz mumkin:</p>
+        <ul>
+          <li>Siz a’zo bo‘lgan o‘quv markazi rahbariyati/o‘qituvchilari (ta’lim maqsadida, ruxsat doirasida).</li>
+          <li>Tasdiqlangan ota-ona/vasiy (progress va hisobotlar).</li>
+          <li>To‘lov, hosting, AI va monitoring provayderlari (xizmat ko‘rsatish uchun).</li>
+          <li>Qonun talab qilganda yoki huquqlarimizni himoya qilish zarur bo‘lganda.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>11. Xalqaro uzatish</h2>
+        <p>
+          Serverlar va uchinchi tomon xizmatlari turli mamlakatlarda joylashgan bo‘lishi mumkin.
+          Ma’lumotlar xizmat ko‘rsatish uchun shu infratuzilma orqali qayta ishlanishi mumkin.
+        </p>
+      </section>
+
+      <section>
+        <h2>12. Siyosat o‘zgarishlari</h2>
+        <p>
+          Biz ushbu Maxfiylik siyosatini vaqti-vaqti bilan yangilashimiz mumkin.
+          Yangilangan versiya ushbu sahifada e’lon qilinadi va “Oxirgi yangilanish” sanasi o‘zgaradi.
+          Muhim o‘zgarishlarda ilova yoki sayt orqali xabar berishga harakat qilamiz.
+        </p>
+      </section>
+
+      <section>
+        <h2>13. Bog‘lanish</h2>
+        <p>Maxfiylik bo‘yicha savollar, so‘rovlar yoki shikoyatlar uchun:</p>
+        <ul>
+          <li>Email: <a href="mailto:sanjarruzmetov017@gmail.com">sanjarruzmetov017@gmail.com</a></li>
+          <li>Telegram: <a href="https://t.me/proskilluz" target="_blank" rel="noopener">t.me/proskilluz</a></li>
+          <li>Sayt: <a href="https://prolymp.uz/">https://prolymp.uz</a></li>
+        </ul>
+      </section>
+    </main>
+
+    <!-- ===================== ENGLISH ===================== -->
+    <main id="lang-en" class="hidden">
+      <section>
+        <h2>1. Introduction</h2>
+        <p>
+          This Privacy Policy explains how <strong>Olympy</strong> (brand/site: <strong>prolymp.uz</strong>), an online olympiad and education platform,
+          collects, uses, stores, and protects personal information. By using the Service (website and mobile apps), you agree to this Policy.
+        </p>
+        <div class="card">
+          <p style="margin:0"><strong>Operator / developer:</strong> Olympy (Prolymp)</p>
+          <p style="margin:0.4rem 0 0"><strong>Website:</strong> <a href="https://prolymp.uz/">https://prolymp.uz</a></p>
+          <p style="margin:0.4rem 0 0"><strong>Contact:</strong> <a href="mailto:sanjarruzmetov017@gmail.com">sanjarruzmetov017@gmail.com</a></p>
+          <p style="margin:0.4rem 0 0"><strong>Telegram:</strong> <a href="https://t.me/proskilluz" target="_blank" rel="noopener">@proskilluz</a></p>
+        </div>
+      </section>
+
+      <section>
+        <h2>2. Information we collect</h2>
+        <p>We collect only what is needed to operate the platform.</p>
+
+        <h3>2.1. Information you provide</h3>
+        <ul>
+          <li><strong>Account data:</strong> phone number (primary identifier), full name, optional username, password (stored hashed).</li>
+          <li><strong>Profile:</strong> avatar image, subjects, grade/level, learning goals, onboarding preferences.</li>
+          <li><strong>Telegram linkage:</strong> Telegram user/chat IDs for phone verification, password reset, and notifications.</li>
+          <li><strong>Learning activity:</strong> olympiad/test attempts, answers, scores, rankings, certificates, practice results, code submissions.</li>
+          <li><strong>Organization data:</strong> education center details, memberships (student, teacher, manager, owner), center images.</li>
+          <li><strong>Parent linking:</strong> a parent may request a link via the student’s phone; progress is shown only after student confirmation (the child’s phone is not returned to the parent in API responses).</li>
+          <li><strong>Payments:</strong> subscription plan, amount, status, and provider transaction IDs (Click / Payme). We do not store full card numbers on our servers.</li>
+          <li><strong>Support:</strong> AI assistant and admin support chat messages.</li>
+          <li><strong>Optional 2FA:</strong> TOTP secrets stored encrypted.</li>
+        </ul>
+
+        <h3>2.2. Information collected automatically</h3>
+        <ul>
+          <li>Authentication cookies (JWT) and local/session storage for sessions, tokens, and temporary test state.</li>
+          <li>Security logs: failed login attempts and anti-abuse protections.</li>
+          <li>Error monitoring (Sentry): limited device/browser diagnostics.</li>
+          <li>Usage metrics: streaks, coins, activity dates, and aggregate analytics for admin/center dashboards.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>3. How we use information</h2>
+        <ul>
+          <li>Create accounts, authenticate users by phone, and protect accounts.</li>
+          <li>Run olympiads/tests, leaderboards, certificates, and learning progress.</li>
+          <li>Provide dashboards and reports for centers, teachers, and parents.</li>
+          <li>Process premium subscriptions and payments.</li>
+          <li>Send OTP, reminders, and service notifications via Telegram.</li>
+          <li>Power AI features (question generation, PDF import, support chat, manager bot).</li>
+          <li>Security, fraud prevention, debugging, and service improvement.</li>
+          <li>Comply with legal obligations.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>4. Third-party services</h2>
+        <p>We use trusted processors only as needed to provide the Service:</p>
+        <table>
+          <thead>
+            <tr>
+              <th>Service</th>
+              <th>Purpose</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Telegram</td>
+              <td>Phone verification, password reset, notifications, bots</td>
+            </tr>
+            <tr>
+              <td>Click / Payme</td>
+              <td>Subscription payments (card data processed by the provider)</td>
+            </tr>
+            <tr>
+              <td>OpenAI / Google Gemini</td>
+              <td>AI generation, PDF analysis, support chat, manager bot</td>
+            </tr>
+            <tr>
+              <td>Cloudinary</td>
+              <td>Avatar and center image hosting</td>
+            </tr>
+            <tr>
+              <td>Sentry</td>
+              <td>Application error monitoring</td>
+            </tr>
+            <tr>
+              <td>Judge0</td>
+              <td>Code execution for programming tasks</td>
+            </tr>
+            <tr>
+              <td>Mailgun (optional)</td>
+              <td>Transactional email if configured</td>
+            </tr>
+            <tr>
+              <td>Hosting / DB / CDN</td>
+              <td>Render, PostgreSQL/Supabase, Redis, Cloudflare, and related infrastructure</td>
+            </tr>
+            <tr>
+              <td>Google Fonts</td>
+              <td>UI font delivery</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>We do not sell personal information to advertising networks.</p>
+      </section>
+
+      <section>
+        <h2>5. Cookies and local storage</h2>
+        <ul>
+          <li><strong>HttpOnly cookies:</strong> authentication session.</li>
+          <li><strong>localStorage / sessionStorage:</strong> tokens, user session, test state, redirects, and UI preferences.</li>
+          <li>These are primarily required for core functionality. Clearing cookies will require signing in again.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>6. Data retention</h2>
+        <ul>
+          <li>Account data — while the account is active and until deletion is processed.</li>
+          <li>Test results and rankings — for learning history and reports (related records are generally removed when an account is deleted).</li>
+          <li>Payment records — may be retained for accounting and dispute resolution as required by law.</li>
+          <li>Security and audit logs — retained for a limited period.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>7. Security</h2>
+        <p>We implement safeguards such as:</p>
+        <ul>
+          <li>Password hashing; JWT cookie auth; optional encrypted TOTP 2FA.</li>
+          <li>HTTPS, security headers, CSRF protection, rate limiting, admin brute-force protection.</li>
+          <li>Phone masking in logs; image upload validation.</li>
+        </ul>
+        <p>No method of transmission over the Internet is 100% secure. Please report suspicious activity immediately.</p>
+      </section>
+
+      <section>
+        <h2>8. Children and students</h2>
+        <p>
+          Olympy is an education platform and may be used by school students.
+          Parent/guardian linking requires student confirmation before progress is shared.
+          If you believe a child’s data was collected without appropriate consent, contact us and we will take appropriate action.
+        </p>
+      </section>
+
+      <section>
+        <h2>9. Your rights</h2>
+        <ul>
+          <li><strong>Access and correction:</strong> view/update profile data in the app.</li>
+          <li><strong>Account deletion:</strong> authenticated users may delete their account (organization owners must transfer ownership first; platform admins cannot self-delete).</li>
+          <li><strong>Unlink Telegram</strong> and disconnect parent–student links.</li>
+          <li><strong>Export:</strong> authorized center managers may export members/results to Excel within their permissions.</li>
+        </ul>
+        <p>Requests: <a href="mailto:sanjarruzmetov017@gmail.com">sanjarruzmetov017@gmail.com</a></p>
+      </section>
+
+      <section>
+        <h2>10. Sharing of information</h2>
+        <p>We may share personal data with:</p>
+        <ul>
+          <li>Education centers you join (staff with appropriate roles), for educational purposes.</li>
+          <li>Confirmed parents/guardians (progress and reports).</li>
+          <li>Payment, hosting, AI, and monitoring processors needed to run the Service.</li>
+          <li>Authorities when required by law or to protect our rights.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>11. International transfers</h2>
+        <p>
+          Servers and third-party services may be located in different countries.
+          Data may be processed through that infrastructure to provide the Service.
+        </p>
+      </section>
+
+      <section>
+        <h2>12. Changes to this Policy</h2>
+        <p>
+          We may update this Privacy Policy from time to time.
+          The updated version will be posted on this page with a revised “Last updated” date.
+          For material changes, we will try to notify users via the app or website.
+        </p>
+      </section>
+
+      <section>
+        <h2>13. Contact</h2>
+        <p>For privacy questions, requests, or complaints:</p>
+        <ul>
+          <li>Email: <a href="mailto:sanjarruzmetov017@gmail.com">sanjarruzmetov017@gmail.com</a></li>
+          <li>Telegram: <a href="https://t.me/proskilluz" target="_blank" rel="noopener">t.me/proskilluz</a></li>
+          <li>Website: <a href="https://prolymp.uz/">https://prolymp.uz</a></li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      <p>
+        <a href="https://prolymp.uz/">← Olympy bosh sahifa</a>
+        ·
+        <a href="https://prolymp.uz/privacy.html">https://prolymp.uz/privacy.html</a>
+      </p>
+      <p>© <span id="year"></span> Olympy. Barcha huquqlar himoyalangan.</p>
+    </footer>
+  </div>
+
+  <script>
+    document.getElementById('year').textContent = new Date().getFullYear();
+
+    function setLang(lang) {
+      const uz = document.getElementById('lang-uz');
+      const en = document.getElementById('lang-en');
+      const btnUz = document.getElementById('btn-uz');
+      const btnEn = document.getElementById('btn-en');
+      const title = document.getElementById('page-title');
+      const meta = document.getElementById('meta-line');
+      if (lang === 'en') {
+        uz.classList.add('hidden');
+        en.classList.remove('hidden');
+        btnUz.classList.remove('active');
+        btnEn.classList.add('active');
+        title.textContent = 'Privacy Policy';
+        meta.textContent = 'Last updated: 17 July 2026 · Applies to: Olympy web and mobile apps (prolymp.uz)';
+        document.documentElement.lang = 'en';
+        document.title = 'Privacy Policy — Olympy (Prolymp)';
+      } else {
+        en.classList.add('hidden');
+        uz.classList.remove('hidden');
+        btnEn.classList.remove('active');
+        btnUz.classList.add('active');
+        title.textContent = 'Maxfiylik siyosati';
+        meta.textContent = 'Oxirgi yangilanish: 17-iyul 2026 · Amal qiladi: Olympy veb va mobil ilovalari (prolymp.uz)';
+        document.documentElement.lang = 'uz';
+        document.title = 'Maxfiylik siyosati — Olympy (Prolymp)';
+      }
+      try {
+        const url = new URL(window.location.href);
+        if (lang === 'en') url.searchParams.set('lang', 'en');
+        else url.searchParams.delete('lang');
+        window.history.replaceState({}, '', url);
+      } catch (e) {}
+    }
+
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if ((params.get('lang') || '').toLowerCase() === 'en') setLang('en');
+    } catch (e) {}
+  </script>
+</body>
+</html>

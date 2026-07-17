@@ -2236,6 +2236,8 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
           </div>
           <div className="text-xs md:text-sm text-white/30">© {new Date().getFullYear()} Olympy. Barcha huquqlar himoyalangan.</div>
           <div className="flex flex-wrap justify-center items-center gap-4 md:gap-6 text-xs md:text-sm text-white/40">
+            <a href="/privacy.html" className="hover:text-white/70 transition-colors">Maxfiylik siyosati</a>
+            <span className="w-px h-4 bg-white/10" aria-hidden="true" />
             <a href="mailto:sanjarruzmetov017@gmail.com" className="hover:text-white/70 transition-colors">Aloqa</a>
             <span className="w-px h-4 bg-white/10" aria-hidden="true" />
             <a href="https://t.me/proskilluz" target="_blank" rel="noreferrer noopener"
