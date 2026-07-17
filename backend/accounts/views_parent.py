@@ -64,16 +64,16 @@ def link_child(request):
         return Response({'detail': "Telefon raqam noto'g'ri"}, status=http_status.HTTP_400_BAD_REQUEST)
     User = get_user_model()
     student = User.objects.filter(normalized_phone=norm).first()
-    if not student:
-        return Response(
-            {'detail': "Bu telefon raqam bilan foydalanuvchi topilmadi"},
-            status=http_status.HTTP_404_NOT_FOUND,
-        )
-    if student.id == request.user.id:
-        return Response(
-            {'detail': "O'zingizni farzand sifatida qo'sha olmaysiz"},
-            status=http_status.HTTP_400_BAD_REQUEST,
-        )
+    # Enumeration himoyasi: telefon mavjud/yo'q farqi ochiq bo'lmasin —
+    # bir xil muvaffaqiyat xabari (200/201) qaytariladi. Self-link va dublikat
+    # ham generic javob (real holat faqat student tomonda ko'rinadi).
+    generic_ok = {
+        'detail': "Agar bu raqam ro'yxatdan o'tgan bo'lsa, so'rov yuborildi. "
+                  "Farzand tasdiqlagach ma'lumotlari ko'rinadi.",
+        'is_confirmed': False,
+    }
+    if not student or student.id == request.user.id:
+        return Response(generic_ok, status=http_status.HTTP_200_OK)
     try:
         # is_confirmed=False — student tasdiqlamaguncha link "kutilmoqda"
         # holatida bo'ladi va get_children/list_children'da ko'rinmaydi.
@@ -81,10 +81,7 @@ def link_child(request):
             parent=request.user, student=student, is_confirmed=False,
         )
     except IntegrityError:
-        return Response(
-            {'detail': "Bu farzand allaqachon qo'shilgan"},
-            status=http_status.HTTP_400_BAD_REQUEST,
-        )
+        return Response(generic_ok, status=http_status.HTTP_200_OK)
     # Yangi parent rolini foydalanuvchi roles ro'yxatiga qo'shamiz —
     # frontend "Ota-ona" rolini ko'rsata oladi.
     try:
@@ -92,12 +89,7 @@ def link_child(request):
             request.user.add_role('parent')
     except Exception:
         pass
-    return Response({
-        'student_id': student.id,
-        'full_name': student.full_name,
-        'is_confirmed': False,
-        'detail': "So'rov yuborildi. Farzand tasdiqlagach ma'lumotlari ko'rinadi.",
-    }, status=http_status.HTTP_201_CREATED)
+    return Response(generic_ok, status=http_status.HTTP_201_CREATED)
 
 
 @api_view(['GET'])

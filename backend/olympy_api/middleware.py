@@ -16,17 +16,26 @@ class SecurityHeadersMiddleware:
         dev server (localhost + ws HMR) ishlaydi — uni bloklamaslik uchun
         connect-src kengaytiriladi.
         """
-        connect_src = ["'self'", 'https:', 'wss:']
+        # Production: faqat o'z domenlari + monitoring. DEBUG: kengroq (Vite HMR).
         if settings.DEBUG:
-            # Vite HMR WebSocket va dev API uchun.
-            connect_src += ['ws:', 'http://localhost:*', 'http://127.0.0.1:*']
-
-        # 'unsafe-inline' va 'unsafe-eval' faqat DEBUG'da (Vite dev server /
-        # HMR talab qiladi). Production'da ikkalasi ham olib tashlanadi —
-        # 'unsafe-inline' XSS himoyasini amalda bekor qilardi.
-        if settings.DEBUG:
+            connect_src = [
+                "'self'", 'https:', 'wss:', 'ws:',
+                'http://localhost:*', 'http://127.0.0.1:*',
+            ]
             script_src = "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
         else:
+            site = (getattr(settings, 'SITE_URL', '') or 'https://prolymp.uz').rstrip('/')
+            connect_src = [
+                "'self'",
+                site,
+                'https://api.prolymp.uz',
+                'https://*.onrender.com',
+                'https://*.sentry.io',
+                'https://*.ingest.sentry.io',
+                'https://generativelanguage.googleapis.com',
+                'https://api.openai.com',
+                'https://api.telegram.org',
+            ]
             script_src = "script-src 'self'"
 
         directives = [

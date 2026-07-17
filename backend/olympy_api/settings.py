@@ -401,7 +401,8 @@ REST_FRAMEWORK = {
         # thread) minutlab band qilib qo'yishi mumkin edi (DoS). 6/min —
         # oddiy foydalanuvchi uchun tabiiy suhbat almashinuvi (savol-javob)
         # yetarli keng, lekin abuse xarajatini keskin cheklaydi.
-        'support_chat': '6/min',
+        # Mehmon AI support — tarqalgan DoS/bill xavfini kamaytirish.
+        'support_chat': '4/min',
 
         # Parol o'zgartirish — autentifikatsiyalangan FOYDALANUVCHI bo'yicha.
         # Soatiga ko'pi bilan 5 marta (accounts.throttling).
@@ -727,16 +728,19 @@ PHONE_VERIFICATION_MAX_ATTEMPTS = int(
     os.environ.get('PHONE_VERIFICATION_MAX_ATTEMPTS', '5')
 )
 
-# Web Push VAPID keys
-VAPID_PUBLIC_KEY = os.environ.get(
-    'VAPID_PUBLIC_KEY',
-    'BD9_OMAXcl4b5FYa6vk8WXkRGxZiiELY3wdujM8UJ7iwEuClqeaVtum5zIfga-IwqenvnRKn7-CyxwXWlZIe3zY'
-)
-VAPID_PRIVATE_KEY = os.environ.get(
-    'VAPID_PRIVATE_KEY',
-    '-----BEGIN PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgx9qeZGwVz9lVtkK0\nNXDrTFE7aAyW88eQwSbGH75fRjqhRANCAAQ/fzjAF3JeG+RWGur5PFl5ERsWYohC\n2N8HbozPFCe4sBLgpanmlbbpucyH4GviMKnp750Sp+/gsscF1pWSHt82\n-----END PRIVATE KEY-----'
-)
+# Web Push VAPID keys — private key HECH QACHON repoda default bo'lmasin.
+# Kalitlar bo'sh bo'lsa push o'chiq (send_web_push no-op). Yangi juftlik:
+#   python -c "from py_vapid import Vapid01; v=Vapid01(); v.generate_keys(); ..."
+# yoki web-push VAPID generator. Eski repodagi default kalit revoke qilingan deb
+# hisoblansin — production'da alohida VAPID_* env o'rnating.
+VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '').strip()
+VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '').strip()
 VAPID_CLAIMS_SUB = os.environ.get('VAPID_CLAIMS_SUB', 'mailto:admin@olympy.uz')
+
+# Production'da JWT tokenlarni response body'da qaytarmaslik (faqat HttpOnly cookie).
+# Telegram WebView / cookie-less klientlar uchun: JWT_EXPOSE_TOKENS_IN_BODY=1
+# yoki so'rovda header `X-Olympy-Auth-Storage: 1`.
+JWT_EXPOSE_TOKENS_IN_BODY = env_bool('JWT_EXPOSE_TOKENS_IN_BODY', DEBUG)
 
 
 # Judge0 kod runner (IT/dasturlash savollari uchun "Ishga tushirish").

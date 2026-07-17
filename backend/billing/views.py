@@ -421,14 +421,37 @@ def click_webhook(request):
         )
         return JsonResponse({'error': -1, 'error_note': 'SIGN CHECK FAILED'})
 
-    # Verify signature
-    # sign_string = md5(click_trans_id + service_id + secret_key + merchant_trans_id + amount + action + sign_time)
-    raw_sign = f"{click_trans_id}{service_id}{secret_key}{merchant_trans_id}{amount}{action}{sign_time}"
-    my_sign = hashlib.md5(raw_sign.encode()).hexdigest()
-    
-    # Timing-safe taqqoslash — oddiy != belgi-belgi solishtirib, imzoni
-    # timing-hujum bilan tiklashga yo'l qo'yishi mumkin.
-    if not hmac.compare_digest(str(my_sign), str(sign_string or '')):
+    # service_id majburiy — boshqa merchant callback'larini rad etamiz.
+    expected_service = str(getattr(settings, 'CLICK_SERVICE_ID', '') or '')
+    if expected_service and str(service_id or '') != expected_service:
+        logger.warning("Click webhook service_id nomuvofiq: got=%s", service_id)
+        return JsonResponse({'error': -1, 'error_note': 'SIGN CHECK FAILED'})
+
+    # action raqamini imzodan oldin aniqlaymiz (Complete formulasi farq qiladi).
+    try:
+        action_code = int(action)
+    except (TypeError, ValueError):
+        return JsonResponse({'error': -3, 'error_note': 'Invalid action'})
+
+    # Click imzo:
+    # Prepare (0): md5(click_trans_id + service_id + SECRET + merchant_trans_id + amount + action + sign_time)
+    # Complete (1): + merchant_prepare_id (rasmiy docs). Ba'zi integratsiyalar
+    # Complete'da ham Prepare formulasini yuboradi — ikkalasini ham qabul qilamiz.
+    merchant_prepare_id = data.get('merchant_prepare_id') or merchant_trans_id
+    raw_prepare = (
+        f"{click_trans_id}{service_id}{secret_key}{merchant_trans_id}"
+        f"{amount}{action}{sign_time}"
+    )
+    candidates = [hashlib.md5(raw_prepare.encode()).hexdigest()]
+    if action_code == 1:
+        raw_complete = (
+            f"{click_trans_id}{service_id}{secret_key}{merchant_trans_id}"
+            f"{merchant_prepare_id}{amount}{action}{sign_time}"
+        )
+        candidates.append(hashlib.md5(raw_complete.encode()).hexdigest())
+
+    provided_sign = str(sign_string or '')
+    if not any(hmac.compare_digest(str(c), provided_sign) for c in candidates):
         return JsonResponse({'error': -1, 'error_note': 'SIGN CHECK FAILED'})
 
     # error qiymati noto'g'ri (raqam bo'lmagan) bo'lsa int() ValueError beradi —
@@ -438,16 +461,12 @@ def click_webhook(request):
     except (TypeError, ValueError):
         error_code = 0
 
-    # action ham xuddi shunday: None yoki raqam bo'lmagan qiymatda int()
-    # 500 bilan qulardi — himoyalab, noto'g'ri bo'lsa -3 qaytaramiz.
-    try:
-        action_code = int(action)
-    except (TypeError, ValueError):
-        return JsonResponse({'error': -3, 'error_note': 'Invalid action'})
     if error_code < 0:
         if merchant_trans_id:
             try:
                 tx = PaymentTransaction.objects.get(pk=merchant_trans_id)
+                if tx.provider and tx.provider != 'click':
+                    return JsonResponse({'error': -5, 'error_note': 'Transaction not found'})
                 tx.status = PaymentTransaction.STATUS_FAILED
                 tx.save()
             except (PaymentTransaction.DoesNotExist, ValueError, TypeError):
@@ -460,6 +479,10 @@ def click_webhook(request):
     try:
         tx = PaymentTransaction.objects.get(pk=merchant_trans_id)
     except (PaymentTransaction.DoesNotExist, ValueError, TypeError):
+        return JsonResponse({'error': -5, 'error_note': 'Transaction not found'})
+
+    # Provider mismatch — Payme tx ni Click orqali yopishni to'samiz.
+    if tx.provider and tx.provider != 'click':
         return JsonResponse({'error': -5, 'error_note': 'Transaction not found'})
 
     # amount None yoki vergulli ("123,456") kelsa Decimal() InvalidOperation
@@ -621,6 +644,9 @@ def payme_webhook(request):
         except (PaymentTransaction.DoesNotExist, ValueError, TypeError):
             return rpc_error(-31050, "Tranzaksiya topilmadi", "Транзакция не найдена")
 
+        if tx.provider and tx.provider != 'payme':
+            return rpc_error(-31050, "Tranzaksiya topilmadi", "Транзакция не найдена")
+
         if tx.status != PaymentTransaction.STATUS_PENDING:
             return rpc_error(-31051, "Tranzaksiya faol emas", "Транзакция не активна")
             
@@ -662,6 +688,9 @@ def payme_webhook(request):
             try:
                 tx = PaymentTransaction.objects.select_for_update().get(pk=tx_id)
             except (PaymentTransaction.DoesNotExist, ValueError, TypeError):
+                return rpc_error(-31050, "Tranzaksiya topilmadi", "Транзакция не найдена")
+
+            if tx.provider and tx.provider != 'payme':
                 return rpc_error(-31050, "Tranzaksiya topilmadi", "Транзакция не найдена")
 
             # amount tiyinda — CheckPerformTransaction'dagi kabi aniq Decimal

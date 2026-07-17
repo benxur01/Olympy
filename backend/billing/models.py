@@ -180,7 +180,14 @@ class PaymentTransaction(models.Model):
         (STATUS_CANCELLED, 'Bekor qilingan (refund)'),
     ]
 
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='transactions')
+    # Hisob o'chirilganda to'lov audit trail saqlansin (CASCADE emas).
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='transactions',
+    )
     # Tranzaksiya qaysi plan uchun yaratilganini saqlaymiz. Webhook obunani
     # aktivlashtirayotganda aynan shu plan ishlatiladi — narx bo'yicha taxmin
     # qilish (bir xil narxli planlar orasida noaniqlik) o'rniga.

@@ -1,6 +1,6 @@
 from unittest.mock import patch
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 from rest_framework import status
 
@@ -31,6 +31,7 @@ class WebPushTestCase(TestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(PushSubscription.objects.filter(user=self.user).exists())
 
+    @override_settings(VAPID_PRIVATE_KEY='test-vapid-private-key-not-for-prod')
     @patch('pywebpush.webpush')
     def test_send_web_push_on_publish(self, mock_webpush):
         # Create a subscription

@@ -376,19 +376,27 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
   };
 
   // ── Hisobni o'chirish (Xavfli zona) ───────────────────────────────────
-  // DELETE /api/auth/me/ — barcha ma'lumotlar butunlay o'chiriladi. Muvaffaqiyatdan
-  // keyin logout qilib bosh sahifaga o'tamiz.
+  // DELETE /api/auth/me/ — parol (+2FA) tasdiqlash majburiy.
   const [deletingAccount, setDeletingAccount] = React.useState(false);
   const [deleteError, setDeleteError] = React.useState('');
+  const [deletePassword, setDeletePassword] = React.useState('');
+  const [deleteTotp, setDeleteTotp] = React.useState('');
 
   const handleDeleteAccount = async () => {
     if (!isApi || deletingAccount) return;
-    setConfirmDeleteAccount(false);
+    if (!deletePassword.trim()) {
+      setDeleteError("Hisobni o'chirish uchun parolni kiriting");
+      return;
+    }
     setDeletingAccount(true);
     setDeleteError('');
     try {
-      await OlympyApi.deleteMyAccount(OlympyApi.getToken());
-      // Auth tozalash + bosh sahifaga yo'naltirish handleLogout ichida.
+      const credentials = { password: deletePassword };
+      if (deleteTotp.trim()) credentials.totp_code = deleteTotp.trim();
+      await OlympyApi.deleteMyAccount(credentials, OlympyApi.getToken());
+      setConfirmDeleteAccount(false);
+      setDeletePassword('');
+      setDeleteTotp('');
       if (onLogout) {
         onLogout();
       } else {
@@ -1008,16 +1016,72 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
         danger
         busy={avatarLoading}
       />
-      <ConfirmModal
+      <Modal
         open={confirmDeleteAccount}
-        onClose={() => setConfirmDeleteAccount(false)}
-        onConfirm={handleDeleteAccount}
+        onClose={() => {
+          if (deletingAccount) return;
+          setConfirmDeleteAccount(false);
+          setDeletePassword('');
+          setDeleteTotp('');
+          setDeleteError('');
+        }}
         title="Hisobni o'chirish"
-        message="Hisobingizni butunlay o'chirmoqchimisiz? Bu amalni qaytarib bo'lmaydi — barcha ma'lumotlaringiz, olimpiada natijalari va markaz a'zoliklaringiz butunlay o'chiriladi."
-        confirmText="Butunlay o'chirish"
-        danger
-        busy={deletingAccount}
-      />
+      >
+        <p className="text-sm text-white/60 mb-4">
+          Bu amalni qaytarib bo&apos;lmaydi. Davom etish uchun parolingizni tasdiqlang.
+          To&apos;lov yozuvlari audit uchun saqlanadi; boshqa shaxsiy ma&apos;lumotlar o&apos;chiriladi.
+        </p>
+        <label className="block text-xs text-white/40 mb-1">Parol</label>
+        <input
+          type="password"
+          value={deletePassword}
+          onChange={(e) => setDeletePassword(e.target.value)}
+          className="input-field w-full mb-3"
+          placeholder="Joriy parol"
+          autoComplete="current-password"
+          disabled={deletingAccount}
+        />
+        {(user?.totpEnabled || user?.totp_enabled) && (
+          <>
+            <label className="block text-xs text-white/40 mb-1">2FA kod</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={deleteTotp}
+              onChange={(e) => setDeleteTotp(e.target.value)}
+              className="input-field w-full mb-3"
+              placeholder="6 xonali kod"
+              disabled={deletingAccount}
+            />
+          </>
+        )}
+        {deleteError && (
+          <div className="text-xs font-semibold text-rose-300 mb-3">{deleteError}</div>
+        )}
+        <div className="flex gap-2 justify-end">
+          <button
+            type="button"
+            className="px-4 py-2 rounded-xl text-sm text-white/60 hover:bg-white/5"
+            onClick={() => {
+              setConfirmDeleteAccount(false);
+              setDeletePassword('');
+              setDeleteTotp('');
+              setDeleteError('');
+            }}
+            disabled={deletingAccount}
+          >
+            Bekor qilish
+          </button>
+          <button
+            type="button"
+            className="px-4 py-2 rounded-xl text-sm font-semibold bg-rose-500/20 text-rose-200 border border-rose-500/30 hover:bg-rose-500/30 disabled:opacity-50"
+            onClick={handleDeleteAccount}
+            disabled={deletingAccount}
+          >
+            {deletingAccount ? "O'chirilmoqda..." : "Butunlay o'chirish"}
+          </button>
+        </div>
+      </Modal>
     </>
   );
 };

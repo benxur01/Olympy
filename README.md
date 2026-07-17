@@ -1,10 +1,12 @@
 # Olympy
 
-Online olympiad platform prototype. Standalone React frontend (Vite-bundled
-JSX) and a standalone Django REST backend. Frontend and backend currently run
-**independently**. Authentication and Telegram phone verification are wired to
-the backend API; centers, olympiads, questions, results, and dashboards still
-use the existing frontend mock store until the next integration phase.
+Online olympiad platform (production: [prolymp.uz](https://prolymp.uz)).
+React/Vite frontend + Django REST backend.
+
+**Current state:** Auth, centers, olympiads, questions, attempts, billing
+(Click/Payme), parent linking, support chat, and dashboards use the **backend
+API** (`user._api` / `OlympyApi`). The legacy `pages/store.jsx` mock store is
+kept for local demos only and is **disabled in production builds**.
 
 ## Project structure
 

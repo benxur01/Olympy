@@ -1069,7 +1069,7 @@ def preview_pdf_questions(request):
 
     task_id = str(uuid.uuid4())
     cache_key = f"pdf_questions:task:{task_id}"
-    cache.set(cache_key, {'status': 'PENDING'}, timeout=900)
+    cache.set(cache_key, {'status': 'PENDING', 'user_id': request.user.id}, timeout=900)
     # Celery argumenti JSON-serializable bo'lishi uchun PDF baytlarini base64 qilamiz.
     process_pdf_questions_task.delay(
         task_id,
@@ -1173,7 +1173,8 @@ def word_ai_preview(request):
 
     task_id = str(uuid.uuid4())
     cache_key = f"pdf_questions:task:{task_id}"
-    cache.set(cache_key, {'status': 'PENDING'}, timeout=900)
+    # user_id ownership — boshqa foydalanuvchi task_id bilan natijani o'qiy olmasin.
+    cache.set(cache_key, {'status': 'PENDING', 'user_id': request.user.id}, timeout=900)
     # Celery argumenti JSON-serializable bo'lishi uchun fayl baytlarini base64 qilamiz.
     process_word_ai_questions_task.delay(
         task_id,
@@ -1200,6 +1201,12 @@ def pdf_preview_status(request, task_id):
 
     state = cache.get(f"pdf_questions:task:{task_id}")
     if not state:
+        return Response(
+            {'status': 'FAILED', 'detail': "Vazifa topilmadi yoki muddati o'tgan"},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+    owner_id = state.get('user_id')
+    if owner_id is not None and int(owner_id) != int(request.user.id):
         return Response(
             {'status': 'FAILED', 'detail': "Vazifa topilmadi yoki muddati o'tgan"},
             status=http_status.HTTP_404_NOT_FOUND,
@@ -1543,7 +1550,11 @@ def run_code_start_view(request):
         )
 
     task_id = str(uuid.uuid4())
-    cache.set(f"run_code:task:{task_id}", {'status': 'PENDING'}, timeout=300)
+    cache.set(
+        f"run_code:task:{task_id}",
+        {'status': 'PENDING', 'user_id': request.user.id},
+        timeout=300,
+    )
     
     run_code_async_task.delay(task_id, source_code, language, stdin, question_id)
     
@@ -1561,4 +1572,12 @@ def run_code_status_view(request, task_id):
             {'status': 'FAILED', 'error': "Vazifa topilmadi yoki muddati o'tgan"},
             status=http_status.HTTP_404_NOT_FOUND,
         )
-    return Response(state)
+    owner_id = state.get('user_id')
+    if owner_id is not None and int(owner_id) != int(request.user.id):
+        return Response(
+            {'status': 'FAILED', 'error': "Vazifa topilmadi yoki muddati o'tgan"},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+    # user_id ni klientga qaytarmaymiz
+    public = {k: v for k, v in state.items() if k != 'user_id'}
+    return Response(public)

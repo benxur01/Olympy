@@ -482,6 +482,8 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
   const [success, setSuccess] = React.useState(false);
   const [phoneVerified, setPhoneVerified] = React.useState(false);
   const [apiCenters, setApiCenters] = React.useState(null);
+  // Yosh siyosati: 13+ yoki ota-ona/vasiy roziligi.
+  const [ageConfirmed, setAgeConfirmed] = React.useState(false);
 
   const normalizedRegisterPhone = OlympyStore.normalizePhone(form.phone);
   const phoneValidForVerify = !!normalizedRegisterPhone && !phoneError;
@@ -562,10 +564,16 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
     setLoading(true);
 
     try {
+      if (!ageConfirmed) {
+        setPhoneError("13+ yosh yoki ota-ona/vasiy roziligini tasdiqlang");
+        setLoading(false);
+        return;
+      }
       const registerPayload = {
         full_name: form.name,
         phone: form.phone,
         password: form.password,
+        age_confirmed: true,
       };
       // `?ref=CODE` havola orqali kelgan referral kodi (app.jsx saqlab qo'ygan):
       // ro'yxatdan o'tishda backend'ga uzatamiz, ikkala tarafga bonus coin.
@@ -817,10 +825,22 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
                 <Icon name="info" size={14} /> Ariza managerga yuboriladi va tasdiqlanishi kutiladi
               </div>
             )}
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={ageConfirmed}
+                onChange={e => setAgeConfirmed(e.target.checked)}
+                className="mt-1 rounded border-white/20 bg-white/5"
+              />
+              <span className="text-xs text-white/50 leading-relaxed">
+                Men 13 yoshdan katta ekanligimni yoki ota-ona/vasiy roziligi borligini tasdiqlayman.
+                <a href="/privacy.html" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline ml-1">Maxfiylik siyosati</a>
+              </span>
+            </label>
             {phoneError && <ErrorBanner message={<span className="flex items-center gap-2"><Icon name="info" size={16} />{phoneError}</span>} />}
             <div className="flex gap-3">
               <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
-              <button onClick={submit} disabled={loading} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2">
+              <button onClick={submit} disabled={loading || !ageConfirmed} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2">
                 {loading ? <Spinner size={16} /> : "Ro'yxatdan o'tish"}
               </button>
             </div>
@@ -894,10 +914,22 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
             <div className="glass rounded-xl p-3 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
               <Icon name="info" size={14} /> Tashkilot Platform Admin tomonidan tasdiqlangach faollashadi.
             </div>
+            <label className="flex items-start gap-2.5 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={ageConfirmed}
+                onChange={e => setAgeConfirmed(e.target.checked)}
+                className="mt-1 rounded border-white/20 bg-white/5"
+              />
+              <span className="text-xs text-white/50 leading-relaxed">
+                Men 13 yoshdan katta ekanligimni yoki ota-ona/vasiy roziligi borligini tasdiqlayman.
+                <a href="/privacy.html" target="_blank" rel="noreferrer" className="text-indigo-400 hover:underline ml-1">Maxfiylik siyosati</a>
+              </span>
+            </label>
             {phoneError && <ErrorBanner message={<span className="flex items-center gap-2"><Icon name="info" size={16} />{phoneError}</span>} />}
             <div className="flex gap-3">
               <button onClick={() => setStep(2)} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">← Orqaga</button>
-              <button onClick={submit} disabled={loading || !newCenterTypeValid || !newCenterLocationValid || !newCenter.name} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+              <button onClick={submit} disabled={loading || !ageConfirmed || !newCenterTypeValid || !newCenterLocationValid || !newCenter.name} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-50">
                 {loading ? <Spinner size={16} /> : 'Arizani yuborish'}
               </button>
             </div>

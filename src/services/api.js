@@ -21,6 +21,15 @@ const makeAssetUrl = (url) => {
 const AUTH_TOKEN_KEY = 'olympy_api_token';
 const AUTH_REFRESH_KEY = 'olympy_refresh_token';
 
+// Production default: JWT faqat HttpOnly cookie — storage'ga yozilmaydi (XSS).
+// Telegram WebView / cookie-less: VITE_AUTH_ALLOW_TOKEN_STORAGE=true yoki
+// so'rov headeri backendga X-Olympy-Auth-Storage: 1.
+const ALLOW_TOKEN_STORAGE = (
+  import.meta.env?.VITE_AUTH_ALLOW_TOKEN_STORAGE === 'true'
+  || import.meta.env?.DEV === true
+  || import.meta.env?.MODE === 'development'
+);
+
 // Foydalanuvchi profil obyekti (xom backend `/api/me/` javobi) modul-darajali
 // in-memory `_currentUser`'da va qo'shimcha sessionStorage'da ('currentUser')
 // keshlanadi. Modul-darajali o'zgaruvchi sahifa yangilanganda yo'qolardi —
@@ -238,12 +247,13 @@ const _refreshTokens = () => {
     });
     const nextToken = refreshed?.access || refreshed?.token || null;
     const nextRefresh = refreshed?.refresh || refresh || null;
-    if (nextToken) {
+    if (nextToken && ALLOW_TOKEN_STORAGE) {
       _writeAuth(AUTH_TOKEN_KEY, nextToken);
       if (nextRefresh) _writeAuth(AUTH_REFRESH_KEY, nextRefresh);
       return { token: nextToken };
     }
-    if (refreshed?.cookie_auth) {
+    if (refreshed?.cookie_auth || nextToken) {
+      // Cookie-only yoki token storage o'chiq — Bearer fallback tozalanadi.
       _removeAuth(AUTH_TOKEN_KEY);
       _removeAuth(AUTH_REFRESH_KEY);
       return { token: null };
@@ -263,6 +273,10 @@ const request = async (
     Accept: 'application/json',
     ...headers,
   };
+  // Cookie-less muhitda backend tokenlarni body'da qaytarsin.
+  if (ALLOW_TOKEN_STORAGE && !requestHeaders['X-Olympy-Auth-Storage']) {
+    requestHeaders['X-Olympy-Auth-Storage'] = '1';
+  }
   // FormData / multipart bodies must be sent with the browser-supplied
   // multipart boundary; do not set Content-Type and do not stringify.
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
@@ -498,13 +512,18 @@ const saveAuth = ({ token, refresh, user, cookieAuth, persistent } = {}) => {
   } else if (persistent === true && _localStore) {
     _setActiveStore(_localStore);
   }
-  // iOS va uchinchi tomon cookie taqiqlangan brauzerlarda (Telegram WebApp kabi)
-  // Authorization sarlavhasi (Bearer token) orqali ishlay olishi uchun tokenni storage'da saqlaymiz.
-  if (token) {
+  // Tokenlar body'da kelganda (dev yoki cookie-less) storage'ga yozamiz.
+  // Production cookie-only: backend token qaytarmaydi — storage yozilmaydi.
+  if (token && ALLOW_TOKEN_STORAGE) {
     _writeAuth(AUTH_TOKEN_KEY, token);
   }
-  if (refresh) {
+  if (refresh && ALLOW_TOKEN_STORAGE) {
     _writeAuth(AUTH_REFRESH_KEY, refresh);
+  }
+  // Cookie-only auth javobi (token body'da yo'q) — eski Bearer nusxasini tozalaymiz.
+  if (cookieAuth && !token && !ALLOW_TOKEN_STORAGE) {
+    _removeAuth(AUTH_TOKEN_KEY);
+    _removeAuth(AUTH_REFRESH_KEY);
   }
   // Migratsiya: eski versiyalar user obyektini 'olympy_api_user' kalitida
   // storage'ga yozardi. Endi storage'da saqlamaymiz — qolib ketgan stale
@@ -602,11 +621,15 @@ export const OlympyApi = {
   deleteMyAvatar: (token) => {
     return request('/api/auth/me/avatar/', { method: 'DELETE', token });
   },
-  // Hisobni butunlay o'chirish — barcha ma'lumotlar (natijalar, a'zoliklar)
-  // backend tomonidan o'chiriladi. Qaytarib bo'lmaydi. 401 bo'lsa qayta auth
-  // urinmaymiz (hisob allaqachon o'chgan bo'lishi mumkin).
-  deleteMyAccount: (token) => {
-    return request('/api/auth/me/', { method: 'DELETE', token, retryOnAuth: false });
+  // Hisobni o'chirish — parol (va ixtiyoriy 2FA) majburiy.
+  // credentials: { password, totp_code? }
+  deleteMyAccount: (credentials, token) => {
+    return request('/api/auth/me/', {
+      method: 'DELETE',
+      body: credentials || {},
+      token,
+      retryOnAuth: false,
+    });
   },
   // Centers
   getCenters: () => request('/api/centers/').then(unwrapList),

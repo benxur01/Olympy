@@ -40,6 +40,7 @@ class RegistrationTestCase(APITestCase):
             'phone': phone,
             'password': 'StrongPass123',
             'role': 'student',
+            'age_confirmed': True,
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertIn('user', response.data)
@@ -54,6 +55,7 @@ class RegistrationTestCase(APITestCase):
             'full_name': 'Vali Aliyev',
             'phone': '+998901112244',
             'password': 'StrongPass123',
+            'age_confirmed': True,
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(User.objects.filter(normalized_phone='+998901112244').exists())
@@ -68,6 +70,7 @@ class RegistrationTestCase(APITestCase):
             'full_name': 'Yangi',
             'phone': phone,
             'password': 'StrongPass123',
+            'age_confirmed': True,
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
@@ -80,9 +83,22 @@ class RegistrationTestCase(APITestCase):
             'full_name': 'Zaif Parol',
             'phone': phone,
             'password': '12345678',  # faqat raqam — Django rad etadi
+            'age_confirmed': True,
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(User.objects.filter(normalized_phone=phone).exists())
+
+    def test_register_requires_age_confirmation(self):
+        phone = '+998901112277'
+        _verified_phone(phone)
+        url = reverse('register')
+        response = self.client.post(url, {
+            'full_name': 'Yosh',
+            'phone': phone,
+            'password': 'StrongPass123',
+            'age_confirmed': False,
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 class LoginLogoutTestCase(APITestCase):

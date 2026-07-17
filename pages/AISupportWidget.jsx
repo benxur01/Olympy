@@ -8,22 +8,12 @@ const AISupportWidget = ({ user }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(false);
 
-  // Mehmonlar uchun session_id hosil qilish funksiyasi
-  const getGuestSessionId = () => {
-    let sessId = localStorage.getItem('olympy:guestSupportSessionId');
-    if (!sessId) {
-      sessId = 'guest_' + ((typeof crypto !== 'undefined' && crypto.randomUUID)
-        ? crypto.randomUUID()
-        : `${Date.now()}_${Math.random().toString(36).slice(2)}`);
-      localStorage.setItem('olympy:guestSupportSessionId', sessId);
-    }
-    return sessId;
-  };
-
-  const sessionId = React.useMemo(() => {
-    if (user) return null;
-    return getGuestSessionId();
-  }, [user]);
+  // Mehmon sessiya endi server HttpOnly cookie orqali (client session_id yubormaydi —
+  // IDOR himoyasi). Eski localStorage kalitini tozalaymiz.
+  React.useEffect(() => {
+    try { localStorage.removeItem('olympy:guestSupportSessionId'); } catch {}
+  }, []);
+  const sessionId = null;
 
   const welcomeText = user
     ? `Salom, ${user.firstName || user.first_name || (user.name || user.full_name || '').split(' ')[0] || 'Foydalanuvchi'}! Men Olympy AI virtual yordamchisiman. Sizga qanday yordam bera olaman?`
