@@ -7,6 +7,7 @@ import urllib.request
 from django.conf import settings
 
 from .models import Notification
+from accounts.utils import mask_phone
 
 logger = logging.getLogger('notifications.telegram')
 
@@ -175,7 +176,7 @@ def send_student_join_request_notification(manager, student, center, membership=
         message,
         reply_markup=_student_join_keyboard(membership),
     )
-    logger.info('[telegram] → %s sent=%s : %s', manager.normalized_phone, sent, message)
+    logger.info('[telegram] → %s sent=%s : %s', mask_phone(manager.normalized_phone), sent, message)
 
 
 def send_staff_join_request_notification(owner, applicant, center, role, subject='', membership=None):
@@ -211,12 +212,12 @@ def send_staff_join_request_notification(owner, applicant, center, role, subject
         message,
         reply_markup=_student_join_keyboard(membership),
     )
-    logger.info('[telegram] → %s sent=%s role=%s', owner.normalized_phone, sent, role)
+    logger.info('[telegram] → %s sent=%s role=%s', mask_phone(owner.normalized_phone), sent, role)
 
 
 def send_center_approval_request_notification(admin, owner, center):
     """Notify a platform admin that a director registered a new center."""
-    owner_name = owner.full_name or owner.normalized_phone
+    owner_name = owner.full_name or mask_phone(owner.normalized_phone)
     message = (
         f"Direktor {owner_name} yangi tashkilot/markaz ro'yxatdan o'tkazdi.\n"
         f"Nomi: {center.name}\n"
@@ -231,7 +232,7 @@ def send_center_approval_request_notification(admin, owner, center):
         title="Yangi direktor arizasi",
         message=message,
     )
-    logger.info('[telegram-mock] → %s : %s', admin.normalized_phone, message)
+    logger.info('[telegram-mock] → %s : %s', mask_phone(admin.normalized_phone), message)
 
 
 def send_center_decision_notification(owner, center, approved):
@@ -253,7 +254,7 @@ def send_center_decision_notification(owner, center, approved):
         title=title,
         message=message,
     )
-    logger.info('[telegram-mock] → %s : %s', owner.normalized_phone, message)
+    logger.info('[telegram-mock] → %s : %s', mask_phone(owner.normalized_phone), message)
 
 
 def send_olympiad_published_notification(student, olympiad, center):
@@ -268,7 +269,7 @@ def send_olympiad_published_notification(student, olympiad, center):
         message=message,
     )
     sent = _send_telegram_to_user(student, message)
-    logger.info('[telegram] → %s sent=%s : %s', student.normalized_phone, sent, message)
+    logger.info('[telegram] → %s sent=%s : %s', mask_phone(student.normalized_phone), sent, message)
     send_web_push_to_user(student, title, message, url='/student')
 
 
@@ -354,7 +355,7 @@ def send_membership_removed_notification(user, center, role):
         message=message,
     )
     sent = _send_telegram_to_user(user, message)
-    logger.info('[telegram] → %s sent=%s membership-removed role=%s', user.normalized_phone, sent, role)
+    logger.info('[telegram] → %s sent=%s membership-removed role=%s', mask_phone(user.normalized_phone), sent, role)
 
 
 def send_attempt_result_to_parents(attempt):
@@ -373,7 +374,7 @@ def send_attempt_result_to_parents(attempt):
 
     student = attempt.user
     olympiad = attempt.olympiad
-    student_name = (student.full_name or student.normalized_phone or 'O\'quvchi').strip()
+    student_name = (student.full_name or mask_phone(student.normalized_phone) or 'O\'quvchi').strip()
     olympiad_title = getattr(olympiad, 'title', '') or '—'
     score = attempt.score or 0
     correct = attempt.correct_count or 0
@@ -515,7 +516,7 @@ def send_olympiad_summary_to_manager(olympiad, center):
     if top_attempt and top_attempt.user:
         top_name = (
             top_attempt.user.full_name
-            or getattr(top_attempt.user, 'normalized_phone', '')
+            or mask_phone(getattr(top_attempt.user, 'normalized_phone', ''))
             or 'O\'quvchi'
         )
 

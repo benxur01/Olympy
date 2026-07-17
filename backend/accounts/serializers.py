@@ -243,6 +243,36 @@ class LoginSerializer(serializers.Serializer):
                 masked, user.pk, current_failed + 1,
             )
             raise serializers.ValidationError("Telefon raqam yoki parol noto'g'ri")
+        # Soft-delete: grace ichida tiklash mumkin; muddat o'tgan bo'lsa hard-delete
+        # kutiladi (yoki allaqachon tozalangan). Admin blok (is_active=False,
+        # deleted_at=None) alohida xabar.
+        if getattr(user, 'deleted_at', None):
+            from datetime import timedelta
+            from django.conf import settings as dj_settings
+            from django.utils import timezone as dj_tz
+            grace_days = int(getattr(dj_settings, 'ACCOUNT_DELETE_GRACE_DAYS', 30))
+            deadline = user.deleted_at + timedelta(days=grace_days)
+            if dj_tz.now() > deadline:
+                security_logger.warning(
+                    'login blocked (soft-deleted expired) phone=%s user_id=%s',
+                    masked, user.pk,
+                )
+                raise serializers.ValidationError(
+                    "Hisob o'chirilgan va tiklash muddati tugagan"
+                )
+            security_logger.warning(
+                'login blocked (soft-deleted restorable) phone=%s user_id=%s',
+                masked, user.pk,
+            )
+            raise serializers.ValidationError({
+                'detail': (
+                    f"Hisob o'chirilgan. {grace_days} kun ichida "
+                    "tiklash mumkin — parol bilan /api/auth/restore/ dan foydalaning."
+                ),
+                'account_deleted': True,
+                'restorable': True,
+                'restorable_until': deadline.isoformat(),
+            })
         if not user.is_active:
             security_logger.warning(
                 'login blocked (inactive account) phone=%s user_id=%s',

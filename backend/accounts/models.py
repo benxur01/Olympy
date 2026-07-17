@@ -143,6 +143,12 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Soft-delete: foydalanuvchi o'z hisobini o'chirganda hard delete o'rniga
+    # shu vaqt yoziladi. Grace period (ACCOUNT_DELETE_GRACE_DAYS) ichida
+    # /api/auth/restore/ orqali qayta tiklash mumkin; muddatdan keyin Celery
+    # task hard-delete qiladi. is_active=False soft-delete bilan birga
+    # o'rnatiladi (login bloklanadi).
+    deleted_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     objects = UserManager()
 
@@ -151,6 +157,10 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     class Meta:
         ordering = ['-created_at']
+
+    @property
+    def is_soft_deleted(self):
+        return bool(self.deleted_at)
 
     def save(self, *args, **kwargs):
         # Always keep normalized_phone in sync with phone.

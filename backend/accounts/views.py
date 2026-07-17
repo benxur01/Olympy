@@ -206,48 +206,55 @@ def _consume_phone_verification(verification):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def health_check(request):
-    """GET /api/health/ — uptime monitoring uchun health check.
+    """GET /api/health/ — uptime monitoring.
 
-    DB va Redis (cache) ulanishini tekshiradi. DB ishlamasa status
-    'degraded' bo'ladi; Redis ishlamasa faqat redis maydoni 'error' bo'ladi
-    (cache local memory'ga fallback bo'lishi mumkin, shu sbabli umumiy status
-    'ok' qoladi). Hech qachon exception ko'tarmaydi — har doim JSON qaytaradi.
+    Public javob: faqat ``status`` (ok | degraded) — ichki topologiya
+    (db/redis/celery) ochiq chiqmasin. Batafsil: platform admin cookie/JWT
+    yoki ``?token=HEALTH_CHECK_TOKEN`` / header ``X-Health-Token``.
     """
-    status_payload = {'status': 'ok', 'db': 'ok', 'redis': 'ok'}
+    detailed = {'status': 'ok', 'db': 'ok', 'redis': 'ok'}
     try:
         from django.db import connection
         connection.ensure_connection()
     except Exception:
-        status_payload['db'] = 'error'
-        status_payload['status'] = 'degraded'
+        detailed['db'] = 'error'
+        detailed['status'] = 'degraded'
     try:
         from django.core.cache import cache
         cache.set('health', '1', 5)
-        # `assert` o'rniga oddiy tekshiruv: Python `-O` (optimized) rejimda
-        # assert'lar olib tashlanadi va tekshiruv jimgina o'tib ketardi.
         if cache.get('health') != '1':
-            status_payload['redis'] = 'error'
+            detailed['redis'] = 'error'
     except Exception:
-        status_payload['redis'] = 'error'
-    # Celery worker holati: beat har 30 soniyada 'celery_heartbeat' cache
-    # kalitini yangilaydi (accounts.celery_heartbeat task). Timestamp 60
-    # soniyadan eski yoki umuman yo'q bo'lsa worker o'lik deb hisoblanadi.
-    # EAGER rejimda (broker sozlanmagan, tasklar sinxron) worker yo'q —
-    # "eager" qaytaramiz, bu xato emas.
+        detailed['redis'] = 'error'
     try:
         if getattr(settings, 'CELERY_TASK_ALWAYS_EAGER', False):
-            status_payload['celery'] = 'eager'
+            detailed['celery'] = 'eager'
         else:
             import time
             from django.core.cache import cache
             heartbeat = cache.get('celery_heartbeat')
             if heartbeat is None or (time.time() - float(heartbeat)) > 60:
-                status_payload['celery'] = 'down'
+                detailed['celery'] = 'down'
             else:
-                status_payload['celery'] = 'ok'
+                detailed['celery'] = 'ok'
     except Exception:
-        status_payload['celery'] = 'unknown'
-    return Response(status_payload)
+        detailed['celery'] = 'unknown'
+
+    # Batafsil faqat ishonchli chaqiruvchilarga.
+    health_token = (getattr(settings, 'HEALTH_CHECK_TOKEN', None) or os.environ.get('HEALTH_CHECK_TOKEN') or '').strip()
+    provided = (
+        (request.query_params.get('token') or '')
+        or (request.headers.get('X-Health-Token') or '')
+    ).strip()
+    is_admin = bool(
+        getattr(request.user, 'is_authenticated', False)
+        and getattr(request.user, 'is_platform_admin', False)
+    )
+    import hmac as _hmac
+    token_ok = bool(health_token and provided and _hmac.compare_digest(provided, health_token))
+    if is_admin or token_ok:
+        return Response(detailed)
+    return Response({'status': detailed['status']})
 
 
 @api_view(['POST'])
@@ -782,41 +789,24 @@ def change_my_password(request):
     return _auth_response(request, user, extra={'password_changed': True})
 
 
-@api_view(['DELETE'])
-@permission_classes([IsAuthenticated])
-def delete_my_account(request):
-    """DELETE /api/auth/me/ — foydalanuvchi o'z hisobini o'chiradi.
-
-    Xavfsizlik: parol (va 2FA yoqilgan bo'lsa TOTP) majburiy — o'g'irlangan
-    access token bilan hisobni yo'q qilishning oldini oladi.
-    To'lov yozuvlari saqlanadi (user SET_NULL); boshqa bog'liq ma'lumotlar
-    CASCADE bilan o'chadi. Audit log o'chirishdan OLDIN yoziladi.
-    """
-    if not request.user.is_active:
-        return Response({'detail': 'Hisob bloklangan'}, status=status.HTTP_401_UNAUTHORIZED)
-    # Platform admin o'z hisobini o'chira olmaydi — platforma egasiz qolmasin.
-    if request.user.is_platform_admin:
-        return Response(
-            {'detail': "Platform admin o'z hisobini o'chira olmaydi"},
-            status=status.HTTP_403_FORBIDDEN,
-        )
-
+def _verify_account_delete_credentials(request, user):
+    """Parol (+ ixtiyoriy 2FA) tekshiruvi. Xato bo'lsa Response, OK bo'lsa None."""
     password = (request.data.get('password') or '').strip()
     if not password:
         return Response(
             {'detail': "Hisobni o'chirish uchun parolni tasdiqlang"},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    if not request.user.check_password(password):
+    if not user.check_password(password):
         security_logger.warning(
-            'account_delete failed (wrong password) user_id=%s', request.user.pk,
+            'account_delete failed (wrong password) user_id=%s', user.pk,
         )
         return Response(
             {'detail': "Parol noto'g'ri"},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    if request.user.totp_enabled and request.user.totp_secret:
+    if user.totp_enabled and user.totp_secret:
         totp_code = str(request.data.get('totp_code') or request.data.get('code') or '').strip()
         if not totp_code:
             return Response(
@@ -824,36 +814,155 @@ def delete_my_account(request):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         import pyotp
-        if not pyotp.TOTP(request.user.totp_secret).verify(totp_code, valid_window=1):
+        if not pyotp.TOTP(user.totp_secret).verify(totp_code, valid_window=1):
             security_logger.warning(
-                'account_delete failed (wrong 2FA) user_id=%s', request.user.pk,
+                'account_delete failed (wrong 2FA) user_id=%s', user.pk,
             )
             return Response(
                 {'detail': "Noto'g'ri 2FA kod", 'requires_2fa': True},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+    return None
 
-    # Markaz egasi (owner) o'z hisobini o'chira olmaydi — EducationCenter.owner
-    # endi PROTECT, demak o'chirish ProtectedError (500) chiqarardi va markaz
-    # egasiz "approved" holda qolardi. Avval owner'lik boshqa foydalanuvchiga
-    # o'tkazilishi shart. Foydalanuvchiga aniq xabar qaytaramiz.
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_my_account(request):
+    """DELETE /api/auth/me/ — soft-delete (grace period ichida tiklash mumkin).
+
+    Xavfsizlik: parol (va 2FA yoqilgan bo'lsa TOTP) majburiy.
+    Soft-delete: is_active=False + deleted_at. Grace (default 30 kun) o'tgach
+    Celery hard-delete qiladi. To'lov yozuvlari hard-delete da SET_NULL.
+    """
+    user = request.user
+    if not user.is_active or getattr(user, 'deleted_at', None):
+        return Response({'detail': 'Hisob bloklangan yoki o\'chirilgan'}, status=status.HTTP_401_UNAUTHORIZED)
+    if user.is_platform_admin:
+        return Response(
+            {'detail': "Platform admin o'z hisobini o'chira olmaydi"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    cred_err = _verify_account_delete_credentials(request, user)
+    if cred_err is not None:
+        return cred_err
+
     from centers.models import EducationCenter
-    if EducationCenter.objects.filter(owner_id=request.user.id).exists():
+    if EducationCenter.objects.filter(owner_id=user.id).exists():
         return Response(
             {'detail': "Siz tashkilot egasisiz. Hisobni o'chirishdan oldin "
                        "tashkilot egaligini boshqa foydalanuvchiga o'tkazing."},
             status=status.HTTP_409_CONFLICT,
         )
 
-    # O'chirishdan OLDIN audit log: keyin user obyekti yo'q bo'ladi.
-    AuditLog.log(request, 'account_delete', target=request.user, extra={
-        'phone': mask_phone(request.user.normalized_phone),
+    grace_days = int(getattr(settings, 'ACCOUNT_DELETE_GRACE_DAYS', 30))
+    now = timezone.now()
+    restorable_until = now + timedelta(days=grace_days)
+
+    AuditLog.log(request, 'account_delete', target=user, extra={
+        'phone': mask_phone(user.normalized_phone),
+        'soft_delete': True,
+        'restorable_until': restorable_until.isoformat(),
     })
 
-    request.user.delete()
+    with transaction.atomic():
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        locked = User.objects.select_for_update().get(pk=user.pk)
+        locked.is_active = False
+        locked.deleted_at = now
+        locked.token_version = (locked.token_version or 0) + 1
+        locked.save(update_fields=['is_active', 'deleted_at', 'token_version'])
 
-    response = Response({'detail': "Hisobingiz muvaffaqiyatli o'chirildi"})
+    response = Response({
+        'detail': (
+            f"Hisobingiz o'chirildi. {grace_days} kun ichida telefon va parol "
+            "bilan tiklash mumkin."
+        ),
+        'soft_deleted': True,
+        'restorable_until': restorable_until.isoformat(),
+        'grace_days': grace_days,
+    })
     return _clear_auth_cookies(response)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([ScopedRateThrottle])
+def restore_my_account(request):
+    """POST /api/auth/restore/ — soft-deleted hisobni grace ichida tiklash.
+
+    Body: { phone, password, totp_code? }
+    """
+    raw_phone = (request.data.get('phone') or '').strip()
+    password = (request.data.get('password') or '').strip()
+    norm = normalize_phone(raw_phone)
+    if not norm or not password:
+        return Response(
+            {'detail': "Telefon va parol majburiy"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    user = User.objects.filter(normalized_phone=norm).first()
+    if not user or not user.deleted_at:
+        # Enumeration himoyasi — bir xil xabar.
+        return Response(
+            {'detail': "Tiklash mumkin emas yoki muddat tugagan"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    grace_days = int(getattr(settings, 'ACCOUNT_DELETE_GRACE_DAYS', 30))
+    deadline = user.deleted_at + timedelta(days=grace_days)
+    if timezone.now() > deadline:
+        return Response(
+            {'detail': "Tiklash muddati tugagan"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not user.check_password(password):
+        security_logger.warning(
+            'account_restore failed (wrong password) user_id=%s phone=%s',
+            user.pk, mask_phone(norm),
+        )
+        return Response(
+            {'detail': "Telefon yoki parol noto'g'ri"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if user.totp_enabled and user.totp_secret:
+        totp_code = str(request.data.get('totp_code') or request.data.get('code') or '').strip()
+        if not totp_code:
+            return Response(
+                {'detail': "2FA kodi talab qilinadi", 'requires_2fa': True},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        import pyotp
+        if not pyotp.TOTP(user.totp_secret).verify(totp_code, valid_window=1):
+            return Response(
+                {'detail': "Noto'g'ri 2FA kod", 'requires_2fa': True},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    with transaction.atomic():
+        locked = User.objects.select_for_update().get(pk=user.pk)
+        if not locked.deleted_at:
+            return Response({'detail': "Hisob allaqachon faol"}, status=status.HTTP_400_BAD_REQUEST)
+        locked.deleted_at = None
+        locked.is_active = True
+        locked.token_version = (locked.token_version or 0) + 1
+        locked.save(update_fields=['deleted_at', 'is_active', 'token_version'])
+        user = locked
+
+    AuditLog.log(request, 'account_delete', target=user, extra={
+        'phone': mask_phone(user.normalized_phone),
+        'restored': True,
+    })
+    return _auth_response(request, user, extra={'restored': True})
+
+
+restore_my_account.cls.throttle_scope = 'auth'
 
 
 @api_view(['POST', 'DELETE'])

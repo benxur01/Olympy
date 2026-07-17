@@ -34,6 +34,35 @@ def cleanup_phone_verifications():
     return f'Cleaned {deleted[0]} phone verification rows'
 
 
+@shared_task(name='accounts.purge_soft_deleted_accounts')
+def purge_soft_deleted_accounts():
+    """Grace muddati o'tgan soft-delete hisoblarni hard-delete qiladi.
+
+    Owner (EducationCenter.owner PROTECT) bo'lgan hisoblar o'tkazib yuboriladi —
+    ular soft-delete paytida ham bloklangan bo'lishi kerak edi, lekin edge-case.
+    """
+    from django.conf import settings
+    from django.contrib.auth import get_user_model
+    from centers.models import EducationCenter
+
+    User = get_user_model()
+    grace = int(getattr(settings, 'ACCOUNT_DELETE_GRACE_DAYS', 30))
+    cutoff = timezone.now() - timedelta(days=grace)
+    qs = User.objects.filter(deleted_at__isnull=False, deleted_at__lt=cutoff)
+    purged = 0
+    skipped = 0
+    for user in qs.iterator(chunk_size=100):
+        if EducationCenter.objects.filter(owner_id=user.pk).exists():
+            skipped += 1
+            continue
+        try:
+            user.delete()
+            purged += 1
+        except Exception:
+            skipped += 1
+    return f'Purged {purged} soft-deleted users (skipped {skipped})'
+
+
 @shared_task(name='accounts.celery_heartbeat')
 def celery_heartbeat_task():
     """Celery worker tirikligini health check uchun cache'ga belgilaydi.
