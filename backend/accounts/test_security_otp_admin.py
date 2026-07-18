@@ -85,6 +85,7 @@ class OtpRequiredRegistrationTests(APITestCase):
             'phone': phone,
             'password': 'StrongPass123',
             'role': 'student',
+            'age_confirmed': True,
         }, format='json')
         self.assertEqual(r1.status_code, status.HTTP_201_CREATED)
 
@@ -111,6 +112,7 @@ class OtpRequiredRegistrationTests(APITestCase):
             'phone': phone2,
             'password': 'StrongPass123',
             'role': 'student',
+            'age_confirmed': True,
         }, format='json')
         self.assertEqual(r2.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(User.objects.filter(normalized_phone=phone2).exists())
