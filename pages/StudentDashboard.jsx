@@ -1248,10 +1248,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {isApi && (
         <>
           <StreakWarningBanner onNavigate={setPage} user={user} />
-          <DailyGoalWidget streakCount={user?.streakCount} user={user} />
           <SuggestedOlympiadCard onNavigate={setPage} olympiads={visibleOlympiads} user={user} />
           <PeerComparisonCard user={user} />
-          <DailyQuestionsWidget user={user} />
         </>
       )}
 
@@ -1339,7 +1337,6 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
           <WeeklyContestWidget user={user} />
           <RivalActivityWidget user={user} />
-          <ProgressComparisonCard user={user} />
         </div>
       )}
 
@@ -1449,95 +1446,6 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       </div>
       )}
 
-      {/* AI Success Predictor */}
-      {(() => {
-        const predData = apiPredictionsRes.data;
-        if (!predData || !predData.predictions) return null;
-        const preds = predData.predictions;
-        return (
-          <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
-            <div className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
-                <Icon name="sparkles" size={16} />
-              </div>
-              <div>
-                <h3 className="font-bold text-white text-sm md:text-base leading-none">AI Muvaffaqiyat Prognostikasi</h3>
-                <span className="text-[9px] text-white/40 mt-1 block">Sizning natijalaringiz tahlili va imtihon bashoratlari</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div className="glass rounded-xl p-3 flex items-center justify-between border border-white/5 card-hover">
-                <div className="min-w-0">
-                  <div className="text-xs text-white/50 truncate">Prezident Maktabi</div>
-                  <div className="text-xs text-white/30 mt-0.5">Tayyorgarlik darajasi</div>
-                </div>
-                <div className="text-lg font-black text-indigo-400">{preds.presidential_school}%</div>
-              </div>
-              <div className="glass rounded-xl p-3 flex items-center justify-between border border-white/5 card-hover">
-                <div className="min-w-0">
-                  <div className="text-xs text-white/50 truncate">Al-Xorazmiy</div>
-                  <div className="text-xs text-white/30 mt-0.5">Olimpiada o'tish ehtimoli</div>
-                </div>
-                <div className="text-lg font-black text-purple-400">{preds.al_xorazmiy}%</div>
-              </div>
-              <div className="glass rounded-xl p-3 flex items-center justify-between border border-white/5 card-hover">
-                <div className="min-w-0">
-                  <div className="text-xs text-white/50 truncate">DTM (Kirish)</div>
-                  <div className="text-xs text-white/30 mt-0.5">O'tish ehtimoli</div>
-                </div>
-                <div className="text-lg font-black text-emerald-400">{preds.dtm}%</div>
-              </div>
-            </div>
-
-            <div className="glass rounded-xl p-3 text-xs md:text-sm text-white/70 leading-relaxed whitespace-pre-line border border-indigo-500/10">
-              <div className="font-bold text-white mb-1.5 flex items-center gap-1">
-                <span>💡</span> AI Ekspert Tavsiyalari:
-              </div>
-              {predData.ai_analysis}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* Activity Leaderboard — faqat o'zida faollik bor o'quvchiga ko'rsatiladi. */}
-      {isApi && hasOwnActivity && activityLeaderboard.length > 0 && (
-        <div className="glass rounded-2xl p-4 md:p-5">
-          <div className="flex items-center justify-between mb-3 md:mb-4 gap-2">
-            <h3 className="font-bold text-white text-sm md:text-base flex items-center gap-1.5">
-              <span>🔥</span> Haftalik eng faol o'quvchilar
-            </h3>
-            <span className="text-[10px] text-indigo-300 font-bold uppercase tracking-wider bg-indigo-500/10 border border-indigo-500/25 px-2 py-0.5 rounded-lg animate-pulse">Streak bo'yicha</span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {activityLeaderboard.slice(0, 9).map((entry, idx) => {
-              const colors = ['bg-amber-500/20 text-amber-400 border border-amber-500/30', 'bg-slate-300/20 text-slate-300 border border-slate-300/30', 'bg-amber-700/20 text-amber-600 border border-amber-700/30'];
-              const badgeClass = idx < 3 ? colors[idx] : 'glass text-white/40 border border-white/5';
-              return (
-                <div key={entry.user_id} className="flex items-center gap-3 p-2.5 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 hover:bg-white/10 transition-all">
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black flex-shrink-0 ${badgeClass}`}>
-                    {idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${entry.rank}`}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs md:text-sm font-medium text-white truncate">{entry.name}</div>
-                    {/* Render badge indicator */}
-                    {entry.badges && entry.badges.length > 0 && (
-                      <div className="flex gap-1 mt-0.5">
-                        {entry.badges.map(b => (
-                          <span key={b.id} className="text-[9px]" title={b.title}>{b.icon}</span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="text-right flex-shrink-0">
-                    <span className="text-xs font-bold text-orange-400">🔥 {entry.streak_count} kun</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </div>
   );
 
