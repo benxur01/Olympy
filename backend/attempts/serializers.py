@@ -9,13 +9,19 @@ class TestAttemptSerializer(serializers.ModelSerializer):
     # (avatar_url_for absolyut yoki nisbiy URL qaytaradi).
     user_name = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
+    # Olimpiada nomi/fani — mobil "qatnashgan musobaqalar" ro'yxati uchun.
+    # Faqat `olympiad` (id) bo'lsa frontend nomni topa olmasdi.
+    olympiad_title = serializers.SerializerMethodField()
+    subject = serializers.SerializerMethodField()
 
     class Meta:
         model = TestAttempt
-        fields = ['id', 'user', 'user_name', 'avatar_url', 'olympiad', 'answers',
+        fields = ['id', 'user', 'user_name', 'avatar_url', 'olympiad',
+                  'olympiad_title', 'subject', 'answers',
                   'score', 'correct_count', 'wrong_count', 'total_questions',
                   'time_spent', 'rank', 'disqualified', 'submitted_at']
-        read_only_fields = ['id', 'user', 'user_name', 'avatar_url', 'rank',
+        read_only_fields = ['id', 'user', 'user_name', 'avatar_url',
+                            'olympiad_title', 'subject', 'rank',
                             'disqualified', 'submitted_at']
 
     def get_user_name(self, obj):
@@ -28,6 +34,18 @@ class TestAttemptSerializer(serializers.ModelSerializer):
         from accounts.utils import avatar_url_for
         request = self.context.get('request') if hasattr(self, 'context') else None
         return avatar_url_for(getattr(obj, 'user', None), request)
+
+    def get_olympiad_title(self, obj):
+        oly = getattr(obj, 'olympiad', None)
+        if not oly:
+            return ''
+        return getattr(oly, 'title', '') or ''
+
+    def get_subject(self, obj):
+        oly = getattr(obj, 'olympiad', None)
+        if not oly:
+            return ''
+        return getattr(oly, 'subject', '') or ''
 
 
 class CodeAnswerSerializer(serializers.Serializer):

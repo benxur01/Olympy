@@ -93,7 +93,7 @@ def olympiads_list_create(request):
             .prefetch_related(
                 Prefetch('questions', queryset=Question.objects.only('id')),
             )
-            .select_related('center')
+            .select_related('center', 'created_by')
             .annotate(
                 participants_count=Count('attempts', distinct=True),
                 avg_score_value=Avg('attempts__score'),

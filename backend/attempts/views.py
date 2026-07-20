@@ -1207,7 +1207,7 @@ def my_stats(request):
 
     Returns:
       {
-        total_attempts, average_score, best_rank,
+        total_attempts, average_score, best_rank, best_score, latest_score,
         subjects: [{subject, attempts, average_score}, ...]
       }
     """
@@ -1219,6 +1219,7 @@ def my_stats(request):
         total=Count('id'),
         avg=Avg('score'),
         best_rank=Min('rank'),
+        best_score=Max('score'),
     )
     total = overall['total'] or 0
     if total == 0:
@@ -1226,10 +1227,16 @@ def my_stats(request):
             'total_attempts': 0,
             'average_score': 0,
             'best_rank': None,
+            'best_score': 0,
+            'latest_score': 0,
             'subjects': [],
         })
     avg = round(overall['avg'] or 0, 1)
     best_rank = overall['best_rank']
+    best_score = overall['best_score'] or 0
+    # Eng so'nggi topshirilgan urinish balli.
+    latest_row = qs.order_by('-submitted_at').values('score').first()
+    latest_score = latest_row['score'] if latest_row else 0
 
     # Fan kesimida o'rtacha ball — DB'da GROUP BY orqali.
     subjects = []
@@ -1248,6 +1255,8 @@ def my_stats(request):
         'total_attempts': total,
         'average_score': avg,
         'best_rank': best_rank,
+        'best_score': best_score,
+        'latest_score': latest_score,
         'subjects': subjects,
     })
 
@@ -1787,6 +1796,13 @@ def leaderboard(request):
         qs = qs.filter(
             olympiad__status__in=[Olympiad.STATUS_ACTIVE, Olympiad.STATUS_FINISHED]
         )
+        # Davr filtri (`?period=week` yoki `7d`) — window'dan OLDIN:
+        # shu davrdagi urinishlar ichidan har user uchun eng yaxshisini olamiz.
+        period = (request.query_params.get('period') or '').strip().lower()
+        if period in ('week', '7d', 'hafta'):
+            from datetime import timedelta
+            from django.utils import timezone as dj_tz
+            qs = qs.filter(submitted_at__gte=dj_tz.now() - timedelta(days=7))
         # Global rejimda har foydalanuvchi faqat BIR marta ko'rinadi — eng
         # yaxshi attempti bilan (eng yuqori ball, teng bo'lsa eng tez vaqt).
         # Avval har bir attempt alohida qator edi va 5 ta olimpiadada
@@ -1809,6 +1825,11 @@ def leaderboard(request):
         # Window filtri queryset'ni subquery'ga o'raydi — yakuniy tartibni
         # qayta tiklaymiz (eng yuqori ball yuqorida).
         qs = qs.order_by('-score', 'time_spent', 'submitted_at')
+    elif (request.query_params.get('period') or '').strip().lower() in ('week', '7d', 'hafta'):
+        # Bitta olimpiada rejimida ham period filtri (manager/natijalar).
+        from datetime import timedelta
+        from django.utils import timezone as dj_tz
+        qs = qs.filter(submitted_at__gte=dj_tz.now() - timedelta(days=7))
     # Pagination: `?page=` va `?page_size=` query parametrlari qo'llab-
     # quvvatlanadi. Default page_size=100, maksimum 500. Eski `?limit=`
     # parametri ham backward-compat uchun qabul qilinadi.
