@@ -56,6 +56,50 @@ def _user_can_create_for_center(user, center_id):
     ).exists()
 
 
+def _user_can_bulk_delete_for_center(user, center_id):
+    """Faqat Manager/Owner ommaviy o'chirishga (delete-all) ruxsat oladi.
+
+    Yakka savolni o'chirish (teacher/manager/owner) himoyalangan-savol
+    tekshiruvi bilan chegaralangan, lekin butun markaz savollarini bir marta
+    o'chirish (delete-all) yanada xavfli — shu sababli teacher'ni chiqarib,
+    faqat manager/owner (yoki platform admin) uchun ruxsat beramiz.
+    """
+    if user.is_platform_admin:
+        return True
+    return CenterMembership.objects.filter(
+        user=user, center_id=center_id,
+        role__in=[
+            CenterMembership.ROLE_MANAGER,
+            CenterMembership.ROLE_OWNER,
+        ],
+        status=CenterMembership.STATUS_APPROVED,
+    ).exists()
+
+
+def _question_is_protected(question):
+    """Savol foydalanishda bo'lsa (o'chirish ma'lumot yo'qotadi) True qaytaradi.
+
+    Himoyalangan hisoblanadi, agar savol:
+      - faol yoki tugagan olimpiadaga biriktirilgan bo'lsa, YOKI
+      - o'quvchi kod yuborgan (CodeSubmission) bo'lsa, YOKI
+      - ustoz essay bahosi (EssayGrade) qo'ygan bo'lsa.
+    Bu holatlarda savolni o'chirish tarixiy baholash ma'lumotini qaytarib
+    bo'lmas tarzda yo'q qiladi (Olympiad kabi soft-delete himoyasi ruhida).
+
+    Olympiad'ni lokal import qilamiz: olympiads app allaqachon questions'dan
+    import qiladi (serializers/urls), shu sababli modul darajasidagi import
+    aylanma (circular) bog'liqlik xavfini keltiradi.
+    """
+    from olympiads.models import Olympiad
+    return (
+        question.olympiads.filter(
+            status__in=[Olympiad.STATUS_ACTIVE, Olympiad.STATUS_FINISHED]
+        ).exists()
+        or question.code_submissions.exists()
+        or question.essay_grades.exists()
+    )
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticated])
 @parser_classes([JSONParser, MultiPartParser, FormParser])
@@ -84,7 +128,11 @@ def questions_list_create(request):
                 {'detail': 'Forbidden'},
                 status=http_status.HTTP_403_FORBIDDEN,
             )
-        qs = Question.objects.filter(center_id=center_id)
+        # Arxivlangan (is_active=False) savollarni ro'yxatdan chiqaramiz — bu
+        # endpoint savol banki ko'rinishi ham, yangi olimpiadaga savol tanlash
+        # manbai ham. Arxivlangan savol mavjud olimpiada/baholarda saqlanadi,
+        # lekin bu yerda ko'rinmaydi va yangi olimpiadaga tanlanmaydi.
+        qs = Question.objects.filter(center_id=center_id, is_active=True)
         # Pagination: bitta markazda yuzlab savol to'planishi mumkin — butun
         # ro'yxatni bitta response'da uzatish xotira/trafik jihatdan og'ir.
         # olympiads_list_create kabi LargePageNumberPagination ishlatamiz:
@@ -131,6 +179,30 @@ def question_detail(request, question_id):
     if request.method == 'GET':
         return Response(QuestionSerializer(question, context={'request': request}).data)
     if request.method == 'DELETE':
+        # Foydalanishdagi savolni o'chirish tarixiy baholash ma'lumotini (kod
+        # yuborishlar, essay baholari) yoki faol/tugagan olimpiada tarkibini
+        # qaytarib bo'lmas tarzda yo'q qiladi. O'chirish o'rniga ARXIVLAYMIZ:
+        # is_active=False qilamiz — savol savol bankidan yo'qoladi va yangi
+        # olimpiadaga tanlanmaydi, ammo qatori saqlanib qoladi va mavjud
+        # o'quvchi balli / leaderboard / baholash ma'lumotiga umuman ta'sir
+        # qilmaydi (scoring yo'li is_active'ni filtrlamaydi).
+        if _question_is_protected(question):
+            question.is_active = False
+            question.save(update_fields=['is_active'])
+            AuditLog.log(request, 'question_archive', target=question, extra={
+                'center_id': question.center_id,
+                'subject': getattr(question, 'subject', ''),
+            })
+            return Response(
+                {
+                    'detail': "Savol foydalanishda bo'lgani uchun o'chirilmadi, balki "
+                              "arxivlandi: u savol bankidan olib tashlandi va yangi "
+                              "olimpiadaga qo'shib bo'lmaydi, lekin mavjud natijalar va "
+                              "baholar uchun saqlab qolindi.",
+                    'archived': True,
+                },
+                status=http_status.HTTP_200_OK,
+            )
         # Audit yozuvini o'chirishdan OLDIN yozamiz — delete() dan keyin pk
         # None bo'lib qoladi va target_id yo'qoladi.
         AuditLog.log(request, 'question_delete', target=question, extra={
@@ -174,13 +246,16 @@ def delete_all_questions(request):
             {'detail': "center parametri son bo'lishi kerak"},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
-    if not _user_can_create_for_center(request.user, center_id):
+    # Ommaviy o'chirish yakka o'chirishdan xavfliroq — teacher'ni chiqarib,
+    # faqat manager/owner (yoki platform admin) uchun ruxsat beramiz.
+    if not _user_can_bulk_delete_for_center(request.user, center_id):
         return Response(
             {'detail': 'Forbidden'},
             status=http_status.HTTP_403_FORBIDDEN,
         )
     ids_raw = request.query_params.get('ids')
     selected_ids = None
+    base_qs = Question.objects.filter(center_id=center_id)
     if ids_raw:
         try:
             ids = [int(x) for x in ids_raw.split(',') if x.strip()]
@@ -190,19 +265,52 @@ def delete_all_questions(request):
                 status=http_status.HTTP_400_BAD_REQUEST,
             )
         selected_ids = ids
-        deleted_count, _ = Question.objects.filter(center_id=center_id, id__in=ids).delete()
-    else:
-        deleted_count, _ = Question.objects.filter(center_id=center_id).delete()
+        base_qs = base_qs.filter(id__in=ids)
+
+    # Foydalanishdagi savollarni O'CHIRMAYMIZ, balki ARXIVLAYMIZ: faol/tugagan
+    # olimpiadaga biriktirilgan yoki javob/baholari bor savollarni is_active=False
+    # qilamiz (savol bankidan yashiriladi, mavjud natijalarga ta'sir qilmaydi).
+    # Himoyalanmagan (hech qayerda ishlatilmagan) savollar avvalgidek qattiq
+    # o'chiriladi. N+1 o'rniga bitta so'rov bilan himoyalangan ID'larni ajratamiz.
+    from django.db.models import Q
+    from olympiads.models import Olympiad
+    protected_q = (
+        Q(olympiads__status__in=[Olympiad.STATUS_ACTIVE, Olympiad.STATUS_FINISHED])
+        | Q(code_submissions__isnull=False)
+        | Q(essay_grades__isnull=False)
+    )
+    protected_ids = list(base_qs.filter(protected_q).distinct().values_list('id', flat=True))
+    archived_count = len(protected_ids)
+    deletable_ids = list(base_qs.exclude(id__in=protected_ids).values_list('id', flat=True))
+    deleted_count = len(deletable_ids)
+    if deletable_ids:
+        Question.objects.filter(id__in=deletable_ids).delete()
+    if protected_ids:
+        # Himoyalangan savollarni arxivlaymiz (bir marta bulk-update).
+        Question.objects.filter(id__in=protected_ids).update(is_active=False)
     # Ommaviy o'chirish ham audit'ga yoziladi (yakka o'chirish question_delete
     # bilan log qilingani kabi). Ko'p obyekt o'chirilgani uchun target=None;
-    # detallar extra'da: markaz, o'chirilgan soni va (qisman bo'lsa) ID'lar.
+    # detallar extra'da: markaz, o'chirilgan/arxivlangan soni, (qisman bo'lsa)
+    # tanlangan ID'lar hamda o'chirilgan/arxivlangan ID'lar.
     AuditLog.log(request, 'question_bulk_delete', extra={
         'center_id': center_id,
         'deleted_count': deleted_count,
+        'archived_count': archived_count,
         'ids': selected_ids,
+        'deleted_ids': deletable_ids,
+        'archived_ids': protected_ids,
     })
+    if archived_count > 0:
+        detail = (
+            f"{deleted_count} ta savol o'chirildi. {archived_count} ta savol "
+            "foydalanishda bo'lgani uchun (faol/tugagan olimpiada yoki mavjud "
+            "javob/baholar) arxivlandi — savol bankidan olib tashlandi, ammo "
+            "mavjud natijalar uchun saqlab qolindi."
+        )
+    else:
+        detail = f"{deleted_count} ta savol muvaffaqiyatli o'chirildi"
     return Response(
-        {'detail': f"{deleted_count} ta savol muvaffaqiyatli o'chirildi", 'deleted_count': deleted_count},
+        {'detail': detail, 'deleted_count': deleted_count, 'archived_count': archived_count},
         status=http_status.HTTP_200_OK,
     )
 

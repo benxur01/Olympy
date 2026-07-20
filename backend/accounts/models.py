@@ -917,6 +917,7 @@ class AuditLog(models.Model):
         ('olympiad_delete', "Olimpiada o'chirildi"),
         ('question_create', 'Savol yaratildi'),
         ('question_delete', "Savol o'chirildi"),
+        ('question_archive', 'Savol arxivlandi'),
         ('member_approve', "A'zo tasdiqlandi"),
         ('member_reject', "A'zo rad etildi"),
     ]

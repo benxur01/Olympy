@@ -134,6 +134,12 @@ class Question(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Arxivlash (archive), o'chirish EMAS: foydalanishdagi (olimpiada/javob/baho
+    # bor) savolni o'chirib bo'lmaydi — o'rniga is_active=False qilinadi. Mavjud
+    # qatorlar hamon ishlatiladi va baholanadi (scoring yo'liga ta'sir qilmaydi);
+    # bu bayroq savolni faqat kelajakdagi tanlov/ro'yxatdan (savol banki) yashiradi.
+    is_active = models.BooleanField(default=True, db_index=True)
+
     explanation = models.TextField(null=True, blank=True)
 
     class Meta:
