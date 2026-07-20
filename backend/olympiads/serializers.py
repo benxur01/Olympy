@@ -47,6 +47,10 @@ class OlympiadSerializer(serializers.ModelSerializer):
     )
     participants = serializers.SerializerMethodField()
     avg_score = serializers.SerializerMethodField()
+    # `center` va `created_by` — xom FK id. Frontend'da "qaysi tashkilot /
+    # kim tomonidan yaratilgan" ko'rsatish uchun o'qiladigan ism kerak.
+    center_name = serializers.SerializerMethodField()
+    created_by_name = serializers.SerializerMethodField()
     # max_score model field default 100 edi va frontend uni o'rnatishga harakat
     # qilardi, lekin server submit_attempt'da uni e'tiborga olmasdi va score
     # = round(earned/sum(question.score)*100) ko'rinishida hisoblardi. Endi
@@ -61,13 +65,19 @@ class OlympiadSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Olympiad
-        fields = ['id', 'center', 'event_type', 'title', 'subject', 'test_level',
+        fields = ['id', 'center', 'center_name', 'event_type', 'title', 'subject', 'test_level',
                   'test_type', 'start_datetime',
-                  'duration_minutes', 'max_score', 'status', 'created_by',
+                  'duration_minutes', 'max_score', 'status', 'created_by', 'created_by_name',
                   'group_filter', 'allowed_languages', 'it_category',
                   'question_ids', 'participants', 'avg_score', 'created_at']
-        read_only_fields = ['id', 'status', 'created_by', 'participants', 'avg_score',
-                            'max_score', 'created_at']
+        read_only_fields = ['id', 'status', 'created_by', 'created_by_name', 'center_name',
+                            'participants', 'avg_score', 'max_score', 'created_at']
+
+    def get_center_name(self, obj):
+        return obj.center.name if obj.center_id else None
+
+    def get_created_by_name(self, obj):
+        return obj.created_by.full_name if obj.created_by_id else None
 
     def get_participants(self, obj):
         # Annotate qiymati bo'lsa undan foydalanamiz (N+1 yo'q),
