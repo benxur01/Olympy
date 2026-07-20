@@ -12,8 +12,10 @@ class QuestionSerializer(serializers.ModelSerializer):
                   'correct_text', 'score', 'difficulty', 'image', 'source',
                   'created_by', 'created_at', 'question_type',
                   'programming_language', 'code_template', 'expected_output',
-                  'test_cases']
-        read_only_fields = ['id', 'created_by', 'created_at']
+                  'test_cases', 'is_active']
+        # `is_active` — arxivlash bayrog'i faqat o'qish uchun ochiladi; o'chirish
+        # (DELETE) endpoint'i uni himoyalangan savol uchun False qiladi.
+        read_only_fields = ['id', 'created_by', 'created_at', 'is_active']
 
     def to_representation(self, instance):
         """`correct_answer` faqat savolni boshqarishga haqli (teacher/manager/

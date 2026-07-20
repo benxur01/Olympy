@@ -5,7 +5,9 @@ from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from attempts.models import CodeSubmission, EssayGrade, TestAttempt
 from centers.models import CenterMembership, EducationCenter
+from olympiads.models import Olympiad
 from questions.models import Question
 
 User = get_user_model()
@@ -215,7 +217,7 @@ class PremiumQuestionFeaturesTestCase(APITestCase):
         mock_generate.return_value = {'ok': True, 'questions': []}
         self.center.is_premium = True
         self.center.save()
-        
+
         url = reverse('questions-generate-ai')
         response = self.client.post(url, {
             'center': self.center.id,
@@ -224,4 +226,227 @@ class PremiumQuestionFeaturesTestCase(APITestCase):
             'count': 5
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+class QuestionDeleteProtectionTestCase(APITestCase):
+    """Foydalanishdagi savol o'chirilmaydi, balki arxivlanadi (is_active=False).
+
+    O'chirish tarixiy baholash ma'lumotini yo'qotardi; endi himoyalangan savol
+    is_active=False qilinadi — savol bankidan yo'qoladi, ammo qatori (va unga
+    bog'liq CodeSubmission/EssayGrade) saqlanadi va scoring yo'liga ta'sir
+    qilmaydi. Himoyalanmagan savol avvalgidek qattiq o'chiriladi.
+    """
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='Delete Academy', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.teacher = User.objects.create_user(
+            phone='+998901330001', password='StrongPass123', full_name="O'qituvchi",
+        )
+        CenterMembership.objects.create(
+            user=self.teacher, center=self.center,
+            role=CenterMembership.ROLE_TEACHER,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        self.manager = User.objects.create_user(
+            phone='+998901330002', password='StrongPass123', full_name='Menejer',
+        )
+        CenterMembership.objects.create(
+            user=self.manager, center=self.center,
+            role=CenterMembership.ROLE_MANAGER,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        self.student = User.objects.create_user(
+            phone='+998901330003', password='StrongPass123', full_name='Talaba',
+        )
+
+    def _make_question(self, text='2+2 = ?'):
+        return Question.objects.create(
+            center=self.center, subject='Matematika', text=text,
+            options=['3', '4', '5'], correct_answer=1, score=5,
+        )
+
+    def _make_attempt(self, olympiad):
+        return TestAttempt.objects.create(user=self.student, olympiad=olympiad)
+
+    def _make_olympiad(self, status_value, title='Olimpiada'):
+        return Olympiad.objects.create(
+            center=self.center, title=title, subject='Matematika',
+            status=status_value,
+        )
+
+    def test_teacher_can_delete_unused_question(self):
+        q = self._make_question()
+        self.client.force_authenticate(user=self.teacher)
+        url = reverse('questions-detail', args=[q.id])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Question.objects.filter(pk=q.id).exists())
+
+    def test_teacher_archives_question_with_code_submission(self):
+        q = self._make_question()
+        olympiad = self._make_olympiad(Olympiad.STATUS_DRAFT)
+        attempt = self._make_attempt(olympiad)
+        submission = CodeSubmission.objects.create(attempt=attempt, question=q)
+        self.client.force_authenticate(user=self.teacher)
+        url = reverse('questions-detail', args=[q.id])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get('archived'))
+        q.refresh_from_db()
+        self.assertFalse(q.is_active)
+        # Qator (va bog'liq CodeSubmission) o'chirilmagan.
+        self.assertTrue(Question.objects.filter(pk=q.id).exists())
+        self.assertTrue(CodeSubmission.objects.filter(pk=submission.id).exists())
+
+    def test_teacher_archives_question_with_essay_grade(self):
+        q = self._make_question()
+        olympiad = self._make_olympiad(Olympiad.STATUS_DRAFT)
+        attempt = self._make_attempt(olympiad)
+        grade = EssayGrade.objects.create(attempt=attempt, question=q, score=3)
+        self.client.force_authenticate(user=self.teacher)
+        url = reverse('questions-detail', args=[q.id])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get('archived'))
+        q.refresh_from_db()
+        self.assertFalse(q.is_active)
+        self.assertTrue(Question.objects.filter(pk=q.id).exists())
+        self.assertTrue(EssayGrade.objects.filter(pk=grade.id).exists())
+
+    def test_teacher_archives_question_in_active_olympiad(self):
+        q = self._make_question()
+        olympiad = self._make_olympiad(Olympiad.STATUS_ACTIVE)
+        olympiad.questions.add(q)
+        self.client.force_authenticate(user=self.teacher)
+        url = reverse('questions-detail', args=[q.id])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get('archived'))
+        q.refresh_from_db()
+        self.assertFalse(q.is_active)
+        self.assertTrue(Question.objects.filter(pk=q.id).exists())
+        # Arxivlangan savol hamon olimpiada M2M tarkibida (scoring uchun).
+        self.assertTrue(olympiad.questions.filter(pk=q.id).exists())
+
+    def test_teacher_archives_question_in_finished_olympiad(self):
+        q = self._make_question()
+        olympiad = self._make_olympiad(Olympiad.STATUS_FINISHED)
+        olympiad.questions.add(q)
+        self.client.force_authenticate(user=self.teacher)
+        url = reverse('questions-detail', args=[q.id])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get('archived'))
+        q.refresh_from_db()
+        self.assertFalse(q.is_active)
+        self.assertTrue(Question.objects.filter(pk=q.id).exists())
+
+    def test_archived_question_hidden_from_bank_list(self):
+        """Arxivlangan savol savol banki GET ro'yxatida ko'rinmaydi."""
+        active_q = self._make_question('faol')
+        archived_q = self._make_question('arxiv')
+        olympiad = self._make_olympiad(Olympiad.STATUS_ACTIVE)
+        olympiad.questions.add(archived_q)
+        self.client.force_authenticate(user=self.teacher)
+        # Arxivlaymiz.
+        self.client.delete(reverse('questions-detail', args=[archived_q.id]))
+        # Ro'yxatni olamiz.
+        resp = self.client.get(reverse('questions-list-create') + f'?center={self.center.id}')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        results = resp.data.get('results', resp.data)
+        ids = {item['id'] for item in results}
+        self.assertIn(active_q.id, ids)
+        self.assertNotIn(archived_q.id, ids)
+
+    def test_question_in_draft_olympiad_still_deletable(self):
+        """Draft/nofaol olimpiadaga biriktirilgan savol hali o'chirilishi mumkin."""
+        q = self._make_question()
+        olympiad = self._make_olympiad(Olympiad.STATUS_DRAFT)
+        olympiad.questions.add(q)
+        self.client.force_authenticate(user=self.teacher)
+        url = reverse('questions-detail', args=[q.id])
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Question.objects.filter(pk=q.id).exists())
+
+    def test_teacher_cannot_bulk_delete_all(self):
+        """Ommaviy o'chirish teacher uchun taqiqlangan (faqat manager/owner)."""
+        self._make_question('q1')
+        self.client.force_authenticate(user=self.teacher)
+        url = reverse('questions-delete-all') + f'?center={self.center.id}'
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(Question.objects.filter(center=self.center).count(), 1)
+
+    def test_manager_bulk_delete_archives_protected(self):
+        """Manager delete-all himoyalanmaganni o'chiradi, himoyalanganni arxivlaydi."""
+        free_q = self._make_question('free')
+        used_q = self._make_question('used')
+        active = self._make_olympiad(Olympiad.STATUS_ACTIVE)
+        active.questions.add(used_q)
+
+        self.client.force_authenticate(user=self.manager)
+        url = reverse('questions-delete-all') + f'?center={self.center.id}'
+        response = self.client.delete(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('deleted_count'), 1)
+        self.assertEqual(response.data.get('archived_count'), 1)
+        self.assertFalse(Question.objects.filter(pk=free_q.id).exists())
+        used_q.refresh_from_db()
+        self.assertFalse(used_q.is_active)
+        self.assertTrue(Question.objects.filter(pk=used_q.id).exists())
+
+    def test_archiving_does_not_change_graded_essay_score(self):
+        """ASOSIY KAFOLAT: essay savolni arxivlash baholangan attempt ballini
+        o'zgartirmaydi — scoring yo'li (ordered_questions/score_session_answers)
+        is_active bayrog'ini filtrlamaydi.
+        """
+        from attempts.models import TestSession
+        from attempts.session_utils import ordered_questions, score_session_answers
+
+        # Essay savol + faol olimpiada + attempt + baholangan essay.
+        essay_q = Question.objects.create(
+            center=self.center, subject='Matematika', text='Insho yozing',
+            options=[], correct_answer=0, score=10,
+            question_type=Question.QUESTION_TYPE_ESSAY,
+        )
+        olympiad = self._make_olympiad(Olympiad.STATUS_ACTIVE)
+        olympiad.questions.add(essay_q)
+        attempt = self._make_attempt(olympiad)
+        attempt.answers = {str(essay_q.id): {'text': 'javob matni'}}
+        attempt.save(update_fields=['answers'])
+        session = TestSession.objects.create(
+            user=self.student, olympiad=olympiad,
+            question_order=[essay_q.id],
+        )
+        EssayGrade.objects.create(
+            attempt=attempt, question=essay_q, score=7, graded_by=self.manager,
+        )
+
+        # Arxivlashdan OLDINGI ball.
+        before = score_session_answers(
+            session, olympiad, attempt.answers or {}, attempt=attempt,
+        )['score']
+
+        # Savolni arxivlaymiz (himoyalangan — faol olimpiadada + essay bahosi bor).
+        self.client.force_authenticate(user=self.teacher)
+        resp = self.client.delete(reverse('questions-detail', args=[essay_q.id]))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        essay_q.refresh_from_db()
+        self.assertFalse(essay_q.is_active)
+
+        # Scoring yo'li arxivlangan savolni hamon ko'radi.
+        self.assertIn(
+            essay_q.id,
+            [q.id for q in ordered_questions(session, olympiad)],
+        )
+        # Va qayta hisoblangan ball o'zgarmagan.
+        after = score_session_answers(
+            session, olympiad, attempt.answers or {}, attempt=attempt,
+        )['score']
+        self.assertEqual(before, after)
+        self.assertEqual(after, 70)  # 7/10 ball (yagona baholangan savol) → 70%
 
