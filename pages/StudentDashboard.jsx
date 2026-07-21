@@ -689,7 +689,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     () => isApi ? OlympyApi.getAiAdvice(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi, page === 'performance'],
   );
-  // Olimpiadaga tayyorlik badge'lari — Tadbirlar sahifasi ochilganda
+  // Olimpiadaga tayyorlik badge'lari — Musobaqalar sahifasi ochilganda
   // ko'rinadigan olimpiadalar uchun yuklanadi.
   const [readinessMap, setReadinessMap] = React.useState({});
 
@@ -830,7 +830,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     return isCenterApproved && String(o.centerId) === String(studentCenterId);
   });
 
-  // Olimpiadaga tayyorlik (4-funksiya): Tadbirlar sahifasi ochilganda
+  // Olimpiadaga tayyorlik (4-funksiya): Musobaqalar sahifasi ochilganda
   // ko'rinadigan faol/yaqinlashayotgan olimpiadalar uchun tayyorlik foizini
   // yuklaymiz. Yuklanganlar `readinessMap`da keshlanadi.
   React.useEffect(() => {
@@ -1065,7 +1065,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // qanday bo'lim yashirin qolmaydi.
   const navItems = [
     { key: 'home', icon: 'home', label: 'Bosh sahifa' },
-    { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
+    { key: 'olympiads', icon: 'trophy', label: 'Musobaqalar' },
     { key: 'practice', icon: 'bolt', label: 'Mashq' },
     { key: 'performance', icon: 'chart', label: 'Natijalarim' },
     { key: 'profile', icon: 'user', label: 'Profil' },
@@ -1245,7 +1245,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
             <StatCard label="O'rtacha ball" value={avg || '—'} icon={<Icon name="chart" size={20} />} color="from-indigo-500 to-purple-600" glow="glow-blue" />
             <StatCard label="Reytingdagi o'rn" value={bestRank ? `#${bestRank}` : '—'} icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />
-            <StatCard label="Tadbirlar" value={total} icon={<Icon name="bolt" size={20} />} color="from-cyan-500 to-blue-600" />
+            <StatCard label="Musobaqalar" value={total} icon={<Icon name="bolt" size={20} />} color="from-cyan-500 to-blue-600" />
             <StatCard label="Sertifikatlar" value={(myResults || []).filter(r => r.rank === 1).length} icon={<Icon name="award" size={20} />} color="from-emerald-500 to-teal-600" />
           </div>
         );
@@ -1380,7 +1380,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       )}
 
       {/* So'nggi yakunlangan tadbirlar — tugagan olimpiada Home'da ham
-          ko'rinadi (avval faqat "Tadbirlar > Tugagan" tabida edi, shu sabab
+          ko'rinadi (avval faqat "Musobaqalar > Tugagan" tabida edi, shu sabab
           tugagan olimpiada "yo'qolgandek" tuyilardi). */}
       {visibleOlympiads.filter(o => o.status === 'finished').length > 0 && (
         <div>
@@ -1460,7 +1460,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const renderOlympiads = () => (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-lg md:text-xl font-black text-white">Tadbirlar</h2>
+        <h2 className="text-lg md:text-xl font-black text-white">Musobaqalar</h2>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           {['Barchasi', 'Faol', 'Kelayotgan', 'Tugagan'].map(f => (
             <button key={f} onClick={() => setOlympiadFilter(f)}
@@ -2183,7 +2183,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   );
 
   // ── Kichik sub-tab tugmalari (bo'lim ichidagi navigatsiya uchun) ──────────
-  // Uslub Tadbirlar filtri / davr toggle bilan bir xil (glass + indigo aktiv).
+  // Uslub Musobaqalar filtri / davr toggle bilan bir xil (glass + indigo aktiv).
   const SubTabBar = ({ tabs, active, onSelect }) => (
     <div className="flex flex-wrap gap-2">
       {tabs.map(t => (
@@ -2356,7 +2356,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 </button>
               )}
               <button onClick={() => setPage('olympiads')} className="btn-primary text-xs px-4 py-2 rounded-xl font-semibold hidden md:flex items-center gap-1">
-                <Icon name="trophy" size={14} /> Tadbirlar
+                <Icon name="trophy" size={14} /> Musobaqalar
               </button>
             </div>
           } />

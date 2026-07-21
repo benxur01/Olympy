@@ -1580,7 +1580,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCount || undefined },
     { key: 'staff', icon: 'users', label: 'Xodimlar' },
     { key: 'students', icon: 'users', label: "O'quvchilar" },
-    { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
+    { key: 'olympiads', icon: 'trophy', label: 'Musobaqalar' },
     { key: 'questionbank', icon: 'file', label: 'Savol banki' },
     { key: 'shop', icon: 'award', label: "Do'kon" },
     { key: 'statistics', icon: 'grid', label: 'Statistika' },
@@ -1887,7 +1887,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           tone="amber"
         />
         <OwnerMetric
-          label="Tadbirlar"
+          label="Musobaqalar"
           value={centerOlympiads.length}
           hint={`${activeOlympiads.length} faol`}
           icon={<Icon name="trophy" size={20} />}
@@ -2297,7 +2297,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderOlympiads = () => (
     <div className="space-y-5 p-4 lg:p-6">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Tadbirlar</h1>
+        <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Musobaqalar</h1>
         <p className="mt-1 text-sm font-semibold text-white/50">Direktor uchun tashkilotdagi olimpiada va musobaqalar ko'rinishi.</p>
       </div>
       <section className="overflow-hidden rounded-2xl border border-white/8 glass-strong">

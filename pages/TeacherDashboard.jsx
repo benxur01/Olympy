@@ -292,7 +292,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const navItems = [
     { key: 'home', icon: 'home', label: 'Asosiy' },
     { key: 'students', icon: 'users', label: "O'quvchilar" },
-    { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
+    { key: 'olympiads', icon: 'trophy', label: 'Musobaqalar' },
     { key: 'questions', icon: 'book', label: 'Savollar' },
     { key: 'results', icon: 'chart', label: 'Natijalar' },
     { key: 'profile', icon: 'user', label: 'Profil' },
@@ -777,7 +777,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h2 className="text-xl font-black text-white">Tadbirlar</h2>
+          <h2 className="text-xl font-black text-white">Musobaqalar</h2>
           <p className="text-white/40 text-sm">{centerName} · olimpiada va musobaqalar</p>
         </div>
         <button onClick={openCreateEvent} className="btn-primary px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
@@ -868,7 +868,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         {olympiads.length === 0 && (
           <EmptyState
             icon="trophy"
-            title="Tadbirlar yo'q"
+            title="Musobaqalar yo'q"
             desc="Birinchi olimpiada yoki musobaqangizni yarating"
             action={<button onClick={openCreateEvent} className="btn-primary px-4 py-2 rounded-xl text-sm">Yaratish</button>}
           />

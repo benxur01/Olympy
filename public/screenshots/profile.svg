@@ -47,7 +47,7 @@
       <text x="612" y="94" fill="#fff" font-size="42" font-weight="950">#3</text>
       <circle cx="780" cy="66" r="34" fill="#6366f1"/>
       <rect x="876" width="258" height="132" rx="24" fill="#ffffff" fill-opacity="0.075" stroke="#ffffff" stroke-opacity="0.1"/>
-      <text x="904" y="48" fill="#94a3b8" font-size="14" font-weight="700">Tadbirlar</text>
+      <text x="904" y="48" fill="#94a3b8" font-size="14" font-weight="700">Musobaqalar</text>
       <text x="904" y="94" fill="#fff" font-size="42" font-weight="950">12</text>
       <circle cx="1072" cy="66" r="34" fill="#06b6d4"/>
     </g>

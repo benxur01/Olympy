@@ -745,7 +745,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const navItems = [
     { key: 'home', icon: 'home', label: 'Asosiy' },
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCount || undefined },
-    { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
+    { key: 'olympiads', icon: 'trophy', label: 'Musobaqalar' },
     { key: 'questions', icon: 'book', label: 'Savollar' },
     { key: 'students', icon: 'users', label: "O'quvchilar" },
     { key: 'results', icon: 'chart', label: 'Natijalar' },
@@ -1121,10 +1121,10 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           </div>
         </div>
 
-        {/* Tadbirlar */}
+        {/* Musobaqalar */}
         <div className="glass rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-white">Tadbirlar</h3>
+            <h3 className="font-bold text-white">Musobaqalar</h3>
             <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400">Ko'rish</button>
           </div>
           <div className="space-y-3">
@@ -1193,7 +1193,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px]">
           <thead><tr className="border-b border-white/5">
-            {["O'quvchi", 'Telefon', 'Guruh', 'Tadbirlar', "O'rt. ball", 'Holat', 'Amal'].map(h => (
+            {["O'quvchi", 'Telefon', 'Guruh', 'Musobaqalar', "O'rt. ball", 'Holat', 'Amal'].map(h => (
               <th key={h} className="text-left px-4 py-3 text-xs text-white/40 font-medium">{h}</th>
             ))}
           </tr></thead>
@@ -1339,14 +1339,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const renderOlympiads = () => (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <h2 className="text-xl font-black text-white">Tadbirlar</h2>
+        <h2 className="text-xl font-black text-white">Musobaqalar</h2>
         <button onClick={openCreateEvent} className="btn-primary px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
           <Icon name="plus" size={15} /> Yangi tadbir
         </button>
       </div>
       <div className="grid grid-cols-1 gap-4">
         {olympiads.length === 0 && (
-          <EmptyState icon="trophy" title="Tadbirlar yo'q" desc="Birinchi olimpiada yoki musobaqangizni yarating"
+          <EmptyState icon="trophy" title="Musobaqalar yo'q" desc="Birinchi olimpiada yoki musobaqangizni yarating"
             action={<button onClick={openCreateEvent} className="btn-primary px-4 py-2 rounded-xl text-sm">Yaratish</button>} />
         )}
         {olympiads.map(o => {
@@ -3256,7 +3256,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <div className="glass rounded-xl p-3 text-center">
                 <div className="text-lg font-black text-white">{studentDetail.stats?.total_attempts || 0}</div>
-                <div className="text-[11px] text-white/40">Tadbirlar</div>
+                <div className="text-[11px] text-white/40">Musobaqalar</div>
               </div>
               <div className="glass rounded-xl p-3 text-center">
                 <div className="text-lg font-black text-white">{studentDetail.stats?.average_score || 0}%</div>

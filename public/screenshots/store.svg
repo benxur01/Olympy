@@ -44,7 +44,7 @@
         <circle cx="25" cy="24" r="7" fill="#818cf8"/>
         <text x="46" y="29" fill="#dbeafe" font-size="13" font-weight="600">Asosiy</text>
         <circle cx="25" cy="74" r="7" fill="#22d3ee"/>
-        <text x="46" y="79" fill="#dbeafe" font-size="13" font-weight="600">Tadbirlar</text>
+        <text x="46" y="79" fill="#dbeafe" font-size="13" font-weight="600">Musobaqalar</text>
         <circle cx="25" cy="124" r="7" fill="#a855f7"/>
         <text x="46" y="129" fill="#dbeafe" font-size="13" font-weight="600">Mashq</text>
         <circle cx="25" cy="174" r="7" fill="#10b981"/>
