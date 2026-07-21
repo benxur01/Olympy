@@ -327,7 +327,7 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
         setPage={setPage}
         user={{ ...user, role: 'Ota-ona' }}
         onLogout={onLogout}
-        logoClick={() => onNavigate('landing')}
+        logoClick={() => setPage('home')}
         mobileOpen={mobileMenu}
         onMobileClose={() => setMobileMenu(false)}
       />

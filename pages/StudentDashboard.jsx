@@ -2343,7 +2343,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     <div className="flex h-screen overflow-hidden">
       <Sidebar items={navItems} activePage={navActiveKey} setPage={setPageOrSpecial}
         user={{ ...user, role: "O'quvchi" }} onLogout={onLogout}
-        logoClick={() => onNavigate('landing')}
+        logoClick={() => setPageOrSpecial('home')}
         mobileOpen={mobileMenu} onMobileClose={() => setMobileMenu(false)} />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Topbar title={navItems.find(n => n.key === navActiveKey)?.label || 'Dashboard'} subtitle={`Salom, ${user.name}!`} user={user}
