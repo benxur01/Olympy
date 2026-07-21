@@ -388,14 +388,6 @@ class User(AbstractBaseUser, PermissionsMixin):
                     'icon': '🎖️',
                     'color': 'from-cyan-500 to-blue-500'
                 })
-            elif total_attempts >= 1:
-                badges.append({
-                    'id': 'rookie',
-                    'title': 'Birinchi Qadam',
-                    'description': "Birinchi imtihon topshirildi",
-                    'icon': '🌱',
-                    'color': 'from-emerald-400 to-teal-500'
-                })
             return badges
         except Exception:
             logger.exception("get_badges xatosi: user=%s", self.pk)
