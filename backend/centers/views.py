@@ -383,6 +383,7 @@ def join_center(request, center_id):
     # Do NOT add the role to user.roles for pending memberships. The role
     # is added in _approve() once the membership is approved. user.roles
     # remains the source of truth ONLY for approved roles.
+    detail = None
     if created and role == CenterMembership.ROLE_STUDENT:
         # Roster cache'dan avto-tasdiq tekshir — manager oldin PDF yuborgan
         # bo'lsa, o'quvchini darhol tasdiqlaymiz.
@@ -399,6 +400,39 @@ def join_center(request, center_id):
             # diagnostika qilib bo'lmasdi. Endi xato log qilinadi, lekin
             # join_center javobini buzmaslik uchun reraise qilinmaydi.
             logger.warning("auto_approve_from_roster failed: %s", exc)
+        # Roster'da topilmasa ham — har bir yangi o'quvchi darhol tasdiqlanadi
+        # (instant access). Seat limit'ga yetilgan bo'lsa decide_membership
+        # ValidationError beradi va pending holatiga qaytamiz.
+        if not center.owner_id:
+            # Owner mavjud bo'lmasa — o'quvchi o'zini o'zi tasdiqlay olmaydi
+            # (privilege escalation). Pending holatida qoldiramiz.
+            logger.info(
+                'Skipping instant auto-approve for membership %s: center %s has no owner',
+                membership.id, center.id,
+            )
+        else:
+            try:
+                decide_membership(membership, center.owner, 'approved')
+                membership.refresh_from_db()
+                # Managerlar hali ham xabardor bo'lishlari uchun notification
+                # yuboriladi (endi informatsion — tasdiqlash talab qilinmaydi).
+                from centers.tasks import send_student_join_notifications_task
+                send_student_join_notifications_task.delay(request.user.id, center.id, membership.id)
+                return Response(
+                    CenterMembershipSerializer(membership).data,
+                    status=http_status.HTTP_201_CREATED if created else http_status.HTTP_200_OK,
+                )
+            except ValidationError as exc:
+                # Seat limit — bloklamaymiz, pending holatida qoldiramiz va
+                # o'quvchiga "markaz to'la" xabarini qaytaramiz. Owner'ni ham
+                # proaktiv xabardor qilamiz (student-role branch'da bu yerga
+                # faqat check_student_limit tushira oladi — 24h dedup task'da).
+                detail = '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc)
+                from centers.tasks import send_student_limit_reached_notification_task
+                send_student_limit_reached_notification_task.delay(center.id)
+            except Exception:
+                # Kutilmagan xato — javobni buzmaymiz, pending holatiga qaytamiz.
+                logger.exception('Instant auto-approve failed for membership %s', membership.id)
         # Trigger Celery task for student join notifications
         from centers.tasks import send_student_join_notifications_task
         send_student_join_notifications_task.delay(request.user.id, center.id, membership.id)
@@ -406,7 +440,10 @@ def join_center(request, center_id):
         # Trigger Celery task for staff join notification
         from centers.tasks import send_staff_join_notification_task
         send_staff_join_notification_task.delay(request.user.id, center.id, membership.id)
-    return Response(CenterMembershipSerializer(membership).data,
+    data = CenterMembershipSerializer(membership).data
+    if detail is not None:
+        data = {**data, 'detail': detail}
+    return Response(data,
                     status=http_status.HTTP_201_CREATED if created
                     else http_status.HTTP_200_OK)
 
@@ -449,6 +486,12 @@ def _approve(request, center_id, role):
                         status=http_status.HTTP_403_FORBIDDEN)
     except ValidationError as exc:
         detail = '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc)
+        # Student approval'da ValidationError'ni faqat check_student_limit
+        # tushira oladi — owner'ni seat-limit haqida proaktiv xabardor qilamiz.
+        # Teacher/manager limit xatolari uchun bu yuborilmaydi (matn ham farqli).
+        if role == CenterMembership.ROLE_STUDENT:
+            from centers.tasks import send_student_limit_reached_notification_task
+            send_student_limit_reached_notification_task.delay(center.id)
         return Response({'detail': detail},
                         status=http_status.HTTP_400_BAD_REQUEST)
     AuditLog.log(

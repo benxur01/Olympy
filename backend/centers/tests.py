@@ -332,6 +332,86 @@ class CenterStudentLimitTestCase(APITestCase):
         ).count()
         self.assertEqual(active_count, 11)
 
+    @patch('notifications.services.send_membership_decision_notification')
+    def test_join_endpoint_instant_approves_under_cap(self, _mock_notify):
+        """Owner mavjud va limit to'lmagan markazga qo'shilish darhol tasdiqlanadi."""
+        self.client.force_authenticate(user=self.students[0])
+        url = reverse('center-join', args=[self.center.id])
+        with patch(NOTIFY_PATCHES[0]) as mock_student_notify, patch(NOTIFY_PATCHES[1]):
+            response = self.client.post(url, {'role': 'student'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data.get('status'), CenterMembership.STATUS_APPROVED)
+        membership = CenterMembership.objects.get(
+            user=self.students[0], center=self.center,
+            role=CenterMembership.ROLE_STUDENT,
+        )
+        self.assertEqual(membership.status, CenterMembership.STATUS_APPROVED)
+        # Manager hali ham xabardor qilinadi (informatsion notification).
+        mock_student_notify.assert_called_once()
+
+    @patch('notifications.services.send_membership_decision_notification')
+    def test_join_at_student_cap_stays_pending_with_detail(self, _mock_notify):
+        """Limit to'lgan markazga qo'shilish auto-approve QILMAYDI va detail qaytaradi."""
+        from centers.services import decide_membership
+        # Free-tier limitni (10) to'ldiramiz.
+        for i in range(10):
+            req = CenterMembership.objects.create(
+                user=self.students[i], center=self.center,
+                role=CenterMembership.ROLE_STUDENT,
+                status=CenterMembership.STATUS_PENDING,
+            )
+            decide_membership(req, self.owner, 'approve')
+        # 11-o'quvchi endpoint orqali qo'shiladi — auto-approve bo'lmasligi kerak.
+        self.client.force_authenticate(user=self.students[10])
+        url = reverse('center-join', args=[self.center.id])
+        with patch(NOTIFY_PATCHES[0]) as mock_student_notify, patch(NOTIFY_PATCHES[1]):
+            response = self.client.post(url, {'role': 'student'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data.get('status'), CenterMembership.STATUS_PENDING)
+        self.assertIn('detail', response.data)
+        self.assertIn('limitga yetgan', response.data['detail'])
+        membership = CenterMembership.objects.get(
+            user=self.students[10], center=self.center,
+            role=CenterMembership.ROLE_STUDENT,
+        )
+        self.assertEqual(membership.status, CenterMembership.STATUS_PENDING)
+        # Seat-limit holatida ham manager join notification jo'natiladi.
+        mock_student_notify.assert_called_once()
+
+    @patch('notifications.services.send_membership_decision_notification')
+    def test_seat_limit_notifies_owner_once_with_dedup(self, _mock_notify):
+        """Seat-limit to'lganda owner'ga bitta 'student_limit_reached' xabar
+        yaratiladi; 24 soat ichida ikkinchi urinish dublikat yaratmaydi."""
+        from notifications.models import Notification
+        # Free-tier limitni (10) to'ldiramiz.
+        from centers.services import decide_membership
+        for i in range(10):
+            req = CenterMembership.objects.create(
+                user=self.students[i], center=self.center,
+                role=CenterMembership.ROLE_STUDENT,
+                status=CenterMembership.STATUS_PENDING,
+            )
+            decide_membership(req, self.owner, 'approve')
+
+        url = reverse('center-join', args=[self.center.id])
+        # 11-o'quvchi qo'shilishga urinadi — seat-limit tufayli owner xabardor
+        # bo'ladi (send_student_limit_reached_notification_task EAGER ishlaydi).
+        self.client.force_authenticate(user=self.students[10])
+        with patch(NOTIFY_PATCHES[0]), patch(NOTIFY_PATCHES[1]):
+            self.client.post(url, {'role': 'student'}, format='json')
+
+        notifs = Notification.objects.filter(
+            user=self.owner, center=self.center,
+            type=Notification.TYPE_STUDENT_LIMIT_REACHED,
+        )
+        self.assertEqual(notifs.count(), 1)
+
+        # 12-o'quvchi 24 soat ichida qo'shilishga urinadi — dublikat bo'lmaydi.
+        self.client.force_authenticate(user=self.students[11])
+        with patch(NOTIFY_PATCHES[0]), patch(NOTIFY_PATCHES[1]):
+            self.client.post(url, {'role': 'student'}, format='json')
+        self.assertEqual(notifs.count(), 1)
+
 
 class CenterActivityTrendTestCase(APITestCase):
     """GET /api/centers/{id}/activity-trend/ — oylik o'rtacha ball trendi."""

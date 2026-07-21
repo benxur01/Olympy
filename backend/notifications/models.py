@@ -37,6 +37,10 @@ class Notification(models.Model):
     # holatda hech qanday xabar yuborilmas edi va foydalanuvchi nima
     # bo'lganini bilmasdan qolib ketardi.
     TYPE_MEMBERSHIP_REMOVED = 'membership_removed'
+    # Markaz o'quvchi joy limitiga yetganda owner'ga proaktiv xabar. Avval
+    # owner buni faqat manager approve tugmasini bosib xato toast'ini o'qigan
+    # holatdagina bilardi. `type` — choices'siz CharField, migratsiya shart emas.
+    TYPE_STUDENT_LIMIT_REACHED = 'student_limit_reached'
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,

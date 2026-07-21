@@ -358,6 +358,45 @@ def send_membership_removed_notification(user, center, role):
     logger.info('[telegram] → %s sent=%s membership-removed role=%s', mask_phone(user.normalized_phone), sent, role)
 
 
+def send_student_limit_reached_notification(owner, center, limit):
+    """Markaz o'quvchi joy limitiga yetganda owner'ni proaktiv xabardor qilish.
+
+    24 soatlik dedup: limit to'lgan markazga ketma-ket bir necha o'quvchi
+    qo'shilishga urinsa, har urinish uchun bitta xabar yuborilib owner spam
+    qilinmasligi kerak. Shu (user, center, type) uchun oxirgi 24 soatda yozuv
+    bo'lsa, yangi xabar yuborilmaydi.
+    """
+    from datetime import timedelta
+    from django.utils import timezone
+
+    if not owner:
+        return
+    recently = Notification.objects.filter(
+        user=owner,
+        center=center,
+        type=Notification.TYPE_STUDENT_LIMIT_REACHED,
+        created_at__gte=timezone.now() - timedelta(hours=24),
+    ).exists()
+    if recently:
+        return
+
+    title = "O'quvchilar limiti to'ldi"
+    message = (
+        f"{center.name} markazida o'quvchilar soni limitga yetdi "
+        f"(Maksimal {limit} ta). Yangi o'quvchilar avtomatik qo'shila olmaydi. "
+        f"Joy sonini oshirish uchun tarifni yangilang."
+    )
+    Notification.objects.create(
+        user=owner,
+        center=center,
+        type=Notification.TYPE_STUDENT_LIMIT_REACHED,
+        title=title,
+        message=message,
+    )
+    sent = _send_telegram_to_user(owner, message)
+    logger.info('[telegram] → %s sent=%s student-limit-reached center=%s', mask_phone(owner.normalized_phone), sent, center.id)
+
+
 def send_attempt_result_to_parents(attempt):
     """O'quvchi olimpiada natijasini topshirganda barcha ulangan ota-onalarga
     Telegram orqali xabar yuboradi.
