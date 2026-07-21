@@ -1163,11 +1163,6 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           <h2 className="text-xl md:text-2xl font-black text-white flex items-center gap-2 truncate">
             {showPremiumBadge && <span title="Premium o'quvchi">⭐</span>}
             Salom, {user.name.split(' ')[0]}! 👋
-            {!!user?.streakCount && (
-              <span className="inline-flex items-center gap-1 text-sm font-black text-orange-400 bg-orange-500/10 border border-orange-500/25 px-2 py-0.5 rounded-lg animate-pulse" title="Ketma-ket faol kunlaringiz">
-                🔥 {user.streakCount} kun
-              </span>
-            )}
           </h2>
           <p className="text-white/40 text-xs md:text-sm mt-1">{new Date().toLocaleDateString('uz-UZ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
           <BadgeList badges={user.badges} />
