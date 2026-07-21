@@ -984,7 +984,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         setPage={setPage}
         user={{ ...user, role: "O'qituvchi" }}
         onLogout={onLogout}
-        logoClick={() => onNavigate('landing')}
+        logoClick={() => setPage('home')}
         mobileOpen={mobileMenu}
         onMobileClose={() => setMobileMenu(false)}
       />
