@@ -990,9 +990,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const openPremiumModal = (row) => {
     setPremiumUser(row);
-    setPremiumDuration(row.isPremium ? -1 : 30);
+    setPremiumDuration(30);
     setPremiumPlanType(row.role?.toLowerCase()?.includes('o\'quvchi') || row.role?.toLowerCase()?.includes('student') ? 'student' : 'organization');
-    setPremiumPlanName('Pro');
+    setPremiumPlanName(row.planName || 'Pro');
   };
 
   const handleSavePremium = () => {
@@ -1086,6 +1086,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       joined: u.joined,
       status: (isApi ? apiBlocked : !!blockedIds[u.id]) ? 'Bloklangan' : 'Faol',
       isPremium: !!(u.isPremium ?? u.is_premium),
+      planName: u.currentPlanName || null,
       isStudent: approved.includes('student') || primary === 'student',
       // Rol o'zgartirish modali uchun: foydalanuvchidagi xom rol kalitlari va
       // platform admin flag'i (checkboxlarni joriy holat bo'yicha belgilaymiz).

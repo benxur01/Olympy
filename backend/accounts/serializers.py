@@ -21,6 +21,7 @@ class UserSerializer(serializers.ModelSerializer):
     telegram_linked = serializers.SerializerMethodField()
     avatar_url = serializers.SerializerMethodField()
     badges = serializers.SerializerMethodField()
+    current_plan_name = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -28,6 +29,7 @@ class UserSerializer(serializers.ModelSerializer):
                   'phone', 'normalized_phone', 'roles',
                   'roles_detail', 'telegram_linked', 'is_platform_admin',
                   'is_premium', 'is_premium_active', 'premium_trial_end',
+                  'current_plan_name',
                   'is_active', 'avatar_url', 'created_at',
                   'streak_count', 'longest_streak', 'last_active_date', 'badges',
                   'onboarding_completed', 'onboarding_grade',
@@ -49,6 +51,7 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'roles', 'normalized_phone', 'roles_detail',
                             'telegram_linked', 'is_platform_admin',
                             'is_premium', 'is_premium_active', 'premium_trial_end',
+                            'current_plan_name',
                             'is_active', 'avatar_url', 'created_at',
                             'streak_count', 'longest_streak', 'last_active_date', 'badges',
                             'onboarding_completed', 'onboarding_grade',
@@ -62,6 +65,14 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_telegram_linked(self, obj):
         return bool(obj.telegram_chat_id)
+
+    def get_current_plan_name(self, obj):
+        prefetched = getattr(obj, 'prefetched_active_subscriptions', None)
+        if prefetched is not None:
+            sub = prefetched[0] if prefetched else None
+        else:
+            sub = obj.subscriptions.filter(is_active=True).select_related('plan').order_by('-end_date').first()
+        return sub.plan.name if sub and sub.plan else None
 
     def get_avatar_url(self, obj):
         from .utils import avatar_url_for

@@ -1029,6 +1029,7 @@ def admin_users_list(request):
     User = get_user_model()
     from django.db.models import Count, Prefetch, Q as DQ
     from centers.models import CenterMembership
+    from billing.models import UserSubscription
     # N+1'ni oldini olamiz:
     #  - badges uchun har user'ga 2 ta TestAttempt count so'rovi o'rniga
     #    queryset darajasida annotate (UserSerializer.get_badges shularni o'qiydi);
@@ -1055,7 +1056,12 @@ def admin_users_list(request):
             Prefetch(
                 'memberships',
                 queryset=CenterMembership.objects.select_related('center').order_by('-created_at'),
-            )
+            ),
+            Prefetch(
+                'subscriptions',
+                queryset=UserSubscription.objects.filter(is_active=True).select_related('plan').order_by('-end_date'),
+                to_attr='prefetched_active_subscriptions',
+            ),
         )
         .order_by('-created_at')
     )
