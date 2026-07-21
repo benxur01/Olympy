@@ -189,7 +189,7 @@ select:-webkit-autofill:focus {
 .orbit { position: absolute; border-radius: 50%; border: 1px solid rgba(99,102,241,0.15); animation: spin 20s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .hero-glow { position: absolute; width: 600px; height: 600px; border-radius: 50%; filter: blur(120px); opacity: 0.15; pointer-events: none; }
-.feature-icon { width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 22px; }
+.feature-icon { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; }
 select.input-field option { background: #12141a; }
 .question-nav-btn { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); transition: all 0.2s; }
 .question-nav-btn.answered { background: rgba(99,102,241,0.3); border-color: #6366f1; color: white; }
