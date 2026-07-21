@@ -682,12 +682,12 @@ const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick,
         item.divider
           ? <div key={item.key} className="my-2 border-t border-white/5" />
           : <button key={item.key}
-              className={`sidebar-item w-full flex items-center rounded-xl text-left transition-all duration-200 ${
+              className={`sidebar-item group w-full flex items-center rounded-xl text-left transition-all duration-200 ${
                 collapsed ? 'justify-center px-0 py-3' : 'gap-3.5 px-4 py-3'
               } ${activePage === item.key ? 'active' : ''}`}
               onClick={() => { setPage(item.key); onItemClick && onItemClick(); }}>
-              <span className={`sidebar-icon transition-colors duration-200 ${activePage === item.key ? 'text-indigo-400' : 'text-white/40'}`}>
-                <Icon name={item.icon} size={20} />
+              <span className={`sidebar-icon flex items-center justify-center flex-shrink-0 w-9 h-9 rounded-full transition-all duration-200 ${activePage === item.key ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-white/5 text-white/40 group-hover:bg-white/10'}`}>
+                <Icon name={item.icon} size={17} />
               </span>
               {!collapsed && (
                 <span className={`text-[15px] font-semibold tracking-wide transition-colors duration-200 ${activePage === item.key ? 'text-white' : 'text-white/65'}`}>
@@ -764,7 +764,9 @@ const MobileBottomNav = ({ items, activePage, setPage }) => {
       {mainItems.map(item => (
         <button key={item.key} onClick={() => setPage(item.key)}
           className={`mobile-bottom-nav-item ${activePage === item.key ? 'active' : ''}`}>
-          <Icon name={item.icon} size={20} />
+          <span className={`flex items-center justify-center transition-all duration-200 ${activePage === item.key ? 'w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white' : ''}`}>
+            <Icon name={item.icon} size={activePage === item.key ? 16 : 20} />
+          </span>
           <span className="label truncate w-full text-center block">{item.label}</span>
           {item.badge && activePage !== item.key && (
             <span className="absolute top-1.5 right-1/4 w-4 h-4 bg-indigo-500 rounded-full text-white text-[9px] flex items-center justify-center font-bold">{item.badge}</span>
