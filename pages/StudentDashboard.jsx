@@ -17,9 +17,15 @@
 const STUDENT_DASHBOARD_BASE = '/dashboard';
 // Dashboard sub-sahifa kalitlari (navItems'dagi `analytics`dan tashqari hammasi).
 // Yangi sahifa qo'shilsa, shu ro'yxatga kalitini qo'shish kifoya.
+// Konsolidatsiyadan keyingi 5 ta yuqori darajali bo'lim + Profil "hub"i ostidagi
+// sub-sahifalar (centers/rewards/premium — deep-link uchun alohida URL'ga ega,
+// lekin sidebar'da ko'rinmaydi). `performance` — Natijalarim (Urinishlarim +
+// O'sishim + Reyting sub-tab'lari). Eski `results/history/progress/leaderboard/
+// mistakes/settings/analytics` alohida sahifa emas — ular tegishli bo'limlar
+// ichidagi sub-tab yoki sub-bo'limga ko'chirildi.
 const STUDENT_DASHBOARD_PAGES = [
-  'home', 'olympiads', 'practice', 'profile', 'results', 'history', 'progress',
-  'centers', 'leaderboard', 'mistakes', 'rewards', 'premium', 'settings',
+  'home', 'olympiads', 'practice', 'performance', 'profile',
+  'centers', 'rewards', 'premium',
 ];
 const PAGE_TO_PATH = STUDENT_DASHBOARD_PAGES.reduce((acc, key) => {
   acc[key] = key === 'home' ? STUDENT_DASHBOARD_BASE : `${STUDENT_DASHBOARD_BASE}/${key}`;
@@ -609,9 +615,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     () => isApi ? OlympyApi.getActivityLeaderboard(OlympyApi.getToken()) : Promise.resolve([]),
     [isApi],
   );
+  // Xatolar Sandig'i endi Mashq bo'limi ichidagi sub-tab — shu bo'lim ochilganda
+  // yuklaymiz.
   const apiMistakesRes = useApiData(
     () => isApi ? OlympyApi.getMistakes(OlympyApi.getToken()) : Promise.resolve([]),
-    [isApi, page === 'mistakes'],
+    [isApi, page === 'practice'],
   );
   const apiRewardsRes = useApiData(
     () => isApi ? OlympyApi.getRewards(OlympyApi.getToken()) : Promise.resolve({ coins: 0, products: [] }),
@@ -649,29 +657,25 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   }, [isApi, apiParentRequestsRes]);
   // Premium: tarixiy tahlil grafigi, raqobatchi tahlili, zaiflik xaritasi.
   // Premium bo'lmagan o'quvchida so'rov yuborilmaydi (backend 403 qaytaradi).
+  // Premium tahlil so'rovlari endi Natijalarim > O'sishim tab'i uchun (performance
+  // sahifasi ochilganda) yuklanadi.
   const apiHistoryChartRes = useApiData(
     () => (isApi && isPremium) ? OlympyApi.getHistoryChart(OlympyApi.getToken()) : Promise.resolve([]),
-    [isApi, isPremium, page === 'history'],
+    [isApi, isPremium, page === 'performance'],
   );
   const apiCompetitorRes = useApiData(
     () => (isApi && isPremium) ? OlympyApi.getCompetitorAnalysis(null, OlympyApi.getToken()) : Promise.resolve(null),
-    [isApi, isPremium, page === 'history'],
+    [isApi, isPremium, page === 'performance'],
   );
   const apiWeaknessRes = useApiData(
     () => (isApi && isPremium) ? OlympyApi.getSubjectWeakness(OlympyApi.getToken()) : Promise.resolve([]),
-    [isApi, isPremium, page === 'history'],
+    [isApi, isPremium, page === 'performance'],
   );
-  // Vaqt bo'yicha reyting tarixi + eng zaif 3 mavzu. Bu ikki endpoint premium
-  // bo'lmaganlar uchun ham so'raladi (backend 403 emas, balki cheklangan/locked
-  // javob qaytaradi) — frontend blur + "premium oling" CTA ko'rsatadi.
-  const [timelineDays, setTimelineDays] = React.useState(30);
+  // Vaqt bo'yicha ball dinamikasi — Natijalarim landing kartasidagi mini
+  // sparkline uchun (oxirgi 30 kun). Premium bo'lmaganlarga ham ochiq.
   const apiScoreTimelineRes = useApiData(
-    () => isApi ? OlympyApi.getScoreTimeline(timelineDays, OlympyApi.getToken()) : Promise.resolve(null),
-    [isApi, timelineDays, page === 'history'],
-  );
-  const apiWeakestTopicsRes = useApiData(
-    () => isApi ? OlympyApi.getWeakestTopics(OlympyApi.getToken()) : Promise.resolve(null),
-    [isApi, page === 'history'],
+    () => isApi ? OlympyApi.getScoreTimeline(30, OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, page === 'performance'],
   );
   // ── Progress Dashboard (premium emas — har o'quvchiga ochiq) ──────────────
   // Davr toggle: 30 kun / 3 oy / 6 oy. Faqat "progress" sahifasi ochilganda
@@ -679,11 +683,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [progressPeriod, setProgressPeriod] = React.useState(30);
   const apiProgressRes = useApiData(
     () => isApi ? OlympyApi.getProgress(progressPeriod, OlympyApi.getToken()) : Promise.resolve(null),
-    [isApi, progressPeriod, page === 'progress'],
+    [isApi, progressPeriod, page === 'performance'],
   );
   const apiAiAdviceRes = useApiData(
     () => isApi ? OlympyApi.getAiAdvice(OlympyApi.getToken()) : Promise.resolve(null),
-    [isApi, page === 'progress'],
+    [isApi, page === 'performance'],
   );
   // Olimpiadaga tayyorlik badge'lari — Tadbirlar sahifasi ochilganda
   // ko'rinadigan olimpiadalar uchun yuklanadi.
@@ -725,11 +729,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const pageErrorSources = {
     home: [],
     olympiads: [apiOlympiadsRes],
-    results: [apiResultsRes],
-    history: [apiHistoryChartRes, apiWeaknessRes],
-    progress: [apiProgressRes],
+    // Natijalarim: asosiy mazmun natijalar (Urinishlarim tab'i) + O'sish
+    // dinamikasidan iborat. Bulardan biri yuklanmasa banner chiqadi.
+    performance: [apiResultsRes, apiProgressRes],
     centers: [apiCentersRes],
-    mistakes: [apiMistakesRes],
     rewards: [apiRewardsRes],
   };
   // Banner sahifa ochilishi bilan (so'rovlar hali loading'da) chiqib qolardi:
@@ -742,7 +745,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // foydalanuvchini premium deb biladi (`user.is_premium`), backend esa
   // real-time tekshiruvda rad etgan. Bunday javob "Internet aloqasini
   // tekshiring" bannerini chiqarmasligi kerak — o'rniga PremiumLock
-  // ko'rsatiladi (renderHistory'da `premiumDenied` orqali).
+  // ko'rsatiladi (renderGrowth'dagi premium tahlil bloki `premiumDenied` orqali).
   const isPremiumDeniedError = (r) => !!(
     r && r.error && r.error.status === 403 && r.error.data && r.error.data.upgrade_required
   );
@@ -1053,23 +1056,32 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       .slice(0, 6);
   })();
 
+  // Yuqori darajali navigatsiya — 5 ta bo'lim. Avvalgi 14 ta element shu 5 taga
+  // konsolidatsiya qilindi:
+  //   • Natijalar/Tarixim/O'sishim/Analitika/Reyting → "Natijalarim" (performance)
+  //   • Xatolar Sandig'i → "Mashq" ichidagi sub-tab
+  //   • Tashkilotlar/Do'kon/Premium Obuna/Sozlamalar → "Profil" hub'i ostida
+  // Mobil pastki panel ham shu ro'yxatdan render bo'ladi (5 ta) — endi hech
+  // qanday bo'lim yashirin qolmaydi.
   const navItems = [
-    { key: 'home', icon: 'home', label: 'Asosiy' },
+    { key: 'home', icon: 'home', label: 'Bosh sahifa' },
     { key: 'olympiads', icon: 'trophy', label: 'Tadbirlar' },
     { key: 'practice', icon: 'bolt', label: 'Mashq' },
+    { key: 'performance', icon: 'chart', label: 'Natijalarim' },
     { key: 'profile', icon: 'user', label: 'Profil' },
-    { key: 'results', icon: 'chart', label: 'Natijalar' },
-    { key: 'history', icon: 'chart', label: 'Tarixim' },
-    { key: 'progress', icon: 'chart', label: "O'sishim" },
-    { key: 'centers', icon: 'building', label: 'Tashkilotlar' },
-    { key: 'leaderboard', icon: 'star', label: 'Reyting' },
-    { key: 'analytics', icon: 'chart', label: 'Analitika' },
-    { key: 'mistakes', icon: 'file', label: "Xatolar Sandig'i" },
-    { key: 'rewards', icon: 'award', label: 'Do\'kon' },
-    { key: 'premium', icon: 'star', label: 'Premium Obuna' },
-    { divider: true, key: 'd1' },
-    { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
   ];
+
+  // Profil "hub"i ostidagi sub-sahifalar. Bular alohida `page` kaliti (deep-link
+  // URL) bo'lib qoladi, lekin sidebar'da ko'rinmaydi — Profil ichidagi sub-nav
+  // orqali ochiladi. Sidebar/mobil panelda faol element sifatida "profile"
+  // yoritiladi.
+  const PROFILE_SUBPAGES = ['centers', 'rewards', 'premium'];
+  const navActiveKey = PROFILE_SUBPAGES.includes(page) ? 'profile' : page;
+
+  // Mashq ichidagi sub-tab: 'practice' (yangi mashq) | 'mistakes' (Xatolar
+  // Sandig'i). Natijalarim ichidagi sub-tab: 'attempts' | 'growth' | 'leaderboard'.
+  const [practiceTab, setPracticeTab] = React.useState('practice');
+  const [perfTab, setPerfTab] = React.useState('attempts');
 
   const hasCenter = isCenterApproved;
 
@@ -1500,12 +1512,15 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     </div>
   );
 
-  const renderResults = () => {
+  // Urinishlarim (Natijalarim > Urinishlarim sub-tab) — eski "Natijalar"
+  // mazmuni o'zgarishsiz: xronologik urinishlar ro'yxati + har biriga bosib
+  // batafsil natijaga o'tish. Sahifa paddingi renderPerformance tomonidan
+  // beriladi, shu sabab bu yerda faqat ichki space-y wrapper.
+  const renderAttempts = () => {
     const avg = myResults.length > 0 ? Math.round(myResults.reduce((sum, r) => sum + (r.score || 0), 0) / myResults.length * 10) / 10 : 0;
     const bestRank = myResults.length > 0 ? Math.min(...myResults.map(r => r.rank || 999)) : 0;
     return (
-      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
-        <h2 className="text-lg md:text-xl font-black text-white">Mening natijalarim</h2>
+      <div className="space-y-4 md:space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
           <StatCard label="O'rtacha ball" value={avg || '—'} icon={<Icon name="chart" size={18} />} color="from-indigo-500 to-purple-600" />
           <StatCard label="Eng yaxshi o'rin" value={bestRank ? `#${bestRank}` : '—'} icon={<Icon name="trophy" size={18} />} color="from-amber-500 to-orange-500" />
@@ -1670,139 +1685,16 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     );
   };
 
-  // Xatolar Sandig'i top-level MistakesPage komponentiga uzatiladi (fayl
-  // boshida e'lon qilingan). Bu yerda faqat propslar bog'lanadi.
-  const renderMistakes = () => (
-    <MistakesPage apiMistakesRes={apiMistakesRes} showApiToast={showApiToast} />
-  );
-
-  const renderHistory = () => {
-    // Backend premium so'rovlarni 403 (upgrade_required) bilan rad etgan
-    // bo'lsa — frontend flag'i eskirgan: xato banner o'rniga PremiumLock.
-    const premiumDenied = [apiHistoryChartRes, apiWeaknessRes, apiCompetitorRes]
-      .some(isPremiumDeniedError);
+  // ── Premium tahlil bloklari (Natijalarim > O'sishim tab'i ichida) ──────────
+  // Ilgari "Tarixim" alohida premium-only sahifa edi. Endi u O'sishim tab'i
+  // ichidagi premium-gated bo'limga aylandi: olimpiada tarixi grafigi,
+  // reytingdagi o'rin (raqobatchi tahlili), fan bo'yicha zaiflik xaritasi va
+  // AI o'quv rejasi. Faqat premium sektsiyalar (fragment) — outer wrapper va
+  // gating (blur/lock) chaqiruvchi renderGrowth tomonidan boshqariladi.
+  const premiumAnalysisDenied = () =>
+    [apiHistoryChartRes, apiWeaknessRes, apiCompetitorRes].some(isPremiumDeniedError);
+  const renderPremiumAnalysis = () => {
     const weaknessColor = (pct) => pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
-
-    // ── "O'sish" bloklari (reyting tarixi + eng zaif 3 mavzu) ──────────────
-    // Bu ikki blok premium bo'lmagan o'quvchiga ham (blur + CTA bilan)
-    // ko'rsatiladi — "men o'sayotganimni ko'raman" tuyg'usini berish uchun.
-    const timeline = apiScoreTimelineRes.data || {};
-    const timelinePoints = Array.isArray(timeline.points) ? timeline.points : [];
-    const timelineChartPoints = timelinePoints.map((p) => ({
-      label: (p.date || '').slice(5),  // MM-DD
-      value: p.score || 0,
-      title: `${p.date} · ${p.olympiad_name} · ${p.score}%${p.rank ? ' · #' + p.rank : ''}`,
-    }));
-    const weakest = apiWeakestTopicsRes.data || {};
-    const weakestTopics = Array.isArray(weakest.topics) ? weakest.topics : [];
-
-    const renderGrowthSections = () => (
-      <>
-        {/* Reyting tarixi (vaqt bo'yicha) */}
-        <div className="glass rounded-2xl p-4 md:p-5">
-          <div className="flex items-center justify-between gap-2 mb-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="w-8 h-8 bg-emerald-500/20 rounded-xl flex items-center justify-center text-emerald-400 shrink-0">
-                <Icon name="chart" size={16} />
-              </div>
-              <div className="min-w-0">
-                <h3 className="font-bold text-white text-sm md:text-base leading-none">Reyting tarixim</h3>
-                <span className="text-[9px] text-white/40 mt-1 block truncate">
-                  {isPremium ? `Oxirgi ${timelineDays} kundagi ball dinamikasi` : 'Oxirgi 7 kun (premium bilan 90 kun)'}
-                </span>
-              </div>
-            </div>
-            {isPremium && (
-              <div className="flex items-center gap-1 shrink-0">
-                {[30, 90].map((d) => (
-                  <button key={d} onClick={() => setTimelineDays(d)}
-                    className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all ${timelineDays === d ? 'bg-emerald-500/20 text-emerald-300 ring-1 ring-emerald-500/30' : 'text-white/40 hover:text-white/70'}`}>
-                    {d} kun
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-          {apiScoreTimelineRes.loading ? (
-            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
-          ) : timelineChartPoints.length === 0 ? (
-            <div className="text-center text-white/40 text-sm py-8">
-              {isPremium ? "Bu davrda urinish yo'q" : "Hali ma'lumot yo'q — birinchi tadbirda qatnashing"}
-            </div>
-          ) : (
-            <>
-              <SvgLineChart points={timelineChartPoints} stroke="#10b981" />
-              <div className="mt-2 text-[11px] text-white/50 text-center">
-                O'rtacha ball: <span className="font-bold text-emerald-300">{timeline.average || 0}%</span>
-                <span className="text-white/30"> · {timelinePoints.length} ta urinish</span>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* Eng zaif 3 mavzu */}
-        <div className="glass rounded-2xl p-4 md:p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 bg-rose-500/20 rounded-xl flex items-center justify-center text-rose-400 shrink-0">
-              <Icon name="bolt" size={16} />
-            </div>
-            <div>
-              <h3 className="font-bold text-white text-sm md:text-base leading-none">Eng zaif 3 mavzu</h3>
-              <span className="text-[9px] text-white/40 mt-1 block">E'tibor qaratishingiz kerak bo'lgan fanlar</span>
-            </div>
-          </div>
-          {apiWeakestTopicsRes.loading ? (
-            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
-          ) : weakestTopics.length === 0 ? (
-            <div className="text-center text-white/40 text-sm py-8">
-              {isPremium ? "Hali yetarli ma'lumot yo'q" : 'Premium bilan zaif mavzularingiz aniqlanadi'}
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {weakestTopics.map((t, i) => (
-                <div key={i} className="glass rounded-xl p-3 border border-white/5">
-                  <div className="flex items-center justify-between mb-1.5 text-xs md:text-sm">
-                    <span className="text-white/80 font-semibold">{i + 1}. {t.subject}</span>
-                    <span className="text-white/50">{t.correct}/{t.total} · <span className="font-bold" style={{ color: weaknessColor(t.pct) }}>{t.pct}%</span></span>
-                  </div>
-                  <div className="h-2.5 rounded-full bg-white/5 overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${t.pct}%`, background: weaknessColor(t.pct) }} />
-                  </div>
-                  {t.recommendation && (
-                    <div className="text-[11px] text-white/45 mt-1.5">{t.recommendation}</div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </>
-    );
-
-    // Premium bo'lmagan o'quvchi: yangi "o'sish" bloklarini blur ostida ko'rsatamiz
-    // (CTA bilan), qolgan to'liq tahlilni esa PremiumLock bilan yopamiz.
-    if (!isPremium || premiumDenied) {
-      return (
-        <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
-          <h2 className="text-lg md:text-xl font-black text-white">Tarixim va tahlil</h2>
-          <div className="relative">
-            <div className="space-y-4 md:space-y-6 pointer-events-none blur-[3px] opacity-60 select-none">
-              {renderGrowthSections()}
-            </div>
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-4">
-              <span className="text-3xl">⭐</span>
-              <p className="text-white/80 text-sm font-bold max-w-xs leading-relaxed">
-                Reyting tarixingiz va eng zaif mavzularingizni to'liq ko'rish uchun premium oling
-              </p>
-              <button onClick={() => setPage('premium')}
-                className="text-[12px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-xl shadow-md transition-all">
-                Premiumga o'tish ⚡
-              </button>
-            </div>
-          </div>
-        </div>
-      );
-    }
     const history = Array.isArray(apiHistoryChartRes.data) ? apiHistoryChartRes.data : [];
     const competitor = apiCompetitorRes.data;
     const weakness = Array.isArray(apiWeaknessRes.data) ? apiWeaknessRes.data : [];
@@ -1813,12 +1705,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     }));
 
     return (
-      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
-        <h2 className="text-lg md:text-xl font-black text-white">Tarixim va tahlil</h2>
-
-        {/* O'sish bloklari: vaqt bo'yicha reyting tarixi + eng zaif 3 mavzu */}
-        {renderGrowthSections()}
-
+      <>
         {/* 1. Tarixiy tahlil grafigi (olimpiada kesimida) */}
         <div className="glass rounded-2xl p-4 md:p-5">
           <div className="flex items-center gap-2 mb-3">
@@ -1835,7 +1722,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             : <SvgLineChart points={chartPoints} />}
         </div>
 
-        {/* 2. Reytingdagi o'rnim */}
+        {/* 2. Reytingdagi o'rnim (raqobatchi tahlili) */}
         {competitor && competitor.my_rank && (
           <div className="glass rounded-2xl p-4 md:p-5 border border-amber-500/20 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
             <div className="flex items-center gap-2 mb-3">
@@ -1889,9 +1776,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           )}
         </div>
 
-        {/* 5. AI o'quv rejasi */}
+        {/* 4. AI o'quv rejasi */}
         <StudyPlanCard />
-      </div>
+      </>
     );
   };
 
@@ -1944,7 +1831,13 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // Premium emas — har o'quvchiga ochiq. Davr toggle, ball dinamikasi (SVG line
   // chart), fanlar bo'yicha progress bar, umumiy stats va oddiy AI tavsiya.
   // Telegram WebView uchun og'ir animatsiya/backdrop-blur ishlatilmaydi.
-  const renderProgress = () => {
+  // ── O'sishim (Natijalarim > O'sishim sub-tab) ─────────────────────────────
+  // Eski "O'sishim" + "Tarixim" + "Analitika" bo'limlari shu bitta tab'ga
+  // birlashtirildi. Barchaga ochiq qism (progress: stats, ball dinamikasi,
+  // fanlar bo'yicha, AI tavsiya) + premium-gated tahlil (renderPremiumAnalysis:
+  // olimpiada tarixi, raqobatchi tahlili, zaiflik xaritasi, AI o'quv rejasi).
+  // To'liq analitika dashboardiga havola ham shu yerda.
+  const renderGrowth = () => {
     const prog = apiProgressRes.data || {};
     const stats = prog.stats || {};
     const trend = prog.trend || {};
@@ -1952,6 +1845,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     const subjects = Array.isArray(prog.subjects) ? prog.subjects : [];
     const advice = apiAiAdviceRes.data || {};
     const advices = Array.isArray(advice.advices) ? advice.advices : [];
+    const premiumDenied = premiumAnalysisDenied();
 
     const periods = [
       { label: '30 kun', value: 30 },
@@ -1975,20 +1869,25 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     }[trend.direction] || { color: '#94a3b8', icon: '→', label: '—' };
 
     return (
-      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+      <div className="space-y-4 md:space-y-6 animate-in">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div>
-            <h2 className="text-lg md:text-xl font-black text-white">O'sishim</h2>
-            <p className="text-white/40 text-xs mt-0.5">Natijalaringiz dinamikasi va shaxsiy tavsiyalar</p>
-          </div>
-          {/* Davr toggle: 30 kun / 3 oy / 6 oy */}
-          <div className="flex items-center gap-1 glass rounded-xl p-1 shrink-0">
-            {periods.map((p) => (
-              <button key={p.value} onClick={() => setProgressPeriod(p.value)}
-                className={`text-[11px] md:text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${progressPeriod === p.value ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30' : 'text-white/40 hover:text-white/70'}`}>
-                {p.label}
-              </button>
-            ))}
+          <p className="text-white/40 text-xs">Natijalaringiz dinamikasi va shaxsiy tavsiyalar</p>
+          <div className="flex items-center gap-2 shrink-0">
+            {/* To'liq analitika dashboardi (oylik ball, qiyinlik taqsimoti,
+                markazlar reytingi) — alohida app-level sahifa. */}
+            <button onClick={() => onNavigate('analytics')}
+              className="text-[11px] md:text-xs font-semibold text-indigo-300 hover:text-indigo-200 px-2 py-1.5 transition-colors flex items-center gap-1">
+              Batafsil analitika <Icon name="chevronRight" size={12} />
+            </button>
+            {/* Davr toggle: 30 kun / 3 oy / 6 oy */}
+            <div className="flex items-center gap-1 glass rounded-xl p-1">
+              {periods.map((p) => (
+                <button key={p.value} onClick={() => setProgressPeriod(p.value)}
+                  className={`text-[11px] md:text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${progressPeriod === p.value ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30' : 'text-white/40 hover:text-white/70'}`}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -2097,6 +1996,37 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 </div>
               );
             })
+          )}
+        </div>
+
+        {/* ── Premium tahlil (raqobatchi tahlili, zaiflik xaritasi, AI reja) ──
+            Premium o'quvchi to'liq ko'radi; bepul o'quvchiga blur + qulf CTA. */}
+        <div className="pt-2">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-base">⭐</span>
+            <h3 className="font-bold text-white text-sm md:text-base">Chuqur tahlil</h3>
+            <span className="text-[9px] uppercase tracking-wider font-extrabold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">Premium</span>
+          </div>
+          {(isPremium && !premiumDenied) ? (
+            <div className="space-y-4 md:space-y-6">
+              {renderPremiumAnalysis()}
+            </div>
+          ) : (
+            <div className="relative">
+              <div className="space-y-4 md:space-y-6 pointer-events-none blur-[3px] opacity-60 select-none">
+                {renderPremiumAnalysis()}
+              </div>
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-4">
+                <span className="text-3xl">⭐</span>
+                <p className="text-white/80 text-sm font-bold max-w-xs leading-relaxed">
+                  Raqobatchi tahlili, fan bo'yicha zaiflik xaritasi va AI o'quv rejasini ko'rish uchun premium oling
+                </p>
+                <button onClick={() => setPage('premium')}
+                  className="text-[12px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-xl shadow-md transition-all">
+                  Premiumga o'tish ⚡
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>
@@ -2252,20 +2182,158 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     />
   );
 
+  // ── Kichik sub-tab tugmalari (bo'lim ichidagi navigatsiya uchun) ──────────
+  // Uslub Tadbirlar filtri / davr toggle bilan bir xil (glass + indigo aktiv).
+  const SubTabBar = ({ tabs, active, onSelect }) => (
+    <div className="flex flex-wrap gap-2">
+      {tabs.map(t => (
+        <button key={t.key} onClick={() => onSelect(t.key)}
+          className={`text-xs px-3 py-2 rounded-xl glass border transition-all min-h-[36px] flex items-center gap-1.5 ${active === t.key ? 'border-indigo-500/60 text-white' : 'border-white/10 text-white/60 hover:text-white hover:border-indigo-500/40'}`}>
+          {t.icon && <Icon name={t.icon} size={14} />} {t.label}
+        </button>
+      ))}
+    </div>
+  );
+
+  // ── Natijalarim landing kartasi ───────────────────────────────────────────
+  // Oxirgi urinish balli + o'rin, mini trend sparkline va "N talabadan
+  // X-o'rindasiz" qatori. Barchasi mavjud so'rovlardan quriladi:
+  //   • oxirgi natija/o'rin — myResults (getMyResults)
+  //   • sparkline — score-timeline (getScoreTimeline) yoki myResults
+  //   • rank vs total — raqobatchi tahlili (getCompetitorAnalysis, premium),
+  //     bo'lmasa oxirgi urinish o'rni / eng yaxshi o'rin (getMyStats).
+  const renderPerformanceLanding = () => {
+    if (!isApi) return null;
+    const statsData = apiStatsRes.data || {};
+    const last = myResults[0] || null;
+    if (!last && !(statsData.total_attempts > 0)) {
+      return (
+        <div className="glass rounded-2xl p-5 md:p-6 text-center text-white/50 text-sm">
+          Hali natijangiz yo'q. Birinchi tadbirda qatnashib, natijalaringizni shu yerda kuzating.
+        </div>
+      );
+    }
+    const lastScore = last ? Math.max(0, Math.min(100, Math.round(last.score || 0))) : (statsData.latest_score || 0);
+    const lastRank = last?.rank || null;
+    const competitor = apiCompetitorRes.data;
+    const timeline = apiScoreTimelineRes.data || {};
+    const tlPoints = Array.isArray(timeline.points) ? timeline.points : [];
+    const sparkPoints = tlPoints.length
+      ? tlPoints.map(p => ({ label: (p.date || '').slice(5), value: p.score || 0, title: `${p.date} · ${p.score}%` }))
+      : myResults.slice().reverse().map(r => ({ label: (r.date || '').slice(5), value: Math.round(r.score || 0), title: `${r.olympiad} · ${Math.round(r.score || 0)}%` }));
+    let rankLine = null;
+    if (competitor && competitor.my_rank && competitor.total) {
+      rankLine = <>Siz <span className="font-black text-indigo-300">{competitor.total}</span> talabadan <span className="font-black text-amber-400">{competitor.my_rank}-o'rindasiz</span>.</>;
+    } else if (lastRank) {
+      rankLine = <>Oxirgi tadbirdagi o'rningiz: <span className="font-black text-amber-400">#{lastRank}</span>.</>;
+    } else if (statsData.best_rank) {
+      rankLine = <>Eng yaxshi o'rningiz: <span className="font-black text-amber-400">#{statsData.best_rank}</span>.</>;
+    }
+    return (
+      <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="min-w-0">
+            <div className="text-[10px] uppercase tracking-wider font-extrabold text-white/40">Oxirgi natija</div>
+            <div className="flex items-baseline gap-2 mt-1">
+              <span className="text-3xl md:text-4xl font-black text-white">{lastScore}<span className="text-white/30 text-lg">%</span></span>
+              {lastRank ? <span className="text-sm font-bold text-amber-400">#{lastRank}</span> : null}
+            </div>
+            {last?.olympiad && <div className="text-xs text-white/50 mt-1 truncate max-w-[240px]">{last.olympiad}{last.date ? ` · ${last.date}` : ''}</div>}
+          </div>
+          {sparkPoints.length > 1 && (
+            <div className="w-full sm:w-56 md:w-64 flex-shrink-0">
+              <SvgLineChart points={sparkPoints} stroke="#6366f1" height={64} />
+            </div>
+          )}
+        </div>
+        {rankLine && (
+          <div className="mt-3 pt-3 border-t border-white/5 text-sm text-white/70">{rankLine}</div>
+        )}
+      </div>
+    );
+  };
+
+  // ── Natijalarim (performance) — landing karta + 3 sub-tab ─────────────────
+  const PERF_TABS = [
+    { key: 'attempts', label: 'Urinishlarim', icon: 'file' },
+    { key: 'growth', label: "O'sishim", icon: 'chart' },
+    { key: 'leaderboard', label: 'Reyting', icon: 'star' },
+  ];
+  const renderPerformance = () => (
+    <div className="animate-in mobile-content-pad">
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6">
+        <h2 className="text-lg md:text-xl font-black text-white">Natijalarim</h2>
+        {renderPerformanceLanding()}
+        <SubTabBar tabs={PERF_TABS} active={perfTab} onSelect={setPerfTab} />
+        {perfTab === 'attempts' && renderAttempts()}
+        {perfTab === 'growth' && renderGrowth()}
+      </div>
+      {/* Reyting o'z ichki layout/paddingiga ega — padded wrapper'dan tashqarida. */}
+      {perfTab === 'leaderboard' && <LeaderboardPage embedded user={user} />}
+    </div>
+  );
+
+  // ── Mashq (practice) — 2 sub-tab: Yangi mashq | Xatolar sandig'i ──────────
+  // "Xatolar sandig'i" (MistakesPage) endi alohida top-level bo'lim emas — u
+  // Mashq ichidagi sub-tab. PracticeFlow o'zining "Savol banki / Xatolarim"
+  // (xato savollar bo'yicha mashq) ichki tab'larini o'zgarishsiz saqlaydi.
+  const PRACTICE_TABS = [
+    { key: 'practice', label: 'Yangi mashq', icon: 'bolt' },
+    { key: 'mistakes', label: "Xatolar sandig'i", icon: 'file' },
+  ];
+  const renderPractice = () => (
+    <div className="animate-in mobile-content-pad">
+      <div className="px-3 md:px-6 pt-3 md:pt-6">
+        <SubTabBar tabs={PRACTICE_TABS} active={practiceTab} onSelect={setPracticeTab} />
+      </div>
+      {practiceTab === 'practice' ? (
+        <PracticeFlow
+          user={user}
+          centerId={studentCenterId}
+          isApproved={isCenterApproved}
+          onClose={() => setPage('home')}
+          onNavigateToCenters={() => setPage('centers')}
+          pageMode
+          onUserUpdate={onUserUpdate}
+        />
+      ) : (
+        <MistakesPage apiMistakesRes={apiMistakesRes} showApiToast={showApiToast} />
+      )}
+    </div>
+  );
+
+  // ── Profil hub — kamdan-kam ishlatiladigan bo'limlar shu yerda ────────────
+  // Sozlamalar ProfilePage'ning o'z "Sozlamalar" tab'i orqali ochiladi (ilgari
+  // buzuq top-level "settings" havolasi renderHome'ga tushib qolardi). Qolgan
+  // sub-bo'limlar (Tashkilotlar/Do'kon/Premium) alohida `page` kaliti bo'lib
+  // qoladi — deep-link va orqaga tugmasi ishlaydi — lekin sidebar'da emas,
+  // shu yerdagi sub-nav orqali ochiladi. Har bir sub-bo'limning ichki ishlashi
+  // o'zgarishsiz.
+  const PROFILE_HUB_TABS = [
+    { key: 'profile', label: 'Profil', icon: 'user' },
+    { key: 'centers', label: 'Tashkilotlar', icon: 'building' },
+    { key: 'rewards', label: "Do'kon", icon: 'award' },
+    { key: 'premium', label: 'Premium', icon: 'star' },
+  ];
+  const renderProfileGroup = () => (
+    <div className="animate-in mobile-content-pad">
+      <div className="px-3 md:px-6 pt-3 md:pt-6">
+        <SubTabBar tabs={PROFILE_HUB_TABS} active={page} onSelect={setPage} />
+      </div>
+      {page === 'profile' && <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} onNavigate={onNavigate} />}
+      {page === 'centers' && renderCenters()}
+      {page === 'rewards' && renderRewards()}
+      {page === 'premium' && renderPremium()}
+    </div>
+  );
+
   const pages = {
     home: renderHome,
     olympiads: renderOlympiads,
-    results: renderResults,
-    history: renderHistory,
-    progress: renderProgress,
-    centers: renderCenters,
-    mistakes: renderMistakes,
-    rewards: renderRewards,
-    premium: renderPremium
   };
 
-  // Sahifa tugmasi `practice` yoki `analytics` bosilsa, ularni alohida
-  // handle qilamiz — `setPage` o'rniga modal yoki app-level navigatsiya.
+  // Sahifa tugmasi `analytics` bosilsa, uni alohida handle qilamiz — app-level
+  // navigatsiya. (Boshqa yuqori darajali kalitlar oddiy setPage.)
   const setPageOrSpecial = (key) => {
     if (key === 'analytics') { onNavigate('analytics'); return; }
     setPage(key);
@@ -2273,12 +2341,12 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   return (
     <div className="flex h-screen overflow-hidden">
-      <Sidebar items={navItems} activePage={page} setPage={setPageOrSpecial}
+      <Sidebar items={navItems} activePage={navActiveKey} setPage={setPageOrSpecial}
         user={{ ...user, role: "O'quvchi" }} onLogout={onLogout}
         logoClick={() => onNavigate('landing')}
         mobileOpen={mobileMenu} onMobileClose={() => setMobileMenu(false)} />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Topbar title={navItems.find(n => n.key === page)?.label || 'Dashboard'} subtitle={`Salom, ${user.name}!`} user={user}
+        <Topbar title={navItems.find(n => n.key === navActiveKey)?.label || 'Dashboard'} subtitle={`Salom, ${user.name}!`} user={user}
           onMenuClick={() => setMobileMenu(true)}
           actions={
             <div className="flex items-center gap-2">
@@ -2299,22 +2367,12 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <span>Ba'zi ma'lumotlar yuklanmadi. Internet aloqasini tekshirib, sahifani yangilang.</span>
             </div>
           )}
-          {page === 'leaderboard' ? <LeaderboardPage embedded user={user} /> :
-           page === 'profile' ? <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} /> :
-           page === 'practice' ? (
-             <PracticeFlow
-               user={user}
-               centerId={studentCenterId}
-               isApproved={isCenterApproved}
-               onClose={() => setPage('home')}
-               onNavigateToCenters={() => setPage('centers')}
-               pageMode
-               onUserUpdate={onUserUpdate}
-             />
-           ) :
+          {page === 'performance' ? renderPerformance() :
+           page === 'practice' ? renderPractice() :
+           (page === 'profile' || PROFILE_SUBPAGES.includes(page)) ? renderProfileGroup() :
            (pages[page] || renderHome)()}
         </main>
-        <MobileBottomNav items={navItems} activePage={page} setPage={setPageOrSpecial} />
+        <MobileBottomNav items={navItems} activePage={navActiveKey} setPage={setPageOrSpecial} />
       </div>
       {apiToast && (
         <div className="fixed bottom-20 md:bottom-6 right-3 md:right-6 left-3 md:left-auto z-50 glass-strong rounded-2xl px-5 py-3.5 border border-rose-500/30 animate-in text-sm font-medium text-white md:max-w-sm">{apiToast}</div>

@@ -747,8 +747,13 @@ const Sidebar = ({ items, activePage, setPage, user, onLogout, logoClick, mobile
 
 // ─── Mobile Bottom Navigation ──────────────────────────────────────────────────
 const MobileBottomNav = ({ items, activePage, setPage }) => {
-  // Pick up to 5 non-divider items for the bottom bar
-  const mainItems = items.filter(i => !i.divider && i.key !== 'settings').slice(0, 5);
+  // Pastki panel haqiqiy nav ro'yxatidan render bo'ladi (divider'lardan tashqari).
+  // Avval bu yerda `.slice(0, 5)` qattiq kesish bor edi — u nav ro'yxati 5 tadan
+  // uzun bo'lganda qolgan bo'limlarni mobil panelda umuman ko'rsatmasdi
+  // (yashirin qolardi). Har bir dashboard endi mobil uchun aynan mos (<=5 ta)
+  // ro'yxat uzatadi, shuning uchun kesish keraksiz — panel to'g'ri "by
+  // construction".
+  const mainItems = items.filter(i => !i.divider);
   return (
     <nav className="mobile-bottom-nav lg:hidden">
       {mainItems.map(item => (
