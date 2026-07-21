@@ -197,7 +197,7 @@ const ParentDashboard = ({ user, onNavigate, onLogout }) => {
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-center mb-3">
                   <div className="glass rounded-xl py-2">
-                    <div className="text-xs text-white/40">Tadbirlar</div>
+                    <div className="text-xs text-white/40">Musobaqalar</div>
                     <div className="text-lg font-bold text-white">{(child.attempts || []).length}</div>
                   </div>
                   <div className="glass rounded-xl py-2">

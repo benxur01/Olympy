@@ -856,7 +856,7 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
   }, [dashboardSvg, todayLabel]);
 
   const screens = [
-    { type: 'student', label: 'Dashboard', icon: 'chart', img: dashboardImgSrc, desc: 'Tadbirlar, natijalar va sertifikatlar bir joyda', glowColor: 'rgba(99, 102, 241, 0.22)' },
+    { type: 'student', label: 'Dashboard', icon: 'chart', img: dashboardImgSrc, desc: 'Musobaqalar, natijalar va sertifikatlar bir joyda', glowColor: 'rgba(99, 102, 241, 0.22)' },
     { type: 'student', label: 'Olimpiada', icon: 'trophy', img: '/screenshots/test.svg', desc: 'Vaqt, savollar va javoblar uchun qulay test oynasi', glowColor: 'rgba(59, 130, 246, 0.22)' },
     { type: 'student', label: 'Mashq', icon: 'bolt', img: '/screenshots/practice.svg', desc: 'Fanlar va mavzular bo\'yicha mustaqil test mashqlari', glowColor: 'rgba(16, 185, 129, 0.22)' },
     { type: 'student', label: 'Reyting', icon: 'star', img: '/screenshots/leaderboard.svg', desc: 'Top o\'quvchilar va ballar bo\'yicha jonli reyting', glowColor: 'rgba(245, 158, 11, 0.22)' },

@@ -2052,7 +2052,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderOlympiads = () => (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div>
-        <h1 className="text-[20px] font-black leading-tight text-white">Tadbirlar</h1>
+        <h1 className="text-[20px] font-black leading-tight text-white">Musobaqalar</h1>
         <p className="mt-1 text-[11px] font-bold text-slate-400">Platformadagi olimpiada va musobaqalar ro'yxati.</p>
       </div>
       <section className="overflow-hidden admin-card">
