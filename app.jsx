@@ -562,6 +562,14 @@ const App = () => {
     } catch {}
   };
 
+  // PendingHome pollingi tasdiqlangan/rad etilgan yangi user'ni qaytarganda:
+  // state'ni yangilab, roleHomePage orqali mos sahifaga o'tamiz. Hali pending
+  // bo'lsa roleHomePage 'pending-home' qaytaradi — sahifa o'zgarmaydi.
+  const handlePendingUserRefresh = (nextUser) => {
+    updateCurrentUser(nextUser);
+    setPage(roleHomePage(nextUser));
+  };
+
   // Auth guard
   useEffect(() => {
     if (NEEDS_AUTH_PAGES.includes(page) && !user) setPage('login');
@@ -667,7 +675,7 @@ const App = () => {
       case 'pricing':       return <PricingPage onNavigate={navigate} user={user} onUserUpdate={updateCurrentUser} />;
       case 'login':         return <LoginPage onNavigate={navigate} onLogin={handleLogin} />;
       case 'register':      return <RegisterPage onNavigate={navigate} onLogin={handleLogin} />;
-      case 'pending-home':  return <PendingHome user={user} onLogout={handleLogout} onNavigate={navigate} />;
+      case 'pending-home':  return <PendingHome user={user} onLogout={handleLogout} onNavigate={navigate} onUserRefresh={handlePendingUserRefresh} />;
       case 'student':       return renderDashboard('student');
       case 'manager':       return renderDashboard('manager');
       case 'teacher':       return renderDashboard('teacher');
@@ -772,7 +780,7 @@ const App = () => {
         }
         return renderDashboard(user?.activeRole || (user?.roles ? Object.keys(user.roles)[0] : 'student') || 'student');
       case 'pending':
-        return <PendingHome user={user} onLogout={handleLogout} onNavigate={navigate} />;
+        return <PendingHome user={user} onLogout={handleLogout} onNavigate={navigate} onUserRefresh={handlePendingUserRefresh} />;
       case 'analytics':
         return <AnalyticsPage user={apiUser || user} onNavigate={navigate} />;
       case 'parent':
@@ -796,37 +804,9 @@ const App = () => {
     );
   }
 
-  // OB1: Onboarding sehrgar — faqat tizimga kirgan o'quvchi uchun va
-  // onboarding tugatilmagan bo'lsa. Test/auth sahifalarida ko'rsatmaymiz
-  // (test jarayonini buzmaslik uchun). Wizard butun ekranni egallaydi.
-  const studentStatus = user?.roles?.student?.status;
-  const showOnboarding = (
-    !!user &&
-    user.onboardingCompleted === false &&
-    !!studentStatus &&
-    !['test', 'mock-test', 'login', 'register', 'landing'].includes(page)
-  );
-
   return (
     <div className="dark">
       {renderPage()}
-      {showOnboarding && (
-        <OnboardingWizard
-          user={user}
-          onUserUpdate={updateCurrentUser}
-          onComplete={() => {
-            // user obyekti onUserUpdate orqali allaqachon yangilangan
-            // (onboardingCompleted=true) — wizard avtomatik yopiladi.
-            // Qo'shimcha kafolat: backend'dan yangi user'ni tortib olamiz.
-            const auth = globalThis.OlympyApi?.loadAuth?.();
-            if (globalThis.OlympyApi?.getMe) {
-              globalThis.OlympyApi.getMe(auth?.token)
-                .then(fresh => updateCurrentUser(globalThis.OlympyApi.mapBackendUser(fresh)))
-                .catch(() => {});
-            }
-          }}
-        />
-      )}
       <RoleSwitcherModal
         open={switcherOpen}
         user={user}

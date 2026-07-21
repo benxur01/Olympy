@@ -51,9 +51,42 @@ const PendingAccessInline = ({ icon = 'shield', title, message, status = 'pendin
 };
 
 // ─── Pending Home — when user has zero approved roles ──────────────────────
-const PendingHome = ({ user, onLogout, onNavigate }) => {
+const PendingHome = ({ user, onLogout, onNavigate, onUserRefresh }) => {
   const pending = getPendingRoles(user);
   const rejected = (user?.roles ? Object.entries(user.roles) : []).filter(([, v]) => v?.status === 'rejected').map(([k]) => k);
+
+  // Ekran o'z va'dasini bajarishi uchun ("tasdiqlangach panel avtomatik
+  // ochiladi"): pending rol qolgan ekan getMe'ni davriy so'rab turamiz. Status
+  // o'zgarganda (approved/rejected) yangi user'ni yuqori state'ga uzatamiz —
+  // routing o'zi mos panelga o'tkazadi. Overlap bo'lmasligi uchun inFlightRef,
+  // fon tab'da so'rov yubormaslik uchun visibility guard (NotificationsBell'dagi
+  // kabi), unmount'da esa interval tozalanadi.
+  const inFlightRef = React.useRef(false);
+  const isApi = !!user?._api;
+  const pendingCount = pending.length;
+  React.useEffect(() => {
+    if (!isApi || pendingCount === 0 || typeof onUserRefresh !== 'function') return undefined;
+    // Joriy rol statuslari imzosi — fetch natijasini shunga solishtiramiz.
+    const roleSignature = (u) => Object.entries(u?.roles || {})
+      .map(([r, v]) => `${r}:${v?.status}`).sort().join(',');
+    const baseline = roleSignature(user);
+    const poll = async () => {
+      if (inFlightRef.current) return;
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      inFlightRef.current = true;
+      try {
+        const fresh = await OlympyApi.getMe(OlympyApi.getToken());
+        const mapped = OlympyApi.mapBackendUser(fresh);
+        if (roleSignature(mapped) !== baseline) onUserRefresh(mapped);
+      } catch (err) {
+        console.warn('pending approval poll failed:', err);
+      } finally {
+        inFlightRef.current = false;
+      }
+    };
+    const interval = setInterval(poll, 6000);
+    return () => clearInterval(interval);
+  }, [isApi, pendingCount, user, onUserRefresh]);
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10" style={{ background: '#050508' }}>
