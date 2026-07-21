@@ -466,6 +466,7 @@ const mapBackendUser = (user) => {
     // sinov muddatini hisobga oladi (backend property). Eski klientlar uchun
     // is_premium flag'iga fallback (sinov paytida u ham True bo'ladi).
     isPremium: !!(user.is_premium_active ?? user.is_premium),
+    currentPlanName: user.current_plan_name || null,
     premiumTrialEnd: user.premium_trial_end || null,
     isActive: user.is_active !== false,
     telegramLinked: !!user.telegram_linked,
