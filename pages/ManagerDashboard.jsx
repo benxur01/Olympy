@@ -633,7 +633,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       )
         .then(() => isTeacherRequest ? loadPendingTeachers() : loadPendingStudents())
         .then(() => showToast(action === 'approve' ? '✓ Ariza tasdiqlandi' : '✗ Ariza rad etildi'))
-        .catch(err => { console.warn('approveStudent/approveTeacher failed:', err); showToast("⚠ Tasdiqlab bo'lmadi"); });
+        .catch(err => { console.warn('approveStudent/approveTeacher failed:', err); showToast(err?.message ? `⚠ ${err.message}` : "⚠ Tasdiqlab bo'lmadi"); });
       return;
     }
     if (action === 'approve') OlympyStore.approveRequest(id);
