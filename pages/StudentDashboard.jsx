@@ -1283,7 +1283,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </div>
       )}
 
-      {/* Today's events */}
+      {/* Today's events — faqat faol musobaqa/olimpiada bo'lganda ko'rinadi,
+          bo'sh holatda "Bugungi faol tadbirlar yo'q" degan doim ochiq
+          blok chalg'itardi. */}
+      {visibleOlympiads.filter(o => o.status === 'active').length > 0 && (
       <div>
         <div className="flex items-center justify-between mb-3 md:mb-4 gap-2">
           <h3 className="font-bold text-white text-sm md:text-base">Bugungi tadbirlar</h3>
@@ -1321,11 +1324,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               }} />
             );
           })}
-          {visibleOlympiads.filter(o => o.status === 'active').length === 0 && (
-            <div className="md:col-span-2 text-center text-white/40 text-sm py-6 glass rounded-2xl">Bugungi faol tadbirlar yo'q</div>
-          )}
         </div>
       </div>
+      )}
 
       {/* Retention: musobaqa va uzoq muddatli bog'liqlik widgetlari */}
       {isApi && (
