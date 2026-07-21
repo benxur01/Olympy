@@ -665,6 +665,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [timeUp, setTimeUp] = React.useState(false);
   const [cheated, setCheated] = React.useState(false);
   const [cheatMessage, setCheatMessage] = React.useState('');
+  // Human-in-the-loop cheating tekshiruvi. Cheating aniqlangach darhol DQ
+  // qilinmaydi — student shu holatda "tekshirilmoqda" ekranida kutadi.
+  // Menejer/owner qaror qilgach: 'continue' → pendingReview=false (davom),
+  // 'disqualify' → cheated=true. Kutish davrida taymer to'xtaydi.
+  const [pendingReview, setPendingReview] = React.useState(false);
   // Musobaqa faol bo'lganda api.js'ga xabar beramiz: shu davrda hech qanday
   // so'rov (savol yuklash, kod ishga tushirish/tekshirish va h.k.) 401
   // qaytarsa ham butun ilovani majburan logout qilib bosh sahifaga
@@ -691,6 +696,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // ikkalasi ham "hidden"). Ikki marta hisoblamaslik uchun: hidden hodisa
   // bir marta otilganda true, qaytib kelganda (visible/focus) false.
   const hiddenEventFiredRef = React.useRef(false);
+  // Qisqa (tasodifiy) fokus yo'qolishini hisoblamaslik uchun kechiktirish
+  // taymeri. Tab/oyna belgilangan muddat davomida uzluksiz yashirin qolsagina
+  // tark etish sifatida sanaladi.
+  const hiddenTimerRef = React.useRef(null);
   // Parallel sessiya tekshiruvi uchun qurilma identifikatori. Sahifa
   // yuklanganda localStorage'dan o'qiladi yoki yangidan generatsiya qilinadi.
   const deviceIdRef = React.useRef(null);
@@ -798,7 +807,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       setQuestionsLoading(false);
       return undefined;
     }
-    if (submitted || cheated) return undefined;
+    if (submitted || cheated || pendingReview) return undefined;
 
     const idx = current;
     // Keshda bo'lsa — qayta so'rov yo'q.
@@ -819,6 +828,22 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     globalThis.OlympyApi.getOlympiadQuestions(liveOlympiad.backendId, globalThis.OlympyApi.getToken(), idx)
       .then(resp => {
         if (cancelled) return;
+        // Sessiya tekshiruvda (student oldin tabni yopib qayta ochgan bo'lishi
+        // mumkin) — savollarni ko'rsatmaymiz, "kutilmoqda" ekraniga o'tamiz.
+        // Server timing'ni ham qaytaradi (paused_seconds hisobga olingan),
+        // resume'da taymerni resync qilish uchun saqlaymiz.
+        if (!Array.isArray(resp) && resp?.status === 'pending_review') {
+          setPendingReview(true);
+          const psess = resp?.session;
+          if (psess?.expires_at) {
+            setServerExpiresAt(psess.expires_at);
+            if (psess.server_now) {
+              setServerClockSkewMs(Date.now() - new Date(psess.server_now).getTime());
+            }
+          }
+          setQuestionsLoading(false);
+          return;
+        }
         // Backend yangi shape qaytaradi: { questions:[oneQuestion], question_index,
         // total_questions, session }. Eski shape (array) bilan ham backward-compat.
         const list = Array.isArray(resp) ? resp : resp?.questions;
@@ -867,10 +892,13 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         if (!cancelled) setQuestionsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [user?._api, liveOlympiad?.backendId, isBeforeStart, isAfterEnd, current, submitted, cheated]);
+  }, [user?._api, liveOlympiad?.backendId, isBeforeStart, isAfterEnd, current, submitted, cheated, pendingReview]);
 
   React.useEffect(() => {
-    if (submitted || isBeforeStart || isAfterEnd || initialQuestionsLoading) return;
+    // pendingReview — tekshiruv kutilmoqda: taymer TO'XTATILADI (ko'rinadigan
+    // sanoq kamaymaydi). Backend resolve bo'lganda muddatni paused_seconds
+    // bilan uzaytiradi va ping javobidagi yangi expires_at bilan resync bo'ladi.
+    if (submitted || isBeforeStart || isAfterEnd || initialQuestionsLoading || pendingReview) return;
     // Agar server expires_at yuborgan bo'lsa, har sekundda undan hisoblaymiz
     // — bu lokal drift yoki tab sleep'ning vaqtni "ushlab turishini" oldini
     // oladi va server bilan har doim sinxron bo'ladi.
@@ -911,31 +939,55 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     tick();
     let t = setInterval(tick, 1000);
     return () => clearInterval(t);
-  }, [submitted, isBeforeStart, isAfterEnd, initialQuestionsLoading, serverExpiresAt, serverClockSkewMs]);
+  }, [submitted, isBeforeStart, isAfterEnd, initialQuestionsLoading, pendingReview, serverExpiresAt, serverClockSkewMs]);
 
   const sendPing = React.useCallback(async () => {
+    // pendingReview holatida ham ping yuboriladi (tekshiruv natijasini kuzatish
+    // uchun) — shu sababli bu yerda pendingReview guard'i YO'Q.
     if (!user?._api || !liveOlympiad?.backendId || submitted || cheated) return;
     const answeredCount = Object.keys(answersRef.current || {}).length;
     const escapes = tabSwitchCountRef.current;
     try {
       const token = globalThis.OlympyApi?.getToken?.()
         ?? globalThis.OlympyApi?.loadAuth?.()?.token;
-      await globalThis.OlympyApi.pingTestSession(
+      const resp = await globalThis.OlympyApi.pingTestSession(
         liveOlympiad.backendId,
         answeredCount,
         escapes,
         token,
         deviceIdRef.current,
       );
+      // Human-in-the-loop tekshiruv holatini polling orqali kuzatamiz.
+      const st = resp?.status;
+      if (st === 'pending_review') {
+        setPendingReview(true);
+      } else if (st === 'active') {
+        // Oddiy active ping YOKI menejer "davom etishga ruxsat" berdi.
+        // Kutishdan chiqamiz, cheatReported guard'ini qayta ochamiz va
+        // taymerni serverning yangilangan (paused_seconds bilan uzaytirilgan)
+        // muddati bilan resync qilamiz.
+        if (pendingReview) {
+          setPendingReview(false);
+          cheatReportedRef.current = false;
+        }
+        if (resp?.expires_at) {
+          setServerExpiresAt(resp.expires_at);
+          if (resp.server_now) {
+            setServerClockSkewMs(Date.now() - new Date(resp.server_now).getTime());
+          }
+        }
+      }
     } catch (err) {
-      // 409 — boshqa qurilmadan parallel sessiya aniqlandi. reportCheating'ni
-      // qayta chaqirmasdan to'g'ridan-to'g'ri diskvalifikatsiya holatini
-      // ko'rsatamiz (backend allaqachon session'ni DQ qildi).
+      // 409 — diskvalifikatsiya: parallel qurilma YOKI tekshiruvdan keyin
+      // menejer qoidabuzarlikni tasdiqladi (yoki 10 daqiqalik auto-timeout).
+      // Ikkala holatda ham cheat ekranini ko'rsatamiz (backend session'ni
+      // allaqachon DQ qildi).
       if (err?.status === 409) {
         cheatReportedRef.current = true;
+        setPendingReview(false);
         setSubmitted(true);
         setCheated(true);
-        setCheatMessage("Boshqa qurilmadan kirilgani aniqlandi. Olimpiada yakunlandi.");
+        setCheatMessage(err?.data?.detail || "Boshqa qurilmadan kirilgani aniqlandi. Olimpiada yakunlandi.");
         try {
           if (typeof localStorage !== 'undefined') {
             localStorage.removeItem(answersStorageKey);
@@ -947,37 +999,29 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       }
       console.warn('pingTestSession failed:', err?.message);
     }
-  }, [user?._api, liveOlympiad?.backendId, submitted, cheated, answersStorageKey, markedStorageKey]);
+  }, [user?._api, liveOlympiad?.backendId, submitted, cheated, pendingReview, answersStorageKey, markedStorageKey, codeStorageKey]);
 
   const reportCheating = React.useCallback((reason) => {
-    if (cheatReportedRef.current || submitted || cheated || !user?._api || !liveOlympiad?.backendId) return;
+    if (cheatReportedRef.current || submitted || cheated || pendingReview || !user?._api || !liveOlympiad?.backendId) return;
     if (!cheatGuardActiveRef.current) return;
     cheatReportedRef.current = true;
-    setCheated(true);
-    setSubmitted(true);
-    setCheatMessage(
-      reason === 'tab_or_app_left'
-        ? "Siz olimpiada vaqtida tabni bir necha marta almashtirdingiz. Olimpiada yakunlandi."
-        : "Siz cheating qildingiz. Olimpiada yakunlandi."
-    );
+    // Darhol DQ QILMAYMIZ — backend'ga xabar beramiz, u sessiyani
+    // "tekshiruv kutilmoqda" holatiga o'tkazadi. Student kutish ekranida
+    // qoladi va menejer/owner qaror qilishini kutadi. Menejer davom etishga
+    // ruxsat berishi mumkin — shu sababli localStorage javoblari TOZALANMAYDI.
+    setPendingReview(true);
     try {
       globalThis.OlympyApi.reportCheating(
         { olympiad: liveOlympiad.backendId, reason },
         globalThis.OlympyApi.getToken(),
       ).catch(() => {});
     } catch {}
-    // Diskvalifikatsiyadan keyin saqlangan javoblar kerak emas.
-    try {
-      if (typeof localStorage !== 'undefined') {
-        localStorage.removeItem(answersStorageKey);
-        localStorage.removeItem(markedStorageKey);
-        if (codeStorageKey) localStorage.removeItem(codeStorageKey);
-      }
-    } catch {}
-  }, [submitted, cheated, user?._api, liveOlympiad?.backendId, answersStorageKey, markedStorageKey, codeStorageKey]);
+  }, [submitted, cheated, pendingReview, user?._api, liveOlympiad?.backendId]);
 
   React.useEffect(() => {
-    if (!user?._api || !liveOlympiad?.backendId || apiTotal === 0 || submitted || cheated) {
+    // pendingReview holatida (tekshiruv kutilmoqda) 3-/4-marta tab almashtirish
+    // hech narsa qilmasligi kerak — listenerlar umuman ulanmaydi.
+    if (!user?._api || !liveOlympiad?.backendId || apiTotal === 0 || submitted || cheated || pendingReview) {
       return undefined;
     }
     // Cheating siyosati: son asosida. Tab/ilovani tark etish soni
@@ -989,22 +1033,37 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     // otiladi (tab almashtirilganda ikkalasi ham "hidden" holatga keladi).
     // hiddenEventFiredRef bayrog'i orqali bitta tark etishni faqat bir marta
     // sanaymiz.
+    //
+    // 4 soniyalik imtiyoz muddati: OS/ilova bildirishnomasi (notification
+    // popup) yoki shunga o'xshash narsalar oyna fokusini bir zumga o'g'irlab
+    // ketsa, bu yolg'on disqualifikatsiyaga olib kelmasligi kerak. Shu sababli
+    // yashirin hodisa darhol hisoblanmaydi — faqat tab/oyna 4 soniya davomida
+    // uzluksiz yashirin qolsagina tark etish sifatida sanaladi. Ag'ar
+    // foydalanuvchi tez qaytib kelsa (onVisible), taymer bekor qilinadi.
+    const HIDDEN_GRACE_MS = 4000;
     const onHidden = () => {
       if (!cheatGuardActiveRef.current) return;
-      if (hiddenEventFiredRef.current) return; // allaqachon hisoblangan
+      if (hiddenEventFiredRef.current) return; // allaqachon hisoblangan/kutilmoqda
       hiddenEventFiredRef.current = true;
-      tabSwitchCountRef.current += 1;
-      if (tabSwitchCountRef.current >= 2) {
-        reportCheating('tab_or_app_left');
-      } else {
-        setCheatWarning(
-          "Diqqat! Olimpiada vaqtida tabni almashtirdingiz. "
-          + "Keyingi marta disqualifikatsiya qilinasiz."
-        );
-      }
-      sendPing();
+      hiddenTimerRef.current = setTimeout(() => {
+        hiddenTimerRef.current = null;
+        tabSwitchCountRef.current += 1;
+        if (tabSwitchCountRef.current >= 2) {
+          reportCheating('tab_or_app_left');
+        } else {
+          setCheatWarning(
+            "Diqqat! Olimpiada vaqtida tabni almashtirdingiz. "
+            + "Keyingi marta disqualifikatsiya qilinasiz."
+          );
+        }
+        sendPing();
+      }, HIDDEN_GRACE_MS);
     };
     const onVisible = () => {
+      if (hiddenTimerRef.current) {
+        clearTimeout(hiddenTimerRef.current);
+        hiddenTimerRef.current = null;
+      }
       hiddenEventFiredRef.current = false;
     };
     const onVisibility = () => {
@@ -1020,8 +1079,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       document.removeEventListener('visibilitychange', onVisibility);
       window.removeEventListener('blur', onBlur);
       window.removeEventListener('focus', onFocus);
+      if (hiddenTimerRef.current) {
+        clearTimeout(hiddenTimerRef.current);
+        hiddenTimerRef.current = null;
+      }
     };
-  }, [user?._api, liveOlympiad?.backendId, apiTotal, submitted, cheated, reportCheating, sendPing]);
+  }, [user?._api, liveOlympiad?.backendId, apiTotal, submitted, cheated, pendingReview, reportCheating, sendPing]);
 
   // Har `answers`/`marked` o'zgarganda lokal saqlash. Submit/cheating
   // paytida tozalash uchun pastdagi cleanup logikasi mavjud.
@@ -1058,11 +1121,17 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   React.useEffect(() => {
     // apiTotal===0 — hali birinchi savol yuklanmagan; mock rejimda apiTotal
     // doim 0, lekin u yerda ping baribir ishlamaydi (user?._api guard).
-    if (!user?._api || !liveOlympiad?.backendId || submitted || cheated || apiTotal === 0) return undefined;
+    // Istisno: pendingReview true bo'lsa (masalan, tabni qayta ochganda darhol
+    // pending holat kelgan bo'lsa) apiTotal===0 bo'lsa ham polling boshlanadi —
+    // aks holda tekshiruv natijasini (resume/DQ) aniqlab bo'lmasdi.
+    if (!user?._api || !liveOlympiad?.backendId || submitted || cheated || (apiTotal === 0 && !pendingReview)) return undefined;
     sendPing();
-    const interval = setInterval(sendPing, 15000);
+    // Adaptiv interval: tekshiruv kutilayotganda tezroq (3s) — student qarorni
+    // kam kechikish bilan ko'radi; aks holda oddiy 15s heartbeat.
+    const intervalMs = pendingReview ? 3000 : 15000;
+    const interval = setInterval(sendPing, intervalMs);
     return () => clearInterval(interval);
-  }, [user?._api, liveOlympiad?.backendId, submitted, cheated, apiTotal, sendPing]);
+  }, [user?._api, liveOlympiad?.backendId, submitted, cheated, apiTotal, pendingReview, sendPing]);
 
   React.useEffect(() => {
     if (Object.keys(answers).length > 0) {
@@ -1444,6 +1513,23 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     return <PendingAccessCard title="Olimpiada tugagan" status="rejected"
       message="Bu olimpiadaga qatnashish muddati o'tib ketdi."
       onBack={() => onNavigate('student')} />;
+  }
+  // Tekshiruv kutilmoqda — student pauza ekranida kutadi. MUHIM: aniq sabab
+  // OSHKOR QILINMAYDI (student aniqlash chegarasini bilib olmasligi uchun),
+  // shunchaki umumiy "tekshirilmoqda" xabari. cheated'dan OLDIN tekshiriladi:
+  // ikkalasi bir vaqtda true bo'lmaydi (resume/DQ paytida pendingReview avval
+  // false bo'ladi), lekin oraliq holatda ham noto'g'ri ekran chiqmasin.
+  if (pendingReview) {
+    const reviewSpinner = (
+      <div className="flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-amber-400/30 border-t-amber-400 animate-spin" />
+      </div>
+    );
+    return <PendingAccessCard
+      title="Tekshirilmoqda"
+      status="pending"
+      message="Sizning harakatingiz menejer tomonidan tekshirilmoqda. Iltimos, kuting — sahifani yopmang."
+      extra={reviewSpinner} />;
   }
   if (cheated) {
     return <PendingAccessCard title="Cheating aniqlandi" status="rejected"

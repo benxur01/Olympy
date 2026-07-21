@@ -119,8 +119,9 @@ class AttemptsTestCase(APITestCase):
         # Score calculation: 5 / 15 * 100 = 33.33... % -> rounded to 33
         self.assertEqual(attempt.score, 33)
 
-    def test_cheating_detection_and_disqualification(self):
-        """Test that cheating report disqualifies the active test session and flags attempt."""
+    def test_cheating_report_moves_session_to_pending_review(self):
+        """Cheating report endi darhol DQ QILMAYDI — sessiyani menejer/owner
+        tekshiruviga (PENDING_REVIEW) yuboradi va hali attempt yaratmaydi."""
         session = TestSession.objects.create(
             user=self.student,
             olympiad=self.olympiad,
@@ -135,13 +136,79 @@ class AttemptsTestCase(APITestCase):
 
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('status'), 'pending_review')
+
+        session.refresh_from_db()
+        self.assertEqual(session.status, TestSession.STATUS_PENDING_REVIEW)
+        self.assertIsNotNone(session.review_requested_at)
+        self.assertEqual(session.cheating_reason, 'Test oynasidan 3 martadan ko\'p chiqildi')
+
+        # Tekshiruvdan oldin diskvalifikatsiya attempt'i yaratilmaydi.
+        self.assertFalse(TestAttempt.objects.filter(user=self.student, olympiad=self.olympiad).exists())
+
+    def test_review_cheating_disqualify(self):
+        """Menejer 'disqualify' qarori — sessiya DQ + disqualified attempt."""
+        self.center.owner = self.student  # student ham owner (test soddaligi uchun)
+        self.center.save(update_fields=['owner'])
+        session = TestSession.objects.create(
+            user=self.student,
+            olympiad=self.olympiad,
+            status=TestSession.STATUS_PENDING_REVIEW,
+            review_requested_at=timezone.now(),
+            cheating_reason='tab_or_app_left',
+        )
+
+        url = reverse('review-cheating-case')
+        response = self.client.post(
+            url, {'session_id': session.id, 'decision': 'disqualify'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         session.refresh_from_db()
         self.assertEqual(session.status, TestSession.STATUS_DISQUALIFIED)
-        self.assertEqual(session.cheating_reason, 'Test oynasidan 3 martadan ko\'p chiqildi')
+        self.assertEqual(session.reviewed_by_id, self.student.id)
+        self.assertIsNotNone(session.reviewed_at)
+        self.assertTrue(
+            TestAttempt.objects.filter(user=self.student, olympiad=self.olympiad, disqualified=True).exists()
+        )
 
-        # Active attempts should be flagged as disqualified
-        self.assertTrue(TestAttempt.objects.filter(user=self.student, olympiad=self.olympiad, disqualified=True).exists())
+    def test_review_cheating_continue_adds_paused_seconds(self):
+        """Menejer 'continue' qarori — sessiya ACTIVE va kutish vaqti
+        paused_seconds ga qo'shiladi (imtihon muddati uzayadi)."""
+        self.center.owner = self.student
+        self.center.save(update_fields=['owner'])
+        session = TestSession.objects.create(
+            user=self.student,
+            olympiad=self.olympiad,
+            status=TestSession.STATUS_PENDING_REVIEW,
+            review_requested_at=timezone.now() - timezone.timedelta(seconds=30),
+        )
+
+        url = reverse('review-cheating-case')
+        response = self.client.post(
+            url, {'session_id': session.id, 'decision': 'continue'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        session.refresh_from_db()
+        self.assertEqual(session.status, TestSession.STATUS_ACTIVE)
+        self.assertGreaterEqual(session.paused_seconds, 29)
+        self.assertFalse(TestAttempt.objects.filter(user=self.student, olympiad=self.olympiad).exists())
+
+    def test_review_cheating_already_handled_conflict(self):
+        """Sessiya PENDING_REVIEW bo'lmasa review 409 qaytaradi (race guard)."""
+        self.center.owner = self.student
+        self.center.save(update_fields=['owner'])
+        session = TestSession.objects.create(
+            user=self.student,
+            olympiad=self.olympiad,
+            status=TestSession.STATUS_DISQUALIFIED,
+        )
+        url = reverse('review-cheating-case')
+        response = self.client.post(
+            url, {'session_id': session.id, 'decision': 'continue'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
 
     def test_session_ping_device_collision(self):
         """Test that pinging from another device within 30 seconds disqualifies the session."""

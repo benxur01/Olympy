@@ -1,11 +1,63 @@
 from celery import shared_task
 import logging
+from datetime import timedelta
 
-from .models import TestAttempt, AttemptAIAnalysis, CodeSubmission
+from django.db import transaction
+from django.utils import timezone
+
+from .models import TestAttempt, AttemptAIAnalysis, CodeSubmission, TestSession
 from notifications.services import send_attempt_result_to_parents
 from questions.ai_generation import analyze_attempt_ai, review_code_submission
 
 logger = logging.getLogger(__name__)
+
+# Menejer/owner javob bermasa, cheating tekshiruvi shu muddatdan keyin
+# avtomatik "disqualify" (xavfsiz default) sifatida yakunlanadi.
+PENDING_REVIEW_TIMEOUT_MINUTES = 10
+
+
+@shared_task
+def auto_disqualify_pending_reviews():
+    """10 daqiqadan oshgan PENDING_REVIEW sessiyalarni avto-diskvalifikatsiya.
+
+    Menejer/owner belgilangan muddatda qaror qilmasa, sessiya `disqualify`
+    branch bilan bir xil yakunlanadi (reviewed_by=None — audit izida bu qaror
+    AVTOMATIK bo'lganini bildiradi). Har sessiya alohida tranzaksiya +
+    select_for_update ichida qayta ishlanadi — review endpoint bilan poyga
+    (race) bo'lsa, PENDING_REVIEW bo'lmasa o'tkazib yuboriladi.
+    """
+    # Circular import'dan qochish uchun ichkarida import (views tasks'ga tayanadi).
+    from .views import finalize_cheating_disqualification, notify_cheating_confirmed
+
+    cutoff = timezone.now() - timedelta(minutes=PENDING_REVIEW_TIMEOUT_MINUTES)
+    stale_ids = list(
+        TestSession.objects
+        .filter(status=TestSession.STATUS_PENDING_REVIEW, review_requested_at__lt=cutoff)
+        .values_list('id', flat=True)
+    )
+    for session_id in stale_ids:
+        student = None
+        olympiad = None
+        reason = ''
+        try:
+            with transaction.atomic():
+                session = (
+                    TestSession.objects
+                    .select_for_update()
+                    .select_related('user', 'olympiad', 'olympiad__center', 'olympiad__center__owner')
+                    .filter(pk=session_id)
+                    .first()
+                )
+                if not session or session.status != TestSession.STATUS_PENDING_REVIEW:
+                    continue
+                olympiad = session.olympiad
+                finalize_cheating_disqualification(session, olympiad, None)
+                student = session.user
+                reason = session.cheating_reason or ''
+            if student is not None:
+                notify_cheating_confirmed(student, olympiad, reason)
+        except Exception:
+            logger.exception('auto_disqualify_pending_reviews failed session=%s', session_id)
 
 
 @shared_task

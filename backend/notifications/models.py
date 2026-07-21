@@ -29,6 +29,10 @@ class Notification(models.Model):
     TYPE_OLYMPIAD_PUBLISHED = 'olympiad_published'
     TYPE_AI_ROSTER_APPROVAL = 'ai_roster_approval'
     TYPE_CHEATING_DETECTED = 'cheating_detected'
+    # Cheating aniqlanib, menejer/owner tomonidan tekshiruv KUTILAYOTGAN holat
+    # (human-in-the-loop). Yakuniy `cheating_detected` esa qaror disqualify
+    # bo'lganda yuboriladi.
+    TYPE_PENDING_CHEATING_REVIEW = 'pending_cheating_review'
     # Foydalanuvchi markazdan chiqarib yuborilganda yuboriladi. Avval bu
     # holatda hech qanday xabar yuborilmas edi va foydalanuvchi nima
     # bo'lganini bilmasdan qolib ketardi.
