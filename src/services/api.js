@@ -936,6 +936,9 @@ export const OlympyApi = {
   submitAttempt: (payload, token) => request('/api/attempts/', { method: 'POST', body: payload, token }),
   reportCheating: (payload, token) => request('/api/attempts/cheating/', { method: 'POST', body: payload, token, keepalive: true, retryOnAuth: false }),
   pingTestSession: (olympiadId, answeredCount, tabEscapes, token, deviceId) => request('/api/attempts/ping/', { method: 'POST', body: { olympiad: olympiadId, answered_count: answeredCount, tab_escapes: tabEscapes, device_id: deviceId }, token }),
+  // Cheating tekshiruvi bo'yicha menejer/owner qarori: decision 'disqualify'
+  // yoki 'continue'. 409 — holat allaqachon hal qilingan (boshqa menejer).
+  reviewCheatingCase: (sessionId, decision, token) => request('/api/attempts/cheating/review/', { method: 'POST', body: { session_id: sessionId, decision }, token }),
   getOlympiadLiveProctoring: (olympiadId, token) => request(`/api/manager/olympiads/${olympiadId}/live/`, { token }),
   // Bitta attemptni olib kelish — Leaderboard "Ko'rish" tugmasi va Results
   // sahifasi uchun. Backend olympiad detail'ni ham qo'shib qaytaradi.

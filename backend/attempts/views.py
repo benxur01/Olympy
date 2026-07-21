@@ -682,8 +682,69 @@ def submit_attempt(request):
 submit_attempt.cls.throttle_scope = 'submit'
 
 
+def _create_disqualified_attempt(user, olympiad, session):
+    """Diskvalifikatsiya qilingan student uchun iz qoldiruvchi attempt yaratadi.
+
+    Aks holda student na leaderboard'da, na manager statistikasida ko'rinmasdi.
+    score=0, disqualified=True; time_spent — session boshidan hozirgacha (duration
+    bilan cheklangan). Eski `ReportCheatingView` shu mantiqni bajarardi — endi u
+    diskvalifikatsiya TASDIQLANGANDA (review yoki auto-timeout) chaqiriladi.
+    """
+    time_spent = max(0, int(
+        (timezone.now() - session.started_at).total_seconds()
+    )) if session.started_at else 0
+    if olympiad.duration_minutes:
+        time_spent = min(time_spent, olympiad.duration_minutes * 60)
+    try:
+        TestAttempt.objects.create(
+            user=user,
+            olympiad=olympiad,
+            answers={},
+            score=0,
+            correct_count=0,
+            wrong_count=0,
+            total_questions=0,
+            time_spent=time_spent,
+            rank=None,
+            disqualified=True,
+        )
+    except IntegrityError:
+        # Race: bir vaqtda submit bilan kelishi mumkin. E'tibor bermaymiz.
+        pass
+
+
+def finalize_cheating_disqualification(session, olympiad, reviewed_by, now=None):
+    """PENDING_REVIEW sessiyani DISQUALIFIED ga o'tkazadi + attempt yaratadi.
+
+    Faqat DB mutatsiyasi — chaqiruvchi tranzaksiya (select_for_update) ichida
+    ishlatadi. `reviewed_by=None` — avtomatik (10 daqiqalik timeout) qaror;
+    aks holda menejer/owner user. Yakuniy xabar (send_cheating_detected_
+    notification) tranzaksiyadan TASHQARIDA, alohida yuboriladi.
+    """
+    now = now or timezone.now()
+    session.reviewed_by = reviewed_by
+    session.reviewed_at = now
+    session.status = TestSession.STATUS_DISQUALIFIED
+    session.disqualified_at = session.disqualified_at or now
+    session.save(update_fields=[
+        'reviewed_by', 'reviewed_at', 'status', 'disqualified_at',
+    ])
+    _create_disqualified_attempt(session.user, olympiad, session)
+
+
+def notify_cheating_confirmed(student, olympiad, reason=''):
+    """Yakuniy 'diskvalifikatsiya tasdiqlandi' xabarini yuboradi (best-effort)."""
+    try:
+        from notifications.services import send_cheating_detected_notification
+
+        send_cheating_detected_notification(student, olympiad, olympiad.center, reason)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception('cheating confirm notification failed')
+
+
 class ReportCheatingView(APIView):
-    """POST /api/attempts/cheating/ — disqualify current user's test session.
+    """POST /api/attempts/cheating/ — flag current user's session for review.
 
     Throttle: foydalanuvchi bir daqiqada 5 martadan ortiq cheating signal
     yubora olmaydi — aks holda olimpiada paytida frontend bug yoki yomon
@@ -726,55 +787,119 @@ class ReportCheatingView(APIView):
                 return Response({'detail': "Test session topilmadi"}, status=http_status.HTTP_400_BAD_REQUEST)
             if session.status == TestSession.STATUS_COMPLETED:
                 return Response({'disqualified': False, 'detail': 'Attempt already submitted'})
-            notify = session.status != TestSession.STATUS_DISQUALIFIED
-            session.status = TestSession.STATUS_DISQUALIFIED
-            session.disqualified_at = session.disqualified_at or timezone.now()
+            # Idempotent: allaqachon tekshiruvda yoki diskvalifikatsiya
+            # qilingan bo'lsa qayta trigger qilinmaydi (takroriy tab-hide
+            # hodisalari yangi xabar/holat o'zgarishiga sabab bo'lmaydi).
+            if session.status in (
+                TestSession.STATUS_PENDING_REVIEW,
+                TestSession.STATUS_DISQUALIFIED,
+            ):
+                return Response({'status': session.status})
+
+            # Darhol DQ qilmasdan — menejer/owner tekshiruviga yuboramiz.
+            # Student "kutilmoqda" ekranida qoladi, taymer to'xtaydi.
+            session.status = TestSession.STATUS_PENDING_REVIEW
+            session.review_requested_at = timezone.now()
             session.cheating_reason = session.cheating_reason or reason
-            session.save(update_fields=['status', 'disqualified_at', 'cheating_reason'])
+            session.save(update_fields=[
+                'status', 'review_requested_at', 'cheating_reason',
+            ])
 
-            # Diskvalifikatsiya bo'lgan student uchun ham attempt yaratamiz —
-            # aks holda na leaderboard'da, na manager paneli statistikasida
-            # ko'rinmasdi. score=0, disqualified=True bilan iz qoldiramiz.
-            # Session boshlanganidan hozirgacha bo'lgan vaqtni time_spent qilamiz.
-            time_spent = max(0, int(
-                (timezone.now() - session.started_at).total_seconds()
-            )) if session.started_at else 0
-            if olympiad.duration_minutes:
-                time_spent = min(time_spent, olympiad.duration_minutes * 60)
-            try:
-                TestAttempt.objects.create(
-                    user=request.user,
-                    olympiad=olympiad,
-                    answers={},
-                    score=0,
-                    correct_count=0,
-                    wrong_count=0,
-                    total_questions=0,
-                    time_spent=time_spent,
-                    rank=None,
-                    disqualified=True,
-                )
-            except IntegrityError:
-                # Race: bir vaqtda submit bilan kelishi mumkin. E'tibor bermaymiz.
-                pass
+        try:
+            from notifications.services import send_pending_review_notification
 
-        if notify:
-            try:
-                from notifications.services import send_cheating_detected_notification
-
-                send_cheating_detected_notification(request.user, olympiad, olympiad.center, reason)
-            except Exception:
-                import logging
-                logging.getLogger(__name__).exception('cheating notification failed')
+            send_pending_review_notification(request.user, olympiad, olympiad.center, reason)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception('pending review notification failed')
         return Response({
-            'disqualified': True,
-            'detail': "Siz cheating qildingiz. Olimpiada yakunlandi.",
+            'status': 'pending_review',
+            'detail': "Harakatingiz menejer tomonidan tekshirilmoqda.",
         })
 
 
 # URL routing FBV-shaklidagi callable kutadi — CBV'ni `.as_view()` orqali
 # beramiz, shunda urls.py'dagi `views.report_cheating` o'zgarmasdan ishlaydi.
 report_cheating = ReportCheatingView.as_view()
+
+
+class ReviewCheatingCaseView(APIView):
+    """POST /api/attempts/cheating/review/ — manager/owner qarori.
+
+    Body: {"session_id": <int>, "decision": "disqualify" | "continue"}.
+    Faqat olimpiadani boshqara oladigan foydalanuvchi (manager/owner/teacher/
+    admin) chaqira oladi. Ikki menejer bir vaqtda bosishi (race) — `select_for_
+    update()` + status tekshiruvi bilan himoyalangan: PENDING_REVIEW bo'lmasa
+    409 qaytadi.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            session_id = int(request.data.get('session_id'))
+        except (TypeError, ValueError):
+            return Response({'detail': 'session_id majburiy'}, status=http_status.HTTP_400_BAD_REQUEST)
+        decision = str(request.data.get('decision') or '').strip()
+        if decision not in ('disqualify', 'continue'):
+            return Response(
+                {'detail': "decision 'disqualify' yoki 'continue' bo'lishi kerak"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+
+        student = None
+        olympiad = None
+        cheating_reason = ''
+        with transaction.atomic():
+            session = (
+                TestSession.objects
+                .select_for_update()
+                .select_related('user', 'olympiad', 'olympiad__center', 'olympiad__center__owner')
+                .filter(pk=session_id)
+                .first()
+            )
+            if not session:
+                return Response({'detail': "Sessiya topilmadi"}, status=http_status.HTTP_404_NOT_FOUND)
+
+            olympiad = session.olympiad
+            if not _user_can_manage_olympiad(request.user, olympiad):
+                return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+            # Race: boshqa menejer allaqachon qaror qilgan bo'lsa 409.
+            if session.status != TestSession.STATUS_PENDING_REVIEW:
+                return Response(
+                    {
+                        'detail': 'Bu holat allaqachon hal qilingan.',
+                        'status': session.status,
+                    },
+                    status=http_status.HTTP_409_CONFLICT,
+                )
+
+            now = timezone.now()
+            if decision == 'disqualify':
+                finalize_cheating_disqualification(session, olympiad, request.user, now=now)
+                student = session.user
+                cheating_reason = session.cheating_reason or ''
+            else:  # continue
+                # Kutishda o'tkazilgan vaqtni paused_seconds ga qo'shamiz —
+                # imtihon muddati shu qadar uzayadi (timer freeze accounting).
+                elapsed = 0
+                if session.review_requested_at:
+                    elapsed = max(0, int((now - session.review_requested_at).total_seconds()))
+                session.reviewed_by = request.user
+                session.reviewed_at = now
+                session.status = TestSession.STATUS_ACTIVE
+                session.paused_seconds = (session.paused_seconds or 0) + elapsed
+                session.save(update_fields=[
+                    'reviewed_by', 'reviewed_at', 'status', 'paused_seconds',
+                ])
+
+        if decision == 'disqualify' and student is not None:
+            notify_cheating_confirmed(student, olympiad, cheating_reason)
+
+        return Response({'ok': True, 'decision': decision})
+
+
+review_cheating_case = ReviewCheatingCaseView.as_view()
 
 
 @api_view(['GET'])
@@ -1975,6 +2100,7 @@ def test_session_ping(request):
         session = (
             TestSession.objects
             .select_for_update()
+            .select_related('olympiad')
             .filter(user=request.user, olympiad_id=olympiad_id)
             .first()
         )
@@ -1989,8 +2115,10 @@ def test_session_ping(request):
         if session.status == TestSession.STATUS_COMPLETED:
             return Response({'ok': True, 'status': session.status})
 
-        # Parallel sessiya tekshiruvi — device_id berilgan bo'lsa.
-        if device_id:
+        # Parallel sessiya tekshiruvi — device_id berilgan va sessiya ACTIVE
+        # bo'lsa. PENDING_REVIEW (kutish) yoki DISQUALIFIED holatda parallel-
+        # qurilma DQ qilinmaydi — quyida joriy holat qaytariladi.
+        if device_id and session.status == TestSession.STATUS_ACTIVE:
             if (
                 session.last_device_id
                 and session.last_device_id != device_id
@@ -2019,6 +2147,20 @@ def test_session_ping(request):
             status=http_status.HTTP_409_CONFLICT,
         )
 
+    # Tekshiruv (human-in-the-loop) natijasini polling client ko'rishi uchun
+    # joriy holatni qaytaramiz. Diskvalifikatsiya tasdiqlangan bo'lsa —
+    # parallel-sessiya bilan bir xil 409 shaklida, lekin alohida sabab bilan.
+    if session.status == TestSession.STATUS_DISQUALIFIED:
+        return Response(
+            {
+                'disqualified': True,
+                'status': session.status,
+                'reviewed_at': session.reviewed_at.isoformat() if session.reviewed_at else None,
+                'detail': "Harakatingiz qoidabuzarlik deb topildi. Olimpiada yakunlandi.",
+            },
+            status=http_status.HTTP_409_CONFLICT,
+        )
+
     # Cacheni yangilash (timeout 60 soniya, agar 60s ichida ping kelmasa oflayn hisoblanadi)
     cache_key = f"test_session_ping:{olympiad_id}:{request.user.id}"
     cache.set(cache_key, {
@@ -2027,7 +2169,19 @@ def test_session_ping(request):
         'last_ping': now.isoformat(),
     }, timeout=60)
 
-    return Response({'ok': True})
+    # Har javobda joriy `status` qaytadi: `active` (yoki review'dan keyin
+    # `active` + `reviewed_at` — davom etish signali) yoki `pending_review`
+    # (hali kutilmoqda). Resume'da frontend taymerni serverning yangilangan
+    # effektiv muddati (paused_seconds hisobga olingan) bilan resync qiladi.
+    resp = {'ok': True, 'status': session.status}
+    if session.reviewed_at:
+        resp['reviewed_at'] = session.reviewed_at.isoformat()
+    from .session_utils import session_end_time
+    end_time = session_end_time(session, session.olympiad)
+    if end_time:
+        resp['expires_at'] = end_time.isoformat()
+        resp['server_now'] = now.isoformat()
+    return Response(resp)
 
 
 test_session_ping.cls.throttle_scope = 'ping'
@@ -2102,6 +2256,7 @@ def olympiad_live_proctoring(request, olympiad_id):
             escapes = ping_data.get('tab_escapes', 0)
 
         status = 'active'
+        pending_review = False
         if attempt:
             status = 'disqualified' if attempt.disqualified else 'completed'
             is_online = False
@@ -2109,14 +2264,21 @@ def olympiad_live_proctoring(request, olympiad_id):
         elif s.status == TestSession.STATUS_DISQUALIFIED:
             status = 'disqualified'
             is_online = False
+        elif s.status == TestSession.STATUS_PENDING_REVIEW:
+            # Cheating aniqlanib, menejer/owner qarorini kutmoqda.
+            status = 'pending_review'
+            pending_review = True
 
         results.append({
+            'session_id': s.id,
             'student_id': user.id,
             'student_name': user.full_name or user.phone or 'O\'quvchi',
             'avatar_url': avatar_url_for(user, request),
             'phone': user.normalized_phone or user.phone or '—',
             'started_at': s.started_at.isoformat(),
             'status': status,
+            'pending_review': pending_review,
+            'review_requested_at': s.review_requested_at.isoformat() if s.review_requested_at else None,
             'cheating_reason': s.cheating_reason,
             'answered_count': answered,
             'total_questions': len(s.question_order) or olympiad_question_count or 0,

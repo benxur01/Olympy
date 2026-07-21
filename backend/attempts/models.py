@@ -78,10 +78,15 @@ class TestSession(models.Model):
     STATUS_ACTIVE = 'active'
     STATUS_DISQUALIFIED = 'disqualified'
     STATUS_COMPLETED = 'completed'
+    # Cheating aniqlangach session darhol DQ qilinmaydi — menejer/owner
+    # tasdiqlashini kutadi. Bu davrda student "tekshirilmoqda" ekranida
+    # kutadi va imtihon taymeri to'xtatiladi (paused_seconds hisoblanadi).
+    STATUS_PENDING_REVIEW = 'pending_review'
     STATUS_CHOICES = [
         (STATUS_ACTIVE, 'Active'),
         (STATUS_DISQUALIFIED, 'Disqualified'),
         (STATUS_COMPLETED, 'Completed'),
+        (STATUS_PENDING_REVIEW, 'Pending review'),
     ]
 
     user = models.ForeignKey(
@@ -105,6 +110,24 @@ class TestSession(models.Model):
     # kelsa — bir vaqtda ikki qurilmadan kirilgan deb hisoblanadi va session DQ.
     last_device_id = models.CharField(max_length=64, blank=True, default='')
     last_ping_at = models.DateTimeField(null=True, blank=True)
+    # Human-in-the-loop cheating tekshiruvi. Cheating aniqlangach session
+    # PENDING_REVIEW holatiga o'tadi va menejer/owner qaror qilishini kutadi.
+    # `review_requested_at` — kutish boshlangan vaqt (10 daqiqalik auto-timeout
+    # shu vaqtdan hisoblanadi). `reviewed_by`/`reviewed_at` — qaror kim va qachon
+    # qilgani (auto-disqualify'da reviewed_by=None bo'lib audit izini qoldiradi).
+    review_requested_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_test_sessions',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    # PENDING_REVIEW da o'tkazilgan umumiy soniyalar. Imtihon muddati shu qadar
+    # uzaytiriladi (session_end_time), shunda student tekshiruvni kutib vaqt
+    # yo'qotmaydi. Bir sessiyada bir necha marta pending bo'lsa yig'iladi.
+    paused_seconds = models.PositiveIntegerField(default=0)
 
     class Meta:
         ordering = ['-started_at']

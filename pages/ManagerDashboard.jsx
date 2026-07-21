@@ -69,6 +69,9 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [proctoringError, setProctoringError] = React.useState('');
   const [proctoringSearch, setProctoringSearch] = React.useState('');
   const debouncedProctoringSearch = useDebounce(proctoringSearch, 300);
+  // Cheating tekshiruvi: qaror yuborilayotgan session_id'lar (tugmalarni
+  // ikki marta bosishdan himoya — click paytida darhol disable).
+  const [reviewBusyIds, setReviewBusyIds] = React.useState({});
   // Kod (IT) javoblari modali — natijalar sahifasidan ochiladi.
   const [codeSubModal, setCodeSubModal] = React.useState(null); // null | { id, title }
   const [codeSubData, setCodeSubData] = React.useState([]);
@@ -257,6 +260,30 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       });
   }, [isApi, liveOlympiadId]);
 
+  // Cheating tekshiruvi bo'yicha qaror: 'disqualify' yoki 'continue'.
+  // Tugmalar bosilishi bilan disable qilinadi (ikki marta yuborishning oldini
+  // olish). 409 — boshqa menejer allaqachon hal qilgan; toast + refresh.
+  const handleReviewCheating = React.useCallback((sessionId, decision) => {
+    if (!isApi || !sessionId || reviewBusyIds[sessionId]) return;
+    setReviewBusyIds(prev => ({ ...prev, [sessionId]: true }));
+    OlympyApi.reviewCheatingCase(sessionId, decision, OlympyApi.getToken())
+      .then(() => {
+        showToast(decision === 'disqualify' ? 'Diskvalifikatsiya qilindi' : 'Davom etishga ruxsat berildi');
+      })
+      .catch(err => {
+        if (err?.status === 409) {
+          showToast('Bu holat allaqachon hal qilingan');
+        } else {
+          console.warn('reviewCheatingCase failed:', err);
+          showToast(OlympyApi.toUserMessage?.(err) || "Amalni bajarib bo'lmadi");
+        }
+      })
+      .finally(() => {
+        setReviewBusyIds(prev => { const n = { ...prev }; delete n[sessionId]; return n; });
+        loadProctoring();
+      });
+  }, [isApi, reviewBusyIds, loadProctoring]);
+
   // Kod (IT) javoblari modalini ochish va yuklash.
   const openCodeSubmissions = (olympiad) => {
     if (!isApi) { showToast('Real server rejimida ishlaydi'); return; }
@@ -387,19 +414,24 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       });
   };
 
+  // Adaptiv polling: biror o'quvchi tekshiruv kutayotgan bo'lsa (pending_review)
+  // menejer qarorini tezroq ko'rsatish va student kam kutishi uchun 5s ga
+  // qisqartiramiz; aks holda oddiy 10s.
+  const hasPendingReview = proctoringData.some(p => p.pending_review);
   React.useEffect(() => {
     if (page !== 'proctoring' || !liveOlympiadId) return undefined;
     setProctoringLoading(true);
     loadProctoring().finally(() => setProctoringLoading(false));
 
+    const intervalMs = hasPendingReview ? 5000 : 10000;
     const interval = setInterval(() => {
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
         loadProctoring();
       }
-    }, 10000);
+    }, intervalMs);
 
     return () => clearInterval(interval);
-  }, [page, liveOlympiadId, loadProctoring]);
+  }, [page, liveOlympiadId, loadProctoring, hasPendingReview]);
 
   React.useEffect(() => {
     setAssignedQuestionIds(assignModal?.questionIds || []);
@@ -1737,6 +1769,19 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                         Oflayn
                       </span>
                     );
+                  } else if (p.pending_review || p.status === 'pending_review') {
+                    // Cheating aniqlandi — menejer/owner qarorini kutmoqda (amber).
+                    statusBadge = (
+                      <span className="rounded-lg bg-amber-500/15 border border-amber-500/40 px-2 py-1 text-xs font-bold text-amber-300 inline-flex items-center gap-1">
+                        ⏳ Tekshiruv kutilmoqda
+                      </span>
+                    );
+                    onlineIndicator = (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-300">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                        Qaror kutilmoqda
+                      </span>
+                    );
                   } else {
                     // active
                     statusBadge = (
@@ -1827,6 +1872,23 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                           </div>
                         ) : p.status === 'disqualified' ? (
                           <span className="font-bold text-rose-400 text-xs">Natija bekor qilingan</span>
+                        ) : (p.pending_review || p.status === 'pending_review') ? (
+                          <div className="flex flex-col gap-1.5 min-w-[160px]">
+                            <button
+                              onClick={() => handleReviewCheating(p.session_id, 'disqualify')}
+                              disabled={!!reviewBusyIds[p.session_id]}
+                              className="btn-danger text-xs px-3 py-1.5 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Diskvalifikatsiya qilish
+                            </button>
+                            <button
+                              onClick={() => handleReviewCheating(p.session_id, 'continue')}
+                              disabled={!!reviewBusyIds[p.session_id]}
+                              className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Davom etishga ruxsat
+                            </button>
+                          </div>
                         ) : (
                           <span className="text-white/30 text-xs">Test topshirilmoqda...</span>
                         )}

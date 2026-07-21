@@ -474,6 +474,62 @@ def send_cheating_detected_notification(student, olympiad, center, reason=''):
             seen_push.discard(user.id)
 
 
+def send_pending_review_notification(student, olympiad, center, reason=''):
+    """Cheating aniqlanib TEKSHIRUV KUTILAYOTGANI haqida menejer/owner'ga xabar.
+
+    `send_cheating_detected_notification` bilan bir xil fan-out (owner + eng
+    so'nggi 3 manager push, qolganlari in-app), lekin matn shoshilinch: menejer
+    darhol qaror qilishi kerak (aks holda 10 daqiqadan keyin avto-diskvalifikatsiya).
+    """
+    reason_label = reason or 'test oynasidan chiqdi'
+    message = (
+        f"⚠️ {student.full_name} cheating deb belgilandi — tekshiruv kerak.\n"
+        f"Olimpiada: {olympiad.title}\n"
+        f"Sabab: {reason_label}\n"
+        f"Iltimos, jonli nazorat panelida qaror qiling. 10 daqiqada javob "
+        f"berilmasa avtomatik diskvalifikatsiya qilinadi."
+    )
+    from centers.models import CenterMembership
+
+    PUSH_CAP = 4  # owner + 3 manager max
+    in_app_recipients = []
+    push_recipients = []
+
+    manager_memberships = list(
+        CenterMembership.objects.filter(
+            center=center,
+            role=CenterMembership.ROLE_MANAGER,
+            status=CenterMembership.STATUS_APPROVED,
+        ).select_related('user').order_by('-created_at')
+    )
+
+    if center.owner_id:
+        push_recipients.append(center.owner)
+        in_app_recipients.append(center.owner)
+
+    for membership in manager_memberships:
+        in_app_recipients.append(membership.user)
+        if len(push_recipients) < PUSH_CAP:
+            push_recipients.append(membership.user)
+
+    seen_in_app = set()
+    seen_push = {u.id for u in push_recipients if u}
+    for user in in_app_recipients:
+        if not user or user.id in seen_in_app:
+            continue
+        seen_in_app.add(user.id)
+        Notification.objects.create(
+            user=user,
+            center=center,
+            type=Notification.TYPE_PENDING_CHEATING_REVIEW,
+            title='Cheating — tekshiruv kerak',
+            message=message,
+        )
+        if user.id in seen_push:
+            _send_telegram_to_user(user, message)
+            seen_push.discard(user.id)
+
+
 def send_olympiad_summary_to_manager(olympiad, center):
     """Olimpiada tugagandan keyin markazga tegishli menejer/ustozlarga xulosa
     yuboradi (Telegram Markdown).

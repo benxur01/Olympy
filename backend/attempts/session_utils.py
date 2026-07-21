@@ -18,7 +18,15 @@ from .models import TestSession
 def session_end_time(session, olympiad):
     if not session or not olympiad.duration_minutes:
         return None
-    return session.started_at + timedelta(minutes=olympiad.duration_minutes)
+    # Effektiv muddat = boshlang'ich muddat + tekshiruv (pending_review) uchun
+    # to'xtatilgan vaqt. Shunda student menejer qarorini kutgan davr uchun
+    # imtihon vaqtidan yutqazmaydi (timer freeze).
+    paused = getattr(session, 'paused_seconds', 0) or 0
+    return (
+        session.started_at
+        + timedelta(minutes=olympiad.duration_minutes)
+        + timedelta(seconds=paused)
+    )
 
 
 # Submit grace period: frontend timer 0 ga yetganda submit yuboradi, lekin

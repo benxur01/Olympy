@@ -610,6 +610,13 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'olympiads.tasks.send_starting_soon_reminders',
         'schedule': timedelta(minutes=1),
     },
+    # Cheating tekshiruvi (human-in-the-loop): menejer 10 daqiqada javob
+    # bermasa avtomatik diskvalifikatsiya (xavfsiz default). Har daqiqa
+    # tekshiradi — maksimal kechikish ~1 daqiqa.
+    'auto-disqualify-pending-reviews': {
+        'task': 'attempts.tasks.auto_disqualify_pending_reviews',
+        'schedule': timedelta(minutes=1),
+    },
 }
 
 

@@ -1497,6 +1497,15 @@ def olympiad_questions(request, olympiad_id):
             {'detail': "Siz cheating qildingiz. Olimpiada yakunlandi."},
             status=http_status.HTTP_403_FORBIDDEN,
         )
+    # Human-in-the-loop tekshiruv kutilmoqda (masalan, student tabni yopib
+    # qayta ochgan) — savollarni ko'rsatmaymiz, frontend "kutilmoqda" ekranini
+    # ko'rsatadi. Taymer paused_seconds bilan uzaytirilgani uchun session
+    # timing'ni ham qaytaramiz (resume'da resync uchun).
+    if session.status == getattr(session, 'STATUS_PENDING_REVIEW', 'pending_review'):
+        return Response({
+            'status': 'pending_review',
+            'session': session_timing_payload(session, olympiad),
+        })
     if session_is_expired(session, olympiad):
         return Response(
             {'detail': "Test vaqti tugagan"},
