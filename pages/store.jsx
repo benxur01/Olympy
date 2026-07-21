@@ -734,6 +734,7 @@ const mapApiOlympiad = (o) => {
     id: String(o.id),
     backendId: o.id,
     centerId: o.center != null ? String(o.center) : null,
+    centerName: o.center_name || null,
     eventType: o.event_type || o.eventType || 'competition',
     title: o.title,
     subject: o.subject,

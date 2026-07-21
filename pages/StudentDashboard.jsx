@@ -3153,6 +3153,7 @@ const OlympiadCard = ({ olympiad: o, onStart, locked, readinessPct, attempted, o
         <span className="flex items-center gap-1"><Icon name="clock" size={12} /> {time} · {o.duration} daqiqa</span>
         <span className="flex items-center gap-1"><Icon name="file" size={12} /> {qCount} ta savol</span>
         <span className="flex items-center gap-1"><Icon name="users" size={12} /> {o.participants || 0} ishtirokchi</span>
+        {o.centerName && <span className="flex items-center gap-1"><Icon name="building" size={12} /> {o.centerName}</span>}
       </div>
       {/* Mashq tugmasi faqat tugagan olimpiadada (allaqachon topshirilgan)
           ko'rinadi va "Natijani ko'rish" yonida yonma-yon turadi. Mashq rejimi
