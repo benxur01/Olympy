@@ -18,6 +18,8 @@ from attempts.models import TestAttempt
 from centers.models import CenterMembership
 from olympiads.models import Olympiad
 
+from billing.services import can_start_practice, student_tier_at_least
+
 from .utils import avatar_url_for, is_user_premium
 
 # Reyting tarixi (score-timeline) uchun premium bo'lmagan o'quvchiga ko'rsatiladigan
@@ -27,16 +29,20 @@ FREE_TIMELINE_DAYS = 7
 ALLOWED_TIMELINE_DAYS = (30, 90)
 
 
-def _premium_required_response():
-    """Premium bo'lmagan o'quvchi uchun 403 javobi."""
-    return Response(
-        {
-            'detail': "Bu funksiya premium o'quvchilar uchun. "
-                      "Premium olish uchun markaz adminiga murojaat qiling.",
-            'upgrade_required': True,
-        },
-        status=http_status.HTTP_403_FORBIDDEN,
-    )
+def _premium_required_response(required_tier=None):
+    """Premium bo'lmagan (yoki tier'i yetmagan) o'quvchi uchun 403 javobi.
+
+    `required_tier` berilsa (masalan 'plus'/'pro') javob tanasiga qo'shiladi —
+    frontend qaysi tarifga ko'tarilish kerakligini ko'rsatishi uchun.
+    """
+    body = {
+        'detail': "Bu funksiya premium o'quvchilar uchun. "
+                  "Premium olish uchun markaz adminiga murojaat qiling.",
+        'upgrade_required': True,
+    }
+    if required_tier:
+        body['required_tier'] = required_tier
+    return Response(body, status=http_status.HTTP_403_FORBIDDEN)
 
 
 @api_view(['GET'])
@@ -97,13 +103,19 @@ def score_timeline(request):
     }
     """
     premium = is_user_premium(request.user)
+    # Pro tarifi 365 kunlik (1 yillik) oynani ham tanlashi mumkin. Standart/Plus
+    # (va bepul) uchun faqat 30/90 — 365 so'ralsa 90 ga tushiriladi (xato emas).
+    is_pro = student_tier_at_least(request.user, 'pro')
 
     try:
         requested_days = int(request.query_params.get('days') or 30)
     except (TypeError, ValueError):
         requested_days = 30
-    if requested_days not in ALLOWED_TIMELINE_DAYS:
-        requested_days = 30
+    allowed_days = ALLOWED_TIMELINE_DAYS + ((365,) if is_pro else ())
+    if requested_days not in allowed_days:
+        # Pro-only 365 so'ralgan (lekin tier yetmagan) — 90 ga clamp; boshqa
+        # noto'g'ri qiymatlar 30 ga tushadi.
+        requested_days = 90 if requested_days == 365 else 30
 
     # Premium bo'lmasa oynani 7 kunga qisqartiramiz (lekin foydalanuvchi
     # so'ragan to'liq oynani `full_days` da qaytaramiz — frontend "yana N kun
@@ -207,9 +219,11 @@ def competitor_analysis(request):
 
     Berilgan olimpiadada (yoki so'nggi qatnashilganda) foydalanuvchining
     o'rni, yuqorisidagi raqib bilan farqi va percentile.
+
+    Plus yoki Pro tarifi talab qilinadi (raqobat tahlili — kengaytirilgan tier).
     """
-    if not is_user_premium(request.user):
-        return _premium_required_response()
+    if not student_tier_at_least(request.user, 'plus'):
+        return _premium_required_response(required_tier='plus')
     olympiad_id = request.query_params.get('olympiad_id')
     my_attempt = None
     if olympiad_id:
@@ -369,9 +383,11 @@ def study_plan(request):
 
     Zaiflik xaritasidan zaif fanlar olinadi va Gemini'ga haftalik reja
     so'rovi yuboriladi. Javob: {"plan": ["1. ...", "2. ..."]}.
+
+    Plus yoki Pro tarifi talab qilinadi (AI o'quv rejasi — kengaytirilgan tier).
     """
-    if not is_user_premium(request.user):
-        return _premium_required_response()
+    if not student_tier_at_least(request.user, 'plus'):
+        return _premium_required_response(required_tier='plus')
     perf = _subject_performance(request.user)
     if not perf:
         return Response({
@@ -410,6 +426,126 @@ def study_plan(request):
 
 
 study_plan.cls.throttle_scope = 'ai'
+
+
+# ─── Kunlik AI mashq to'plami (Daily AI Practice Set) — Standart+ ────────────
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
+def daily_practice_set(request):
+    """GET /api/me/daily-practice/ — kunlik AI mashq to'plami (5 ta savol).
+
+    Standart yoki undan yuqori tarif talab qilinadi. O'sha kunga to'plam
+    mavjud bo'lsa — saqlangani qaytariladi (AI chaqiruvi yo'q). Aks holda
+    o'quvchining eng zaif fani aniqlanib, Gemini orqali 5 ta o'rta darajali
+    ko'p tanlovli savol generatsiya qilinadi va saqlanadi. Baholash frontend'da
+    (savollarda to'g'ri javob indeksi bor). Throttle: 'ai' scope.
+
+    Javob: {date, subject, questions: [{text, options, correct_answer, ...}]}.
+    """
+    from accounts.models import DailyPracticeSet
+    from questions.ai_generation import TYPE_MULTIPLE_CHOICE, generate_questions
+
+    if not student_tier_at_least(request.user, 'standart'):
+        return _premium_required_response(required_tier='standart')
+
+    today = timezone.now().date()
+    existing = DailyPracticeSet.objects.filter(user=request.user, date=today).first()
+    if existing is not None:
+        return Response({
+            'date': existing.date.isoformat(),
+            'subject': existing.subject,
+            'questions': existing.questions or [],
+        })
+
+    # Birinchi so'rov — eng zaif fanni aniqlaymiz. '—' (fan belgilanmagan) va
+    # bo'sh nomlarni chiqarib tashlaymiz; tarix bo'lmasa oqilona fallback fan.
+    perf = _subject_performance(request.user)
+    clean_perf = {s: p for s, p in perf.items() if s and s != '—'}
+    if clean_perf:
+        weak_subject = min(clean_perf.items(), key=lambda kv: kv[1])[0]
+    else:
+        weak_subject = 'Matematika'
+
+    result = generate_questions(
+        subject=weak_subject,
+        topic=weak_subject,
+        count=5,
+        difficulty='medium',
+        question_type=TYPE_MULTIPLE_CHOICE,
+    )
+    if not result.get('ok') or not result.get('questions'):
+        # Buzuq (bo'sh) to'plamni saqlamaymiz — xatoni qaytaramiz, keyingi
+        # so'rov qayta urinishi mumkin bo'lsin.
+        return Response(
+            {'detail': result.get('error') or "Mashq to'plamini yaratib bo'lmadi. Keyinroq urinib ko'ring."},
+            status=http_status.HTTP_502_BAD_GATEWAY,
+        )
+
+    obj, _created = DailyPracticeSet.objects.get_or_create(
+        user=request.user, date=today,
+        defaults={'subject': weak_subject, 'questions': result['questions']},
+    )
+    return Response({
+        'date': obj.date.isoformat(),
+        'subject': obj.subject,
+        'questions': obj.questions or [],
+    })
+
+
+daily_practice_set.cls.throttle_scope = 'ai'
+
+
+# ─── Shaxsiy AI test generatori (Custom AI Test Builder) — Plus+ ─────────────
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
+def custom_ai_test(request):
+    """POST /api/me/custom-test/ — foydalanuvchi tanlagan fan/mavzu bo'yicha AI test.
+
+    Plus yoki undan yuqori tarif talab qilinadi. So'rov tanasidan `subject`,
+    `topic` va (ixtiyoriy) `difficulty` olinadi va Gemini orqali 10 ta ko'p
+    tanlovli savol generatsiya qilinadi. Saqlanmaydi (har so'rov bir martalik) —
+    baholash to'liq frontend'da (savollarda to'g'ri javob indeksi bor).
+    Throttle: 'ai_question' scope (20/soat).
+
+    Javob: {questions: [{text, options, correct_answer, ...}]}.
+    """
+    from questions.ai_generation import TYPE_MULTIPLE_CHOICE, generate_questions
+
+    if not student_tier_at_least(request.user, 'plus'):
+        return _premium_required_response(required_tier='plus')
+
+    subject = str(request.data.get('subject') or '').strip()
+    topic = str(request.data.get('topic') or '').strip()
+    difficulty = request.data.get('difficulty')
+    if not subject or not topic:
+        return Response(
+            {'detail': 'Fan va mavzu majburiy.'},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+
+    result = generate_questions(
+        subject=subject,
+        topic=topic,
+        count=10,
+        difficulty=difficulty or 'medium',
+        question_type=TYPE_MULTIPLE_CHOICE,
+    )
+    if not result.get('ok') or not result.get('questions'):
+        return Response(
+            {'detail': result.get('error') or "Test yaratib bo'lmadi. Keyinroq urinib ko'ring."},
+            status=http_status.HTTP_502_BAD_GATEWAY,
+        )
+
+    return Response({'questions': result['questions']})
+
+
+custom_ai_test.cls.throttle_scope = 'ai_question'
 
 
 # ─── Student Progress Dashboard (premium emas — retention) ──────────────────
@@ -622,6 +758,104 @@ def ai_advice(request):
         'advices': advices,
         'weakest_subject': weakest_subject,
         'streak': streak,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def weekly_report_pdf(request):
+    """GET /api/me/weekly-report/ — o'quvchining haftalik hisobotini PDF yuklab olish.
+
+    Plus yoki Pro tarifi talab qilinadi. Oxirgi 7 kunlik natijalardan hisobot.
+    """
+    from django.http import HttpResponse
+    from .reports import generate_weekly_report_pdf
+
+    if not student_tier_at_least(request.user, 'plus'):
+        return _premium_required_response(required_tier='plus')
+
+    try:
+        pdf_bytes = generate_weekly_report_pdf(request.user)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "Weekly report generation failed for user %s", request.user.id,
+        )
+        return Response(
+            {'detail': "Hisobotni yaratib bo'lmadi. Keyinroq qayta urinib ko'ring."},
+            status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    filename = f"haftalik-hisobot-{request.user.id}.pdf"
+    if request.user.full_name:
+        cleaned_name = "".join(
+            c for c in request.user.full_name if c.isalnum() or c in (' ', '-', '_')
+        ).strip().replace(' ', '_')
+        filename = f"haftalik-hisobot-{cleaned_name}.pdf"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def portfolio_pdf(request):
+    """GET /api/me/portfolio/ — o'quvchining yutuqlar portfoliosini PDF yuklab olish.
+
+    Pro tarifi talab qilinadi. Butun tarixdagi natijalardan tuzilgan
+    verifikatsiya qilinadigan portfolio/sertifikat. PDF'dagi QR public verify
+    URL'iga (portfolio_uuid) yo'naltiradi — shuning uchun UUID null bo'lsa
+    download paytida lazy ravishda to'ldiriladi (certificate_uuid naqshi kabi).
+    """
+    import uuid as _uuid
+    from django.http import HttpResponse
+    from .reports import generate_portfolio_pdf
+
+    if not student_tier_at_least(request.user, 'pro'):
+        return _premium_required_response(required_tier='pro')
+
+    # Mavjud userlarda portfolio_uuid NULL bo'lishi mumkin — birinchi yuklab
+    # olishda to'ldiramiz, shunda QR/verify URL barqaror bo'ladi.
+    if not request.user.portfolio_uuid:
+        request.user.portfolio_uuid = _uuid.uuid4()
+        request.user.save(update_fields=['portfolio_uuid'])
+
+    try:
+        pdf_bytes = generate_portfolio_pdf(request.user)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception(
+            "Portfolio generation failed for user %s", request.user.id,
+        )
+        return Response(
+            {'detail': "Portfolioni yaratib bo'lmadi. Keyinroq qayta urinib ko'ring."},
+            status=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    filename = f"portfolio-{request.user.id}.pdf"
+    if request.user.full_name:
+        cleaned_name = "".join(
+            c for c in request.user.full_name if c.isalnum() or c in (' ', '-', '_')
+        ).strip().replace(' ', '_')
+        filename = f"portfolio-{cleaned_name}.pdf"
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def practice_quota(request):
+    """GET /api/me/practice-quota/ — joriy oydagi mashq (mock) limiti holati.
+
+    Frontend "used/limit" indikatorini ko'rsatishi uchun. Pro (cheksiz) uchun
+    `limit` null va `unlimited` True. Javob: {used, limit, unlimited}.
+    """
+    _allowed, used, limit = can_start_practice(request.user)
+    return Response({
+        'used': used,
+        'limit': limit,
+        'unlimited': limit is None,
     })
 
 
