@@ -58,6 +58,11 @@ urlpatterns = [
     path('me/subject-weakness/', views_student.subject_weakness, name='me-subject-weakness'),
     path('me/readiness/', views_student.readiness, name='me-readiness'),
     path('me/study-plan/', views_student.study_plan, name='me-study-plan'),
+    path('me/daily-practice/', views_student.daily_practice_set, name='me-daily-practice'),
+    path('me/custom-test/', views_student.custom_ai_test, name='me-custom-test'),
+    path('me/practice-quota/', views_student.practice_quota, name='me-practice-quota'),
+    path('me/weekly-report/', views_student.weekly_report_pdf, name='me-weekly-report'),
+    path('me/portfolio/', views_student.portfolio_pdf, name='me-portfolio'),
     # Student Progress Dashboard (premium emas) + oddiy AI tavsiyalar.
     path('me/progress/', views_student.progress_dashboard, name='me-progress'),
     path('me/ai-advice/', views_student.ai_advice, name='me-ai-advice'),
