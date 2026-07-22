@@ -7,7 +7,9 @@ from django.utils import timezone
 
 from .models import TestAttempt, AttemptAIAnalysis, CodeSubmission, TestSession
 from notifications.services import send_attempt_result_to_parents
-from questions.ai_generation import analyze_attempt_ai, review_code_submission
+from questions.ai_generation import (
+    analyze_attempt_ai, review_code_submission, review_essay_answer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +117,52 @@ def generate_attempt_ai_analysis_task(attempt_id):
         except Exception:
             logger.exception(
                 "Failed to mark AI analysis FAILED for attempt=%s", attempt_id,
+            )
+
+
+@shared_task
+def generate_essay_ai_feedback_task(feedback_id):
+    """On-demand: bitta insho javobi uchun chuqur AI tahlilini generatsiya qiladi."""
+    from .models import EssayAIFeedback
+    from .views_essay import _essay_answer_text
+
+    try:
+        feedback = EssayAIFeedback.objects.select_related(
+            'attempt', 'attempt__olympiad', 'question',
+        ).get(pk=feedback_id)
+    except EssayAIFeedback.DoesNotExist:
+        logger.warning(f"EssayAIFeedback {feedback_id} not found for AI feedback task")
+        return
+
+    if feedback.status == EssayAIFeedback.STATUS_READY:
+        return
+
+    try:
+        answer_text = _essay_answer_text(feedback.attempt, feedback.question)
+        result = review_essay_answer(
+            question_text=feedback.question.text,
+            essay_text=answer_text,
+            subject=feedback.attempt.olympiad.subject or '',
+        )
+        if result.get('ok'):
+            EssayAIFeedback.objects.filter(pk=feedback_id).update(
+                feedback_text=result.get('review') or '',
+                status=EssayAIFeedback.STATUS_READY,
+            )
+        else:
+            EssayAIFeedback.objects.filter(pk=feedback_id).update(
+                feedback_text=result.get('error') or '',
+                status=EssayAIFeedback.STATUS_FAILED,
+            )
+    except Exception as exc:
+        logger.exception(f"Essay AI feedback generation failed for id={feedback_id}: {exc}")
+        try:
+            EssayAIFeedback.objects.filter(pk=feedback_id).update(
+                status=EssayAIFeedback.STATUS_FAILED,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to mark EssayAIFeedback FAILED for id=%s", feedback_id,
             )
 
 
