@@ -260,6 +260,16 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
     () => isApi ? OlympyApi.getMyMonthlyStats(6, OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+  // Premium obuna muddati — hero'dagi "Premium" badge yonida amal qilish
+  // muddatini ko'rsatish uchun. StudentDashboard bilan bir xil endpoint
+  // (/api/billing/subscription/current/): end_date + days_remaining qaytaradi
+  // (bepul sinov ham, pullik obuna ham shu yerga tushadi). Faqat premium
+  // foydalanuvchida yuklaymiz.
+  const apiSubRes = useApiData(
+    () => (isApi && isPremium) ? OlympyApi.getCurrentSubscription(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, isPremium],
+  );
+  const currentSub = isApi && isPremium && apiSubRes.data ? apiSubRes.data : null;
   // API rejimida olimpiadalar ro'yxati — "Olimpiadalar" tab'i va natija
   // kartalaridagi sarlavha uchun. Avval bu store.olympiads dan olinardi va
   // API foydalanuvchisida hech narsa ko'rinmasdi.
@@ -480,6 +490,17 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                 return fromStore?.name || 'Tashkilotsiz';
               })()}</div>
               <div className="flex items-center gap-1.5 text-sm text-white/50"><Icon name="clock" size={14} />{user?.joined ? `${user.joined} dan` : '—'}</div>
+              {/* Premium muddati — StudentDashboard'dagi "Mening abonementim"
+                  bloki bilan bir xil format: "<sana> gacha (N kun qoldi)". */}
+              {isPremium && currentSub && (
+                <div className="flex items-center gap-1.5 text-sm text-amber-300/80">
+                  <Icon name="clock" size={14} />
+                  <span>Premium: <span className="font-bold text-amber-200">{fmtReceiptDate(currentSub.end_date)}</span> gacha</span>
+                  {typeof currentSub.days_remaining === 'number' && (
+                    <span className="font-bold text-emerald-300">({currentSub.days_remaining} kun qoldi)</span>
+                  )}
+                </div>
+              )}
             </div>
             <div className="flex flex-wrap gap-3 mt-3">
               <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="text-lg font-black text-white">{myResults.length}</div><div className="text-xs text-white/40">Olimpiada</div></div>

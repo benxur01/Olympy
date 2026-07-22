@@ -973,9 +973,19 @@ def attempt_detail(request, attempt_id):
     # ko'rishi mumkin. Bu javoblarni tahlil qilish uchun ishlatiladi —
     # foydalanuvchi qaysi savolda xato qilganini ko'rsata oladi.
     if is_owner or is_admin or (not is_owner and can_view):
+        from .session_utils import _deshuffle_index, _deshuffle_multi
         questions_review = []
         # answers dict kalitlari string yoki integer bo'lishi mumkin.
         answers = attempt.answers or {}
+        # Variantlar test paytida sessiya bo'yicha aralashtirilgan
+        # (get_or_create_test_session). Saqlangan javob indeksi shuffle
+        # qilingan ko'rinish tartibida — is_correct'ni to'g'ri hisoblash uchun
+        # score_session_answers/event_user_answers bilan bir xil de-shuffle
+        # qilamiz, aks holda to'g'ri javoblar ham noto'g'ri (qizil) ko'rinadi.
+        _review_session = TestSession.objects.filter(
+            user_id=attempt.user_id, olympiad=olympiad,
+        ).only('option_orders').first()
+        option_orders = (_review_session.option_orders if _review_session else {}) or {}
         # Kod (IT) javoblari — yuqorida `prefetch_related('code_submissions')`
         # bilan oldindan yuklangan; `.all()` orqali prefetch cache'dan o'qiymiz
         # (qo'shimcha DB so'rovi otmaymiz). `.filter(...)` ishlatsak prefetch
@@ -1016,6 +1026,16 @@ def attempt_detail(request, attempt_id):
             if raw_chosen is None:
                 raw_chosen = answers.get(q.id)
             chosen_val = _extract_review_chosen(raw_chosen, q_type)
+            # Variant indeksli turlar — shuffle qilingan indeksni asl indeksga
+            # o'giramiz (frontend variantlarni asl `q.options` tartibida
+            # ko'rsatadi, correct_answer ham asl indeks).
+            order = option_orders.get(str(q.id)) or list(
+                range(len(q.options or [])),
+            )
+            if q_type in ('mcq', 'yes_no'):
+                chosen_val = _deshuffle_index(chosen_val, order)
+            elif q_type == 'multiple_select':
+                chosen_val = _deshuffle_multi(chosen_val, order)
 
             # Yangi savol turlari (multiple_select/fill_blank/fill_blanks/
             # yes_no/essay) — grade_answer orqali baholanadi. Essay

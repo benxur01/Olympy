@@ -419,22 +419,6 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const content = (
     <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-3 md:px-4 py-4 md:py-10 mobile-content-pad`} style={embedded ? {} : { background: '#050508' }}>
       <div className="max-w-2xl w-full space-y-4 md:space-y-6 animate-in">
-        {/* Streak Celebration Banner */}
-        {!!user?.streakCount && (
-          <div className="glass-strong rounded-2xl p-4 bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-orange-500/10 border border-orange-500/30 flex items-center justify-between gap-3 shadow-[0_8px_32px_rgba(249,115,22,0.08)] animate-in">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl animate-bounce">🔥</span>
-              <div className="text-left">
-                <div className="text-sm font-black text-white">Ketma-ket {user.streakCount} kun faollik!</div>
-                <div className="text-[10px] text-white/50">Faollik alangangizni o'chirmaslik uchun har kuni mashq yoki olimpiada yeching.</div>
-              </div>
-            </div>
-            <div className="hidden sm:block text-xs font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2.5 py-1 rounded-xl">
-              Super!
-            </div>
-          </div>
-        )}
-
         {/* Hero result card */}
         <div className={`glass-strong rounded-3xl p-5 md:p-8 text-center bg-gradient-to-br ${grade.bg} border border-white/10 relative overflow-hidden`}>
           <div className="hero-glow" style={{ background: '#6366f1', top: '-60%', left: '30%', opacity: 0.1 }} />

@@ -424,7 +424,9 @@ const PricingPage = ({ onNavigate, user, onUserUpdate }) => {
                   <span className="text-3xl">✅</span>
                 </div>
                 <div>
-                  <p className="text-base font-black text-white">To'lov muvaffaqiyatli!</p>
+                  <p className="text-base font-black text-white">
+                    Tabriklaymiz! Siz {_pricingTierName(paymentPlan.name)} tarifiga o'tdingiz.
+                  </p>
                   <p className="mt-1.5 text-xs text-white/50">
                     Obunangiz faollashtirildi. Endi barcha imkoniyatlardan foydalanishingiz mumkin.
                   </p>
