@@ -24,12 +24,24 @@ services:
         destination: /index.html
     # Xavfsizlik headerlari — clickjacking, MIME-sniffing va XSS himoyasi.
     headers:
-      - path: /*
+      # Render'ning /* glob'i bare root '/' ni ba'zan qamramaydi — shuning
+      # uchun har bir header uchun aniq '/' entry ham qo'shildi (root document
+      # ham, boshqa yo'llar ham aniq qoplansin).
+      - path: /
         name: X-Frame-Options
         value: DENY
       - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /
         name: X-Content-Type-Options
         value: nosniff
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
       - path: /*
         name: Referrer-Policy
         value: strict-origin-when-cross-origin
@@ -38,6 +50,9 @@ services:
       # Google Identity Services (Google orqali kirish) uchun accounts.google.com
       # ruxsat etiladi: gsi/client skripti (script-src), One Tap iframe
       # (frame-src), so'rovlar (connect-src) va injected stillar (style-src).
+      - path: /
+        name: Content-Security-Policy
+        value: "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; img-src 'self' data: blob: https:; connect-src 'self' https://api.prolymp.uz https://*.onrender.com https://*.sentry.io https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; font-src 'self' data: https://fonts.gstatic.com; frame-ancestors 'none'"
       - path: /*
         name: Content-Security-Policy
         value: "default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style; img-src 'self' data: blob: https:; connect-src 'self' https://api.prolymp.uz https://*.onrender.com https://*.sentry.io https://accounts.google.com/gsi/; frame-src https://accounts.google.com/gsi/; font-src 'self' data: https://fonts.gstatic.com; frame-ancestors 'none'"
