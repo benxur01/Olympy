@@ -15,7 +15,11 @@ const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoa
     if (loading) return;
     setError('');
 
-    const clientId = window.GOOGLE_CLIENT_ID || '1088734327299-demo.apps.googleusercontent.com';
+    const clientId = window.GOOGLE_CLIENT_ID || import.meta.env?.VITE_GOOGLE_CLIENT_ID || '';
+    if (!clientId) {
+      setError("Google Client ID o'rnatilmagan. Google Cloud Console'dan Client ID olinib .env ga kiritilishi kerak.");
+      return;
+    }
 
     const triggerLoginWithCredential = async (credential) => {
       setLoading(true);
