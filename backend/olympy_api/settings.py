@@ -54,6 +54,8 @@ if not SECRET_KEY:
 # bo'lishi kerak. Kalit aylantirilsa eski shifrlangan kalitlar ochilmaydi
 # (foydalanuvchilar 2FA'ni qayta sozlashi kerak bo'ladi).
 TOTP_ENCRYPTION_KEY = os.environ.get('TOTP_ENCRYPTION_KEY') or None
+# Google OAuth 2.0 Client ID (ixtiyoriy, Google Login uchun).
+GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID') or None
 DEBUG = env_bool('OLYMPY_DEBUG', False)
 _allowed = os.environ.get('OLYMPY_ALLOWED_HOSTS', '')
 ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()] or (

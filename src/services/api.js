@@ -585,6 +585,7 @@ export const OlympyApi = {
   setExamMode,
   // Auth
   login: (payload) => request('/api/auth/login/', { method: 'POST', body: payload, retryOnAuth: false }),
+  loginWithGoogle: (payload) => request('/api/auth/google/', { method: 'POST', body: payload, retryOnAuth: false }),
   register: (payload) => request('/api/auth/register/', { method: 'POST', body: payload, retryOnAuth: false }),
   registerOrganization: (payload) => request('/api/auth/register-organization/', { method: 'POST', body: payload, retryOnAuth: false }),
   refreshToken: (refresh) => request('/api/auth/token/refresh/', { method: 'POST', body: refresh ? { refresh } : undefined, retryOnAuth: false }),
