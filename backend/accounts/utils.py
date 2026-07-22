@@ -209,6 +209,8 @@ def normalize_phone(raw):
     if raw is None:
         return ''
     text = str(raw).strip()
+    if text.startswith('google_'):
+        return text
     digits = re.sub(r'\D', '', text)
     if not digits:
         return ''

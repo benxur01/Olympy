@@ -1383,3 +1383,35 @@ class PortfolioVerifyTestCase(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
         self.assertFalse(resp.data['valid'])
         self.assertEqual(resp.data['reason'], 'not_found')
+
+
+class GoogleAuthTestCase(APITestCase):
+    """POST /api/auth/google/ — Google Login tests."""
+
+    @patch('urllib.request.urlopen')
+    def test_google_login_new_user_success(self, mock_urlopen):
+        import io
+        import json
+        mock_response = io.BytesIO(json.dumps({
+            'sub': '1234567890',
+            'email': 'newuser@gmail.com',
+            'email_verified': 'true',
+            'name': 'New Google User',
+            'given_name': 'New',
+            'family_name': 'User',
+        }).encode('utf-8'))
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        url = reverse('google-login')
+        response = self.client.post(url, {'id_token': 'fake_google_id_token', 'role': 'student'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn('user', response.data)
+        user = User.objects.get(phone='google_1234567890')
+        self.assertEqual(user.full_name, 'New User')
+        self.assertIn('student', user.roles)
+
+    def test_google_login_missing_token_bad_request(self):
+        url = reverse('google-login')
+        response = self.client.post(url, {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+

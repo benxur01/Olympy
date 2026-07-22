@@ -7,6 +7,7 @@ urlpatterns = [
     path('register/', views.register, name='register'),
     path('register-organization/', views.register_organization, name='register-organization'),
     path('login/', views.login, name='login'),
+    path('google/', views.google_login, name='google-login'),
     path('logout/', views.logout, name='logout'),
     path('token/refresh/', views.refresh_token, name='token-refresh'),
     path('restore/', views.restore_my_account, name='restore-my-account'),

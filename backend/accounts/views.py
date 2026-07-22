@@ -523,6 +523,95 @@ login.cls.throttle_scope = 'auth'
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @throttle_classes([ScopedRateThrottle])
+def google_login(request):
+    """POST /api/auth/google/ — Google OAuth2 login via ID Token verification.
+    Body: { "id_token": "...", "role": "student" }
+    """
+    id_token = request.data.get('id_token') or request.data.get('token') or request.data.get('credential')
+    if not id_token:
+        return Response({'detail': "Google ID Token ko'rsatilmadi."}, status=status.HTTP_400_BAD_REQUEST)
+
+    import urllib.request
+    import urllib.parse
+    import json
+    from django.contrib.auth import get_user_model
+    from django.db import models
+
+    User = get_user_model()
+
+    try:
+        url = f"https://oauth2.googleapis.com/tokeninfo?id_token={urllib.parse.quote(id_token)}"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Olympy-Auth/1.0'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            token_info = json.loads(resp.read().decode('utf-8'))
+    except Exception as exc:
+        logger.warning("Google token verification error: %s", exc)
+        return Response({'detail': "Google tokeni yaroqsiz yoki tasdiqlanmadi."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    if token_info.get('error') or token_info.get('error_description'):
+        return Response({'detail': token_info.get('error_description') or "Google tokeni yaroqsiz."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    google_client_id = getattr(settings, 'GOOGLE_CLIENT_ID', None)
+    aud = token_info.get('aud')
+    if google_client_id and aud and aud != google_client_id:
+        logger.warning("Google token audience mismatch: expected=%s, got=%s", google_client_id, aud)
+        return Response({'detail': "Google Client ID mos kelmadi."}, status=status.HTTP_401_UNAUTHORIZED)
+
+    email = (token_info.get('email') or '').strip().lower()
+    sub = token_info.get('sub') or ''
+    if not sub:
+        return Response({'detail': "Google foydalanuvchi ma'lumoti yetarsiz."}, status=status.HTTP_400_BAD_REQUEST)
+
+    name = (token_info.get('name') or '').strip()
+    given_name = (token_info.get('given_name') or '').strip()
+    family_name = (token_info.get('family_name') or '').strip()
+
+    desired_role = (request.data.get('role') or 'student').strip().lower()
+    if desired_role not in ('student', 'teacher', 'manager', 'owner', 'parent'):
+        desired_role = 'student'
+
+    google_username = f"google_{sub[:12]}"
+    google_phone = f"google_{sub}"
+
+    user = None
+    if email:
+        user = User.objects.filter(models.Q(phone=google_phone) | models.Q(normalized_phone=google_phone) | models.Q(username=email)).first()
+    if not user:
+        user = User.objects.filter(models.Q(phone=google_phone) | models.Q(normalized_phone=google_phone) | models.Q(username=google_username)).first()
+
+    if user:
+        if not user.is_active:
+            return Response({'detail': "Hisob bloklangan yoki o'chirilgan."}, status=status.HTTP_403_FORBIDDEN)
+        if desired_role and desired_role not in (user.roles or []):
+            user.add_role(desired_role)
+        return _auth_response(request, user)
+
+    with transaction.atomic():
+        user = User.objects.create(
+            phone=google_phone,
+            normalized_phone=google_phone,
+            username=email if email else google_username,
+            full_name=name or (email.split('@')[0] if email else "Google User"),
+            first_name=given_name,
+            last_name=family_name,
+            roles=[desired_role],
+            is_active=True,
+            is_premium=True,
+            premium_trial_end=timezone.now() + timedelta(days=30),
+        )
+        user.set_unusable_password()
+        user.save()
+
+    return _auth_response(request, user, status_code=status.HTTP_201_CREATED)
+
+
+google_login.cls.throttle_scope = 'auth'
+
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+@throttle_classes([ScopedRateThrottle])
 def refresh_token(request):
     refresh = (
         request.data.get('refresh')
