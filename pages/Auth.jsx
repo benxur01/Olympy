@@ -914,6 +914,15 @@ const RegisterPage = ({ onNavigate, onLogin }) => {
               <button onClick={() => onNavigate('login')} className="btn-ghost flex-1 py-3.5 rounded-2xl font-semibold">Kirish</button>
               <button onClick={goNext} disabled={!registrationType} className="btn-primary flex-1 py-3.5 rounded-2xl font-bold disabled:opacity-50">Davom etish →</button>
             </div>
+            {registrationType && (
+              <GoogleAuthButton
+                role={registrationType === 'organization' ? 'owner' : 'student'}
+                onLogin={onLogin}
+                setError={setPhoneError}
+                loading={loading}
+                setLoading={setLoading}
+              />
+            )}
           </div>
         )}
 
