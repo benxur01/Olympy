@@ -15,21 +15,22 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 
 from attempts.models import TestAttempt
+from billing.services import student_tier_at_least
 from .models import Achievement, DailyGoal, ParentStudentLink, Rival
 from .utils import is_user_premium
 
 MAX_RIVALS = 3
 
 
-def _premium_required():
-    return Response(
-        {
-            'detail': "Bu funksiya premium o'quvchilar uchun. "
-                      "Premium olish uchun markaz adminiga murojaat qiling.",
-            'upgrade_required': True,
-        },
-        status=http_status.HTTP_403_FORBIDDEN,
-    )
+def _premium_required(required_tier=None):
+    body = {
+        'detail': "Bu funksiya premium o'quvchilar uchun. "
+                  "Premium olish uchun markaz adminiga murojaat qiling.",
+        'upgrade_required': True,
+    }
+    if required_tier:
+        body['required_tier'] = required_tier
+    return Response(body, status=http_status.HTTP_403_FORBIDDEN)
 
 
 # ─── O1. Kundalik streak ─────────────────────────────────────────────────────
@@ -559,8 +560,8 @@ def olympiad_prep_plan(request):
     from olympiads.models import Olympiad
     from accounts.views_student import _subject_performance
 
-    if not is_user_premium(request.user):
-        return _premium_required()
+    if not student_tier_at_least(request.user, 'pro'):
+        return _premium_required(required_tier='pro')
 
     olympiad_id = (request.data or {}).get('olympiad_id')
     if not olympiad_id:
@@ -716,8 +717,8 @@ def ai_audio_analysis(request):
     from attempts.models import AttemptAIAnalysis, TestAttempt
     from questions.ai_generation import analyze_attempt_ai
 
-    if not is_user_premium(request.user):
-        return _premium_required()
+    if not student_tier_at_least(request.user, 'pro'):
+        return _premium_required(required_tier='pro')
 
     attempt_id = (request.data or {}).get('attempt_id')
     if not attempt_id:
