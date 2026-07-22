@@ -11,8 +11,12 @@ const ORGANIZATION_TYPES = ["O'quv markaz", 'Maktab', 'Universitet/Kollej', 'Tas
 // (davlat kodi tanlash + xalqaro E.164, defolt O'zbekiston +998).
 
 const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoading }) => {
-  // Yashirin konteyner: Google'ning o'z tugmasini shu yerga render qilamiz.
-  const hiddenBtnRef = React.useRef(null);
+  // Google'ning haqiqiy tugmasini shu konteynerga render qilamiz. U ko'rinadigan
+  // custom tugma ustida shaffof (opacity:0) qatlam sifatida turadi va foydalanuvchi
+  // bosganda bosish to'g'ridan-to'g'ri Google'ning o'z tugmasiga tushadi.
+  const overlayRef = React.useRef(null);
+  const wrapRef = React.useRef(null);
+  const [btnWidth, setBtnWidth] = React.useState(320);
 
   const clientId = window.GOOGLE_CLIENT_ID || import.meta.env?.VITE_GOOGLE_CLIENT_ID || '238943789457-rp81dheh17qfcc184323uaevg6act9ck.apps.googleusercontent.com';
 
@@ -35,22 +39,37 @@ const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoa
     }
   };
 
-  // Avval `google.accounts.id.prompt()` (One Tap) ishlatilardi. One Tap
-  // foydalanuvchi oynani "X" bilan yopgach, `g_state` cookie orqali dismiss'ni
-  // eslab qoladi va keyingi `.prompt()` chaqiruvlarini bir muddat jimgina
-  // o'tkazib yuboradi (cooldown). Bu avtomatik One Tap uchun to'g'ri, lekin
-  // aniq "Google orqali kirish" tugmasini bosgan foydalanuvchi uchun noto'g'ri —
-  // har safar hisob tanlash oynasi chiqishi kerak. Shuning uchun Google'ning
-  // o'z tugmasini (renderButton) yashirin konteynerga render qilamiz — u
-  // klassik OAuth hisob-tanlash popup'ini ochadi va One Tap dismiss cooldown'iga
-  // bo'ysunmaydi. Custom stilni saqlab qolish uchun ko'rinadigan tugma bosilganda
-  // shu yashirin Google tugmasini programmatik `click()` qilamiz.
+  // Custom tugma kengligini o'lchab, Google tugmasini shunga mos render qilamiz
+  // (GIS renderButton foizli emas, faqat piksel kenglik qabul qiladi; 200–400 orasi).
+  React.useEffect(() => {
+    if (!wrapRef.current || typeof ResizeObserver === 'undefined') return;
+    const measure = () => {
+      const w = wrapRef.current?.offsetWidth;
+      if (w) setBtnWidth(Math.max(200, Math.min(400, Math.round(w))));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(wrapRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  // MUHIM: avval custom Google tugmasini yashirin konteynerga render qilib,
+  // bosilganda uni programmatik `click()` qilardik. Ammo GIS renderButton
+  // tugmani `accounts.google.com/gsi/button` dan yuklanadigan CROSS-ORIGIN
+  // iframe ichida chizadi — parent hujjatdan `querySelector('div[role=button]')`
+  // u iframe ichiga kira olmaydi (brauzer xavfsizlik chegarasi), shuning uchun
+  // bosiladigan element hech qachon topilmaydi va "hali tayyor emas" xatosi
+  // chiqadi. Yechim: Google'ning haqiqiy tugmasini custom tugma ustiga shaffof
+  // qatlam qilib joylashtiramiz — foydalanuvchining haqiqiy bosishi to'g'ridan-
+  // to'g'ri Google iframe'iga tushadi (bu iframe bo'lsa ham, oddiy DOM bo'lsa ham
+  // ishlaydi). One Tap `prompt()` emas, `renderButton` ishlatamiz — u klassik
+  // OAuth hisob-tanlash popup'ini ochadi va One Tap dismiss cooldown'iga bo'ysunmaydi.
   React.useEffect(() => {
     let cancelled = false;
     let attempts = 0;
     const render = () => {
       if (cancelled) return;
-      if (!window.google?.accounts?.id || !hiddenBtnRef.current) {
+      if (!window.google?.accounts?.id || !overlayRef.current) {
         if (attempts++ < 40) setTimeout(render, 150);
         return;
       }
@@ -65,13 +84,13 @@ const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoa
           auto_select: false,
           cancel_on_tap_outside: true,
         });
-        hiddenBtnRef.current.innerHTML = '';
-        window.google.accounts.id.renderButton(hiddenBtnRef.current, {
+        overlayRef.current.innerHTML = '';
+        window.google.accounts.id.renderButton(overlayRef.current, {
           type: 'standard',
           theme: 'filled_black',
           size: 'large',
           text: role === 'student' ? 'signin_with' : 'signup_with',
-          width: 300,
+          width: btnWidth,
         });
       } catch (e) {
         console.warn('Google Identity initialization error:', e);
@@ -80,23 +99,17 @@ const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoa
     render();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role]);
+  }, [role, btnWidth]);
 
-  const handleGoogleClick = () => {
-    if (loading) return;
+  // Faqat teskari aloqa uchun: agar Google tugmasi hali render bo'lmagan bo'lsa
+  // (SDK yuklanmagan yoki origin ruxsat etilmagan) — foydalanuvchiga xabar beramiz.
+  // Google tugmasi mavjud bo'lsa, bosish allaqachon uning iframe'iga tushgan,
+  // bu handler shunchaki eski xatoni tozalaydi.
+  const handleOverlayClick = () => {
     setError('');
-    if (!window.google?.accounts?.id) {
-      setError("Google SDK skripti yuklanmadi. Sahifani qayta yangilab ko'ring.");
-      return;
-    }
-    // Google renderButton haqiqiy DOM tugmasini yasaydi — uni topib bosamiz.
-    const clickable = hiddenBtnRef.current?.querySelector('div[role="button"]')
-      || hiddenBtnRef.current?.querySelector('[role="button"]')
-      || hiddenBtnRef.current?.querySelector('button');
-    if (clickable) {
-      clickable.click();
-    } else {
-      setError("Google tugmasi hali tayyor emas. Bir lahzadan so'ng qayta urinib ko'ring.");
+    const rendered = overlayRef.current && overlayRef.current.childElementCount > 0;
+    if (!window.google?.accounts?.id || !rendered) {
+      setError("Google hali tayyor emas. Sahifani yangilab, biroz kutib qayta urinib ko'ring.");
     }
   };
 
@@ -107,29 +120,32 @@ const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoa
         <span className="relative bg-[#050508] px-3 text-xs text-white/40 uppercase font-semibold tracking-wider">yoki</span>
       </div>
 
-      {/* Ekrandan tashqarida turadigan yashirin Google tugmasi — faqat
-          programmatik click uchun. display:none EMAS, aks holda GIS uni
-          render qilmaydi. */}
-      <div
-        ref={hiddenBtnRef}
-        aria-hidden="true"
-        style={{ position: 'absolute', top: '-9999px', left: '-9999px', width: '300px', height: '44px', overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}
-      />
+      <div ref={wrapRef} className="relative w-full" style={{ minHeight: '52px' }}>
+        {/* Ko'rinadigan custom tugma — faqat vizual, bosishni ushlamaydi. */}
+        <div
+          aria-hidden="true"
+          className={`w-full py-3.5 px-4 rounded-2xl bg-white/5 border border-white/10 text-white font-semibold flex items-center justify-center gap-3 shadow-sm transition-opacity ${loading ? 'opacity-60' : ''}`}
+          style={{ pointerEvents: 'none' }}
+        >
+          <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+          </svg>
+          <span>Google orqali kirish</span>
+        </div>
 
-      <button
-        type="button"
-        onClick={handleGoogleClick}
-        disabled={loading}
-        className="w-full py-3.5 px-4 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold flex items-center justify-center gap-3 transition-all transform active:scale-[0.98] shadow-sm disabled:opacity-60"
-      >
-        <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
-          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-        </svg>
-        <span>Google orqali kirish</span>
-      </button>
+        {/* Google'ning haqiqiy tugmasi — custom tugma ustida shaffof qatlam.
+            opacity:0 hit-testingga ta'sir qilmaydi, shuning uchun ko'rinmas bo'lsa
+            ham bosishni oladi. Bosish to'g'ridan-to'g'ri Google iframe'iga tushadi. */}
+        <div
+          ref={overlayRef}
+          onClickCapture={handleOverlayClick}
+          className="absolute inset-0 flex items-center justify-center overflow-hidden"
+          style={{ opacity: 0, zIndex: 2, pointerEvents: loading ? 'none' : 'auto' }}
+        />
+      </div>
     </div>
   );
 };
