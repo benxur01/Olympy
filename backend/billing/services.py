@@ -61,6 +61,69 @@ def _tier_from_name(plan_name):
     return None
 
 
+# ── O'quvchi (student) premium tier'lari ──────────────────────────────────────
+# Ierarxiya: Pro ⊇ Plus ⊇ Standart ⊇ free. `student_tier_at_least` shu tartibga
+# tayanadi (kattaroq raqam — kengroq huquq).
+STUDENT_TIER_ORDER = {'free': 0, 'standart': 1, 'standard': 1, 'plus': 2, 'pro': 3}
+
+# Premium (is_premium=True) bo'lgan, lekin aktiv student-plan yozuvi
+# aniqlanmaydigan foydalanuvchilar (legacy/admin toggle/trial grant) uchun
+# standart tier — ular admin/trial tomonidan to'liq premium berilgan deb
+# hisoblanadi, shuning uchun eng yuqori tier.
+PREMIUM_NO_PLAN_DEFAULT_TIER = 'pro'
+
+
+def get_student_tier(user):
+    """Returns 'free' | 'standart' | 'plus' | 'pro' for a student user."""
+    from accounts.utils import is_user_premium  # lokal import — circular-import xavfini oldini oladi
+    if not is_user_premium(user):
+        return 'free'
+    sub = (
+        user.subscriptions
+        .filter(is_active=True, plan__plan_type='student', end_date__gt=timezone.now())
+        .select_related('plan')
+        .order_by('-end_date')
+        .first()
+    )
+    if not sub or not sub.plan:
+        return PREMIUM_NO_PLAN_DEFAULT_TIER
+    tier = _tier_from_name(sub.plan.name)
+    return tier if tier in STUDENT_TIER_ORDER else PREMIUM_NO_PLAN_DEFAULT_TIER
+
+
+def student_tier_at_least(user, min_tier):
+    """`user`ning tier'i `min_tier` dan past emasligini tekshiradi (ierarxik)."""
+    return STUDENT_TIER_ORDER.get(get_student_tier(user), 0) >= STUDENT_TIER_ORDER[min_tier]
+
+
+# ── O'quvchi mashq (practice / mock) oylik limiti ─────────────────────────────
+# Standart = 10/oy, Plus = 25/oy, Pro = cheksiz. Bepul (premium bo'lmagan)
+# o'quvchi ham Standart kabi 10/oy bilan cheklanadi.
+STUDENT_PRACTICE_MONTHLY_LIMIT = {'free': 10, 'standart': 10, 'plus': 25, 'pro': None}  # None = unlimited
+
+
+def practice_attempts_this_month(user):
+    """Joriy oyda `user` boshlagan mock (mashq) urinishlari soni."""
+    from centers.models import MockAttempt
+    now = timezone.now()
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    return MockAttempt.objects.filter(user=user, started_at__gte=month_start).count()
+
+
+def can_start_practice(user):
+    """(allowed, used, limit) — o'quvchi yangi mashq boshlashi mumkinmi.
+
+    `limit` None bo'lsa cheksiz (Pro). `allowed` — hali limit tugamaganini
+    bildiradi (mavjud urinishni davom ettirish alohida, cheklanmaydi).
+    """
+    tier = get_student_tier(user)
+    limit = STUDENT_PRACTICE_MONTHLY_LIMIT.get(tier, 0)
+    if limit is None:
+        return True, practice_attempts_this_month(user), None
+    used = practice_attempts_this_month(user)
+    return used < limit, used, limit
+
+
 class SubscriptionService:
     """Tashkilot uchun obuna limitlari xizmati.
 
