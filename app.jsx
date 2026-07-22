@@ -872,9 +872,21 @@ const certVerifyUuid = (() => {
   } catch { return null; }
 })();
 
+// Public yutuqlar portfoliosi tekshirish sahifasi (Feature #5, Pro) — App'dan
+// TASHQARIDA ishlaydi (login talab qilinmaydi). /portfolio/verify/<uuid>[/].
+const portfolioVerifyUuid = (() => {
+  try {
+    const raw = (window.location.pathname || '').replace(/\/+$/, '');
+    const m = raw.match(/^\/portfolio\/verify\/([^/]+)$/);
+    return m ? m[1] : null;
+  } catch { return null; }
+})();
+
 const root = ReactDOM.createRoot(document.getElementById('root'));
 if (certVerifyUuid) {
   root.render(<ErrorBoundary><CertificateVerifyPage uuid={certVerifyUuid} /></ErrorBoundary>);
+} else if (portfolioVerifyUuid) {
+  root.render(<ErrorBoundary><PortfolioVerifyPage uuid={portfolioVerifyUuid} /></ErrorBoundary>);
 } else {
   root.render(<ErrorBoundary><App /></ErrorBoundary>);
 }

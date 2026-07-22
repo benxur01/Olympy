@@ -944,6 +944,8 @@ export const OlympyApi = {
   // Bitta attemptni olib kelish — Leaderboard "Ko'rish" tugmasi va Results
   // sahifasi uchun. Backend olympiad detail'ni ham qo'shib qaytaradi.
   getAttempt: (attemptId, token) => request(`/api/attempts/${attemptId}/`, { token }),
+  // Feature 4: insho uchun on-demand chuqur AI tahlili (Plus tarifi).
+  getEssayAIFeedback: (attemptId, questionId, token) => request(`/api/attempts/${attemptId}/essay/${questionId}/ai-feedback/`, { token }),
   getMyResults: (token) => request('/api/results/me/', { token }).then(unwrapList),
   getMyStats: (token) => request('/api/results/me/stats/', { token }),
   // Backend shakli: { results: [...], pagination: {...}, header: {...}|null }.
@@ -1120,6 +1122,71 @@ export const OlympyApi = {
   getSubjectWeakness: (token) => request('/api/me/subject-weakness/', { token }),
   getReadiness: (olympiadId, token) => request(`/api/me/readiness/?olympiad_id=${encodeURIComponent(olympiadId)}`, { token }),
   getStudyPlan: (token) => request('/api/me/study-plan/', { method: 'POST', token }),
+  // Kunlik AI mashq to'plami — Standart+ tier. Kuniga bir marta 5 ta AI savol
+  // generatsiya qilinadi va saqlanadi; kun davomida aynan shu to'plam qaytadi.
+  // Baholash client-side (savollarda correct_answer indeksi bor). Tier yetmasa
+  // backend 403 { detail, upgrade_required, required_tier } qaytaradi.
+  getDailyPracticeSet: (token) => request('/api/me/daily-practice/', { token }),
+  // Shaxsiy AI test generatori — Plus+ tier. Fan/mavzu/qiyinlik yuboriladi,
+  // backend 10 ta ko'p tanlovli savol qaytaradi (saqlanmaydi). Baholash
+  // client-side (savollarda correct_answer indeksi bor). Tier yetmasa backend
+  // 403 { detail, upgrade_required, required_tier } qaytaradi.
+  generateCustomTest: (payload, token) => request('/api/me/custom-test/', { method: 'POST', body: payload, token }),
+  // Oylik mashq (practice) kvotasi holati. {used, limit, unlimited}.
+  // Standart=10/oy, Plus=25/oy, Pro=cheksiz (unlimited:true, limit:null).
+  getPracticeQuota: (token) => request('/api/me/practice-quota/', { token }),
+  // Haftalik hisobot (PDF) — Plus+ tier talab qilinadi. Tier yetarli bo'lmasa
+  // backend 403 { detail, upgrade_required, required_tier } qaytaradi; bu holda
+  // ApiError.status=403 va ApiError.data orqali upgrade prompt ko'rsatiladi.
+  // downloadCertificate / exportOlympiadResultsXlsx bilan bir xil naqsh.
+  downloadWeeklyReport: async (token) => {
+    const res = await fetch(`${API_BASE_URL}/api/me/weekly-report/`, {
+      method: 'GET',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      let data = null;
+      try { data = await res.json(); } catch {}
+      throw new ApiError((data && data.detail) || "Haftalik hisobotni yuklab bo'lmadi", { status: res.status, data });
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'olympy-haftalik-hisobot.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  },
+  // Yutuqlar portfoliosi (PDF) — Pro tier talab qilinadi. Butun tarixdagi
+  // yutuqlardan tuzilgan verifikatsiya qilinadigan portfolio/sertifikat. Tier
+  // yetmasa backend 403 { detail, upgrade_required, required_tier } qaytaradi;
+  // downloadWeeklyReport bilan bir xil naqsh.
+  downloadPortfolio: async (token) => {
+    const res = await fetch(`${API_BASE_URL}/api/me/portfolio/`, {
+      method: 'GET',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      let data = null;
+      try { data = await res.json(); } catch {}
+      throw new ApiError((data && data.detail) || "Portfolioni yuklab bo'lmadi", { status: res.status, data });
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'olympy-portfolio.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return true;
+  },
   // Student Progress Dashboard (premium emas). period: 30|90|180.
   getProgress: (period, token) => request(`/api/me/progress/?period=${encodeURIComponent(period || 30)}`, { token }),
   // Oddiy (template) AI tavsiyalar — LLM chaqiruvsiz, cheklanmagan.
@@ -1268,6 +1335,9 @@ export const OlympyApi = {
   // Token YUBORILMAYDI va 401 da logout chaqirilmasligi uchun retryOnAuth:false.
   // Topilmasa backend {valid:false} 404 qaytaradi — ApiError.data orqali o'qiladi.
   verifyCertificate: (uuid) => request(`/api/certificates/verify/${uuid}/`, { retryOnAuth: false }),
+  // Feature #5: Yutuqlar portfoliosi haqiqiyligini tekshirish — PUBLIC (auth
+  // shart emas). verifyCertificate bilan bir xil naqsh, faqat endpoint boshqa.
+  verifyPortfolio: (uuid) => request(`/api/portfolio/verify/${uuid}/`, { retryOnAuth: false }),
   // Feature #6: Markaz brendi (white-label) — faqat owner. body {brand_color, custom_domain?}.
   updateCenterBranding: (centerId, body, token) => request(`/api/centers/${centerId}/branding/`, { method: 'PATCH', body, token }),
   // Feature #7: Referral — o'z kodi/statistikasi va boshqa kodni ishlatish.

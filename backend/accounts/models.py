@@ -6,6 +6,7 @@ Per-role status (pending / approved / rejected) and the bound center live on
 exception — that's a system-wide role represented by ``is_platform_admin``.
 """
 import logging
+import uuid
 
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
@@ -90,6 +91,15 @@ class User(AbstractBaseUser, PermissionsMixin):
     longest_streak = models.PositiveIntegerField(default=0)
     coins = models.PositiveIntegerField(default=0)
     last_active_date = models.DateField(null=True, blank=True)
+    # Pro tarifi: yutuqlar portfoliosi (barcha vaqt statistikasi) PDF'ida QR
+    # kod sifatida ko'rsatiladigan public verify URL uchun UUID:
+    # prolymp.uz/portfolio/verify/<uuid>. Public endpoint shu UUID orqali
+    # o'quvchining barcha vaqt yutuqlarini tasdiqlaydi. Mavjud userlarda NULL
+    # bo'lishi mumkin (migratsiya null=True bilan qo'shadi) — portfolio yuklab
+    # olinganda lazy ravishda to'ldiriladi (certificate_uuid naqshi kabi).
+    portfolio_uuid = models.UUIDField(
+        default=uuid.uuid4, unique=True, null=True, blank=True, db_index=True,
+    )
 
     # Retention onboarding (OB1): yangi foydalanuvchi birinchi kirishda 3-4
     # bosqichli sehrgardan o'tadi. `onboarding_completed` True bo'lguncha
