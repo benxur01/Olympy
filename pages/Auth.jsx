@@ -11,32 +11,50 @@ const ORGANIZATION_TYPES = ["O'quv markaz", 'Maktab', 'Universitet/Kollej', 'Tas
 // (davlat kodi tanlash + xalqaro E.164, defolt O'zbekiston +998).
 
 const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoading }) => {
-  const handleGoogleClick = () => {
-    if (loading) return;
-    setError('');
+  // Yashirin konteyner: Google'ning o'z tugmasini shu yerga render qilamiz.
+  const hiddenBtnRef = React.useRef(null);
 
-    const clientId = window.GOOGLE_CLIENT_ID || import.meta.env?.VITE_GOOGLE_CLIENT_ID || '238943789457-rp81dheh17qfcc184323uaevg6act9ck.apps.googleusercontent.com';
+  const clientId = window.GOOGLE_CLIENT_ID || import.meta.env?.VITE_GOOGLE_CLIENT_ID || '238943789457-rp81dheh17qfcc184323uaevg6act9ck.apps.googleusercontent.com';
 
-    const triggerLoginWithCredential = async (credential) => {
-      setLoading(true);
-      try {
-        const data = await OlympyApi.loginWithGoogle({ credential, role });
-        const mappedUser = OlympyApi.mapBackendUser(data.user);
-        OlympyApi.saveAuth({
-          token: data.token,
-          refresh: data.refresh,
-          user: mappedUser,
-          cookieAuth: data.cookie_auth,
-          persistent: true,
-        });
-        onLogin(mappedUser);
-      } catch (err) {
-        setError(OlympyApi.toUserMessage(err) || "Google orqali kirishda xatolik yuz berdi");
-        setLoading(false);
+  const triggerLoginWithCredential = async (credential) => {
+    setLoading(true);
+    try {
+      const data = await OlympyApi.loginWithGoogle({ credential, role });
+      const mappedUser = OlympyApi.mapBackendUser(data.user);
+      OlympyApi.saveAuth({
+        token: data.token,
+        refresh: data.refresh,
+        user: mappedUser,
+        cookieAuth: data.cookie_auth,
+        persistent: true,
+      });
+      onLogin(mappedUser);
+    } catch (err) {
+      setError(OlympyApi.toUserMessage(err) || "Google orqali kirishda xatolik yuz berdi");
+      setLoading(false);
+    }
+  };
+
+  // Avval `google.accounts.id.prompt()` (One Tap) ishlatilardi. One Tap
+  // foydalanuvchi oynani "X" bilan yopgach, `g_state` cookie orqali dismiss'ni
+  // eslab qoladi va keyingi `.prompt()` chaqiruvlarini bir muddat jimgina
+  // o'tkazib yuboradi (cooldown). Bu avtomatik One Tap uchun to'g'ri, lekin
+  // aniq "Google orqali kirish" tugmasini bosgan foydalanuvchi uchun noto'g'ri —
+  // har safar hisob tanlash oynasi chiqishi kerak. Shuning uchun Google'ning
+  // o'z tugmasini (renderButton) yashirin konteynerga render qilamiz — u
+  // klassik OAuth hisob-tanlash popup'ini ochadi va One Tap dismiss cooldown'iga
+  // bo'ysunmaydi. Custom stilni saqlab qolish uchun ko'rinadigan tugma bosilganda
+  // shu yashirin Google tugmasini programmatik `click()` qilamiz.
+  React.useEffect(() => {
+    if (!window.google?.accounts?.id) return;
+    let cancelled = false;
+    let attempts = 0;
+    const render = () => {
+      if (cancelled) return;
+      if (!window.google?.accounts?.id || !hiddenBtnRef.current) {
+        if (attempts++ < 40) setTimeout(render, 150);
+        return;
       }
-    };
-
-    if (window.google?.accounts?.id) {
       try {
         window.google.accounts.id.initialize({
           client_id: clientId,
@@ -45,17 +63,41 @@ const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoa
               triggerLoginWithCredential(response.credential);
             }
           },
+          auto_select: false,
+          cancel_on_tap_outside: true,
         });
-        window.google.accounts.id.prompt((notification) => {
-          if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-            // Prompt fallback
-          }
+        hiddenBtnRef.current.innerHTML = '';
+        window.google.accounts.id.renderButton(hiddenBtnRef.current, {
+          type: 'standard',
+          theme: 'filled_black',
+          size: 'large',
+          text: role === 'student' ? 'signin_with' : 'signup_with',
+          width: 300,
         });
       } catch (e) {
         console.warn('Google Identity initialization error:', e);
       }
-    } else {
+    };
+    render();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role]);
+
+  const handleGoogleClick = () => {
+    if (loading) return;
+    setError('');
+    if (!window.google?.accounts?.id) {
       setError("Google SDK skripti yuklanmadi. Sahifani qayta yangilab ko'ring.");
+      return;
+    }
+    // Google renderButton haqiqiy DOM tugmasini yasaydi — uni topib bosamiz.
+    const clickable = hiddenBtnRef.current?.querySelector('div[role="button"]')
+      || hiddenBtnRef.current?.querySelector('[role="button"]')
+      || hiddenBtnRef.current?.querySelector('button');
+    if (clickable) {
+      clickable.click();
+    } else {
+      setError("Google tugmasi hali tayyor emas. Bir lahzadan so'ng qayta urinib ko'ring.");
     }
   };
 
@@ -65,6 +107,15 @@ const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoa
         <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-white/10" /></div>
         <span className="relative bg-[#050508] px-3 text-xs text-white/40 uppercase font-semibold tracking-wider">yoki</span>
       </div>
+
+      {/* Ekrandan tashqarida turadigan yashirin Google tugmasi — faqat
+          programmatik click uchun. display:none EMAS, aks holda GIS uni
+          render qilmaydi. */}
+      <div
+        ref={hiddenBtnRef}
+        aria-hidden="true"
+        style={{ position: 'absolute', top: '-9999px', left: '-9999px', width: '300px', height: '44px', overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}
+      />
 
       <button
         type="button"
