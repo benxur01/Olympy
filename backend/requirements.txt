@@ -1,51 +1,28 @@
-# Reproducible build uchun aniq versiyalar (lokal muhitda o'rnatilgan).
-# Yangilashda: aktiv muhitda `pip freeze` chiqishini tekshirib, shu yerga ko'chiring.
-Django==5.2.14
-djangorestframework==3.17.1
-django-cors-headers==4.9.0
-psycopg[binary]==3.3.4
-djangorestframework-simplejwt==5.5.1
-Pillow==12.2.0
-# Sertifikat va hisobotdagi haqiqiy QR kod (Pillow backend bilan rasm chizadi).
-# Verify sahifasiga (prolymp.uz/certificates/verify/<uuid>) yo'naltiradi.
-qrcode==8.2
-pypdf==6.12.2
-pdfplumber==0.11.4
-openpyxl==3.1.5
-# Word (.docx) savol import va namuna shabloni (questions.views import_questions_word,
-# download_word_template). Jadval formatidagi .docx faylni o'qiydi/yaratadi.
-python-docx==1.1.2
-# Excel/PDF eksport (markaz a'zolari, olimpiada natijalari).
-reportlab==4.4.1
-celery==5.3.6
-redis==5.0.1
-django-celery-beat==2.8.1
-gunicorn==26.0.0
-whitenoise==6.12.0
-requests==2.34.2
-# TOTP 2FA (admin/owner uchun ixtiyoriy ikki bosqichli autentifikatsiya).
-pyotp==2.9.0
-# TOTP maxfiy kalitini DB'da shifrlash (Fernet). To'g'ridan-to'g'ri ishlatiladi
-# (accounts.utils.encrypt/decrypt_totp_secret) — transitive bog'liqlikka tayanmay
-# aniq pinlanadi.
-cryptography==46.0.5
-# Cloudinary (faqat production'da, CLOUDINARY_CLOUD_NAME o'rnatilganda yoqiladi).
-# Reproducible build uchun lokal venv'da o'rnatilgan versiyalarga pinlangan.
-cloudinary==1.44.2
-django-cloudinary-storage==0.3.0
-# Sentry — xato monitoring (faqat SENTRY_DSN env o'rnatilganda yoqiladi).
-sentry-sdk[django]==2.20.0
-# Email yuborish — Mailgun backend (faqat MAILGUN_API_KEY o'rnatilganda
-# yoqiladi, aks holda console/SMTP backend ishlatiladi).
-django-anymail[mailgun]==12.0
-# AI tahlil audio (O4) — matnni ovozga aylantirish (gTTS), Telegram sendVoice
-# orqali yuboriladi. accounts.views_me_premium._try_send_voice ichida dynamic
-# import bilan ishlatiladi; o'rnatilmagan bo'lsa graceful fallback (matn
-# yuboriladi), lekin funksiya ishlashi uchun shu yerda pinlanadi.
-gTTS==2.5.4
-# Admin login brute-force himoyasi (5 xato urinishdan keyin 1 soat lock).
-# Pin: `>=6.0` deploy'dan deploy'ga boshqa versiya o'rnatib reproducible
-# build'ni buzardi. 8.3.1 — hozirgi barqaror versiya (>=6.0 bilan so'nggi
-# deploylar ham shu major'ni o'rnatgan).
-django-axes==8.3.1
-pywebpush==2.3.0
+# Requirements for production & local development
+Django>=5.0,<6.0
+djangorestframework>=3.14
+django-cors-headers>=4.0
+psycopg[binary]>=3.1
+djangorestframework-simplejwt>=5.3
+Pillow>=10.0
+qrcode>=7.4
+pypdf>=3.0
+pdfplumber>=0.10
+openpyxl>=3.1
+python-docx>=1.0
+reportlab>=4.0
+celery>=5.3
+redis>=5.0
+django-celery-beat>=2.5
+gunicorn>=21.2
+whitenoise>=6.5
+requests>=2.31
+pyotp>=2.9
+cryptography>=41.0
+cloudinary>=1.36
+django-cloudinary-storage>=0.3
+sentry-sdk[django]>=1.40
+django-anymail[mailgun]>=10.0
+gTTS>=2.4
+django-axes>=6.0
+pywebpush>=1.14
