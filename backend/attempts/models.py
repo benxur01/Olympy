@@ -271,3 +271,51 @@ class AttemptAIAnalysis(models.Model):
 
     def __str__(self):
         return f'ai-analysis:{self.attempt_id} [{self.status}]'
+
+
+class EssayAIFeedback(models.Model):
+    """O4 (Plus): Insho javobi uchun on-demand chuqur AI tahlili.
+
+    `AttemptAIAnalysis`dan farqi — har (attempt, savol) juftligi uchun
+    alohida yozuv (bitta attempt bir nechta essay savolga ega bo'lishi
+    mumkin). Faqat Plus+ o'quvchi tugmani bosganda lazy yaratiladi va
+    Celery task Gemini orqali `feedback_text`ni to'ldiradi. Ustoz bahosiga
+    (EssayGrade) daxl qilmaydi — bu faqat matnli tavsiya.
+    """
+    STATUS_PENDING = 'pending'
+    STATUS_READY = 'ready'
+    STATUS_FAILED = 'failed'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Kutilmoqda'),
+        (STATUS_READY, 'Tayyor'),
+        (STATUS_FAILED, 'Xatolik'),
+    ]
+
+    attempt = models.ForeignKey(
+        TestAttempt,
+        on_delete=models.CASCADE,
+        related_name='essay_ai_feedbacks',
+    )
+    question = models.ForeignKey(
+        'questions.Question',
+        on_delete=models.CASCADE,
+        related_name='essay_ai_feedbacks',
+    )
+    feedback_text = models.TextField(blank=True, default='')
+    status = models.CharField(
+        max_length=10, choices=STATUS_CHOICES, default=STATUS_PENDING,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['question_id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['attempt', 'question'],
+                name='unique_attempt_essay_ai_feedback',
+            ),
+        ]
+
+    def __str__(self):
+        return f'essay-ai:{self.attempt_id}@q{self.question_id} [{self.status}]'
