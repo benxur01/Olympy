@@ -1388,27 +1388,70 @@ class PortfolioVerifyTestCase(APITestCase):
 class GoogleAuthTestCase(APITestCase):
     """POST /api/auth/google/ — Google Login tests."""
 
-    @patch('urllib.request.urlopen')
-    def test_google_login_new_user_success(self, mock_urlopen):
+    @staticmethod
+    def _google_phone(sub):
+        import hashlib
+        return f"google_{hashlib.sha256(sub.encode('utf-8')).hexdigest()[:13]}"
+
+    def _mock_token(self, mock_urlopen, **claims):
         import io
         import json
-        mock_response = io.BytesIO(json.dumps({
-            'sub': '1234567890',
-            'email': 'newuser@gmail.com',
-            'email_verified': 'true',
-            'name': 'New Google User',
-            'given_name': 'New',
-            'family_name': 'User',
-        }).encode('utf-8'))
+        mock_response = io.BytesIO(json.dumps(claims).encode('utf-8'))
         mock_urlopen.return_value.__enter__.return_value = mock_response
+
+    @patch('urllib.request.urlopen')
+    def test_google_login_new_user_success(self, mock_urlopen):
+        self._mock_token(
+            mock_urlopen,
+            sub='1234567890',
+            email='newuser@gmail.com',
+            email_verified='true',
+            name='New Google User',
+            given_name='New',
+            family_name='User',
+        )
 
         url = reverse('google-login')
         response = self.client.post(url, {'id_token': 'fake_google_id_token', 'role': 'student'}, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertIn('user', response.data)
-        user = User.objects.get(phone='google_1234567890')
+        user = User.objects.get(phone=self._google_phone('1234567890'))
         self.assertEqual(user.full_name, 'New User')
         self.assertIn('student', user.roles)
+
+    @patch('urllib.request.urlopen')
+    def test_google_login_realistic_long_sub_and_email_fits_columns(self, mock_urlopen):
+        """Haqiqiy Google sub (~21 raqam) va uzun email DB ustunlariga sig'ishi
+        kerak — aks holda PostgreSQL'da 'value too long' (500) yuzaga keladi."""
+        long_sub = '117253846290381746255'  # 21 raqam, real Google formatida
+        self._mock_token(
+            mock_urlopen,
+            sub=long_sub,
+            email='very.long.email.address.for.testing@somelongdomain.example.com',
+            email_verified='true',
+            name='Long Sub User',
+        )
+
+        url = reverse('google-login')
+        response = self.client.post(url, {'id_token': 'tok'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        user = User.objects.get(phone=self._google_phone(long_sub))
+        self.assertLessEqual(len(user.phone), 20)
+        self.assertLessEqual(len(user.normalized_phone), 20)
+        self.assertLessEqual(len(user.username), 32)
+
+    @patch('urllib.request.urlopen')
+    def test_google_login_existing_user_reused(self, mock_urlopen):
+        """Bir xil sub bilan qayta login — yangi user yaratmasdan mavjudini qaytaradi."""
+        self._mock_token(mock_urlopen, sub='555000555', email='repeat@gmail.com', name='Repeat User')
+        url = reverse('google-login')
+        first = self.client.post(url, {'id_token': 'tok'}, format='json')
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        self._mock_token(mock_urlopen, sub='555000555', email='repeat@gmail.com', name='Repeat User')
+        second = self.client.post(url, {'id_token': 'tok'}, format='json')
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertEqual(User.objects.filter(phone=self._google_phone('555000555')).count(), 1)
 
     def test_google_login_missing_token_bad_request(self):
         url = reverse('google-login')

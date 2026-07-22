@@ -531,6 +531,7 @@ def google_login(request):
     if not id_token:
         return Response({'detail': "Google ID Token ko'rsatilmadi."}, status=status.HTTP_400_BAD_REQUEST)
 
+    import hashlib
     import urllib.request
     import urllib.parse
     import json
@@ -570,14 +571,18 @@ def google_login(request):
     if desired_role not in ('student', 'teacher', 'manager', 'owner', 'parent'):
         desired_role = 'student'
 
-    google_username = f"google_{sub[:12]}"
-    google_phone = f"google_{sub}"
+    # Google `sub` bevosita `phone`/`normalized_phone` (max_length=20) ga
+    # sig'maydi (haqiqiy sub ~21 raqam → "google_" bilan ~28 belgi) va email
+    # `username` (max_length=32) dan uzun bo'lishi mumkin. Shu sababli sub'dan
+    # deterministik, qisqa va DB'ga xavfsiz identifikator hosil qilamiz —
+    # aks holda PostgreSQL'da "value too long" (500) yuzaga keladi.
+    sub_digest = hashlib.sha256(sub.encode('utf-8')).hexdigest()
+    google_phone = f"google_{sub_digest[:13]}"      # 7 + 13 = 20 belgi (phone maks.)
+    google_username = f"google_{sub_digest[:12]}"   # 7 + 12 = 19 belgi (username maks. 32)
 
-    user = None
-    if email:
-        user = User.objects.filter(models.Q(phone=google_phone) | models.Q(normalized_phone=google_phone) | models.Q(username=email)).first()
-    if not user:
-        user = User.objects.filter(models.Q(phone=google_phone) | models.Q(normalized_phone=google_phone) | models.Q(username=google_username)).first()
+    user = User.objects.filter(
+        models.Q(normalized_phone=google_phone) | models.Q(phone=google_phone)
+    ).first()
 
     if user:
         if not user.is_active:
@@ -586,21 +591,30 @@ def google_login(request):
             user.add_role(desired_role)
         return _auth_response(request, user)
 
-    with transaction.atomic():
-        user = User.objects.create(
-            phone=google_phone,
-            normalized_phone=google_phone,
-            username=email if email else google_username,
-            full_name=name or (email.split('@')[0] if email else "Google User"),
-            first_name=given_name,
-            last_name=family_name,
-            roles=[desired_role],
-            is_active=True,
-            is_premium=True,
-            premium_trial_end=timezone.now() + timedelta(days=30),
-        )
-        user.set_unusable_password()
-        user.save()
+    try:
+        with transaction.atomic():
+            user = User.objects.create(
+                phone=google_phone,
+                normalized_phone=google_phone,
+                username=google_username,
+                full_name=name or (email.split('@')[0] if email else "Google User"),
+                first_name=given_name,
+                last_name=family_name,
+                roles=[desired_role],
+                is_active=True,
+                is_premium=True,
+                premium_trial_end=timezone.now() + timedelta(days=30),
+            )
+            user.set_unusable_password()
+            user.save()
+    except IntegrityError:
+        # Bir vaqtda ikkita birinchi login (race) — mavjud yozuvni qaytaramiz.
+        user = User.objects.filter(
+            models.Q(normalized_phone=google_phone) | models.Q(phone=google_phone)
+        ).first()
+        if not user:
+            raise
+        return _auth_response(request, user)
 
     return _auth_response(request, user, status_code=status.HTTP_201_CREATED)
 
