@@ -14,21 +14,6 @@ const StreakWarningBanner = ({ onNavigate, user }) => {
   const { data } = useApiData(() => OlympyApi.getStreakWarning(_retToken()), [user?.id, user?.backendId]);
   if (!data || (data.streak_count || 0) <= 3) return null;
 
-  if (data.is_premium) {
-    return (
-      <div className="rounded-2xl p-4 border border-indigo-500/30 bg-indigo-500/10 flex items-center gap-3 shadow-[0_4px_12px_rgba(99,102,241,0.05)]">
-        <div className="text-3xl flex-shrink-0 animate-pulse">❄️</div>
-        <div className="flex-1 min-w-0">
-          <div className="text-sm font-black text-indigo-300 flex items-center gap-1.5">
-            <span>Streak Premium Himoyasida!</span>
-            <span className="text-[9px] font-extrabold uppercase tracking-widest text-indigo-400 bg-indigo-500/20 px-1.5 py-0.2 rounded">Muzlatilgan</span>
-          </div>
-          <div className="text-xs text-white/60 mt-0.5">Bugun faol bo'la olmasangiz ham, ketma-ket faollik seriyangiz uzilmaydi.</div>
-        </div>
-      </div>
-    );
-  }
-
   if (!data.warning) return null;
 
   return (
@@ -389,43 +374,6 @@ const RivalActivityWidget = ({ user }) => {
             </div>
           </div>
         ))}
-      </div>
-    </div>
-  );
-};
-
-// ─── DH4. Haftalik musobaqa (top 5 + o'z o'rni) ──────────────────────────────
-const WeeklyContestWidget = ({ user }) => {
-  const { data, loading } = useApiData(() => OlympyApi.getWeeklyContest(_retToken()), [user?.id, user?.backendId]);
-  if (loading) return null;
-  const top = data?.top || [];
-  const myEntry = data?.my_entry;
-  if (!top.length && !myEntry) return null;
-  const medal = (rank) => rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : `#${rank}`;
-  const inTop = myEntry && top.some(t => t.is_me);
-  return (
-    <div className="glass rounded-2xl p-4 md:p-5 border border-amber-500/15">
-      <h3 className="font-bold text-white text-sm md:text-base mb-3 flex items-center gap-2">
-        🏆 Haftalik musobaqa
-      </h3>
-      <div className="space-y-1.5">
-        {top.map(t => (
-          <div key={t.user_id} className={`flex items-center gap-3 rounded-xl px-3 py-2 ${t.is_me ? 'bg-indigo-500/15 border border-indigo-500/30' : 'bg-white/[0.03]'}`}>
-            <div className="w-7 text-center text-sm font-black flex-shrink-0">{medal(t.rank)}</div>
-            <div className="flex-1 min-w-0 text-sm font-semibold text-white truncate">{t.full_name}{t.is_me && ' (siz)'}</div>
-            <div className="text-sm font-bold text-amber-300 flex-shrink-0">{t.score}</div>
-          </div>
-        ))}
-        {myEntry && !inTop && (
-          <>
-            <div className="text-center text-white/20 text-xs py-0.5">···</div>
-            <div className="flex items-center gap-3 rounded-xl px-3 py-2 bg-indigo-500/15 border border-indigo-500/30">
-              <div className="w-7 text-center text-sm font-black flex-shrink-0">#{myEntry.rank}</div>
-              <div className="flex-1 min-w-0 text-sm font-semibold text-white truncate">{myEntry.full_name} (siz)</div>
-              <div className="text-sm font-bold text-amber-300 flex-shrink-0">{myEntry.score}</div>
-            </div>
-          </>
-        )}
       </div>
     </div>
   );
@@ -903,7 +851,6 @@ Object.assign(window, {
   DailyGoalWidget,
   ReferralWidget,
   RivalActivityWidget,
-  WeeklyContestWidget,
   WeeklyContestHistoryCard,
   DailyAIPracticeCard,
   CustomTestBuilderCard,

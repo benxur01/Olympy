@@ -1202,7 +1202,6 @@ export const OlympyApi = {
   getDailyQuestionsStats: (token) => request('/api/daily-questions/stats/', { token }),
   getRivalActivity: (token) => request('/api/me/rival-activity/', { token }),
   getStreakWarning: (token) => request('/api/me/streak-warning/', { token }),
-  getWeeklyContest: (token) => request('/api/weekly-contest/', { token }),
   getWeeklyContestHistory: (token) => request('/api/weekly-contest/history/', { token }),
   getOlympiadCalendar: (params, token) => {
     const qs = params && Object.keys(params).length
