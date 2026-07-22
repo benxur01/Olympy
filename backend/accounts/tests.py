@@ -1458,3 +1458,77 @@ class GoogleAuthTestCase(APITestCase):
         response = self.client.post(url, {}, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    @patch('urllib.request.urlopen')
+    def test_google_login_student_then_owner_rejected(self, mock_urlopen):
+        """O'quvchi (student) sifatida ro'yxatdan o'tgan Gmail bilan tashkilot
+        (owner) sifatida qayta kirishga urinish 400 bilan rad etiladi va owner
+        roli qo'shilmaydi."""
+        sub = '900100200'
+        self._mock_token(mock_urlopen, sub=sub, email='dual@gmail.com', name='Dual User')
+        url = reverse('google-login')
+        first = self.client.post(url, {'id_token': 'tok', 'role': 'student'}, format='json')
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        self._mock_token(mock_urlopen, sub=sub, email='dual@gmail.com', name='Dual User')
+        second = self.client.post(url, {'id_token': 'tok', 'role': 'owner'}, format='json')
+        self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            second.data['detail'],
+            "Siz bu Gmail orqali allaqachon o'quvchi sifatida ro'yxatdan o'tgansiz. "
+            "Boshqa Gmail hisobidan tashkilot sifatida ro'yxatdan o'ting.",
+        )
+        user = User.objects.get(phone=self._google_phone(sub))
+        self.assertIn('student', user.roles)
+        self.assertNotIn('owner', user.roles)
+
+    @patch('urllib.request.urlopen')
+    def test_google_login_owner_then_student_rejected(self, mock_urlopen):
+        """Tashkilot (owner) sifatida ro'yxatdan o'tgan Gmail bilan o'quvchi
+        (student) sifatida qayta kirishga urinish 400 bilan rad etiladi va
+        student roli qo'shilmaydi."""
+        sub = '900100201'
+        self._mock_token(mock_urlopen, sub=sub, email='org@gmail.com', name='Org User')
+        url = reverse('google-login')
+        first = self.client.post(url, {'id_token': 'tok', 'role': 'owner'}, format='json')
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        self._mock_token(mock_urlopen, sub=sub, email='org@gmail.com', name='Org User')
+        second = self.client.post(url, {'id_token': 'tok', 'role': 'student'}, format='json')
+        self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            second.data['detail'],
+            "Siz bu Gmail orqali allaqachon tashkilot sifatida ro'yxatdan o'tgansiz. "
+            "Boshqa Gmail hisobidan o'quvchi sifatida ro'yxatdan o'ting.",
+        )
+        user = User.objects.get(phone=self._google_phone(sub))
+        self.assertIn('owner', user.roles)
+        self.assertNotIn('student', user.roles)
+
+    @patch('urllib.request.urlopen')
+    def test_google_login_student_relogin_as_student_allowed(self, mock_urlopen):
+        """O'quvchi qayta o'quvchi sifatida kirishi cheklanmaydi (200)."""
+        sub = '900100202'
+        self._mock_token(mock_urlopen, sub=sub, email='again@gmail.com', name='Again User')
+        url = reverse('google-login')
+        self.client.post(url, {'id_token': 'tok', 'role': 'student'}, format='json')
+
+        self._mock_token(mock_urlopen, sub=sub, email='again@gmail.com', name='Again User')
+        second = self.client.post(url, {'id_token': 'tok', 'role': 'student'}, format='json')
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+
+    @patch('urllib.request.urlopen')
+    def test_google_login_owner_then_teacher_allowed(self, mock_urlopen):
+        """student/owner istisnosi boshqa rollarga (teacher) ta'sir qilmaydi —
+        owner keyin teacher rolini olishi mumkin (200) va rol qo'shiladi."""
+        sub = '900100203'
+        self._mock_token(mock_urlopen, sub=sub, email='mixed@gmail.com', name='Mixed User')
+        url = reverse('google-login')
+        self.client.post(url, {'id_token': 'tok', 'role': 'owner'}, format='json')
+
+        self._mock_token(mock_urlopen, sub=sub, email='mixed@gmail.com', name='Mixed User')
+        second = self.client.post(url, {'id_token': 'tok', 'role': 'teacher'}, format='json')
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        user = User.objects.get(phone=self._google_phone(sub))
+        self.assertIn('owner', user.roles)
+        self.assertIn('teacher', user.roles)
+
