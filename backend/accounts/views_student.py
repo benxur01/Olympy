@@ -495,7 +495,11 @@ def daily_practice_set(request):
     })
 
 
-daily_practice_set.cls.throttle_scope = 'ai'
+# Passiv, dashboard har ochilganda avtomatik so'raladigan widget — umumiy 'ai'
+# scope'idan (10/day; explain_question/explain_all_mistakes/study_plan bilan
+# bo'linadi) ATAYIN ajratilgan alohida per-user scope. Aks holda boshqa AI
+# tugmalarini ishlatgan o'quvchida bu widget 429 qaytarardi ("~20 soat kuting").
+daily_practice_set.cls.throttle_scope = 'ai_daily_practice'
 
 
 # ─── Shaxsiy AI test generatori (Custom AI Test Builder) — Plus+ ─────────────

@@ -450,7 +450,9 @@ const DailyAIPracticeCard = ({ user }) => {
           <Icon name="sparkles" size={16} /> Kunlik AI mashq
         </h3>
         <p className="text-xs text-amber-300">
-          {OlympyApi.toUserMessage?.(error) || "Mashq to'plamini yuklab bo'lmadi. Keyinroq urinib ko'ring."}
+          {error?.status === 429
+            ? "Kunlik AI mashq limiti tugadi, ertaga qayta urinib ko'ring."
+            : (OlympyApi.toUserMessage?.(error) || "Mashq to'plamini yuklab bo'lmadi. Keyinroq urinib ko'ring.")}
         </p>
       </div>
     );

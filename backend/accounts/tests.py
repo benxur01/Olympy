@@ -1030,6 +1030,14 @@ class DailyPracticeSetTestCase(APITestCase):
         # Buzuq (bo'sh) to'plam saqlanmasligi kerak.
         self.assertEqual(DailyPracticeSet.objects.filter(user=self.standart_user).count(), 0)
 
+    def test_throttle_scope_is_dedicated_not_shared_ai(self):
+        # Passiv, dashboard'da avtomatik so'raladigan widget umumiy 'ai' scope'ini
+        # (explain_question/explain_all_mistakes/study_plan bilan bo'linadigan)
+        # ISHLATMASLIGI kerak — aks holda boshqa AI tugmalari bucket'ni tugatib
+        # bu widget 429 qaytarardi. Alohida 'ai_daily_practice' scope.
+        from accounts.views_student import daily_practice_set
+        self.assertEqual(daily_practice_set.cls.throttle_scope, 'ai_daily_practice')
+
 
 class CustomAITestTestCase(APITestCase):
     """Feature 3: Shaxsiy AI test generatori (Custom AI Test Builder).
