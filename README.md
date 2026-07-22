@@ -146,19 +146,18 @@ Question creator PDF import uses:
 POST /api/questions/pdf-preview/
 ```
 
-The backend extracts text from normal PDFs, asks OpenAI for ordered structured
-questions, and falls back to Gemini automatically. For scanned PDFs without
-embedded text, Gemini analyzes the PDF document directly. Answers found in the
-PDF or answer key are attached to the matching question; inferred answers are
-shown in the preview as needing review before saving.
+The backend extracts text from normal PDFs, then asks Gemini for ordered
+structured questions. For scanned PDFs without embedded text, Gemini analyzes
+the PDF document directly. Answers found in the PDF or answer key are attached
+to the matching question; inferred answers are shown in the preview as needing
+review before saving.
 
 The manager bot also accepts PDF/TXT/CSV/image rosters and plain text commands.
 It extracts student names/phones/codes, then the backend approves only matches
 that the linked manager/director is allowed to approve. For free-form manager
-questions, set `AI_MANAGER_BOT_OPENAI_API_KEY`/`OPENAI_API_KEY` or
-`AI_MANAGER_BOT_GEMINI_API_KEY`/`GEMINI_API_KEY`; basic status commands still
-work without an AI key. Free-form manager chat uses a warmer Uzbek prompt,
-OpenAI first and Gemini fallback, and a short-lived conversation memory so
+questions, set `AI_MANAGER_BOT_GEMINI_API_KEY`/`GEMINI_API_KEY`; basic status
+commands still work without an AI key. Free-form manager chat uses a warmer
+Uzbek prompt, Gemini, and a short-lived conversation memory so
 follow-up questions feel natural. Managers can write `xotirani tozala` to clear
 that temporary chat context. Gemini fallback uses the configured model list and
 also auto-discovers available `generateContent` Gemini text models, so if one

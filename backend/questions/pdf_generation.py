@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from django.conf import settings
 
-from .ai_generation import _extract_output_text, _json_from_ai_text
+from .ai_generation import _json_from_ai_text
 
 
 logger = logging.getLogger('questions.pdf_generation')
@@ -328,47 +328,6 @@ def _split_pdf_into_page_chunks(pdf_bytes, pages_per_chunk=10):
         return []
 
 
-def _schema_openai():
-    question = {
-        'type': 'object',
-        'additionalProperties': False,
-        'properties': {
-            'original_number': {'type': 'string'},
-            'text': {'type': 'string'},
-            'options': {
-                'type': 'array',
-                'items': {'type': 'string'},
-            },
-            'correct_answer': {'type': 'integer'},
-            'answer_source': {
-                'type': 'string',
-                'enum': ['pdf', 'inferred', 'missing'],
-            },
-            'needs_review': {'type': 'boolean'},
-            'difficulty': {
-                'type': 'string',
-                'enum': ['easy', 'medium', 'hard'],
-            },
-            'score': {'type': 'integer'},
-        },
-        'required': [
-            'original_number', 'text', 'options', 'correct_answer',
-            'answer_source', 'needs_review', 'difficulty', 'score',
-        ],
-    }
-    return {
-        'type': 'object',
-        'additionalProperties': False,
-        'properties': {
-            'questions': {
-                'type': 'array',
-                'items': question,
-            },
-        },
-        'required': ['questions'],
-    }
-
-
 def _schema_gemini():
     return {
         'type': 'OBJECT',
@@ -451,14 +410,6 @@ def _prompt(subject, difficulty, question_type, has_extracted_text, pdf_text='')
     return base + extras
 
 
-def _openai_keys():
-    keys = list(getattr(settings, 'AI_QUESTION_OPENAI_API_KEYS', []) or [])
-    single_key = getattr(settings, 'AI_QUESTION_OPENAI_API_KEY', '')
-    if single_key:
-        keys.append(single_key)
-    return list(dict.fromkeys(key for key in keys if key))
-
-
 def _gemini_keys():
     keys = list(getattr(settings, 'AI_QUESTION_GEMINI_API_KEYS', []) or [])
     single_key = getattr(settings, 'AI_QUESTION_GEMINI_API_KEY', '')
@@ -479,16 +430,6 @@ def _gemini_models():
         'gemini-1.5-pro',
     ]
     return list(dict.fromkeys(model for model in [primary, *fallbacks, *defaults] if model))
-
-
-def _openai_pdf_error(last_error):
-    if last_error == 'HTTP 429':
-        return "OpenAI kvotasi tugagan yoki billing limiti yetmagan."
-    if last_error in ('HTTP 401', 'HTTP 403'):
-        return "OpenAI API kaliti ishlamayapti yoki ruxsat yetarli emas."
-    if last_error == 'empty_questions':
-        return "OpenAI PDF matnidan savol topa olmadi."
-    return "OpenAI PDFni tahlil qila olmadi."
 
 
 def _gemini_pdf_error(last_error):
@@ -887,63 +828,6 @@ def _split_pdf_text_chunks(pdf_text):
     return chunks or [text[:chunk_chars]]
 
 
-def _openai_from_text(pdf_text, subject, difficulty, question_type):
-    keys = _openai_keys()
-    if not keys:
-        return {'ok': False, 'missing_key': True, 'error': "OpenAI API kaliti sozlanmagan.", 'questions': []}
-    if not pdf_text:
-        return {'ok': False, 'error': "PDF matni topilmadi.", 'questions': []}
-    prompt = f"{_prompt(subject, difficulty, question_type, True, pdf_text)}\n\nPDF matni:\n{pdf_text}"
-    payload = {
-        'model': getattr(settings, 'AI_QUESTION_MODEL', 'gpt-4o-mini'),
-        'messages': [{
-            'role': 'user',
-            'content': prompt,
-        }],
-        'response_format': {
-            'type': 'json_schema',
-            'json_schema': {
-                'name': 'olympy_pdf_questions',
-                'schema': _schema_openai(),
-                'strict': True,
-            },
-        },
-        'max_tokens': getattr(settings, 'AI_QUESTION_MAX_OUTPUT_TOKENS', 6000),
-    }
-    body = json.dumps(payload).encode('utf-8')
-    last_error = ''
-    for index, api_key in enumerate(keys, start=1):
-        req = urllib.request.Request(
-            'https://api.openai.com/v1/chat/completions',
-            data=body,
-            method='POST',
-            headers={
-                'Authorization': f'Bearer {api_key}',
-                'Content-Type': 'application/json',
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=60) as response:
-                raw = json.loads(response.read().decode('utf-8'))
-            parsed = _json_from_ai_text(_extract_output_text(raw))
-            questions = _normalize_questions(parsed, subject, difficulty)
-            if questions:
-                if index > 1:
-                    logger.info('PDF question extraction succeeded with OpenAI fallback key #%s', index)
-                return {'ok': True, 'provider': 'openai', 'questions': questions}
-            last_error = 'empty_questions'
-        except urllib.error.HTTPError as exc:
-            status = getattr(exc, 'code', 0)
-            last_error = f'HTTP {status}'
-            logger.warning('OpenAI PDF question key #%s failed: %s', index, last_error)
-            if status not in (401, 403, 408, 409, 429, 500, 502, 503, 504):
-                break
-        except Exception as exc:
-            last_error = exc.__class__.__name__
-            logger.warning('OpenAI PDF question key #%s failed: %s', index, last_error)
-    return {'ok': False, 'error': _openai_pdf_error(last_error), 'provider_error': last_error, 'questions': []}
-
-
 def _gemini_payload(pdf_bytes, pdf_text, subject, difficulty, question_type, include_pdf, chunk_note=''):
     use_inline_pdf = include_pdf and bool(pdf_bytes)
     prompt = _prompt(subject, difficulty, question_type, not use_inline_pdf, pdf_text)
@@ -1250,7 +1134,7 @@ def extract_questions_from_text(text, subject, difficulty='medium', question_typ
     """Tayyor matndan (PDF baytlari emas) AI yordamida savollarni ajratadi.
 
     Word (.docx) matni shu yo'l orqali o'tadi: docx'dan ajratilgan matn to'g'ridan-
-    to'g'ri uzatiladi va PDF oqimidagi xuddi shu AI logikasi (OpenAI/Gemini matn
+    to'g'ri uzatiladi va PDF oqimidagi xuddi shu AI logikasi (Gemini matn
     rejimi + regex parser fallback) qayta ishlatiladi. PDF baytlari yo'qligi
     sababli vision/inline-PDF rejimi ishlatilmaydi, `page_count=0` va
     `used_pdf_vision=False`. Qaytadigan dict shakli extract_questions_from_pdf
@@ -1269,49 +1153,20 @@ def extract_questions_from_text(text, subject, difficulty='medium', question_typ
             'used_pdf_vision': False,
         }
 
-    has_openai = bool(_openai_keys())
     has_gemini = bool(_gemini_keys())
 
-    openai_result = {'ok': False}
     gemini_result = {'ok': False}
 
-    if has_openai or has_gemini:
-        if has_openai:
-            openai_result = _openai_from_text(source_text, subject, difficulty, question_type)
-            if openai_result.get('ok') and text_chunk_count <= 1:
-                openai_result['pdf_text_chars'] = len(source_text)
-                openai_result['page_count'] = 0
-                openai_result['used_pdf_vision'] = False
-                openai_result['complete'] = True
-                return openai_result
-
-        if has_gemini:
-            # pdf_bytes=None — Gemini faqat matn rejimida ishlaydi (vision yo'q).
-            gemini_result = _gemini_extract(None, source_text, subject, difficulty, question_type)
-            if gemini_result.get('ok'):
-                if openai_result.get('ok') and len(openai_result.get('questions') or []) > len(gemini_result.get('questions') or []):
-                    openai_result['pdf_text_chars'] = len(source_text)
-                    openai_result['page_count'] = 0
-                    openai_result['used_pdf_vision'] = False
-                    openai_result['complete'] = False
-                    openai_result['warning'] = "Katta hujjat bir martada ajratildi. Natijani asl fayl bilan solishtirib tekshiring."
-                    openai_result['chunks'] = text_chunk_count
-                    return openai_result
-                gemini_result['pdf_text_chars'] = len(source_text)
-                gemini_result['page_count'] = 0
-                gemini_result['used_pdf_vision'] = False
-                gemini_result['complete'] = gemini_result.get('complete', True)
-                gemini_result['chunks'] = gemini_result.get('chunks') or max(text_chunk_count, 1)
-                return gemini_result
-
-        if openai_result.get('ok'):
-            openai_result['pdf_text_chars'] = len(source_text)
-            openai_result['page_count'] = 0
-            openai_result['used_pdf_vision'] = False
-            openai_result['complete'] = False
-            openai_result['warning'] = "Katta hujjat bo'lgani uchun barcha savollar chiqqanini asl fayl bilan solishtirib tekshiring."
-            openai_result['chunks'] = text_chunk_count
-            return openai_result
+    if has_gemini:
+        # pdf_bytes=None — Gemini faqat matn rejimida ishlaydi (vision yo'q).
+        gemini_result = _gemini_extract(None, source_text, subject, difficulty, question_type)
+        if gemini_result.get('ok'):
+            gemini_result['pdf_text_chars'] = len(source_text)
+            gemini_result['page_count'] = 0
+            gemini_result['used_pdf_vision'] = False
+            gemini_result['complete'] = gemini_result.get('complete', True)
+            gemini_result['chunks'] = gemini_result.get('chunks') or max(text_chunk_count, 1)
+            return gemini_result
 
     # Fallback: AI yo'q/ishlamadi — mahalliy regex parser.
     parser_questions = _parse_questions_from_text(source_text, subject, difficulty, question_type)
@@ -1337,8 +1192,6 @@ def extract_questions_from_text(text, subject, difficulty='medium', question_typ
     )
     if gemini_result.get('error') or gemini_result.get('provider_error'):
         detail = f"{detail} / {gemini_result.get('error') or gemini_result.get('provider_error')}"
-    elif openai_result.get('error') or openai_result.get('provider_error'):
-        detail = f"{detail} / {openai_result.get('error') or openai_result.get('provider_error')}"
 
     return {
         'ok': False,
@@ -1354,50 +1207,19 @@ def extract_questions_from_pdf(pdf_bytes, subject, difficulty='medium', question
     pdf_text, page_count = _extract_pdf_text(pdf_bytes)
     text_chunk_count = len(_split_pdf_text_chunks(pdf_text)) if pdf_text else 0
     # Check if AI keys are configured
-    has_openai = bool(_openai_keys())
     has_gemini = bool(_gemini_keys())
-    
-    openai_result = {'ok': False}
+
     gemini_result = {'ok': False}
-    
-    if has_openai or has_gemini:
-        if has_openai:
-            openai_result = _openai_from_text(pdf_text, subject, difficulty, question_type)
-            if openai_result.get('ok') and text_chunk_count <= 1:
-                openai_result['pdf_text_chars'] = len(pdf_text)
-                openai_result['page_count'] = page_count
-                openai_result['used_pdf_vision'] = False
-                openai_result['complete'] = True
-                return openai_result
-        
-        if has_gemini:
-            gemini_result = _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type)
-            if gemini_result.get('ok'):
-                if openai_result.get('ok') and len(openai_result.get('questions') or []) > len(gemini_result.get('questions') or []):
-                    openai_result['pdf_text_chars'] = len(pdf_text)
-                    openai_result['page_count'] = page_count
-                    openai_result['used_pdf_vision'] = False
-                    openai_result['complete'] = False
-                    openai_result['warning'] = "Katta PDF bir martada ajratildi. Natijani asl PDF bilan solishtirib tekshiring."
-                    openai_result['chunks'] = text_chunk_count
-                    return openai_result
-                if openai_result.get('provider_error') or openai_result.get('error'):
-                    logger.info('PDF question extraction used Gemini after OpenAI failed: %s', openai_result.get('provider_error') or openai_result.get('error'))
-                gemini_result['pdf_text_chars'] = len(pdf_text)
-                gemini_result['page_count'] = page_count
-                gemini_result['used_pdf_vision'] = bool(gemini_result.get('used_pdf_vision'))
-                gemini_result['complete'] = gemini_result.get('complete', True)
-                gemini_result['chunks'] = gemini_result.get('chunks') or max(text_chunk_count, 1)
-                return gemini_result
-                
-        if openai_result.get('ok'):
-            openai_result['pdf_text_chars'] = len(pdf_text)
-            openai_result['page_count'] = page_count
-            openai_result['used_pdf_vision'] = False
-            openai_result['complete'] = False
-            openai_result['warning'] = "Katta PDF bo'lgani uchun barcha savollar chiqqanini PDF bilan solishtirib tekshiring."
-            openai_result['chunks'] = text_chunk_count
-            return openai_result
+
+    if has_gemini:
+        gemini_result = _gemini_extract(pdf_bytes, pdf_text, subject, difficulty, question_type)
+        if gemini_result.get('ok'):
+            gemini_result['pdf_text_chars'] = len(pdf_text)
+            gemini_result['page_count'] = page_count
+            gemini_result['used_pdf_vision'] = bool(gemini_result.get('used_pdf_vision'))
+            gemini_result['complete'] = gemini_result.get('complete', True)
+            gemini_result['chunks'] = gemini_result.get('chunks') or max(text_chunk_count, 1)
+            return gemini_result
 
     # Fallback to local regex-based parser
     parser_questions = _parse_questions_from_text(pdf_text, subject, difficulty, question_type)
@@ -1429,9 +1251,7 @@ def extract_questions_from_pdf(pdf_bytes, subject, difficulty='medium', question
         )
         if gemini_result.get('error') or gemini_result.get('provider_error'):
             detail = f"{detail} / {gemini_result.get('error') or gemini_result.get('provider_error')}"
-        elif openai_result.get('error') or openai_result.get('provider_error'):
-            detail = f"{detail} / {openai_result.get('error') or openai_result.get('provider_error')}"
-            
+
     return {
         'ok': False,
         'error': detail,

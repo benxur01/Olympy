@@ -33,7 +33,6 @@ class SecurityHeadersMiddleware:
                 'https://*.sentry.io',
                 'https://*.ingest.sentry.io',
                 'https://generativelanguage.googleapis.com',
-                'https://api.openai.com',
                 'https://api.telegram.org',
             ]
             script_src = "script-src 'self'"

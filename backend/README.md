@@ -118,8 +118,7 @@ approval callbacks through `/api/telegram/webhook/manager/`.
 The manager bot can receive PDF/TXT/CSV/image rosters or plain text commands.
 It extracts names, phones, and approval codes, then approves only backend-verified
 pending student matches for the linked manager/director. Free-form questions use
-`AI_MANAGER_BOT_OPENAI_API_KEY` or `AI_MANAGER_BOT_GEMINI_API_KEY` when
-configured; OpenAI is tried first and Gemini is used as fallback. The prompt is
+`AI_MANAGER_BOT_GEMINI_API_KEY` when configured. The prompt is
 tuned for natural Uzbek manager chat, and a short-lived conversation memory
 keeps follow-up questions contextual. Basic status commands such as
 "kutilayotgan arizalar nechta?" work without an AI key, and managers can write
@@ -130,9 +129,9 @@ quota.
 
 Question creator PDF import posts multipart PDF files to
 `/api/questions/pdf-preview/`. The backend extracts embedded PDF text with
-`pypdf`, asks OpenAI for a structured question preview, and automatically falls
-back to Gemini. If embedded text is unavailable, Gemini receives the PDF as a
-document input. The preview preserves PDF order, maps answer keys when present,
+`pypdf`, then asks Gemini for a structured question preview. If embedded text is
+unavailable, Gemini receives the PDF as a document input. The preview preserves
+PDF order, maps answer keys when present,
 and marks inferred/missing answers for review before saving.
 
 Local development can leave bot tokens blank. In that mode, messages
