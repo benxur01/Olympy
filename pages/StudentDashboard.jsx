@@ -1250,8 +1250,19 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             Salom, {user.name.split(' ')[0]}! 👋
           </h2>
           <p className="text-white/40 text-xs md:text-sm mt-1">{new Date().toLocaleDateString('uz-UZ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-          <BadgeList badges={user.badges} />
         </div>
+        {/* O'ng chekka: premiumga o'tmagan o'quvchi uchun upsell CTA (premium
+            foydalanuvchida ko'rinmaydi). */}
+        {!isPremium && (
+          <button
+            onClick={() => setPage('premium')}
+            title="Premiumga o'ting"
+            className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs md:text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-xl shadow-md transition-all min-h-[40px]"
+          >
+            <span>👑</span>
+            Premium
+          </button>
+        )}
         {!hasCenter && (
           <div className="glass rounded-2xl p-4 border border-indigo-500/20 w-full sm:max-w-xs">
             <div className="text-xs text-indigo-300 font-medium mb-1">💡 Maslahat</div>
@@ -1413,12 +1424,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       </div>
       )}
 
-      {/* Retention: musobaqa va uzoq muddatli bog'liqlik widgetlari */}
+      {/* Retention: raqib faolligi widgeti */}
       {isApi && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-          <WeeklyContestWidget user={user} />
-          <RivalActivityWidget user={user} />
-        </div>
+        <RivalActivityWidget user={user} />
       )}
 
       {/* Haftalik musobaqa tarixi — Standart+ tarif; bepulga qulflangan karta */}
