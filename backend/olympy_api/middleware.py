@@ -34,17 +34,23 @@ class SecurityHeadersMiddleware:
                 'https://*.ingest.sentry.io',
                 'https://generativelanguage.googleapis.com',
                 'https://api.telegram.org',
+                # Google Identity Services (Google orqali kirish) so'rovlari.
+                'https://accounts.google.com/gsi/',
             ]
-            script_src = "script-src 'self'"
+            # Google Sign-In: gsi/client skripti CSP tomonidan bloklanmasin.
+            script_src = "script-src 'self' https://accounts.google.com/gsi/client"
 
         directives = [
             "default-src 'self'",
             script_src,
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+            # style-src'ga GIS injected stillari (accounts.google.com/gsi/style).
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com/gsi/style",
             "font-src 'self' https://fonts.gstatic.com data:",
             # Cloudinary va boshqa media https: orqali; data:/blob: avatarlar uchun.
             "img-src 'self' data: https: blob:",
             "connect-src " + ' '.join(connect_src),
+            # Google Identity Services One Tap iframe'i (accounts.google.com/gsi/).
+            "frame-src https://accounts.google.com/gsi/",
             # Clickjacking himoyasi — sayt iframe ichida ko'rsatilmaydi.
             "frame-ancestors 'none'",
         ]
