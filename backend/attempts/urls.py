@@ -21,6 +21,12 @@ urlpatterns = [
         views_essay.grade_essay_answer,
         name='grade-essay-answer',
     ),
+    # Insho chuqur AI tahlili (on-demand, Plus+ o'quvchi).
+    path(
+        '<int:attempt_id>/essay/<int:question_id>/ai-feedback/',
+        views_essay.essay_ai_feedback,
+        name='attempt-essay-ai-feedback',
+    ),
     path('<int:attempt_id>/', views.attempt_detail, name='attempt-detail'),
     path('', views.submit_attempt, name='submit-attempt'),
 ]

@@ -16,7 +16,7 @@ from rest_framework.response import Response
 
 from olympiads.models import Olympiad
 
-from .models import EssayGrade, TestAttempt, TestSession
+from .models import EssayAIFeedback, EssayGrade, TestAttempt, TestSession
 from .views import _extract_review_chosen, _user_can_manage_olympiad
 
 logger = logging.getLogger(__name__)
@@ -174,6 +174,64 @@ def grade_essay_answer(request, attempt_id, question_id):
         **_essay_entry(attempt, question, grade),
         'attempt_score': attempt.score,
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def essay_ai_feedback(request, attempt_id, question_id):
+    """GET /api/attempts/<id>/essay/<qid>/ai-feedback/ — insho chuqur AI tahlili.
+
+    On-demand (tugma bilan) — Plus+ o'quvchi uchun. Faqat attempt egasi (yoki
+    admin). Egasi Plus'dan past bo'lsa 403 (upgrade_required, required_tier).
+    Yozuv hali yo'q bo'lsa lazy yaratiladi va Celery task navbatga qo'yiladi:
+    {status: "pending"}. Tayyor bo'lsa {status: "ready", feedback: "..."}.
+    """
+    from billing.services import student_tier_at_least
+    from .tasks import generate_essay_ai_feedback_task
+
+    attempt = get_object_or_404(
+        TestAttempt.objects.select_related('user', 'olympiad'),
+        pk=attempt_id,
+    )
+    is_owner = attempt.user_id == request.user.id
+    is_admin = getattr(request.user, 'is_platform_admin', False)
+    if not (is_owner or is_admin):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    # Plus tier gate — faqat egaga tegishli (admin/staff har doim o'tadi).
+    if is_owner and not is_admin and not student_tier_at_least(request.user, 'plus'):
+        return Response(
+            {
+                'detail': "Chuqur AI tahlil Plus tarifi uchun.",
+                'upgrade_required': True,
+                'required_tier': 'plus',
+            },
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+
+    question = attempt.olympiad.questions.filter(
+        pk=question_id, question_type='essay',
+    ).first()
+    if not question:
+        return Response(
+            {'detail': 'Essay savol topilmadi'},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    feedback, created = EssayAIFeedback.objects.get_or_create(
+        attempt=attempt,
+        question=question,
+        defaults={'status': EssayAIFeedback.STATUS_PENDING},
+    )
+    if created:
+        generate_essay_ai_feedback_task.delay(feedback.id)
+        return Response({'status': 'pending'})
+
+    if feedback.status == EssayAIFeedback.STATUS_READY:
+        return Response({'status': 'ready', 'feedback': feedback.feedback_text})
+    if feedback.status == EssayAIFeedback.STATUS_FAILED:
+        return Response({'status': 'failed', 'feedback': feedback.feedback_text or ''})
+    return Response({'status': 'pending'})
 
 
 @api_view(['GET'])
