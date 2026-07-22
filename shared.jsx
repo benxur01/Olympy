@@ -37,6 +37,36 @@ const formatUzPhoneInput = (raw) => {
   return '+' + UZ_DIAL_CODE + local.slice(0, UZ_LOCAL_DIGITS);
 };
 
+// ─── O'quvchi premium tier (Standart/Plus/Pro) yordamchilari ───
+// Backend 3 ta ierarxik tier joriy qildi: Pro ⊇ Plus ⊇ Standart ⊇ free.
+// Ba'zi funksiyalar (competitor-analysis, study-plan, weekly-report) Plus+ ni,
+// boshqalari (olympiad-prep-plan, AI audio, 365-kunlik timeline, cheksiz mashq)
+// Pro ni talab qiladi. UI shu yordamchilar orqali qulflangan/upgrade holatini
+// ko'rsatadi. Reyting kaliti Pricing.jsx'dagi `_tierKey` bilan bir xil mantiq.
+const STUDENT_TIER_ORDER = { free: 0, standart: 1, standard: 1, plus: 2, pro: 3 };
+
+// Plan nomi satridan tier kalitini ajratamiz ("Plus (3 oy)" -> "plus").
+// Pricing.jsx'dagi `_tierKey` bilan aynan bir xil naqsh (qayta ixtiro emas).
+const studentTierKey = (planName) => {
+  const low = (planName || '').toLowerCase();
+  if (low.includes('standart') || low.includes('standard')) return 'standart';
+  if (low.includes('plus')) return 'plus';
+  if (low.includes('pro')) return 'pro';
+  return '';
+};
+
+// Foydalanuvchining amaldagi tier'i. Premium bo'lmasa 'free'. Premium bo'lib
+// plan nomi aniqlanmasa (legacy/qo'lda berilgan grant) — backend'dagi
+// PREMIUM_NO_PLAN_DEFAULT_TIER='pro' mantig'iga mos ravishda 'pro' deb olamiz,
+// shunda to'liq premium foydalanuvchiga noto'g'ri upgrade taklifi ko'rsatilmaydi.
+const userTier = (user) => (user && user.isPremium)
+  ? (studentTierKey(user.currentPlanName) || 'pro')
+  : 'free';
+
+// Foydalanuvchi tier'i kamida `minTier` darajasidami? (ierarxik taqqoslash).
+const tierAtLeast = (user, minTier) =>
+  (STUDENT_TIER_ORDER[userTier(user)] || 0) >= (STUDENT_TIER_ORDER[minTier] || 0);
+
 // Xalqaro input formatlash. `dialCode` — tanlangan davlat kodi (default 998).
 // Foydalanuvchi '+' bilan boshlab boshqa kod yozsa, uni hurmat qilamiz; aks
 // holda tanlangan davlat kodi prefiksini qo'yamiz. Natija doim '+' bilan
