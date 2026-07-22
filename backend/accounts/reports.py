@@ -1,7 +1,7 @@
 import io
 import math
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from PIL import Image, ImageDraw, ImageFont
 from django.db.models import Avg, Max, Q
 from django.utils import timezone
@@ -108,9 +108,94 @@ def generate_monthly_report_pdf(student):
     """Foydalanuvchining oylik natijalaridan hisobot kartasini generatsiya qiladi va PDF qaytaradi."""
     from attempts.models import TestAttempt
 
-    # Natijalarni olish
+    # Natijalarni olish (butun tarix — oylik hisobotning mavjud xulqi saqlanadi).
     attempts = TestAttempt.objects.filter(user=student, disqualified=False).select_related('olympiad').order_by('-submitted_at')
-    
+
+    # Sarlavha ostidagi davr matni (o'zbek oy nomi bilan).
+    months_uz = {
+        'January': 'Yanvar', 'February': 'Fevral', 'March': 'Mart', 'April': 'Aprel',
+        'May': 'May', 'June': 'Iyun', 'July': 'Iyul', 'August': 'Avgust',
+        'September': 'Sentabr', 'October': 'Oktabr', 'November': 'Noyabr', 'December': 'Dekabr'
+    }
+    month_en = timezone.now().strftime('%B')
+    month_uz = months_uz.get(month_en, month_en)
+    date_str = f"Hisobot davri: {month_uz} {timezone.now().strftime('%Y')}"
+
+    return _render_report_pdf(
+        student, attempts,
+        header_title="OYLIK RIVOJLANISH HISOBOTI",
+        date_str=date_str,
+    )
+
+
+def generate_weekly_report_pdf(student):
+    """Foydalanuvchining oxirgi 7 kunlik natijalaridan haftalik hisobot PDF'i.
+
+    Oylik hisobot bilan bir xil chizma/tartib (`_render_report_pdf`), faqat
+    7 kunlik oyna va "HAFTALIK" ramka bilan.
+    """
+    from attempts.models import TestAttempt
+
+    since = timezone.now() - timedelta(days=7)
+    attempts = (
+        TestAttempt.objects
+        .filter(user=student, disqualified=False, submitted_at__gte=since)
+        .select_related('olympiad')
+        .order_by('-submitted_at')
+    )
+    date_str = "Hisobot davri: oxirgi 7 kun (haftalik)"
+
+    return _render_report_pdf(
+        student, attempts,
+        header_title="HAFTALIK RIVOJLANISH HISOBOTI",
+        date_str=date_str,
+    )
+
+
+def generate_portfolio_pdf(student):
+    """O'quvchining BARCHA VAQT yutuqlaridan portfolio/sertifikat PDF'i (Pro).
+
+    Butun tarixdagi natijalar agregatsiya qilinadi (olimpiadalar bo'yicha eng
+    yaxshi natija, fanlar bo'yicha kuchli tomonlar, umumiy ball trendi).
+    Oylik/haftalik hisobot bilan bir xil chizma (`_render_report_pdf`), faqat
+    "YUTUQLAR PORTFOLIOSI" ramkasi va butun tarix oynasi bilan. Sarlavha
+    ostidagi QR kod public verify URL'iga (portfolio_uuid) yo'naltiradi.
+    """
+    from attempts.models import TestAttempt
+
+    attempts = (
+        TestAttempt.objects
+        .filter(user=student, disqualified=False)
+        .select_related('olympiad')
+        .order_by('-submitted_at')
+    )
+    date_str = f"Barcha vaqt statistikasi — {timezone.now().strftime('%d.%m.%Y')}"
+
+    # Public verify URL'i uchun QR — certificate QR bilan bir xil SITE_URL
+    # konventsiyasi. portfolio_uuid NULL bo'lsa (lazy-fill chaqiruvchida
+    # bo'lishi kerak) baribir base URL'ga yo'naltiramiz.
+    from django.conf import settings
+    site = (getattr(settings, 'SITE_URL', '') or 'https://prolymp.uz').rstrip('/')
+    if student.portfolio_uuid:
+        qr_data = f"{site}/portfolio/verify/{student.portfolio_uuid}"
+    else:
+        qr_data = f"{site}/u/{student.id}"
+
+    return _render_report_pdf(
+        student, attempts,
+        header_title="YUTUQLAR PORTFOLIOSI",
+        date_str=date_str,
+        qr_data=qr_data,
+    )
+
+
+def _render_report_pdf(student, attempts, header_title, date_str, qr_data=None):
+    """Hisobot PDF'ini chizadi (oylik/haftalik uchun umumiy chizma logikasi).
+
+    `attempts` — allaqachon filtrlangan TestAttempt queryset'i. `header_title`
+    sarlavha (masalan "OYLIK RIVOJLANISH HISOBOTI"), `date_str` — sarlavha
+    ostidagi davr matni.
+    """
     total_attempts = attempts.count()
     
     # Umumiy o'rtacha ball va to'g'ri/noto'g'ri savollar
@@ -216,18 +301,8 @@ def generate_monthly_report_pdf(student):
     draw.text((105 - w_o/2, 105 - h_o/2), "O", fill=text_white, font=font_logo)
     
     draw.text((145, 90), "OLYMPY", fill=text_white, font=font_logo)
-    draw.text((80, 160), "OYLIK RIVOJLANISH HISOBOTI", fill=text_white, font=font_title)
-    
-    current_month = timezone.now().strftime('%B, %Y')
-    # O'zbek tiliga o'tkazish
-    months_uz = {
-        'January': 'Yanvar', 'February': 'Fevral', 'March': 'Mart', 'April': 'Aprel',
-        'May': 'May', 'June': 'Iyun', 'July': 'Iyul', 'August': 'Avgust',
-        'September': 'Sentabr', 'October': 'Oktabr', 'November': 'Noyabr', 'December': 'Dekabr'
-    }
-    month_en = timezone.now().strftime('%B')
-    month_uz = months_uz.get(month_en, month_en)
-    date_str = f"Hisobot davri: {month_uz} {timezone.now().strftime('%Y')}"
+    draw.text((80, 160), header_title, fill=text_white, font=font_title)
+
     draw.text((80, 215), date_str, fill=text_gray, font=font_subtitle)
 
     # Decorative Line
@@ -353,9 +428,10 @@ def generate_monthly_report_pdf(student):
 
     # QR Code — platformaga (o'quvchi profili) yo'naltiradi. Ota-ona/o'quvchi
     # telefon kamerasi bilan skanerlab Olympy'ga o'tishi mumkin.
-    from django.conf import settings
-    site = (getattr(settings, 'SITE_URL', '') or 'https://prolymp.uz').rstrip('/')
-    qr_data = f"{site}/u/{student.id}"
+    if qr_data is None:
+        from django.conf import settings
+        site = (getattr(settings, 'SITE_URL', '') or 'https://prolymp.uz').rstrip('/')
+        qr_data = f"{site}/u/{student.id}"
     _draw_qr_code(img, draw, [1030, 1515, 1120, 1605], qr_data, student.id)
 
     # Save to PDF
