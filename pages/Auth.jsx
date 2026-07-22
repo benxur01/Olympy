@@ -450,7 +450,7 @@ const LoginPage = ({ onNavigate, onLogin }) => {
               className="btn-ghost w-full py-3 rounded-2xl font-semibold">← Oddiy kirish</button>
           )}
           {!restoreMode && (
-            <GoogleAuthButton role="student" onLogin={finishLogin} setError={setError} loading={loading} setLoading={setLoading} />
+            <GoogleAuthButton role="student" onLogin={onLogin} setError={setError} loading={loading} setLoading={setLoading} />
           )}
         </form>
         )}
