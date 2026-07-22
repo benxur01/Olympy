@@ -26,7 +26,6 @@ MAX_DOCUMENT_TEXT_CHARS = 80_000
 MAX_CONTEXT_PENDING_ROWS = 20
 DEFAULT_CONVERSATION_TTL_SECONDS = 6 * 60 * 60
 DEFAULT_HISTORY_MESSAGES = 8
-OPENAI_ERROR_CACHE_SECONDS = 30 * 60
 GEMINI_ERROR_CACHE_SECONDS = 30 * 60
 
 APPROVAL_KEYWORDS = (
@@ -386,28 +385,6 @@ def _ai_unavailable_reply(reason='temporary'):
     )
 
 
-def _openai_keys():
-    keys = list(getattr(settings, 'AI_MANAGER_BOT_OPENAI_API_KEYS', []) or [])
-    single = getattr(settings, 'AI_MANAGER_BOT_OPENAI_API_KEY', '')
-    if single:
-        keys.append(single)
-    return list(dict.fromkeys(key for key in keys if key))
-
-
-def _openai_error_cache_key():
-    return 'manager_bot:openai_last_error'
-
-
-def _remember_openai_error(error_code):
-    if error_code in ('insufficient_quota', 'invalid_key'):
-        cache.set(_openai_error_cache_key(), error_code, timeout=OPENAI_ERROR_CACHE_SECONDS)
-
-
-def _cached_openai_error():
-    cached = cache.get(_openai_error_cache_key())
-    return cached if cached in ('insufficient_quota', 'invalid_key') else ''
-
-
 def _gemini_keys():
     keys = list(getattr(settings, 'AI_MANAGER_BOT_GEMINI_API_KEYS', []) or [])
     single = getattr(settings, 'AI_MANAGER_BOT_GEMINI_API_KEY', '')
@@ -512,79 +489,12 @@ def _manager_ai_prompt(actor, text, ctx):
         "Chegaralar: faqat berilgan kontekst va suhbat tarixiga tayan. Ma'lumot yetmasa, ochiq ayt va nima yuborish "
         "kerakligini so'ra. Hech qachon o'zing mustaqil tasdiqlash qildim deb yozma; tasdiqlashni backend alohida bajaradi. "
         "Agar manager kimnidir tasdiqlashni so'rasa, ism, telefon yoki kod kerakligini ayt; noaniq bo'lsa aniqlashtir. "
-        "OpenAI, Gemini, model, quota, API kalit kabi texnik tafsilotlarni managerga aytma.\n\n"
+        "Gemini, model, quota, API kalit kabi texnik tafsilotlarni managerga aytma.\n\n"
         "Kontekst:\n"
         f"{chr(10).join(context_lines)}"
         f"{history_block}\n\n"
         f"Manager savoli: {str(text or '')[:2000]}"
     )
-
-
-def _openai_answer(actor, text, ctx):
-    api_keys = _openai_keys()
-    if not api_keys:
-        return '', 'missing_key'
-    cached_error = _cached_openai_error()
-    if cached_error:
-        return '', cached_error
-    prompt = _manager_ai_prompt(actor, text, ctx)
-    payload = {
-        'model': getattr(settings, 'AI_MANAGER_BOT_MODEL', 'gpt-4o-mini'),
-        'messages': [{
-            'role': 'user',
-            'content': prompt,
-        }],
-        'max_tokens': 500,
-        'temperature': getattr(settings, 'AI_MANAGER_BOT_TEMPERATURE', 0.45),
-    }
-    body = json.dumps(payload).encode('utf-8')
-    for index, api_key in enumerate(api_keys, start=1):
-        req = urllib.request.Request(
-            'https://api.openai.com/v1/chat/completions',
-            data=body,
-            method='POST',
-            headers={
-                'Authorization': f'Bearer {api_key}',
-                'Content-Type': 'application/json',
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as response:
-                raw = json.loads(response.read().decode('utf-8'))
-            try:
-                text_out = raw['choices'][0]['message']['content']
-            except (KeyError, IndexError, TypeError):
-                text_out = ''
-            return text_out.strip()[:3500], ''
-        except urllib.error.HTTPError as exc:
-            status = getattr(exc, 'code', 0)
-            error_code = ''
-            error_type = ''
-            try:
-                raw_error = json.loads(exc.read().decode('utf-8'))
-                error = raw_error.get('error') or {}
-                error_code = error.get('code') or ''
-                error_type = error.get('type') or ''
-            except Exception:
-                pass
-            logger.warning(
-                'Manager bot OpenAI key #%s failed: HTTP %s type=%s code=%s',
-                index,
-                status,
-                error_type or '-',
-                error_code or '-',
-            )
-            if status == 429 and (error_code == 'insufficient_quota' or error_type == 'insufficient_quota'):
-                _remember_openai_error('insufficient_quota')
-                return '', 'insufficient_quota'
-            if status in (401, 403):
-                _remember_openai_error('invalid_key')
-                return '', 'invalid_key'
-            if status not in (401, 403, 408, 409, 429, 500, 502, 503, 504):
-                break
-        except Exception as exc:
-            logger.warning('Manager bot OpenAI key #%s failed: %s', index, exc.__class__.__name__)
-    return '', 'request_failed'
 
 
 def _gemini_answer(actor, text, ctx):
@@ -696,39 +606,11 @@ def answer_manager_question(actor, text):
         if not _is_memory_clear_request(text):
             _remember_exchange(actor, text, deterministic)
         return deterministic
-    ai_answer, ai_error = _openai_answer(actor, text, ctx)
-    if ai_answer:
-        _remember_exchange(actor, text, ai_answer)
-        return ai_answer
     gemini_answer, gemini_error = _gemini_answer(actor, text, ctx)
     if gemini_answer:
         _remember_exchange(actor, text, gemini_answer)
         return gemini_answer
-    if gemini_error == 'insufficient_quota':
-        reply = _ai_unavailable_reply()
-        _remember_exchange(actor, text, reply)
-        return reply
-    if gemini_error == 'invalid_key':
-        reply = _ai_unavailable_reply('config')
-        _remember_exchange(actor, text, reply)
-        return reply
-    if gemini_error == 'temporary_unavailable':
-        reply = _ai_unavailable_reply()
-        _remember_exchange(actor, text, reply)
-        return reply
-    if gemini_error == 'request_failed' and ai_error == 'insufficient_quota':
-        reply = _ai_unavailable_reply()
-        _remember_exchange(actor, text, reply)
-        return reply
-    if ai_error == 'insufficient_quota':
-        reply = _ai_unavailable_reply()
-        _remember_exchange(actor, text, reply)
-        return reply
-    if ai_error == 'invalid_key':
-        reply = _ai_unavailable_reply('config')
-        _remember_exchange(actor, text, reply)
-        return reply
-    if ai_error == 'missing_key' and gemini_error == 'missing_key':
+    if gemini_error in ('invalid_key', 'missing_key'):
         reply = _ai_unavailable_reply('config')
         _remember_exchange(actor, text, reply)
         return reply

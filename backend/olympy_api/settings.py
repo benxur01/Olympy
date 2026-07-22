@@ -767,14 +767,6 @@ JUDGE0_API_KEY = os.environ.get('JUDGE0_API_KEY', '')
 
 # AI-assisted roster approval. AI extracts names only; backend permissions and
 # deterministic matching decide whether a pending student can be approved.
-AI_ROSTER_OPENAI_API_KEY = os.environ.get('AI_ROSTER_OPENAI_API_KEY') or os.environ.get('OPENAI_API_KEY', '')
-AI_ROSTER_OPENAI_API_KEYS = [
-    key.strip() for key in os.environ.get('AI_ROSTER_OPENAI_API_KEYS', '').split(',')
-    if key.strip()
-]
-if AI_ROSTER_OPENAI_API_KEY:
-    AI_ROSTER_OPENAI_API_KEYS.append(AI_ROSTER_OPENAI_API_KEY)
-AI_ROSTER_OPENAI_API_KEYS = list(dict.fromkeys(AI_ROSTER_OPENAI_API_KEYS))
 AI_ROSTER_GEMINI_API_KEY = os.environ.get('AI_ROSTER_GEMINI_API_KEY') or os.environ.get('GEMINI_API_KEY', '')
 AI_ROSTER_GEMINI_API_KEYS = [
     key.strip() for key in os.environ.get('AI_ROSTER_GEMINI_API_KEYS', '').split(',')
@@ -783,7 +775,6 @@ AI_ROSTER_GEMINI_API_KEYS = [
 if AI_ROSTER_GEMINI_API_KEY:
     AI_ROSTER_GEMINI_API_KEYS.append(AI_ROSTER_GEMINI_API_KEY)
 AI_ROSTER_GEMINI_API_KEYS = list(dict.fromkeys(AI_ROSTER_GEMINI_API_KEYS))
-AI_ROSTER_MODEL = os.environ.get('AI_ROSTER_MODEL', 'gpt-4o-mini')
 AI_ROSTER_GEMINI_MODEL = os.environ.get('AI_ROSTER_GEMINI_MODEL', 'gemini-2.5-flash')
 # Default False (xavfsiz). True qilinsa AI ajratgan o'quvchi ismlari inson
 # tasdig'isiz avtomatik qabul qilinadi. Faqat ishonchli muhitda env orqali yoqing.
@@ -795,19 +786,6 @@ AI_ROSTER_MAX_IMAGE_BYTES = int(os.environ.get('AI_ROSTER_MAX_IMAGE_BYTES', str(
 AI_MANAGER_BOT_MAX_DOCUMENT_BYTES = int(
     os.environ.get('AI_MANAGER_BOT_MAX_DOCUMENT_BYTES', str(10 * 1024 * 1024))
 )
-AI_MANAGER_BOT_OPENAI_API_KEY = (
-    os.environ.get('AI_MANAGER_BOT_OPENAI_API_KEY')
-    or AI_ROSTER_OPENAI_API_KEY
-    or os.environ.get('OPENAI_API_KEY', '')
-)
-AI_MANAGER_BOT_OPENAI_API_KEYS = [
-    key.strip() for key in os.environ.get('AI_MANAGER_BOT_OPENAI_API_KEYS', '').split(',')
-    if key.strip()
-]
-if AI_MANAGER_BOT_OPENAI_API_KEY:
-    AI_MANAGER_BOT_OPENAI_API_KEYS.append(AI_MANAGER_BOT_OPENAI_API_KEY)
-AI_MANAGER_BOT_OPENAI_API_KEYS = list(dict.fromkeys(AI_MANAGER_BOT_OPENAI_API_KEYS))
-AI_MANAGER_BOT_MODEL = os.environ.get('AI_MANAGER_BOT_MODEL', AI_ROSTER_MODEL)
 AI_MANAGER_BOT_TEMPERATURE = float(os.environ.get('AI_MANAGER_BOT_TEMPERATURE', '0.7'))
 AI_MANAGER_BOT_GEMINI_API_KEY = (
     os.environ.get('AI_MANAGER_BOT_GEMINI_API_KEY')
@@ -844,20 +822,6 @@ AI_MANAGER_BOT_HISTORY_MESSAGES = int(os.environ.get('AI_MANAGER_BOT_HISTORY_MES
 
 # AI question generation for manager/teacher/owner panels. Generated questions
 # are only previews until the staff user explicitly saves them.
-AI_QUESTION_OPENAI_API_KEY = (
-    os.environ.get('AI_QUESTION_OPENAI_API_KEY')
-    or AI_MANAGER_BOT_OPENAI_API_KEY
-    or AI_ROSTER_OPENAI_API_KEY
-    or os.environ.get('OPENAI_API_KEY', '')
-)
-AI_QUESTION_OPENAI_API_KEYS = [
-    key.strip() for key in os.environ.get('AI_QUESTION_OPENAI_API_KEYS', '').split(',')
-    if key.strip()
-]
-if AI_QUESTION_OPENAI_API_KEY:
-    AI_QUESTION_OPENAI_API_KEYS.append(AI_QUESTION_OPENAI_API_KEY)
-AI_QUESTION_OPENAI_API_KEYS = list(dict.fromkeys(AI_QUESTION_OPENAI_API_KEYS))
-AI_QUESTION_MODEL = os.environ.get('AI_QUESTION_MODEL', 'gpt-4o-mini')
 AI_QUESTION_GEMINI_API_KEY = (
     os.environ.get('AI_QUESTION_GEMINI_API_KEY')
     or AI_MANAGER_BOT_GEMINI_API_KEY
@@ -889,7 +853,6 @@ AI_QUESTION_GEMINI_FALLBACK_MODELS = [
     if model.strip()
 ]
 AI_QUESTION_MAX_COUNT = int(os.environ.get('AI_QUESTION_MAX_COUNT', '30'))
-AI_QUESTION_MAX_OUTPUT_TOKENS = int(os.environ.get('AI_QUESTION_MAX_OUTPUT_TOKENS', '12000'))
 # Matematik savollarda LaTeX (har '\' JSON'da '\\') token sarfini oshiradi —
 # 8192 ko'p savolli chunk'da javobni o'rtada kesib qo'yardi. 16384 ga ko'tardik
 # (gemini-2.5-flash 65536 gacha qo'llaydi). Kesilsa ham endi qisman JSON

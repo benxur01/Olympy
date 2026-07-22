@@ -124,255 +124,6 @@ def _json_from_ai_text(text):
     return json.loads(cleaned)
 
 
-def _openai_extract_names_from_image(image_bytes, mime_type, caption=''):
-    api_keys = list(getattr(settings, 'AI_ROSTER_OPENAI_API_KEYS', []) or [])
-    single_key = getattr(settings, 'AI_ROSTER_OPENAI_API_KEY', '')
-    if single_key:
-        api_keys.append(single_key)
-    api_keys = list(dict.fromkeys(key for key in api_keys if key))
-    if not api_keys:
-        return {
-            'ok': False,
-            'error': "OpenAI API kaliti sozlanmagan.",
-            'names': [],
-            'provider': 'openai',
-            'missing_key': True,
-        }
-    data_url = f"data:{mime_type or 'image/jpeg'};base64,{base64.b64encode(image_bytes).decode('ascii')}"
-    schema = {
-        'type': 'object',
-        'additionalProperties': False,
-        'properties': {
-            'students': {
-                'type': 'array',
-                'items': {
-                    'type': 'object',
-                    'additionalProperties': False,
-                    'properties': {
-                        'full_name': {
-                            'type': 'string',
-                            'description': "Student full name only, without numbering or extra columns.",
-                        },
-                        'phone': {
-                            'type': 'string',
-                            'description': "Visible phone number for this student, or empty string.",
-                        },
-                        'approval_code': {
-                            'type': 'string',
-                            'description': "Visible approval/code/id for this student, or empty string.",
-                        },
-                    },
-                    'required': ['full_name', 'phone', 'approval_code'],
-                },
-            },
-        },
-        'required': ['students'],
-    }
-    prompt = (
-        "Rasmdagi yoki skrinshotdagi o'quvchilar ro'yxatidan faqat F.I.Sh. "
-        "to'liq ismlarini ajratib ber. Agar telefon raqam yoki kod/id ko'rinsa, "
-        "ularni ham shu o'quvchi qatoriga yoz; ko'rinmasa bo'sh string qaytar. "
-        "Sinf, tartib raqami, ball, sarlavha va izohlarni chiqarma. "
-        "Natijani faqat JSON schema bo'yicha qaytar."
-    )
-    if caption:
-        prompt += f"\nQo'shimcha caption: {caption[:1000]}"
-    payload = {
-        'model': getattr(settings, 'AI_ROSTER_MODEL', 'gpt-4o-mini'),
-        'messages': [{
-            'role': 'user',
-            'content': [
-                {'type': 'text', 'text': prompt},
-                {'type': 'image_url', 'image_url': {'url': data_url}},
-            ],
-        }],
-        'response_format': {
-            'type': 'json_schema',
-            'json_schema': {
-                'name': 'student_roster_names',
-                'schema': schema,
-                'strict': True,
-            },
-        },
-    }
-    raw = None
-    last_error = ''
-    body = json.dumps(payload).encode('utf-8')
-    for index, api_key in enumerate(api_keys, start=1):
-        req = urllib.request.Request(
-            'https://api.openai.com/v1/chat/completions',
-            data=body,
-            method='POST',
-            headers={
-                'Authorization': f'Bearer {api_key}',
-                'Content-Type': 'application/json',
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as response:
-                raw = json.loads(response.read().decode('utf-8'))
-            if index > 1:
-                logger.info('OpenAI roster extraction succeeded with fallback key #%s', index)
-            break
-        except urllib.error.HTTPError as exc:
-            status = getattr(exc, 'code', 0)
-            last_error = f'HTTP {status}'
-            logger.warning('OpenAI roster key #%s failed: %s', index, last_error)
-            if status not in (401, 403, 408, 409, 429, 500, 502, 503, 504):
-                break
-        except Exception as exc:
-            last_error = exc.__class__.__name__
-            logger.warning('OpenAI roster key #%s failed: %s', index, last_error)
-    if raw is None:
-        logger.error('OpenAI roster extraction failed for all configured keys: %s', last_error)
-        return {'ok': False, 'error': "OpenAI rasmni o'qiy olmadi.", 'names': [], 'provider': 'openai'}
-
-    try:
-        text = raw['choices'][0]['message']['content']
-    except (KeyError, IndexError, TypeError):
-        text = ''
-    try:
-        parsed = _json_from_ai_text(text)
-    except (TypeError, ValueError):
-        logger.warning('OpenAI roster response was not JSON: %s', text[:500])
-        return {'ok': False, 'error': "OpenAI javobi tushunarsiz bo'ldi.", 'names': [], 'provider': 'openai'}
-
-    entries = _dedupe_entries([
-        {
-            'full_name': item.get('full_name', '').strip(),
-            'phone': normalize_phone(item.get('phone', '')),
-            'approval_code': str(item.get('approval_code') or '').strip().upper(),
-        }
-        for item in (parsed.get('students') or [])
-        if isinstance(item, dict) and _looks_like_name(item.get('full_name', ''))
-    ])
-    return {
-        'ok': True,
-        'error': '',
-        'entries': entries,
-        'names': [entry['full_name'] for entry in entries],
-        'provider': 'openai',
-    }
-
-
-def _openai_extract_names_from_text(text):
-    api_keys = list(getattr(settings, 'AI_ROSTER_OPENAI_API_KEYS', []) or [])
-    single_key = getattr(settings, 'AI_ROSTER_OPENAI_API_KEY', '')
-    if single_key:
-        api_keys.append(single_key)
-    api_keys = list(dict.fromkeys(key for key in api_keys if key))
-    if not api_keys:
-        return {
-            'ok': False,
-            'error': "OpenAI API kaliti sozlanmagan.",
-            'entries': [],
-            'names': [],
-            'provider': 'openai',
-            'missing_key': True,
-        }
-    schema = {
-        'type': 'object',
-        'additionalProperties': False,
-        'properties': {
-            'students': {
-                'type': 'array',
-                'items': {
-                    'type': 'object',
-                    'additionalProperties': False,
-                    'properties': {
-                        'full_name': {'type': 'string'},
-                        'phone': {'type': 'string'},
-                        'approval_code': {'type': 'string'},
-                    },
-                    'required': ['full_name', 'phone', 'approval_code'],
-                },
-            },
-        },
-        'required': ['students'],
-    }
-    prompt = (
-        "Quyidagi matndan faqat o'quvchilar ro'yxatini ajrat. "
-        "Har bir o'quvchi uchun F.I.Sh., ko'rinsa telefon raqam va kod/id ni qaytar. "
-        "Sarlavha, izoh, fan, sinf, ball va boshqa ustunlarni chiqarmagin. "
-        "Agar o'quvchi topilmasa bo'sh students array qaytar.\n\n"
-        f"Matn:\n{str(text or '')[:24000]}"
-    )
-    payload = {
-        'model': getattr(settings, 'AI_ROSTER_MODEL', 'gpt-4o-mini'),
-        'messages': [{
-            'role': 'user',
-            'content': prompt,
-        }],
-        'response_format': {
-            'type': 'json_schema',
-            'json_schema': {
-                'name': 'student_roster_text_names',
-                'schema': schema,
-                'strict': True,
-            },
-        },
-        'max_tokens': 4000,
-    }
-    body = json.dumps(payload).encode('utf-8')
-    raw = None
-    last_error = ''
-    for index, api_key in enumerate(api_keys, start=1):
-        req = urllib.request.Request(
-            'https://api.openai.com/v1/chat/completions',
-            data=body,
-            method='POST',
-            headers={
-                'Authorization': f'Bearer {api_key}',
-                'Content-Type': 'application/json',
-            },
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=35) as response:
-                raw = json.loads(response.read().decode('utf-8'))
-            if index > 1:
-                logger.info('OpenAI text roster extraction succeeded with fallback key #%s', index)
-            break
-        except urllib.error.HTTPError as exc:
-            status = getattr(exc, 'code', 0)
-            last_error = f'HTTP {status}'
-            logger.warning('OpenAI text roster key #%s failed: %s', index, last_error)
-            if status not in (401, 403, 408, 409, 429, 500, 502, 503, 504):
-                break
-        except Exception as exc:
-            last_error = exc.__class__.__name__
-            logger.warning('OpenAI text roster key #%s failed: %s', index, last_error)
-    if raw is None:
-        logger.error('OpenAI text roster extraction failed for all configured keys: %s', last_error)
-        return {'ok': False, 'error': "OpenAI matnni o'qiy olmadi.", 'entries': [], 'names': [], 'provider': 'openai'}
-
-    try:
-        text_out = raw['choices'][0]['message']['content']
-    except (KeyError, IndexError, TypeError):
-        text_out = ''
-    try:
-        parsed = _json_from_ai_text(text_out)
-    except (TypeError, ValueError):
-        logger.warning('OpenAI text roster response was not JSON: %s', text_out[:500])
-        return {'ok': False, 'error': "OpenAI javobi tushunarsiz bo'ldi.", 'entries': [], 'names': [], 'provider': 'openai'}
-
-    entries = _dedupe_entries([
-        {
-            'full_name': item.get('full_name', '').strip(),
-            'phone': normalize_phone(item.get('phone', '')),
-            'approval_code': str(item.get('approval_code') or '').strip().upper(),
-        }
-        for item in (parsed.get('students') or [])
-        if isinstance(item, dict) and _looks_like_name(item.get('full_name', ''))
-    ])
-    return {
-        'ok': True,
-        'error': '',
-        'entries': entries,
-        'names': [entry['full_name'] for entry in entries],
-        'provider': 'openai',
-    }
-
-
 def _gemini_extract_names_from_text(text):
     api_keys = list(getattr(settings, 'AI_ROSTER_GEMINI_API_KEYS', []) or [])
     single_key = getattr(settings, 'AI_ROSTER_GEMINI_API_KEY', '')
@@ -643,17 +394,12 @@ def _gemini_extract_names_from_image(image_bytes, mime_type, caption=''):
 
 
 def _ai_extract_names_from_image(image_bytes, mime_type, caption=''):
-    openai_result = _openai_extract_names_from_image(image_bytes, mime_type, caption=caption)
-    if openai_result.get('ok'):
-        return openai_result
     gemini_result = _gemini_extract_names_from_image(image_bytes, mime_type, caption=caption)
     if gemini_result.get('ok'):
-        logger.info('AI roster extraction used Gemini after OpenAI failed: %s', openai_result.get('error'))
         return gemini_result
-    errors = [r.get('error') for r in (openai_result, gemini_result) if r.get('error')]
     return {
         'ok': False,
-        'error': ' / '.join(errors) or "AI rasmni o'qiy olmadi.",
+        'error': gemini_result.get('error') or "AI rasmni o'qiy olmadi.",
         'names': [],
     }
 
@@ -678,16 +424,11 @@ def extract_names_from_payload(text='', image_bytes=None, mime_type='image/jpeg'
         elif not entries:
             return ai_result
     elif use_ai_text and text and not entries:
-        ai_result = _openai_extract_names_from_text(text)
-        if ai_result.get('ok'):
-            entries = _dedupe_entries([*entries, *(ai_result.get('entries') or [])])
-        else:
-            gemini_result = _gemini_extract_names_from_text(text)
-            if gemini_result.get('ok'):
-                logger.info('Text roster used Gemini after OpenAI failed: %s', ai_result.get('error'))
-                entries = _dedupe_entries([*entries, *(gemini_result.get('entries') or [])])
-            elif not ai_result.get('missing_key') and not gemini_result.get('missing_key'):
-                return gemini_result
+        gemini_result = _gemini_extract_names_from_text(text)
+        if gemini_result.get('ok'):
+            entries = _dedupe_entries([*entries, *(gemini_result.get('entries') or [])])
+        elif not gemini_result.get('missing_key'):
+            return gemini_result
     return {
         'ok': True,
         'error': '',
