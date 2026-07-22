@@ -829,6 +829,86 @@ def review_code_submission(question_text, submitted_code, language, expected_out
     }
 
 
+def review_essay_answer(question_text, essay_text, subject=''):
+    """O'quvchi insho (essay) javobini Gemini orqali chuqur tahlil qiladi.
+
+    `review_code_submission` bilan bir xil naqsh (strukturaviy JSON,
+    45s timeout, key/model fallback), lekin insho uchun. Ball qo'ymaydi —
+    essay bahosi ustozniki bo'lib qoladi. Qaytaradi:
+    `{'ok': bool, 'review': str, 'error': str}` — `review` o'zbek tilida
+    Markdown (kuchli tomonlar / kamchiliklar / qanday yaxshilash).
+    """
+    text = str(essay_text or '').strip()
+    if not text:
+        return {'ok': False, 'review': '', 'error': 'Insho javobi bo\'sh.'}
+
+    keys = _gemini_api_keys()
+    if not keys:
+        return {
+            'ok': False,
+            'review': '',
+            'error': "AI tahlil sozlanmagan.",
+        }
+
+    # Juda uzun inshoni cheklaymiz (token portlashining oldini olish).
+    text = text[:8000]
+    schema = {
+        'type': 'OBJECT',
+        'properties': {
+            'review': {'type': 'STRING'},
+        },
+        'required': ['review'],
+    }
+    prompt = (
+        "Sen tajribali insho (essay) o'qituvchisisan. Quyidagi olimpiada "
+        "savoliga o'quvchi yozgan inshoni chuqur tahlil qil.\n\n"
+        f"Fan: {subject or 'aniqlanmagan'}\n"
+        f"Savol matni:\n{str(question_text or '')[:3000]}\n\n"
+        f"O'quvchi inshosi:\n{text}\n\n"
+        "Quyidagilarni baholang:\n"
+        "1. Kuchli tomonlari — mazmun, tuzilma, dalillar, til.\n"
+        "2. Kamchiliklari — mantiqiy, grammatik yoki uslubiy xatolar.\n"
+        "3. Qanday yaxshilash — aniq, amaliy tavsiyalar.\n\n"
+        "Natijani JSON shaklida qaytar:\n"
+        "- review: o'zbek tilida batafsil tahlil (Markdown: sarlavhalar, "
+        "ro'yxatlar, muhim joylarini qalin). Ball QO'YMA — faqat matnli tahlil."
+    )
+    payload = {
+        'contents': [{'role': 'user', 'parts': [{'text': prompt}]}],
+        'generationConfig': {
+            'responseMimeType': 'application/json',
+            'responseSchema': schema,
+            'maxOutputTokens': 2048,
+        },
+    }
+    body = json.dumps(payload).encode('utf-8')
+    for model in _gemini_models():
+        model_path = urllib.parse.quote(model, safe='-_.~/')
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+        for api_key in keys:
+            req = urllib.request.Request(
+                url, data=body, method='POST',
+                headers={'Content-Type': 'application/json', 'x-goog-api-key': api_key},
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=45) as response:
+                    raw = json.loads(response.read().decode('utf-8'))
+                parts = (((raw.get('candidates') or [{}])[0].get('content') or {}).get('parts') or [])
+                ai_text = ''.join(part.get('text') or '' for part in parts)
+                parsed = _json_from_ai_text(ai_text)
+                if isinstance(parsed, dict):
+                    review = str(parsed.get('review') or '').strip()
+                    if review:
+                        return {'ok': True, 'review': review, 'error': ''}
+            except Exception as exc:
+                logger.warning('Gemini essay review failed with model=%s: %s', model, exc)
+    return {
+        'ok': False,
+        'review': '',
+        'error': "AI tahlilni hozir bajarib bo'lmadi. Keyinroq qayta urinib ko'ring.",
+    }
+
+
 def analyze_attempt_ai(attempt_summary, mistakes_list):
     """O4: Bitta test natijasi bo'yicha qisqa AI tahlil (o'zbek tilida).
 
