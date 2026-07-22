@@ -10,7 +10,47 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const [explanations, setExplanations] = React.useState({}); // { [qid]: string }
   const [explaining, setExplaining] = React.useState({});     // { [qid]: boolean }
   const isPremium = isApi ? !!(user?.isPremium ?? user?.is_premium) : true;
+  // Feature 4: insho chuqur AI tahlili Plus+ tarifi uchun. Mock (isApi=false)
+  // rejimda barcha imkoniyatlar ochiq.
+  const canPlusEssay = isApi ? tierAtLeast(user, 'plus') : true;
   const [showPremiumLockModal, setShowPremiumLockModal] = React.useState(false);
+  // On-demand insho AI tahlili holati (savol id bo'yicha).
+  const [essayAI, setEssayAI] = React.useState({});          // { [qid]: {status, text} }
+  const [essayAILoading, setEssayAILoading] = React.useState({}); // { [qid]: bool }
+  const essayPollRef = React.useRef({});                     // { [qid]: timeoutId }
+  React.useEffect(() => () => {
+    // Unmount'da barcha polling timerlarini tozalaymiz.
+    Object.values(essayPollRef.current).forEach((t) => clearTimeout(t));
+  }, []);
+
+  // "Chuqur AI tahlil" tugmasi — insho javobini AI orqali tahlil qiladi.
+  // Backend on-demand: birinchi so'rov {status:'pending'} qaytarsa, tayyor
+  // bo'lguncha (ready/failed) davriy so'rab turamiz (AttemptAIAnalysis kabi).
+  const handleEssayAIFeedback = (qid) => {
+    const attemptId = reviewAttemptId;
+    if (!attemptId || essayAILoading[qid]) return;
+    setEssayAILoading((prev) => ({ ...prev, [qid]: true }));
+    const poll = async () => {
+      try {
+        const res = await OlympyApi.getEssayAIFeedback(attemptId, qid, OlympyApi.getToken());
+        const st = res?.status;
+        if (st === 'ready') {
+          setEssayAI((prev) => ({ ...prev, [qid]: { status: 'ready', text: res.feedback || '' } }));
+          setEssayAILoading((prev) => ({ ...prev, [qid]: false }));
+        } else if (st === 'failed') {
+          setEssayAI((prev) => ({ ...prev, [qid]: { status: 'failed', text: res.feedback || "AI tahlil hozircha tayyor emas. Keyinroq urinib ko'ring." } }));
+          setEssayAILoading((prev) => ({ ...prev, [qid]: false }));
+        } else {
+          // pending — davriy tekshiruvni davom ettiramiz.
+          essayPollRef.current[qid] = setTimeout(poll, 3000);
+        }
+      } catch (err) {
+        setEssayAI((prev) => ({ ...prev, [qid]: { status: 'failed', text: OlympyApi.toUserMessage?.(err) || "AI tahlilni yuklab bo'lmadi." } }));
+        setEssayAILoading((prev) => ({ ...prev, [qid]: false }));
+      }
+    };
+    poll();
+  };
 
   const handleExplain = async (qid) => {
     if (explanations[qid]) return;
@@ -66,6 +106,45 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
               <Icon name="info" size={12} /> Insho qo'lda baholanadi
             </div>
           )}
+
+          {/* Feature 4: on-demand chuqur AI tahlil (Plus+). */}
+          <div className="pt-1">
+            {!canPlusEssay ? (
+              <button
+                onClick={() => setShowPremiumLockModal(true)}
+                className="text-[11px] text-white/50 hover:text-white/70 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 border border-white/10 bg-white/5"
+              >
+                <Icon name="lock" size={12} /> Chuqur AI tahlil — Plus tarifi
+              </button>
+            ) : essayAI[q.id] ? (
+              <div className={`rounded-xl border p-3 text-xs whitespace-pre-wrap break-words ${essayAI[q.id].status === 'failed' ? 'bg-amber-500/10 border-amber-500/25 text-amber-200' : 'bg-[#12141a] border-indigo-500/20 text-white/80'}`}>
+                <div className="flex items-center gap-1.5 text-indigo-400 font-bold mb-2">
+                  <Icon name="bolt" size={13} className="text-indigo-400" />
+                  <span>Chuqur AI tahlil</span>
+                </div>
+                <div className="whitespace-pre-line text-[11px] md:text-xs">
+                  {renderMarkdown(essayAI[q.id].text)}
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => handleEssayAIFeedback(q.id)}
+                disabled={!!essayAILoading[q.id]}
+                className="btn-ghost text-[11px] px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5 text-indigo-300 hover:text-indigo-200"
+              >
+                {essayAILoading[q.id] ? (
+                  <>
+                    <span className="w-3 h-3 rounded-full border border-white/20 border-t-white animate-spin" />
+                    Tahlil qilinmoqda…
+                  </>
+                ) : (
+                  <>
+                    <Icon name="bolt" size={13} /> Chuqur AI tahlil
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </div>
       );
     }
