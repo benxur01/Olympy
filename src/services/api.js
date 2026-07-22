@@ -273,7 +273,7 @@ const _refreshTokens = () => {
 
 const request = async (
   path,
-  { method = 'GET', body, token, headers = {}, retryOnAuth = true, keepalive = false, signal } = {},
+  { method = 'GET', body, token, headers = {}, retryOnAuth = true, keepalive = false, signal, silent = false } = {},
 ) => {
   const requestHeaders = {
     Accept: 'application/json',
@@ -310,8 +310,14 @@ const request = async (
       throw new ApiError('aborted', { status: 0 });
     }
     // Haqiqiy tarmoq xatosi (internet yo'q / server o'chiq / timeout) — AI
-    // yordam widjetini avtomatik ochamiz.
-    dispatchSupportNeeded('network_error', "Server bilan bog‘lanishda xatolik yuz berdi");
+    // yordam widjetini avtomatik ochamiz. `silent` so'rovlar (masalan AI
+    // widjetning o'z fon tarixi preload'i) buni triggerlamaydi — aks holda
+    // widjet o'zining fon so'rovi qulasa o'zini-o'zi ochib, foydalanuvchini
+    // (ayniqsa ro'yxatdan o'tgach navbatdagi so'rovlar to'lqinida server hali
+    // "uyg'onmagan" paytda) bejiz bezovta qilardi.
+    if (!silent) {
+      dispatchSupportNeeded('network_error', "Server bilan bog‘lanishda xatolik yuz berdi");
+    }
     throw new ApiError("Server bilan bog‘lanishda xatolik yuz berdi", { status: 0 });
   }
 
@@ -381,7 +387,7 @@ const request = async (
     }
     // Server ichki xatosi (5xx) — AI yordam widjetini avtomatik ochamiz. 4xx
     // (validatsiya / ruxsat / topilmadi) oddiy holatlar, ular uchun ochmaymiz.
-    if (response.status >= 500) {
+    if (response.status >= 500 && !silent) {
       dispatchSupportNeeded('api_error', extractErrorMessage(data) || response.statusText || 'Server xatosi');
     }
     throw new ApiError(extractErrorMessage(data) || response.statusText, {
@@ -1351,7 +1357,10 @@ export const OlympyApi = {
   useReferral: (code, token) => request('/api/me/referral/use/', { method: 'POST', body: { code }, token }),
   // AI Support Chatbot
   sendSupportChat: (messages, token, sessionId) => request('/api/support/chat/', { method: 'POST', body: { messages, session_id: sessionId }, token }),
-  getSupportChatHistory: (token, sessionId) => request(`/api/support/chat/?session_id=${sessionId || ''}`, { token }),
+  // `silent`: bu AI widjetning fon (passiv) tarix preload'i — u qulasa
+  // widjetni avtomatik ochib "server bilan bog'lanishda muammo" ko'rsatmaymiz
+  // (widjet o'zining loadHistory catch'ida xatoni jimgina yutadi).
+  getSupportChatHistory: (token, sessionId) => request(`/api/support/chat/?session_id=${sessionId || ''}`, { token, silent: true }),
   getAdminSupportChats: (token) => request('/api/admin/support/chats/', { token }),
   getAdminSupportChatDetail: (chatKey, token) => request(`/api/admin/support/chats/${chatKey}/`, { token }),
   sendAdminSupportReply: (chatKey, text, token) => request(`/api/admin/support/chats/${chatKey}/reply/`, { method: 'POST', body: { text }, token }),
