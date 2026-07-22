@@ -75,6 +75,26 @@ def start_mock(request, mock_id):
             status=http_status.HTTP_403_FORBIDDEN,
         )
 
+    # Oylik mashq limiti — faqat HAQIQATAN yangi urinish yaratilganda tekshiriladi.
+    # Mavjud urinishni (mock, user) davom ettirish har doim ruxsat etiladi, hisob
+    # qanday bo'lishidan qat'i nazar. Real olimpiada (TestAttempt) bu cheklovga
+    # umuman tegishli emas — faqat mock (mashq) urinishlar hisobga olinadi.
+    already_started = MockAttempt.objects.filter(mock=mock, user=request.user).exists()
+    if not already_started:
+        from billing.services import can_start_practice
+        allowed, used, limit = can_start_practice(request.user)
+        if not allowed:
+            return Response(
+                {
+                    'detail': 'Oylik mashq limiti tugadi',
+                    'upgrade_required': True,
+                    'required_tier': 'pro',
+                    'used': used,
+                    'limit': limit,
+                },
+                status=http_status.HTTP_403_FORBIDDEN,
+            )
+
     # Mavjud attempt qaytarilsa, foydalanuvchi to'xtatgan joydan davom etadi
     # (javoblar va `started_at` saqlanadi). Qayta boshlash uchun frontend
     # `restart: true` yuboradi — faqat hali topshirilmagan (submitted_at is
