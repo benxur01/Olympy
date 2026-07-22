@@ -46,7 +46,6 @@ const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoa
   // bo'ysunmaydi. Custom stilni saqlab qolish uchun ko'rinadigan tugma bosilganda
   // shu yashirin Google tugmasini programmatik `click()` qilamiz.
   React.useEffect(() => {
-    if (!window.google?.accounts?.id) return;
     let cancelled = false;
     let attempts = 0;
     const render = () => {
