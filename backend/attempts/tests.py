@@ -233,3 +233,186 @@ class AttemptsTestCase(APITestCase):
         session.refresh_from_db()
         self.assertEqual(session.status, TestSession.STATUS_DISQUALIFIED)
         self.assertEqual(session.cheating_reason, "concurrent_session")
+
+
+class EssayAIFeedbackTestCase(APITestCase):
+    """Feature 4: Insho uchun on-demand chuqur AI tahlili (Plus tarifi)."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        # is_user_premium 60s cache'ni ishlatadi — testlar orasida premium
+        # holati eskirmasin.
+        cache.clear()
+
+        self.center = EducationCenter.objects.create(name='AI Center', city='Toshkent')
+        self.olympiad = Olympiad.objects.create(
+            center=self.center,
+            title='Insho Olimpiadasi',
+            subject='Ona tili',
+            status='active',
+            event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timezone.timedelta(minutes=10),
+            duration_minutes=60,
+        )
+        self.essay_q = Question.objects.create(
+            center=self.center,
+            subject='Ona tili',
+            text='Vatan haqida insho yozing.',
+            question_type=Question.QUESTION_TYPE_ESSAY,
+            score=20,
+        )
+        self.code_q = Question.objects.create(
+            center=self.center,
+            subject='Informatika',
+            text='Ikki sonni qo\'shing.',
+            question_type=Question.QUESTION_TYPE_CODE,
+            score=10,
+        )
+        self.olympiad.questions.add(self.essay_q, self.code_q)
+
+        # Plus o'quvchi + uning attempt'i (insho javobi bilan).
+        self.plus_student = User.objects.create_user(
+            username='plus_stu', phone='+998900000001', password='pw',
+        )
+        self._make_plus(self.plus_student)
+        self.attempt = TestAttempt.objects.create(
+            user=self.plus_student,
+            olympiad=self.olympiad,
+            score=0,
+            correct_count=0,
+            wrong_count=0,
+            total_questions=2,
+            answers={str(self.essay_q.id): {'text': 'Vatan — muqaddas tushuncha.'}},
+        )
+
+        # Boshqa (begona) o'quvchi.
+        self.other_student = User.objects.create_user(
+            username='other_stu', phone='+998900000002', password='pw',
+        )
+
+    def _make_plus(self, user):
+        from billing.models import SubscriptionPlan, UserSubscription
+        plan = SubscriptionPlan.objects.create(
+            name='Plus (1 oy)', plan_type='student', price=0, duration_days=30,
+        )
+        UserSubscription.objects.create(
+            user=user, plan=plan,
+            end_date=timezone.now() + timezone.timedelta(days=30),
+            is_active=True,
+        )
+        user.refresh_from_db()
+
+    def _url(self):
+        return reverse(
+            'attempt-essay-ai-feedback',
+            kwargs={'attempt_id': self.attempt.id, 'question_id': self.essay_q.id},
+        )
+
+    def test_non_plus_owner_forbidden(self):
+        """Plus bo'lmagan (free) egaga 403 upgrade_required (required_tier=plus)."""
+        from django.core.cache import cache
+        free_student = User.objects.create_user(
+            username='free_stu', phone='+998900000003', password='pw',
+        )
+        attempt = TestAttempt.objects.create(
+            user=free_student, olympiad=self.olympiad,
+            score=0, correct_count=0, wrong_count=0, total_questions=2,
+            answers={str(self.essay_q.id): {'text': 'javob'}},
+        )
+        cache.clear()
+        self.client.force_authenticate(user=free_student)
+        url = reverse(
+            'attempt-essay-ai-feedback',
+            kwargs={'attempt_id': attempt.id, 'question_id': self.essay_q.id},
+        )
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(res.data.get('upgrade_required'))
+        self.assertEqual(res.data.get('required_tier'), 'plus')
+
+    def test_non_owner_forbidden(self):
+        """Begona o'quvchi boshqa attempt'ga kira olmaydi (403)."""
+        self.client.force_authenticate(user=self.other_student)
+        res = self.client.get(self._url())
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_plus_owner_pending_then_ready(self):
+        """Plus egasi: birinchi GET pending (task navbatga), keyin ready."""
+        from unittest.mock import patch
+        from attempts.models import EssayAIFeedback
+        from attempts.tasks import generate_essay_ai_feedback_task
+
+        self.client.force_authenticate(user=self.plus_student)
+
+        with patch(
+            'attempts.tasks.review_essay_answer',
+            return_value={'ok': True, 'review': 'AI insho tahlili.', 'error': ''},
+        ):
+            with patch.object(generate_essay_ai_feedback_task, 'delay') as mock_delay:
+                res = self.client.get(self._url())
+                self.assertEqual(res.status_code, status.HTTP_200_OK)
+                self.assertEqual(res.data.get('status'), 'pending')
+                mock_delay.assert_called_once()
+                feedback = EssayAIFeedback.objects.get(
+                    attempt=self.attempt, question=self.essay_q,
+                )
+                self.assertEqual(feedback.status, EssayAIFeedback.STATUS_PENDING)
+
+            # Task'ni to'g'ridan-to'g'ri bajaramiz (Gemini mock'langan holda).
+            generate_essay_ai_feedback_task(feedback.id)
+
+            # Keyingi GET — ready + feedback matni.
+            res2 = self.client.get(self._url())
+            self.assertEqual(res2.status_code, status.HTTP_200_OK)
+            self.assertEqual(res2.data.get('status'), 'ready')
+            self.assertEqual(res2.data.get('feedback'), 'AI insho tahlili.')
+
+    def test_no_duplicate_row_per_attempt_question(self):
+        """Ikkinchi GET (attempt, savol) uchun ikkinchi yozuv yaratmaydi."""
+        from unittest.mock import patch
+        from attempts.models import EssayAIFeedback
+        from attempts.tasks import generate_essay_ai_feedback_task
+
+        self.client.force_authenticate(user=self.plus_student)
+        with patch.object(generate_essay_ai_feedback_task, 'delay'):
+            self.client.get(self._url())
+            self.client.get(self._url())
+        self.assertEqual(
+            EssayAIFeedback.objects.filter(
+                attempt=self.attempt, question=self.essay_q,
+            ).count(),
+            1,
+        )
+
+    def test_code_review_ungated_on_result_payload(self):
+        """Regression: ai_code_review free o'quvchiga ham natija sahifasida
+        ko'rinadi (Plus bilan gate qilinmagan)."""
+        from django.core.cache import cache
+        from attempts.models import CodeSubmission
+
+        free_student = User.objects.create_user(
+            username='free_code', phone='+998900000004', password='pw',
+        )
+        attempt = TestAttempt.objects.create(
+            user=free_student, olympiad=self.olympiad,
+            score=0, correct_count=0, wrong_count=0, total_questions=2,
+            answers={},
+        )
+        CodeSubmission.objects.create(
+            attempt=attempt, question=self.code_q,
+            submitted_code='print(a+b)', code_language='python',
+            ai_code_review='Kod yaxshi yozilgan.', ai_code_score=85,
+        )
+        cache.clear()
+        self.client.force_authenticate(user=free_student)
+        res = self.client.get(
+            reverse('attempt-detail', kwargs={'attempt_id': attempt.id}),
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        review = res.data.get('questions_review') or []
+        code_item = next(
+            (q for q in review if q.get('question_type') == 'code'), None,
+        )
+        self.assertIsNotNone(code_item)
+        self.assertEqual(code_item.get('ai_code_review'), 'Kod yaxshi yozilgan.')
+        self.assertEqual(code_item.get('ai_code_score'), 85)

@@ -1,7 +1,9 @@
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -555,3 +557,125 @@ class CenterRegionRankTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
+
+
+class PracticeMonthlyCapTestCase(APITestCase):
+    """Oylik mashq (mock) limiti mock-start view'da. Real TestAttempt'ga
+    umuman ta'sir qilmaydi; mavjud urinishni davom ettirish hech qachon
+    bloklanmaydi."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        from billing.models import SubscriptionPlan
+
+        cache.clear()  # is_user_premium 60s cache
+        self.center = EducationCenter.objects.create(name='Practice Academy', city='Toshkent')
+        SubscriptionPlan.objects.filter(plan_type='student').delete()
+        self.standart_plan = SubscriptionPlan.objects.create(
+            name='Standart (1 oy)', plan_type='student', price=9999.00,
+            duration_days=30, is_active=True,
+        )
+        self.plus_plan = SubscriptionPlan.objects.create(
+            name='Plus (1 oy)', plan_type='student', price=19999.00,
+            duration_days=30, is_active=True,
+        )
+        self.pro_plan = SubscriptionPlan.objects.create(
+            name='Pro (1 oy)', plan_type='student', price=29999.00,
+            duration_days=30, is_active=True,
+        )
+
+    def _make_student(self, phone, plan=None):
+        from billing.models import UserSubscription
+        user = User.objects.create_user(
+            phone=phone, password='UserPass123', is_premium=plan is not None,
+        )
+        CenterMembership.objects.create(
+            user=user, center=self.center,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        if plan is not None:
+            from django.utils import timezone
+            from datetime import timedelta
+            UserSubscription.objects.create(
+                user=user, plan=plan, is_active=True,
+                end_date=timezone.now() + timedelta(days=30),
+            )
+        return user
+
+    def _make_mock(self, title):
+        from centers.models import MockOlympiad
+        return MockOlympiad.objects.create(center=self.center, title=title, is_active=True)
+
+    def _fill_practice(self, user, n):
+        """n ta har xil mock uchun MockAttempt yaratadi (limit hisobi uchun)."""
+        from centers.models import MockAttempt
+        for i in range(n):
+            mock = self._make_mock(f'fill-{user.id}-{i}')
+            MockAttempt.objects.create(mock=mock, user=user)
+
+    def test_standart_blocked_at_10(self):
+        user = self._make_student('+998905100001', self.standart_plan)
+        self._fill_practice(user, 10)  # limitga yetdi
+        self.client.force_authenticate(user=user)
+        new_mock = self._make_mock('target-standart')
+        resp = self.client.post(reverse('mock-start', kwargs={'mock_id': new_mock.id}))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.data.get('required_tier'), 'pro')
+        self.assertEqual(resp.data.get('limit'), 10)
+        self.assertEqual(resp.data.get('used'), 10)
+
+    def test_standart_allowed_under_cap(self):
+        user = self._make_student('+998905100002', self.standart_plan)
+        self._fill_practice(user, 9)
+        self.client.force_authenticate(user=user)
+        new_mock = self._make_mock('target-under')
+        resp = self.client.post(reverse('mock-start', kwargs={'mock_id': new_mock.id}))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_plus_blocked_at_25(self):
+        user = self._make_student('+998905100003', self.plus_plan)
+        self._fill_practice(user, 25)
+        self.client.force_authenticate(user=user)
+        new_mock = self._make_mock('target-plus')
+        resp = self.client.post(reverse('mock-start', kwargs={'mock_id': new_mock.id}))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.data.get('limit'), 25)
+
+    def test_pro_never_blocked(self):
+        user = self._make_student('+998905100004', self.pro_plan)
+        self._fill_practice(user, 40)  # limitdan ancha ko'p
+        self.client.force_authenticate(user=user)
+        new_mock = self._make_mock('target-pro')
+        resp = self.client.post(reverse('mock-start', kwargs={'mock_id': new_mock.id}))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_resuming_existing_attempt_never_blocked(self):
+        from centers.models import MockAttempt
+        user = self._make_student('+998905100005', self.standart_plan)
+        # Cap dan oshiq mashqlar, jumladan target mock uchun mavjud urinish.
+        self._fill_practice(user, 10)
+        target = self._make_mock('resume-target')
+        MockAttempt.objects.create(mock=target, user=user)  # 11-chi, mavjud
+        self.client.force_authenticate(user=user)
+        resp = self.client.post(reverse('mock-start', kwargs={'mock_id': target.id}))
+        # Mavjud urinishni davom ettirish — hisob qanday bo'lishidan qat'i nazar 200.
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_real_test_attempt_unaffected_by_practice_count(self):
+        from billing.services import practice_attempts_this_month
+        from attempts.models import TestAttempt
+        from olympiads.models import Olympiad
+        user = self._make_student('+998905100006', self.standart_plan)
+        # Real olimpiada urinishlari — mashq hisobiga KIRMAYDI.
+        olympiad = Olympiad.objects.create(
+            center=self.center, title='Real Olimpiada', subject='Matematika',
+            status='active', event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timedelta(days=1, minutes=10),
+            duration_minutes=60,
+        )
+        TestAttempt.objects.create(
+            user=user, olympiad=olympiad, score=50,
+            correct_count=5, wrong_count=5, total_questions=10,
+        )
+        self.assertEqual(practice_attempts_this_month(user), 0)

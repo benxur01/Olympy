@@ -778,3 +778,600 @@ class TrialEndingRemindersTestCase(APITestCase):
         self.assertIsNotNone(user.trial_reminder_sent_at)
 
 
+
+
+class StudentTierGatingTestCase(APITestCase):
+    """Tier-ga asoslangan gating: competitor/study-plan (Plus), prep-plan/
+    ai-audio (Pro), score-timeline (Pro 365), va Standart baseline endpointlar."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        from billing.models import SubscriptionPlan, UserSubscription
+        from centers.models import EducationCenter
+
+        cache.clear()  # is_user_premium 60s cache — testlar orasida tozalaymiz
+        self.center = EducationCenter.objects.create(name='Gating Academy', city='Toshkent')
+        SubscriptionPlan.objects.filter(plan_type='student').delete()
+        self._Sub = UserSubscription
+        self.standart_plan = SubscriptionPlan.objects.create(
+            name='Standart (1 oy)', plan_type='student', price=9999.00,
+            duration_days=30, is_active=True,
+        )
+        self.plus_plan = SubscriptionPlan.objects.create(
+            name='Plus (1 oy)', plan_type='student', price=19999.00,
+            duration_days=30, is_active=True,
+        )
+        self.pro_plan = SubscriptionPlan.objects.create(
+            name='Pro (1 oy)', plan_type='student', price=29999.00,
+            duration_days=30, is_active=True,
+        )
+        self.standart_user = self._make('+998903000001', self.standart_plan)
+        self.plus_user = self._make('+998903000002', self.plus_plan)
+        self.pro_user = self._make('+998903000003', self.pro_plan)
+
+    def _make(self, phone, plan):
+        user = User.objects.create_user(phone=phone, password='UserPass123', is_premium=True)
+        self._Sub.objects.create(
+            user=user, plan=plan, is_active=True,
+            end_date=timezone.now() + timedelta(days=30),
+        )
+        return user
+
+    def _make_attempt(self, user, subject='Matematika', score=40, days_ago=2):
+        from attempts.models import TestAttempt
+        from olympiads.models import Olympiad
+        olympiad = Olympiad.objects.create(
+            center=self.center, title=f'{subject} Olimpiadasi',
+            subject=subject, status='active',
+            event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timedelta(days=days_ago, minutes=10),
+            duration_minutes=60,
+        )
+        a = TestAttempt.objects.create(
+            user=user, olympiad=olympiad, score=score,
+            correct_count=4, wrong_count=6, total_questions=10,
+        )
+        TestAttempt.objects.filter(pk=a.pk).update(
+            submitted_at=timezone.now() - timedelta(days=days_ago),
+        )
+        return olympiad, a
+
+    # ── competitor_analysis — Plus+ ─────────────────────────────────────────
+    def test_competitor_standart_403(self):
+        self.client.force_authenticate(user=self.standart_user)
+        resp = self.client.get(reverse('me-competitor-analysis'))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.data.get('required_tier'), 'plus')
+
+    def test_competitor_plus_200(self):
+        self.client.force_authenticate(user=self.plus_user)
+        resp = self.client.get(reverse('me-competitor-analysis'))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    # ── study_plan — Plus+ ──────────────────────────────────────────────────
+    def test_study_plan_standart_403(self):
+        self.client.force_authenticate(user=self.standart_user)
+        resp = self.client.post(reverse('me-study-plan'), {}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.data.get('required_tier'), 'plus')
+
+    def test_study_plan_plus_200(self):
+        self.client.force_authenticate(user=self.plus_user)
+        resp = self.client.post(reverse('me-study-plan'), {}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    # ── olympiad_prep_plan — Pro only ───────────────────────────────────────
+    def test_prep_plan_plus_403(self):
+        self.client.force_authenticate(user=self.plus_user)
+        resp = self.client.post(reverse('me-olympiad-prep-plan'), {}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.data.get('required_tier'), 'pro')
+
+    def test_prep_plan_pro_200(self):
+        olympiad, _ = self._make_attempt(self.pro_user)
+        self.client.force_authenticate(user=self.pro_user)
+        resp = self.client.post(
+            reverse('me-olympiad-prep-plan'), {'olympiad_id': olympiad.id}, format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    # ── ai_audio_analysis — Pro only ────────────────────────────────────────
+    def test_ai_audio_plus_403(self):
+        self.client.force_authenticate(user=self.plus_user)
+        resp = self.client.post(reverse('me-ai-audio-analysis'), {}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.data.get('required_tier'), 'pro')
+
+    def test_ai_audio_pro_200(self):
+        _, attempt = self._make_attempt(self.pro_user)
+        self.client.force_authenticate(user=self.pro_user)
+        resp = self.client.post(
+            reverse('me-ai-audio-analysis'), {'attempt_id': attempt.id}, format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        # Telegram ulanmagan — no_telegram statusi (tashqi chaqiruv yo'q).
+        self.assertEqual(resp.data.get('status'), 'no_telegram')
+
+    # ── score_timeline — 365 faqat Pro uchun ────────────────────────────────
+    def test_timeline_plus_365_clamped_to_90(self):
+        self.client.force_authenticate(user=self.plus_user)
+        resp = self.client.get(reverse('me-score-timeline'), {'days': 365})
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        # Plus 365 so'rasa 90 ga tushadi (xato emas).
+        self.assertEqual(resp.data['days'], 90)
+        self.assertEqual(resp.data['full_days'], 90)
+
+    def test_timeline_pro_gets_365(self):
+        self.client.force_authenticate(user=self.pro_user)
+        resp = self.client.get(reverse('me-score-timeline'), {'days': 365})
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['days'], 365)
+        self.assertEqual(resp.data['full_days'], 365)
+
+    # ── Standart baseline endpointlar 200 bo'lib qolishi kerak ──────────────
+    def test_standart_baseline_endpoints_still_200(self):
+        self.client.force_authenticate(user=self.standart_user)
+        for name in ('me-history-chart', 'me-readiness', 'me-weakest-topics'):
+            url = reverse(name)
+            if name == 'me-readiness':
+                olympiad, _ = self._make_attempt(self.standart_user)
+                resp = self.client.get(url, {'olympiad_id': olympiad.id})
+            else:
+                resp = self.client.get(url)
+            self.assertEqual(resp.status_code, status.HTTP_200_OK,
+                             msg=f'{name} Standart uchun 200 bo\'lishi kerak')
+
+
+class DailyPracticeSetTestCase(APITestCase):
+    """Feature 1: Kunlik AI mashq to'plami (Daily AI Practice Set).
+
+    Standart+ gate; kuniga bir marta generatsiya (repeat → saqlangan to'plam,
+    AI qayta chaqirilmaydi); eng zaif fan tanlash mantig'i. generate_questions
+    patch qilinadi — haqiqiy Gemini chaqiruvi bo'lmaydi.
+    """
+
+    _FAKE_QUESTIONS = [
+        {
+            'subject': 'Matematika', 'text': f"Test savol {i}?",
+            'options': ['A', 'B', 'C', 'D'], 'correct_answer': i % 4,
+            'score': 3, 'difficulty': 'medium', 'source': 'ai',
+        }
+        for i in range(5)
+    ]
+
+    def setUp(self):
+        from django.core.cache import cache
+        from billing.models import SubscriptionPlan, UserSubscription
+        from centers.models import EducationCenter
+
+        cache.clear()  # is_user_premium 60s cache + throttle keshi
+        self.center = EducationCenter.objects.create(name='Daily Academy', city='Toshkent')
+        SubscriptionPlan.objects.filter(plan_type='student').delete()
+        self._Sub = UserSubscription
+        self.standart_plan = SubscriptionPlan.objects.create(
+            name='Standart (1 oy)', plan_type='student', price=9999.00,
+            duration_days=30, is_active=True,
+        )
+        self.free_user = User.objects.create_user(
+            phone='+998905000000', password='UserPass123', is_premium=False,
+        )
+        self.standart_user = self._make_standart('+998905000001')
+
+    def _make_standart(self, phone):
+        user = User.objects.create_user(phone=phone, password='UserPass123', is_premium=True)
+        self._Sub.objects.create(
+            user=user, plan=self.standart_plan, is_active=True,
+            end_date=timezone.now() + timedelta(days=30),
+        )
+        return user
+
+    def _make_attempt(self, user, subject, correct, total):
+        from attempts.models import TestAttempt
+        from olympiads.models import Olympiad
+        olympiad = Olympiad.objects.create(
+            center=self.center, title=f'{subject} Olimpiadasi',
+            subject=subject, status='active',
+            event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timedelta(days=2, minutes=10),
+            duration_minutes=60,
+        )
+        return TestAttempt.objects.create(
+            user=user, olympiad=olympiad, score=correct * 10,
+            correct_count=correct, wrong_count=total - correct, total_questions=total,
+        )
+
+    def test_free_user_403(self):
+        self.client.force_authenticate(user=self.free_user)
+        resp = self.client.get(reverse('me-daily-practice'))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.data.get('required_tier'), 'standart')
+
+    @patch('questions.ai_generation.generate_questions')
+    def test_standart_user_200_five_questions(self, mock_gen):
+        mock_gen.return_value = {'ok': True, 'questions': self._FAKE_QUESTIONS, 'error': ''}
+        self.client.force_authenticate(user=self.standart_user)
+        resp = self.client.get(reverse('me-daily-practice'))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp.data['questions']), 5)
+        mock_gen.assert_called_once()
+
+    @patch('questions.ai_generation.generate_questions')
+    def test_repeat_same_day_uses_cached_set(self, mock_gen):
+        mock_gen.return_value = {'ok': True, 'questions': self._FAKE_QUESTIONS, 'error': ''}
+        self.client.force_authenticate(user=self.standart_user)
+        first = self.client.get(reverse('me-daily-practice'))
+        second = self.client.get(reverse('me-daily-practice'))
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        # Ikkinchi so'rov aynan saqlangan to'plamni qaytaradi.
+        self.assertEqual(first.data['questions'], second.data['questions'])
+        # AI faqat bir marta chaqirilishi kerak (kuniga bitta generatsiya).
+        mock_gen.assert_called_once()
+
+    @patch('questions.ai_generation.generate_questions')
+    def test_weakest_subject_selected(self, mock_gen):
+        mock_gen.return_value = {'ok': True, 'questions': self._FAKE_QUESTIONS, 'error': ''}
+        # Fizika kuchli (90%), Kimyo zaif (20%) → eng zaif Kimyo tanlanishi kerak.
+        self._make_attempt(self.standart_user, 'Fizika', correct=9, total=10)
+        self._make_attempt(self.standart_user, 'Kimyo', correct=2, total=10)
+        self.client.force_authenticate(user=self.standart_user)
+        resp = self.client.get(reverse('me-daily-practice'))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data['subject'], 'Kimyo')
+        self.assertEqual(mock_gen.call_args.kwargs.get('subject'), 'Kimyo')
+
+    @patch('questions.ai_generation.generate_questions')
+    def test_ai_failure_does_not_cache_broken_row(self, mock_gen):
+        from accounts.models import DailyPracticeSet
+        mock_gen.return_value = {'ok': False, 'questions': [], 'error': 'AI xato'}
+        self.client.force_authenticate(user=self.standart_user)
+        resp = self.client.get(reverse('me-daily-practice'))
+        self.assertEqual(resp.status_code, status.HTTP_502_BAD_GATEWAY)
+        # Buzuq (bo'sh) to'plam saqlanmasligi kerak.
+        self.assertEqual(DailyPracticeSet.objects.filter(user=self.standart_user).count(), 0)
+
+
+class CustomAITestTestCase(APITestCase):
+    """Feature 3: Shaxsiy AI test generatori (Custom AI Test Builder).
+
+    Plus+ gate; har so'rov bir martalik generatsiya (saqlanmaydi). subject/topic
+    majburiy. generate_questions patch qilinadi — haqiqiy Gemini chaqiruvi yo'q.
+    """
+
+    _FAKE_QUESTIONS = [
+        {
+            'subject': 'Matematika', 'text': f"Test savol {i}?",
+            'options': ['A', 'B', 'C', 'D'], 'correct_answer': i % 4,
+            'score': 3, 'difficulty': 'medium', 'source': 'ai',
+        }
+        for i in range(10)
+    ]
+
+    def setUp(self):
+        from django.core.cache import cache
+        from billing.models import SubscriptionPlan, UserSubscription
+
+        cache.clear()  # is_user_premium 60s cache + throttle keshi
+        SubscriptionPlan.objects.filter(plan_type='student').delete()
+        self._Sub = UserSubscription
+        self.standart_plan = SubscriptionPlan.objects.create(
+            name='Standart (1 oy)', plan_type='student', price=9999.00,
+            duration_days=30, is_active=True,
+        )
+        self.plus_plan = SubscriptionPlan.objects.create(
+            name='Plus (1 oy)', plan_type='student', price=19999.00,
+            duration_days=30, is_active=True,
+        )
+        self.standart_user = self._make('+998906000001', self.standart_plan)
+        self.plus_user = self._make('+998906000002', self.plus_plan)
+
+    def _make(self, phone, plan):
+        user = User.objects.create_user(phone=phone, password='UserPass123', is_premium=True)
+        self._Sub.objects.create(
+            user=user, plan=plan, is_active=True,
+            end_date=timezone.now() + timedelta(days=30),
+        )
+        return user
+
+    def test_standart_user_403(self):
+        self.client.force_authenticate(user=self.standart_user)
+        resp = self.client.post(
+            reverse('me-custom-test'),
+            {'subject': 'Matematika', 'topic': 'Kvadrat tenglamalar'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.data.get('required_tier'), 'plus')
+
+    @patch('questions.ai_generation.generate_questions')
+    def test_plus_user_200_ten_questions(self, mock_gen):
+        mock_gen.return_value = {'ok': True, 'questions': self._FAKE_QUESTIONS, 'error': ''}
+        self.client.force_authenticate(user=self.plus_user)
+        resp = self.client.post(
+            reverse('me-custom-test'),
+            {'subject': 'Matematika', 'topic': 'Kvadrat tenglamalar', 'difficulty': 'hard'},
+            format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp.data['questions']), 10)
+        mock_gen.assert_called_once()
+        kwargs = mock_gen.call_args.kwargs
+        self.assertEqual(kwargs.get('subject'), 'Matematika')
+        self.assertEqual(kwargs.get('topic'), 'Kvadrat tenglamalar')
+        self.assertEqual(kwargs.get('count'), 10)
+        self.assertEqual(kwargs.get('difficulty'), 'hard')
+
+    @patch('questions.ai_generation.generate_questions')
+    def test_missing_subject_400(self, mock_gen):
+        self.client.force_authenticate(user=self.plus_user)
+        resp = self.client.post(
+            reverse('me-custom-test'), {'topic': 'Kvadrat tenglamalar'}, format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        mock_gen.assert_not_called()
+
+    @patch('questions.ai_generation.generate_questions')
+    def test_missing_topic_400(self, mock_gen):
+        self.client.force_authenticate(user=self.plus_user)
+        resp = self.client.post(
+            reverse('me-custom-test'), {'subject': 'Matematika'}, format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        mock_gen.assert_not_called()
+
+    def test_throttle_scope_is_ai_question(self):
+        from accounts.views_student import custom_ai_test
+        self.assertEqual(custom_ai_test.cls.throttle_scope, 'ai_question')
+
+
+class WeeklyReportPdfTestCase(APITestCase):
+    """Haftalik PDF hisobot: generator bytes qaytaradi, endpoint Plus+ gated."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        from billing.models import SubscriptionPlan, UserSubscription
+
+        cache.clear()
+        SubscriptionPlan.objects.filter(plan_type='student').delete()
+        self.standart_plan = SubscriptionPlan.objects.create(
+            name='Standart (1 oy)', plan_type='student', price=9999.00,
+            duration_days=30, is_active=True,
+        )
+        self.plus_plan = SubscriptionPlan.objects.create(
+            name='Plus (1 oy)', plan_type='student', price=19999.00,
+            duration_days=30, is_active=True,
+        )
+        self.standart_user = self._make('+998904000001', self.standart_plan)
+        self.plus_user = self._make('+998904000002', self.plus_plan)
+
+    def _make(self, phone, plan):
+        from billing.models import UserSubscription
+        user = User.objects.create_user(
+            phone=phone, password='UserPass123', full_name='Test User', is_premium=True,
+        )
+        UserSubscription.objects.create(
+            user=user, plan=plan, is_active=True,
+            end_date=timezone.now() + timedelta(days=30),
+        )
+        return user
+
+    def test_generator_returns_bytes(self):
+        from accounts.reports import generate_weekly_report_pdf
+        pdf = generate_weekly_report_pdf(self.plus_user)
+        self.assertIsInstance(pdf, bytes)
+        self.assertTrue(len(pdf) > 0)
+
+    def test_endpoint_standart_403(self):
+        self.client.force_authenticate(user=self.standart_user)
+        resp = self.client.get(reverse('me-weekly-report'))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.data.get('required_tier'), 'plus')
+
+    def test_endpoint_plus_200_pdf(self):
+        self.client.force_authenticate(user=self.plus_user)
+        resp = self.client.get(reverse('me-weekly-report'))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp['Content-Type'], 'application/pdf')
+
+
+class WeeklyContestHistoryTestCase(APITestCase):
+    """Feature 2 — Haftalik musobaqa tarixi (Standart+): gating va o'rin trendi."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        from billing.models import SubscriptionPlan
+
+        cache.clear()  # is_user_premium 60s cache — testlar orasida tozalaymiz
+        SubscriptionPlan.objects.filter(plan_type='student').delete()
+        self.standart_plan = SubscriptionPlan.objects.create(
+            name='Standart (1 oy)', plan_type='student', price=9999.00,
+            duration_days=30, is_active=True,
+        )
+        self.free_user = self._make('+998905000001', plan=None)
+        self.standart_user = self._make('+998905000002', plan=self.standart_plan)
+
+    def _make(self, phone, plan):
+        from billing.models import UserSubscription
+        user = User.objects.create_user(
+            phone=phone, password='UserPass123', full_name='Test User',
+            is_premium=plan is not None,
+        )
+        if plan is not None:
+            UserSubscription.objects.create(
+                user=user, plan=plan, is_active=True,
+                end_date=timezone.now() + timedelta(days=30),
+            )
+        return user
+
+    def _seed_week(self, user, weeks_ago, rank):
+        """`weeks_ago` hafta oldin yakunlangan musobaqa + foydalanuvchi natijasi."""
+        from accounts.models import WeeklyContest, WeeklyContestResult
+        today = timezone.now().date()
+        monday = today - timedelta(days=today.weekday() + 7 * weeks_ago)
+        contest = WeeklyContest.objects.create(
+            week_start=monday, week_end=monday + timedelta(days=6),
+            status=WeeklyContest.STATUS_FINISHED,
+        )
+        WeeklyContestResult.objects.create(
+            contest=contest, user=user, score=max(0, 100 - rank), rank=rank,
+        )
+        return contest
+
+    def test_free_user_403(self):
+        self.client.force_authenticate(user=self.free_user)
+        resp = self.client.get(reverse('weekly-contest-history'))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.data.get('required_tier'), 'standart')
+
+    def test_standart_user_200(self):
+        self.client.force_authenticate(user=self.standart_user)
+        resp = self.client.get(reverse('weekly-contest-history'))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIsInstance(resp.data, list)
+
+    def test_trend_across_weeks(self):
+        # Eng eskidan yangiga: rank 5 -> 3 -> 6 -> 6.
+        self._seed_week(self.standart_user, weeks_ago=3, rank=5)  # w1 (eng eski)
+        self._seed_week(self.standart_user, weeks_ago=2, rank=3)  # w2
+        self._seed_week(self.standart_user, weeks_ago=1, rank=6)  # w3
+        self._seed_week(self.standart_user, weeks_ago=0, rank=6)  # w4 (eng yangi)
+
+        self.client.force_authenticate(user=self.standart_user)
+        resp = self.client.get(reverse('weekly-contest-history'))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        data = resp.data
+        self.assertEqual(len(data), 4)
+        # Javob -week_start bo'yicha: [w4, w3, w2, w1].
+        self.assertEqual(data[0]['my_entry']['rank'], 6)
+        self.assertEqual(data[0]['my_entry']['trend'], 'flat')   # w4 vs w3 (6==6)
+        self.assertEqual(data[1]['my_entry']['trend'], 'down')   # w3 vs w2 (6>3)
+        self.assertEqual(data[2]['my_entry']['trend'], 'up')     # w2 vs w1 (3<5)
+        self.assertIsNone(data[3]['my_entry']['trend'])          # w1 — oldingi hafta yo'q
+
+
+class PortfolioPDFTestCase(APITestCase):
+    """Feature 5: Yutuqlar portfoliosi PDF (Pro tier) + lazy UUID to'ldirish."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        from billing.models import SubscriptionPlan, UserSubscription
+        from centers.models import EducationCenter
+
+        cache.clear()
+        self.center = EducationCenter.objects.create(name='Portfolio Academy', city='Toshkent')
+        SubscriptionPlan.objects.filter(plan_type='student').delete()
+        self._Sub = UserSubscription
+        self.plus_plan = SubscriptionPlan.objects.create(
+            name='Plus (1 oy)', plan_type='student', price=19999.00,
+            duration_days=30, is_active=True,
+        )
+        self.pro_plan = SubscriptionPlan.objects.create(
+            name='Pro (1 oy)', plan_type='student', price=29999.00,
+            duration_days=30, is_active=True,
+        )
+        self.plus_user = self._make('+998904000001', self.plus_plan)
+        self.pro_user = self._make('+998904000002', self.pro_plan, full_name='Ali Valiyev')
+
+    def _make(self, phone, plan, full_name=''):
+        user = User.objects.create_user(
+            phone=phone, password='UserPass123', is_premium=True, full_name=full_name,
+        )
+        self._Sub.objects.create(
+            user=user, plan=plan, is_active=True,
+            end_date=timezone.now() + timedelta(days=30),
+        )
+        return user
+
+    def _make_attempt(self, user, subject='Matematika', score=80):
+        from attempts.models import TestAttempt
+        from olympiads.models import Olympiad
+        olympiad = Olympiad.objects.create(
+            center=self.center, title=f'{subject} Olimpiadasi',
+            subject=subject, status='active',
+            event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timedelta(days=2, minutes=10),
+            duration_minutes=60,
+        )
+        return TestAttempt.objects.create(
+            user=user, olympiad=olympiad, score=score,
+            correct_count=8, wrong_count=2, total_questions=10,
+        )
+
+    def test_portfolio_plus_403(self):
+        self.client.force_authenticate(user=self.plus_user)
+        resp = self.client.get(reverse('me-portfolio'))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.data.get('required_tier'), 'pro')
+
+    def test_portfolio_pro_200_pdf(self):
+        self._make_attempt(self.pro_user)
+        self.client.force_authenticate(user=self.pro_user)
+        resp = self.client.get(reverse('me-portfolio'))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp['Content-Type'], 'application/pdf')
+        body = b''.join(resp.streaming_content) if resp.streaming else resp.content
+        self.assertTrue(body.startswith(b'%PDF'))
+
+    def test_portfolio_uuid_lazy_filled(self):
+        # Yangi Pro user — portfolio_uuid NULL bo'lishi mumkin; birinchi yuklab
+        # olishda to'ldirilishini tekshiramiz.
+        User.objects.filter(pk=self.pro_user.pk).update(portfolio_uuid=None)
+        self.pro_user.refresh_from_db()
+        self.assertIsNone(self.pro_user.portfolio_uuid)
+
+        self.client.force_authenticate(user=self.pro_user)
+        resp = self.client.get(reverse('me-portfolio'))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        self.pro_user.refresh_from_db()
+        self.assertIsNotNone(self.pro_user.portfolio_uuid)
+
+
+class PortfolioVerifyTestCase(APITestCase):
+    """Feature 5: Public (auth talab qilmaydi) portfolio verifikatsiyasi."""
+
+    def setUp(self):
+        import uuid
+        from centers.models import EducationCenter
+
+        self.center = EducationCenter.objects.create(name='Verify Academy', city='Toshkent')
+        self.student = User.objects.create_user(
+            phone='+998905000001', password='UserPass123', full_name='Guli Karimova',
+        )
+        self.student.portfolio_uuid = uuid.uuid4()
+        self.student.save(update_fields=['portfolio_uuid'])
+
+    def _make_attempt(self, subject='Fizika', score=75):
+        from attempts.models import TestAttempt
+        from olympiads.models import Olympiad
+        olympiad = Olympiad.objects.create(
+            center=self.center, title=f'{subject} Olimpiadasi',
+            subject=subject, status='active',
+            event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timedelta(days=2, minutes=10),
+            duration_minutes=60,
+        )
+        return TestAttempt.objects.create(
+            user=self.student, olympiad=olympiad, score=score,
+            correct_count=6, wrong_count=2, total_questions=8,
+        )
+
+    def test_verify_valid_no_auth(self):
+        self._make_attempt()
+        # Auth header YO'Q — public endpoint.
+        self.client.force_authenticate(user=None)
+        url = reverse('portfolio-verify', kwargs={'portfolio_uuid': self.student.portfolio_uuid})
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(resp.data['valid'])
+        self.assertEqual(resp.data['student_name'], 'Guli Karimova')
+        self.assertEqual(resp.data['total_olympiads'], 1)
+
+    def test_verify_unmatched_uuid_not_found(self):
+        import uuid
+        self.client.force_authenticate(user=None)
+        url = reverse('portfolio-verify', kwargs={'portfolio_uuid': uuid.uuid4()})
+        resp = self.client.get(url)
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(resp.data['valid'])
+        self.assertEqual(resp.data['reason'], 'not_found')

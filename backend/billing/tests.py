@@ -804,3 +804,131 @@ class SubscriptionServiceTestCase(APITestCase):
         self.client.force_authenticate(user=intruder)
         res = self.client.get(f'/api/billing/limits/?center_id={self.center.id}')
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class StudentTierTestCase(APITestCase):
+    """`get_student_tier` / `student_tier_at_least` va mashq (practice) limiti."""
+
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()  # is_user_premium 60s cache — testlar orasida tozalaymiz
+        SubscriptionPlan.objects.all().delete()
+        from centers.models import EducationCenter
+        self.center = EducationCenter.objects.create(name='Tier Academy', city='Toshkent')
+        self.standart_plan = SubscriptionPlan.objects.create(
+            name='Standart (1 oy)', plan_type='student', price=Decimal('9999.00'),
+            duration_days=30, is_active=True,
+        )
+        self.plus_plan = SubscriptionPlan.objects.create(
+            name='Plus (1 oy)', plan_type='student', price=Decimal('19999.00'),
+            duration_days=30, is_active=True,
+        )
+        self.pro_plan = SubscriptionPlan.objects.create(
+            name='Pro (1 oy)', plan_type='student', price=Decimal('29999.00'),
+            duration_days=30, is_active=True,
+        )
+
+    def _make_student(self, phone, plan=None, premium=None, expired=False):
+        is_prem = premium if premium is not None else (plan is not None)
+        user = User.objects.create_user(
+            phone=phone, password='UserPass123', is_premium=is_prem,
+        )
+        if plan is not None:
+            end = timezone.now() + timedelta(days=-1 if expired else 30)
+            UserSubscription.objects.create(
+                user=user, plan=plan, is_active=True, end_date=end,
+            )
+        return user
+
+    def _add_practice_attempts(self, user, n):
+        from centers.models import MockOlympiad, MockAttempt
+        for i in range(n):
+            mock = MockOlympiad.objects.create(center=self.center, title=f'M-{user.id}-{i}')
+            MockAttempt.objects.create(mock=mock, user=user)
+
+    # ── get_student_tier ────────────────────────────────────────────────────
+    def test_tier_free_for_non_premium(self):
+        from billing.services import get_student_tier
+        user = self._make_student('+998900000001')
+        self.assertEqual(get_student_tier(user), 'free')
+
+    def test_tier_standart(self):
+        from billing.services import get_student_tier
+        user = self._make_student('+998900000002', plan=self.standart_plan)
+        self.assertEqual(get_student_tier(user), 'standart')
+
+    def test_tier_plus(self):
+        from billing.services import get_student_tier
+        user = self._make_student('+998900000003', plan=self.plus_plan)
+        self.assertEqual(get_student_tier(user), 'plus')
+
+    def test_tier_pro(self):
+        from billing.services import get_student_tier
+        user = self._make_student('+998900000004', plan=self.pro_plan)
+        self.assertEqual(get_student_tier(user), 'pro')
+
+    def test_tier_premium_no_plan_defaults_pro(self):
+        from billing.services import get_student_tier
+        # is_premium=True, lekin aktiv student-plan yozuvi yo'q (legacy/admin/trial).
+        user = self._make_student('+998900000005', premium=True)
+        self.assertEqual(get_student_tier(user), 'pro')
+
+    def test_tier_expired_sub_is_free(self):
+        from billing.services import get_student_tier
+        user = self._make_student('+998900000006', plan=self.pro_plan, expired=True)
+        self.assertEqual(get_student_tier(user), 'free')
+
+    def test_tier_at_least(self):
+        from billing.services import student_tier_at_least
+        standart = self._make_student('+998900000011', plan=self.standart_plan)
+        plus = self._make_student('+998900000012', plan=self.plus_plan)
+        pro = self._make_student('+998900000013', plan=self.pro_plan)
+        free = self._make_student('+998900000014')
+        self.assertTrue(student_tier_at_least(standart, 'standart'))
+        self.assertFalse(student_tier_at_least(standart, 'plus'))
+        self.assertTrue(student_tier_at_least(plus, 'plus'))
+        self.assertFalse(student_tier_at_least(plus, 'pro'))
+        self.assertTrue(student_tier_at_least(pro, 'pro'))
+        self.assertFalse(student_tier_at_least(free, 'standart'))
+
+    # ── can_start_practice ──────────────────────────────────────────────────
+    def test_practice_standart_under_and_at_cap(self):
+        from billing.services import can_start_practice
+        user = self._make_student('+998900000021', plan=self.standart_plan)
+        self._add_practice_attempts(user, 9)
+        allowed, used, limit = can_start_practice(user)
+        self.assertTrue(allowed)
+        self.assertEqual((used, limit), (9, 10))
+        self._add_practice_attempts(user, 1)  # 10-chi
+        allowed, used, limit = can_start_practice(user)
+        self.assertFalse(allowed)
+        self.assertEqual((used, limit), (10, 10))
+
+    def test_practice_free_capped_at_10(self):
+        from billing.services import can_start_practice
+        user = self._make_student('+998900000022')
+        self._add_practice_attempts(user, 10)
+        allowed, used, limit = can_start_practice(user)
+        self.assertFalse(allowed)
+        self.assertEqual((used, limit), (10, 10))
+
+    def test_practice_plus_cap_25(self):
+        from billing.services import can_start_practice
+        user = self._make_student('+998900000023', plan=self.plus_plan)
+        self._add_practice_attempts(user, 24)
+        allowed, used, limit = can_start_practice(user)
+        self.assertTrue(allowed)
+        self.assertEqual((used, limit), (24, 25))
+        self._add_practice_attempts(user, 1)  # 25-chi
+        allowed, used, limit = can_start_practice(user)
+        self.assertFalse(allowed)
+        self.assertEqual((used, limit), (25, 25))
+
+    def test_practice_pro_unlimited(self):
+        from billing.services import can_start_practice
+        user = self._make_student('+998900000024', plan=self.pro_plan)
+        self._add_practice_attempts(user, 40)
+        allowed, used, limit = can_start_practice(user)
+        self.assertTrue(allowed)
+        self.assertEqual(used, 40)
+        self.assertIsNone(limit)
