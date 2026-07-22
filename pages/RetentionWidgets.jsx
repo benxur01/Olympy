@@ -431,6 +431,331 @@ const WeeklyContestWidget = ({ user }) => {
   );
 };
 
+// ─── DH4b. Haftalik musobaqa tarixi (Standart+ tarif) ────────────────────────
+// O'tgan yakunlangan haftalardagi o'rin/ball tarixi + o'rin trendi (▲/▼/▬).
+// Gating StudentDashboard darajasida (canStandart) — bu karta faqat ruxsat
+// berilgan foydalanuvchiga render qilinadi.
+const WeeklyContestHistoryCard = ({ user }) => {
+  const { data, loading } = useApiData(() => OlympyApi.getWeeklyContestHistory(_retToken()), [user?.id, user?.backendId]);
+  if (loading) return null;
+  const weeks = Array.isArray(data) ? data : [];
+  // Faqat foydalanuvchi qatnashgan (my_entry bor) haftalarni ko'rsatamiz.
+  const rows = weeks.filter(w => w.my_entry && w.my_entry.rank != null);
+  if (!rows.length) return null;
+  const trendIcon = (t) => t === 'up' ? '▲' : t === 'down' ? '▼' : t === 'flat' ? '▬' : '';
+  const trendColor = (t) => t === 'up' ? 'text-emerald-400' : t === 'down' ? 'text-rose-400' : 'text-white/30';
+  const fmtWeek = (iso) => {
+    const d = iso ? new Date(iso) : null;
+    return d ? d.toLocaleDateString('uz-UZ', { day: 'numeric', month: 'short' }) : '';
+  };
+  return (
+    <div className="glass rounded-2xl p-4 md:p-5 border border-amber-500/15">
+      <h3 className="font-bold text-white text-sm md:text-base mb-3 flex items-center gap-2">
+        📜 Musobaqa tarixi
+      </h3>
+      <div className="space-y-1.5">
+        {rows.map(w => {
+          const me = w.my_entry;
+          return (
+            <div key={w.week_start} className="flex items-center gap-3 rounded-xl px-3 py-2 bg-white/[0.03]">
+              <div className="flex-1 min-w-0 text-xs text-white/50 truncate">
+                {fmtWeek(w.week_start)} – {fmtWeek(w.week_end)}
+              </div>
+              <div className={`w-4 text-center text-xs font-black flex-shrink-0 ${trendColor(me.trend)}`}>{trendIcon(me.trend)}</div>
+              <div className="w-9 text-right text-sm font-black text-white flex-shrink-0">#{me.rank}</div>
+              <div className="w-12 text-right text-sm font-bold text-amber-300 flex-shrink-0">{me.score}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// ─── O1 (premium). Kunlik AI mashq to'plami (Standart+) ──────────────────────
+// Backenddan bugungi 5 ta AI savol (eng zaif fan bo'yicha) olinadi va inline
+// quiz sifatida ko'rsatiladi. Baholash client-side: har savolda correct_answer
+// indeksi bor, "Tekshirish" bosilganda to'g'ri/xato ranglanadi va (bo'lsa) izoh
+// ochiladi. Standart+ gate frontend'da (canStandart) — bu yerda 403 kelsa ham
+// xushmuomala xabar chiqadi.
+const DailyAIPracticeCard = ({ user }) => {
+  const { data, loading, error } = useApiData(
+    () => OlympyApi.getDailyPracticeSet(_retToken()),
+    [user?.id, user?.backendId],
+  );
+  const [answers, setAnswers] = React.useState({});   // {savolIndeks: variantIndeks}
+  const [submitted, setSubmitted] = React.useState(false);
+
+  const questions = Array.isArray(data?.questions) ? data.questions : [];
+
+  if (loading) {
+    return (
+      <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+        <div className="text-center text-white/40 text-sm py-6">Kunlik mashq tayyorlanmoqda...</div>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className="glass rounded-2xl p-4 md:p-5 border border-amber-500/20">
+        <h3 className="font-bold text-white text-sm md:text-base mb-1 flex items-center gap-2">
+          <Icon name="sparkles" size={16} /> Kunlik AI mashq
+        </h3>
+        <p className="text-xs text-amber-300">
+          {OlympyApi.toUserMessage?.(error) || "Mashq to'plamini yuklab bo'lmadi. Keyinroq urinib ko'ring."}
+        </p>
+      </div>
+    );
+  }
+  if (!questions.length) return null;
+
+  const allAnswered = questions.every((_, i) => answers[i] != null);
+  const correctCount = questions.reduce(
+    (n, q, i) => n + (answers[i] === q.correct_answer ? 1 : 0), 0,
+  );
+  const optClass = (qi, oi, correctIdx) => {
+    if (!submitted) {
+      return answers[qi] === oi
+        ? 'border-indigo-400 bg-indigo-500/15 text-white'
+        : 'border-white/10 bg-white/[0.03] text-white/70 hover:border-white/25';
+    }
+    if (oi === correctIdx) return 'border-emerald-400 bg-emerald-500/15 text-emerald-100';
+    if (answers[qi] === oi) return 'border-rose-400 bg-rose-500/15 text-rose-100';
+    return 'border-white/10 bg-white/[0.02] text-white/40';
+  };
+
+  return (
+    <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
+          <Icon name="sparkles" size={16} />
+        </div>
+        <div>
+          <h3 className="font-bold text-white text-sm md:text-base leading-none">Kunlik AI mashq</h3>
+          <span className="text-[9px] text-white/40 mt-1 block">
+            {data?.subject ? `${data.subject} · ` : ''}bugungi 5 ta savol
+          </span>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {questions.map((q, qi) => {
+          const options = Array.isArray(q.options) ? q.options : [];
+          const chosen = answers[qi];
+          const isCorrect = submitted && chosen === q.correct_answer;
+          return (
+            <div key={qi} className="glass rounded-xl p-3 border border-indigo-500/10">
+              <div className="text-xs md:text-sm text-white/85 font-medium mb-2 leading-relaxed">
+                <span className="text-indigo-300 font-bold">{qi + 1}.</span> {q.text}
+              </div>
+              <div className="space-y-1.5">
+                {options.map((opt, oi) => (
+                  <button
+                    key={oi}
+                    type="button"
+                    disabled={submitted}
+                    onClick={() => setAnswers(a => ({ ...a, [qi]: oi }))}
+                    className={`w-full text-left flex items-center gap-2 rounded-lg border px-3 py-2 text-xs md:text-sm transition-all disabled:cursor-default ${optClass(qi, oi, q.correct_answer)}`}
+                  >
+                    <span className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center text-[9px] ${chosen === oi ? 'border-current' : 'border-white/30'}`}>
+                      {chosen === oi ? '●' : ''}
+                    </span>
+                    <span className="flex-1">{opt}</span>
+                  </button>
+                ))}
+              </div>
+              {submitted && q.explanation ? (
+                <div className={`mt-2 text-[11px] md:text-xs leading-relaxed rounded-lg px-3 py-2 ${isCorrect ? 'bg-emerald-500/10 text-emerald-200' : 'bg-white/[0.04] text-white/60'}`}>
+                  <span className="font-bold">Izoh: </span>{q.explanation}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+
+      {submitted ? (
+        <div className="mt-3 text-center text-sm font-bold text-white">
+          Natija: <span className="text-emerald-400">{correctCount}</span> / {questions.length} to'g'ri
+        </div>
+      ) : (
+        <button
+          onClick={() => setSubmitted(true)}
+          disabled={!allAnswered}
+          className="btn-primary text-xs px-4 py-2.5 rounded-xl font-semibold min-h-[40px] disabled:opacity-50 mt-3 w-full">
+          {allAnswered ? 'Tekshirish' : 'Barcha savollarga javob bering'}
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ─── O3 (premium). Shaxsiy AI test generatori (Plus+) ────────────────────────
+// Foydalanuvchi fan/mavzu/qiyinlikni tanlaydi, "Generatsiya" bosilganda backend
+// Gemini orqali 10 ta ko'p tanlovli savol qaytaradi (saqlanmaydi). Inline quiz
+// DailyAIPracticeCard bilan bir xil ko'rinishda: baholash client-side, correct_answer
+// indeksi bo'yicha ranglash va yakuniy natija (n/10). Plus gate frontend'da (canPlus)
+// — bu yerda 403 kelsa ham xushmuomala xabar chiqadi.
+const CUSTOM_TEST_DIFFICULTIES = [
+  { value: 'easy', label: 'Oson' },
+  { value: 'medium', label: "O'rta" },
+  { value: 'hard', label: 'Qiyin' },
+];
+const CustomTestBuilderCard = () => {
+  const [subject, setSubject] = React.useState('');
+  const [topic, setTopic] = React.useState('');
+  const [difficulty, setDifficulty] = React.useState('medium');
+  const [questions, setQuestions] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+  const [answers, setAnswers] = React.useState({});   // {savolIndeks: variantIndeks}
+  const [submitted, setSubmitted] = React.useState(false);
+
+  const handleGenerate = async (e) => {
+    e.preventDefault();
+    if (loading || !subject.trim() || !topic.trim()) return;
+    setLoading(true);
+    setError('');
+    setQuestions([]);
+    setAnswers({});
+    setSubmitted(false);
+    try {
+      const res = await OlympyApi.generateCustomTest(
+        { subject: subject.trim(), topic: topic.trim(), difficulty },
+        _retToken(),
+      );
+      setQuestions(Array.isArray(res?.questions) ? res.questions : []);
+    } catch (err) {
+      setError(OlympyApi.toUserMessage?.(err) || "Testni yaratib bo'lmadi. Keyinroq urinib ko'ring.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const allAnswered = questions.length > 0 && questions.every((_, i) => answers[i] != null);
+  const correctCount = questions.reduce(
+    (n, q, i) => n + (answers[i] === q.correct_answer ? 1 : 0), 0,
+  );
+  const optClass = (qi, oi, correctIdx) => {
+    if (!submitted) {
+      return answers[qi] === oi
+        ? 'border-indigo-400 bg-indigo-500/15 text-white'
+        : 'border-white/10 bg-white/[0.03] text-white/70 hover:border-white/25';
+    }
+    if (oi === correctIdx) return 'border-emerald-400 bg-emerald-500/15 text-emerald-100';
+    if (answers[qi] === oi) return 'border-rose-400 bg-rose-500/15 text-rose-100';
+    return 'border-white/10 bg-white/[0.02] text-white/40';
+  };
+
+  return (
+    <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
+          <Icon name="sparkles" size={16} />
+        </div>
+        <div>
+          <h3 className="font-bold text-white text-sm md:text-base leading-none">Shaxsiy AI test</h3>
+          <span className="text-[9px] text-white/40 mt-1 block">Fan va mavzuni tanlang — 10 ta savol</span>
+        </div>
+      </div>
+
+      <form onSubmit={handleGenerate} className="space-y-2.5">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+          <input
+            value={subject}
+            onChange={e => setSubject(e.target.value)}
+            placeholder="Fan (masalan Matematika)"
+            maxLength={80}
+            className="input-field"
+          />
+          <input
+            value={topic}
+            onChange={e => setTopic(e.target.value)}
+            placeholder="Mavzu (masalan Kvadrat tenglamalar)"
+            maxLength={300}
+            className="input-field"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <select
+            value={difficulty}
+            onChange={e => setDifficulty(e.target.value)}
+            className="input-field flex-1"
+          >
+            {CUSTOM_TEST_DIFFICULTIES.map(d => (
+              <option key={d.value} value={d.value}>{d.label}</option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            disabled={loading || !subject.trim() || !topic.trim()}
+            className="btn-primary text-xs px-4 py-2.5 rounded-xl font-semibold min-h-[40px] disabled:opacity-50 flex-shrink-0"
+          >
+            {loading ? 'Tayyorlanmoqda...' : 'Generatsiya'}
+          </button>
+        </div>
+      </form>
+
+      {error && (
+        <p className="mt-3 text-xs text-amber-300">{error}</p>
+      )}
+
+      {questions.length > 0 && (
+        <>
+          <div className="space-y-4 mt-4">
+            {questions.map((q, qi) => {
+              const options = Array.isArray(q.options) ? q.options : [];
+              const chosen = answers[qi];
+              const isCorrect = submitted && chosen === q.correct_answer;
+              return (
+                <div key={qi} className="glass rounded-xl p-3 border border-indigo-500/10">
+                  <div className="text-xs md:text-sm text-white/85 font-medium mb-2 leading-relaxed">
+                    <span className="text-indigo-300 font-bold">{qi + 1}.</span> {q.text}
+                  </div>
+                  <div className="space-y-1.5">
+                    {options.map((opt, oi) => (
+                      <button
+                        key={oi}
+                        type="button"
+                        disabled={submitted}
+                        onClick={() => setAnswers(a => ({ ...a, [qi]: oi }))}
+                        className={`w-full text-left flex items-center gap-2 rounded-lg border px-3 py-2 text-xs md:text-sm transition-all disabled:cursor-default ${optClass(qi, oi, q.correct_answer)}`}
+                      >
+                        <span className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center text-[9px] ${chosen === oi ? 'border-current' : 'border-white/30'}`}>
+                          {chosen === oi ? '●' : ''}
+                        </span>
+                        <span className="flex-1">{opt}</span>
+                      </button>
+                    ))}
+                  </div>
+                  {submitted && q.explanation ? (
+                    <div className={`mt-2 text-[11px] md:text-xs leading-relaxed rounded-lg px-3 py-2 ${isCorrect ? 'bg-emerald-500/10 text-emerald-200' : 'bg-white/[0.04] text-white/60'}`}>
+                      <span className="font-bold">Izoh: </span>{q.explanation}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+
+          {submitted ? (
+            <div className="mt-3 text-center text-sm font-bold text-white">
+              Natija: <span className="text-emerald-400">{correctCount}</span> / {questions.length} to'g'ri
+            </div>
+          ) : (
+            <button
+              onClick={() => setSubmitted(true)}
+              disabled={!allAnswered}
+              className="btn-primary text-xs px-4 py-2.5 rounded-xl font-semibold min-h-[40px] disabled:opacity-50 mt-3 w-full">
+              {allAnswered ? 'Tekshirish' : 'Barcha savollarga javob bering'}
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
 // ─── OB3. "Sizga o'xshash o'quvchi" taqqoslash (kichik karta) ─────────────────
 const PeerComparisonCard = ({ user }) => {
   const { data, loading } = useApiData(() => OlympyApi.getPeerComparison(_retToken()), [user?.id, user?.backendId]);
@@ -579,6 +904,9 @@ Object.assign(window, {
   ReferralWidget,
   RivalActivityWidget,
   WeeklyContestWidget,
+  WeeklyContestHistoryCard,
+  DailyAIPracticeCard,
+  CustomTestBuilderCard,
   PeerComparisonCard,
   SuggestedOlympiadCard,
   ProgressComparisonCard,
