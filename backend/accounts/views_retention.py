@@ -22,6 +22,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from attempts.models import TestAttempt
+from billing.services import student_tier_at_least
 from olympiads.models import Olympiad
 
 from .models import (
@@ -32,6 +33,7 @@ from .models import (
     WeeklyContest,
     WeeklyContestResult,
 )
+from .views_me_premium import _premium_required
 from .views_student import _olympiad_max_score, _subject_performance
 
 
@@ -626,15 +628,43 @@ def weekly_contest(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def weekly_contest_history(request):
-    """GET /api/weekly-contest/history/ — o'tgan yakunlangan haftalar."""
+    """GET /api/weekly-contest/history/ — o'tgan yakunlangan haftalar (Standart+).
+
+    Har `my_entry` uchun `trend` maydoni: shu haftadagi o'rin darvechan
+    oldingi yakunlangan haftadagi o'rinni bilan taqqoslanadi ('up' — o'rin
+    yaxshilangan, 'down' — yomonlashgan, 'flat' — o'zgarmagan, null — taqqoslash
+    uchun oldingi hafta yo'q).
+    """
+    if not student_tier_at_least(request.user, 'standart'):
+        return _premium_required(required_tier='standart')
+
     contests = list(
         WeeklyContest.objects
         .filter(status=WeeklyContest.STATUS_FINISHED)
         .order_by('-week_start')[:12]
     )
+    # Ro'yxat -week_start bo'yicha tartiblangan: [i] joriy, [i+1] darvechan
+    # oldingi (eskiroq) yakunlangan hafta. Avval hammasini serialize qilamiz,
+    # so'ng qo'shni haftalar orasida o'rin trendini hisoblaymiz (qo'shimcha
+    # so'rovsiz — faqat Python).
+    serialized = [
+        _serialize_weekly_results(c, request.user.id, limit=3)
+        for c in contests
+    ]
     data = []
-    for c in contests:
-        top, my_entry, total = _serialize_weekly_results(c, request.user.id, limit=3)
+    for i, c in enumerate(contests):
+        top, my_entry, total = serialized[i]
+        if my_entry and my_entry.get('rank') is not None:
+            trend = None
+            prev_entry = serialized[i + 1][1] if i + 1 < len(serialized) else None
+            if prev_entry and prev_entry.get('rank') is not None:
+                if my_entry['rank'] < prev_entry['rank']:
+                    trend = 'up'      # o'rin raqami kichrayd — yaxshilandi
+                elif my_entry['rank'] > prev_entry['rank']:
+                    trend = 'down'
+                else:
+                    trend = 'flat'
+            my_entry['trend'] = trend
         data.append({
             'week_start': c.week_start.isoformat(),
             'week_end': c.week_end.isoformat(),
