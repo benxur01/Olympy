@@ -587,7 +587,23 @@ def google_login(request):
     if user:
         if not user.is_active:
             return Response({'detail': "Hisob bloklangan yoki o'chirilgan."}, status=status.HTTP_403_FORBIDDEN)
-        if desired_role and desired_role not in (user.roles or []):
+        # `student` va `owner` — o'zaro istisno qiluvchi (mutually exclusive)
+        # identifikatsiya turlari. Bir Gmail o'quvchi (student) sifatida
+        # ro'yxatdan o'tgan bo'lsa, o'sha Gmail bilan tashkilot (owner) sifatida
+        # qayta ro'yxatdan o'tishga ruxsat berilmaydi va aksincha. Boshqa
+        # rollar (teacher, manager, parent) bu cheklovga tushmaydi.
+        current_roles = user.roles or []
+        if desired_role == 'owner' and 'student' in current_roles:
+            return Response(
+                {'detail': "Siz bu Gmail orqali allaqachon o'quvchi sifatida ro'yxatdan o'tgansiz. Boshqa Gmail hisobidan tashkilot sifatida ro'yxatdan o'ting."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if desired_role == 'student' and 'owner' in current_roles:
+            return Response(
+                {'detail': "Siz bu Gmail orqali allaqachon tashkilot sifatida ro'yxatdan o'tgansiz. Boshqa Gmail hisobidan o'quvchi sifatida ro'yxatdan o'ting."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if desired_role and desired_role not in current_roles:
             user.add_role(desired_role)
         return _auth_response(request, user)
 
