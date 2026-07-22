@@ -56,6 +56,23 @@ def _user_can_create_for_center(user, center_id):
     ).exists()
 
 
+def _user_can_explain_question(user, question):
+    """AI tushuntirishga kim ruxsat oladi.
+
+    - Markazning tasdiqlangan o'qituvchi/menejer/egasi (yoki platforma admini):
+      savol yaratish/boshqarish huquqiga ega.
+    - O'quvchi: shu savolni o'z ichiga olgan olimpiadani topshirgan bo'lsa
+      (mistakes review'da o'z xatosini tushunish uchun).
+    Boshqa foydalanuvchilar savol ID'sini taxmin qilib tushuntirish ololmaydi.
+    """
+    if _user_can_create_for_center(user, question.center_id):
+        return True
+    from attempts.models import TestAttempt
+    return TestAttempt.objects.filter(
+        user=user, olympiad__questions=question,
+    ).exists()
+
+
 def _user_can_bulk_delete_for_center(user, center_id):
     """Faqat Manager/Owner ommaviy o'chirishga (delete-all) ruxsat oladi.
 
@@ -1612,11 +1629,13 @@ def explain_question(request, question_id):
     tashqi Gemini API'ga qimmat va sekin murojaat qiladi, abuse'dan himoyalanadi.
     """
     question = get_object_or_404(Question, pk=question_id)
-    # Center ownership tekshiruvi — istalgan foydalanuvchi boshqa markazga
-    # tegishli savol ID'sini yuborib AI tushuntirishni olmasligi uchun. Faqat
-    # shu markazda tasdiqlangan o'qituvchi/menejer/egasi (yoki platforma admini)
-    # tushuntirishni ola oladi.
-    if not _user_can_create_for_center(request.user, question.center_id):
+    # Ruxsat tekshiruvi — istalgan foydalanuvchi boshqa markazga tegishli savol
+    # ID'sini yuborib AI tushuntirishni olmasligi uchun. Ikki toifa ruxsat oladi:
+    #   1) Shu markazning tasdiqlangan o'qituvchi/menejer/egasi (yoki admin).
+    #   2) Shu savolni o'z ichiga olgan olimpiadani topshirgan o'quvchi —
+    #      xatolarini ko'rib chiqishda ("mistakes review") AI tushuntirishni
+    #      shu o'quvchi ham ola oladi.
+    if not _user_can_explain_question(request.user, question):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
     if question.explanation and question.explanation.strip():
         return Response({'explanation': question.explanation})

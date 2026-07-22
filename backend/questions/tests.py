@@ -450,3 +450,63 @@ class QuestionDeleteProtectionTestCase(APITestCase):
         self.assertEqual(before, after)
         self.assertEqual(after, 70)  # 7/10 ball (yagona baholangan savol) → 70%
 
+
+class ExplainQuestionPermissionTestCase(APITestCase):
+    """AI tushuntirish (questions-explain) ruxsat tizimi.
+
+    - Markazning tasdiqlangan o'qituvchisi ola oladi.
+    - Savolni o'z ichiga olgan olimpiadani topshirgan o'quvchi ham ola oladi
+      (mistakes review). Regressiya: ilgari o'quvchi 403 olardi.
+    - Boshqa (topshirmagan) o'quvchi ola olmaydi — 403.
+    """
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='Explain Academy', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.teacher = User.objects.create_user(
+            phone='+998901440001', password='StrongPass123', full_name="O'qituvchi",
+        )
+        CenterMembership.objects.create(
+            user=self.teacher, center=self.center,
+            role=CenterMembership.ROLE_TEACHER,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        self.student = User.objects.create_user(
+            phone='+998901440002', password='StrongPass123', full_name='Talaba',
+        )
+        self.other_student = User.objects.create_user(
+            phone='+998901440003', password='StrongPass123', full_name='Boshqa',
+        )
+        self.question = Question.objects.create(
+            center=self.center, subject='Matematika', text='2 + 2 = ?',
+            options=['3', '4', '5', '6'], correct_answer=1, score=5,
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center, title='Olimpiada', subject='Matematika',
+            status=Olympiad.STATUS_FINISHED,
+        )
+        self.olympiad.questions.add(self.question)
+        # Faqat `student` shu olimpiadani topshirgan.
+        TestAttempt.objects.create(user=self.student, olympiad=self.olympiad)
+
+    @patch('questions.views.explain_question_ai', return_value='Tushuntirish matni')
+    def test_student_who_attempted_can_explain(self, _mock):
+        self.client.force_authenticate(user=self.student)
+        resp = self.client.post(reverse('questions-explain', args=[self.question.id]))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data.get('explanation'), 'Tushuntirish matni')
+
+    @patch('questions.views.explain_question_ai', return_value='Tushuntirish matni')
+    def test_teacher_can_explain(self, _mock):
+        self.client.force_authenticate(user=self.teacher)
+        resp = self.client.post(reverse('questions-explain', args=[self.question.id]))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    @patch('questions.views.explain_question_ai', return_value='Tushuntirish matni')
+    def test_unrelated_student_forbidden(self, _mock):
+        self.client.force_authenticate(user=self.other_student)
+        resp = self.client.post(reverse('questions-explain', args=[self.question.id]))
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
