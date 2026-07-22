@@ -181,6 +181,12 @@ const toUserMessage = (error) => {
     || text.includes('authentication credentials')) {
     return "Sessiya muddati tugadi. Iltimos, qayta kiring.";
   }
+  // 429 (rate-limit). DRF xom xabari ("Request was throttled. Expected
+  // available in N seconds") HECH QACHON foydalanuvchiga ko'rinmasin — status
+  // yoki xabar matni bo'yicha aniqlab, xushmuomala umumiy xabar qaytaramiz.
+  if (error?.status === 429 || text.includes('throttled') || text.includes('expected available in')) {
+    return "So'rovlar soni vaqtincha chegaralandi. Biroz kutib, qayta urinib ko'ring.";
+  }
   if (!error?.status) {
     return "Server bilan bog‘lanishda xatolik yuz berdi";
   }
