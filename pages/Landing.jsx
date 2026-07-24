@@ -285,6 +285,89 @@ const TeacherMockup = () => {
   );
 };
 
+const ParentMockup = () => {
+  return (
+    <div className="p-5 md:p-6 text-white text-left select-none relative overflow-hidden" style={{ background: '#07080c', minHeight: '340px' }}>
+      <div className="flex items-center justify-between border-b border-white/5 pb-3.5 mb-4">
+        <div>
+          <h4 className="text-sm md:text-base font-bold text-white flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)] animate-pulse" />
+            <span>Ota-ona Boshqaruv Nazorati</span>
+          </h4>
+          <p className="text-[10px] md:text-xs text-white/45 mt-0.5">Farzandlar natijalari, o'sish dinamikasi va Telegram xabarlari</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] bg-purple-500/10 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded-lg font-bold">Farzand: Ali Valiyev</span>
+          <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 rounded-lg font-bold">Streak: 🔥 14 kun</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+        <div className="md:col-span-7 glass p-3.5 rounded-xl border border-white/5">
+          <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2.5 flex items-center gap-1.5">
+            <Icon name="chart" size={12} className="text-purple-400" />
+            <span>O'sish Dinamikasi va Test Natijalari</span>
+          </div>
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between bg-white/5 p-2.5 rounded-xl border border-white/5">
+              <div>
+                <div className="text-xs font-bold text-white">Respublika Matematika Olimpiadasi</div>
+                <div className="text-[9px] text-white/40">Kecha · 24-iyul, 2026</div>
+              </div>
+              <div className="text-right">
+                <span className="text-xs font-black text-emerald-400">96 / 100 ball</span>
+                <span className="text-[9px] text-purple-300 block">1-o'rin 🥇</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between bg-white/5 p-2.5 rounded-xl border border-white/5">
+              <div>
+                <div className="text-xs font-bold text-white">Haftalik Fizika Test #3</div>
+                <div className="text-[9px] text-white/40">20-iyul, 2026</div>
+              </div>
+              <div className="text-right">
+                <span className="text-xs font-black text-indigo-400">88 / 100 ball</span>
+                <span className="text-[9px] text-white/40 block">3-o'rin 🥉</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="md:col-span-5 flex flex-col gap-3">
+          <div className="glass p-3.5 rounded-xl border border-white/5 flex-1 text-xs">
+            <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2 flex items-center justify-between">
+              <span>Telegram Xabarnomalar</span>
+              <span className="bg-emerald-500/20 text-emerald-300 font-bold px-1.5 py-0.5 rounded text-[8px]">Ulangan ✓</span>
+            </div>
+            <div className="space-y-2">
+              <div className="bg-emerald-500/5 p-2 rounded-lg border border-emerald-500/20 text-[10px]">
+                <span className="text-emerald-400 font-bold block">📩 Bildirishnoma:</span>
+                <span className="text-white/70">"Farzandingiz Ali Valiyev Matematika testida 96 ball to'pladi va 1-o'rinni egalladi!"</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="glass p-3.5 rounded-xl border border-white/5 flex-1 flex flex-col justify-center text-xs">
+            <div className="text-[10px] text-white/45 uppercase font-bold tracking-wider mb-2 flex items-center gap-1.5">
+              <Icon name="award" size={12} className="text-yellow-400" />
+              <span>QR Sertifikat va Yutuqlar</span>
+            </div>
+            <div className="flex items-center justify-between bg-white/5 p-2 rounded-lg border border-white/5">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">📜</span>
+                <div>
+                  <div className="font-bold text-white text-xs">I darajali Diplom</div>
+                  <div className="text-[9px] text-emerald-400 font-mono">QR: #OL-88421</div>
+                </div>
+              </div>
+              <span className="bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2 py-0.5 rounded text-[9px] font-bold">Tekshirilgan</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 const use3DTilt = (maxRotate = 10, scale = 1.02) => {
   const ref = React.useRef(null);
@@ -654,6 +737,8 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
   const [todayLabel, setTodayLabel] = React.useState(formatLandingDate);
   const [dashboardSvg, setDashboardSvg] = React.useState('');
   const [selectedCategory, setSelectedCategory] = React.useState('all');
+  const [verifyInput, setVerifyInput] = React.useState('OL-88421');
+  const [verifyResult, setVerifyResult] = React.useState(null);
   const [scrollProgress, setScrollProgress] = React.useState(0);
   const tabsContainerRef = React.useRef(null);
   const [paymentPlan, setPaymentPlan] = React.useState(null);
@@ -880,47 +965,37 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
     { icon: 'trophy', label: 'Live Reyting', color: 'text-emerald-300 border-emerald-500/25 bg-emerald-500/10' },
   ];
 
-  // Auto-switch tabs every 4 seconds
-  React.useEffect(() => {
-    const interval = setInterval(() => {
-      setActiveScreen(prev => (prev + 1) % screens.length);
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [activeScreen]);
-
-
-
   const features = [
     // Center features
-    // `spotlight: true` — guruhning eng kuchli 3-4 ta imkoniyati katta kartada
-    // ko'rsatiladi, qolganlari kichik chip shaklida chiqadi (B).
-    { category: 'center', icon: '✨', iconName: 'sparkles', title: 'AI orqali savol yaratish', desc: 'Sun\'iy intellekt yordamida sekundlar ichida yuzlab savol yarating', color: 'from-indigo-500 to-purple-600', spotlight: true },
-    { category: 'center', icon: '📄', iconName: 'file', title: 'PDF\'dan test yaratish', desc: 'Darslik yoki materiallardan avtomatik test savollarini yarating', color: 'from-cyan-500 to-blue-600', spotlight: true },
-    { category: 'center', icon: '📱', iconName: 'send', title: 'Telegram orqali tasdiqlash', desc: 'Manager Telegram orqali bir tugma bilan arizalarni tasdiqlaydi', color: 'from-emerald-500 to-teal-600' },
-    { category: 'center', icon: '🏆', iconName: 'trophy', title: 'Online olimpiada', desc: 'Real vaqtda olimpiada o\'tkazib, Natijalarni avtomatik hisoblang', color: 'from-amber-500 to-orange-600', spotlight: true },
-    { category: 'center', icon: '👁️', iconName: 'eye', title: 'Jonli Proctoring nazorati', desc: 'Test topshirayotgan o\'quvchilarning tab o\'zgarishi va ping holatini real vaqtda kuzatish', color: 'from-rose-500 to-pink-600', spotlight: true },
+    { category: 'center', icon: '✨', iconName: 'sparkles', title: 'AI orqali savol yaratish', desc: 'Sun\'iy intellekt (Gemini AI) yordamida sekundlar ichida yuzlab savol yarating', color: 'from-indigo-500 to-purple-600', spotlight: true },
+    { category: 'center', icon: '📄', iconName: 'file', title: 'PDF\'dan test yaratish', desc: 'Darslik yoki PDF materiallardan avtomatik test va kalitlarni ajratish', color: 'from-cyan-500 to-blue-600', spotlight: true },
+    { category: 'center', icon: '👁️', iconName: 'eye', title: 'Ko\'p bosqichli AI Proktorin', desc: 'Webcam AI yuz nazorati, Tab switch detection, majburiy Fullscreen va copy lock', color: 'from-rose-500 to-pink-600', spotlight: true },
+    { category: 'center', icon: '📱', iconName: 'send', title: 'Telegram Manager & Auth Bot', desc: 'Arizalarni Telegram orqali tasdiqlash, photo/PDF upload va 1-soniyalik OTP login', color: 'from-emerald-500 to-teal-600', spotlight: true },
+    { category: 'center', icon: '📜', iconName: 'award', title: 'QR Sertifikat va Portfolio Tekshiruvi', desc: 'Har bir sertifikatda va o\'quvchi portfoliosida davlat va uchinchi taraflar uchun 1 soniyalik QR tekshiruv havolasi', color: 'from-purple-500 to-indigo-600', spotlight: true },
+    { category: 'center', icon: '🏆', iconName: 'trophy', title: 'Online olimpiada', desc: 'Real vaqtda olimpiada o\'tkazib, Natijalarni avtomatik hisoblang', color: 'from-amber-500 to-orange-600' },
+    { category: 'center', icon: '📐', iconName: 'edit', title: 'LaTeX & MathJax Formulalar', desc: 'Matematika, fizika va kimyo olimpiadalari uchun formulalar va tenglamalar redaktori', color: 'from-teal-500 to-cyan-600' },
+    { category: 'center', icon: '💻', iconName: 'code', title: 'Dasturlash Redaktori (Code Runner)', desc: 'Python, C++, JS dagi savollarni kod yozib Time Limit nazorati bilan avto-baholash', color: 'from-indigo-600 to-purple-600' },
     { category: 'center', icon: '📈', iconName: 'chart', title: 'Tashkilot reyting dinamikasi', desc: 'Markazning global oylik reyting o\'zgarishi va ballar o\'sishini jonli grafikda kuzatish (T7)', color: 'from-blue-600 to-cyan-500' },
     { category: 'center', icon: '📊', iconName: 'grid', title: 'O\'quvchilar taqqoslash jadvali', desc: 'Guruhdagi barcha o\'quvchilarning o\'rtacha ballari, reytingi va urinishlari batafsil jadvali (T1)', color: 'from-indigo-500 to-blue-600' },
     { category: 'center', icon: '🧠', iconName: 'brain', title: 'Savollar qiyinlik tahlili', desc: 'Markaz savollarining o\'quvchilar tomonidan xato qilinish foizlari bo\'yicha qiyinlik darajasini aniqlash (T4)', color: 'from-purple-500 to-indigo-600' },
     { category: 'center', icon: '⚠️', iconName: 'info', title: 'Nofaol o\'quvchilar ogohlantirishi', desc: 'Ma\'lum muddat davomida test topshirmagan nofaol o\'quvchilarni tizimli aniqlash va eslatish (T3)', color: 'from-amber-500 to-red-500' },
-    { category: 'center', icon: '🏷️', iconName: 'tag', title: 'Guruhlararo taqqoslash', desc: 'Sinf va guruh teglari kesimida faollik hamda o\'rtacha ko\'rsatkichlarni guruhlab solishtirish (T5)', color: 'from-teal-500 to-emerald-600' },
     { category: 'center', icon: '📥', iconName: 'download', title: 'Excel va CSV yig\'ma eksporti', desc: 'Markazning barcha o\'quvchilari natijalarini formatlangan Excel yoki CSV faylga bir tugma bilan yuklab olish (T6)', color: 'from-emerald-600 to-teal-500' },
-    { category: 'center', icon: '📄', iconName: 'file', title: 'Tashkilot tahliliy hisoboti', desc: 'Markaz faoliyatiga oid statistika va TOP 5 o\'quvchini Pillow orqali PDF shaklida yuklash (T2)', color: 'from-pink-500 to-rose-600' },
  
     // Student features
-    { category: 'student', icon: '📊', iconName: 'chart', title: 'Natijalar va reyting', desc: 'Batafsil statistika, shaxsiy grafik va global reyting jadvallarini ko\'ring', color: 'from-pink-500 to-rose-600' },
-    { category: 'student', icon: '👤', iconName: 'user', title: 'O\'quvchi profili', desc: 'Har bir o\'quvchining yutuqlari, faollik oylari va natijalarini kuzating', color: 'from-violet-500 to-purple-600' },
-    { category: 'student', icon: '🏋️', iconName: 'bolt', title: 'Mustaqil Mashq Rejimi', desc: 'Fanlar va mavzular bo\'yicha o\'z ustida ishlash hamda faollik (streak) tizimi', color: 'from-blue-500 to-indigo-600', spotlight: true },
+    { category: 'student', icon: '🔥', iconName: 'bolt', title: 'Ketma-ketlik (Streak 🔥) Tizimi', desc: 'Kunlik faollikni va eng uzun streaklarni kuzatib borish orqali uzluksiz o\'rganish motivatsiyasi (O1)', color: 'from-orange-500 to-amber-500', spotlight: true },
+    { category: 'student', icon: '🪙', iconName: 'tag', title: 'Virtual Sovg\'alar Do\'koni (Shop)', desc: 'Testlar va mashqlardan tangalar yig\'ib, qiziqarli brendli mukofotlar xarid qilish', color: 'from-yellow-400 to-orange-500', spotlight: true },
     { category: 'student', icon: '📂', iconName: 'shield', title: 'AI Xatolar Sandig\'i', desc: 'Yo\'l qo\'yilgan xatolarni jamlab, sun\'iy intellekt orqali tushuntirish berish', color: 'from-amber-500 to-red-600', spotlight: true },
-    { category: 'student', icon: '🪙', iconName: 'tag', title: 'Virtual Sovg\'alar Do\'koni', desc: 'Testlar va mashqlardan tangalar yig\'ib, qiziqarli mukofotlar xarid qilish', color: 'from-yellow-400 to-orange-500' },
     { category: 'student', icon: '🔮', iconName: 'sparkles', title: 'AI Muvaffaqiyat Prognostikasi', desc: 'Imtihon va olimpiadalarga kirish imkoniyatlarini AI yordamida prognozlash', color: 'from-purple-500 to-pink-600', spotlight: true },
-    { category: 'student', icon: '⚔️', iconName: 'users', title: 'Raqiblar tizimi (Rivals)', desc: 'Kursdoshlarni raqib sifatida qo\'shib, ular bilan o\'rtacha ball va reytinglarni taqqoslash (O2)', color: 'from-rose-500 to-orange-500', spotlight: true },
-    { category: 'student', icon: '🎯', iconName: 'award', title: 'Mavzu tayyorlik darajasi', desc: 'Har bir fan bo\'yicha o\'quvchining o\'zlashtirish foizini va tayyorgarlik darajasini ko\'rish (O3)', color: 'from-cyan-500 to-teal-500' },
-    { category: 'student', icon: '🔮', iconName: 'brain', title: 'Urinishlar AI tahlili', desc: 'Har bir test urinishi yakunida Gemini AI yordamida yo\'l qo\'yilgan xatolarga tushuntirish olish (O4)', color: 'from-purple-600 to-pink-500' },
-    { category: 'student', icon: '🎖️', iconName: 'star', title: 'Premium Yutuqlar', desc: 'Urinishlar soni, streaklar va eng yuqori ballarga erishganda beriladigan nishonlar (O5)', color: 'from-yellow-500 to-amber-600' },
-    { category: 'student', icon: '💡', iconName: 'info', title: 'Smart Olimpiada tavsiyalari', desc: 'Zaif fanlaringizga mos ravishda navbatdagi olimpiada va mashqlarni avtomatik tavsiya etish (O7)', color: 'from-indigo-600 to-purple-600' },
-    { category: 'student', icon: '🔥', iconName: 'bolt', title: 'Ketma-ketlik (Streak) tizimi', desc: 'Kunlik faollikni va eng uzun streaklarni kuzatib borish orqali uzluksiz o\'rganish motivatsiyasi (O1)', color: 'from-orange-500 to-amber-500' },
-    { category: 'student', icon: '👑', iconName: 'award', title: 'Oltin avatar halqasi va unvon', desc: 'Premium o\'quvchilar uchun platformada alohida vizual oltin avatar va reytinglarda maxsus belgi', color: 'from-yellow-400 to-amber-500' },
+    { category: 'student', icon: '📜', iconName: 'award', title: 'Rasmiy Ochiq QR-Portfolio', desc: 'O\'quvchining yutuqlari, medallari va olimpiadalar tarixi ko\'rinadigan unikal QR portfolyo (/verify/portfolio)', color: 'from-cyan-500 to-blue-600', spotlight: true },
+    { category: 'student', icon: '⚔️', iconName: 'users', title: 'Raqiblar tizimi (Rivals)', desc: 'Kursdoshlarni raqib sifatida qo\'shib, ular bilan o\'rtacha ball va reytinglarni taqqoslash (O2)', color: 'from-rose-500 to-orange-500' },
+    { category: 'student', icon: '🏋️', iconName: 'bolt', title: 'Mustaqil Mashq Rejimi', desc: 'Fanlar va mavzular bo\'yicha o\'z ustida ishlash hamda faollik (streak) tizimi', color: 'from-blue-500 to-indigo-600' },
+    { category: 'student', icon: '💻', iconName: 'code', title: 'Dasturlash Kod Redaktori', desc: 'Python, JS, C++ da topshiriqlarni interaktiv yechish', color: 'from-indigo-500 to-purple-600' },
+    { category: 'student', icon: '🎖️', iconName: 'star', title: 'Premium Yutuqlar & Nishonlar', desc: 'Urinishlar soni, streaklar va eng yuqori ballarga erishganda beriladigan nishonlar (O5)', color: 'from-yellow-500 to-amber-600' },
+
+    // Parent features
+    { category: 'parent', icon: '👨‍👩‍👧', iconName: 'users', title: 'Ota-ona Profilini Ulash (Parent Link)', desc: 'Maxsus kod orqali farzand profiliga ulanib, test natijalarini realtime kuzatish', color: 'from-purple-500 to-pink-600', spotlight: true },
+    { category: 'parent', icon: '💬', iconName: 'send', title: 'Telegram Avto-Hisobotlar', desc: 'Farzandning har bir olimpiada natijasi va streak holati haqida Telegram orqali lahzalik xabarnomalar', color: 'from-emerald-500 to-teal-600', spotlight: true },
+    { category: 'parent', icon: '📊', iconName: 'chart', title: 'Farzand O\'sish Dinamikasi', desc: 'Farzandning fanlar bo\'yicha o\'sish foizlari va o\'zlashtirish tahlilini ko\'rish', color: 'from-indigo-500 to-blue-600', spotlight: true },
   ];
 
   const filteredFeatures = React.useMemo(() => {
@@ -1579,6 +1654,15 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
                   color: 'emerald',
                   accent: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/5',
                   accentActive: 'border-emerald-500 bg-emerald-500/10 text-white shadow-[0_0_20px_rgba(16,185,129,0.2)]'
+                },
+                {
+                  id: 'parent',
+                  label: 'Ota-ona Nazorati',
+                  desc: 'Farzand profilini Parent-Code orqali ulab, test natijalari, o\'sish dinamikasi va Telegram xabarnomalarini realtime kuzatish.',
+                  icon: 'users',
+                  color: 'purple',
+                  accent: 'text-purple-400 border-purple-500/30 bg-purple-500/5',
+                  accentActive: 'border-purple-500 bg-purple-500/10 text-white shadow-[0_0_20px_rgba(168,85,247,0.2)]'
                 }
               ].map((role) => {
                 const active = activeOrgRole === role.id;
@@ -1609,7 +1693,7 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
               <div 
                 className="aura-glow transition-all duration-500" 
                 style={{ 
-                  background: activeOrgRole === 'director' ? 'rgba(99, 102, 241, 0.15)' : activeOrgRole === 'manager' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(16, 185, 129, 0.15)',
+                  background: activeOrgRole === 'director' ? 'rgba(99, 102, 241, 0.15)' : activeOrgRole === 'manager' ? 'rgba(245, 158, 11, 0.15)' : activeOrgRole === 'teacher' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(168, 85, 247, 0.15)',
                   left: '50%',
                   top: '50%',
                   transform: 'translate(-50%, -50%)',
@@ -1640,6 +1724,7 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
                   {activeOrgRole === 'director' && <DirectorMockup />}
                   {activeOrgRole === 'manager' && <ManagerMockup />}
                   {activeOrgRole === 'teacher' && <TeacherMockup />}
+                  {activeOrgRole === 'parent' && <ParentMockup />}
                 </div>
               </div>
             </div>
@@ -1652,7 +1737,7 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
         <div className="text-center mb-8 md:mb-10 scroll-reveal">
           <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-purple-300 border border-purple-500/20">✨ Xususiyatlar</div>
           <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Platforma Imkoniyatlari</h2>
-          <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Tashkilotingiz va o'quvchilar uchun eng zamonaviy premium yechimlar</p>
+          <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Tashkilotingiz, o'quvchilar va ota-onalar uchun eng zamonaviy premium yechimlar</p>
         </div>
 
         {/* Category Filter Tabs */}
@@ -1662,6 +1747,7 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
               { id: 'all', label: 'Barchasi', icon: 'grid' },
               { id: 'center', label: 'Tashkilotlar uchun', icon: 'building' },
               { id: 'student', label: 'O\'quvchilar uchun', icon: 'award' },
+              { id: 'parent', label: 'Ota-onalar uchun', icon: 'users' },
             ].map(cat => {
               const active = selectedCategory === cat.id;
               return (
@@ -1736,24 +1822,72 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
               </div>
             </GlowCard>
 
-            {/* Card 3: O'quvchi Streak & Tangalar Do'koni (Span 4) */}
-            <GlowCard className="p-6 md:p-8 md:col-span-4 flex flex-col justify-between group border border-white/5 relative min-h-[280px]">
+            {/* Card 3: QR Sertifikat va Portfolio Tekshiruvi (Span 4) */}
+            <GlowCard className="p-6 md:p-8 md:col-span-4 flex flex-col justify-between group border border-white/5 relative min-h-[280px]" style={{ background: 'linear-gradient(135deg, rgba(168,85,247,0.08) 0%, rgba(236,72,153,0.04) 100%)' }}>
+              <div className="relative z-10">
+                <span className="flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-purple-400 bg-purple-500/10 border border-purple-500/20 px-3 py-1 w-fit rounded-full mb-4">
+                  <Icon name="award" size={10} />
+                  QR Sertifikat & Portfolio
+                </span>
+                <h3 className="text-lg md:text-xl font-bold text-white mb-2 group-hover:text-purple-200 transition-colors duration-250">QR Tekshiruv & Portfolio</h3>
+                <p className="text-xs text-white/50 leading-relaxed">Har bir sertifikatda QR-kod mavjud. O'quvchilar yutuqlari ochiq portfolio havolasida saqlanadi.</p>
+              </div>
+              <div className="mt-6 flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5">
+                <span className="text-purple-300 font-bold text-xs flex items-center gap-1">📜 Verifikatsiya havolasi</span>
+                <span className="text-emerald-400 font-mono font-bold text-xs">✓ HAQIQIY</span>
+              </div>
+            </GlowCard>
+
+            {/* Card 4: Ota-onalar Nazorati (Span 4) */}
+            <GlowCard className="p-6 md:p-8 md:col-span-4 flex flex-col justify-between group border border-white/5 relative min-h-[280px]" style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.08) 0%, rgba(99,102,241,0.04) 100%)' }}>
+              <div className="relative z-10">
+                <span className="flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 w-fit rounded-full mb-4">
+                  <Icon name="users" size={10} />
+                  Ota-onalar Nazorati
+                </span>
+                <h3 className="text-lg md:text-xl font-bold text-white mb-2 group-hover:text-emerald-200 transition-colors duration-250">Ota-onalar Nazorati</h3>
+                <p className="text-xs text-white/50 leading-relaxed">Farzandining test natijalari, ballari va ketma-ketligini Telegram bot orqali realtime kuzatish.</p>
+              </div>
+              <div className="mt-6 flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5">
+                <span className="text-emerald-300 font-bold text-xs">📲 Telegram Xabarnomalar</span>
+                <span className="text-xs text-white/40">Lahzalik xabar</span>
+              </div>
+            </GlowCard>
+
+            {/* Card 5: Dasturlash Olimpiadalari (Span 4) */}
+            <GlowCard className="p-6 md:p-8 md:col-span-4 flex flex-col justify-between group border border-white/5 relative min-h-[280px]" style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.08) 0%, rgba(168,85,247,0.04) 100%)' }}>
+              <div className="relative z-10">
+                <span className="flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-blue-400 bg-blue-500/10 border border-blue-500/20 px-3 py-1 w-fit rounded-full mb-4">
+                  <Icon name="code" size={10} />
+                  Kod Redaktori & Runner
+                </span>
+                <h3 className="text-lg md:text-xl font-bold text-white mb-2 group-hover:text-blue-200 transition-colors duration-250">Dasturlash Redaktori</h3>
+                <p className="text-xs text-white/50 leading-relaxed">Python, C++, JS tillarida kod yozish va Time Limit nazorati bilan avto-baholash.</p>
+              </div>
+              <div className="mt-6 flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5 font-mono text-xs">
+                <span className="text-blue-300">python solution.py</span>
+                <span className="text-emerald-400 font-bold">10/10 PASS</span>
+              </div>
+            </GlowCard>
+
+            {/* Card 6: Streak & Tangalar Do'koni (Span 6) */}
+            <GlowCard className="p-6 md:p-8 md:col-span-6 flex flex-col justify-between group border border-white/5 relative min-h-[280px]">
               <div>
                 <span className="flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-3 py-1 w-fit rounded-full mb-4">
                   <Icon name="tag" size={10} />
                   O'yinlashtirilgan Tizim
                 </span>
-                <h3 className="text-lg md:text-xl font-bold text-white mb-2 group-hover:text-amber-200 transition-colors duration-250">Streak & Do'kon Tizimi</h3>
-                <p className="text-xs text-white/50 leading-relaxed">O'quvchilar testlar topshirib virtual tangalar yig'adi va nishonlar, sovg'alar olishadi.</p>
+                <h3 className="text-lg md:text-xl font-bold text-white mb-2 group-hover:text-amber-200 transition-colors duration-250">Streak & Sovrinlar Do'koni Tizimi</h3>
+                <p className="text-xs text-white/50 leading-relaxed">O'quvchilar kunlik testlar topshirib virtual tangalar yig'adi hamda brendli ryukzak, kitoblar va sovg'alar xarid qilishadi.</p>
               </div>
               <div className="mt-6 flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5">
-                <span className="text-orange-400 font-bold text-xs flex items-center gap-1">🔥 7 kunlik streak</span>
-                <span className="text-yellow-400 font-bold text-xs flex items-center gap-1">🪙 120 tanga</span>
+                <span className="text-orange-400 font-bold text-xs flex items-center gap-1">🔥 14 kunlik streak</span>
+                <span className="text-yellow-400 font-bold text-xs flex items-center gap-1">🪙 450 tanga</span>
               </div>
             </GlowCard>
 
-            {/* Card 5: Markaz Premium Analitikasi (Span 4) */}
-            <GlowCard className="p-6 md:p-8 md:col-span-4 flex flex-col justify-between group border border-white/5 relative min-h-[280px]" style={{ background: 'linear-gradient(135deg, rgba(34,211,238,0.08) 0%, rgba(99,102,241,0.04) 100%)' }}>
+            {/* Card 7: Markaz Premium Analitikasi (Span 6) */}
+            <GlowCard className="p-6 md:p-8 md:col-span-6 flex flex-col justify-between group border border-white/5 relative min-h-[280px]" style={{ background: 'linear-gradient(135deg, rgba(34,211,238,0.08) 0%, rgba(99,102,241,0.04) 100%)' }}>
               <div>
                 <span className="flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-3 py-1 w-fit rounded-full mb-4">
                   <Icon name="chart" size={10} />
@@ -1814,6 +1948,196 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
             </div>
           </div>
         )}
+      </section>
+
+      {/* Multi-Layer AI Proctoring Suite Section */}
+      <section id="proctoring-suite" className="py-12 md:py-20 relative overflow-hidden" style={{ background: '#050508', borderTop: '1px solid rgba(255,255,255,0.03)' }}>
+        <div className="max-w-6xl mx-auto px-4 md:px-6 relative z-10">
+          <div className="text-center mb-10 md:mb-16 scroll-reveal">
+            <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-rose-300 border border-rose-500/20">
+              <Icon name="eye" size={16} className="text-rose-400" />
+              Anti-Cheat Majmuasi
+            </div>
+            <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">
+              Ko'p Bosqichli AI Proktorin
+            </h2>
+            <p className="text-white/45 max-w-xl mx-auto text-sm md:text-base">
+              Test xolisligi va shaffofligini 100% kafolatlovchi sun'iy intellekt nazorati
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="glass p-6 rounded-2xl border border-white/5 space-y-3 relative overflow-hidden">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center text-rose-400 font-bold">
+                📷
+              </div>
+              <h3 className="text-lg font-bold text-white">Veb-kamera AI Yuz Nazorati</h3>
+              <p className="text-xs text-white/50 leading-relaxed">
+                Kamera orqali o'quvchining shaxsini, joyidaligini hamda xonada begona shaxslar borligini sun'iy intellekt real vaqtda aniqlaydi.
+              </p>
+              <div className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20 w-fit">
+                ✓ Face Presence OK
+              </div>
+            </div>
+
+            <div className="glass p-6 rounded-2xl border border-white/5 space-y-3 relative overflow-hidden">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 font-bold">
+                📑
+              </div>
+              <h3 className="text-lg font-bold text-white">Tab & Oyna Almashtirish Detektori</h3>
+              <p className="text-xs text-white/50 leading-relaxed">
+                Test paytida boshqa brauzer oynasiga o'tilsa, tizim soniya aniqligida ogohlantirish beradi va takrorlansa testni avto-yakunlaydi.
+              </p>
+              <div className="text-[10px] text-amber-400 font-mono font-bold bg-amber-500/10 px-2 py-1 rounded border border-amber-500/20 w-fit">
+                ⚠ Tab Switch Alert
+              </div>
+            </div>
+
+            <div className="glass p-6 rounded-2xl border border-white/5 space-y-3 relative overflow-hidden">
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 font-bold">
+                🔒
+              </div>
+              <h3 className="text-lg font-bold text-white">To'liq Ekran & Nusxalash Blokirovkasi</h3>
+              <p className="text-xs text-white/50 leading-relaxed">
+                Test majburiy Fullscreen rejimida ishlaydi. Matn belgilash, nusxalash (Copy-Paste) va F12 (DevTools) tugmalari bloklanadi.
+              </p>
+              <div className="text-[10px] text-indigo-300 font-mono font-bold bg-indigo-500/10 px-2 py-1 rounded border border-indigo-500/20 w-fit">
+                🔒 Fullscreen Enforced
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Interactive QR Certificate & Portfolio Verification Showcase */}
+      <section id="verification-suite" className="py-12 md:py-24 relative overflow-hidden" style={{ background: 'linear-gradient(180deg, #050508 0%, rgba(168,85,247,0.04) 50%, #050508 100%)' }}>
+        <div className="max-w-6xl mx-auto px-4 md:px-6 relative z-10">
+          <div className="text-center mb-10 md:mb-14 scroll-reveal">
+            <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-purple-300 border border-purple-500/20">
+              <Icon name="award" size={16} className="text-purple-400" />
+              Davlat va Xalqaro Verifikatsiya
+            </div>
+            <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">
+              Sertifikat va Portfolio QR Tekshiruvi
+            </h2>
+            <p className="text-white/45 max-w-xl mx-auto text-sm md:text-base">
+              Har bir Olympy sertifikati va o'quvchi yutuqlari unikal QR-kod hamda ochiq portfolio havolasiga ega. Qalbaki hujjatlarga yo'l qo'yilmaydi!
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+            {/* Left: Interactive Verification Search Demo */}
+            <div className="lg:col-span-6 glass p-6 md:p-8 rounded-3xl border border-white/10 space-y-5">
+              <div className="flex items-center gap-2 text-xs font-bold text-purple-300 uppercase tracking-wider">
+                <span>🔎 Bir Zumda Tekshirib Ko'ring</span>
+              </div>
+              <p className="text-xs md:text-sm text-white/60">
+                Quyida sertifikat kodi yoki foydalanuvchi nomini kiriting va rasmiy haqiqiyligini tekshiring:
+              </p>
+
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={verifyInput}
+                  onChange={(e) => setVerifyInput(e.target.value)}
+                  placeholder="Masalan: OL-88421"
+                  className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-purple-500"
+                />
+                <button
+                  onClick={() => {
+                    if (!verifyInput) return;
+                    setVerifyResult({
+                      code: verifyInput.toUpperCase(),
+                      studentName: 'Ali Valiyev',
+                      olympiad: 'Respublika Matematika Olimpiadasi',
+                      rank: '1-o\'rin (Oltin Medal) 🥇',
+                      score: '96 / 100 ball',
+                      issuedDate: '24-iyul, 2026',
+                      verified: true,
+                      issuer: 'ProSkill Academy & Olympy Platformasi'
+                    });
+                  }}
+                  className="btn-primary px-5 py-2.5 rounded-xl text-xs font-bold shrink-0"
+                >
+                  Tekshirish
+                </button>
+              </div>
+
+              <div className="flex gap-2 text-[10px]">
+                <span className="text-white/40">Kodni tanlang:</span>
+                {['OL-88421', 'OL-99201', 'OL-44102'].map(code => (
+                  <button
+                    key={code}
+                    onClick={() => {
+                      setVerifyInput(code);
+                      setVerifyResult({
+                        code: code,
+                        studentName: code === 'OL-88421' ? 'Ali Valiyev' : code === 'OL-99201' ? 'Sardor Aliyev' : 'Zuhra Karimova',
+                        olympiad: 'Olimpiada Test Sertifikati',
+                        rank: 'I-darajali Diplom 🥇',
+                        score: '94 / 100 ball',
+                        issuedDate: '2026-07-24',
+                        verified: true,
+                        issuer: 'Olympy Rasmiy Tizimi'
+                      });
+                    }}
+                    className="text-purple-300 hover:text-white underline cursor-pointer"
+                  >
+                    #{code}
+                  </button>
+                ))}
+              </div>
+
+              {verifyResult && (
+                <div className="mt-4 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-left space-y-2 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black text-emerald-400 flex items-center gap-1.5">
+                      <span>✓</span> SERTIFIKAT HAQIQIY (VERIFIED)
+                    </span>
+                    <span className="text-[10px] text-emerald-300 font-mono">{verifyResult.code}</span>
+                  </div>
+                  <div className="text-xs text-white space-y-1 pt-1 border-t border-emerald-500/20">
+                    <div><span className="text-white/50">O'quvchi:</span> <strong className="text-white">{verifyResult.studentName}</strong></div>
+                    <div><span className="text-white/50">Tadbir:</span> {verifyResult.olympiad}</div>
+                    <div><span className="text-white/50">Natija:</span> <span className="text-amber-300 font-bold">{verifyResult.rank}</span> ({verifyResult.score})</div>
+                    <div><span className="text-white/50">Beruvchi:</span> {verifyResult.issuer}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right: Certificate Mockup Card */}
+            <div className="lg:col-span-6 relative">
+              <div className="glass p-6 md:p-8 rounded-3xl border border-white/10 relative z-10 bg-[#0d0e12] shadow-2xl text-left space-y-4">
+                <div className="flex justify-between items-start border-b border-white/10 pb-4">
+                  <div>
+                    <span className="text-[10px] uppercase font-mono tracking-widest text-purple-400 font-bold">Olympy Official Certificate</span>
+                    <h3 className="text-lg font-black text-white mt-1">I DARAJALI DIPLOM</h3>
+                    <p className="text-[10px] text-white/40">ID: OL-88421 · Respublika Matematika Olimpiadasi</p>
+                  </div>
+                  <div className="w-14 h-14 rounded-xl bg-white/5 border border-white/10 flex flex-col items-center justify-center text-center p-1 font-mono text-[8px] text-purple-300">
+                    <span className="text-base">🏁</span>
+                    <span>QR OK</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2 text-xs text-white/80 py-2">
+                  <p className="leading-relaxed">
+                    Ushbu sertifikat egasi <strong className="text-white text-sm">Ali Valiyev</strong> Matematika fani bo'yicha Respublika Online Olimpiadasida <strong className="text-emerald-400">96 ball</strong> to'plagan holda faol ishtirok etgani va faxrli <strong className="text-yellow-400">1-o'rinni</strong> egallagani uchun berildi.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between border-t border-white/10 pt-4 text-[10px] text-white/40">
+                  <span>Sana: 24.07.2026</span>
+                  <span className="text-emerald-400 font-bold flex items-center gap-1">
+                    <Icon name="shield" size={12} />
+                    prolymp.uz/verify/cert/OL-88421
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       {/* How it works */}
