@@ -397,64 +397,6 @@ def send_student_limit_reached_notification(owner, center, limit):
     logger.info('[telegram] → %s sent=%s student-limit-reached center=%s', mask_phone(owner.normalized_phone), sent, center.id)
 
 
-def send_attempt_result_to_parents(attempt):
-    """O'quvchi olimpiada natijasini topshirganda barcha ulangan ota-onalarga
-    Telegram orqali xabar yuboradi.
-
-    `ParentStudentLink` modelidan `student=attempt.user` bo'lgan barcha
-    parent'larni topib, har biriga `telegram_chat_id` mavjud bo'lsa xabar
-    yuboriladi. Xato bo'lsa log yoziladi, asosiy jarayonga ta'sir qilmaydi.
-    """
-    try:
-        from accounts.models import ParentStudentLink
-    except Exception:
-        logger.exception('ParentStudentLink import failed')
-        return
-
-    student = attempt.user
-    olympiad = attempt.olympiad
-    student_name = (student.full_name or mask_phone(student.normalized_phone) or 'O\'quvchi').strip()
-    olympiad_title = getattr(olympiad, 'title', '') or '—'
-    score = attempt.score or 0
-    correct = attempt.correct_count or 0
-    total = attempt.total_questions or 0
-    message = (
-        f"📊 {student_name} olimpiadani tugatdi!\n"
-        f"🏆 Olimpiada: {olympiad_title}\n"
-        f"⭐ Ball: {score}%\n"
-        f"✅ To'g'ri: {correct}/{total}"
-    )
-
-    try:
-        parent_links = list(
-            ParentStudentLink.objects
-            .filter(student=student)
-            .select_related('parent')
-        )
-    except Exception:
-        logger.exception('ParentStudentLink lookup failed for student=%s', student.id)
-        return
-
-    for link in parent_links:
-        parent_user = link.parent
-        if not parent_user:
-            continue
-        chat_id = getattr(parent_user, 'telegram_chat_id', '')
-        if not chat_id:
-            logger.info(
-                '[telegram-skip] parent=%s has no telegram_chat_id (student=%s)',
-                parent_user.id, student.id,
-            )
-            continue
-        try:
-            _send_telegram_to_user(parent_user, message)
-        except Exception:
-            logger.exception(
-                'send_attempt_result_to_parents failed parent=%s student=%s',
-                parent_user.id, student.id,
-            )
-
-
 def send_cheating_detected_notification(student, olympiad, center, reason=''):
     """Notify center managers/owner that a student left the test surface.
 
@@ -666,61 +608,8 @@ def send_olympiad_summary_to_manager(olympiad, center):
             )
 
 
-def send_pdf_to_telegram(chat_id, pdf_bytes, filename, caption):
-    """ Ota-onaga PDF hisobotini telegram orqali yuborish """
-    import urllib.request
-    import urllib.parse
-    token = _manager_bot_token()
-    if not token or not chat_id:
-        logger.info("[telegram-skip] bot token yoki chat_id yo'q, pdf yuborilmadi")
-        return False
-        
-    url = f'https://api.telegram.org/bot{token}/sendDocument'
-    
-    boundary = '----TelegramBotBoundaryReportPDF'
-    body = []
-    
-    # chat_id field
-    body.append(f'--{boundary}')
-    body.append('Content-Disposition: form-data; name="chat_id"\r\n')
-    body.append(str(chat_id))
-    
-    # caption field
-    body.append(f'--{boundary}')
-    body.append('Content-Disposition: form-data; name="caption"\r\n')
-    body.append(caption)
-    
-    # document file field
-    body.append(f'--{boundary}')
-    body.append(f'Content-Disposition: form-data; name="document"; filename="{filename}"')
-    body.append('Content-Type: application/pdf\r\n')
-    
-    raw_body = b''
-    for item in body:
-        if isinstance(item, str):
-            raw_body += item.encode('utf-8') + b'\r\n'
-        else:
-            raw_body += item + b'\r\n'
-            
-    raw_body += pdf_bytes + b'\r\n'
-    raw_body += f'--{boundary}--\r\n'.encode('utf-8')
-    
-    headers = {
-        'Content-Type': f'multipart/form-data; boundary={boundary}',
-        'Content-Length': str(len(raw_body))
-    }
-    
-    try:
-        req = urllib.request.Request(url, raw_body, headers, method='POST')
-        with urllib.request.urlopen(req, timeout=10):
-            return True
-    except Exception:
-        logger.exception('sendDocument to Telegram failed')
-        return False
-
-
 def send_telegram_markdown(chat_id, text):
-    """ Ota-onaga Markdown formatida Telegram xabar yuborish """
+    """Markdown formatida Telegram xabar yuborish."""
     payload = {
         'chat_id': chat_id,
         'text': text,

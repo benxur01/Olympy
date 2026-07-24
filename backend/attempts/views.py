@@ -644,17 +644,6 @@ def submit_attempt(request):
         # latency'ni oshirardi. Funksiyaning o'zi mavjud, kerak bo'lsa
         # cron yoki manager dashboard'ida chaqiriladi.
 
-        # Ota-onalarga Telegram xabari. Sinxron API call'ni request thread'ini
-        # bloklamasligi uchun Celery orqali asinxron yuboramiz.
-        try:
-            from .tasks import send_attempt_result_to_parents_task
-            send_attempt_result_to_parents_task.delay(attempt.id)
-        except Exception:
-            import logging
-            logging.getLogger(__name__).exception(
-                'failed to queue parent notification task'
-            )
-
         data = TestAttemptSerializer(attempt).data
         data['max_score'] = max_possible
         # Yangi semantika: blank (javob berilmagan) va answered alohida

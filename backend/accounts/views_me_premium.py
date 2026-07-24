@@ -16,7 +16,7 @@ from rest_framework.throttling import ScopedRateThrottle
 
 from attempts.models import TestAttempt
 from billing.services import student_tier_at_least
-from .models import Achievement, DailyGoal, ParentStudentLink, Rival
+from .models import Achievement, DailyGoal, Rival
 from .utils import is_user_premium
 
 MAX_RIVALS = 3
@@ -206,56 +206,6 @@ def my_achievements(request):
 
     items = Achievement.objects.filter(user=request.user).order_by('-achieved_at')
     return Response([achievement_payload(a) for a in items])
-
-
-# ─── O6. Ota-onaga haftalik xulosa (endpoint varianti) ───────────────────────
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def weekly_summary(request):
-    """GET /api/me/weekly-summary/?student_id=<id>
-
-    Ota-ona uchun farzandning oxirgi 7 kundagi xulosasi. `student_id`
-    berilmasa va foydalanuvchining o'zi student bo'lsa — o'z xulosasini
-    qaytaradi. Faqat tasdiqlangan ota-ona-farzand bog'lanishi uchun.
-    Javob: {full_name, olympiads_count, average_score, streak, best_score}
-    """
-    from datetime import timedelta
-    from django.utils import timezone
-
-    student_id = request.query_params.get('student_id')
-    if student_id:
-        try:
-            student_id = int(student_id)
-        except (TypeError, ValueError):
-            return Response({'detail': "student_id son bo'lishi kerak"}, status=http_status.HTTP_400_BAD_REQUEST)
-        # Faqat tasdiqlangan bog'lanish bo'lsa ko'rsatamiz.
-        link_ok = ParentStudentLink.objects.filter(
-            parent=request.user, student_id=student_id, is_confirmed=True,
-        ).exists()
-        if not link_ok:
-            return Response(
-                {'detail': "Ruxsat berilmagan yoki farzand bog'lanmagan"},
-                status=http_status.HTTP_403_FORBIDDEN,
-            )
-        User = get_user_model()
-        student = get_object_or_404(User, pk=student_id)
-    else:
-        student = request.user
-
-    week_ago = timezone.now() - timedelta(days=7)
-    qs = TestAttempt.objects.filter(
-        user=student, disqualified=False, submitted_at__gte=week_ago,
-    )
-    agg = qs.aggregate(avg=Avg('score'), best=Max('score'), total=Count('id'))
-    return Response({
-        'full_name': student.full_name or '—',
-        'olympiads_count': agg['total'] or 0,
-        'average_score': round(agg['avg'] or 0, 1),
-        'streak': student.streak_count or 0,
-        'best_score': agg['best'] or 0,
-    })
 
 
 # ─── O7. Olimpiada tavsiyasi ─────────────────────────────────────────────────

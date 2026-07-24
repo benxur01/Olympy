@@ -5,7 +5,6 @@ from . import views
 from . import views_b2b
 from . import views_duel
 from . import views_me_premium
-from . import views_parent
 from . import views_retention
 from . import views_student
 from . import views_support
@@ -42,7 +41,6 @@ urlpatterns = [
     path('me/rivals/<int:rival_id>/', views_me_premium.remove_rival, name='me-remove-rival'),
     path('me/subject-readiness/', views_me_premium.subject_readiness, name='me-subject-readiness'),
     path('me/achievements/', views_me_premium.my_achievements, name='me-achievements'),
-    path('me/weekly-summary/', views_me_premium.weekly_summary, name='me-weekly-summary'),
     path('me/recommended-olympiads/', views_me_premium.recommended_olympiads, name='me-recommended-olympiads'),
     # Yangi 12-funksiya spec (O'quvchilar: O1–O6)
     path('me/error-notebook/', views_me_premium.error_notebook, name='me-error-notebook'),
@@ -66,16 +64,6 @@ urlpatterns = [
     # Student Progress Dashboard (premium emas) + oddiy AI tavsiyalar.
     path('me/progress/', views_student.progress_dashboard, name='me-progress'),
     path('me/ai-advice/', views_student.ai_advice, name='me-ai-advice'),
-    path('me/parent/link/', views_parent.link_child, name='parent-link-child'),
-    path('me/parent/link/<int:student_id>/', views_parent.unlink_child, name='parent-unlink-child'),
-    path('me/parent/children/', views_parent.list_children, name='parent-list-children'),
-    path('me/parent/children/<int:student_id>/report/', views_parent.child_report_pdf, name='parent-child-report-pdf'),
-    path('me/parent/children/<int:student_id>/predictions/', views_parent.predict_child_success, name='parent-child-predictions'),
-    path('me/parent/children/<int:student_id>/toggle-digest/', views_parent.toggle_weekly_digest, name='parent-child-toggle-digest'),
-    path('me/parent/children/<int:student_id>/test-digest/', views_parent.send_test_weekly_digest, name='parent-child-test-digest'),
-    path('me/parent-requests/', views_parent.list_parent_requests, name='parent-requests-list'),
-    path('me/parent-requests/<int:link_id>/respond/', views_parent.respond_parent_request, name='parent-requests-respond'),
-    path('me/confirm-parent/', views_parent.confirm_parent, name='confirm-parent'),
     path('me/predictions/', views.get_my_predictions, name='my-predictions'),
     path('me/activity-leaderboard/', views.activity_leaderboard, name='activity-leaderboard'),
     path('me/rewards/', views.list_rewards, name='rewards-list'),

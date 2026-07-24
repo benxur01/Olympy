@@ -921,10 +921,6 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
     { category: 'student', icon: '💡', iconName: 'info', title: 'Smart Olimpiada tavsiyalari', desc: 'Zaif fanlaringizga mos ravishda navbatdagi olimpiada va mashqlarni avtomatik tavsiya etish (O7)', color: 'from-indigo-600 to-purple-600' },
     { category: 'student', icon: '🔥', iconName: 'bolt', title: 'Ketma-ketlik (Streak) tizimi', desc: 'Kunlik faollikni va eng uzun streaklarni kuzatib borish orqali uzluksiz o\'rganish motivatsiyasi (O1)', color: 'from-orange-500 to-amber-500' },
     { category: 'student', icon: '👑', iconName: 'award', title: 'Oltin avatar halqasi va unvon', desc: 'Premium o\'quvchilar uchun platformada alohida vizual oltin avatar va reytinglarda maxsus belgi', color: 'from-yellow-400 to-amber-500' },
- 
-    // Parent features
-    { category: 'parent', icon: '📄', iconName: 'file', title: 'Ota-onalar uchun PDF hisobot', desc: 'Telegram bot orqali farzand rivojlanishi bo\'yicha haftalik PDF tahlil xabarlari', color: 'from-emerald-500 to-green-600', spotlight: true },
-    { category: 'parent', icon: '📩', iconName: 'send', title: 'Ota-onaga haftalik digest', desc: 'Farzandning oxirgi 7 kundagi urinishlari, o\'rtacha bali va faollik kunlarini Telegramda olish (O6)', color: 'from-emerald-500 to-green-600', spotlight: true },
   ];
 
   const filteredFeatures = React.useMemo(() => {
@@ -976,10 +972,10 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
     { id: 19, name: 'Plus', plan_type: 'organization', price: '1 919 999 UZS', duration_days: 180, desc: 'O\'sib borayotgan tashkilotlar uchun (6 oy)', features: ["Maksimal 200 ta o'quvchi", "Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], popular: true },
     { id: 20, name: 'Plus', plan_type: 'organization', price: '3 359 999 UZS', duration_days: 365, desc: 'O\'sib borayotgan tashkilotlar uchun (1 yil)', features: ["Maksimal 200 ta o'quvchi", "Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], popular: true },
     // Pro
-    { id: 21, name: 'Pro', plan_type: 'organization', price: '449 999 UZS', duration_days: 30, desc: 'Yirik ta\'lim tashkilotlari uchun (1 oy)', features: ["Cheksiz o'quvchi qo'shish", "Plus reja imkoniyatlari", "Cheksiz olimpiada", "API kirish", "Maxsus qo'llab-quvvatlash", "Ota-onalar paneli"], popular: false },
-    { id: 22, name: 'Pro', plan_type: 'organization', price: '1 199 999 UZS', duration_days: 90, desc: 'Yirik ta\'lim tashkilotlari uchun (3 oy)', features: ["Cheksiz o'quvchi qo'shish", "Plus reja imkoniyatlari", "Cheksiz olimpiada", "API kirish", "Maxsus qo'llab-quvvatlash", "Ota-onalar paneli"], popular: false },
-    { id: 23, name: 'Pro', plan_type: 'organization', price: '2 149 999 UZS', duration_days: 180, desc: 'Yirik ta\'lim tashkilotlari uchun (6 oy)', features: ["Cheksiz o'quvchi qo'shish", "Plus reja imkoniyatlari", "Cheksiz olimpiada", "API kirish", "Maxsus qo'llab-quvvatlash", "Ota-onalar paneli"], popular: false },
-    { id: 24, name: 'Pro', plan_type: 'organization', price: '3 749 999 UZS', duration_days: 365, desc: 'Yirik ta\'lim tashkilotlari uchun (1 yil)', features: ["Cheksiz o'quvchi qo'shish", "Plus reja imkoniyatlari", "Cheksiz olimpiada", "API kirish", "Maxsus qo'llab-quvvatlash", "Ota-onalar paneli"], popular: false },
+    { id: 21, name: 'Pro', plan_type: 'organization', price: '449 999 UZS', duration_days: 30, desc: 'Yirik ta\'lim tashkilotlari uchun (1 oy)', features: ["Cheksiz o'quvchi qo'shish", "Plus reja imkoniyatlari", "Cheksiz olimpiada", "API kirish", "Maxsus qo'llab-quvvatlash"], popular: false },
+    { id: 22, name: 'Pro', plan_type: 'organization', price: '1 199 999 UZS', duration_days: 90, desc: 'Yirik ta\'lim tashkilotlari uchun (3 oy)', features: ["Cheksiz o'quvchi qo'shish", "Plus reja imkoniyatlari", "Cheksiz olimpiada", "API kirish", "Maxsus qo'llab-quvvatlash"], popular: false },
+    { id: 23, name: 'Pro', plan_type: 'organization', price: '2 149 999 UZS', duration_days: 180, desc: 'Yirik ta\'lim tashkilotlari uchun (6 oy)', features: ["Cheksiz o'quvchi qo'shish", "Plus reja imkoniyatlari", "Cheksiz olimpiada", "API kirish", "Maxsus qo'llab-quvvatlash"], popular: false },
+    { id: 24, name: 'Pro', plan_type: 'organization', price: '3 749 999 UZS', duration_days: 365, desc: 'Yirik ta\'lim tashkilotlari uchun (1 yil)', features: ["Cheksiz o'quvchi qo'shish", "Plus reja imkoniyatlari", "Cheksiz olimpiada", "API kirish", "Maxsus qo'llab-quvvatlash"], popular: false },
   ];
   // API'dan kelgan plan'lar bo'lsa shularni, aks holda fallback'ni ko'rsatamiz.
   const pricing = (plans && plans.length) ? plans : FALLBACK_PRICING;
@@ -1050,15 +1046,6 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
                     <div>
                       <div className="text-xs font-bold text-white group-hover/item:text-cyan-300 transition-colors">Jonli Proctoring</div>
                       <div className="text-[10px] text-white/40 mt-0.5">O'quvchilar tab nazorati</div>
-                    </div>
-                  </a>
-                  <a href="#features" onClick={(e) => handleSolutionClick(e, 'parent', 'features')} className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
-                    <div className="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-400 group-hover/item:bg-emerald-500/20 group-hover/item:scale-105 transition-all">
-                      <Icon name="users" size={16} />
-                    </div>
-                    <div>
-                      <div className="text-xs font-bold text-white group-hover/item:text-emerald-300 transition-colors">Ota-ona Monitoringi</div>
-                      <div className="text-[10px] text-white/40 mt-0.5">Faollik va AI muvaffaqiyat bashorati</div>
                     </div>
                   </a>
                   <a href="#features" onClick={(e) => handleSolutionClick(e, 'student', 'features')} className="flex items-start gap-3 p-2.5 rounded-xl hover:bg-white/5 transition-all group/item">
@@ -1149,10 +1136,6 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
                       <a href="#b2b-console" onClick={(e) => handleSolutionClick(e, 'center', 'b2b-console', 'manager', true)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
                         <Icon name="eye" size={12} className="text-cyan-400" />
                         Jonli Proctoring
-                      </a>
-                      <a href="#features" onClick={(e) => handleSolutionClick(e, 'parent', 'features', null, true)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
-                        <Icon name="users" size={12} className="text-emerald-400" />
-                        Ota-ona Monitoringi
                       </a>
                       <a href="#features" onClick={(e) => handleSolutionClick(e, 'student', 'features', null, true)} className="text-xs text-white/50 hover:text-white flex items-center gap-2 py-1">
                         <Icon name="trophy" size={12} className="text-amber-400" />
@@ -1338,7 +1321,6 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
             { icon: 'file', label: 'PDF\'dan Test Yaratish', color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20' },
             { icon: 'eye', label: 'Jonli Proctoring Nazorati', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' },
             { icon: 'trophy', label: 'Real vaqtda Reyting & Musobaqalar', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
-            { icon: 'users', label: 'Ota-ona Monitoring Paneli', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
             { icon: 'send', label: 'Telegram orqali Tasdiqlash', color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
             { icon: 'chart', label: 'Premium Tahliliy Hisobotlar (T2)', color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
             { icon: 'shield', label: 'Xavfsiz Tab Nazorati Muhiti', color: 'text-teal-400 bg-teal-500/10 border-teal-500/20' },
@@ -1348,7 +1330,6 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
             { icon: 'file', label: 'PDF\'dan Test Yaratish', color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20' },
             { icon: 'eye', label: 'Jonli Proctoring Nazorati', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20' },
             { icon: 'trophy', label: 'Real vaqtda Reyting & Musobaqalar', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20' },
-            { icon: 'users', label: 'Ota-ona Monitoring Paneli', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20' },
             { icon: 'send', label: 'Telegram orqali Tasdiqlash', color: 'text-blue-400 bg-blue-500/10 border-blue-500/20' },
             { icon: 'chart', label: 'Premium Tahliliy Hisobotlar (T2)', color: 'text-purple-400 bg-purple-500/10 border-purple-500/20' },
             { icon: 'shield', label: 'Xavfsiz Tab Nazorati Muhiti', color: 'text-teal-400 bg-teal-500/10 border-teal-500/20' },
@@ -1671,7 +1652,7 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
         <div className="text-center mb-8 md:mb-10 scroll-reveal">
           <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-purple-300 border border-purple-500/20">✨ Xususiyatlar</div>
           <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Platforma Imkoniyatlari</h2>
-          <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Tashkilotingiz, o'quvchilar va ota-onalar uchun eng zamonaviy premium yechimlar</p>
+          <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Tashkilotingiz va o'quvchilar uchun eng zamonaviy premium yechimlar</p>
         </div>
 
         {/* Category Filter Tabs */}
@@ -1681,7 +1662,6 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
               { id: 'all', label: 'Barchasi', icon: 'grid' },
               { id: 'center', label: 'Tashkilotlar uchun', icon: 'building' },
               { id: 'student', label: 'O\'quvchilar uchun', icon: 'award' },
-              { id: 'parent', label: 'Ota-onalar uchun', icon: 'users' },
             ].map(cat => {
               const active = selectedCategory === cat.id;
               return (
@@ -1769,21 +1749,6 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
               <div className="mt-6 flex items-center justify-between bg-white/5 p-3 rounded-xl border border-white/5">
                 <span className="text-orange-400 font-bold text-xs flex items-center gap-1">🔥 7 kunlik streak</span>
                 <span className="text-yellow-400 font-bold text-xs flex items-center gap-1">🪙 120 tanga</span>
-              </div>
-            </GlowCard>
-
-            {/* Card 4: Ota-ona Telegram Monitoringi (Span 4) */}
-            <GlowCard className="p-6 md:p-8 md:col-span-4 flex flex-col justify-between group border border-white/5 relative min-h-[280px]">
-              <div>
-                <span className="flex items-center gap-1.5 text-[10px] font-black tracking-wider uppercase text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 w-fit rounded-full mb-4">
-                  <Icon name="users" size={10} />
-                  Haftalik Digest
-                </span>
-                <h3 className="text-lg md:text-xl font-bold text-white mb-2 group-hover:text-emerald-200 transition-colors duration-250">Ota-ona Monitoringi</h3>
-                <p className="text-xs text-white/50 leading-relaxed">Farzand faolligi va natijalari bo'yicha Telegram xabarnomalar va tahliliy haftalik PDF.</p>
-              </div>
-              <div className="mt-6 bg-emerald-500/10 text-emerald-300 text-[10px] font-bold px-3 py-2 rounded-xl border border-emerald-500/20 text-center">
-                💬 Telegram Digest Faol
               </div>
             </GlowCard>
 
@@ -1912,15 +1877,14 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
         <div className="text-center mb-8 md:mb-12 scroll-reveal">
           <div className="inline-flex items-center gap-2 glass rounded-full px-3 md:px-4 py-1.5 md:py-2 mb-3 md:mb-4 text-xs md:text-sm text-amber-300 border border-amber-500/20">⭐ Fikrlar</div>
           <h2 className="text-2xl md:text-4xl font-black text-white mb-3 md:mb-4">Bizga ishonishadi</h2>
-          <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Platformadan foydalanayotgan markazlar va ota-onalarning fikrlari</p>
+          <p className="text-white/40 max-w-xl mx-auto text-sm md:text-base">Platformadan foydalanayotgan markazlarning fikrlari</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5">
           {[
             { name: 'Sardorbek M.', org: 'ProSkill Academy', meta: "120 o'quvchi", stars: 5, color: 'from-indigo-500 to-purple-600', text: "AI savol generatori haftalik test tayyorlash vaqtimizni 10 barobar qisqartirdi. Olimpiada natijalarini endi qo'lda hisoblamaymiz." },
-            { name: 'Dilnoza K.', org: 'Bilim Markazi', meta: "85 o'quvchi", stars: 5, color: 'from-cyan-500 to-blue-600', text: "O'quvchilar reytingi va mashq rejimi guruhdagi faollikni sezilarli oshirdi. Ota-onalar PDF hisobotlardan juda mamnun." },
+            { name: 'Dilnoza K.', org: 'Bilim Markazi', meta: "85 o'quvchi", stars: 5, color: 'from-cyan-500 to-blue-600', text: "O'quvchilar reytingi va mashq rejimi guruhdagi faollikni sezilarli oshirdi. Natijalar tahlili juda qulay." },
             { name: 'Jasur T.', org: 'Iqtidor School', meta: "210 o'quvchi", stars: 5, color: 'from-emerald-500 to-teal-600', text: "PDF'dan test import qilish funksiyasi darsliklarimizni soniyalarda test bazasiga aylantirdi. Proctoring nazorati ham ishonchli." },
-            { name: 'Nilufar A.', org: 'Ota-ona', meta: "2 farzand", stars: 4, color: 'from-rose-500 to-orange-500', text: "Telegram orqali har hafta farzandlarim natijalarini olib turaman. Qaysi fanda oqsayotganini aniq bilaman." },
           ].map((t, i) => (
             <div key={t.name} className={`glass rounded-2xl p-5 border border-white/5 hover:border-white/10 transition-colors flex flex-col scroll-reveal scroll-reveal-delay-${(i % 4) + 1}`}>
               {/* Yulduz reytingi */}
@@ -2129,10 +2093,6 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
             {
               q: "AI (sun'iy intellekt) orqali qanday qilib savol yaratish mumkin?",
               a: "Platformamizga integratsiya qilingan Gemini AI darsliklar, mavzular yoki kalit so'zlar asosida bir necha soniya ichida yuzlab noyob, qiyinchilik darajasi sozlangan test savollarini avtomatik yaratib beradi."
-            },
-            {
-              q: "Ota-onalar farzandlarining natijalarini qanday kuzatishadi?",
-              a: "Ota-onalar uchun maxsus Telegram-bot ishlaydi. Bot orqali ota-onaga har hafta farzandining test urinishlari, o'rtacha ballari, faollik kunlari va rivojlanish grafigi PDF (digest) shaklida yuboriladi."
             },
             {
               q: "Premium tariflarning afzalliklari nimada?",

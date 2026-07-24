@@ -400,7 +400,7 @@ const request = async (
 
 // Higher index wins. Used to pick activeRole when a user has multiple
 // roles approved at the same time. admin > owner > manager > teacher > student.
-const ROLE_PRIORITY = ['student', 'teacher', 'manager', 'owner', 'admin', 'parent'];
+const ROLE_PRIORITY = ['student', 'teacher', 'manager', 'owner', 'admin'];
 
 const mapRoleCenter = (center) => ({
   membershipId: center.membership_id ?? center.membershipId ?? null,
@@ -1073,34 +1073,6 @@ export const OlympyApi = {
     `/api/billing/limits/?_t=${Date.now()}${centerId ? `&center_id=${encodeURIComponent(centerId)}` : ''}`,
     { token, retryOnAuth: false },
   ),
-  // Parent / Ota-ona
-  linkChild: (studentPhone, token) => request('/api/me/parent/link/', { method: 'POST', body: { student_phone: studentPhone }, token }),
-  getChildren: (token) => request('/api/me/parent/children/', { token }),
-  unlinkChild: (studentId, token) => request(`/api/me/parent/link/${studentId}/`, { method: 'DELETE', token }),
-  // O'quvchi tomoni: o'ziga "farzand" sifatida qo'shilmoqchi bo'lgan
-  // ota-onalarning kutilayotgan so'rovlari. Backend: views_parent.
-  // list_parent_requests / respond_parent_request / confirm_parent.
-  listParentRequests: (token) => request('/api/me/parent-requests/', { token }).then(unwrapList),
-  // Bitta so'rovni tasdiqlash/rad etish (link_id URL'da). accept=true|false.
-  respondParent: (linkId, accept, token) => request(`/api/me/parent-requests/${linkId}/respond/`, { method: 'POST', body: { accept: !!accept }, token }),
-  // Qulay muqobil: link_id yoki parent_id orqali tasdiqlash/rad etish.
-  confirmParent: (payload, token) => request('/api/me/confirm-parent/', { method: 'POST', body: payload || {}, token }),
-  childReportDownloadUrl: (studentId) => `${API_BASE_URL}/api/me/parent/children/${studentId}/report/`,
-  downloadChildReport: async (studentId, token) => {
-    const res = await fetch(`${API_BASE_URL}/api/me/parent/children/${studentId}/report/`, {
-      method: 'GET',
-      headers: { Authorization: token ? `Bearer ${token}` : '' },
-      credentials: 'include',
-    });
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      const err = new Error(errData.detail || "Hisobot yuklab bo'lmadi");
-      err.status = res.status;
-      err.data = errData;
-      throw err;
-    }
-    return res.blob();
-  },
   // Mistakes Vault
   getMistakes: (token) => request('/api/attempts/mistakes/', { token }),
   explainAllMistakes: (token) => request('/api/attempts/mistakes/explain/', { method: 'POST', token }),
@@ -1241,10 +1213,6 @@ export const OlympyApi = {
   setMemberGroupTag: (centerId, membershipId, groupTag, token) => request(`/api/centers/${centerId}/members/${membershipId}/group-tag/`, { method: 'POST', body: { group_tag: groupTag }, token }),
   // Predictions
   getMyPredictions: (token) => request('/api/me/predictions/', { token }),
-  getChildPredictions: (studentId, token) => request(`/api/me/parent/children/${studentId}/predictions/`, { token }),
-  // Weekly Digest Toggle & Test Send
-  toggleWeeklyDigest: (studentId, enabled, token) => request(`/api/me/parent/children/${studentId}/toggle-digest/`, { method: 'POST', body: { enabled }, token }),
-  sendTestWeeklyDigest: (studentId, token) => request(`/api/me/parent/children/${studentId}/test-digest/`, { method: 'POST', token }),
   // Sertifikat URL'i — `download` atributi bilan <a> orqali fayl tushadi.
   certificateDownloadUrl: (attemptId) => `${API_BASE_URL}/api/certificates/${attemptId}/download/`,
   downloadCertificate: async (attemptId, token) => {

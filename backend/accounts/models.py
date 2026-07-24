@@ -416,44 +416,6 @@ class User(AbstractBaseUser, PermissionsMixin):
             self.save(update_fields=['roles'])
 
 
-class ParentStudentLink(models.Model):
-    """Ota-ona va o'quvchi orasidagi kuzatuv aloqasi.
-
-    Bir parent bir nechta farzandni kuzata oladi; bir student bir nechta
-    parent'ga bog'lanishi mumkin (ona+ota). Unique constraint duplicate
-    link'larning oldini oladi.
-    """
-    parent = models.ForeignKey(
-        'accounts.User',
-        on_delete=models.CASCADE,
-        related_name='children_links',
-    )
-    student = models.ForeignKey(
-        'accounts.User',
-        on_delete=models.CASCADE,
-        related_name='parent_links',
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    weekly_digest_enabled = models.BooleanField(default=True)
-    # Student roziligi: ota-ona link yaratganida False bo'ladi va student
-    # tasdiqlaguncha (is_confirmed=True) link "kutilmoqda" holatida turadi.
-    # Tasdiqlanmagan link list_children'da ko'rinmaydi.
-    is_confirmed = models.BooleanField(default=False)
-    confirmed_at = models.DateTimeField(null=True, blank=True)
-
-    class Meta:
-        ordering = ['-created_at']
-        constraints = [
-            models.UniqueConstraint(
-                fields=['parent', 'student'],
-                name='unique_parent_student',
-            ),
-        ]
-
-    def __str__(self):
-        return f'parent:{self.parent_id} → student:{self.student_id}'
-
-
 class RewardProduct(models.Model):
     # Markaz do'koni: har bir o'quv markaz o'zining mahsulotlarini qo'sha
     # oladi. `center=None` bo'lgan mahsulotlar — platforma global do'koni

@@ -104,30 +104,6 @@ def wrap_text(text, font, max_width, draw):
         lines.append(' '.join(current_line))
     return lines
 
-def generate_monthly_report_pdf(student):
-    """Foydalanuvchining oylik natijalaridan hisobot kartasini generatsiya qiladi va PDF qaytaradi."""
-    from attempts.models import TestAttempt
-
-    # Natijalarni olish (butun tarix — oylik hisobotning mavjud xulqi saqlanadi).
-    attempts = TestAttempt.objects.filter(user=student, disqualified=False).select_related('olympiad').order_by('-submitted_at')
-
-    # Sarlavha ostidagi davr matni (o'zbek oy nomi bilan).
-    months_uz = {
-        'January': 'Yanvar', 'February': 'Fevral', 'March': 'Mart', 'April': 'Aprel',
-        'May': 'May', 'June': 'Iyun', 'July': 'Iyul', 'August': 'Avgust',
-        'September': 'Sentabr', 'October': 'Oktabr', 'November': 'Noyabr', 'December': 'Dekabr'
-    }
-    month_en = timezone.now().strftime('%B')
-    month_uz = months_uz.get(month_en, month_en)
-    date_str = f"Hisobot davri: {month_uz} {timezone.now().strftime('%Y')}"
-
-    return _render_report_pdf(
-        student, attempts,
-        header_title="OYLIK RIVOJLANISH HISOBOTI",
-        date_str=date_str,
-    )
-
-
 def generate_weekly_report_pdf(student):
     """Foydalanuvchining oxirgi 7 kunlik natijalaridan haftalik hisobot PDF'i.
 
