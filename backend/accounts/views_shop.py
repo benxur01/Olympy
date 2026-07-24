@@ -21,7 +21,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from centers.models import CenterMembership, EducationCenter
-from centers.services import user_can_manage_center
+from centers.services import user_can_manage_center_staff
 
 from .models import RewardProduct
 from .serializers import RewardProductSerializer
@@ -48,7 +48,8 @@ def _managed_center_for(user, center_id=None):
     """
     if center_id is not None:
         center = EducationCenter.objects.filter(pk=center_id).first()
-        if center is not None and user_can_manage_center(user, center):
+        # Teacher == manager tenglik: o'qituvchi ham markaz do'konini boshqaradi.
+        if center is not None and user_can_manage_center_staff(user, center):
             return center
         return None
     owned = (
@@ -63,7 +64,10 @@ def _managed_center_for(user, center_id=None):
         CenterMembership.objects
         .filter(
             user=user,
-            role=CenterMembership.ROLE_MANAGER,
+            role__in=[
+                CenterMembership.ROLE_MANAGER,
+                CenterMembership.ROLE_TEACHER,
+            ],
             status=CenterMembership.STATUS_APPROVED,
         )
         .select_related('center')

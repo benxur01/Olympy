@@ -36,6 +36,7 @@ from .services import (
     decide_membership,
     user_can_approve_membership,
     user_can_manage_center,
+    user_can_manage_center_staff,
 )
 
 
@@ -512,7 +513,8 @@ def _approve(request, center_id, role):
 @permission_classes([IsAuthenticated])
 def pending_memberships(request, center_id):
     center = get_object_or_404(EducationCenter, pk=center_id)
-    if not user_can_manage_center(request.user, center):
+    # Teacher == manager tenglik: o'qituvchi ham arizalar ro'yxatini ko'radi.
+    if not user_can_manage_center_staff(request.user, center):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
     role = request.query_params.get('role')
     qs = CenterMembership.objects.filter(

@@ -100,6 +100,24 @@ def user_can_manage_center(user, center):
     ).exists()
 
 
+def user_can_manage_center_staff(user, center):
+    """Owner/Manager/Teacher (yoki platform admin) uchun staff-darajali ruxsat.
+
+    ``user_can_manage_center`` faqat owner/manager'ni qamraydi va billing kabi
+    owner-only endpointlarda ishlatiladi — uni kengaytirmasdan, teacher==manager
+    tenglik talab qilingan staff amallar (a'zolik arizalari, mukofot do'koni)
+    uchun alohida, o'qituvchini ham qo'shadigan tekshiruv.
+    """
+    if user_can_manage_center(user, center):
+        return True
+    return CenterMembership.objects.filter(
+        user=user,
+        center=center,
+        role=CenterMembership.ROLE_TEACHER,
+        status=CenterMembership.STATUS_APPROVED,
+    ).exists()
+
+
 def user_can_approve_membership(user, center, role):
     if not getattr(user, 'is_authenticated', False):
         return False
@@ -108,10 +126,15 @@ def user_can_approve_membership(user, center, role):
     if center.owner_id == user.id:
         return center.status == EducationCenter.STATUS_APPROVED
     if role == CenterMembership.ROLE_STUDENT:
+        # Teacher == manager tenglik: o'qituvchi ham o'quvchi arizalarini
+        # tasdiqlay oladi. O'qituvchi/menejer arizalari esa owner-only qoladi.
         return CenterMembership.objects.filter(
             user=user,
             center=center,
-            role=CenterMembership.ROLE_MANAGER,
+            role__in=[
+                CenterMembership.ROLE_MANAGER,
+                CenterMembership.ROLE_TEACHER,
+            ],
             status=CenterMembership.STATUS_APPROVED,
         ).exists()
     return False
