@@ -146,6 +146,42 @@ class AttemptsTestCase(APITestCase):
         # Tekshiruvdan oldin diskvalifikatsiya attempt'i yaratilmaydi.
         self.assertFalse(TestAttempt.objects.filter(user=self.student, olympiad=self.olympiad).exists())
 
+    def test_cheating_report_new_proctoring_reason_ownerless_center(self):
+        """Regressiya: markaz owner=None bo'lganda cheating report 500 QILMASLIGI kerak.
+
+        `EducationCenter.owner` nullable. `ReportCheatingView` olimpiadani
+        `select_for_update().select_related('center', 'center__owner')` bilan
+        oladi — `center__owner` LEFT OUTER JOIN hosil qiladi. `of` bo'lmasa
+        PostgreSQL "FOR UPDATE cannot be applied to the nullable side of an
+        outer join" bilan 500 qaytaradi. Yangi kamera/ovoz proktoring
+        signallari (masalan 'ambient_speech_detected') aynan shu endpoint
+        orqali o'tadi, shu sababli har bir proktoring hodisasi 500 bo'lardi.
+
+        Eslatma: SQLite `select_for_update`ni butunlay e'tiborsiz qoldiradi, shu
+        sababli bu test lokal SQLite'da fix'siz ham o'tadi — haqiqiy regressiyani
+        PostgreSQL backendли CI ushlaydi. `select_for_update_of` tekshiruvi esa
+        har qanday backendda lock scope'ini himoya qiladi.
+        """
+        self.assertIsNone(self.center.owner_id)  # markazda owner yo'q -> nullable join
+        self.olympiad.camera_proctoring_enabled = True
+        self.olympiad.voice_proctoring_enabled = True
+        self.olympiad.save(update_fields=['camera_proctoring_enabled', 'voice_proctoring_enabled'])
+        TestSession.objects.create(
+            user=self.student, olympiad=self.olympiad, status=TestSession.STATUS_ACTIVE,
+        )
+
+        response = self.client.post(
+            reverse('report-cheating'),
+            {'olympiad': self.olympiad.id, 'reason': 'ambient_speech_detected'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('status'), 'pending_review')
+
+        session = TestSession.objects.get(user=self.student, olympiad=self.olympiad)
+        self.assertEqual(session.status, TestSession.STATUS_PENDING_REVIEW)
+        self.assertEqual(session.cheating_reason, 'ambient_speech_detected')
+
     def test_review_cheating_disqualify(self):
         """Menejer 'disqualify' qarori — sessiya DQ + disqualified attempt."""
         self.center.owner = self.student  # student ham owner (test soddaligi uchun)
