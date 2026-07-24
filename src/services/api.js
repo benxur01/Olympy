@@ -1130,6 +1130,10 @@ export const OlympyApi = {
   // Baholash client-side (savollarda correct_answer indeksi bor). Tier yetmasa
   // backend 403 { detail, upgrade_required, required_tier } qaytaradi.
   getDailyPracticeSet: (token) => request('/api/me/daily-practice/', { token }),
+  // Kunlik AI mashq javoblarini saqlaydi (topshirish). answers: {savolIndeks:
+  // variantIndeks}. Bir marta topshirilgach saqlanadi — kun davomida qayta
+  // ochilganda mashq "bajarilgan" holatda ko'rinadi.
+  submitDailyPracticeSet: (answers, token) => request('/api/me/daily-practice/submit/', { method: 'POST', body: { answers }, token }),
   // Shaxsiy AI test generatori — Plus+ tier. Fan/mavzu/qiyinlik yuboriladi,
   // backend 10 ta ko'p tanlovli savol qaytaradi (saqlanmaydi). Baholash
   // client-side (savollarda correct_answer indeksi bor). Tier yetmasa backend

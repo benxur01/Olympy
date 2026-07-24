@@ -57,6 +57,7 @@ urlpatterns = [
     path('me/readiness/', views_student.readiness, name='me-readiness'),
     path('me/study-plan/', views_student.study_plan, name='me-study-plan'),
     path('me/daily-practice/', views_student.daily_practice_set, name='me-daily-practice'),
+    path('me/daily-practice/submit/', views_student.daily_practice_submit, name='me-daily-practice-submit'),
     path('me/custom-test/', views_student.custom_ai_test, name='me-custom-test'),
     path('me/practice-quota/', views_student.practice_quota, name='me-practice-quota'),
     path('me/weekly-report/', views_student.weekly_report_pdf, name='me-weekly-report'),

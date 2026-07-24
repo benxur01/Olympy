@@ -811,6 +811,12 @@ class DailyPracticeSet(models.Model):
     # generate_questions qaytargan savollar ro'yxati (har biri text, options,
     # correct_answer indeksi bilan) — client-side scoring uchun to'liq saqlanadi.
     questions = models.JSONField(default=list)
+    # O'quvchi bergan javoblar: {savol_indeksi: tanlangan_variant_indeksi}.
+    # Bo'sh — hali topshirilmagan. `submitted_at` topshirilgan vaqt (null bo'lsa
+    # mashq hali bajarilmagan). Bu bo'lmaganda kun davomida har qayta ochilganda
+    # mashq qaytadan "javob berilmagan" holatda ko'rinardi.
+    answers = models.JSONField(default=dict)
+    submitted_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

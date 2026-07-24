@@ -1030,6 +1030,52 @@ class DailyPracticeSetTestCase(APITestCase):
         # Buzuq (bo'sh) to'plam saqlanmasligi kerak.
         self.assertEqual(DailyPracticeSet.objects.filter(user=self.standart_user).count(), 0)
 
+    @patch('questions.ai_generation.generate_questions')
+    def test_submit_persists_and_marks_completed(self, mock_gen):
+        # Topshirilgan javoblar saqlanadi va keyingi GET "bajarilgan" holatni
+        # qaytaradi — kun davomida qayta ochilganda mashq qaytadan chiqmaydi.
+        mock_gen.return_value = {'ok': True, 'questions': self._FAKE_QUESTIONS, 'error': ''}
+        self.client.force_authenticate(user=self.standart_user)
+        self.client.get(reverse('me-daily-practice'))  # to'plamni generatsiya
+
+        submit = self.client.post(
+            reverse('me-daily-practice-submit'),
+            {'answers': {'0': 1, '1': 2}}, format='json',
+        )
+        self.assertEqual(submit.status_code, status.HTTP_200_OK)
+        self.assertTrue(submit.data['submitted'])
+        self.assertEqual(submit.data['answers'], {'0': 1, '1': 2})
+
+        # Keyingi GET topshirilgan holatni qaytaradi.
+        again = self.client.get(reverse('me-daily-practice'))
+        self.assertTrue(again.data['submitted'])
+        self.assertEqual(again.data['answers'], {'0': 1, '1': 2})
+
+    @patch('questions.ai_generation.generate_questions')
+    def test_submit_is_idempotent(self, mock_gen):
+        # Ikkinchi topshirish birinchi javoblarni qayta yozmaydi.
+        mock_gen.return_value = {'ok': True, 'questions': self._FAKE_QUESTIONS, 'error': ''}
+        self.client.force_authenticate(user=self.standart_user)
+        self.client.get(reverse('me-daily-practice'))
+        self.client.post(reverse('me-daily-practice-submit'),
+                         {'answers': {'0': 1}}, format='json')
+        second = self.client.post(reverse('me-daily-practice-submit'),
+                                  {'answers': {'0': 3}}, format='json')
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertEqual(second.data['answers'], {'0': 1})
+
+    def test_submit_without_set_404(self):
+        self.client.force_authenticate(user=self.standart_user)
+        resp = self.client.post(reverse('me-daily-practice-submit'),
+                                {'answers': {'0': 1}}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_submit_free_user_403(self):
+        self.client.force_authenticate(user=self.free_user)
+        resp = self.client.post(reverse('me-daily-practice-submit'),
+                                {'answers': {'0': 1}}, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_throttle_scope_is_dedicated_not_shared_ai(self):
         # Passiv, dashboard'da avtomatik so'raladigan widget umumiy 'ai' scope'ini
         # (explain_question/explain_all_mistakes/study_plan bilan bo'linadigan)
