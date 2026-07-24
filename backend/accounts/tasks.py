@@ -77,37 +77,6 @@ def celery_heartbeat_task():
     cache.set('celery_heartbeat', time.time(), timeout=120)
 
 
-@shared_task
-def send_monthly_report_pdf_telegram_task(chat_id, student_id, filename_tg, caption_tg):
-    """Generate child's monthly PDF report and send it to parent via Telegram."""
-    from django.contrib.auth import get_user_model
-    from accounts.reports import generate_monthly_report_pdf
-    from notifications.services import send_pdf_to_telegram
-    User = get_user_model()
-    try:
-        student = User.objects.get(pk=student_id)
-        pdf_bytes = generate_monthly_report_pdf(student)
-        send_pdf_to_telegram(chat_id, pdf_bytes, filename_tg, caption_tg)
-        return f"Successfully sent PDF report for student {student_id} to chat {chat_id}"
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).exception("Failed to send monthly report to telegram in celery task")
-        return f"Error sending PDF report: {str(e)}"
-
-
-@shared_task
-def send_telegram_markdown_task(chat_id, msg):
-    """Send markdown weekly digest message to parent via Telegram."""
-    from notifications.services import send_telegram_markdown
-    try:
-        send_telegram_markdown(chat_id, msg)
-        return f"Successfully sent weekly digest markdown to chat {chat_id}"
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).exception("Failed to send telegram markdown in celery task")
-        return f"Error sending markdown: {str(e)}"
-
-
 @shared_task(
     bind=True,
     max_retries=5,
@@ -237,76 +206,6 @@ def generate_daily_questions(count=DAILY_QUESTION_COUNT):
             created += 1
 
     return f'daily questions ready: {created} created for {today}'
-
-
-@shared_task(name='accounts.send_weekly_parent_reports')
-def send_weekly_parent_reports():
-    """O6: Ota-onalarga farzandning haftalik hisobotini Telegram orqali yuboradi.
-
-    Bu task Celery Beat tomonidan har hafta avtomatik ishga tushiriladi
-    (settings.CELERY_BEAT_SCHEDULE['send-weekly-parent-reports'], har dushanba
-    08:00 UTC). `send_weekly_parent_reports` management command logikasining
-    Celery beat varianti. Tasdiqlangan va digest yoqilgan har bir
-    ota-ona-farzand bog'lanishi uchun oxirgi 7 kunlik statistikani yuboradi.
-    """
-    import logging
-
-    from accounts.models import ParentStudentLink
-    from attempts.models import TestAttempt
-
-    logger = logging.getLogger(__name__)
-    week_ago = timezone.now() - timedelta(days=7)
-
-    links = (
-        ParentStudentLink.objects
-        .filter(is_confirmed=True, weekly_digest_enabled=True)
-        .select_related('parent', 'student')
-    )
-
-    # 1000+ ota-onada barcha Telegram HTTP so'rovlarini bitta for-loop'da
-    # sinxron yuborish butun task'ni bloklab qo'yardi (har biri sekundlar).
-    # Buning o'rniga DB o'qish (stat) shu yerda qoladi, lekin har xabar
-    # alohida `send_telegram_markdown_task` subtask'iga (retry'li) topshiriladi
-    # — yuborish parallel/distributed bo'lib, batch tezda yakunlanadi.
-    queued = 0
-    skipped = 0
-    for link in links:
-        parent = link.parent
-        student = link.student
-        chat_id = getattr(parent, 'telegram_chat_id', '')
-        if not chat_id:
-            skipped += 1
-            continue
-
-        agg = TestAttempt.objects.filter(
-            user=student, disqualified=False, submitted_at__gte=week_ago,
-        ).aggregate(avg=Avg('score'), best=Max('score'), total=Count('id'))
-
-        olympiads_count = agg['total'] or 0
-        avg_score = round(agg['avg'] or 0, 1)
-        best_score = agg['best'] or 0
-        streak = student.streak_count or 0
-        name = student.full_name or 'Farzandingiz'
-
-        msg = (
-            f"📊 Haftalik hisobot: {name}\n"
-            f"📝 Olimpiadalar: {olympiads_count} ta\n"
-            f"⭐ O'rtacha ball: {avg_score}%\n"
-            f"🔥 Streak: {streak} kun\n"
-            f"🏆 Eng yaxshi natija: {best_score}%"
-        )
-
-        try:
-            send_telegram_markdown_task.delay(chat_id, msg)
-            queued += 1
-        except Exception:
-            logger.exception(
-                'weekly parent report enqueue failed for parent=%s student=%s',
-                parent.id, student.id,
-            )
-            skipped += 1
-
-    return f'weekly reports: {queued} queued, {skipped} skipped'
 
 
 @shared_task(name='accounts.send_weekly_digest')
