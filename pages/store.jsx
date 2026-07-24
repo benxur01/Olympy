@@ -754,6 +754,12 @@ const mapApiOlympiad = (o) => {
       ? o.allowed_languages
       : (Array.isArray(o.allowedLanguages) ? o.allowedLanguages : []),
     itCategory: o.it_category || o.itCategory || '',
+    // Webkamera proktoring (yuz/nigoh kuzatuvi) yoqilganmi. Default false —
+    // mavjud olimpiadalar o'zgarishsiz qoladi.
+    cameraProctoringEnabled: !!(o.camera_proctoring_enabled ?? o.cameraProctoringEnabled),
+    // Ovoz (mikrofon) proktoring yoqilganmi. Kameradan mustaqil. Default false —
+    // mavjud olimpiadalar o'zgarishsiz qoladi.
+    voiceProctoringEnabled: !!(o.voice_proctoring_enabled ?? o.voiceProctoringEnabled),
     createdAt: (o.created_at || '').slice(0, 10),
     participants: o.participants || 0,
     maxScore: o.max_score ?? 100,

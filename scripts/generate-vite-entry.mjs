@@ -47,6 +47,8 @@ entry += `import { OlympyApi } from './services/api.js';\n`;
 entry += `import DOMPurify from 'dompurify';\n`;
 entry += `import katex from 'katex';\n`;
 entry += `import './services/codemirror-loader.js';\n`;
+entry += `import './proctoring/proctorLoader.js';\n`;
+entry += `import './proctoring/voiceProctorLoader.js';\n`;
 entry += `import 'katex/dist/katex.min.css';\n`;
 entry += `import './index.css';\n\n`;
 

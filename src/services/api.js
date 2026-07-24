@@ -949,6 +949,12 @@ export const OlympyApi = {
   // Attempts / results / leaderboard
   submitAttempt: (payload, token) => request('/api/attempts/', { method: 'POST', body: payload, token }),
   reportCheating: (payload, token) => request('/api/attempts/cheating/', { method: 'POST', body: payload, token, keepalive: true, retryOnAuth: false }),
+  // Webkamera proktoring rozilik — student imtihonni boshlashdan oldin
+  // tasdiqlaydi. Faqat boolean + vaqt tamg'asi yoziladi (video EMAS).
+  cameraConsent: (payload, token) => request('/api/attempts/camera-consent/', { method: 'POST', body: payload, token }),
+  // Ovoz (mikrofon) proktoring rozilik — kamera roziligidan mustaqil. Faqat
+  // boolean + vaqt tamg'asi yoziladi (audio EMAS).
+  microphoneConsent: (payload, token) => request('/api/attempts/microphone-consent/', { method: 'POST', body: payload, token }),
   pingTestSession: (olympiadId, answeredCount, tabEscapes, token, deviceId) => request('/api/attempts/ping/', { method: 'POST', body: { olympiad: olympiadId, answered_count: answeredCount, tab_escapes: tabEscapes, device_id: deviceId }, token }),
   // Cheating tekshiruvi bo'yicha menejer/owner qarori: decision 'disqualify'
   // yoki 'continue'. 409 — holat allaqachon hal qilingan (boshqa menejer).

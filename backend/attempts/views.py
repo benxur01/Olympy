@@ -35,6 +35,7 @@ from .models import TestAttempt, TestSession
 from .serializers import SubmitAttemptSerializer, TestAttemptSerializer
 from .session_utils import (
     SUBMIT_GRACE_SECONDS,
+    get_or_create_test_session,
     score_session_answers,
     session_is_expired,
 )
@@ -810,6 +811,84 @@ class ReportCheatingView(APIView):
 # URL routing FBV-shaklidagi callable kutadi — CBV'ni `.as_view()` orqali
 # beramiz, shunda urls.py'dagi `views.report_cheating` o'zgarmasdan ishlaydi.
 report_cheating = ReportCheatingView.as_view()
+
+
+class CameraConsentView(APIView):
+    """POST /api/attempts/camera-consent/ — student webkamera proktoringga rozilik.
+
+    Body: {"olympiad": <id>}. Olimpiadada `camera_proctoring_enabled` yoqilgan
+    bo'lsa, student imtihonni boshlashdan oldin rozilik ekranida tasdiqlaydi.
+    Bu endpoint FAQAT boolean rozilik + vaqt tamg'asini o'z sessiyasiga yozadi —
+    hech qanday video/rasm/audio qabul qilinmaydi yoki saqlanmaydi.
+
+    Auth/session-lookup naqshi `ReportCheatingView` bilan bir xil; sessiya
+    `session_utils.get_or_create_test_session` orqali `olympiad_questions`
+    bilan bir xil tarzda olinadi (rozilik savollar yuklanishidan oldin
+    beriladi, shu sababli sessiya hali mavjud bo'lmasligi mumkin).
+    """
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'cheating'
+
+    def post(self, request):
+        olympiad_id = request.data.get('olympiad')
+        if not olympiad_id:
+            return Response({'detail': 'olympiad majburiy'}, status=http_status.HTTP_400_BAD_REQUEST)
+
+        olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
+        if not user_can_participate_in_event(request.user, olympiad):
+            return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+        session = get_or_create_test_session(request.user, olympiad)
+        if not session.camera_consent_given:
+            session.camera_consent_given = True
+            session.camera_consent_at = timezone.now()
+            session.save(update_fields=['camera_consent_given', 'camera_consent_at'])
+        return Response({
+            'camera_consent_given': True,
+            'camera_consent_at': session.camera_consent_at.isoformat() if session.camera_consent_at else None,
+        })
+
+
+camera_consent = CameraConsentView.as_view()
+
+
+class MicrophoneConsentView(APIView):
+    """POST /api/attempts/microphone-consent/ — student ovoz proktoringga rozilik.
+
+    Body: {"olympiad": <id>}. Olimpiadada `voice_proctoring_enabled` yoqilgan
+    bo'lsa, student imtihonni boshlashdan oldin rozilik ekranida tasdiqlaydi.
+    Kamera roziligidan MUSTAQIL. Bu endpoint FAQAT boolean rozilik + vaqt
+    tamg'asini o'z sessiyasiga yozadi — hech qanday audio/ovoz qabul qilinmaydi
+    yoki saqlanmaydi.
+
+    Auth/session-lookup naqshi `CameraConsentView` bilan bir xil.
+    """
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'cheating'
+
+    def post(self, request):
+        olympiad_id = request.data.get('olympiad')
+        if not olympiad_id:
+            return Response({'detail': 'olympiad majburiy'}, status=http_status.HTTP_400_BAD_REQUEST)
+
+        olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
+        if not user_can_participate_in_event(request.user, olympiad):
+            return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+        session = get_or_create_test_session(request.user, olympiad)
+        if not session.microphone_consent_given:
+            session.microphone_consent_given = True
+            session.microphone_consent_at = timezone.now()
+            session.save(update_fields=['microphone_consent_given', 'microphone_consent_at'])
+        return Response({
+            'microphone_consent_given': True,
+            'microphone_consent_at': session.microphone_consent_at.isoformat() if session.microphone_consent_at else None,
+        })
+
+
+microphone_consent = MicrophoneConsentView.as_view()
 
 
 class ReviewCheatingCaseView(APIView):
@@ -2297,6 +2376,15 @@ def olympiad_live_proctoring(request, olympiad_id):
             'pending_review': pending_review,
             'review_requested_at': s.review_requested_at.isoformat() if s.review_requested_at else None,
             'cheating_reason': s.cheating_reason,
+            # Webkamera proktoring rozilik holati (video EMAS — faqat boolean +
+            # vaqt). Menejer "hech qachon rozilik bermagan" ni "rozilik bergan,
+            # kamera hech narsa topmagan" dan ajrata olishi uchun.
+            'camera_consent_given': s.camera_consent_given,
+            'camera_consent_at': s.camera_consent_at.isoformat() if s.camera_consent_at else None,
+            # Ovoz (mikrofon) proktoring rozilik holati — kamera roziligidan
+            # mustaqil (audio EMAS, faqat boolean + vaqt).
+            'microphone_consent_given': s.microphone_consent_given,
+            'microphone_consent_at': s.microphone_consent_at.isoformat() if s.microphone_consent_at else None,
             'answered_count': answered,
             'total_questions': len(s.question_order) or olympiad_question_count or 0,
             'tab_escapes': escapes,

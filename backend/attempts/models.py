@@ -128,6 +128,19 @@ class TestSession(models.Model):
     # uzaytiriladi (session_end_time), shunda student tekshiruvni kutib vaqt
     # yo'qotmaydi. Bir sessiyada bir necha marta pending bo'lsa yig'iladi.
     paused_seconds = models.PositiveIntegerField(default=0)
+    # Webkamera proktoring rozilikni kuzatish. Olimpiadada
+    # `camera_proctoring_enabled` yoqilgan bo'lsa, student imtihonni
+    # boshlashdan oldin rozilik ekranida tasdiqlaydi. Bu yerda FAQAT boolean
+    # rozilik va vaqt tamg'asi saqlanadi — hech qanday video/rasm/audio EMAS.
+    camera_consent_given = models.BooleanField(default=False)
+    camera_consent_at = models.DateTimeField(null=True, blank=True)
+    # Ovoz (mikrofon) proktoring rozilikni kuzatish. Olimpiadada
+    # `voice_proctoring_enabled` yoqilgan bo'lsa, student imtihonni
+    # boshlashdan oldin rozilik ekranida tasdiqlaydi. Kamera roziligidan
+    # MUSTAQIL. Bu yerda FAQAT boolean rozilik va vaqt tamg'asi saqlanadi —
+    # hech qanday audio/ovoz EMAS.
+    microphone_consent_given = models.BooleanField(default=False)
+    microphone_consent_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-started_at']
