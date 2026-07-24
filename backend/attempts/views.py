@@ -935,7 +935,11 @@ def attempt_detail(request, attempt_id):
             or CenterMembership.objects.filter(
                 user=request.user,
                 center_id=attempt.olympiad.center_id,
-                role__in=[CenterMembership.ROLE_MANAGER, CenterMembership.ROLE_OWNER],
+                role__in=[
+                    CenterMembership.ROLE_MANAGER,
+                    CenterMembership.ROLE_OWNER,
+                    CenterMembership.ROLE_TEACHER,
+                ],
                 status=CenterMembership.STATUS_APPROVED,
             ).exists()
         )
@@ -1416,7 +1420,11 @@ def download_certificate(request, attempt_id):
         can_view = CenterMembership.objects.filter(
             user=request.user,
             center_id=attempt.olympiad.center_id,
-            role__in=[CenterMembership.ROLE_MANAGER, CenterMembership.ROLE_OWNER],
+            role__in=[
+                CenterMembership.ROLE_MANAGER,
+                CenterMembership.ROLE_OWNER,
+                CenterMembership.ROLE_TEACHER,
+            ],
             status=CenterMembership.STATUS_APPROVED,
         ).exists() or attempt.olympiad.center.owner_id == request.user.id
     if not can_view:
