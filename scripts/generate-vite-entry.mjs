@@ -82,7 +82,7 @@ entry += `globalThis.katex = katex;\n\n`;
 // xato yuz bersa ilova oddiy holatda davom etadi.
 entry += `if ('serviceWorker' in navigator) {\n`;
 entry += `  window.addEventListener('load', () => {\n`;
-entry += `    navigator.serviceWorker.register('/sw.js?v=20260608-2').catch(() => {});\n`;
+entry += `    navigator.serviceWorker.register('/sw.js?v=20260724-1').catch(() => {});\n`;
 entry += `  });\n`;
 entry += `}\n\n`;
 

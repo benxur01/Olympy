@@ -688,6 +688,56 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // ko'rinadigan olimpiadalar uchun yuklanadi.
   const [readinessMap, setReadinessMap] = React.useState({});
 
+  // ─── Yangi olimpiada real-time ko'rinishi ─────────────────────────────────
+  // Manager/o'qituvchi yangi olimpiadani faollashtirganda, dashboard'i allaqachon
+  // ochiq o'quvchi uni qo'lda F5 bosmasdan ko'rishi kerak. Ikki yo'l bilan:
+  //   1) Web Push (push ruxsati berilgan bo'lsa, ~1-3s): service worker `push`
+  //      hodisasida ochiq tab(lar)ga `OLYMPY_PUSH` postMessage yuboradi
+  //      (public/sw.js). Shu turdagi ('olympiad_published') xabar kelsa,
+  //      olimpiadalar ro'yxatini darhol qayta yuklaymiz.
+  //   2) Fon polling (fallback): push ruxsati yo'q yoki tab push obunasidan oldin
+  //      ochilgan o'quvchilar uchun — faqat tab ko'rinib turganda har 10 sekundda
+  //      ro'yxatni qayta so'raymiz (backgroundda so'rov yubormaymiz).
+  // Faqat olimpiadalar ro'yxati qayta yuklanadi — boshqa dashboard so'rovlari
+  // (markazlar, natijalar, statistika) bu yerda tegilmaydi.
+  React.useEffect(() => {
+    if (!isApi) return;
+    if (!('serviceWorker' in navigator)) return;
+    const onSwMessage = (event) => {
+      const data = event.data;
+      if (data && data.type === 'OLYMPY_PUSH' && data.pushType === 'olympiad_published') {
+        apiOlympiadsRes.reload();
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', onSwMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onSwMessage);
+  }, [isApi, apiOlympiadsRes.reload]);
+
+  React.useEffect(() => {
+    if (!isApi) return;
+    let intervalId = null;
+    const start = () => {
+      if (intervalId != null) return;
+      intervalId = setInterval(() => {
+        if (document.visibilityState === 'visible') apiOlympiadsRes.reload();
+      }, 10000);
+    };
+    const stop = () => {
+      if (intervalId != null) { clearInterval(intervalId); intervalId = null; }
+    };
+    // Tab ko'rinib turgandagina polling ishlaydi — backgroundda serverni bezovta
+    // qilmaymiz. visibilitychange'da to'xtatib/qayta yoqamiz.
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') start(); else stop();
+    };
+    if (document.visibilityState === 'visible') start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      stop();
+    };
+  }, [isApi, apiOlympiadsRes.reload]);
+
   // Live student-role state from store
   const studentRole = user.roles?.student;
   const studentCenterId = studentRole?.centerId || null;

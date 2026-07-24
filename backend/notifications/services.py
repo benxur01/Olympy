@@ -79,7 +79,7 @@ def _send_telegram_to_user(user, message, reply_markup=None):
     return _telegram_api_post('sendMessage', payload)
 
 
-def send_web_push(subscription_model, title, message, url='/'):
+def send_web_push(subscription_model, title, message, url='/', push_type=None):
     from pywebpush import webpush, WebPushException
     # VAPID private key bo'lmasa push o'chiq — hardcoded default ishlatilmaydi.
     if not getattr(settings, 'VAPID_PRIVATE_KEY', None):
@@ -93,10 +93,15 @@ def send_web_push(subscription_model, title, message, url='/'):
                 'auth': subscription_model.auth,
             }
         }
+        # `type` — frontend service worker ochiq tab(lar)ni qaysi push turida
+        # yangilashini ajratishi uchun (masalan 'olympiad_published' → dashboard
+        # olimpiadalar ro'yxatini darhol qayta yuklaydi). Boshqa turlarda None
+        # bo'lib qoladi va mavjud OS bildirishnomasi xatti-harakati o'zgarmaydi.
         payload = json.dumps({
             'title': title,
             'body': message,
             'url': url,
+            'type': push_type,
         })
         webpush(
             subscription_info=subscription_info,
@@ -116,12 +121,12 @@ def send_web_push(subscription_model, title, message, url='/'):
         return False
 
 
-def send_web_push_to_user(user, title, message, url='/'):
+def send_web_push_to_user(user, title, message, url='/', push_type=None):
     from .models import PushSubscription
     subs = PushSubscription.objects.filter(user=user)
     sent_count = 0
     for sub in subs:
-        if send_web_push(sub, title, message, url):
+        if send_web_push(sub, title, message, url, push_type):
             sent_count += 1
     return sent_count
 
@@ -270,7 +275,7 @@ def send_olympiad_published_notification(student, olympiad, center):
     )
     sent = _send_telegram_to_user(student, message)
     logger.info('[telegram] → %s sent=%s : %s', mask_phone(student.normalized_phone), sent, message)
-    send_web_push_to_user(student, title, message, url='/student')
+    send_web_push_to_user(student, title, message, url='/student', push_type='olympiad_published')
 
 
 def send_olympiad_published_bulk(students, olympiad, center):
@@ -291,7 +296,7 @@ def send_olympiad_published_bulk(students, olympiad, center):
     ])
     logger.info('[telegram-mock] olympiad %s → %d students', olympiad.id, len(students))
     for s in students:
-        send_web_push_to_user(s, title, message, url='/student')
+        send_web_push_to_user(s, title, message, url='/student', push_type='olympiad_published')
 
 
 

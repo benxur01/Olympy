@@ -173,8 +173,27 @@ self.addEventListener('push', function(event) {
     }
   };
 
+  // OS bildirishnomasini ko'rsatishdan tashqari, ochiq tab(lar)ga ham xabar
+  // yuboramiz. Shunda foydalanuvchi bildirishnomani bosmasa ham, dashboard
+  // allaqachon ochiq bo'lsa (masalan yangi olimpiada e'lon qilinganda),
+  // frontend darhol tegishli ma'lumotni qayta yuklaydi.
+  const notifyOpenTabs = clients
+    .matchAll({ type: 'window', includeUncontrolled: true })
+    .then((windowClients) => {
+      for (const client of windowClients) {
+        client.postMessage({
+          type: 'OLYMPY_PUSH',
+          pushType: data.type || null,
+          url: data.url || '/',
+        });
+      }
+    });
+
   event.waitUntil(
-    self.registration.showNotification(title, options)
+    Promise.all([
+      self.registration.showNotification(title, options),
+      notifyOpenTabs,
+    ])
   );
 });
 
