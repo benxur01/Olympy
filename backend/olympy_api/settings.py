@@ -532,7 +532,7 @@ if CELERY_TASK_ALWAYS_EAGER:
     _logging.getLogger('olympy.celery').warning(
         'CELERY_BROKER_URL o\'rnatilmagan — Celery task\'lari sinxron (EAGER) '
         'rejimda ishlaydi. Productionda Redis broker o\'rnating, aks holda '
-        'og\'ir task\'lar (AI tahlil, ota-ona xabarlari) so\'rovni sekinlashtiradi.'
+        'og\'ir task\'lar (AI tahlil, Telegram xabarlari) so\'rovni sekinlashtiradi.'
     )
 
 # Cache — REDIS_URL (yuqorida CELERY_BROKER_URL fallback bilan aniqlangan)
@@ -604,11 +604,6 @@ CELERY_BEAT_SCHEDULE = {
     'generate-daily-questions': {
         'task': 'accounts.generate_daily_questions',
         'schedule': crontab(hour=6, minute=0, nowfun=lambda: datetime.now(dt_timezone.utc)),
-    },
-    # Har dushanba soat 08:00 UTC — ota-onalarga haftalik hisobot.
-    'send-weekly-parent-reports': {
-        'task': 'accounts.send_weekly_parent_reports',
-        'schedule': crontab(hour=8, minute=0, day_of_week='monday', nowfun=lambda: datetime.now(dt_timezone.utc)),
     },
     # Har dushanba soat 08:30 UTC — markaz egalariga (owner) haftalik digest (B2B).
     'send-weekly-digest': {

@@ -568,7 +568,7 @@ def google_login(request):
     family_name = (token_info.get('family_name') or '').strip()
 
     desired_role = (request.data.get('role') or 'student').strip().lower()
-    if desired_role not in ('student', 'teacher', 'manager', 'owner', 'parent'):
+    if desired_role not in ('student', 'teacher', 'manager', 'owner'):
         desired_role = 'student'
 
     # Google `sub` bevosita `phone`/`normalized_phone` (max_length=20) ga
@@ -591,7 +591,7 @@ def google_login(request):
         # identifikatsiya turlari. Bir Gmail o'quvchi (student) sifatida
         # ro'yxatdan o'tgan bo'lsa, o'sha Gmail bilan tashkilot (owner) sifatida
         # qayta ro'yxatdan o'tishga ruxsat berilmaydi va aksincha. Boshqa
-        # rollar (teacher, manager, parent) bu cheklovga tushmaydi.
+        # rollar (teacher, manager) bu cheklovga tushmaydi.
         current_roles = user.roles or []
         if desired_role == 'owner' and 'student' in current_roles:
             return Response(

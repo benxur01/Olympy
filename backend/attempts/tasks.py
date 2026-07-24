@@ -6,7 +6,6 @@ from django.db import transaction
 from django.utils import timezone
 
 from .models import TestAttempt, AttemptAIAnalysis, CodeSubmission, TestSession
-from notifications.services import send_attempt_result_to_parents
 from questions.ai_generation import (
     analyze_attempt_ai, review_code_submission, review_essay_answer,
 )
@@ -60,18 +59,6 @@ def auto_disqualify_pending_reviews():
                 notify_cheating_confirmed(student, olympiad, reason)
         except Exception:
             logger.exception('auto_disqualify_pending_reviews failed session=%s', session_id)
-
-
-@shared_task
-def send_attempt_result_to_parents_task(attempt_id):
-    """Asynchronously sends the attempt result notification to parents via Telegram."""
-    try:
-        attempt = TestAttempt.objects.select_related('user', 'olympiad').get(pk=attempt_id)
-        send_attempt_result_to_parents(attempt)
-    except TestAttempt.DoesNotExist:
-        logger.warning(f"Attempt {attempt_id} not found for parent notification task")
-    except Exception as exc:
-        logger.exception(f"Parent notification task failed for attempt={attempt_id}: {exc}")
 
 
 @shared_task

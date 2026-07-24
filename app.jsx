@@ -15,7 +15,7 @@ const { useState, useEffect } = React;
 // ichki navigatsiyasiga (page state) tegishli — shuning uchun ular bu
 // mapping'dan olib tashlandi. `/dashboard/*` barcha sub-path'lari `student`
 // (StudentDashboard) sahifasiga yo'naltiriladi, qolgani esa dashboard ichida
-// hal qilinadi. `teacher`, `questions`, `parent` boshqa rollarga tegishli
+// hal qilinadi. `teacher`, `questions` boshqa rollarga tegishli
 // bo'lib qoladi.
 const PAGE_URLS = {
   landing: '/',
@@ -32,7 +32,6 @@ const PAGE_URLS = {
   pending: '/pending',
   'pending-home': '/pending',
   analytics: '/analytics',
-  parent: '/dashboard/parent',
   pricing: '/pricing',
 };
 
@@ -47,7 +46,6 @@ const DASHBOARD_ROLE_BASES = {
   '/dashboard/manager': 'manager',
   '/dashboard/admin': 'admin',
   '/dashboard/teacher': 'teacher',
-  '/dashboard/parent': 'parent',
 };
 
 // Faol test sahifasidagi olimpiada ID'sini saqlash kaliti. F5 (sahifa
@@ -89,7 +87,7 @@ const URL_PAGES = (() => {
 // Auth talab qiladigan sahifalar. Component tashqarisida `const` sifatida —
 // har render'da qayta yaratilmasligi va useEffect bog'liqliklarini bekorga
 // o'zgartirmasligi uchun.
-const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','parent','questions'];
+const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','questions'];
 
 const pageFromPath = () => {
   try {
@@ -98,7 +96,7 @@ const pageFromPath = () => {
     // /test va /test/<id> — test sahifasi (dinamik segment URL_PAGES'da yo'q).
     if (/^\/test(\/.*)?$/.test(path)) return 'test';
     // Aniq mos kelgan URL (masalan /dashboard/teacher, /dashboard/manager,
-    // /dashboard/owner, /dashboard/admin, /dashboard/parent, /dashboard/questions
+    // /dashboard/owner, /dashboard/admin, /dashboard/questions
     // tegishli rollarga; /dashboard StudentDashboard'ga).
     if (URL_PAGES[path]) return URL_PAGES[path];
     // /dashboard/<role>/<tab> — rol dashboardlarining ichki sub-sahifalari
@@ -783,8 +781,6 @@ const App = () => {
         return <PendingHome user={user} onLogout={handleLogout} onNavigate={navigate} onUserRefresh={handlePendingUserRefresh} />;
       case 'analytics':
         return <AnalyticsPage user={apiUser || user} onNavigate={navigate} />;
-      case 'parent':
-        return <ParentDashboard user={apiUser || user} onNavigate={navigate} onLogout={handleLogout} />;
       default: return <LandingPage onNavigate={navigate} user={user} onUserUpdate={updateCurrentUser} />;
     }
   };
