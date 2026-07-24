@@ -156,7 +156,19 @@ class ApiError extends Error {
 
 const extractErrorMessage = (data) => {
   if (!data) return '';
-  if (typeof data === 'string') return data;
+  if (typeof data === 'string') {
+    // Non-JSON javob (masalan Django'ning production HTML 500 sahifasi — DRF
+    // faqat APIException'larni JSON qiladi, xom istisno esa HTML sahifaga
+    // aylanadi) — bu matnni HECH QACHON foydalanuvchiga ko'rsatmaymiz. Aks
+    // holda butun HTML hujjat AI yordam widjetida yoki xato bannerida xom
+    // holda chiqib ketardi. HTML ko'rinsa bo'sh qaytaramiz — chaqiruvchi
+    // o'zining umumiy ("Server xatosi" kabi) xabariga tushadi.
+    const trimmed = data.trim().toLowerCase();
+    if (trimmed.startsWith('<!doctype') || trimmed.startsWith('<html') || trimmed.includes('<html')) {
+      return '';
+    }
+    return data;
+  }
   if (typeof data.detail === 'string') return data.detail;
   const firstKey = Object.keys(data)[0];
   const value = firstKey ? data[firstKey] : null;
