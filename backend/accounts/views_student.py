@@ -431,6 +431,22 @@ study_plan.cls.throttle_scope = 'ai'
 # ─── Kunlik AI mashq to'plami (Daily AI Practice Set) — Standart+ ────────────
 
 
+def _daily_practice_payload(obj):
+    """DailyPracticeSet ni frontend javobiga aylantiradi.
+
+    `answers` va `submitted` maydonlari bo'lmasa, kun davomida qayta ochilganda
+    mashq har safar "javob berilmagan" holatda ko'rinar edi (topshirilgani
+    saqlanmasdi). Endi topshirilgan holat ham qaytariladi.
+    """
+    return {
+        'date': obj.date.isoformat(),
+        'subject': obj.subject,
+        'questions': obj.questions or [],
+        'answers': obj.answers or {},
+        'submitted': obj.submitted_at is not None,
+    }
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 @throttle_classes([ScopedRateThrottle])
@@ -454,11 +470,7 @@ def daily_practice_set(request):
     today = timezone.now().date()
     existing = DailyPracticeSet.objects.filter(user=request.user, date=today).first()
     if existing is not None:
-        return Response({
-            'date': existing.date.isoformat(),
-            'subject': existing.subject,
-            'questions': existing.questions or [],
-        })
+        return Response(_daily_practice_payload(existing))
 
     # Birinchi so'rov — eng zaif fanni aniqlaymiz. '—' (fan belgilanmagan) va
     # bo'sh nomlarni chiqarib tashlaymiz; tarix bo'lmasa oqilona fallback fan.
@@ -488,11 +500,7 @@ def daily_practice_set(request):
         user=request.user, date=today,
         defaults={'subject': weak_subject, 'questions': result['questions']},
     )
-    return Response({
-        'date': obj.date.isoformat(),
-        'subject': obj.subject,
-        'questions': obj.questions or [],
-    })
+    return Response(_daily_practice_payload(obj))
 
 
 # Passiv, dashboard har ochilganda avtomatik so'raladigan widget — umumiy 'ai'
@@ -500,6 +508,52 @@ def daily_practice_set(request):
 # bo'linadi) ATAYIN ajratilgan alohida per-user scope. Aks holda boshqa AI
 # tugmalarini ishlatgan o'quvchida bu widget 429 qaytarardi ("~20 soat kuting").
 daily_practice_set.cls.throttle_scope = 'ai_daily_practice'
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def daily_practice_submit(request):
+    """POST /api/me/daily-practice/submit/ — bugungi mashq javoblarini saqlaydi.
+
+    Body: {answers: {savol_indeksi: tanlangan_variant_indeksi}}. Bugungi to'plam
+    mavjud bo'lishi shart (avval GET orqali generatsiya qilinadi). Bir marta
+    topshirilgach, javoblar saqlanadi va kun davomida qayta ochilganda mashq
+    "bajarilgan" holatda ko'rinadi (AI chaqiruvi emas — throttle qilinmaydi).
+    Idempotent: allaqachon topshirilgan bo'lsa saqlangan holat qaytariladi.
+    """
+    from accounts.models import DailyPracticeSet
+
+    if not student_tier_at_least(request.user, 'standart'):
+        return _premium_required_response(required_tier='standart')
+
+    today = timezone.now().date()
+    obj = DailyPracticeSet.objects.filter(user=request.user, date=today).first()
+    if obj is None:
+        return Response(
+            {'detail': "Bugungi mashq to'plami topilmadi. Avval mashqni yuklang."},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+
+    # Allaqachon topshirilgan — saqlangan holatni qaytaramiz (qayta yozmaymiz).
+    if obj.submitted_at is not None:
+        return Response(_daily_practice_payload(obj))
+
+    raw = (request.data or {}).get('answers')
+    if not isinstance(raw, dict):
+        return Response({'detail': 'answers majburiy (obyekt)'},
+                        status=http_status.HTTP_400_BAD_REQUEST)
+    # Faqat haqiqiy indekslarni saqlaymiz: kalit va qiymat butun son bo'lsin.
+    answers = {}
+    for key, val in raw.items():
+        try:
+            answers[str(int(key))] = int(val)
+        except (TypeError, ValueError):
+            continue
+
+    obj.answers = answers
+    obj.submitted_at = timezone.now()
+    obj.save(update_fields=['answers', 'submitted_at'])
+    return Response(_daily_practice_payload(obj))
 
 
 # ─── Shaxsiy AI test generatori (Custom AI Test Builder) — Plus+ ─────────────

@@ -668,6 +668,13 @@ CORS_ALLOW_CREDENTIALS = True
 # Faqat API ishlatadigan metodlar — django-cors-headers default'i TRACE va
 # boshqa keraksizlarni ham qo'shadi. Aniq ro'yxat hujum yuzasini kichraytiradi.
 CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
+# django-cors-headers default ro'yxati X-Olympy-Auth-Storage'ni bilmaydi —
+# frontend uni har bir dev-rejim so'rovida yuboradi (api.js ALLOW_TOKEN_STORAGE),
+# shu maydon bo'lmasa preflight har doim rad etilib, cross-origin dev muhitida
+# (frontend :5173, backend :8000) barcha API chaqiruvlari CORS xatosi bilan
+# qulaydi.
+from corsheaders.defaults import default_headers as _cors_default_headers
+CORS_ALLOW_HEADERS = list(_cors_default_headers) + ['x-olympy-auth-storage']
 if not DEBUG and not CORS_ALLOWED_ORIGINS:
     raise ImproperlyConfigured('OLYMPY_CORS_ALLOWED_ORIGINS must be set in production')
 OLYMPY_FRONTEND_URL = (

@@ -433,8 +433,32 @@ const DailyAIPracticeCard = ({ user }) => {
   );
   const [answers, setAnswers] = React.useState({});   // {savolIndeks: variantIndeks}
   const [submitted, setSubmitted] = React.useState(false);
+  const [submitting, setSubmitting] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!data) return;
+    if (data.submitted) {
+      const hydrated = {};
+      Object.entries(data.answers || {}).forEach(([qi, oi]) => { hydrated[Number(qi)] = Number(oi); });
+      setAnswers(hydrated);
+      setSubmitted(true);
+    }
+  }, [data]);
 
   const questions = Array.isArray(data?.questions) ? data.questions : [];
+
+  const handleSubmit = async () => {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      await OlympyApi.submitDailyPracticeSet(answers, _retToken());
+      setSubmitted(true);
+    } catch {
+      // Best-effort UI feedback stays local; state simply remains unsubmitted.
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -530,10 +554,10 @@ const DailyAIPracticeCard = ({ user }) => {
         </div>
       ) : (
         <button
-          onClick={() => setSubmitted(true)}
-          disabled={!allAnswered}
+          onClick={handleSubmit}
+          disabled={!allAnswered || submitting}
           className="btn-primary text-xs px-4 py-2.5 rounded-xl font-semibold min-h-[40px] disabled:opacity-50 mt-3 w-full">
-          {allAnswered ? 'Tekshirish' : 'Barcha savollarga javob bering'}
+          {submitting ? 'Yuborilmoqda...' : (allAnswered ? 'Tekshirish' : 'Barcha savollarga javob bering')}
         </button>
       )}
     </div>
