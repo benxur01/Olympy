@@ -2205,7 +2205,18 @@ def test_session_ping(request):
     with transaction.atomic():
         session = (
             TestSession.objects
-            .select_for_update()
+            # `of=('self',)` — FAQAT test-sessiya qatorini lock qilamiz.
+            # `select_related('olympiad')` INNER JOIN hosil qiladi (olympiad FK
+            # NOT NULL) — bu Postgres'da `FOR UPDATE` uchun o'z-o'zidan xato
+            # bermaydi, lekin `of=` bo'lmasa `FOR UPDATE` ulanган OLYMPIAD
+            # qatorini HAM qulflaydi. Olimpiada qatori barcha o'quvchilar uchun
+            # UMUMIY — har ping (10s'da bir, PENDING_REVIEW kutish ekranida ham)
+            # shu bitta qatorga qulf so'raydi va yuzlab bir vaqtdagi ping'lar
+            # serializatsiyaga tushib, statement_timeout'ga urilib 500 (xom HTML)
+            # qaytarishi mumkin edi. Ping olimpiadani faqat O'QIYDI
+            # (session_end_time), yozmaydi — shuning uchun of=('self',) bilan
+            # faqat sessiya qatorini lock qilamiz.
+            .select_for_update(of=('self',))
             .select_related('olympiad')
             .filter(user=request.user, olympiad_id=olympiad_id)
             .first()
