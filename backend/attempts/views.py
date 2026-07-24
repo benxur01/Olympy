@@ -757,7 +757,13 @@ class ReportCheatingView(APIView):
 
         with transaction.atomic():
             olympiad = get_object_or_404(
-                Olympiad.objects.select_for_update().select_related('center', 'center__owner')
+                # `of=('self',)` — FAQAT olimpiada qatorini lock qilamiz. `center__
+                # owner` nullable FK bo'lgani uchun select_related LEFT OUTER JOIN
+                # hosil qiladi va `of` bo'lmasa PostgreSQL "FOR UPDATE cannot be
+                # applied to the nullable side of an outer join" xatosi bilan 500
+                # qaytaradi (SQLite'da select_for_update umuman e'tiborsiz, shuning
+                # uchun lokal testlarda bilinmaydi).
+                Olympiad.objects.select_for_update(of=('self',)).select_related('center', 'center__owner')
                 # _build_attempt_mistakes va scoring `olympiad.questions.all()` ni
                 # aylanadi — savollarni oldindan yuklab N+1 so'rovlarni oldini olamiz.
                 .prefetch_related('questions'),
@@ -920,7 +926,11 @@ class ReviewCheatingCaseView(APIView):
         with transaction.atomic():
             session = (
                 TestSession.objects
-                .select_for_update()
+                # `of=('self',)` — faqat sessiya qatorini lock qilamiz.
+                # `olympiad__center__owner` nullable FK LEFT OUTER JOIN hosil
+                # qiladi; `of` bo'lmasa PostgreSQL nullable outer join ustida
+                # FOR UPDATE'ni rad etib 500 qaytaradi.
+                .select_for_update(of=('self',))
                 .select_related('user', 'olympiad', 'olympiad__center', 'olympiad__center__owner')
                 .filter(pk=session_id)
                 .first()

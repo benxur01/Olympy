@@ -44,7 +44,12 @@ def auto_disqualify_pending_reviews():
             with transaction.atomic():
                 session = (
                     TestSession.objects
-                    .select_for_update()
+                    # `of=('self',)` — faqat sessiya qatorini lock qilamiz.
+                    # `olympiad__center__owner` nullable FK LEFT OUTER JOIN
+                    # hosil qiladi; `of` bo'lmasa PostgreSQL nullable outer join
+                    # ustida FOR UPDATE'ni rad etadi (avto-diskvalifikatsiya
+                    # task'i jimgina uzilardi).
+                    .select_for_update(of=('self',))
                     .select_related('user', 'olympiad', 'olympiad__center', 'olympiad__center__owner')
                     .filter(pk=session_id)
                     .first()
