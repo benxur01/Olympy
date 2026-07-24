@@ -686,6 +686,30 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // Tab birinchi marta yashirilganda — disqualifikatsiya o'rniga
   // ogohlantirish ko'rsatamiz. Ikkinchi marta chiqishda — DQ.
   const [cheatWarning, setCheatWarning] = React.useState('');
+  // Webkamera proktoring (yuz/nigoh kuzatuvi). Faqat olimpiadada
+  // `cameraProctoringEnabled` yoqilgan bo'lsa ishlaydi. Rozilik shu sessiyada
+  // bir marta beriladi (cameraConsentAcked), so'ng kamera ruxsati so'raladi va
+  // FaceMonitor ishga tushadi. Hech qanday video saqlanmaydi — faqat hosila
+  // signallar `reportCheating` orqali o'tadi.
+  const cameraProctoringEnabled = !!liveOlympiad?.cameraProctoringEnabled;
+  const [cameraConsentAcked, setCameraConsentAcked] = React.useState(false);
+  const [cameraConsentChecked, setCameraConsentChecked] = React.useState(false);
+  const [cameraStarting, setCameraStarting] = React.useState(false);
+  const [cameraError, setCameraError] = React.useState('');
+  // FaceMonitor handle'i ({ stop }) — submit/DQ/unmount'da to'xtatish uchun.
+  const faceMonitorRef = React.useRef(null);
+  // Ovoz (mikrofon) proktoring (atrofdagi gapirish/ovoz kuzatuvi). Kamera
+  // proktoringidan MUSTAQIL: o'z bayrog'i (`voiceProctoringEnabled`) va o'z
+  // roziligi (voiceConsentAcked) bilan boshqariladi. Rozilik berilgach mikrofon
+  // ruxsati so'raladi va VoiceMonitor ishga tushadi. Hech qanday audio
+  // saqlanmaydi — faqat hosila signal `reportCheating` orqali o'tadi.
+  const voiceProctoringEnabled = !!liveOlympiad?.voiceProctoringEnabled;
+  const [voiceConsentAcked, setVoiceConsentAcked] = React.useState(false);
+  const [voiceConsentChecked, setVoiceConsentChecked] = React.useState(false);
+  const [voiceStarting, setVoiceStarting] = React.useState(false);
+  const [voiceError, setVoiceError] = React.useState('');
+  // VoiceMonitor handle'i ({ stop }) — submit/DQ/unmount'da to'xtatish uchun.
+  const voiceMonitorRef = React.useRef(null);
   // Yangi siyosat: son asosida. Tashqarida o'tkazilgan vaqtni emas,
   // balki tab/ilovani tark etish SONINI hisoblaymiz. 1-marta chiqishda
   // ogohlantirish, 2-marta chiqishda darhol disqualifikatsiya.
@@ -700,6 +724,15 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // taymeri. Tab/oyna belgilangan muddat davomida uzluksiz yashirin qolsagina
   // tark etish sifatida sanaladi.
   const hiddenTimerRef = React.useRef(null);
+  // Qo'shimcha passiv cheating signallari uchun holat kuzatuvchilar.
+  // Bularning barchasi `reportCheating` orqali o'tadi — u `cheatReportedRef`
+  // bilan himoyalangani uchun birinchi signaldan keyingi barcha chaqiriqlar
+  // no-op. Quyidagi bayroqlar esa har bir signalni faqat holat o'zgarishida
+  // (transition) bir marta yuborish uchun (interval har tikda qayta
+  // yubormaslik uchun) ishlatiladi.
+  const wasFullscreenRef = React.useRef(false);
+  const devtoolsOpenRef = React.useRef(false);
+  const multiMonitorReportedRef = React.useRef(false);
   // Parallel sessiya tekshiruvi uchun qurilma identifikatori. Sahifa
   // yuklanganda localStorage'dan o'qiladi yoki yangidan generatsiya qilinadi.
   const deviceIdRef = React.useRef(null);
@@ -808,6 +841,13 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       return undefined;
     }
     if (submitted || cheated || pendingReview) return undefined;
+    // Webkamera nazorati yoqilgan bo'lsa, rozilik + kamera berilmaguncha
+    // savollar YUKLANMAYDI (va shu bilan taymer boshlanmaydi) — student rozilik
+    // ekranida turganда vaqt yo'qotmasin.
+    if (cameraProctoringEnabled && !cameraConsentAcked) return undefined;
+    // Ovoz nazorati yoqilgan bo'lsa, rozilik + mikrofon berilmaguncha
+    // savollar YUKLANMAYDI (kamera bilan bir xil naqsh, undan mustaqil).
+    if (voiceProctoringEnabled && !voiceConsentAcked) return undefined;
 
     const idx = current;
     // Keshda bo'lsa — qayta so'rov yo'q.
@@ -892,7 +932,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         if (!cancelled) setQuestionsLoading(false);
       });
     return () => { cancelled = true; };
-  }, [user?._api, liveOlympiad?.backendId, isBeforeStart, isAfterEnd, current, submitted, cheated, pendingReview]);
+  }, [user?._api, liveOlympiad?.backendId, isBeforeStart, isAfterEnd, current, submitted, cheated, pendingReview, cameraProctoringEnabled, cameraConsentAcked, voiceProctoringEnabled, voiceConsentAcked]);
 
   React.useEffect(() => {
     // pendingReview — tekshiruv kutilmoqda: taymer TO'XTATILADI (ko'rinadigan
@@ -1018,6 +1058,137 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     } catch {}
   }, [submitted, cheated, pendingReview, user?._api, liveOlympiad?.backendId]);
 
+  // Webkamera proktoring rozilik oqimi: (1) backend'ga rozilikni yozamiz,
+  // (2) kamera ruxsatini so'raymiz, (3) FaceMonitor'ni lazy yuklab ishga
+  // tushiramiz. Kamera ruxsati berilmasa — imtihon boshlanmaydi (bu olimpiada
+  // uchun kamera MAJBURIY). Hech qanday video saqlanmaydi.
+  const handleCameraConsent = React.useCallback(async () => {
+    if (cameraStarting) return;
+    if (!user?._api || !liveOlympiad?.backendId) return;
+    setCameraStarting(true);
+    setCameraError('');
+    // Rozilikni serverga yozamiz (faqat boolean + vaqt). Kamera ruxsatidan
+    // OLDIN yuboramiz — student aynan roziligini bildirdi.
+    try {
+      await globalThis.OlympyApi.cameraConsent(
+        { olympiad: liveOlympiad.backendId },
+        globalThis.OlympyApi.getToken(),
+      );
+    } catch {
+      /* rozilik yozuvi vaqtincha muvaffaqiyatsiz bo'lsa ham kamera oqimini
+         davom ettiramiz — asosiy himoya kamera va detektsiya */
+    }
+    let stream = null;
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('no_camera_api');
+      }
+      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    } catch {
+      setCameraError(
+        "Kamera ruxsati berilmadi. Bu olimpiada webkamera nazorati bilan "
+        + "o'tkaziladi — davom etish uchun brauzer sozlamalaridan kameraga "
+        + "ruxsat bering va qayta urinib ko'ring.",
+      );
+      setCameraStarting(false);
+      return;
+    }
+    try {
+      const monitor = await globalThis.OlympyFaceProctor.start({
+        stream,
+        onWarn: (msg) => setCheatWarning(msg),
+        onReport: (reason) => reportCheating(reason),
+      });
+      faceMonitorRef.current = monitor;
+    } catch {
+      // FaceMonitor yuklanmasa (masalan model yuklab bo'lmasa) — kamera
+      // stream'ini yopamiz va rozilikni tasdiqlaymiz. Detektsiyasiz ham
+      // imtihon davom etadi (boshqa passiv signallar ishlaydi), lekin
+      // studentni bloklamaymiz.
+      try { stream.getTracks().forEach(t => t.stop()); } catch {}
+    }
+    setCameraConsentAcked(true);
+    setCameraStarting(false);
+  }, [cameraStarting, user?._api, liveOlympiad?.backendId, reportCheating]);
+
+  // Ovoz nazorati rozilik oqimi: (1) backend'ga rozilikni yozamiz,
+  // (2) mikrofon ruxsatini so'raymiz, (3) VoiceMonitor'ni lazy yuklab ishga
+  // tushiramiz. Mikrofon ruxsati berilmasa — imtihon boshlanmaydi (bu olimpiada
+  // uchun mikrofon MAJBURIY). Hech qanday audio saqlanmaydi. Kamera oqimidan
+  // mustaqil naqsh.
+  const handleVoiceConsent = React.useCallback(async () => {
+    if (voiceStarting) return;
+    if (!user?._api || !liveOlympiad?.backendId) return;
+    setVoiceStarting(true);
+    setVoiceError('');
+    // Rozilikni serverga yozamiz (faqat boolean + vaqt). Mikrofon ruxsatidan
+    // OLDIN yuboramiz — student aynan roziligini bildirdi.
+    try {
+      await globalThis.OlympyApi.microphoneConsent(
+        { olympiad: liveOlympiad.backendId },
+        globalThis.OlympyApi.getToken(),
+      );
+    } catch {
+      /* rozilik yozuvi vaqtincha muvaffaqiyatsiz bo'lsa ham mikrofon oqimini
+         davom ettiramiz — asosiy himoya mikrofon va detektsiya */
+    }
+    let stream = null;
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        throw new Error('no_microphone_api');
+      }
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setVoiceError(
+        "Mikrofon ruxsati berilmadi. Bu olimpiada ovoz nazorati bilan "
+        + "o'tkaziladi — davom etish uchun brauzer sozlamalaridan mikrofonga "
+        + "ruxsat bering va qayta urinib ko'ring.",
+      );
+      setVoiceStarting(false);
+      return;
+    }
+    try {
+      const monitor = await globalThis.OlympyVoiceProctor.start({
+        stream,
+        onWarn: (msg) => setCheatWarning(msg),
+        onReport: (reason) => reportCheating(reason),
+      });
+      voiceMonitorRef.current = monitor;
+    } catch {
+      // VoiceMonitor yuklanmasa — mikrofon stream'ini yopamiz va rozilikni
+      // tasdiqlaymiz. Detektsiyasiz ham imtihon davom etadi (boshqa passiv
+      // signallar ishlaydi), lekin studentni bloklamaymiz.
+      try { stream.getTracks().forEach(t => t.stop()); } catch {}
+    }
+    setVoiceConsentAcked(true);
+    setVoiceStarting(false);
+  }, [voiceStarting, user?._api, liveOlympiad?.backendId, reportCheating]);
+
+  // FaceMonitor'ni yakuniy holatlarda (submit/DQ) va unmount'da to'xtatamiz —
+  // tab-switch listenerlari tozalanishi bilan bir xil naqsh.
+  React.useEffect(() => {
+    if (submitted || cheated) {
+      if (faceMonitorRef.current) {
+        try { faceMonitorRef.current.stop(); } catch {}
+        faceMonitorRef.current = null;
+      }
+      if (voiceMonitorRef.current) {
+        try { voiceMonitorRef.current.stop(); } catch {}
+        voiceMonitorRef.current = null;
+      }
+    }
+  }, [submitted, cheated]);
+  React.useEffect(() => () => {
+    if (faceMonitorRef.current) {
+      try { faceMonitorRef.current.stop(); } catch {}
+      faceMonitorRef.current = null;
+    }
+    if (voiceMonitorRef.current) {
+      try { voiceMonitorRef.current.stop(); } catch {}
+      voiceMonitorRef.current = null;
+    }
+  }, []);
+
   React.useEffect(() => {
     // pendingReview holatida (tekshiruv kutilmoqda) 3-/4-marta tab almashtirish
     // hech narsa qilmasligi kerak — listenerlar umuman ulanmaydi.
@@ -1085,6 +1256,94 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       }
     };
   }, [user?._api, liveOlympiad?.backendId, apiTotal, submitted, cheated, pendingReview, reportCheating, sendPing]);
+
+  // Qo'shimcha passiv cheating detektorlari — nusxa olish/kesish/qo'yish,
+  // to'liq ekrandan chiqish, DevTools ochilishi va bir nechta monitor.
+  // MUHIM: hech qanday preventDefault YO'Q — faqat hodisa otilganini kuzatamiz
+  // va tab-almashtirish bilan bir xil `reportCheating()` oqimidan yuboramiz
+  // (backend session'ni PENDING_REVIEW ga o'tkazadi, auto-DQ yo'q). Guard
+  // sharti tab-almashtirish effekti bilan bir xil.
+  React.useEffect(() => {
+    if (!user?._api || !liveOlympiad?.backendId || apiTotal === 0 || submitted || cheated || pendingReview) {
+      return undefined;
+    }
+
+    // 1) Nusxa olish / kesish / qo'yish urinishi. Passiv — brauzer standart
+    //    xatti-harakati bloklanmaydi. `reportCheating` allaqachon idempotent,
+    //    shu sababli takroriy hodisalar spam qilmaydi.
+    const onCopyPaste = () => {
+      if (!cheatGuardActiveRef.current) return;
+      reportCheating('copy_paste_attempt');
+    };
+
+    // 2) To'liq ekrandan chiqish. Faqat oldin to'liq ekranga kirilgan
+    //    bo'lsagina (transition) hisoblanadi — hech qachon kirilmagan bo'lsa
+    //    yolg'on signal yubormaydi.
+    const onFullscreenChange = () => {
+      const isFs = !!document.fullscreenElement;
+      if (isFs) {
+        wasFullscreenRef.current = true;
+      } else if (wasFullscreenRef.current) {
+        wasFullscreenRef.current = false;
+        if (!cheatGuardActiveRef.current) return;
+        reportCheating('fullscreen_exit');
+      }
+    };
+
+    // 3) DevTools ochilishi (heuristika) + 4) bir nechta monitor. Ikkalasi ham
+    //    davriy tekshiriladi; faqat holat o'zgarishida bir marta yuboriladi.
+    const DEVTOOLS_THRESHOLD = 160;
+    const checkSignals = () => {
+      if (!cheatGuardActiveRef.current) return;
+      // DevTools: docklangan panel outer/inner o'lchamlar farqini oshiradi.
+      const widthGap = (window.outerWidth || 0) - (window.innerWidth || 0);
+      const heightGap = (window.outerHeight || 0) - (window.innerHeight || 0);
+      const devtoolsOpen = widthGap > DEVTOOLS_THRESHOLD || heightGap > DEVTOOLS_THRESHOLD;
+      if (devtoolsOpen && !devtoolsOpenRef.current) {
+        devtoolsOpenRef.current = true;
+        reportCheating('devtools_open');
+      } else if (!devtoolsOpen) {
+        devtoolsOpenRef.current = false;
+      }
+
+      // Bir nechta monitor: Window Management API `screen.isExtended` —
+      // ruxsatsiz ishlaydi va bir nechta displey ulangan bo'lsa true qaytaradi.
+      if (!multiMonitorReportedRef.current) {
+        try {
+          if (typeof window.screen?.isExtended === 'boolean') {
+            if (window.screen.isExtended) {
+              multiMonitorReportedRef.current = true;
+              reportCheating('multi_monitor_detected');
+            }
+          } else if (typeof window.getScreenDetails === 'function') {
+            // Fallback: ruxsat berilgan bo'lsa displeylar sonini tekshiramiz.
+            window.getScreenDetails()
+              .then((details) => {
+                if (details?.screens?.length > 1 && !multiMonitorReportedRef.current) {
+                  multiMonitorReportedRef.current = true;
+                  reportCheating('multi_monitor_detected');
+                }
+              })
+              .catch(() => {});
+          }
+        } catch {}
+      }
+    };
+
+    checkSignals();
+    const signalTimer = setInterval(checkSignals, 3000);
+    document.addEventListener('copy', onCopyPaste);
+    document.addEventListener('cut', onCopyPaste);
+    document.addEventListener('paste', onCopyPaste);
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => {
+      clearInterval(signalTimer);
+      document.removeEventListener('copy', onCopyPaste);
+      document.removeEventListener('cut', onCopyPaste);
+      document.removeEventListener('paste', onCopyPaste);
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+    };
+  }, [user?._api, liveOlympiad?.backendId, apiTotal, submitted, cheated, pendingReview, reportCheating]);
 
   // Har `answers`/`marked` o'zgarganda lokal saqlash. Submit/cheating
   // paytida tozalash uchun pastdagi cleanup logikasi mavjud.
@@ -1513,6 +1772,146 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     return <PendingAccessCard title="Olimpiada tugagan" status="rejected"
       message="Bu olimpiadaga qatnashish muddati o'tib ketdi."
       onBack={() => onNavigate('student')} />;
+  }
+  // Webkamera nazorati roziligi — savollar YUKLANISHIDAN OLDIN. Faqat olimpiadada
+  // `cameraProctoringEnabled` yoqilgan va rozilik hali berilmagan bo'lsa
+  // ko'rsatiladi. Rozilik + kamera ruxsatisiz imtihon boshlanmaydi.
+  if (cameraProctoringEnabled && !cameraConsentAcked && user?._api && liveOlympiad?.backendId && !submitted && !cheated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+        <div className="glass rounded-2xl p-6 md:p-8 max-w-lg w-full space-y-5">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-300 flex-shrink-0">
+              <Icon name="eye" size={20} />
+            </div>
+            <div>
+              <h2 className="text-lg font-black text-white">Webkamera nazorati</h2>
+              <p className="text-white/40 text-xs mt-0.5">{olympiad?.title || 'Olimpiada'}</p>
+            </div>
+          </div>
+
+          <div className="text-sm text-white/70 leading-relaxed space-y-3">
+            <p>
+              Bu olimpiada webkamera orqali nazorat qilinadi. Kamera yordamida siz ekran
+              oldida ekanligingiz va ekranga qarab turganingiz tekshiriladi (yuzingiz
+              ko'rinishi, begona odam yo'qligi va nigohingiz).
+            </p>
+            <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/25 px-4 py-3 text-emerald-200 text-xs md:text-sm">
+              <div className="flex items-start gap-2">
+                <Icon name="check" size={15} className="text-emerald-300 flex-shrink-0 mt-0.5" />
+                <span>
+                  Hech qanday video yoki ovoz <b>yozib olinmaydi</b> va serverga
+                  <b> yuborilmaydi</b>. Faqat aniqlangan holat signallari (yuz bor/yo'q,
+                  begona yuz, nigoh chetda) saqlanadi — tasvirning o'zi kompyuteringizdan
+                  chiqmaydi.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-indigo-500 flex-shrink-0"
+              checked={cameraConsentChecked}
+              onChange={e => setCameraConsentChecked(e.target.checked)}
+            />
+            <span className="text-sm text-white/80">
+              Yuqoridagilarni o'qidim va webkamera nazoratiga roziman.
+            </span>
+          </label>
+
+          {cameraError && (
+            <div className="rounded-xl bg-rose-500/10 border border-rose-500/25 px-4 py-3 text-rose-200 text-xs md:text-sm flex items-start gap-2">
+              <Icon name="info" size={15} className="text-rose-300 flex-shrink-0 mt-0.5" />
+              <span>{cameraError}</span>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <button onClick={() => onNavigate('student')} disabled={cameraStarting}
+              className="btn-ghost flex-1 py-3 rounded-xl disabled:opacity-50">
+              Bekor qilish
+            </button>
+            <button onClick={handleCameraConsent} disabled={!cameraConsentChecked || cameraStarting}
+              className="btn-primary flex-1 py-3 rounded-xl font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2">
+              {cameraStarting && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+              {cameraStarting ? 'Ulanmoqda...' : 'Davom etish'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // Ovoz (mikrofon) nazorati roziligi — savollar YUKLANISHIDAN OLDIN. Faqat
+  // olimpiadada `voiceProctoringEnabled` yoqilgan va rozilik hali berilmagan
+  // bo'lsa ko'rsatiladi. Kamera roziligidan MUSTAQIL: agar ikkalasi ham yoqilgan
+  // bo'lsa, avval kamera, so'ng shu ekran ko'rsatiladi. Rozilik + mikrofon
+  // ruxsatisiz imtihon boshlanmaydi.
+  if (voiceProctoringEnabled && !voiceConsentAcked && user?._api && liveOlympiad?.backendId && !submitted && !cheated) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+        <div className="glass rounded-2xl p-6 md:p-8 max-w-lg w-full space-y-5">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-300 flex-shrink-0">
+              <Icon name="mic" size={20} />
+            </div>
+            <div>
+              <h2 className="text-lg font-black text-white">Ovoz nazorati</h2>
+              <p className="text-white/40 text-xs mt-0.5">{olympiad?.title || 'Olimpiada'}</p>
+            </div>
+          </div>
+
+          <div className="text-sm text-white/70 leading-relaxed space-y-3">
+            <p>
+              Bu olimpiada mikrofon orqali nazorat qilinadi. Mikrofon yordamida imtihon
+              vaqtida atrofingizdan gapirish yoki begona ovoz eshitilmayotgani tekshiriladi.
+            </p>
+            <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/25 px-4 py-3 text-emerald-200 text-xs md:text-sm">
+              <div className="flex items-start gap-2">
+                <Icon name="check" size={15} className="text-emerald-300 flex-shrink-0 mt-0.5" />
+                <span>
+                  Hech qanday ovoz <b>yozib olinmaydi</b> va serverga <b>yuborilmaydi</b>.
+                  Nutqingiz tahlil qilinmaydi — faqat kompyuteringizda "ovoz bor/yo'q"
+                  degan signal aniqlanadi, ovozning o'zi qurilmangizdan chiqmaydi.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <label className="flex items-start gap-3 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 accent-indigo-500 flex-shrink-0"
+              checked={voiceConsentChecked}
+              onChange={e => setVoiceConsentChecked(e.target.checked)}
+            />
+            <span className="text-sm text-white/80">
+              Yuqoridagilarni o'qidim va ovoz nazoratiga roziman.
+            </span>
+          </label>
+
+          {voiceError && (
+            <div className="rounded-xl bg-rose-500/10 border border-rose-500/25 px-4 py-3 text-rose-200 text-xs md:text-sm flex items-start gap-2">
+              <Icon name="info" size={15} className="text-rose-300 flex-shrink-0 mt-0.5" />
+              <span>{voiceError}</span>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-1">
+            <button onClick={() => onNavigate('student')} disabled={voiceStarting}
+              className="btn-ghost flex-1 py-3 rounded-xl disabled:opacity-50">
+              Bekor qilish
+            </button>
+            <button onClick={handleVoiceConsent} disabled={!voiceConsentChecked || voiceStarting}
+              className="btn-primary flex-1 py-3 rounded-xl font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2">
+              {voiceStarting && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+              {voiceStarting ? 'Ulanmoqda...' : 'Davom etish'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
   }
   // Tekshiruv kutilmoqda — student pauza ekranida kutadi. MUHIM: aniq sabab
   // OSHKOR QILINMAYDI (student aniqlash chegarasini bilib olmasligi uchun),

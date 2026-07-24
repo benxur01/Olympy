@@ -12,6 +12,32 @@ const MANAGER_DASHBOARD_PAGES = [
 ];
 const managerDashUrl = makeDashboardUrlSync('/dashboard/manager', MANAGER_DASHBOARD_PAGES);
 
+// Cheating sabab kodlarini (backend `cheating_reason`) o'qiladigan o'zbekcha
+// yorliqqa aylantiramiz. Noma'lum kod kelsa xom qiymatni ko'rsatamiz, shunda
+// yangi signal qo'shilsa ham panel buzilmaydi.
+const CHEATING_REASON_LABELS = {
+  tab_or_app_left: 'Tab yoki ilovani tark etdi',
+  test_window_left: 'Test oynasidan chiqdi',
+  concurrent_session: 'Boshqa qurilmadan kirildi',
+  copy_paste_attempt: 'Nusxa olish urinishi',
+  fullscreen_exit: "To'liq ekrandan chiqish",
+  devtools_open: 'DevTools ochildi',
+  multi_monitor_detected: 'Bir nechta monitor aniqlandi',
+  // Webkamera proktoring signallari. Kalitlar src/proctoring/reasons.js
+  // (yagona manba) bilan mos bo'lishi shart — ishlab chiqaruvchi shu satrlarni
+  // yuboradi.
+  no_face_detected: 'Yuz aniqlanmadi',
+  multiple_faces_detected: 'Bir nechta yuz aniqlandi',
+  gaze_away_sustained: 'Nigoh ekrandan uzoq',
+  // Ovoz proktoring signali. Kalit src/proctoring/voiceReasons.js (yagona
+  // manba) bilan mos bo'lishi shart.
+  ambient_speech_detected: 'Atrofdan ovoz aniqlandi',
+};
+const cheatingReasonLabel = (reason) => {
+  const key = String(reason || '').trim().toLowerCase();
+  return CHEATING_REASON_LABELS[key] || reason;
+};
+
 const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
@@ -20,7 +46,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [telegramLink, setTelegramLink] = React.useState(null);
   const [telegramLinkLoading, setTelegramLinkLoading] = React.useState(false);
   const [telegramLinked, setTelegramLinked] = React.useState(!!user?.telegramLinked);
-  const emptyOlympiadForm = { eventType: 'competition', title: '', subject: store.subjects[0] || 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft', testLevel: '', testType: '', groupFilter: '', itCategory: '', allowedLanguages: [] };
+  const emptyOlympiadForm = { eventType: 'competition', title: '', subject: store.subjects[0] || 'Matematika', startDate: '', startTime: '10:00', duration: 60, maxScore: 100, status: 'draft', testLevel: '', testType: '', groupFilter: '', itCategory: '', allowedLanguages: [], cameraProctoringEnabled: false, voiceProctoringEnabled: false };
   const [newOlympiad, setNewOlympiad] = React.useState(emptyOlympiadForm);
   // Premium kerak bo'lganda ko'rinadigan modal (8-funksiya — limit oshganda).
   const [premiumModal, setPremiumModal] = React.useState('');
@@ -833,6 +859,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       groupFilter: event.groupFilter || '',
       itCategory: event.itCategory || '',
       allowedLanguages: Array.isArray(event.allowedLanguages) ? event.allowedLanguages : [],
+      cameraProctoringEnabled: !!event.cameraProctoringEnabled,
+      voiceProctoringEnabled: !!event.voiceProctoringEnabled,
     });
     setCreateModal(true);
   };
@@ -871,6 +899,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       group_filter: (newOlympiad.groupFilter || '').trim(),
       it_category: newOlympiad.itCategory || '',
       allowed_languages: Array.isArray(newOlympiad.allowedLanguages) ? newOlympiad.allowedLanguages : [],
+      camera_proctoring_enabled: !!newOlympiad.cameraProctoringEnabled,
+      voice_proctoring_enabled: !!newOlympiad.voiceProctoringEnabled,
     };
 
     if (isApi) {
@@ -1618,14 +1648,22 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const renderProctoring = () => {
     const activeOlym = olympiads.find(o => String(o.id) === String(liveOlympiadId));
+    // Webkamera nazorati shu olimpiadada yoqilgan bo'lsagina rozilik badge'ini
+    // ko'rsatamiz (aks holda "rozilik yo'q" chalg'ituvchi bo'lardi).
+    const cameraOn = !!activeOlym?.cameraProctoringEnabled;
+    // Ovoz nazorati shu olimpiadada yoqilgan bo'lsagina rozilik badge'ini
+    // ko'rsatamiz (kameradan mustaqil).
+    const voiceOn = !!activeOlym?.voiceProctoringEnabled;
     const searchQuery = (debouncedProctoringSearch || '').trim().toLowerCase();
-    
+
     const filteredProctoring = searchQuery
       ? proctoringData.filter(p => {
           const name = String(p.student_name || '').toLowerCase();
           const phone = String(p.phone || '').toLowerCase();
           const reason = String(p.cheating_reason || '').toLowerCase();
-          return name.includes(searchQuery) || phone.includes(searchQuery) || reason.includes(searchQuery);
+          const reasonLabel = String(cheatingReasonLabel(p.cheating_reason) || '').toLowerCase();
+          return name.includes(searchQuery) || phone.includes(searchQuery)
+            || reason.includes(searchQuery) || reasonLabel.includes(searchQuery);
         })
       : proctoringData;
 
@@ -1835,9 +1873,35 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                         <div className="space-y-1">
                           <div>{statusBadge}</div>
                           <div>{onlineIndicator}</div>
+                          {cameraOn && (
+                            p.camera_consent_given ? (
+                              <span className="text-[10px] font-semibold text-emerald-300/90 bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/30 inline-flex items-center gap-1"
+                                title={p.camera_consent_at ? `Rozilik: ${new Date(p.camera_consent_at).toLocaleString('uz-UZ')}` : 'Kamera roziligi berilgan'}>
+                                <Icon name="eye" size={11} /> Kamera roziligi
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-white/40 bg-white/5 px-2 py-0.5 rounded border border-white/10 inline-flex items-center gap-1"
+                                title="Kamera roziligi berilmagan">
+                                <Icon name="eyeOff" size={11} /> Rozilik yo'q
+                              </span>
+                            )
+                          )}
+                          {voiceOn && (
+                            p.microphone_consent_given ? (
+                              <span className="text-[10px] font-semibold text-emerald-300/90 bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/30 inline-flex items-center gap-1"
+                                title={p.microphone_consent_at ? `Rozilik: ${new Date(p.microphone_consent_at).toLocaleString('uz-UZ')}` : 'Mikrofon roziligi berilgan'}>
+                                <Icon name="mic" size={11} /> Mikrofon roziligi
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-white/40 bg-white/5 px-2 py-0.5 rounded border border-white/10 inline-flex items-center gap-1"
+                                title="Mikrofon roziligi berilmagan">
+                                <Icon name="mic" size={11} /> Rozilik yo'q
+                              </span>
+                            )
+                          )}
                           {p.cheating_reason && (
-                            <div className="text-[10px] text-rose-300/80 bg-rose-950/20 px-2 py-0.5 rounded border border-rose-900/30 max-w-[200px] truncate" title={p.cheating_reason}>
-                              Sabab: {p.cheating_reason}
+                            <div className="text-[10px] text-rose-300/80 bg-rose-950/20 px-2 py-0.5 rounded border border-rose-900/30 max-w-[200px] truncate" title={cheatingReasonLabel(p.cheating_reason)}>
+                              Sabab: {cheatingReasonLabel(p.cheating_reason)}
                             </div>
                           )}
                         </div>
@@ -2832,6 +2896,58 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   value={newOlympiad.groupFilter}
                   onChange={e => setNewOlympiad({ ...newOlympiad, groupFilter: e.target.value })} />
                 <p className="mt-1.5 text-[11px] text-white/35">To'ldirilsa, faqat shu guruh tegiga ega o'quvchilar tadbirga kira oladi.</p>
+              </div>
+
+              {/* Webkamera proktoring — ixtiyoriy opt-in. Yoqilsa, student
+                  imtihonni boshlashdan oldin rozilik ekranini ko'radi va kamera
+                  ruxsatini beradi. FAQAT hosila signallar (yuz yo'q/ko'p yuz/
+                  nigoh) saqlanadi — video/rasm/audio HECH QACHON yozilmaydi. */}
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 accent-indigo-500 flex-shrink-0"
+                    checked={!!newOlympiad.cameraProctoringEnabled}
+                    onChange={e => setNewOlympiad({ ...newOlympiad, cameraProctoringEnabled: e.target.checked })}
+                  />
+                  <span>
+                    <span className="flex items-center gap-2 text-xs font-bold text-white/80">
+                      <Icon name="eye" size={14} /> Webkamera nazorati
+                    </span>
+                    <span className="block mt-1 text-[11px] text-white/40 leading-relaxed">
+                      O'quvchi imtihon davomida kamera orqali kuzatiladi (yuz bor-yo'qligi,
+                      begona yuz, nigoh). Video yozilmaydi — faqat aniqlangan signallar
+                      saqlanadi. Yoqilsa, o'quvchi boshlashdan oldin rozilik beradi.
+                    </span>
+                  </span>
+                </label>
+              </div>
+
+              {/* Ovoz (mikrofon) proktoring — ixtiyoriy opt-in, kameradan
+                  mustaqil. Yoqilsa, student imtihonni boshlashdan oldin alohida
+                  rozilik ekranini ko'radi va mikrofon ruxsatini beradi. FAQAT
+                  hosila signal (atrofdan ovoz aniqlandi) saqlanadi — audio HECH
+                  QACHON yozilmaydi. */}
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 h-4 w-4 accent-indigo-500 flex-shrink-0"
+                    checked={!!newOlympiad.voiceProctoringEnabled}
+                    onChange={e => setNewOlympiad({ ...newOlympiad, voiceProctoringEnabled: e.target.checked })}
+                  />
+                  <span>
+                    <span className="flex items-center gap-2 text-xs font-bold text-white/80">
+                      <Icon name="mic" size={14} /> Ovoz nazorati
+                    </span>
+                    <span className="block mt-1 text-[11px] text-white/40 leading-relaxed">
+                      O'quvchi imtihon davomida mikrofon orqali kuzatiladi (atrofdan
+                      gapirish/ovoz). Audio yozilmaydi va nutq tahlil qilinmaydi — faqat
+                      "ovoz bor/yo'q" signali saqlanadi. Yoqilsa, o'quvchi boshlashdan
+                      oldin rozilik beradi.
+                    </span>
+                  </span>
+                </label>
               </div>
 
               {/* IT (dasturlash) olimpiadasi sozlamalari — ixtiyoriy. To'ldirilsa

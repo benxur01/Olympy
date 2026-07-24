@@ -279,6 +279,7 @@ const Icon = ({ name, size = 18, className = '' }) => {
     arrowLeft: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 12H5M12 19l-7-7 7-7" />,
     play: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 3a1 1 0 011.514-.857l13.999 8.999a1 1 0 010 1.716l-14 9A1 1 0 016 21z" />,
     lock: <><rect x="3" y="11" width="18" height="11" rx="2" ry="2" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11V7a5 5 0 0110 0v4" /></>,
+    mic: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2a3 3 0 00-3 3v6a3 3 0 006 0V5a3 3 0 00-3-3z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v1a7 7 0 01-14 0v-1M12 18v4M8 22h8" /></>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" className={className}>

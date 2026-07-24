@@ -68,7 +68,8 @@ class OlympiadSerializer(serializers.ModelSerializer):
         fields = ['id', 'center', 'center_name', 'event_type', 'title', 'subject', 'test_level',
                   'test_type', 'start_datetime',
                   'duration_minutes', 'max_score', 'status', 'created_by', 'created_by_name',
-                  'group_filter', 'allowed_languages', 'it_category',
+                  'group_filter', 'allowed_languages', 'it_category', 'camera_proctoring_enabled',
+                  'voice_proctoring_enabled',
                   'question_ids', 'participants', 'avg_score', 'created_at']
         read_only_fields = ['id', 'status', 'created_by', 'created_by_name', 'center_name',
                             'participants', 'avg_score', 'max_score', 'created_at']

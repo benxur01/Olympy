@@ -3,7 +3,9 @@
 // Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/teacher/<key>`
 // manziliga bog'lanadi (home → /dashboard/teacher). Namuna StudentDashboard'dan,
 // umumiy yordamchi shared.jsx'dagi makeDashboardUrlSync.
-const TEACHER_DASHBOARD_PAGES = ['home', 'students', 'olympiads', 'questions', 'results', 'profile'];
+// `proctoring` ro'yxatda YO'Q — u `liveOlympiadId` runtime state'iga bog'liq
+// drill-down ko'rinish (URL'ga yozilmaydi), Manager panel bilan bir xil naqsh.
+const TEACHER_DASHBOARD_PAGES = ['home', 'requests', 'students', 'olympiads', 'questions', 'results', 'shop', 'qanalytics', 'profile'];
 const teacherDashUrl = makeDashboardUrlSync('/dashboard/teacher', TEACHER_DASHBOARD_PAGES);
 
 // Fan progress-bar ranglari — StudentDashboard'dagi palitra bilan bir xil
@@ -199,6 +201,33 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   };
   const [newEvent, setNewEvent] = React.useState(emptyEventForm);
 
+  // ─── Manager-parity bo'limlari holatlari (Arizalar, Do'kon, Jonli nazorat) ───
+  // Telegram bot integratsiyasi (Arizalar bo'limi kartasi).
+  const [telegramLink, setTelegramLink] = React.useState(null);
+  const [telegramLinkLoading, setTelegramLinkLoading] = React.useState(false);
+  const [telegramLinked, setTelegramLinked] = React.useState(!!user?.telegramLinked);
+  const telegramPollRef = React.useRef(null);
+  // A'zolik arizalari (o'quvchi + o'qituvchi) — manager panel bilan bir xil.
+  const [pendingStudents, setPendingStudents] = React.useState([]);
+  const [pendingTeachers, setPendingTeachers] = React.useState([]);
+  // Jonli nazorat (proctoring) holatlari.
+  const [liveOlympiadId, setLiveOlympiadId] = React.useState(null);
+  const [proctoringData, setProctoringData] = React.useState([]);
+  const [proctoringLoading, setProctoringLoading] = React.useState(false);
+  const [proctoringError, setProctoringError] = React.useState('');
+  const [proctoringSearch, setProctoringSearch] = React.useState('');
+  const debouncedProctoringSearch = useDebounce(proctoringSearch, 300);
+  const [reviewBusyIds, setReviewBusyIds] = React.useState({});
+  // Markaz do'koni (Mukofotlar) holatlari.
+  const [shopProducts, setShopProducts] = React.useState([]);
+  const [shopLoading, setShopLoading] = React.useState(false);
+  const [shopSaving, setShopSaving] = React.useState(false);
+  const [shopModal, setShopModal] = React.useState(null); // null | 'new' | product obyekti
+  const emptyShopForm = { title: '', description: '', coin_cost: 100, icon: '🎁', stock: 10, is_active: true, features: [], imageFile: null, image_url: '' };
+  const [shopForm, setShopForm] = React.useState(emptyShopForm);
+  const [deleteProductId, setDeleteProductId] = React.useState(null);
+  const [shopDeleting, setShopDeleting] = React.useState(false);
+
   const showToast = (msg) => {
     setToast(msg);
     setTimeout(() => setToast(''), 2500);
@@ -278,6 +307,119 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     return map;
   }, [isApi, apiTeacherOlympiadsRes.data]);
 
+  // ─── Manager-parity: hook'lar (state'lar early-return'dan oldin bo'lishi shart) ───
+
+  // Telegram polling intervalini unmount'da tozalash.
+  React.useEffect(() => () => {
+    if (telegramPollRef.current) {
+      clearInterval(telegramPollRef.current);
+      telegramPollRef.current = null;
+    }
+  }, []);
+  React.useEffect(() => {
+    setTelegramLinked(!!user?.telegramLinked);
+  }, [user?.telegramLinked]);
+
+  // A'zolik arizalari (o'quvchi + o'qituvchi) — 15s polling (faqat ko'rinib turganda).
+  const loadPendingStudents = React.useCallback(() => {
+    if (!isApi || !centerId) { setPendingStudents([]); return Promise.resolve(); }
+    return OlympyApi.getPendingMemberships(centerId, 'student', OlympyApi.getToken())
+      .then(rows => setPendingStudents(Array.isArray(rows) ? rows : []));
+  }, [isApi, centerId]);
+  const loadPendingTeachers = React.useCallback(() => {
+    if (!isApi || !centerId) { setPendingTeachers([]); return Promise.resolve(); }
+    return OlympyApi.getPendingMemberships(centerId, 'teacher', OlympyApi.getToken())
+      .then(rows => setPendingTeachers(Array.isArray(rows) ? rows : []));
+  }, [isApi, centerId]);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      loadPendingStudents().catch(err => {
+        if (!cancelled) { console.warn('getPendingMemberships failed:', err); setPendingStudents([]); }
+      });
+      loadPendingTeachers().catch(err => {
+        if (!cancelled) { console.warn('getPendingMemberships(teacher) failed:', err); setPendingTeachers([]); }
+      });
+    };
+    refresh();
+    const intervalId = isApi && centerId
+      ? setInterval(() => {
+          if (typeof document === 'undefined' || document.visibilityState === 'visible') refresh();
+        }, 15000)
+      : null;
+    return () => { cancelled = true; if (intervalId) clearInterval(intervalId); };
+  }, [isApi, centerId, loadPendingStudents, loadPendingTeachers]);
+
+  // Savollar analitikasi (eng ko'p noto'g'ri savollar).
+  const questionAnalyticsRes = useApiData(
+    () => (isApi && centerId)
+      ? OlympyApi.getQuestionAnalytics(centerId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, centerId],
+  );
+
+  // Jonli nazorat: tanlangan olimpiada sessiyalarini yuklaydi.
+  const loadProctoring = React.useCallback(() => {
+    if (!isApi || !liveOlympiadId) { setProctoringData([]); return Promise.resolve(); }
+    return OlympyApi.getOlympiadLiveProctoring(liveOlympiadId, OlympyApi.getToken())
+      .then(res => { setProctoringData(Array.isArray(res) ? res : []); setProctoringError(''); })
+      .catch(err => {
+        console.warn('getOlympiadLiveProctoring failed:', err);
+        setProctoringError("Jonli nazorat ma'lumotlarini yuklab bo'lmadi.");
+      });
+  }, [isApi, liveOlympiadId]);
+
+  // Cheating tekshiruvi bo'yicha qaror: 'disqualify' yoki 'continue'.
+  const handleReviewCheating = React.useCallback((sessionId, decision) => {
+    if (!isApi || !sessionId || reviewBusyIds[sessionId]) return;
+    setReviewBusyIds(prev => ({ ...prev, [sessionId]: true }));
+    OlympyApi.reviewCheatingCase(sessionId, decision, OlympyApi.getToken())
+      .then(() => showToast(decision === 'disqualify' ? 'Diskvalifikatsiya qilindi' : 'Davom etishga ruxsat berildi'))
+      .catch(err => {
+        if (err?.status === 409) {
+          showToast('Bu holat allaqachon hal qilingan');
+        } else {
+          console.warn('reviewCheatingCase failed:', err);
+          showToast(OlympyApi.toUserMessage?.(err) || "Amalni bajarib bo'lmadi");
+        }
+      })
+      .finally(() => {
+        setReviewBusyIds(prev => { const n = { ...prev }; delete n[sessionId]; return n; });
+        loadProctoring();
+      });
+  }, [isApi, reviewBusyIds, loadProctoring]);
+
+  // Adaptiv polling: tekshiruv kutilayotgan bo'lsa 5s, aks holda 10s.
+  const hasPendingReview = proctoringData.some(p => p.pending_review);
+  React.useEffect(() => {
+    if (page !== 'proctoring' || !liveOlympiadId) return undefined;
+    setProctoringLoading(true);
+    loadProctoring().finally(() => setProctoringLoading(false));
+    const intervalMs = hasPendingReview ? 5000 : 10000;
+    const interval = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') loadProctoring();
+    }, intervalMs);
+    return () => clearInterval(interval);
+  }, [page, liveOlympiadId, loadProctoring, hasPendingReview]);
+
+  // Markaz do'koni mahsulotlari.
+  const loadShopProducts = React.useCallback(() => {
+    if (!isApi || !centerId) { setShopProducts([]); return Promise.resolve(); }
+    return OlympyApi.getCenterShopProducts(OlympyApi.getToken(), centerId)
+      .then(rows => { setShopProducts(Array.isArray(rows) ? rows : []); });
+  }, [isApi, centerId]);
+
+  React.useEffect(() => {
+    if (page !== 'shop') return undefined;
+    let cancelled = false;
+    setShopLoading(true);
+    loadShopProducts()
+      .catch(() => { if (!cancelled) setShopProducts([]); })
+      .finally(() => { if (!cancelled) setShopLoading(false); });
+    return () => { cancelled = true; };
+  }, [page, loadShopProducts]);
+
   if (!center) {
     return (
       <PendingAccessCard
@@ -289,23 +431,53 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     );
   }
 
+  // Arizalar (o'quvchi + o'qituvchi) — Manager panel bilan bir xil ro'yxat.
+  const apiRequests = pendingStudents.map(m => ({
+    id: `api:student:${m.membership_id}`,
+    role: 'student',
+    name: m.user?.full_name || m.user?.name || '—',
+    phone: m.user?.normalized_phone || m.user?.phone || '—',
+    avatarUrl: m.user?.avatar_url || m.user?.avatarUrl || '',
+    date: (m.created_at || '').slice(0, 10),
+    subject: m.subject || '—',
+    approvalCode: m.approval_code || '',
+    status: 'Kutilmoqda',
+    _raw: m,
+  }));
+  const apiTeacherRequests = pendingTeachers.map(m => ({
+    id: `api:teacher:${m.membership_id}`,
+    role: 'teacher',
+    name: m.user?.full_name || m.user?.name || '—',
+    phone: m.user?.normalized_phone || m.user?.phone || '—',
+    avatarUrl: m.user?.avatar_url || m.user?.avatarUrl || '',
+    date: (m.created_at || '').slice(0, 10),
+    subject: m.subject || '—',
+    approvalCode: m.approval_code || '',
+    status: 'Kutilmoqda',
+    _raw: m,
+  }));
+  const requests = isApi ? [...apiRequests, ...apiTeacherRequests] : [];
+  const pendingCount = requests.filter(r => r.status === 'Kutilmoqda').length;
+
   const navItems = [
     { key: 'home', icon: 'home', label: 'Asosiy' },
+    { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCount || undefined },
     { key: 'students', icon: 'users', label: "O'quvchilar" },
     { key: 'olympiads', icon: 'trophy', label: 'Musobaqalar' },
     { key: 'questions', icon: 'book', label: 'Savollar' },
     { key: 'results', icon: 'chart', label: 'Natijalar' },
+    { key: 'shop', icon: 'award', label: "Do'kon" },
+    { key: 'qanalytics', icon: 'info', label: 'Savollar analitikasi' },
     { key: 'profile', icon: 'user', label: 'Profil' },
   ];
 
-  // MobileBottomNav faqat dastlabki 5 ta elementni oladi. Natijalar
-  // qo'shilgach navItems 6 ta bo'ldi — mobil panel uchun alohida ro'yxat:
-  // savollar o'rniga natijalar, oxirida profil (Manager paneldagi naqsh).
+  // MobileBottomNav faqat dastlabki 5 ta elementni oladi — mobil uchun alohida
+  // ro'yxat (Manager paneldagi naqsh): oxirida profil.
   const mobileNavItems = [
     navItems.find(n => n.key === 'home'),
-    navItems.find(n => n.key === 'students'),
+    navItems.find(n => n.key === 'requests'),
     navItems.find(n => n.key === 'olympiads'),
-    navItems.find(n => n.key === 'results'),
+    navItems.find(n => n.key === 'students'),
     navItems.find(n => n.key === 'profile'),
   ].filter(Boolean);
 
@@ -619,6 +791,774 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       });
   };
 
+  // ─── Manager-parity: Telegram bot ulash (Arizalar bo'limi) ───
+  const startTelegramLink = () => {
+    if (!isApi) { showToast('Real bot server rejimida ulanadi'); return; }
+    setTelegramLinkLoading(true);
+    OlympyApi.startTelegramLink(OlympyApi.getToken())
+      .then(data => {
+        setTelegramLink(data);
+        if (data?.telegram_deep_link) {
+          const opened = goToTelegramLink(data.telegram_deep_link);
+          showToast(opened ? 'Telegram bot ochilyapti. Telefon raqamingizni yuboring.' : 'Brauzer Telegramga o‘tishni blokladi. Pastdagi linkni bosing.');
+          let tries = 0;
+          const MAX_TRIES = 60;
+          const token = OlympyApi.getToken();
+          if (telegramPollRef.current) clearInterval(telegramPollRef.current);
+          const pollId = setInterval(() => {
+            tries += 1;
+            OlympyApi.getMe(token)
+              .then(fresh => {
+                const mapped = OlympyApi.mapBackendUser(fresh);
+                if (mapped.telegramLinked) {
+                  const auth = OlympyApi.loadAuth();
+                  OlympyApi.saveAuth({ token: auth?.token || token, refresh: auth?.refresh, user: mapped });
+                  setTelegramLinked(true);
+                  clearInterval(pollId);
+                  telegramPollRef.current = null;
+                }
+              })
+              .catch(() => {});
+            if (tries >= MAX_TRIES) {
+              clearInterval(pollId);
+              telegramPollRef.current = null;
+              showToast('Polling tugadi. Telegramda ulansangiz, sahifani yangilang.');
+            }
+          }, 5000);
+          telegramPollRef.current = pollId;
+        } else {
+          showToast('Bot username sozlanmagan');
+        }
+      })
+      .catch(err => { console.warn('startTelegramLink failed:', err); showToast(OlympyApi.toUserMessage(err)); })
+      .finally(() => setTelegramLinkLoading(false));
+  };
+
+  // ─── Manager-parity: ariza tasdiqlash/rad etish ───
+  const handleRequest = (id, action) => {
+    if (!isApi) { showToast('Real server rejimida ishlaydi'); return; }
+    const token = OlympyApi.getToken();
+    const requestEntry = requests.find(r => r.id === id);
+    const requestRow = requestEntry?._raw;
+    const membershipId = requestRow?.membership_id ?? requestRow?.membershipId ?? requestRow?.backendId;
+    if (!membershipId || !centerId) { showToast("⚠ API rejimida ariza ma'lumoti yetarli emas"); return; }
+    const backendCenterId = center?.backendId ?? centerId;
+    const isTeacherRequest = requestEntry?.role === 'teacher';
+    const approveFn = isTeacherRequest ? OlympyApi.approveTeacher : OlympyApi.approveStudent;
+    approveFn(backendCenterId, { membership_id: membershipId, decision: action === 'approve' ? 'approved' : 'rejected' }, token)
+      .then(() => isTeacherRequest ? loadPendingTeachers() : loadPendingStudents())
+      .then(() => showToast(action === 'approve' ? '✓ Ariza tasdiqlandi' : '✗ Ariza rad etildi'))
+      .catch(err => { console.warn('approveStudent/approveTeacher failed:', err); showToast(err?.message ? `⚠ ${err.message}` : "⚠ Tasdiqlab bo'lmadi"); });
+  };
+
+  // ─── Manager-parity: markaz do'koni CRUD ───
+  const openShopModal = (product) => {
+    if (product) {
+      setShopForm({
+        title: product.title || '',
+        description: product.description || '',
+        coin_cost: product.coin_cost ?? 0,
+        icon: product.icon || '🎁',
+        stock: product.stock ?? 0,
+        is_active: product.is_active !== false,
+        features: Array.isArray(product.features) ? product.features.map(f => (typeof f === 'string' ? f : (f?.value || ''))).filter(Boolean) : [],
+        imageFile: null,
+        image_url: product.image_url || '',
+      });
+      setShopModal(product);
+    } else {
+      setShopForm(emptyShopForm);
+      setShopModal('new');
+    }
+  };
+  const closeShopModal = () => { setShopModal(null); setShopForm(emptyShopForm); };
+
+  const submitShopProduct = () => {
+    if (!isApi || !centerId) { showToast('Demo rejimida ishlamaydi'); return; }
+    const title = (shopForm.title || '').trim();
+    if (!title) { showToast('Mahsulot nomini kiriting'); return; }
+    const coinCost = parseInt(shopForm.coin_cost, 10);
+    if (!Number.isFinite(coinCost) || coinCost < 0) { showToast("Tanga narxini to'g'ri kiriting"); return; }
+    const stock = parseInt(shopForm.stock, 10);
+    const features = (shopForm.features || []).map(f => (typeof f === 'string' ? f.trim() : f)).filter(Boolean);
+
+    let body;
+    if (shopForm.imageFile) {
+      body = new FormData();
+      body.append('title', title);
+      body.append('description', (shopForm.description || '').trim());
+      body.append('coin_cost', String(coinCost));
+      body.append('icon', shopForm.icon || '🎁');
+      body.append('stock', String(Number.isFinite(stock) ? stock : 0));
+      body.append('is_active', shopForm.is_active ? 'true' : 'false');
+      body.append('features', JSON.stringify(features));
+      body.append('image', shopForm.imageFile);
+    } else {
+      body = {
+        title,
+        description: (shopForm.description || '').trim(),
+        coin_cost: coinCost,
+        icon: shopForm.icon || '🎁',
+        stock: Number.isFinite(stock) ? stock : 0,
+        is_active: !!shopForm.is_active,
+        features,
+      };
+    }
+
+    setShopSaving(true);
+    const token = OlympyApi.getToken();
+    const isEdit = shopModal && shopModal !== 'new';
+    const req = isEdit
+      ? OlympyApi.updateCenterShopProduct(shopModal.id, body, token, centerId)
+      : OlympyApi.createCenterShopProduct(body, token, centerId);
+    req
+      .then(() => { closeShopModal(); return loadShopProducts(); })
+      .then(() => showToast(isEdit ? 'Mahsulot yangilandi' : "Mahsulot qo'shildi"))
+      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "Saqlab bo'lmadi"))
+      .finally(() => setShopSaving(false));
+  };
+
+  const deleteShopProduct = (productId) => {
+    if (!isApi || !centerId) return;
+    setShopDeleting(true);
+    OlympyApi.deleteCenterShopProduct(productId, OlympyApi.getToken(), centerId)
+      .then(() => loadShopProducts())
+      .then(() => { showToast("Mahsulot o'chirildi"); setDeleteProductId(null); })
+      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'chirib bo'lmadi"))
+      .finally(() => setShopDeleting(false));
+  };
+
+  const toggleShopActive = (product) => {
+    if (!isApi || !centerId) return;
+    OlympyApi.updateCenterShopProduct(product.id, { is_active: !product.is_active }, OlympyApi.getToken(), centerId)
+      .then(() => loadShopProducts())
+      .catch(err => showToast(OlympyApi.toUserMessage?.(err) || "O'zgartirib bo'lmadi"));
+  };
+
+  const renderRequests = () => (
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <h2 className="text-xl font-black text-white">Arizalar</h2>
+        <div className="flex items-center gap-2 text-sm text-white/40">
+          <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+          {pendingCount} ta kutilmoqda
+        </div>
+      </div>
+
+      <div className="glass rounded-2xl p-5 border border-indigo-500/10">
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl" style={{ background: '#2b5278' }}><div className="w-full h-full flex items-center justify-center text-white font-bold text-sm rounded-xl">TG</div></div>
+          <div>
+            <div className="text-sm font-bold text-white">Telegram Bot Integratsiya</div>
+            <div className="text-xs text-white/40">Yangi o'quvchi arizalari botga avtomatik boradi</div>
+          </div>
+          <div className={`ml-auto flex items-center gap-1.5 text-xs ${telegramLinked ? 'text-emerald-400' : 'text-amber-300'}`}>
+            <span className={`w-2 h-2 rounded-full ${telegramLinked ? 'bg-emerald-400 animate-pulse' : 'bg-amber-300'}`}></span>
+            {telegramLinked ? 'Ulangan' : 'Ulanmagan'}
+          </div>
+        </div>
+        {!telegramLinked && (
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={startTelegramLink} disabled={telegramLinkLoading}
+              className="btn-primary px-4 py-2 rounded-xl text-xs font-semibold inline-flex items-center gap-2 disabled:opacity-60">
+              <Icon name="send" size={13} /> {telegramLinkLoading ? 'Ulanmoqda...' : 'Botni ulash'}
+            </button>
+            {telegramLink?.telegram_deep_link && (
+              <a href={telegramLink.telegram_deep_link} target="_blank" rel="noreferrer"
+                onClick={(e) => { if (goToTelegramLink(telegramLink.telegram_deep_link)) e.preventDefault(); }}
+                className="text-xs text-indigo-300 hover:text-indigo-200">
+                Telegram botni ochish
+              </a>
+            )}
+            <span className="text-xs text-white/40">Ulanmaguncha arizalar faqat sayt ichida ko'rinadi.</span>
+          </div>
+        )}
+        {telegramLinked && (
+          <div className="text-xs text-emerald-300 flex items-center gap-2">
+            <Icon name="check" size={13} /> Botdagi tasdiq saytdagi ariza holatini ham avtomatik yangilaydi.
+          </div>
+        )}
+      </div>
+
+      <div className="glass rounded-2xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px]">
+          <thead><tr className="border-b border-white/5">
+            {['Ism', 'Rol', 'Telefon', 'Ariza sanasi', 'Fan', 'Kod', 'Holat', 'Amal'].map(h => (
+              <th key={h} className="text-left px-4 py-3 text-xs text-white/40 font-medium">{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {requests.map(r => (
+              <tr key={r.id} className="olympy-row">
+                <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={r.name} src={r.avatarUrl || ''} size={32} /><span className="text-sm font-medium text-white">{r.name}</span></div></td>
+                <td className="px-4 py-3">
+                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${r.role === 'teacher' ? 'text-sky-300 bg-sky-500/15 border border-sky-500/30' : 'text-indigo-300 bg-indigo-500/15 border border-indigo-500/30'}`}>
+                    {r.role === 'teacher' ? "O'qituvchi" : "O'quvchi"}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-sm text-white/60">{maskPhoneDisplay(r.phone, '')}</td>
+                <td className="px-4 py-3 text-sm text-white/60">{r.date}</td>
+                <td className="px-4 py-3">{r.subject && r.subject !== '—' ? <SubjectBadge subject={r.subject} /> : <span className="text-xs text-white/30">—</span>}</td>
+                <td className="px-4 py-3 text-xs font-mono text-white/50">{r.approvalCode || '—'}</td>
+                <td className="px-4 py-3"><Badge status={r.status} /></td>
+                <td className="px-4 py-3">
+                  {r.status === 'Kutilmoqda' ? (
+                    <div className="flex gap-2">
+                      <button onClick={() => handleRequest(r.id, 'approve')} className="btn-success text-xs px-3 py-1.5 rounded-xl">Tasdiqlash</button>
+                      <button onClick={() => handleRequest(r.id, 'reject')} className="btn-danger text-xs px-3 py-1.5 rounded-xl">Rad etish</button>
+                    </div>
+                  ) : <span className="text-xs text-white/30">—</span>}
+                </td>
+              </tr>
+            ))}
+            {requests.length === 0 && (
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-white/40 text-sm">Arizalar yo'q</td></tr>
+            )}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderQAnalytics = () => {
+    const rows = isApi && Array.isArray(questionAnalyticsRes.data) ? questionAnalyticsRes.data : [];
+    const loading = isApi && questionAnalyticsRes.loading && !questionAnalyticsRes.data;
+    return (
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
+        <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-black text-white">Savollar analitikasi</h2>
+            <p className="text-xs text-white/40 mt-1">Eng ko'p noto'g'ri javob berilgan savollar (kamida 3 ta urinish, ≥30% xato).</p>
+          </div>
+          <button
+            onClick={() => questionAnalyticsRes.reload?.()}
+            className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"
+          >
+            <Icon name="bolt" size={13} /> Yangilash
+          </button>
+        </div>
+        {loading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+        {!loading && rows.length === 0 && (
+          <div className="glass rounded-2xl p-8 text-center text-sm text-white/40">
+            Hozircha tahlilga yaroqli savollar yo'q. O'quvchilar tadbirlarda qatnashgach, bu yerda ko'rinadi.
+          </div>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {rows.map(r => {
+            const rate = Number(r.wrong_rate || 0);
+            const tone = rate >= 70
+              ? { bar: 'bg-rose-500', text: 'text-rose-300', border: 'border-rose-500/30', bg: 'bg-rose-500/10' }
+              : rate >= 50
+                ? { bar: 'bg-amber-500', text: 'text-amber-300', border: 'border-amber-500/25', bg: 'bg-amber-500/10' }
+                : { bar: 'bg-sky-500', text: 'text-sky-300', border: 'border-sky-500/25', bg: 'bg-sky-500/10' };
+            return (
+              <div key={r.question_id} className={`glass rounded-2xl p-4 border ${tone.border}`}>
+                <div className="flex items-start gap-3">
+                  <div className={`flex-shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-xl ${tone.bg} ${tone.text} font-black text-xs`}>
+                    {rate}%
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm text-white font-semibold leading-snug">{r.text || '—'}</div>
+                    <div className="text-[11px] text-white/45 mt-1">
+                      {r.subject || 'Umumiy'} · {r.total_attempts} urinish · {r.wrong_count} xato
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-3 h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                  <div
+                    className={`h-full ${tone.bar} transition-all`}
+                    style={{ width: `${Math.min(100, Math.max(0, rate))}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderProctoring = () => {
+    const activeOlym = olympiads.find(o => String(o.id) === String(liveOlympiadId));
+    // Webkamera nazorati shu olimpiadada yoqilgan bo'lsagina rozilik badge'ini ko'rsatamiz.
+    const cameraOn = !!activeOlym?.cameraProctoringEnabled;
+    // Ovoz nazorati badge'i — kameradan mustaqil.
+    const voiceOn = !!activeOlym?.voiceProctoringEnabled;
+    const searchQuery = (debouncedProctoringSearch || '').trim().toLowerCase();
+
+    const filteredProctoring = searchQuery
+      ? proctoringData.filter(p => {
+          const name = String(p.student_name || '').toLowerCase();
+          const phone = String(p.phone || '').toLowerCase();
+          const reason = String(p.cheating_reason || '').toLowerCase();
+          const reasonLabel = String(cheatingReasonLabel(p.cheating_reason) || '').toLowerCase();
+          return name.includes(searchQuery) || phone.includes(searchQuery)
+            || reason.includes(searchQuery) || reasonLabel.includes(searchQuery);
+        })
+      : proctoringData;
+
+    const totalCount = proctoringData.length;
+    const onlineCount = proctoringData.filter(p => p.is_online).length;
+    const completedCount = proctoringData.filter(p => p.status === 'completed').length;
+    const disqualifiedCount = proctoringData.filter(p => p.status === 'disqualified').length;
+
+    return (
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
+        {/* Back and title */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => { setPage('olympiads'); setLiveOlympiadId(null); }}
+              className="btn-ghost p-2 rounded-xl"
+              title="Orqaga"
+            >
+              <Icon name="arrowLeft" size={16} />
+            </button>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xl font-black text-white">Jonli nazorat paneli</h2>
+                <span className="flex h-2.5 w-2.5 relative">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                </span>
+                <span className="text-[10px] uppercase tracking-wider font-extrabold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md">LIVE</span>
+              </div>
+              <p className="text-white/40 text-xs mt-0.5">{activeOlym?.title || 'Tadbir'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={loadProctoring}
+              disabled={proctoringLoading}
+              className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1.5"
+            >
+              <Icon name="bolt" size={13} /> {proctoringLoading ? 'Yangilanmoqda...' : 'Yangilash'}
+            </button>
+          </div>
+        </div>
+
+        {/* Stats summary cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="glass rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <div className="text-xs text-white/40 font-medium">Jami faol</div>
+              <div className="text-2xl font-black text-white mt-1">{totalCount}</div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+              <Icon name="users" size={18} />
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <div className="text-xs text-white/40 font-medium font-bold text-emerald-400 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                Onlayn
+              </div>
+              <div className="text-2xl font-black text-white mt-1">{onlineCount}</div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+              <Icon name="check" size={18} />
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <div className="text-xs text-white/40 font-medium text-slate-300">Tugatganlar</div>
+              <div className="text-2xl font-black text-white mt-1">{completedCount}</div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/45">
+              <Icon name="trophy" size={18} />
+            </div>
+          </div>
+          <div className="glass rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <div className="text-xs text-white/40 font-medium text-rose-400">Diskvalifikatsiya</div>
+              <div className="text-2xl font-black text-rose-400 mt-1">{disqualifiedCount}</div>
+            </div>
+            <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-400">
+              <Icon name="info" size={18} />
+            </div>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div className="flex justify-between items-center gap-3">
+          <div className="relative w-full sm:w-80">
+            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+            <input
+              className="input-field pl-10 py-2 w-full text-sm"
+              placeholder="Ism yoki telefon bo'yicha qidirish..."
+              value={proctoringSearch}
+              onChange={e => setProctoringSearch(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Proctoring table */}
+        <div className="glass rounded-2xl overflow-hidden border border-white/5">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[800px]">
+              <thead>
+                <tr className="border-b border-white/5 bg-white/2">
+                  {["Ism / Telefon", 'Boshlash vaqti', 'Holati', 'Javoblar', 'Tab almashish', 'Natija / Sarflangan vaqt'].map(h => (
+                    <th key={h} className="text-left px-5 py-4 text-xs text-white/40 font-bold uppercase tracking-wider">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {filteredProctoring.map(p => {
+                  const percent = p.total_questions > 0 ? Math.round((p.answered_count / p.total_questions) * 100) : 0;
+
+                  let statusBadge = null;
+                  let onlineIndicator = null;
+
+                  if (p.status === 'disqualified') {
+                    statusBadge = (
+                      <span className="rounded-lg bg-rose-500/15 border border-rose-500/30 px-2 py-1 text-xs font-bold text-rose-400 inline-flex items-center gap-1">
+                        ⚠️ Diskvalifikatsiya
+                      </span>
+                    );
+                    onlineIndicator = (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-rose-400">
+                        <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                        Qizil chiroq
+                      </span>
+                    );
+                  } else if (p.status === 'completed') {
+                    statusBadge = (
+                      <span className="rounded-lg bg-indigo-500/15 border border-indigo-500/30 px-2 py-1 text-xs font-bold text-indigo-300 inline-flex items-center gap-1">
+                        ✓ Yakunlandi
+                      </span>
+                    );
+                    onlineIndicator = (
+                      <span className="inline-flex items-center gap-1.5 text-xs text-white/30">
+                        <span className="w-2 h-2 rounded-full bg-white/20"></span>
+                        Oflayn
+                      </span>
+                    );
+                  } else if (p.pending_review || p.status === 'pending_review') {
+                    statusBadge = (
+                      <span className="rounded-lg bg-amber-500/15 border border-amber-500/40 px-2 py-1 text-xs font-bold text-amber-300 inline-flex items-center gap-1">
+                        ⏳ Tekshiruv kutilmoqda
+                      </span>
+                    );
+                    onlineIndicator = (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-300">
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                        Qaror kutilmoqda
+                      </span>
+                    );
+                  } else {
+                    statusBadge = (
+                      <span className="rounded-lg bg-cyan-500/10 border border-cyan-500/25 px-2 py-1 text-xs font-bold text-cyan-300">
+                        Faol topshirmoqda
+                      </span>
+                    );
+                    if (p.is_online) {
+                      onlineIndicator = (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                          Yashil chiroq (Onlayn)
+                        </span>
+                      );
+                    } else {
+                      onlineIndicator = (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-white/40">
+                          <span className="w-2 h-2 rounded-full bg-white/30"></span>
+                          Oflayn (Aloqa yo'q)
+                        </span>
+                      );
+                    }
+                  }
+
+                  const hasEscapes = p.tab_escapes > 0;
+                  const escapeTone = hasEscapes
+                    ? (p.tab_escapes >= 60
+                        ? 'text-rose-400 bg-rose-500/10 border border-rose-500/20'
+                        : 'text-amber-400 bg-amber-500/10 border border-amber-500/20')
+                    : 'text-white/40 bg-white/5';
+
+                  const formattedStart = p.started_at
+                    ? new Date(p.started_at).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                    : '—';
+
+                  const formattedTimeSpent = p.time_spent != null
+                    ? `${Math.floor(p.time_spent / 60)} daqiqa`
+                    : '—';
+
+                  return (
+                    <tr key={p.student_id} className="olympy-row hover:bg-white/1.5 transition-colors">
+                      <td className="px-5 py-4">
+                        <div className="font-semibold text-white text-sm">{p.student_name}</div>
+                        <div className="text-xs text-white/40 mt-0.5">{p.phone}</div>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-white/60">
+                        {formattedStart}
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="space-y-1">
+                          <div>{statusBadge}</div>
+                          <div>{onlineIndicator}</div>
+                          {cameraOn && (
+                            p.camera_consent_given ? (
+                              <span className="text-[10px] font-semibold text-emerald-300/90 bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/30 inline-flex items-center gap-1"
+                                title={p.camera_consent_at ? `Rozilik: ${new Date(p.camera_consent_at).toLocaleString('uz-UZ')}` : 'Kamera roziligi berilgan'}>
+                                <Icon name="eye" size={11} /> Kamera roziligi
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-white/40 bg-white/5 px-2 py-0.5 rounded border border-white/10 inline-flex items-center gap-1"
+                                title="Kamera roziligi berilmagan">
+                                <Icon name="eyeOff" size={11} /> Rozilik yo'q
+                              </span>
+                            )
+                          )}
+                          {voiceOn && (
+                            p.microphone_consent_given ? (
+                              <span className="text-[10px] font-semibold text-emerald-300/90 bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/30 inline-flex items-center gap-1"
+                                title={p.microphone_consent_at ? `Rozilik: ${new Date(p.microphone_consent_at).toLocaleString('uz-UZ')}` : 'Mikrofon roziligi berilgan'}>
+                                <Icon name="mic" size={11} /> Mikrofon roziligi
+                              </span>
+                            ) : (
+                              <span className="text-[10px] font-semibold text-white/40 bg-white/5 px-2 py-0.5 rounded border border-white/10 inline-flex items-center gap-1"
+                                title="Mikrofon roziligi berilmagan">
+                                <Icon name="mic" size={11} /> Rozilik yo'q
+                              </span>
+                            )
+                          )}
+                          {p.cheating_reason && (
+                            <div className="text-[10px] text-rose-300/80 bg-rose-950/20 px-2 py-0.5 rounded border border-rose-900/30 max-w-[200px] truncate" title={cheatingReasonLabel(p.cheating_reason)}>
+                              Sabab: {cheatingReasonLabel(p.cheating_reason)}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 min-w-[150px]">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-bold text-white/80">{p.answered_count} / {p.total_questions}</span>
+                          <span className="text-[10px] text-white/40 font-medium">({percent}%)</span>
+                        </div>
+                        <div className="w-32 h-1.5 bg-white/5 rounded-full mt-1.5 overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400 rounded-full transition-all duration-300"
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold font-mono inline-flex items-center gap-1 ${escapeTone}`}>
+                          <Icon name="info" size={11} /> {p.tab_escapes} soniya
+                        </span>
+                        {hasEscapes && (
+                          <div className="text-[9px] text-amber-300 mt-1 font-semibold">
+                            ⚠️ Tashqarida bo'lgan
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-5 py-4 text-sm">
+                        {p.status === 'completed' ? (
+                          <div>
+                            <span className="font-extrabold text-emerald-400 text-base">{p.score}%</span>
+                            <div className="text-[10px] text-white/40 mt-0.5">Sarflandi: {formattedTimeSpent}</div>
+                          </div>
+                        ) : p.status === 'disqualified' ? (
+                          <span className="font-bold text-rose-400 text-xs">Natija bekor qilingan</span>
+                        ) : (p.pending_review || p.status === 'pending_review') ? (
+                          <div className="flex flex-col gap-1.5 min-w-[160px]">
+                            <button
+                              onClick={() => handleReviewCheating(p.session_id, 'disqualify')}
+                              disabled={!!reviewBusyIds[p.session_id]}
+                              className="btn-danger text-xs px-3 py-1.5 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Diskvalifikatsiya qilish
+                            </button>
+                            <button
+                              onClick={() => handleReviewCheating(p.session_id, 'continue')}
+                              disabled={!!reviewBusyIds[p.session_id]}
+                              className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              Davom etishga ruxsat
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-white/30 text-xs">Test topshirilmoqda...</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filteredProctoring.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-16 text-center text-white/40 text-sm">
+                      {searchQuery ? "Mos keladigan ishtirokchilar topilmadi" : "Ushbu tadbirda faol ishtirokchilar hozircha mavjud emas"}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderShop = () => {
+    const addFeature = () => setShopForm(f => ({ ...f, features: [...(f.features || []), ''] }));
+    const setFeature = (idx, val) => setShopForm(f => ({ ...f, features: (f.features || []).map((x, i) => i === idx ? val : x) }));
+    const removeFeature = (idx) => setShopForm(f => ({ ...f, features: (f.features || []).filter((_, i) => i !== idx) }));
+    const onPickImage = (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      if (file.size > 5 * 1024 * 1024) { showToast('Rasm 5 MB dan oshmasligi kerak'); return; }
+      setShopForm(f => ({ ...f, imageFile: file, image_url: URL.createObjectURL(file) }));
+    };
+    const isEdit = shopModal && shopModal !== 'new';
+    return (
+      <div className="space-y-5 p-4 md:p-6 mobile-content-pad">
+        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
+          <div>
+            <h1 className="text-xl md:text-2xl font-black tracking-tight text-white">Mukofotlar do'koni</h1>
+            <p className="mt-1 text-sm font-semibold text-white/50">{centerName} o'quvchilari tangalarini almashtiradigan sovg'alar.</p>
+          </div>
+          <button onClick={() => openShopModal(null)} className="btn-primary flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-black self-start">
+            <Icon name="plus" size={15} /> Yangi mahsulot
+          </button>
+        </div>
+
+        <section className="rounded-2xl border border-white/8 glass p-4 md:p-6">
+          <h2 className="mb-4 text-base font-black text-white">Mahsulotlar ({shopProducts.length})</h2>
+          {shopLoading ? (
+            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+          ) : shopProducts.length === 0 ? (
+            <EmptyState icon="award" title="Do'kon bo'sh" desc="Yuqoridagi tugma orqali birinchi mahsulotni qo'shing." />
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {shopProducts.map(p => {
+                const features = Array.isArray(p.features) ? p.features : [];
+                return (
+                  <div key={p.id} className={`rounded-xl border p-3.5 flex flex-col gap-3 ${p.is_active ? 'border-white/8 bg-white/5' : 'border-white/5 bg-white/[0.02] opacity-70'}`}>
+                    <div className="flex items-start gap-3">
+                      {p.image_url ? (
+                        <img src={p.image_url} alt={p.title} className="h-14 w-14 flex-shrink-0 rounded-xl object-cover" />
+                      ) : (
+                        <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-white/5 text-2xl">{p.icon || '🎁'}</div>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <div className="truncate text-sm font-black text-white">{p.title}</div>
+                          {!p.is_active && <span className="flex-shrink-0 rounded-md bg-white/5 px-1.5 py-0.5 text-[9px] font-black uppercase text-white/40">Nofaol</span>}
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] font-bold text-white/40">
+                          <span className="text-amber-300">🪙 {p.coin_cost}</span>
+                          <span>·</span>
+                          <span>Zaxira: {p.stock}</span>
+                        </div>
+                      </div>
+                    </div>
+                    {p.description && <p className="text-xs leading-relaxed text-white/45 line-clamp-2">{p.description}</p>}
+                    {features.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {features.map((f, i) => (
+                          <span key={i} className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-white/60">
+                            {typeof f === 'string' ? f : (f?.value || '')}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-auto flex items-center gap-2 border-t border-white/5 pt-3">
+                      <button onClick={() => openShopModal(p)} className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/70 hover:bg-white/10">
+                        Tahrirlash
+                      </button>
+                      <button onClick={() => toggleShopActive(p)} className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/70 hover:bg-white/10" title={p.is_active ? 'Nofaol qilish' : 'Faollashtirish'}>
+                        {p.is_active ? 'Yashirish' : "Ko'rsatish"}
+                      </button>
+                      <button onClick={() => setDeleteProductId(p.id)} className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20">
+                        <Icon name="x" size={14} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {shopModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={closeShopModal}>
+            <div className="modal w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="mb-5 flex items-start justify-between gap-4">
+                <h2 className="text-lg font-black text-white">{isEdit ? 'Mahsulotni tahrirlash' : 'Yangi mahsulot'}</h2>
+                <button type="button" onClick={closeShopModal} className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white">
+                  <Icon name="x" size={18} />
+                </button>
+              </div>
+              <div className="space-y-4">
+                <div className="flex items-center gap-3">
+                  {shopForm.image_url ? (
+                    <img src={shopForm.image_url} alt="" className="h-16 w-16 flex-shrink-0 rounded-xl object-cover" />
+                  ) : (
+                    <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl bg-white/5 text-2xl">{shopForm.icon || '🎁'}</div>
+                  )}
+                  <label className="btn-ghost cursor-pointer rounded-lg px-3 py-2 text-xs font-bold">
+                    Rasm yuklash
+                    <input type="file" accept="image/*" className="hidden" onChange={onPickImage} />
+                  </label>
+                  {shopForm.image_url && (
+                    <button type="button" onClick={() => setShopForm(f => ({ ...f, imageFile: null, image_url: '' }))} className="text-xs font-bold text-rose-300 hover:text-rose-200">O'chirish</button>
+                  )}
+                </div>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Nom</span>
+                  <input value={shopForm.title} onChange={e => setShopForm(f => ({ ...f, title: e.target.value }))} className="input-field" placeholder="Masalan, ProSkill futbolkasi" autoFocus />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tavsif</span>
+                  <textarea value={shopForm.description} onChange={e => setShopForm(f => ({ ...f, description: e.target.value }))} className="input-field" rows={2} placeholder="Mahsulot haqida qisqacha..." />
+                </label>
+                <div className="grid grid-cols-3 gap-3">
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tanga</span>
+                    <input type="number" min={0} value={shopForm.coin_cost} onChange={e => setShopForm(f => ({ ...f, coin_cost: e.target.value }))} className="input-field" />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Zaxira</span>
+                    <input type="number" min={0} value={shopForm.stock} onChange={e => setShopForm(f => ({ ...f, stock: e.target.value }))} className="input-field" />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Belgi</span>
+                    <input value={shopForm.icon} onChange={e => setShopForm(f => ({ ...f, icon: e.target.value }))} className="input-field text-center" maxLength={4} placeholder="🎁" />
+                  </label>
+                </div>
+                <div className="space-y-2">
+                  <span className="block text-xs font-black uppercase text-white/40">Xususiyatlar</span>
+                  {(shopForm.features || []).map((f, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input value={typeof f === 'string' ? f : (f?.value || '')} onChange={e => setFeature(i, e.target.value)} className="input-field w-full py-1.5 text-sm" placeholder="Masalan, Hajmi: L" />
+                      <button type="button" onClick={() => removeFeature(i)} className="flex-shrink-0 text-rose-300 hover:text-rose-200">
+                        <Icon name="x" size={16} />
+                      </button>
+                    </div>
+                  ))}
+                  <button type="button" onClick={addFeature} className="btn-ghost rounded-lg px-3 py-1.5 text-xs font-bold">+ Xususiyat qo'shish</button>
+                </div>
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input type="checkbox" checked={!!shopForm.is_active} onChange={e => setShopForm(f => ({ ...f, is_active: e.target.checked }))} className="h-4 w-4 rounded accent-indigo-500" />
+                  <span className="text-sm font-bold text-white/70">Faol (o'quvchilarga ko'rinadi)</span>
+                </label>
+              </div>
+              <div className="mt-6 flex gap-3">
+                <button onClick={submitShopProduct} disabled={shopSaving} className="btn-primary flex-1 rounded-xl py-2.5 text-sm font-black disabled:opacity-50">
+                  {shopSaving ? 'Saqlanmoqda...' : (isEdit ? 'Saqlash' : "Qo'shish")}
+                </button>
+                <button onClick={closeShopModal} className="btn-ghost rounded-xl px-5 py-2.5 text-sm font-bold">Bekor qilish</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const renderHome = () => (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
       {user?.onboardingTeacherCompleted === false && !onboardingDismissed && (
@@ -854,6 +1794,10 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   )}
                   {o.status === 'active' && (
                     <>
+                      <button onClick={() => { setLiveOlympiadId(o.id); setPage('proctoring'); }}
+                        className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 flex items-center justify-center gap-1">
+                        👁️ Jonli nazorat
+                      </button>
                       <button onClick={() => deactivateEvent(o)}
                         className="btn-ghost text-xs px-3 py-1.5 rounded-xl disabled:opacity-50">Nofaol qilish</button>
                       <button onClick={() => finishEvent(o)}
@@ -969,9 +1913,13 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const pagesMap = {
     home: renderHome,
+    requests: renderRequests,
     students: renderStudents,
     olympiads: renderOlympiads,
     results: renderResults,
+    qanalytics: renderQAnalytics,
+    proctoring: renderProctoring,
+    shop: renderShop,
     questions: () => <QuestionCreatorPage embedded user={user} onOpenSwitcher={onOpenSwitcher} onNavigate={onNavigate} />,
     profile: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} />,
   };
@@ -1923,6 +2871,18 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           </div>
         </div>
       </Modal>
+
+      {/* Do'kon mahsulotini o'chirish tasdig'i */}
+      <ConfirmModal
+        open={!!deleteProductId}
+        onClose={() => setDeleteProductId(null)}
+        onConfirm={() => deleteShopProduct(deleteProductId)}
+        title="Mahsulotni o'chirish"
+        message="Mahsulotni do'kondan o'chirasizmi? Bu amalni ortga qaytarib bo'lmaydi."
+        confirmText="Ha, o'chirish"
+        danger
+        busy={shopDeleting}
+      />
 
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 glass-strong rounded-2xl px-5 py-3.5 border border-indigo-500/30 animate-in text-sm font-medium text-white">{toast}</div>

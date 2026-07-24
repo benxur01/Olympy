@@ -110,6 +110,20 @@ class Olympiad(models.Model):
         max_length=30, blank=True, default='',
         choices=IT_CATEGORY_CHOICES,
     )
+    # Webkamera proktoring (yuz/nigoh kuzatuvi) — olimpiada bo'yicha ixtiyoriy
+    # yoqiladigan bayroq. False (default) bo'lsa hech qanday kamera so'ralmaydi
+    # va mavjud olimpiadalar o'zgarishsiz qoladi. Yoqilganda student imtihonni
+    # boshlashdan oldin rozilik ekranini ko'radi va kamera ruxsatini beradi;
+    # server FAQAT hosila signallarni (yuz yo'q/ko'p yuz/nigoh) qabul qiladi —
+    # hech qachon video/rasm/audio saqlanmaydi.
+    camera_proctoring_enabled = models.BooleanField(default=False)
+    # Ovoz (mikrofon) proktoring — olimpiada bo'yicha ixtiyoriy yoqiladigan
+    # bayroq, kamera proktoringidan MUSTAQIL. False (default) bo'lsa hech
+    # qanday mikrofon so'ralmaydi va mavjud olimpiadalar o'zgarishsiz qoladi.
+    # Yoqilganda student imtihonni boshlashdan oldin alohida rozilik ekranini
+    # ko'radi va mikrofon ruxsatini beradi; server FAQAT hosila signalni
+    # (atrofdagi ovoz aniqlandi) qabul qiladi — hech qachon audio saqlanmaydi.
+    voice_proctoring_enabled = models.BooleanField(default=False)
     is_deleted = models.BooleanField(default=False, db_index=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
