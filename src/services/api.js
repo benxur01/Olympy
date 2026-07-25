@@ -499,6 +499,10 @@ const mapBackendUser = (user) => {
     lastName: user.last_name || user.lastName || '',
     username: user.username || '',
     phone: user.normalized_phone || user.phone,
+    // Email — ixtiyoriy tiklash kanali. `emailVerified` tasdiqlanganini
+    // bildiradi (email mavjud bo'lib, tasdiqlanmagan bo'lishi mumkin).
+    email: user.email || '',
+    emailVerified: !!user.email_verified,
     avatarUrl: makeAssetUrl(user.avatar_url || user.avatarUrl || ''),
     password: '',
     roles,
@@ -670,6 +674,11 @@ export const OlympyApi = {
   confirmPasswordReset: (payload) => request('/api/auth/password-reset/confirm/', { method: 'POST', body: payload, retryOnAuth: false }),
   startTelegramLink: (token) => request('/api/auth/telegram/link/start/', { method: 'POST', token }),
   verifyOtp: (payload) => request('/api/auth/phone/verify-otp/', { method: 'POST', body: payload, retryOnAuth: false }),
+  // Email'ni hisobga bog'lash (tiklash kanali, autentifikatsiya emas): start
+  // manzilga 6 xonali kod yuboradi, confirm shu kodni tekshirib emailni
+  // tasdiqlangan holda yozadi va yangilangan user obyektini qaytaradi.
+  startEmailLink: (payload, token) => request('/api/auth/email/link/start/', { method: 'POST', body: payload, token }),
+  confirmEmailLink: (payload, token) => request('/api/auth/email/link/confirm/', { method: 'POST', body: payload, token }),
   // TOTP 2FA — autentifikatsiyalangan foydalanuvchi profilda yoqadi/o'chiradi.
   // setup: {uri, secret} qaytaradi; verify: {code} qabul qiladi.
   twoFactorSetup: (token) => request('/api/auth/2fa/setup/', { method: 'POST', token }),

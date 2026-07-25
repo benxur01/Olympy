@@ -48,6 +48,8 @@ and the `OLYMPY_DB_*` env vars (see `olympy_api/settings.py`).
 | POST   | `/api/auth/phone/verify-otp/`                 | Verifies Telegram-delivered OTP        |
 | POST   | `/api/auth/password-reset/start/`             | Starts Telegram password reset OTP     |
 | POST   | `/api/auth/password-reset/confirm/`           | Sets a new password after OTP          |
+| POST   | `/api/auth/email/link/start/`                 | Auth — emails an OTP to link an address |
+| POST   | `/api/auth/email/link/confirm/`               | Auth — OTP confirms + stores the email  |
 | POST   | `/api/questions/pdf-preview/`                 | Extracts PDF questions with AI preview |
 | POST   | `/api/telegram/webhook/auth/`                 | Auth-code bot webhook                  |
 | POST   | `/api/telegram/webhook/manager/`              | Manager notification bot webhook       |

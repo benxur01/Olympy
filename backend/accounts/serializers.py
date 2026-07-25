@@ -26,7 +26,8 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'full_name', 'first_name', 'last_name', 'username',
-                  'phone', 'normalized_phone', 'roles',
+                  'phone', 'normalized_phone',
+                  'email', 'email_verified', 'email_verified_at', 'roles',
                   'roles_detail', 'telegram_linked', 'is_platform_admin',
                   'is_premium', 'is_premium_active', 'premium_trial_end',
                   'current_plan_name',
@@ -48,7 +49,12 @@ class UserSerializer(serializers.ModelSerializer):
         # Rollar faqat CenterMembership tasdiqlash oqimi (owner/admin) yoki
         # admin CLI orqali o'zgaradi; premium esa admin_toggle_user_premium
         # (is_platform_admin tekshiruvi bilan) orqali.
-        read_only_fields = ['id', 'roles', 'normalized_phone', 'roles_detail',
+        # `email` ham read-only: u faqat tasdiqlangan OTP oqimi
+        # (email/link/confirm/) orqali yoziladi — profil PATCH'ida tasdiqsiz
+        # almashtirish tiklash kanalini o'g'irlash imkonini berardi.
+        read_only_fields = ['id', 'roles', 'normalized_phone',
+                            'email', 'email_verified', 'email_verified_at',
+                            'roles_detail',
                             'telegram_linked', 'is_platform_admin',
                             'is_premium', 'is_premium_active', 'premium_trial_end',
                             'current_plan_name',
@@ -348,6 +354,35 @@ class VerifyOtpSerializer(serializers.Serializer):
         if not norm:
             raise serializers.ValidationError("Telefon raqam noto'g'ri")
         return norm
+
+
+class StartEmailLinkSerializer(serializers.Serializer):
+    """POST /api/auth/email/link/start/ — tasdiqlanadigan email manzili."""
+
+    # Xato matni o'zbekcha — frontend serializer xatosini shundayligicha
+    # ko'rsatadi (toUserMessage `detail`/birinchi maydon xatosini oladi).
+    email = serializers.EmailField(
+        max_length=254,
+        error_messages={'invalid': "Email manzil noto'g'ri"},
+    )
+
+    def validate_email(self, value):
+        # Kichik harfga keltiramiz — User.save() ham shunday qiladi, shu sababli
+        # unique tekshiruvi saqlanadigan qiymat bilan bir xil ko'rinishda ketadi.
+        return value.strip().lower()
+
+
+class ConfirmEmailLinkSerializer(serializers.Serializer):
+    """POST /api/auth/email/link/confirm/ — emailga yuborilgan 6 xonali kod.
+
+    Manzil so'rovda emas — u sessiyada (EmailVerification) yozilgan, klient
+    boshqa manzilni "tasdiqlab" yubora olmasligi uchun.
+    """
+
+    otp = serializers.RegexField(
+        r'^\d{6}$',
+        error_messages={'invalid': 'OTP 6 xonali raqamdan iborat bo\'lishi kerak'},
+    )
 
 
 class UpdateProfileSerializer(serializers.Serializer):

@@ -422,6 +422,14 @@ REST_FRAMEWORK = {
         # Parol o'zgartirish — autentifikatsiyalangan FOYDALANUVCHI bo'yicha.
         # Soatiga ko'pi bilan 5 marta (accounts.throttling).
         'password_change': '5/hour',
+        # Email bog'lash kodini YUBORISH — autentifikatsiyalangan foydalanuvchi
+        # bo'yicha (ScopedRateThrottle user.pk'ga kalitlanadi). Bu yagona
+        # endpoint tashqariga email jo'natadi: 'auth' (10/min) bilan qoldirilsa
+        # bitta hisob begona manzilga soatiga 600 ta xat yuborib "email bombing"
+        # qilishi va Mailgun reputatsiyamizni kuydirishi mumkin edi. Kodni
+        # tasdiqlash ('auth' scope'da qoladi) xat yubormaydi va OTP taxmini
+        # EmailVerification.max_attempts bilan allaqachon cheklangan.
+        'email_link': '5/hour',
         # 2FA (TOTP) sozlash/tasdiqlash/o'chirish — kod yoki parol taxminini
         # cheklaydi. O'chirishda joriy TOTP kodi/parol talab qilinadi, shu
         # sababli brute-force'ni daqiqada 10 ta urinish bilan to'samiz.
@@ -765,6 +773,15 @@ PHONE_VERIFICATION_OTP_TTL_SECONDS = int(
 )
 PHONE_VERIFICATION_MAX_ATTEMPTS = int(
     os.environ.get('PHONE_VERIFICATION_MAX_ATTEMPTS', '5')
+)
+# Hisobga email bog'lash kodi. TTL telefon oqimidan uzunroq (5 daq → 15 daq):
+# email SMTP/Mailgun navbati orqali keladi va spam papkasidan izlash ham vaqt
+# oladi — 5 daqiqada foydalanuvchi kodni ko'rmasligi mumkin.
+EMAIL_VERIFICATION_OTP_TTL_SECONDS = int(
+    os.environ.get('EMAIL_VERIFICATION_OTP_TTL_SECONDS', '900')
+)
+EMAIL_VERIFICATION_MAX_ATTEMPTS = int(
+    os.environ.get('EMAIL_VERIFICATION_MAX_ATTEMPTS', '5')
 )
 
 # Web Push VAPID keys — private key HECH QACHON repoda default bo'lmasin.

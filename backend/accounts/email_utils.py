@@ -1,10 +1,10 @@
 """Xavfsiz email yuborish yordamchilari.
 
-DIQQAT: hozirgi User modelida `email` maydoni YO'Q (autentifikatsiya telefon
-raqami orqali ishlaydi). Shu sababli har bir `send_*` funksiya foydalanuvchining
-email manzilini `getattr(user, 'email', None)` orqali xavfsiz oladi — manzil
-bo'lmasa funksiya jimgina no-op bo'ladi (xato ko'tarmaydi). Kelajakda User'ga
-`email` maydoni qo'shilsa, bu funksiyalar avtomatik ishlay boshlaydi.
+DIQQAT: autentifikatsiya baribir telefon raqami orqali ishlaydi — `User.email`
+IXTIYORIY (tiklash kanali, `email/link/` oqimida tasdiqlanadi), ya'ni
+foydalanuvchilarning ko'pchiligida bo'sh. Shu sababli har bir `send_*`
+funksiya manzilni `getattr(user, 'email', None)` orqali xavfsiz oladi —
+manzil bo'lmasa funksiya jimgina no-op bo'ladi (xato ko'tarmaydi).
 
 Yuborish SINXRON. Har bir chaqiruv try/except bilan o'ralgan — email
 yuborishdagi har qanday xato faqat log'ga yoziladi, asosiy oqim (obuna
@@ -17,39 +17,13 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-# User modelida `email` maydoni bor-yo'qligini bir marta aniqlaymiz (har
-# chaqiruvda field introspection qilmaslik uchun). Maydon umuman bo'lmasa,
-# har bir `send_*` chaqiruvi jimgina no-op bo'ladi — bu holatda foydalanuvchiga
-# xabar Telegram orqali boradi (notifications.services). Konfiguratsiya
-# muammosini ko'rish uchun bir marta WARNING yoziladi.
-_EMAIL_FIELD_AVAILABLE = None
-_EMAIL_NOT_CONFIGURED_LOGGED = False
-
-
 def _user_email(user):
     """Foydalanuvchidan email manzilini xavfsiz olish (yo'q bo'lsa None).
 
-    User modelida `email` maydoni mavjud bo'lmasa (autentifikatsiya telefon
-    orqali) — birinchi chaqiruvda bir marta `logger.warning` yoziladi va None
-    qaytaradi. Email kanali sozlanmagan, lekin chaqiruvchi oqim (obuna, to'lov,
-    markaz tasdig'i) buzilmaydi — xabar Telegram orqali yetkaziladi.
+    Manzil bo'lmasa chaqiruvchi oqim (obuna, to'lov, markaz tasdig'i)
+    buzilmaydi — xabar Telegram orqali yetkaziladi (notifications.services).
     """
-    global _EMAIL_FIELD_AVAILABLE, _EMAIL_NOT_CONFIGURED_LOGGED
-    email = getattr(user, 'email', None)
-    if not email:
-        # Maydon umuman yo'q (None va ataylab bo'sh emas) — konfiguratsiya
-        # holatini bir marta log'ga chiqaramiz. Render stderr'ni yig'adi.
-        if _EMAIL_FIELD_AVAILABLE is None:
-            _EMAIL_FIELD_AVAILABLE = hasattr(user, 'email')
-        if not _EMAIL_FIELD_AVAILABLE and not _EMAIL_NOT_CONFIGURED_LOGGED:
-            logger.warning(
-                "Email not configured: User modelida 'email' maydoni yo'q — "
-                "email bildirishnomalari o'tkazib yuborilmoqda, xabarlar "
-                "Telegram orqali yuboriladi."
-            )
-            _EMAIL_NOT_CONFIGURED_LOGGED = True
-        return None
-    return email
+    return getattr(user, 'email', None) or None
 
 
 def send_async_email(subject, message, recipient_list, html_message=None):
@@ -163,6 +137,37 @@ def send_olympiad_result(user, olympiad_name, score, rank=None):
         <p>Hurmatli <b>{user.full_name}</b>,</p>
         <p><b>{olympiad_name}</b> olimpiadasi natijalari:</p>
         <p>Ball: <b>{score}</b>{rank_text}</p>
+        <br><p>Olympy jamoasi</p>
+        ''',
+        recipient_list=[email],
+    )
+
+
+def send_email_verification_code(user, email, code, ttl_minutes):
+    """Hisobga email bog'lash uchun bir martalik kod.
+
+    Boshqa `send_*` funksiyalardan farqi: manzil `_user_email(user)` dan
+    OLINMAYDI — kod hali tasdiqlanmagan, ya'ni hisobga yozilmagan manzilga
+    yuboriladi (manzil confirm bosqichida to'g'ri kod bilan yoziladi).
+    """
+    if not email:
+        return
+    send_async_email(
+        subject=f'Olympy tasdiqlash kodi: {code}',
+        message=(
+            f'Hurmatli {user.full_name},\n\n'
+            f'Email manzilingizni Olympy hisobingizga bog\'lash uchun kod: {code}\n'
+            f'Kod {ttl_minutes} daqiqa amal qiladi.\n\n'
+            "Agar bu so'rovni siz yubormagan bo'lsangiz, bu xatni e'tiborsiz "
+            'qoldiring.\n\nOlympy jamoasi'
+        ),
+        html_message=f'''
+        <h2>Email manzilini tasdiqlash 📧</h2>
+        <p>Hurmatli <b>{user.full_name}</b>,</p>
+        <p>Email manzilingizni Olympy hisobingizga bog'lash uchun kod:</p>
+        <p style="font-size:28px;font-weight:700;letter-spacing:6px">{code}</p>
+        <p>Kod <b>{ttl_minutes} daqiqa</b> amal qiladi.</p>
+        <p>Agar bu so'rovni siz yubormagan bo'lsangiz, bu xatni e'tiborsiz qoldiring.</p>
         <br><p>Olympy jamoasi</p>
         ''',
         recipient_list=[email],
