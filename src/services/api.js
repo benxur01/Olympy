@@ -11,6 +11,25 @@ export const API_BASE_URL = (
   DEFAULT_API_BASE_URL
 ).replace(/\/+$/, '');
 
+// Real-time (Java Spring Boot) xizmatning bazaviy URL'i — jonli duel va
+// "Kahoot uslubidagi" jonli viktorina shu yerda ishlaydi. Django'dan alohida
+// (lokalda 8081-portda). Deploy'da VITE_REALTIME_BASE_URL orqali beriladi;
+// o'rnatilmasa Django bilan bir xil origin'ga tushadi (reverse-proxy orqali
+// /ws/* va /api/quiz/* Java'ga yo'naltirilishi mumkin).
+const DEFAULT_REALTIME_BASE_URL = (
+  (import.meta.env?.DEV === true || import.meta.env?.MODE === 'development')
+    ? 'http://localhost:8081'
+    : API_BASE_URL
+);
+export const REALTIME_BASE_URL = (
+  import.meta.env?.VITE_REALTIME_BASE_URL ||
+  DEFAULT_REALTIME_BASE_URL
+).replace(/\/+$/, '');
+
+// REALTIME_BASE_URL (http[s]://...) → ws[s]://... — WebSocket sxemasiga
+// aylantiramiz (https→wss, http→ws).
+const realtimeWsBase = () => REALTIME_BASE_URL.replace(/^http/i, 'ws');
+
 const makeAssetUrl = (url) => {
   if (!url) return '';
   const value = String(url);
@@ -590,8 +609,47 @@ const clearAuth = async () => {
 
 const getToken = () => _readAuth(AUTH_TOKEN_KEY);
 
+// ─── Jonli viktorina (Java real-time xizmat) ─────────────────────────────────
+// Bu chaqiruvlar Django emas, Java xizmatga (REALTIME_BASE_URL) ketadi, shuning
+// uchun umumiy `request()` (Django JWT/cookie oqimi) o'rniga to'g'ridan-to'g'ri
+// `fetch` ishlatiladi. Java xizmat JWT'ni o'zi tekshirmaydi — token'ni
+// Django'ning introspection endpoint'iga uzatadi (source of truth).
+const createQuizRoom = async ({ title, questions }, token) => {
+  const jwt = token || getToken();
+  const res = await fetch(`${REALTIME_BASE_URL}/api/quiz/rooms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token: jwt, title, questions }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new ApiError(data?.detail || "Xona yaratib bo'lmadi", { status: res.status, data });
+  }
+  return data; // { roomCode, hostId, title, totalQuestions }
+};
+
+const getQuizRoom = async (roomCode) => {
+  const res = await fetch(`${REALTIME_BASE_URL}/api/quiz/rooms/${encodeURIComponent(roomCode)}`);
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, ...data }; // { ok, exists, title, started, finished }
+};
+
+// WebSocket URL quruvchi. role='host'|'student'. Token query param orqali
+// yuboriladi (Java handshake interceptor uni Django'ga tekshirtiradi) — duel
+// oqimidagi bilan bir xil yondashuv.
+const quizWsUrl = ({ roomCode, role = 'student', name = '' }, token) => {
+  const jwt = token || getToken() || '';
+  const params = new URLSearchParams({ token: jwt, roomCode, role });
+  if (name) params.set('name', name);
+  return `${realtimeWsBase()}/ws/quiz?${params.toString()}`;
+};
+
 export const OlympyApi = {
   API_BASE_URL,
+  REALTIME_BASE_URL,
+  createQuizRoom,
+  getQuizRoom,
+  quizWsUrl,
   ApiError,
   toUserMessage,
   mapBackendUser,

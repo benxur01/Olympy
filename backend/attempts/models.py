@@ -286,6 +286,87 @@ class AttemptAIAnalysis(models.Model):
         return f'ai-analysis:{self.attempt_id} [{self.status}]'
 
 
+class DuelResult(models.Model):
+    """Final outcome of a real-time "Brain Battles" 1v1 duel.
+
+    The live match runs in the separate Java (Spring Boot) service, holding
+    state in-memory. When a duel ends, that service POSTs the final result to
+    ``POST /api/attempts/duel-result/`` so Django stays the source of truth for
+    scores/records. Django never participates in the live match; it only
+    persists the finished outcome here.
+
+    Kept intentionally minimal: the two players, their scores, subject context,
+    an optional winner (NULL = draw), and the Spring-side ``match_id`` for
+    idempotency/traceability.
+    """
+    match_id = models.CharField(max_length=64, blank=True, default='', db_index=True)
+    player1 = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='duel_results_as_player1',
+    )
+    player2 = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='duel_results_as_player2',
+    )
+    player1_score = models.PositiveIntegerField(default=0)
+    player2_score = models.PositiveIntegerField(default=0)
+    # NULL winner means a draw. SET_NULL so deleting a user doesn't drop the row.
+    winner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='duel_results_won',
+    )
+    subject = models.CharField(max_length=80, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'duel-result:{self.player1_id}({self.player1_score}) vs ' \
+               f'{self.player2_id}({self.player2_score})'
+
+
+class QuizResult(models.Model):
+    """Final leaderboard of a live "Kahoot-style" classroom quiz.
+
+    Like ``DuelResult``, the live game runs entirely in the separate Java
+    (Spring Boot) service, holding room state in-memory. When a quiz finishes,
+    that service POSTs the final leaderboard to
+    ``POST /api/attempts/quiz-result/`` so Django stays the source of truth for
+    the record. Django never participates in the live game.
+
+    Kept intentionally lightweight: the room code/title, the host, and the
+    ranked participants stored as a single JSON list (each
+    ``{user_id, name, score, rank}``) — following the ``DailyPracticeSet``
+    convention of a ``JSONField`` for a small self-contained payload rather than
+    a separate row per participant.
+    """
+    room_code = models.CharField(max_length=64, blank=True, default='', db_index=True)
+    title = models.CharField(max_length=200, blank=True, default='')
+    # NULL host means the account was deleted; SET_NULL so the record survives.
+    host = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='quiz_results_hosted',
+    )
+    # Ranked leaderboard rows: [{"user_id": int, "name": str, "score": int, "rank": int}].
+    participants = models.JSONField(default=list)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f'quiz-result:{self.room_code} ({len(self.participants)} ishtirokchi)'
+
+
 class EssayAIFeedback(models.Model):
     """O4 (Plus): Insho javobi uchun on-demand chuqur AI tahlili.
 

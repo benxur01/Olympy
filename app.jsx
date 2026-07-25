@@ -28,6 +28,8 @@ const PAGE_URLS = {
   admin: '/dashboard/admin',
   questions: '/dashboard/questions',
   leaderboard: '/leaderboard',
+  'live-quiz-host': '/live-quiz/host',
+  'live-quiz': '/live-quiz',
   profile: '/profile',
   pending: '/pending',
   'pending-home': '/pending',
@@ -87,7 +89,7 @@ const URL_PAGES = (() => {
 // Auth talab qiladigan sahifalar. Component tashqarisida `const` sifatida —
 // har render'da qayta yaratilmasligi va useEffect bog'liqliklarini bekorga
 // o'zgartirmasligi uchun.
-const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','questions'];
+const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','questions','live-quiz-host','live-quiz'];
 
 const pageFromPath = () => {
   try {
@@ -539,6 +541,40 @@ const App = () => {
     }
   };
 
+  // Oflayn outbox: submit paytida tarmoq uzilib navbatga qo'yilgan javoblar
+  // ilova yuklanganda va aloqa tiklanganda ('online') avtomatik yuboriladi.
+  // Bu asosan tab oflayn paytda yopilib, keyin onlayn qayta ochilgan holat
+  // uchun (OlympiadTest komponenti mount bo'lmasa ham). Faol imtihon paytida
+  // OlympiadTest o'zi drain qiladi; modul-darajali qulf ikki marta
+  // yuborishning oldini oladi. Yangi (200) submitda natijalar sahifasiga
+  // o'tkazamiz; "allaqachon topshirilgan" holatda esa jimgina o'chiriladi
+  // (natija allaqachon saqlangan, foydalanuvchini majburan ko'chirmaymiz).
+  useEffect(() => {
+    const queue = globalThis.OlympyOfflineQueue;
+    if (!queue) return undefined;
+    const drain = () => {
+      queue.drainOutbox({
+        onSubmitted: (item, resp) => {
+          handleTestFinish({
+            attemptId: resp?.id,
+            correct: resp?.correct_count ?? 0,
+            wrong: resp?.wrong_count ?? 0,
+            score: resp?.score ?? 0,
+            total: resp?.total_questions ?? 0,
+            rank: resp?.rank ?? resp?.position ?? null,
+            time: resp?.time_spent ?? item?.payload?.time_spent ?? null,
+            maxScore: resp?.max_score,
+            _api: true,
+          });
+        },
+      });
+    };
+    drain();
+    window.addEventListener('online', drain);
+    return () => window.removeEventListener('online', drain);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const switchRole = (role) => {
     if (!user) return;
     const nextUser = { ...user, activeRole: role };
@@ -725,6 +761,8 @@ const App = () => {
         }
         return <MockTestPage mock={activeMock} user={user} onFinish={handleTestFinish} onNavigate={navigate} />;
       }
+      case 'live-quiz-host': return <LiveQuizHostPage user={user} onNavigate={navigate} />;
+      case 'live-quiz':      return <LiveQuizPlayPage user={user} onNavigate={navigate} />;
       case 'leaderboard': return (
         <div className="min-h-screen" style={{ background: '#050508' }}>
           <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
