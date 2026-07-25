@@ -11,6 +11,13 @@ services:
       # Bo'sh bo'lsa Sentry init o'tkazib yuboriladi (graceful fallback).
       - key: VITE_SENTRY_DSN
         sync: false
+      # Java real-time xizmat (jonli duel + "Kahoot uslubidagi" jonli
+      # viktorina) manzili — quyidagi `olympy-realtime` xizmatiga ishora
+      # qiladi. Bo'sh bo'lsa frontend Django bilan bir xil origin'ga
+      # (olympy-api) so'rov yuboradi va u yerda mos yo'l topilmay xato
+      # beradi — shu sababli aniq qiymat majburiy.
+      - key: VITE_REALTIME_BASE_URL
+        value: https://olympy-realtime.onrender.com
     routes:
       # Maxfiylik siyosati — static HTML (Google Play / App Store uchun)
       - type: rewrite
@@ -152,6 +159,33 @@ services:
       - key: PAYME_MERCHANT_ID
         sync: false
       - key: PAYME_SECRET_KEY
+        sync: false
+      # Java real-time xizmat (quyida, olympy-realtime) server-serverga shu
+      # sirni X-Internal-Service-Secret header'da yuboradi (masalan viktorina
+      # tugagach natijani Django'ga yozganda). Ikkala xizmatda BIR XIL qiymat
+      # bo'lishi shart — Render dashboard'da qo'lda kiritiladi.
+      - key: INTERNAL_SERVICE_SECRET
+        sync: false
+
+  # ── Java real-time xizmat (jonli duel + "Kahoot uslubidagi" viktorina) ─────
+  # Django'dan alohida: WebSocket orqali xona/duel holatini xotirada saqlaydi.
+  # `render.yaml`da avval bu xizmat umuman yo'q edi — shu sabab production'da
+  # "Xona yaratib bo'lmadi" xatosi berardi (frontend so'rovi Django'ga borib,
+  # Django bu yo'lni bilmagani uchun 404 qaytarardi).
+  - type: web_service
+    name: olympy-realtime
+    repo: https://github.com/benxur01/Olympy
+    rootDir: backend-java
+    env: docker
+    region: ohio
+    plan: starter
+    branch: main
+    envVars:
+      # Introspection (JWT tekshiruv) va natija yozish uchun Django manzili.
+      - key: DJANGO_BASE_URL
+        value: https://olympy-api.onrender.com
+      # olympy-api xizmatidagi bilan BIR XIL qiymat bo'lishi shart.
+      - key: INTERNAL_SERVICE_SECRET
         sync: false
 
   # ── Celery worker (ixtiyoriy ajratish) ─────────────────────────────────────
