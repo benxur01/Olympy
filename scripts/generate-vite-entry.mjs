@@ -44,6 +44,7 @@ entry += `import { createPortal } from 'react-dom';\n\n`;
 entry += `import * as Sentry from '@sentry/react';\n`;
 entry += `import * as Recharts from 'recharts';\n`;
 entry += `import { OlympyApi } from './services/api.js';\n`;
+entry += `import { OlympyOfflineQueue } from './services/offlineQueue.js';\n`;
 entry += `import DOMPurify from 'dompurify';\n`;
 entry += `import katex from 'katex';\n`;
 entry += `import './services/codemirror-loader.js';\n`;
@@ -71,6 +72,7 @@ entry += `}\n\n`;
 entry += `globalThis.React = React;\n`;
 entry += `globalThis.ReactDOM = { ...ReactDOMClient, createPortal };\n\n`;
 entry += `globalThis.OlympyApi = OlympyApi;\n`;
+entry += `globalThis.OlympyOfflineQueue = OlympyOfflineQueue;\n`;
 entry += `globalThis.DOMPurify = DOMPurify;\n`;
 entry += `globalThis.Recharts = Recharts;\n`;
 // KaTeX — matematik ifodalarni ($...$ / $$...$$) chiroyli render qilish uchun.

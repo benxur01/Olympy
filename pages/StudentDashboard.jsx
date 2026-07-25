@@ -1324,6 +1324,19 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </>
       )}
 
+      {/* Jonli viktorinaga qo'shilish — ustoz bergan kod bilan real-time o'yin. */}
+      <button onClick={() => onNavigate('live-quiz')}
+        className="w-full text-left glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 flex items-center gap-4 hover:bg-white/[0.04] transition-colors">
+        <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+          <Icon name="bolt" size={22} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-bold text-white">Jonli viktorinaga qo'shilish</div>
+          <div className="text-xs text-white/50 mt-0.5">Ustoz bergan xona kodini kiriting va real vaqtda o'ynang</div>
+        </div>
+        <Icon name="chevronRight" size={18} className="text-white/30" />
+      </button>
+
       {/* Center status */}
       {studentStatus && studentCenterId && myCenter && (
         <div className={`glass rounded-2xl p-4 md:p-5 border ${studentStatus === 'approved' ? 'border-indigo-500/10' : studentStatus === 'rejected' ? 'border-rose-500/20' : 'border-amber-500/20'}`}>

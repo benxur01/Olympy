@@ -1590,9 +1590,14 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           <h2 className="text-2xl font-black text-white">{centerName}</h2>
           <p className="text-white/40 text-sm">{centerType} · Ustoz paneli · tadbirlar va savollar</p>
         </div>
-        <button onClick={openCreateEvent} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
-          <Icon name="plus" size={16} /> Tadbir yaratish
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={() => onNavigate('live-quiz-host')} className="btn-ghost px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
+            <Icon name="bolt" size={16} /> Jonli viktorina
+          </button>
+          <button onClick={openCreateEvent} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
+            <Icon name="plus" size={16} /> Tadbir yaratish
+          </button>
+        </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard label="Jami tadbirlar" value={olympiads.length} icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />

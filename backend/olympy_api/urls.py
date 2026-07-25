@@ -27,6 +27,9 @@ urlpatterns = [
     path('api/telegram/webhook/auth/', account_views.telegram_auth_webhook, name='telegram-auth-webhook'),
     path('api/telegram/webhook/manager/', account_views.telegram_manager_webhook, name='telegram-manager-webhook'),
     path('api/', include('accounts.urls_me')),
+    # Internal, server-to-server (shared-secret gated) — JWT introspection for
+    # the Java "Brain Battles" real-time duel service.
+    path('api/accounts/', include('accounts.urls_internal')),
     path('api/duels/', include('accounts.urls_duel')),
     path('api/center/shop/', include('accounts.urls_shop')),
     path('api/shop/', include('accounts.urls_shop_student')),

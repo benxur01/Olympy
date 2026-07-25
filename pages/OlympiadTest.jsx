@@ -658,6 +658,14 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [submitted, setSubmitted] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [submitError, setSubmitError] = React.useState('');
+  // Oflayn rejim: submit paytida tarmoq uzilsa javoblar IndexedDB "outbox"'ga
+  // navbatga qo'yiladi va aloqa tiklangach avtomatik yuboriladi. Bu holatda
+  // foydalanuvchiga xotirjam qiluvchi "saqlandi, tiklangach yuboriladi"
+  // ekrani ko'rsatiladi (qo'rqinchli umumiy xato o'rniga).
+  const [offlineQueued, setOfflineQueued] = React.useState(false);
+  // Oflayn drain funksiyasiga qo'lda ("Qayta urinish" tugmasi) murojaat qilish
+  // uchun ref — drain effekti ichida o'rnatiladi.
+  const offlineDrainRef = React.useRef(null);
   // Vaqt tugab avto-submit bo'lganda true — bu holatda foydalanuvchiga
   // savol o'rniga "Vaqt tugadi, yuborilmoqda" ekrani ko'rsatiladi. Avval
   // sanoqchi 0:00 ga yetganda hech qanday o'tish ekrani bo'lmasdi, talaba
@@ -1377,6 +1385,69 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     } catch {}
   }, [answersStorageKey, markedStorageKey, codeStorageKey]);
 
+  // Oflayn outbox'ni bo'shatish: submit paytida tarmoq uzilib javoblar
+  // navbatga qo'yilgan bo'lsa (offlineQueued), bu ekran ochilishi bilan darhol
+  // (agar allaqachon onlayn bo'lsa) va har safar aloqa tiklanganda ('online')
+  // qayta yuborishga urinamiz. Backend idempotent, shu sababli qayta urinish
+  // xavfsiz. Muvaffaqiyatda odatdagi post-submit oqimiga (onFinish → natijalar)
+  // o'tamiz — go'yo hozirgina yuborilgandek.
+  React.useEffect(() => {
+    if (!offlineQueued || !globalThis.OlympyOfflineQueue) return undefined;
+    let cancelled = false;
+    const onSubmitted = (item, resp) => {
+      if (cancelled) return;
+      clearPersistedAnswers();
+      const maxPossible = TEST_QUESTIONS.reduce((sum, qq) => sum + ((qq && qq.score) || 3), 0);
+      onFinish({
+        attemptId: resp?.id,
+        correct: resp?.correct_count ?? 0,
+        wrong: resp?.wrong_count ?? 0,
+        score: resp?.score ?? 0,
+        total: resp?.total_questions ?? TOTAL,
+        rank: resp?.rank ?? resp?.position ?? null,
+        time: resp?.time_spent ?? item?.payload?.time_spent ?? null,
+        maxScore: resp?.max_score ?? (maxPossible || undefined),
+        olympiad: liveOlympiad || olympiad,
+        _api: true,
+      });
+    };
+    const onAlreadySubmitted = () => {
+      // Server "allaqachon topshirilgan" deydi — asl so'rov aslida serverga
+      // yetib borgan. Bu XATO EMAS: javoblar saqlangan, natijani dashboard'da
+      // ko'radi. Muvaffaqiyat sifatida qabul qilamiz.
+      if (cancelled) return;
+      clearPersistedAnswers();
+      onNavigate('student');
+    };
+    const onExpired = () => {
+      if (cancelled) return;
+      clearPersistedAnswers();
+      setOfflineQueued(false);
+      setSubmitted(false);
+      setSubmitError('Vaqt tugagani sababli javoblar qabul qilinmadi.');
+    };
+    const onError = (item, err) => {
+      if (cancelled) return;
+      clearPersistedAnswers();
+      setOfflineQueued(false);
+      setSubmitted(false);
+      setSubmitError(err?.data?.detail || "Javoblar yuborilmadi. Qayta urinib ko'ring.");
+    };
+    const drain = () => {
+      globalThis.OlympyOfflineQueue.drainOutbox({
+        onSubmitted, onAlreadySubmitted, onExpired, onError,
+      });
+    };
+    offlineDrainRef.current = drain;
+    drain(); // darhol urinish — allaqachon onlayn bo'lishi mumkin
+    window.addEventListener('online', drain);
+    return () => {
+      cancelled = true;
+      offlineDrainRef.current = null;
+      window.removeEventListener('online', drain);
+    };
+  }, [offlineQueued, TEST_QUESTIONS, TOTAL, onFinish, onNavigate, liveOlympiad, olympiad, clearPersistedAnswers]);
+
   React.useEffect(() => {
     // apiTotal===0 — hali birinchi savol yuklanmagan; mock rejimda apiTotal
     // doim 0, lekin u yerda ping baribir ishlamaydi (user?._api guard).
@@ -1623,11 +1694,14 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
       // API rejimda — backend natijani avtoritar deb hisoblaymiz.
       if (user?._api) {
+        // submitPayload try'dan TASHQARIDA e'lon qilinadi — catch bloki tarmoq
+        // xatosida uni oflayn outbox'ga navbatga qo'yish uchun ko'ra olishi kerak.
+        let submitPayload = null;
         try {
           if (numericOlympiadId == null) throw new Error('Missing olympiad id');
           const token = globalThis.OlympyApi?.getToken?.()
             ?? globalThis.OlympyApi?.loadAuth?.()?.token;
-          const submitPayload = { olympiad: numericOlympiadId, answers: formattedAnswers, time_spent: timeSpent };
+          submitPayload = { olympiad: numericOlympiadId, answers: formattedAnswers, time_spent: timeSpent };
           // Kod javoblar bo'lsagina qo'shamiz (oddiy MCQ submit'ni o'zgartirmaslik uchun).
           if (Object.keys(formattedCodeAnswers).length > 0) {
             submitPayload.code_answers = formattedCodeAnswers;
@@ -1684,6 +1758,26 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             );
             setSubmitted(false);
             return;
+          }
+          // Haqiqiy tarmoq xatosi (status 0 — internet yo'q / server o'chiq).
+          // Validatsiya/4xx EMAS. Javoblarni oflayn "outbox"'ga navbatga
+          // qo'yamiz va aloqa tiklangach avtomatik yuboriladi. Foydalanuvchi
+          // qayta urinib o'tirmasligi uchun xotirjam qiluvchi xabar beramiz.
+          const isNetworkError = err?.status === 0 && err?.message !== 'aborted';
+          if (isNetworkError && numericOlympiadId != null && submitPayload && globalThis.OlympyOfflineQueue) {
+            try {
+              await globalThis.OlympyOfflineQueue.enqueueSubmit({
+                olympiadId: numericOlympiadId,
+                payload: submitPayload,
+              });
+              // submitted=true qoladi (imtihon ekrani yashiriladi), oflayn
+              // ekran ko'rsatiladi. Draining effekti aloqa tiklanishini kutadi.
+              setOfflineQueued(true);
+              return;
+            } catch {
+              // Outbox yozib bo'lmadi (IndexedDB yo'q/quota) — umumiy xatoga
+              // tushamiz. Javoblar baribir localStorage'da qolgan.
+            }
           }
           setSubmitError("Javoblar yuborilmadi. Qayta urinib ko'ring.");
           setSubmitted(false);
@@ -1934,6 +2028,37 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     return <PendingAccessCard title="Cheating aniqlandi" status="rejected"
       message={cheatMessage || "Siz cheating qildingiz. Olimpiada yakunlandi."}
       onBack={() => onNavigate('student')} />;
+  }
+  // Oflayn rejim: submit paytida tarmoq uzildi, javoblar navbatga qo'yildi.
+  // Xotirjam qiluvchi ekran — aloqa tiklangach avtomatik yuboriladi.
+  if (offlineQueued) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+        <div className="glass rounded-2xl p-8 max-w-md text-center space-y-5">
+          <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-300 mx-auto">
+            <Icon name="clock" size={26} />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-lg font-black text-white">Javoblaringiz saqlandi</h2>
+            <p className="text-white/60 text-sm leading-relaxed">
+              Internet aloqasi uzildi. Javoblaringiz qurilmangizda xavfsiz
+              saqlandi va internet tiklangach avtomatik yuboriladi. Bu sahifani
+              yopmang.
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-2 text-white/40 text-xs">
+            <div className="w-4 h-4 rounded-full border-2 border-amber-400/30 border-t-amber-400 animate-spin" />
+            Aloqa kutilmoqda...
+          </div>
+          <button
+            onClick={() => offlineDrainRef.current && offlineDrainRef.current()}
+            className="btn-ghost px-4 py-2 rounded-xl text-sm font-semibold"
+          >
+            Hozir qayta urinish
+          </button>
+        </div>
+      </div>
+    );
   }
   // Faqat birinchi yuklash — butun ekranli spinner. Keyingi savollar
   // navigatsiyada inline spinner bilan ko'rsatiladi (pastda), test holatini
