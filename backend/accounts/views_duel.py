@@ -53,7 +53,9 @@ def _pick_duel_questions(subject):
     """
     from questions.models import Question
 
-    qs = Question.objects.all()
+    # Faqat umumiy olimpiada bankidan tanlaymiz: o'qituvchining shaxsiy Jonli
+    # Viktorina savoli duelda boshqa o'quvchilarga chiqib qolmasligi kerak.
+    qs = Question.objects.filter(purpose=Question.QUESTION_PURPOSE_OLYMPIAD)
     subject = (subject or '').strip()
     if subject:
         subject_qs = qs.filter(subject__iexact=subject)

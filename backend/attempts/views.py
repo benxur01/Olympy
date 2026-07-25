@@ -1804,7 +1804,11 @@ def question_difficulty_stats(request):
     # grade_answer savol turiga qarab correct_text/question_type maydonlaridan
     # ham foydalanadi — ularni .only() ga qo'shamiz, aks holda har bir baholash
     # deferred maydon uchun qo'shimcha DB so'rovi qilib N+1 keltirib chiqaradi.
-    questions = list(Question.objects.filter(center_id=center_id).only(
+    # Statistika markazning umumiy (olimpiada) banki bo'yicha — o'qituvchining
+    # shaxsiy Jonli Viktorina savollari `total_questions` sonini shishirmasin.
+    questions = list(Question.objects.filter(
+        center_id=center_id, purpose=Question.QUESTION_PURPOSE_OLYMPIAD,
+    ).only(
         'id', 'difficulty', 'correct_answer', 'correct_text', 'question_type',
     ))
     total = len(questions)

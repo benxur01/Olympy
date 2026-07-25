@@ -39,9 +39,15 @@ def _question_test_type(question):
 
 
 class OlympiadSerializer(serializers.ModelSerializer):
+    # Olimpiadaga faqat umumiy (olimpiada) bankidagi savol biriktiriladi.
+    # UI'ning savol tanlagichi allaqachon shu bankni ko'rsatadi; bu filtr xom
+    # API chaqiruvi orqali o'qituvchining shaxsiy Jonli Viktorina savolini
+    # haqiqiy olimpiadaga ulab yuborishning oldini oladi.
     question_ids = serializers.PrimaryKeyRelatedField(
         many=True,
-        queryset=Question.objects.all(),
+        queryset=Question.objects.filter(
+            purpose=Question.QUESTION_PURPOSE_OLYMPIAD,
+        ),
         source='questions',
         required=False,
     )

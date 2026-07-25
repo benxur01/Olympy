@@ -2,6 +2,12 @@
 // qo'shilish + o'ynash ko'rinishi. Mobil-birinchi: kod kiritish → kutish
 // lobbisi → savolda 4 ta katta rangli shakl-tugma (2x2) → javob → fikr-mulohaza
 // (to'g'ri/xato, olingan ball, umumiy ball) → yakuniy o'rin. O'zbek tilida.
+//
+// Savol turi server'dan `question` xabaridagi `questionType` bilan keladi va
+// javob berish ko'rinishini belgilaydi:
+//   mcq (4 variant) / true_false (2 variant) → shakl-tugmalar, javob = indeks
+//   type_answer                             → matn maydoni, javob = matn
+//   slider                                  → range slayder, javob = raqam
 
 const LiveQuizPlayPage = ({ user, onNavigate }) => {
   const { useState, useEffect, useRef, useCallback } = React;
@@ -25,7 +31,12 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
 
   const [question, setQuestion] = useState(null);
   const [remaining, setRemaining] = useState(0);
+  // Yuborilgan javob: variantli turlarda indeks (int), type_answer'da matn,
+  // slayderda raqam. null → hali javob berilmagan.
   const [myChoice, setMyChoice] = useState(null);
+  // type_answer / slider uchun javob qoralamasi (tasdiqlanmaguncha yuborilmaydi).
+  const [textAnswer, setTextAnswer] = useState('');
+  const [sliderValue, setSliderValue] = useState(0);
   const [result, setResult] = useState(null); // {correct, pointsThisRound, totalScore, rank, correctIndex, answered}
   const [myTotal, setMyTotal] = useState(0);
   const [myRank, setMyRank] = useState(null);
@@ -66,13 +77,24 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
       case 'quiz_start':
         setStep('lobby');
         break;
-      case 'question':
+      case 'question': {
         setQuestion(msg);
         setMyChoice(null);
         setResult(null);
+        setTextAnswer('');
+        if (msg.questionType === 'slider') {
+          // Slayder oraliqning o'rtasidan boshlanadi (Kahoot'dagidek) va
+          // qadam (step) to'riga moslanadi.
+          const min = Number(msg.sliderMin ?? 0);
+          const max = Number(msg.sliderMax ?? 0);
+          const step = Math.max(1, Number(msg.sliderStep ?? 1));
+          const mid = min + Math.round(((min + max) / 2 - min) / step) * step;
+          setSliderValue(Math.min(max, Math.max(min, mid)));
+        }
         startCountdown(msg.timeLimitSeconds || 20);
         setStep('question');
         break;
+      }
       case 'answer_received':
         setStep('answered');
         break;
@@ -117,11 +139,13 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
     }
   };
 
-  const answer = (i) => {
+  // `value` — savol turiga qarab: variant indeksi (int), matn (string) yoki
+  // slayder raqami (number). Server turni o'zi biladi va shunga qarab baholaydi.
+  const answer = (value) => {
     if (myChoice !== null || !question) return;
-    setMyChoice(i);
+    setMyChoice(value);
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'answer', index: question.index, answer: i }));
+      wsRef.current.send(JSON.stringify({ type: 'answer', index: question.index, answer: value }));
     }
     setStep('answered');
   };
@@ -182,6 +206,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
   }
 
   if (step === 'question' && question) {
+    const qType = question.questionType || 'mcq';
     return (
       <div className="min-h-screen flex flex-col text-white" style={{ background: '#0b0b14' }}>
         <div className="px-4 py-3 flex items-center justify-between">
@@ -191,16 +216,56 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
         <div className="px-5 py-4 text-center">
           <h2 className="text-xl sm:text-2xl font-black leading-tight break-words">{question.text}</h2>
         </div>
-        <div className="flex-1 grid grid-cols-2 grid-rows-2 gap-2.5 p-3">
-          {question.options.map((opt, i) => (
-            <button key={i} onClick={() => answer(i)}
-              className="rounded-2xl flex flex-col items-center justify-center gap-2 p-3 text-white font-bold text-base sm:text-lg active:scale-[0.97] transition-transform"
-              style={{ background: ANSWER_STYLES[i].bg }}>
-              <QuizShape shape={ANSWER_STYLES[i].shape} size={34} />
-              <span className="break-words text-center leading-tight">{opt}</span>
+        {qType === 'type_answer' ? (
+          // Matnli javob: o'quvchi yozadi va "Yuborish" bilan tasdiqlaydi.
+          <div className="flex-1 flex flex-col justify-center gap-3 p-4">
+            <input
+              value={textAnswer}
+              onChange={(e) => setTextAnswer(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && textAnswer.trim()) answer(textAnswer.trim()); }}
+              placeholder="Javobingizni yozing"
+              maxLength={120}
+              autoFocus
+              className="w-full bg-white/5 border border-white/15 rounded-2xl px-4 py-4 text-center text-lg font-bold text-white outline-none focus:border-indigo-500/60"
+            />
+            <button onClick={() => answer(textAnswer.trim())} disabled={!textAnswer.trim()}
+              className="btn-primary w-full py-4 rounded-2xl text-base font-black disabled:opacity-40">
+              Yuborish
             </button>
-          ))}
-        </div>
+          </div>
+        ) : qType === 'slider' ? (
+          // Slayder: surish javob emas — "Tasdiqlash" bosilganda yuboriladi
+          // (Kahoot'dagi bilan bir xil xatti-harakat).
+          <div className="flex-1 flex flex-col justify-center gap-4 p-5">
+            <div className="text-center text-5xl font-black text-indigo-300">{sliderValue}</div>
+            <input type="range"
+              min={question.sliderMin} max={question.sliderMax} step={question.sliderStep || 1}
+              value={sliderValue}
+              onChange={(e) => setSliderValue(Number(e.target.value))}
+              className="w-full accent-indigo-500" />
+            <div className="flex justify-between text-xs font-semibold text-white/40">
+              <span>{question.sliderMin}</span>
+              <span>{question.sliderMax}</span>
+            </div>
+            <button onClick={() => answer(sliderValue)}
+              className="btn-primary w-full py-4 rounded-2xl text-base font-black">
+              Tasdiqlash
+            </button>
+          </div>
+        ) : (
+          // Variantli turlar: 4 variant → 2x2 to'r, 2 variant (To'g'ri/Noto'g'ri)
+          // → ustma-ust ikkita katta tugma.
+          <div className={`flex-1 grid gap-2.5 p-3 ${question.options.length === 2 ? 'grid-cols-1 grid-rows-2' : 'grid-cols-2 grid-rows-2'}`}>
+            {question.options.map((opt, i) => (
+              <button key={i} onClick={() => answer(i)}
+                className="rounded-2xl flex flex-col items-center justify-center gap-2 p-3 text-white font-bold text-base sm:text-lg active:scale-[0.97] transition-transform"
+                style={{ background: ANSWER_STYLES[i].bg }}>
+                <QuizShape shape={ANSWER_STYLES[i].shape} size={34} />
+                <span className="break-words text-center leading-tight">{opt}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     );
   }
@@ -211,11 +276,19 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
         <div className="text-6xl mb-4">✓</div>
         <h2 className="text-2xl font-black mb-1">Javob qabul qilindi</h2>
         <p className="text-white/50 text-sm">Boshqalarni kuting...</p>
+        {/* Yuborilgan javob: variantli turlarda rangli shakl-chip, matn/slayder
+            turlarida esa oddiy chip (ANSWER_STYLES indeksi mos kelmaydi). */}
         {myChoice !== null && question && (
-          <div className="mt-6 flex items-center gap-3 px-5 py-3 rounded-2xl text-white font-bold" style={{ background: ANSWER_STYLES[myChoice].bg }}>
-            <QuizShape shape={ANSWER_STYLES[myChoice].shape} size={22} />
-            <span>{question.options[myChoice]}</span>
-          </div>
+          (question.questionType === 'type_answer' || question.questionType === 'slider') ? (
+            <div className="mt-6 px-5 py-3 rounded-2xl glass font-bold break-words max-w-[80vw] text-center">
+              {String(myChoice)}
+            </div>
+          ) : (
+            <div className="mt-6 flex items-center gap-3 px-5 py-3 rounded-2xl text-white font-bold" style={{ background: ANSWER_STYLES[myChoice].bg }}>
+              <QuizShape shape={ANSWER_STYLES[myChoice].shape} size={22} />
+              <span>{question.options[myChoice]}</span>
+            </div>
+          )
         )}
       </div>
     );
@@ -223,6 +296,14 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
 
   if (step === 'result' && result) {
     const correct = result.correct;
+    // Matnli javob va slayderda o'quvchi to'g'ri javobni o'zi taxmin qila
+    // olmaydi — xato bo'lsa ko'rsatamiz (variantli turlarda to'g'ri javob
+    // avvalgidek faqat ustozning katta ekranida chiqadi).
+    const missedAnswer = correct ? null : (
+      question?.questionType === 'type_answer' ? result.correctAnswer
+        : question?.questionType === 'slider' ? result.correctValue
+        : null
+    );
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 text-white text-center"
         style={{ background: correct ? 'radial-gradient(circle at 50% 30%, #065f46 0%, #0b0b14 60%)' : 'radial-gradient(circle at 50% 30%, #7f1d1d 0%, #0b0b14 60%)' }}>
@@ -231,6 +312,9 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
           {correct ? "To'g'ri!" : result.answered ? "Noto'g'ri" : 'Ulgurmadingiz'}
         </h2>
         {correct && <div className="text-2xl font-black text-emerald-300 mb-3">+{result.pointsThisRound}</div>}
+        {(missedAnswer !== null && missedAnswer !== undefined && missedAnswer !== '') && (
+          <div className="text-sm text-white/60 mb-1">To'g'ri javob: <b className="text-white break-words">{String(missedAnswer)}</b></div>
+        )}
         <div className="glass rounded-2xl px-6 py-4 mt-2 flex gap-8">
           <div>
             <div className="text-xs text-white/50">Umumiy ball</div>

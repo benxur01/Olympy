@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -94,6 +95,40 @@ class QuestionCreateApiTestCase(APITestCase):
             Question.objects.filter(center=self.center, text__startswith='Yorug').exists()
         )
 
+    def test_teacher_creates_slider_question(self):
+        """Slayder savoli: sozlama correct_text ichida JSON bo'lib saqlanadi."""
+        self.client.force_authenticate(user=self.teacher)
+        url = reverse('questions-list-create')
+        response = self.client.post(url, {
+            'center': self.center.id,
+            'subject': 'Tarix',
+            'text': "O'zbekiston mustaqilligi qaysi yilda e'lon qilindi?",
+            'question_type': Question.QUESTION_TYPE_SLIDER,
+            'correct_text': '{"min": 1900, "max": 2000, "step": 1, "correct": 1991, "tolerance": 2}',
+            'score': 5,
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        q = Question.objects.get(center=self.center, question_type=Question.QUESTION_TYPE_SLIDER)
+        self.assertEqual(q.options, [])
+        self.assertEqual(
+            json.loads(q.correct_text),
+            {'min': 1900, 'max': 2000, 'step': 1, 'correct': 1991, 'tolerance': 2},
+        )
+
+    def test_slider_correct_value_outside_range_rejected(self):
+        self.client.force_authenticate(user=self.teacher)
+        url = reverse('questions-list-create')
+        response = self.client.post(url, {
+            'center': self.center.id,
+            'subject': 'Tarix',
+            'text': 'Noto\'g\'ri slayder',
+            'question_type': Question.QUESTION_TYPE_SLIDER,
+            'correct_text': '{"min": 0, "max": 10, "step": 1, "correct": 42, "tolerance": 0}',
+            'score': 5,
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('correct_text', response.data)
+
     def test_outsider_cannot_create_question(self):
         self.client.force_authenticate(user=self.outsider)
         url = reverse('questions-list-create')
@@ -108,6 +143,126 @@ class QuestionCreateApiTestCase(APITestCase):
             'score': 3,
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class QuestionPurposeApiTestCase(APITestCase):
+    """Savol banki ikkiga bo'linadi: `olympiad` (umumiy) va `live_quiz` (shaxsiy).
+
+    GET /api/questions/?center=<id>            → olimpiada banki (avvalgi xulq)
+    GET /api/questions/?center=<id>&purpose=live_quiz → faqat o'z viktorina savollari
+    """
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='Purpose Academy', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.teacher = User.objects.create_user(
+            phone='+998901440001', password='StrongPass123', full_name="Ustoz 1",
+        )
+        self.other_teacher = User.objects.create_user(
+            phone='+998901440002', password='StrongPass123', full_name="Ustoz 2",
+        )
+        self.manager = User.objects.create_user(
+            phone='+998901440003', password='StrongPass123', full_name='Menejer',
+        )
+        for user, role in (
+            (self.teacher, CenterMembership.ROLE_TEACHER),
+            (self.other_teacher, CenterMembership.ROLE_TEACHER),
+            (self.manager, CenterMembership.ROLE_MANAGER),
+        ):
+            CenterMembership.objects.create(
+                user=user, center=self.center, role=role,
+                status=CenterMembership.STATUS_APPROVED,
+            )
+        self.url = reverse('questions-list-create')
+
+    def _rows(self, response):
+        """Paginatsiyalangan javobdan savollar ro'yxatini oladi."""
+        data = response.data
+        return data['results'] if isinstance(data, dict) else data
+
+    def _create(self, user, text, purpose=None):
+        self.client.force_authenticate(user=user)
+        payload = {
+            'center': self.center.id,
+            'subject': 'Matematika',
+            'text': text,
+            'options': ['1', '2'],
+            'correct_answer': 0,
+            'score': 3,
+        }
+        if purpose is not None:
+            payload['purpose'] = purpose
+        return self.client.post(self.url, payload, format='json')
+
+    def test_create_olympiad_question_by_default(self):
+        """purpose yuborilmasa — savol umumiy olimpiada bankiga tushadi."""
+        response = self._create(self.teacher, 'Olimpiada savoli')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['purpose'], Question.QUESTION_PURPOSE_OLYMPIAD)
+        q = Question.objects.get(text='Olimpiada savoli')
+        self.assertEqual(q.purpose, Question.QUESTION_PURPOSE_OLYMPIAD)
+
+    def test_create_live_quiz_question(self):
+        response = self._create(
+            self.teacher, 'Viktorina savoli', purpose=Question.QUESTION_PURPOSE_LIVE_QUIZ,
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['purpose'], Question.QUESTION_PURPOSE_LIVE_QUIZ)
+        q = Question.objects.get(text='Viktorina savoli')
+        self.assertEqual(q.purpose, Question.QUESTION_PURPOSE_LIVE_QUIZ)
+        self.assertEqual(q.created_by, self.teacher)
+
+    def test_live_quiz_bank_is_personal(self):
+        """Ustozning viktorina savoli hamkasbiga (va menejerga) ko'rinmaydi."""
+        self._create(self.teacher, 'Mening viktorinam',
+                     purpose=Question.QUESTION_PURPOSE_LIVE_QUIZ)
+        self._create(self.other_teacher, 'Hamkasb viktorinasi',
+                     purpose=Question.QUESTION_PURPOSE_LIVE_QUIZ)
+
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.get(self.url, {
+            'center': self.center.id, 'purpose': Question.QUESTION_PURPOSE_LIVE_QUIZ,
+        })
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        texts = [row['text'] for row in self._rows(response)]
+        self.assertEqual(texts, ['Mening viktorinam'])
+
+        # Menejer ham hamkasblarining shaxsiy bankini ko'rmaydi (bu pool
+        # administrativ emas) — o'zi yaratmagani uchun ro'yxat bo'sh.
+        self.client.force_authenticate(user=self.manager)
+        response = self.client.get(self.url, {
+            'center': self.center.id, 'purpose': Question.QUESTION_PURPOSE_LIVE_QUIZ,
+        })
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(self._rows(response), [])
+
+    def test_list_without_purpose_returns_center_wide_olympiad_bank(self):
+        """purpose berilmasa — avvalgidek markazning umumiy banki (viktorinasiz)."""
+        self._create(self.teacher, 'Umumiy 1')
+        self._create(self.other_teacher, 'Umumiy 2')
+        self._create(self.teacher, 'Viktorina',
+                     purpose=Question.QUESTION_PURPOSE_LIVE_QUIZ)
+
+        self.client.force_authenticate(user=self.other_teacher)
+        response = self.client.get(self.url, {'center': self.center.id})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        texts = sorted(row['text'] for row in self._rows(response))
+        # Hamkasbning savoli ham ko'rinadi (markaz bo'ylab umumiy), viktorina yo'q.
+        self.assertEqual(texts, ['Umumiy 1', 'Umumiy 2'])
+
+    def test_unknown_purpose_falls_back_to_olympiad(self):
+        self._create(self.teacher, 'Umumiy savol')
+        self._create(self.teacher, 'Viktorina savoli',
+                     purpose=Question.QUESTION_PURPOSE_LIVE_QUIZ)
+        self.client.force_authenticate(user=self.teacher)
+        response = self.client.get(self.url, {
+            'center': self.center.id, 'purpose': 'nimadir',
+        })
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        texts = [row['text'] for row in self._rows(response)]
+        self.assertEqual(texts, ['Umumiy savol'])
 
 
 class RunCodeViewTestCase(APITestCase):

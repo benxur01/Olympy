@@ -38,7 +38,12 @@ def _collect_subjects():
             out.append(s)
     for source in (
         Olympiad.objects.values_list('subject', flat=True).distinct(),
-        Question.objects.values_list('subject', flat=True).distinct(),
+        # Faqat umumiy (olimpiada) banki: bu ro'yxatni har qanday
+        # foydalanuvchi (o'quvchi ham) oladi, shu sababli o'qituvchining
+        # shaxsiy Jonli Viktorina savolidagi fan nomi bu yerga chiqmasin.
+        Question.objects
+        .filter(purpose=Question.QUESTION_PURPOSE_OLYMPIAD)
+        .values_list('subject', flat=True).distinct(),
     ):
         for s in source:
             if s and s not in seen:

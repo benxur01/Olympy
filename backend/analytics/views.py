@@ -336,10 +336,15 @@ def question_stats(request):
     """
     from questions.models import Question
 
+    # Taqsimot faqat umumiy (olimpiada) banki bo'yicha: o'qituvchilarning
+    # shaxsiy Jonli Viktorina savollari umumiy bank statistikasiga kirmaydi.
+    olympiad_bank = Question.objects.filter(
+        purpose=Question.QUESTION_PURPOSE_OLYMPIAD,
+    )
     by_subject = [
         {'name': row['subject'] or "Noma'lum", 'count': row['count']}
         for row in (
-            Question.objects
+            olympiad_bank
             .values('subject')
             .annotate(count=Count('id'))
             .order_by('-count')[:12]
@@ -355,7 +360,7 @@ def question_stats(request):
             'count': row['count'],
         }
         for row in (
-            Question.objects
+            olympiad_bank
             .values('source')
             .annotate(count=Count('id'))
             .order_by('-count')

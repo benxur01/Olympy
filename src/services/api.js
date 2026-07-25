@@ -874,7 +874,13 @@ export const OlympyApi = {
   // Backend savollar ro'yxatini paginatsiya qiladi (LargePageNumberPagination,
   // max 200/page). requestAllPages barcha sahifalarni ketma-ket yuklaydi —
   // markazda 200+ savol bo'lsa ham to'liq ro'yxat keladi.
-  getQuestions: (centerId, token) => requestAllPages(`/api/questions/?center=${centerId}`, { token }),
+  // `purpose` ixtiyoriy: 'live_quiz' berilsa faqat shu o'qituvchining shaxsiy
+  // jonli viktorina savollari keladi. Berilmasa parametr umuman qo'shilmaydi va
+  // backend avvalgidek markazning umumiy (olimpiada) bankini qaytaradi.
+  getQuestions: (centerId, token, purpose) => requestAllPages(
+    `/api/questions/?center=${centerId}${purpose ? `&purpose=${encodeURIComponent(purpose)}` : ''}`,
+    { token },
+  ),
   createQuestion: (payload, token) => request('/api/questions/', { method: 'POST', body: payload, token }),
   generateAiQuestions: (payload, token) => request('/api/questions/generate-ai/', { method: 'POST', body: payload, token }),
   // IT (kod) savolini AI bilan baholash — test paytida o'quvchi kodini sinaydi.

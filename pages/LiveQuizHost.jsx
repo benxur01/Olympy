@@ -4,6 +4,10 @@
 // ustoz oqimni boshqaradi (boshlash / keyingi / yakunlash). Savol, sanoq
 // taymer, "javob berganlar" hisoblagichi, oraliq reyting va yakuniy podium
 // katta ekranda ko'rsatiladi.
+//
+// Qo'llanadigan savol turlari (1-bosqich): 4 variantli test (mcq),
+// To'g'ri/Noto'g'ri (2 variantli mcq), matnli javob (fill_blank) va slayder
+// (raqamli oraliq). Tur `questionType` maydoni bilan Java xizmatga uzatiladi.
 
 const LiveQuizHostPage = ({ user, onNavigate }) => {
   const { useState, useEffect, useRef, useMemo, useCallback } = React;
@@ -25,7 +29,7 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
 
   // ─── Setup bosqichi ──────────────────────────────────────────────────────
   const [loadingBank, setLoadingBank] = useState(false);
-  const [bank, setBank] = useState([]); // mos keladigan (4 variantli MCQ) savollar
+  const [bank, setBank] = useState([]); // jonli viktorinaga mos keladigan savollar
   const [subject, setSubject] = useState('all');
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const [title, setTitle] = useState('Jonli viktorina');
@@ -45,23 +49,22 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
   const timerRef = useRef(null);
   const prevRanksRef = useRef({}); // {userId: rank} — oldingi reytingdagi o'rin (▲/▼ uchun)
 
-  // Savol bankini yuklaymiz (mavjud endpoint qayta ishlatiladi) va faqat
-  // 4 variantli MCQ savollarni qoldiramiz — jonli viktorina 4 tugmali.
+  // Savol bankini yuklaymiz (mavjud endpoint qayta ishlatiladi) va faqat jonli
+  // viktorinada o'ynatib bo'ladigan turlarni qoldiramiz (liveQuizTypeOf null
+  // qaytargan savollar — kod, essay, multiple_select va h.k. — tushib qoladi).
+  // `purpose: 'live_quiz'` — bank SHU ustozning shaxsiy viktorina savollari
+  // bilan chegaralanadi: markazning olimpiada savollari va hamkasblarning
+  // viktorina savollari bu ro'yxatga tushmaydi ("Savollar" sahifasidagi
+  // "Jonli Viktorina savollarim" tabida yaratiladi).
   useEffect(() => {
     if (!centerId) return;
     let alive = true;
     setLoadingBank(true);
-    OlympyApi.getQuestions(centerId, OlympyApi.getToken())
+    OlympyApi.getQuestions(centerId, OlympyApi.getToken(), 'live_quiz')
       .then((rows) => {
         if (!alive) return;
         const list = Array.isArray(rows) ? rows : (rows?.results || []);
-        const usable = list.filter((q) => {
-          const opts = Array.isArray(q.options) ? q.options : [];
-          const type = q.question_type || q.questionType || 'mcq';
-          return type === 'mcq' && opts.length === 4
-            && typeof q.correct_answer === 'number'
-            && q.correct_answer >= 0 && q.correct_answer <= 3;
-        });
+        const usable = list.filter((q) => liveQuizTypeOf(q) !== null);
         setBank(usable);
       })
       .catch((e) => { if (alive) setError(OlympyApi.toUserMessage?.(e) || "Savollarni yuklab bo'lmadi"); })
@@ -173,14 +176,29 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
     if (selectedQuestions.length === 0) { setError('Kamida bitta savol tanlang'); return; }
     setCreating(true);
     try {
+      // Har bir savol o'z turiga mos shaklda yuboriladi — Java xizmat `type`
+      // bo'yicha validatsiya qiladi va javobni shu turga qarab baholaydi.
       const payload = {
         title: title.trim() || 'Jonli viktorina',
-        questions: selectedQuestions.map((q) => ({
-          text: q.text,
-          options: q.options.slice(0, 4),
-          correctIndex: q.correct_answer,
-          timeLimitSeconds: timeLimit,
-        })),
+        questions: selectedQuestions.map((q) => {
+          const base = { text: q.text, timeLimitSeconds: timeLimit };
+          const liveType = liveQuizTypeOf(q);
+          if (liveType === 'true_false') {
+            return { ...base, type: 'true_false', options: q.options.slice(0, 2), correctIndex: q.correct_answer };
+          }
+          if (liveType === 'type_answer') {
+            // Django `fill_blank` bitta matnli javob saqlaydi; Java tomon
+            // ro'yxat kutadi (kelajakda bir nechta variant qo'shish uchun).
+            return { ...base, type: 'type_answer', acceptableAnswers: [String(q.correct_text).trim()] };
+          }
+          if (liveType === 'slider') {
+            const cfg = parseSliderConfig(q.correct_text);
+            return { ...base, type: 'slider', sliderMin: cfg.min, sliderMax: cfg.max,
+              sliderStep: cfg.step, correctValue: cfg.correct, tolerance: cfg.tolerance };
+          }
+          // 4 variantli klassik test — o'zgarmadi.
+          return { ...base, type: 'mcq', options: q.options.slice(0, 4), correctIndex: q.correct_answer };
+        }),
       };
       const res = await OlympyApi.createQuizRoom(payload);
       setRoomCode(res.roomCode);
@@ -310,7 +328,7 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
             <div className="max-h-[46vh] overflow-y-auto space-y-2 pr-1">
               {loadingBank && <div className="text-sm text-white/40 py-6 text-center">Savollar yuklanmoqda...</div>}
               {!loadingBank && visibleQuestions.length === 0 && (
-                <div className="text-sm text-white/40 py-6 text-center">4 variantli test savollari topilmadi. Avval savol banki yarating.</div>
+                <div className="text-sm text-white/40 py-6 text-center">Mos savol topilmadi. "Savollar" sahifasidagi <b className="text-white/60">"Jonli Viktorina savollarim"</b> tabida 4 variantli test, To'g'ri/Noto'g'ri, matnli javob yoki slayder savoli yarating.</div>
               )}
               {visibleQuestions.map((q) => {
                 const on = selectedIds.has(q.id);
@@ -322,7 +340,7 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="block text-sm font-medium text-white break-words">{q.text}</span>
-                      <span className="block text-xs text-white/40 mt-0.5">{q.subject || 'Fan belgilanmagan'} · {q.options?.length || 0} variant</span>
+                      <span className="block text-xs text-white/40 mt-0.5">{q.subject || 'Fan belgilanmagan'} · {LIVE_TYPE_LABELS[liveQuizTypeOf(q)] || 'Test'}</span>
                     </span>
                   </button>
                 );
@@ -390,14 +408,39 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
             <h2 className="text-2xl sm:text-4xl font-black leading-tight break-words">{question.text}</h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {question.options.map((opt, i) => (
-              <div key={i} className="flex items-center gap-3 rounded-2xl p-4 sm:p-5 text-white font-bold text-lg" style={{ background: ANSWER_STYLES[i].bg }}>
-                <QuizShape shape={ANSWER_STYLES[i].shape} />
-                <span className="break-words">{opt}</span>
+          {/* Variantli turlar (mcq / To'g'ri-Noto'g'ri) — shakl-tugmalar to'ri.
+              2 variantda bir qatorda 2 ta, 4 variantda 2x2 bo'lib chiqadi. */}
+          {(question.questionType === 'type_answer' || question.questionType === 'slider') ? (
+            question.questionType === 'slider' ? (
+              // Slayder: katta ekranda faqat oraliqni ko'rsatamiz (to'g'ri
+              // qiymat reveal'gacha yashirin).
+              <div className="glass rounded-2xl p-5 sm:p-6">
+                <div className="flex items-center justify-between font-black text-xl sm:text-2xl">
+                  <span>{question.sliderMin}</span>
+                  <span className="text-xs sm:text-sm font-semibold text-white/40">O'quvchilar raqam tanlaydi (qadam: {question.sliderStep})</span>
+                  <span>{question.sliderMax}</span>
+                </div>
+                <div className="mt-3 h-3 rounded-full border border-white/10 bg-gradient-to-r from-indigo-500/40 via-purple-500/40 to-pink-500/40" />
               </div>
-            ))}
-          </div>
+            ) : (
+              // Matnli javob: variant yo'q — o'quvchilar telefonda yozadi
+              // (javob berganlar hisoblagichi yuqoridagi sarlavhada turadi).
+              <div className="glass rounded-2xl p-6 text-center">
+                <div className="text-4xl mb-2">⌨️</div>
+                <div className="font-bold text-white/80">O'quvchilar javobni yozmoqda...</div>
+                <div className="text-sm text-white/40 mt-1">Javoblar kutilmoqda</div>
+              </div>
+            )
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {question.options.map((opt, i) => (
+                <div key={i} className="flex items-center gap-3 rounded-2xl p-4 sm:p-5 text-white font-bold text-lg" style={{ background: ANSWER_STYLES[i].bg }}>
+                  <QuizShape shape={ANSWER_STYLES[i].shape} />
+                  <span className="break-words">{opt}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="flex justify-center mt-6">
             <button onClick={() => sendHost('next')} className="btn-ghost px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
@@ -416,10 +459,23 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
           {question && (
             <div className="glass rounded-2xl p-4 mb-4">
               <div className="text-xs text-white/40 mb-2">To'g'ri javob</div>
-              <div className="flex items-center gap-3 rounded-xl p-3 text-white font-bold" style={{ background: ANSWER_STYLES[reveal.correctIndex]?.bg }}>
-                <QuizShape shape={ANSWER_STYLES[reveal.correctIndex]?.shape} size={22} />
-                <span>{question.options?.[reveal.correctIndex]}</span>
-              </div>
+              {/* Tur bo'yicha: matnli javob → correctAnswer, slayder →
+                  correctValue, variantli turlar → correctIndex (o'zgarmadi). */}
+              {question.questionType === 'type_answer' ? (
+                <div className="rounded-xl p-3 font-bold bg-emerald-500/20 border border-emerald-500/30 text-emerald-100 break-words">
+                  {reveal.correctAnswer}
+                </div>
+              ) : question.questionType === 'slider' ? (
+                <div className="rounded-xl p-3 font-black text-2xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-100">
+                  {reveal.correctValue}
+                  <span className="text-sm font-semibold text-emerald-200/60 ml-2">({question.sliderMin}...{question.sliderMax})</span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 rounded-xl p-3 text-white font-bold" style={{ background: ANSWER_STYLES[reveal.correctIndex]?.bg }}>
+                  <QuizShape shape={ANSWER_STYLES[reveal.correctIndex]?.shape} size={22} />
+                  <span>{question.options?.[reveal.correctIndex]}</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -521,6 +577,58 @@ const QuizShape = ({ shape, size = 26 }) => {
     return <span style={{ width: s, height: s, background: '#fff', borderRadius: '50%', display: 'inline-block', flexShrink: 0 }} />;
   }
   return <span style={{ width: s * 0.85, height: s * 0.85, background: '#fff', borderRadius: 4, display: 'inline-block', flexShrink: 0 }} />;
+};
+
+// Savol banki ro'yxatidagi tur yozuvi (setup ekranidagi qisqa izoh).
+const LIVE_TYPE_LABELS = {
+  mcq: '4 variantli test',
+  true_false: "To'g'ri/Noto'g'ri",
+  type_answer: 'Matnli javob',
+  slider: 'Slayder (raqamli)',
+};
+
+// Slayder sozlamasi Django tomonda `correct_text` ichida JSON bo'lib saqlanadi:
+// {"min":0,"max":100,"step":1,"correct":42,"tolerance":5}. Buzilgan yoki
+// mantiqsiz sozlama bo'lsa null qaytaramiz — bunday savol jonli viktorinada
+// ko'rsatilmaydi (Java xizmat ham uni rad etardi).
+const parseSliderConfig = (raw) => {
+  if (raw === null || raw === undefined || raw === '') return null;
+  let cfg = raw;
+  if (typeof cfg === 'string') {
+    try { cfg = JSON.parse(cfg); } catch { return null; }
+  }
+  if (!cfg || typeof cfg !== 'object') return null;
+  const min = Number(cfg.min);
+  const max = Number(cfg.max);
+  const step = Number(cfg.step ?? 1);
+  const correct = Number(cfg.correct);
+  const tolerance = Number(cfg.tolerance ?? 0);
+  if (![min, max, step, correct, tolerance].every((v) => Number.isFinite(v))) return null;
+  if (min >= max || step < 1 || correct < min || correct > max || tolerance < 0) return null;
+  return { min, max, step, correct, tolerance };
+};
+
+// Savol banki yozuvi jonli viktorinada qaysi turda o'ynatilishini aniqlaydi.
+// null → bu savol jonli viktorinaga to'g'ri kelmaydi (kod, essay,
+// multiple_select, ko'p bo'sh joy, to'g'ri javobi yo'q savol va h.k.).
+const liveQuizTypeOf = (q) => {
+  const type = q.question_type || q.questionType || 'mcq';
+  const opts = Array.isArray(q.options) ? q.options : [];
+  if (type === 'mcq') {
+    if (typeof q.correct_answer !== 'number') return null;
+    // 4 variantli klassik test (o'zgarmagan yo'l) va 2 variantli
+    // To'g'ri/Noto'g'ri — ikkalasi ham indeks bo'yicha baholanadi.
+    if (opts.length === 4 && q.correct_answer >= 0 && q.correct_answer <= 3) return 'mcq';
+    if (opts.length === 2 && q.correct_answer >= 0 && q.correct_answer <= 1) return 'true_false';
+    return null;
+  }
+  if (type === 'fill_blank') {
+    return String(q.correct_text ?? '').trim() ? 'type_answer' : null;
+  }
+  if (type === 'slider') {
+    return parseSliderConfig(q.correct_text) ? 'slider' : null;
+  }
+  return null;
 };
 
 // onNavigate uchun xavfsiz rol-uy sahifasi (app.jsx'dagi roleHomePage global

@@ -1807,3 +1807,95 @@ class GoogleAuthTestCase(APITestCase):
         self.assertIn('owner', user.roles)
         self.assertIn('teacher', user.roles)
 
+
+class LiveQuizQuestionIsolationTestCase(APITestCase):
+    """O'qituvchining shaxsiy Jonli Viktorina savoli o'quvchilarga chiqmaydi.
+
+    `purpose=live_quiz` savol faqat o'qituvchining o'z jonli viktorina xonasida
+    ishlatiladi. Duel (Brain Battles) savol tanlash va kunlik savol generatori
+    umumiy (olimpiada) bankidan tashqariga chiqmasligi kerak.
+    """
+
+    def setUp(self):
+        from centers.models import EducationCenter
+        from questions.models import Question
+
+        self.center = EducationCenter.objects.create(
+            name='Live Quiz Academy', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.teacher = User.objects.create_user(
+            phone='+998901550001', password='StrongPass123', full_name='Ustoz',
+        )
+        # Umumiy bank: 3 ta olimpiada savoli.
+        self.olympiad_questions = [
+            Question.objects.create(
+                center=self.center, subject='Matematika',
+                text=f'Olimpiada savoli {i}', options=['1', '2'],
+                correct_answer=0, score=5,
+            )
+            for i in range(3)
+        ]
+        # O'qituvchining shaxsiy viktorina savoli — hech bir o'quvchi
+        # yuzasiga chiqmasligi kerak.
+        self.live_quiz_question = Question.objects.create(
+            center=self.center, subject='Matematika',
+            text='Viktorina savoli', options=['1', '2'],
+            correct_answer=0, score=5,
+            created_by=self.teacher,
+            purpose=Question.QUESTION_PURPOSE_LIVE_QUIZ,
+        )
+
+    def test_duel_question_pick_skips_live_quiz(self):
+        from accounts.views_duel import _pick_duel_questions
+
+        picked = _pick_duel_questions('')
+        picked_ids = {q.id for q in picked}
+        self.assertEqual(picked_ids, {q.id for q in self.olympiad_questions})
+        self.assertNotIn(self.live_quiz_question.id, picked_ids)
+
+    def test_duel_question_pick_by_subject_skips_live_quiz(self):
+        """Fan bo'yicha tanlash tarmog'ida ham viktorina savoli chiqmaydi.
+
+        `Fizika`da 10 ta umumiy savol bor — shu sababli fan bo'yicha
+        toraytirish tarmog'i ishga tushadi (subject_qs >= 10).
+        """
+        from questions.models import Question
+
+        from accounts.views_duel import DUEL_QUESTION_COUNT, _pick_duel_questions
+
+        physics_ids = {
+            Question.objects.create(
+                center=self.center, subject='Fizika',
+                text=f'Fizika savoli {i}', options=['1', '2'],
+                correct_answer=0, score=5,
+            ).id
+            for i in range(DUEL_QUESTION_COUNT)
+        }
+        live_quiz_physics = Question.objects.create(
+            center=self.center, subject='Fizika',
+            text='Fizika viktorina savoli', options=['1', '2'],
+            correct_answer=0, score=5, created_by=self.teacher,
+            purpose=Question.QUESTION_PURPOSE_LIVE_QUIZ,
+        )
+
+        picked_ids = {q.id for q in _pick_duel_questions('Fizika')}
+        self.assertEqual(picked_ids, physics_ids)
+        self.assertNotIn(live_quiz_physics.id, picked_ids)
+
+    def test_daily_question_generator_skips_live_quiz(self):
+        from accounts.models import DailyQuestion
+        from accounts.tasks import generate_daily_questions
+
+        # 4 ta savol so'raymiz, lekin umumiy bankda faqat 3 tasi bor —
+        # viktorina savoli bo'shliqni to'ldirish uchun ham olinmaydi.
+        generate_daily_questions(count=4)
+        today = timezone.now().date()
+        chosen_ids = set(
+            DailyQuestion.objects
+            .filter(date=today)
+            .values_list('question_id', flat=True)
+        )
+        self.assertEqual(chosen_ids, {q.id for q in self.olympiad_questions})
+        self.assertNotIn(self.live_quiz_question.id, chosen_ids)
+

@@ -22,6 +22,7 @@ const TYPES = [
   'Essay (Katta matn)',
   "Bo'sh joy to'ldirish",
   "Ko'p bo'sh joy to'ldirish",
+  'Slayder (raqamli)',
 ];
 // AI/PDF generatori faqat klassik variantli turlarni biladi.
 const AI_TYPES = ["Ko'p tanlovli", "To'g'ri/Noto'g'ri", 'Qisqa javob'];
@@ -41,6 +42,19 @@ const TYPE_TO_BACKEND = {
   'Essay (Katta matn)': 'essay',
   "Bo'sh joy to'ldirish": 'fill_blank',
   "Ko'p bo'sh joy to'ldirish": 'fill_blanks',
+  'Slayder (raqamli)': 'slider',
+};
+// Slayder savolining standart sozlamasi (forma bo'sh ochilganda).
+const DEFAULT_SLIDER = { min: 0, max: 100, step: 1, correct: 50, tolerance: 5 };
+// Savol maqsadi (purpose) — ikki alohida bank. `olympiad` markaz bo'ylab umumiy
+// (olimpiada/test uchun), `live_quiz` esa faqat shu ustozning shaxsiy jonli
+// viktorina savollari. Backend `?purpose=` bilan filtrlaydi va POST'da shu
+// qiymatni saqlaydi; qiymatlar backend Question.QUESTION_PURPOSE_* bilan mos.
+const PURPOSE_OLYMPIAD = 'olympiad';
+const PURPOSE_LIVE_QUIZ = 'live_quiz';
+const PURPOSE_LABELS = {
+  [PURPOSE_OLYMPIAD]: 'Olimpiada savollari',
+  [PURPOSE_LIVE_QUIZ]: 'Jonli Viktorina savollarim',
 };
 // IT (kod) savollari uchun dasturlash tillari.
 const CODE_LANGUAGES = [
@@ -88,6 +102,9 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const showApiToast = (m) => { setApiToast(m); setTimeout(() => setApiToast(''), 3000); };
   const [premiumLockDetail, setPremiumLockDetail] = React.useState('');
   const [mode, setMode] = React.useState('list'); // list | manual | ai | pdf
+  // Faol savol banki (tab): olimpiada savollari (default — avvalgi xulq) yoki
+  // shu ustozning shaxsiy jonli viktorina savollari.
+  const [purpose, setPurpose] = React.useState(PURPOSE_OLYMPIAD);
   const [filterSubject, setFilterSubject] = React.useState('');
   const [filterLevel, setFilterLevel] = React.useState('');
   const [aiForm, setAiForm] = React.useState({ subject: store.subjects[0] || 'Matematika', topic:'', count:10, level:'O\'rta', type:'Ko\'p tanlovli' });
@@ -109,7 +126,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [wordAiProvider, setWordAiProvider] = React.useState('');
   const [wordAiWarning, setWordAiWarning] = React.useState('');
   const [wordAiChunks, setWordAiChunks] = React.useState(1);
-  const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject: store.subjects[0] || 'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
+  const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject: store.subjects[0] || 'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], slider:{ ...DEFAULT_SLIDER }, programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
   const [editingQuestionId, setEditingQuestionId] = React.useState(null);
   // saveQuestion tugmasi so'rov davomida disabled bo'lishi uchun — avval
   // hech qanday busy holat yo'q edi, ikki marta bosilsa dublikat savol
@@ -201,16 +218,23 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const myCenter = !isApi && myCenterId ? store.centers.find(c => String(c.id) === String(myCenterId)) : null;
 
   // ─── API rejimida savollarni real backend'dan olish ────────────────────
+  // Tab (purpose) o'zgarsa so'rov qayta yuboriladi — har bir bank alohida.
   const apiQuestionsRes = useApiData(
     () => (isApi && myCenterId)
-      ? OlympyApi.getQuestions(myCenterId, OlympyApi.getToken())
+      ? OlympyApi.getQuestions(myCenterId, OlympyApi.getToken(), purpose)
       : Promise.resolve(null),
-    [isApi, myCenterId],
+    [isApi, myCenterId, purpose],
   );
   const apiQuestions = isApi && Array.isArray(apiQuestionsRes.data) ? apiQuestionsRes.data.map(mapApiQuestion) : null;
 
   // Pull questions live from the store, scoped to this user's center
-  const questions = (isApi ? (apiQuestions || []) : store.questions).filter(q => !myCenterId || String(q.centerId) === String(myCenterId));
+  const questions = (isApi ? (apiQuestions || []) : store.questions).filter(q =>
+    (!myCenterId || String(q.centerId) === String(myCenterId))
+    // API rejimida bankni backend `?purpose=` bilan ajratadi; mock (lokal)
+    // rejimda esa store'dagi savollarni shu yerda filtrlaymiz (eski mock
+    // savollarda maydon yo'q — ular olimpiada bankiga tegishli).
+    && (isApi || (q.purpose || PURPOSE_OLYMPIAD) === purpose)
+  );
   const allSubjects = store.subjects;
   const filtered = questions.filter(q =>
     (!filterSubject || q.subject === filterSubject) && (!filterLevel || q.difficulty === filterLevel)
@@ -580,6 +604,10 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     // maydon yo'q — ular ham mcq bo'lib qoladi.
     question_type: q.question_type || 'mcq',
     source: source || q.source || 'manual',
+    // AI/PDF/Word preview'idan saqlanadigan savollar ham faol tabdagi bankka
+    // tushadi — aks holda "Jonli Viktorina savollarim" tabida yaratilgan
+    // savollar umumiy olimpiada bankiga ketib, ro'yxatda ko'rinmay qolardi.
+    purpose,
   });
 
   const _createApiBulk = (items, source) => {
@@ -606,6 +634,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       inferredType = "Bo'sh joy to'ldirish";
     } else if (backendType === 'fill_blanks') {
       inferredType = "Ko'p bo'sh joy to'ldirish";
+    } else if (backendType === 'slider') {
+      inferredType = 'Slayder (raqamli)';
     } else if (q.options && q.options.length === 2 && q.options.every(o => /to'?g'?ri|noto'?g'?ri/i.test(o))) {
       inferredType = "To'g'ri/Noto'g'ri";
     } else if (Array.isArray(q.options) && q.options.length > 0) {
@@ -613,12 +643,26 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     } else {
       inferredType = 'Qisqa javob';
     }
-    // multiple_select to'g'ri indekslari va fill_blanks javoblari correct_text
-    // (JSON) ichida — formaga ochib yuklaymiz.
+    // multiple_select to'g'ri indekslari, fill_blanks javoblari va slayder
+    // sozlamasi correct_text (JSON) ichida — formaga ochib yuklaymiz.
     let correctIndexes = [];
     let blanks = [{ key: '1', answer: '' }];
     let correctText = '';
-    if (backendType === 'multiple_select') {
+    let slider = { ...DEFAULT_SLIDER };
+    if (backendType === 'slider') {
+      try {
+        const p = JSON.parse(correctTextRaw);
+        if (p && typeof p === 'object') {
+          slider = {
+            min: Number(p.min ?? DEFAULT_SLIDER.min),
+            max: Number(p.max ?? DEFAULT_SLIDER.max),
+            step: Number(p.step ?? DEFAULT_SLIDER.step),
+            correct: Number(p.correct ?? DEFAULT_SLIDER.correct),
+            tolerance: Number(p.tolerance ?? DEFAULT_SLIDER.tolerance),
+          };
+        }
+      } catch (_) {}
+    } else if (backendType === 'multiple_select') {
       try { const p = JSON.parse(correctTextRaw); if (Array.isArray(p)) correctIndexes = p.map(Number); } catch (_) {}
     } else if (backendType === 'fill_blanks') {
       try {
@@ -647,6 +691,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       correctIndexes,
       correctText,
       blanks,
+      slider,
       programmingLanguage: q.programmingLanguage || q.programming_language || 'python',
       codeTemplate: q.codeTemplate || q.code_template || '',
       expectedOutput: q.expectedOutput || q.expected_output || '',
@@ -660,7 +705,21 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   };
 
   // Bo'sh joy reset qiymati — saqlashdan keyin va bekor qilishda ishlatiladi.
-  const _resetQ = () => ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
+  const _resetQ = () => ({ text:'', type:"Ko'p tanlovli", subject: allSubjects[0] || 'Matematika', level:"O'rta", score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], slider:{ ...DEFAULT_SLIDER }, programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
+
+  // Bank (tab) almashtirish: ro'yxat qayta yuklanadi (useApiData deps), tanlov
+  // va yarim to'ldirilgan forma esa tozalanadi — aks holda bir bankda boshlangan
+  // tahrir ikkinchisiga saqlanib ketardi.
+  const switchPurpose = (next) => {
+    if (next === purpose) return;
+    setPurpose(next);
+    setSelectedIds([]);
+    setEditingQuestionId(null);
+    setNewQ(_resetQ());
+    setImportResult(null);
+    setImportErrorsOpen(false);
+    setMode('list');
+  };
 
   // Forma holatidan backend payload quradi va front validatsiyasini bajaradi.
   // Xatolik bo'lsa toast ko'rsatib null qaytaradi (saqlash to'xtaydi).
@@ -672,6 +731,10 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       score: newQ.score,
       difficulty: _diffToApi(newQ.level, newQ.subject),
       question_type: backendType,
+      // Savol qaysi bankka tushadi — faol tab (purpose) bilan aniqlanadi.
+      // Tahrirlashda ham shu yuboriladi: ro'yxat allaqachon tab bo'yicha
+      // filtrlangani uchun qiymat savolning mavjud bankiga teng bo'ladi.
+      purpose,
     };
     if (backendType === 'code') {
       return { ...base, programming_language: newQ.programmingLanguage,
@@ -695,6 +758,26 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       const map = {};
       entries.forEach((b, i) => { map[String(b.key || (i + 1))] = String(b.answer).trim(); });
       return { ...base, options: [], correct_answer: 0, correct_text: JSON.stringify(map) };
+    }
+    if (backendType === 'slider') {
+      // Slayder sozlamasi correct_text ichida JSON bo'lib saqlanadi
+      // (fill_blanks bilan bir xil yondashuv) — variant va correct_answer
+      // ishlatilmaydi.
+      const s = newQ.slider || DEFAULT_SLIDER;
+      const min = Number(s.min);
+      const max = Number(s.max);
+      const step = Number(s.step);
+      const correct = Number(s.correct);
+      const tolerance = Number(s.tolerance);
+      if ([min, max, step, correct, tolerance].some(v => !Number.isFinite(v))) {
+        showApiToast('⚠ Slayder qiymatlari raqam bo\'lishi kerak'); return null;
+      }
+      if (min >= max) { showApiToast('⚠ Min qiymat Max dan kichik bo\'lishi kerak'); return null; }
+      if (step < 1) { showApiToast('⚠ Qadam (step) 1 dan kichik bo\'lmasligi kerak'); return null; }
+      if (correct < min || correct > max) { showApiToast("⚠ To'g'ri javob Min..Max oralig'ida bo'lishi kerak"); return null; }
+      if (tolerance < 0) { showApiToast('⚠ Xatolik chegarasi manfiy bo\'lmasligi kerak'); return null; }
+      return { ...base, options: [], correct_answer: 0,
+        correct_text: JSON.stringify({ min, max, step, correct, tolerance }) };
     }
     if (backendType === 'multiple_select') {
       const opts = (newQ.options || []).filter(o => String(o).trim());
@@ -773,6 +856,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       difficulty: newQ.level,
       questionType: backendType,
       correctText: payload.correct_text || '',
+      // Mock rejimda ham savol faol tabdagi bankka yoziladi (ro'yxat filtri).
+      purpose,
     };
     if (isEditing) {
       OlympyStore.updateQuestion(editingQuestionId, storeFields);
@@ -1040,7 +1125,9 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <h2 className="text-lg md:text-xl font-black text-white">Savol yaratuvchi</h2>
-          <p className="text-white/40 text-xs md:text-sm">{questions.length} ta savol · {allSubjects.length} ta fan</p>
+          {/* Faol bank nomi har rejimda ko'rinadi — AI/PDF rejimida tablar
+              yashiringanda ham savol qaysi bankka saqlanishi aniq bo'lsin. */}
+          <p className="text-white/40 text-xs md:text-sm">{questions.length} ta savol · {allSubjects.length} ta fan · {PURPOSE_LABELS[purpose]}</p>
         </div>
         {mode === 'list' && (
           <div className="grid grid-cols-2 md:flex md:flex-wrap md:gap-2 gap-2">
@@ -1048,6 +1135,12 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             <button onClick={() => setMode('ai')} className="btn-primary text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5"><Icon name="sparkles" size={14} /> <span className="hidden sm:inline">AI orqali</span><span className="sm:hidden">AI</span></button>
             <button onClick={() => setMode('pdf')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-cyan-500/30 text-cyan-300"><Icon name="upload" size={14} /> <span className="hidden sm:inline">PDF dan</span><span className="sm:hidden">PDF</span></button>
             <button onClick={() => setMode('word_ai')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-sky-500/30 text-sky-300"><Icon name="sparkles" size={14} /> <span className="hidden sm:inline">Word (AI)</span><span className="sm:hidden">W·AI</span></button>
+            {/* Excel/CSV va Word import backend endpoint'lari savolni har doim
+                umumiy olimpiada bankiga yozadi (ular `purpose` ni bilmaydi).
+                Shu sababli bu tugmalar faqat olimpiada tabida ko'rsatiladi —
+                aks holda import qilingan savollar boshqa bankka tushib,
+                ro'yxatda ko'rinmay qolardi. */}
+            {purpose === PURPOSE_OLYMPIAD && (<>
             <button
               onClick={() => importInputRef.current?.click()}
               disabled={importLoading}
@@ -1084,6 +1177,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               <span className="hidden sm:inline">Word namuna</span>
               <span className="sm:hidden">Word</span>
             </button>
+            </>)}
             <input
               ref={importInputRef}
               type="file"
@@ -1102,6 +1196,31 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
         )}
         {mode !== 'list' && <button onClick={() => { setMode('list'); setAiResult(null); setPdfResult(null); setPdfProvider(''); setPdfVision(false); setWordAiResult(null); setWordAiProvider(''); setEditingQuestionId(null); setNewQ(_resetQ()); }} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 w-full md:w-auto"><Icon name="arrowLeft" size={14} /> Orqaga</button>}
       </div>
+
+      {/* Savol banki (purpose) tablari. Ikki bank kesishmaydi: olimpiada
+          savollari markazdagi barcha ustozlarga umumiy va olimpiada/test
+          tuzishda ishlatiladi; jonli viktorina savollari esa faqat shu
+          ustozning shaxsiy banki (LiveQuizHost shu bankdan o'qiydi). */}
+      {mode === 'list' && (
+        <div className="flex gap-1.5 p-1 glass rounded-2xl w-full md:w-fit">
+          {[PURPOSE_OLYMPIAD, PURPOSE_LIVE_QUIZ].map(p => (
+            <button
+              key={p}
+              onClick={() => switchPurpose(p)}
+              className={`flex-1 md:flex-none text-xs px-3 md:px-4 py-2.5 rounded-xl font-semibold flex items-center justify-center gap-1.5 transition-colors ${purpose === p ? 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/30' : 'text-white/50 hover:text-white/80 border border-transparent'}`}
+            >
+              <Icon name={p === PURPOSE_LIVE_QUIZ ? 'bolt' : 'trophy'} size={14} />
+              {PURPOSE_LABELS[p]}
+            </button>
+          ))}
+        </div>
+      )}
+      {mode === 'list' && purpose === PURPOSE_LIVE_QUIZ && (
+        <p className="text-white/40 text-xs leading-relaxed">
+          Bu savollar faqat sizga ko'rinadi va faqat <b className="text-white/60">Jonli Viktorina</b>da ishlatiladi —
+          markazning olimpiada bankiga qo'shilmaydi.
+        </p>
+      )}
 
       {/* Import natijasi banner */}
       {mode === 'list' && importResult && (
@@ -1396,6 +1515,33 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+          {/* Slayder (raqamli) — o'quvchi min..max oralig'idan qiymat tanlaydi.
+              Sozlama correct_text ichida JSON bo'lib saqlanadi. */}
+          {newQ.type === 'Slayder (raqamli)' && (
+            <div>
+              <label className="block text-xs text-white/50 mb-2 font-medium">Slayder sozlamalari</label>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                {[
+                  ['min', 'Min'],
+                  ['max', 'Max'],
+                  ['step', 'Qadam'],
+                  ['correct', "To'g'ri javob"],
+                  ['tolerance', 'Xatolik (±)'],
+                ].map(([key, label]) => (
+                  <div key={key}>
+                    <label className="block text-[10px] text-white/35 mb-1">{label}</label>
+                    <input type="number" className="input-field py-2"
+                      value={newQ.slider?.[key] ?? ''}
+                      onChange={e => setNewQ({ ...newQ, slider: { ...(newQ.slider || DEFAULT_SLIDER), [key]: e.target.value === '' ? '' : +e.target.value } })} />
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-white/35">
+                O'quvchi slayderni surib raqam tanlaydi. Javob <strong>±{newQ.slider?.tolerance ?? 0}</strong> chegarasida bo'lsa to'g'ri hisoblanadi
+                (masalan to'g'ri javob {newQ.slider?.correct ?? 0} bo'lsa, {Number(newQ.slider?.correct || 0) - Number(newQ.slider?.tolerance || 0)}..{Number(newQ.slider?.correct || 0) + Number(newQ.slider?.tolerance || 0)} qabul qilinadi).
+              </p>
             </div>
           )}
           {newQ.type === 'Kod (dasturlash)' && (
@@ -1905,7 +2051,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             {selectedIds.length > 0 ? (
               <>Ushbu markazga tegishli <strong>tanlangan {selectedIds.length} ta savol</strong> o'chirib tashlanadi.</>
             ) : (
-              <>Ushbu markazga tegishli <strong>barcha {questions.length} ta savol</strong> o'chirib tashlanadi.</>
+              <>{purpose === PURPOSE_LIVE_QUIZ ? <>Sizning <strong>{questions.length} ta jonli viktorina savolingiz</strong> o'chirib tashlanadi (olimpiada banki tegilmaydi).</> : <>Ushbu markazga tegishli <strong>barcha {questions.length} ta savol</strong> o'chirib tashlanadi.</>}</>
             )}
           </p>
           <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs leading-relaxed">
@@ -1919,13 +2065,29 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               onClick={async () => {
                 if (deletingAll) return;
                 setDeletingAll(true);
-                const targetIds = selectedIds.length > 0 ? selectedIds : null;
+                const hasSelection = selectedIds.length > 0;
+                // delete-all endpoint'i `purpose` ni bilmaydi — ID'siz chaqirilsa
+                // MARKAZNING butun savol bankini o'chiradi. Shu sababli jonli
+                // viktorina tabida faqat ko'rinib turgan (shu ustozning shaxsiy)
+                // savollar ID'sini aniq yuboramiz; olimpiada tabida esa avvalgi
+                // xulq — hammasi (ID'siz) o'chiriladi.
+                const targetIds = hasSelection
+                  ? selectedIds
+                  : (purpose === PURPOSE_LIVE_QUIZ ? questions.map(q => q.backendId ?? q.id) : null);
+                // Bo'sh ID ro'yxati bilan chaqirmaymiz: api.js bo'sh massivda
+                // `ids` parametrini tushirib qoldiradi va bu butun markaz
+                // bankini o'chirishga aylanib ketardi.
+                if (Array.isArray(targetIds) && targetIds.length === 0) {
+                  setDeletingAll(false);
+                  setDeleteAllConfirm(false);
+                  return;
+                }
                 if (isApi) {
                   try {
                     await OlympyApi.deleteAllQuestions(myCenterId, OlympyApi.getToken(), targetIds);
                     showApiToast(
-                      targetIds
-                        ? `✅ Tanlangan ${targetIds.length} ta savol muvaffaqiyatli o'chirildi`
+                      hasSelection
+                        ? `✅ Tanlangan ${selectedIds.length} ta savol muvaffaqiyatli o'chirildi`
                         : "✅ Barcha savollar muvaffaqiyatli o'chirildi"
                     );
                     setSelectedIds([]);
@@ -1937,8 +2099,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 } else {
                   OlympyStore.deleteAllQuestions(myCenterId, targetIds);
                   showApiToast(
-                    targetIds
-                      ? `✅ Tanlangan ${targetIds.length} ta savol muvaffaqiyatli o'chirildi (Mock)`
+                    hasSelection
+                      ? `✅ Tanlangan ${selectedIds.length} ta savol muvaffaqiyatli o'chirildi (Mock)`
                       : "✅ Barcha savollar muvaffaqiyatli o'chirildi (Mock)"
                   );
                   setSelectedIds([]);
