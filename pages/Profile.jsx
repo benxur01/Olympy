@@ -196,6 +196,65 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
     }
   };
 
+  // ── Email bog'lash (hisobni tiklash kanali) ─────────────────────────────
+  // Backend: /api/auth/email/link/{start,confirm}/. Manzil hisobga faqat
+  // to'g'ri kod kiritilgandan keyin yoziladi — shu sababli ikki bosqichli
+  // forma: `emailOtpSentTo` bo'sh bo'lmasa kod kutilmoqda.
+  const linkedEmail = user?.email || '';
+  const emailVerified = !!user?.emailVerified;
+  const [emailInput, setEmailInput] = React.useState('');
+  const [emailOtp, setEmailOtp] = React.useState('');
+  const [emailOtpSentTo, setEmailOtpSentTo] = React.useState('');
+  const [emailBusy, setEmailBusy] = React.useState(false);
+  const [emailMsg, setEmailMsg] = React.useState({ type: '', text: '' });
+
+  const handleEmailStart = async (e) => {
+    e?.preventDefault?.();
+    if (!isApi || emailBusy) return;
+    const email = emailInput.trim();
+    if (!email) {
+      setEmailMsg({ type: 'err', text: 'Email manzilini kiriting' });
+      return;
+    }
+    setEmailBusy(true);
+    setEmailMsg({ type: '', text: '' });
+    try {
+      const data = await OlympyApi.startEmailLink({ email }, OlympyApi.getToken());
+      setEmailOtpSentTo(data?.email || email);
+      setEmailOtp('');
+      setEmailMsg({ type: 'ok', text: 'Tasdiqlash kodi emailingizga yuborildi' });
+    } catch (err) {
+      setEmailMsg({ type: 'err', text: OlympyApi.toUserMessage?.(err) || "Kod yuborib bo'lmadi" });
+    } finally {
+      setEmailBusy(false);
+    }
+  };
+
+  const handleEmailConfirm = async (e) => {
+    e?.preventDefault?.();
+    if (!isApi || emailBusy) return;
+    if (emailOtp.length < 6) {
+      setEmailMsg({ type: 'err', text: "Kodni to'liq kiriting (6 raqam)" });
+      return;
+    }
+    setEmailBusy(true);
+    setEmailMsg({ type: '', text: '' });
+    try {
+      // Confirm yangilangan user obyektini qaytaradi — qayta getMe kerak emas.
+      const data = await OlympyApi.confirmEmailLink({ otp: emailOtp }, OlympyApi.getToken());
+      onUserUpdate?.(OlympyApi.mapBackendUser(data));
+      setEmailOtpSentTo('');
+      setEmailOtp('');
+      setEmailInput('');
+      setEmailMsg({ type: 'ok', text: 'Email tasdiqlandi' });
+    } catch (err) {
+      setEmailMsg({ type: 'err', text: OlympyApi.toUserMessage?.(err) || "Noto'g'ri kod" });
+    } finally {
+      setEmailBusy(false);
+      setTimeout(() => setEmailMsg({ type: '', text: '' }), 4000);
+    }
+  };
+
   const handleAvatarFile = (e) => {
     const file = e.target.files?.[0];
     if (!file || !isApi) return;
@@ -975,6 +1034,114 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             {twoFAMsg.text && (
               <div className={`text-xs font-semibold ${twoFAMsg.type === 'ok' ? 'text-emerald-300' : 'text-rose-300'}`}>
                 {twoFAMsg.text}
+              </div>
+            )}
+          </div>
+
+          {/* Email — hisobni tiklash uchun zaxira kanal (to'liq kenglik) */}
+          <div className="glass rounded-2xl p-5 space-y-3 md:col-span-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Icon name="send" size={18} className="text-indigo-400" />
+              <h3 className="font-bold text-white">Email manzili</h3>
+              {emailVerified && (
+                <span className="chip badge-active text-xs">Tasdiqlangan</span>
+              )}
+            </div>
+
+            {!isApi && (
+              <div className="text-xs text-amber-300">Email bog'lash faqat akkaunt rejimida mavjud.</div>
+            )}
+
+            {isApi && (
+              <>
+                <p className="text-sm text-white/50">
+                  {linkedEmail ? (
+                    <>
+                      Hisobingizga <b className="text-white/80">{linkedEmail}</b> bog'langan.
+                      Boshqa manzilga almashtirish uchun yangisini kiriting va kod bilan tasdiqlang.
+                    </>
+                  ) : (
+                    "Hisobingizni tiklash uchun zaxira kanal. Platformaga kirish baribir "
+                    + "telefon raqami orqali — email faqat kirish imkonini yo'qotganda kerak bo'ladi."
+                  )}
+                </p>
+
+                {!emailOtpSentTo && (
+                  <form onSubmit={handleEmailStart} className="space-y-3">
+                    <div>
+                      <label className="block text-xs text-white/50 mb-1">Email</label>
+                      <input
+                        type="email"
+                        value={emailInput}
+                        onChange={(e) => setEmailInput(e.target.value)}
+                        disabled={emailBusy}
+                        autoComplete="email"
+                        placeholder="ali.valiyev@gmail.com"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={emailBusy || !emailInput.trim()}
+                      className="gradient-bg text-white font-semibold rounded-xl py-2.5 px-5 text-sm disabled:opacity-50"
+                    >
+                      {emailBusy ? 'Yuborilmoqda...' : 'Yuborish'}
+                    </button>
+                  </form>
+                )}
+
+                {emailOtpSentTo && (
+                  <form onSubmit={handleEmailConfirm} className="space-y-3">
+                    <p className="text-sm text-white/50">
+                      <b className="text-white/80">{emailOtpSentTo}</b> manziliga 6 raqamli kod
+                      yubordik. Kod kelmasa spam papkasini ham tekshirib ko'ring.
+                    </p>
+                    <div>
+                      <label className="block text-xs text-white/50 mb-1">Tasdiqlash kodi</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        value={emailOtp}
+                        onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                        disabled={emailBusy}
+                        placeholder="123456"
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50 tracking-[0.4em] font-mono"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        disabled={emailBusy || emailOtp.length < 6}
+                        className="gradient-bg text-white font-semibold rounded-xl py-2.5 px-5 text-sm disabled:opacity-50"
+                      >
+                        {emailBusy ? 'Tekshirilmoqda...' : 'Tasdiqlash'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleEmailStart}
+                        disabled={emailBusy}
+                        className="btn-ghost text-sm px-5 py-2.5 rounded-xl disabled:opacity-50"
+                      >
+                        Kodni qayta yuborish
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setEmailOtpSentTo(''); setEmailOtp(''); setEmailMsg({ type: '', text: '' }); }}
+                        disabled={emailBusy}
+                        className="btn-ghost text-sm px-5 py-2.5 rounded-xl disabled:opacity-50"
+                      >
+                        Bekor qilish
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </>
+            )}
+
+            {emailMsg.text && (
+              <div className={`text-xs font-semibold ${emailMsg.type === 'ok' ? 'text-emerald-300' : 'text-rose-300'}`}>
+                {emailMsg.text}
               </div>
             )}
           </div>

@@ -270,6 +270,93 @@ class PasswordResetTestCase(APITestCase):
         self.assertTrue(self.user.check_password(new_password))
 
 
+class EmailLinkTestCase(APITestCase):
+    """POST /api/auth/email/link/{start,confirm}/ — hisobga email bog'lash."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            phone='+998901230077', password='StrongPass123', full_name='Email User',
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def _start(self, email):
+        return self.client.post(
+            reverse('start-email-link'), {'email': email}, format='json',
+        )
+
+    def _confirm(self, otp):
+        return self.client.post(
+            reverse('confirm-email-link'), {'otp': otp}, format='json',
+        )
+
+    def test_link_email_success(self):
+        with patch('accounts.views.send_email_verification_code') as sender:
+            response = self._start('Owner@Example.COM')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        # Manzil kichik harfga keltiriladi va hali hisobga YOZILMAYDI.
+        self.assertEqual(response.data['email'], 'owner@example.com')
+        self.user.refresh_from_db()
+        self.assertIsNone(self.user.email)
+
+        otp = sender.call_args[0][2]
+        response = self._confirm(otp)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, 'owner@example.com')
+        self.assertIsNotNone(self.user.email_verified_at)
+        self.assertTrue(self.user.email_verified)
+        self.assertTrue(response.data['email_verified'])
+
+    def test_confirm_wrong_otp_keeps_email_unlinked(self):
+        with patch('accounts.views.send_email_verification_code'):
+            self._start('owner@example.com')
+        response = self._confirm('000000')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.user.refresh_from_db()
+        self.assertIsNone(self.user.email)
+
+    def test_start_rejects_email_of_another_account(self):
+        other = User.objects.create_user(
+            phone='+998901230078', password='StrongPass123', full_name='Other User',
+        )
+        other.email = 'taken@example.com'
+        other.email_verified_at = timezone.now()
+        other.save(update_fields=['email', 'email_verified_at'])
+
+        with patch('accounts.views.send_email_verification_code') as sender:
+            response = self._start('taken@example.com')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        sender.assert_not_called()
+
+    def test_relink_replaces_previous_email_only_after_confirm(self):
+        with patch('accounts.views.send_email_verification_code') as sender:
+            self._start('first@example.com')
+            self._confirm(sender.call_args[0][2])
+            self._start('second@example.com')
+        # Yangisi tasdiqlanmaguncha eski tiklash kanali o'z kuchida.
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, 'first@example.com')
+
+        self._confirm(sender.call_args[0][2])
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.email, 'second@example.com')
+
+    def test_link_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        response = self._start('anon@example.com')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_multiple_users_without_email_allowed(self):
+        """`email` unique, lekin NULL'lar to'qnashmaydi (Postgres/SQLite)."""
+        User.objects.create_user(
+            phone='+998901230079', password='StrongPass123', full_name='No Email 1',
+        )
+        User.objects.create_user(
+            phone='+998901230080', password='StrongPass123', full_name='No Email 2',
+        )
+        self.assertEqual(User.objects.filter(email__isnull=True).count(), 3)
+
+
 class AdminPremiumManagementTestCase(APITestCase):
     """Platform Admin tomonidan premium boshqarilishi testlari."""
 

@@ -57,6 +57,17 @@ class User(AbstractBaseUser, PermissionsMixin):
     )
     phone = models.CharField(max_length=20, unique=True)
     normalized_phone = models.CharField(max_length=20, unique=True, db_index=True)
+    # Hisobni tiklash uchun IXTIYORIY zaxira kanali — autentifikatsiya baribir
+    # telefon (Telegram OTP) orqali. `email` faqat EmailVerification oqimida
+    # tasdiqlangandan keyin yoziladi; `email_verified_at` esa "tasdiqlangan"
+    # holatni "shunchaki mavjud" holatdan ajratadi (admin panelidan qo'lda
+    # kiritilgan yoki kelajakdagi import qilingan manzil tasdiqsiz bo'lishi
+    # mumkin — tiklash uchun faqat tasdiqlangani yaroqli).
+    # NULL ruxsat etiladi va unique constraint bir nechta NULL bilan
+    # to'qnashmaydi (Postgres ham, SQLite ham NULL'larni o'zaro teng emas deb
+    # hisoblaydi) — `username` bilan bir xil naqsh.
+    email = models.EmailField(max_length=254, unique=True, blank=True, null=True)
+    email_verified_at = models.DateTimeField(null=True, blank=True)
     # JSON list of role keys: student | teacher | manager | owner | admin
     roles = models.JSONField(default=list, blank=True)
     is_platform_admin = models.BooleanField(default=False)
@@ -172,6 +183,11 @@ class User(AbstractBaseUser, PermissionsMixin):
     def is_soft_deleted(self):
         return bool(self.deleted_at)
 
+    @property
+    def email_verified(self):
+        """Email tiklash kanali sifatida ishlatishga yaroqlimi?"""
+        return bool(self.email and self.email_verified_at)
+
     def save(self, *args, **kwargs):
         # Always keep normalized_phone in sync with phone.
         norm = normalize_phone(self.phone)
@@ -191,6 +207,11 @@ class User(AbstractBaseUser, PermissionsMixin):
         # bo'sh string'larni o'ziga xos deb hisoblaydi va to'qnashuv beradi).
         if self.username is not None and not str(self.username).strip():
             self.username = None
+        # Email ham shu sababdan NULL'ga aylanadi; qo'shimcha ravishda kichik
+        # harfga keltiriladi — unique tekshiruv va tiklash oqimi manzilni harf
+        # registriga qarab ikkiga ajratmasligi kerak.
+        if self.email is not None:
+            self.email = str(self.email).strip().lower() or None
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -516,6 +537,57 @@ class PhoneVerification(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['normalized_phone', 'created_at']),
+        ]
+
+    @property
+    def is_verified(self):
+        return self.verified_at is not None
+
+    @property
+    def otp_is_expired(self):
+        return bool(self.otp_expires_at and self.otp_expires_at <= timezone.now())
+
+
+class EmailVerification(models.Model):
+    """Email manzilini tasdiqlash sessiyasi (mavjud hisobga email bog'lash).
+
+    `PhoneVerification` bilan bir xil xavfsizlik naqshi: OTP hech qachon ochiq
+    saqlanmaydi (faqat Django hash), urinishlar sanaladi va muddat bilan
+    cheklanadi. Alohida model — kalit telefon emas, email manzili
+    (`PhoneVerification.normalized_phone` 20 belgi, email uchun yetmaydi) va
+    yetkazish kanali Telegram chat emas, SMTP (`verify_token`/deep-link kerak
+    emas). Sessiya har doim autentifikatsiyalangan foydalanuvchiga bog'langan,
+    shuning uchun `user` FK — anonim oqim yo'q.
+    """
+    PURPOSE_ACCOUNT_LINK = 'account_link'
+    PURPOSE_CHOICES = [
+        (PURPOSE_ACCOUNT_LINK, 'Account link'),
+    ]
+
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='email_verifications',
+    )
+    email = models.EmailField(max_length=254, db_index=True)
+    purpose = models.CharField(
+        max_length=32,
+        choices=PURPOSE_CHOICES,
+        default=PURPOSE_ACCOUNT_LINK,
+        db_index=True,
+    )
+    otp_hash = models.CharField(max_length=256, blank=True)
+    otp_expires_at = models.DateTimeField(null=True, blank=True)
+    attempts_count = models.PositiveIntegerField(default=0)
+    max_attempts = models.PositiveIntegerField(default=5)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'created_at']),
         ]
 
     @property

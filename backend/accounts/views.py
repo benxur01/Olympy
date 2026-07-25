@@ -22,14 +22,17 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import AuditLog, PhoneVerification
+from .email_utils import send_email_verification_code
+from .models import AuditLog, EmailVerification, PhoneVerification
 from .permissions import IsPlatformAdmin
 from .throttling import PasswordChangePerUserThrottle
 from .serializers import (
     ChangePasswordSerializer,
+    ConfirmEmailLinkSerializer,
     ConfirmPasswordResetSerializer,
     LoginSerializer,
     RegisterSerializer,
+    StartEmailLinkSerializer,
     StartPasswordResetSerializer,
     StartTelegramPhoneVerificationSerializer,
     UpdateProfileSerializer,
@@ -1514,13 +1517,23 @@ def _make_otp():
     return f'{secrets.randbelow(1_000_000):06d}'
 
 
-def _prepare_otp(verification):
+def _prepare_otp(verification, ttl_seconds=None, max_attempts=None):
+    """Yangi OTP yaratib hash'ini yozadi va ochiq kodni qaytaradi.
+
+    `ttl_seconds`/`max_attempts` berilmasa telefon (Telegram) oqimi sozlamalari
+    ishlatiladi — email oqimi o'z qiymatlarini uzatadi. EmailVerification
+    maydonlari PhoneVerification bilan bir xil nomlangani uchun bitta yordamchi
+    ikkala modelga ham yaraydi.
+    """
     otp = _make_otp()
-    ttl = getattr(settings, 'PHONE_VERIFICATION_OTP_TTL_SECONDS', 300)
+    if ttl_seconds is None:
+        ttl_seconds = getattr(settings, 'PHONE_VERIFICATION_OTP_TTL_SECONDS', 300)
+    if max_attempts is None:
+        max_attempts = getattr(settings, 'PHONE_VERIFICATION_MAX_ATTEMPTS', 5)
     verification.otp_hash = make_password(otp)
-    verification.otp_expires_at = timezone.now() + timedelta(seconds=ttl)
+    verification.otp_expires_at = timezone.now() + timedelta(seconds=ttl_seconds)
     verification.attempts_count = 0
-    verification.max_attempts = getattr(settings, 'PHONE_VERIFICATION_MAX_ATTEMPTS', 5)
+    verification.max_attempts = max_attempts
     verification.save(update_fields=[
         'otp_hash', 'otp_expires_at', 'attempts_count', 'max_attempts', 'updated_at',
     ])
@@ -1895,6 +1908,135 @@ def start_telegram_account_link(request):
 
 
 start_telegram_account_link.cls.throttle_scope = 'auth'
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
+def start_email_link(request):
+    """POST /api/auth/email/link/start/ — hisobga email bog'lashni boshlaydi.
+
+    Manzil `User.email` ga BU YERDA yozilmaydi — faqat confirm bosqichida,
+    to'g'ri kod bilan. Shu sababli mavjud (tasdiqlangan) email yangisi
+    tasdiqlanmaguncha o'z kuchida qoladi: foydalanuvchi manzilni almashtirish
+    o'rtasida tiklash kanalisiz qolib qolmaydi.
+    """
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    serializer = StartEmailLinkSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    email = serializer.validated_data['email']
+
+    if User.objects.filter(email__iexact=email).exclude(pk=request.user.pk).exists():
+        return Response({'detail': "Bu email boshqa hisobga bog'langan"},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    # Ochiq (tasdiqlanmagan) sessiyalarni tozalaymiz — start_telegram_account_
+    # link bilan bir xil: har start yangi kod beradi va eski kodlar yig'ilib
+    # qolmasligi kerak (aks holda eski manzilga yuborilgan kod ham amal qilardi).
+    EmailVerification.objects.filter(
+        user=request.user,
+        purpose=EmailVerification.PURPOSE_ACCOUNT_LINK,
+        verified_at__isnull=True,
+    ).delete()
+    verification = EmailVerification.objects.create(
+        user=request.user,
+        email=email,
+        purpose=EmailVerification.PURPOSE_ACCOUNT_LINK,
+    )
+    ttl = getattr(settings, 'EMAIL_VERIFICATION_OTP_TTL_SECONDS', 900)
+    otp = _prepare_otp(
+        verification,
+        ttl_seconds=ttl,
+        max_attempts=getattr(settings, 'EMAIL_VERIFICATION_MAX_ATTEMPTS', 5),
+    )
+    send_email_verification_code(request.user, email, otp, max(1, ttl // 60))
+    return Response({
+        'verification_id': verification.id,
+        'email': email,
+        'expires_in': ttl,
+        'detail': 'Tasdiqlash kodi emailingizga yuborildi',
+    }, status=status.HTTP_201_CREATED)
+
+
+start_email_link.cls.throttle_scope = 'email_link'
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
+def confirm_email_link(request):
+    """POST /api/auth/email/link/confirm/ — kodni tekshirib emailni bog'laydi."""
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    serializer = ConfirmEmailLinkSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    otp = serializer.validated_data['otp']
+
+    try:
+        # Race condition himoyasi (verify_otp bilan bir xil): parallel ikki
+        # so'rov attempts_count'ni eski qiymatdan +1 yozib max_attempts limitini
+        # aldashi mumkin edi. Kod tekshiruvi, urinish sanog'i va email yozish —
+        # bitta atomic blokda, qator lock ostida.
+        with transaction.atomic():
+            verification = EmailVerification.objects.select_for_update().filter(
+                user=request.user,
+                purpose=EmailVerification.PURPOSE_ACCOUNT_LINK,
+                verified_at__isnull=True,
+                otp_hash__gt='',
+            ).order_by('-created_at').first()
+
+            if not verification:
+                return Response({'detail': 'Verification not found'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            if verification.attempts_count >= verification.max_attempts:
+                security_logger.warning(
+                    'email link blocked (too many attempts) user=%s', request.user.pk,
+                )
+                return Response({'detail': 'Too many attempts'},
+                                status=status.HTTP_429_TOO_MANY_REQUESTS)
+            if verification.otp_is_expired:
+                return Response({'detail': 'OTP expired'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            verification.attempts_count += 1
+            if not check_password(otp, verification.otp_hash):
+                verification.save(update_fields=['attempts_count', 'updated_at'])
+                security_logger.warning(
+                    'email link otp failed (wrong code) user=%s attempt=%s/%s',
+                    request.user.pk,
+                    verification.attempts_count, verification.max_attempts,
+                )
+                return Response({'detail': 'OTP noto\'g\'ri'},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # Sessiya boshlangandan keyin boshqa hisob shu manzilni tasdiqlab
+            # olgan bo'lishi mumkin — unique constraint 500 bermasin.
+            if User.objects.filter(email__iexact=verification.email).exclude(
+                pk=request.user.pk,
+            ).exists():
+                verification.save(update_fields=['attempts_count', 'updated_at'])
+                return Response({'detail': "Bu email boshqa hisobga bog'langan"},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            user = User.objects.select_for_update().get(pk=request.user.pk)
+            user.email = verification.email
+            user.email_verified_at = timezone.now()
+            user.save(update_fields=['email', 'email_verified_at'])
+            verification.verified_at = timezone.now()
+            verification.save(update_fields=['attempts_count', 'verified_at', 'updated_at'])
+    except IntegrityError:
+        # Yuqoridagi exists() tekshiruvi bilan bir vaqtda boshqa hisob shu
+        # manzilni yozib qo'ygan holat (unique constraint).
+        return Response({'detail': "Bu email boshqa hisobga bog'langan"},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    return Response(UserSerializer(user, context={'request': request}).data)
+
+
+confirm_email_link.cls.throttle_scope = 'auth'
 
 
 @api_view(['POST'])

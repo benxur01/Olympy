@@ -2,7 +2,9 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 
 from .forms import UserAdminForm
-from .models import PhoneVerification, User, RewardProduct, RewardRedemption
+from .models import (
+    EmailVerification, PhoneVerification, User, RewardProduct, RewardRedemption,
+)
 
 
 @admin.register(User)
@@ -15,12 +17,16 @@ class UserAdmin(DjangoUserAdmin):
     list_filter = ('is_premium', 'is_platform_admin', 'is_active', 'is_staff')
     list_editable = ('is_premium',)
     search_fields = (
-        'full_name', 'normalized_phone', 'phone',
+        'full_name', 'normalized_phone', 'phone', 'email',
         'telegram_chat_id', 'telegram_user_id',
     )
     ordering = ('-created_at',)
     fieldsets = (
         (None, {'fields': ('full_name', 'phone', 'normalized_phone', 'password')}),
+        # `email_verified_at` readonly: tasdiqlangan holat faqat OTP oqimi
+        # (email/link/confirm/) orqali yoziladi, admin qo'lda "tasdiqlangan"
+        # deb belgilay olmasin.
+        ('Email', {'fields': ('email', 'email_verified_at')}),
         ('Roles', {'fields': ('roles', 'is_platform_admin', 'is_premium')}),
         ('Telegram', {'fields': ('telegram_chat_id', 'telegram_user_id', 'telegram_linked_at')}),
         ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
@@ -31,7 +37,9 @@ class UserAdmin(DjangoUserAdmin):
             'fields': ('full_name', 'phone', 'password1', 'password2'),
         }),
     )
-    readonly_fields = ('normalized_phone', 'created_at', 'telegram_linked_at')
+    readonly_fields = (
+        'normalized_phone', 'created_at', 'telegram_linked_at', 'email_verified_at',
+    )
 
 
 @admin.register(PhoneVerification)
@@ -41,6 +49,16 @@ class PhoneVerificationAdmin(admin.ModelAdmin):
         'otp_expires_at', 'verified_at', 'created_at',
     )
     search_fields = ('normalized_phone', 'telegram_chat_id', 'telegram_user_id', 'verify_token')
+    readonly_fields = ('otp_hash', 'created_at', 'updated_at', 'verified_at')
+    ordering = ('-created_at',)
+
+
+@admin.register(EmailVerification)
+class EmailVerificationAdmin(admin.ModelAdmin):
+    list_display = (
+        'email', 'user', 'attempts_count', 'otp_expires_at', 'verified_at', 'created_at',
+    )
+    search_fields = ('email', 'user__full_name', 'user__normalized_phone')
     readonly_fields = ('otp_hash', 'created_at', 'updated_at', 'verified_at')
     ordering = ('-created_at',)
 
