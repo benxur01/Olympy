@@ -682,6 +682,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [premiumPlanType, setPremiumPlanType] = React.useState('student');
   const [premiumPlanName, setPremiumPlanName] = React.useState('Pro');
   const [premiumSaving, setPremiumSaving] = React.useState(false);
+  // Hisobni qo'lda tiklash (support): telefon raqamini yo'qotgan va email
+  // bog'lamagan foydalanuvchi uchun o'z-o'ziga xizmat yo'li yo'q.
+  const [phoneModal, setPhoneModal] = React.useState(null);
+  const [phoneInput, setPhoneInput] = React.useState('');
+  const [phoneSaving, setPhoneSaving] = React.useState(false);
+  const [resetPasswordConfirm, setResetPasswordConfirm] = React.useState(null);
+  const [resetPasswordBusy, setResetPasswordBusy] = React.useState(false);
+  // Yangi parol backenddan faqat BIR MARTA ochiq matnda keladi — uni hech
+  // qayerda saqlamaymiz, modal yopilishi bilan state'dan ham o'chiriladi.
+  const [newPasswordInfo, setNewPasswordInfo] = React.useState(null);
   const [newSubjectName, setNewSubjectName] = React.useState('');
   // Topbar global qidiruv — foydalanuvchi/tashkilot/olimpiada nomi bo'yicha
   // joriy ko'rinayotgan jadvalga ta'sir qiladi (avval onChange yo'q edi).
@@ -1059,6 +1069,56 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         showToast(OlympyApi.toUserMessage(err));
       })
       .finally(() => setRoleSaving(false));
+  };
+
+  const openPhoneModal = (row) => {
+    setPhoneInput('');
+    setPhoneModal(row);
+  };
+
+  const handleSavePhone = () => {
+    if (!phoneModal) return;
+    if (!isApi) { showToast('Telefon raqam faqat API rejimida o\'zgartiriladi'); return; }
+    const numericUserId = phoneModal?.backendId ?? (typeof phoneModal?.id === 'string' && phoneModal.id.startsWith('api:') ? Number(phoneModal.id.slice(4)) : null);
+    if (!numericUserId) { showToast('Backend ID topilmadi'); return; }
+    const phone = phoneInput.trim();
+    if (!phone) { showToast('Yangi telefon raqamni kiriting'); return; }
+
+    setPhoneSaving(true);
+    OlympyApi.adminChangeUserPhone(numericUserId, phone, OlympyApi.getToken())
+      .then(() => {
+        showToast('Telefon raqam yangilandi');
+        setPhoneModal(null);
+        setPhoneInput('');
+        apiUsersRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminChangeUserPhone failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setPhoneSaving(false));
+  };
+
+  const handleResetPassword = () => {
+    if (!resetPasswordConfirm) return;
+    if (!isApi) { showToast('Parol faqat API rejimida tiklanadi'); return; }
+    const row = resetPasswordConfirm;
+    const numericUserId = row?.backendId ?? (typeof row?.id === 'string' && row.id.startsWith('api:') ? Number(row.id.slice(4)) : null);
+    if (!numericUserId) { showToast('Backend ID topilmadi'); setResetPasswordConfirm(null); return; }
+
+    setResetPasswordBusy(true);
+    OlympyApi.adminResetUserPassword(numericUserId, OlympyApi.getToken())
+      .then(res => {
+        // Parol faqat shu javobda keladi — darhol ko'rsatamiz (loglamaymiz).
+        setNewPasswordInfo({ name: row.name, password: res?.new_password || '' });
+        setResetPasswordConfirm(null);
+        apiUsersRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminResetUserPassword failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setResetPasswordBusy(false));
   };
 
   const userRows = allUsers.map(u => {
@@ -1590,9 +1650,15 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     )}
                   </td>
                   <td className="px-5 py-4">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <button onClick={() => openRoleModal(row)} className="rounded-lg bg-indigo-500/10 px-3 py-1.5 text-[11px] font-bold text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition">
                         Rol
+                      </button>
+                      <button onClick={() => openPhoneModal(row)} className="rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white transition">
+                        Telefon raqamini o'zgartirish
+                      </button>
+                      <button onClick={() => setResetPasswordConfirm(row)} className="rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition">
+                        Parolni tiklash
                       </button>
                       <button onClick={() => setBlockModal(row)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${row.status === 'Bloklangan' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'}`}>
                         {row.status === 'Bloklangan' ? 'Ochish' : 'Bloklash'}
@@ -1804,6 +1870,85 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 {premiumSaving ? 'Saqlanmoqda...' : premiumDuration === -1 ? 'O\'chirish' : 'Saqlash'}
               </button>
             </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Telefon raqamini o'zgartirish (support) modali */}
+      <Modal open={!!phoneModal} onClose={() => !phoneSaving && setPhoneModal(null)} title="Telefon raqamini o'zgartirish">
+        {phoneModal && (
+          <div className="space-y-5">
+            <div className="flex items-center gap-3 rounded-xl bg-white/5 p-3">
+              <Avatar name={phoneModal.name || ''} size={36} />
+              <div>
+                <div className="text-sm font-semibold text-white">{phoneModal.name}</div>
+                <div className="text-xs text-white/40">{phoneModal.phone}</div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Yangi telefon raqam</label>
+              <input
+                value={phoneInput}
+                onChange={e => setPhoneInput(e.target.value)}
+                className="w-full admin-input px-3 py-2.5 text-sm outline-none"
+                placeholder="+998 90 123 45 67"
+                inputMode="tel"
+              />
+              <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+                Foydalanuvchi shu raqam bilan tizimga kiradi. Amal bajarilgandan keyin
+                uning barcha joriy sessiyalari bekor qilinadi.
+              </p>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setPhoneModal(null)} disabled={phoneSaving} className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">Bekor qilish</button>
+              <button onClick={handleSavePhone} disabled={phoneSaving} className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">
+                {phoneSaving ? 'Saqlanmoqda...' : "O'zgartirish"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <ConfirmModal
+        open={!!resetPasswordConfirm}
+        onClose={() => !resetPasswordBusy && setResetPasswordConfirm(null)}
+        onConfirm={handleResetPassword}
+        title="Parolni tiklash"
+        message="Bu foydalanuvchining joriy paroli bekor qilinadi va yangi parol yaratiladi — davom etasizmi?"
+        confirmText="Ha, tiklash"
+        danger
+        busy={resetPasswordBusy}
+      />
+
+      {/* Yangi parol BIR MARTA ko'rsatiladi — modal yopilishi bilan state
+          tozalanadi, boshqa hech qayerda saqlanmaydi. */}
+      <Modal open={!!newPasswordInfo} onClose={() => setNewPasswordInfo(null)} title="Yangi parol">
+        {newPasswordInfo && (
+          <div className="space-y-4">
+            <p className="text-sm text-white/60 leading-relaxed">
+              <span className="font-semibold text-white">{newPasswordInfo.name}</span> uchun yangi parol yaratildi.
+            </p>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-indigo-200 font-mono break-all select-all">
+                {newPasswordInfo.password}
+              </code>
+              <button
+                type="button"
+                onClick={() => { navigator.clipboard?.writeText(newPasswordInfo.password); }}
+                className="btn-ghost text-xs px-3 py-2 rounded-xl flex items-center gap-1.5"
+                title="Nusxalash"
+              >
+                <Icon name="copy" size={13} />
+              </button>
+            </div>
+            <p className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-amber-300">
+              Diqqat: bu parol qayta ko'rsatilmaydi, uni foydalanuvchiga xavfsiz yo'l bilan yetkazing.
+            </p>
+            <button onClick={() => setNewPasswordInfo(null)} className="btn-primary w-full rounded-xl py-3 text-xs font-bold">
+              Yopdim, nusxaladim
+            </button>
           </div>
         )}
       </Modal>

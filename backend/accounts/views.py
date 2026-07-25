@@ -1513,6 +1513,143 @@ def admin_set_user_roles(request, user_id):
     return Response(UserSerializer(target, context={'request': request}).data)
 
 
+# Admin qo'lda bergan parol uchun alifbo. Chalkashadigan belgilar (0/O, 1/l/I)
+# ataylab olib tashlangan — bu parol admin tomonidan tashqi kanal orqali
+# (telefon, xat) qo'lda yetkaziladi, shu sababli xato o'qilmasligi muhim.
+RECOVERY_PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789'
+
+
+def _make_recovery_password():
+    """Kriptografik tasodifiy, lekin qo'lda ko'chirib yozib bo'ladigan parol.
+
+    12 belgi 4 talik uchta blokka bo'linadi (``Ab7k-Mn3p-Qr9t``). Manba
+    faqat `secrets` (CSPRNG) — `random` moduli parol yasash uchun yaroqsiz.
+    """
+    return '-'.join(
+        ''.join(secrets.choice(RECOVERY_PASSWORD_ALPHABET) for _ in range(4))
+        for _ in range(3)
+    )
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_reset_user_password(request, user_id):
+    """POST /api/admin/users/{id}/reset-password/ — parolni majburan tiklash.
+
+    Faqat Platform Admin uchun. Autentifikatsiya telefon raqamga bog'langan:
+    ro'yxatdagi raqamini yo'qotgan (va email bog'lamagan) foydalanuvchi uchun
+    o'z-o'ziga xizmat yo'li yo'q — `start_password_reset` joriy
+    `normalized_phone` ga jonli Telegram OTP talab qiladi. Shaxsi tashqi
+    kanal orqali tasdiqlangandan keyin admin shu endpoint bilan yangi parol
+    beradi.
+
+    Yangi parol javobda BIR MARTA ochiq qaytariladi (admin uni foydalanuvchiga
+    xavfsiz kanal orqali yetkazadi) va boshqa hech qayerda — audit log, server
+    loglari — saqlanmaydi. Parolni keyin qayta o'qib olish endpoint'i ataylab
+    yo'q.
+    """
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    if target.id == request.user.id:
+        return Response({'detail': "O'z parolingizni bu yerdan tiklab bo'lmaydi"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if target.is_platform_admin:
+        return Response({'detail': "Boshqa adminning parolini tiklab bo'lmaydi"},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    new_password = _make_recovery_password()
+    target.set_password(new_password)
+    # Hisobni o'zlashtirgan shaxs eski parol bilan olingan JWT bilan ishlashda
+    # davom etmasin — parolni tiklashning butun maqsadi shu.
+    target.token_version = (target.token_version or 0) + 1
+    target.save(update_fields=['password', 'token_version'])
+    # extra'da faqat metadata: yangi parol audit logga HECH QACHON tushmaydi.
+    AuditLog.log(request, 'admin_password_reset', target=target, extra={
+        'phone': mask_phone(target.normalized_phone),
+    })
+    return Response({
+        'new_password': new_password,
+        'user': UserSerializer(target, context={'request': request}).data,
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_change_user_phone(request, user_id):
+    """POST /api/admin/users/{id}/change-phone/ — telefon raqamni almashtirish.
+
+    Faqat Platform Admin uchun. Body: {"phone": "..."}. O'z-o'ziga xizmat
+    qiladigan "raqamni o'zgartirish" oqimi yo'q, shu sababli raqamini
+    butunlay yo'qotgan foydalanuvchini hisobiga qaytarishning yagona yo'li —
+    admin qo'lda almashtirishi (shaxsi tashqi kanal orqali tasdiqlangandan
+    keyin).
+
+    Ro'yxatdan o'tish oqimidan tashqarida ishlaydi, shu sababli
+    normalizatsiya va `normalized_phone` yagonaligini qo'lda tekshiramiz —
+    `UserManager._create_user` bu tekshiruvlarni faqat yaratish paytida
+    bajaradi.
+    """
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    if target.id == request.user.id:
+        return Response({'detail': "O'z raqamingizni bu yerdan o'zgartirib bo'lmaydi"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if target.is_platform_admin:
+        return Response({'detail': "Boshqa adminning raqamini o'zgartirib bo'lmaydi"},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    new_phone = normalize_phone(request.data.get('phone'))
+    if not new_phone:
+        return Response({'detail': "Telefon raqam noto'g'ri"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if User.objects.filter(normalized_phone=new_phone).exclude(pk=target.pk).exists():
+        return Response({'detail': "Bu telefon raqam avval ro'yxatdan o'tgan"},
+                        status=status.HTTP_409_CONFLICT)
+
+    old_phone = target.normalized_phone
+    # `phone`, `normalized_phone` va `token_version` birga o'zgaradi —
+    # yarim holatda (masalan normalized_phone yangi, phone eski) qolmasin.
+    with transaction.atomic():
+        target.phone = new_phone
+        target.normalized_phone = new_phone
+        # Eski raqam bilan olingan JWT sessiyalar ham bekor bo'lsin.
+        target.token_version = (target.token_version or 0) + 1
+        target.save(update_fields=['phone', 'normalized_phone', 'token_version'])
+        # Eski raqamda boshlangan, hali tasdiqlanmagan sessiyalar (parol
+        # tiklash / Telegram bog'lash) o'chiriladi: hisob yangi raqamga
+        # o'tgandan keyin eski raqam egasidagi jonli OTP bilan hisobga ta'sir
+        # qilish yo'li qolmasin. Registration maqsadidagi yozuvlar mavjud
+        # hisobga tegmaydi, shuning uchun ularga aralashmaymiz (eski raqamni
+        # keyinchalik olgan odam ro'yxatdan o'tishini buzmaslik uchun).
+        # Tasdiqlanmaganini o'chirish — boshqa oqimlardagi (masalan
+        # `start_password_reset`) tozalash naqshi bilan bir xil.
+        PhoneVerification.objects.filter(
+            normalized_phone=old_phone,
+            purpose__in=[
+                PhoneVerification.PURPOSE_PASSWORD_RESET,
+                PhoneVerification.PURPOSE_ACCOUNT_LINK,
+            ],
+            verified_at__isnull=True,
+        ).delete()
+
+    # Xom raqam hech qachon loglanmaydi — faqat maskalangan ko'rinishi.
+    AuditLog.log(request, 'admin_phone_change', target=target, extra={
+        'old_phone': mask_phone(old_phone),
+        'new_phone': mask_phone(new_phone),
+    })
+    return Response(UserSerializer(target, context={'request': request}).data)
+
+
 def _make_otp():
     return f'{secrets.randbelow(1_000_000):06d}'
 
