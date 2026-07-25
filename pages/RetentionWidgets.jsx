@@ -38,10 +38,21 @@ const StreakWarningBanner = ({ onNavigate, user }) => {
 };
 
 // ─── DH1. Bugungi savollar (countdown + 3 ta savol) ──────────────────────────
+const DAILY_Q_FEEDBACK_MS = 2500;
+const DAILY_Q_FADE_MS = 300;
 const DailyQuestionsWidget = ({ user }) => {
   const { data, loading, reload } = useApiData(() => OlympyApi.getDailyQuestions(_retToken()), [user?.id, user?.backendId]);
   const [timeLeft, setTimeLeft] = React.useState('');
   const [answering, setAnswering] = React.useState(null);
+  // Javob berilgan savol ro'yxatda qolmaydi. Faqat shu sessiyada javob
+  // berilganlari qisqa vaqt natijasi bilan turadi: feedback map'da 'show' →
+  // 'fade' → o'chirish. Ilgari javob berilganlari map'da yo'q, shuning uchun
+  // birinchi render'dayoq ko'rinmaydi (natija chaqnab ketmaydi).
+  const [feedback, setFeedback] = React.useState(() => new Map());
+  // Javobi serverga yozilgan, ammo reload() hali tasdiqlamagan savollar —
+  // sanoq faqat yangi ma'lumot kelganda boshlanadi.
+  const pendingRef = React.useRef(new Set());
+  const timersRef = React.useRef([]);
 
   // Countdown 23:59 gacha.
   React.useEffect(() => {
@@ -59,11 +70,34 @@ const DailyQuestionsWidget = ({ user }) => {
     return () => clearInterval(id);
   }, [data?.ends_at]);
 
+  // Yangi ma'lumot kelganda: shu sessiyada javob berilgan savolning natijasi
+  // 2.5s ko'rinadi, so'ng ro'yxatdan yo'qoladi.
+  React.useEffect(() => {
+    (data?.questions || []).forEach(q => {
+      if (!q.answered || !pendingRef.current.has(q.id)) return;
+      pendingRef.current.delete(q.id);
+      timersRef.current.push(setTimeout(() => {
+        setFeedback(prev => new Map(prev).set(q.id, 'fade'));
+        timersRef.current.push(setTimeout(() => {
+          setFeedback(prev => {
+            const next = new Map(prev);
+            next.delete(q.id);
+            return next;
+          });
+        }, DAILY_Q_FADE_MS));
+      }, DAILY_Q_FEEDBACK_MS));
+    });
+  }, [data]);
+
+  React.useEffect(() => () => timersRef.current.forEach(t => clearTimeout(t)), []);
+
   const handleAnswer = async (dq, idx) => {
     if (dq.answered || answering != null) return;
     setAnswering(dq.id);
     try {
       await OlympyApi.answerDailyQuestion(dq.id, idx, _retToken());
+      setFeedback(prev => new Map(prev).set(dq.id, 'show'));
+      pendingRef.current.add(dq.id);
       reload();
     } catch (e) {
       // jim — keyingi urinishda qayta yuklanadi
@@ -74,7 +108,8 @@ const DailyQuestionsWidget = ({ user }) => {
 
   if (loading) return null;
   const questions = data?.questions || [];
-  if (!questions.length) return null;
+  const isVisible = (q) => !q.answered || feedback.has(q.id);
+  if (!questions.some(isVisible)) return null;
 
   const answeredCount = questions.filter(q => q.answered).length;
 
@@ -90,8 +125,8 @@ const DailyQuestionsWidget = ({ user }) => {
         </div>
       </div>
       <div className="space-y-3">
-        {questions.map((dq, qi) => (
-          <div key={dq.id} className="rounded-xl bg-white/[0.03] border border-white/5 p-3">
+        {questions.map((dq, qi) => !isVisible(dq) ? null : (
+          <div key={dq.id} className={`rounded-xl bg-white/[0.03] border border-white/5 p-3 transition-opacity duration-300 ${feedback.get(dq.id) === 'fade' ? 'opacity-0' : 'opacity-100'}`}>
             <div className="text-sm font-semibold text-white mb-2 flex items-start gap-1.5">
               <span className="text-white/40">{qi + 1}.</span>
               <MathText className="flex-1" text={dq.text} />
@@ -423,40 +458,50 @@ const WeeklyContestHistoryCard = ({ user }) => {
 // ─── O1 (premium). Kunlik AI mashq to'plami (Standart+) ──────────────────────
 // Backenddan bugungi 5 ta AI savol (eng zaif fan bo'yicha) olinadi va inline
 // quiz sifatida ko'rsatiladi. Baholash client-side: har savolda correct_answer
-// indeksi bor, "Tekshirish" bosilganda to'g'ri/xato ranglanadi va (bo'lsa) izoh
-// ochiladi. Standart+ gate frontend'da (canStandart) — bu yerda 403 kelsa ham
-// xushmuomala xabar chiqadi.
+// indeksi bor, variant tanlangan zahoti to'g'ri/xato ranglanadi va (bo'lsa)
+// izoh ochiladi, so'ng savol ro'yxatdan yo'qoladi. Standart+ gate frontend'da
+// (canStandart) — bu yerda 403 kelsa ham xushmuomala xabar chiqadi.
 const DailyAIPracticeCard = ({ user }) => {
   const { data, loading, error } = useApiData(
     () => OlympyApi.getDailyPracticeSet(_retToken()),
     [user?.id, user?.backendId],
   );
   const [answers, setAnswers] = React.useState({});   // {savolIndeks: variantIndeks}
-  const [submitted, setSubmitted] = React.useState(false);
-  const [submitting, setSubmitting] = React.useState(false);
+  // Javob berilgan savol natijasi qisqa vaqt turadi: feedback map'da 'show' →
+  // 'fade' → o'chirish (savol ro'yxatdan chiqadi). Map faqat shu sessiyadagi
+  // javoblar bilan to'ladi.
+  const [feedback, setFeedback] = React.useState(() => new Map());
+  // Barcha javoblar bir marta fon rejimida serverga yoziladi.
+  const savedRef = React.useRef(false);
+  const timersRef = React.useRef([]);
 
-  React.useEffect(() => {
-    if (!data) return;
-    if (data.submitted) {
-      const hydrated = {};
-      Object.entries(data.answers || {}).forEach(([qi, oi]) => { hydrated[Number(qi)] = Number(oi); });
-      setAnswers(hydrated);
-      setSubmitted(true);
-    }
-  }, [data]);
+  React.useEffect(() => () => timersRef.current.forEach(t => clearTimeout(t)), []);
 
   const questions = Array.isArray(data?.questions) ? data.questions : [];
 
-  const handleSubmit = async () => {
-    if (submitting) return;
-    setSubmitting(true);
-    try {
-      await OlympyApi.submitDailyPracticeSet(answers, _retToken());
-      setSubmitted(true);
-    } catch {
-      // Best-effort UI feedback stays local; state simply remains unsubmitted.
-    } finally {
-      setSubmitting(false);
+  const handleAnswer = (qi, oi) => {
+    if (answers[qi] != null) return;
+    const next = { ...answers, [qi]: oi };
+    setAnswers(next);
+    // setTimeout eski feedback'ni ushlab qolmasligi uchun faqat funksional
+    // yangilash ishlatiladi.
+    setFeedback(prev => new Map(prev).set(qi, 'show'));
+    timersRef.current.push(setTimeout(() => {
+      setFeedback(prev => new Map(prev).set(qi, 'fade'));
+      timersRef.current.push(setTimeout(() => {
+        setFeedback(prev => {
+          const rest = new Map(prev);
+          rest.delete(qi);
+          return rest;
+        });
+      }, DAILY_Q_FADE_MS));
+    }, DAILY_Q_FEEDBACK_MS));
+    // Oxirgi savolga javob berilgach saqlaymiz — javoblar mahalliy bo'lgani
+    // uchun server javobini kutmaymiz (kun davomida "bajarilgan" holat qolsin).
+    if (!savedRef.current && questions.every((_, i) => next[i] != null)) {
+      savedRef.current = true;
+      OlympyApi.submitDailyPracticeSet(next, _retToken())
+        .catch(err => console.warn('submitDailyPracticeSet failed:', err));
     }
   };
 
@@ -482,17 +527,16 @@ const DailyAIPracticeCard = ({ user }) => {
     );
   }
   if (!questions.length) return null;
+  // `data` faqat mount'da yuklanadi, shuning uchun `submitted` = "shu sessiya
+  // boshlanishidan oldin topshirilgan": bunda natija qayta chaqnab ketmasligi
+  // uchun karta o'sha kun uchun umuman ko'rsatilmaydi. Shu sessiyada berilgan
+  // javoblar esa faqat feedback map'ida bo'ladi.
+  if (data.submitted) return null;
+  const isVisible = (qi) => answers[qi] == null || feedback.has(qi);
+  if (!questions.some((_, qi) => isVisible(qi))) return null;
 
-  const allAnswered = questions.every((_, i) => answers[i] != null);
-  const correctCount = questions.reduce(
-    (n, q, i) => n + (answers[i] === q.correct_answer ? 1 : 0), 0,
-  );
   const optClass = (qi, oi, correctIdx) => {
-    if (!submitted) {
-      return answers[qi] === oi
-        ? 'border-indigo-400 bg-indigo-500/15 text-white'
-        : 'border-white/10 bg-white/[0.03] text-white/70 hover:border-white/25';
-    }
+    if (answers[qi] == null) return 'border-white/10 bg-white/[0.03] text-white/70 hover:border-white/25';
     if (oi === correctIdx) return 'border-emerald-400 bg-emerald-500/15 text-emerald-100';
     if (answers[qi] === oi) return 'border-rose-400 bg-rose-500/15 text-rose-100';
     return 'border-white/10 bg-white/[0.02] text-white/40';
@@ -514,11 +558,12 @@ const DailyAIPracticeCard = ({ user }) => {
 
       <div className="space-y-4">
         {questions.map((q, qi) => {
+          if (!isVisible(qi)) return null;
           const options = Array.isArray(q.options) ? q.options : [];
           const chosen = answers[qi];
-          const isCorrect = submitted && chosen === q.correct_answer;
+          const isCorrect = chosen === q.correct_answer;
           return (
-            <div key={qi} className="glass rounded-xl p-3 border border-indigo-500/10">
+            <div key={qi} className={`glass rounded-xl p-3 border border-indigo-500/10 transition-opacity duration-300 ${feedback.get(qi) === 'fade' ? 'opacity-0' : 'opacity-100'}`}>
               <div className="text-xs md:text-sm text-white/85 font-medium mb-2 leading-relaxed">
                 <span className="text-indigo-300 font-bold">{qi + 1}.</span> {q.text}
               </div>
@@ -527,8 +572,8 @@ const DailyAIPracticeCard = ({ user }) => {
                   <button
                     key={oi}
                     type="button"
-                    disabled={submitted}
-                    onClick={() => setAnswers(a => ({ ...a, [qi]: oi }))}
+                    disabled={chosen != null}
+                    onClick={() => handleAnswer(qi, oi)}
                     className={`w-full text-left flex items-center gap-2 rounded-lg border px-3 py-2 text-xs md:text-sm transition-all disabled:cursor-default ${optClass(qi, oi, q.correct_answer)}`}
                   >
                     <span className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center text-[9px] ${chosen === oi ? 'border-current' : 'border-white/30'}`}>
@@ -538,7 +583,7 @@ const DailyAIPracticeCard = ({ user }) => {
                   </button>
                 ))}
               </div>
-              {submitted && q.explanation ? (
+              {chosen != null && q.explanation ? (
                 <div className={`mt-2 text-[11px] md:text-xs leading-relaxed rounded-lg px-3 py-2 ${isCorrect ? 'bg-emerald-500/10 text-emerald-200' : 'bg-white/[0.04] text-white/60'}`}>
                   <span className="font-bold">Izoh: </span>{q.explanation}
                 </div>
@@ -547,19 +592,6 @@ const DailyAIPracticeCard = ({ user }) => {
           );
         })}
       </div>
-
-      {submitted ? (
-        <div className="mt-3 text-center text-sm font-bold text-white">
-          Natija: <span className="text-emerald-400">{correctCount}</span> / {questions.length} to'g'ri
-        </div>
-      ) : (
-        <button
-          onClick={handleSubmit}
-          disabled={!allAnswered || submitting}
-          className="btn-primary text-xs px-4 py-2.5 rounded-xl font-semibold min-h-[40px] disabled:opacity-50 mt-3 w-full">
-          {submitting ? 'Yuborilmoqda...' : (allAnswered ? 'Tekshirish' : 'Barcha savollarga javob bering')}
-        </button>
-      )}
     </div>
   );
 };
