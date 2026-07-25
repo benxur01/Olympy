@@ -323,7 +323,9 @@ def error_notebook(request):
                 all_qids.add(int(k))
             except (TypeError, ValueError):
                 continue
-    questions_qs = Question.objects.filter(pk__in=all_qids)
+    questions_qs = Question.objects.filter(
+        pk__in=all_qids, purpose=Question.QUESTION_PURPOSE_OLYMPIAD,
+    )
     if subject:
         questions_qs = questions_qs.filter(subject__iexact=subject)
     qmap = {q.id: q for q in questions_qs}

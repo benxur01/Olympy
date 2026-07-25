@@ -22,7 +22,18 @@ import uz.olympy.quiz.service.RoomService;
  * trusted session attributes.
  *
  * <p>Host -> server: {@code {"type":"start|next|reveal|end"}}.
- * <p>Student -> server: {@code {"type":"answer","index":<int>,"answer":<int>}}.
+ * <p>Student -> server: {@code {"type":"answer","index":<int>,"answer":<value>}}
+ * — {@code index} joriy savol indeksi, {@code answer} esa savol turiga qarab
+ * o'zgaradi (turni klient {@code question} xabaridagi {@code questionType} dan
+ * biladi):
+ * <ul>
+ *   <li>{@code mcq} — variant indeksi, int 0..3</li>
+ *   <li>{@code true_false} — variant indeksi, int 0 yoki 1</li>
+ *   <li>{@code type_answer} — o'quvchi yozgan matn (string)</li>
+ *   <li>{@code slider} — tanlangan raqam (number)</li>
+ * </ul>
+ * Turga qarab ajratish {@link RoomService#onAnswer} da bajariladi — savol turi
+ * u yerda mavjud, shu sababli bu handler xom JSON qiymatni uzatadi.
  */
 @Component
 public class QuizWebSocketHandler extends TextWebSocketHandler {
@@ -78,8 +89,7 @@ public class QuizWebSocketHandler extends TextWebSocketHandler {
                 roomService.onHostCommand(room, userId(session), type);
             } else if ("answer".equals(type)) {
                 int index = node.path("index").asInt(-1);
-                int answer = node.path("answer").asInt(-1);
-                roomService.onAnswer(room, userId(session), index, answer);
+                roomService.onAnswer(room, userId(session), index, node.path("answer"));
             }
         } catch (Exception e) {
             log.warn("Bad quiz message from session {}: {}", session.getId(), e.getMessage());

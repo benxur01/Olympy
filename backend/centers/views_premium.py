@@ -454,7 +454,9 @@ def question_analytics(request, center_id):
         return _premium_center_required()
 
     subject = (request.query_params.get('subject') or '').strip()
-    questions_qs = Question.objects.filter(center=center)
+    questions_qs = Question.objects.filter(
+        center=center, purpose=Question.QUESTION_PURPOSE_OLYMPIAD,
+    )
     if subject:
         questions_qs = questions_qs.filter(subject__iexact=subject)
     questions = list(questions_qs.only('id', 'text', 'correct_answer', 'subject'))

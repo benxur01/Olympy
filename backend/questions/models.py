@@ -38,6 +38,10 @@ class Question(models.Model):
     QUESTION_TYPE_ESSAY = 'essay'
     QUESTION_TYPE_FILL_BLANK = 'fill_blank'
     QUESTION_TYPE_FILL_BLANKS = 'fill_blanks'
+    # Slayder — o'quvchi raqamli oraliqdan (min..max) qiymat tanlaydi. Sozlamasi
+    # `correct_text` ichida JSON bo'lib saqlanadi (fill_blanks bilan bir xil
+    # yondashuv), shuning uchun yangi DB ustun kerak emas.
+    QUESTION_TYPE_SLIDER = 'slider'
     QUESTION_TYPE_CHOICES = [
         (QUESTION_TYPE_MCQ, 'Test (variantli)'),
         (QUESTION_TYPE_CODE, 'Kod (dasturlash)'),
@@ -46,6 +50,23 @@ class Question(models.Model):
         (QUESTION_TYPE_ESSAY, 'Essay (Katta matn)'),
         (QUESTION_TYPE_FILL_BLANK, "Bo'sh joy to'ldirish"),
         (QUESTION_TYPE_FILL_BLANKS, "Ko'p bo'sh joy to'ldirish"),
+        (QUESTION_TYPE_SLIDER, 'Slayder (raqamli)'),
+    ]
+
+    # Savol maqsadi (purpose) — savol banki ikkiga bo'linadi:
+    #   olympiad  → markazning UMUMIY banki: olimpiada/test uchun, markazdagi
+    #               barcha tasdiqlangan o'qituvchi/menejer/egaga ko'rinadi.
+    #   live_quiz → o'qituvchining SHAXSIY jonli viktorina (Kahoot uslubi)
+    #               banki: faqat savolni yaratgan o'qituvchi ko'radi va
+    #               ishlatadi, hamkasblariga (hatto menejer/egaga ham) ko'rinmaydi.
+    # Ikki bank kesishmaydi — olimpiada savoli viktorinada, viktorina savoli
+    # olimpiadada tanlanmaydi. Default `olympiad`: mavjud barcha savollar
+    # avvalgidek umumiy bankda qoladi.
+    QUESTION_PURPOSE_OLYMPIAD = 'olympiad'
+    QUESTION_PURPOSE_LIVE_QUIZ = 'live_quiz'
+    QUESTION_PURPOSE_CHOICES = [
+        (QUESTION_PURPOSE_OLYMPIAD, 'Olimpiada/Test uchun'),
+        (QUESTION_PURPOSE_LIVE_QUIZ, 'Jonli Viktorina uchun'),
     ]
 
     DIFFICULTY_EASY = 'easy'
@@ -85,6 +106,8 @@ class Question(models.Model):
     #   fill_blank   → bitta matnli javob (string)
     #   fill_blanks  → JSON, masalan {"1": "javob1", "2": "javob2"}
     #   multiple_select → JSON ro'yxat, to'g'ri option indekslari (masalan [0, 2])
+    #   slider       → JSON sozlama, masalan
+    #                  {"min": 0, "max": 100, "step": 1, "correct": 42, "tolerance": 5}
     # mcq/code/yes_no/essay bu maydonni ishlatmaydi (bo'sh qoladi).
     correct_text = models.TextField(
         blank=True, default='',
@@ -95,6 +118,12 @@ class Question(models.Model):
         max_length=20,
         choices=QUESTION_TYPE_CHOICES,
         default=QUESTION_TYPE_MCQ,
+        db_index=True,
+    )
+    purpose = models.CharField(
+        max_length=20,
+        choices=QUESTION_PURPOSE_CHOICES,
+        default=QUESTION_PURPOSE_OLYMPIAD,
         db_index=True,
     )
     # Faqat question_type == 'code' bo'lganda ishlatiladigan maydonlar.

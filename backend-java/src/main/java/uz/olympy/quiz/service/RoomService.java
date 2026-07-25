@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import uz.olympy.duel.client.DjangoClient;
@@ -198,8 +199,14 @@ public class RoomService {
         }, timeLimit, TimeUnit.SECONDS);
     }
 
-    /** Handle a student's answer. Ignores stale/duplicate answers safely. */
-    public void onAnswer(RoomState room, long userId, int questionIndex, int answerIndex) {
+    /**
+     * Handle a student's answer. Ignores stale/duplicate answers safely.
+     *
+     * <p>{@code answer} — {@code {"type":"answer",...}} xabaridagi xom
+     * {@code answer} qiymati (int / string / number). Turga qarab ajratish
+     * {@link #isCorrect} da — WebSocket handler'da takrorlanmasligi uchun.
+     */
+    public void onAnswer(RoomState room, long userId, int questionIndex, JsonNode answer) {
         synchronized (room) {
             if (room.finished || !room.started || room.revealed) {
                 return;
@@ -211,7 +218,7 @@ public class RoomService {
                 return; // already answered this round
             }
             QuizQuestion q = room.questions.get(room.currentIndex);
-            boolean correct = (answerIndex == q.correctIndex());
+            boolean correct = isCorrect(q, answer);
             long elapsedMs = System.currentTimeMillis() - room.questionStartMillis;
             int points = correct ? pointsFor(elapsedMs, q.timeLimitSeconds()) : 0;
 
@@ -236,6 +243,65 @@ public class RoomService {
                 reveal(room); // everyone answered — reveal early
             }
         }
+    }
+
+    /**
+     * Savol turiga qarab javobning to'g'riligini tekshiradi. Har bir tur uchun
+     * xom JSON qiymatdan kerakli tipni o'zi ajratib oladi.
+     *
+     * <ul>
+     *   <li>mcq / true_false — variant indeksi (int) aynan mos kelishi kerak</li>
+     *   <li>type_answer — normalizatsiyadan (trim, kichik harf, ichki bo'shliqlar
+     *       bittaga) keyin ruxsat etilgan javoblardan biriga mos kelishi kerak</li>
+     *   <li>slider — |javob - to'g'ri qiymat| &lt;= tolerance</li>
+     * </ul>
+     */
+    private boolean isCorrect(QuizQuestion q, JsonNode answer) {
+        if (answer == null || answer.isNull() || answer.isMissingNode()) {
+            return false;
+        }
+        switch (q.type()) {
+            case QuizQuestion.TYPE_TYPE_ANSWER -> {
+                String submitted = normalizeText(answer.asText(""));
+                if (submitted.isEmpty() || q.acceptableAnswers() == null) {
+                    return false;
+                }
+                for (String candidate : q.acceptableAnswers()) {
+                    if (submitted.equals(normalizeText(candidate))) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            case QuizQuestion.TYPE_SLIDER -> {
+                // 1-bosqichda ataylab soddalashtirilgan baholash: tolerance
+                // ichida bo'lsa to'g'ri, aks holda xato (Kahoot'dagi masofaga
+                // proporsional ball keyingi bosqichga qoldirildi).
+                if (q.correctValue() == null) {
+                    return false;
+                }
+                double submitted = answer.asDouble(Double.NaN);
+                if (Double.isNaN(submitted)) {
+                    return false;
+                }
+                int tolerance = q.tolerance() == null ? 0 : q.tolerance();
+                return Math.abs(submitted - q.correctValue()) <= tolerance;
+            }
+            default -> {
+                // mcq / true_false — indeks solishtirish. `asInt` avvalgi
+                // (bir turli) mantiq bilan aynan bir xil ishlaydi, shu sababli
+                // mavjud 4 variantli test yo'li o'zgarmaydi.
+                return answer.asInt(-1) == q.correctIndex();
+            }
+        }
+    }
+
+    /** type_answer solishtirish normalizatsiyasi: trim + kichik harf + bitta bo'shliq. */
+    private static String normalizeText(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.trim().toLowerCase().replaceAll("\\s+", " ");
     }
 
     /**
@@ -271,7 +337,7 @@ public class RoomService {
             payload.put("index", room.currentIndex);
             payload.put("correct", correct);
             payload.put("answered", room.answeredThisRound.contains(uid));
-            payload.put("correctIndex", q.correctIndex());
+            putCorrectAnswer(payload, q);
             payload.put("pointsThisRound", gained);
             payload.put("totalScore", total);
             payload.put("rank", rankOf(room, uid));
@@ -282,7 +348,7 @@ public class RoomService {
         Map<String, Object> hostPayload = new LinkedHashMap<>();
         hostPayload.put("type", "reveal");
         hostPayload.put("index", room.currentIndex);
-        hostPayload.put("correctIndex", q.correctIndex());
+        putCorrectAnswer(hostPayload, q);
         hostPayload.put("isLast", room.currentIndex >= room.questions.size() - 1);
         hostPayload.put("leaderboard", leaderboard(room, LEADERBOARD_TOP_N));
         sendTo(room.hostSession, hostPayload);
@@ -356,16 +422,51 @@ public class RoomService {
 
     // ─── Payload builders / transport ──────────────────────────────────────────
 
+    /**
+     * Savol jonli bo'lgan paytda hammaga (host + o'quvchilar) ketadigan payload.
+     * Bu yerga to'g'ri javobga tegishli hech narsa (correctIndex,
+     * acceptableAnswers, correctValue, tolerance) QO'SHILMAYDI — javob faqat
+     * {@link #reveal} da oshkor bo'ladi. Har bir tur uchun faqat javob berish
+     * uchun zarur maydonlar yuboriladi.
+     *
+     * <p>Xabar konverti allaqachon {@code type: "question"} ni ishlatgani uchun
+     * savol turi {@code questionType} nomi bilan boradi.
+     */
     private Map<String, Object> questionPayload(RoomState room) {
         QuizQuestion q = room.questions.get(room.currentIndex);
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", "question");
+        payload.put("questionType", q.type());
         payload.put("index", room.currentIndex);
         payload.put("totalQuestions", room.questions.size());
         payload.put("text", q.text());
+        // mcq/true_false uchun variantlar; qolgan turlarda bo'sh ro'yxat
+        // (klient variant tugmalari o'rniga input/slayder ko'rsatadi).
         payload.put("options", q.options());
+        if (QuizQuestion.TYPE_SLIDER.equals(q.type())) {
+            payload.put("sliderMin", q.sliderMin());
+            payload.put("sliderMax", q.sliderMax());
+            payload.put("sliderStep", q.sliderStep());
+        }
         payload.put("timeLimitSeconds", q.timeLimitSeconds());
         return payload;
+    }
+
+    /**
+     * Reveal payload'iga savol turiga mos "to'g'ri javob" maydonini qo'shadi:
+     * mcq/true_false → {@code correctIndex}, type_answer → {@code correctAnswer}
+     * (ko'rsatish uchun birinchi ruxsat etilgan javob), slider →
+     * {@code correctValue}. Klient turni {@code question} xabaridan biladi.
+     */
+    private void putCorrectAnswer(Map<String, Object> payload, QuizQuestion q) {
+        switch (q.type()) {
+            case QuizQuestion.TYPE_TYPE_ANSWER -> {
+                List<String> answers = q.acceptableAnswers();
+                payload.put("correctAnswer", (answers == null || answers.isEmpty()) ? "" : answers.get(0));
+            }
+            case QuizQuestion.TYPE_SLIDER -> payload.put("correctValue", q.correctValue());
+            default -> payload.put("correctIndex", q.correctIndex());
+        }
     }
 
     private Map<String, Object> hostStatePayload(RoomState room) {

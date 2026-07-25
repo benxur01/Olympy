@@ -71,27 +71,102 @@ public class QuizController {
             }
             Map<String, Object> qm = (Map<String, Object>) o;
             String text = qm.get("text") == null ? "" : String.valueOf(qm.get("text")).trim();
-            Object rawOptions = qm.get("options");
-            if (text.isEmpty() || !(rawOptions instanceof List) || ((List<?>) rawOptions).size() != 4) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("detail", "Har bir savolda matn va aynan 4 ta variant bo'lishi kerak"));
+            if (text.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("detail", "Har bir savolda matn bo'lishi kerak"));
             }
-            List<String> options = new ArrayList<>();
-            for (Object opt : (List<Object>) rawOptions) {
-                options.add(opt == null ? "" : String.valueOf(opt));
+            // `type` yuborilmasa `mcq` — eski klientlar faqat 4 variantli MCQ
+            // yuborardi, ular hech narsa o'zgartirmasdan ishlashda davom etadi.
+            String type = qm.get("type") == null ? QuizQuestion.TYPE_MCQ
+                    : String.valueOf(qm.get("type")).trim();
+            if (type.isEmpty()) {
+                type = QuizQuestion.TYPE_MCQ;
             }
-            int correctIndex = toInt(qm.get("correctIndex"), -1);
-            if (correctIndex < 0 || correctIndex > 3) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("detail", "correctIndex 0..3 oralig'ida bo'lishi kerak"));
-            }
+            // Javob oynasi barcha turlar uchun bir xil chegaralanadi (5..120 s).
             int timeLimit = toInt(qm.get("timeLimitSeconds"), 20);
             if (timeLimit < 5) {
                 timeLimit = 5;
             } else if (timeLimit > 120) {
                 timeLimit = 120;
             }
-            questions.add(new QuizQuestion(text, options, correctIndex, timeLimit));
+            Object rawOptions = qm.get("options");
+
+            switch (type) {
+                case QuizQuestion.TYPE_TRUE_FALSE -> {
+                    // Variantlar ixtiyoriy: klient yubormasa server o'zi
+                    // "To'g'ri"/"Noto'g'ri" yozuvlarini qo'yadi.
+                    List<String> options = (rawOptions instanceof List)
+                            ? toStringList((List<Object>) rawOptions)
+                            : QuizQuestion.TRUE_FALSE_OPTIONS;
+                    if (options.isEmpty()) {
+                        options = QuizQuestion.TRUE_FALSE_OPTIONS;
+                    }
+                    if (options.size() != 2) {
+                        return ResponseEntity.badRequest()
+                                .body(Map.of("detail", "To'g'ri/Noto'g'ri savolida aynan 2 ta variant bo'lishi kerak"));
+                    }
+                    int correctIndex = toInt(qm.get("correctIndex"), -1);
+                    if (correctIndex < 0 || correctIndex > 1) {
+                        return ResponseEntity.badRequest()
+                                .body(Map.of("detail", "To'g'ri/Noto'g'ri savolida correctIndex 0 yoki 1 bo'lishi kerak"));
+                    }
+                    questions.add(QuizQuestion.trueFalse(text, options, correctIndex, timeLimit));
+                }
+                case QuizQuestion.TYPE_TYPE_ANSWER -> {
+                    Object rawAnswers = qm.get("acceptableAnswers");
+                    if (!(rawAnswers instanceof List) || ((List<?>) rawAnswers).isEmpty()) {
+                        return ResponseEntity.badRequest()
+                                .body(Map.of("detail", "Matnli javob savolida kamida bitta to'g'ri javob bo'lishi kerak"));
+                    }
+                    List<String> answers = new ArrayList<>();
+                    for (Object a : (List<Object>) rawAnswers) {
+                        String candidate = a == null ? "" : String.valueOf(a).trim();
+                        if (candidate.isEmpty()) {
+                            return ResponseEntity.badRequest()
+                                    .body(Map.of("detail", "To'g'ri javob bo'sh bo'lmasligi kerak"));
+                        }
+                        answers.add(candidate);
+                    }
+                    questions.add(QuizQuestion.typeAnswer(text, answers, timeLimit));
+                }
+                case QuizQuestion.TYPE_SLIDER -> {
+                    int min = toInt(qm.get("sliderMin"), 0);
+                    int max = toInt(qm.get("sliderMax"), 0);
+                    int step = toInt(qm.get("sliderStep"), 1);
+                    int correctValue = toInt(qm.get("correctValue"), Integer.MIN_VALUE);
+                    int tolerance = toInt(qm.get("tolerance"), 0);
+                    if (min >= max) {
+                        return ResponseEntity.badRequest()
+                                .body(Map.of("detail", "Slayderda sliderMin sliderMax dan kichik bo'lishi kerak"));
+                    }
+                    if (step < 1) {
+                        return ResponseEntity.badRequest()
+                                .body(Map.of("detail", "Slayder qadami (sliderStep) 1 dan kichik bo'lmasligi kerak"));
+                    }
+                    if (correctValue < min || correctValue > max) {
+                        return ResponseEntity.badRequest()
+                                .body(Map.of("detail", "correctValue sliderMin..sliderMax oralig'ida bo'lishi kerak"));
+                    }
+                    if (tolerance < 0) {
+                        return ResponseEntity.badRequest()
+                                .body(Map.of("detail", "tolerance manfiy bo'lmasligi kerak"));
+                    }
+                    questions.add(QuizQuestion.slider(text, min, max, step, correctValue, tolerance, timeLimit));
+                }
+                default -> {
+                    // mcq (default) — o'zgarmadi: aynan 4 variant, correctIndex 0..3.
+                    if (!(rawOptions instanceof List) || ((List<?>) rawOptions).size() != 4) {
+                        return ResponseEntity.badRequest()
+                                .body(Map.of("detail", "Har bir savolda matn va aynan 4 ta variant bo'lishi kerak"));
+                    }
+                    List<String> options = toStringList((List<Object>) rawOptions);
+                    int correctIndex = toInt(qm.get("correctIndex"), -1);
+                    if (correctIndex < 0 || correctIndex > 3) {
+                        return ResponseEntity.badRequest()
+                                .body(Map.of("detail", "correctIndex 0..3 oralig'ida bo'lishi kerak"));
+                    }
+                    questions.add(QuizQuestion.mcq(text, options, correctIndex, timeLimit));
+                }
+            }
         }
 
         RoomState room = roomService.createRoom(introspection.userId(), title, questions);
@@ -118,6 +193,14 @@ public class QuizController {
         resp.put("started", room.started);
         resp.put("finished", room.finished);
         return ResponseEntity.ok(resp);
+    }
+
+    private static List<String> toStringList(List<Object> raw) {
+        List<String> out = new ArrayList<>();
+        for (Object item : raw) {
+            out.add(item == null ? "" : String.valueOf(item));
+        }
+        return out;
     }
 
     private static int toInt(Object value, int fallback) {

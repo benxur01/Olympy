@@ -186,8 +186,14 @@ def generate_daily_questions(count=DAILY_QUESTION_COUNT):
     used_ids = list(
         DailyQuestion.objects.filter(date=today).values_list('question_id', flat=True)
     )
+    # Kunlik savol barcha o'quvchilarga ko'rsatiladi — shu sababli faqat umumiy
+    # olimpiada bankidan olinadi. O'qituvchining shaxsiy Jonli Viktorina savoli
+    # bu yerga tushib qolmasligi kerak.
     candidate_ids = list(
-        Question.objects.exclude(id__in=used_ids).values_list('id', flat=True)
+        Question.objects
+        .filter(purpose=Question.QUESTION_PURPOSE_OLYMPIAD)
+        .exclude(id__in=used_ids)
+        .values_list('id', flat=True)
     )
     if not candidate_ids:
         return 'no questions available — nothing created'

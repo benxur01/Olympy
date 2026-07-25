@@ -10,9 +10,13 @@ class QuestionSerializer(serializers.ModelSerializer):
         model = Question
         fields = ['id', 'center', 'subject', 'text', 'options', 'correct_answer',
                   'correct_text', 'score', 'difficulty', 'image', 'source',
-                  'created_by', 'created_at', 'question_type',
+                  'created_by', 'created_at', 'question_type', 'purpose',
                   'programming_language', 'code_template', 'expected_output',
                   'test_cases', 'is_active']
+        # `purpose` — savol qaysi bankka tegishli (olimpiada / jonli viktorina).
+        # Yozishga ochiq: frontend "Savollar" sahifasidagi faol tabga qarab
+        # yuboradi. Berilmasa model default'i (`olympiad`) ishlaydi, shu sababli
+        # bu maydonni bilmaydigan eski chaqiruvchilar o'zgarmasdan ishlaydi.
         # `is_active` — arxivlash bayrog'i faqat o'qish uchun ochiladi; o'chirish
         # (DELETE) endpoint'i uni himoyalangan savol uchun False qiladi.
         read_only_fields = ['id', 'created_by', 'created_at', 'is_active']
@@ -186,6 +190,61 @@ class QuestionSerializer(serializers.ModelSerializer):
             data['options'] = []
             data['correct_answer'] = 0
             data['correct_text'] = json.dumps(parsed, ensure_ascii=False)
+            return self._validate_score(data, instance)
+
+        # ─── Slayder (raqamli oraliq) ──────────────────────────────────────
+        # Variant yo'q: o'quvchi min..max oralig'idan raqam tanlaydi. Sozlama
+        # `correct_text` da JSON bo'lib saqlanadi (fill_blanks bilan bir xil
+        # yondashuv, yangi DB ustun kerak bo'lmasligi uchun):
+        #   {"min": 0, "max": 100, "step": 1, "correct": 42, "tolerance": 5}
+        if q_type == Question.QUESTION_TYPE_SLIDER:
+            raw = data.get('correct_text')
+            if raw is None and instance is not None:
+                raw = instance.correct_text
+            cfg = raw
+            if isinstance(cfg, str):
+                try:
+                    cfg = json.loads(cfg)
+                except (TypeError, ValueError):
+                    cfg = None
+            if not isinstance(cfg, dict):
+                raise serializers.ValidationError(
+                    {'correct_text': "Slayder sozlamasi JSON bo'lishi kerak: "
+                                     "{\"min\": 0, \"max\": 100, \"step\": 1, "
+                                     "\"correct\": 42, \"tolerance\": 5}"}
+                )
+            try:
+                s_min = int(cfg.get('min'))
+                s_max = int(cfg.get('max'))
+                s_step = int(cfg.get('step', 1))
+                s_correct = int(cfg.get('correct'))
+                s_tol = int(cfg.get('tolerance', 0))
+            except (TypeError, ValueError):
+                raise serializers.ValidationError(
+                    {'correct_text': "Slayder qiymatlari butun son bo'lishi kerak"}
+                )
+            if s_min >= s_max:
+                raise serializers.ValidationError(
+                    {'correct_text': "Slayderda min qiymat max dan kichik bo'lishi kerak"}
+                )
+            if s_step < 1:
+                raise serializers.ValidationError(
+                    {'correct_text': "Slayder qadami (step) 1 dan kichik bo'lmasligi kerak"}
+                )
+            if not (s_min <= s_correct <= s_max):
+                raise serializers.ValidationError(
+                    {'correct_text': "To'g'ri javob min..max oralig'ida bo'lishi kerak"}
+                )
+            if s_tol < 0:
+                raise serializers.ValidationError(
+                    {'correct_text': "Xatolik chegarasi (tolerance) manfiy bo'lmasligi kerak"}
+                )
+            data['options'] = []
+            data['correct_answer'] = 0
+            data['correct_text'] = json.dumps({
+                'min': s_min, 'max': s_max, 'step': s_step,
+                'correct': s_correct, 'tolerance': s_tol,
+            })
             return self._validate_score(data, instance)
 
         # ─── Multiple Select (bir nechta to'g'ri javob) ────────────────────

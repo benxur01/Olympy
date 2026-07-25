@@ -422,9 +422,15 @@ def mock_olympiads(request, center_id):
         question_ids = body.get('question_ids') or []
         if not isinstance(question_ids, list):
             question_ids = []
-        # Faqat shu markazning savollarini biriktiramiz (xavfsizlik).
+        # Faqat shu markazning UMUMIY (olimpiada) bankidagi savollarini
+        # biriktiramiz (xavfsizlik). Mock olimpiadani o'quvchi ishlaydi, shu
+        # sababli o'qituvchining shaxsiy Jonli Viktorina savoli tushmasligi kerak.
         valid_questions = list(
-            Question.objects.filter(center=center, pk__in=question_ids)
+            Question.objects.filter(
+                center=center,
+                pk__in=question_ids,
+                purpose=Question.QUESTION_PURPOSE_OLYMPIAD,
+            )
         ) if question_ids else []
 
         mock = MockOlympiad.objects.create(
@@ -502,13 +508,18 @@ def mock_olympiad_delete(request, center_id, mock_id):
     if update_fields:
         mock.save(update_fields=update_fields)
 
-    # question_ids berilsa — faqat shu markazning savollarini biriktiramiz.
+    # question_ids berilsa — faqat shu markazning umumiy (olimpiada) bankidagi
+    # savollarini biriktiramiz (Jonli Viktorina savoli o'quvchiga chiqmasin).
     if 'question_ids' in body:
         question_ids = body.get('question_ids') or []
         if not isinstance(question_ids, list):
             question_ids = []
         valid_questions = list(
-            Question.objects.filter(center=center, pk__in=question_ids)
+            Question.objects.filter(
+                center=center,
+                pk__in=question_ids,
+                purpose=Question.QUESTION_PURPOSE_OLYMPIAD,
+            )
         ) if question_ids else []
         mock.questions.set(valid_questions)
 
