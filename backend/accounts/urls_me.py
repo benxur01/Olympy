@@ -82,6 +82,12 @@ urlpatterns = [
          name='admin-toggle-user-premium'),
     path('admin/users/<int:user_id>/set-roles/', views.admin_set_user_roles,
          name='admin-set-user-roles'),
+    # Hisobni tiklash (support): raqamini yo'qotgan foydalanuvchi uchun
+    # o'z-o'ziga xizmat yo'li yo'q — admin qo'lda tiklaydi.
+    path('admin/users/<int:user_id>/reset-password/', views.admin_reset_user_password,
+         name='admin-reset-user-password'),
+    path('admin/users/<int:user_id>/change-phone/', views.admin_change_user_phone,
+         name='admin-change-user-phone'),
     path('admin/audit-log/', views.audit_log_list, name='admin-audit-log'),
     path('support/chat/', views_support.support_chat, name='support-chat'),
     path('admin/support/chats/', views_support.admin_support_threads, name='admin-support-chats'),

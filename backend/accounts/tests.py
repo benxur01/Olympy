@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -8,7 +9,8 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from accounts.models import PhoneVerification
+from accounts.models import AuditLog, PhoneVerification
+from accounts.utils import mask_phone
 
 User = get_user_model()
 
@@ -455,6 +457,146 @@ class AdminPremiumManagementTestCase(APITestCase):
         sub = self.target_user.subscriptions.filter(is_active=True).first()
         self.assertIsNotNone(sub)
         self.assertEqual(sub.plan.name, 'Pro (1 oy)')
+
+
+class AdminAccountRecoveryTestCase(APITestCase):
+    """Platform Admin qo'lda hisobni tiklash (parol / telefon raqam) testlari."""
+
+    def setUp(self):
+        self.admin_user = User.objects.create_superuser(
+            phone='+998909999999', password='AdminPass123', full_name='Admin',
+        )
+        self.other_admin = User.objects.create_user(
+            phone='+998908888888', password='AdminPass123', full_name='Other Admin',
+            is_platform_admin=True,
+        )
+        self.target_user = User.objects.create_user(
+            phone='+998901112233', password='UserPass123', full_name='Normal User',
+        )
+
+    # --- Parolni tiklash -------------------------------------------------
+
+    def _reset_url(self, user):
+        return reverse('admin-reset-user-password', kwargs={'user_id': user.id})
+
+    def test_reset_password_requires_platform_admin(self):
+        url = self._reset_url(self.target_user)
+        response = self.client.post(url, {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        self.client.force_authenticate(user=self.target_user)
+        response = self.client.post(url, {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_reset_password_self_blocked(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(self._reset_url(self.admin_user), {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reset_password_other_admin_blocked(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(self._reset_url(self.other_admin), {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reset_password_success(self):
+        old_version = self.target_user.token_version
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(self._reset_url(self.target_user), {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        new_password = response.data['new_password']
+        self.assertTrue(new_password)
+        self.assertEqual(response.data['user']['id'], self.target_user.id)
+
+        self.target_user.refresh_from_db()
+        # Yangi parol haqiqatan o'rnatildi, eskisi ishlamaydi.
+        self.assertTrue(self.target_user.check_password(new_password))
+        self.assertFalse(self.target_user.check_password('UserPass123'))
+        # Mavjud JWT sessiyalar bekor qilindi.
+        self.assertEqual(self.target_user.token_version, old_version + 1)
+
+        # Ochiq parol audit logga tushmasligi kerak.
+        log = AuditLog.objects.filter(action='admin_password_reset').first()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.target_id, self.target_user.id)
+        self.assertNotIn(new_password, json.dumps(log.extra))
+
+    # --- Telefon raqamni almashtirish ------------------------------------
+
+    def _phone_url(self, user):
+        return reverse('admin-change-user-phone', kwargs={'user_id': user.id})
+
+    def test_change_phone_requires_platform_admin(self):
+        url = self._phone_url(self.target_user)
+        response = self.client.post(url, {'phone': '+998901230000'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        self.client.force_authenticate(user=self.target_user)
+        response = self.client.post(url, {'phone': '+998901230000'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_change_phone_self_blocked(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            self._phone_url(self.admin_user), {'phone': '+998901230000'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_change_phone_other_admin_blocked(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            self._phone_url(self.other_admin), {'phone': '+998901230000'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_change_phone_invalid_number(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            self._phone_url(self.target_user), {'phone': '123'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_change_phone_conflict_with_existing_user(self):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            self._phone_url(self.target_user),
+            {'phone': self.other_admin.normalized_phone},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        self.target_user.refresh_from_db()
+        self.assertEqual(self.target_user.normalized_phone, '+998901112233')
+
+    def test_change_phone_success(self):
+        old_phone = self.target_user.normalized_phone
+        old_version = self.target_user.token_version
+        # Eski raqamda ochiq parol-tiklash sessiyasi — hisob ko'chgandan keyin
+        # u bilan parolni almashtirib bo'lmasligi kerak.
+        stale = PhoneVerification.objects.create(
+            normalized_phone=old_phone,
+            purpose=PhoneVerification.PURPOSE_PASSWORD_RESET,
+            verify_token='stale-reset-token',
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.post(
+            self._phone_url(self.target_user), {'phone': '90 123 00 00'}, format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.target_user.refresh_from_db()
+        self.assertEqual(self.target_user.phone, '+998901230000')
+        self.assertEqual(self.target_user.normalized_phone, '+998901230000')
+        self.assertEqual(self.target_user.token_version, old_version + 1)
+        self.assertFalse(PhoneVerification.objects.filter(pk=stale.pk).exists())
+
+        # Audit logda faqat maskalangan raqamlar.
+        log = AuditLog.objects.filter(action='admin_phone_change').first()
+        self.assertIsNotNone(log)
+        extra_text = json.dumps(log.extra)
+        self.assertNotIn(old_phone, extra_text)
+        self.assertNotIn('+998901230000', extra_text)
+        self.assertEqual(log.extra['new_phone'], mask_phone('+998901230000'))
 
 
 class StreakProtectionTestCase(APITestCase):

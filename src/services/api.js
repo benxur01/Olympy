@@ -789,6 +789,13 @@ export const OlympyApi = {
   // flag'i. roles oddiy rollar ro'yxati (student/teacher/manager/owner),
   // is_platform_admin esa admin checkboxidan keladi.
   adminSetUserRoles: (userId, { roles, isPlatformAdmin }, token) => request(`/api/admin/users/${userId}/set-roles/`, { method: 'PATCH', body: { roles: roles || [], is_platform_admin: !!isPlatformAdmin }, token }),
+  // Hisobni tiklash (support): ro'yxatdagi telefon raqamini yo'qotgan
+  // foydalanuvchi uchun o'z-o'ziga xizmat yo'li yo'q — admin shaxsini tashqi
+  // kanal orqali tasdiqlagandan keyin qo'lda tiklaydi.
+  // Javobda `new_password` ochiq matnda BIR MARTA keladi — uni saqlamang,
+  // loglamang, faqat adminga ko'rsatib, foydalanuvchiga yetkazish uchun.
+  adminResetUserPassword: (userId, token) => request(`/api/admin/users/${userId}/reset-password/`, { method: 'POST', token }),
+  adminChangeUserPhone: (userId, phone, token) => request(`/api/admin/users/${userId}/change-phone/`, { method: 'POST', body: { phone }, token }),
   // Subjects
   getSubjects: (token) => request('/api/subjects/', { token }),
   createSubject: (name, token) => request('/api/subjects/', { method: 'POST', body: { name }, token }),
