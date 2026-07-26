@@ -10,6 +10,9 @@ urlpatterns = [
     path('google/', views.google_login, name='google-login'),
     path('logout/', views.logout, name='logout'),
     path('token/refresh/', views.refresh_token, name='token-refresh'),
+    # Jonli viktorina/duel — Java real-time xizmatga uzatiladigan xom access JWT
+    # (cookie boshqa origin'ga bormaydi, shuning uchun token body'da olinadi).
+    path('realtime-token/', views.realtime_token, name='realtime-token'),
     path('restore/', views.restore_my_account, name='restore-my-account'),
     path('me/', views.delete_my_account, name='delete-my-account'),
     path('me/avatar/', views.update_my_avatar, name='update-my-avatar'),

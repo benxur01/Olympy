@@ -4,6 +4,7 @@ These back the Java "Brain Battles" duel service: JWT introspection and the
 finished-duel result ingest. Both are gated by the ``X-Internal-Service-Secret``
 header (``settings.INTERNAL_SERVICE_SECRET``).
 """
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 from django.urls import reverse
@@ -99,6 +100,62 @@ class IntrospectFailClosedTestCase(APITestCase):
             HTTP_X_INTERNAL_SERVICE_SECRET='',
         )
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+
+@override_settings(INTERNAL_SERVICE_SECRET=SECRET, JWT_EXPOSE_TOKENS_IN_BODY=False)
+class RealtimeTokenTestCase(APITestCase):
+    """Jonli viktorina oqimi: cookie-only sessiyadan xom JWT olish.
+
+    Production'da JWT faqat HttpOnly cookie'da yashaydi — frontend uni o'qiy
+    olmaydi, Java real-time xizmatga esa token so'rov body'sida / WebSocket
+    query'sida uzatilishi shart (cookie boshqa origin'ga bormaydi). Shu
+    endpoint bo'lmaganda klient bo'sh token yuborardi va xona yaratishda
+    "Invalid token" (401) chiqardi.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            phone='+998901114400', password='pw', full_name='Ustoz Aziz',
+        )
+        self.url = reverse('realtime-token')
+
+    def _login_with_cookie_only(self):
+        """Faqat HttpOnly access cookie — Authorization header YO'Q."""
+        self.client.cookies[settings.JWT_ACCESS_COOKIE_NAME] = _jwt_payload(self.user)['token']
+
+    def test_anonymous_is_rejected(self):
+        resp = self.client.post(self.url)
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_cookie_session_returns_token_that_introspect_accepts(self):
+        self._login_with_cookie_only()
+        resp = self.client.post(self.url)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(resp.data['token'])
+        self.assertGreater(resp.data['expires_in'], 0)
+
+        # Aynan Java xizmat bosadigan yo'l (DjangoClient.introspect).
+        introspect = self.client.post(
+            reverse('internal-introspect'),
+            {'token': resp.data['token']}, format='json', **HDR,
+        )
+        self.assertTrue(introspect.data['valid'])
+        self.assertEqual(introspect.data['user_id'], self.user.id)
+
+    def test_refresh_token_is_never_exposed(self):
+        self._login_with_cookie_only()
+        resp = self.client.post(self.url)
+        self.assertNotIn('refresh', resp.data)
+
+    def test_token_is_revoked_by_version_bump(self):
+        self._login_with_cookie_only()
+        token = self.client.post(self.url).data['token']
+        self.user.token_version = (self.user.token_version or 0) + 1
+        self.user.save(update_fields=['token_version'])
+        introspect = self.client.post(
+            reverse('internal-introspect'), {'token': token}, format='json', **HDR,
+        )
+        self.assertFalse(introspect.data['valid'])
 
 
 @override_settings(INTERNAL_SERVICE_SECRET=SECRET)

@@ -20,7 +20,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
-from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from .email_utils import send_email_verification_code
 from .models import AuditLog, EmailVerification, PhoneVerification
@@ -697,6 +697,31 @@ def refresh_token(request):
 
 
 refresh_token.cls.throttle_scope = 'auth'
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def realtime_token(request):
+    """POST /api/auth/realtime-token/ — real-time (Java) xizmat uchun access JWT.
+
+    Nega kerak: production'da JWT faqat HttpOnly cookie'da yashaydi (JS uni
+    o'qiy olmaydi) va cookie boshqa origin'dagi real-time xizmatga
+    (olympy-realtime) yuborilmaydi. Jonli viktorina esa tokenni AYNAN so'rov
+    body'sida (xona yaratish) va WebSocket query'sida uzatadi — cookie bu
+    yerda ishlamaydi. Klient tokenni shu endpoint orqali oladi: so'rovning
+    o'zi cookie bilan autentifikatsiya qilinadi.
+
+    Faqat ACCESS token qaytariladi — refresh token hech qachon body'ga
+    chiqmaydi. Java xizmat tokenni o'zi tekshirmaydi: uni
+    /api/accounts/introspect/ ga uzatadi, u yerda token_version ham
+    tekshiriladi (majburiy logout'dan keyin token darhol yaroqsiz bo'ladi).
+    """
+    token = AccessToken.for_user(request.user)
+    token['token_version'] = request.user.token_version
+    return Response({
+        'token': str(token),
+        'expires_in': int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
+    })
 
 
 @api_view(['POST'])
