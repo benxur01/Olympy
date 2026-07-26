@@ -23,7 +23,7 @@ from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from .email_utils import send_email_verification_code
-from .models import AuditLog, EmailVerification, PhoneVerification
+from .models import AuditLog, EmailVerification, LoginEvent, PhoneVerification
 from .permissions import IsPlatformAdmin
 from .throttling import PasswordChangePerUserThrottle
 from .serializers import (
@@ -91,6 +91,27 @@ def _should_expose_tokens_in_body(request):
 def _auth_response(request, user, *, extra=None, status_code=status.HTTP_200_OK):
     """Cookie o'rnatadi; tokenlarni body'da faqat kerak bo'lganda qaytaradi."""
     payload = _jwt_payload(user)
+    # Kirish tarixi (admin paneli "Kirish tarixi") aynan shu yerda yoziladi:
+    # _auth_response — yangi sessiya beriladigan YAGONA joy (login, Google
+    # login, ro'yxatdan o'tish, parol tiklash). `token/refresh/` bu yerdan
+    # o'tmaydi, shuning uchun tarix avtomatik yangilanishlar bilan to'lmaydi.
+    # Yozuv muvaffaqiyatsiz bo'lsa ham autentifikatsiya buzilmasligi kerak —
+    # AuditLog.log bilan bir xil yondashuv.
+    try:
+        # X-Forwarded-For'dan OXIRGI qiymat olinadi: proxy (Render) mijoz
+        # yuborgan headerni saqlab oxiriga haqiqiy IP'ni qo'shadi, ya'ni
+        # birinchi element spoof qilinishi mumkin. Bir xil mantiq —
+        # olympy_api.security_logging._client_ip.
+        forwarded = [
+            p.strip() for p in request.META.get('HTTP_X_FORWARDED_FOR', '').split(',') if p.strip()
+        ]
+        LoginEvent.objects.create(
+            user=user,
+            ip_address=(forwarded[-1] if forwarded else request.META.get('REMOTE_ADDR')) or None,
+            user_agent=(request.META.get('HTTP_USER_AGENT') or '')[:255],
+        )
+    except Exception:
+        security_logger.exception('LoginEvent yozilmadi user_id=%s', user.pk)
     body = {
         'cookie_auth': True,
         'user': UserSerializer(user, context={'request': request}).data,
@@ -588,6 +609,9 @@ def google_login(request):
     ).first()
 
     if user:
+        # Parol bilan login oqimidagi kabi: muddatli blok tugagan bo'lsa
+        # kirishdan oldin ochiladi (LoginSerializer.validate bilan bir xil).
+        user.release_expired_suspension()
         if not user.is_active:
             return Response({'detail': "Hisob bloklangan yoki o'chirilgan."}, status=status.HTTP_403_FORBIDDEN)
         # `student` va `owner` — o'zaro istisno qiluvchi (mutually exclusive)
@@ -715,7 +739,19 @@ def realtime_token(request):
     chiqmaydi. Java xizmat tokenni o'zi tekshirmaydi: uni
     /api/accounts/introspect/ ga uzatadi, u yerda token_version ham
     tekshiriladi (majburiy logout'dan keyin token darhol yaroqsiz bo'ladi).
+
+    Impersonatsiya tokeni bilan ISHLAMAYDI: aks holda 15 daqiqalik, belgili
+    (`impersonated_by`) va erta bekor qilinadigan token shu yerda 30 daqiqalik
+    TOZA tokenga almashtirilardi — u seans yakunlangandan keyin ham yashab,
+    yana o'zidan yangisini olib, cheksiz uzayishi mumkin edi. Amaliy zarari
+    ham yo'q: support tekshiruvi jonli viktorinaga o'quvchi nomidan
+    ulanishni talab qilmaydi.
     """
+    if request.auth is not None and request.auth.get('impersonated_by'):
+        return Response(
+            {'detail': "Foydalanuvchi sifatida ko'rish rejimida bu amal mumkin emas"},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     token = AccessToken.for_user(request.user)
     token['token_version'] = request.user.token_version
     return Response({
@@ -1161,6 +1197,41 @@ def update_my_avatar(request):
     return Response(UserSerializer(request.user, context={'request': request}).data)
 
 
+def _filter_admin_users_by_search(qs, search):
+    """`?search=` filtri — telefon yoki ism bo'yicha.
+
+    Optimizatsiya: telefon raqamlari uchun `icontains` B-tree indeksdan
+    foydalanmaydi (har qatorni to'liq skanerlash). Qidiruv matnida raqam ko'p
+    bo'lsa, uni telefon deb hisoblab `normalized_phone__startswith` ishlatamiz
+    — bu indeksli prefiks qidiruvi. Ism qidiruvi uchun `icontains` qoladi
+    (aloxida trigram indeks pg_trgm talab qiladi — bu yerda qo'shilmaydi).
+
+    Ro'yxat (`admin_users_list`) va CSV eksport (`admin_users_export`) bir xil
+    natija berishi uchun ajratilgan: aks holda eksport admin ekranda ko'rgan
+    to'plamdan boshqa qatorlarni chiqarib berardi.
+    """
+    if not search:
+        return qs
+    import re as _re
+
+    digits = _re.sub(r'\D', '', search)
+    # 3+ raqam va matnning ko'p qismi raqam bo'lsa — telefon qidiruvi.
+    looks_like_phone = len(digits) >= 3 and len(digits) >= len(search.replace(' ', '')) - 2
+    if not looks_like_phone:
+        return qs.filter(full_name__icontains=search)
+    norm = normalize_phone(search)
+    if norm:
+        # To'liq normalizatsiya bo'ldi (+<davlat kodi><raqam>) — aniq prefiks.
+        return qs.filter(normalized_phone__startswith=norm)
+    if search.lstrip().startswith('+'):
+        # Xalqaro qisman raqam ('+' bilan boshlangan, lekin hali to'liq emas)
+        # — kiritilgan raqamlar bo'yicha prefiks qidiruvi.
+        return qs.filter(normalized_phone__startswith=f'+{digits}')
+    # Qisman raqam, davlat kodisiz — orqaga moslik uchun O'zbekiston abonent
+    # raqami deb prefiks qidiramiz.
+    return qs.filter(normalized_phone__startswith=f'+998{digits[-9:]}')
+
+
 @api_view(['GET'])
 @permission_classes([IsPlatformAdmin])
 def admin_users_list(request):
@@ -1212,34 +1283,9 @@ def admin_users_list(request):
         )
         .order_by('-created_at')
     )
-    # Optional search query: phone yoki ism bo'yicha.
-    # Optimizatsiya: telefon raqamlari uchun `icontains` B-tree indeksdan
-    # foydalanmaydi (har qatorni to'liq skanerlash). Qidiruv matnida raqam ko'p
-    # bo'lsa, uni telefon deb hisoblab `normalized_phone__startswith` ishlatamiz
-    # — bu indeksli prefiks qidiruvi. Ism qidiruvi uchun `icontains` qoladi
-    # (aloxida trigram indeks pg_trgm talab qiladi — bu yerda qo'shilmaydi).
-    search = request.query_params.get('search', '').strip()
-    if search:
-        from django.db.models import Q
-        import re as _re
-        digits = _re.sub(r'\D', '', search)
-        # 3+ raqam va matnning ko'p qismi raqam bo'lsa — telefon qidiruvi.
-        looks_like_phone = len(digits) >= 3 and len(digits) >= len(search.replace(' ', '')) - 2
-        if looks_like_phone:
-            norm = normalize_phone(search)
-            if norm:
-                # To'liq normalizatsiya bo'ldi (+<davlat kodi><raqam>) — aniq prefiks.
-                qs = qs.filter(normalized_phone__startswith=norm)
-            elif search.lstrip().startswith('+'):
-                # Xalqaro qisman raqam ('+' bilan boshlangan, lekin hali
-                # to'liq emas) — kiritilgan raqamlar bo'yicha prefiks qidiruvi.
-                qs = qs.filter(normalized_phone__startswith=f'+{digits}')
-            else:
-                # Qisman raqam, davlat kodisiz — orqaga moslik uchun
-                # O'zbekiston abonent raqami deb prefiks qidiramiz.
-                qs = qs.filter(normalized_phone__startswith=f'+998{digits[-9:]}')
-        else:
-            qs = qs.filter(full_name__icontains=search)
+    # Optional search query: phone yoki ism bo'yicha (CSV eksport bilan
+    # bo'lishilgan filtr).
+    qs = _filter_admin_users_by_search(qs, request.query_params.get('search', '').strip())
     # O9: admin paneli uchun katta paginator — default 100 elem, ?page_size=
     # bilan max 200. Avval 50 limit bilan admin har sahifani alohida
     # varaqlardi va katta tashkilotlarda 1000+ foydalanuvchini ko'rish
@@ -1253,13 +1299,254 @@ def admin_users_list(request):
     return Response(UserSerializer(qs, many=True, context={'request': request}).data)
 
 
+# CSV eksportning qator chegarasi. Filtr bo'sh bo'lsa so'rov butun jadvalni
+# tortadi — o'n minglab foydalanuvchida bu bitta web worker'ni uzoq band qilib,
+# javobni ham xotirada to'liq yig'ardi. 5000 qator qo'lda ishlash uchun yetarli
+# (undan kattasi allaqachon tahlil vositasining ishi). Chegaradan oshsa javob
+# `X-Export-Truncated: 1` sarlavhasi bilan keladi va panel adminni ogohlantiradi.
+ADMIN_EXPORT_MAX_ROWS = 5000
+
+ADMIN_EXPORT_HEADERS = [
+    'ID', "To'liq ism", 'Telefon', 'Rollar', 'Holat', 'Premium', "Ro'yxatdan o'tgan",
+]
+
+
+def _csv_text(value):
+    """Excel formula injection himoyasi.
+
+    `full_name` foydalanuvchining o'zi yozadigan matn: `=`/`+`/`-`/`@` bilan
+    boshlansa Excel uni FORMULA deb hisoblaydi va admin faylni ochganda
+    bajarishga urinadi. Bir tirnoq qo'shilsa Excel qiymatni matn sifatida
+    ko'rsatadi (ekranda tirnoq ko'rinmaydi).
+    """
+    text = str(value or '')
+    return f"'{text}" if text[:1] in ('=', '+', '-', '@') else text
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def admin_users_export(request):
+    """GET /api/admin/users/export/ — filtrlangan ro'yxatni CSV qilib beradi.
+
+    Faqat Platform Admin uchun. `admin_users_list` bilan BIR XIL filtr
+    (`?search=`) va bir xil tartib — admin ekranda ko'rgan to'plamni yuklab
+    oladi. Ustunlar: ID, ism, telefon, rollar, holat, premium, ro'yxatdan
+    o'tgan sana.
+
+    Paginatsiya yo'q (fayl yaxlit bo'lishi kerak), o'rniga
+    `ADMIN_EXPORT_MAX_ROWS` chegarasi bor.
+    """
+    import csv
+
+    from django.contrib.auth import get_user_model
+    from django.http import HttpResponse
+
+    User = get_user_model()
+    qs = _filter_admin_users_by_search(
+        # `admin_users_list` bilan bir xil asos: platforma adminlari ro'yxatga
+        # ham, eksportga ham kirmaydi.
+        User.objects.exclude(is_platform_admin=True).order_by('-created_at'),
+        request.query_params.get('search', '').strip(),
+    ).only(
+        'id', 'full_name', 'normalized_phone', 'roles',
+        'is_active', 'is_premium', 'created_at',
+    )
+    # Chegaradan bitta ko'p o'qiymiz — qo'shimcha COUNT so'rovisiz kesilganini
+    # bilish uchun.
+    rows = list(qs[:ADMIN_EXPORT_MAX_ROWS + 1])
+    truncated = len(rows) > ADMIN_EXPORT_MAX_ROWS
+    rows = rows[:ADMIN_EXPORT_MAX_ROWS]
+
+    response = HttpResponse(content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = (
+        f'attachment; filename="olympy-foydalanuvchilar-{timezone.now():%Y-%m-%d}.csv"'
+    )
+    if truncated:
+        response['X-Export-Truncated'] = '1'
+    # UTF-8 BOM — Excel CSV'ni avtomatik UTF-8 sifatida tan oladi
+    # (olympiads/views.py dagi eksport bilan bir xil naqsh).
+    response.write('﻿')
+    writer = csv.writer(response)
+    writer.writerow(ADMIN_EXPORT_HEADERS)
+    for u in rows:
+        writer.writerow([
+            u.id,
+            _csv_text(u.full_name),
+            # Raqam maskalanmaydi: eksport faqat platforma admini uchun va
+            # aynan bog'lanish ma'lumoti sifatida kerak (audit jurnalidan
+            # farqli — u uzoq saqlanadi, shu sababli u yerda maskalangan).
+            _csv_text(u.normalized_phone),
+            ', '.join(u.roles or []),
+            'Faol' if u.is_active else 'Bloklangan',
+            'Ha' if u.is_premium else "Yo'q",
+            timezone.localtime(u.created_at).strftime('%Y-%m-%d') if u.created_at else '',
+        ])
+    return response
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def admin_user_detail(request, user_id):
+    """GET /api/admin/users/{id}/ — bitta foydalanuvchining to'liq profili.
+
+    Admin panelidagi "Batafsil" oynasi uchun: ro'yxat qatori faqat qisqacha
+    ma'lumot beradi (ism/telefon/rol/holat), bu yerda esa UserSerializer'ning
+    to'liq to'plami (rollar detali, ro'yxatdan o'tgan sana, is_active,
+    is_premium/is_premium_active, joriy tarif) yangi holatda keladi.
+
+    Blok sababi va muddati ATAYLAB `UserSerializer` ga qo'shilmagan: o'sha
+    serializer markaz egasi/menejerga qaytariladigan a'zo javoblarida ham
+    ishlatiladi (centers/views.py) va platforma admini yozgan izoh u yerga
+    chiqib ketmasligi kerak. Shu sababli maydonlar faqat shu admin
+    endpoint'ida javobga qo'shiladi.
+    """
+    from django.contrib.auth import get_user_model
+    from django.db.models import Prefetch
+    from centers.models import CenterMembership
+
+    User = get_user_model()
+    target = (
+        User.objects
+        .prefetch_related(
+            Prefetch(
+                'memberships',
+                queryset=CenterMembership.objects.select_related('center').order_by('-created_at'),
+            ),
+        )
+        .filter(pk=user_id)
+        .first()
+    )
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    data = UserSerializer(target, context={'request': request}).data
+    data['block_reason'] = target.block_reason or None
+    data['blocked_until'] = target.blocked_until.isoformat() if target.blocked_until else None
+    return Response(data)
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def admin_user_login_history(request, user_id):
+    """GET /api/admin/users/{id}/login-history/ — oxirgi 20 ta kirish.
+
+    "Batafsil" oynasidagi "Kirish tarixi" bloki uchun. LoginEvent faqat shu
+    funksiya ishga tushirilgandan KEYINGI kirishlarni qamraydi — eskilarini
+    tiklab bo'lmaydi (ma'lumot umuman saqlanmagan), shuning uchun bo'sh
+    ro'yxat normal holat va UI'da "hali ma'lumot yo'q" deb ko'rsatiladi.
+
+    Sahifalash yo'q: 20 ta oxirgi yozuv "kim, qachon, qayerdan kirdi"
+    savoliga javob berish uchun yetarli. Chuqurroq tekshiruv kerak bo'lsa
+    LoginEvent jadvalidan to'g'ridan-to'g'ri o'qiladi.
+
+    `user_id` javobda qaytariladi — panel ochiq modal qaysi foydalanuvchiga
+    tegishli ekanini tekshiradi (ketma-ket ochilgan oynalarda eski javob
+    ko'rinib qolmasin).
+    """
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    if not User.objects.filter(pk=user_id).exists():
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    events = LoginEvent.objects.filter(user_id=user_id).order_by('-created_at')[:20]
+    return Response({
+        'user_id': int(user_id),
+        'events': [{
+            'id': e.id,
+            'ip': e.ip_address,
+            'user_agent': e.user_agent,
+            'created_at': e.created_at.isoformat(),
+        } for e in events],
+    })
+
+
+# Blok muddati uchun ruxsat etilgan variantlar (kun). Admin panelidagi
+# tugmalar bilan bir xil — `admin_toggle_user_premium` dagi qat'iy ro'yxat
+# naqshi: ixtiyoriy son qabul qilinsa, terish xatosi (masalan 3650) sezilmay
+# o'tib ketardi. Muddat berilmasa blok doimiy bo'ladi.
+BLOCK_DURATION_DAYS = (1, 7, 14, 30)
+
+
+def _parse_suspension_payload(data):
+    """Bloklash/ochish tanasini tekshiradi.
+
+    Qaytaradi: `(is_active, reason, blocked_until, error)`. `error` None
+    bo'lmasa qolgan qiymatlar ma'nosiz. Bitta va ommaviy endpointlar bir xil
+    qoidalarga bo'ysunishi uchun ajratildi (majburiy sabab, faqat ruxsat
+    etilgan muddat).
+    """
+    desired = data.get('is_active')
+    if not isinstance(desired, bool):
+        return None, '', None, "is_active bool bo'lishi kerak"
+    if desired:
+        # Blok ochildi — sabab va muddat endi ma'nosiz, tozalaymiz (aks holda
+        # keyingi safar "Batafsil" oynasida eski sabab ko'rinib qolardi).
+        return True, '', None, None
+    reason = str(data.get('reason') or '').strip()
+    if not reason:
+        return None, '', None, 'Bloklash sababini kiriting'
+    duration_days = data.get('duration_days')
+    blocked_until = None
+    if duration_days not in (None, ''):
+        try:
+            days = int(duration_days)
+        except (TypeError, ValueError):
+            days = None
+        if days not in BLOCK_DURATION_DAYS:
+            return None, '', None, "Blok muddati noto'g'ri (faqat 1, 7, 14 yoki 30 kun)"
+        blocked_until = timezone.now() + timedelta(days=days)
+    # max_length=255 — uzun matn DB darajasida xato bermasin.
+    return False, reason[:255], blocked_until, None
+
+
+def _apply_suspension(request, target, is_active, reason, blocked_until, bulk=False):
+    """Blok holatini yozadi, seanslarni bekor qiladi va jurnalga tushiradi."""
+    target.block_reason = reason
+    target.blocked_until = blocked_until
+    target.is_active = is_active
+    # Bloklash ham, qayta tiklash ham mavjud JWT tokenlarni darhol
+    # bekor qiladi. Block paytida bu majburiy (bloklangan user eski token
+    # bilan kirmasin), unblock paytida ham xavfsizlik nuqtai nazaridan
+    # foydali — admin to'g'irlash uchun bloklab keyin tiklagan bo'lsa,
+    # avvalgi tokenlar qayta ishlashi kerak emas.
+    target.token_version = (target.token_version or 0) + 1
+    target.save(update_fields=[
+        'is_active', 'token_version', 'block_reason', 'blocked_until',
+    ])
+    extra = {
+        'is_active': is_active,
+        'phone': mask_phone(target.normalized_phone),
+        # Blokni ochishda ikkalasi ham None — jurnalda "doimiy blok" va
+        # "blok ochildi" yozuvlari bir xil ko'rinmasligi uchun `is_active`
+        # bilan birga o'qiladi.
+        'reason': target.block_reason or None,
+        'blocked_until': target.blocked_until.isoformat() if target.blocked_until else None,
+    }
+    if bulk:
+        # Ommaviy amal ham HAR BIR foydalanuvchi uchun alohida yozuv qoldiradi
+        # (jurnal per-user granular bo'lib qolsin — "Amallar tarixi" target
+        # bo'yicha qidiriladi). `bulk` faqat kelib chiqishini belgilaydi.
+        extra['bulk'] = True
+    AuditLog.log(request, 'user_block', target=target, extra=extra)
+
+
 @api_view(['POST'])
 @permission_classes([IsPlatformAdmin])
 def admin_set_user_active(request, user_id):
     """POST /api/admin/users/{id}/set-active/ — block or unblock a user.
 
-    Body: {"is_active": true|false}. Platform Admin only. Cannot disable
-    yourself or another platform admin (defensive).
+    Body: {"is_active": true|false, "reason": "...", "duration_days": 1|7|14|30}.
+    Platform Admin only. Cannot disable yourself or another platform admin
+    (defensive).
+
+    Bloklashda `reason` MAJBURIY: sabab foydalanuvchi bilan ishlashda ham
+    (nega bloklangan degan savolga javob), blokni ochish qarorida ham kerak.
+    `duration_days` ixtiyoriy — berilmasa (yoki null) blok doimiy, berilsa
+    o'sha muddatdan keyin blok o'z-o'zidan ochiladi
+    (`User.release_expired_suspension`: login paytida lazy, va kunlik
+    `accounts.expire_stale_suspensions` task orqali). Blokni ochishda sabab
+    ham, muddat ham tozalanadi.
     """
     from django.contrib.auth import get_user_model
 
@@ -1274,23 +1561,96 @@ def admin_set_user_active(request, user_id):
     if target.is_platform_admin:
         return Response({'detail': "Boshqa adminni bloklab bo'lmaydi"},
                         status=status.HTTP_400_BAD_REQUEST)
-    desired = request.data.get('is_active')
-    if not isinstance(desired, bool):
-        return Response({'detail': "is_active bool bo'lishi kerak"},
-                        status=status.HTTP_400_BAD_REQUEST)
-    target.is_active = desired
-    # Bloklash ham, qayta tiklash ham mavjud JWT tokenlarni darhol
-    # bekor qiladi. Block paytida bu majburiy (bloklangan user eski token
-    # bilan kirmasin), unblock paytida ham xavfsizlik nuqtai nazaridan
-    # foydali — admin to'g'irlash uchun bloklab keyin tiklagan bo'lsa,
-    # avvalgi tokenlar qayta ishlashi kerak emas.
-    target.token_version = (target.token_version or 0) + 1
-    target.save(update_fields=['is_active', 'token_version'])
-    AuditLog.log(request, 'user_block', target=target, extra={
-        'is_active': desired,
-        'phone': mask_phone(target.normalized_phone),
-    })
+    desired, reason, blocked_until, error = _parse_suspension_payload(request.data)
+    if error:
+        return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+
+    _apply_suspension(request, target, desired, reason, blocked_until)
     return Response(UserSerializer(target, context={'request': request}).data)
+
+
+# Bitta ommaviy so'rovdagi maksimal foydalanuvchi soni. Har bir id alohida
+# UPDATE + AuditLog yozuvidan o'tadi, shu sababli cheksiz ro'yxat bitta
+# so'rovni daqiqalarga cho'zib yuborardi. 200 — admin ro'yxatining maksimal
+# sahifa hajmi (`LargePageNumberPagination`), ya'ni admin bir ekranda ko'rgan
+# qatorlarni bir yo'la qamrab oladi.
+BULK_ACTION_MAX_USERS = 200
+
+
+def _parse_bulk_user_ids(raw):
+    """`user_ids` ni tekshiradi. Qaytaradi: `(ids, error)` (takrorlarsiz)."""
+    if not isinstance(raw, list) or not raw:
+        return None, "user_ids bo'sh bo'lmagan ro'yxat bo'lishi kerak"
+    ids = []
+    for value in raw:
+        try:
+            uid = int(value)
+        except (TypeError, ValueError):
+            return None, "user_ids faqat sonlardan iborat bo'lishi kerak"
+        if uid not in ids:
+            ids.append(uid)
+    if len(ids) > BULK_ACTION_MAX_USERS:
+        return None, (
+            f"Bir vaqtda {BULK_ACTION_MAX_USERS} tadan ko'p foydalanuvchini "
+            "tanlab bo'lmaydi"
+        )
+    return ids, None
+
+
+def _resolve_bulk_targets(request, ids):
+    """id'larni foydalanuvchilarga aylantiradi. Qaytaradi: `(targets, failed)`.
+
+    Himoyalar bitta foydalanuvchilik endpointlar bilan bir xil: o'zini ham,
+    boshqa platforma adminini ham ommaviy amal chetlab o'tadi (admin tanlovga
+    tasodifan tushib qolsa butun hisob o'zgarib ketmasin). Farqi shundaki bu
+    yerda butun so'rov 400 bilan qulamaydi — mos kelmagan id `failed`
+    ro'yxatiga tushadi, qolganlari bajariladi.
+    """
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    found = {u.id: u for u in User.objects.filter(pk__in=ids)}
+    targets, failed = [], []
+    for uid in ids:
+        target = found.get(uid)
+        if target is None:
+            failed.append({'id': uid, 'reason': 'Foydalanuvchi topilmadi'})
+        elif target.id == request.user.id:
+            failed.append({'id': uid, 'reason': "O'zingizga qo'llab bo'lmaydi"})
+        elif target.is_platform_admin:
+            failed.append({'id': uid, 'reason': "Admin hisobiga qo'llab bo'lmaydi"})
+        else:
+            targets.append(target)
+    return targets, failed
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_bulk_set_user_active(request):
+    """POST /api/admin/users/bulk-set-active/ — bir nechta hisobni bloklash/ochish.
+
+    Body: {"user_ids": [...], "is_active": true|false, "reason": "...",
+    "duration_days": 1|7|14|30}. Sabab/muddat qoidalari bitta foydalanuvchilik
+    `admin_set_user_active` bilan bir xil (`_parse_suspension_payload`).
+
+    Javob: {"succeeded": [id, ...], "failed": [{"id": .., "reason": ".."}]}.
+    Qisman muvaffaqiyat NORMAL holat — tanlovga admin hisobi yoki o'chirilgan
+    id tushib qolsa qolgan foydalanuvchilar baribir qayta ishlanadi, panel esa
+    nima o'tkazib yuborilganini ko'rsatadi.
+    """
+    ids, error = _parse_bulk_user_ids(request.data.get('user_ids'))
+    if error:
+        return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+    desired, reason, blocked_until, error = _parse_suspension_payload(request.data)
+    if error:
+        return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+
+    targets, failed = _resolve_bulk_targets(request, ids)
+    succeeded = []
+    for target in targets:
+        _apply_suspension(request, target, desired, reason, blocked_until, bulk=True)
+        succeeded.append(target.id)
+    return Response({'succeeded': succeeded, 'failed': failed})
 
 
 # Tashkilotga bog'langan rollar: bunday hisobda SHAXSIY premium (`is_premium`
@@ -1502,6 +1862,15 @@ def admin_toggle_user_premium(request, user_id):
 ALLOWED_ROLE_KEYS = ['student', 'teacher', 'manager', 'owner']
 
 
+def _normalize_role_keys(raw_roles):
+    """Ruxsat etilgan rollarni filtrlab, tartibni saqlab tozalaydi."""
+    normalized = []
+    for role in raw_roles:
+        if role in ALLOWED_ROLE_KEYS and role not in normalized:
+            normalized.append(role)
+    return normalized
+
+
 @api_view(['PATCH'])
 @permission_classes([IsPlatformAdmin])
 def admin_set_user_roles(request, user_id):
@@ -1538,11 +1907,7 @@ def admin_set_user_roles(request, user_id):
     if isinstance(is_admin_flag, bool):
         wants_admin = is_admin_flag
 
-    # Ruxsat etilgan rollarni filtrlab, tartibni saqlab tozalaymiz.
-    normalized_roles = []
-    for role in raw_roles:
-        if role in ALLOWED_ROLE_KEYS and role not in normalized_roles:
-            normalized_roles.append(role)
+    normalized_roles = _normalize_role_keys(raw_roles)
 
     # Xavfsizlik: admin o'zining platform admin huquqini bu yerdan olib
     # tashlay olmaydi (o'zini tasodifan tizimdan chiqarib qo'ymasin).
@@ -1574,6 +1939,49 @@ def admin_set_user_roles(request, user_id):
         })
 
     return Response(UserSerializer(target, context={'request': request}).data)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsPlatformAdmin])
+def admin_bulk_set_user_roles(request):
+    """PATCH /api/admin/users/bulk-set-roles/ — bir nechta hisobga bir xil rol.
+
+    Body: {"user_ids": [...], "roles": ["student", ...]}. Javob shakli
+    `admin_bulk_set_user_active` bilan bir xil.
+
+    `is_platform_admin` ATAYLAB qabul qilinmaydi: platform admin huquqini bir
+    yo'la ko'p hisobga tarqatish (yoki olib tashlash) ommaviy amal uchun
+    haddan tashqari xavfli — u bitta foydalanuvchilik `admin_set_user_roles`
+    da qoladi. Shu sababli `admin` kaliti ham `_normalize_role_keys` tomonidan
+    tashlab yuboriladi.
+    """
+    ids, error = _parse_bulk_user_ids(request.data.get('user_ids'))
+    if error:
+        return Response({'detail': error}, status=status.HTTP_400_BAD_REQUEST)
+    raw_roles = request.data.get('roles')
+    if not isinstance(raw_roles, list):
+        return Response({'detail': "roles ro'yxat (list) bo'lishi kerak"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    normalized_roles = _normalize_role_keys(raw_roles)
+
+    targets, failed = _resolve_bulk_targets(request, ids)
+    succeeded = []
+    for target in targets:
+        # Rollari allaqachon bir xil bo'lsa yozuv ham, jurnal ham kerak emas
+        # (bitta foydalanuvchilik endpoint bilan bir xil xulq), lekin natija
+        # baribir muvaffaqiyatli — kerakli holat allaqachon o'rnatilgan.
+        if list(target.roles or []) != normalized_roles:
+            target.roles = normalized_roles
+            target.save(update_fields=['roles'])
+            AuditLog.log(request, 'user_role_change', target=target, extra={
+                'roles': normalized_roles,
+                # Ommaviy amal bu flag'ga TEGMAYDI — targetlar baribir admin
+                # emas, shuning uchun jurnalda o'zgarmagan holat qoladi.
+                'is_platform_admin': bool(target.is_platform_admin),
+                'bulk': True,
+            })
+        succeeded.append(target.id)
+    return Response({'succeeded': succeeded, 'failed': failed})
 
 
 # Admin qo'lda bergan parol uchun alifbo. Chalkashadigan belgilar (0/O, 1/l/I)
@@ -1711,6 +2119,555 @@ def admin_change_user_phone(request, user_id):
         'new_phone': mask_phone(new_phone),
     })
     return Response(UserSerializer(target, context={'request': request}).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_reset_user_totp(request, user_id):
+    """POST /api/admin/users/{id}/reset-2fa/ — 2FA'ni majburan o'chirish.
+
+    Faqat Platform Admin uchun. O'z-o'ziga xizmat qiladigan `totp_disable`
+    joriy TOTP kodini yoki parolni talab qiladi — telefonini (autentifikator
+    ilovasini) yo'qotgan foydalanuvchi uchun bu yo'l yopiq: kod yo'q, parol
+    esa login paytida baribir 2FA'ga borib taqaladi. Shaxsi tashqi kanal
+    orqali tasdiqlangandan keyin admin shu endpoint bilan 2FA'ni o'chiradi;
+    foydalanuvchi kirib, profilidan qaytadan yoqadi.
+
+    Kalit ham o'chiriladi (`encrypted_totp_secret`), faqat `totp_enabled`
+    emas: eski kalit qolsa foydalanuvchi qayta yoqqanda o'sha yo'qolgan
+    ilovadagi kalitni tiklab qo'yardi.
+
+    `admin_reset_user_password` bilan bir xil cheklovlar: o'zining va boshqa
+    adminning 2FA'sini bu yerdan o'chirib bo'lmaydi — 2FA xavfsizlik
+    to'sig'i, uni panel orqali admin ustidan olib tashlash imkoniyati
+    qolmasligi kerak (admin hisobi shell orqali tiklanadi).
+    """
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    if target.id == request.user.id:
+        return Response({'detail': "O'z 2FA'ngizni bu yerdan o'chirib bo'lmaydi"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if target.is_platform_admin:
+        return Response({'detail': "Boshqa adminning 2FA'sini o'chirib bo'lmaydi"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if not target.totp_enabled:
+        return Response({'detail': "Bu foydalanuvchida 2FA yoqilmagan"},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    target.totp_enabled = False
+    target.totp_secret = ''  # property — `encrypted_totp_secret`ni bo'shatadi
+    # Hisobni o'zlashtirgan shaxs 2FA'ni yoqib egasini quvib chiqargan bo'lishi
+    # mumkin — bunday holatda uning jonli sessiyasi ham tugashi kerak.
+    target.token_version = (target.token_version or 0) + 1
+    target.save(update_fields=['totp_enabled', 'encrypted_totp_secret', 'token_version'])
+    AuditLog.log(request, 'admin_totp_reset', target=target, extra={
+        'phone': mask_phone(target.normalized_phone),
+    })
+    return Response(UserSerializer(target, context={'request': request}).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_force_logout_user(request, user_id):
+    """POST /api/admin/users/{id}/force-logout/ — barcha seanslarni yakunlash.
+
+    Faqat Platform Admin uchun. `token_version` oshadi — foydalanuvchining
+    barcha qurilmalaridagi JWT'lar (access ham, refresh ham) darhol bekor
+    bo'ladi, lekin hisob holati (`is_active`, rollar, parol) o'zgarmaydi.
+    Bu bloklashning yengil muqobili: qurilma o'g'irlangan yoki hisob birov
+    bilan bo'lishilgan deb gumon qilinganda foydalanuvchini butunlay
+    bloklamasdan chiqarib yuborish kerak bo'ladi.
+
+    Bloklash/parol tiklashdan farqli o'laroq boshqa ADMINGA ham ruxsat
+    berilgan: o'g'irlangan qurilma holatida admin sessiyasini tezda
+    yakunlash imkoniyati aynan shu yerda kerak (bu amal hech qanday huquqni
+    o'zgartirmaydi, faqat qaytadan kirishni talab qiladi). Faqat o'zini
+    bundan istisno qilamiz — admin panel ochiq turgan holda o'zini chiqarib
+    yuborishi tasodifiy va chalg'ituvchi bo'lardi.
+    """
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    if target.id == request.user.id:
+        return Response({'detail': "O'z seanslaringizni bu yerdan yakunlab bo'lmaydi"},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    bump_token_version(target)
+    AuditLog.log(request, 'admin_force_logout', target=target, extra={
+        'phone': mask_phone(target.normalized_phone),
+    })
+    return Response(UserSerializer(target, context={'request': request}).data)
+
+
+# Impersonatsiya ("foydalanuvchi sifatida ko'rish") tokenining umri. Oddiy
+# sessiya tokenidan (SIMPLE_JWT ACCESS_TOKEN_LIFETIME = 30 daqiqa) ATAYIN
+# qisqaroq: shikoyatni tekshirib chiqishga yetadi, lekin admin brauzerida
+# uzoq "yashab" qolmaydi.
+IMPERSONATION_TOKEN_LIFETIME = timedelta(minutes=15)
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_impersonate_user(request, user_id):
+    """POST /api/admin/users/{id}/impersonate/ — foydalanuvchi sifatida ko'rish.
+
+    Faqat Platform Admin uchun, faqat qo'llab-quvvatlash (support) maqsadida:
+    "menda tugma ishlamayapti", "natijam ko'rinmayapti" kabi shikoyatlarni
+    aynan shu foydalanuvchining ekranidan ko'rmasdan tekshirib bo'lmaydi.
+
+    Token dizayni (ataylab tor):
+    * FAQAT access token — refresh BERILMAYDI, ya'ni seansni uzaytirib
+      bo'lmaydi. 15 daqiqadan keyin token o'zi o'ladi.
+    * `user_id` — MAQSADLI foydalanuvchiniki. Shu sababli huquqlar ham
+      o'shanikidan kelib chiqadi: `IsPlatformAdmin` `request.user`ni
+      tekshiradi, `request.user` esa token ichidagi `user_id` bo'yicha
+      yuklanadi. Ya'ni bu token bilan admin endpoint'lariga qaytib kirib
+      bo'lmaydi (huquq oshirish yo'q) — pastdagi "boshqa adminni maqsad qilib
+      bo'lmaydi" cheklovi bilan birga bu xususiyat konstruksiya bo'yicha
+      ta'minlanadi.
+    * `token_version` — maqsadli foydalanuvchiniki. Ya'ni mavjud bekor qilish
+      mexanizmlari (bloklash, parol tiklash, majburiy logout) impersonatsiya
+      tokenini ham darhol o'ldiradi.
+    * `impersonated_by` — tokenni bergan admin ID'si. Bu da'vo forenzika
+      uchun (log/token dekodida kim boshlaganini ko'rish) va erta bekor
+      qilish tekshiruvini faqat shu tokenlarga cheklash uchun ishlatiladi
+      (`OlympyJWTAuthentication.get_user`).
+
+    Cookie ATAYLAB O'RNATILMAYDI (`_set_auth_cookies` chaqirilmaydi): adminning
+    o'z HttpOnly sessiyasi tegilmasdan qoladi va "Admin panelga qaytish" — bu
+    shunchaki impersonatsiya tokenini tashlab yuborish. Token javob body'sida
+    qaytadi, frontend uni `Authorization: Bearer` sifatida yuboradi (header
+    cookie'dan ustun — `OlympyJWTAuthentication.authenticate`).
+    """
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    if target.id == request.user.id:
+        return Response({'detail': "O'zingiz sifatida ko'rish shart emas"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    # `admin_reset_user_password` bilan bir xil cheklov: boshqa adminning
+    # hisobiga kirish butun admin qatlamini bir-biriga ochib qo'yardi (bir
+    # admin ikkinchisining nomidan istalgan amalni bajara olardi va audit
+    # jurnalida aktor sifatida O'SHA ikkinchisi ko'rinardi).
+    if target.is_platform_admin:
+        return Response({'detail': "Boshqa admin sifatida ko'rib bo'lmaydi"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    # Bloklangan/o'chirilgan hisob uchun token baribir ishlamaydi
+    # (`JWTAuthentication.get_user` `is_active=False` ni rad etadi) — noaniq
+    # 401 o'rniga darhol tushunarli xabar beramiz.
+    if not target.is_active:
+        return Response({'detail': "Bloklangan foydalanuvchi sifatida ko'rib bo'lmaydi"},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    token = AccessToken.for_user(target)
+    token['token_version'] = target.token_version
+    token['impersonated_by'] = request.user.id
+    token.set_exp(lifetime=IMPERSONATION_TOKEN_LIFETIME)
+    # Audit yozuvi token QAYTARILISHIDAN OLDIN — javob yo'lda uzilib qolsa ham
+    # "kim, qachon, kimning hisobiga kirdi" izi qoladi.
+    AuditLog.log(request, 'admin_impersonate_start', target=target, extra={
+        'phone': mask_phone(target.normalized_phone),
+        'expires_in': int(IMPERSONATION_TOKEN_LIFETIME.total_seconds()),
+    })
+    return Response({
+        'token': str(token),
+        # Frontend seansni yakunlaganda shu jti'ni qaytaradi — token o'sha
+        # zahoti qora ro'yxatga tushadi (`admin_end_impersonation`).
+        'jti': token['jti'],
+        'expires_in': int(IMPERSONATION_TOKEN_LIFETIME.total_seconds()),
+        'user': UserSerializer(target, context={'request': request}).data,
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_end_impersonation(request, user_id):
+    """POST /api/admin/users/{id}/impersonate/end/ — seansni yakunlash.
+
+    Frontend "Admin panelga qaytish" bosilganda chaqiradi. So'rov ADMINNING
+    o'z seansi bilan ketadi (impersonatsiya tokeni undan oldin tashlanadi),
+    shuning uchun `IsPlatformAdmin` bu yerda ham o'rinli.
+
+    Ikki ish qiladi:
+    1. `admin_impersonate_end` audit yozuvi — seansning oxirini belgilaydi.
+       Tokenning tugash vaqtini kutib turmaydi: jurnalda haqiqiy oyna
+       ko'rinishi kerak.
+    2. Body'dagi `jti` bo'yicha tokenni qora ro'yxatga qo'shadi (cache, TTL =
+       token umri). Bu ixtiyoriy qadam: `jti` kelmasa ham (masalan eski
+       klient) seans yakunlangan hisoblanadi, token esa 15 daqiqada o'zi
+       o'ladi.
+    """
+    from django.contrib.auth import get_user_model
+    from django.core.cache import cache
+
+    from .authentication import impersonation_block_key
+
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+
+    # Xom `jti` — faqat cache kalitiga qo'shiladi, shuning uchun uzunligini
+    # cheklaymiz (klientdan kelgan qiymat cheksiz kalit yasamasin).
+    jti = str(request.data.get('jti') or '').strip()[:64]
+    if jti:
+        cache.set(
+            impersonation_block_key(jti),
+            True,
+            timeout=int(IMPERSONATION_TOKEN_LIFETIME.total_seconds()),
+        )
+    AuditLog.log(request, 'admin_impersonate_end', target=target, extra={
+        'phone': mask_phone(target.normalized_phone),
+        'revoked': bool(jti),
+    })
+    return Response({'ok': True, 'revoked': bool(jti)})
+
+
+# ---------------------------------------------------------------------------
+# Takrorlangan hisoblarni birlashtirish (support)
+# ---------------------------------------------------------------------------
+# Autentifikatsiya faqat telefon raqamga bog'langan (`USERNAME_FIELD =
+# normalized_phone`, OTP Telegram orqali). SIM kartasini yo'qotgan o'quvchi
+# yangi raqam bilan QAYTA ro'yxatdan o'tadi va bir odamda ikkita hisob paydo
+# bo'ladi: tanga, streak va urinishlar tarixi ikkiga bo'linadi, ularni
+# qo'shishning hech qanday yo'li yo'q edi.
+#
+# Dizayn qoidalari:
+#  * Ko'chiriladigan to'plam ATAYLAB TOR — faqat o'quvchining o'z progressi
+#    (balans, streak, urinish/mashq tarixi, kirish tarixi). Buxgalteriya
+#    (obuna/to'lov), markaz a'zoligi, ikki tomonlama yozuvlar (duel) va
+#    e'lon qilingan reyting natijalari TEGILMAYDI — pastdagi
+#    `_merge_untouched_models` ro'yxatiga qarang.
+#  * Manba hisob HECH QACHON o'chirilmaydi: bloklanadi (batch 3 mexanizmi,
+#    doimiy) va qatorlari joyida qoladi — audit izi ham, tekshirish imkoni
+#    ham saqlanadi.
+#  * Avval `preview` (hech narsa o'zgarmaydi), keyin `commit` (bitta
+#    tranzaksiya). Ikkalasi ham AYNAN bir xil rejani quradi.
+
+
+def _merge_movable_models():
+    """Birlashtirishda maqsadli hisobga KO'CHIRILADIGAN modellar.
+
+    Har element: `(model, label, collision_field)`. `collision_field` —
+    `user` bilan birga UNIQUE bo'lgan maydon nomi; None bo'lsa bu modelda
+    to'qnashuv bo'lishi mumkin emas (cheklov yo'q).
+
+    To'qnashuv qoidasi hamma joyda bir xil: MAQSADLI hisobning qatori
+    qoladi, manbadagi juftlashgan qator ko'chirilmaydi (o'chirilmaydi ham —
+    manba hisobida joyida qolib, tarix sifatida ko'rinaveradi) va nechtasi
+    o'tkazib yuborilgani javobda ham, audit jurnalida ham ko'rsatiladi.
+    """
+    from attempts.models import TestAttempt, TestSession
+
+    from .models import (
+        Achievement, DailyGoal, DailyPracticeSet, DailyQuestionAnswer,
+        LoginEvent, RewardRedemption,
+    )
+    return [
+        (TestAttempt, 'Olimpiada urinishlari', 'olympiad_id'),
+        (TestSession, 'Test sessiyalari', 'olympiad_id'),
+        (DailyPracticeSet, 'Kunlik mashq to\'plamlari', 'date'),
+        (DailyQuestionAnswer, 'Kunlik savol javoblari', 'daily_question_id'),
+        (DailyGoal, 'Kunlik maqsadlar', 'date'),
+        (Achievement, 'Yutuqlar', 'type'),
+        (RewardRedemption, 'Mukofot buyurtmalari', None),
+        (LoginEvent, 'Kirish tarixi', None),
+    ]
+
+
+def _merge_untouched_models(source):
+    """Manba hisobda QOLADIGAN ma'lumotlar — nega qolgani sababi bilan.
+
+    Bu ro'yxat javobda ko'rsatiladi: admin nima ko'chmaganini bilib, kerak
+    bo'lsa qo'lda (mavjud vositalar bilan — premium berish, markazga qayta
+    qabul qilish) hal qiladi. Faqat NOL bo'lmagan qatorlar qaytariladi.
+    """
+    from django.db.models import Q
+
+    from billing.models import PaymentTransaction, UserSubscription
+    from centers.models import CenterMembership
+
+    from .models import Duel, WeeklyContestResult
+
+    rows = [
+        (
+            'billing.UserSubscription', 'Obunalar',
+            UserSubscription.objects.filter(user=source).count(),
+            "Obuna ko'chirilmaydi — pullik huquqni bir hisobdan ikkinchisiga "
+            "o'tkazish buxgalteriya qarori. Kerak bo'lsa maqsadli hisobga "
+            "qo'lda premium bering.",
+        ),
+        (
+            'billing.PaymentTransaction', "To'lovlar",
+            PaymentTransaction.objects.filter(user=source).count(),
+            "To'lov tarixi kim to'laganiga bog'langan holda qoladi (refund va "
+            "solishtirish uchun).",
+        ),
+        (
+            'centers.CenterMembership', "Markaz a'zoliklari",
+            CenterMembership.objects.filter(user=source).count(),
+            "A'zolik — markazning ruxsati. Maqsadli hisob markazga qaytadan "
+            "qabul qilinishi kerak.",
+        ),
+        (
+            'accounts.WeeklyContestResult', 'Haftalik musobaqa natijalari',
+            WeeklyContestResult.objects.filter(user=source).count(),
+            "Yakunlangan musobaqa reytingi o'zgartirilmaydi — bir odam bir "
+            "musobaqada ikki marta turib qolmasligi kerak.",
+        ),
+        (
+            'accounts.Duel', 'Duellar',
+            Duel.objects.filter(Q(challenger=source) | Q(opponent=source)).count(),
+            "Duel ikki tomonlama yozuv — ko'chirilsa raqibning tarixi ham "
+            "o'zgarib ketardi.",
+        ),
+    ]
+    return [
+        {'model': model, 'label': label, 'count': count, 'note': note}
+        for model, label, count, note in rows if count
+    ]
+
+
+def _merge_blockers(source, target):
+    """Birlashtirishga yo'l qo'ymaydigan sabablar ro'yxati (bo'sh = ruxsat)."""
+    from centers.models import EducationCenter
+
+    blockers = []
+    if source.id == target.id:
+        return ["Manba va maqsadli hisob bir xil"]
+    for user, role in ((source, 'Manba'), (target, 'Maqsadli')):
+        # Bloklash/parol tiklash bilan bir xil cheklov: admin hisobiga
+        # tegadigan amal panel orqali umuman bo'lmasin.
+        if user.is_platform_admin:
+            blockers.append(f'{role} hisob — platforma admini')
+        # `EducationCenter.owner` PROTECT: markaz egasining hisobi umuman
+        # bloklab bo'lmaydigan tashkiliy hisob, SIM yo'qotgan o'quvchi emas.
+        if EducationCenter.objects.filter(owner=user).exists():
+            blockers.append(f'{role} hisob — markaz egasi')
+    if target.deleted_at:
+        blockers.append("Maqsadli hisob o'chirilgan (soft-delete)")
+    # Ikki marta birlashtirish amalda bo'sh ish bajaradi (qatorlar allaqachon
+    # ko'chgan, tanga nolga tushgan), lekin adminni chalg'itadi.
+    if AuditLog.objects.filter(action='admin_user_merge', extra__source_id=source.id).exists():
+        blockers.append('Manba hisob avval boshqa hisobga birlashtirilgan')
+    return blockers
+
+
+def _build_merge_plan(source, target):
+    """Ko'chiriladigan qatorlarni SANAYDI, hech narsani o'zgartirmaydi.
+
+    Qaytaradi: har model uchun `{model_cls, model, label, move, skip,
+    skip_ids}`. `skip_ids` faqat ichki foydalanish uchun (javobga
+    chiqmaydi) — `commit` aynan shu qatorlarni chetlab o'tadi.
+    """
+    plan = []
+    for model, label, collision_field in _merge_movable_models():
+        pairs = list(model.objects.filter(user=source).values_list('pk', collision_field)) \
+            if collision_field \
+            else [(pk, None) for pk in model.objects.filter(user=source).values_list('pk', flat=True)]
+        skip_ids = []
+        if collision_field:
+            taken = set(
+                model.objects.filter(user=target).values_list(collision_field, flat=True)
+            )
+            skip_ids = [pk for pk, value in pairs if value in taken]
+        plan.append({
+            'model_cls': model,
+            'model': f'{model._meta.app_label}.{model.__name__}',
+            'label': label,
+            'move': len(pairs) - len(skip_ids),
+            'skip': len(skip_ids),
+            'skip_ids': skip_ids,
+        })
+    return plan
+
+
+def _merge_user_brief(user):
+    """Oynada ko'rsatiladigan qisqacha hisob ma'lumoti.
+
+    Telefon TO'LIQ qaytariladi (maskalanmaydi): admin panelida raqam
+    allaqachon ochiq ko'rinadi (`admin_users_export` izohiga qarang) va
+    tasdiqlash qadami aynan manba raqamini qo'lda yozishni talab qiladi.
+    """
+    return {
+        'id': user.id,
+        'full_name': user.full_name,
+        'phone': user.normalized_phone,
+        'is_active': user.is_active,
+        'is_premium': user.is_premium,
+        'coins': user.coins,
+        'streak_count': user.streak_count,
+        'created_at': user.created_at.isoformat() if user.created_at else None,
+    }
+
+
+def _resolve_merge_pair(request):
+    """`{source_id, target_id}` ni tekshirib foydalanuvchilarni topadi.
+
+    Qaytaradi: `(source, target, error_response)`.
+    """
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    try:
+        source_id = int(request.data.get('source_id'))
+        target_id = int(request.data.get('target_id'))
+    except (TypeError, ValueError):
+        return None, None, Response(
+            {'detail': 'source_id va target_id son bo\'lishi kerak'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    users = {u.id: u for u in User.objects.filter(pk__in={source_id, target_id})}
+    source, target = users.get(source_id), users.get(target_id)
+    if not source or not target:
+        return None, None, Response({'detail': 'Foydalanuvchi topilmadi'},
+                                    status=status.HTTP_404_NOT_FOUND)
+    return source, target, None
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_merge_users_preview(request):
+    """POST /api/admin/users/merge/preview/ — quruq yurish (dry-run).
+
+    Body: `{"source_id": .., "target_id": ..}`. HECH NARSANI
+    O'ZGARTIRMAYDI — faqat nima ko'chishini, nima to'qnashuv sababli
+    o'tkazib yuborilishini, nima manbada qolishini va birlashtirishga
+    to'sqinlik qiladigan sabablarni sanaydi.
+
+    `can_merge=false` bo'lsa `commit` ham aynan shu sabab bilan rad etadi.
+    """
+    source, target, error = _resolve_merge_pair(request)
+    if error:
+        return error
+
+    blockers = _merge_blockers(source, target)
+    plan = _build_merge_plan(source, target) if not blockers else []
+    return Response({
+        'source': _merge_user_brief(source),
+        'target': _merge_user_brief(target),
+        'blockers': blockers,
+        'can_merge': not blockers,
+        'moves': [
+            {k: v for k, v in entry.items() if k not in ('model_cls', 'skip_ids')}
+            for entry in plan
+        ],
+        'totals': {
+            'move': sum(e['move'] for e in plan),
+            'skip': sum(e['skip'] for e in plan),
+        },
+        # Skalyar maydonlar qatorlar kabi "ko'chmaydi", ular hisoblanadi:
+        # tanga qo'shiladi (balans), streak esa kattasi olinadi (kunlar soni
+        # — qo'shib bo'lmaydi).
+        'balances': {
+            'coins': {
+                'source': source.coins, 'target': target.coins,
+                'result': (target.coins or 0) + (source.coins or 0),
+            },
+            'streak_count': {
+                'source': source.streak_count, 'target': target.streak_count,
+                'result': max(source.streak_count or 0, target.streak_count or 0),
+            },
+            'longest_streak': {
+                'source': source.longest_streak, 'target': target.longest_streak,
+                'result': max(source.longest_streak or 0, target.longest_streak or 0),
+            },
+        },
+        'untouched': _merge_untouched_models(source) if not blockers else [],
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_merge_users_commit(request):
+    """POST /api/admin/users/merge/commit/ — birlashtirishni bajaradi.
+
+    Body: `preview` bilan bir xil `{"source_id": .., "target_id": ..}`.
+    Butun amal BITTA tranzaksiyada: qatorlar ko'chishi, balans qo'shilishi
+    va manba hisobning bloklanishi yo hammasi bajariladi, yo hech biri.
+
+    Manba hisob O'CHIRILMAYDI — doimiy bloklanadi ("#N hisobiga
+    birlashtirildi" sababi bilan) va barcha qatorlari joyida qoladi. Shu
+    sababli natijani tekshirish (va zarur bo'lsa qo'lda qaytarish) mumkin.
+    """
+    source, target, error = _resolve_merge_pair(request)
+    if error:
+        return error
+
+    blockers = _merge_blockers(source, target)
+    if blockers:
+        return Response({'detail': blockers[0], 'blockers': blockers},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    plan = _build_merge_plan(source, target)
+    moved_coins = source.coins or 0
+    moved = {e['model']: e['move'] for e in plan if e['move']}
+    skipped = {e['model']: e['skip'] for e in plan if e['skip']}
+    with transaction.atomic():
+        for entry in plan:
+            qs = entry['model_cls'].objects.filter(user=source)
+            if entry['skip_ids']:
+                qs = qs.exclude(pk__in=entry['skip_ids'])
+            qs.update(user=target)
+
+        target.coins = (target.coins or 0) + moved_coins
+        target.streak_count = max(target.streak_count or 0, source.streak_count or 0)
+        target.longest_streak = max(target.longest_streak or 0, source.longest_streak or 0)
+        # Ikkalasidan KEYINGI faollik sanasi — streak mantiqi shu sanadan
+        # keyingi kunni "ketma-ket" deb hisoblaydi.
+        if source.last_active_date and (
+            not target.last_active_date or source.last_active_date > target.last_active_date
+        ):
+            target.last_active_date = source.last_active_date
+        target.save(update_fields=[
+            'coins', 'streak_count', 'longest_streak', 'last_active_date',
+        ])
+
+        # Balans KO'CHDI, ya'ni manbada qolmasligi kerak — aks holda manba
+        # hisob biror sabab bilan qayta ochilsa tanga ikki marta sarflanardi.
+        source.coins = 0
+        source.save(update_fields=['coins'])
+        # Manba hisobni doimiy bloklaymiz (`blocked_until=None` — muddati
+        # tugagan blokni ochadigan mexanizm bunga hech qachon tegmaydi).
+        # `_apply_suspension` seanslarni ham bekor qiladi va manba hisob
+        # uchun alohida `user_block` audit yozuvini qoldiradi.
+        _apply_suspension(
+            request, source, False, f'#{target.id} hisobiga birlashtirildi', None,
+        )
+        # Jurnal ham TRANZAKSIYA ICHIDA: birlashtirish izsiz qolmasligi
+        # kerak. Audit target — TIRIK hisob (jurnalda ism bo'yicha topiladi),
+        # manba esa `extra.source_id` da; manba hisobning o'z tarixida esa
+        # yuqoridagi `user_block` yozuvi aynan shu sabab bilan turadi.
+        AuditLog.log(request, 'admin_user_merge', target=target, extra={
+            'source_id': source.id,
+            'source_phone': mask_phone(source.normalized_phone),
+            'target_phone': mask_phone(target.normalized_phone),
+            'moved': moved,
+            'skipped': skipped,
+            'coins_moved': moved_coins,
+        })
+    return Response({
+        'ok': True,
+        'moved': moved,
+        'skipped': skipped,
+        'coins_moved': moved_coins,
+        'source': _merge_user_brief(source),
+        'target': UserSerializer(target, context={'request': request}).data,
+    })
 
 
 def _make_otp():
@@ -3116,18 +4073,67 @@ get_my_predictions.cls.throttle_scope = 'ai_predictions'
 @api_view(['GET'])
 @permission_classes([IsPlatformAdmin])
 def audit_log_list(request):
-    """GET /api/admin/audit-log/ — oxirgi 100 ta audit yozuvi (faqat platform admin)."""
-    logs = AuditLog.objects.select_related('actor').order_by('-created_at')[:100]
+    """GET /api/admin/audit-log/ — audit yozuvlari (faqat platform admin).
+
+    Paginatsiya majburiy: jurnal cheksiz o'sadi va avval qat'iy `[:100]`
+    kesim bor edi — undan eskiroq yozuvlarga admin panelidan umuman yetib
+    bo'lmasdi. `?page=` / `?page_size=` (max 200) boshqa admin ro'yxatlari
+    bilan bir xil `LargePageNumberPagination` orqali.
+
+    `?search=` — aktor ismi, harakat kodi, IP yoki target ID bo'yicha.
+    Target nomi bo'yicha qidiruv yo'q: target generic (target_type +
+    target_id), SQL join qilib bo'lmaydi.
+    """
+    from django.contrib.auth import get_user_model
+    from django.db.models import Q
+
+    from olympy_api.pagination import LargePageNumberPagination
+
+    User = get_user_model()
+    qs = AuditLog.objects.select_related('actor').order_by('-created_at')
+    search = request.query_params.get('search', '').strip()
+    if search:
+        cond = (
+            Q(actor__full_name__icontains=search)
+            | Q(action__icontains=search)
+            | Q(ip_address__icontains=search)
+        )
+        # target_id — IntegerField: 32-bit chegaradan katta raqam Postgres'da
+        # "integer out of range" xatosini berardi, shuning uchun chegaradan
+        # oshsa ID bo'yicha qidiruv shartini umuman qo'shmaymiz.
+        if search.isdigit() and int(search) < 2 ** 31:
+            cond |= Q(target_id=int(search))
+        qs = qs.filter(cond)
+
+    paginator = LargePageNumberPagination()
+    page = paginator.paginate_queryset(qs, request)
+    logs = page if page is not None else list(qs[:100])
+    # Target — generic (target_type + target_id). Foydalanuvchiga tegishli
+    # yozuvlar uchun ismni BITTA qo'shimcha so'rov bilan yechamiz (har qator
+    # uchun alohida so'rov emas).
+    target_user_ids = {
+        l.target_id for l in logs if l.target_type == 'User' and l.target_id
+    }
+    target_names = dict(
+        User.objects.filter(pk__in=target_user_ids).values_list('id', 'full_name')
+    ) if target_user_ids else {}
     data = [{
         'id': l.id,
         'actor': l.actor.full_name if l.actor else 'Tizim',
-        'action': l.get_action_display(),
+        'actor_id': l.actor_id,
+        # `action` — xom kod (filtr/qidiruv uchun), `action_label` — o'zbekcha
+        # ko'rinish (AuditLog.ACTION_CHOICES).
+        'action': l.action,
+        'action_label': l.get_action_display(),
         'target_type': l.target_type,
         'target_id': l.target_id,
+        'target_name': target_names.get(l.target_id) if l.target_type == 'User' else None,
         'extra': l.extra,
         'ip': l.ip_address,
         'created_at': l.created_at.isoformat(),
     } for l in logs]
+    if page is not None:
+        return paginator.get_paginated_response(data)
     return Response(data)
 
 

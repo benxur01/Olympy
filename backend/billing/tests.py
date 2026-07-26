@@ -1103,3 +1103,79 @@ class OrgPremiumStudentBoundaryTestCase(APITestCase):
         self.assertEqual(res.data['student_tier'], 'standart')
         res = self.client.get('/api/me/subject-weakness/')
         self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+
+class AdminUserBillingHistoryTestCase(APITestCase):
+    """GET /api/admin/users/<id>/billing-history/ — admin paneldagi "Batafsil"
+    oynasining "To'lovlar tarixi" bloki."""
+
+    def setUp(self):
+        SubscriptionPlan.objects.all().delete()
+        self.plan = SubscriptionPlan.objects.create(
+            name='Pro Plan', price=Decimal('149000.00'), duration_days=30, is_active=True,
+        )
+        self.admin = User.objects.create_user(
+            phone='+998901110001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.target = User.objects.create_user(
+            phone='+998901110002', password='UserPass123', full_name='Target',
+        )
+        self.other = User.objects.create_user(
+            phone='+998901110003', password='UserPass123', full_name='Other',
+        )
+        PaymentTransaction.objects.create(
+            user=self.target, plan=self.plan, amount=self.plan.price,
+            provider='click', status=PaymentTransaction.STATUS_SUCCESS,
+            provider_transaction_id='tx-target-1',
+        )
+        PaymentTransaction.objects.create(
+            user=self.other, plan=self.plan, amount=self.plan.price,
+            provider='payme', status=PaymentTransaction.STATUS_FAILED,
+            provider_transaction_id='tx-other-1',
+        )
+        UserSubscription.objects.create(
+            user=self.target, plan=self.plan, is_active=True,
+            end_date=timezone.now() + timedelta(days=30),
+        )
+        self.target.refresh_from_db()
+
+    def _url(self, user_id):
+        return reverse('admin-user-billing-history', args=[user_id])
+
+    def test_returns_only_target_user_transactions(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self._url(self.target.id))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['user_id'], self.target.id)
+        providers = [tx['provider'] for tx in res.data['transactions']]
+        self.assertEqual(providers, ['click'])
+        self.assertEqual(res.data['transactions'][0]['plan_name'], 'Pro Plan')
+        self.assertEqual(res.data['subscription']['plan_name'], 'Pro Plan')
+        self.assertTrue(res.data['subscription']['is_active'])
+
+    def test_user_without_payments_is_empty_not_error(self):
+        fresh = User.objects.create_user(
+            phone='+998901110004', password='UserPass123', full_name='Fresh',
+        )
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self._url(fresh.id))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIsNone(res.data['subscription'])
+        self.assertEqual(res.data['transactions'], [])
+
+    def test_unknown_user_is_404(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self._url(99999))
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_self_service_current_subscription_matches_admin_view(self):
+        """Ikkala endpoint bitta serializerdan foydalanadi — o'z-o'ziga xizmat
+        ko'rinishi ("Mening abonementim") admin ko'rinishi bilan bir xil."""
+        self.client.force_authenticate(user=self.target)
+        mine = self.client.get(reverse('billing-subscription-current'))
+        self.assertEqual(mine.status_code, status.HTTP_200_OK)
+        self.client.force_authenticate(user=self.admin)
+        theirs = self.client.get(self._url(self.target.id))
+        self.assertEqual(mine.data, theirs.data['subscription'])

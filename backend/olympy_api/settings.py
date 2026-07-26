@@ -619,6 +619,15 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'accounts.expire_stale_premium',
         'schedule': crontab(hour=3, minute=45, nowfun=lambda: datetime.now(dt_timezone.utc)),
     },
+    # Har kuni soat 04:05 UTC — muddati tugagan vaqtinchalik bloklarni ochadi.
+    # Login oqimidagi lazy tekshiruv (`release_expired_suspension`) faqat
+    # foydalanuvchi qaytib kirsa ishlaydi — qaytmaganida admin ro'yxatida
+    # holat eskirib qolardi. `expire-stale-premium` (03:45) tugagach: ikkala
+    # sweep ham `accounts_user` jadvalini yangilaydi.
+    'expire-stale-suspensions': {
+        'task': 'accounts.expire_stale_suspensions',
+        'schedule': crontab(hour=4, minute=5, nowfun=lambda: datetime.now(dt_timezone.utc)),
+    },
     # Har 30 soniyada worker tirikligini cache'ga yozadi — /api/health/
     # shu timestamp orqali Celery holatini ("ok"/"down") aniqlaydi.
     'celery-heartbeat': {
@@ -701,6 +710,11 @@ CORS_ALLOW_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']
 # qulaydi.
 from corsheaders.defaults import default_headers as _cors_default_headers
 CORS_ALLOW_HEADERS = list(_cors_default_headers) + ['x-olympy-auth-storage']
+# Cross-origin javobda brauzer JS'ga faqat "safelisted" sarlavhalarni ko'rsatadi.
+# Admin CSV eksporti 5000 qatordan oshsa kesiladi va buni X-Export-Truncated
+# bilan bildiradi — ro'yxatga qo'shilmasa panel ogohlantirishni hech qachon
+# ko'rsata olmasdi (dev muhitida frontend :5173, backend :8000).
+CORS_EXPOSE_HEADERS = ['X-Export-Truncated']
 if not DEBUG and not CORS_ALLOWED_ORIGINS:
     raise ImproperlyConfigured('OLYMPY_CORS_ALLOWED_ORIGINS must be set in production')
 OLYMPY_FRONTEND_URL = (

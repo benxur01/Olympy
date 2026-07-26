@@ -9,7 +9,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from accounts.models import AuditLog, PhoneVerification
+from accounts.models import AuditLog, LoginEvent, PhoneVerification
 from accounts.utils import mask_phone
 
 User = get_user_model()
@@ -187,6 +187,24 @@ class LoginLogoutTestCase(APITestCase):
         response = self.client.post(url, {}, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(response.data.get('ok'))
+
+    def test_login_records_login_event(self):
+        """Muvaffaqiyatli kirish "Kirish tarixi" uchun yozuv qoldiradi."""
+        self.client.post(reverse('login'), {
+            'phone': self.phone,
+            'password': self.password,
+        }, format='json', HTTP_USER_AGENT='TestBrowser/1.0', REMOTE_ADDR='10.1.2.3')
+        event = LoginEvent.objects.filter(user=self.user).first()
+        self.assertIsNotNone(event)
+        self.assertEqual(event.ip_address, '10.1.2.3')
+        self.assertEqual(event.user_agent, 'TestBrowser/1.0')
+
+    def test_failed_login_records_nothing(self):
+        self.client.post(reverse('login'), {
+            'phone': self.phone,
+            'password': 'WrongPass999',
+        }, format='json')
+        self.assertFalse(LoginEvent.objects.filter(user=self.user).exists())
 
 
 class IsPremiumDefaultTestCase(APITestCase):
@@ -2116,3 +2134,1151 @@ class LiveQuizQuestionIsolationTestCase(APITestCase):
         self.assertEqual(chosen_ids, {q.id for q in self.olympiad_questions})
         self.assertNotIn(self.live_quiz_question.id, chosen_ids)
 
+
+
+class AdminUserLoginHistoryTestCase(APITestCase):
+    """GET /api/admin/users/<id>/login-history/ — "Batafsil" oynasidagi
+    "Kirish tarixi" bloki."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            phone='+998903330001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.target = User.objects.create_user(
+            phone='+998903330002', password='UserPass123', full_name='Target',
+        )
+        self.other = User.objects.create_user(
+            phone='+998903330003', password='UserPass123', full_name='Other',
+        )
+
+    def _url(self, user_id):
+        return reverse('admin-user-login-history', args=[user_id])
+
+    def test_returns_only_target_user_events(self):
+        LoginEvent.objects.create(
+            user=self.target, ip_address='10.0.0.1', user_agent='Chrome',
+        )
+        LoginEvent.objects.create(
+            user=self.other, ip_address='10.0.0.2', user_agent='Firefox',
+        )
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self._url(self.target.id))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['user_id'], self.target.id)
+        self.assertEqual(len(res.data['events']), 1)
+        self.assertEqual(res.data['events'][0]['ip'], '10.0.0.1')
+        self.assertEqual(res.data['events'][0]['user_agent'], 'Chrome')
+
+    def test_user_without_logins_is_empty_not_error(self):
+        # Funksiya joriy qilinishidan oldingi kirishlarni tiklab bo'lmaydi —
+        # bo'sh ro'yxat normal holat (UI "hali ma'lumot yo'q" deb ko'rsatadi).
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self._url(self.target.id))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['events'], [])
+
+    def test_capped_at_20_newest_first(self):
+        now = timezone.now()
+        for i in range(25):
+            event = LoginEvent.objects.create(user=self.target, ip_address=f'10.0.1.{i}')
+            # created_at — auto_now_add, shuning uchun aniq tartib uchun
+            # yaratilgandan keyin qo'lda suramiz (i=0 eng yangisi).
+            LoginEvent.objects.filter(pk=event.pk).update(created_at=now - timedelta(minutes=i))
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self._url(self.target.id))
+        self.assertEqual(len(res.data['events']), 20)
+        self.assertEqual(res.data['events'][0]['ip'], '10.0.1.0')
+
+    def test_unknown_user_is_404(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self._url(99999))
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class AdminSuspensionTestCase(APITestCase):
+    """POST /api/admin/users/<id>/set-active/ — sababli, muddatli bloklash."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            phone='+998904440001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.password = 'UserPass123'
+        self.target = User.objects.create_user(
+            phone='+998904440002', password=self.password, full_name='Target',
+        )
+        self.url = reverse('admin-set-user-active', args=[self.target.id])
+
+    def test_block_without_reason_is_400(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {'is_active': False}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.is_active)
+
+    def test_block_with_duration_sets_reason_and_expiry(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {
+            'is_active': False,
+            'reason': 'Imtihonda qoidabuzarlik',
+            'duration_days': 7,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.target.refresh_from_db()
+        self.assertFalse(self.target.is_active)
+        self.assertEqual(self.target.block_reason, 'Imtihonda qoidabuzarlik')
+        self.assertIsNotNone(self.target.blocked_until)
+        delta = self.target.blocked_until - timezone.now()
+        self.assertGreater(delta, timedelta(days=6, hours=23))
+        self.assertLess(delta, timedelta(days=7, minutes=1))
+
+    def test_block_without_duration_is_permanent(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {
+            'is_active': False, 'reason': 'Spam',
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.target.refresh_from_db()
+        self.assertFalse(self.target.is_active)
+        self.assertIsNone(self.target.blocked_until)
+
+    def test_unsupported_duration_is_400(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {
+            'is_active': False, 'reason': 'Spam', 'duration_days': 3650,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.is_active)
+
+    def test_unblock_clears_reason_and_expiry(self):
+        self.target.is_active = False
+        self.target.block_reason = 'Spam'
+        self.target.blocked_until = timezone.now() + timedelta(days=7)
+        self.target.save()
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {'is_active': True}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.is_active)
+        self.assertEqual(self.target.block_reason, '')
+        self.assertIsNone(self.target.blocked_until)
+
+    def test_block_is_audit_logged_with_reason_and_expiry(self):
+        self.client.force_authenticate(user=self.admin)
+        self.client.post(self.url, {
+            'is_active': False, 'reason': 'Spam', 'duration_days': 1,
+        }, format='json')
+        log = AuditLog.objects.filter(action='user_block', target_id=self.target.id).first()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.extra['reason'], 'Spam')
+        self.assertIsNotNone(log.extra['blocked_until'])
+        self.assertFalse(log.extra['is_active'])
+        # Telefon avvalgidek maskalangan holda qoladi (naqsh buzilmadi).
+        self.assertEqual(log.extra['phone'], mask_phone(self.target.normalized_phone))
+
+    def test_expired_suspension_is_lifted_on_login(self):
+        self.target.is_active = False
+        self.target.block_reason = 'Spam'
+        self.target.blocked_until = timezone.now() - timedelta(minutes=1)
+        self.target.save()
+        res = self.client.post(reverse('login'), {
+            'phone': self.target.normalized_phone,
+            'password': self.password,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.is_active)
+        self.assertEqual(self.target.block_reason, '')
+        self.assertIsNone(self.target.blocked_until)
+
+    def test_active_suspension_still_blocks_login(self):
+        self.target.is_active = False
+        self.target.block_reason = 'Spam'
+        self.target.blocked_until = timezone.now() + timedelta(days=1)
+        self.target.save()
+        res = self.client.post(reverse('login'), {
+            'phone': self.target.normalized_phone,
+            'password': self.password,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.target.refresh_from_db()
+        self.assertFalse(self.target.is_active)
+
+    def test_permanent_block_is_not_lifted_on_login(self):
+        self.target.is_active = False
+        self.target.block_reason = 'Spam'
+        self.target.save()
+        res = self.client.post(reverse('login'), {
+            'phone': self.target.normalized_phone,
+            'password': self.password,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.target.refresh_from_db()
+        self.assertFalse(self.target.is_active)
+
+    def test_expire_stale_suspensions_task_releases_only_expired(self):
+        from accounts.tasks import expire_stale_suspensions
+
+        expired = self.target
+        expired.is_active = False
+        expired.block_reason = 'Spam'
+        expired.blocked_until = timezone.now() - timedelta(hours=1)
+        expired.save()
+        permanent = User.objects.create_user(
+            phone='+998904440003', password='UserPass123', full_name='Permanent',
+        )
+        permanent.is_active = False
+        permanent.block_reason = 'Doimiy'
+        permanent.save()
+        soft_deleted = User.objects.create_user(
+            phone='+998904440004', password='UserPass123', full_name='Deleted',
+        )
+        soft_deleted.is_active = False
+        soft_deleted.deleted_at = timezone.now()
+        soft_deleted.save()
+
+        result = expire_stale_suspensions()
+        self.assertEqual(result['released_users'], 1)
+        expired.refresh_from_db()
+        permanent.refresh_from_db()
+        soft_deleted.refresh_from_db()
+        self.assertTrue(expired.is_active)
+        self.assertEqual(expired.block_reason, '')
+        self.assertFalse(permanent.is_active)
+        self.assertFalse(soft_deleted.is_active)
+
+    def test_detail_exposes_reason_and_expiry(self):
+        self.target.is_active = False
+        self.target.block_reason = 'Spam'
+        self.target.blocked_until = timezone.now() + timedelta(days=7)
+        self.target.save()
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(reverse('admin-user-detail', args=[self.target.id]))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['block_reason'], 'Spam')
+        self.assertIsNotNone(res.data['blocked_until'])
+
+
+class AdminResetTotpTestCase(APITestCase):
+    """POST /api/admin/users/<id>/reset-2fa/ — 2FA'ni majburan o'chirish."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            phone='+998905550001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.target = User.objects.create_user(
+            phone='+998905550002', password='UserPass123', full_name='Target',
+        )
+        self.target.totp_enabled = True
+        self.target.totp_secret = 'JBSWY3DPEHPK3PXP'
+        self.target.save()
+        self.url = reverse('admin-reset-user-totp', args=[self.target.id])
+
+    def test_admin_clears_totp_and_bumps_token_version(self):
+        old_version = self.target.token_version
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.target.refresh_from_db()
+        self.assertFalse(self.target.totp_enabled)
+        self.assertEqual(self.target.encrypted_totp_secret, '')
+        self.assertEqual(self.target.token_version, old_version + 1)
+        self.assertTrue(
+            AuditLog.objects.filter(action='admin_totp_reset', target_id=self.target.id).exists()
+        )
+
+    def test_user_without_totp_is_400(self):
+        self.target.totp_enabled = False
+        self.target.save(update_fields=['totp_enabled'])
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_other_admin_is_400(self):
+        self.target.is_platform_admin = True
+        self.target.save(update_fields=['is_platform_admin'])
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.totp_enabled)
+
+    def test_non_admin_is_403(self):
+        self.client.force_authenticate(user=self.target)
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unknown_user_is_404(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(reverse('admin-reset-user-totp', args=[99999]), {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class AdminForceLogoutTestCase(APITestCase):
+    """POST /api/admin/users/<id>/force-logout/ — bloklamasdan chiqarish."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            phone='+998906660001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.target = User.objects.create_user(
+            phone='+998906660002', password='UserPass123', full_name='Target',
+        )
+        self.url = reverse('admin-force-logout-user', args=[self.target.id])
+
+    def test_bumps_token_version_without_blocking(self):
+        old_version = self.target.token_version
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.token_version, old_version + 1)
+        self.assertTrue(self.target.is_active)
+        self.assertEqual(self.target.block_reason, '')
+        self.assertTrue(
+            AuditLog.objects.filter(action='admin_force_logout', target_id=self.target.id).exists()
+        )
+
+    def test_old_refresh_token_is_rejected_after_force_logout(self):
+        login = self.client.post(reverse('login'), {
+            'phone': self.target.normalized_phone,
+            'password': 'UserPass123',
+        }, format='json')
+        self.assertEqual(login.status_code, status.HTTP_200_OK)
+        refresh = login.cookies['olympy_refresh'].value
+        self.client.force_authenticate(user=self.admin)
+        self.client.post(self.url, {}, format='json')
+        self.client.force_authenticate(user=None)
+        self.client.cookies.clear()
+        res = self.client.post(reverse('token-refresh'), {'refresh': refresh}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_self_is_400(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('admin-force-logout-user', args=[self.admin.id]), {}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_non_admin_is_403(self):
+        self.client.force_authenticate(user=self.target)
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class AdminImpersonationTestCase(APITestCase):
+    """POST /api/admin/users/<id>/impersonate/[end/] — "sifatida ko'rish".
+
+    Eng nozik admin funksiyasi, shuning uchun testlar asosan CHEKLOVLARNI
+    tekshiradi: kim maqsad bo'la olmaydi, token qanday huquq beradi (va
+    bermaydi), qachon o'ladi va har ikkala hodisa jurnalga tushadimi.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            phone='+998907770001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.target = User.objects.create_user(
+            phone='+998907770002', password='UserPass123', full_name='Target',
+        )
+        self.target.roles = ['student']
+        self.target.save()
+        self.url = reverse('admin-impersonate-user', args=[self.target.id])
+
+    def _start(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        # Bearer token bilan ishlash uchun admin seansidan chiqamiz.
+        self.client.force_authenticate(user=None)
+        return res.data
+
+    def test_start_returns_token_and_logs_audit(self):
+        data = self._start()
+        self.assertTrue(data['token'])
+        self.assertTrue(data['jti'])
+        self.assertEqual(data['user']['id'], self.target.id)
+        # Refresh token HECH QACHON qaytmaydi — seansni uzaytirib bo'lmasin.
+        self.assertNotIn('refresh', data)
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action='admin_impersonate_start',
+                actor=self.admin,
+                target_id=self.target.id,
+            ).exists()
+        )
+
+    def test_token_lifetime_is_shorter_than_normal_session(self):
+        from django.conf import settings
+        from rest_framework_simplejwt.tokens import AccessToken
+
+        data = self._start()
+        token = AccessToken(data['token'])
+        lifetime = token['exp'] - token['iat']
+        self.assertEqual(lifetime, 15 * 60)
+        self.assertEqual(data['expires_in'], 15 * 60)
+        self.assertLess(
+            lifetime, int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
+        )
+        self.assertEqual(token['impersonated_by'], self.admin.id)
+        # `user_id` — simplejwt uni satr sifatida yozadi.
+        self.assertEqual(str(token['user_id']), str(self.target.id))
+
+    def test_admin_session_cookies_are_untouched(self):
+        # Javob auth cookie O'RNATMAYDI: adminning o'z HttpOnly seansi
+        # buzilmasligi kerak (aks holda "qaytish" imkoni yo'qolardi).
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertNotIn('olympy_access', res.cookies)
+        self.assertNotIn('olympy_refresh', res.cookies)
+
+    def test_token_resolves_to_target_user(self):
+        data = self._start()
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {data['token']}")
+        res = self.client.get(reverse('me'))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['id'], self.target.id)
+
+    def test_token_cannot_reach_admin_endpoints(self):
+        # Huquq oshirish yo'qligining asosiy testi: tokenni ADMIN bergan
+        # bo'lsa ham, u maqsadli foydalanuvchi sifatida hal qilinadi.
+        data = self._start()
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {data['token']}")
+        self.assertEqual(
+            self.client.get(reverse('admin-users-list')).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertEqual(
+            self.client.get(reverse('admin-audit-log')).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertEqual(
+            self.client.post(
+                reverse('admin-impersonate-user', args=[self.admin.id]), {}, format='json',
+            ).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_bearer_wins_over_admin_cookie_and_admin_session_survives(self):
+        """Brauzerdagi haqiqiy holat: admin cookie'si VA impersonatsiya
+        header'i bir vaqtda yuboriladi.
+
+        Frontend butun oqimi shunga tayanadi: header cookie'dan ustun bo'lsa
+        so'rov maqsadli foydalanuvchi sifatida ketadi, header olib tashlansa
+        (= "Admin panelga qaytish") adminning o'z seansi joyida turadi.
+        """
+        login = self.client.post(reverse('login'), {
+            'phone': self.admin.normalized_phone, 'password': 'AdminPass123',
+        }, format='json')
+        self.assertEqual(login.status_code, status.HTTP_200_OK)
+
+        # Impersonatsiya adminning cookie seansi bilan boshlanadi.
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        token = res.data['token']
+
+        # Cookie (admin) + Bearer (maqsad) → maqsadli foydalanuvchi.
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        me = self.client.get(reverse('me'))
+        self.assertEqual(me.status_code, status.HTTP_200_OK)
+        self.assertEqual(me.data['id'], self.target.id)
+        # Admin cookie'si so'rovda bo'lsa ham huquq oshmaydi.
+        self.assertEqual(
+            self.client.get(reverse('admin-users-list')).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+        # Header olib tashlandi — admin yana o'zi (cookie buzilmagan).
+        self.client.credentials()
+        me_admin = self.client.get(reverse('me'))
+        self.assertEqual(me_admin.status_code, status.HTTP_200_OK)
+        self.assertEqual(me_admin.data['id'], self.admin.id)
+        self.assertEqual(
+            self.client.get(reverse('admin-users-list')).status_code,
+            status.HTTP_200_OK,
+        )
+
+    def test_token_cannot_be_exchanged_for_a_longer_session(self):
+        """Impersonatsiya tokenini "yuvib", uzunroq seansga aylantirib
+        bo'lmaydi — aks holda 15 daqiqalik oyna ma'nosini yo'qotardi."""
+        data = self._start()
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {data['token']}")
+        # 1) Refresh sifatida yaramaydi (access token, token_type mos emas).
+        self.assertEqual(
+            self.client.post(
+                reverse('token-refresh'), {'refresh': data['token']}, format='json',
+            ).status_code,
+            status.HTTP_401_UNAUTHORIZED,
+        )
+        # 2) Jonli xizmat tokenini ham bermaydi — u belgisiz (`impersonated_by`
+        #    yo'q) va uzunroq bo'lardi, ya'ni seansdan keyin ham yashardi.
+        self.assertEqual(
+            self.client.post(reverse('realtime-token'), {}, format='json').status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+    def test_end_revokes_token_and_logs_audit(self):
+        data = self._start()
+        self.client.force_authenticate(user=self.admin)
+        end = self.client.post(
+            reverse('admin-end-impersonation', args=[self.target.id]),
+            {'jti': data['jti']}, format='json',
+        )
+        self.assertEqual(end.status_code, status.HTTP_200_OK)
+        self.assertTrue(end.data['revoked'])
+        self.assertTrue(
+            AuditLog.objects.filter(
+                action='admin_impersonate_end',
+                actor=self.admin,
+                target_id=self.target.id,
+            ).exists()
+        )
+        # Token muddati tugamagan bo'lsa ham endi ishlamaydi.
+        self.client.force_authenticate(user=None)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {data['token']}")
+        self.assertEqual(
+            self.client.get(reverse('me')).status_code, status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_end_without_jti_still_logs(self):
+        self._start()
+        self.client.force_authenticate(user=self.admin)
+        end = self.client.post(
+            reverse('admin-end-impersonation', args=[self.target.id]), {}, format='json',
+        )
+        self.assertEqual(end.status_code, status.HTTP_200_OK)
+        self.assertFalse(end.data['revoked'])
+        self.assertTrue(
+            AuditLog.objects.filter(action='admin_impersonate_end', target_id=self.target.id).exists()
+        )
+
+    def test_force_logout_invalidates_impersonation_token(self):
+        # Token maqsadli foydalanuvchining `token_version`ini olib yuradi —
+        # mavjud bekor qilish yo'llari (majburiy logout, bloklash, parol
+        # tiklash) uni ham darhol o'ldiradi.
+        data = self._start()
+        self.client.force_authenticate(user=self.admin)
+        self.client.post(
+            reverse('admin-force-logout-user', args=[self.target.id]), {}, format='json',
+        )
+        self.client.force_authenticate(user=None)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {data['token']}")
+        self.assertEqual(
+            self.client.get(reverse('me')).status_code, status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_self_is_400(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('admin-impersonate-user', args=[self.admin.id]), {}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_other_admin_is_400(self):
+        self.target.is_platform_admin = True
+        self.target.save(update_fields=['is_platform_admin'])
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(AuditLog.objects.filter(action='admin_impersonate_start').exists())
+
+    def test_blocked_user_is_400(self):
+        self.target.is_active = False
+        self.target.save(update_fields=['is_active'])
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_unknown_user_is_404(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('admin-impersonate-user', args=[99999]), {}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_admin_is_403(self):
+        self.client.force_authenticate(user=self.target)
+        self.assertEqual(
+            self.client.post(self.url, {}, format='json').status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertEqual(
+            self.client.post(
+                reverse('admin-end-impersonation', args=[self.target.id]), {}, format='json',
+            ).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+
+
+class AdminBulkUserActionsTestCase(APITestCase):
+    """POST /api/admin/users/bulk-set-active/ va PATCH .../bulk-set-roles/.
+
+    Asosiy talab: amal QISMAN bajarilishi mumkin — chetlab o'tilgan id butun
+    so'rovni qulatmaydi, `failed` ro'yxatida sabab bilan qaytadi.
+    """
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            phone='+998907770001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.other_admin = User.objects.create_user(
+            phone='+998907770002', password='AdminPass123', full_name='Other admin',
+        )
+        self.other_admin.is_platform_admin = True
+        self.other_admin.save()
+        self.first = User.objects.create_user(
+            phone='+998907770003', password='UserPass123', full_name='First',
+        )
+        self.second = User.objects.create_user(
+            phone='+998907770004', password='UserPass123', full_name='Second',
+        )
+        self.active_url = reverse('admin-bulk-set-user-active')
+        self.roles_url = reverse('admin-bulk-set-user-roles')
+
+    def test_block_applies_to_every_target(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.active_url, {
+            'user_ids': [self.first.id, self.second.id],
+            'is_active': False,
+            'reason': 'Spam',
+            'duration_days': 7,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(sorted(res.data['succeeded']), sorted([self.first.id, self.second.id]))
+        self.assertEqual(res.data['failed'], [])
+        for user in (self.first, self.second):
+            user.refresh_from_db()
+            self.assertFalse(user.is_active)
+            self.assertEqual(user.block_reason, 'Spam')
+            self.assertIsNotNone(user.blocked_until)
+
+    def test_block_without_reason_is_400_and_changes_nothing(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.active_url, {
+            'user_ids': [self.first.id], 'is_active': False,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.first.refresh_from_db()
+        self.assertTrue(self.first.is_active)
+
+    def test_admin_self_and_unknown_ids_are_reported_not_fatal(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.active_url, {
+            'user_ids': [self.first.id, self.admin.id, self.other_admin.id, 999999],
+            'is_active': False,
+            'reason': 'Spam',
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['succeeded'], [self.first.id])
+        failed_ids = {row['id'] for row in res.data['failed']}
+        self.assertEqual(failed_ids, {self.admin.id, self.other_admin.id, 999999})
+        # Muhimi: boshqa admin ommaviy amal bilan bloklanib qolmaydi.
+        self.other_admin.refresh_from_db()
+        self.admin.refresh_from_db()
+        self.assertTrue(self.other_admin.is_active)
+        self.assertTrue(self.admin.is_active)
+
+    def test_unblock_clears_reason_and_expiry(self):
+        for user in (self.first, self.second):
+            user.is_active = False
+            user.block_reason = 'Spam'
+            user.blocked_until = timezone.now() + timedelta(days=7)
+            user.save()
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.active_url, {
+            'user_ids': [self.first.id, self.second.id], 'is_active': True,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        for user in (self.first, self.second):
+            user.refresh_from_db()
+            self.assertTrue(user.is_active)
+            self.assertEqual(user.block_reason, '')
+            self.assertIsNone(user.blocked_until)
+
+    def test_each_target_gets_its_own_audit_row(self):
+        self.client.force_authenticate(user=self.admin)
+        self.client.post(self.active_url, {
+            'user_ids': [self.first.id, self.second.id],
+            'is_active': False,
+            'reason': 'Spam',
+        }, format='json')
+        for user in (self.first, self.second):
+            log = AuditLog.objects.filter(action='user_block', target_id=user.id).first()
+            self.assertIsNotNone(log)
+            self.assertEqual(log.extra['reason'], 'Spam')
+            self.assertTrue(log.extra['bulk'])
+            self.assertEqual(log.extra['phone'], mask_phone(user.normalized_phone))
+
+    def test_empty_user_ids_is_400(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.active_url, {
+            'user_ids': [], 'is_active': False, 'reason': 'Spam',
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_too_many_ids_is_400(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.active_url, {
+            'user_ids': list(range(1, 502)), 'is_active': False, 'reason': 'Spam',
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_roles_are_replaced_for_every_target(self):
+        self.first.roles = ['student']
+        self.first.save(update_fields=['roles'])
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.patch(self.roles_url, {
+            'user_ids': [self.first.id, self.second.id], 'roles': ['teacher'],
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(sorted(res.data['succeeded']), sorted([self.first.id, self.second.id]))
+        for user in (self.first, self.second):
+            user.refresh_from_db()
+            self.assertEqual(user.roles, ['teacher'])
+
+    def test_admin_role_key_is_ignored(self):
+        # Platform admin huquqi ommaviy amalda berilmaydi (bitta
+        # foydalanuvchilik `set-roles/` da qoladi).
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.patch(self.roles_url, {
+            'user_ids': [self.first.id], 'roles': ['admin', 'student'],
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.first.refresh_from_db()
+        self.assertEqual(self.first.roles, ['student'])
+        self.assertFalse(self.first.is_platform_admin)
+
+    def test_roles_must_be_a_list(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.patch(self.roles_url, {
+            'user_ids': [self.first.id], 'roles': 'student',
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_role_change_skips_admins_and_logs_each_target(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.patch(self.roles_url, {
+            'user_ids': [self.first.id, self.other_admin.id], 'roles': ['student'],
+        }, format='json')
+        self.assertEqual(res.data['succeeded'], [self.first.id])
+        self.assertEqual(res.data['failed'][0]['id'], self.other_admin.id)
+        self.other_admin.refresh_from_db()
+        self.assertEqual(self.other_admin.roles, [])
+        self.assertTrue(
+            AuditLog.objects.filter(action='user_role_change', target_id=self.first.id).exists()
+        )
+
+    def test_non_admin_is_403(self):
+        self.client.force_authenticate(user=self.first)
+        res = self.client.post(self.active_url, {
+            'user_ids': [self.second.id], 'is_active': False, 'reason': 'Spam',
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        res = self.client.patch(self.roles_url, {
+            'user_ids': [self.second.id], 'roles': ['teacher'],
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class AdminUsersCsvExportTestCase(APITestCase):
+    """GET /api/admin/users/export/ — filtrlangan ro'yxatning CSV eksporti."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            phone='+998908880001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.first = User.objects.create_user(
+            phone='+998908880002', password='UserPass123', full_name='Ali Valiyev',
+        )
+        self.first.roles = ['student']
+        self.first.is_premium = True
+        self.first.save(update_fields=['roles', 'is_premium'])
+        self.second = User.objects.create_user(
+            phone='+998908880003', password='UserPass123', full_name='Vali Aliyev',
+        )
+        self.url = reverse('admin-users-export')
+
+    def _rows(self, response):
+        text = response.content.decode('utf-8-sig')
+        return [line for line in text.splitlines() if line.strip()]
+
+    def test_returns_csv_attachment_with_expected_columns(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertTrue(res['Content-Type'].startswith('text/csv'))
+        self.assertIn('attachment;', res['Content-Disposition'])
+        rows = self._rows(res)
+        self.assertEqual(rows[0].split(',')[0], 'ID')
+        # Sarlavha + ikki foydalanuvchi (admin ro'yxatga kirmaydi).
+        self.assertEqual(len(rows), 3)
+        body = '\n'.join(rows[1:])
+        self.assertIn('Ali Valiyev', body)
+        self.assertIn(self.first.normalized_phone, body)
+        self.assertIn('student', body)
+        self.assertNotIn('Admin', body)
+
+    def test_search_filter_matches_the_list_endpoint(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self.url, {'search': 'Ali Valiyev'})
+        rows = self._rows(res)
+        self.assertEqual(len(rows), 2)
+        self.assertIn('Ali Valiyev', rows[1])
+        # Bir xil filtr ro'yxat endpoint'ida ham bitta natija beradi.
+        listed = self.client.get(reverse('admin-users-list'), {'search': 'Ali Valiyev'})
+        self.assertEqual(listed.data['count'], 1)
+
+    def test_phone_search_filter(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self.url, {'search': '+998908880003'})
+        rows = self._rows(res)
+        self.assertEqual(len(rows), 2)
+        self.assertIn('Vali Aliyev', rows[1])
+
+    def test_row_cap_sets_truncated_header(self):
+        self.client.force_authenticate(user=self.admin)
+        with patch('accounts.views.ADMIN_EXPORT_MAX_ROWS', 1):
+            res = self.client.get(self.url)
+        self.assertEqual(res['X-Export-Truncated'], '1')
+        # Sarlavha + chegara bo'yicha bitta qator.
+        self.assertEqual(len(self._rows(res)), 2)
+
+    def test_no_truncated_header_when_under_cap(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self.url)
+        self.assertNotIn('X-Export-Truncated', res)
+
+    def test_formula_like_name_is_escaped(self):
+        self.first.full_name = '=cmd|calc'
+        self.first.save(update_fields=['full_name'])
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self.url)
+        self.assertIn("'=cmd|calc", res.content.decode('utf-8-sig'))
+
+    def test_non_admin_is_403(self):
+        self.client.force_authenticate(user=self.first)
+        res = self.client.get(self.url)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unauthenticated_is_rejected(self):
+        res = self.client.get(self.url)
+        self.assertIn(
+            res.status_code,
+            (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+        )
+
+
+class AdminUserMergeTestCase(APITestCase):
+    """POST /api/admin/users/merge/preview/ va .../commit/.
+
+    Asosiy talablar: preview HECH NARSANI o'zgartirmaydi, commit atomik,
+    manba hisob o'chirilmaydi (doimiy bloklanadi) va buxgalteriya /
+    markaz a'zoligi / reyting ma'lumotlari TEGILMAY qoladi.
+    """
+
+    def setUp(self):
+        from attempts.models import TestAttempt
+        from centers.models import EducationCenter
+        from olympiads.models import Olympiad
+
+        self.admin = User.objects.create_user(
+            phone='+998907780001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        # Eski (SIM yo'qolgan) hisob va yangi raqam bilan ochilgan hisob.
+        self.old = User.objects.create_user(
+            phone='+998907780002', password='UserPass123', full_name='Eski hisob',
+        )
+        self.old.coins = 120
+        self.old.streak_count = 9
+        self.old.longest_streak = 14
+        self.old.save()
+        self.new = User.objects.create_user(
+            phone='+998907780003', password='UserPass123', full_name='Yangi hisob',
+        )
+        self.new.coins = 30
+        self.new.streak_count = 4
+        self.new.longest_streak = 4
+        self.new.save()
+
+        self.center = EducationCenter.objects.create(name='Markaz', city='Toshkent')
+        self.olympiad = Olympiad.objects.create(
+            center=self.center, title='Matematika', subject='Matematika',
+            status='active',
+            start_datetime=timezone.now() - timedelta(minutes=10),
+            duration_minutes=60,
+        )
+        self.shared_olympiad = Olympiad.objects.create(
+            center=self.center, title='Fizika', subject='Fizika',
+            status='active',
+            start_datetime=timezone.now() - timedelta(minutes=10),
+            duration_minutes=60,
+        )
+        # Faqat eski hisobda bor — ko'chadi.
+        TestAttempt.objects.create(user=self.old, olympiad=self.olympiad, score=90)
+        # Ikkalasida ham bor — (user, olympiad) UNIQUE, ya'ni to'qnashuv.
+        TestAttempt.objects.create(user=self.old, olympiad=self.shared_olympiad, score=40)
+        TestAttempt.objects.create(user=self.new, olympiad=self.shared_olympiad, score=70)
+        LoginEvent.objects.create(user=self.old, ip_address='10.0.0.1')
+        LoginEvent.objects.create(user=self.old, ip_address='10.0.0.2')
+
+        self.preview_url = reverse('admin-merge-users-preview')
+        self.commit_url = reverse('admin-merge-users-commit')
+
+    def _preview(self, source=None, target=None):
+        return self.client.post(self.preview_url, {
+            'source_id': (source or self.old).id,
+            'target_id': (target or self.new).id,
+        }, format='json')
+
+    def _commit(self, source=None, target=None):
+        return self.client.post(self.commit_url, {
+            'source_id': (source or self.old).id,
+            'target_id': (target or self.new).id,
+        }, format='json')
+
+    # ─── preview ──────────────────────────────────────────────────────────
+
+    def test_preview_counts_moves_and_collisions(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self._preview()
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertTrue(res.data['can_merge'])
+        moves = {row['model']: row for row in res.data['moves']}
+        # Bitta urinish ko'chadi, bittasi to'qnashuv sababli qoladi.
+        self.assertEqual(moves['attempts.TestAttempt']['move'], 1)
+        self.assertEqual(moves['attempts.TestAttempt']['skip'], 1)
+        self.assertEqual(moves['accounts.LoginEvent']['move'], 2)
+        self.assertEqual(moves['accounts.LoginEvent']['skip'], 0)
+        self.assertEqual(res.data['totals'], {'move': 3, 'skip': 1})
+
+    def test_preview_computes_balances_without_saving(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self._preview()
+        self.assertEqual(res.data['balances']['coins']['result'], 150)
+        self.assertEqual(res.data['balances']['streak_count']['result'], 9)
+        self.assertEqual(res.data['balances']['longest_streak']['result'], 14)
+        # Quruq yurish — DB tegilmagan bo'lishi kerak.
+        self.old.refresh_from_db()
+        self.new.refresh_from_db()
+        self.assertEqual(self.old.coins, 120)
+        self.assertEqual(self.new.coins, 30)
+        self.assertTrue(self.old.is_active)
+
+    def test_preview_does_not_move_any_row(self):
+        from attempts.models import TestAttempt
+
+        self.client.force_authenticate(user=self.admin)
+        self._preview()
+        self.assertEqual(TestAttempt.objects.filter(user=self.old).count(), 2)
+        self.assertEqual(TestAttempt.objects.filter(user=self.new).count(), 1)
+        self.assertFalse(AuditLog.objects.filter(action='admin_user_merge').exists())
+
+    def test_preview_reports_untouched_billing_and_membership(self):
+        from billing.models import SubscriptionPlan, UserSubscription
+        from centers.models import CenterMembership
+
+        plan = SubscriptionPlan.objects.create(
+            name='Pro', price=10000, duration_days=30,
+        )
+        UserSubscription.objects.create(
+            user=self.old, plan=plan, end_date=timezone.now() + timedelta(days=30),
+        )
+        CenterMembership.objects.create(
+            user=self.old, center=self.center, role=CenterMembership.ROLE_STUDENT,
+        )
+        self.client.force_authenticate(user=self.admin)
+        res = self._preview()
+        untouched = {row['model']: row['count'] for row in res.data['untouched']}
+        self.assertEqual(untouched['billing.UserSubscription'], 1)
+        self.assertEqual(untouched['centers.CenterMembership'], 1)
+        # Ko'chadigan modellar ro'yxatida bo'lmasligi kerak.
+        self.assertNotIn(
+            'billing.UserSubscription', {row['model'] for row in res.data['moves']},
+        )
+
+    # ─── commit ───────────────────────────────────────────────────────────
+
+    def test_commit_moves_rows_and_keeps_target_row_on_collision(self):
+        from attempts.models import TestAttempt
+
+        self.client.force_authenticate(user=self.admin)
+        res = self._commit()
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['moved']['attempts.TestAttempt'], 1)
+        self.assertEqual(res.data['skipped']['attempts.TestAttempt'], 1)
+        # Ko'chgan urinish endi yangi hisobda.
+        self.assertEqual(
+            TestAttempt.objects.get(olympiad=self.olympiad).user_id, self.new.id,
+        )
+        # To'qnashuvda maqsadli hisobning natijasi qoladi, manbadagi joyida.
+        kept = TestAttempt.objects.filter(olympiad=self.shared_olympiad)
+        self.assertEqual(kept.count(), 2)
+        self.assertEqual(kept.get(user=self.new).score, 70)
+        self.assertEqual(kept.get(user=self.old).score, 40)
+        self.assertEqual(LoginEvent.objects.filter(user=self.new).count(), 2)
+        self.assertEqual(LoginEvent.objects.filter(user=self.old).count(), 0)
+
+    def test_commit_sums_coins_and_takes_best_streak(self):
+        self.client.force_authenticate(user=self.admin)
+        self._commit()
+        self.new.refresh_from_db()
+        self.old.refresh_from_db()
+        self.assertEqual(self.new.coins, 150)
+        self.assertEqual(self.new.streak_count, 9)
+        self.assertEqual(self.new.longest_streak, 14)
+        # Balans ko'chdi — manbada qolmasligi kerak (ikki marta sarflanmasin).
+        self.assertEqual(self.old.coins, 0)
+
+    def test_commit_blocks_source_permanently_without_deleting_it(self):
+        self.client.force_authenticate(user=self.admin)
+        before_version = self.old.token_version
+        self._commit()
+        self.old.refresh_from_db()
+        self.assertTrue(User.objects.filter(pk=self.old.id).exists())
+        self.assertFalse(self.old.is_active)
+        self.assertIsNone(self.old.deleted_at)
+        self.assertEqual(self.old.block_reason, f'#{self.new.id} hisobiga birlashtirildi')
+        # Doimiy blok — muddati tugagan blokni ochish mexanizmi tegmasin.
+        self.assertIsNone(self.old.blocked_until)
+        self.assertGreater(self.old.token_version, before_version)
+
+    def test_merged_source_cannot_log_in(self):
+        self.client.force_authenticate(user=self.admin)
+        self._commit()
+        self.client.force_authenticate(user=None)
+        res = self.client.post(reverse('login'), {
+            'phone': '+998907780002', 'password': 'UserPass123',
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_commit_leaves_billing_and_membership_on_source(self):
+        from billing.models import SubscriptionPlan, UserSubscription
+        from centers.models import CenterMembership
+
+        plan = SubscriptionPlan.objects.create(
+            name='Pro', price=10000, duration_days=30,
+        )
+        sub = UserSubscription.objects.create(
+            user=self.old, plan=plan, end_date=timezone.now() + timedelta(days=30),
+        )
+        membership = CenterMembership.objects.create(
+            user=self.old, center=self.center, role=CenterMembership.ROLE_STUDENT,
+        )
+        self.client.force_authenticate(user=self.admin)
+        self._commit()
+        sub.refresh_from_db()
+        membership.refresh_from_db()
+        self.assertEqual(sub.user_id, self.old.id)
+        self.assertEqual(membership.user_id, self.old.id)
+        # Premium ham ko'chirilmaydi — pullik huquq avtomatik o'tmasin.
+        self.new.refresh_from_db()
+        self.assertFalse(self.new.is_premium)
+
+    def test_commit_writes_audit_rows_for_both_accounts(self):
+        self.client.force_authenticate(user=self.admin)
+        self._commit()
+        merge_log = AuditLog.objects.get(action='admin_user_merge')
+        self.assertEqual(merge_log.target_id, self.new.id)
+        self.assertEqual(merge_log.extra['source_id'], self.old.id)
+        self.assertEqual(merge_log.extra['coins_moved'], 120)
+        self.assertEqual(merge_log.extra['moved']['attempts.TestAttempt'], 1)
+        self.assertEqual(merge_log.extra['skipped']['attempts.TestAttempt'], 1)
+        self.assertEqual(merge_log.extra['source_phone'], mask_phone(self.old.normalized_phone))
+        # Manba hisob o'z tarixida bloklash yozuvini oladi.
+        block_log = AuditLog.objects.get(action='user_block', target_id=self.old.id)
+        self.assertEqual(
+            block_log.extra['reason'], f'#{self.new.id} hisobiga birlashtirildi',
+        )
+
+    def test_old_audit_rows_keep_pointing_at_the_source_id(self):
+        historical = AuditLog.objects.create(
+            action='user_premium_toggle', target_id=self.old.id, target_type='User',
+        )
+        self.client.force_authenticate(user=self.admin)
+        self._commit()
+        historical.refresh_from_db()
+        # Audit — tarixiy yozuv, birlashtirish uni qayta yozmaydi.
+        self.assertEqual(historical.target_id, self.old.id)
+
+    # ─── to'siqlar ────────────────────────────────────────────────────────
+
+    def test_same_user_is_blocked(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self._preview(source=self.old, target=self.old)
+        self.assertFalse(res.data['can_merge'])
+        commit = self._commit(source=self.old, target=self.old)
+        self.assertEqual(commit.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_account_cannot_be_merged(self):
+        self.client.force_authenticate(user=self.admin)
+        for source, target in ((self.admin, self.new), (self.old, self.admin)):
+            res = self._commit(source=source, target=target)
+            self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_active)
+
+    def test_center_owner_cannot_be_merged(self):
+        from centers.models import EducationCenter
+
+        EducationCenter.objects.create(name='Egalik', city='Toshkent', owner=self.old)
+        self.client.force_authenticate(user=self.admin)
+        res = self._preview()
+        self.assertFalse(res.data['can_merge'])
+        self.assertTrue(any('markaz egasi' in b for b in res.data['blockers']))
+
+    def test_soft_deleted_target_is_blocked(self):
+        self.new.deleted_at = timezone.now()
+        self.new.save(update_fields=['deleted_at'])
+        self.client.force_authenticate(user=self.admin)
+        res = self._commit()
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_second_merge_of_the_same_source_is_blocked(self):
+        third = User.objects.create_user(
+            phone='+998907780004', password='UserPass123', full_name='Uchinchi',
+        )
+        self.client.force_authenticate(user=self.admin)
+        self.assertEqual(self._commit().status_code, status.HTTP_200_OK)
+        res = self._commit(source=self.old, target=third)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_unknown_user_is_404(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.commit_url, {
+            'source_id': 999999, 'target_id': self.new.id,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_numeric_ids_are_400(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.preview_url, {'source_id': 'x'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_non_admin_is_403(self):
+        self.client.force_authenticate(user=self.old)
+        self.assertEqual(self._preview().status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._commit().status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unauthenticated_is_rejected(self):
+        res = self._commit()
+        self.assertIn(
+            res.status_code,
+            (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+        )
