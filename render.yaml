@@ -180,6 +180,13 @@ services:
     region: ohio
     plan: starter
     branch: main
+    # Spring Boot ishga tushishi bir necha soniya davom etadi. healthCheckPath
+    # bo'lmasa Render yangi instansiyaga tayyor bo'lishidan oldin trafik
+    # yuboradi va bu oynada qirra 502 qaytaradi. 502 sahifasida CORS
+    # sarlavhalari yo'q, shuning uchun brauzer cross-origin `fetch`ni butunlay
+    # rad etadi — o'quvchi jonli viktorinaga qo'shilolmaydi. Ilova aynan shu
+    # endpoint'ni ochib qo'ygan (application.properties: actuator health).
+    healthCheckPath: /actuator/health
     envVars:
       # Introspection (JWT tekshiruv) va natija yozish uchun Django manzili.
       - key: DJANGO_BASE_URL

@@ -668,9 +668,32 @@ const createQuizRoom = async ({ title, questions }, token) => {
   return data; // { roomCode, hostId, title, totalQuestions }
 };
 
+// Xona holati probe'i. HECH QACHON throw qilmaydi — chaqiruvchi uchta holatni
+// ajrata olishi kerak, chunki ularning har biri o'quvchiga boshqa narsani
+// aytadi:
+//   unavailable=true → Java xizmatning o'ziga yetib bo'lmadi (o'chgan, qayta
+//     deploy bo'lyapti, tarmoq yo'q). DIQQAT: Render/Cloudflare qirrasi
+//     qaytargan 502/503 sahifasida CORS sarlavhalari bo'lmaydi, shuning uchun
+//     brauzer cross-origin `fetch`ni umuman rad etadi — bu ham shu yerga
+//     tushadi.
+//   exists=false   → xizmat ishlayapti va "bunday xona yo'q" dedi (404).
+//   exists=true    → xona bor.
+// Avval xizmat yiqilgan holat ham `exists: false` bo'lib chiqardi va o'quvchiga
+// "Bunday xona topilmadi. Kodni tekshiring." deb ko'rsatilardi — o'quvchi esa
+// to'g'ri kodni behuda qayta-qayta terib chiqardi.
 const getQuizRoom = async (roomCode) => {
-  const res = await fetch(`${REALTIME_BASE_URL}/api/quiz/rooms/${encodeURIComponent(roomCode)}`);
+  let res;
+  try {
+    res = await fetch(`${REALTIME_BASE_URL}/api/quiz/rooms/${encodeURIComponent(roomCode)}`);
+  } catch {
+    return { ok: false, status: 0, unavailable: true };
+  }
   const data = await res.json().catch(() => ({}));
+  // 404 — Java xizmatning aniq javobi ("xona yo'q"). Qolgan xato statuslar
+  // (502/503/500...) xizmatning o'zi ishlamayotganini bildiradi.
+  if (!res.ok && res.status !== 404) {
+    return { ok: false, status: res.status, unavailable: true };
+  }
   return { ok: res.ok, status: res.status, ...data }; // { ok, exists, title, started, finished }
 };
 
