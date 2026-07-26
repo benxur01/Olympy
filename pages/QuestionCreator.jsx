@@ -1804,6 +1804,14 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
                   {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
                 </select></div>
+              {/* Savol turi — PDF oqimi ham `question_type`ni backendga yuboradi
+                  (handlePDF), shuning uchun ustoz fayl yuklashdan oldin turni
+                  ko'rishi va tanlashi kerak. Avval bu select faqat AI rejimida
+                  bor edi va PDF eski/standart qiymatni jimgina yuborardi. */}
+              <div className="col-span-2"><label className="block text-xs text-white/50 mb-1.5">Savol turi</label>
+                <select className="input-field" value={aiForm.type} onChange={e => setAiForm({...aiForm, type: e.target.value})}>
+                  {AI_TYPES.map(t => <option key={t}>{t}</option>)}
+                </select></div>
             </div>
             <label className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-white/10 hover:border-cyan-500/30 transition-all cursor-pointer group">
               <div className="text-4xl mb-3 group-hover:scale-110 transition-transform">📄</div>
@@ -1926,6 +1934,12 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               <div><label className="block text-xs text-white/50 mb-1.5">Qiyinlik</label>
                 <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
                   {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
+                </select></div>
+              {/* Savol turi — handleWordAi ham `question_type`ni yuboradi, PDF
+                  rejimidagi kabi ustoz oldindan tanlab qo'yadi. */}
+              <div className="col-span-2"><label className="block text-xs text-white/50 mb-1.5">Savol turi</label>
+                <select className="input-field" value={aiForm.type} onChange={e => setAiForm({...aiForm, type: e.target.value})}>
+                  {AI_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select></div>
             </div>
             <label className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-white/10 hover:border-sky-500/30 transition-all cursor-pointer group">
