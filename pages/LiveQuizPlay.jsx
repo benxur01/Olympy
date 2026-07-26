@@ -124,7 +124,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
       const room = await OlympyApi.getQuizRoom(code);
       if (!room.exists) { setError('Bunday xona topilmadi. Kodni tekshiring.'); setJoining(false); return; }
       if (room.finished) { setError('Bu viktorina allaqachon tugagan.'); setJoining(false); return; }
-      const url = OlympyApi.quizWsUrl({ roomCode: code, role: 'student', name: nameInput.trim() });
+      const url = await OlympyApi.quizWsUrl({ roomCode: code, role: 'student', name: nameInput.trim() });
       const ws = new WebSocket(url);
       wsRef.current = ws;
       ws.onmessage = (evt) => { try { handleMessage(JSON.parse(evt.data)); } catch {} };

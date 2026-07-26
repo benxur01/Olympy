@@ -118,8 +118,8 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
     }, 250);
   }, []);
 
-  const connectHost = useCallback((code) => {
-    const url = OlympyApi.quizWsUrl({ roomCode: code, role: 'host' });
+  const connectHost = useCallback(async (code) => {
+    const url = await OlympyApi.quizWsUrl({ roomCode: code, role: 'host' });
     const ws = new WebSocket(url);
     wsRef.current = ws;
     ws.onmessage = (evt) => {
@@ -203,7 +203,7 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
       const res = await OlympyApi.createQuizRoom(payload);
       setRoomCode(res.roomCode);
       setStep('lobby');
-      connectHost(res.roomCode);
+      await connectHost(res.roomCode);
     } catch (e) {
       setError(OlympyApi.toUserMessage?.(e) || e?.message || "Xona yaratib bo'lmadi");
     } finally {

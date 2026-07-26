@@ -514,6 +514,12 @@ const mapBackendUser = (user) => {
     // is_premium flag'iga fallback (sinov paytida u ham True bo'ladi).
     isPremium: !!(user.is_premium_active ?? user.is_premium),
     currentPlanName: user.current_plan_name || null,
+    // O'quvchi tarifi — backend hisoblaydi (billing.services.resolve_student_tier).
+    // Uni plan NOMIDAN chiqarib bo'lmaydi: tashkilot (markaz) planlari o'quvchi
+    // planlari bilan bir xil nomlanadi ("Pro (1 yil)"), lekin o'quvchi tarifini
+    // bermaydi. Eski backend bu maydonni yubormasa null — shared.jsx eski
+    // nom-asosidagi mantiqqa qaytadi.
+    studentTier: user.student_tier || null,
     premiumTrialEnd: user.premium_trial_end || null,
     isActive: user.is_active !== false,
     telegramLinked: !!user.telegram_linked,
@@ -605,6 +611,9 @@ const clearAuth = async () => {
   _removeAuth(AUTH_REFRESH_KEY);
   _clearCachedUser();
   _clearSwApiCache();
+  // Jonli xizmat tokeni keshi ham tozalanadi — aks holda bir tabda boshqa
+  // foydalanuvchi kirsa oldingi hisobning tokeni bilan xonaga ulanib qolardi.
+  _realtimeToken = null;
   // await — logout so'rovi tugashini kutamiz, aks holda refresh token
   // server tomonda blacklist'ga tushmasdan qolib ketishi mumkin (fetch
   // boshlanmasdan sahifa o'zgarsa). Chaqiruvchilar natijani kutmaydi.
@@ -618,8 +627,35 @@ const getToken = () => _readAuth(AUTH_TOKEN_KEY);
 // uchun umumiy `request()` (Django JWT/cookie oqimi) o'rniga to'g'ridan-to'g'ri
 // `fetch` ishlatiladi. Java xizmat JWT'ni o'zi tekshirmaydi — token'ni
 // Django'ning introspection endpoint'iga uzatadi (source of truth).
+
+// XOM JWT olish. Bu yerda `getToken()` YETARLI EMAS: production'da token
+// storage'ga umuman yozilmaydi (ALLOW_TOKEN_STORAGE=false, JWT faqat HttpOnly
+// cookie'da), shuning uchun getToken() null qaytarardi va Java xizmat
+// "Invalid token" (401) berardi — jonli viktorina xonasi yaratilmasdi.
+// Cookie'ni esa boshqa origin'dagi Java xizmatga yuborib bo'lmaydi, token
+// body/query orqali ketishi shart. Yechim: Django'dan (cookie bilan
+// autentifikatsiya qilingan holda) qisqa muddatli access token so'raymiz.
+// Muddati tugagunicha keshlaymiz — har WebSocket ulanishida qayta so'ralmasin.
+let _realtimeToken = null; // { value, expiresAt }
+// Muddat tugashidan 30s oldin yangilaymiz (soat farqi / tarmoq kechikishi).
+const REALTIME_TOKEN_SKEW_MS = 30000;
+
+const getRealtimeToken = async () => {
+  const now = Date.now();
+  if (_realtimeToken && _realtimeToken.expiresAt - REALTIME_TOKEN_SKEW_MS > now) {
+    return _realtimeToken.value;
+  }
+  const data = await request('/api/auth/realtime-token/', { method: 'POST' });
+  const value = data?.token || '';
+  if (!value) {
+    throw new ApiError('Sessiya topilmadi. Tizimga qayta kiring.', { status: 401 });
+  }
+  _realtimeToken = { value, expiresAt: now + (Number(data?.expires_in) || 0) * 1000 };
+  return value;
+};
+
 const createQuizRoom = async ({ title, questions }, token) => {
-  const jwt = token || getToken();
+  const jwt = token || await getRealtimeToken();
   const res = await fetch(`${REALTIME_BASE_URL}/api/quiz/rooms`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -640,9 +676,10 @@ const getQuizRoom = async (roomCode) => {
 
 // WebSocket URL quruvchi. role='host'|'student'. Token query param orqali
 // yuboriladi (Java handshake interceptor uni Django'ga tekshirtiradi) — duel
-// oqimidagi bilan bir xil yondashuv.
-const quizWsUrl = ({ roomCode, role = 'student', name = '' }, token) => {
-  const jwt = token || getToken() || '';
+// oqimidagi bilan bir xil yondashuv. `createQuizRoom` bilan bir xil sababga
+// ko'ra async: xom JWT Django'dan olinadi (odatda keshdan, tarmoqsiz).
+const quizWsUrl = async ({ roomCode, role = 'student', name = '' }, token) => {
+  const jwt = token || await getRealtimeToken();
   const params = new URLSearchParams({ token: jwt, roomCode, role });
   if (name) params.set('name', name);
   return `${realtimeWsBase()}/ws/quiz?${params.toString()}`;
@@ -654,6 +691,7 @@ export const OlympyApi = {
   createQuizRoom,
   getQuizRoom,
   quizWsUrl,
+  getRealtimeToken,
   ApiError,
   toUserMessage,
   mapBackendUser,
