@@ -122,6 +122,12 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
     setJoining(true);
     try {
       const room = await OlympyApi.getQuizRoom(code);
+      // Xizmatning o'zi javob bermayapti — bu "kod noto'g'ri" degani EMAS.
+      // Xona ustozda ochiq turibdi, shunchaki qayta urinish kerak.
+      if (room.unavailable) {
+        setError("Jonli viktorina xizmati javob bermayapti. Bir ozdan so'ng qayta urinib ko'ring.");
+        setJoining(false); return;
+      }
       if (!room.exists) { setError('Bunday xona topilmadi. Kodni tekshiring.'); setJoining(false); return; }
       if (room.finished) { setError('Bu viktorina allaqachon tugagan.'); setJoining(false); return; }
       const url = await OlympyApi.quizWsUrl({ roomCode: code, role: 'student', name: nameInput.trim() });
@@ -134,7 +140,15 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
         if (step === 'join') { setJoining(false); if (!e.wasClean) setError("Ulanish rad etildi. Tizimga qayta kiring."); }
       };
     } catch (e) {
-      setError(OlympyApi.toUserMessage?.(e) || "Ulanib bo'lmadi");
+      // Bu yerga faqat token olish (Django /api/auth/realtime-token/) yoki
+      // WebSocket qurish qadami yiqilganda tushamiz — xona holati yuqorida
+      // allaqachon alohida tekshirilgan. `status` bo'lsa server aniq javob
+      // bergan (401 sessiya, 429 rate-limit...), aks holda backend'ga umuman
+      // yetib bo'lmadi: umumiy "Server bilan bog'lanishda xatolik" o'rniga
+      // o'quvchiga nima qilish kerakligini aytamiz.
+      setError(e?.status
+        ? (OlympyApi.toUserMessage?.(e) || "Ulanib bo'lmadi")
+        : "Serverga ulanib bo'lmadi. Bir ozdan so'ng qayta urinib ko'ring.");
       setJoining(false);
     }
   };
