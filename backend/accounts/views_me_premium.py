@@ -17,7 +17,6 @@ from rest_framework.throttling import ScopedRateThrottle
 from attempts.models import TestAttempt
 from billing.services import student_tier_at_least
 from .models import Achievement, DailyGoal, Rival
-from .utils import is_user_premium
 
 MAX_RIVALS = 3
 
@@ -223,7 +222,7 @@ def recommended_olympiads(request):
     from django.utils import timezone
     from olympiads.models import Olympiad
 
-    if not is_user_premium(request.user):
+    if not student_tier_at_least(request.user, 'standart'):
         return _premium_required()
 
     # Fan kesimida o'rtacha ball.
@@ -301,7 +300,7 @@ def error_notebook(request):
     """
     from questions.models import Question
 
-    if not is_user_premium(request.user):
+    if not student_tier_at_least(request.user, 'standart'):
         return _premium_required()
 
     subject = (request.query_params.get('subject') or '').strip()

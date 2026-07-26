@@ -608,6 +608,17 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'accounts.purge_soft_deleted_accounts',
         'schedule': crontab(hour=3, minute=15, nowfun=lambda: datetime.now(dt_timezone.utc)),
     },
+    # Har kuni soat 03:45 UTC — muddati tugagan premium bayrog'ini
+    # (`User.is_premium`, `EducationCenter.is_premium`) va eskirgan obuna
+    # yozuvlarini tozalaydi. `/me` dagi lazy-expiry faqat foydalanuvchi
+    # so'rov yuborganda ishlaydi — qaytmagan foydalanuvchida bayroq bazada
+    # eskirib qolardi. Vaqt tinch soatda va `purge-soft-deleted-accounts`
+    # (03:15) tugagach tanlandi: ikkala sweep ham `accounts_user` jadvalini
+    # yangilaydi, ustma-ust tushmasin.
+    'expire-stale-premium': {
+        'task': 'accounts.expire_stale_premium',
+        'schedule': crontab(hour=3, minute=45, nowfun=lambda: datetime.now(dt_timezone.utc)),
+    },
     # Har 30 soniyada worker tirikligini cache'ga yozadi — /api/health/
     # shu timestamp orqali Celery holatini ("ok"/"down") aniqlaydi.
     'celery-heartbeat': {

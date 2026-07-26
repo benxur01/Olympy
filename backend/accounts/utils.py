@@ -127,10 +127,10 @@ def is_user_premium(user):
     """Premium holatini real vaqtda tekshiradi (60 soniyalik cache bilan).
 
     `user.is_premium` flag'i obuna muddati tugaganda darhol yangilanmaydi
-    (Celery task 60 daqiqada bir yuradi, /me lazy expiry esa faqat /me
-    so'rovida ishlaydi). Premium-only endpoint'lar shu helper orqali
-    flag + obuna holatini tekshiradi — muddati o'tgan (lekin hali sync
-    qilinmagan) obuna bilan premium imkoniyat ochilmaydi.
+    (`accounts.expire_stale_premium` task kuniga bir marta yuradi, /me lazy
+    expiry esa faqat /me so'rovida ishlaydi). Premium-only endpoint'lar shu
+    helper orqali flag + obuna holatini tekshiradi — muddati o'tgan (lekin
+    hali sync qilinmagan) obuna bilan premium imkoniyat ochilmaydi.
 
     MUHIM: premium har doim ham UserSubscription yozuvi bilan berilmaydi —
     eski admin toggle (duration'siz), Django admin'dagi is_premium checkbox

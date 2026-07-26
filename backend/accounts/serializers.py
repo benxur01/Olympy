@@ -3,6 +3,7 @@ import re
 
 from django.contrib.auth.password_validation import validate_password as django_validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils import timezone
 from rest_framework import serializers
 
 from .models import RewardProduct, User
@@ -22,6 +23,7 @@ class UserSerializer(serializers.ModelSerializer):
     avatar_url = serializers.SerializerMethodField()
     badges = serializers.SerializerMethodField()
     current_plan_name = serializers.SerializerMethodField()
+    student_tier = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -30,7 +32,7 @@ class UserSerializer(serializers.ModelSerializer):
                   'email', 'email_verified', 'email_verified_at', 'roles',
                   'roles_detail', 'telegram_linked', 'is_platform_admin',
                   'is_premium', 'is_premium_active', 'premium_trial_end',
-                  'current_plan_name',
+                  'current_plan_name', 'student_tier',
                   'is_active', 'avatar_url', 'created_at',
                   'streak_count', 'longest_streak', 'last_active_date', 'badges',
                   'onboarding_completed', 'onboarding_grade',
@@ -57,7 +59,7 @@ class UserSerializer(serializers.ModelSerializer):
                             'roles_detail',
                             'telegram_linked', 'is_platform_admin',
                             'is_premium', 'is_premium_active', 'premium_trial_end',
-                            'current_plan_name',
+                            'current_plan_name', 'student_tier',
                             'is_active', 'avatar_url', 'created_at',
                             'streak_count', 'longest_streak', 'last_active_date', 'badges',
                             'onboarding_completed', 'onboarding_grade',
@@ -72,13 +74,54 @@ class UserSerializer(serializers.ModelSerializer):
     def get_telegram_linked(self, obj):
         return bool(obj.telegram_chat_id)
 
-    def get_current_plan_name(self, obj):
+    def _active_subscriptions(self, obj):
+        """Aktiv obunalar (end_date bo'yicha kamayish tartibida), bir marta.
+
+        Admin ro'yxatida `prefetched_active_subscriptions` orqali oldindan
+        yuklanadi (N+1 yo'q). Aks holda bitta so'rov — natija obyektda
+        keshlanadi, shunda `current_plan_name` va `student_tier` maydonlari
+        so'rovni takrorlamaydi.
+        """
+        cached = getattr(obj, '_active_subs_cache', None)
+        if cached is not None:
+            return cached
         prefetched = getattr(obj, 'prefetched_active_subscriptions', None)
         if prefetched is not None:
-            sub = prefetched[0] if prefetched else None
+            subs = list(prefetched)
         else:
-            sub = obj.subscriptions.filter(is_active=True).select_related('plan').order_by('-end_date').first()
+            subs = list(
+                obj.subscriptions.filter(is_active=True)
+                .select_related('plan').order_by('-end_date')
+            )
+        obj._active_subs_cache = subs
+        return subs
+
+    def get_current_plan_name(self, obj):
+        subs = self._active_subscriptions(obj)
+        sub = subs[0] if subs else None
         return sub.plan.name if sub and sub.plan else None
+
+    def get_student_tier(self, obj):
+        """O'quvchi tarifi: 'free' | 'standart' | 'plus' | 'pro'.
+
+        Frontend gate'lari (canStandart/canPlus/canPro) shu maydonni o'qiydi.
+        Avval tier `current_plan_name` satridan chiqarilardi — lekin tashkilot
+        planlari o'quvchi planlari bilan AYNAN bir xil nomlanadi ("Pro (1 yil)"),
+        shuning uchun markaz obunasi o'quvchi tarifi deb hisoblanib, UI barcha
+        Pro imkoniyatlarini ochib yuborardi. Endi qaror bitta joyda —
+        `billing.services.resolve_student_tier` (backend gate'lari ham
+        `student_tier_at_least` orqali o'sha funksiyaga tayanadi).
+        """
+        from billing.services import resolve_student_tier  # lokal import — circular import xavfi
+
+        if not obj.is_premium_active:
+            return 'free'
+        now = timezone.now()
+        active = [
+            s for s in self._active_subscriptions(obj)
+            if s.end_date and s.end_date > now
+        ]
+        return resolve_student_tier(active, trial_active=obj.trial_active)
 
     def get_avatar_url(self, obj):
         from .utils import avatar_url_for
