@@ -458,6 +458,43 @@ def send_trial_ending_reminders():
     return {'sent': len(pending_messages), 'skipped': skipped}
 
 
+@shared_task(name='accounts.expire_stale_suspensions')
+def expire_stale_suspensions():
+    """Muddati tugagan vaqtinchalik bloklarni toplu ochadi.
+
+    Bu task Celery Beat tomonidan har kuni ishga tushiriladi
+    (settings.CELERY_BEAT_SCHEDULE['expire-stale-suspensions'], har kuni
+    04:05 UTC). `User.release_expired_suspension` mantig'ining batch varianti:
+    o'sha yerda tekshiruv faqat foydalanuvchi KIRISHGA urinsagina bajariladi
+    — qaytmagan foydalanuvchi admin ro'yxatida "Bloklangan" bo'lib
+    qolaverardi (`expire_stale_premium` bilan bir xil muammo va yechim).
+
+    Doimiy bloklar (`blocked_until` NULL) va soft-delete qilingan hisoblar
+    (`deleted_at` to'ldirilgan — ular ham `is_active=False`, lekin
+    `blocked_until` siz) tanlovga umuman tushmaydi. Takror ishga tushirish
+    xavfsiz: faqat `is_active=False` va muddati o'tgan yozuvlar yangilanadi.
+
+    token_version teginilmaydi — bloklash paytida allaqachon oshirilgan,
+    eski tokenlar baribir bekor.
+    """
+    import logging
+
+    from django.contrib.auth import get_user_model
+
+    logger = logging.getLogger(__name__)
+    User = get_user_model()
+    now = timezone.now()
+
+    released = (
+        User.objects
+        .filter(is_active=False, blocked_until__isnull=False, blocked_until__lte=now)
+        .update(is_active=True, block_reason='', blocked_until=None)
+    )
+    if released:
+        logger.info('expire_stale_suspensions: released %s users', released)
+    return {'released_users': released}
+
+
 @shared_task(name='accounts.expire_stale_premium')
 def expire_stale_premium():
     """Muddati tugagan premium bayrog'ini (`is_premium`) toplu tozalaydi.

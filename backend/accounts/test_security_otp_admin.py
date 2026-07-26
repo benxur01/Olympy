@@ -150,6 +150,86 @@ class AdminForbiddenForNonAdminTests(APITestCase):
         r = self.client.get(reverse('admin-audit-log'))
         self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_student_admin_user_detail_403(self):
+        self._auth(self.student)
+        r = self.client.get(reverse('admin-user-detail', args=[self.student.id]))
+        self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_student_admin_user_billing_history_403(self):
+        # O'z to'lovlari uchun /api/billing/history/ bor — admin varianti
+        # boshqa foydalanuvchinikini ko'rsatadi, shuning uchun faqat admin.
+        self._auth(self.student)
+        r = self.client.get(reverse('admin-user-billing-history', args=[self.student.id]))
+        self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_student_admin_user_login_history_403(self):
+        self._auth(self.student)
+        r = self.client.get(reverse('admin-user-login-history', args=[self.student.id]))
+        self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_student_admin_reset_user_totp_403(self):
+        # 2FA'ni o'chirish — boshqa hisobning xavfsizlik to'sig'ini olib
+        # tashlaydi, shuning uchun faqat platforma admini.
+        self._auth(self.student)
+        r = self.client.post(reverse('admin-reset-user-totp', args=[self.student.id]))
+        self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_student_admin_force_logout_403(self):
+        self._auth(self.student)
+        r = self.client.post(reverse('admin-force-logout-user', args=[self.student.id]))
+        self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_student_admin_impersonate_403(self):
+        # "Foydalanuvchi sifatida ko'rish" — boshqa hisobning huquqidagi
+        # token beradi, shuning uchun faqat platforma admini.
+        self._auth(self.student)
+        r = self.client.post(reverse('admin-impersonate-user', args=[self.student.id]))
+        self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_student_admin_users_export_403(self):
+        # CSV eksport butun foydalanuvchilar bazasini (ism + telefon) beradi.
+        self._auth(self.student)
+        r = self.client.get(reverse('admin-users-export'))
+        self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_student_admin_bulk_set_active_403(self):
+        self._auth(self.student)
+        r = self.client.post(
+            reverse('admin-bulk-set-user-active'),
+            {'user_ids': [self.student.id], 'is_active': False, 'reason': 'Spam'},
+            format='json',
+        )
+        self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_student_admin_bulk_set_roles_403(self):
+        self._auth(self.student)
+        r = self.client.patch(
+            reverse('admin-bulk-set-user-roles'),
+            {'user_ids': [self.student.id], 'roles': ['teacher']},
+            format='json',
+        )
+        self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_student_admin_merge_preview_403(self):
+        # Birlashtirish quruq yurishi ham ikki hisobning to'liq raqamini va
+        # progress hajmini ochib beradi — faqat platforma admini.
+        self._auth(self.student)
+        r = self.client.post(
+            reverse('admin-merge-users-preview'),
+            {'source_id': self.student.id, 'target_id': self.admin.id},
+            format='json',
+        )
+        self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_student_admin_merge_commit_403(self):
+        self._auth(self.student)
+        r = self.client.post(
+            reverse('admin-merge-users-commit'),
+            {'source_id': self.student.id, 'target_id': self.admin.id},
+            format='json',
+        )
+        self.assertEqual(r.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_student_admin_centers_403(self):
         self._auth(self.student)
         r = self.client.get('/api/admin/centers/')

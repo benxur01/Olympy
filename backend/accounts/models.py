@@ -162,6 +162,17 @@ class User(AbstractBaseUser, PermissionsMixin):
         self.encrypted_totp_secret = encrypt_totp_secret(value)
 
     is_active = models.BooleanField(default=True)
+    # Admin bloki: `is_active=False` o'z-o'zicha "nega" va "qachongacha"
+    # savollariga javob bermasdi — sabab qo'llab-quvvatlash uchun ham, blokni
+    # ochish qaroriga qaytish uchun ham kerak. `blocked_until` NULL bo'lsa blok
+    # muddatsiz (doimiy); to'ldirilgan bo'lsa o'sha vaqtdan keyin blok o'z-o'zidan
+    # ochiladi (`release_expired_suspension` — login paytida lazy, va kuniga bir
+    # marta `accounts.expire_stale_suspensions` task orqali).
+    # Soft-delete (`deleted_at`) ham `is_active=False` qiladi, lekin
+    # `blocked_until` ni to'ldirmaydi — avtomatik ochilish o'chirilgan hisobga
+    # hech qachon tegmaydi.
+    block_reason = models.CharField(max_length=255, blank=True, default='')
+    blocked_until = models.DateTimeField(null=True, blank=True, db_index=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     # Soft-delete: foydalanuvchi o'z hisobini o'chirganda hard delete o'rniga
@@ -182,6 +193,30 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def is_soft_deleted(self):
         return bool(self.deleted_at)
+
+    def release_expired_suspension(self):
+        """Muddati tugagan vaqtinchalik blokni ochadi (lazy expiry).
+
+        Bloklangan foydalanuvchi `/me` ga umuman kira olmaydi (token_version
+        bloklash paytida oshiriladi), shuning uchun premium lazy-expiry'sidan
+        farqli o'laroq bu tekshiruv KIRISH oqimlarida chaqiriladi: parol bilan
+        login (`LoginSerializer`) va Google login. Ilovaga qaytmagan
+        foydalanuvchilar uchun kuniga bir marta
+        `accounts.expire_stale_suspensions` task xuddi shu ishni toplu
+        bajaradi (admin ro'yxatida holat eskirib qolmasin).
+
+        Blokni ochdimi — True qaytaradi. Doimiy blok (`blocked_until` NULL),
+        muddati hali tugamagan blok va soft-delete qilingan hisob teginilmaydi.
+        """
+        if self.is_active or not self.blocked_until:
+            return False
+        if self.blocked_until > timezone.now():
+            return False
+        self.is_active = True
+        self.block_reason = ''
+        self.blocked_until = None
+        self.save(update_fields=['is_active', 'block_reason', 'blocked_until'])
+        return True
 
     @property
     def email_verified(self):
@@ -987,12 +1022,30 @@ class AuditLog(models.Model):
         ('user_block', 'Foydalanuvchi bloklandi'),
         ('user_role_change', "Foydalanuvchi rollari o'zgardi"),
         ('account_delete', "Hisob o'chirildi"),
+        # Admin support amallari — kod avvaldan yoziladi, lekin choices'da
+        # yo'q edi: `get_action_display()` xom kodni ('admin_phone_change')
+        # qaytarardi va admin panelidagi "Amallar tarixi" jadvalida shu
+        # ko'rinardi.
+        ('admin_password_reset', 'Parol majburan tiklandi'),
+        ('admin_phone_change', "Telefon raqami o'zgartirildi"),
+        ('admin_totp_reset', "2FA majburan o'chirildi"),
+        ('admin_force_logout', 'Barcha seanslar yakunlandi'),
+        # Impersonatsiya ("foydalanuvchi sifatida ko'rish") — boshi va oxiri
+        # ALOHIDA yoziladi: token qisqa muddatli bo'lsa ham, admin qancha
+        # vaqt boshqa hisobda bo'lganini keyin faqat shu ikki yozuv ko'rsatadi.
+        ('admin_impersonate_start', "Foydalanuvchi sifatida ko'rish boshlandi"),
+        ('admin_impersonate_end', "Foydalanuvchi sifatida ko'rish yakunlandi"),
+        # Takrorlangan hisoblarni birlashtirish. Yozuv MAQSADLI (tirik)
+        # hisobga bog'lanadi, manba id'si `extra.source_id` da — manba hisob
+        # o'z tarixida alohida `user_block` yozuvini oladi.
+        ('admin_user_merge', 'Hisoblar birlashtirildi'),
         ('center_approve', 'Markaz tasdiqlandi'),
         ('center_reject', 'Markaz rad etildi'),
         ('olympiad_create', 'Olimpiada yaratildi'),
         ('olympiad_delete', "Olimpiada o'chirildi"),
         ('question_create', 'Savol yaratildi'),
         ('question_delete', "Savol o'chirildi"),
+        ('question_bulk_delete', "Savollar ommaviy o'chirildi"),
         ('question_archive', 'Savol arxivlandi'),
         ('member_approve', "A'zo tasdiqlandi"),
         ('member_reject', "A'zo rad etildi"),
@@ -1042,6 +1095,46 @@ class AuditLog(models.Model):
             )
         except Exception:
             logger.exception('AuditLog.log xatosi: action=%s', action)
+
+
+class LoginEvent(models.Model):
+    """Kirish (sessiya boshlanishi) tarixi — admin paneldagi "Kirish tarixi".
+
+    Yozuv `accounts.views._auth_response` ichida, ya'ni yangi JWT beriladigan
+    har bir joyda yaratiladi (login, Google login, ro'yxatdan o'tish, parol
+    tiklash). Token yangilash (`/api/auth/token/refresh/`) `_auth_response`
+    dan o'tmaydi — aks holda tarix haqiqiy kirishlar o'rniga avtomatik
+    yangilanishlar bilan to'lib ketardi.
+
+    Django'ning standart `last_login` maydoni bu loyihada hech qachon
+    to'ldirilmaydi: login `django.contrib.auth.login()` orqali o'tmaydi va
+    SIMPLE_JWT['UPDATE_LAST_LOGIN'] = False. Shu sababli kirish tarixi uchun
+    alohida jurnal kerak.
+
+    AuditLog kabi faqat meta-ma'lumot saqlaydi (IP, qurilma satri) — token,
+    parol yoki OTP hech qachon yozilmaydi.
+    """
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='login_events',
+    )
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    # User-Agent to'liq saqlanmaydi (ba'zi brauzerlarda 500+ belgi) —
+    # qurilma/brauzerni ajratish uchun boshlang'ich qismi yetarli.
+    user_agent = models.CharField(max_length=255, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            # Admin paneli faqat bitta foydalanuvchining oxirgi yozuvlarini
+            # so'raydi: filter(user=...).order_by('-created_at')[:N].
+            models.Index(fields=['user', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'login:{self.user_id} @ {self.created_at:%Y-%m-%d %H:%M}'
 
 
 class ReferralCode(models.Model):

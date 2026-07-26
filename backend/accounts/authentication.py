@@ -1,6 +1,22 @@
 from django.conf import settings
+from django.core.cache import cache
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import AuthenticationFailed
+
+
+def impersonation_block_key(jti):
+    """Bekor qilingan impersonatsiya tokenining cache kaliti.
+
+    Impersonatsiya tokeni (``accounts.views.admin_impersonate_user``) qisqa
+    muddatli va refresh'siz, lekin admin "Admin panelga qaytish"ni bosgach uni
+    KUTMASDAN o'lik qilish kerak — aks holda token admin brauzerida muddati
+    tugagunicha yaroqli qolardi. Foydalanuvchining ``token_version``ini oshirib
+    bekor qilib bo'lmaydi: u aybsiz foydalanuvchini barcha qurilmalaridan
+    chiqarib yuborardi. Shu sababli faqat SHU tokenning ``jti`` si cache'da
+    qora ro'yxatga tushadi (TTL — tokenning qolgan umri, undan keyin token
+    baribir o'zi yaroqsiz).
+    """
+    return f'impersonation_revoked:{jti}'
 
 
 class OlympyJWTAuthentication(JWTAuthentication):
@@ -28,6 +44,18 @@ class OlympyJWTAuthentication(JWTAuthentication):
             return None
 
     def get_user(self, validated_token):
+        # Impersonatsiya tokeni erta bekor qilingan bo'lishi mumkin. Tekshiruv
+        # FAQAT `impersonated_by` da'vosi bo'lgan tokenlarda bajariladi —
+        # oddiy sessiyalar hech qanday qo'shimcha cache so'rovi olmaydi.
+        # Cache ishlamasa (Redis o'chgan) tekshiruv o'tib ketadi va token o'z
+        # muddati (15 daqiqa) tugaganda yaroqsiz bo'ladi — qora ro'yxat
+        # qo'shimcha qatlam, yagona to'siq emas.
+        if validated_token.get('impersonated_by'):
+            jti = validated_token.get('jti')
+            if jti and cache.get(impersonation_block_key(jti)):
+                raise AuthenticationFailed(
+                    "Impersonatsiya seansi yakunlangan", code='impersonation_ended',
+                )
         user = super().get_user(validated_token)
         token_version = validated_token.get('token_version')
         if token_version is None:

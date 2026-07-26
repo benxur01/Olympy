@@ -1,5 +1,7 @@
 from django.urls import path
 
+from billing import views as billing_views
+
 from . import export_views
 from . import views
 from . import views_b2b
@@ -76,6 +78,34 @@ urlpatterns = [
     path('export/olympiad/<int:olympiad_id>/results/', export_views.export_olympiad_results_excel,
          name='export-olympiad-results'),
     path('admin/users/', views.admin_users_list, name='admin-users-list'),
+    # Ro'yxatning CSV eksporti — `admin/users/` bilan bir xil `?search=` filtri
+    # qabul qiladi (admin ekranda ko'rgan to'plamni yuklab oladi).
+    path('admin/users/export/', views.admin_users_export, name='admin-users-export'),
+    # Ommaviy amallar — id ro'yxati bo'yicha (bitta foydalanuvchilik
+    # endpointlardan farqli o'laroq URL'da user_id yo'q). `<int:user_id>`
+    # yo'llaridan OLDIN turadi degan talab yo'q (int konvertori harfli
+    # segmentga mos kelmaydi), lekin o'qish uchun ro'yxat boshida.
+    path('admin/users/bulk-set-active/', views.admin_bulk_set_user_active,
+         name='admin-bulk-set-user-active'),
+    path('admin/users/bulk-set-roles/', views.admin_bulk_set_user_roles,
+         name='admin-bulk-set-user-roles'),
+    # Takrorlangan hisoblarni birlashtirish (SIM yo'qotib qayta ro'yxatdan
+    # o'tgan o'quvchi). Avval `preview` — hech narsani o'zgartirmaydigan quruq
+    # yurish, keyin `commit` — bitta tranzaksiyadagi haqiqiy amal.
+    path('admin/users/merge/preview/', views.admin_merge_users_preview,
+         name='admin-merge-users-preview'),
+    path('admin/users/merge/commit/', views.admin_merge_users_commit,
+         name='admin-merge-users-commit'),
+    # Bitta foydalanuvchining to'liq profili — admin paneldagi "Batafsil" oynasi.
+    path('admin/users/<int:user_id>/', views.admin_user_detail, name='admin-user-detail'),
+    # "Batafsil" oynasining to'lovlar/kirish tarixi bloklari. Alohida
+    # endpointlar: ikkalasi ham uzun bo'lishi mumkin va profilning o'zi
+    # ularsiz ham ochilishi kerak. To'lov mantiqi billing app'da qoladi
+    # (o'sha serializerlar), lekin URL boshqa admin amallari bilan bir joyda.
+    path('admin/users/<int:user_id>/billing-history/', billing_views.admin_user_billing_history,
+         name='admin-user-billing-history'),
+    path('admin/users/<int:user_id>/login-history/', views.admin_user_login_history,
+         name='admin-user-login-history'),
     path('admin/users/<int:user_id>/set-active/', views.admin_set_user_active,
          name='admin-set-user-active'),
     path('admin/users/<int:user_id>/toggle-premium/', views.admin_toggle_user_premium,
@@ -88,6 +118,21 @@ urlpatterns = [
          name='admin-reset-user-password'),
     path('admin/users/<int:user_id>/change-phone/', views.admin_change_user_phone,
          name='admin-change-user-phone'),
+    # Autentifikator ilovasini yo'qotgan foydalanuvchi uchun: o'z-o'ziga xizmat
+    # qiladigan 2FA o'chirish joriy kod yoki parolni talab qiladi.
+    path('admin/users/<int:user_id>/reset-2fa/', views.admin_reset_user_totp,
+         name='admin-reset-user-totp'),
+    # Bloklamasdan barcha qurilmalardan chiqarish (token_version bump).
+    path('admin/users/<int:user_id>/force-logout/', views.admin_force_logout_user,
+         name='admin-force-logout-user'),
+    # Support uchun "foydalanuvchi sifatida ko'rish": qisqa muddatli, faqat
+    # maqsadli foydalanuvchi huquqidagi access token. `.../impersonate/end/`
+    # `<int:user_id>` yo'lidan keyin turishi muhim emas (yo'l aniq matn
+    # bo'yicha mos keladi), lekin juftlik sifatida yonma-yon turadi.
+    path('admin/users/<int:user_id>/impersonate/', views.admin_impersonate_user,
+         name='admin-impersonate-user'),
+    path('admin/users/<int:user_id>/impersonate/end/', views.admin_end_impersonation,
+         name='admin-end-impersonation'),
     path('admin/audit-log/', views.audit_log_list, name='admin-audit-log'),
     path('support/chat/', views_support.support_chat, name='support-chat'),
     path('admin/support/chats/', views_support.admin_support_threads, name='admin-support-chats'),

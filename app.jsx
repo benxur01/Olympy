@@ -184,6 +184,14 @@ const App = () => {
   // haqiqiy sahifa render bo'ladi.
   const [bootstrapping, setBootstrapping] = React.useState(true);
   const [showPushPrompt, setShowPushPrompt] = React.useState(false);
+  // Support rejimi: admin "Foydalanuvchi sifatida ko'rish"ni yoqqan bo'lsa
+  // {userId, name}. Butun ilova o'sha foydalanuvchining tokeni bilan ishlaydi
+  // (api.js), shu sababli ekranning tepasida doimiy banner turishi SHART —
+  // admin qaysi hisobda ekanini bir qarashda ko'rishi kerak.
+  const [impersonation, setImpersonation] = React.useState(
+    () => globalThis.OlympyApi?.getImpersonation?.() || null,
+  );
+  const [endingImpersonation, setEndingImpersonation] = React.useState(false);
 
   const user = apiUser;
 
@@ -458,6 +466,30 @@ const App = () => {
     const onForcedLogout = () => handleLogout();
     window.addEventListener('olympy:logout', onForcedLogout);
     return () => window.removeEventListener('olympy:logout', onForcedLogout);
+  }, []);
+
+  // "Foydalanuvchi sifatida ko'rish" seansini yakunlash. To'liq qayta yuklash
+  // ATAYIN: impersonatsiya ostida yig'ilgan barcha React holati (ro'yxatlar,
+  // ochiq modallar, komponent keshlari) tashlab yuboriladi va ilova admin
+  // sifatida toza boshlanadi.
+  const handleEndImpersonation = async () => {
+    if (endingImpersonation) return;
+    setEndingImpersonation(true);
+    try { await globalThis.OlympyApi?.endImpersonation?.(); } catch {}
+    setImpersonation(null);
+    try { window.location.assign(PAGE_URLS.admin); } catch { setEndingImpersonation(false); }
+  };
+
+  // Impersonatsiya tokeni tugagan/bekor qilingan bo'lsa api.js shu hodisani
+  // yuboradi (u yerda lokal holat allaqachon tozalangan) — admin o'z paneliga
+  // qaytariladi.
+  useEffect(() => {
+    const onImpersonationEnded = () => {
+      setImpersonation(null);
+      try { window.location.assign(PAGE_URLS.admin); } catch {}
+    };
+    window.addEventListener('olympy:impersonation_ended', onImpersonationEnded);
+    return () => window.removeEventListener('olympy:impersonation_ended', onImpersonationEnded);
   }, []);
 
   const navigate = (dest, data) => {
@@ -839,7 +871,30 @@ const App = () => {
   }
 
   return (
-    <div className="dark">
+    // Impersonatsiya banneri sahifa ustida turadi (fixed), shuning uchun
+    // kontentni shuncha pastga suramiz — tepadagi element banner ostida
+    // yashirinib qolmasin.
+    <div className="dark" style={impersonation ? { paddingTop: 44 } : undefined}>
+      {impersonation && (
+        <div
+          className="fixed top-0 left-0 right-0 z-[10000] flex h-11 items-center justify-between gap-3 border-b border-amber-300 bg-amber-400 px-3 md:px-5 text-[#1a1200]"
+          role="status"
+        >
+          <div className="min-w-0 text-[11px] md:text-xs font-extrabold truncate">
+            <span className="hidden sm:inline">Support rejimi · </span>
+            Siz <span className="underline underline-offset-2">{impersonation.name || 'foydalanuvchi'}</span> sifatida ko'ryapsiz
+            <span className="hidden md:inline"> — bu seans audit jurnaliga yozilgan</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleEndImpersonation}
+            disabled={endingImpersonation}
+            className="shrink-0 rounded-lg bg-[#1a1200] px-3 py-1.5 text-[11px] font-extrabold text-amber-300 hover:bg-black disabled:opacity-60 transition"
+          >
+            {endingImpersonation ? 'Qaytilmoqda...' : 'Admin panelga qaytish'}
+          </button>
+        </div>
+      )}
       {renderPage()}
       <RoleSwitcherModal
         open={switcherOpen}

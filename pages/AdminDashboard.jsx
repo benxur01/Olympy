@@ -4,7 +4,7 @@
 // manziliga bog'lanadi (home → /dashboard/admin).
 const ADMIN_DASHBOARD_PAGES = [
   'home', 'users', 'centers', 'olympiads', 'requests',
-  'subjects', 'analytics', 'settings', 'myprofile', 'support',
+  'subjects', 'analytics', 'logs', 'settings', 'myprofile', 'support',
 ];
 const adminDashUrl = makeDashboardUrlSync('/dashboard/admin', ADMIN_DASHBOARD_PAGES);
 
@@ -19,11 +19,69 @@ const ROLE_MODAL_KEYS = [
   { value: 'admin', label: 'Platform Admin' },
 ];
 
+// Amallar tarixi (audit jurnali) bir sahifada nechta yozuv ko'rsatadi.
+// Backend LargePageNumberPagination'ga `page_size` sifatida yuboriladi.
+const AUDIT_PAGE_SIZE = 50;
+
 const formatAdminDate = (value) => {
   if (!value) return '';
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
   return d.toLocaleDateString('uz-UZ', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+// Audit jurnali uchun: sana + soat (formatAdminDate faqat sanani beradi,
+// "kim nima qildi" tarixida esa soat/daqiqa muhim).
+const formatAdminDateTime = (value) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 16).replace('T', ' ');
+  return d.toLocaleString('uz-UZ', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+};
+
+// To'lov summasi — "149 000 so'm" ko'rinishida (panelning boshqa joylaridagi
+// daromad tooltipi bilan bir xil format).
+const formatAdminAmount = (amount) => `${(Number(amount) || 0).toLocaleString('uz-UZ')} so'm`;
+
+// Backend PaymentTransaction.STATUS_CHOICES → o'zbekcha yorliq + rang.
+// Noma'lum kod kelsa xom qiymat ko'rsatiladi (yashirib qo'yilmaydi).
+const ADMIN_PAYMENT_STATUS = {
+  success: { label: "To'langan", cls: 'text-emerald-400' },
+  pending: { label: 'Kutilmoqda', cls: 'text-amber-400' },
+  failed: { label: 'Xato', cls: 'text-rose-400' },
+  cancelled: { label: 'Bekor qilingan', cls: 'text-slate-400' },
+};
+const adminPaymentStatus = (status) => ADMIN_PAYMENT_STATUS[status]
+  || { label: status || '—', cls: 'text-slate-400' };
+
+// To'lov provayderi kodi → ko'rsatish nomi (backend 'click' / 'payme' yozadi).
+const ADMIN_PROVIDER_LABEL = { click: 'Click', payme: 'Payme' };
+const adminProviderLabel = (provider) => ADMIN_PROVIDER_LABEL[provider]
+  || (provider ? provider[0].toUpperCase() + provider.slice(1) : '—');
+
+// User-Agent satri juda uzun (250 belgigacha) — jadvalga sig'maydi. Eng
+// muhim qismini ajratamiz: qurilma turi + brauzer. Tanib bo'lmasa satrning
+// boshi qaytariladi (ma'lumot butunlay yo'qolmasin, `title` da to'lig'i bor).
+const adminDeviceLabel = (userAgent) => {
+  const ua = String(userAgent || '').trim();
+  if (!ua) return "Noma'lum qurilma";
+  const platform = /Android/i.test(ua) ? 'Android'
+    : /iPhone|iPad|iPod/i.test(ua) ? 'iOS'
+    : /Windows/i.test(ua) ? 'Windows'
+    : /Mac OS X|Macintosh/i.test(ua) ? 'macOS'
+    : /Linux/i.test(ua) ? 'Linux' : '';
+  // Tartib muhim: Edge/Opera ham "Chrome" ni, Chrome esa "Safari" ni o'z
+  // UA satrida saqlaydi — aniqrog'idan boshlab tekshiramiz.
+  const browser = /Edg\//i.test(ua) ? 'Edge'
+    : /OPR\/|Opera/i.test(ua) ? 'Opera'
+    : /Telegram/i.test(ua) ? 'Telegram'
+    : /Firefox\//i.test(ua) ? 'Firefox'
+    : /Chrome\//i.test(ua) ? 'Chrome'
+    : /Safari\//i.test(ua) ? 'Safari' : '';
+  const parts = [platform, browser].filter(Boolean);
+  return parts.length ? parts.join(' · ') : ua.slice(0, 40);
 };
 
 const adminStatusMeta = (status) => {
@@ -669,6 +727,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [blockModal, setBlockModal] = React.useState(null);
   const [blocking, setBlocking] = React.useState(false);
   const [blockedIds, setBlockedIds] = React.useState({});
+  // Bloklash sababi (majburiy) va muddati (null = doimiy). Modal har ochilganda
+  // tozalanadi — oldingi foydalanuvchining sababi qolib ketmasin.
+  const [blockReason, setBlockReason] = React.useState('');
+  const [blockDuration, setBlockDuration] = React.useState(null);
   // Markaz rad etish / premium bekor qilish — destruktiv/qaytarib
   // bo'lmaydigan amallar avval tasdiqlashsiz zudlik bilan bajarilardi.
   const [rejectCenterConfirm, setRejectCenterConfirm] = React.useState(null);
@@ -689,10 +751,52 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [phoneSaving, setPhoneSaving] = React.useState(false);
   const [resetPasswordConfirm, setResetPasswordConfirm] = React.useState(null);
   const [resetPasswordBusy, setResetPasswordBusy] = React.useState(false);
+  // 2FA'ni majburan o'chirish (autentifikatorini yo'qotgan foydalanuvchi) va
+  // bloklamasdan barcha seanslarni yakunlash — ikkalasi ham "Batafsil"
+  // oynasidan, tasdiqlash bilan.
+  const [resetTotpConfirm, setResetTotpConfirm] = React.useState(null);
+  const [resetTotpBusy, setResetTotpBusy] = React.useState(false);
+  const [forceLogoutConfirm, setForceLogoutConfirm] = React.useState(null);
+  const [forceLogoutBusy, setForceLogoutBusy] = React.useState(false);
+  // "Foydalanuvchi sifatida ko'rish" (support): eng nozik amal, shuning uchun
+  // alohida tasdiqlash oynasi va faqat "Batafsil" oynasidan chaqiriladi.
+  const [impersonateConfirm, setImpersonateConfirm] = React.useState(null);
+  const [impersonateBusy, setImpersonateBusy] = React.useState(false);
+  // Takrorlangan hisoblarni birlashtirish: SIM raqamini yo'qotib yangi raqam
+  // bilan qayta ro'yxatdan o'tgan o'quvchida ikkita hisob qoladi. Oqim ikki
+  // bosqichli — avval quruq yurish (`preview`, hech narsa o'zgarmaydi), keyin
+  // manba raqamini qo'lda yozib tasdiqlash va `commit`.
+  const [mergeModal, setMergeModal] = React.useState(null);
+  const [mergeSearch, setMergeSearch] = React.useState('');
+  const [mergeOtherId, setMergeOtherId] = React.useState(null);
+  // "Batafsil" oynasidan ochilgan hisob SAQLANADIMI (maqsadli) yoki
+  // birlashtiriladimi (manba). Standart — saqlanadi.
+  const [mergeKeepOpened, setMergeKeepOpened] = React.useState(true);
+  const [mergePreview, setMergePreview] = React.useState(null);
+  const [mergeConfirmPhone, setMergeConfirmPhone] = React.useState('');
+  const [mergeBusy, setMergeBusy] = React.useState(false);
+  // Ommaviy amallar: jadvalda belgilangan qatorlar (row.id bo'yicha) va ochiq
+  // ommaviy modal. Sabab/muddat maydonlari bitta foydalanuvchilik oqim bilan
+  // BO'LISHILADI (`blockReason`/`blockDuration`) — bir vaqtda faqat bitta
+  // modal ochiq bo'ladi va qoidalar ham bir xil.
+  const [selectedUserIds, setSelectedUserIds] = React.useState([]);
+  const [bulkBlockModal, setBulkBlockModal] = React.useState(null); // 'block' | 'unblock'
+  const [bulkRoleModal, setBulkRoleModal] = React.useState(false);
+  const [bulkRoleSelection, setBulkRoleSelection] = React.useState([]);
+  const [bulkBusy, setBulkBusy] = React.useState(false);
+  const [csvBusy, setCsvBusy] = React.useState(false);
   // Yangi parol backenddan faqat BIR MARTA ochiq matnda keladi — uni hech
   // qayerda saqlamaymiz, modal yopilishi bilan state'dan ham o'chiriladi.
   const [newPasswordInfo, setNewPasswordInfo] = React.useState(null);
+  // "Batafsil" oynasi — bitta foydalanuvchining to'liq ko'rinishi (jadval
+  // qatori faqat qisqacha ma'lumot beradi).
+  const [detailUser, setDetailUser] = React.useState(null);
   const [newSubjectName, setNewSubjectName] = React.useState('');
+  // Amallar tarixi (audit jurnali) — server tomonda sahifalanadi, chunki
+  // jurnal cheksiz o'sadi (boshqa admin ro'yxatlaridagidek hammasini bir
+  // yo'la yuklab bo'lmaydi).
+  const [auditPage, setAuditPage] = React.useState(1);
+  const [auditSearch, setAuditSearch] = React.useState('');
   // Topbar global qidiruv — foydalanuvchi/tashkilot/olimpiada nomi bo'yicha
   // joriy ko'rinayotgan jadvalga ta'sir qiladi (avval onChange yo'q edi).
   const [globalSearch, setGlobalSearch] = React.useState('');
@@ -702,6 +806,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   // (katta foydalanuvchilar jadvalini har harfda qayta filtrlamaslik uchun).
   const debouncedUserSearch = useDebounce(userSearch, 300);
   const debouncedGlobalSearch = useDebounce(globalSearch, 300);
+  // Audit qidiruvi backendga ketadi (server tomon filtr) — har bosishda
+  // so'rov yubormaslik uchun u ham debounce qilinadi.
+  const debouncedAuditSearch = useDebounce(auditSearch, 300);
 
   // Profile settings state
   const [editFirstName, setEditFirstName] = React.useState('');
@@ -849,6 +956,41 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     () => isApi ? OlympyApi.getCenterAnalytics(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+  // Amallar tarixi — faqat "logs" tabi ochilganda so'raladi (boshqa tablarda
+  // keraksiz so'rov bo'lmasin). Sahifa/qidiruv o'zgarganda qayta yuklanadi.
+  const apiAuditRes = useApiData(
+    () => (isApi && page === 'logs')
+      ? OlympyApi.getAdminAuditLog(
+          { page: auditPage, pageSize: AUDIT_PAGE_SIZE, search: debouncedAuditSearch },
+          OlympyApi.getToken(),
+        )
+      : Promise.resolve(null),
+    [isApi, page, auditPage, debouncedAuditSearch],
+  );
+  // "Batafsil" oynasi ochilganda o'sha foydalanuvchining to'liq profili.
+  const detailBackendId = detailUser?.backendId
+    ?? (typeof detailUser?.id === 'string' && detailUser.id.startsWith('api:') ? Number(detailUser.id.slice(4)) : null);
+  const apiUserDetailRes = useApiData(
+    () => (isApi && detailBackendId)
+      ? OlympyApi.getAdminUserDetail(detailBackendId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, detailBackendId],
+  );
+  // To'lovlar va kirish tarixi — profildan alohida so'rovlar, faqat oyna
+  // ochilganda ketadi (foydalanuvchilar jadvalini yuklashda emas). Profil
+  // ularni kutmaydi: har biri o'z yuklanish/xato holatini ko'rsatadi.
+  const apiUserBillingRes = useApiData(
+    () => (isApi && detailBackendId)
+      ? OlympyApi.getAdminUserBillingHistory(detailBackendId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, detailBackendId],
+  );
+  const apiUserLoginsRes = useApiData(
+    () => (isApi && detailBackendId)
+      ? OlympyApi.getAdminUserLoginHistory(detailBackendId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, detailBackendId],
+  );
 
   const apiCenters = isApi && Array.isArray(apiCentersRes.data)
     ? apiCentersRes.data.map(mapApiCenter)
@@ -980,14 +1122,30 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     if (center) rejectCenterDirect(center);
   };
 
+  // Bloklash modali har safar toza ochiladi: sabab bo'sh, muddat "Doimiy".
+  const openBlockModal = (row) => {
+    setBlockReason('');
+    setBlockDuration(null);
+    setBlockModal(row);
+  };
+
   const toggleBlock = (row) => {
     if (blocking) return;
+    const nextActive = row.status === 'Bloklangan';
+    // Sabab faqat bloklashda kerak (backend ham bo'shini rad etadi) —
+    // blokni ochishda hech narsa so'ralmaydi.
+    const reason = blockReason.trim();
+    if (!nextActive && !reason) { showToast('Bloklash sababini kiriting'); return; }
     if (isApi) {
       const numericUserId = row?.backendId ?? (typeof row?.id === 'string' && row.id.startsWith('api:') ? Number(row.id.slice(4)) : null);
       if (!numericUserId) { showToast("Backend ID topilmadi"); setBlockModal(null); return; }
-      const nextActive = row.status === 'Bloklangan';
       setBlocking(true);
-      OlympyApi.adminSetUserActive(numericUserId, nextActive, OlympyApi.getToken())
+      OlympyApi.adminSetUserActive(
+        numericUserId,
+        nextActive,
+        { reason, durationDays: blockDuration },
+        OlympyApi.getToken(),
+      )
         .then(() => { showToast('Foydalanuvchi holati yangilandi'); apiUsersRes.reload(); })
         .catch(err => { console.warn('adminSetUserActive failed:', err); showToast(OlympyApi.toUserMessage(err)); })
         .finally(() => { setBlocking(false); setBlockModal(null); });
@@ -997,6 +1155,55 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     setBlockModal(null);
     showToast('Foydalanuvchi holati yangilandi');
   };
+
+  // Sabab + muddat maydonlari. Bitta foydalanuvchilik va ommaviy bloklash
+  // modallari AYNAN shu bloklardan foydalanadi — qoidalar (majburiy sabab,
+  // qat'iy muddat variantlari) ikkalasida bir xil bo'lishi kerak.
+  const blockReasonFields = (
+    <div className="mb-5 space-y-4">
+      <div>
+        <label className="block text-xs text-white/50 mb-1.5 font-medium">Bloklash sababi</label>
+        <input
+          value={blockReason}
+          onChange={e => setBlockReason(e.target.value)}
+          maxLength={255}
+          className="w-full admin-input px-3 py-2.5 text-sm outline-none"
+          placeholder="Masalan: imtihonda qoidabuzarlik"
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-white/50 mb-1.5 font-medium">Muddat</label>
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            { value: 1, label: '1 kun' },
+            { value: 7, label: '7 kun' },
+            { value: 14, label: '14 kun' },
+            { value: 30, label: '30 kun' },
+            { value: null, label: 'Doimiy' },
+          ].map(opt => (
+            <button
+              key={String(opt.value)}
+              type="button"
+              onClick={() => setBlockDuration(opt.value)}
+              className={`px-2 py-2 rounded-xl text-[11px] font-bold transition-all border ${
+                blockDuration === opt.value
+                  ? opt.value === null
+                    ? 'bg-rose-600 text-white border-rose-600 font-extrabold shadow'
+                    : 'bg-amber-500 text-indigo-950 border-amber-500 font-extrabold shadow'
+                  : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+          Muddat tanlansa, blok o'sha kunlar o'tgach avtomatik ochiladi. "Doimiy" —
+          admin qo'lda ochmaguncha bloklangan qoladi.
+        </p>
+      </div>
+    </div>
+  );
 
   const openPremiumModal = (row) => {
     setPremiumUser(row);
@@ -1121,6 +1328,70 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .finally(() => setResetPasswordBusy(false));
   };
 
+  const handleResetTotp = () => {
+    if (!resetTotpConfirm) return;
+    if (!isApi) { showToast("2FA faqat API rejimida o'chiriladi"); return; }
+    const numericUserId = resetTotpConfirm.backendId;
+    if (!numericUserId) { showToast('Backend ID topilmadi'); setResetTotpConfirm(null); return; }
+
+    setResetTotpBusy(true);
+    OlympyApi.adminResetUserTotp(numericUserId, OlympyApi.getToken())
+      .then(() => {
+        showToast("2FA o'chirildi — foydalanuvchi kodsiz kira oladi");
+        setResetTotpConfirm(null);
+        // "Batafsil" oynasidagi 2FA tugmasi darhol yo'qolishi uchun profilni
+        // qayta o'qiymiz (ro'yxatda bu holat ko'rsatilmaydi).
+        apiUserDetailRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminResetUserTotp failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setResetTotpBusy(false));
+  };
+
+  const handleForceLogout = () => {
+    if (!forceLogoutConfirm) return;
+    if (!isApi) { showToast('Seanslar faqat API rejimida yakunlanadi'); return; }
+    const numericUserId = forceLogoutConfirm.backendId;
+    if (!numericUserId) { showToast('Backend ID topilmadi'); setForceLogoutConfirm(null); return; }
+
+    setForceLogoutBusy(true);
+    OlympyApi.adminForceLogoutUser(numericUserId, OlympyApi.getToken())
+      .then(() => {
+        showToast('Barcha seanslar yakunlandi');
+        setForceLogoutConfirm(null);
+      })
+      .catch(err => {
+        console.warn('adminForceLogoutUser failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setForceLogoutBusy(false));
+  };
+
+  const handleImpersonate = () => {
+    if (!impersonateConfirm) return;
+    if (!isApi) { showToast("Bu rejim faqat API rejimida ishlaydi"); return; }
+    const numericUserId = impersonateConfirm.backendId;
+    if (!numericUserId) { showToast('Backend ID topilmadi'); setImpersonateConfirm(null); return; }
+
+    setImpersonateBusy(true);
+    OlympyApi.startImpersonation(numericUserId)
+      .then(() => {
+        // To'liq qayta yuklash ATAYIN: admin panelida yig'ilgan holat
+        // (foydalanuvchilar ro'yxati, ochiq modallar) impersonatsiya seansiga
+        // o'tib ketmasin. Bosh sahifa foydalanuvchining o'z rolidagi
+        // dashboardga olib boradi (app.jsx roleHomePage).
+        window.location.assign('/');
+      })
+      .catch(err => {
+        console.warn('startImpersonation failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+        setImpersonateBusy(false);
+        setImpersonateConfirm(null);
+      });
+  };
+
   const userRows = allUsers.map(u => {
     const approved = getApprovedRoles(u);
     // Avval foydalanuvchi tasdiqlanmagan rollarda bo'lsa, fallback "student"
@@ -1161,6 +1432,217 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       isPlatformAdmin: !!(u.isPlatformAdmin ?? u.is_platform_admin),
     };
   });
+
+  // Jadval filtri. Avval bu hisob-kitob jadval ichidagi IIFE'da edi — endi
+  // ommaviy amallar paneli, "hammasini tanlash" va CSV eksporti ham AYNAN shu
+  // to'plamga tayanadi (ko'rinmayotgan qator amalga tushib qolmasin).
+  const userTableSearch = (debouncedUserSearch || debouncedGlobalSearch || '').trim();
+  const userTableQuery = userTableSearch.toLowerCase();
+  const visibleUserRows = userTableQuery
+    ? userRows.filter(row =>
+        (row.name || '').toLowerCase().includes(userTableQuery) ||
+        (row.phone || '').toLowerCase().includes(userTableQuery) ||
+        (row.role || '').toLowerCase().includes(userTableQuery) ||
+        (row.center || '').toLowerCase().includes(userTableQuery))
+    : userRows;
+
+  // Qidiruv o'zgarsa tanlov tozalanadi: aks holda filtrdan chiqib ketgan
+  // (ekranda ko'rinmaydigan) foydalanuvchi ommaviy amalga bilinmay tushardi.
+  React.useEffect(() => {
+    setSelectedUserIds(prev => (prev.length ? [] : prev));
+  }, [userTableQuery]);
+
+  const selectedUserRows = visibleUserRows.filter(row => selectedUserIds.includes(row.id));
+  const allVisibleSelected = visibleUserRows.length > 0
+    && visibleUserRows.every(row => selectedUserIds.includes(row.id));
+
+  const toggleUserSelected = (rowId) => setSelectedUserIds(prev => prev.includes(rowId)
+    ? prev.filter(id => id !== rowId)
+    : [...prev, rowId]);
+
+  const toggleSelectAllVisible = () => setSelectedUserIds(
+    allVisibleSelected ? [] : visibleUserRows.map(row => row.id),
+  );
+
+  // Ommaviy so'rovlar backend (numeric) id bilan ishlaydi — jadval qatorining
+  // id'si esa API rejimida `api:<id>` ko'rinishida keladi.
+  const selectedBackendIds = selectedUserRows
+    .map(row => row.backendId
+      ?? (typeof row.id === 'string' && row.id.startsWith('api:') ? Number(row.id.slice(4)) : null))
+    .filter(Boolean);
+
+  // Ommaviy endpointlar QISMAN muvaffaqiyat qaytaradi:
+  // { succeeded: [...], failed: [{ id, reason }] }. Admin nima o'tkazib
+  // yuborilganini (admin hisobi, o'chirilgan foydalanuvchi) ko'rishi kerak.
+  const showBulkResult = (res, successText) => {
+    const ok = (res?.succeeded || []).length;
+    const failed = res?.failed || [];
+    const base = `${ok} ta foydalanuvchi ${successText}`;
+    showToast(failed.length
+      ? `${base}. ${failed.length} tasi o'tkazib yuborildi (${failed[0]?.reason || 'xatolik'})`
+      : base);
+  };
+
+  // Ommaviy modallar ham har safar toza ochiladi (oldingi sabab qolib ketmasin).
+  const openBulkBlockModal = (mode) => {
+    setBlockReason('');
+    setBlockDuration(null);
+    setBulkBlockModal(mode);
+  };
+
+  const openBulkRoleModal = () => {
+    setBulkRoleSelection([]);
+    setBulkRoleModal(true);
+  };
+
+  const runBulkSetActive = () => {
+    if (bulkBusy) return;
+    const nextActive = bulkBlockModal === 'unblock';
+    // Sabab faqat bloklashda kerak — bitta foydalanuvchilik oqim bilan bir xil
+    // qoida (backend ham bo'shini rad etadi).
+    const reason = blockReason.trim();
+    if (!nextActive && !reason) { showToast('Bloklash sababini kiriting'); return; }
+    if (!isApi) { showToast('Ommaviy amallar faqat API rejimida ishlaydi'); return; }
+    if (!selectedBackendIds.length) { showToast('Backend ID topilmadi'); return; }
+    setBulkBusy(true);
+    OlympyApi.adminBulkSetUserActive(
+      selectedBackendIds,
+      nextActive,
+      { reason, durationDays: blockDuration },
+      OlympyApi.getToken(),
+    )
+      .then(res => {
+        showBulkResult(res, nextActive ? 'blokdan chiqarildi' : 'bloklandi');
+        setSelectedUserIds([]);
+        apiUsersRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminBulkSetUserActive failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => { setBulkBusy(false); setBulkBlockModal(null); });
+  };
+
+  const runBulkSetRoles = () => {
+    if (bulkBusy) return;
+    if (!isApi) { showToast('Ommaviy amallar faqat API rejimida ishlaydi'); return; }
+    if (!selectedBackendIds.length) { showToast('Backend ID topilmadi'); return; }
+    setBulkBusy(true);
+    // Platform admin huquqi ATAYLAB yo'q: backend ham uni ommaviy amalda qabul
+    // qilmaydi, u bitta foydalanuvchilik rol modalida qoladi.
+    OlympyApi.adminBulkSetUserRoles(selectedBackendIds, bulkRoleSelection, OlympyApi.getToken())
+      .then(res => {
+        showBulkResult(res, 'roli yangilandi');
+        setSelectedUserIds([]);
+        apiUsersRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminBulkSetUserRoles failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => { setBulkBusy(false); setBulkRoleModal(false); });
+  };
+
+  // CSV eksporti: backend AYNAN shu qidiruv matnini `admin_users_list` bilan
+  // bir xil filtr sifatida qo'llaydi (ism/telefon), ya'ni admin ekranda ko'rgan
+  // to'plam yuklab olinadi. 5000 qatordan ko'pi kesiladi — bunda ogohlantirish.
+  const handleExportUsersCsv = () => {
+    if (csvBusy) return;
+    if (!isApi) { showToast('Eksport faqat API rejimida ishlaydi'); return; }
+    setCsvBusy(true);
+    OlympyApi.downloadAdminUsersCsv(userTableSearch, OlympyApi.getToken())
+      .then(({ truncated }) => showToast(truncated
+        ? "CSV yuklandi — faqat birinchi 5000 qator. Qidiruv bilan toraytiring."
+        : 'CSV yuklab olindi'))
+      .catch(err => {
+        console.warn('downloadAdminUsersCsv failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setCsvBusy(false));
+  };
+
+  // ─── Takrorlangan hisoblarni birlashtirish ───────────────────────────────
+  // Ikkinchi hisob qidiruvi to'liq yuklangan `userRows` ustidan (jadval bilan
+  // BIR XIL manba) — alohida endpoint kerak emas. Ochilgan hisobning o'zi va
+  // adminlar ro'yxatdan chiqariladi; ko'p natija chiqib ketmasligi uchun 6 ta.
+  const debouncedMergeSearch = useDebounce(mergeSearch, 300);
+  const mergeCandidates = (() => {
+    if (!mergeModal) return [];
+    const q = debouncedMergeSearch.trim().toLowerCase();
+    if (!q) return [];
+    return userRows
+      .filter(row => row.backendId && row.backendId !== mergeModal.backendId && !row.isPlatformAdmin)
+      .filter(row => (row.name || '').toLowerCase().includes(q)
+        || (row.phone || '').toLowerCase().includes(q))
+      .slice(0, 6);
+  })();
+  const mergeOther = mergeOtherId
+    ? userRows.find(row => row.backendId === mergeOtherId) || null
+    : null;
+  // Yo'nalish: "saqlanadigan" hisob — maqsadli, ikkinchisi — manba (bloklanadi).
+  const mergeSourceId = mergeModal
+    ? (mergeKeepOpened ? mergeOtherId : mergeModal.backendId)
+    : null;
+  const mergeTargetId = mergeModal
+    ? (mergeKeepOpened ? mergeModal.backendId : mergeOtherId)
+    : null;
+  // Tasdiqlash: manba raqamini AYNAN yozish talab qilinadi (amal
+  // qaytarilmaydigandek his qilinadi). Preview javobidagi normalizatsiya
+  // qilingan raqam bilan solishtiramiz, bo'shliqlarni tashlab.
+  const mergeConfirmOk = !!mergePreview?.can_merge
+    && !!mergePreview?.source?.phone
+    && mergeConfirmPhone.replace(/\s/g, '') === mergePreview.source.phone;
+
+  const openMergeModal = (row) => {
+    setMergeModal(row);
+    setMergeSearch('');
+    setMergeOtherId(null);
+    setMergeKeepOpened(true);
+    setMergePreview(null);
+    setMergeConfirmPhone('');
+  };
+
+  // Ikkinchi hisob yoki yo'nalish o'zgarsa quruq yurish natijasi eskiradi —
+  // tasdiqlash ham nolga qaytadi (eski preview bilan commit ketib qolmasin).
+  const resetMergePreview = () => {
+    setMergePreview(null);
+    setMergeConfirmPhone('');
+  };
+
+  const runMergePreview = () => {
+    if (mergeBusy || !mergeSourceId || !mergeTargetId) return;
+    if (!isApi) { showToast('Birlashtirish faqat API rejimida ishlaydi'); return; }
+    setMergeBusy(true);
+    OlympyApi.adminMergeUsersPreview(mergeSourceId, mergeTargetId, OlympyApi.getToken())
+      .then(res => { setMergePreview(res); setMergeConfirmPhone(''); })
+      .catch(err => {
+        console.warn('adminMergeUsersPreview failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setMergeBusy(false));
+  };
+
+  const runMergeCommit = () => {
+    if (mergeBusy || !mergeConfirmOk || !mergeSourceId || !mergeTargetId) return;
+    setMergeBusy(true);
+    OlympyApi.adminMergeUsersCommit(mergeSourceId, mergeTargetId, OlympyApi.getToken())
+      .then(res => {
+        const moved = Object.values(res?.moved || {}).reduce((a, b) => a + b, 0);
+        showToast(`Hisoblar birlashtirildi — ${moved} ta yozuv va ${res?.coins_moved || 0} tanga ko'chirildi`);
+        setMergeModal(null);
+        setMergePreview(null);
+        setMergeConfirmPhone('');
+        // Manba bloklandi, maqsadli hisobning balansi o'zgardi — ikkalasi ham
+        // ro'yxatda va ochiq "Batafsil" oynasida yangilanishi kerak.
+        apiUsersRes.reload();
+        apiUserDetailRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminMergeUsersCommit failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setMergeBusy(false));
+  };
 
   // Foydalanuvchi o'sishi: oxirgi 6 oy bo'yicha ro'yxatdan o'tganlar soni.
   // Avval bu chart hardcoded [38, 55, 64, 77, 90, 100] qiymatlarni ko'rsatardi.
@@ -1223,6 +1705,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCenterReqs.length || undefined },
     { key: 'subjects', icon: 'book', label: 'Fanlar' },
     { key: 'analytics', icon: 'chart', label: 'Tahlil' },
+    { key: 'logs', icon: 'shield', label: 'Amallar tarixi' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
     { key: 'myprofile', icon: 'user', label: 'Mening profilim' },
     { key: 'support', icon: 'sparkles', label: 'AI Support' },
@@ -1604,6 +2087,260 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     </div>
   );
 
+  // "Batafsil" oynasi. Jadval qatoridagi ma'lumot darhol ko'rsatiladi,
+  // backenddan kelgan to'liq profil (yangiroq holat, rollar detali, obuna)
+  // ustidan yoziladi; to'lovlar va kirish tarixi alohida so'rovlar bilan
+  // keladi va profilni kutdirmaydi.
+  const renderUserDetailModal = () => {
+    // ID tekshiruvi majburiy: useApiData yangi so'rov ketayotganda eski
+    // data'ni saqlab turadi — busiz ketma-ket ochilgan ikkinchi foydalanuvchi
+    // oynasida bir lahza BIRINCHISINING holati/premiumi ko'rinardi. Shu sabab
+    // tarix endpointlari ham javobda `user_id` qaytaradi.
+    const fresh = isApi && apiUserDetailRes.data && apiUserDetailRes.data.id === detailBackendId
+      ? OlympyApi.mapBackendUser(apiUserDetailRes.data)
+      : null;
+    const info = detailUser ? {
+      name: fresh?.name || detailUser.name,
+      phone: fresh?.phone || detailUser.phone,
+      avatarUrl: fresh?.avatarUrl || detailUser.avatarUrl || '',
+      joined: fresh?.joined || detailUser.joined,
+      isActive: fresh ? fresh.isActive !== false : detailUser.status !== 'Bloklangan',
+      isPremium: fresh ? !!fresh.isPremium : !!detailUser.isPremium,
+      planName: fresh?.currentPlanName || detailUser.planName || '',
+      center: detailUser.center,
+      roles: fresh?.roles || null,
+      // 2FA holati faqat backend profilida keladi (jadval qatorida yo'q) —
+      // "2FA'ni o'chirish" tugmasi shu bayroqqa qarab ko'rsatiladi.
+      totpEnabled: !!fresh?.totpEnabled,
+      // Boshqa admin ustidan bajarib bo'lmaydigan amallar (masalan
+      // "sifatida ko'rish") uchun — yangi profil kelgan bo'lsa o'shandan.
+      isPlatformAdmin: fresh ? !!fresh.isPlatformAdmin : !!detailUser.isPlatformAdmin,
+      // Blok sababi/muddati `mapBackendUser` dan o'tmaydi: ular faqat shu
+      // admin endpoint javobida bo'ladi (UserSerializer'ga qo'shilmagan).
+      blockReason: (isApi && apiUserDetailRes.data?.id === detailBackendId
+        ? apiUserDetailRes.data.block_reason : null) || '',
+      blockedUntil: (isApi && apiUserDetailRes.data?.id === detailBackendId
+        ? apiUserDetailRes.data.blocked_until : null) || null,
+    } : null;
+    const roleEntries = info?.roles ? Object.entries(info.roles) : [];
+    const billing = isApi && apiUserBillingRes.data?.user_id === detailBackendId
+      ? apiUserBillingRes.data
+      : null;
+    const logins = isApi && apiUserLoginsRes.data?.user_id === detailBackendId
+      ? apiUserLoginsRes.data
+      : null;
+    const txRows = Array.isArray(billing?.transactions) ? billing.transactions : [];
+    const loginRows = Array.isArray(logins?.events) ? logins.events : [];
+    // `res.loading` yolg'iz yetarli emas: useApiData effekti render'dan KEYIN
+    // ishga tushadi, ya'ni oyna ochilgan birinchi kadrda bayroq hali `false`
+    // va bir lahza "bo'sh" holat ko'rinib qolardi. Javob hali shu
+    // foydalanuvchiniki bo'lmagan holat ham yuklanish deb qaraladi.
+    const billingLoading = apiUserBillingRes.loading || (!billing && !apiUserBillingRes.error);
+    const loginsLoading = apiUserLoginsRes.loading || (!logins && !apiUserLoginsRes.error);
+    // Ikkala tarix bloki bir xil holatlarni boshqaradi (API emas / yuklanmoqda
+    // / xato / bo'sh / ro'yxat) — bitta o'ram orqali.
+    const renderHistorySection = ({ title, note, loading, error, rows, emptyText, renderRow }) => (
+      <div>
+        <div className="mb-2 flex items-baseline justify-between gap-2">
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">{title}</div>
+          {note && <div className="text-[10px] font-bold text-indigo-400 truncate">{note}</div>}
+        </div>
+        <div className="max-h-56 overflow-y-auto admin-scroll divide-y divide-white/5 rounded-xl border border-white/10 bg-white/[0.02]">
+          {!isApi ? (
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Faqat API rejimida ko'rinadi</div>
+          ) : loading ? (
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Yuklanmoqda...</div>
+          ) : error ? (
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</div>
+          ) : rows.length === 0 ? (
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">{emptyText}</div>
+          ) : rows.map(renderRow)}
+        </div>
+      </div>
+    );
+    return (
+      <Modal
+        open={!!detailUser}
+        onClose={() => setDetailUser(null)}
+        title="Foydalanuvchi ma'lumotlari"
+        width="max-w-2xl"
+      >
+        {info && (
+          <div className="space-y-5">
+            <div className="flex items-center gap-3 rounded-xl bg-white/5 p-3">
+              <Avatar name={info.name} src={info.avatarUrl} size={44} />
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-white truncate">{info.name}</div>
+                <div className="text-xs text-white/40 font-mono">{info.phone || '—'}</div>
+              </div>
+              {apiUserDetailRes.loading && (
+                <span className="ml-auto text-[10px] font-bold text-white/30">Yuklanmoqda...</span>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              {[
+                { label: 'ID', value: detailBackendId ? `#${detailBackendId}` : '—' },
+                { label: "Ro'yxatdan o'tgan", value: formatAdminDate(info.joined) || '—' },
+                { label: 'Tashkilot', value: info.center || '—' },
+                { label: 'Tarif', value: info.planName || '—' },
+              ].map(f => (
+                <div key={f.label} className="rounded-xl bg-white/5 px-3 py-2.5">
+                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">{f.label}</div>
+                  <div className="mt-1 text-xs font-bold text-white break-words">{f.value}</div>
+                </div>
+              ))}
+            </div>
+
+            <div>
+              <div className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Rollar</div>
+              <div className="flex flex-wrap gap-2">
+                {roleEntries.length > 0 ? roleEntries.map(([key, val]) => (
+                  <span key={key} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1.5 text-[11px] font-bold text-indigo-400">
+                    {ROLE_META[key]?.label || key}
+                    <AdminPill status={val?.status || 'pending'} />
+                  </span>
+                )) : (
+                  <span className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1.5 text-[11px] font-bold text-indigo-400">
+                    {detailUser?.role || '—'}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <AdminPill status={info.isActive ? 'approved' : 'rejected'}>
+                {info.isActive ? 'Faol' : 'Bloklangan'}
+              </AdminPill>
+              <AdminPill status={info.isPremium ? 'active' : 'draft'}>
+                {info.isPremium ? 'Premium' : 'Premium yo\'q'}
+              </AdminPill>
+            </div>
+
+            {/* Blok sababi va muddati — faqat hozir bloklangan foydalanuvchida.
+                Muddat ko'rsatilmagan bo'lsa blok doimiy. */}
+            {!info.isActive && info.blockReason && (
+              <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-3.5 py-3">
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-rose-300/70">Bloklash sababi</div>
+                <div className="mt-1 text-xs font-bold text-rose-100 break-words">{info.blockReason}</div>
+                <div className="mt-2 text-[11px] font-semibold text-rose-300/80">
+                  {info.blockedUntil
+                    ? `Ochilish vaqti: ${formatAdminDateTime(info.blockedUntil)}`
+                    : 'Muddat: doimiy (admin qo\'lda ochadi)'}
+                </div>
+              </div>
+            )}
+
+            {renderHistorySection({
+              title: "To'lovlar tarixi",
+              // Sarlavha yonida joriy obuna: tarix o'tmishni, bu esa hozirgi
+              // holatni ko'rsatadi (bekor qilingan to'lovdan keyin ham obuna
+              // amal qilib turishi mumkin).
+              note: billing?.subscription
+                ? `${billing.subscription.plan_name} · ${billing.subscription.days_remaining} kun qoldi`
+                : null,
+              loading: billingLoading,
+              error: apiUserBillingRes.error,
+              rows: txRows,
+              emptyText: "To'lovlar hali yo'q",
+              renderRow: (tx) => {
+                const st = adminPaymentStatus(tx.status);
+                return (
+                  <div key={tx.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] font-bold text-white">{tx.plan_name}</div>
+                      <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                        {formatAdminDateTime(tx.created_at)} · {adminProviderLabel(tx.provider)}
+                      </div>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <div className="text-[11px] font-bold tabular-nums text-white">{formatAdminAmount(tx.amount)}</div>
+                      <div className={`mt-0.5 text-[10px] font-bold ${st.cls}`}>{st.label}</div>
+                    </div>
+                  </div>
+                );
+              },
+            })}
+
+            {renderHistorySection({
+              title: 'Kirish tarixi',
+              loading: loginsLoading,
+              error: apiUserLoginsRes.error,
+              rows: loginRows,
+              // Kirishlar faqat shu funksiya ishga tushirilgandan keyin
+              // yozila boshlagan — eskilarini tiklab bo'lmaydi, shuning uchun
+              // bo'sh ro'yxat xato emas.
+              emptyText: "Kirish tarixi hali bo'sh — faqat yangi kirishlar yoziladi",
+              renderRow: (event) => (
+                <div key={event.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                  <div className="min-w-0">
+                    <div className="truncate text-[11px] font-bold text-white" title={event.user_agent || ''}>
+                      {adminDeviceLabel(event.user_agent)}
+                    </div>
+                    <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                      {formatAdminDateTime(event.created_at)}
+                    </div>
+                  </div>
+                  <div className="shrink-0 font-mono text-[10px] text-slate-400">{event.ip || '—'}</div>
+                </div>
+              ),
+            })}
+
+            {/* Xavfsizlik amallari. Ikkalasi ham "Batafsil" oynasida: jadval
+                qatoridagi tugmalar allaqachon to'lib ketgan va bularning
+                ikkalasi ham kundalik emas, aniq holat uchun kerak. */}
+            {isApi && (
+              <div className="flex flex-wrap gap-2">
+                {info.totpEnabled && (
+                  <button
+                    onClick={() => setResetTotpConfirm({ backendId: detailBackendId, name: info.name })}
+                    className="rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition"
+                  >
+                    2FA'ni o'chirish
+                  </button>
+                )}
+                <button
+                  onClick={() => setForceLogoutConfirm({ backendId: detailBackendId, name: info.name })}
+                  className="rounded-lg bg-white/5 px-3 py-2 text-[11px] font-bold text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white transition"
+                >
+                  Barcha seanslarni yakunlash
+                </button>
+                {/* Boshqa adminni yoki bloklangan hisobni bu yo'l bilan ochib
+                    bo'lmaydi (backend 400 qaytaradi) — tugmani ham
+                    ko'rsatmaymiz. */}
+                {!info.isPlatformAdmin && info.isActive && (
+                  <button
+                    onClick={() => setImpersonateConfirm({ backendId: detailBackendId, name: info.name })}
+                    className="rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition"
+                  >
+                    Foydalanuvchi sifatida ko'rish
+                  </button>
+                )}
+                {/* Takrorlangan hisob: raqamini yo'qotib qayta ro'yxatdan
+                    o'tgan o'quvchining ikkinchi hisobi bilan birlashtirish.
+                    Admin hisobiga qo'llanmaydi (backend ham rad etadi). */}
+                {!info.isPlatformAdmin && (
+                  <button
+                    onClick={() => openMergeModal({
+                      backendId: detailBackendId, name: info.name, phone: info.phone,
+                    })}
+                    className="rounded-lg bg-indigo-500/10 px-3 py-2 text-[11px] font-bold text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition"
+                  >
+                    Hisoblarni birlashtirish
+                  </button>
+                )}
+              </div>
+            )}
+
+            <button onClick={() => setDetailUser(null)} className="btn-ghost w-full rounded-xl py-3 text-xs font-bold">
+              Yopish
+            </button>
+          </div>
+        )}
+      </Modal>
+    );
+  };
+
   const renderUsers = () => (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1611,38 +2348,94 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <h1 className="text-[20px] font-black leading-tight text-white">Foydalanuvchilar</h1>
           <p className="mt-1 text-[11px] font-bold text-slate-400">Platformadagi foydalanuvchi rollari va holati. Admin userlar hisobga olinmaydi.</p>
         </div>
-        <div className="relative w-full md:w-72">
-          <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
-          <input
-            value={userSearch}
-            onChange={e => setUserSearch(e.target.value)}
-            className="h-9 w-full admin-input pl-9 pr-3 text-xs outline-none"
-            placeholder="Ism, telefon, rol bo'yicha qidirish..." />
+        <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center md:w-auto">
+          <div className="relative w-full md:w-72">
+            <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              value={userSearch}
+              onChange={e => setUserSearch(e.target.value)}
+              className="h-9 w-full admin-input pl-9 pr-3 text-xs outline-none"
+              placeholder="Ism, telefon, rol bo'yicha qidirish..." />
+          </div>
+          <button
+            type="button"
+            onClick={handleExportUsersCsv}
+            disabled={csvBusy}
+            title="Joriy qidiruv bo'yicha filtrlangan ro'yxatni CSV qilib yuklaydi (eng ko'pi 5000 qator)"
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[11px] font-bold text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50">
+            <Icon name="download" size={13} /> {csvBusy ? 'Yuklanmoqda...' : 'CSV yuklab olish'}
+          </button>
         </div>
       </div>
+
+      {/* Ommaviy amallar paneli — kamida bitta qator belgilanganda ko'rinadi.
+          2FA tiklash / seanslarni yakunlash / premium ATAYLAB yo'q: ular bitta
+          foydalanuvchilik amallar bo'lib qoladi. */}
+      {selectedUserIds.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-500/25 bg-indigo-500/10 px-4 py-3">
+          <span className="text-xs font-extrabold text-white">{selectedUserIds.length} ta tanlandi</span>
+          <div className="flex flex-wrap items-center gap-2 md:ml-auto">
+            <button
+              type="button"
+              onClick={() => openBulkBlockModal('block')}
+              className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-[11px] font-bold text-rose-400 transition hover:bg-rose-500/20">
+              Bloklash
+            </button>
+            <button
+              type="button"
+              onClick={() => openBulkBlockModal('unblock')}
+              className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-400 transition hover:bg-emerald-500/20">
+              Blokni ochish
+            </button>
+            <button
+              type="button"
+              onClick={openBulkRoleModal}
+              className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-1.5 text-[11px] font-bold text-indigo-400 transition hover:bg-indigo-500/20">
+              Rol o'zgartirish
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedUserIds([])}
+              className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 transition hover:bg-white/10 hover:text-white">
+              Tanlovni bekor qilish
+            </button>
+          </div>
+        </div>
+      )}
       <section className="overflow-hidden admin-card">
         <div className="overflow-x-auto admin-scroll">
           <table className="w-full min-w-[760px] text-left">
             <thead className="admin-table-hdr">
               <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                <th className="px-5 py-3.5">
+                  {/* Faqat ko'rinayotgan (filtrlangan) qatorlarni tanlaydi. */}
+                  <button
+                    type="button"
+                    onClick={toggleSelectAllVisible}
+                    aria-label="Hammasini tanlash"
+                    className={`flex h-4 w-4 items-center justify-center rounded border transition ${allVisibleSelected ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-white/25 hover:border-white/50'}`}>
+                    {allVisibleSelected && <Icon name="check" size={12} />}
+                  </button>
+                </th>
                 {['Foydalanuvchi', 'Telefon', 'Rol', 'Tashkilot', 'Qo\'shilgan', 'Holat', 'Premium', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
               {(() => {
-                const q = (debouncedUserSearch || debouncedGlobalSearch || '').trim().toLowerCase();
-                const visible = q
-                  ? userRows.filter(row =>
-                      (row.name || '').toLowerCase().includes(q) ||
-                      (row.phone || '').toLowerCase().includes(q) ||
-                      (row.role || '').toLowerCase().includes(q) ||
-                      (row.center || '').toLowerCase().includes(q))
-                  : userRows;
-                if (visible.length === 0) {
-                  return <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">{q ? 'Qidiruv natijasi topilmadi' : 'Foydalanuvchilar yo\'q'}</td></tr>;
+                if (visibleUserRows.length === 0) {
+                  return <tr><td colSpan={9} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">{userTableQuery ? 'Qidiruv natijasi topilmadi' : 'Foydalanuvchilar yo\'q'}</td></tr>;
                 }
-                return visible.map(row => (
+                return visibleUserRows.map(row => (
                 <tr key={row.id} className="text-xs admin-table-row text-slate-300">
+                  <td className="px-5 py-4">
+                    <button
+                      type="button"
+                      onClick={() => toggleUserSelected(row.id)}
+                      aria-label={`${row.name} — tanlash`}
+                      className={`flex h-4 w-4 items-center justify-center rounded border transition ${selectedUserIds.includes(row.id) ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-white/25 hover:border-white/50'}`}>
+                      {selectedUserIds.includes(row.id) && <Icon name="check" size={12} />}
+                    </button>
+                  </td>
                   <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={row.name} src={row.avatarUrl || ''} size={34} /><span className="font-bold text-white">{row.name}</span></div></td>
                   <td className="px-5 py-4 font-mono text-[11px] text-slate-400">{maskPhoneDisplay(row.phone, '')}</td>
                   <td className="px-5 py-4"><span className="rounded-md bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-400">{row.role}</span></td>
@@ -1666,6 +2459,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex flex-wrap items-center gap-2">
+                      <button onClick={() => setDetailUser(row)} className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white transition">
+                        <Icon name="eye" size={12} /> Batafsil
+                      </button>
                       <button onClick={() => openRoleModal(row)} className="rounded-lg bg-indigo-500/10 px-3 py-1.5 text-[11px] font-bold text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition">
                         Rol
                       </button>
@@ -1675,7 +2471,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       <button onClick={() => setResetPasswordConfirm(row)} className="rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition">
                         Parolni tiklash
                       </button>
-                      <button onClick={() => setBlockModal(row)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${row.status === 'Bloklangan' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'}`}>
+                      <button onClick={() => openBlockModal(row)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${row.status === 'Bloklangan' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'}`}>
                         {row.status === 'Bloklangan' ? 'Ochish' : 'Bloklash'}
                       </button>
                     </div>
@@ -1697,11 +2493,86 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </div>
           <p className="text-sm text-white/60">{blockModal?.status === 'Bloklangan' ? 'Bu foydalanuvchining blokini ochasizmi?' : 'Bu foydalanuvchini bloklamoqchimisiz?'}</p>
         </div>
+        {/* Sabab va muddat faqat bloklashda so'raladi — ochishda backend
+            ikkalasini ham o'zi tozalaydi. */}
+        {blockModal?.status !== 'Bloklangan' && blockReasonFields}
         <div className="flex gap-3">
           <button onClick={() => setBlockModal(null)} disabled={blocking} className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">Bekor qilish</button>
           <button onClick={() => toggleBlock(blockModal)} disabled={blocking} className={`flex-1 rounded-xl py-3 font-semibold text-xs font-bold disabled:opacity-50 ${blockModal?.status === 'Bloklangan' ? 'btn-success' : 'btn-danger'}`}>
             {blocking ? '...' : (blockModal?.status === 'Bloklangan' ? 'Blokni ochish' : 'Bloklash')}
           </button>
+        </div>
+      </Modal>
+
+      {/* Ommaviy bloklash / blokni ochish */}
+      <Modal
+        open={!!bulkBlockModal}
+        onClose={() => !bulkBusy && setBulkBlockModal(null)}
+        title={bulkBlockModal === 'unblock' ? 'Ommaviy blokni ochish' : 'Ommaviy bloklash'}>
+        <div className="mb-5">
+          <p className="text-sm text-white/60">
+            {bulkBlockModal === 'unblock'
+              ? `Tanlangan ${selectedUserIds.length} ta foydalanuvchining blokini ochasizmi?`
+              : `Tanlangan ${selectedUserIds.length} ta foydalanuvchini bloklaysizmi?`}
+          </p>
+          <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+            Admin hisoblari va o'zingiz amaldan chetda qoladi — natijada nechtasi
+            o'tkazib yuborilgani ko'rsatiladi.
+          </p>
+        </div>
+        {bulkBlockModal === 'block' && blockReasonFields}
+        <div className="flex gap-3">
+          <button onClick={() => setBulkBlockModal(null)} disabled={bulkBusy} className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">Bekor qilish</button>
+          <button onClick={runBulkSetActive} disabled={bulkBusy} className={`flex-1 rounded-xl py-3 font-semibold text-xs font-bold disabled:opacity-50 ${bulkBlockModal === 'unblock' ? 'btn-success' : 'btn-danger'}`}>
+            {bulkBusy ? '...' : (bulkBlockModal === 'unblock' ? 'Blokni ochish' : 'Bloklash')}
+          </button>
+        </div>
+      </Modal>
+
+      {/* Ommaviy rol o'zgartirish. Platform Admin varianti ATAYLAB yo'q:
+          backend ham bu huquqni ommaviy amalda qabul qilmaydi. */}
+      <Modal open={bulkRoleModal} onClose={() => !bulkBusy && setBulkRoleModal(false)} title="Ommaviy rol o'zgartirish">
+        <div className="space-y-5">
+          <p className="text-sm text-white/60">
+            Tanlangan {selectedUserIds.length} ta foydalanuvchining rollari quyidagi
+            tanlov bilan TO'LIQ almashtiriladi.
+          </p>
+          <div>
+            <label className="block text-xs text-white/50 mb-2 font-medium">Rollar</label>
+            <div className="space-y-2">
+              {ROLE_MODAL_KEYS.filter(opt => opt.value !== 'admin').map(opt => {
+                const checked = bulkRoleSelection.includes(opt.value);
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setBulkRoleSelection(prev => prev.includes(opt.value)
+                      ? prev.filter(r => r !== opt.value)
+                      : [...prev, opt.value])}
+                    className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-xs font-bold transition-all ${
+                      checked
+                        ? 'bg-indigo-500/15 text-white border-indigo-500/40'
+                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                    }`}
+                  >
+                    <span className={`flex h-4 w-4 items-center justify-center rounded border transition ${checked ? 'bg-indigo-500 border-indigo-500' : 'border-white/25'}`}>
+                      {checked && <Icon name="check" size={12} />}
+                    </span>
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+              Hech biri tanlanmasa, tanlangan hisoblarning barcha rollari olib tashlanadi.
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => setBulkRoleModal(false)} disabled={bulkBusy} className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">Bekor qilish</button>
+            <button onClick={runBulkSetRoles} disabled={bulkBusy} className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">
+              {bulkBusy ? 'Saqlanmoqda...' : 'Saqlash'}
+            </button>
+          </div>
         </div>
       </Modal>
 
@@ -1937,6 +2808,39 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         busy={resetPasswordBusy}
       />
 
+      <ConfirmModal
+        open={!!resetTotpConfirm}
+        onClose={() => !resetTotpBusy && setResetTotpConfirm(null)}
+        onConfirm={handleResetTotp}
+        title="2FA'ni o'chirish"
+        message={`"${resetTotpConfirm?.name || ''}" uchun ikki bosqichli tasdiq o'chiriladi va barcha seanslari yakunlanadi. Foydalanuvchi kodsiz kira oladi va uni profilidan qaytadan yoqishi kerak — davom etasizmi?`}
+        confirmText="Ha, o'chirish"
+        danger
+        busy={resetTotpBusy}
+      />
+
+      <ConfirmModal
+        open={!!forceLogoutConfirm}
+        onClose={() => !forceLogoutBusy && setForceLogoutConfirm(null)}
+        onConfirm={handleForceLogout}
+        title="Barcha seanslarni yakunlash"
+        message={`"${forceLogoutConfirm?.name || ''}" barcha qurilmalardan chiqariladi va qaytadan kirishi kerak bo'ladi. Hisob bloklanmaydi — davom etasizmi?`}
+        confirmText="Ha, yakunlash"
+        danger
+        busy={forceLogoutBusy}
+      />
+
+      <ConfirmModal
+        open={!!impersonateConfirm}
+        onClose={() => !impersonateBusy && setImpersonateConfirm(null)}
+        onConfirm={handleImpersonate}
+        title="Foydalanuvchi sifatida ko'rish"
+        message={`Ilova "${impersonateConfirm?.name || ''}" hisobiga o'tadi: siz uning ekranini ko'rasiz va uning nomidan amal qila olasiz. Bu faqat qo'llab-quvvatlash uchun; seansning boshlanishi ham, yakunlanishi ham audit jurnaliga yoziladi. Kirish 15 daqiqadan keyin o'zi tugaydi, undan oldin tepadagi "Admin panelga qaytish" tugmasi bilan yakunlanadi — davom etasizmi?`}
+        confirmText="Ha, ko'rish"
+        danger
+        busy={impersonateBusy}
+      />
+
       {/* Yangi parol BIR MARTA ko'rsatiladi — modal yopilishi bilan state
           tozalanadi, boshqa hech qayerda saqlanmaydi. */}
       <Modal open={!!newPasswordInfo} onClose={() => setNewPasswordInfo(null)} title="Yangi parol">
@@ -1967,6 +2871,225 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </div>
         )}
       </Modal>
+
+      {/* Takrorlangan hisoblarni birlashtirish. Oqim ataylab ikki bosqichli:
+          quruq yurish (`preview`) hech narsani o'zgartirmaydi va nima
+          ko'chishini ko'rsatadi, keyin manba raqamini qo'lda yozib tasdiqlash
+          talab qilinadi. */}
+      <Modal
+        open={!!mergeModal}
+        onClose={() => !mergeBusy && setMergeModal(null)}
+        title="Hisoblarni birlashtirish"
+        width="max-w-2xl"
+      >
+        {mergeModal && (
+          <div className="space-y-4">
+            <p className="text-[11px] font-semibold leading-relaxed text-slate-400">
+              Raqamini yo'qotib qayta ro'yxatdan o'tgan o'quvchining ikkita hisobi bitta hisobga yig'iladi:
+              tangalar qo'shiladi, streak kattasi olinadi, urinish va mashq tarixi ko'chadi. Ikkinchi hisob
+              o'chirilmaydi — doimiy bloklanadi va tekshirish uchun joyida qoladi.
+            </p>
+
+            <div className="rounded-xl bg-white/5 px-3.5 py-3">
+              <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Ochilgan hisob</div>
+              <div className="mt-1 text-xs font-bold text-white">{mergeModal.name}</div>
+              <div className="text-[11px] font-mono text-white/40">{mergeModal.phone || '—'}</div>
+            </div>
+
+            {/* Ikkinchi hisob qidiruvi — jadval bilan bir xil manba (ism yoki
+                telefon bo'yicha). */}
+            <div>
+              <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                Ikkinchi hisob (ism yoki telefon)
+              </label>
+              <input
+                value={mergeSearch}
+                onChange={(e) => { setMergeSearch(e.target.value); setMergeOtherId(null); resetMergePreview(); }}
+                placeholder="Masalan: Ali yoki +99890..."
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-xs font-semibold text-white placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none"
+              />
+              {mergeOther ? (
+                <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-indigo-500/25 bg-indigo-500/10 px-3 py-2.5">
+                  <Avatar name={mergeOther.name || ''} src={mergeOther.avatarUrl} size={32} />
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[11px] font-bold text-white">{mergeOther.name}</div>
+                    <div className="truncate font-mono text-[10px] text-white/40">{mergeOther.phone}</div>
+                  </div>
+                  <button
+                    onClick={() => { setMergeOtherId(null); resetMergePreview(); }}
+                    className="shrink-0 text-[10px] font-bold text-slate-400 hover:text-white"
+                  >
+                    Bekor qilish
+                  </button>
+                </div>
+              ) : mergeCandidates.length > 0 ? (
+                <div className="mt-2 divide-y divide-white/5 overflow-hidden rounded-xl border border-white/10 bg-white/[0.02]">
+                  {mergeCandidates.map(row => (
+                    <button
+                      key={row.id}
+                      onClick={() => { setMergeOtherId(row.backendId); resetMergePreview(); }}
+                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-white/5"
+                    >
+                      <Avatar name={row.name || ''} src={row.avatarUrl} size={28} />
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-[11px] font-bold text-white">{row.name}</div>
+                        <div className="truncate font-mono text-[10px] text-white/40">{row.phone}</div>
+                      </div>
+                      <span className="shrink-0 text-[10px] font-bold text-slate-500">#{row.backendId}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : debouncedMergeSearch.trim() ? (
+                <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.02] px-3.5 py-3 text-center text-[11px] font-semibold text-slate-500">
+                  Mos hisob topilmadi
+                </div>
+              ) : null}
+            </div>
+
+            {/* Yo'nalish: qaysi hisob TIRIK qoladi. Noto'g'ri tanlov eng
+                jiddiy xato bo'lgani uchun alohida, aniq savol. */}
+            {mergeOther && (
+              <div>
+                <div className="mb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                  Qaysi hisob saqlanadi?
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {[
+                    { keep: true, label: mergeModal.name, phone: mergeModal.phone },
+                    { keep: false, label: mergeOther.name, phone: mergeOther.phone },
+                  ].map(opt => (
+                    <button
+                      key={String(opt.keep)}
+                      onClick={() => { setMergeKeepOpened(opt.keep); resetMergePreview(); }}
+                      className={`rounded-xl border px-3 py-2.5 text-left transition ${
+                        mergeKeepOpened === opt.keep
+                          ? 'border-emerald-500/40 bg-emerald-500/10'
+                          : 'border-white/10 bg-white/[0.02] hover:bg-white/5'
+                      }`}
+                    >
+                      <div className="truncate text-[11px] font-bold text-white">{opt.label}</div>
+                      <div className="truncate font-mono text-[10px] text-white/40">{opt.phone}</div>
+                      <div className={`mt-1 text-[10px] font-bold ${mergeKeepOpened === opt.keep ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        {mergeKeepOpened === opt.keep ? 'Saqlanadi' : 'Bloklanadi'}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {mergeOther && !mergePreview && (
+              <button
+                onClick={runMergePreview}
+                disabled={mergeBusy}
+                className="btn-primary w-full rounded-xl py-3 text-xs font-bold disabled:opacity-50"
+              >
+                {mergeBusy ? '...' : 'Tekshirish (hech narsa o\'zgarmaydi)'}
+              </button>
+            )}
+
+            {/* Quruq yurish natijasi */}
+            {mergePreview && !mergePreview.can_merge && (
+              <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-3.5 py-3">
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-rose-300/70">Birlashtirib bo'lmaydi</div>
+                <ul className="mt-1.5 space-y-1">
+                  {(mergePreview.blockers || []).map((b, i) => (
+                    <li key={i} className="text-[11px] font-bold text-rose-100">• {b}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {mergePreview?.can_merge && (
+              <div className="space-y-3.5">
+                <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3.5 py-3">
+                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Ko'chadigan ma'lumot</div>
+                  <div className="mt-2 space-y-1.5">
+                    {(mergePreview.moves || []).filter(m => m.move || m.skip).map(m => (
+                      <div key={m.model} className="flex items-baseline justify-between gap-3">
+                        <span className="text-[11px] font-semibold text-slate-300">{m.label}</span>
+                        <span className="shrink-0 text-[11px] font-bold tabular-nums text-white">
+                          {m.move} ta
+                          {m.skip > 0 && (
+                            <span className="ml-1.5 font-bold text-amber-400">({m.skip} ta o'tkazib yuboriladi)</span>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                    {(mergePreview.totals?.move || 0) === 0 && (
+                      <div className="text-[11px] font-semibold text-slate-500">Ko'chadigan yozuv yo'q</div>
+                    )}
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/5 pt-2.5">
+                    <div>
+                      <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Tangalar</div>
+                      <div className="mt-0.5 text-xs font-bold tabular-nums text-white">
+                        {mergePreview.balances?.coins?.target} + {mergePreview.balances?.coins?.source} = {mergePreview.balances?.coins?.result}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Streak</div>
+                      <div className="mt-0.5 text-xs font-bold tabular-nums text-white">
+                        {mergePreview.balances?.streak_count?.result} kun
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Ko'chirilmaydigan ma'lumot — admin buni bilib, kerak bo'lsa
+                    mavjud vositalar bilan qo'lda hal qiladi. */}
+                {(mergePreview.untouched || []).length > 0 && (
+                  <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3">
+                    <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300/70">Ko'chirilmaydi</div>
+                    <div className="mt-2 space-y-2">
+                      {mergePreview.untouched.map(row => (
+                        <div key={row.model}>
+                          <div className="text-[11px] font-bold text-amber-100">{row.label} ({row.count} ta)</div>
+                          <div className="text-[10px] font-semibold leading-relaxed text-amber-200/70">{row.note}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Tasdiqlash: bloklanadigan hisobning raqamini AYNAN yozish. */}
+                <div>
+                  <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                    Tasdiqlash uchun bloklanadigan hisob raqamini yozing: <span className="font-mono text-rose-300">{mergePreview.source?.phone}</span>
+                  </label>
+                  <input
+                    value={mergeConfirmPhone}
+                    onChange={(e) => setMergeConfirmPhone(e.target.value)}
+                    placeholder={mergePreview.source?.phone || ''}
+                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 font-mono text-xs font-semibold text-white placeholder:text-slate-600 focus:border-rose-500/50 focus:outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setMergeModal(null)}
+                disabled={mergeBusy}
+                className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50"
+              >
+                Bekor qilish
+              </button>
+              {mergePreview?.can_merge && (
+                <button
+                  onClick={runMergeCommit}
+                  disabled={mergeBusy || !mergeConfirmOk}
+                  className="btn-danger flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50"
+                >
+                  {mergeBusy ? '...' : 'Birlashtirish'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {renderUserDetailModal()}
     </div>
   );
 
@@ -2206,6 +3329,95 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </ChartCard>
           </div>
         </div>
+      </div>
+    );
+  };
+
+  // Amallar tarixi (audit jurnali). Backend AuditLog'ni server tomonda
+  // sahifalaydi va filtrlaydi — bu yerda mahalliy filtr yo'q, aks holda
+  // faqat joriy sahifa ichida qidirilgan bo'lardi.
+  const renderLogs = () => {
+    const res = isApi ? apiAuditRes.data : null;
+    const rows = Array.isArray(res?.results) ? res.results : (Array.isArray(res) ? res : []);
+    const total = typeof res?.count === 'number' ? res.count : rows.length;
+    const lastPage = Math.max(1, Math.ceil(total / AUDIT_PAGE_SIZE));
+    const failed = isApi && !!apiAuditRes.error;
+    return (
+      <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-[20px] font-black leading-tight text-white">Amallar tarixi</h1>
+            <p className="mt-1 text-[11px] font-bold text-slate-400">
+              Admin va tashkilot rahbarlari bajargan muhim amallar: kim, qachon, kimga va qaysi IP dan.
+            </p>
+          </div>
+          <div className="relative w-full md:w-72">
+            <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <input
+              value={auditSearch}
+              onChange={e => { setAuditSearch(e.target.value); setAuditPage(1); }}
+              className="h-9 w-full admin-input pl-9 pr-3 text-xs outline-none"
+              placeholder="Ism, amal kodi, IP yoki ID bo'yicha..." />
+          </div>
+        </div>
+        <section className="overflow-hidden admin-card">
+          <div className="overflow-x-auto admin-scroll">
+            <table className="w-full min-w-[860px] text-left">
+              <thead className="admin-table-hdr">
+                <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  {['Vaqt', 'Kim', 'Amal', 'Obyekt', 'IP'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {!isApi ? (
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Amallar tarixi faqat API rejimida ko'rinadi</td></tr>
+                ) : apiAuditRes.loading ? (
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Yuklanmoqda...</td></tr>
+                ) : failed ? (
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</td></tr>
+                ) : rows.length === 0 ? (
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">{auditSearch ? 'Qidiruv natijasi topilmadi' : 'Yozuvlar yo\'q'}</td></tr>
+                ) : rows.map(log => (
+                  <tr key={log.id} className="text-xs admin-table-row text-slate-300">
+                    <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">{formatAdminDateTime(log.created_at)}</td>
+                    <td className="px-5 py-4"><div className="flex items-center gap-3"><AdminInitial name={log.actor} /><span className="font-bold text-white">{log.actor}</span></div></td>
+                    <td className="px-5 py-4">
+                      <span className="rounded-md bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-400">
+                        {log.action_label || log.action}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 font-semibold text-slate-400">
+                      {log.target_name || (log.target_id ? `${log.target_type || 'Obyekt'} #${log.target_id}` : '—')}
+                    </td>
+                    <td className="px-5 py-4 font-mono text-[11px] text-slate-400">{log.ip || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+        {/* Server tomon paginatsiya — jurnal cheksiz o'sadi, hammasi bir yo'la yuklanmaydi. */}
+        {total > AUDIT_PAGE_SIZE && (
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={() => setAuditPage(p => Math.max(1, p - 1))}
+              disabled={apiAuditRes.loading || auditPage <= 1}
+              className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
+            </button>
+            <div className="px-3 py-2 rounded-xl bg-white/5 text-[11px] font-bold text-white/60 tabular-nums">
+              {auditPage} / {lastPage}
+            </div>
+            <button
+              onClick={() => setAuditPage(p => Math.min(lastPage, p + 1))}
+              disabled={apiAuditRes.loading || auditPage >= lastPage}
+              className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Keyingisi <Icon name="chevronRight" size={12} />
+            </button>
+          </div>
+        )}
       </div>
     );
   };
@@ -2624,6 +3836,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     centers: renderCenters,
     users: renderUsers,
     analytics: renderAnalytics,
+    logs: renderLogs,
     olympiads: renderOlympiads,
     subjects: renderSubjects,
     settings: renderSettings,

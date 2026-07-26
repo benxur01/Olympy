@@ -333,6 +333,11 @@ class LoginSerializer(serializers.Serializer):
                 'restorable': True,
                 'restorable_until': deadline.isoformat(),
             })
+        # Muddatli blok (`blocked_until`) tugagan bo'lsa shu yerda ochiladi:
+        # bloklangan foydalanuvchi `/me` ga kira olmaydi (tokenlari bekor
+        # qilingan), shuning uchun premium lazy-expiry'sidan farqli o'laroq
+        # tekshiruv aynan kirish oqimida turadi. Doimiy blokka ta'sir qilmaydi.
+        user.release_expired_suspension()
         if not user.is_active:
             security_logger.warning(
                 'login blocked (inactive account) phone=%s user_id=%s',

@@ -15,6 +15,8 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework import status as http_status
 
+from accounts.permissions import IsPlatformAdmin
+
 from .models import SubscriptionPlan, UserSubscription, PaymentTransaction
 
 User = get_user_model()
@@ -1024,6 +1026,34 @@ def billing_history(request):
     return Response([_serialize_transaction(tx) for tx in txs])
 
 
+def _active_subscription_for(user):
+    """Foydalanuvchining eng so'nggi aktiv, muddati tugamagan obunasi (yoki None)."""
+    return (
+        UserSubscription.objects
+        .filter(user=user, is_active=True, end_date__gt=timezone.now())
+        .select_related('plan')
+        .order_by('-end_date')
+        .first()
+    )
+
+
+def _serialize_subscription(sub, user):
+    """Aktiv obunani "Mening abonementim" bloki uchun JSON'ga aylantiradi."""
+    # Qolgan kunlar — yuqoriga yaxlitlaymiz (qisman kun qolsa ham "1 kun
+    # qoldi" ko'rinishi mantiqiyroq). end_date filtr bo'yicha kelajakda,
+    # shuning uchun delta musbat; max(0, ...) chegaraviy holat himoyasi.
+    delta = sub.end_date - timezone.now()
+    days_remaining = max(0, delta.days + (1 if delta.seconds > 0 else 0))
+    return {
+        'plan_name': sub.plan.name if sub.plan else _DELETED_PLAN_LABEL,
+        'start_date': sub.start_date,
+        'end_date': sub.end_date,
+        'days_remaining': days_remaining,
+        'price': float(sub.plan.price) if sub.plan else None,
+        'is_active': bool(user.is_premium),
+    }
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def current_subscription(request):
@@ -1033,29 +1063,47 @@ def current_subscription(request):
     to'liqroq ma'lumot (start_date, days_remaining, price) qaytaramiz. Eng so'nggi
     aktiv, muddati tugamagan obunani olamiz.
     """
-    sub = (
-        UserSubscription.objects
-        .filter(user=request.user, is_active=True, end_date__gt=timezone.now())
-        .select_related('plan')
-        .order_by('-end_date')
-        .first()
-    )
+    sub = _active_subscription_for(request.user)
     if not sub:
         return Response(None)
+    return Response(_serialize_subscription(sub, request.user))
 
-    # Qolgan kunlar — yuqoriga yaxlitlaymiz (qisman kun qolsa ham "1 kun
-    # qoldi" ko'rinishi mantiqiyroq). end_date filtr bo'yicha kelajakda,
-    # shuning uchun delta musbat; max(0, ...) chegaraviy holat himoyasi.
-    delta = sub.end_date - timezone.now()
-    days_remaining = max(0, delta.days + (1 if delta.seconds > 0 else 0))
 
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def admin_user_billing_history(request, user_id):
+    """GET /api/admin/users/<id>/billing-history/ — foydalanuvchi to'lovlari (admin).
+
+    `billing_history` + `current_subscription`ning admin varianti: bir xil
+    ma'lumot, lekin `request.user` emas, ko'rsatilgan foydalanuvchi bo'yicha.
+    Admin paneldagi "Batafsil" oynasi ikkalasini bitta blokda ko'rsatadi,
+    shuning uchun bitta so'rovda qaytariladi (modal ochilganda ikkita emas,
+    bitta round-trip).
+
+    Tranzaksiyalar 50 ta bilan cheklangan — oynadagi ro'yxat uchun oxirgi
+    to'lovlar yetarli (o'z-o'ziga xizmatdagi `billing_history` 20 ta beradi).
+
+    `user_id` javobda qaytariladi: panel ochiq modal qaysi foydalanuvchiga
+    tegishli ekanini tekshiradi (ketma-ket ochilgan oynalarda oldingi
+    foydalanuvchining to'lovlari ko'rinib qolmasin).
+    """
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response(
+            {'detail': 'Foydalanuvchi topilmadi'},
+            status=http_status.HTTP_404_NOT_FOUND,
+        )
+    sub = _active_subscription_for(target)
+    txs = (
+        PaymentTransaction.objects
+        .filter(user=target)
+        .select_related('plan')
+        .order_by('-created_at')[:50]
+    )
     return Response({
-        'plan_name': sub.plan.name if sub.plan else _DELETED_PLAN_LABEL,
-        'start_date': sub.start_date,
-        'end_date': sub.end_date,
-        'days_remaining': days_remaining,
-        'price': float(sub.plan.price) if sub.plan else None,
-        'is_active': bool(request.user.is_premium),
+        'user_id': target.id,
+        'subscription': _serialize_subscription(sub, target) if sub else None,
+        'transactions': [_serialize_transaction(tx) for tx in txs],
     })
 
 

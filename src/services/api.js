@@ -142,6 +142,38 @@ const _removeAuth = (key) => {
   try { _sessionStore && _sessionStore.removeItem(key); } catch {}
 };
 
+// ─── Impersonatsiya ("foydalanuvchi sifatida ko'rish") ───────────────────────
+// Support uchun admin boshqa foydalanuvchi sifatida ilovani ochganda backend
+// QISQA muddatli (15 daqiqa) access token beradi. Uni cookie'ga YOZMAYMIZ va
+// oddiy token kalitiga ham (AUTH_TOKEN_KEY) tegmaymiz: adminning O'Z seansi
+// buzilmasdan qolishi kerak — "Admin panelga qaytish" aynan shunga tayanadi
+// (impersonatsiya tokenini tashlash kifoya, admin cookie'si joyida turadi).
+// Token faqat sessionStorage'da yashaydi (tab yopilishi bilan yo'qoladi) va
+// so'rovlarda `Authorization: Bearer` sifatida ketadi — backend header'ni
+// cookie'dan USTUN qo'yadi (OlympyJWTAuthentication.authenticate).
+const IMPERSONATION_KEY = 'olympy_impersonation';
+let _impersonation = null; // { token, jti, userId, name }
+const _readImpersonation = () => {
+  if (_impersonation) return _impersonation;
+  try {
+    const raw = _sessionStore && _sessionStore.getItem(IMPERSONATION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    _impersonation = (parsed && parsed.token) ? parsed : null;
+    return _impersonation;
+  } catch {
+    try { _sessionStore && _sessionStore.removeItem(IMPERSONATION_KEY); } catch {}
+    return null;
+  }
+};
+const _writeImpersonation = (info) => {
+  _impersonation = info || null;
+  try {
+    if (info) _sessionStore && _sessionStore.setItem(IMPERSONATION_KEY, JSON.stringify(info));
+    else _sessionStore && _sessionStore.removeItem(IMPERSONATION_KEY);
+  } catch {}
+};
+
 const unwrapList = (res) => Array.isArray(res) ? res : (res && res.results ? res.results : []);
 
 // DRF PageNumberPagination ro'yxatining BARCHA sahifalarini ketma-ket yuklab,
@@ -318,7 +350,12 @@ const request = async (
   // multipart boundary; do not set Content-Type and do not stringify.
   const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
   if (body !== undefined && !isFormData) requestHeaders['Content-Type'] = 'application/json';
-  const activeToken = token || _readAuth(AUTH_TOKEN_KEY);
+  // Impersonatsiya faol bo'lsa token AYNAN shu: chaqiruvchi o'zi token uzatgan
+  // bo'lsa ham (ko'p joyda `OlympyApi.getToken()`) impersonatsiya tokeni ustun
+  // turadi. Aks holda dev rejimda (Bearer storage yoqilgan) ekranda
+  // foydalanuvchi ko'rinib, so'rovlar admin nomidan ketardi.
+  const impersonation = _readImpersonation();
+  const activeToken = (impersonation && impersonation.token) || token || _readAuth(AUTH_TOKEN_KEY);
   if (activeToken) requestHeaders.Authorization = `Bearer ${activeToken}`;
 
   let response;
@@ -356,6 +393,19 @@ const request = async (
   const data = contentType.includes('application/json') ? await response.json() : await response.text();
   if (!response.ok) {
     if (response.status === 401) {
+      // Impersonatsiya tokeni tugagan yoki "Admin panelga qaytish" orqali
+      // bekor qilingan. Odatdagi refresh oqimiga TUSHMASLIK shart: refresh
+      // cookie ADMINNIKI — u yangilansa ilova jimgina admin huquqiga qaytib,
+      // ekranda esa hamon foydalanuvchi ko'rinib turardi. Impersonatsiyani
+      // tozalab ilovaga xabar beramiz; adminning o'z seansi buzilmaydi.
+      if (impersonation) {
+        _writeImpersonation(null);
+        _clearCachedUser();
+        _clearSwApiCache();
+        _realtimeToken = null;
+        try { window.dispatchEvent(new CustomEvent('olympy:impersonation_ended')); } catch {}
+        throw new ApiError("Ko'rish seansi tugadi", { status: 401, data });
+      }
       if (retryOnAuth) {
         try {
           // Single-flight: parallel 401'lar bitta refresh natijasini kutadi.
@@ -609,6 +659,10 @@ const _clearSwApiCache = () => {
 const clearAuth = async () => {
   _removeAuth(AUTH_TOKEN_KEY);
   _removeAuth(AUTH_REFRESH_KEY);
+  // Impersonatsiya tokeni ham ketadi — aks holda chiqib qaytadan kirgan
+  // admin (yoki shu tabda kirgan boshqa odam) hamon o'sha foydalanuvchi
+  // sifatida so'rov yuborardi.
+  _writeImpersonation(null);
   _clearCachedUser();
   _clearSwApiCache();
   // Jonli xizmat tokeni keshi ham tozalanadi — aks holda bir tabda boshqa
@@ -620,7 +674,13 @@ const clearAuth = async () => {
   try { await request('/api/auth/logout/', { method: 'POST', retryOnAuth: false }); } catch {}
 };
 
-const getToken = () => _readAuth(AUTH_TOKEN_KEY);
+// Impersonatsiya faol bo'lsa uning tokeni qaytadi: `request()`dan tashqarida
+// to'g'ridan-to'g'ri `fetch` qiladigan joylar (fayl yuklab olishlar, jonli
+// xizmat) ham AYNAN o'sha foydalanuvchi sifatida ishlashi kerak.
+const getToken = () => {
+  const impersonation = _readImpersonation();
+  return (impersonation && impersonation.token) || _readAuth(AUTH_TOKEN_KEY);
+};
 
 // ─── Jonli viktorina (Java real-time xizmat) ─────────────────────────────────
 // Bu chaqiruvlar Django emas, Java xizmatga (REALTIME_BASE_URL) ketadi, shuning
@@ -844,7 +904,82 @@ export const OlympyApi = {
     const results = await requestAllPages('/api/admin/users/', { token, pageSize: 100 });
     return { results, count: results.length, next: null, previous: null };
   },
-  adminSetUserActive: (userId, isActive, token) => request(`/api/admin/users/${userId}/set-active/`, { method: 'POST', body: { is_active: !!isActive }, token }),
+  // Bitta foydalanuvchining to'liq profili ("Batafsil" oynasi) — ro'yxatdagi
+  // qatordan ko'ra yangiroq/to'liqroq ma'lumot (rollar detali, obuna, holat).
+  getAdminUserDetail: (userId, token) => request(`/api/admin/users/${userId}/`, { token }),
+  // "Batafsil" oynasining to'lovlar/kirish tarixi bloklari — profildan
+  // alohida endpointlar (ikkalasi ham uzun bo'lishi mumkin, profil esa
+  // ularsiz ham ochilishi kerak). Ikkalasi javobda `user_id` qaytaradi:
+  // ketma-ket ochilgan oynalarda eski javob ko'rinib qolmasligi uchun panel
+  // shuni tekshiradi.
+  getAdminUserBillingHistory: (userId, token) => request(`/api/admin/users/${userId}/billing-history/`, { token }),
+  getAdminUserLoginHistory: (userId, token) => request(`/api/admin/users/${userId}/login-history/`, { token }),
+  // Bloklash/ochish. Bloklashda `reason` MAJBURIY (backend bo'sh sababni 400
+  // bilan rad etadi), `durationDays` esa ixtiyoriy: berilmasa blok doimiy,
+  // berilsa (1|7|14|30) o'sha muddatdan keyin avtomatik ochiladi. Ochishda
+  // ikkalasi ham yuborilmaydi — backend eski sabab/muddatni o'zi tozalaydi.
+  adminSetUserActive: (userId, isActive, { reason, durationDays } = {}, token) => request(
+    `/api/admin/users/${userId}/set-active/`,
+    {
+      method: 'POST',
+      body: isActive
+        ? { is_active: true }
+        : { is_active: false, reason: reason || '', duration_days: durationDays ?? null },
+      token,
+    },
+  ),
+  // Ommaviy bloklash/ochish. Sabab/muddat qoidalari bitta foydalanuvchilikdagi
+  // bilan bir xil. Javob QISMAN muvaffaqiyat qaytaradi:
+  // { succeeded: [id, ...], failed: [{ id, reason }] } — tanlovga admin hisobi
+  // yoki o'chirilgan id tushib qolsa ham qolganlari bajariladi, shuning uchun
+  // chaqiruvchi `failed` ni tekshirib foydalanuvchiga ko'rsatishi kerak.
+  adminBulkSetUserActive: (userIds, isActive, { reason, durationDays } = {}, token) => request(
+    '/api/admin/users/bulk-set-active/',
+    {
+      method: 'POST',
+      body: isActive
+        ? { user_ids: userIds, is_active: true }
+        : { user_ids: userIds, is_active: false, reason: reason || '', duration_days: durationDays ?? null },
+      token,
+    },
+  ),
+  // Ommaviy rol almashtirish. `is_platform_admin` ATAYLAB yuborilmaydi —
+  // backend ham uni ommaviy amalda qabul qilmaydi (admin huquqini bir yo'la
+  // ko'p hisobga tarqatish juda xavfli). Javob shakli yuqoridagi bilan bir xil.
+  adminBulkSetUserRoles: (userIds, roles, token) => request(
+    '/api/admin/users/bulk-set-roles/',
+    { method: 'PATCH', body: { user_ids: userIds, roles: roles || [] }, token },
+  ),
+  // Foydalanuvchilar ro'yxatini CSV qilib yuklab beradi. `search` ro'yxat
+  // endpoint'i bilan BIR XIL filtr — admin ekranda ko'rgan to'plam eksportga
+  // tushadi. Yuklash usuli downloadOlympiadResults bilan bir xil (fetch → blob
+  // → link.click(), token Authorization header'da). Backend 5000 qatordan
+  // ko'pini kesib, `X-Export-Truncated` sarlavhasini qo'yadi — qaytariladigan
+  // { truncated } shu haqda paneldagi ogohlantirish uchun.
+  downloadAdminUsersCsv: async (search, token) => {
+    const qs = search ? `?search=${encodeURIComponent(search)}` : '';
+    const res = await fetch(`${API_BASE_URL}/api/admin/users/export/${qs}`, {
+      method: 'GET',
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+      credentials: 'include',
+    });
+    if (!res.ok) {
+      let msg = "Foydalanuvchilarni eksport qilib bo'lmadi";
+      try { const data = await res.json(); if (data?.detail) msg = data.detail; } catch {}
+      throw new ApiError(msg, { status: res.status });
+    }
+    const truncated = res.headers.get('X-Export-Truncated') === '1';
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `olympy-foydalanuvchilar-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return { truncated };
+  },
   adminToggleUserPremium: (userId, payload, token) => request(`/api/admin/users/${userId}/toggle-premium/`, { method: 'POST', body: payload, token }),
   // Rollarni almashtirish — system-wide rollar (markazsiz) + platform admin
   // flag'i. roles oddiy rollar ro'yxati (student/teacher/manager/owner),
@@ -857,6 +992,82 @@ export const OlympyApi = {
   // loglamang, faqat adminga ko'rsatib, foydalanuvchiga yetkazish uchun.
   adminResetUserPassword: (userId, token) => request(`/api/admin/users/${userId}/reset-password/`, { method: 'POST', token }),
   adminChangeUserPhone: (userId, phone, token) => request(`/api/admin/users/${userId}/change-phone/`, { method: 'POST', body: { phone }, token }),
+  // Autentifikator ilovasini yo'qotgan foydalanuvchining 2FA'sini o'chiradi
+  // (o'z-o'ziga xizmat yo'li joriy kod yoki parolni talab qiladi — kira
+  // olmagan foydalanuvchi uchun yopiq). Foydalanuvchi kirgach qayta yoqadi.
+  adminResetUserTotp: (userId, token) => request(`/api/admin/users/${userId}/reset-2fa/`, { method: 'POST', token }),
+  // Bloklamasdan barcha qurilmalardagi sessiyalarni yakunlash (token_version
+  // bump) — o'g'irlangan qurilma yoki bo'lishilgan hisob uchun yengil chora.
+  adminForceLogoutUser: (userId, token) => request(`/api/admin/users/${userId}/force-logout/`, { method: 'POST', token }),
+  // ─── Takrorlangan hisoblarni birlashtirish ───
+  // SIM kartasini yo'qotgan o'quvchi yangi raqam bilan qayta ro'yxatdan
+  // o'tadi — tanga/streak/urinishlar ikkiga bo'linadi. `preview` HECH
+  // NARSANI o'zgartirmaydi: nima ko'chishini, nima to'qnashuv sababli
+  // o'tkazib yuborilishini (`skip`), nima manbada qolishini (`untouched`)
+  // va to'siqlarni (`blockers` / `can_merge`) qaytaradi.
+  adminMergeUsersPreview: (sourceId, targetId, token) => request(
+    '/api/admin/users/merge/preview/',
+    { method: 'POST', body: { source_id: sourceId, target_id: targetId }, token },
+  ),
+  // Haqiqiy amal — bitta tranzaksiyada. Manba hisob O'CHIRILMAYDI: doimiy
+  // bloklanadi ("#N hisobiga birlashtirildi") va qatorlari joyida qoladi.
+  adminMergeUsersCommit: (sourceId, targetId, token) => request(
+    '/api/admin/users/merge/commit/',
+    { method: 'POST', body: { source_id: sourceId, target_id: targetId }, token },
+  ),
+  // ─── "Foydalanuvchi sifatida ko'rish" (faqat support uchun) ───
+  // Boshlash: backend qisqa muddatli (15 daqiqa) tokenni beradi, biz uni
+  // sessiya uchun saqlaymiz. Adminning o'z tokeni/cookie'siga TEGILMAYDI —
+  // qaytish aynan shunga tayanadi. Har boshlanish backendda audit jurnaliga
+  // yoziladi (admin_impersonate_start).
+  startImpersonation: async (userId) => {
+    const data = await request(`/api/admin/users/${userId}/impersonate/`, { method: 'POST' });
+    if (!data || !data.token) throw new ApiError("Ko'rish tokeni olinmadi", { status: 0 });
+    _writeImpersonation({
+      token: data.token,
+      jti: data.jti || '',
+      userId: (data.user && data.user.id) || userId,
+      name: (data.user && data.user.full_name) || '',
+    });
+    // Profil keshi hamon ADMINNIKI — tozalamasak banner ostida eski ism/rol
+    // ko'rinardi. Jonli xizmat tokeni ham hisobga bog'liq. Service worker
+    // keshidagi /api/ javoblari ham adminniki (logout'dagi bilan bir xil
+    // sabab: bir hisobning javoblari ikkinchisiga ko'rinmasin).
+    _clearCachedUser();
+    _clearSwApiCache();
+    _realtimeToken = null;
+    return data;
+  },
+  // Yakunlash: avval LOKAL holat tozalanadi — shundan keyingi so'rovlar
+  // adminning o'z seansi bilan ketadi va `IsPlatformAdmin` o'tadi. Keyin
+  // backendga "end" yoziladi: audit yozuvi + tokenni erta bekor qilish.
+  endImpersonation: async () => {
+    const info = _readImpersonation();
+    _writeImpersonation(null);
+    _clearCachedUser();
+    _clearSwApiCache();
+    _realtimeToken = null;
+    if (!info || !info.userId) return null;
+    return request(`/api/admin/users/${info.userId}/impersonate/end/`, {
+      method: 'POST',
+      body: { jti: info.jti || '' },
+    });
+  },
+  // Faol impersonatsiya haqida UI uchun ma'lumot (token qaytarilmaydi).
+  getImpersonation: () => {
+    const info = _readImpersonation();
+    return info ? { userId: info.userId, name: info.name } : null;
+  },
+  // Audit jurnali ("Amallar tarixi"). Boshqa admin ro'yxatlaridan farqli
+  // o'laroq bu yerda requestAllPages ATAYLAB ishlatilmaydi: jurnal cheksiz
+  // o'sadi, hammasini bir yo'la tortish brauzerni bog'lab qo'yardi. DRF
+  // sahifa obyekti ({results, count, next, previous}) xom holda qaytariladi —
+  // panel server tomon paginatsiyani (Oldingisi / Keyingisi) shu bilan yuritadi.
+  getAdminAuditLog: ({ page = 1, pageSize = 50, search = '' } = {}, token) => {
+    const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (search) qs.set('search', search);
+    return request(`/api/admin/audit-log/?${qs.toString()}`, { token });
+  },
   // Subjects
   getSubjects: (token) => request('/api/subjects/', { token }),
   createSubject: (name, token) => request('/api/subjects/', { method: 'POST', body: { name }, token }),
