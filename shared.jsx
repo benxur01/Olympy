@@ -55,13 +55,21 @@ const studentTierKey = (planName) => {
   return '';
 };
 
-// Foydalanuvchining amaldagi tier'i. Premium bo'lmasa 'free'. Premium bo'lib
+// Foydalanuvchining amaldagi tier'i. Asosiy manba — backend hisoblagan
+// `studentTier` (billing.services.resolve_student_tier). Uni plan NOMIDAN
+// chiqarish MUMKIN EMAS: tashkilot (markaz) planlari o'quvchi planlari bilan
+// aynan bir xil nomlanadi ("Pro (1 yil)"), lekin markaz obunasi o'quvchi
+// tarifini bermaydi — aks holda markaz egasiga barcha Pro o'quvchi
+// imkoniyatlari bepul ochilib ketardi.
+//
+// Fallback (eski backend `student_tier` yubormasa): premium bo'lmasa 'free',
 // plan nomi aniqlanmasa (legacy/qo'lda berilgan grant) — backend'dagi
-// PREMIUM_NO_PLAN_DEFAULT_TIER='pro' mantig'iga mos ravishda 'pro' deb olamiz,
-// shunda to'liq premium foydalanuvchiga noto'g'ri upgrade taklifi ko'rsatilmaydi.
-const userTier = (user) => (user && user.isPremium)
-  ? (studentTierKey(user.currentPlanName) || 'pro')
-  : 'free';
+// PREMIUM_NO_PLAN_DEFAULT_TIER='pro' mantig'iga mos ravishda 'pro'.
+const userTier = (user) => {
+  if (!user || !user.isPremium) return 'free';
+  if (user.studentTier) return user.studentTier;
+  return studentTierKey(user.currentPlanName) || 'pro';
+};
 
 // Foydalanuvchi tier'i kamida `minTier` darajasidami? (ierarxik taqqoslash).
 const tierAtLeast = (user, minTier) =>

@@ -20,7 +20,7 @@ from olympiads.models import Olympiad
 
 from billing.services import can_start_practice, student_tier_at_least
 
-from .utils import avatar_url_for, is_user_premium
+from .utils import avatar_url_for
 
 # Reyting tarixi (score-timeline) uchun premium bo'lmagan o'quvchiga ko'rsatiladigan
 # oyna (kun). Premium o'quvchi 30 yoki 90 kunni tanlay oladi; bepul o'quvchi faqat
@@ -54,7 +54,7 @@ def history_chart(request):
     Eng yangi 10 ta olinadi, lekin grafik o'sish tartibida bo'lishi uchun
     eskidan yangiga qarab qaytariladi.
     """
-    if not is_user_premium(request.user):
+    if not student_tier_at_least(request.user, 'standart'):
         return _premium_required_response()
     # prefetch_related('olympiad__questions') — _olympiad_max_score har
     # attempt uchun olympiad.questions.all() yangi so'rov otmasligi uchun.
@@ -102,7 +102,7 @@ def score_timeline(request):
       average,
     }
     """
-    premium = is_user_premium(request.user)
+    premium = student_tier_at_least(request.user, 'standart')
     # Pro tarifi 365 kunlik (1 yillik) oynani ham tanlashi mumkin. Standart/Plus
     # (va bepul) uchun faqat 30/90 — 365 so'ralsa 90 ga tushiriladi (xato emas).
     is_pro = student_tier_at_least(request.user, 'pro')
@@ -171,7 +171,7 @@ def weakest_topics(request):
 
     Javob: {premium, locked, topics: [{subject, correct, total, pct, recommendation}]}
     """
-    premium = is_user_premium(request.user)
+    premium = student_tier_at_least(request.user, 'standart')
     if not premium:
         return Response({'premium': False, 'locked': True, 'topics': []})
 
@@ -296,7 +296,7 @@ def subject_weakness(request):
     Har bir olimpiada fani bo'yicha to'g'ri/jami javoblar yig'iladi.
     Javob: [{subject, correct, total, pct}]
     """
-    if not is_user_premium(request.user):
+    if not student_tier_at_least(request.user, 'standart'):
         return _premium_required_response()
     attempts = (
         TestAttempt.objects
@@ -335,7 +335,7 @@ def readiness(request):
     foizi hisoblanadi. Zaif/kuchli fanlar umumiy subject-performance'dan
     olinadi.
     """
-    if not is_user_premium(request.user):
+    if not student_tier_at_least(request.user, 'standart'):
         return _premium_required_response()
     olympiad_id = request.query_params.get('olympiad_id')
     if not olympiad_id:

@@ -868,9 +868,43 @@ class StudentTierTestCase(APITestCase):
         self.assertEqual(get_student_tier(user), 'pro')
 
     def test_tier_premium_no_plan_defaults_pro(self):
+        """Bayroq bilan berilgan admin/legacy granti — eng yuqori tier."""
         from billing.services import get_student_tier
-        # is_premium=True, lekin aktiv student-plan yozuvi yo'q (legacy/admin/trial).
+        # is_premium=True, obuna yozuvi umuman yo'q va sinov ham amal qilmaydi:
+        # bu faqat admin qo'lda bergan grant bo'lishi mumkin (sinov holati —
+        # test_tier_trial_without_subscription_is_plus).
         user = self._make_student('+998900000005', premium=True)
+        self.assertFalse(user.trial_active)
+        self.assertEqual(get_student_tier(user), 'pro')
+
+    def test_tier_trial_without_subscription_is_plus(self):
+        """Ro'yxatdan o'tish sinovi Pro emas, Plus beradi (admin grantidan past)."""
+        from billing.services import get_student_tier
+        user = self._make_student('+998900000007', premium=True)
+        user.premium_trial_end = timezone.now() + timedelta(days=30)
+        user.save(update_fields=['premium_trial_end'])
+        self.assertEqual(get_student_tier(user), 'plus')
+
+    def test_tier_student_plan_wins_over_trial(self):
+        """Pullik student obunasi bo'lsa, sinov uni pasaytirmaydi ham,
+        ko'tarmaydi ham — tier plandan olinadi."""
+        from billing.services import get_student_tier
+        standart_user = self._make_student('+998900000008', plan=self.standart_plan)
+        standart_user.premium_trial_end = timezone.now() + timedelta(days=30)
+        standart_user.save(update_fields=['premium_trial_end'])
+        self.assertEqual(get_student_tier(standart_user), 'standart')
+        pro_user = self._make_student('+998900000009', plan=self.pro_plan)
+        pro_user.premium_trial_end = timezone.now() + timedelta(days=30)
+        pro_user.save(update_fields=['premium_trial_end'])
+        self.assertEqual(get_student_tier(pro_user), 'pro')
+
+    def test_tier_expired_trial_falls_back_to_admin_grant(self):
+        """Sinov tugagach, bayroqli grant yana Pro'da qoladi (sinov 'plus'i
+        premiumni doimiy pasaytirib qo'ymaydi)."""
+        from billing.services import get_student_tier
+        user = self._make_student('+998900000010', premium=True)
+        user.premium_trial_end = timezone.now() - timedelta(days=1)
+        user.save(update_fields=['premium_trial_end'])
         self.assertEqual(get_student_tier(user), 'pro')
 
     def test_tier_expired_sub_is_free(self):
@@ -890,6 +924,74 @@ class StudentTierTestCase(APITestCase):
         self.assertFalse(student_tier_at_least(plus, 'pro'))
         self.assertTrue(student_tier_at_least(pro, 'pro'))
         self.assertFalse(student_tier_at_least(free, 'standart'))
+
+    # ── Tashkilot (organization) premiumi ≠ o'quvchi premiumi ───────────────
+    # Regressiya: tashkilot obunasi `UserSubscription.sync_premium_status`
+    # orqali `User.is_premium=True` qiladi. Avval `get_student_tier` "premium,
+    # lekin student-plan yozuvi yo'q" holatini legacy grant deb hisoblab eng
+    # yuqori tier ('pro') berardi — natijada har bir markaz egasi (markaz
+    # tasdiqlanganda avtomatik 14 kunlik tashkilot trial obunasi olgani uchun)
+    # barcha pullik O'QUVCHI imkoniyatlarini bepul olardi.
+
+    def _org_plan(self, name='Pro (1 yil)'):
+        # Tashkilot planlari o'quvchi planlari bilan AYNAN bir xil nomlanadi —
+        # shuning uchun tier nomdan emas, plan_type'dan aniqlanishi shart.
+        return SubscriptionPlan.objects.create(
+            name=name, plan_type='organization', price=Decimal('99999.00'),
+            duration_days=365, is_active=True,
+        )
+
+    def test_tier_free_for_organization_only_subscription(self):
+        from billing.services import get_student_tier
+        owner = self._make_student('+998900000031', plan=self._org_plan())
+        self.assertTrue(owner.is_premium)  # tashkilot obunasi flag'ni qo'yadi
+        self.assertEqual(get_student_tier(owner), 'free')
+
+    def test_organization_sub_does_not_override_student_plan(self):
+        """Ikkala obuna ham bo'lsa — o'quvchi tarifi student plandan olinadi.
+
+        Tashkilot obunasi kechroq tugasa ham (end_date kattaroq) uni o'quvchi
+        tarifi sifatida talqin qilmaymiz.
+        """
+        from billing.services import get_student_tier
+        user = self._make_student('+998900000032', plan=self.standart_plan)
+        UserSubscription.objects.create(
+            user=user, plan=self._org_plan(), is_active=True,
+            end_date=timezone.now() + timedelta(days=365),
+        )
+        self.assertEqual(get_student_tier(user), 'standart')
+
+    def test_organization_sub_keeps_tier_during_personal_trial(self):
+        """Shaxsiy sinov muddati markazdan emas — u o'quvchi tarifini beradi.
+
+        Tarif aynan sinov tarifi ('plus'), tashkilot planining nomi ('Pro')
+        emas: huquqni beruvchi manba — sinov.
+        """
+        from billing.services import get_student_tier
+        owner = self._make_student('+998900000033', plan=self._org_plan())
+        owner.premium_trial_end = timezone.now() + timedelta(days=10)
+        owner.save(update_fields=['premium_trial_end'])
+        self.assertEqual(get_student_tier(owner), 'plus')
+
+    def test_organization_sub_is_free_again_after_trial_ends(self):
+        """Sinov tugagach markaz egasi yana o'quvchi bo'yicha 'free' bo'ladi."""
+        from billing.services import get_student_tier
+        owner = self._make_student('+998900000035', plan=self._org_plan())
+        owner.premium_trial_end = timezone.now() - timedelta(days=1)
+        owner.save(update_fields=['premium_trial_end'])
+        self.assertEqual(get_student_tier(owner), 'free')
+
+    def test_tier_active_sub_without_plan_still_defaults_pro(self):
+        """Admin "umrbod" granti mos plan topolmasa plan=None obuna yaratadi —
+        bu legacy grant sifatida eng yuqori tier'da qolishi kerak."""
+        from billing.services import get_student_tier
+        user = self._make_student('+998900000034', premium=True)
+        UserSubscription.objects.create(
+            user=user, plan=None, is_active=True,
+            end_date=timezone.now() + timedelta(days=30),
+        )
+        self.assertFalse(user.trial_active)
+        self.assertEqual(get_student_tier(user), 'pro')
 
     # ── can_start_practice ──────────────────────────────────────────────────
     def test_practice_standart_under_and_at_cap(self):
@@ -932,3 +1034,72 @@ class StudentTierTestCase(APITestCase):
         self.assertTrue(allowed)
         self.assertEqual(used, 40)
         self.assertIsNone(limit)
+
+
+class OrgPremiumStudentBoundaryTestCase(APITestCase):
+    """Tashkilot premiumi va o'quvchi premiumi orasidagi chegara (end-to-end).
+
+    Markaz egasi tashkilot obunasini MARKAZ imkoniyatlari uchun sotib oladi.
+    Bu obuna `User.is_premium=True` qiladi (sync_premium_status), lekin
+    o'quvchi funksiyalarini (AI mashq, tahlil, xato daftari...) OCHMASLIGI
+    kerak — ular alohida student tarifida sotiladi.
+    """
+
+    def setUp(self):
+        from django.core.cache import cache
+        from centers.models import EducationCenter
+        cache.clear()  # is_user_premium 60s cache
+        SubscriptionPlan.objects.all().delete()
+        self.org_plan = SubscriptionPlan.objects.create(
+            # Ataylab o'quvchi plani bilan bir xil nom — tier plan NOMIDAN
+            # emas, plan_type'dan aniqlanishi shart.
+            name='Pro (1 yil)', plan_type='organization',
+            price=Decimal('99999.00'), duration_days=365, is_active=True,
+        )
+        self.student_plan = SubscriptionPlan.objects.create(
+            name='Standart (1 oy)', plan_type='student',
+            price=Decimal('9999.00'), duration_days=30, is_active=True,
+        )
+        self.owner = User.objects.create_user(
+            phone='+998900000041', password='UserPass123',
+        )
+        self.center = EducationCenter.objects.create(
+            name='Org Boundary Academy', city='Toshkent', owner=self.owner,
+        )
+        UserSubscription.objects.create(
+            user=self.owner, plan=self.org_plan, is_active=True,
+            end_date=timezone.now() + timedelta(days=365),
+        )
+        self.owner.refresh_from_db()
+        self.center.refresh_from_db()
+
+    def test_org_subscription_grants_center_premium(self):
+        """Markaz imkoniyati saqlanadi — bu regressiya emas."""
+        self.assertTrue(self.center.is_premium)
+        self.assertTrue(self.owner.is_premium)
+
+    def test_org_owner_student_tier_is_free_in_me(self):
+        self.client.force_authenticate(user=self.owner)
+        res = self.client.get('/api/me/')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['student_tier'], 'free')
+
+    def test_org_owner_denied_student_premium_endpoint(self):
+        self.client.force_authenticate(user=self.owner)
+        res = self.client.get('/api/me/subject-weakness/')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_student_plan_still_unlocks_student_endpoint(self):
+        student = User.objects.create_user(
+            phone='+998900000042', password='UserPass123',
+        )
+        UserSubscription.objects.create(
+            user=student, plan=self.student_plan, is_active=True,
+            end_date=timezone.now() + timedelta(days=30),
+        )
+        student.refresh_from_db()  # obuna save()'i is_premium'ni update() bilan qo'yadi
+        self.client.force_authenticate(user=student)
+        res = self.client.get('/api/me/')
+        self.assertEqual(res.data['student_tier'], 'standart')
+        res = self.client.get('/api/me/subject-weakness/')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)

@@ -1007,6 +1007,189 @@ class TrialEndingRemindersTestCase(APITestCase):
         self.assertIsNotNone(user.trial_reminder_sent_at)
 
 
+class ExpireStalePremiumTestCase(APITestCase):
+    """`expire_stale_premium` task'i: muddati tugagan premiumni toplu tozalash.
+
+    `/me` dagi lazy-expiry faqat foydalanuvchi so'rov yuborganda ishlaydi —
+    qaytmagan foydalanuvchida `is_premium` bazada True bo'lib qolardi. Task
+    o'sha mantiqni kunda bir marta batch tarzda takrorlaydi.
+
+    Eslatma: `UserSubscription.save()` → `sync_premium_status()` obunani
+    saqlashda bayroqlarni o'zi sinxronlaydi, shuning uchun "muddati o'tgan,
+    lekin hali aktiv" holatni yaratish uchun obuna kelajakdagi sana bilan
+    yaratilib, keyin `.update()` (save()'siz) orqali o'tmishga suriladi —
+    aynan production'dagi eskirgan yozuv holati.
+    """
+
+    def setUp(self):
+        from billing.models import SubscriptionPlan
+
+        self.student_plan = SubscriptionPlan.objects.create(
+            name='Pro (1 oy)', plan_type='student', price=29999.00,
+            duration_days=30, is_active=True,
+        )
+        self.org_plan = SubscriptionPlan.objects.create(
+            name='Plus (1 oy)', plan_type='organization', price=99999.00,
+            duration_days=30, is_active=True,
+        )
+
+    def _sub(self, user, plan, days):
+        """`days` kundan keyin/oldin tugaydigan aktiv obuna yaratadi.
+
+        Manfiy `days` — muddati o'tgan, lekin `is_active=True` bo'lib qolgan
+        yozuv (sync_premium_status ishlab ketmasligi uchun `.update()` bilan).
+        """
+        from billing.models import UserSubscription
+
+        sub = UserSubscription.objects.create(
+            user=user, plan=plan, start_date=timezone.now() - timedelta(days=60),
+            end_date=timezone.now() + timedelta(days=abs(days)), is_active=True,
+        )
+        if days < 0:
+            UserSubscription.objects.filter(pk=sub.pk).update(
+                end_date=timezone.now() + timedelta(days=days),
+            )
+        return sub
+
+    def _user(self, phone, **kwargs):
+        user = User.objects.create_user(
+            phone=phone, password='UserPass123', full_name='Premium User',
+        )
+        if kwargs:
+            User.objects.filter(pk=user.pk).update(**kwargs)
+            user.refresh_from_db()
+        return user
+
+    def test_expired_trial_without_subscription_is_cleared(self):
+        """Sinovi tugagan va obunasi yo'q userda bayroq o'chadi."""
+        from accounts.tasks import expire_stale_premium
+
+        user = self._user(
+            '+998901118001', is_premium=True,
+            premium_trial_end=timezone.now() - timedelta(days=1),
+        )
+
+        result = expire_stale_premium()
+
+        user.refresh_from_db()
+        self.assertFalse(user.is_premium)
+        self.assertEqual(result['cleared_users'], 1)
+
+    def test_active_trial_or_subscription_is_untouched(self):
+        """Sinovi yoki obunasi hali amal qiladigan userlar tegilmaydi."""
+        from accounts.tasks import expire_stale_premium
+
+        trial_user = self._user(
+            '+998901118002', is_premium=True,
+            premium_trial_end=timezone.now() + timedelta(days=3),
+        )
+        sub_user = self._user('+998901118003', is_premium=True)
+        self._sub(sub_user, self.student_plan, days=10)
+        # Sinovi tugagan, lekin pullik obunaga o'tgan user ham premium qoladi —
+        # ikki manba mustaqil, faqat IKKALASI ham tugaganda bayroq o'chadi.
+        converted_user = self._user(
+            '+998901118004', is_premium=True,
+            premium_trial_end=timezone.now() - timedelta(days=5),
+        )
+        self._sub(converted_user, self.student_plan, days=20)
+
+        result = expire_stale_premium()
+
+        for user in (trial_user, sub_user, converted_user):
+            user.refresh_from_db()
+            self.assertTrue(user.is_premium)
+        self.assertEqual(result['cleared_users'], 0)
+
+    def test_expired_subscription_rows_are_deactivated(self):
+        """Muddati o'tgan obuna yozuvi `is_active=False` ga o'tadi."""
+        from accounts.tasks import expire_stale_premium
+
+        user = self._user('+998901118005', is_premium=True)
+        expired = self._sub(user, self.student_plan, days=-2)
+        still_valid = self._sub(self._user('+998901118006'), self.student_plan, days=5)
+
+        result = expire_stale_premium()
+
+        expired.refresh_from_db()
+        still_valid.refresh_from_db()
+        self.assertFalse(expired.is_active)
+        self.assertTrue(still_valid.is_active)
+        self.assertEqual(result['expired_subscriptions'], 1)
+        user.refresh_from_db()
+        self.assertFalse(user.is_premium)
+
+    def test_center_premium_cleared_when_org_subscription_expired(self):
+        """Egasining tashkilot obunasi tugagan markaz premiumdan chiqadi,
+        amal qiluvchi obunali markaz esa tegilmaydi."""
+        from accounts.tasks import expire_stale_premium
+        from centers.models import EducationCenter
+
+        lapsed_owner = self._user('+998901118007', is_premium=True)
+        self._sub(lapsed_owner, self.org_plan, days=-1)
+        lapsed_center = EducationCenter.objects.create(
+            name='Lapsed Academy', city='Toshkent', owner=lapsed_owner,
+            status=EducationCenter.STATUS_APPROVED, is_premium=True,
+        )
+
+        paying_owner = self._user('+998901118008', is_premium=True)
+        self._sub(paying_owner, self.org_plan, days=15)
+        paying_center = EducationCenter.objects.create(
+            name='Paying Academy', city='Samarqand', owner=paying_owner,
+            status=EducationCenter.STATUS_APPROVED, is_premium=True,
+        )
+
+        result = expire_stale_premium()
+
+        lapsed_center.refresh_from_db()
+        paying_center.refresh_from_db()
+        self.assertFalse(lapsed_center.is_premium)
+        self.assertTrue(paying_center.is_premium)
+        self.assertEqual(result['cleared_centers'], 1)
+
+    def test_admin_granted_center_premium_is_preserved(self):
+        """Obunasiz (platforma admini qo'lda bergan) markaz premiumi saqlanadi.
+
+        `SubscriptionService` bunday markazni "lifetime/admin premium —
+        limitsiz" deb qabul qiladi; sweep uni o'chirsa markaz bepul limitlarga
+        tushib qolardi. `/me` ham bunday markazga tegmaydi.
+        """
+        from accounts.tasks import expire_stale_premium
+        from centers.models import EducationCenter
+
+        owner = self._user('+998901118009', is_premium=True)
+        # Faqat SHAXSIY (student) obunasi tugaydi — markaz premiumi tashkilot
+        # obunasidan kelmagan, shuning uchun unga daxl qilinmaydi.
+        self._sub(owner, self.student_plan, days=-3)
+        center = EducationCenter.objects.create(
+            name='Lifetime Academy', city='Buxoro', owner=owner,
+            status=EducationCenter.STATUS_APPROVED, is_premium=True,
+        )
+
+        result = expire_stale_premium()
+
+        center.refresh_from_db()
+        self.assertTrue(center.is_premium)
+        self.assertEqual(result['cleared_centers'], 0)
+
+    def test_task_is_idempotent(self):
+        """Takroriy ishga tushirishda hech narsa qayta ishlanmaydi."""
+        from accounts.tasks import expire_stale_premium
+
+        user = self._user(
+            '+998901118010', is_premium=True,
+            premium_trial_end=timezone.now() - timedelta(days=1),
+        )
+        self._sub(user, self.student_plan, days=-4)
+
+        first = expire_stale_premium()
+        second = expire_stale_premium()
+
+        self.assertEqual(first['cleared_users'], 1)
+        self.assertEqual(first['expired_subscriptions'], 1)
+        self.assertEqual(
+            second,
+            {'expired_subscriptions': 0, 'cleared_users': 0, 'cleared_centers': 0},
+        )
 
 
 class StudentTierGatingTestCase(APITestCase):

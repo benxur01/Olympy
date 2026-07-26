@@ -66,11 +66,74 @@ def _tier_from_name(plan_name):
 # tayanadi (kattaroq raqam — kengroq huquq).
 STUDENT_TIER_ORDER = {'free': 0, 'standart': 1, 'standard': 1, 'plus': 2, 'pro': 3}
 
-# Premium (is_premium=True) bo'lgan, lekin aktiv student-plan yozuvi
-# aniqlanmaydigan foydalanuvchilar (legacy/admin toggle/trial grant) uchun
-# standart tier — ular admin/trial tomonidan to'liq premium berilgan deb
-# hisoblanadi, shuning uchun eng yuqori tier.
+# Premium (is_premium=True) bo'lgan, lekin OBUNA YOZUVI umuman bo'lmagan
+# (yoki plan biriktirilmagan) foydalanuvchilar uchun default tier: eski admin
+# toggle (duration'siz), Django admin'dagi is_premium checkbox, ensure_manager
+# komandasi, `admin_toggle_user_premium` ning plansiz "Umrbod" branch'i —
+# bularning hammasida faqat flag qo'yiladi, plan yo'q. Bu ATAYLAB berilgan
+# admin sovg'asi, shuning uchun eng yuqori tier.
+#
+# DIQQAT: bu fallback plan_type='organization' obunaga TATBIQ ETILMAYDI —
+# `resolve_student_tier` izohiga qarang.
 PREMIUM_NO_PLAN_DEFAULT_TIER = 'pro'
+
+# Ro'yxatdan o'tishdagi 30 kunlik SHAXSIY sinov (`User.premium_trial_end`)
+# uchun tier. Ikkala konstanta ham "student plani yo'q" holatida ishlatiladi,
+# lekin qiymatlari ATAYLAB har xil: sinov — har bir yangi foydalanuvchiga
+# avtomatik beriladigan perk (Pro'ga o'tish uchun sabab qolishi kerak),
+# PREMIUM_NO_PLAN_DEFAULT_TIER esa admin qo'lda bergan grant (uni bu
+# o'zgarish kuchsizlantirmasligi shart). Ikkovini birlashtirmang.
+TRIAL_DEFAULT_TIER = 'plus'
+
+
+def resolve_student_tier(active_subs, trial_active=False):
+    """Amal qiluvchi obunalar ro'yxatidan o'quvchi (student) tier'ini aniqlaydi.
+
+    `active_subs` — muddati o'tmagan aktiv `UserSubscription`'lar (plan bilan),
+    end_date bo'yicha kamayish tartibida. `trial_active` — foydalanuvchining
+    SHAXSIY sinov muddati (`User.trial_active`) hali amal qilyaptimi.
+
+    Uch xil natija:
+      1. Aktiv STUDENT plan bor — tier o'sha plan nomidan olinadi.
+      2. Student plan yo'q, lekin shaxsiy sinov muddati amal qiladi —
+         `TRIAL_DEFAULT_TIER` ('plus'). Obunalar ro'yxati bo'sh bo'lishi ham,
+         faqat tashkilot obunasidan iborat bo'lishi ham mumkin: ikkala holatda
+         ham huquqni beruvchi manba — sinovning o'zi.
+      3. Student plan ham, sinov ham yo'q, lekin chaqiruvchi (`get_student_tier`
+         → `is_user_premium`) premiumni allaqachon tasdiqlagan va obuna yozuvi
+         yo'q (yoki plansiz) — bu admin/legacy granti,
+         `PREMIUM_NO_PLAN_DEFAULT_TIER` ('pro').
+
+    MUHIM chegara (tashkilot premiumi ≠ o'quvchi premiumi): tashkilot obunasi
+    (`plan_type='organization'`) markaz EGASI tomonidan MARKAZ imkoniyatlari
+    uchun sotib olinadi. `UserSubscription.sync_premium_status` esa har qanday
+    aktiv obunada `User.is_premium=True` qiladi — natijada egada student-plan
+    yozuvi bo'lmagani uchun quyidagi fallback ishlab, unga BEPULGA eng yuqori
+    o'quvchi tarifi (Pro: AI mashq, AI test, AI o'quv rejasi, cheksiz mashq...)
+    berilardi. Markaz tasdiqlanganda avtomatik 14 kunlik tashkilot trial
+    obunasi yaratilgani uchun (centers.views.admin_approve_center) bu HAR bir
+    markaz egasiga tegishli edi. Shuning uchun: student obunasi bo'lmasa va
+    premium faqat tashkilot obunasidan kelayotgan bo'lsa — 'free'.
+
+    Shaxsiy sinov muddati bundan mustasno: u markazdan emas, foydalanuvchining
+    o'zidan (ro'yxatdan o'tish perki) — markaz egasi sinov davrida o'quvchi
+    imkoniyatlarini yo'qotmasligi kerak (yuqoridagi 2-holat).
+    """
+    for sub in active_subs:
+        if sub.plan and sub.plan.plan_type == 'student':
+            tier = _tier_from_name(sub.plan.name)
+            return tier if tier in STUDENT_TIER_ORDER else PREMIUM_NO_PLAN_DEFAULT_TIER
+    if trial_active:
+        # Student obunasi yo'q — huquqni sinov berayapti (obunalar ro'yxati
+        # bo'sh bo'lsa ham, faqat tashkilot obunasi bo'lsa ham).
+        return TRIAL_DEFAULT_TIER
+    has_non_student_plan = any(
+        sub.plan and sub.plan.plan_type != 'student' for sub in active_subs
+    )
+    if has_non_student_plan:
+        return 'free'
+    # Obuna yozuvi yo'q yoki plan biriktirilmagan — admin/legacy granti.
+    return PREMIUM_NO_PLAN_DEFAULT_TIER
 
 
 def get_student_tier(user):
@@ -78,17 +141,18 @@ def get_student_tier(user):
     from accounts.utils import is_user_premium  # lokal import — circular-import xavfini oldini oladi
     if not is_user_premium(user):
         return 'free'
-    sub = (
+    # Bitta so'rovda barcha amal qiluvchi obunalar: student rejasini ham,
+    # tashkilot rejasini ham ko'rish kerak (faqat student'ni filtrlab olsak,
+    # premium tashkilot obunasidan kelayotganini ajrata olmaymiz).
+    active_subs = list(
         user.subscriptions
-        .filter(is_active=True, plan__plan_type='student', end_date__gt=timezone.now())
+        .filter(is_active=True, end_date__gt=timezone.now())
         .select_related('plan')
         .order_by('-end_date')
-        .first()
     )
-    if not sub or not sub.plan:
-        return PREMIUM_NO_PLAN_DEFAULT_TIER
-    tier = _tier_from_name(sub.plan.name)
-    return tier if tier in STUDENT_TIER_ORDER else PREMIUM_NO_PLAN_DEFAULT_TIER
+    return resolve_student_tier(
+        active_subs, trial_active=bool(getattr(user, 'trial_active', False)),
+    )
 
 
 def student_tier_at_least(user, min_tier):

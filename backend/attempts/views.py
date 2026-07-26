@@ -630,8 +630,8 @@ def submit_attempt(request):
         # alohida daemon thread'da bajaramiz (Gemini 45s gacha kutishi
         # mumkin — bu submit'ni bloklamasligi shart). Endpoint tayyor
         # bo'lmaguncha {status: "pending"} qaytaradi.
-        from accounts.utils import is_user_premium
-        if is_user_premium(request.user):
+        from billing.services import student_tier_at_least
+        if student_tier_at_least(request.user, 'standart'):
             try:
                 _trigger_attempt_ai_analysis(attempt, olympiad, answers)
             except Exception:
@@ -1343,9 +1343,11 @@ def attempt_ai_analysis(request, attempt_id):
     is_owner = attempt.user_id == request.user.id
     if not (is_owner or request.user.is_platform_admin):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
-    # Real-time premium tekshiruvi: flag + aktiv obuna muddati (60s cache).
-    from accounts.utils import is_user_premium
-    owner_is_premium = is_user_premium(request.user) if is_owner else False
+    # Real-time premium tekshiruvi: O'QUVCHI tarifi (flag + aktiv obuna
+    # muddati, 60s cache). Markaz (organization) obunasi bu yerda hisobga
+    # olinmaydi — u markaz imkoniyatlari uchun.
+    from billing.services import student_tier_at_least
+    owner_is_premium = student_tier_at_least(request.user, 'standart') if is_owner else False
     if is_owner and not owner_is_premium:
         return Response(
             {

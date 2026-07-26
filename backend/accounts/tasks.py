@@ -4,7 +4,7 @@ from datetime import timedelta
 
 from celery import shared_task
 from django.db import transaction
-from django.db.models import Avg, Count, Max, Q
+from django.db.models import Avg, Count, Exists, Max, OuterRef, Q
 from django.utils import timezone
 
 from .models import PhoneVerification
@@ -456,4 +456,119 @@ def send_trial_ending_reminders():
             )
 
     return {'sent': len(pending_messages), 'skipped': skipped}
+
+
+@shared_task(name='accounts.expire_stale_premium')
+def expire_stale_premium():
+    """Muddati tugagan premium bayrog'ini (`is_premium`) toplu tozalaydi.
+
+    Bu task Celery Beat tomonidan har kuni avtomatik ishga tushiriladi
+    (settings.CELERY_BEAT_SCHEDULE['expire-stale-premium'], har kuni 03:45
+    UTC). `/me` endpoint'idagi lazy-expiry mantig'ining batch varianti: o'sha
+    yerda tekshiruv FAQAT foydalanuvchi so'rov yuborganda bajariladi —
+    sinovi (yoki obunasi) tugagandan keyin ilovaga umuman qaytmagan
+    foydalanuvchida `is_premium` bazada True bo'lib qolaverardi.
+
+    Asosiy maqsad — bayroqni TO'G'RIDAN-TO'G'RI o'qiydigan joylarni
+    (mukofot do'konidagi `is_premium_only`, streak muzlatish perki,
+    reyting/a'zolar ro'yxatidagi "Premium ✓" belgisi) eskirgan holatdan
+    saqlash. Qo'shimcha samara: `is_user_premium` obuna YOZUVI umuman
+    bo'lmaganda bayroqqa ishonadi (legacy/admin grant'larni xato rad
+    etmaslik uchun) — ya'ni sinovi tugagan, obunasiz foydalanuvchi `/me`ga
+    kirmaguncha premium imkoniyatlarni saqlab qolardi. Task shu oynani
+    kuniga bir marta yopadi. Aktiv obuna yozuvi bor holatlarda esa hech
+    narsa o'zgarmaydi: `is_user_premium` va `resolve_student_tier` premium
+    holatini baribir obuna muddatidan qayta hisoblaydi.
+
+    Bosqichlar (hammasi bitta `now` qiymati bo'yicha):
+      1. Muddati o'tgan, lekin hali `is_active=True` bo'lgan obunalarni yopish;
+      2. Amal qiluvchi obunasi ham, sinov muddati ham qolmagan premium
+         foydalanuvchilarning bayrog'ini o'chirish;
+      3. Egasining tashkilot obunasi endigina tugagan markazlarning
+         `is_premium` bayrog'ini o'chirish.
+
+    Takror ishga tushirish xavfsiz (idempotent): 2- va 3-qadamlar faqat
+    `is_premium=True` yozuvlarni tanlaydi, 1-qadam esa allaqachon yopilgan
+    obunani qayta yopmaydi — to'g'ri holatdagi yozuvlar umuman tegilmaydi.
+    """
+    import logging
+
+    from django.contrib.auth import get_user_model
+
+    from billing.models import UserSubscription
+    from centers.models import EducationCenter
+
+    logger = logging.getLogger(__name__)
+    User = get_user_model()
+    now = timezone.now()
+
+    # 1) Muddati o'tgan aktiv obunalar — `/me` ham har so'rovda xuddi shuni
+    # qiladi. Tashkilot (organization) obunasi tugagan egalarni update'dan
+    # OLDIN ro'yxatga olamiz: update'dan keyin bu qatorlar `is_active=False`
+    # bo'lib, filtrga umuman tushmaydi (3-qadam uchun kerak).
+    expired_qs = UserSubscription.objects.filter(is_active=True, end_date__lte=now)
+    org_owner_ids = list(
+        expired_qs
+        .filter(plan__plan_type='organization')
+        .values_list('user_id', flat=True)
+        .distinct()
+    )
+    expired_subs = expired_qs.update(is_active=False)
+
+    # 2) Premium bayrog'i qolgan, lekin amal qiluvchi obunasi ham, sinov
+    # muddati ham yo'q foydalanuvchilar — `/me` dagi
+    # `is_premium and not still_active and not trial_active` shartining aynan
+    # o'zi. Sinov va obuna mustaqil manba: ikkalasi ham tugagan bo'lsagina
+    # bayroq o'chadi. `~Exists(...)` tufayli bularning hammasi bitta SQL
+    # UPDATE'da bajariladi (foydalanuvchilar bo'yicha Python tsikli yo'q).
+    active_sub = UserSubscription.objects.filter(
+        user_id=OuterRef('pk'), is_active=True, end_date__gt=now,
+    )
+    cleared_users = (
+        User.objects
+        .filter(is_premium=True)
+        .filter(Q(premium_trial_end__isnull=True) | Q(premium_trial_end__lte=now))
+        .filter(~Exists(active_sub))
+        .update(is_premium=False)
+    )
+    # Cache'ni tozalashga hojat yo'q: `subscription_cache_key` faqat `/me`
+    # ichidagi qayta tekshiruvni 60 soniyaga o'tkazib yuboradi (u ham shu
+    # yerdagi natijani takrorlagan bo'lardi), `is_user_premium` esa cache'dan
+    # oldin `user.is_premium` bayrog'ini tekshiradi — bayroq False bo'lgach
+    # eski cache qiymati natijaga ta'sir qilmaydi.
+
+    # 3) Markaz premiumi. `/me` markazni faqat obuna ENDIGINA tugaganda qayta
+    # hisoblaydi — shuning uchun biz ham 1-qadamda yopilgan TASHKILOT obunasi
+    # egalari bilan cheklanamiz. "Aktiv tashkilot obunasi yo'q" degan kengroq
+    # shart xavfli bo'lardi: markaz premiumi obunasiz ham beriladi (platforma
+    # admini qo'lda yoqadi — centers/views.py, Django admin), va
+    # `SubscriptionService` uni "lifetime/admin premium — limitsiz" deb qabul
+    # qiladi. Keng shart bunday markazlarni bepul limitlarga tushirib qo'yardi.
+    cleared_centers = 0
+    if org_owner_ids:
+        active_org_sub = UserSubscription.objects.filter(
+            user_id=OuterRef('owner_id'),
+            is_active=True,
+            plan__plan_type='organization',
+            end_date__gt=now,
+        )
+        cleared_centers = (
+            EducationCenter.objects
+            .filter(is_premium=True, owner_id__in=org_owner_ids)
+            .filter(~Exists(active_org_sub))
+            .update(is_premium=False)
+        )
+
+    if expired_subs or cleared_users or cleared_centers:
+        logger.info(
+            'expire_stale_premium: closed %s subscriptions, cleared is_premium '
+            'for %s users and %s centers',
+            expired_subs, cleared_users, cleared_centers,
+        )
+
+    return {
+        'expired_subscriptions': expired_subs,
+        'cleared_users': cleared_users,
+        'cleared_centers': cleared_centers,
+    }
 
