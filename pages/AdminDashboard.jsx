@@ -1127,7 +1127,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     // qaytarib jadvalda noto'g'ri "O'quvchi" deb ko'rsatardi. Endi tasdiqlangan
     // rol bo'lmasa boshqa har qanday mavjud rol-ni, u ham bo'lmasa "—" qiyofa
     // ko'rsatamiz.
-    const anyRole = Object.keys(u.roles || {})[0];
+    const roleKeys = Object.keys(u.roles || {});
+    const anyRole = roleKeys[0];
     const primary = (u.activeRole && approved.includes(u.activeRole))
       ? u.activeRole
       : (approved[0] || anyRole || null);
@@ -1150,7 +1151,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       isStudent: approved.includes('student') || primary === 'student',
       // Rol o'zgartirish modali uchun: foydalanuvchidagi xom rol kalitlari va
       // platform admin flag'i (checkboxlarni joriy holat bo'yicha belgilaymiz).
-      roleKeys: Object.keys(u.roles || {}),
+      roleKeys,
+      // O'qituvchi/manager hisobiga shaxsiy premium ta'sir qilmaydi — ularning
+      // premium funksiyalari markazning obunasidan keladi (backend ham bunday
+      // grantni 400 bilan rad etadi). Direktor (owner) bundan mustasno: unga
+      // berilgan premium markazga ham tarqaladi.
+      orgBoundPremium: roleKeys.some(r => r === 'teacher' || r === 'manager')
+        && !roleKeys.some(r => r === 'student' || r === 'owner'),
       isPlatformAdmin: !!(u.isPlatformAdmin ?? u.is_platform_admin),
     };
   });
@@ -1645,6 +1652,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   <td className="px-5 py-4">
                     {row.isPremium ? (
                       <button onClick={() => openPremiumModal(row)} className="rounded-lg bg-amber-500/15 px-3 py-1.5 text-[11px] font-bold text-amber-400 ring-1 ring-amber-500/30 hover:bg-amber-500/25 transition">⭐ Premium ✓</button>
+                    ) : row.orgBoundPremium ? (
+                      <button
+                        type="button"
+                        disabled
+                        title="O'qituvchi va manager premiumi markazning (tashkilotning) obunasidan keladi — shaxsiy premium berilmaydi"
+                        className="cursor-not-allowed rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-500 ring-1 ring-white/10">
+                        Tashkilot obunasi
+                      </button>
                     ) : (
                       <button onClick={() => openPremiumModal(row)} className="rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 ring-1 ring-white/10 hover:bg-amber-500/10 hover:text-amber-400 transition">Premium berish</button>
                     )}

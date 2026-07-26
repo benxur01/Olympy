@@ -1293,6 +1293,31 @@ def admin_set_user_active(request, user_id):
     return Response(UserSerializer(target, context={'request': request}).data)
 
 
+# Tashkilotga bog'langan rollar: bunday hisobda SHAXSIY premium (`is_premium`
+# flag + UserSubscription) hech qanday imkoniyat ochmaydi — o'qituvchi/manager
+# ko'radigan premium funksiyalar `billing.SubscriptionService(center)` orqali
+# MARKAZ obunasini (markaz egasining organization obunasi yoki
+# `EducationCenter.is_premium`) o'qiydi. `owner` bu ro'yxatda ATAYLAB yo'q:
+# markaz egasiga berilgan premium markazga tarqaladi (quyidagi
+# `EducationCenter.objects.filter(owner=target).update(is_premium=True)`) va
+# organization obunasi ham aynan uning nomiga yoziladi.
+ORG_BOUND_PREMIUM_ROLES = {'teacher', 'manager'}
+
+# Shaxsiy premium haqiqatan ishlaydigan rollar: o'quvchi funksiyalari
+# `billing.student_tier_at_least` orqali foydalanuvchining O'Z obunasiga
+# tayanadi, owner esa yuqoridagi sababga ko'ra. Roli umuman yo'q (ro'yxatdan
+# endi o'tgan) foydalanuvchi ham shaxsiy premium oladi — u ham o'quvchi
+# endpoint'laridan foydalanadi.
+INDIVIDUAL_PREMIUM_ROLES = {'student', 'owner'}
+
+ORG_BOUND_PREMIUM_ERROR = (
+    "O'qituvchi va manager hisoblariga shaxsiy premium berib bo'lmaydi — "
+    "ularning premium imkoniyatlari markazning (tashkilotning) obunasidan "
+    "keladi. Markaz egasiga tashkilot obunasini bering yoki markaz "
+    "sozlamalaridan premiumni yoqing."
+)
+
+
 @api_view(['POST'])
 @permission_classes([IsPlatformAdmin])
 def admin_toggle_user_premium(request, user_id):
@@ -1313,6 +1338,19 @@ def admin_toggle_user_premium(request, user_id):
 
     duration = request.data.get('duration')
     plan_type = request.data.get('plan_type', 'student')
+
+    # Tashkilotga bog'langan hisobga (o'qituvchi/manager, va shu bilan birga
+    # hech qanday shaxsiy roli bo'lmagan) premium berish faqat chalg'ituvchi DB
+    # yozuvi qoldirardi — real tekshiruvlar markaz obunasiga qaraydi. Bekor
+    # qilishga (-1, va mavjud premiumni o'chiruvchi eski toggle) ruxsat
+    # beramiz: bu tuzatishdan oldin berilgan ta'sirsiz yozuvlarni admin
+    # panelidan tozalash imkoni qolishi kerak.
+    target_roles = set(target.roles or [])
+    if target_roles & ORG_BOUND_PREMIUM_ROLES and not target_roles & INDIVIDUAL_PREMIUM_ROLES:
+        revoking = str(duration) == '-1' or (duration is None and target.is_premium)
+        if not revoking:
+            return Response({'detail': ORG_BOUND_PREMIUM_ERROR},
+                            status=status.HTTP_400_BAD_REQUEST)
 
     if duration is None:
         # Eski toggle mantiqini saqlaymiz (orqaga moslik uchun).

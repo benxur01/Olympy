@@ -428,6 +428,40 @@ class AdminPremiumManagementTestCase(APITestCase):
         self.target_user.refresh_from_db()
         self.assertTrue(self.target_user.is_premium)
 
+    def test_admin_toggle_premium_rejected_for_org_bound_roles(self):
+        """O'qituvchi/manager hisobiga shaxsiy premium berib bo'lmaydi.
+
+        Ularning premium funksiyalari `SubscriptionService(center)` orqali
+        markaz obunasini o'qiydi — shaxsiy grant faqat chalg'ituvchi yozuv
+        bo'lardi. Bekor qilish (-1) esa ta'sirsiz eski yozuvlarni tozalash
+        uchun ochiq qoladi.
+        """
+        url = reverse('admin-toggle-user-premium', kwargs={'user_id': self.target_user.id})
+        self.client.force_authenticate(user=self.admin_user)
+
+        for roles in (['teacher'], ['manager'], ['teacher', 'manager']):
+            self.target_user.roles = roles
+            self.target_user.save(update_fields=['roles'])
+            response = self.client.post(url, {'duration': 30, 'plan_type': 'student'}, format='json')
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, roles)
+            self.target_user.refresh_from_db()
+            self.assertFalse(self.target_user.is_premium)
+            self.assertFalse(self.target_user.subscriptions.filter(is_active=True).exists())
+
+        # Bekor qilish taqiqlanmaydi (eski, ta'sirsiz grantni tozalash).
+        response = self.client.post(url, {'duration': -1}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # O'quvchi va direktor (owner) rollari uchun oldingidek ishlaydi:
+        # owner'ga berilgan premium markazga ham tarqaladi.
+        for roles in (['student'], ['teacher', 'student'], ['manager', 'owner']):
+            self.target_user.roles = roles
+            self.target_user.save(update_fields=['roles'])
+            response = self.client.post(url, {'duration': 30, 'plan_type': 'student'}, format='json')
+            self.assertEqual(response.status_code, status.HTTP_200_OK, roles)
+            self.target_user.refresh_from_db()
+            self.assertTrue(self.target_user.is_premium)
+
     def test_admin_toggle_premium_with_plan_name(self):
         url = reverse('admin-toggle-user-premium', kwargs={'user_id': self.target_user.id})
         self.client.force_authenticate(user=self.admin_user)
