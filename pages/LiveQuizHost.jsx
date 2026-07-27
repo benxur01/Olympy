@@ -10,7 +10,7 @@
 // (raqamli oraliq). Tur `questionType` maydoni bilan Java xizmatga uzatiladi.
 
 const LiveQuizHostPage = ({ user, onNavigate }) => {
-  const { useState, useEffect, useRef, useMemo, useCallback } = React;
+  const { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } = React;
 
   // Kahoot uslubidagi 4 ta rang/shakl: qizil uchburchak, ko'k romb, sariq
   // doira, yashil kvadrat. shared.jsx'dagi CSS shakllar bilan mos.
@@ -250,11 +250,49 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
     }
   }, [reveal]);
 
+  // Reyting qatorlari o'rin almashganda ular yangi joyiga sirg'alib o'tsin
+  // (Kahoot'dagi "2-o'rin → 1-o'rin" harakati). FLIP: har bir renderdan keyin
+  // qatorning ro'yxat ichidagi joyini o'lchab qo'yamiz; keyingi reveal'da esa
+  // qatorni avval ESKI joyiga qaytarib, darhol bo'shatamiz — oradagi siljishni
+  // CSS (.lq-rank-row transition) chizadi. Ro'yxat DOM'da bo'lmaganda
+  // (savol/podium ekranlari) o'lchov o'tkazib yuboriladi, saqlangan joylar esa
+  // keyingi reveal uchun turaveradi.
+  const rankListRef = useRef(null);
+  const rowRefs = useRef(new Map());    // userId -> qator DOM tuguni
+  const rowTopsRef = useRef(new Map()); // userId -> oldingi vertikal joylashuv
+
+  useLayoutEffect(() => {
+    const list = rankListRef.current;
+    if (!list) return;
+    const listTop = list.getBoundingClientRect().top;
+    const prevTops = rowTopsRef.current;
+    const nextTops = new Map();
+    const moved = [];
+    rowRefs.current.forEach((node, userId) => {
+      const top = node.getBoundingClientRect().top - listTop;
+      nextTops.set(userId, top);
+      const before = prevTops.get(userId);
+      if (before !== undefined && Math.abs(before - top) > 0.5) moved.push([node, before - top]);
+    });
+    rowTopsRef.current = nextTops;
+    if (moved.length === 0) return;
+    moved.forEach(([node, dy]) => {
+      node.style.transition = 'none';
+      node.style.transform = `translateY(${dy}px)`;
+    });
+    // Uslublarni majburan hisoblatamiz — aks holda brauzer "eski joy" holatini
+    // umuman ko'rmaydi va transition boshlanmay, qator shartta sakrab qoladi.
+    void list.offsetHeight;
+    moved.forEach(([node]) => { node.style.transition = ''; node.style.transform = ''; });
+  }, [rankedWithDelta]);
+
   const exit = () => { cleanupWs(); onNavigate?.(roleHomePageSafe(user)); };
 
   // ─── Renderlar ─────────────────────────────────────────────────────────────
   const Shell = ({ children }) => (
-    <div className="min-h-screen text-white" style={{ background: '#0b0b14' }}>
+    // Fon o'quvchi ekranlari bilan bir xil: yassi qora emas, yuqoridan
+    // yoyilgan radial gradient (jonli o'yin ekranlari shu ko'rinishda).
+    <div className="min-h-screen text-white" style={{ background: 'radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0b0b14 55%)' }}>
       <div className="glass border-b border-white/5 px-4 sm:px-6 py-3 flex items-center gap-3">
         <BrandLogo size="sm" />
         <span className="text-sm font-bold text-white/80 hidden sm:inline">Jonli viktorina</span>
@@ -412,9 +450,18 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
             </div>
             <div className="flex flex-wrap justify-center gap-2 min-h-[40px]">
               {participants.length === 0 && <span className="text-sm text-white/30">Kutilmoqda...</span>}
-              {participants.map((name, i) => (
-                <span key={i} className="px-3 py-1.5 rounded-full bg-white/10 text-sm font-semibold animate-in">{name}</span>
-              ))}
+              {participants.map((p, i) => {
+                // Server ishtirokchini {userId, name, avatar} shaklida yuboradi;
+                // avatar qo'shilgunga qadar esa faqat ismlar ro'yxati kelardi —
+                // deploy oralig'ida ikkala shakl ham uchraydi.
+                const isPlainName = typeof p === 'string';
+                return (
+                  <span key={i} className="flex items-center gap-2 pl-1.5 pr-3.5 py-1.5 rounded-full bg-white/10 text-sm font-semibold animate-in">
+                    <QuizAvatar value={isPlainName ? '' : p?.avatar} size={22} />
+                    {isPlainName ? p : (p?.name || '')}
+                  </span>
+                );
+              })}
             </div>
           </div>
 
@@ -516,13 +563,19 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
           )}
 
           <h3 className="text-lg font-black mb-3 flex items-center gap-2"><Icon name="trophy" size={18} /> Reyting</h3>
-          <div className="space-y-2">
+          <div ref={rankListRef} className="space-y-2">
             {rankedWithDelta.map((row) => (
-              <div key={row.userId} className="flex items-center gap-3 glass rounded-xl px-4 py-3">
+              <div key={row.userId}
+                ref={(node) => { if (node) rowRefs.current.set(row.userId, node); else rowRefs.current.delete(row.userId); }}
+                className="lq-rank-row flex items-center gap-3 glass rounded-xl px-4 py-3">
                 <span className="w-8 text-center font-black text-white/80">{row.rank}</span>
+                <QuizAvatar value={row.avatar} size={28} />
                 <span className="flex-1 font-semibold break-words">{row.name}</span>
                 {row.delta !== 0 && (
-                  <span className={`text-xs font-bold ${row.delta > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                  // `key` — savol yoki o'zgarish qiymati almashganda nishon
+                  // qaytadan yaratiladi va "pop" animatsiyasi yana ishlaydi.
+                  <span key={`${reveal.index}:${row.delta}`}
+                    className={`lq-pop text-[11px] font-black px-2 py-0.5 rounded-full ${row.delta > 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'}`}>
                     {row.delta > 0 ? `▲${row.delta}` : `▼${Math.abs(row.delta)}`}
                   </span>
                 )}
@@ -566,7 +619,8 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
               return (
                 <div key={idx} className="flex flex-col items-center">
                   <div className="text-3xl mb-1">{meta.emoji}</div>
-                  <div className="font-bold text-sm mb-1 max-w-[90px] truncate">{p.name}</div>
+                  <QuizAvatar value={p.avatar} size={38} />
+                  <div className="font-bold text-sm mt-1.5 mb-1 max-w-[90px] truncate">{p.name}</div>
                   <div className="text-xs text-white/60 mb-2">{p.score}</div>
                   <div className={`w-20 sm:w-24 ${meta.h} rounded-t-xl flex items-start justify-center pt-2 font-black text-black/70`} style={{ background: meta.color }}>
                     {p.rank}
@@ -581,6 +635,7 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
               {rest.map((row) => (
                 <div key={row.userId} className="flex items-center gap-3 glass rounded-xl px-4 py-2.5">
                   <span className="w-7 text-center font-black text-white/70">{row.rank}</span>
+                  <QuizAvatar value={row.avatar} size={26} />
                   <span className="flex-1 font-semibold break-words">{row.name}</span>
                   <span className="font-black text-indigo-300">{row.score}</span>
                 </div>
@@ -597,6 +652,36 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
   }
 
   return <Shell><div className="text-center text-white/40 mt-20">Yuklanmoqda...</div></Shell>;
+};
+
+// O'quvchi kirish ekranida tanlaydigan avatarlar (Kahoot'dagi personajlar
+// o'rnida). Tanlangan emoji `avatar` maydonida handshake orqali serverga
+// boradi va host ekranidagi barcha ro'yxatlarda ism yonida ko'rinadi.
+// LiveQuizPlay.jsx tanlagichni shu ro'yxatdan quradi.
+const LIVE_QUIZ_AVATARS = [
+  { emoji: '🦊', bg: '#e0341f' },
+  { emoji: '🐼', bg: '#1368ce' },
+  { emoji: '🦁', bg: '#d89e00' },
+  { emoji: '🐸', bg: '#26890c' },
+  { emoji: '🐨', bg: '#7c3aed' },
+  { emoji: '🦉', bg: '#0e7490' },
+  { emoji: '🐙', bg: '#db2777' },
+  { emoji: '🐝', bg: '#ea580c' },
+  { emoji: '🤖', bg: '#4b5563' },
+  { emoji: '👾', bg: '#059669' },
+];
+
+// Ishtirokchi avatari — ism yonidagi rangli doira. Avatar bo'sh yoki
+// ro'yxatda yo'q bo'lsa (avatar qo'shilgunga qadar ulangan o'quvchi, eski
+// klient) zaxira emoji va neytral fon bilan chiziladi.
+const QuizAvatar = ({ value, size = 26 }) => {
+  const preset = LIVE_QUIZ_AVATARS.find((a) => a.emoji === value);
+  return (
+    <span className="inline-flex items-center justify-center rounded-full flex-shrink-0 border border-white/15"
+      style={{ width: size, height: size, fontSize: Math.round(size * 0.55), lineHeight: 1, background: preset?.bg || 'rgba(255,255,255,0.10)' }}>
+      {value || '🙂'}
+    </span>
+  );
 };
 
 // Kahoot uslubidagi javob shakli (CSS bilan chizilgan). Katta ekranda ham,
