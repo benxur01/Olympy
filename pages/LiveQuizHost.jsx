@@ -44,6 +44,8 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
   const [reveal, setReveal] = useState(null); // {index, correctIndex, isLast, leaderboard}
   const [finalBoard, setFinalBoard] = useState([]);
   const [creating, setCreating] = useState(false);
+  // Soket holati: idle|connecting|open|reconnecting|failed.
+  const [connState, setConnState] = useState('idle');
 
   const wsRef = useRef(null);
   const timerRef = useRef(null);
@@ -99,10 +101,7 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
   // ─── WebSocket boshqaruvi ──────────────────────────────────────────────────
   const cleanupWs = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    if (wsRef.current) {
-      try { wsRef.current.onclose = null; wsRef.current.close(); } catch {}
-      wsRef.current = null;
-    }
+    if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
   }, []);
 
   useEffect(() => () => cleanupWs(), [cleanupWs]);
@@ -118,56 +117,75 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
     }, 250);
   }, []);
 
-  const connectHost = useCallback(async (code) => {
-    const url = await OlympyApi.quizWsUrl({ roomCode: code, role: 'host' });
-    const ws = new WebSocket(url);
-    wsRef.current = ws;
-    ws.onmessage = (evt) => {
-      let msg;
-      try { msg = JSON.parse(evt.data); } catch { return; }
-      switch (msg.type) {
-        case 'host_state':
-          setParticipants(msg.participants || []);
-          if (!msg.started) setStep('lobby');
-          break;
-        case 'lobby':
-          setParticipants(msg.participants || []);
-          break;
-        case 'quiz_start':
-          setReveal(null);
-          break;
-        case 'question':
-          setReveal(null);
-          setQuestion(msg);
-          setAnswered({ answered: 0, total: (msg.total || answered.total) });
-          startCountdown(msg.timeLimitSeconds || 20);
-          setStep('question');
-          break;
-        case 'answer_count':
-          setAnswered({ answered: msg.answered || 0, total: msg.total || 0 });
-          break;
-        case 'reveal':
-          if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-          setRemaining(0);
-          setReveal(msg);
-          setStep('reveal');
-          break;
-        case 'final':
-          if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-          setFinalBoard(msg.leaderboard || []);
-          setStep('final');
-          break;
-        default:
-          break;
-      }
-    };
-    ws.onclose = () => { /* xona tugagan yoki ulanish uzilgan — UI joriy holatda qoladi */ };
-    ws.onerror = () => setError("Real-time xizmatga ulanib bo'lmadi. Java xizmat ishga tushganini tekshiring.");
-  }, [answered.total, startCountdown]);
+  // Ustozning katta ekrani ham o'quvchilar bilan bir xil muammoga tushardi:
+  // lobbida trafik yo'q, oradagi proksi bo'sh soketni yopadi va `onclose`
+  // ataylab bo'sh edi — ustoz "Boshlash"ni bosganda hech nima sodir
+  // bo'lmasdi (`sendHost` jimgina tushib qolardi). connectQuizSocket
+  // heartbeat yuboradi va uzilsa qayta ulanadi; server tomon host'ning qayta
+  // ulanishini allaqachon qo'llaydi (`onHostConnect` xona holatini qaytaradi).
+  const connectHost = useCallback((code) => {
+    if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+    setConnState('connecting');
+    wsRef.current = OlympyApi.connectQuizSocket({
+      roomCode: code,
+      role: 'host',
+      onStatus: (state, reason) => {
+        setConnState(state);
+        if (state === 'open') setError('');
+        if (state === 'failed') {
+          setError(reason === 'auth'
+            ? 'Sessiya muddati tugagan. Tizimga qayta kiring.'
+            : "Real-time xizmatga ulanib bo'lmadi. Qayta ulanishga urinib ko'ring.");
+        }
+      },
+      onMessage: (msg) => {
+        switch (msg.type) {
+          case 'host_state':
+            setParticipants(msg.participants || []);
+            if (!msg.started) setStep('lobby');
+            break;
+          case 'lobby':
+            setParticipants(msg.participants || []);
+            break;
+          case 'quiz_start':
+            setReveal(null);
+            break;
+          case 'question':
+            setReveal(null);
+            setQuestion(msg);
+            // Funksional yangilanish: bu closure ulanish paytida bir marta
+            // quriladi, `answered.total`ni to'g'ridan-to'g'ri o'qish esa eski
+            // qiymatni ushlab qolardi.
+            setAnswered((prev) => ({ answered: 0, total: msg.total || prev.total }));
+            startCountdown(msg.timeLimitSeconds || 20);
+            setStep('question');
+            break;
+          case 'answer_count':
+            setAnswered({ answered: msg.answered || 0, total: msg.total || 0 });
+            break;
+          case 'reveal':
+            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+            setRemaining(0);
+            setReveal(msg);
+            setStep('reveal');
+            break;
+          case 'final':
+            if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+            setFinalBoard(msg.leaderboard || []);
+            setStep('final');
+            break;
+          default:
+            break;
+        }
+      },
+    });
+  }, [startCountdown]);
 
   const sendHost = (type) => {
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type }));
+    // Avval buyruq soket yopiq bo'lsa jimgina yo'qolardi — ustoz tugmani
+    // qayta-qayta bosib, nima uchun ishlamayotganini tushunmasdi.
+    if (!wsRef.current?.send({ type })) {
+      setError("Ulanish tiklanmoqda — buyruq yuborilmadi. Bir soniyadan so'ng qayta bosing.");
     }
   };
 
@@ -203,7 +221,7 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
       const res = await OlympyApi.createQuizRoom(payload);
       setRoomCode(res.roomCode);
       setStep('lobby');
-      await connectHost(res.roomCode);
+      connectHost(res.roomCode);
     } catch (e) {
       setError(OlympyApi.toUserMessage?.(e) || e?.message || "Xona yaratib bo'lmadi");
     } finally {
@@ -243,6 +261,24 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
         {roomCode && step !== 'setup' && (
           <span className="ml-2 text-xs font-mono px-2 py-1 rounded-lg bg-white/10 text-white/70">
             Kod: <b className="tracking-widest">{roomCode}</b>
+          </span>
+        )}
+        {/* Ulanish holati — ustoz katta ekranda darhol ko'radi. Ilgari uzilish
+            hech qaerda ko'rinmasdi: kod ekranda turardi, lekin yangi
+            o'quvchilar ro'yxatga tushmasdi va "Boshlash" ishlamasdi. */}
+        {(connState === 'connecting' || connState === 'reconnecting' || connState === 'failed') && (
+          <span className={`ml-2 text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1.5 ${connState === 'failed' ? 'bg-red-500/20 text-red-200' : 'bg-amber-500/20 text-amber-200'}`}>
+            {connState === 'failed' ? (
+              <>
+                Ulanish uzildi
+                <button onClick={() => { if (roomCode) connectHost(roomCode); }} className="underline">Qayta ulanish</button>
+              </>
+            ) : (
+              <>
+                <span className="w-2.5 h-2.5 rounded-full border-2 border-amber-200/40 border-t-amber-200 animate-spin" />
+                {connState === 'reconnecting' ? 'Qayta ulanmoqda...' : 'Ulanmoqda...'}
+              </>
+            )}
           </span>
         )}
         <button onClick={exit} className="ml-auto btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5">
