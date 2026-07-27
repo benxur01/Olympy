@@ -466,7 +466,21 @@ SIMPLE_JWT = {
     # Short-lived access token reduces the blast radius if a token leaks.
     # The frontend automatically refreshes via /api/auth/token/refresh/.
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=30),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    # 90 kun — ataylab tanlangan muvozanat. FAOL foydalanuvchi uchun bu amalda
+    # "hech qachon qayta login so'ralmaydi" degani: ROTATE_REFRESH_TOKENS=True
+    # bo'lgani uchun har refresh yangi to'liq muddatli token beradi, ya'ni
+    # muddat har safar noldan boshlanadi va qaytib turgan sessiya cheksiz
+    # uzayaveradi. Ayni paytda muddat o'g'irlangan refresh token'ning yashash
+    # oynasini cheklaydi — oldingi 10 yillik qiymat bu oynani haddan tashqari
+    # kengaytirardi. Yagona nosozlik holati: 90 kundan uzoq g'oyib bo'lgan
+    # foydalanuvchi login ekraniga tushadi.
+    # Sessiyani DARHOL bekor qilish baribir muddatga emas, aniq hodisalarga
+    # bog'liq: `User.token_version` bump (bloklash, parol o'zgarishi, barcha
+    # qurilmalardan chiqish) va logout'dagi blacklist — ikkalasi ham shu
+    # sozlamadan qat'i nazar zudlik bilan ta'sir qiladi.
+    # `_set_auth_cookies` (accounts/views.py) refresh cookie max_age'ini shu
+    # qiymatdan oladi, shuning uchun alohida o'zgartirish kerak emas.
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=90),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': False,
