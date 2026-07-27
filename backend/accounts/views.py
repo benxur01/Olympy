@@ -7,6 +7,7 @@ import urllib.parse
 import urllib.request
 from datetime import timedelta
 
+import jwt
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.contrib.auth.hashers import check_password, make_password
@@ -544,6 +545,28 @@ def login(request):
 login.cls.throttle_scope = 'auth'
 
 
+# Google ID Token'ni MAHALLIY (kriptografik) tekshirish uchun JWKS klienti.
+# Avval har bir Google login'da `oauth2.googleapis.com/tokeninfo` ga bloklovchi
+# HTTP so'rov yuborilardi — bu har bir kirishga tarmoq round-trip qo'shar edi
+# (Google hujjatlarida ham bu endpoint faqat debug/test uchun deb ko'rsatilgan
+# va rate-limit qilinadi). Endi token Google'ning ochiq imzo kalitlari bilan
+# joyida tekshiriladi.
+#
+# Klient MODUL darajasida bir marta yaratiladi — asosiy tezlik yutug'i shunda:
+# `PyJWKClient` kalitlarni worker process ichida keshlaydi, shuning uchun
+# tarmoqqa faqat kalitlar eskirganda chiqiladi. Kalit rotatsiyasi xavfsiz:
+# token'dagi `kid` keshda topilmasa, klient JWKS'ni avtomatik yangilab qayta
+# qidiradi.
+GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
+GOOGLE_ISSUERS = ('https://accounts.google.com', 'accounts.google.com')
+_google_jwks_client = jwt.PyJWKClient(
+    GOOGLE_JWKS_URL,
+    cache_keys=True,
+    lifespan=3600,
+    timeout=10,
+)
+
+
 @api_view(['POST'])
 @permission_classes([AllowAny])
 @throttle_classes([ScopedRateThrottle])
@@ -556,31 +579,42 @@ def google_login(request):
         return Response({'detail': "Google ID Token ko'rsatilmadi."}, status=status.HTTP_400_BAD_REQUEST)
 
     import hashlib
-    import urllib.request
-    import urllib.parse
-    import json
     from django.contrib.auth import get_user_model
     from django.db import models
 
     User = get_user_model()
 
+    google_client_id = getattr(settings, 'GOOGLE_CLIENT_ID', None)
+
     try:
-        url = f"https://oauth2.googleapis.com/tokeninfo?id_token={urllib.parse.quote(id_token)}"
-        req = urllib.request.Request(url, headers={'User-Agent': 'Olympy-Auth/1.0'})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            token_info = json.loads(resp.read().decode('utf-8'))
+        signing_key = _google_jwks_client.get_signing_key_from_jwt(id_token)
+        # `jwt.decode` imzo, muddat (`exp`) va `iss` ni ham shu yerda tekshiradi
+        # — ya'ni tokeninfo endpoint'i Google tomonida bajargan tekshiruvlarning
+        # hammasi saqlanib qoladi.
+        #
+        # `verify_aud`: eski kod audience'ni faqat `if google_client_id and aud`
+        # bo'lganda solishtirardi, ya'ni GOOGLE_CLIENT_ID sozlanmagan muhitda
+        # tekshiruv butunlay o'tkazib yuborilardi. PyJWT esa `audience=None`
+        # bo'lsa tokendagi `aud` claim'ini AKSINCHA rad etadi — shuning uchun
+        # bu holatda audience tekshiruvi ataylab o'chiriladi (eski xatti-harakat).
+        token_info = jwt.decode(
+            id_token,
+            signing_key.key,
+            algorithms=['RS256'],
+            audience=google_client_id,
+            issuer=GOOGLE_ISSUERS,
+            options={'verify_aud': bool(google_client_id)},
+        )
+    except jwt.ExpiredSignatureError:
+        return Response({'detail': "Google tokeni muddati tugagan. Qaytadan urinib ko'ring."}, status=status.HTTP_401_UNAUTHORIZED)
+    except jwt.InvalidAudienceError as exc:
+        logger.warning("Google token audience mismatch: expected=%s (%s)", google_client_id, exc)
+        return Response({'detail': "Google Client ID mos kelmadi."}, status=status.HTTP_401_UNAUTHORIZED)
     except Exception as exc:
+        # Yaroqsiz imzo/issuer, buzilgan token yoki JWKS'ni olishdagi tarmoq
+        # xatosi — eski kod kabi hammasi 401 bilan yopiladi (fail-closed).
         logger.warning("Google token verification error: %s", exc)
         return Response({'detail': "Google tokeni yaroqsiz yoki tasdiqlanmadi."}, status=status.HTTP_401_UNAUTHORIZED)
-
-    if token_info.get('error') or token_info.get('error_description'):
-        return Response({'detail': token_info.get('error_description') or "Google tokeni yaroqsiz."}, status=status.HTTP_401_UNAUTHORIZED)
-
-    google_client_id = getattr(settings, 'GOOGLE_CLIENT_ID', None)
-    aud = token_info.get('aud')
-    if google_client_id and aud and aud != google_client_id:
-        logger.warning("Google token audience mismatch: expected=%s, got=%s", google_client_id, aud)
-        return Response({'detail': "Google Client ID mos kelmadi."}, status=status.HTTP_401_UNAUTHORIZED)
 
     email = (token_info.get('email') or '').strip().lower()
     sub = token_info.get('sub') or ''
