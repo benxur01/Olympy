@@ -290,9 +290,10 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
 
   // ─── Renderlar ─────────────────────────────────────────────────────────────
   const Shell = ({ children }) => (
-    // Fon o'quvchi ekranlari bilan bir xil: yassi qora emas, yuqoridan
-    // yoyilgan radial gradient (jonli o'yin ekranlari shu ko'rinishda).
-    <div className="min-h-screen text-white" style={{ background: 'radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0b0b14 55%)' }}>
+    // Fon o'quvchi ekranlari bilan bir xil: yorqin Kahoot binafshasi —
+    // yuqoridan yoyilgan radial gradient (jonli o'yin ekranlari shu
+    // ko'rinishda).
+    <div className="min-h-screen text-white" style={{ background: 'radial-gradient(circle at 50% 0%, #7c3aed 0%, #46178f 55%)' }}>
       <div className="glass border-b border-white/5 px-4 sm:px-6 py-3 flex items-center gap-3">
         <BrandLogo size="sm" />
         <span className="text-sm font-bold text-white/80 hidden sm:inline">Jonli viktorina</span>
