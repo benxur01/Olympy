@@ -24,8 +24,15 @@ logger = logging.getLogger('accounts.views_support')
 # qo'yishi mumkin edi (support_chat AllowAny bo'lgani uchun bu boshqa AI
 # endpointlaridan farqli — pastdagi throttle_scope bilan birga DoS xavfini
 # cheklaydi).
-_SUPPORT_CHAT_PER_REQUEST_TIMEOUT = 10
-_SUPPORT_CHAT_TOTAL_TIME_BUDGET = 25
+#
+# DIQQAT: byudjet tekshiruvi har bir `urlopen` dan OLDIN bajariladi, uning
+# ichida emas — ya'ni haqiqiy eng yomon holat `BUDGET + PER_REQUEST_TIMEOUT`.
+# Avvalgi qiymatlarda bu 25+10 = 35 sekund edi: butun serverda atigi bir necha
+# gunicorn thread bo'lgani uchun ikki-uch anonim tashrifchi AI chatni ochsa
+# saytning qolgan qismi (login, dashboard) shuncha vaqt kutib qolardi.
+# 4+8 = eng yomon holat ~12 sekund.
+_SUPPORT_CHAT_PER_REQUEST_TIMEOUT = 4
+_SUPPORT_CHAT_TOTAL_TIME_BUDGET = 8
 
 # Mehmon chat sessiyasi — server tomonida cryptographically random cookie.
 # Klient `session_id` ni erkin yuborib boshqa mehmon chatini o'qiy olmasin.

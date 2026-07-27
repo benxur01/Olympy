@@ -10,6 +10,32 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task
+def send_olympiad_published_notifications_task(student_ids, olympiad_id, center_id):
+    """Nashr qilingan olimpiada haqida approved studentlarga xabar fan-out'i.
+
+    Avval `publish_olympiad` view'i `send_olympiad_published_bulk` ni TO'G'RIDAN
+    chaqirardi — yuzlab studentli markazda bu bitta HTTP so'rov ichida yuzlab
+    ketma-ket bloklovchi web-push chaqiruvi degani edi. Endi fan-out shu
+    task'da bajariladi (`centers.tasks.send_student_join_notifications_task`
+    bilan bir xil naqsh: Celery chegarasidan model emas, ID'lar o'tkaziladi).
+    """
+    from django.contrib.auth import get_user_model
+    from centers.models import EducationCenter
+    from notifications.services import send_olympiad_published_bulk
+    User = get_user_model()
+    try:
+        students = list(User.objects.filter(pk__in=student_ids))
+        olympiad = Olympiad.objects.get(pk=olympiad_id)
+        center = EducationCenter.objects.get(pk=center_id)
+        send_olympiad_published_bulk(students, olympiad, center)
+    except Exception:
+        logger.exception(
+            'Failed to send olympiad-published notifications (olympiad=%s)',
+            olympiad_id,
+        )
+
+
+@shared_task
 def send_olympiad_summary_task(olympiad_id):
     """Olimpiada yakunlangach markaz menejer/ustozlariga xulosa yuboradi.
 
@@ -332,9 +358,35 @@ def finish_expired_olympiads():
 
 
 @shared_task
+def send_reminder_to_student_task(user_id, title, message):
+    """Bitta o'quvchiga "boshlanmoqda" eslatmasini yuboradi (Telegram + push).
+
+    `send_starting_soon_reminders` beat task'i har daqiqada ishlaydi va bitta
+    worker (concurrency=1) bilan yuzlab o'quvchiga ketma-ket bloklovchi tarmoq
+    chaqiruvi qilsa, navbatdagi barcha task'lar (OTP yetkazish va h.k.) kutib
+    qoladi. Shu sababli har bir o'quvchi uchun yuborish alohida task'ga
+    ajratilgan.
+    """
+    from django.contrib.auth import get_user_model
+    from notifications.services import send_web_push_to_user, _send_telegram_to_user
+    User = get_user_model()
+    try:
+        student = User.objects.get(pk=user_id)
+        _send_telegram_to_user(student, message)
+        send_web_push_to_user(student, title, message, url='/student')
+    except Exception:
+        logger.exception('Failed to send reminder to user_id=%s', user_id)
+
+
+@shared_task
 def send_starting_soon_reminders():
     """Periodik task: 5 daqiqadan so'ng boshlanadigan olimpiadalarni aniqlab,
     o'quvchilarga eslatma (Telegram, In-App va Web Push) yuboradi.
+
+    Beat task'ning o'zi faqat arzon ishlarni bajaradi: olimpiadalarni topish,
+    har olimpiada uchun BITTA `Notification.bulk_create` va har o'quvchi uchun
+    `send_reminder_to_student_task.delay(...)` (xotiradagi navbatga qo'yish).
+    Bloklovchi Telegram/push chaqiruvlari o'sha alohida task ichida bo'ladi.
     """
     now = timezone.now()
     five_minutes_later = now + timedelta(minutes=5)
@@ -360,26 +412,34 @@ def send_starting_soon_reminders():
 
         from centers.models import CenterMembership
         from notifications.models import Notification
-        from notifications.services import send_web_push_to_user, _send_telegram_to_user
 
-        approved_students = CenterMembership.objects.filter(
-            center=olympiad.center,
-            role=CenterMembership.ROLE_STUDENT,
-            status=CenterMembership.STATUS_APPROVED,
-        ).select_related('user')
+        student_ids = list(
+            CenterMembership.objects.filter(
+                center=olympiad.center,
+                role=CenterMembership.ROLE_STUDENT,
+                status=CenterMembership.STATUS_APPROVED,
+            ).values_list('user_id', flat=True)
+        )
 
-        for membership in approved_students:
-            student = membership.user
-            Notification.objects.create(
-                user=student,
+        # Avval har o'quvchi uchun alohida INSERT bo'lardi — endi olimpiada
+        # bo'yicha bitta bulk_create.
+        Notification.objects.bulk_create([
+            Notification(
+                user_id=student_id,
                 center=olympiad.center,
                 type=Notification.TYPE_OLYMPIAD_PUBLISHED,
                 title=title,
                 message=message,
             )
-            _send_telegram_to_user(student, message)
-            send_web_push_to_user(student, title, message, url='/student')
+            for student_id in student_ids
+        ])
 
+        for student_id in student_ids:
+            send_reminder_to_student_task.delay(student_id, title, message)
+
+        # Flag har doim o'rnatiladi (yuborish natijasidan qat'i nazar): u
+        # eslatma PARTIYASI takror yuborilmasligini kafolatlaydi, alohida
+        # yetkazib berish muvaffaqiyatini emas — ular endi asinxron.
         olympiad.start_reminder_sent = True
         olympiad.save(update_fields=['start_reminder_sent'])
         count += 1

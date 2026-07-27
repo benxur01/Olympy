@@ -6,7 +6,7 @@ from rest_framework import status
 
 from centers.models import EducationCenter
 from .models import PushSubscription
-from .services import send_olympiad_published_notification
+from .services import send_olympiad_published_notification, send_web_push
 
 User = get_user_model()
 
@@ -67,3 +67,24 @@ class WebPushTestCase(TestCase):
         args, kwargs = mock_webpush.call_args
         self.assertEqual(kwargs['subscription_info']['endpoint'], 'https://fcm.googleapis.com/fcm/send/fake')
         self.assertIn('Test Center', kwargs['data'])
+
+    @override_settings(VAPID_PRIVATE_KEY='test-vapid-private-key-not-for-prod')
+    @patch('pywebpush.webpush')
+    def test_send_web_push_uses_bounded_timeout(self, mock_webpush):
+        """Javob bermayotgan push endpoint thread/task'ni cheksiz ushlamasin.
+
+        `timeout` bo'lmasa bitta osilib qolgan endpoint fan-out'ning qolganini
+        (va uni chaqirgan worker'ni) noma'lum muddatga bloklaydi.
+        """
+        subscription = PushSubscription.objects.create(
+            user=self.user,
+            endpoint='https://fcm.googleapis.com/fcm/send/slow',
+            p256dh='fake_p256dh',
+            auth='fake_auth',
+        )
+
+        self.assertTrue(send_web_push(subscription, 'Sarlavha', 'Matn'))
+
+        mock_webpush.assert_called_once()
+        _, kwargs = mock_webpush.call_args
+        self.assertEqual(kwargs['timeout'], 5)

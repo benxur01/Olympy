@@ -1,12 +1,17 @@
+import json
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import connection
+from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from centers.models import CenterMembership, EducationCenter
+from notifications.models import Notification, PushSubscription
 from olympiads.models import Olympiad
 from questions.models import Question
 
@@ -228,7 +233,7 @@ class OlympiadReminderTestCase(APITestCase):
         from olympiads.tasks import send_starting_soon_reminders
         result = send_starting_soon_reminders()
         self.assertIn("1 ta olimpiada uchun eslatma yuborildi", result)
-        
+
         self.olympiad.refresh_from_db()
         self.assertTrue(self.olympiad.start_reminder_sent)
         mock_telegram.assert_called_once()
@@ -237,4 +242,257 @@ class OlympiadReminderTestCase(APITestCase):
         # Keyingi chaqiriqda takroran yuborilmasligi kerak
         result_again = send_starting_soon_reminders()
         self.assertIn("0 ta olimpiada uchun eslatma yuborildi", result_again)
+
+
+class OlympiadPublishFanOutTestCase(APITestCase):
+    """Nashr qilish so'rovi ichida sinxron push fan-out bo'lmasligi kerak.
+
+    Yuzlab studentli markazda `send_olympiad_published_bulk` ni to'g'ridan
+    chaqirish manager'ning HTTP so'rovini yuzlab ketma-ket tarmoq chaqiruvi
+    davomida ushlab turardi.
+    """
+
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            phone='+998901300030', password='StrongPass123', full_name='Owner',
+        )
+        self.center = EducationCenter.objects.create(
+            name='Fan-out Markaz', city='Toshkent', owner=self.owner,
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.question = Question.objects.create(
+            center=self.center, subject='Kimyo', text='H2O nima?',
+            options=['Suv', 'Tuz'], correct_answer=0, score=5,
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center,
+            title='Kimyo Olimpiadasi',
+            subject='Kimyo',
+            event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            status=Olympiad.STATUS_DRAFT,
+            start_datetime=timezone.now() + timezone.timedelta(hours=2),
+            duration_minutes=60,
+        )
+        self.olympiad.questions.add(self.question)
+
+        self.students = []
+        for index in range(3):
+            student = User.objects.create_user(
+                phone=f'+99890130004{index}', password='StrongPass123',
+                full_name=f'Student {index}',
+            )
+            CenterMembership.objects.create(
+                user=student, center=self.center,
+                role=CenterMembership.ROLE_STUDENT,
+                status=CenterMembership.STATUS_APPROVED,
+            )
+            self.students.append(student)
+
+        # Tasdiqlanmagan o'quvchi va o'qituvchi — fan-out ro'yxatiga kirmasin.
+        pending = User.objects.create_user(
+            phone='+998901300050', password='StrongPass123', full_name='Pending',
+        )
+        CenterMembership.objects.create(
+            user=pending, center=self.center,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_PENDING,
+        )
+        teacher = User.objects.create_user(
+            phone='+998901300051', password='StrongPass123', full_name='Teacher',
+        )
+        CenterMembership.objects.create(
+            user=teacher, center=self.center,
+            role=CenterMembership.ROLE_TEACHER,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+
+        self.client.force_authenticate(user=self.owner)
+
+    @override_settings(VAPID_PRIVATE_KEY='test-vapid-private-key-not-for-prod')
+    @patch('pywebpush.webpush')
+    @patch('notifications.services._send_telegram_to_user')
+    @patch('olympiads.tasks.send_olympiad_published_notifications_task.delay')
+    def test_publish_enqueues_task_without_blocking_the_request(
+        self, mock_delay, mock_telegram, mock_webpush,
+    ):
+        for student in self.students:
+            PushSubscription.objects.create(
+                user=student, endpoint=f'https://push.example/{student.id}',
+                p256dh='fake_p256dh', auth='fake_auth',
+            )
+
+        url = reverse('olympiad-publish', args=[self.olympiad.id])
+        response = self.client.post(url, {}, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.olympiad.refresh_from_db()
+        self.assertEqual(self.olympiad.status, Olympiad.STATUS_ACTIVE)
+
+        mock_delay.assert_called_once()
+        student_ids, olympiad_id, center_id = mock_delay.call_args.args
+        self.assertEqual(sorted(student_ids), sorted(s.id for s in self.students))
+        self.assertEqual(olympiad_id, self.olympiad.id)
+        self.assertEqual(center_id, self.center.id)
+        # Celery chegarasidan faqat JSON-seriyalanadigan ID'lar o'tadi.
+        json.dumps([student_ids, olympiad_id, center_id])
+
+        # So'rov ichida hech qanday bloklovchi yuborish yoki DB fan-out yo'q.
+        mock_webpush.assert_not_called()
+        mock_telegram.assert_not_called()
+        self.assertEqual(Notification.objects.count(), 0)
+
+    @override_settings(VAPID_PRIVATE_KEY='test-vapid-private-key-not-for-prod')
+    @patch('pywebpush.webpush')
+    def test_task_creates_notifications_and_pushes(self, mock_webpush):
+        """Task'ning o'zi (`.delay` orqali emas) eski xulqni saqlab qoladi."""
+        from olympiads.tasks import send_olympiad_published_notifications_task
+
+        for student in self.students:
+            PushSubscription.objects.create(
+                user=student, endpoint=f'https://push.example/{student.id}',
+                p256dh='fake_p256dh', auth='fake_auth',
+            )
+
+        send_olympiad_published_notifications_task(
+            [s.id for s in self.students], self.olympiad.id, self.center.id,
+        )
+
+        notifications = Notification.objects.filter(
+            type=Notification.TYPE_OLYMPIAD_PUBLISHED,
+        )
+        self.assertEqual(notifications.count(), len(self.students))
+        self.assertEqual(
+            sorted(notifications.values_list('user_id', flat=True)),
+            sorted(s.id for s in self.students),
+        )
+        self.assertEqual(notifications.first().title, 'Yangi olimpiada')
+        self.assertEqual(mock_webpush.call_count, len(self.students))
+
+
+class StartingSoonReminderBatchTestCase(APITestCase):
+    """Beat task o'zi arzon bo'lishi kerak: 1 ta bulk INSERT + N ta enqueue.
+
+    Celery worker concurrency=1 — bitta ommabop olimpiadaning eslatma fan-out'i
+    sinxron bo'lsa butun navbatni (OTP yetkazish va h.k.) ushlab qoladi.
+    """
+
+    STUDENT_COUNT = 25
+
+    def setUp(self):
+        self.owner = User.objects.create_user(
+            phone='+998901300060', password='StrongPass123', full_name='Owner',
+        )
+        self.center = EducationCenter.objects.create(
+            name='Batch Markaz', city='Toshkent', owner=self.owner,
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.students = []
+        for index in range(self.STUDENT_COUNT):
+            student = User.objects.create_user(
+                phone=f'+9989013001{index:02d}', password='StrongPass123',
+                full_name=f'Student {index}',
+            )
+            CenterMembership.objects.create(
+                user=student, center=self.center,
+                role=CenterMembership.ROLE_STUDENT,
+                status=CenterMembership.STATUS_APPROVED,
+            )
+            self.students.append(student)
+
+        # Tasdiqlanmagan o'quvchi eslatma olmasligi kerak.
+        self.pending_student = User.objects.create_user(
+            phone='+998901300199', password='StrongPass123', full_name='Pending',
+        )
+        CenterMembership.objects.create(
+            user=self.pending_student, center=self.center,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_PENDING,
+        )
+
+        self.olympiad = Olympiad.objects.create(
+            center=self.center,
+            title='Ommabop Musobaqa',
+            subject='Informatika',
+            event_type=Olympiad.EVENT_TYPE_COMPETITION,
+            status=Olympiad.STATUS_ACTIVE,
+            start_datetime=timezone.now() + timezone.timedelta(minutes=4),
+            duration_minutes=60,
+            start_reminder_sent=False,
+        )
+
+    @patch('notifications.services.send_web_push_to_user')
+    @patch('notifications.services._send_telegram_to_user')
+    @patch('olympiads.tasks.send_reminder_to_student_task.delay')
+    def test_beat_task_batches_inserts_and_defers_sends(
+        self, mock_delay, mock_telegram, mock_push,
+    ):
+        from olympiads.tasks import send_starting_soon_reminders
+
+        with CaptureQueriesContext(connection) as queries:
+            result = send_starting_soon_reminders()
+
+        self.assertIn('1 ta olimpiada uchun eslatma yuborildi', result)
+
+        # (a) Notification yozuvlari — N ta alohida INSERT emas, bitta bulk.
+        notification_inserts = [
+            query['sql'] for query in queries.captured_queries
+            if 'INSERT INTO "notifications_notification"' in query['sql']
+        ]
+        self.assertEqual(len(notification_inserts), 1)
+        self.assertEqual(
+            Notification.objects.filter(
+                type=Notification.TYPE_OLYMPIAD_PUBLISHED,
+            ).count(),
+            self.STUDENT_COUNT,
+        )
+        self.assertFalse(
+            Notification.objects.filter(user=self.pending_student).exists(),
+        )
+
+        # (b) Har bir o'quvchi uchun bitta arzon enqueue, to'g'ri argumentlar.
+        self.assertEqual(mock_delay.call_count, self.STUDENT_COUNT)
+        notification = Notification.objects.first()
+        self.assertEqual(
+            sorted(call.args[0] for call in mock_delay.call_args_list),
+            sorted(s.id for s in self.students),
+        )
+        for call in mock_delay.call_args_list:
+            self.assertEqual(call.args[1], notification.title)
+            self.assertEqual(call.args[2], notification.message)
+        self.assertEqual(notification.title, 'Musobaqa boshlanmoqda!')
+        self.assertIn('5 daqiqadan so\'ng', notification.message)
+
+        # (c) Bloklovchi yuborishlar beat task ichida umuman bo'lmaydi.
+        mock_telegram.assert_not_called()
+        mock_push.assert_not_called()
+
+        # Flag har doim o'rnatiladi — partiya takror yuborilmaydi.
+        self.olympiad.refresh_from_db()
+        self.assertTrue(self.olympiad.start_reminder_sent)
+        self.assertIn(
+            '0 ta olimpiada uchun eslatma yuborildi',
+            send_starting_soon_reminders(),
+        )
+
+    @override_settings(VAPID_PRIVATE_KEY='test-vapid-private-key-not-for-prod')
+    @patch('pywebpush.webpush')
+    @patch('notifications.services._send_telegram_to_user')
+    def test_per_student_task_sends_telegram_and_push(
+        self, mock_telegram, mock_webpush,
+    ):
+        """Ajratilgan task haqiqiy yuborishni bajaradi (endi worker ichida)."""
+        from olympiads.tasks import send_reminder_to_student_task
+
+        student = self.students[0]
+        PushSubscription.objects.create(
+            user=student, endpoint='https://push.example/reminder',
+            p256dh='fake_p256dh', auth='fake_auth',
+        )
+
+        send_reminder_to_student_task(student.id, 'Sarlavha', 'Matn')
+
+        mock_telegram.assert_called_once_with(student, 'Matn')
+        mock_webpush.assert_called_once()
+        _, kwargs = mock_webpush.call_args
+        self.assertIn('/student', kwargs['data'])
 

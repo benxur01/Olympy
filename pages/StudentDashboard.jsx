@@ -625,34 +625,37 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // Xatolar Sandig'i endi Mashq bo'limi ichidagi sub-tab — shu bo'lim ochilganda
   // yuklaymiz.
   const apiMistakesRes = useApiData(
-    () => isApi ? OlympyApi.getMistakes(OlympyApi.getToken()) : Promise.resolve([]),
+    () => (isApi && page === 'practice') ? OlympyApi.getMistakes(OlympyApi.getToken()) : Promise.resolve([]),
     [isApi, page === 'practice'],
   );
   const apiRewardsRes = useApiData(
-    () => isApi ? OlympyApi.getRewards(OlympyApi.getToken()) : Promise.resolve({ coins: 0, products: [] }),
+    () => (isApi && page === 'rewards') ? OlympyApi.getRewards(OlympyApi.getToken()) : Promise.resolve({ coins: 0, products: [] }),
     [isApi, page === 'rewards'],
   );
+  // AI bashorati faqat "home" bo'limiga tegishli (alohida `predictions` sahifasi
+  // yo'q — STUDENT_DASHBOARD_PAGES'ga qarang), shuning uchun boshqa bo'limlarda
+  // so'rov yubormaymiz.
   const apiPredictionsRes = useApiData(
-    () => isApi ? OlympyApi.getMyPredictions(OlympyApi.getToken()) : Promise.resolve({}),
-    [isApi, page === 'home' || page === 'predictions'],
+    () => (isApi && page === 'home') ? OlympyApi.getMyPredictions(OlympyApi.getToken()) : Promise.resolve({}),
+    [isApi, page === 'home'],
   );
   // Premium: tarixiy tahlil grafigi, raqobatchi tahlili, zaiflik xaritasi.
   // Premium bo'lmagan o'quvchida so'rov yuborilmaydi (backend 403 qaytaradi).
   // Premium tahlil so'rovlari endi Natijalarim > O'sishim tab'i uchun (performance
   // sahifasi ochilganda) yuklanadi.
   const apiHistoryChartRes = useApiData(
-    () => (isApi && isPremium) ? OlympyApi.getHistoryChart(OlympyApi.getToken()) : Promise.resolve([]),
+    () => (isApi && isPremium && page === 'performance') ? OlympyApi.getHistoryChart(OlympyApi.getToken()) : Promise.resolve([]),
     [isApi, isPremium, page === 'performance'],
   );
   // Raqobatchi tahlili endi Plus+ tier talab qiladi — Standart o'quvchida so'rov
   // yubormaymiz (backend 403 upgrade_required qaytaradi); o'rniga qulflangan
   // karta ko'rsatiladi (renderPremiumAnalysis, canPlus).
   const apiCompetitorRes = useApiData(
-    () => (isApi && canPlus) ? OlympyApi.getCompetitorAnalysis(null, OlympyApi.getToken()) : Promise.resolve(null),
+    () => (isApi && canPlus && page === 'performance') ? OlympyApi.getCompetitorAnalysis(null, OlympyApi.getToken()) : Promise.resolve(null),
     [isApi, canPlus, page === 'performance'],
   );
   const apiWeaknessRes = useApiData(
-    () => (isApi && isPremium) ? OlympyApi.getSubjectWeakness(OlympyApi.getToken()) : Promise.resolve([]),
+    () => (isApi && isPremium && page === 'performance') ? OlympyApi.getSubjectWeakness(OlympyApi.getToken()) : Promise.resolve([]),
     [isApi, isPremium, page === 'performance'],
   );
   // Vaqt bo'yicha ball dinamikasi — Natijalarim landing kartasidagi mini
@@ -661,7 +664,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // qisqartiradi, shuning uchun frontend ham 365 tugmasini faqat Pro'ga beradi.
   const [timelineDays, setTimelineDays] = React.useState(30);
   const apiScoreTimelineRes = useApiData(
-    () => isApi ? OlympyApi.getScoreTimeline(timelineDays, OlympyApi.getToken()) : Promise.resolve(null),
+    () => (isApi && page === 'performance') ? OlympyApi.getScoreTimeline(timelineDays, OlympyApi.getToken()) : Promise.resolve(null),
     [isApi, timelineDays, page === 'performance'],
   );
   // ── Progress Dashboard (premium emas — har o'quvchiga ochiq) ──────────────
@@ -669,7 +672,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // (yoki davr o'zgarganda) so'raladi. AI tavsiya alohida — bir marta yuklanadi.
   const [progressPeriod, setProgressPeriod] = React.useState(30);
   const apiProgressRes = useApiData(
-    () => isApi ? OlympyApi.getProgress(progressPeriod, OlympyApi.getToken()) : Promise.resolve(null),
+    () => (isApi && page === 'performance') ? OlympyApi.getProgress(progressPeriod, OlympyApi.getToken()) : Promise.resolve(null),
     [isApi, progressPeriod, page === 'performance'],
   );
   // Oylik mashq (practice) kvotasi — Mashq bo'limi ochilganda. {used, limit,
@@ -677,11 +680,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // (non-Pro) yangi mashq boshlash qulflanadi (davom etayotgani hech qachon
   // qulflanmaydi — bu yerda faqat YANGI boshlash gate qilinadi).
   const apiPracticeQuotaRes = useApiData(
-    () => isApi ? OlympyApi.getPracticeQuota(OlympyApi.getToken()) : Promise.resolve(null),
+    () => (isApi && page === 'practice') ? OlympyApi.getPracticeQuota(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi, page === 'practice'],
   );
   const apiAiAdviceRes = useApiData(
-    () => isApi ? OlympyApi.getAiAdvice(OlympyApi.getToken()) : Promise.resolve(null),
+    () => (isApi && page === 'performance') ? OlympyApi.getAiAdvice(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi, page === 'performance'],
   );
   // Olimpiadaga tayyorlik badge'lari — Musobaqalar sahifasi ochilganda

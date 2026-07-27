@@ -234,7 +234,6 @@ def publish_olympiad(request, olympiad_id):
     ):
         # Lazy import: avoid circular dependency.
         from centers.models import CenterMembership
-        from notifications.services import send_olympiad_published_bulk
         # Olimpiada (public) bo'lsa-da, push spam'ni oldini olish uchun
         # xabar faqat shu markazning approved studentlariga yuboriladi —
         # boshqa markaz a'zolari va platforma userlari uchun olimpiada
@@ -243,16 +242,20 @@ def publish_olympiad(request, olympiad_id):
             center=olympiad.center,
             role=CenterMembership.ROLE_STUDENT,
             status=CenterMembership.STATUS_APPROVED,
-        ).select_related('user')
+        )
+        # Fan-out (yuzlab studentga web-push) so'rov ichida SINXRON emas,
+        # Celery'da bajariladi — aks holda manager'ning publish so'rovi har bir
+        # student uchun bitta bloklovchi tarmoq chaqiruvini kutardi.
         try:
-            send_olympiad_published_bulk(
-                [m.user for m in approved_students],
-                olympiad,
-                olympiad.center,
+            from olympiads.tasks import send_olympiad_published_notifications_task
+            send_olympiad_published_notifications_task.delay(
+                list(approved_students.values_list('user_id', flat=True)),
+                olympiad.id,
+                olympiad.center_id,
             )
         except Exception as e:
             import logging
-            logging.getLogger(__name__).warning('Notification send failed: %s', e)
+            logging.getLogger(__name__).warning('Notification dispatch failed: %s', e)
     return Response(OlympiadSerializer(olympiad).data)
 
 
