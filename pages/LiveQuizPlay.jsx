@@ -259,7 +259,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
 
   if (step === 'join') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-5 text-white" style={{ background: 'radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0b0b14 55%)' }}>
+      <div className="min-h-screen flex flex-col items-center justify-center px-5 text-white" style={{ background: 'radial-gradient(circle at 50% 0%, #7c3aed 0%, #46178f 55%)' }}>
         <div className="w-full max-w-sm">
           <div className="text-center mb-8">
             <div className="text-5xl mb-3">⚡</div>
@@ -312,7 +312,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
 
   if (step === 'lobby') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-white text-center" style={{ background: 'radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0b0b14 55%)' }}>
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-white text-center" style={{ background: 'radial-gradient(circle at 50% 0%, #7c3aed 0%, #46178f 55%)' }}>
         {connBanner}
         <div className="w-16 h-16 rounded-full border-4 border-white/15 border-t-indigo-400 animate-spin mb-6" />
         <h2 className="text-2xl font-black mb-1">Kutilmoqda...</h2>
@@ -328,7 +328,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
   if (step === 'question' && question) {
     const qType = question.questionType || 'mcq';
     return (
-      <div className="min-h-screen flex flex-col text-white" style={{ background: 'radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0b0b14 55%)' }}>
+      <div className="min-h-screen flex flex-col text-white" style={{ background: 'radial-gradient(circle at 50% 0%, #7c3aed 0%, #46178f 55%)' }}>
         {/* Kahoot uslubidagi o'yin maydoni: fon butun ekranni qoplaydi (kirish
             va lobbi bilan bir xil gradient — yassi qora emas), kontent
             ustuni esa keng monitorlarda cheklanib markazga tortiladi. Kichik
@@ -403,7 +403,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
 
   if (step === 'answered') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-white text-center" style={{ background: 'radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0b0b14 55%)' }}>
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-white text-center" style={{ background: 'radial-gradient(circle at 50% 0%, #7c3aed 0%, #46178f 55%)' }}>
         {connBanner}
         <div className="text-6xl mb-4">✓</div>
         <h2 className="text-2xl font-black mb-1">Javob qabul qilindi</h2>
@@ -485,7 +485,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
     };
     const msg = messages[rank] || (rank ? `Siz ${rank}-o'rinni egalladingiz! 🎉` : 'Viktorina yakunlandi! 🎉');
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-white text-center" style={{ background: 'radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0b0b14 55%)' }}>
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-white text-center" style={{ background: 'radial-gradient(circle at 50% 0%, #7c3aed 0%, #46178f 55%)' }}>
         <div className="text-6xl mb-4">{rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '🎊'}</div>
         <h1 className="text-2xl font-black mb-3 max-w-xs">{msg}</h1>
         <div className="glass rounded-2xl px-8 py-5 mb-8">
@@ -514,7 +514,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center text-white/40" style={{ background: '#0b0b14' }}>
+    <div className="min-h-screen flex items-center justify-center text-white/40" style={{ background: 'radial-gradient(circle at 50% 0%, #7c3aed 0%, #46178f 55%)' }}>
       Yuklanmoqda...
     </div>
   );
