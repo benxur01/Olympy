@@ -100,10 +100,13 @@ public class RoomService {
     }
 
     /** Register a student's socket; put them in the lobby (or the live question). */
-    public void onStudentConnect(RoomState room, long userId, String name, WebSocketSession session) {
+    public void onStudentConnect(RoomState room, long userId, String name, String avatar, WebSocketSession session) {
         synchronized (room) {
             room.studentSessions.put(userId, session);
             room.names.put(userId, (name == null || name.isBlank()) ? ("O'quvchi #" + userId) : name.trim());
+            // Avatar ixtiyoriy: eski klient yubormasa bo'sh qoladi va host
+            // ekranida zaxira belgi ko'rsatiladi.
+            room.avatars.put(userId, avatar == null ? "" : avatar.trim());
             room.totalScores.putIfAbsent(userId, 0);
 
             Map<String, Object> welcome = new LinkedHashMap<>();
@@ -387,7 +390,7 @@ public class RoomService {
 
     // ─── Leaderboard helpers ───────────────────────────────────────────────────
 
-    /** Descending-by-score leaderboard rows: {rank, userId, name, score}. */
+    /** Descending-by-score leaderboard rows: {rank, userId, name, avatar, score}. */
     private List<Map<String, Object>> leaderboard(RoomState room, int limit) {
         List<Long> ordered = new ArrayList<>(room.totalScores.keySet());
         ordered.sort(Comparator.comparingInt((Long id) -> room.totalScores.getOrDefault(id, 0)).reversed());
@@ -402,6 +405,7 @@ public class RoomService {
             row.put("rank", rank);
             row.put("userId", uid);
             row.put("name", room.names.getOrDefault(uid, "O'quvchi #" + uid));
+            row.put("avatar", room.avatars.getOrDefault(uid, ""));
             row.put("score", room.totalScores.getOrDefault(uid, 0));
             rows.add(row);
         }
@@ -477,7 +481,7 @@ public class RoomService {
         payload.put("started", room.started);
         payload.put("finished", room.finished);
         payload.put("totalQuestions", room.questions.size());
-        payload.put("participants", lobbyNames(room));
+        payload.put("participants", lobbyParticipants(room));
         return payload;
     }
 
@@ -485,14 +489,19 @@ public class RoomService {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", "lobby");
         payload.put("count", room.studentSessions.size());
-        payload.put("participants", lobbyNames(room));
+        payload.put("participants", lobbyParticipants(room));
         sendTo(room.hostSession, payload);
     }
 
-    private List<String> lobbyNames(RoomState room) {
-        List<String> out = new ArrayList<>();
+    /** Lobby rows for the host's big screen: {userId, name, avatar}. */
+    private List<Map<String, Object>> lobbyParticipants(RoomState room) {
+        List<Map<String, Object>> out = new ArrayList<>();
         for (Long uid : room.studentSessions.keySet()) {
-            out.add(room.names.getOrDefault(uid, "O'quvchi #" + uid));
+            Map<String, Object> p = new LinkedHashMap<>();
+            p.put("userId", uid);
+            p.put("name", room.names.getOrDefault(uid, "O'quvchi #" + uid));
+            p.put("avatar", room.avatars.getOrDefault(uid, ""));
+            out.add(p);
         }
         return out;
     }

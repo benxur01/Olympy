@@ -30,6 +30,8 @@ public class RoomState {
     public final Map<Long, WebSocketSession> studentSessions = new ConcurrentHashMap<>();
     /** studentUserId -> display name / nickname (client-provided, display only). */
     public final Map<Long, String> names = new ConcurrentHashMap<>();
+    /** studentUserId -> avatar emoji picked on the join screen (display only, may be empty). */
+    public final Map<Long, String> avatars = new ConcurrentHashMap<>();
     /** studentUserId -> cumulative score across all answered questions. */
     public final Map<Long, Integer> totalScores = new ConcurrentHashMap<>();
 

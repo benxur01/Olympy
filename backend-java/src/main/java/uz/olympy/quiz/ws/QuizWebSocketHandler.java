@@ -18,8 +18,8 @@ import uz.olympy.quiz.service.RoomService;
  * WebSocket endpoint handler for {@code /ws/quiz}. The handshake (auth + room
  * membership) is already enforced by
  * {@link uz.olympy.quiz.config.QuizAuthHandshakeInterceptor}; by the time we get
- * here, {@code userId}, {@code roomCode}, {@code role} and {@code name} are
- * trusted session attributes.
+ * here, {@code userId}, {@code roomCode}, {@code role}, {@code name} and
+ * {@code avatar} are trusted session attributes.
  *
  * <p>Host -> server: {@code {"type":"start|next|reveal|end"}}.
  * <p>Student -> server: {@code {"type":"answer","index":<int>,"answer":<value>}}
@@ -71,7 +71,8 @@ public class QuizWebSocketHandler extends TextWebSocketHandler {
             roomService.onHostConnect(room, session);
         } else {
             String name = (String) session.getAttributes().get("name");
-            roomService.onStudentConnect(room, userId(session), name, session);
+            String avatar = (String) session.getAttributes().get("avatar");
+            roomService.onStudentConnect(room, userId(session), name, avatar, session);
         }
     }
 

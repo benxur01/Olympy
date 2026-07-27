@@ -31,6 +31,11 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
 
   const [codeInput, setCodeInput] = useState('');
   const [nameInput, setNameInput] = useState(defaultName);
+  // Tanlangan avatar — oddiy satr (emoji). Boshlang'ich qiymat tasodifiy
+  // tanlanadi, shunda hech kim avatarsiz qo'shilmaydi (Kahoot ham shunday
+  // qiladi). Ro'yxatning o'zi LiveQuizHost.jsx'da — host ham shu emojini
+  // ko'rsatadi.
+  const [avatar, setAvatar] = useState(() => LIVE_QUIZ_AVATARS[Math.floor(Math.random() * LIVE_QUIZ_AVATARS.length)].emoji);
   const [title, setTitle] = useState('');
 
   const [question, setQuestion] = useState(null);
@@ -44,11 +49,15 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
   const [result, setResult] = useState(null); // {correct, pointsThisRound, totalScore, rank, correctIndex, answered}
   const [myTotal, setMyTotal] = useState(0);
   const [myRank, setMyRank] = useState(null);
+  // O'rin o'zgarishi (+ => yuqoriga ko'tarildi). Server faqat joriy o'rinni
+  // yuboradi, shuning uchun oldingisini klientda eslab qolamiz.
+  const [rankShift, setRankShift] = useState(0);
   const [finalBoard, setFinalBoard] = useState([]);
 
   const wsRef = useRef(null); // OlympyApi.connectQuizSocket handle'i
   const timerRef = useRef(null);
   const myIdRef = useRef(null);
+  const prevRankRef = useRef(null); // oldingi raunddagi o'rin (▲/▼ uchun)
   // Qo'shilish urinishi ketayotganini `joining` state'i emas, ref bilan
   // qo'riqlaymiz: ikkala input ham Enter'ga bog'langan va state yangilanishi
   // asinxron — bir necha tez bosish bitta renderda `joining === false` ko'rib,
@@ -114,13 +123,19 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
       case 'answer_received':
         setStep('answered');
         break;
-      case 'question_result':
+      case 'question_result': {
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
         setResult(msg);
         setMyTotal(msg.totalScore || 0);
-        setMyRank(msg.rank ?? null);
+        const nextRank = msg.rank ?? null;
+        setRankShift(typeof prevRankRef.current === 'number' && typeof nextRank === 'number'
+          ? prevRankRef.current - nextRank
+          : 0);
+        prevRankRef.current = nextRank;
+        setMyRank(nextRank);
         setStep('result');
         break;
+      }
       case 'final':
         if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
         setFinalBoard(msg.leaderboard || []);
@@ -142,6 +157,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
       roomCode: code,
       role: 'student',
       name: nameInput.trim(),
+      avatar,
       onMessage: handleMessage,
       onStatus: (state, reason) => {
         setConnState(state);
@@ -158,7 +174,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
         }
       },
     });
-  }, [handleMessage, nameInput]);
+  }, [handleMessage, nameInput, avatar]);
 
   const join = async () => {
     // Takroriy bosishlarni to'xtatamiz — yuqoridagi izohga qarang (joiningRef).
@@ -268,6 +284,18 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
               maxLength={30}
               className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-center text-sm text-white outline-none focus:border-indigo-500/50"
             />
+            <div>
+              <div className="text-xs font-semibold text-white/50 text-center mb-2">Avatar tanlang</div>
+              <div className="grid grid-cols-5 gap-2">
+                {LIVE_QUIZ_AVATARS.map((a) => (
+                  <button key={a.emoji} type="button" onClick={() => setAvatar(a.emoji)}
+                    className={`aspect-square rounded-full flex items-center justify-center text-xl transition-all active:scale-95 ${a.emoji === avatar ? 'ring-2 ring-white scale-105' : 'opacity-60 hover:opacity-100'}`}
+                    style={{ background: a.bg }}>
+                    {a.emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
             {error && <div className="text-red-300 text-sm text-center">{error}</div>}
             <button onClick={join} disabled={joining}
               className="btn-primary w-full py-3.5 rounded-xl text-base font-black disabled:opacity-50">
@@ -289,7 +317,10 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
         <div className="w-16 h-16 rounded-full border-4 border-white/15 border-t-indigo-400 animate-spin mb-6" />
         <h2 className="text-2xl font-black mb-1">Kutilmoqda...</h2>
         <p className="text-white/50 text-sm">{title || 'Viktorina'} boshlanishini kuting</p>
-        <div className="mt-6 px-4 py-2 rounded-full bg-white/10 text-sm font-semibold">{nameInput || 'Siz'}</div>
+        <div className="mt-6 flex items-center gap-2 pl-1.5 pr-4 py-1.5 rounded-full bg-white/10 text-sm font-semibold">
+          <QuizAvatar value={avatar} size={24} />
+          {nameInput || 'Siz'}
+        </div>
       </div>
     );
   }
@@ -297,8 +328,9 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
   if (step === 'question' && question) {
     const qType = question.questionType || 'mcq';
     return (
-      <div className="min-h-screen flex flex-col text-white" style={{ background: '#0b0b14' }}>
-        {/* Kahoot uslubidagi o'yin maydoni: fon butun ekranni qoplaydi, kontent
+      <div className="min-h-screen flex flex-col text-white" style={{ background: 'radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0b0b14 55%)' }}>
+        {/* Kahoot uslubidagi o'yin maydoni: fon butun ekranni qoplaydi (kirish
+            va lobbi bilan bir xil gradient — yassi qora emas), kontent
             ustuni esa keng monitorlarda cheklanib markazga tortiladi. Kichik
             ekranlarda `w-full` tufayli hech narsa o'zgarmaydi. */}
         {connBanner}
@@ -371,7 +403,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
 
   if (step === 'answered') {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-white text-center" style={{ background: '#0b0b14' }}>
+      <div className="min-h-screen flex flex-col items-center justify-center px-6 text-white text-center" style={{ background: 'radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0b0b14 55%)' }}>
         {connBanner}
         <div className="text-6xl mb-4">✓</div>
         <h2 className="text-2xl font-black mb-1">Javob qabul qilindi</h2>
@@ -423,7 +455,17 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
           </div>
           <div>
             <div className="text-xs text-white/50">O'rin</div>
-            <div className="text-2xl font-black">{myRank ?? '-'}</div>
+            {/* `key` savol indeksiga bog'langan — har raundda element qaytadan
+                yaratiladi va "pop" animatsiyasi yana ishlaydi. */}
+            <div className="flex items-center gap-1.5">
+              <div key={`rank-${result.index}`} className="lq-pop text-2xl font-black">{myRank ?? '-'}</div>
+              {rankShift !== 0 && (
+                <span key={`shift-${result.index}`}
+                  className={`lq-pop text-[11px] font-black px-1.5 py-0.5 rounded-full ${rankShift > 0 ? 'bg-emerald-500/20 text-emerald-300' : 'bg-red-500/20 text-red-300'}`}>
+                  {rankShift > 0 ? `▲${rankShift}` : `▼${Math.abs(rankShift)}`}
+                </span>
+              )}
+            </div>
           </div>
         </div>
         <p className="text-white/40 text-sm mt-6">Keyingi savolni kuting...</p>
@@ -456,6 +498,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
             {finalBoard.slice(0, 5).map((row) => (
               <div key={row.userId} className={`flex items-center gap-3 rounded-xl px-4 py-2.5 ${row.userId === myId ? 'bg-indigo-500/25 border border-indigo-500/40' : 'glass'}`}>
                 <span className="w-7 text-center font-black text-white/70">{row.rank}</span>
+                <QuizAvatar value={row.avatar} size={24} />
                 <span className="flex-1 font-semibold break-words">{row.name}</span>
                 <span className="font-black text-indigo-300">{row.score}</span>
               </div>

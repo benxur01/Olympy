@@ -378,6 +378,38 @@ const _refreshTokens = () => {
   return _refreshInFlight;
 };
 
+// ─── Tarmoq xatosida qisqa qayta urinish ────────────────────────────────────
+// Mobil internetda bir lahzalik uzilish (DNS xatosi, connection reset, tunnel
+// almashuvi) juda tez-tez uchraydi. Ilgari `fetch()` ning BIRINCHI qulashida
+// darhol `support_needed` eventi yuborilib AI yordam widjeti ochilardi — aynan
+// shu sababli widjet ishlab turgan serverda ham "o'zidan-o'zi ochiladigan oyna"
+// bo'lib ko'rinardi, holbuki xuddi shu so'rov bir soniyadan keyin muammosiz
+// ketardi. Endi so'rovni qisqa backoff bilan yana 2 marta (jami 3 urinish)
+// takrorlaymiz va faqat hammasi qulagandan keyingina buni haqiqiy tarmoq
+// xatosi deb hisoblaymiz.
+//
+// MUHIM chegara: bu faqat `fetch()` ning O'ZI exception tashlagan holat uchun.
+// Serverdan javob KELGAN holatlar (4xx/5xx) va 401 dan keyingi
+// refresh-retry — pastdagi butunlay alohida oqim, ular bu yerdan
+// ta'sirlanmaydi.
+const NETWORK_RETRY_DELAYS_MS = [600, 1200];
+
+// Backoff kutuvi abort'ni darhol sezishi kerak: aks holda unmount bo'lgan
+// komponent so'rovni bekor qilsa ham loop 1.2s "osilib" turardi.
+const _waitBeforeNetworkRetry = (ms, signal) => new Promise((resolve, reject) => {
+  if (signal?.aborted) {
+    reject(new ApiError('aborted', { status: 0 }));
+    return;
+  }
+  const timer = setTimeout(resolve, ms);
+  if (signal) {
+    signal.addEventListener('abort', () => {
+      clearTimeout(timer);
+      reject(new ApiError('aborted', { status: 0 }));
+    }, { once: true });
+  }
+});
+
 const request = async (
   path,
   { method = 'GET', body, token, headers = {}, retryOnAuth = true, keepalive = false, signal, silent = false } = {},
@@ -402,35 +434,57 @@ const request = async (
   const activeToken = (impersonation && impersonation.token) || token || _readAuth(AUTH_TOKEN_KEY);
   if (activeToken) requestHeaders.Authorization = `Bearer ${activeToken}`;
 
+  // Body bir marta tayyorlanadi: qayta urinishlarda ham AYNAN shu qiymat
+  // yuboriladi (string qayta ishlatilaveradi, FormData esa fetch tomonidan
+  // "iste'mol qilinmaydi" — har safar qaytadan serializatsiya bo'ladi).
+  const requestBody = body === undefined
+    ? undefined
+    : (isFormData ? body : JSON.stringify(body));
+
+  // `keepalive` so'rovlari (masalan sahifa yopilayotganda ketadigan cheating
+  // report) qayta urinilmaydi: unload paytida setTimeout ishga tushmaydi, va
+  // takroriy yuborish serverda dublikat yozuv qoldirishi mumkin.
+  const maxNetworkRetries = keepalive ? 0 : NETWORK_RETRY_DELAYS_MS.length;
+
   let response;
-  try {
-    response = await fetch(`${API_BASE_URL}${path}`, {
-      method,
-      headers: requestHeaders,
-      credentials: 'include',
-      keepalive,
-      signal,
-      body: body === undefined
-        ? undefined
-        : (isFormData ? body : JSON.stringify(body)),
-    });
-  } catch (error) {
-    // AbortController.abort() — chaqiruvchi (masalan, unmount bo'lgan komponent)
-    // so'rovni atayin bekor qilgan. Buni "server bilan bog'lanish xatosi" deb
-    // ko'rsatmaymiz; chaqiruvchi catch'da abort'ni jimgina yutadi.
-    if (error?.name === 'AbortError') {
-      throw new ApiError('aborted', { status: 0 });
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      response = await fetch(`${API_BASE_URL}${path}`, {
+        method,
+        headers: requestHeaders,
+        credentials: 'include',
+        keepalive,
+        signal,
+        body: requestBody,
+      });
+      break;
+    } catch (error) {
+      // AbortController.abort() — chaqiruvchi (masalan, unmount bo'lgan komponent)
+      // so'rovni atayin bekor qilgan. Buni "server bilan bog'lanish xatosi" deb
+      // ko'rsatmaymiz va HECH QACHON qayta urinmaymiz; chaqiruvchi catch'da
+      // abort'ni jimgina yutadi.
+      if (error?.name === 'AbortError' || signal?.aborted) {
+        throw new ApiError('aborted', { status: 0 });
+      }
+      // Bir lahzalik uzilish bo'lishi mumkin — qisqa backoff bilan yana
+      // urinamiz (yuqoridagi izohga qarang). Kutish paytida so'rov bekor
+      // qilinsa `_waitBeforeNetworkRetry` abort xatosini otadi.
+      if (attempt < maxNetworkRetries) {
+        await _waitBeforeNetworkRetry(NETWORK_RETRY_DELAYS_MS[attempt], signal);
+        continue;
+      }
+      // Barcha urinishlar tugadi — haqiqiy tarmoq xatosi (internet yo'q /
+      // server o'chiq / timeout). AI yordam widjetini avtomatik ochamiz.
+      // `silent` so'rovlar (masalan AI widjetning o'z fon tarixi preload'i)
+      // buni triggerlamaydi — aks holda widjet o'zining fon so'rovi qulasa
+      // o'zini-o'zi ochib, foydalanuvchini (ayniqsa ro'yxatdan o'tgach
+      // navbatdagi so'rovlar to'lqinida server hali "uyg'onmagan" paytda)
+      // bejiz bezovta qilardi.
+      if (!silent) {
+        dispatchSupportNeeded('network_error', "Server bilan bog‘lanishda xatolik yuz berdi");
+      }
+      throw new ApiError("Server bilan bog‘lanishda xatolik yuz berdi", { status: 0 });
     }
-    // Haqiqiy tarmoq xatosi (internet yo'q / server o'chiq / timeout) — AI
-    // yordam widjetini avtomatik ochamiz. `silent` so'rovlar (masalan AI
-    // widjetning o'z fon tarixi preload'i) buni triggerlamaydi — aks holda
-    // widjet o'zining fon so'rovi qulasa o'zini-o'zi ochib, foydalanuvchini
-    // (ayniqsa ro'yxatdan o'tgach navbatdagi so'rovlar to'lqinida server hali
-    // "uyg'onmagan" paytda) bejiz bezovta qilardi.
-    if (!silent) {
-      dispatchSupportNeeded('network_error', "Server bilan bog‘lanishda xatolik yuz berdi");
-    }
-    throw new ApiError("Server bilan bog‘lanishda xatolik yuz berdi", { status: 0 });
   }
 
   const contentType = response.headers.get('content-type') || '';
@@ -826,10 +880,14 @@ const getQuizRoom = async (roomCode) => {
 // yuboriladi (Java handshake interceptor uni Django'ga tekshirtiradi) — duel
 // oqimidagi bilan bir xil yondashuv. `createQuizRoom` bilan bir xil sababga
 // ko'ra async: xom JWT Django'dan olinadi (odatda keshdan, tarmoqsiz).
-const quizWsUrl = async ({ roomCode, role = 'student', name = '' }, token) => {
+// `avatar` — o'quvchi kirish ekranida tanlagan emoji (Kahoot'dagi personaj
+// o'rnida). `name` bilan bir xil yo'l: handshake query param'i, Java tomon uni
+// xona holatiga yozib, host'ga ketadigan ro'yxatlarga qo'shadi.
+const quizWsUrl = async ({ roomCode, role = 'student', name = '', avatar = '' }, token) => {
   const jwt = token || await getRealtimeToken();
   const params = new URLSearchParams({ token: jwt, roomCode, role });
   if (name) params.set('name', name);
+  if (avatar) params.set('avatar', avatar);
   return `${realtimeWsBase()}/ws/quiz?${params.toString()}`;
 };
 
@@ -867,7 +925,7 @@ const QUIZ_WS_CONNECT_TIMEOUT_MS = 12000;
 const QUIZ_WS_HEARTBEAT_MS = 25000;
 const QUIZ_WS_MAX_ATTEMPTS = 8;
 
-const connectQuizSocket = ({ roomCode, role = 'student', name = '', onMessage, onStatus }) => {
+const connectQuizSocket = ({ roomCode, role = 'student', name = '', avatar = '', onMessage, onStatus }) => {
   let socket = null;
   let attempts = 0;
   let disposed = false;
@@ -919,7 +977,7 @@ const connectQuizSocket = ({ roomCode, role = 'student', name = '', onMessage, o
     let url;
     try {
       const jwt = await getRealtimeToken({ force: forceFreshToken });
-      url = await quizWsUrl({ roomCode, role, name }, jwt);
+      url = await quizWsUrl({ roomCode, role, name, avatar }, jwt);
     } catch (e) {
       // Sessiyaning o'zi yaroqsiz — qayta urinish holatni o'zgartirmaydi.
       if (e?.status === 401) { emit('failed', 'auth'); return; }

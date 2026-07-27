@@ -34,6 +34,9 @@ public class QuizAuthHandshakeInterceptor implements HandshakeInterceptor {
 
     private static final Logger log = LoggerFactory.getLogger(QuizAuthHandshakeInterceptor.class);
 
+    /** Longest accepted avatar value — a preset emoji is at most a few chars. */
+    private static final int MAX_AVATAR_LENGTH = 8;
+
     private final DjangoClient djangoClient;
     private final RoomService roomService;
 
@@ -80,10 +83,22 @@ public class QuizAuthHandshakeInterceptor implements HandshakeInterceptor {
             name = URLDecoder.decode(name, StandardCharsets.UTF_8);
         }
 
+        // Avatar — o'quvchi kirish ekranida tanlagan emoji, faqat ko'rsatish
+        // uchun. Klient tayyor ro'yxatdan bittasini yuboradi, shuning uchun
+        // uzunligini cheklaymiz: undan uzun qiymat qo'lda yasalgan, tashlanadi.
+        String avatar = params.get("avatar");
+        if (avatar != null) {
+            avatar = URLDecoder.decode(avatar, StandardCharsets.UTF_8).trim();
+            if (avatar.length() > MAX_AVATAR_LENGTH) {
+                avatar = "";
+            }
+        }
+
         attributes.put("userId", introspection.userId());
         attributes.put("roomCode", room.roomCode);
         attributes.put("role", isHost ? "host" : "student");
         attributes.put("name", name == null ? "" : name);
+        attributes.put("avatar", avatar == null ? "" : avatar);
         return true;
     }
 
