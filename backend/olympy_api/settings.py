@@ -263,6 +263,30 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
+# Parol hash'lash narxi. Avval bu sozlama umuman yo'q edi — Django 5.2 default'i
+# (PBKDF2-SHA256, 1,000,000 iteratsiya) amal qilardi va har bir login shu
+# mashinada ~155 ms sof CPU sarflardi. `POST /api/auth/login/` sekinligining
+# deyarli hammasi shu edi (I/O emas, CPU), va web konteyner bitta yadroda
+# ishlagani uchun bir vaqtda kelgan so'rovlar navbatda kutardi.
+#
+# Endi birinchi o'rinda 600,000 iteratsiyali hasher turadi (accounts/hashers.py)
+# — bu Django'ning o'zining oldingi default qiymati, tan olingan va hozir ham
+# xavfsiz standart, ammo ~40% arzon (~155 ms → ~93 ms).
+#
+# Ro'yxatning qolgan qismi Django default'i bilan bir xil va MAVJUD hash'larni
+# tekshirish uchun kerak: PBKDF2 `verify()` iteratsiya sonini hash satrining
+# o'zidan o'qiydi, shuning uchun 1,000,000 bilan yozilgan eski parollar ham
+# to'g'ri ishlaydi. Django ularni keyingi muvaffaqiyatli login'da avtomatik
+# 600,000 ga qayta hash'laydi — bu kutilgan xulq, migratsiya kerak emas.
+PASSWORD_HASHERS = [
+    'accounts.hashers.PBKDF2600kPasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
+    'django.contrib.auth.hashers.Argon2PasswordHasher',
+    'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',
+    'django.contrib.auth.hashers.ScryptPasswordHasher',
+]
+
 LANGUAGE_CODE = 'uz'
 TIME_ZONE = 'Asia/Tashkent'
 USE_I18N = True

@@ -391,15 +391,37 @@ class User(AbstractBaseUser, PermissionsMixin):
         Ko'p foydalanuvchi serialize qilinadigan joylarda (admin paneli)
         N+1'ni oldini olish uchun queryset darajasida hisoblangan
         `attempts_100_count` va `total_attempts_count` annotatsiyalari
-        mavjud bo'lsa shulardan foydalanamiz — bo'lmasa eski count()
-        so'rovlariga qaytamiz (xulq o'zgarmaydi).
+        mavjud bo'lsa shulardan foydalanamiz — bo'lmasa BITTA shartli
+        agregatsiya so'rovi bilan ikkalasini birdan hisoblaymiz (xulq
+        o'zgarmaydi).
+
+        Avval bu yerda ikkita alohida `COUNT(*)` so'rovi bor edi va ular
+        bitta foydalanuvchi serialize qilinadigan har bir joyda (jumladan
+        LOGIN javobida) ketma-ket ikki DB round-trip'ga tushardi. Filtr
+        bazasi ikkalasida ham bir xil (`disqualified=False`), shuning uchun
+        `score=100` shartini `filter=` bilan bitta so'rovga yig'ish mumkin.
         """
         try:
-            from attempts.models import TestAttempt
             badges = []
 
             annotated_100 = getattr(self, 'attempts_100_count', None)
             annotated_total = getattr(self, 'total_attempts_count', None)
+
+            if annotated_100 is None or annotated_total is None:
+                from attempts.models import TestAttempt
+
+                counts = (
+                    TestAttempt.objects
+                    .filter(user=self, disqualified=False)
+                    .aggregate(
+                        total=models.Count('id'),
+                        perfect=models.Count('id', filter=models.Q(score=100)),
+                    )
+                )
+                if annotated_100 is None:
+                    annotated_100 = counts['perfect'] or 0
+                if annotated_total is None:
+                    annotated_total = counts['total'] or 0
 
             # 1. Tirishqoq
             if (self.streak_count or 0) >= 7:
@@ -420,10 +442,7 @@ class User(AbstractBaseUser, PermissionsMixin):
                 })
                 
             # 2. Matematika qiroli (10 marta 100% ball yoki 3 marta 100% ball)
-            if annotated_100 is not None:
-                attempts_100 = annotated_100
-            else:
-                attempts_100 = TestAttempt.objects.filter(user=self, score=100, disqualified=False).count()
+            attempts_100 = annotated_100
             if attempts_100 >= 10:
                 badges.append({
                     'id': 'math_king',
@@ -442,10 +461,7 @@ class User(AbstractBaseUser, PermissionsMixin):
                 })
                 
             # 3. Faol Ishtirokchi (Kamida 10 ta urinish)
-            if annotated_total is not None:
-                total_attempts = annotated_total
-            else:
-                total_attempts = TestAttempt.objects.filter(user=self, disqualified=False).count()
+            total_attempts = annotated_total
             if total_attempts >= 10:
                 badges.append({
                     'id': 'veteran',

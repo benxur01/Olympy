@@ -3372,3 +3372,90 @@ class AdminUserMergeTestCase(APITestCase):
             res.status_code,
             (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
         )
+
+
+class BadgeQueryCountTestCase(APITestCase):
+    """`User.get_badges()` — bitta so'rov (login javobining bir qismi).
+
+    Nishonlar har bir `UserSerializer` chiqishida hisoblanadi, jumladan
+    LOGIN javobida. Avval bu yerda ikkita alohida `COUNT(*)` so'rovi bor edi
+    — masofadagi (managed) PostgreSQL'da bu keraksiz ikkinchi round-trip.
+    Shartli agregatsiyaga o'tgach bitta so'rov qoldi; test shu holatni
+    qotirib qo'yadi va chegaralar (3/10) o'zgarmaganini tekshiradi.
+    """
+
+    def setUp(self):
+        from centers.models import EducationCenter
+
+        self.user = User.objects.create_user(
+            phone='+998907654321', password='StrongPass123', full_name='Nishon Test',
+        )
+        self.center = EducationCenter.objects.create(name='Nishon Markazi')
+        self._made = 0
+
+    def _add_attempt(self, score, disqualified=False):
+        from attempts.models import TestAttempt
+        from olympiads.models import Olympiad
+
+        self._made += 1
+        olympiad = Olympiad.objects.create(
+            center=self.center,
+            title=f'Olimpiada {self._made}',
+            subject='Matematika',
+        )
+        TestAttempt.objects.create(
+            user=self.user, olympiad=olympiad, score=score,
+            disqualified=disqualified,
+        )
+
+    def _badge_ids(self):
+        return {b['id'] for b in User.objects.get(pk=self.user.pk).get_badges()}
+
+    def test_single_query_without_annotations(self):
+        for _ in range(4):
+            self._add_attempt(100)
+        user = User.objects.get(pk=self.user.pk)
+        with self.assertNumQueries(1):
+            user.get_badges()
+
+    def test_no_query_when_annotated(self):
+        from django.db.models import Count, Q
+
+        self._add_attempt(100)
+        annotated = User.objects.annotate(
+            attempts_100_count=Count(
+                'attempts',
+                filter=Q(attempts__score=100, attempts__disqualified=False),
+                distinct=True,
+            ),
+            total_attempts_count=Count(
+                'attempts',
+                filter=Q(attempts__disqualified=False),
+                distinct=True,
+            ),
+        ).get(pk=self.user.pk)
+        with self.assertNumQueries(0):
+            annotated.get_badges()
+
+    def test_thresholds_and_disqualified_exclusion(self):
+        self.assertEqual(self._badge_ids(), set())
+
+        # Diskvalifikatsiya qilinganlar hech qaysi hisobga kirmaydi.
+        for _ in range(12):
+            self._add_attempt(100, disqualified=True)
+        self.assertEqual(self._badge_ids(), set())
+
+        # 3 ta 100% — "Mukammal Natija".
+        for _ in range(3):
+            self._add_attempt(100)
+        self.assertEqual(self._badge_ids(), {'perfect_score'})
+
+        # 10 ta urinish (100% bo'lmaganlari ham) — "Tajribali" qo'shiladi.
+        for _ in range(7):
+            self._add_attempt(50)
+        self.assertEqual(self._badge_ids(), {'perfect_score', 'veteran'})
+
+        # 10 ta 100% — "Matematika Qiroli" `perfect_score` o'rnini egallaydi.
+        for _ in range(7):
+            self._add_attempt(100)
+        self.assertEqual(self._badge_ids(), {'math_king', 'veteran'})
