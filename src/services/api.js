@@ -860,20 +860,41 @@ const createQuizRoom = async ({ title, questions }, token) => {
 // Avval xizmat yiqilgan holat ham `exists: false` bo'lib chiqardi va o'quvchiga
 // "Bunday xona topilmadi. Kodni tekshiring." deb ko'rsatilardi — o'quvchi esa
 // to'g'ri kodni behuda qayta-qayta terib chiqardi.
+//
+// Bu probe qo'shilishdan OLDIN ketadi, shuning uchun bitta lahzalik uzilish
+// butun qo'shilish urinishini bekor qilardi: o'quvchi "xizmat javob bermayapti"
+// ni ko'rib, "Qo'shilish"ni QO'LDA qayta bosishga majbur bo'lardi (Kahoot'da
+// birinchi urinishdayoq kiriladi). Endi `request()` dagi bilan AYNAN bir xil
+// qisqa backoff ishlatiladi (NETWORK_RETRY_DELAYS_MS — jami 3 urinish).
+// Qayta uriniladigan holatlar FAQAT ikkitasi: `fetch` ning o'zi qulashi va
+// 404 bo'lmagan xato status (5xx / shlyuz xatosi). Toza 404 — xizmatning
+// aniq javobi ("bunday xona yo'q"), u vaqtinchalik xato EMAS, shuning uchun
+// darhol qaytariladi; muvaffaqiyatli javob ham xuddi shunday.
 const getQuizRoom = async (roomCode) => {
-  let res;
-  try {
-    res = await fetch(`${REALTIME_BASE_URL}/api/quiz/rooms/${encodeURIComponent(roomCode)}`);
-  } catch {
-    return { ok: false, status: 0, unavailable: true };
+  for (let attempt = 0; ; attempt += 1) {
+    const canRetry = attempt < NETWORK_RETRY_DELAYS_MS.length;
+    let res;
+    try {
+      res = await fetch(`${REALTIME_BASE_URL}/api/quiz/rooms/${encodeURIComponent(roomCode)}`);
+    } catch {
+      if (canRetry) {
+        await _waitBeforeNetworkRetry(NETWORK_RETRY_DELAYS_MS[attempt]);
+        continue;
+      }
+      return { ok: false, status: 0, unavailable: true };
+    }
+    const data = await res.json().catch(() => ({}));
+    // 404 — Java xizmatning aniq javobi ("xona yo'q"). Qolgan xato statuslar
+    // (502/503/500...) xizmatning o'zi ishlamayotganini bildiradi.
+    if (!res.ok && res.status !== 404) {
+      if (canRetry) {
+        await _waitBeforeNetworkRetry(NETWORK_RETRY_DELAYS_MS[attempt]);
+        continue;
+      }
+      return { ok: false, status: res.status, unavailable: true };
+    }
+    return { ok: res.ok, status: res.status, ...data }; // { ok, exists, title, started, finished }
   }
-  const data = await res.json().catch(() => ({}));
-  // 404 — Java xizmatning aniq javobi ("xona yo'q"). Qolgan xato statuslar
-  // (502/503/500...) xizmatning o'zi ishlamayotganini bildiradi.
-  if (!res.ok && res.status !== 404) {
-    return { ok: false, status: res.status, unavailable: true };
-  }
-  return { ok: res.ok, status: res.status, ...data }; // { ok, exists, title, started, finished }
 };
 
 // WebSocket URL quruvchi. role='host'|'student'. Token query param orqali
