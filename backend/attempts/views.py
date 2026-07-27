@@ -2495,11 +2495,17 @@ get_mistakes_list.cls.throttle_scope = 'mistakes'
 @throttle_classes([ScopedRateThrottle])
 def explain_all_mistakes(request):
     """POST /api/attempts/mistakes/explain/
-    O'quvchining xatolari asosida Gemini AI orqali umumiy tavsiyalar generatsiya qiladi.
+    O'quvchining xatolari asosida AI orqali umumiy tavsiyalar generatsiya qiladi.
+
+    Xatolar ro'yxati shu yerda yig'iladi (DB ishi tez), sekin Gemini chaqiruvi
+    esa Celery task'ga uzatiladi: view darhol `{'task_id': ...}` (202) qaytaradi
+    va frontend `mistakes/explain/<task_id>/status/` ni polling qiladi. Avval
+    Gemini so'rov ichida chaqirilib gunicorn thread'ini daqiqalab bloklardi.
     """
+    from questions.ai_task_status import start_ai_task
     from questions.models import Question
-    from questions.ai_generation import explain_mistakes_ai
     from .models import TestAttempt
+    from .tasks import EXPLAIN_MISTAKES_TASK_PREFIX, explain_all_mistakes_task
 
     # Avval har bir savol uchun (birinchi ko'rilgan) tanlangan javobni yig'amiz,
     # tartibni saqlagan holda (dict insertion order). Keyin barcha savollarni
@@ -2554,28 +2560,25 @@ def explain_all_mistakes(request):
     if not mistakes:
         return Response({'explanation': "Sizda hozircha xatolar aniqlanmadi. Barakalla!"})
 
-    explanation_text = explain_mistakes_ai(mistakes)
-
-    # T5: AI xatolar tahlilini menejer faoliyat logiga yozamiz (markaz bo'lsa).
-    try:
-        from centers.models import ManagerActivityLog
-        from centers.services import log_manager_activity, primary_center_for_user
-        center = primary_center_for_user(request.user)
-        if center is not None:
-            log_manager_activity(
-                center, request.user, ManagerActivityLog.ACTION_SEND_ANALYSIS,
-                description='Xatolar tahlili (AI) generatsiya qilindi',
-                target_user=request.user,
-            )
-    except Exception:
-        import logging
-        logging.getLogger(__name__).exception(
-            'manager activity log failed for user=%s', request.user.pk,
-        )
-
-    return Response({'explanation': explanation_text})
+    task_id = start_ai_task(EXPLAIN_MISTAKES_TASK_PREFIX, request.user.id)
+    # Menejer faoliyat logi ham task ichida (generatsiyadan keyin) yoziladi.
+    explain_all_mistakes_task.delay(task_id, request.user.id, mistakes)
+    return Response({'task_id': task_id}, status=http_status.HTTP_202_ACCEPTED)
 
 
 explain_all_mistakes.cls.throttle_scope = 'ai'
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def explain_all_mistakes_status(request, task_id):
+    """GET /api/attempts/mistakes/explain/<task_id>/status/ — AI tahlil holati."""
+    from questions.ai_task_status import ai_task_status_response
+    from .tasks import EXPLAIN_MISTAKES_TASK_PREFIX
+
+    return ai_task_status_response(
+        EXPLAIN_MISTAKES_TASK_PREFIX, task_id, request.user,
+        failed_detail="AI yordamida xatolar tahlili generatsiya qilinmadi. Iltimos keyinroq urinib ko'ring.",
+    )
 
 

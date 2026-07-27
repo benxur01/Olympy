@@ -10,7 +10,6 @@ from rest_framework.throttling import UserRateThrottle
 from accounts.models import AuditLog
 from centers.models import CenterMembership
 
-from .ai_generation import generate_questions, explain_question_ai, review_code_submission
 from .models import Question
 from .serializers import QuestionSerializer
 
@@ -357,7 +356,17 @@ def delete_all_questions(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([AiQuestionRateThrottle])
 def generate_ai_questions(request):
-    """POST /api/questions/generate-ai/ — preview AI questions before saving."""
+    """POST /api/questions/generate-ai/ — AI savol generatsiya task'ini boshlaydi.
+
+    Avval `generate_questions` shu view ichida SINXRON chaqirilardi (Gemini
+    model/kalit sikli, eng yomon holatda bir necha daqiqa) va gunicorn
+    thread'ini bloklardi. Endi PDF import oqimidagi kabi Celery task ishga
+    tushadi va darhol `task_id` qaytadi; frontend
+    `generate-ai/<task_id>/status/` ni polling qiladi.
+    """
+    from .ai_task_status import start_ai_task
+    from .tasks import AI_QUESTIONS_TASK_PREFIX, generate_ai_questions_task
+
     center_id = request.data.get('center')
     if not center_id:
         return Response(
@@ -396,31 +405,41 @@ def generate_ai_questions(request):
             status=http_status.HTTP_403_FORBIDDEN
         )
 
-    result = generate_questions(
-        subject=request.data.get('subject'),
-        topic=request.data.get('topic'),
-        count=request.data.get('count', 10),
-        difficulty=request.data.get('difficulty', 'medium'),
-        question_type=request.data.get('question_type'),
-    )
-    if not result.get('ok'):
-        status_code = (
-            http_status.HTTP_400_BAD_REQUEST
-            if result.get('error') in ("Fan va mavzu majburiy.",)
-            else http_status.HTTP_503_SERVICE_UNAVAILABLE
-        )
+    # Fan/mavzu bo'sh bo'lsa AI'ga umuman bormaymiz — bu 400, task emas
+    # (avval `generate_questions` shu xatoni sinxron qaytarardi).
+    if not str(request.data.get('subject') or '').strip() or not str(request.data.get('topic') or '').strip():
         return Response(
-            {'detail': result.get('error') or "AI savol yarata olmadi"},
-            status=status_code,
+            {'detail': 'Fan va mavzu majburiy.'},
+            status=http_status.HTTP_400_BAD_REQUEST,
         )
-    # Muvaffaqiyatli generatsiyani oylik limit hisobiga yozamiz (faqat haqiqiy
-    # natija bo'lganda — xato/bo'sh javob limitdan ushlab qolinmaydi).
-    if svc:
-        try:
-            svc.log_ai_generation(user=request.user, count=len(result.get('questions') or []))
-        except Exception:
-            pass
-    return Response({'questions': result['questions']})
+
+    task_id = start_ai_task(AI_QUESTIONS_TASK_PREFIX, request.user.id)
+    # Oylik limit hisobi (log_ai_generation) task ichida — faqat haqiqiy
+    # natija bo'lganda yoziladi (avvalgi sinxron xulq saqlanadi).
+    generate_ai_questions_task.delay(
+        task_id,
+        center_id,
+        request.user.id,
+        request.data.get('subject'),
+        request.data.get('topic'),
+        request.data.get('count', 10),
+        request.data.get('difficulty', 'medium'),
+        request.data.get('question_type'),
+    )
+    return Response({'task_id': task_id}, status=http_status.HTTP_202_ACCEPTED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def generate_ai_questions_status(request, task_id):
+    """GET /api/questions/generate-ai/<task_id>/status/ — AI generatsiya holati."""
+    from .ai_task_status import ai_task_status_response
+    from .tasks import AI_QUESTIONS_TASK_PREFIX
+
+    return ai_task_status_response(
+        AI_QUESTIONS_TASK_PREFIX, task_id, request.user,
+        failed_detail="AI savol yarata olmadi",
+    )
 
 
 def _normalize_correct_answer(value):
@@ -1590,13 +1609,21 @@ def olympiad_questions(request, olympiad_id):
 @permission_classes([IsAuthenticated])
 @throttle_classes([CodeReviewRateThrottle])
 def code_review(request):
-    """POST /api/questions/code-review/ — IT kod savolini AI bilan baholaydi.
+    """POST /api/questions/code-review/ — IT kod savolini AI baholash task'ini boshlaydi.
 
     Body: { question_id, submitted_code, language }. O'quvchi test paytida
     kodini sinash uchun AI feedback oladi (to'g'rilik 0-100, xatolar, tavsiya).
     Bu yerda natija SAQLANMAYDI — yakuniy kod javob va AI bahosi submit
     paytida CodeSubmission'ga yoziladi. Rate limit: 10/hour (code_review).
+
+    Avval Gemini chaqiruvi shu view ichida SINXRON bajarilardi va gunicorn
+    thread'ini daqiqalab bloklardi (bu endpoint olimpiada vaqtida chaqiriladi).
+    Endi PDF import oqimidagi kabi Celery task ishga tushadi va darhol
+    `task_id` qaytadi; frontend `code-review/<task_id>/status/` ni polling qiladi.
     """
+    from .ai_task_status import start_ai_task
+    from .tasks import CODE_REVIEW_TASK_PREFIX, code_review_task
+
     question_id = request.data.get('question_id')
     submitted_code = request.data.get('submitted_code') or ''
     language = (request.data.get('language') or '').strip().lower()
@@ -1612,16 +1639,27 @@ def code_review(request):
             status=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    result = review_code_submission(
-        question_text=question.text,
-        submitted_code=submitted_code,
-        language=language or question.programming_language,
-        expected_output=question.expected_output or '',
+    task_id = start_ai_task(CODE_REVIEW_TASK_PREFIX, request.user.id)
+    code_review_task.delay(task_id, question.id, submitted_code, language)
+    return Response({'task_id': task_id}, status=http_status.HTTP_202_ACCEPTED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def code_review_status(request, task_id):
+    """GET /api/questions/code-review/<task_id>/status/ — AI kod baholash holati.
+
+    `pdf_preview_status` bilan bir xil javob shakli:
+      {'status': 'PENDING'} | {'status': 'COMPLETED', 'score', 'review'}
+      | {'status': 'FAILED', 'detail'}
+    """
+    from .ai_task_status import ai_task_status_response
+    from .tasks import CODE_REVIEW_TASK_PREFIX
+
+    return ai_task_status_response(
+        CODE_REVIEW_TASK_PREFIX, task_id, request.user,
+        failed_detail="AI baholashni hozir bajarib bo'lmadi. Keyinroq qayta urinib ko'ring.",
     )
-    return Response({
-        'score': result.get('score'),
-        'review': result.get('review') or '',
-    })
 
 
 def _normalize_output(text):
@@ -1644,12 +1682,18 @@ def _normalize_output(text):
 def explain_question(request, question_id):
     """POST /api/questions/<id>/explain/
 
-    Savol uchun yechim tushuntirishini qaytaradi. Agar tushuntirish bazada
-    saqlanmagan bo'lsa, Gemini AI yordamida generatsiya qilinadi va keshlanadi.
+    Savol uchun yechim tushuntirishini qaytaradi. Tushuntirish bazada bo'lsa
+    darhol `{'explanation': ...}` qaytadi (AI'ga umuman borilmaydi). Bo'lmasa
+    Gemini generatsiyasi Celery task'iga uzatiladi va `{'task_id': ...}` (202)
+    qaytadi — frontend `explain/<task_id>/status/` ni polling qiladi. Avval bu
+    generatsiya so'rov ichida sinxron bajarilib gunicorn thread'ini bloklardi.
 
     Rate limit: 'ai' scope (settings.REST_FRAMEWORK.DEFAULT_THROTTLE_RATES) —
     tashqi Gemini API'ga qimmat va sekin murojaat qiladi, abuse'dan himoyalanadi.
     """
+    from .ai_task_status import start_ai_task
+    from .tasks import EXPLAIN_QUESTION_TASK_PREFIX, explain_question_task
+
     question = get_object_or_404(Question, pk=question_id)
     # Ruxsat tekshiruvi — istalgan foydalanuvchi boshqa markazga tegishli savol
     # ID'sini yuborib AI tushuntirishni olmasligi uchun. Ikki toifa ruxsat oladi:
@@ -1662,18 +1706,22 @@ def explain_question(request, question_id):
     if question.explanation and question.explanation.strip():
         return Response({'explanation': question.explanation})
 
-    explanation_text = explain_question_ai(
-        question_text=question.text,
-        options=question.options or [],
-        correct_idx=question.correct_answer,
-        subject=question.subject or '',
+    task_id = start_ai_task(EXPLAIN_QUESTION_TASK_PREFIX, request.user.id)
+    explain_question_task.delay(task_id, question.id)
+    return Response({'task_id': task_id}, status=http_status.HTTP_202_ACCEPTED)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def explain_question_status(request, task_id):
+    """GET /api/questions/explain/<task_id>/status/ — AI tushuntirish holati."""
+    from .ai_task_status import ai_task_status_response
+    from .tasks import EXPLAIN_QUESTION_TASK_PREFIX
+
+    return ai_task_status_response(
+        EXPLAIN_QUESTION_TASK_PREFIX, task_id, request.user,
+        failed_detail="AI yordamida tushuntirish generatsiya qilinmadi. Iltimos keyinroq urinib ko'ring.",
     )
-
-    if explanation_text and "generatsiya qilinmadi" not in explanation_text:
-        question.explanation = explanation_text
-        question.save(update_fields=['explanation'])
-
-    return Response({'explanation': explanation_text})
 
 
 @api_view(['POST'])

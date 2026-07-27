@@ -502,13 +502,18 @@ def strength_card(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([ScopedRateThrottle])
 def olympiad_prep_plan(request):
-    """POST /api/me/olympiad-prep-plan/ — olimpiadaga AI tayyorgarlik rejasi.
+    """POST /api/me/olympiad-prep-plan/ — AI tayyorgarlik rejasi task'ini boshlaydi.
 
-    Body: {olympiad_id}. O'quvchining zaif fanlari + olimpiadagacha kunlar
-    asosida kunlik reja generatsiya qiladi (Gemini). Premium, throttle 5/day.
-    Javob: {olympiad_name, days_left, focus_subjects, daily_plan: [{day, tasks}]}
+    Body: {olympiad_id}. O'quvchining zaif fanlari + olimpiadagacha kunlar shu
+    yerda hisoblanadi, sekin Gemini chaqiruvi esa Celery task'ga uzatiladi:
+    javob `{'task_id': ...}` (202) va frontend
+    `me/olympiad-prep-plan/<task_id>/status/` ni polling qiladi. Natija
+    avvalgidek {olympiad_name, days_left, focus_subjects, daily_plan}.
+    Premium (Pro), throttle 5/day.
     """
     from olympiads.models import Olympiad
+    from questions.ai_task_status import start_ai_task
+    from accounts.tasks import PREP_PLAN_TASK_PREFIX, generate_prep_plan_task
     from accounts.views_student import _subject_performance
 
     if not student_tier_at_least(request.user, 'pro'):
@@ -545,20 +550,27 @@ def olympiad_prep_plan(request):
     if not focus:
         focus = [olympiad_subject] if olympiad_subject else ["Umumiy tayyorgarlik"]
 
-    daily_plan = _generate_prep_plan_ai(
-        olympiad.title, focus, plan_days, perf,
+    task_id = start_ai_task(PREP_PLAN_TASK_PREFIX, request.user.id)
+    generate_prep_plan_task.delay(
+        task_id, olympiad.id, days_left, plan_days, focus, perf,
     )
-
-    return Response({
-        'olympiad_id': olympiad.id,
-        'olympiad_name': olympiad.title,
-        'days_left': days_left,
-        'focus_subjects': focus,
-        'daily_plan': daily_plan,
-    })
+    return Response({'task_id': task_id}, status=http_status.HTTP_202_ACCEPTED)
 
 
 olympiad_prep_plan.cls.throttle_scope = 'ai_prep'
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def olympiad_prep_plan_status(request, task_id):
+    """GET /api/me/olympiad-prep-plan/<task_id>/status/ — tayyorgarlik rejasi holati."""
+    from questions.ai_task_status import ai_task_status_response
+    from accounts.tasks import PREP_PLAN_TASK_PREFIX
+
+    return ai_task_status_response(
+        PREP_PLAN_TASK_PREFIX, task_id, request.user,
+        failed_detail="Tayyorgarlik rejasini olib bo'lmadi",
+    )
 
 
 def _generate_prep_plan_ai(olympiad_name, focus_subjects, plan_days, perf):
@@ -660,13 +672,20 @@ def _generate_prep_plan_ai(olympiad_name, focus_subjects, plan_days, perf):
 def ai_audio_analysis(request):
     """POST /api/me/ai-audio-analysis/ — AI tahlilni Telegram orqali yuborish.
 
-    Body: {attempt_id}. Mavjud AI tahlil matnini oladi (yo'q bo'lsa yangidan
-    generatsiya qiladi). gTTS bo'lsa audio (voice) qilib, bo'lmasa matn xabar
-    sifatida o'quvchining Telegram'iga yuboradi. Premium, throttle 3/day.
-    Javob: {status: "sent"|"text_only"|"no_telegram", message}
+    Body: {attempt_id}. Telegram ulanmagan bo'lsa darhol
+    `{status: "no_telegram", message}` qaytadi (hech qanday tashqi chaqiruv
+    yo'q). Aks holda Celery task boshlanadi va `{'task_id': ...}` (202)
+    qaytadi; frontend `me/ai-audio-analysis/<task_id>/status/` ni polling
+    qiladi, natijada `{delivery_status: "sent"|"text_only", message}` keladi.
+
+    Avval bu view AI tahlilni (Gemini model/kalit sikli) VA undan keyin
+    Telegram sendVoice'ni (20s timeout) bitta so'rov ichida ketma-ket
+    bajarardi — gunicorn thread'i daqiqalab band bo'lardi. Premium (Pro),
+    throttle 3/day.
     """
-    from attempts.models import AttemptAIAnalysis, TestAttempt
-    from questions.ai_generation import analyze_attempt_ai
+    from attempts.models import TestAttempt
+    from questions.ai_task_status import start_ai_task
+    from accounts.tasks import AI_AUDIO_TASK_PREFIX, send_ai_audio_analysis_task
 
     if not student_tier_at_least(request.user, 'pro'):
         return _premium_required(required_tier='pro')
@@ -683,52 +702,33 @@ def ai_audio_analysis(request):
     if not attempt:
         return Response({'detail': 'Urinish topilmadi'}, status=http_status.HTTP_404_NOT_FOUND)
 
-    # Avval saqlangan AI tahlil bor bo'lsa undan foydalanamiz (qayta
-    # generatsiya qilmaymiz — Gemini chaqiruvini tejaymiz).
-    analysis = AttemptAIAnalysis.objects.filter(attempt=attempt).first()
-    if analysis and analysis.status == AttemptAIAnalysis.STATUS_READY and analysis.analysis_text:
-        analysis_text = analysis.analysis_text
-    else:
-        olympiad = attempt.olympiad
-        summary = {
-            'olympiad_title': olympiad.title if olympiad else '',
-            'subject': olympiad.subject if olympiad else '',
-            'score': attempt.score,
-            'correct': attempt.correct_count,
-            'wrong': attempt.wrong_count,
-            'total': attempt.total_questions,
-        }
-        mistakes = []
-        if olympiad:
-            from attempts.views import _build_attempt_mistakes
-            mistakes = _build_attempt_mistakes(attempt, olympiad, attempt.answers or {})
-        analysis_text = analyze_attempt_ai(summary, mistakes)
-
-    chat_id = getattr(request.user, 'telegram_chat_id', '')
-    if not chat_id:
+    # Telegram ulanmagan bo'lsa tahlil generatsiya qilishning ma'nosi yo'q —
+    # darhol javob beramiz (avval tahlil bekorga generatsiya qilinardi).
+    if not getattr(request.user, 'telegram_chat_id', ''):
         return Response({
             'status': 'no_telegram',
             'message': "Telegram ulanmagan. Avval Telegram hisobingizni bog'lang.",
         })
 
-    # gTTS mavjud bo'lsa audio (voice) yuboramiz, aks holda matn.
-    audio_sent = _try_send_voice(chat_id, analysis_text)
-    if audio_sent:
-        return Response({'status': 'sent', 'message': 'Audio tahlil Telegram orqali yuborildi.'})
-
-    # Matn xabar (fallback).
-    from notifications.services import _send_telegram_to_user
-    text_msg = f"🎓 Olympy AI tahlil:\n\n{analysis_text}"
-    ok = _send_telegram_to_user(request.user, text_msg)
-    if ok:
-        return Response({'status': 'text_only', 'message': 'Tahlil matn ko\'rinishida yuborildi (audio mavjud emas).'})
-    return Response({
-        'status': 'text_only',
-        'message': 'Tahlil tayyor, lekin Telegram yuborishda muammo bo\'ldi.',
-    })
+    task_id = start_ai_task(AI_AUDIO_TASK_PREFIX, request.user.id)
+    send_ai_audio_analysis_task.delay(task_id, request.user.id, attempt.id)
+    return Response({'task_id': task_id}, status=http_status.HTTP_202_ACCEPTED)
 
 
 ai_audio_analysis.cls.throttle_scope = 'ai_audio'
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def ai_audio_analysis_status(request, task_id):
+    """GET /api/me/ai-audio-analysis/<task_id>/status/ — AI audio yuborish holati."""
+    from questions.ai_task_status import ai_task_status_response
+    from accounts.tasks import AI_AUDIO_TASK_PREFIX
+
+    return ai_task_status_response(
+        AI_AUDIO_TASK_PREFIX, task_id, request.user,
+        failed_detail="AI tahlilni yuborib bo'lmadi",
+    )
 
 
 def _try_send_voice(chat_id, text):

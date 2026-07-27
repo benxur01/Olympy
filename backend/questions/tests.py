@@ -367,8 +367,13 @@ class PremiumQuestionFeaturesTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertTrue(response.data.get('upgrade_required'))
 
-    @patch('questions.views.generate_questions')
+    @patch('questions.ai_generation.generate_questions')
     def test_generate_ai_questions_allowed_for_premium_center(self, mock_generate):
+        """Premium markaz uchun generatsiya task'i boshlanadi va natija polling bilan olinadi.
+
+        Gemini chaqiruvi endi Celery task'da (test muhitida EAGER — `delay()`
+        sinxron bajariladi), shu sababli view 202 + task_id qaytaradi.
+        """
         mock_generate.return_value = {'ok': True, 'questions': []}
         self.center.is_premium = True
         self.center.save()
@@ -380,7 +385,16 @@ class PremiumQuestionFeaturesTestCase(APITestCase):
             'topic': 'Integral',
             'count': 5
         }, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        task_id = response.data.get('task_id')
+        self.assertTrue(task_id)
+
+        status_resp = self.client.get(
+            reverse('questions-generate-ai-status', args=[task_id]),
+        )
+        self.assertEqual(status_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(status_resp.data.get('status'), 'COMPLETED')
+        self.assertEqual(status_resp.data.get('questions'), [])
 
 
 class QuestionDeleteProtectionTestCase(APITestCase):
@@ -646,22 +660,158 @@ class ExplainQuestionPermissionTestCase(APITestCase):
         # Faqat `student` shu olimpiadani topshirgan.
         TestAttempt.objects.create(user=self.student, olympiad=self.olympiad)
 
-    @patch('questions.views.explain_question_ai', return_value='Tushuntirish matni')
+    def _explain(self, user):
+        """Tushuntirish task'ini boshlaydi va (agar boshlangan bo'lsa) natijani oladi.
+
+        Gemini chaqiruvi endi Celery task'da: view 202 + task_id qaytaradi,
+        natija esa status endpointidan olinadi (test muhitida EAGER — task
+        `delay()` ichida sinxron bajariladi).
+        """
+        self.client.force_authenticate(user=user)
+        resp = self.client.post(reverse('questions-explain', args=[self.question.id]))
+        if resp.status_code != status.HTTP_202_ACCEPTED:
+            return resp
+        return self.client.get(
+            reverse('questions-explain-status', args=[resp.data['task_id']]),
+        )
+
+    @patch('questions.ai_generation.explain_question_ai', return_value='Tushuntirish matni')
     def test_student_who_attempted_can_explain(self, _mock):
+        resp = self._explain(self.student)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data.get('status'), 'COMPLETED')
+        self.assertEqual(resp.data.get('explanation'), 'Tushuntirish matni')
+        # Generatsiya qilingan tushuntirish savolga saqlanadi (keyingi so'rov
+        # AI'ga umuman bormaydi va darhol 200 qaytadi).
+        self.question.refresh_from_db()
+        self.assertEqual(self.question.explanation, 'Tushuntirish matni')
+
+    @patch('questions.ai_generation.explain_question_ai', return_value='Tushuntirish matni')
+    def test_saved_explanation_returned_without_task(self, mock_ai):
+        self.question.explanation = 'Oldindan saqlangan'
+        self.question.save(update_fields=['explanation'])
         self.client.force_authenticate(user=self.student)
         resp = self.client.post(reverse('questions-explain', args=[self.question.id]))
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(resp.data.get('explanation'), 'Tushuntirish matni')
+        self.assertEqual(resp.data.get('explanation'), 'Oldindan saqlangan')
+        mock_ai.assert_not_called()
 
-    @patch('questions.views.explain_question_ai', return_value='Tushuntirish matni')
+    @patch('questions.ai_generation.explain_question_ai', return_value='Tushuntirish matni')
     def test_teacher_can_explain(self, _mock):
-        self.client.force_authenticate(user=self.teacher)
-        resp = self.client.post(reverse('questions-explain', args=[self.question.id]))
+        resp = self._explain(self.teacher)
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data.get('status'), 'COMPLETED')
 
-    @patch('questions.views.explain_question_ai', return_value='Tushuntirish matni')
+    @patch('questions.ai_generation.explain_question_ai', return_value='Tushuntirish matni')
     def test_unrelated_student_forbidden(self, _mock):
-        self.client.force_authenticate(user=self.other_student)
-        resp = self.client.post(reverse('questions-explain', args=[self.question.id]))
+        resp = self._explain(self.other_student)
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch('questions.ai_generation.explain_question_ai', return_value='Tushuntirish matni')
+    def test_other_user_cannot_read_task_result(self, _mock):
+        """task_id topilsa ham begona foydalanuvchi natijani o'qiy olmaydi."""
+        self.client.force_authenticate(user=self.student)
+        start = self.client.post(reverse('questions-explain', args=[self.question.id]))
+        self.assertEqual(start.status_code, status.HTTP_202_ACCEPTED)
+        self.client.force_authenticate(user=self.other_student)
+        resp = self.client.get(
+            reverse('questions-explain-status', args=[start.data['task_id']]),
+        )
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class CodeReviewAsyncTestCase(APITestCase):
+    """POST /api/questions/code-review/ — AI kod baholash asinxron oqimi.
+
+    Gemini chaqiruvi (eng yomon holatda daqiqalab davom etadi) so'rov ichida
+    emas, Celery task'da bajariladi: view 202 + task_id qaytaradi, natija
+    `code-review/<task_id>/status/` orqali olinadi. Bu endpoint olimpiada
+    vaqtida chaqirilgani uchun gunicorn thread'ini bloklamasligi shart.
+    """
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='Code Review Academy', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.student = User.objects.create_user(
+            phone='+998901450001', password='StrongPass123', full_name='Talaba',
+        )
+        self.other_student = User.objects.create_user(
+            phone='+998901450002', password='StrongPass123', full_name='Boshqa',
+        )
+        self.code_question = Question.objects.create(
+            center=self.center, subject='Informatika',
+            text='Ikki sonni qo\'shing', question_type=Question.QUESTION_TYPE_CODE,
+            programming_language='python', expected_output='7', score=10,
+        )
+        self.client.force_authenticate(user=self.student)
+
+    @patch(
+        'questions.ai_generation.review_code_submission',
+        return_value={'score': 82, 'review': 'Yaxshi kod'},
+    )
+    def test_code_review_returns_task_then_result(self, mock_review):
+        resp = self.client.post(reverse('questions-code-review'), {
+            'question_id': self.code_question.id,
+            'submitted_code': 'print(3+4)',
+            'language': 'python',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_202_ACCEPTED)
+        task_id = resp.data.get('task_id')
+        self.assertTrue(task_id)
+
+        status_resp = self.client.get(
+            reverse('questions-code-review-status', args=[task_id]),
+        )
+        self.assertEqual(status_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(status_resp.data.get('status'), 'COMPLETED')
+        self.assertEqual(status_resp.data.get('score'), 82)
+        self.assertEqual(status_resp.data.get('review'), 'Yaxshi kod')
+        mock_review.assert_called_once()
+
+    @patch('questions.tasks.code_review_task.delay')
+    def test_empty_code_rejected_without_task(self, mock_delay):
+        resp = self.client.post(reverse('questions-code-review'), {
+            'question_id': self.code_question.id,
+            'submitted_code': '   ',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        mock_delay.assert_not_called()
+
+    @patch('questions.tasks.code_review_task.delay')
+    def test_non_code_question_rejected_without_task(self, mock_delay):
+        mcq = Question.objects.create(
+            center=self.center, subject='Matematika', text='2 + 2 = ?',
+            options=['3', '4'], correct_answer=1, score=5,
+        )
+        resp = self.client.post(reverse('questions-code-review'), {
+            'question_id': mcq.id,
+            'submitted_code': 'print(1)',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        mock_delay.assert_not_called()
+
+    def test_status_unknown_task(self):
+        resp = self.client.get(
+            reverse('questions-code-review-status', args=['no-such-task']),
+        )
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(resp.data.get('status'), 'FAILED')
+
+    @patch(
+        'questions.ai_generation.review_code_submission',
+        return_value={'score': 82, 'review': 'Yaxshi kod'},
+    )
+    def test_other_user_cannot_read_task_result(self, _mock):
+        start = self.client.post(reverse('questions-code-review'), {
+            'question_id': self.code_question.id,
+            'submitted_code': 'print(3+4)',
+        }, format='json')
+        self.assertEqual(start.status_code, status.HTTP_202_ACCEPTED)
+        self.client.force_authenticate(user=self.other_student)
+        resp = self.client.get(
+            reverse('questions-code-review-status', args=[start.data['task_id']]),
+        )
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 

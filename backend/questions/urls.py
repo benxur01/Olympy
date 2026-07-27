@@ -5,7 +5,10 @@ from . import views
 # Mounted under /api/questions/
 urlpatterns = [
     path('generate-ai/', views.generate_ai_questions, name='questions-generate-ai'),
+    path('generate-ai/<str:task_id>/status/', views.generate_ai_questions_status, name='questions-generate-ai-status'),
     path('code-review/', views.code_review, name='questions-code-review'),
+    path('code-review/<str:task_id>/status/', views.code_review_status, name='questions-code-review-status'),
+    path('explain/<str:task_id>/status/', views.explain_question_status, name='questions-explain-status'),
     path('run-code/start/', views.run_code_start_view, name='questions-run-code-start'),
     path('run-code/status/<str:task_id>/', views.run_code_status_view, name='questions-run-code-status'),
     path('pdf-preview/', views.preview_pdf_questions, name='questions-pdf-preview'),

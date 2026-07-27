@@ -1246,12 +1246,17 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         .catch(err => {
           console.warn('joinCenter failed:', err);
           showApiToast("Ariza yuborib bo'lmadi");
-          // Markazga qo'shilish (ariza) xatosi — AI yordamni avtomatik ochamiz.
-          try {
-            window.dispatchEvent(new CustomEvent('olympy:support_needed', {
-              detail: { reason: 'join_error', message: OlympyApi.toUserMessage?.(err) || "Ariza yuborib bo'lmadi" },
-            }));
-          } catch {}
+          // AI yordamni FAQAT haqiqiy nosozlikda ochamiz: server ichki xatosi
+          // (5xx) yoki status yo'q (tarmoq uzilishi — api.js'da status 0).
+          // 4xx oddiy holatlar: "boshqa markazda a'zosiz" (400) yoki "rad
+          // etilgandan keyin N soat kuting" (429) — yuqoridagi toast yetarli.
+          if (err && (!err.status || err.status >= 500)) {
+            try {
+              window.dispatchEvent(new CustomEvent('olympy:support_needed', {
+                detail: { reason: 'join_error', message: OlympyApi.toUserMessage?.(err) || "Ariza yuborib bo'lmadi" },
+              }));
+            } catch {}
+          }
         })
         .finally(() => setSendingRequest(false));
       return;

@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
@@ -452,3 +454,79 @@ class EssayAIFeedbackTestCase(APITestCase):
         self.assertIsNotNone(code_item)
         self.assertEqual(code_item.get('ai_code_review'), 'Kod yaxshi yozilgan.')
         self.assertEqual(code_item.get('ai_code_score'), 85)
+
+
+class ExplainAllMistakesAsyncTestCase(APITestCase):
+    """POST /api/attempts/mistakes/explain/ — AI xatolar tahlili asinxron oqimi.
+
+    Sekin Gemini chaqiruvi so'rov ichida emas, Celery task'da bajariladi:
+    view 202 + task_id qaytaradi, natija `mistakes/explain/<task_id>/status/`
+    orqali olinadi (test muhitida EAGER — `delay()` sinxron bajariladi).
+    """
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='Mistakes Center', city='Toshkent',
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center, title='Matematika', subject='Matematika',
+            status='finished',
+        )
+        self.question = Question.objects.create(
+            center=self.center, subject='Matematika', text='2 + 2 = ?',
+            options=['3', '4', '5', '6'], correct_answer=1, score=5,
+        )
+        self.olympiad.questions.add(self.question)
+        self.student = User.objects.create_user(
+            username='mistake_stu', phone='+998900000101', password='pw',
+        )
+        self.other_student = User.objects.create_user(
+            username='mistake_other', phone='+998900000102', password='pw',
+        )
+        # Noto'g'ri javob (to'g'risi indeks 1).
+        TestAttempt.objects.create(
+            user=self.student, olympiad=self.olympiad,
+            score=0, correct_count=0, wrong_count=1, total_questions=1,
+            answers={str(self.question.id): 0},
+        )
+        self.client.force_authenticate(user=self.student)
+
+    @patch(
+        'questions.ai_generation.explain_mistakes_ai',
+        return_value='Tavsiyalar matni',
+    )
+    def test_returns_task_then_result(self, mock_ai):
+        resp = self.client.post(reverse('mistakes-explain-all'))
+        self.assertEqual(resp.status_code, status.HTTP_202_ACCEPTED)
+        task_id = resp.data.get('task_id')
+        self.assertTrue(task_id)
+        mock_ai.assert_called_once()
+
+        status_resp = self.client.get(
+            reverse('mistakes-explain-all-status', args=[task_id]),
+        )
+        self.assertEqual(status_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(status_resp.data.get('status'), 'COMPLETED')
+        self.assertEqual(status_resp.data.get('explanation'), 'Tavsiyalar matni')
+
+    @patch('attempts.tasks.explain_all_mistakes_task.delay')
+    def test_no_mistakes_returns_message_without_task(self, mock_delay):
+        TestAttempt.objects.filter(user=self.student).delete()
+        resp = self.client.post(reverse('mistakes-explain-all'))
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIsNone(resp.data.get('task_id'))
+        self.assertTrue(resp.data.get('explanation'))
+        mock_delay.assert_not_called()
+
+    @patch(
+        'questions.ai_generation.explain_mistakes_ai',
+        return_value='Tavsiyalar matni',
+    )
+    def test_other_user_cannot_read_task_result(self, _mock_ai):
+        start = self.client.post(reverse('mistakes-explain-all'))
+        self.assertEqual(start.status_code, status.HTTP_202_ACCEPTED)
+        self.client.force_authenticate(user=self.other_student)
+        resp = self.client.get(
+            reverse('mistakes-explain-all-status', args=[start.data['task_id']]),
+        )
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)

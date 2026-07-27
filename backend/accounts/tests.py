@@ -1321,9 +1321,46 @@ class StudentTierGatingTestCase(APITestCase):
         self.assertEqual(resp.data.get('required_tier'), 'plus')
 
     def test_study_plan_plus_200(self):
+        """Natija yo'q — AI'ga umuman borilmaydi, darhol bo'sh reja qaytadi."""
         self.client.force_authenticate(user=self.plus_user)
         resp = self.client.post(reverse('me-study-plan'), {}, format='json')
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIsNone(resp.data.get('task_id'))
+
+    def test_study_plan_with_results_returns_task_then_plan(self):
+        """Natija bor — sekin Gemini chaqiruvi Celery task'ida bajariladi."""
+        self._make_attempt(self.plus_user, subject='Fizika', score=30)
+        self.client.force_authenticate(user=self.plus_user)
+        with patch(
+            'accounts.views_student._generate_study_plan_ai',
+            return_value=['1. Fizikani takrorlang'],
+        ) as mock_ai:
+            resp = self.client.post(reverse('me-study-plan'), {}, format='json')
+            self.assertEqual(resp.status_code, status.HTTP_202_ACCEPTED)
+            mock_ai.assert_called_once()
+        task_id = resp.data.get('task_id')
+        self.assertTrue(task_id)
+
+        status_resp = self.client.get(reverse('me-study-plan-status', args=[task_id]))
+        self.assertEqual(status_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(status_resp.data.get('status'), 'COMPLETED')
+        self.assertEqual(status_resp.data.get('plan'), ['1. Fizikani takrorlang'])
+        self.assertEqual(status_resp.data.get('weak_subjects'), ['Fizika'])
+
+    def test_study_plan_task_result_is_owner_scoped(self):
+        self._make_attempt(self.plus_user, subject='Fizika', score=30)
+        self.client.force_authenticate(user=self.plus_user)
+        with patch(
+            'accounts.views_student._generate_study_plan_ai',
+            return_value=['1. Fizikani takrorlang'],
+        ):
+            start = self.client.post(reverse('me-study-plan'), {}, format='json')
+        self.assertEqual(start.status_code, status.HTTP_202_ACCEPTED)
+        self.client.force_authenticate(user=self.pro_user)
+        resp = self.client.get(
+            reverse('me-study-plan-status', args=[start.data['task_id']]),
+        )
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 
     # ── olympiad_prep_plan — Pro only ───────────────────────────────────────
     def test_prep_plan_plus_403(self):
@@ -1332,13 +1369,28 @@ class StudentTierGatingTestCase(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(resp.data.get('required_tier'), 'pro')
 
-    def test_prep_plan_pro_200(self):
+    def test_prep_plan_pro_202(self):
+        """Pro tarifi task boshlaydi — Gemini chaqiruvi so'rov ichida emas.
+
+        Test muhitida EAGER, ya'ni `delay()` task'ni sinxron bajaradi; AI
+        kaliti yo'qligi uchun `_generate_prep_plan_ai` fallback reja qaytaradi.
+        """
         olympiad, _ = self._make_attempt(self.pro_user)
         self.client.force_authenticate(user=self.pro_user)
         resp = self.client.post(
             reverse('me-olympiad-prep-plan'), {'olympiad_id': olympiad.id}, format='json',
         )
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.status_code, status.HTTP_202_ACCEPTED)
+        task_id = resp.data.get('task_id')
+        self.assertTrue(task_id)
+
+        status_resp = self.client.get(
+            reverse('me-olympiad-prep-plan-status', args=[task_id]),
+        )
+        self.assertEqual(status_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(status_resp.data.get('status'), 'COMPLETED')
+        self.assertEqual(status_resp.data.get('olympiad_name'), olympiad.title)
+        self.assertTrue(status_resp.data.get('daily_plan'))
 
     # ── ai_audio_analysis — Pro only ────────────────────────────────────────
     def test_ai_audio_plus_403(self):
@@ -1350,12 +1402,43 @@ class StudentTierGatingTestCase(APITestCase):
     def test_ai_audio_pro_200(self):
         _, attempt = self._make_attempt(self.pro_user)
         self.client.force_authenticate(user=self.pro_user)
-        resp = self.client.post(
-            reverse('me-ai-audio-analysis'), {'attempt_id': attempt.id}, format='json',
-        )
+        with patch('accounts.tasks.send_ai_audio_analysis_task.delay') as mock_delay:
+            resp = self.client.post(
+                reverse('me-ai-audio-analysis'), {'attempt_id': attempt.id}, format='json',
+            )
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        # Telegram ulanmagan — no_telegram statusi (tashqi chaqiruv yo'q).
+        # Telegram ulanmagan — no_telegram statusi (tashqi chaqiruv/task yo'q).
         self.assertEqual(resp.data.get('status'), 'no_telegram')
+        mock_delay.assert_not_called()
+
+    def test_ai_audio_with_telegram_returns_task_then_result(self):
+        """Telegram ulangan — Gemini + sendVoice ishlari task'ga ko'chadi."""
+        _, attempt = self._make_attempt(self.pro_user)
+        self.pro_user.telegram_chat_id = '123456'
+        self.pro_user.save(update_fields=['telegram_chat_id'])
+        self.client.force_authenticate(user=self.pro_user)
+        with (
+            patch(
+                'questions.ai_generation.analyze_attempt_ai',
+                return_value='Tahlil matni',
+            ),
+            patch('accounts.views_me_premium._try_send_voice', return_value=True) as mock_voice,
+        ):
+            resp = self.client.post(
+                reverse('me-ai-audio-analysis'), {'attempt_id': attempt.id}, format='json',
+            )
+            self.assertEqual(resp.status_code, status.HTTP_202_ACCEPTED)
+            mock_voice.assert_called_once()
+        task_id = resp.data.get('task_id')
+        self.assertTrue(task_id)
+
+        status_resp = self.client.get(
+            reverse('me-ai-audio-analysis-status', args=[task_id]),
+        )
+        self.assertEqual(status_resp.status_code, status.HTTP_200_OK)
+        # Polling konverti `status`ni egallaydi, yuborish holati `delivery_status`.
+        self.assertEqual(status_resp.data.get('status'), 'COMPLETED')
+        self.assertEqual(status_resp.data.get('delivery_status'), 'sent')
 
     # ── score_timeline — 365 faqat Pro uchun ────────────────────────────────
     def test_timeline_plus_365_clamped_to_90(self):

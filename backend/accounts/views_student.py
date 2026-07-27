@@ -379,13 +379,20 @@ def readiness(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([ScopedRateThrottle])
 def study_plan(request):
-    """POST /api/me/study-plan/ — AI shaxsiy o'quv rejasi.
+    """POST /api/me/study-plan/ — AI shaxsiy o'quv rejasi task'ini boshlaydi.
 
-    Zaiflik xaritasidan zaif fanlar olinadi va Gemini'ga haftalik reja
-    so'rovi yuboriladi. Javob: {"plan": ["1. ...", "2. ..."]}.
+    Zaiflik xaritasi shu yerda hisoblanadi (DB ishi tez), sekin Gemini chaqiruvi
+    esa Celery task'ga uzatiladi: javob `{'task_id': ...}` (202) va frontend
+    `me/study-plan/<task_id>/status/` ni polling qiladi (natija avvalgidek
+    `{plan, weak_subjects}`). Avval Gemini so'rov ichida chaqirilib gunicorn
+    thread'ini daqiqalab bloklardi.
 
     Plus yoki Pro tarifi talab qilinadi (AI o'quv rejasi — kengaytirilgan tier).
     """
+    from questions.ai_task_status import start_ai_task
+
+    from .tasks import STUDY_PLAN_TASK_PREFIX, generate_study_plan_task
+
     if not student_tier_at_least(request.user, 'plus'):
         return _premium_required_response(required_tier='plus')
     perf = _subject_performance(request.user)
@@ -402,30 +409,27 @@ def study_plan(request):
         # Hammasi yaxshi — eng past 2 tasini olamiz.
         weak_subjects = sorted(perf, key=lambda s: perf[s])[:2]
 
-    plan = _generate_study_plan_ai(
-        getattr(request.user, 'full_name', '') or 'Oʻquvchi',
-        weak_subjects,
-        perf,
-    )
-
-    # T5: AI reja generatsiyasini menejer faoliyat logiga yozamiz (markaz bo'lsa).
-    try:
-        from centers.models import ManagerActivityLog
-        from centers.services import log_manager_activity, primary_center_for_user
-        center = primary_center_for_user(request.user)
-        if center is not None:
-            log_manager_activity(
-                center, request.user, ManagerActivityLog.ACTION_SEND_PLAN,
-                description="O'quv rejasi (AI) generatsiya qilindi",
-                target_user=request.user,
-            )
-    except Exception:
-        pass
-
-    return Response({'plan': plan, 'weak_subjects': weak_subjects[:5]})
+    task_id = start_ai_task(STUDY_PLAN_TASK_PREFIX, request.user.id)
+    # Menejer faoliyat logi ham task ichida (generatsiyadan keyin) yoziladi.
+    generate_study_plan_task.delay(task_id, request.user.id, weak_subjects, perf)
+    return Response({'task_id': task_id}, status=http_status.HTTP_202_ACCEPTED)
 
 
 study_plan.cls.throttle_scope = 'ai'
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def study_plan_status(request, task_id):
+    """GET /api/me/study-plan/<task_id>/status/ — AI o'quv rejasi holati."""
+    from questions.ai_task_status import ai_task_status_response
+
+    from .tasks import STUDY_PLAN_TASK_PREFIX
+
+    return ai_task_status_response(
+        STUDY_PLAN_TASK_PREFIX, task_id, request.user,
+        failed_detail="Rejani olib bo'lmadi",
+    )
 
 
 # ─── Kunlik AI mashq to'plami (Daily AI Practice Set) — Standart+ ────────────
