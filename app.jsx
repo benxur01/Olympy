@@ -371,13 +371,50 @@ const App = () => {
       // token eskirgan bo'lsa dashboard 401 olib bounce loop yaratadi.
       // Avval getMe bilan validate qilamiz.
       const urlTestId = testIdFromPath();
+
+      // Cookie-only sessiyani tekshirish: storage'da user cache'i bo'lmasa ham
+      // HttpOnly cookie hali tirik bo'lishi mumkin. true => sessiya topildi va
+      // sahifa o'rnatildi. Hech qachon reject qilmaydi — fonda ham chaqiriladi.
+      const restoreFromCookieSession = async () => {
+        try {
+          const freshUser = await globalThis.OlympyApi?.getMe?.(null);
+          if (!freshUser || cancelled) return false;
+          const mappedUser = globalThis.OlympyApi.mapBackendUser(freshUser);
+          globalThis.OlympyApi.saveAuth({ user: mappedUser, cookieAuth: true });
+          hydrateBearerTokenIfMissing();
+          setApiUser(mappedUser);
+          if (requestedPage === 'test') {
+            const restored = await tryRestoreActiveTest(mappedUser, urlTestId);
+            if (cancelled) return true;
+            if (!restored) setPage(roleHomePage(mappedUser));
+            return true;
+          }
+          const publicPages2 = ['login', 'register', 'landing'];
+          const dest2 = (!requestedPage || publicPages2.includes(requestedPage))
+            ? roleHomePage(mappedUser) : requestedPage;
+          setPage(dest2);
+          tryResumePendingOlympiad(mappedUser);
+          return true;
+        } catch { return false; }
+      };
+
+      // Sessiya topilmadi — so'ralgan sahifada qolamiz.
+      // Autentifikatsiyasiz /test ochilsa — auth guard login'ga yo'naltiradi.
+      const keepRequestedPage = () => {
+        if (!cancelled && requestedPage && requestedPage !== 'test') setPage(requestedPage);
+      };
+
       if (auth?.user) {
         try {
           const freshUser = await globalThis.OlympyApi?.getMe?.(null);
           if (!freshUser || cancelled) throw new Error('Stale session');
           const mappedUser = globalThis.OlympyApi.mapBackendUser(freshUser);
           globalThis.OlympyApi.saveAuth({ user: mappedUser, cookieAuth: true });
-          await hydrateBearerTokenIfMissing();
+          // Bearer hidratsiyasi ATAYIN await QILINMAYDI: u best-effort fon
+          // vazifasi (yuqoridagi izohga qarang), lekin yana bitta tarmoq
+          // so'rovi — await qilinsa sekin mobil tarmoqda butun ilova shuncha
+          // vaqt "Olympy yuklanmoqda..." loaderida turib qolardi.
+          hydrateBearerTokenIfMissing();
           setApiUser(mappedUser);
           // F5'dan keyin test sahifasida bo'lsak — sessiyani tiklaymiz.
           if (requestedPage === 'test') {
@@ -398,29 +435,25 @@ const App = () => {
           // Token stale — tozalab cookie session sinab ko'ramiz
           try { globalThis.OlympyApi?.clearAuth?.(); } catch {}
         }
-      }
-      try {
-        const freshUser = await globalThis.OlympyApi?.getMe?.(null);
-        if (!freshUser || cancelled) throw new Error('No cookie session');
-        const mappedUser = globalThis.OlympyApi.mapBackendUser(freshUser);
-        globalThis.OlympyApi.saveAuth({ user: mappedUser, cookieAuth: true });
-        await hydrateBearerTokenIfMissing();
-        setApiUser(mappedUser);
-        if (requestedPage === 'test') {
-          const restored = await tryRestoreActiveTest(mappedUser, urlTestId);
-          if (cancelled) return;
-          if (!restored) setPage(roleHomePage(mappedUser));
-          return;
-        }
-        const publicPages2 = ['login', 'register', 'landing'];
-        const dest2 = (!requestedPage || publicPages2.includes(requestedPage))
-          ? roleHomePage(mappedUser) : requestedPage;
-        setPage(dest2);
-        tryResumePendingOlympiad(mappedUser);
+        // Cache bor edi-yu eskirgan: cookie sessiyasini BLOKLAB sinaymiz —
+        // sessiya tirik bo'lsa login ekrani miltillab o'tmasin.
+        if (await restoreFromCookieSession()) return;
+        keepRequestedPage();
         return;
-      } catch {}
-      // Autentifikatsiyasiz /test ochilsa — auth guard login'ga yo'naltiradi.
-      if (!cancelled && requestedPage && requestedPage !== 'test') setPage(requestedPage);
+      }
+      // Umuman cache yo'q — birinchi marta kirgan mehmon, eng ko'p uchraydigan
+      // holat. Bu yerdagi getMe SPEKULYATIV: storage tozalangan-u cookie hali
+      // tirik bo'lish ehtimoli uchun. Shu ehtimol uchun butun ilovani tarmoq
+      // so'roviga bog'lab qo'ymaymiz (sekin mobil tarmoqda bu bir necha soniya
+      // "Olympy yuklanmoqda..." degani) — so'ralgan sahifani DARHOL ko'rsatamiz
+      // va tekshiruvni fonda davom ettiramiz. Cookie sessiyasi topilsa,
+      // foydalanuvchi javob kelishi bilan dashboard'ga o'tkaziladi (landing bir
+      // lahza ko'rinib ketishi — shu noyob holat uchun maqbul narx).
+      // Test sahifasi tiklanishi ham buzilmaydi: `urlTestId` yuqorida, hech
+      // qanday await'dan oldin URL'dan o'qib olingan.
+      keepRequestedPage();
+      setBootstrapping(false);
+      restoreFromCookieSession();
     };
     try {
       restore().finally(() => { if (!cancelled) setBootstrapping(false); });
