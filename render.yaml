@@ -87,9 +87,17 @@ services:
     # URL: https://prolymp.uz/api/health/ — 5 daqiqada bir tekshiradi
     # Alert: Telegram yoki email orqali xabar beradi
     envVars:
-      # Alohida celery worker (olympy-celery) yoqilganda 1 qiling — web OOM kamayadi.
+      # "1" — Celery web konteynerdan tashqarida, alohida `olympy-celery`
+      # worker service'da ishlaydi (quyida). Avval "0" edi: worker + beat aynan
+      # shu web konteynerda ishlab, HTTP so'rovlar bilan BITTA CPU yadroni
+      # bo'lishardi (numInstances: 1, gunicorn --workers 1) — fon task'lari
+      # login'ning parol hash'lash CPU narxini va umuman javob vaqtini
+      # yomonlashtirardi. Endi web faqat Gunicorn ishga tushiradi
+      # (render_start.sh shu o'zgaruvchini tekshiradi).
+      # SHART: `olympy-celery` service Render'da create qilingan bo'lishi kerak,
+      # aks holda hech bir fon task'i (OTP, AI tahlil, beat jadvali) bajarilmaydi.
       - key: CELERY_EXTERNAL_WORKER
-        value: "0"
+        value: "1"
       - key: REDIS_URL
         sync: false
       - key: CELERY_BROKER_URL
@@ -195,9 +203,15 @@ services:
       - key: INTERNAL_SERVICE_SECRET
         sync: false
 
-  # ── Celery worker (ixtiyoriy ajratish) ─────────────────────────────────────
-  # Yoqish: shu service'ni create + olympy-api da CELERY_EXTERNAL_WORKER=1.
-  # Default o'chiq bo'lishi mumkin (plan); qo'lda enable qiling.
+  # ── Celery worker + Beat (MAJBURIY) ────────────────────────────────────────
+  # olympy-api'da CELERY_EXTERNAL_WORKER=1 bo'lgani uchun bu service endi
+  # ixtiyoriy EMAS — Render'da create qilinishi shart. Web konteyner endi
+  # Celery'ni umuman ishga tushirmaydi, ya'ni barcha fon task'lari va davriy
+  # (beat) jadval faqat shu yerda bajariladi.
+  #
+  # startCommand'dagi `-B` — embedded Beat. Beat aynan bitta joyda ishlashi
+  # kerak (aks holda davriy task'lar ikki marta ishlaydi), shuning uchun bu
+  # service bitta instansiyada qolsin.
   - type: worker
     name: olympy-celery
     repo: https://github.com/benxur01/Olympy
@@ -234,6 +248,37 @@ services:
       - key: CLOUDINARY_API_KEY
         sync: false
       - key: CLOUDINARY_API_SECRET
+        sync: false
+      # ── Quyidagilar CELERY_EXTERNAL_WORKER=1 bilan birga qo'shildi ──────────
+      # Bu env'lar avval faqat olympy-api'da bor edi va task'lar o'sha
+      # konteynerda ishlagani uchun yetarli edi. Endi task'lar shu worker'da
+      # bajariladi, shuning uchun bu yerda ham bo'lishi SHART — aks holda
+      # settings.py ularni "sozlanmagan" deb hisoblab JIMGINA no-op'ga tushadi
+      # (xato bermaydi, shunchaki xabar ketmaydi).
+      #
+      # Web Push — bo'sh bo'lsa notifications/services.py `[webpush-skip]`
+      # yozib qaytadi. `send_starting_soon_reminders` beat task'i (har daqiqa)
+      # aynan shu funksiyani chaqiradi.
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      # Email — MAILGUN_API_KEY bo'sh bo'lsa EMAIL_BACKEND console'ga tushadi
+      # va `send_olympiad_results_email_task` natijalarni hech kimga
+      # yubormaydi (faqat log'ga chiqaradi).
+      - key: EMAIL_BACKEND
+        sync: false
+      - key: MAILGUN_API_KEY
+        sync: false
+      - key: MAILGUN_SENDER_DOMAIN
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      # Judge0 kod runner — `run_code_async_task` shu worker'da ishlaydi.
+      # Bo'sh bo'lsa public CE API'ga tushadi (limitlar qattiq).
+      - key: JUDGE0_URL
+        sync: false
+      - key: JUDGE0_API_KEY
         sync: false
 
 # Database va Redis allaqachon Render dashboard'da yaratilgan.

@@ -103,11 +103,15 @@ def send_web_push(subscription_model, title, message, url='/', push_type=None):
             'url': url,
             'type': push_type,
         })
+        # timeout=5 — javob bermayotgan push endpoint bitta thread/task'ni
+        # cheksiz ushlab turmasin. `_send_telegram_to_user` (timeout=3) bilan
+        # bir xil sabab: N ta student × cheksiz timeout = worker band bo'ladi.
         webpush(
             subscription_info=subscription_info,
             data=payload,
             vapid_private_key=settings.VAPID_PRIVATE_KEY,
             vapid_claims={"sub": settings.VAPID_CLAIMS_SUB},
+            timeout=5,
         )
         return True
     except WebPushException as ex:

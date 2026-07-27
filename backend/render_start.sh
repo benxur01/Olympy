@@ -34,9 +34,11 @@ fi
 # gunicorn worker soni 2'dan 1'ga tushirildi (har qo'shimcha worker butun
 # Django appni yana bir marta xotiraga yuklaydi — bu 512MB limit uchun juda
 # qimmat, ayniqsa Celery worker+beat ham shu konteynerda ishlayotganda).
-# Thread soni 2'dan 3'ga oshirildi — bitta worker ko'proq parallel so'rovni
+# Thread soni 3'dan 6'ga oshirildi — bitta worker ko'proq parallel so'rovni
 # I/O-bound holatda ushlab turishi uchun (GIL thread'lar orasida I/O paytida
-# bo'shatiladi). GUNICORN_WORKERS / GUNICORN_THREADS env var orqali override
+# bo'shatiladi; bu yerdagi view'lar asosan DB/tashqi API kutadi, CPU emas —
+# shu sababli qo'shimcha thread deyarli tekin). GUNICORN_WORKERS /
+# GUNICORN_THREADS env var orqali override
 # qilinadi — agar plan Standard/512MB'dan yuqori bo'lsa, GUNICORN_WORKERS=2
 # ga qaytarish mumkin.
 #
@@ -47,7 +49,7 @@ fi
 exec gunicorn olympy_api.wsgi:application \
     --bind "0.0.0.0:${PORT:-10000}" \
     --workers "${GUNICORN_WORKERS:-1}" \
-    --threads "${GUNICORN_THREADS:-3}" \
+    --threads "${GUNICORN_THREADS:-6}" \
     --worker-class gthread \
     --timeout 300 \
     --access-logfile - \
