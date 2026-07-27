@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -1895,71 +1896,100 @@ class PortfolioVerifyTestCase(APITestCase):
         self.assertEqual(resp.data['reason'], 'not_found')
 
 
+GOOGLE_JWKS_PATCH = 'accounts.views._google_jwks_client.get_signing_key_from_jwt'
+
+
+@override_settings(GOOGLE_CLIENT_ID=None)
 class GoogleAuthTestCase(APITestCase):
-    """POST /api/auth/google/ — Google Login tests."""
+    """POST /api/auth/google/ — Google Login tests.
+
+    Google ID Token endi tarmoqqa chiqmasdan, mahalliy (kriptografik) tarzda
+    tekshiriladi. Shu sababli testlar HAQIQIY RS256 token imzolaydi va faqat
+    Google'ning ochiq kalitini olish (yagona tarmoq nuqtasi — JWKS) mock
+    qilinadi: imzo/`aud`/`iss`/`exp` tekshiruvlari haqiqiy kod yo'lidan o'tadi.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        # Kalit test klassi uchun BIR MARTA generatsiya qilinadi (RSA sekin).
+        cls.rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        cls.other_rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
     @staticmethod
     def _google_phone(sub):
         import hashlib
         return f"google_{hashlib.sha256(sub.encode('utf-8')).hexdigest()[:13]}"
 
-    def _mock_token(self, mock_urlopen, **claims):
-        import io
-        import json
-        mock_response = io.BytesIO(json.dumps(claims).encode('utf-8'))
-        mock_urlopen.return_value.__enter__.return_value = mock_response
+    def _mock_token(self, mock_get_key, *, sign_with=None, **claims):
+        """Haqiqiy imzolangan Google ID Token qaytaradi va JWKS kalitini mock qiladi."""
+        import time
+        from types import SimpleNamespace
 
-    @patch('urllib.request.urlopen')
-    def test_google_login_new_user_success(self, mock_urlopen):
-        self._mock_token(
-            mock_urlopen,
+        import jwt
+
+        mock_get_key.return_value = SimpleNamespace(key=self.rsa_key.public_key())
+        now = int(time.time())
+        payload = {
+            'iss': 'https://accounts.google.com',
+            'aud': 'olympy-test.apps.googleusercontent.com',
+            'iat': now,
+            'exp': now + 3600,
+            **claims,
+        }
+        return jwt.encode(payload, sign_with or self.rsa_key, algorithm='RS256')
+
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_new_user_success(self, mock_get_key):
+        token = self._mock_token(
+            mock_get_key,
             sub='1234567890',
             email='newuser@gmail.com',
-            email_verified='true',
+            email_verified=True,
             name='New Google User',
             given_name='New',
             family_name='User',
         )
 
         url = reverse('google-login')
-        response = self.client.post(url, {'id_token': 'fake_google_id_token', 'role': 'student'}, format='json')
+        response = self.client.post(url, {'id_token': token, 'role': 'student'}, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertIn('user', response.data)
         user = User.objects.get(phone=self._google_phone('1234567890'))
         self.assertEqual(user.full_name, 'New User')
         self.assertIn('student', user.roles)
 
-    @patch('urllib.request.urlopen')
-    def test_google_login_realistic_long_sub_and_email_fits_columns(self, mock_urlopen):
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_realistic_long_sub_and_email_fits_columns(self, mock_get_key):
         """Haqiqiy Google sub (~21 raqam) va uzun email DB ustunlariga sig'ishi
         kerak — aks holda PostgreSQL'da 'value too long' (500) yuzaga keladi."""
         long_sub = '117253846290381746255'  # 21 raqam, real Google formatida
-        self._mock_token(
-            mock_urlopen,
+        token = self._mock_token(
+            mock_get_key,
             sub=long_sub,
             email='very.long.email.address.for.testing@somelongdomain.example.com',
-            email_verified='true',
+            email_verified=True,
             name='Long Sub User',
         )
 
         url = reverse('google-login')
-        response = self.client.post(url, {'id_token': 'tok'}, format='json')
+        response = self.client.post(url, {'id_token': token}, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         user = User.objects.get(phone=self._google_phone(long_sub))
         self.assertLessEqual(len(user.phone), 20)
         self.assertLessEqual(len(user.normalized_phone), 20)
         self.assertLessEqual(len(user.username), 32)
 
-    @patch('urllib.request.urlopen')
-    def test_google_login_existing_user_reused(self, mock_urlopen):
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_existing_user_reused(self, mock_get_key):
         """Bir xil sub bilan qayta login — yangi user yaratmasdan mavjudini qaytaradi."""
-        self._mock_token(mock_urlopen, sub='555000555', email='repeat@gmail.com', name='Repeat User')
+        token = self._mock_token(mock_get_key, sub='555000555', email='repeat@gmail.com', name='Repeat User')
         url = reverse('google-login')
-        first = self.client.post(url, {'id_token': 'tok'}, format='json')
+        first = self.client.post(url, {'id_token': token}, format='json')
         self.assertEqual(first.status_code, status.HTTP_201_CREATED)
 
-        self._mock_token(mock_urlopen, sub='555000555', email='repeat@gmail.com', name='Repeat User')
-        second = self.client.post(url, {'id_token': 'tok'}, format='json')
+        second = self.client.post(url, {'id_token': token}, format='json')
         self.assertEqual(second.status_code, status.HTTP_200_OK)
         self.assertEqual(User.objects.filter(phone=self._google_phone('555000555')).count(), 1)
 
@@ -1968,19 +1998,82 @@ class GoogleAuthTestCase(APITestCase):
         response = self.client.post(url, {}, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    @patch('urllib.request.urlopen')
-    def test_google_login_student_then_owner_rejected(self, mock_urlopen):
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_bad_signature_rejected(self, mock_get_key):
+        """Boshqa kalit bilan imzolangan token — 401 (imzo mahalliy tekshiriladi)."""
+        token = self._mock_token(
+            mock_get_key, sign_with=self.other_rsa_key, sub='777000777', email='forged@gmail.com',
+        )
+        url = reverse('google-login')
+        response = self.client.post(url, {'id_token': token}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertFalse(User.objects.filter(phone=self._google_phone('777000777')).exists())
+
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_expired_token_rejected(self, mock_get_key):
+        """Muddati o'tgan token — 401 (`exp` mahalliy tekshiriladi)."""
+        import time
+        now = int(time.time())
+        token = self._mock_token(
+            mock_get_key, sub='777000778', email='expired@gmail.com', iat=now - 7200, exp=now - 3600,
+        )
+        url = reverse('google-login')
+        response = self.client.post(url, {'id_token': token}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_wrong_issuer_rejected(self, mock_get_key):
+        """Google bo'lmagan `iss` — 401."""
+        token = self._mock_token(
+            mock_get_key, iss='https://evil.example.com', sub='777000779', email='evil@gmail.com',
+        )
+        url = reverse('google-login')
+        response = self.client.post(url, {'id_token': token}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    @override_settings(GOOGLE_CLIENT_ID='olympy-test.apps.googleusercontent.com')
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_matching_audience_allowed(self, mock_get_key):
+        """GOOGLE_CLIENT_ID sozlangan va `aud` mos — kirish muvaffaqiyatli."""
+        token = self._mock_token(mock_get_key, sub='777000780', email='aud-ok@gmail.com', name='Aud Ok')
+        url = reverse('google-login')
+        response = self.client.post(url, {'id_token': token}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    @override_settings(GOOGLE_CLIENT_ID='another-client.apps.googleusercontent.com')
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_audience_mismatch_rejected(self, mock_get_key):
+        """`aud` boshqa Client ID uchun bo'lsa — 401."""
+        token = self._mock_token(mock_get_key, sub='777000781', email='aud-bad@gmail.com')
+        url = reverse('google-login')
+        response = self.client.post(url, {'id_token': token}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(response.data['detail'], "Google Client ID mos kelmadi.")
+
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_without_client_id_skips_audience_check(self, mock_get_key):
+        """GOOGLE_CLIENT_ID sozlanmagan muhitda audience tekshiruvi o'tkazib
+        yuboriladi (eski tokeninfo-yondashuvidagi xatti-harakat saqlangan)."""
+        token = self._mock_token(
+            mock_get_key, aud='some-other-client.apps.googleusercontent.com',
+            sub='777000782', email='no-client-id@gmail.com',
+        )
+        url = reverse('google-login')
+        response = self.client.post(url, {'id_token': token}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_student_then_owner_rejected(self, mock_get_key):
         """O'quvchi (student) sifatida ro'yxatdan o'tgan Gmail bilan tashkilot
         (owner) sifatida qayta kirishga urinish 400 bilan rad etiladi va owner
         roli qo'shilmaydi."""
         sub = '900100200'
-        self._mock_token(mock_urlopen, sub=sub, email='dual@gmail.com', name='Dual User')
+        token = self._mock_token(mock_get_key, sub=sub, email='dual@gmail.com', name='Dual User')
         url = reverse('google-login')
-        first = self.client.post(url, {'id_token': 'tok', 'role': 'student'}, format='json')
+        first = self.client.post(url, {'id_token': token, 'role': 'student'}, format='json')
         self.assertEqual(first.status_code, status.HTTP_201_CREATED)
 
-        self._mock_token(mock_urlopen, sub=sub, email='dual@gmail.com', name='Dual User')
-        second = self.client.post(url, {'id_token': 'tok', 'role': 'owner'}, format='json')
+        second = self.client.post(url, {'id_token': token, 'role': 'owner'}, format='json')
         self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
             second.data['detail'],
@@ -1991,19 +2084,18 @@ class GoogleAuthTestCase(APITestCase):
         self.assertIn('student', user.roles)
         self.assertNotIn('owner', user.roles)
 
-    @patch('urllib.request.urlopen')
-    def test_google_login_owner_then_student_rejected(self, mock_urlopen):
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_owner_then_student_rejected(self, mock_get_key):
         """Tashkilot (owner) sifatida ro'yxatdan o'tgan Gmail bilan o'quvchi
         (student) sifatida qayta kirishga urinish 400 bilan rad etiladi va
         student roli qo'shilmaydi."""
         sub = '900100201'
-        self._mock_token(mock_urlopen, sub=sub, email='org@gmail.com', name='Org User')
+        token = self._mock_token(mock_get_key, sub=sub, email='org@gmail.com', name='Org User')
         url = reverse('google-login')
-        first = self.client.post(url, {'id_token': 'tok', 'role': 'owner'}, format='json')
+        first = self.client.post(url, {'id_token': token, 'role': 'owner'}, format='json')
         self.assertEqual(first.status_code, status.HTTP_201_CREATED)
 
-        self._mock_token(mock_urlopen, sub=sub, email='org@gmail.com', name='Org User')
-        second = self.client.post(url, {'id_token': 'tok', 'role': 'student'}, format='json')
+        second = self.client.post(url, {'id_token': token, 'role': 'student'}, format='json')
         self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(
             second.data['detail'],
@@ -2014,29 +2106,27 @@ class GoogleAuthTestCase(APITestCase):
         self.assertIn('owner', user.roles)
         self.assertNotIn('student', user.roles)
 
-    @patch('urllib.request.urlopen')
-    def test_google_login_student_relogin_as_student_allowed(self, mock_urlopen):
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_student_relogin_as_student_allowed(self, mock_get_key):
         """O'quvchi qayta o'quvchi sifatida kirishi cheklanmaydi (200)."""
         sub = '900100202'
-        self._mock_token(mock_urlopen, sub=sub, email='again@gmail.com', name='Again User')
+        token = self._mock_token(mock_get_key, sub=sub, email='again@gmail.com', name='Again User')
         url = reverse('google-login')
-        self.client.post(url, {'id_token': 'tok', 'role': 'student'}, format='json')
+        self.client.post(url, {'id_token': token, 'role': 'student'}, format='json')
 
-        self._mock_token(mock_urlopen, sub=sub, email='again@gmail.com', name='Again User')
-        second = self.client.post(url, {'id_token': 'tok', 'role': 'student'}, format='json')
+        second = self.client.post(url, {'id_token': token, 'role': 'student'}, format='json')
         self.assertEqual(second.status_code, status.HTTP_200_OK)
 
-    @patch('urllib.request.urlopen')
-    def test_google_login_owner_then_teacher_allowed(self, mock_urlopen):
+    @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_owner_then_teacher_allowed(self, mock_get_key):
         """student/owner istisnosi boshqa rollarga (teacher) ta'sir qilmaydi —
         owner keyin teacher rolini olishi mumkin (200) va rol qo'shiladi."""
         sub = '900100203'
-        self._mock_token(mock_urlopen, sub=sub, email='mixed@gmail.com', name='Mixed User')
+        token = self._mock_token(mock_get_key, sub=sub, email='mixed@gmail.com', name='Mixed User')
         url = reverse('google-login')
-        self.client.post(url, {'id_token': 'tok', 'role': 'owner'}, format='json')
+        self.client.post(url, {'id_token': token, 'role': 'owner'}, format='json')
 
-        self._mock_token(mock_urlopen, sub=sub, email='mixed@gmail.com', name='Mixed User')
-        second = self.client.post(url, {'id_token': 'tok', 'role': 'teacher'}, format='json')
+        second = self.client.post(url, {'id_token': token, 'role': 'teacher'}, format='json')
         self.assertEqual(second.status_code, status.HTTP_200_OK)
         user = User.objects.get(phone=self._google_phone(sub))
         self.assertIn('owner', user.roles)
