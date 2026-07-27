@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 # avtomatik "disqualify" (xavfsiz default) sifatida yakunlanadi.
 PENDING_REVIEW_TIMEOUT_MINUTES = 10
 
+# AI xatolar tahlili task'ining kesh prefiksi (`questions.ai_task_status`).
+EXPLAIN_MISTAKES_TASK_PREFIX = 'explain_mistakes'
+
 
 @shared_task
 def auto_disqualify_pending_reviews():
@@ -156,6 +159,48 @@ def generate_essay_ai_feedback_task(feedback_id):
             logger.exception(
                 "Failed to mark EssayAIFeedback FAILED for id=%s", feedback_id,
             )
+
+
+@shared_task
+def explain_all_mistakes_task(task_id, user_id, mistakes):
+    """O'quvchining xatolari bo'yicha umumiy AI tavsiyani generatsiya qiladi.
+
+    Avval `explain_all_mistakes` view'i `explain_mistakes_ai` ni SINXRON
+    chaqirardi: Gemini model/kalit sikli 45s timeout bilan, eng yomon holatda
+    bir necha daqiqa gunicorn thread'ini bloklardi. Endi PDF import oqimidagi
+    kabi Celery task; frontend `mistakes/explain/<task_id>/status/` ni polling
+    qiladi. `mistakes` view'da yig'iladi (DB ishi tez) va JSON sifatida uzatiladi.
+    """
+    from questions.ai_generation import explain_mistakes_ai
+    from questions.ai_task_status import set_ai_task_failed, set_ai_task_result
+
+    try:
+        explanation_text = explain_mistakes_ai(mistakes or [])
+        # T5: AI xatolar tahlilini menejer faoliyat logiga yozamiz (markaz bo'lsa).
+        try:
+            from accounts.models import User
+            from centers.models import ManagerActivityLog
+            from centers.services import log_manager_activity, primary_center_for_user
+            user = User.objects.filter(pk=user_id).first()
+            center = primary_center_for_user(user) if user else None
+            if center is not None:
+                log_manager_activity(
+                    center, user, ManagerActivityLog.ACTION_SEND_ANALYSIS,
+                    description='Xatolar tahlili (AI) generatsiya qilindi',
+                    target_user=user,
+                )
+        except Exception:
+            logger.exception('manager activity log failed for user=%s', user_id)
+        set_ai_task_result(
+            EXPLAIN_MISTAKES_TASK_PREFIX, task_id,
+            {'explanation': explanation_text},
+        )
+    except Exception as exc:
+        logger.exception('AI xatolar tahlili task xatosi task=%s', task_id)
+        set_ai_task_failed(
+            EXPLAIN_MISTAKES_TASK_PREFIX, task_id,
+            str(exc) or "AI yordamida xatolar tahlili generatsiya qilinmadi",
+        )
 
 
 @shared_task

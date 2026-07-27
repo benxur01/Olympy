@@ -170,14 +170,18 @@ const PricingPage = ({ onNavigate, user, onUserUpdate }) => {
     } catch (err) {
       const payMsg = OlympyApi.toUserMessage?.(err) || "To'lov havolasini generatsiya qilib bo'lmadi";
       setPayError(payMsg);
-      // To'lov oqimida xatolik — AI yordamni avtomatik ochamiz (server 5xx/tarmoq
-      // xatosi bo'lsa api.js allaqachon yuboradi; bu esa 4xx/biznes xatolarini
-      // ham qamrab oladi).
-      try {
-        window.dispatchEvent(new CustomEvent('olympy:support_needed', {
-          detail: { reason: 'payment_error', message: payMsg },
-        }));
-      } catch {}
+      // AI yordamni FAQAT haqiqiy nosozlikda ochamiz: server ichki xatosi (5xx)
+      // yoki status yo'q (tarmoq uzilishi / kutilmagan javob — api.js'da ham
+      // status 0 shunday qaraladi). 4xx (validatsiya/ruxsat/biznes qoidasi —
+      // masalan plan topilmadi yoki obuna allaqachon bor) oddiy holatlar:
+      // yuqoridagi `setPayError` xabari yetarli, widjetni ochmaymiz.
+      if (!err?.status || err.status >= 500) {
+        try {
+          window.dispatchEvent(new CustomEvent('olympy:support_needed', {
+            detail: { reason: 'payment_error', message: payMsg },
+          }));
+        } catch {}
+      }
     } finally {
       setPaying(false);
     }

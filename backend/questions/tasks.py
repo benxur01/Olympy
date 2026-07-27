@@ -8,6 +8,13 @@ from .models import Question
 
 logger = logging.getLogger(__name__)
 
+# Sekin Gemini chaqiruvlarini so'rovdan tashqariga chiqargan AI task'larning
+# kesh prefikslari (`<prefix>:task:<task_id>`). View task'ni boshlaydi, mos
+# status endpointi shu prefiks bo'yicha natijani o'qiydi.
+CODE_REVIEW_TASK_PREFIX = 'code_review'
+EXPLAIN_QUESTION_TASK_PREFIX = 'explain_question'
+AI_QUESTIONS_TASK_PREFIX = 'ai_questions'
+
 
 def _normalize_output(val):
     if val is None:
@@ -561,6 +568,124 @@ def process_word_ai_questions_task(self, task_id, word_b64, subject, difficulty,
             'status': 'FAILED',
             'error': str(exc) or "Faylni tahlil qilishda kutilmagan xato",
         }, timeout=900)
+
+
+@shared_task(bind=True)
+def code_review_task(self, task_id, question_id, submitted_code, language):
+    """IT (kod) savoliga yuborilgan kodni AI bilan baholaydi (asinxron).
+
+    Avval bu ish `code_review` view'da SINXRON bajarilardi: `review_code_submission`
+    6 ta Gemini modeli × API kalitlar bo'yicha 45s timeout bilan urinib, eng
+    yomon holatda bir necha daqiqa gunicorn thread'ini bloklardi — bu esa
+    o'quvchilar OLIMPIADA VAQTIDA chaqiradigan endpoint. Endi PDF import
+    oqimidagi kabi alohida Celery task; frontend
+    `GET /api/questions/code-review/<task_id>/status/` orqali polling qiladi.
+    """
+    from .ai_generation import review_code_submission
+    from .ai_task_status import set_ai_task_failed, set_ai_task_result
+
+    try:
+        question = Question.objects.filter(pk=question_id).first()
+        if not question:
+            set_ai_task_failed(CODE_REVIEW_TASK_PREFIX, task_id, 'Savol topilmadi')
+            return
+        result = review_code_submission(
+            question_text=question.text,
+            submitted_code=submitted_code,
+            language=language or question.programming_language,
+            expected_output=question.expected_output or '',
+        )
+        set_ai_task_result(CODE_REVIEW_TASK_PREFIX, task_id, {
+            'score': result.get('score'),
+            'review': result.get('review') or '',
+        })
+    except Exception as exc:
+        logger.exception('AI kod baholash task xatosi task=%s', task_id)
+        set_ai_task_failed(
+            CODE_REVIEW_TASK_PREFIX, task_id,
+            str(exc) or "AI baholashni bajarib bo'lmadi",
+        )
+
+
+@shared_task(bind=True)
+def explain_question_task(self, task_id, question_id):
+    """Savol uchun AI yechim tushuntirishini generatsiya qiladi (asinxron).
+
+    `code_review_task` bilan bir xil naqsh. Natija savolda saqlanadi
+    (`Question.explanation`) — keyingi so'rovlar AI'ga umuman bormaydi.
+    """
+    from .ai_generation import explain_question_ai
+    from .ai_task_status import set_ai_task_failed, set_ai_task_result
+
+    try:
+        question = Question.objects.filter(pk=question_id).first()
+        if not question:
+            set_ai_task_failed(EXPLAIN_QUESTION_TASK_PREFIX, task_id, 'Savol topilmadi')
+            return
+        explanation_text = explain_question_ai(
+            question_text=question.text,
+            options=question.options or [],
+            correct_idx=question.correct_answer,
+            subject=question.subject or '',
+        )
+        if explanation_text and "generatsiya qilinmadi" not in explanation_text:
+            question.explanation = explanation_text
+            question.save(update_fields=['explanation'])
+        set_ai_task_result(
+            EXPLAIN_QUESTION_TASK_PREFIX, task_id,
+            {'explanation': explanation_text},
+        )
+    except Exception as exc:
+        logger.exception('AI tushuntirish task xatosi task=%s', task_id)
+        set_ai_task_failed(
+            EXPLAIN_QUESTION_TASK_PREFIX, task_id,
+            str(exc) or "Tushuntirishni generatsiya qilib bo'lmadi",
+        )
+
+
+@shared_task(bind=True)
+def generate_ai_questions_task(self, task_id, center_id, user_id, subject, topic, count, difficulty, question_type):
+    """AI savol bankini generatsiya qiladi (asinxron).
+
+    `code_review_task` bilan bir xil naqsh. Oylik limit hisobi (log_ai_generation)
+    ham shu yerda — faqat haqiqiy natija bo'lganda yoziladi (avvalgi sinxron
+    view'dagi xulq saqlanadi).
+    """
+    from .ai_generation import generate_questions
+    from .ai_task_status import set_ai_task_failed, set_ai_task_result
+
+    try:
+        result = generate_questions(
+            subject=subject,
+            topic=topic,
+            count=count,
+            difficulty=difficulty,
+            question_type=question_type,
+        )
+        if not result.get('ok'):
+            set_ai_task_failed(
+                AI_QUESTIONS_TASK_PREFIX, task_id,
+                result.get('error') or "AI savol yarata olmadi",
+            )
+            return
+        questions = result.get('questions') or []
+        try:
+            from billing.services import SubscriptionService
+            from centers.models import EducationCenter
+            center = EducationCenter.objects.filter(pk=center_id).first()
+            if center is not None:
+                from accounts.models import User
+                user = User.objects.filter(pk=user_id).first()
+                SubscriptionService(center).log_ai_generation(user=user, count=len(questions))
+        except Exception:
+            logger.exception('AI generatsiya limitini yozib bo\'lmadi center=%s', center_id)
+        set_ai_task_result(AI_QUESTIONS_TASK_PREFIX, task_id, {'questions': questions})
+    except Exception as exc:
+        logger.exception('AI savol generatsiya task xatosi task=%s', task_id)
+        set_ai_task_failed(
+            AI_QUESTIONS_TASK_PREFIX, task_id,
+            str(exc) or "AI savol yarata olmadi",
+        )
 
 
 @shared_task(bind=True, max_retries=3)

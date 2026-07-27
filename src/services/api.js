@@ -1063,6 +1063,49 @@ const connectQuizSocket = ({ roomCode, role = 'student', name = '', avatar = '',
   };
 };
 
+// Backend sekin Gemini chaqiruvlarini Celery task'iga ko'chirdi: POST darhol
+// `{task_id}` (202) qaytaradi, natija esa `<endpoint>/<task_id>/status/` orqali
+// olinadi ({status: PENDING|COMPLETED|FAILED}). Bu yordamchi o'sha polling
+// loop'ini bir joyga yig'adi (runCode/extractPdfQuestions naqshi bilan bir xil:
+// abort-aware kutish, FAILED → ApiError, urinishlar tugasa timeout xatosi).
+//
+// `startRes` — POST javobi. `task_id` bo'lmasa javob darhol tayyor (masalan
+// bazada saqlangan tushuntirish) yoki backend eski versiya — o'shani qaytaramiz.
+const pollAiTask = async (startRes, statusPath, {
+  token,
+  signal,
+  attempts = 150,
+  intervalMs = 2000,
+  failMessage,
+  timeoutMessage,
+}) => {
+  const taskId = startRes?.task_id;
+  if (!taskId) return startRes;
+  const aborted = () => signal && signal.aborted;
+  for (let i = 0; i < attempts; i++) {
+    await new Promise((resolve, reject) => {
+      if (aborted()) return reject(new ApiError('aborted', { status: 0 }));
+      const t = setTimeout(resolve, intervalMs);
+      if (signal) {
+        signal.addEventListener('abort', () => {
+          clearTimeout(t);
+          reject(new ApiError('aborted', { status: 0 }));
+        }, { once: true });
+      }
+    });
+    if (aborted()) throw new ApiError('aborted', { status: 0 });
+    const statusRes = await request(statusPath(taskId), { token, signal });
+    if (statusRes?.status === 'COMPLETED') return statusRes;
+    if (statusRes?.status === 'FAILED') {
+      throw new ApiError(
+        statusRes?.detail || statusRes?.error || failMessage,
+        { status: 503, data: statusRes },
+      );
+    }
+  }
+  throw new ApiError(timeoutMessage);
+};
+
 export const OlympyApi = {
   API_BASE_URL,
   REALTIME_BASE_URL,
@@ -1450,10 +1493,28 @@ export const OlympyApi = {
     { token },
   ),
   createQuestion: (payload, token) => request('/api/questions/', { method: 'POST', body: payload, token }),
-  generateAiQuestions: (payload, token) => request('/api/questions/generate-ai/', { method: 'POST', body: payload, token }),
+  // AI savol generatsiyasi — backend Celery task'ni boshlaydi, natija polling
+  // bilan olinadi (pollAiTask izohiga qarang). Javob shakli avvalgidek
+  // { questions: [...] } bo'lib qoladi, shu sababli chaqiruvchi o'zgarmaydi.
+  generateAiQuestions: async (payload, token, signal) => pollAiTask(
+    await request('/api/questions/generate-ai/', { method: 'POST', body: payload, token, signal }),
+    (taskId) => `/api/questions/generate-ai/${taskId}/status/`,
+    { token, signal, failMessage: "AI savol yarata olmadi", timeoutMessage: "AI savol yaratish vaqti tugadi (Timeout)" },
+  ),
   // IT (kod) savolini AI bilan baholash — test paytida o'quvchi kodini sinaydi.
   // { question_id, submitted_code, language } → { score (0-100|null), review }.
-  reviewCode: (payload, token) => request('/api/questions/code-review/', { method: 'POST', body: payload, token }),
+  // Backend Gemini chaqiruvini Celery task'iga ko'chirgani uchun bu ham
+  // submit + polling oqimida ishlaydi (javob maydonlari o'zgarmagan).
+  reviewCode: async (payload, token, signal) => pollAiTask(
+    await request('/api/questions/code-review/', { method: 'POST', body: payload, token, signal }),
+    (taskId) => `/api/questions/code-review/${taskId}/status/`,
+    {
+      token,
+      signal,
+      failMessage: "AI baholashni hozir bajarib bo'lmadi. Keyinroq qayta urinib ko'ring.",
+      timeoutMessage: "AI tekshiruv vaqti tugadi (Timeout)",
+    },
+  ),
   runCode: async (payload, token, signal) => {
     // `signal` (AbortSignal) ixtiyoriy — chaqiruvchi component unmount bo'lganda
     // polling loop'ini va kutilayotgan fetch'ni bekor qiladi, aks holda loop
@@ -1717,7 +1778,19 @@ export const OlympyApi = {
   submitPractice: (body, token) => request('/api/practice/submit/', { method: 'POST', body, token }),
   getWrongAnswerSubjects: (token) => request('/api/practice/wrong-answers/', { token }),
   startWrongAnswerPractice: (body, token) => request('/api/practice/wrong-answers/start/', { method: 'POST', body, token }),
-  explainQuestion: (questionId, token) => request(`/api/questions/${questionId}/explain/`, { method: 'POST', token }),
+  // AI yechim tushuntirishi. Tushuntirish bazada bo'lsa backend darhol
+  // { explanation } qaytaradi (task_id yo'q → pollAiTask javobni o'zini beradi);
+  // aks holda Celery task boshlanadi va natija polling bilan olinadi.
+  explainQuestion: async (questionId, token, signal) => pollAiTask(
+    await request(`/api/questions/${questionId}/explain/`, { method: 'POST', token, signal }),
+    (taskId) => `/api/questions/explain/${taskId}/status/`,
+    {
+      token,
+      signal,
+      failMessage: "AI yordamida tushuntirish generatsiya qilinmadi. Iltimos keyinroq urinib ko'ring.",
+      timeoutMessage: "Tushuntirish olish vaqti tugadi (Timeout)",
+    },
+  ),
   // Billing / To'lov
   // Aktiv obuna rejalari — Landing'da ochiq ko'rsatiladi, autentifikatsiya talab qilinmaydi.
   getSubscriptionPlans: () => request(`/api/billing/plans/?_t=${Date.now()}`, { retryOnAuth: false }),
@@ -1741,7 +1814,18 @@ export const OlympyApi = {
   ),
   // Mistakes Vault
   getMistakes: (token) => request('/api/attempts/mistakes/', { token }),
-  explainAllMistakes: (token) => request('/api/attempts/mistakes/explain/', { method: 'POST', token }),
+  // Umumiy xatolar tahlili. Xato bo'lmasa backend darhol { explanation }
+  // qaytaradi (task_id yo'q); aks holda Celery task + polling.
+  explainAllMistakes: async (token, signal) => pollAiTask(
+    await request('/api/attempts/mistakes/explain/', { method: 'POST', token, signal }),
+    (taskId) => `/api/attempts/mistakes/explain/${taskId}/status/`,
+    {
+      token,
+      signal,
+      failMessage: "AI yordamida xatolar tahlili generatsiya qilinmadi. Iltimos keyinroq urinib ko'ring.",
+      timeoutMessage: "Tahlil olish vaqti tugadi (Timeout)",
+    },
+  ),
   // Reward Shop
   getRewards: (token) => request('/api/me/rewards/', { token }),
   redeemReward: (productId, token) => request('/api/me/rewards/redeem/', { method: 'POST', body: { product_id: productId }, token }),
@@ -1772,7 +1856,18 @@ export const OlympyApi = {
   getCompetitorAnalysis: (olympiadId, token) => request(`/api/me/competitor-analysis/${olympiadId ? '?olympiad_id=' + encodeURIComponent(olympiadId) : ''}`, { token }),
   getSubjectWeakness: (token) => request('/api/me/subject-weakness/', { token }),
   getReadiness: (olympiadId, token) => request(`/api/me/readiness/?olympiad_id=${encodeURIComponent(olympiadId)}`, { token }),
-  getStudyPlan: (token) => request('/api/me/study-plan/', { method: 'POST', token }),
+  // AI o'quv rejasi. Yetarli natija bo'lmasa backend darhol { plan: [], detail }
+  // qaytaradi (task_id yo'q); aks holda Celery task + polling.
+  getStudyPlan: async (token, signal) => pollAiTask(
+    await request('/api/me/study-plan/', { method: 'POST', token, signal }),
+    (taskId) => `/api/me/study-plan/${taskId}/status/`,
+    {
+      token,
+      signal,
+      failMessage: "Rejani olib bo'lmadi",
+      timeoutMessage: "Reja olish vaqti tugadi (Timeout)",
+    },
+  ),
   // Kunlik AI mashq to'plami — Standart+ tier. Kuniga bir marta 5 ta AI savol
   // generatsiya qilinadi va saqlanadi; kun davomida aynan shu to'plam qaytadi.
   // Baholash client-side (savollarda correct_answer indeksi bor). Tier yetmasa

@@ -1,4 +1,5 @@
 """Periodic background tasks for the accounts app."""
+import logging
 import random
 from datetime import timedelta
 
@@ -609,3 +610,168 @@ def expire_stale_premium():
         'cleared_centers': cleared_centers,
     }
 
+
+
+# ─── Sekin AI (Gemini) endpointlari — Celery task'lari ──────────────────────
+#
+# Quyidagi uchta task avval mos view'lar ichida SINXRON bajarilardi: har biri
+# `_gemini_models()` (6 ta model) × API kalitlar bo'yicha 45s timeout bilan
+# urinardi, ya'ni eng yomon holatda bir necha daqiqa gunicorn thread'ini
+# bloklardi. Endi PDF import oqimidagi naqsh: view validatsiyani bajarib
+# `task_id` qaytaradi, frontend `<endpoint>/<task_id>/status/` ni polling qiladi
+# (kesh yordamchilari — `questions.ai_task_status`).
+
+STUDY_PLAN_TASK_PREFIX = 'study_plan'
+PREP_PLAN_TASK_PREFIX = 'prep_plan'
+AI_AUDIO_TASK_PREFIX = 'ai_audio'
+
+
+@shared_task(name='accounts.generate_study_plan')
+def generate_study_plan_task(task_id, user_id, weak_subjects, perf):
+    """AI haftalik o'quv rejasi (`POST /api/me/study-plan/`)."""
+    from questions.ai_task_status import set_ai_task_failed, set_ai_task_result
+
+    from .models import User
+    from .views_student import _generate_study_plan_ai
+
+    logger = logging.getLogger(__name__)
+    try:
+        user = User.objects.filter(pk=user_id).first()
+        plan = _generate_study_plan_ai(
+            getattr(user, 'full_name', '') or 'Oʻquvchi',
+            weak_subjects or [],
+            perf or {},
+        )
+        # T5: AI reja generatsiyasini menejer faoliyat logiga yozamiz (markaz bo'lsa).
+        try:
+            from centers.models import ManagerActivityLog
+            from centers.services import log_manager_activity, primary_center_for_user
+            center = primary_center_for_user(user) if user else None
+            if center is not None:
+                log_manager_activity(
+                    center, user, ManagerActivityLog.ACTION_SEND_PLAN,
+                    description="O'quv rejasi (AI) generatsiya qilindi",
+                    target_user=user,
+                )
+        except Exception:
+            logger.exception('manager activity log failed for user=%s', user_id)
+        set_ai_task_result(STUDY_PLAN_TASK_PREFIX, task_id, {
+            'plan': plan,
+            'weak_subjects': (weak_subjects or [])[:5],
+        })
+    except Exception as exc:
+        logger.exception('AI o\'quv rejasi task xatosi task=%s', task_id)
+        set_ai_task_failed(
+            STUDY_PLAN_TASK_PREFIX, task_id,
+            str(exc) or "Rejani olib bo'lmadi",
+        )
+
+
+@shared_task(name='accounts.generate_prep_plan')
+def generate_prep_plan_task(task_id, olympiad_id, days_left, plan_days, focus_subjects, perf):
+    """Olimpiadaga AI tayyorgarlik rejasi (`POST /api/me/olympiad-prep-plan/`)."""
+    from olympiads.models import Olympiad
+    from questions.ai_task_status import set_ai_task_failed, set_ai_task_result
+
+    from .views_me_premium import _generate_prep_plan_ai
+
+    logger = logging.getLogger(__name__)
+    try:
+        olympiad = Olympiad.objects.filter(pk=olympiad_id).first()
+        if not olympiad:
+            set_ai_task_failed(PREP_PLAN_TASK_PREFIX, task_id, 'Olimpiada topilmadi')
+            return
+        daily_plan = _generate_prep_plan_ai(
+            olympiad.title, focus_subjects or [], plan_days, perf or {},
+        )
+        set_ai_task_result(PREP_PLAN_TASK_PREFIX, task_id, {
+            'olympiad_id': olympiad.id,
+            'olympiad_name': olympiad.title,
+            'days_left': days_left,
+            'focus_subjects': focus_subjects or [],
+            'daily_plan': daily_plan,
+        })
+    except Exception as exc:
+        logger.exception('AI tayyorgarlik rejasi task xatosi task=%s', task_id)
+        set_ai_task_failed(
+            PREP_PLAN_TASK_PREFIX, task_id,
+            str(exc) or "Tayyorgarlik rejasini olib bo'lmadi",
+        )
+
+
+@shared_task(name='accounts.send_ai_audio_analysis')
+def send_ai_audio_analysis_task(task_id, user_id, attempt_id):
+    """AI tahlilni Telegram orqali yuboradi (`POST /api/me/ai-audio-analysis/`).
+
+    Bu task ikkita sekin ishni birlashtiradi: Gemini tahlili (mavjud bo'lmasa)
+    va Telegram sendVoice/sendMessage (20s timeout) — ikkalasi ham avval bitta
+    so'rov ichida ketma-ket bajarilardi.
+
+    Natijadagi yuborish holati `delivery_status` kalitida ('sent' | 'text_only')
+    — polling konverti `status` kalitini (PENDING/COMPLETED/FAILED) egallaydi.
+    """
+    from attempts.models import AttemptAIAnalysis, TestAttempt
+    from questions.ai_generation import analyze_attempt_ai
+    from questions.ai_task_status import set_ai_task_failed, set_ai_task_result
+
+    from .models import User
+    from .views_me_premium import _try_send_voice
+
+    logger = logging.getLogger(__name__)
+    try:
+        user = User.objects.filter(pk=user_id).first()
+        attempt = (
+            TestAttempt.objects
+            .filter(pk=attempt_id, user_id=user_id)
+            .select_related('olympiad')
+            .first()
+        )
+        if not user or not attempt:
+            set_ai_task_failed(AI_AUDIO_TASK_PREFIX, task_id, 'Urinish topilmadi')
+            return
+
+        # Avval saqlangan AI tahlil bor bo'lsa undan foydalanamiz (qayta
+        # generatsiya qilmaymiz — Gemini chaqiruvini tejaymiz).
+        analysis = AttemptAIAnalysis.objects.filter(attempt=attempt).first()
+        if analysis and analysis.status == AttemptAIAnalysis.STATUS_READY and analysis.analysis_text:
+            analysis_text = analysis.analysis_text
+        else:
+            olympiad = attempt.olympiad
+            summary = {
+                'olympiad_title': olympiad.title if olympiad else '',
+                'subject': olympiad.subject if olympiad else '',
+                'score': attempt.score,
+                'correct': attempt.correct_count,
+                'wrong': attempt.wrong_count,
+                'total': attempt.total_questions,
+            }
+            mistakes = []
+            if olympiad:
+                from attempts.views import _build_attempt_mistakes
+                mistakes = _build_attempt_mistakes(attempt, olympiad, attempt.answers or {})
+            analysis_text = analyze_attempt_ai(summary, mistakes)
+
+        # gTTS mavjud bo'lsa audio (voice) yuboramiz, aks holda matn.
+        if _try_send_voice(user.telegram_chat_id, analysis_text):
+            set_ai_task_result(AI_AUDIO_TASK_PREFIX, task_id, {
+                'delivery_status': 'sent',
+                'message': 'Audio tahlil Telegram orqali yuborildi.',
+            })
+            return
+
+        from notifications.services import _send_telegram_to_user
+        ok = _send_telegram_to_user(user, f"🎓 Olympy AI tahlil:\n\n{analysis_text}")
+        set_ai_task_result(AI_AUDIO_TASK_PREFIX, task_id, {
+            'delivery_status': 'text_only',
+            'message': (
+                "Tahlil matn ko'rinishida yuborildi (audio mavjud emas)."
+                if ok else
+                "Tahlil tayyor, lekin Telegram yuborishda muammo bo'ldi."
+            ),
+        })
+    except Exception as exc:
+        logger.exception('AI audio tahlil task xatosi task=%s', task_id)
+        set_ai_task_failed(
+            AI_AUDIO_TASK_PREFIX, task_id,
+            str(exc) or "AI tahlilni yuborib bo'lmadi",
+        )
