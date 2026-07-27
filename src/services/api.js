@@ -40,13 +40,57 @@ const makeAssetUrl = (url) => {
 const AUTH_TOKEN_KEY = 'olympy_api_token';
 const AUTH_REFRESH_KEY = 'olympy_refresh_token';
 
-// Production default: JWT faqat HttpOnly cookie — storage'ga yozilmaydi (XSS).
-// Telegram WebView / cookie-less: VITE_AUTH_ALLOW_TOKEN_STORAGE=true yoki
-// so'rov headeri backendga X-Olympy-Auth-Storage: 1.
+// Hostning taxminiy "registrable domain"i (eTLD+1) — oxirgi ikki yorliq.
+// To'liq Public Suffix List'siz taxmin, lekin bizga kerak bo'lgan ikkala
+// holatni to'g'ri ajratadi: `api.prolymp.uz` va `prolymp.uz` bir sayt,
+// `olympy-api.onrender.com` va `prolymp.uz` esa turli saytlar.
+const _registrableDomain = (hostname) => {
+  const labels = String(hostname || '').toLowerCase().split('.');
+  return labels.length <= 2 ? labels.join('.') : labels.slice(-2).join('.');
+};
+
+// API sahifaga nisbatan CROSS-SITE joylashganmi? Shu holatda auth cookie
+// brauzer uchun "uchinchi tomon cookie"si bo'ladi.
+const _apiIsCrossSite = () => {
+  try {
+    if (typeof window === 'undefined' || !window.location?.hostname) return false;
+    // Nisbiy baza (bo'sh yoki '/...') — har doim same-origin.
+    if (!/^https?:\/\//i.test(API_BASE_URL)) return false;
+    const api = new URL(API_BASE_URL);
+    if (api.host === window.location.host) return false;
+    return _registrableDomain(api.hostname) !== _registrableDomain(window.location.hostname);
+  } catch {
+    return false;
+  }
+};
+
+// Default: JWT faqat HttpOnly cookie — storage'ga yozilmaydi (XSS blast
+// radius'i kichik qoladi). Telegram WebView / cookie-less muhitlar uchun
+// VITE_AUTH_ALLOW_TOKEN_STORAGE=true yoki so'rov headeri X-Olympy-Auth-Storage: 1.
+//
+// MUHIM (iOS Safari): cookie-only rejim FAQAT frontend va API bir saytda
+// bo'lganda ishlaydi. Production'da ular turli saytlarda (prolymp.uz va
+// olympy-api.onrender.com — onrender.com Public Suffix List'da), ya'ni auth
+// cookie brauzer uchun uchinchi tomon cookie'si. Safari (iOS va macOS) 13.1
+// dan beri uchinchi tomon cookie'larini TO'LIQ bloklaydi (ITP), shuning uchun
+// `SameSite=None; Secure` bo'lsa ham `/api/auth/google/` javobidagi Set-Cookie
+// umuman SAQLANMAYDI. Login javobining o'zi muvaffaqiyatli bo'lgani uchun
+// ilova foydalanuvchini kiritadi, keyin esa birinchi autentifikatsiyali
+// so'rov 401 oladi → refresh ham 401 → `olympy:logout` → foydalanuvchi hech
+// nima qilmasdan o'zidan-o'zi chiqarib yuboriladi. Aynan shu Bearer fallback
+// 58a1fbe da qo'shilgan edi, c0b005d (security audit) esa uni production'da
+// o'chirib qo'ygan — natijada iOS Safari'dagi avto-logout qaytib keldi.
+//
+// Shu sababli cross-site deploy'da Bearer fallback avtomatik yoqiladi: cookie
+// baribir birinchi navbatda ishlatiladi, token esa u yetib bormaganda zaxira
+// kanal bo'lib qoladi. Same-site deploy'da (masalan API `api.prolymp.uz` ga
+// ko'chirilsa) bu shart o'zidan-o'zi o'chadi va qat'iy cookie-only rejim
+// qaytadi — qo'shimcha sozlash kerak emas.
 const ALLOW_TOKEN_STORAGE = (
   import.meta.env?.VITE_AUTH_ALLOW_TOKEN_STORAGE === 'true'
   || import.meta.env?.DEV === true
   || import.meta.env?.MODE === 'development'
+  || _apiIsCrossSite()
 );
 
 // Foydalanuvchi profil obyekti (xom backend `/api/me/` javobi) modul-darajali
@@ -697,21 +741,42 @@ const getToken = () => {
 // autentifikatsiya qilingan holda) qisqa muddatli access token so'raymiz.
 // Muddati tugagunicha keshlaymiz — har WebSocket ulanishida qayta so'ralmasin.
 let _realtimeToken = null; // { value, expiresAt }
+// Parallel chaqiruvlar shu bitta so'rovni kutadi (pastdagi single-flight).
+let _realtimeTokenInflight = null;
 // Muddat tugashidan 30s oldin yangilaymiz (soat farqi / tarmoq kechikishi).
 const REALTIME_TOKEN_SKEW_MS = 30000;
+// `expires_in` kelmasa ishlatiladigan zaxira muddat. Avval bunda
+// `expiresAt = now` chiqib, kesh HAR SAFAR eskirgan hisoblanardi — ya'ni har
+// bir soket ulanishi Django'ga alohida so'rov yuborardi (30 o'quvchi bir
+// vaqtda qo'shilganda aynan shu kerak emas edi).
+const REALTIME_TOKEN_FALLBACK_TTL_MS = 120000;
 
-const getRealtimeToken = async () => {
+// `force: true` — keshni chetlab o'tib yangi token so'raymiz. Handshake rad
+// etilganda shu bilan qayta urinamiz: kesh muddati "tugamagan" bo'lsa ham
+// token server tomonda yaroqsiz bo'lishi mumkin (Django restart, chiqib qayta
+// kirish), va eski tokenni qayta-qayta ishlatish bir xil xatoga olib borardi.
+const getRealtimeToken = async ({ force = false } = {}) => {
   const now = Date.now();
-  if (_realtimeToken && _realtimeToken.expiresAt - REALTIME_TOKEN_SKEW_MS > now) {
+  if (!force && _realtimeToken && _realtimeToken.expiresAt - REALTIME_TOKEN_SKEW_MS > now) {
     return _realtimeToken.value;
   }
-  const data = await request('/api/auth/realtime-token/', { method: 'POST' });
-  const value = data?.token || '';
-  if (!value) {
-    throw new ApiError('Sessiya topilmadi. Tizimga qayta kiring.', { status: 401 });
+  if (force) _realtimeToken = null;
+  // Single-flight: bir necha soket bir vaqtda ulansa ham Django'ga bitta
+  // so'rov ketadi. (Inflight so'rov aynan hozir olinayotgani uchun `force`
+  // bo'lsa ham uni kutish to'g'ri — u allaqachon yangi token.)
+  if (!_realtimeTokenInflight) {
+    _realtimeTokenInflight = (async () => {
+      const data = await request('/api/auth/realtime-token/', { method: 'POST' });
+      const value = data?.token || '';
+      if (!value) {
+        throw new ApiError('Sessiya topilmadi. Tizimga qayta kiring.', { status: 401 });
+      }
+      const ttlMs = (Number(data?.expires_in) || 0) * 1000 || REALTIME_TOKEN_FALLBACK_TTL_MS;
+      _realtimeToken = { value, expiresAt: Date.now() + ttlMs };
+      return value;
+    })().finally(() => { _realtimeTokenInflight = null; });
   }
-  _realtimeToken = { value, expiresAt: now + (Number(data?.expires_in) || 0) * 1000 };
-  return value;
+  return _realtimeTokenInflight;
 };
 
 const createQuizRoom = async ({ title, questions }, token) => {
@@ -768,12 +833,164 @@ const quizWsUrl = async ({ roomCode, role = 'student', name = '' }, token) => {
   return `${realtimeWsBase()}/ws/quiz?${params.toString()}`;
 };
 
+// ─── Jonli viktorina soketi: heartbeat + avtomatik qayta ulanish ─────────────
+// Sahifalar avval `new WebSocket(url)`ni to'g'ridan-to'g'ri ishlatardi. Bu
+// uchta real shikoyatning manbasi edi:
+//
+//  1) LOBBIDA "O'ZIDAN-O'ZI CHIQIB KETISH". Kutish xonasida trafik umuman
+//     yo'q — ustoz sinfni yig'guncha bir necha daqiqa o'tadi — va oradagi
+//     proksi (Render/CDN) bo'sh turgan WebSocket'ni ~60s dan keyin yopadi.
+//     Klientda qayta ulanish yo'q edi, shuning uchun o'quvchi spinner bilan
+//     muzlab qolardi va viktorina boshlanganda savol umuman kelmasdi.
+//     Yechim: ~25s da bir marta yengil `ping` matni (brauzerdan WebSocket
+//     ping FRAME'ini yuborib bo'lmaydi, shuning uchun oddiy xabar) + uzilish
+//     bo'lsa avtomatik qayta ulanish. Java xizmat buni allaqachon qo'llaydi:
+//     `onStudentConnect` o'quvchini userId bo'yicha topib, ballini saqlab
+//     qoladi va kerak bo'lsa joriy savolni qaytadan yuboradi; notanish
+//     `type`li xabarlar (bizning `ping`) jimgina e'tiborsiz qoldiriladi.
+//
+//  2) HAMMA BIR VAQTDA QO'SHILGANDA XATO. Har bir handshake Java tomonda
+//     Django introspection javobini kutadi; 30 o'quvchi bir zumda bosganda
+//     bir qismi rad etiladi. Bitta urinish o'rniga eksponensial backoff +
+//     jitter bilan qayta urinamiz — to'lqin vaqt bo'yicha yoyiladi va
+//     o'quvchi qo'lda qayta-qayta bosishi shart emas.
+//
+//  3) ABADIY "ULANMOQDA...". Handshake osilib qolsa (Java Django javobini
+//     kutib turibdi) brauzer na `open`, na `close`, na `error` beradi —
+//     tugma cheksiz "Ulanmoqda..." holatida qolardi. Har bir urinishga qat'iy
+//     timeout qo'yamiz.
+//
+// `onStatus(state, reason)` holatlari: 'connecting' | 'open' | 'reconnecting'
+// | 'failed'. 'failed' — urinishlar tugadi (reason: 'auth' bo'lsa sessiya
+// yaroqsiz, qayta urinishning ma'nosi yo'q).
+const QUIZ_WS_CONNECT_TIMEOUT_MS = 12000;
+const QUIZ_WS_HEARTBEAT_MS = 25000;
+const QUIZ_WS_MAX_ATTEMPTS = 8;
+
+const connectQuizSocket = ({ roomCode, role = 'student', name = '', onMessage, onStatus }) => {
+  let socket = null;
+  let attempts = 0;
+  let disposed = false;
+  let sawOpen = false;    // joriy urinishda `open` bo'ldimi
+  let openedOnce = false; // umuman bir marta ulandikmi ('connecting' vs 'reconnecting')
+  let retryTimer = null;
+  let connectTimer = null;
+  let heartbeatTimer = null;
+
+  const emit = (state, reason) => { try { onStatus?.(state, reason); } catch {} };
+
+  const stopTimers = () => {
+    if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  };
+
+  // Eski soketdan butunlay uzilamiz: handlerlarsiz yopilgan soket endi holatga
+  // tegmaydi (avval almashtirilgan soketlar ochiq qolib, keyin `onclose` bilan
+  // UI'ni buzardi).
+  const detach = (s) => {
+    if (!s) return;
+    s.onopen = null; s.onmessage = null; s.onerror = null; s.onclose = null;
+    try { s.close(); } catch {}
+  };
+
+  // `handshakeRejected` — soket umuman ochilmadi. Sabab eskirgan token
+  // bo'lishi mumkin, shuning uchun keyingi urinishda uni majburan yangilaymiz.
+  const retry = (reason, handshakeRejected) => {
+    stopTimers();
+    const dead = socket;
+    socket = null;
+    detach(dead);
+    if (disposed) return;
+    if (attempts >= QUIZ_WS_MAX_ATTEMPTS) { emit('failed', reason); return; }
+    // Backoff + jitter: bitta uzilishdan 30 o'quvchi barobar ta'sirlansa ham
+    // hammasi bir zumda qaytib kelib xizmatni yana bo'g'masin.
+    const base = Math.min(500 * 2 ** Math.max(0, attempts - 1), 8000);
+    const delay = base + Math.random() * Math.min(base, 1000);
+    emit(openedOnce ? 'reconnecting' : 'connecting', reason);
+    retryTimer = setTimeout(() => { retryTimer = null; start(handshakeRejected); }, delay);
+  };
+
+  const start = async (forceFreshToken = false) => {
+    if (disposed) return;
+    attempts += 1;
+    sawOpen = false;
+    emit(openedOnce ? 'reconnecting' : 'connecting');
+
+    let url;
+    try {
+      const jwt = await getRealtimeToken({ force: forceFreshToken });
+      url = await quizWsUrl({ roomCode, role, name }, jwt);
+    } catch (e) {
+      // Sessiyaning o'zi yaroqsiz — qayta urinish holatni o'zgartirmaydi.
+      if (e?.status === 401) { emit('failed', 'auth'); return; }
+      retry('token', true);
+      return;
+    }
+    if (disposed) return;
+
+    let s;
+    try { s = new WebSocket(url); } catch { retry('open', false); return; }
+    socket = s;
+
+    connectTimer = setTimeout(() => {
+      connectTimer = null;
+      if (socket === s && !sawOpen) retry('timeout', false);
+    }, QUIZ_WS_CONNECT_TIMEOUT_MS);
+
+    s.onopen = () => {
+      if (socket !== s) return;
+      sawOpen = true;
+      openedOnce = true;
+      attempts = 0;
+      if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
+      heartbeatTimer = setInterval(() => {
+        if (s.readyState === WebSocket.OPEN) { try { s.send('{"type":"ping"}'); } catch {} }
+      }, QUIZ_WS_HEARTBEAT_MS);
+      emit('open');
+    };
+    s.onmessage = (evt) => {
+      if (socket !== s) return;
+      let msg;
+      try { msg = JSON.parse(evt.data); } catch { return; }
+      try { onMessage?.(msg); } catch {}
+    };
+    // `error` ortidan doim `close` keladi — qayta ulanish o'sha yerda hal
+    // bo'ladi, bu yerda ikki marta ishlamaslik uchun hech narsa qilmaymiz.
+    s.onerror = () => {};
+    s.onclose = () => {
+      if (socket !== s) return;
+      retry(sawOpen ? 'dropped' : 'refused', !sawOpen);
+    };
+  };
+
+  start();
+
+  return {
+    // `false` — soket hozir ochiq emas (qayta ulanmoqda). Chaqiruvchi buni
+    // foydalanuvchiga aytishi kerak: avval yuborilmagan javob jimgina
+    // yo'qolar, o'quvchi esa javobim ketdi deb o'ylardi.
+    send: (payload) => {
+      if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+      try { socket.send(JSON.stringify(payload)); return true; } catch { return false; }
+    },
+    close: () => {
+      disposed = true;
+      stopTimers();
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+      const dead = socket;
+      socket = null;
+      detach(dead);
+    },
+  };
+};
+
 export const OlympyApi = {
   API_BASE_URL,
   REALTIME_BASE_URL,
   createQuizRoom,
   getQuizRoom,
   quizWsUrl,
+  connectQuizSocket,
   getRealtimeToken,
   ApiError,
   toUserMessage,

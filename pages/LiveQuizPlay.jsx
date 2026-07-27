@@ -24,6 +24,10 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
   const [step, setStep] = useState('join'); // join|lobby|question|answered|result|final
   const [error, setError] = useState('');
   const [joining, setJoining] = useState(false);
+  // Soket holati (OlympyApi.connectQuizSocket'dan): idle|connecting|open|
+  // reconnecting|failed. Avval bunday holat umuman yo'q edi — ulanish uzilsa
+  // o'quvchi buni bilmasdan kutish spinneriga tikilib o'tirardi.
+  const [connState, setConnState] = useState('idle');
 
   const [codeInput, setCodeInput] = useState('');
   const [nameInput, setNameInput] = useState(defaultName);
@@ -42,16 +46,21 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
   const [myRank, setMyRank] = useState(null);
   const [finalBoard, setFinalBoard] = useState([]);
 
-  const wsRef = useRef(null);
+  const wsRef = useRef(null); // OlympyApi.connectQuizSocket handle'i
   const timerRef = useRef(null);
   const myIdRef = useRef(null);
+  // Qo'shilish urinishi ketayotganini `joining` state'i emas, ref bilan
+  // qo'riqlaymiz: ikkala input ham Enter'ga bog'langan va state yangilanishi
+  // asinxron — bir necha tez bosish bitta renderda `joining === false` ko'rib,
+  // bir vaqtning o'zida bir nechta soket ochib yuborardi.
+  const joiningRef = useRef(false);
+  // Qayta ulanish tugmasi uchun xona kodi (`codeInput` foydalanuvchi
+  // tahrirlaydigan maydon, ulangandan keyin unga tayanib bo'lmaydi).
+  const roomCodeRef = useRef('');
 
   const cleanupWs = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    if (wsRef.current) {
-      try { wsRef.current.onclose = null; wsRef.current.close(); } catch {}
-      wsRef.current = null;
-    }
+    if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
   }, []);
 
   useEffect(() => () => cleanupWs(), [cleanupWs]);
@@ -72,7 +81,14 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
       case 'joined':
         setTitle(msg.title || '');
         myIdRef.current = msg.userId ?? null;
-        if (!msg.started) setStep('lobby');
+        // Faqat birinchi qo'shilishda kutish lobbisiga o'tamiz. Ilgari sharti
+        // `!msg.started` edi va ikkita holatda o'quvchi kirish ekranida qolib
+        // ketardi: (a) allaqachon boshlangan xonaga qo'shilganda, (b) uzilib
+        // qayta ulanganda — server javoblarni qabul qilib turgan bo'lsa ham
+        // ekranda hech nima o'zgarmasdi. Qayta ulanishda esa o'quvchini joriy
+        // ekranidan sug'urib olmaymiz: server kerak bo'lsa darhol `question`
+        // yuboradi.
+        setStep((s) => (s === 'join' ? 'lobby' : s));
         break;
       case 'quiz_start':
         setStep('lobby');
@@ -115,10 +131,42 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
     }
   }, [startCountdown]);
 
+  // Soketni ochadi (yoki qaytadan ochadi). Uzilish, backoff bilan qayta
+  // urinish va heartbeat OlympyApi.connectQuizSocket ichida — bu yerda faqat
+  // holatni ekranga chiqaramiz.
+  const openSocket = useCallback((code) => {
+    roomCodeRef.current = code;
+    if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
+    setConnState('connecting');
+    wsRef.current = OlympyApi.connectQuizSocket({
+      roomCode: code,
+      role: 'student',
+      name: nameInput.trim(),
+      onMessage: handleMessage,
+      onStatus: (state, reason) => {
+        setConnState(state);
+        if (state === 'open') { joiningRef.current = false; setJoining(false); setError(''); }
+        if (state === 'failed') {
+          // Urinishlar tugadi. Ilgari bu holat umuman kuzatilmasdi va
+          // o'quvchi cheksiz "Ulanmoqda..." yoki qotib qolgan spinnerda
+          // qolardi; endi aniq xabar + qayta urinish tugmasi beramiz.
+          joiningRef.current = false;
+          setJoining(false);
+          setError(reason === 'auth'
+            ? 'Sessiya muddati tugagan. Tizimga qayta kiring.'
+            : "Serverga ulanib bo'lmadi. Internetni tekshirib, qayta urinib ko'ring.");
+        }
+      },
+    });
+  }, [handleMessage, nameInput]);
+
   const join = async () => {
+    // Takroriy bosishlarni to'xtatamiz — yuqoridagi izohga qarang (joiningRef).
+    if (joiningRef.current) return;
     setError('');
     const code = codeInput.trim().toUpperCase();
     if (!code) { setError('Xona kodini kiriting'); return; }
+    joiningRef.current = true;
     setJoining(true);
     try {
       const room = await OlympyApi.getQuizRoom(code);
@@ -126,47 +174,73 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
       // Xona ustozda ochiq turibdi, shunchaki qayta urinish kerak.
       if (room.unavailable) {
         setError("Jonli viktorina xizmati javob bermayapti. Bir ozdan so'ng qayta urinib ko'ring.");
-        setJoining(false); return;
+        joiningRef.current = false; setJoining(false); return;
       }
-      if (!room.exists) { setError('Bunday xona topilmadi. Kodni tekshiring.'); setJoining(false); return; }
-      if (room.finished) { setError('Bu viktorina allaqachon tugagan.'); setJoining(false); return; }
-      const url = await OlympyApi.quizWsUrl({ roomCode: code, role: 'student', name: nameInput.trim() });
-      const ws = new WebSocket(url);
-      wsRef.current = ws;
-      ws.onmessage = (evt) => { try { handleMessage(JSON.parse(evt.data)); } catch {} };
-      ws.onerror = () => { setError("Ulanib bo'lmadi. Qaytadan urinib ko'ring."); setJoining(false); };
-      ws.onclose = (e) => {
-        // Handshake rad etilsa (masalan token yaroqsiz) ulanish darhol yopiladi.
-        if (step === 'join') { setJoining(false); if (!e.wasClean) setError("Ulanish rad etildi. Tizimga qayta kiring."); }
-      };
+      if (!room.exists) { setError('Bunday xona topilmadi. Kodni tekshiring.'); joiningRef.current = false; setJoining(false); return; }
+      if (room.finished) { setError('Bu viktorina allaqachon tugagan.'); joiningRef.current = false; setJoining(false); return; }
+      // Bundan keyingi barcha xatolar (token, handshake, tarmoq) soket
+      // ichidagi qayta urinishlar bilan hal bo'ladi — `onStatus` xabar beradi.
+      openSocket(code);
     } catch (e) {
-      // Bu yerga faqat token olish (Django /api/auth/realtime-token/) yoki
-      // WebSocket qurish qadami yiqilganda tushamiz — xona holati yuqorida
-      // allaqachon alohida tekshirilgan. `status` bo'lsa server aniq javob
-      // bergan (401 sessiya, 429 rate-limit...), aks holda backend'ga umuman
-      // yetib bo'lmadi: umumiy "Server bilan bog'lanishda xatolik" o'rniga
-      // o'quvchiga nima qilish kerakligini aytamiz.
+      // Bu yerga faqat xona holatini tekshirish kutilmaganda yiqilsa tushamiz.
       setError(e?.status
         ? (OlympyApi.toUserMessage?.(e) || "Ulanib bo'lmadi")
         : "Serverga ulanib bo'lmadi. Bir ozdan so'ng qayta urinib ko'ring.");
+      joiningRef.current = false;
       setJoining(false);
     }
+  };
+
+  // "Qayta ulanish" tugmasi (ulanish butunlay uzilganda). Xona kodi saqlangan,
+  // server esa o'quvchini userId bo'yicha tanib, ballini qaytaradi.
+  const reconnect = () => {
+    if (!roomCodeRef.current) return;
+    setError('');
+    openSocket(roomCodeRef.current);
   };
 
   // `value` — savol turiga qarab: variant indeksi (int), matn (string) yoki
   // slayder raqami (number). Server turni o'zi biladi va shunga qarab baholaydi.
   const answer = (value) => {
     if (myChoice !== null || !question) return;
-    setMyChoice(value);
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'answer', index: question.index, answer: value }));
+    // Ilgari javob soket yopiq bo'lsa jimgina yo'qolar, ekranda esa "Javob
+    // qabul qilindi" chiqardi — o'quvchi ballsiz qolganini bilmasdi.
+    if (!wsRef.current?.send({ type: 'answer', index: question.index, answer: value })) {
+      setError("Ulanish tiklanmoqda — javob yuborilmadi. Bir soniyadan so'ng qayta urinib ko'ring.");
+      return;
     }
+    setError('');
+    setMyChoice(value);
     setStep('answered');
   };
 
   const exit = () => { cleanupWs(); onNavigate?.('student'); };
 
   // ─── Renderlar ─────────────────────────────────────────────────────────────
+  // Ulanish holati banneri. Kirish ekranidan keyingi barcha ekranlarda
+  // ko'rsatiladi: uzilish endi jimgina o'tmaydi, o'quvchi nima bo'layotganini
+  // va qachon qo'lda aralashish kerakligini ko'radi. `fixed` — qaysi ekranga
+  // qo'yilishidan qat'i nazar bir xil joyda chiqadi.
+  //
+  // 'connecting' ham kiritilgan: "Qayta ulanish" bosilgandan keyin yangi soket
+  // birinchi urinishini aynan shu holatda boshlaydi, aks holda banner yo'qolib,
+  // o'quvchi hech qanday javob ko'rmasdan qolardi.
+  const connBanner = (connState === 'connecting' || connState === 'reconnecting' || connState === 'failed') ? (
+    <div className={`fixed top-0 inset-x-0 z-50 px-4 py-2 text-center text-xs font-semibold flex items-center justify-center gap-2 ${connState === 'failed' ? 'bg-red-500/90 text-white' : 'bg-amber-500/90 text-black'}`}>
+      {connState === 'failed' ? (
+        <>
+          <span>Ulanish uzildi.</span>
+          <button onClick={reconnect} className="underline font-black">Qayta ulanish</button>
+        </>
+      ) : (
+        <>
+          <span className="w-3 h-3 rounded-full border-2 border-black/30 border-t-black animate-spin" />
+          <span>{connState === 'reconnecting' ? 'Qayta ulanmoqda...' : 'Ulanmoqda...'}</span>
+        </>
+      )}
+    </div>
+  ) : null;
+
   if (step === 'join') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-5 text-white" style={{ background: 'radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0b0b14 55%)' }}>
@@ -211,6 +285,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
   if (step === 'lobby') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 text-white text-center" style={{ background: 'radial-gradient(circle at 50% 0%, #1e1b4b 0%, #0b0b14 55%)' }}>
+        {connBanner}
         <div className="w-16 h-16 rounded-full border-4 border-white/15 border-t-indigo-400 animate-spin mb-6" />
         <h2 className="text-2xl font-black mb-1">Kutilmoqda...</h2>
         <p className="text-white/50 text-sm">{title || 'Viktorina'} boshlanishini kuting</p>
@@ -223,63 +298,73 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
     const qType = question.questionType || 'mcq';
     return (
       <div className="min-h-screen flex flex-col text-white" style={{ background: '#0b0b14' }}>
-        <div className="px-4 py-3 flex items-center justify-between">
-          <span className="text-sm font-semibold text-white/50">Savol {question.index + 1}/{question.totalQuestions}</span>
-          <span className="w-11 h-11 rounded-full flex items-center justify-center font-black bg-white/10 border border-white/15">{remaining}</span>
-        </div>
-        <div className="px-5 py-4 text-center">
-          <h2 className="text-xl sm:text-2xl font-black leading-tight break-words">{question.text}</h2>
-        </div>
-        {qType === 'type_answer' ? (
-          // Matnli javob: o'quvchi yozadi va "Yuborish" bilan tasdiqlaydi.
-          <div className="flex-1 flex flex-col justify-center gap-3 p-4">
-            <input
-              value={textAnswer}
-              onChange={(e) => setTextAnswer(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && textAnswer.trim()) answer(textAnswer.trim()); }}
-              placeholder="Javobingizni yozing"
-              maxLength={120}
-              autoFocus
-              className="w-full bg-white/5 border border-white/15 rounded-2xl px-4 py-4 text-center text-lg font-bold text-white outline-none focus:border-indigo-500/60"
-            />
-            <button onClick={() => answer(textAnswer.trim())} disabled={!textAnswer.trim()}
-              className="btn-primary w-full py-4 rounded-2xl text-base font-black disabled:opacity-40">
-              Yuborish
-            </button>
+        {/* Kahoot uslubidagi o'yin maydoni: fon butun ekranni qoplaydi, kontent
+            ustuni esa keng monitorlarda cheklanib markazga tortiladi. Kichik
+            ekranlarda `w-full` tufayli hech narsa o'zgarmaydi. */}
+        {connBanner}
+        <div className="flex-1 w-full max-w-5xl mx-auto flex flex-col">
+          <div className="px-4 py-3 flex items-center justify-between">
+            <span className="text-sm font-semibold text-white/50">Savol {question.index + 1}/{question.totalQuestions}</span>
+            <span className="w-11 h-11 rounded-full flex items-center justify-center font-black bg-white/10 border border-white/15">{remaining}</span>
           </div>
-        ) : qType === 'slider' ? (
-          // Slayder: surish javob emas — "Tasdiqlash" bosilganda yuboriladi
-          // (Kahoot'dagi bilan bir xil xatti-harakat).
-          <div className="flex-1 flex flex-col justify-center gap-4 p-5">
-            <div className="text-center text-5xl font-black text-indigo-300">{sliderValue}</div>
-            <input type="range"
-              min={question.sliderMin} max={question.sliderMax} step={question.sliderStep || 1}
-              value={sliderValue}
-              onChange={(e) => setSliderValue(Number(e.target.value))}
-              className="w-full accent-indigo-500" />
-            <div className="flex justify-between text-xs font-semibold text-white/40">
-              <span>{question.sliderMin}</span>
-              <span>{question.sliderMax}</span>
-            </div>
-            <button onClick={() => answer(sliderValue)}
-              className="btn-primary w-full py-4 rounded-2xl text-base font-black">
-              Tasdiqlash
-            </button>
+          <div className="px-5 py-4 text-center">
+            <h2 className="text-xl sm:text-2xl font-black leading-tight break-words">{question.text}</h2>
           </div>
-        ) : (
-          // Variantli turlar: 4 variant → 2x2 to'r, 2 variant (To'g'ri/Noto'g'ri)
-          // → ustma-ust ikkita katta tugma.
-          <div className={`flex-1 grid gap-2.5 p-3 ${question.options.length === 2 ? 'grid-cols-1 grid-rows-2' : 'grid-cols-2 grid-rows-2'}`}>
-            {question.options.map((opt, i) => (
-              <button key={i} onClick={() => answer(i)}
-                className="rounded-2xl flex flex-col items-center justify-center gap-2 p-3 text-white font-bold text-base sm:text-lg active:scale-[0.97] transition-transform"
-                style={{ background: ANSWER_STYLES[i].bg }}>
-                <QuizShape shape={ANSWER_STYLES[i].shape} size={34} />
-                <span className="break-words text-center leading-tight">{opt}</span>
+          {/* Javob yuborilmay qolgani (soket uzilgan) shu yerda ko'rinadi —
+              avval bu xato hech qaerda chiqmasdi va o'quvchi javobim ketdi
+              deb o'ylardi. */}
+          {error && <div className="px-5 pb-2 text-center text-sm text-amber-300">{error}</div>}
+          {qType === 'type_answer' ? (
+            // Matnli javob: o'quvchi yozadi va "Yuborish" bilan tasdiqlaydi.
+            <div className="flex-1 flex flex-col justify-center gap-3 p-4">
+              <input
+                value={textAnswer}
+                onChange={(e) => setTextAnswer(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && textAnswer.trim()) answer(textAnswer.trim()); }}
+                placeholder="Javobingizni yozing"
+                maxLength={120}
+                autoFocus
+                className="w-full bg-white/5 border border-white/15 rounded-2xl px-4 py-4 text-center text-lg font-bold text-white outline-none focus:border-indigo-500/60"
+              />
+              <button onClick={() => answer(textAnswer.trim())} disabled={!textAnswer.trim()}
+                className="btn-primary w-full py-4 rounded-2xl text-base font-black disabled:opacity-40">
+                Yuborish
               </button>
-            ))}
-          </div>
-        )}
+            </div>
+          ) : qType === 'slider' ? (
+            // Slayder: surish javob emas — "Tasdiqlash" bosilganda yuboriladi
+            // (Kahoot'dagi bilan bir xil xatti-harakat).
+            <div className="flex-1 flex flex-col justify-center gap-4 p-5">
+              <div className="text-center text-5xl font-black text-indigo-300">{sliderValue}</div>
+              <input type="range"
+                min={question.sliderMin} max={question.sliderMax} step={question.sliderStep || 1}
+                value={sliderValue}
+                onChange={(e) => setSliderValue(Number(e.target.value))}
+                className="w-full accent-indigo-500" />
+              <div className="flex justify-between text-xs font-semibold text-white/40">
+                <span>{question.sliderMin}</span>
+                <span>{question.sliderMax}</span>
+              </div>
+              <button onClick={() => answer(sliderValue)}
+                className="btn-primary w-full py-4 rounded-2xl text-base font-black">
+                Tasdiqlash
+              </button>
+            </div>
+          ) : (
+            // Variantli turlar: 4 variant → 2x2 to'r, 2 variant (To'g'ri/Noto'g'ri)
+            // → ustma-ust ikkita katta tugma.
+            <div className={`flex-1 grid gap-2.5 p-3 ${question.options.length === 2 ? 'grid-cols-1 grid-rows-2' : 'grid-cols-2 grid-rows-2'}`}>
+              {question.options.map((opt, i) => (
+                <button key={i} onClick={() => answer(i)}
+                  className="rounded-2xl flex flex-col items-center justify-center gap-2 p-3 text-white font-bold text-base sm:text-lg active:scale-[0.97] transition-transform"
+                  style={{ background: ANSWER_STYLES[i].bg }}>
+                  <QuizShape shape={ANSWER_STYLES[i].shape} size={34} />
+                  <span className="break-words text-center leading-tight">{opt}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     );
   }
@@ -287,6 +372,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
   if (step === 'answered') {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 text-white text-center" style={{ background: '#0b0b14' }}>
+        {connBanner}
         <div className="text-6xl mb-4">✓</div>
         <h2 className="text-2xl font-black mb-1">Javob qabul qilindi</h2>
         <p className="text-white/50 text-sm">Boshqalarni kuting...</p>
@@ -321,6 +407,7 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center px-6 text-white text-center"
         style={{ background: correct ? 'radial-gradient(circle at 50% 30%, #065f46 0%, #0b0b14 60%)' : 'radial-gradient(circle at 50% 30%, #7f1d1d 0%, #0b0b14 60%)' }}>
+        {connBanner}
         <div className="text-7xl mb-3">{correct ? '🎉' : result.answered ? '😕' : '⏱️'}</div>
         <h2 className="text-3xl font-black mb-2">
           {correct ? "To'g'ri!" : result.answered ? "Noto'g'ri" : 'Ulgurmadingiz'}
