@@ -36,6 +36,8 @@ def _extract_mock_chosen(chosen, q_type):
             return chosen.get('selected')
         if q_type in ('fill_blank', 'essay'):
             return chosen.get('text')
+        if q_type == 'slider':
+            return chosen.get('value')
         if q_type == 'fill_blanks':
             if 'blanks' in chosen:
                 return chosen.get('blanks')
@@ -120,7 +122,7 @@ def start_mock(request, mock_id):
             status=http_status.HTTP_400_BAD_REQUEST,
         )
 
-    from questions.grading import _parse_correct_text
+    from questions.grading import _parse_correct_text, public_slider_range
     questions = []
     for q in mock.questions.all().order_by('id'):
         q_type = getattr(q, 'question_type', 'mcq') or 'mcq'
@@ -131,10 +133,13 @@ def start_mock(request, mock_id):
             'subject': q.subject,
             'question_type': q_type,
         }
-        # fill_blanks uchun bo'sh joylar soni — to'g'ri javoblarni sizdirmasdan.
+        # fill_blanks uchun bo'sh joylar soni, slider uchun esa faqat oraliq
+        # (min/max/step) — to'g'ri javoblarni sizdirmasdan.
         if q_type == 'fill_blanks':
             correct = _parse_correct_text(getattr(q, 'correct_text', ''))
             item['blanks_count'] = len(correct) if isinstance(correct, dict) else 1
+        elif q_type == 'slider':
+            item['slider_range'] = public_slider_range(q)
         questions.append(item)
     return Response({
         'attempt_id': attempt.id,

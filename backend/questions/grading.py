@@ -18,6 +18,8 @@ edi. Bu modul yagona, izchil baholashni ta'minlaydi.
   - multiple_select         → indekslar ro'yxati (list[int])
   - fill_blank              → matn (str)
   - fill_blanks             → {"1": "...", ...} dict yoki list
+  - slider                  → raqamli qiymat (int/float). Variant yo'q, shu
+                              sababli de-shuffle QILINMAYDI — xom son beriladi.
   - essay                   → har qanday qiymat (baholanmaydi)
 """
 import json
@@ -57,6 +59,34 @@ def _parse_correct_text(raw):
         return json.loads(raw)
     except (ValueError, TypeError):
         return raw
+
+
+def public_slider_range(question):
+    """slider savolining O'QUVCHIGA ko'rsatiladigan (javobsiz) sozlamasi.
+
+    `correct_text` ichida to'g'ri javob ham bor
+    ({"min","max","step","correct","tolerance"}) — uni butunligicha
+    yuborib bo'lmaydi. Bu yerdan FAQAT `min`/`max`/`step` qaytadi,
+    `correct`/`tolerance` HECH QACHON qaytmaydi (aks holda javob sizib
+    chiqadi va slayder savoli ma'nosini yo'qotadi).
+
+    Buzuq/yo'q sozlamada xavfsiz standart oraliq (0..100, qadam 1) beriladi —
+    shunda o'quvchi hech bo'lmasa javob bera oladi, ekran bo'sh qolmaydi.
+    """
+    cfg = _parse_correct_text(getattr(question, 'correct_text', ''))
+    if not isinstance(cfg, dict):
+        cfg = {}
+    try:
+        s_min = int(cfg.get('min', 0) or 0)
+        s_max = int(cfg.get('max', 100) or 100)
+        s_step = int(cfg.get('step', 1) or 1)
+    except (TypeError, ValueError):
+        s_min, s_max, s_step = 0, 100, 1
+    if s_max <= s_min:
+        s_min, s_max = 0, 100
+    if s_step <= 0:
+        s_step = 1
+    return {'min': s_min, 'max': s_max, 'step': s_step}
 
 
 def _grade_multiple_select(question, chosen):
@@ -104,6 +134,35 @@ def _grade_fill_blanks(question, chosen):
     return RESULT_CORRECT
 
 
+def _grade_slider(question, chosen):
+    """slider — o'quvchi surgan raqam `correct` ± `tolerance` ichidami.
+
+    `correct_text` JSON sozlama saqlaydi:
+        {"min": 0, "max": 100, "step": 1, "correct": 42, "tolerance": 5}
+    `correct_answer` bu tur uchun ISHLATILMAYDI (0 ga qotirilgan) — shu sababli
+    _grade_index bu yerga tushmasligi kerak.
+
+    Buzuq/yo'q sozlama yoki raqam bo'lmagan javob istisno tashlamaydi, oddiy
+    RESULT_WRONG qaytaradi — bitta buzuq savol butun baholashni to'xtatmasin.
+    """
+    cfg = _parse_correct_text(getattr(question, 'correct_text', ''))
+    if not isinstance(cfg, dict):
+        return RESULT_WRONG
+    try:
+        correct = float(cfg['correct'])
+        tolerance = abs(float(cfg.get('tolerance') or 0))
+    except (KeyError, TypeError, ValueError):
+        return RESULT_WRONG
+    # bool int'ning kichik turi — True/False javobni son deb qabul qilmaymiz.
+    if isinstance(chosen, bool):
+        return RESULT_WRONG
+    try:
+        value = float(chosen)
+    except (TypeError, ValueError):
+        return RESULT_WRONG
+    return RESULT_CORRECT if abs(value - correct) <= tolerance else RESULT_WRONG
+
+
 def _grade_index(question, chosen):
     """mcq / yes_no — option indeksi correct_answer bilan solishtiriladi.
 
@@ -138,5 +197,7 @@ def grade_answer(question, chosen):
         return _grade_fill_blank(question, chosen)
     if q_type == 'fill_blanks':
         return _grade_fill_blanks(question, chosen)
+    if q_type == 'slider':
+        return _grade_slider(question, chosen)
     # mcq, yes_no va boshqa indeksli turlar (default).
     return _grade_index(question, chosen)

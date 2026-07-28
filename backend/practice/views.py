@@ -16,6 +16,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from attempts.models import TestAttempt
+from attempts.session_utils import _extract_chosen
 from centers.models import CenterMembership, EducationCenter
 from questions.grading import (
     RESULT_CORRECT,
@@ -233,7 +234,12 @@ def practice_submit(request):
 
         # Practice'da option shuffle yo'q — chosen_raw to'g'ridan-to'g'ri asl
         # javob (mcq/yes_no uchun indeks, boshqa turlar uchun matn/ro'yxat).
-        # Savol turiga qarab grade_answer to'g'ri baholaydi.
+        # Frontend obyekt-shaklli payload yuborsa ({"chosen_idx":..},
+        # {"value":..} va h.k.) xom qiymatni olimpiada bilan bir xil
+        # shartnoma bo'yicha ajratamiz. Savol turiga qarab grade_answer
+        # to'g'ri baholaydi.
+        q_type = getattr(q, 'question_type', 'mcq') or 'mcq'
+        chosen_raw = _extract_chosen(chosen_raw, q_type)
         result = grade_answer(q, chosen_raw)
         is_correct = (result == RESULT_CORRECT)
         if is_correct:
@@ -253,7 +259,7 @@ def practice_submit(request):
             'id': q.id,
             'text': q.text,
             'options': q.options or [],
-            'question_type': getattr(q, 'question_type', 'mcq') or 'mcq',
+            'question_type': q_type,
             'correct_answer': q.correct_answer,
             'chosen_answer': chosen_display,
             'is_correct': is_correct,
@@ -357,11 +363,7 @@ def _collect_wrong_question_ids(user):
     # javob shuffle qilingan indeks — sessiyadagi option_orders bilan asl
     # indeksga o'giramiz, aks holda to'g'ri javob ham "xato" deb belgilanardi.
     from attempts.models import TestSession
-    from attempts.session_utils import (
-        _deshuffle_index,
-        _deshuffle_multi,
-        _extract_chosen,
-    )
+    from attempts.session_utils import _deshuffle_index, _deshuffle_multi
     session_orders = {
         olympiad_id: (orders or {})
         for olympiad_id, orders in (

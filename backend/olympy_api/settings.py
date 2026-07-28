@@ -699,6 +699,13 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'attempts.tasks.auto_disqualify_pending_reviews',
         'schedule': timedelta(minutes=1),
     },
+    # Judge0 natijasi kelmay qolgan kod javoblari (CodeSubmission.all_tests_passed
+    # = None) — task navbatdan yo'qolgan yoki worker qulagan holat. Har 10
+    # daqiqada 15 daqiqadan eskirganlarini qayta tekshiruvga yuboradi.
+    'recover-stuck-code-submissions': {
+        'task': 'questions.tasks.recover_stuck_code_submissions',
+        'schedule': timedelta(minutes=10),
+    },
 }
 
 
