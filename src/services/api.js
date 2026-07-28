@@ -294,8 +294,21 @@ const toUserMessage = (error) => {
   if (error?.status === 429 || text.includes('throttled') || text.includes('expected available in')) {
     return "So'rovlar soni vaqtincha chegaralandi. Biroz kutib, qayta urinib ko'ring.";
   }
-  if (!error?.status) {
+  // `status === 0` — ApiError'ning "so'rov serverga UMUMAN yetib bormadi"
+  // holati (tarmoq uzilgan, DNS/TLS xatosi, CORS bloki, abort). Faqat shu
+  // holat haqiqiy "bog'lanish xatosi".
+  if (error?.status === 0) {
     return "Server bilan bog‘lanishda xatolik yuz berdi";
+  }
+  // `status` UMUMAN yo'q (undefined) — bu ApiError emas, ya'ni so'rov emas,
+  // KLIENT tomonidagi oddiy istisno (masalan javobni qayta ishlashda
+  // TypeError). Avval u ham "server bilan bog'lanish xatosi" deb
+  // ko'rsatilardi: foydalanuvchi internetini/serverni bekorga tekshirar,
+  // xato hisobotlari esa haqiqiy sababdan (klient kodidagi qulash) butunlay
+  // chalg'itardi. Xom `error.message` ham ko'rsatilmaydi — u ichki matn
+  // ("Cannot read properties of undefined ...") bo'lishi mumkin.
+  if (error?.status === undefined || error?.status === null) {
+    return "Kutilmagan xatolik yuz berdi. Sahifani yangilab, qayta urinib ko‘ring.";
   }
   return error?.message || "Server bilan bog‘lanishda xatolik yuz berdi";
 };
@@ -583,7 +596,23 @@ const request = async (
     if (response.status >= 500 && !silent) {
       dispatchSupportNeeded('api_error', extractErrorMessage(data) || response.statusText || 'Server xatosi');
     }
-    throw new ApiError(extractErrorMessage(data) || response.statusText, {
+    // `response.statusText` HTTP/2 da HAR DOIM bo'sh bo'ladi — protokol
+    // reason-phrase'ni umuman tashimaydi, production API esa HTTP/2 orqali
+    // ishlaydi. HTML javob (Django'ning 500 sahifasi yoki Render/Cloudflare'ning
+    // 502/503/504 sahifasi) esa `extractErrorMessage` tomonidan ataylab '' ga
+    // aylantiriladi (xom HTML foydalanuvchiga ko'rsatilmasin). Ikkalasi
+    // birgalikda ApiError.message'ni BO'SH qoldirardi va `toUserMessage`
+    // pastdagi umumiy tarmoq xabariga ("Server bilan bog'lanishda xatolik yuz
+    // berdi") tushib qolardi — ya'ni SERVER xatosi foydalanuvchiga TARMOQ
+    // xatosi qiyofasida ko'rinardi. Bu ham foydalanuvchini chalg'itadi
+    // (internetini tekshirib vaqt yo'qotadi), ham nosozlikni topishni
+    // qiyinlashtiradi (xabar 500 bilan 502 ni ham, uzilgan ulanishni ham
+    // farqlamaydi). Shu sababli oxirgi zaxira sifatida status kodi bor halol
+    // xabar qaytaramiz.
+    const statusFallback = response.status >= 500
+      ? `Serverda xatolik yuz berdi (${response.status}). Birozdan so'ng qayta urinib ko'ring.`
+      : `So'rov bajarilmadi (${response.status}).`;
+    throw new ApiError(extractErrorMessage(data) || response.statusText || statusFallback, {
       status: response.status,
       data,
     });

@@ -2182,6 +2182,27 @@ class GoogleAuthTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
 
     @patch(GOOGLE_JWKS_PATCH)
+    def test_google_login_jwks_unreachable_returns_503(self, mock_get_key):
+        """Google JWKS'ga chiqib bo'lmasa — 503, 401 EMAS.
+
+        Bu SERVER tomonidagi vaqtinchalik nosozlik (tarmoq/timeout), token
+        bilan bog'liq emas. 401 qaytarilsa foydalanuvchiga "Google tokeningiz
+        yaroqsiz" degan yolg'on sabab ko'rsatilardi va frontend buni qayta
+        urinib ko'rilmaydigan yakuniy rad javobi deb bilardi.
+        """
+        import jwt as pyjwt
+
+        token = self._mock_token(mock_get_key, sub='777000783', email='jwks-down@gmail.com')
+        # Token o'zi mutlaqo yaroqli — faqat JWKS'ni olish qulaydi.
+        mock_get_key.side_effect = pyjwt.PyJWKClientConnectionError(
+            'Fail to fetch data from the url, err: "timed out"'
+        )
+        url = reverse('google-login')
+        response = self.client.post(url, {'id_token': token}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertFalse(User.objects.filter(phone=self._google_phone('777000783')).exists())
+
+    @patch(GOOGLE_JWKS_PATCH)
     def test_google_login_wrong_issuer_rejected(self, mock_get_key):
         """Google bo'lmagan `iss` — 401."""
         token = self._mock_token(

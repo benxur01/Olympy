@@ -610,10 +610,25 @@ def google_login(request):
     except jwt.InvalidAudienceError as exc:
         logger.warning("Google token audience mismatch: expected=%s (%s)", google_client_id, exc)
         return Response({'detail': "Google Client ID mos kelmadi."}, status=status.HTTP_401_UNAUTHORIZED)
+    except jwt.PyJWKClientConnectionError as exc:
+        # Google'ning JWKS endpoint'iga chiqa olmadik (tarmoq/timeout) — bu
+        # SERVER tomonidagi vaqtinchalik nosozlik, foydalanuvchi tokeni bilan
+        # bog'liq emas. Buni 401 "tokeningiz yaroqsiz" deb qaytarish ikki
+        # marta zarar qiladi: foydalanuvchiga yolg'on sabab ko'rsatiladi va
+        # frontend buni qayta urinib ko'rilmaydigan yakuniy rad javobi deb
+        # biladi. 503 — halol va qayta urinsa bo'ladigan holat.
+        logger.error("Google JWKS fetch failed (%s): %s", GOOGLE_JWKS_URL, exc)
+        return Response(
+            {'detail': "Google bilan bog'lanib bo'lmadi. Birozdan so'ng qayta urinib ko'ring."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
     except Exception as exc:
-        # Yaroqsiz imzo/issuer, buzilgan token yoki JWKS'ni olishdagi tarmoq
-        # xatosi — eski kod kabi hammasi 401 bilan yopiladi (fail-closed).
-        logger.warning("Google token verification error: %s", exc)
+        # Yaroqsiz imzo/issuer, buzilgan yoki mos kalit topilmagan token —
+        # eski kod kabi 401 bilan yopiladi (fail-closed). Sabab tashxis uchun
+        # istisno TURI bilan birga yoziladi: aks holda "Invalid issuer" kabi
+        # KONFIGURATSIYA xatosi ham, buzilgan token ham loglarda bir xil
+        # ko'rinardi.
+        logger.warning("Google token verification error [%s]: %s", type(exc).__name__, exc)
         return Response({'detail': "Google tokeni yaroqsiz yoki tasdiqlanmadi."}, status=status.HTTP_401_UNAUTHORIZED)
 
     email = (token_info.get('email') or '').strip().lower()

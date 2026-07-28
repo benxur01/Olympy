@@ -22,8 +22,23 @@ const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoa
 
   const triggerLoginWithCredential = async (credential) => {
     setLoading(true);
+    // MUHIM: tarmoq chaqiruvi va undan KEYINGI klient ishi (javobni map
+    // qilish, auth'ni saqlash, sahifaga o'tish) ATAYIN alohida try'larda.
+    // Avval hammasi bitta catch ostida edi: server 200 qaytargandan keyin
+    // klientda yuz bergan har qanday istisno ham `toUserMessage` orqali
+    // "Server bilan bog'lanishda xatolik yuz berdi" bo'lib ko'rinardi —
+    // ya'ni Google kirishi ALLAQACHON muvaffaqiyatli bo'lgan holatda ham
+    // foydalanuvchiga (va nosozlikni qidiruvchiga) tarmoq/server aybdor
+    // deb ko'rsatilardi.
+    let data;
     try {
-      const data = await OlympyApi.loginWithGoogle({ credential, role });
+      data = await OlympyApi.loginWithGoogle({ credential, role });
+    } catch (err) {
+      setError(OlympyApi.toUserMessage(err) || "Google orqali kirishda xatolik yuz berdi");
+      setLoading(false);
+      return;
+    }
+    try {
       const mappedUser = OlympyApi.mapBackendUser(data.user);
       OlympyApi.saveAuth({
         token: data.token,
@@ -34,7 +49,10 @@ const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoa
       });
       onLogin(mappedUser);
     } catch (err) {
-      setError(OlympyApi.toUserMessage(err) || "Google orqali kirishda xatolik yuz berdi");
+      // Server javobi keldi, lekin uni qayta ishlashda qulab tushdik —
+      // console'ga xom istisno yoziladi (tashxis uchun yagona iz).
+      console.error('Google login: javobni qayta ishlashda xatolik', err);
+      setError("Kirish yakunlanmadi. Sahifani yangilab, qayta urinib ko'ring.");
       setLoading(false);
     }
   };
