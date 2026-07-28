@@ -20,6 +20,7 @@ import org.springframework.web.socket.WebSocketSession;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import jakarta.annotation.PostConstruct;
 import uz.olympy.duel.client.DjangoClient;
 import uz.olympy.quiz.model.QuizQuestion;
 import uz.olympy.quiz.model.RoomState;
@@ -31,9 +32,13 @@ import uz.olympy.quiz.model.RoomState;
  * podium). Scoring copies Kahoot's shape: full points for an instant correct
  * answer, decaying toward a 50% floor as the timer elapses, zero for wrong.
  *
- * <p>All state is in-memory in a {@link java.util.concurrent.ConcurrentHashMap}
- * (single instance, v1). On completion the final leaderboard is POSTed to
- * Django (source of truth) and the room is discarded.
+ * <p>Rooms are served from an in-memory {@link java.util.concurrent.ConcurrentHashMap}
+ * and mirrored into Redis by {@link RoomStore} after every mutation, so a crash
+ * or redeploy no longer drops running quizzes: {@link #restorePersistedRooms()}
+ * reloads them at startup and reschedules the pending reveal timers, and the
+ * clients reconnect on their own. Single instance still — Redis is durability,
+ * not coordination; two instances must not own the same rooms. On completion the
+ * final leaderboard is POSTed to Django (source of truth).
  */
 @Service
 public class RoomService {
@@ -57,12 +62,17 @@ public class RoomService {
 
     /** How long a finished room stays joinable before it is discarded. */
     private static final long FINISHED_GRACE_MS = TimeUnit.MINUTES.toMillis(5);
-    /** How long a room with no activity at all survives before it is discarded. */
-    private static final long IDLE_ROOM_TTL_MS = TimeUnit.HOURS.toMillis(4);
+    /**
+     * How long a room with no activity at all survives before it is discarded.
+     * Also the TTL {@link RoomStore} puts on the Redis copy — the two must not
+     * drift apart, so they read the same constant.
+     */
+    static final long IDLE_ROOM_TTL_MS = TimeUnit.HOURS.toMillis(4);
     /** How often abandoned/finished rooms are swept. */
     private static final long SWEEP_INTERVAL_MS = TimeUnit.MINUTES.toMillis(5);
 
     private final DjangoClient djangoClient;
+    private final RoomStore roomStore;
     private final ObjectMapper mapper = new ObjectMapper();
     // 3 threads: per-question auto-reveal timers plus the periodic room sweep.
     // The sweep briefly takes each room's lock, and finish() holds that lock
@@ -73,8 +83,9 @@ public class RoomService {
     /** roomCode -> live room state. */
     private final Map<String, RoomState> rooms = new java.util.concurrent.ConcurrentHashMap<>();
 
-    public RoomService(DjangoClient djangoClient) {
+    public RoomService(DjangoClient djangoClient, RoomStore roomStore) {
         this.djangoClient = djangoClient;
+        this.roomStore = roomStore;
         // Rooms were only ever removed by finish(), so a host who just closed
         // the tab left the room in this map forever: the memory never came
         // back and, worse, the stale code still passed the join probe — a
@@ -84,6 +95,35 @@ public class RoomService {
                 SWEEP_INTERVAL_MS, SWEEP_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * Bring back the rooms this service was running before it restarted. A
+     * deploy (or a crash) used to end every live quiz instantly: the map was
+     * empty, so reconnecting students got "no such room" mid-lesson.
+     *
+     * <p>A room caught mid-question also lost its auto-reveal timer with the old
+     * scheduler, so the question would hang until the host pressed a button —
+     * the timer is therefore rescheduled for whatever is left of the answer
+     * window (0 = reveal immediately, i.e. the window elapsed while we were down).
+     */
+    @PostConstruct
+    void restorePersistedRooms() {
+        List<RoomState> restored = roomStore.loadAll();
+        if (restored.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        for (RoomState room : restored) {
+            rooms.put(room.roomCode, room);
+            if (room.started && !room.finished && !room.revealed
+                    && room.currentIndex >= 0 && room.currentIndex < room.questions.size()) {
+                long remainingMs = Math.max(0L,
+                        room.questionStartMillis + questionWindowMillis(room, room.currentIndex) - now);
+                scheduleReveal(room, room.currentIndex, remainingMs);
+            }
+        }
+        log.info("Restored {} quiz room(s) from Redis", restored.size());
+    }
+
     // ─── Room lifecycle ──────────────────────────────────────────────────────
 
     /** Create a room owned by {@code hostUserId}. Returns the generated code. */
@@ -91,6 +131,7 @@ public class RoomService {
         String code = uniqueCode();
         RoomState room = new RoomState(code, hostUserId, title, questions);
         rooms.put(code, room);
+        roomStore.save(room);
         log.info("Quiz room {} created by host {} with {} questions", code, hostUserId, questions.size());
         return room;
     }
@@ -145,6 +186,9 @@ public class RoomService {
                             : now - room.lastActivityMillis > IDLE_ROOM_TTL_MS;
                     if (expired) {
                         log.info("Discarding {} quiz room {}", room.finished ? "finished" : "abandoned", room.roomCode);
+                        // Drop the Redis copy too, or the next restart would
+                        // rehydrate a room this sweep just decided is dead.
+                        roomStore.delete(room.roomCode);
                     }
                     return expired;
                 }
@@ -163,6 +207,7 @@ public class RoomService {
             room.touch();
             room.hostSession = session;
             sendTo(session, hostStatePayload(room));
+            roomStore.save(room);
         }
     }
 
@@ -207,6 +252,7 @@ public class RoomService {
             }
 
             broadcastLobby(room);
+            roomStore.save(room);
         }
     }
 
@@ -244,6 +290,7 @@ public class RoomService {
                 case "end" -> finish(room);
                 default -> log.debug("Unknown host command '{}' for room {}", command, room.roomCode);
             }
+            roomStore.save(room);
         }
     }
 
@@ -274,15 +321,28 @@ public class RoomService {
         room.questionStartMillis = System.currentTimeMillis();
         broadcast(room, questionPayload(room));
 
-        final int scheduledIndex = room.currentIndex;
-        int timeLimit = Math.max(1, room.questions.get(scheduledIndex).timeLimitSeconds());
+        scheduleReveal(room, room.currentIndex, questionWindowMillis(room, room.currentIndex));
+    }
+
+    /** The answer window of one question, in millis. The single source for it. */
+    private long questionWindowMillis(RoomState room, int index) {
+        return TimeUnit.SECONDS.toMillis(Math.max(1, room.questions.get(index).timeLimitSeconds()));
+    }
+
+    /**
+     * Arm the auto-reveal timer for {@code scheduledIndex}. {@code delayMillis}
+     * is the full answer window for a fresh question, or whatever is left of it
+     * for a room rehydrated after a restart.
+     */
+    private void scheduleReveal(RoomState room, int scheduledIndex, long delayMillis) {
         room.questionTimer = scheduler.schedule(() -> {
             synchronized (room) {
                 if (!room.finished && room.currentIndex == scheduledIndex && !room.revealed) {
                     reveal(room);
+                    roomStore.save(room);
                 }
             }
-        }, timeLimit, TimeUnit.SECONDS);
+        }, delayMillis, TimeUnit.MILLISECONDS);
     }
 
     /**
@@ -329,6 +389,7 @@ public class RoomService {
             if (!room.studentSessions.isEmpty() && room.answeredThisRound.size() >= room.studentSessions.size()) {
                 reveal(room); // everyone answered — reveal early
             }
+            roomStore.save(room);
         }
     }
 

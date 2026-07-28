@@ -9,9 +9,16 @@ import java.util.concurrent.ScheduledFuture;
 import org.springframework.web.socket.WebSocketSession;
 
 /**
- * In-memory state for one live "Kahoot-style" classroom quiz room. v1: single
- * instance, no persistence — a room lives only for the duration of the game
- * (Redis-backed scaling is a deliberate follow-up, matching the duel module).
+ * State for one live "Kahoot-style" classroom quiz room. Served entirely from
+ * memory; every mutation is additionally mirrored to Redis as a
+ * {@link RoomSnapshot} (see {@link uz.olympy.quiz.service.RoomStore}) so a
+ * crash or redeploy of the service no longer wipes rooms mid-lesson — on
+ * startup {@link uz.olympy.quiz.service.RoomService} reloads them and the
+ * clients reconnect into their running quiz.
+ *
+ * <p>Still single-instance: Redis is a durability tier here, not a coordination
+ * one. Fanning out across several instances (Pub/Sub, distributed locks) is out
+ * of scope, so exactly one instance may own these rooms at a time.
  *
  * <p>Guard all mutations by synchronizing on the instance (the
  * {@link uz.olympy.quiz.service.RoomService} does this) so incoming answers and
@@ -74,6 +81,47 @@ public class RoomState {
     /** Mark the room as still in use (see {@link #lastActivityMillis}). */
     public void touch() {
         this.lastActivityMillis = System.currentTimeMillis();
+    }
+
+    /** Persistent half of this room, for Redis. Call with the lock held. */
+    public RoomSnapshot toSnapshot() {
+        return RoomSnapshot.from(this);
+    }
+
+    /**
+     * Rebuild a room from Redis after a restart. Sessions start empty and the
+     * auto-reveal timer starts null — both are re-established by the caller
+     * ({@code RoomService} reschedules the timer; the clients reconnect their
+     * own sockets).
+     */
+    public static RoomState fromSnapshot(RoomSnapshot snapshot) {
+        RoomState room = new RoomState(
+                snapshot.roomCode(),
+                snapshot.hostUserId(),
+                snapshot.title(),
+                snapshot.questions() == null ? List.of() : snapshot.questions());
+        putAllIfPresent(room.names, snapshot.names());
+        putAllIfPresent(room.avatars, snapshot.avatars());
+        putAllIfPresent(room.totalScores, snapshot.totalScores());
+        putAllIfPresent(room.roundPoints, snapshot.roundPoints());
+        putAllIfPresent(room.roundCorrect, snapshot.roundCorrect());
+        if (snapshot.answeredThisRound() != null) {
+            room.answeredThisRound.addAll(snapshot.answeredThisRound());
+        }
+        room.currentIndex = snapshot.currentIndex();
+        room.started = snapshot.started();
+        room.finished = snapshot.finished();
+        room.revealed = snapshot.revealed();
+        room.questionStartMillis = snapshot.questionStartMillis();
+        room.lastActivityMillis = snapshot.lastActivityMillis();
+        room.finishedAtMillis = snapshot.finishedAtMillis();
+        return room;
+    }
+
+    private static <V> void putAllIfPresent(Map<Long, V> target, Map<Long, V> source) {
+        if (source != null) {
+            target.putAll(source);
+        }
     }
 
     public boolean isHost(long userId) {
