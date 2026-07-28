@@ -202,6 +202,19 @@ services:
       # olympy-api xizmatidagi bilan BIR XIL qiymat bo'lishi shart.
       - key: INTERNAL_SERVICE_SECRET
         sync: false
+      # Jonli viktorina xonalarini Redis'ga snapshot qilib yozish uchun
+      # (RoomStore). YANGI resurs kerak emas — olympy-api va olympy-celery
+      # allaqachon ishlatayotgan O'SHA Redis instansiyasining URL'i, xuddi
+      # o'sha ikki service'dagidek qo'lda kiritiladi (sync: false).
+      # Kalitlar `quiz:room:*` prefiksi bilan yoziladi, ya'ni Celery navbatlari
+      # bilan to'qnashmaydi va TTL bilan o'zi tozalanadi.
+      #
+      # DIQQAT: bu o'zgaruvchining o'zi hech narsani yoqmaydi — yozish
+      # QUIZ_REDIS_PERSISTENCE_ENABLED=true qo'yilgandagina boshlanadi
+      # (application.properties'da default false, ya'ni kod "qorong'i" chiqadi).
+      # Avval REDIS_URL ni bering, keyin bayroqni yoqing.
+      - key: REDIS_URL
+        sync: false
 
   # ── Celery worker + Beat (MAJBURIY) ────────────────────────────────────────
   # olympy-api'da CELERY_EXTERNAL_WORKER=1 bo'lgani uchun bu service endi
