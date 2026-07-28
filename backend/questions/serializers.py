@@ -13,13 +13,14 @@ class QuestionSerializer(serializers.ModelSerializer):
                   'created_by', 'created_at', 'question_type', 'purpose',
                   'programming_language', 'code_template', 'expected_output',
                   'test_cases', 'is_active']
-        # `purpose` — savol qaysi bankka tegishli (olimpiada / jonli viktorina).
-        # Yozishga ochiq: frontend "Savollar" sahifasidagi faol tabga qarab
-        # yuboradi. Berilmasa model default'i (`olympiad`) ishlaydi, shu sababli
-        # bu maydonni bilmaydigan eski chaqiruvchilar o'zgarmasdan ishlaydi.
+        # `purpose` — legacy maydon (avval olimpiada/jonli-viktorina bankini
+        # ajratish uchun ishlatilgan; jonli viktorina olib tashlangач faqat
+        # `olympiad` qiymati ma'noga ega). Yozishga yopiq: aks holda to'g'ridan-
+        # to'g'ri API chaqiruvi savolni `live_quiz`ga o'rnatib, uni barcha
+        # ro'yxatlardan jimgina yo'qotib qo'yishi mumkin edi.
         # `is_active` — arxivlash bayrog'i faqat o'qish uchun ochiladi; o'chirish
         # (DELETE) endpoint'i uni himoyalangan savol uchun False qiladi.
-        read_only_fields = ['id', 'created_by', 'created_at', 'is_active']
+        read_only_fields = ['id', 'created_by', 'created_at', 'is_active', 'purpose']
 
     def to_representation(self, instance):
         """`correct_answer` faqat savolni boshqarishga haqli (teacher/manager/

@@ -1,3 +1,4 @@
+import json
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -271,6 +272,102 @@ class AttemptsTestCase(APITestCase):
         session.refresh_from_db()
         self.assertEqual(session.status, TestSession.STATUS_DISQUALIFIED)
         self.assertEqual(session.cheating_reason, "concurrent_session")
+
+
+class SliderAttemptTestCase(APITestCase):
+    """Slayder savoli imtihonda uchidan-uchiga ishlaydimi.
+
+    Faqat `grade_answer` emas — savol payload'i (o'quvchiga javob sizmasligi)
+    va submit oqimidagi javob ajratish (`{"value": N}`) ham tekshiriladi.
+    """
+
+    def setUp(self):
+        self.student = User.objects.create_user(
+            phone='+998901239001', password='StrongPass123', full_name="O'quvchi",
+        )
+        self.client.force_authenticate(user=self.student)
+        self.center = EducationCenter.objects.create(
+            name='Slider Center', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center,
+            title='Slayder Olimpiadasi',
+            subject='Tarix',
+            status='active',
+            event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timezone.timedelta(minutes=5),
+            duration_minutes=60,
+        )
+        self.slider_q = Question.objects.create(
+            center=self.center,
+            subject='Tarix',
+            text="O'zbekiston mustaqilligi qaysi yilda e'lon qilindi?",
+            options=[],
+            correct_answer=0,
+            question_type=Question.QUESTION_TYPE_SLIDER,
+            correct_text=(
+                '{"min": 1900, "max": 2000, "step": 1, '
+                '"correct": 1991, "tolerance": 2}'
+            ),
+            score=10,
+        )
+        self.olympiad.questions.add(self.slider_q)
+
+    def test_student_payload_exposes_range_without_answer(self):
+        """Savol payload'ida min/max/step bor, correct/tolerance YO'Q."""
+        url = reverse('olympiad-questions', args=[self.olympiad.id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        item = response.data['questions'][0]
+        self.assertEqual(item['question_type'], 'slider')
+        self.assertEqual(
+            item['slider_range'], {'min': 1900, 'max': 2000, 'step': 1},
+        )
+        # Javob kaliti hech qanday ko'rinishda chiqmasligi kerak.
+        self.assertNotIn('correct_text', item)
+        self.assertNotIn('correct_answer', item)
+        self.assertNotIn('correct', item['slider_range'])
+        self.assertNotIn('tolerance', item['slider_range'])
+        self.assertNotIn('1991', json.dumps(item))
+
+    def _submit(self, value):
+        TestSession.objects.create(
+            user=self.student, olympiad=self.olympiad,
+            status=TestSession.STATUS_ACTIVE,
+        )
+        response = self.client.post(reverse('submit-attempt'), {
+            'olympiad': self.olympiad.id,
+            'answers': {str(self.slider_q.id): {'value': value}},
+            'time_spent': 60,
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        return TestAttempt.objects.get(user=self.student, olympiad=self.olympiad)
+
+    def test_submit_value_within_tolerance_scores_correct(self):
+        attempt = self._submit(1990)
+        self.assertEqual(attempt.correct_count, 1)
+        self.assertEqual(attempt.wrong_count, 0)
+        self.assertEqual(attempt.score, 100)
+
+    def test_submit_value_outside_tolerance_scores_wrong(self):
+        attempt = self._submit(1950)
+        self.assertEqual(attempt.correct_count, 0)
+        self.assertEqual(attempt.wrong_count, 1)
+        self.assertEqual(attempt.score, 0)
+
+    def test_review_payload_unwraps_slider_answer(self):
+        """Natijalar sahifasi `{"value": N}` ni ochib ko'rsatadi (dict emas)."""
+        attempt = self._submit(1990)
+        url = reverse('attempt-detail', args=[attempt.id])
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        item = next(
+            r for r in response.data['questions_review']
+            if r['id'] == self.slider_q.id
+        )
+        self.assertEqual(item['chosen_answer'], 1990)
+        self.assertTrue(item['is_correct'])
 
 
 class EssayAIFeedbackTestCase(APITestCase):

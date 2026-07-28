@@ -55,6 +55,8 @@ def _extract_review_chosen(chosen, q_type):
             return chosen.get('selected')
         if q_type in ('fill_blank', 'essay'):
             return chosen.get('text')
+        if q_type == 'slider':
+            return chosen.get('value')
         if q_type == 'fill_blanks':
             if 'blanks' in chosen:
                 return chosen.get('blanks')
@@ -1848,10 +1850,12 @@ def question_difficulty_stats(request):
                 continue
             answered_count[qid] = answered_count.get(qid, 0) + 1
             # `v` savol turiga qarab int (mcq), str (fill_blank), list
-            # (multiple_select) yoki dict (fill_blanks) bo'lishi mumkin.
+            # (multiple_select) yoki dict (fill_blanks/slider) bo'lishi mumkin.
             # `int(v)` yangi turlarda ValueError berardi — grade_answer
-            # har bir turni to'g'ri baholaydi.
-            if grade_answer(q, v) == RESULT_CORRECT:
+            # har bir turni to'g'ri baholaydi. Obyekt-shaklli payload
+            # ({"chosen_idx":..}, {"value":..}) avval ochib olinadi.
+            q_type = getattr(q, 'question_type', 'mcq') or 'mcq'
+            if grade_answer(q, _extract_review_chosen(v, q_type)) == RESULT_CORRECT:
                 correct_count[qid] = correct_count.get(qid, 0) + 1
 
     # Difficulty bo'yicha bucket'lar.
@@ -2474,7 +2478,8 @@ def get_mistakes_list(request):
         # Faqat aniq noto'g'ri javoblar (RESULT_WRONG) xatolar ro'yxatiga
         # kiradi: to'g'ri (correct), bo'sh (blank) va qo'lda baholanadigan
         # essay (pending_review) chiqarib tashlanadi.
-        if grade_answer(question, chosen_val) == RESULT_WRONG:
+        q_type = getattr(question, 'question_type', 'mcq') or 'mcq'
+        if grade_answer(question, _extract_review_chosen(chosen_val, q_type)) == RESULT_WRONG:
             mistakes.append({
                 'question_id': question.id,
                 'subject': question.subject,
@@ -2545,7 +2550,8 @@ def explain_all_mistakes(request):
         if not question:
             continue
         # Faqat aniq noto'g'ri javoblarni (RESULT_WRONG) AI tahliliga beramiz.
-        if grade_answer(question, chosen_val) == RESULT_WRONG:
+        q_type = getattr(question, 'question_type', 'mcq') or 'mcq'
+        if grade_answer(question, _extract_review_chosen(chosen_val, q_type)) == RESULT_WRONG:
             mistakes.append({
                 'question_id': question.id,
                 'subject': question.subject,

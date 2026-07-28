@@ -86,6 +86,11 @@ def _recompute_attempt_score(attempt):
     attempt.save(update_fields=[
         'score', 'correct_count', 'wrong_count', 'total_questions',
     ])
+    # Insho bahosi kech qo'yilsa (masalan natijalar e'lon qilingandan keyin),
+    # ball o'zgarishi butun olimpiadaning reytingini eskirtiradi — kod
+    # savoli kech baholanganda qilinadigan tuzatish bilan bir xil sabab.
+    from olympiads.services import recompute_olympiad_ranks
+    recompute_olympiad_ranks(attempt.olympiad)
 
 
 @api_view(['GET'])

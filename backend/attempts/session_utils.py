@@ -9,6 +9,7 @@ from questions.grading import (
     RESULT_PENDING,
     _parse_correct_text,
     grade_answer,
+    public_slider_range,
 )
 from questions.models import Question
 
@@ -126,7 +127,8 @@ def questions_payload(session, olympiad):
         # multiple_select esa options ro'yxatini ishlatadi (yes_no — odatda
         # ["Ha","Yo'q"]). correct_answer/correct_text HECH QACHON yuborilmaydi —
         # baholash faqat serverda. fill_blanks uchun bo'sh joylar sonini
-        # (blanks_count) to'g'ri javoblarni sizdirmasdan beramiz.
+        # (blanks_count), slider uchun esa faqat oraliqni (slider_range:
+        # min/max/step) to'g'ri javoblarni sizdirmasdan beramiz.
         item = {
             'id': question.id,
             'text': question.text,
@@ -137,6 +139,8 @@ def questions_payload(session, olympiad):
         if q_type == 'fill_blanks':
             correct = _parse_correct_text(getattr(question, 'correct_text', ''))
             item['blanks_count'] = len(correct) if isinstance(correct, dict) else 1
+        elif q_type == 'slider':
+            item['slider_range'] = public_slider_range(question)
         data.append(item)
     return data
 
@@ -200,6 +204,7 @@ def _extract_chosen(chosen, q_type):
       fill_blank        → "matn" yoki {"text": "matn"}
       essay             → "matn" yoki {"text": "matn"}
       fill_blanks       → {"1": "...", ...} yoki {"blanks": {"1": "..."}}
+      slider            → {"value": son} yoki xom son
     Eski (skalар/ro'yxat) formatlar ham backward-compat qo'llab-quvvatlanadi —
     shu sababli mavjud MCQ submit'lari buzilmaydi.
     """
@@ -210,6 +215,8 @@ def _extract_chosen(chosen, q_type):
             return chosen.get('selected')
         if q_type in ('fill_blank', 'essay'):
             return chosen.get('text')
+        if q_type == 'slider':
+            return chosen.get('value')
         if q_type == 'fill_blanks':
             # {"blanks": {...}} yoki to'g'ridan-to'g'ri {"1": "...", ...}.
             if 'blanks' in chosen:

@@ -12,8 +12,9 @@ const LANG_LABELS = {
 // Savol turiga qarab javob kiritish UI. Kod (code) savol bu yerga kelmaydi —
 // u alohida LeetCode-uslubidagi split layoutda render qilinadi.
 //   value formati: mcq/yes_no → son/{chosen_idx}; multiple_select →
-//   {selected:[...]}; fill_blank/essay → {text}; fill_blanks → {blanks:{...}}.
-const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBlank, onMultiToggle, onYesNo }) => {
+//   {selected:[...]}; fill_blank/essay → {text}; fill_blanks → {blanks:{...}};
+//   slider → {value: son}.
+const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBlank, onMultiToggle, onYesNo, onSlider }) => {
   const inputCls = 'w-full glass rounded-2xl px-4 py-3 text-white text-sm md:text-base placeholder-white/30 border border-white/10 focus:border-indigo-500 focus:outline-none transition-all';
 
   // Matn kiritilgan bo'lsa kichik "Saqlandi" belgisi — MCQ/yes_no/multiple_select
@@ -87,6 +88,50 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
             </div>
           );
         })}
+      </div>
+    );
+  }
+
+  // slider — raqamli javob (surgichni surib son tanlanadi). Oraliq backend
+  // `slider_range` (min/max/step) dan keladi; to'g'ri javob va xatolik
+  // chegarasi (correct/tolerance) o'quvchiga HECH QACHON yuborilmaydi.
+  if (qType === 'slider') {
+    const range = q.slider_range || q.sliderRange || {};
+    const min = Number(range.min ?? 0) || 0;
+    const rawMax = Number(range.max ?? 100);
+    const max = rawMax > min ? rawMax : min + 100;
+    const step = Number(range.step) > 0 ? Number(range.step) : 1;
+    const picked = (value && typeof value === 'object') ? value.value : value;
+    const hasValue = typeof picked === 'number' && Number.isFinite(picked);
+    const current = hasValue ? Math.min(max, Math.max(min, picked)) : min;
+    return (
+      <div className="glass rounded-2xl p-4 md:p-5">
+        <div className="text-center mb-4">
+          <div className={`text-3xl md:text-4xl font-extrabold tabular-nums ${hasValue ? 'text-white' : 'text-white/30'}`}>
+            {hasValue ? current : '—'}
+          </div>
+          {!hasValue && (
+            <div className="text-xs text-white/40 mt-1">Javob berish uchun surgichni suring</div>
+          )}
+        </div>
+        <input
+          type="range"
+          min={min}
+          max={max}
+          step={step}
+          value={current}
+          onChange={(e) => onSlider(Number(e.target.value))}
+          // Faqat onChange bo'lsa, to'g'ri javob aynan `min` bo'lganda o'quvchi
+          // surgichni qimirlatolmay javobini qayd eta olmasdi — bosib qo'yib
+          // yuborish ham joriy qiymatni saqlaydi.
+          onPointerUp={() => onSlider(current)}
+          className="w-full accent-indigo-500 cursor-pointer"
+        />
+        <div className="flex items-center justify-between text-xs text-white/40 mt-2 tabular-nums">
+          <span>{min}</span>
+          <span>{max}</span>
+        </div>
+        {hasValue && <SavedTag />}
       </div>
     );
   }
@@ -263,6 +308,7 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
       if (v.blanks && typeof v.blanks === 'object') return Object.values(v.blanks).some(x => String(x || '').trim());
       if (typeof v.text === 'string') return v.text.trim().length > 0;
       if (typeof v.chosen_idx === 'number') return true;
+      if (typeof v.value === 'number') return true; // slider
     }
     return true;
   }).length;
@@ -449,6 +495,7 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
               blanks[String(num)] = t;
               setAnswer({ blanks });
             }}
+            onSlider={(n) => setAnswer({ value: n })}
           />
         </div>
 
@@ -1484,6 +1531,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         return Object.values(val.blanks).some(v => String(v ?? '').trim().length > 0);
       }
       if (typeof val.chosen_idx === 'number') return true;
+      if (typeof val.value === 'number') return true; // slider
       return false;
     }
     return true; // son (MCQ indeks, -1 ham javob deb sanaladi)
@@ -1524,6 +1572,9 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   });
   // yes_no: {chosen_idx: 0|1}.
   const handleYesNo = (idx) => setAnswers(prev => ({ ...prev, [current]: { chosen_idx: idx } }));
+  // slider: {value: son}. Variant yo'q — xom raqam serverga shundayligicha
+  // yuboriladi (de-shuffle qilinmaydi).
+  const handleSlider = (num) => setAnswers(prev => ({ ...prev, [current]: { value: num } }));
   const toggleMark = () => setMarked(prev => ({ ...prev, [current]: !prev[current] }));
   // Olimpiadaning ruxsat etilgan tillari (bo'sh bo'lsa barcha til ruxsat).
   const allowedLanguages = Array.isArray(liveOlympiad?.allowedLanguages)
@@ -2476,6 +2527,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
                     onBlank={handleBlankAnswer}
                     onMultiToggle={handleMultiToggle}
                     onYesNo={handleYesNo}
+                    onSlider={handleSlider}
                   />
                 </div>
               </>

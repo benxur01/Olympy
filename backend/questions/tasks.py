@@ -1,12 +1,29 @@
 import time
 
 from celery import shared_task
+from celery.exceptions import Retry
 from django.conf import settings
 from django.core.cache import cache
 import logging
 from .models import Question
 
 logger = logging.getLogger(__name__)
+
+# EAGER rejimda (broker yo'q dev/test) `self.retry()` ishlamaydi — vaqtinchalik
+# Judge0 xatosida shu martagacha bitta chaqiruv ichida qayta urinamiz.
+EAGER_TRANSIENT_RETRIES = 3
+
+# Judge0 natijasi kelmay "osilib qolgan" CodeSubmission'ni qayta ishga
+# tushirishdan oldin shuncha kutamiz (task navbatdan yo'qolgan, worker
+# qulagan va h.k.).
+STUCK_CODE_SUBMISSION_MINUTES = 15
+# Bitta submission bo'yicha qayta ishga tushirish qulfi — keyingi beat tick
+# o'sha yozuvni ikkinchi marta navbatga qo'ymasligi uchun (bitta urinish
+# ketishi mumkin bo'lgan vaqtdan sezilarli uzunroq).
+STUCK_CODE_RECOVERY_LOCK_TTL = 20 * 60
+# Bitta tick'da eng ko'pi bilan shuncha submission qayta yuboriladi — nosozlik
+# ommaviy bo'lsa Judge0 ni bir zumda ko'mib yubormaslik uchun.
+STUCK_CODE_RECOVERY_BATCH = 100
 
 # Sekin Gemini chaqiruvlarini so'rovdan tashqariga chiqargan AI task'larning
 # kesh prefikslari (`<prefix>:task:<task_id>`). View task'ni boshlaydi, mos
@@ -104,8 +121,16 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
         # ─── EAGER rejim: retry o'rniga bitta chaqiruvda to'liq polling ───
         if eager:
             batch_subs, test_cases_meta = _build_batch(source_code, language, stdin, question_id)
+            # Vaqtinchalik xato (limit/tarmoq/5xx) bo'lsa qayta urinamiz;
+            # doimiy xatoda (til yo'q, kirish rad etildi) darrov to'xtaymiz.
             sub_res = submit_code_batch(batch_subs)
+            for _ in range(EAGER_TRANSIENT_RETRIES):
+                if sub_res.get('ok') or not sub_res.get('retryable'):
+                    break
+                time.sleep(1)
+                sub_res = submit_code_batch(batch_subs)
             if not sub_res.get('ok'):
+                _update_submission_tests_passed(submission_id, False)
                 _set_run_state({
                     'status': 'FAILED',
                     'error': sub_res.get('error') or "Kodni ishga tushirib bo'lmadi",
@@ -116,9 +141,15 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
             valid_indices = sub_res['valid_indices']
 
             status_res = None
+            transient_left = EAGER_TRANSIENT_RETRIES
             for _ in range(30):
                 status_res = check_batch_status(tokens, valid_indices, len(test_cases_meta))
                 if not status_res.get('ok'):
+                    if status_res.get('retryable') and transient_left > 0:
+                        transient_left -= 1
+                        time.sleep(1)
+                        continue
+                    _update_submission_tests_passed(submission_id, False)
                     _set_run_state({
                         'status': 'FAILED',
                         'error': status_res.get('error') or "Kodni ishga tushirib bo'lmadi",
@@ -128,6 +159,7 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
                     break
                 time.sleep(1)
             else:
+                _update_submission_tests_passed(submission_id, False)
                 _set_run_state({
                     'status': 'FAILED',
                     'error': "Kod bajarilishini tekshirish vaqti tugadi (Timeout)",
@@ -145,6 +177,21 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
             # Submit batch
             sub_res = submit_code_batch(batch_subs)
             if not sub_res.get('ok'):
+                # Vaqtinchalik xato (limit/tarmoq/Judge0 5xx) — task'ni
+                # ortib boruvchi kechikish bilan navbatga qaytaramiz
+                # (PENDING pollingdagi 1s emas: bu yerda Judge0 hali
+                # ishlayotgani emas, nosozlik tugashini kutamiz).
+                if sub_res.get('retryable'):
+                    self.retry(
+                        args=[task_id, source_code, language, stdin, question_id, None, None, None, submission_id],
+                        countdown=min(2 ** self.request.retries, 30),
+                    )
+                    return
+                # Doimiy xato (til yo'q, kirish rad etildi) — qayta urinish
+                # foyda bermaydi, shu zahoti muvaffaqiyatsiz deb belgilaymiz
+                # (aks holda all_tests_passed abadiy None qolib, ball hech
+                # qachon hisoblanmagan holatda qolardi).
+                _update_submission_tests_passed(submission_id, False)
                 _set_run_state({
                     'status': 'FAILED',
                     'error': sub_res.get('error') or "Kodni ishga tushirib bo'lmadi"
@@ -161,6 +208,15 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
         # Step 2: Retrieve batch results
         status_res = check_batch_status(tokens, valid_indices, len(test_cases_meta))
         if not status_res.get('ok'):
+            # Step 1 dagi kabi: vaqtinchalik xatoda tokenlarni saqlab qolib
+            # (Judge0 da natija tayyor bo'lishi mumkin) qayta urinamiz.
+            if status_res.get('retryable'):
+                self.retry(
+                    args=[task_id, source_code, language, stdin, question_id, tokens, valid_indices, test_cases_meta, submission_id],
+                    countdown=min(2 ** self.request.retries, 30),
+                )
+                return
+            _update_submission_tests_passed(submission_id, False)
             _set_run_state({
                 'status': 'FAILED',
                 'error': status_res.get('error') or "Kodni ishga tushirib bo'lmadi"
@@ -175,13 +231,25 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
         # Step 3: Parse and cache completed results
         _finalize_results(task_id, status_res['results'], test_cases_meta, submission_id)
 
+    except Retry:
+        # `self.retry()` Retry istisnosini ko'taradi — u Exception vorisi,
+        # shu sababli pastdagi umumiy `except Exception` uni ushlab olib
+        # keshga FAILED yozib qo'yardi (task esa aslida navbatga qaytgan
+        # bo'lardi). Retry — normal oqim, Celery'ga o'tkazib yuboramiz.
+        raise
     except self.MaxRetriesExceededError:
+        # Urinishlar tugadi — bu yozuv endi hech qachon o'z-o'zidan
+        # baholanmaydi. `all_tests_passed` None qolsa ball hisoblash uni
+        # abadiy "hali tekshirilmagan" deb ko'radi, shu sababli aniq
+        # muvaffaqiyatsiz (False) deb belgilaymiz.
+        _update_submission_tests_passed(submission_id, False)
         _set_run_state({
             'status': 'FAILED',
             'error': "Kod bajarilishini tekshirish vaqti tugadi (Timeout)"
         })
     except Exception as e:
         logger.exception(f"Async run code task failed: {e}")
+        _update_submission_tests_passed(submission_id, False)
         _set_run_state({
             'status': 'FAILED',
             'error': str(e)
@@ -255,6 +323,13 @@ def _recompute_attempt_score_for_submission(submission_id):
         attempt.save(update_fields=[
             'score', 'correct_count', 'wrong_count', 'total_questions',
         ])
+        # Kod savoli deadline yaqinida kech baholansa, ball o'zgargani
+        # sertifikat/reyting uchun ishlatiladigan `rank`ni eskirtiradi —
+        # olimpiadaning BARCHA attempt'lari qayta tartiblanadi (bitta
+        # o'zgargan ball boshqalarning ham nisbiy o'rnini siljitishi
+        # mumkin), shu sababli faqat shu attempt emas, butun olimpiada.
+        from olympiads.services import recompute_olympiad_ranks
+        recompute_olympiad_ranks(olympiad)
     except Exception:
         logger.exception(
             'attempt ballini qayta hisoblashda xato submission=%s', submission_id,
@@ -364,6 +439,64 @@ def _finalize_results(task_id, batch_results, test_cases_meta, submission_id=Non
             'status': 'FAILED',
             'error': str(e)
         }, timeout=300)
+
+
+@shared_task
+def recover_stuck_code_submissions():
+    """Judge0 natijasi kelmay "osilib qolgan" kod javoblarini qayta yuboradi.
+
+    `run_code_async_task` navbatdan yo'qolsa, worker qulasa yoki retry zanjiri
+    yakunlanmasa `CodeSubmission.all_tests_passed` abadiy `None` bo'lib qoladi
+    — bunday javob avtomatik ball hisobiga umuman kirmaydi (o'quvchi kodini
+    to'g'ri yozgan bo'lsa ham 0 ball oladi). Shu safety-net eskirgan
+    yozuvlarni topib Judge0 tekshiruvini boshidan boshlaydi.
+
+    Har bir submission uchun qisqa kesh qulfi qo'yiladi — keyingi beat tick
+    hali tugamagan urinishni ikkinchi marta navbatga qo'ymaydi.
+    """
+    import uuid
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from attempts.models import CodeSubmission
+    from .judge0_service import is_supported
+
+    cutoff = timezone.now() - timedelta(minutes=STUCK_CODE_SUBMISSION_MINUTES)
+    stuck = list(
+        CodeSubmission.objects
+        .filter(all_tests_passed__isnull=True, updated_at__lt=cutoff)
+        .values('id', 'submitted_code', 'code_language', 'question_id')
+        [:STUCK_CODE_RECOVERY_BATCH]
+    )
+
+    requeued = 0
+    for row in stuck:
+        code = row['submitted_code'] or ''
+        language = (row['code_language'] or '').strip().lower()
+        # Submit oqimidagi shartlar (attempts.views._save_code_submissions):
+        # bo'sh kod va qo'llab-quvvatlanmaydigan til Judge0 ga umuman
+        # yuborilmagan — ularni qayta urinishdan foyda yo'q.
+        if not code.strip() or not is_supported(language):
+            continue
+        lock_key = f"code_submission:recovery:{row['id']}"
+        if not cache.add(lock_key, 1, timeout=STUCK_CODE_RECOVERY_LOCK_TTL):
+            continue
+        task_id = str(uuid.uuid4())
+        cache.set(f"run_code:task:{task_id}", {'status': 'PENDING'}, timeout=300)
+        # stdin='' — test caslar bor savolda `_build_batch` uni ishlatmaydi,
+        # test caslar yo'q bo'lsa ham submit oqimi aynan shuni yuboradi.
+        run_code_async_task.delay(
+            task_id, code, language, '', row['question_id'],
+            submission_id=row['id'],
+        )
+        requeued += 1
+
+    if requeued:
+        logger.warning(
+            'Judge0 natijasi kelmagan %s ta kod javobi qayta yuborildi', requeued,
+        )
+    return requeued
 
 
 @shared_task(bind=True)

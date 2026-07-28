@@ -3,12 +3,20 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from attempts.models import CodeSubmission, EssayGrade, TestAttempt
+from attempts.models import CodeSubmission, EssayGrade, TestAttempt, TestSession
 from centers.models import CenterMembership, EducationCenter
 from olympiads.models import Olympiad
+from questions.grading import (
+    RESULT_BLANK,
+    RESULT_CORRECT,
+    RESULT_WRONG,
+    grade_answer,
+    public_slider_range,
+)
 from questions.models import Question
 
 User = get_user_model()
@@ -129,6 +137,25 @@ class QuestionCreateApiTestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn('correct_text', response.data)
 
+    def test_purpose_is_ignored_from_request_body(self):
+        """`purpose` API orqali yozib bo'lmaydi (live_quiz olib tashlangach
+        legacy maydon) — savol doim `olympiad` bilan yaratiladi, chaqiruvchi
+        boshqa qiymat yuborishga urinsa ham."""
+        self.client.force_authenticate(user=self.teacher)
+        url = reverse('questions-list-create')
+        response = self.client.post(url, {
+            'center': self.center.id,
+            'subject': 'Fizika',
+            'text': "Purpose spoof urinishi",
+            'options': ['a', 'b'],
+            'correct_answer': 0,
+            'score': 3,
+            'purpose': 'live_quiz',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        q = Question.objects.get(center=self.center, text="Purpose spoof urinishi")
+        self.assertEqual(q.purpose, Question.QUESTION_PURPOSE_OLYMPIAD)
+
     def test_outsider_cannot_create_question(self):
         self.client.force_authenticate(user=self.outsider)
         url = reverse('questions-list-create')
@@ -143,6 +170,105 @@ class QuestionCreateApiTestCase(APITestCase):
             'score': 3,
         }, format='json')
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class SliderGradingTestCase(APITestCase):
+    """`grade_answer` slayder savolini `correct_text` sozlamasi bo'yicha baholaydi.
+
+    Avval slayder uchun alohida shox yo'q edi va baholash `_grade_index` ga
+    tushib, ishlatilmaydigan `correct_answer` (doim 0) bilan solishtirilardi —
+    ya'ni deyarli har doim noto'g'ri chiqardi.
+    """
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='Slider Academy', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+
+    def _slider(self, correct_text):
+        return Question.objects.create(
+            center=self.center,
+            subject='Tarix',
+            text='Qaysi yilda?',
+            options=[],
+            correct_answer=0,
+            question_type=Question.QUESTION_TYPE_SLIDER,
+            correct_text=correct_text,
+            score=5,
+        )
+
+    def test_exact_value_is_correct(self):
+        q = self._slider(json.dumps({
+            'min': 1900, 'max': 2000, 'step': 1, 'correct': 1991, 'tolerance': 2,
+        }))
+        self.assertEqual(grade_answer(q, 1991), RESULT_CORRECT)
+
+    def test_value_within_tolerance_is_correct(self):
+        q = self._slider(json.dumps({
+            'min': 1900, 'max': 2000, 'step': 1, 'correct': 1991, 'tolerance': 2,
+        }))
+        self.assertEqual(grade_answer(q, 1989), RESULT_CORRECT)
+        self.assertEqual(grade_answer(q, 1993), RESULT_CORRECT)
+        # Matn ko'rinishidagi raqam ham qabul qilinadi (JSON'dan str kelishi mumkin).
+        self.assertEqual(grade_answer(q, '1990'), RESULT_CORRECT)
+
+    def test_value_outside_tolerance_is_wrong(self):
+        q = self._slider(json.dumps({
+            'min': 1900, 'max': 2000, 'step': 1, 'correct': 1991, 'tolerance': 2,
+        }))
+        self.assertEqual(grade_answer(q, 1988), RESULT_WRONG)
+        self.assertEqual(grade_answer(q, 1994), RESULT_WRONG)
+
+    def test_zero_tolerance_requires_exact_value(self):
+        q = self._slider(json.dumps({
+            'min': 0, 'max': 10, 'step': 1, 'correct': 7, 'tolerance': 0,
+        }))
+        self.assertEqual(grade_answer(q, 7), RESULT_CORRECT)
+        self.assertEqual(grade_answer(q, 6), RESULT_WRONG)
+
+    def test_zero_value_is_answered_not_blank(self):
+        """0 — haqiqiy javob, "javob berilmagan" emas."""
+        q = self._slider(json.dumps({
+            'min': 0, 'max': 10, 'step': 1, 'correct': 0, 'tolerance': 0,
+        }))
+        self.assertEqual(grade_answer(q, 0), RESULT_CORRECT)
+
+    def test_no_answer_is_blank(self):
+        q = self._slider(json.dumps({
+            'min': 0, 'max': 10, 'step': 1, 'correct': 5, 'tolerance': 1,
+        }))
+        self.assertEqual(grade_answer(q, None), RESULT_BLANK)
+
+    def test_malformed_correct_text_does_not_raise(self):
+        """Buzuq/yo'q sozlama istisno tashlamaydi — oddiy `wrong` qaytadi."""
+        for raw in ['', 'not json', '[1, 2, 3]', '{"min": 0, "max": 10}']:
+            with self.subTest(correct_text=raw):
+                q = self._slider(raw)
+                self.assertEqual(grade_answer(q, 5), RESULT_WRONG)
+
+    def test_non_numeric_answer_is_wrong(self):
+        q = self._slider(json.dumps({
+            'min': 0, 'max': 10, 'step': 1, 'correct': 5, 'tolerance': 1,
+        }))
+        for chosen in ['abc', [5], {'value': 5}, True]:
+            with self.subTest(chosen=chosen):
+                self.assertEqual(grade_answer(q, chosen), RESULT_WRONG)
+
+    def test_public_slider_range_hides_answer(self):
+        """O'quvchiga faqat min/max/step — correct/tolerance HECH QACHON."""
+        q = self._slider(json.dumps({
+            'min': 1900, 'max': 2000, 'step': 5, 'correct': 1991, 'tolerance': 2,
+        }))
+        self.assertEqual(
+            public_slider_range(q), {'min': 1900, 'max': 2000, 'step': 5},
+        )
+
+    def test_public_slider_range_falls_back_when_malformed(self):
+        q = self._slider('buzuq')
+        self.assertEqual(
+            public_slider_range(q), {'min': 0, 'max': 100, 'step': 1},
+        )
 
 
 class QuestionPurposeApiTestCase(APITestCase):
@@ -273,6 +399,308 @@ class RunCodeViewTestCase(APITestCase):
         response = self.client.get(status_url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.data.get('status'), 'FAILED')
+
+
+class Judge0RetryTestCase(APITestCase):
+    """run_code_async_task: Judge0 vaqtinchalik xatosida qayta urinadi,
+    doimiy xatoda darrov to'xtaydi, va har ikkala holatda ham (production
+    retry zanjiri tugaganda yoki EAGER rejimda) CodeSubmission.all_tests_passed
+    abadiy None bo'lib qolmaydi.
+
+    `self.retry()` haqiqatan chaqirilishini (broker'ga murojaat qilmasdan)
+    tekshirish uchun bog'langan metodni mock qilamiz — faqat qaror mantig'i
+    sinaladi, Celery infratuzilmasi emas.
+    """
+
+    def setUp(self):
+        from django.test import override_settings
+
+        self.center = EducationCenter.objects.create(
+            name='Retry Markaz', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.user = User.objects.create_user(
+            phone='+998901110098', password='StrongPass123', full_name='Retry Coder',
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center, title='Kod olimpiadasi', subject='Informatika',
+            status='active', event_type='olympiad',
+        )
+        self.question = Question.objects.create(
+            center=self.center, subject='Informatika', text="Ikkitasini qo'shing.",
+            question_type=Question.QUESTION_TYPE_CODE, score=10,
+        )
+        self.olympiad.questions.add(self.question)
+        self.attempt = TestAttempt.objects.create(
+            user=self.user, olympiad=self.olympiad,
+            score=0, correct_count=0, wrong_count=0, total_questions=1, answers={},
+        )
+        self.submission = CodeSubmission.objects.create(
+            attempt=self.attempt, question=self.question,
+            submitted_code='print(1)', code_language='python',
+        )
+        # Production oqimini sinash uchun EAGER'ni vaqtincha o'chiramiz —
+        # aks holda task ichidagi `eager` shart har doim EAGER bo'lakni tanlaydi.
+        self._override = override_settings(CELERY_TASK_ALWAYS_EAGER=False)
+        self._override.enable()
+        self.addCleanup(self._override.disable)
+
+    def _run(self, source_code='print(1)', language='python', stdin=''):
+        from questions.tasks import run_code_async_task
+        return run_code_async_task(
+            'test-task-id', source_code, language, stdin, self.question.id,
+            submission_id=self.submission.id,
+        )
+
+    @patch('questions.judge0_service.submit_code_batch')
+    def test_transient_submit_error_retries_not_fails(self, mock_submit):
+        from questions.tasks import run_code_async_task
+
+        mock_submit.return_value = {
+            'ok': False, 'error': 'Kod runner limiti tugadi.', 'retryable': True,
+        }
+        with patch.object(run_code_async_task, 'retry') as mock_retry:
+            mock_retry.return_value = None
+            self._run()
+            mock_retry.assert_called_once()
+        # Vaqtinchalik xatoda hali hech narsa yakunlanmagan — all_tests_passed
+        # None qolishi kerak (FAILED deb belgilanmagan).
+        self.submission.refresh_from_db()
+        self.assertIsNone(self.submission.all_tests_passed)
+
+    @patch('questions.judge0_service.submit_code_batch')
+    def test_permanent_submit_error_fails_immediately_and_marks_submission(self, mock_submit):
+        from questions.tasks import run_code_async_task
+
+        mock_submit.return_value = {
+            'ok': False, 'error': 'Kod runner xizmatiga kirish rad etildi.', 'retryable': False,
+        }
+        with patch.object(run_code_async_task, 'retry') as mock_retry:
+            self._run()
+            mock_retry.assert_not_called()
+        self.submission.refresh_from_db()
+        self.assertFalse(self.submission.all_tests_passed)
+
+    @patch('questions.judge0_service.check_batch_status')
+    @patch('questions.judge0_service.submit_code_batch')
+    def test_transient_status_check_error_retries(self, mock_submit, mock_check):
+        from questions.tasks import run_code_async_task
+
+        mock_submit.return_value = {'ok': True, 'tokens': ['tok1'], 'valid_indices': [0]}
+        mock_check.return_value = {
+            'ok': False, 'error': "Kod runner serveriga ulanib bo'lmadi", 'retryable': True,
+        }
+        with patch.object(run_code_async_task, 'retry') as mock_retry:
+            mock_retry.return_value = None
+            run_code_async_task(
+                'test-task-id', 'print(1)', 'python', '', self.question.id,
+                tokens=['tok1'], valid_indices=[0], test_cases_meta=[{'is_single': True}],
+                submission_id=self.submission.id,
+            )
+            mock_retry.assert_called_once()
+        self.submission.refresh_from_db()
+        self.assertIsNone(self.submission.all_tests_passed)
+
+    def test_max_retries_exceeded_marks_submission_failed(self):
+        from celery.exceptions import MaxRetriesExceededError
+        from questions.tasks import run_code_async_task
+
+        with patch('questions.judge0_service.submit_code_batch') as mock_submit:
+            mock_submit.return_value = {
+                'ok': False, 'error': 'Kod runner limiti tugadi.', 'retryable': True,
+            }
+            with patch.object(run_code_async_task, 'retry', side_effect=MaxRetriesExceededError()):
+                self._run()
+        self.submission.refresh_from_db()
+        self.assertFalse(self.submission.all_tests_passed)
+
+    @patch('questions.judge0_service.check_batch_status')
+    @patch('questions.judge0_service.submit_code_batch')
+    def test_eager_mode_permanent_error_marks_submission(self, mock_submit, mock_check):
+        """EAGER rejimda (Redis'siz dev/test) ham doimiy xato submission'ni
+        abadiy None holatda qoldirmasligi kerak."""
+        from django.test import override_settings
+        from questions.tasks import run_code_async_task
+
+        mock_submit.return_value = {
+            'ok': False, 'error': 'Kod runner xizmatiga kirish rad etildi.', 'retryable': False,
+        }
+        with override_settings(CELERY_TASK_ALWAYS_EAGER=True):
+            run_code_async_task(
+                'test-task-id-2', 'print(1)', 'python', '', self.question.id,
+                submission_id=self.submission.id,
+            )
+        self.submission.refresh_from_db()
+        self.assertFalse(self.submission.all_tests_passed)
+
+
+class RecoverStuckCodeSubmissionsTestCase(APITestCase):
+    """recover_stuck_code_submissions: eskirgan (Judge0 javobi kelmagan)
+    CodeSubmission'larni qayta navbatga qo'yadi, va bir marta qulflangan
+    yozuvni keyingi tick'da ikkinchi marta yubormaydi."""
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.center = EducationCenter.objects.create(
+            name='Recovery Markaz', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.user = User.objects.create_user(
+            phone='+998901110097', password='StrongPass123', full_name='Stuck Coder',
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center, title='Kod olimpiadasi 2', subject='Informatika',
+            status='active', event_type='olympiad',
+        )
+        self.question = Question.objects.create(
+            center=self.center, subject='Informatika', text="Ikkitasini qo'shing.",
+            question_type=Question.QUESTION_TYPE_CODE, score=10,
+        )
+        self.olympiad.questions.add(self.question)
+        self.attempt = TestAttempt.objects.create(
+            user=self.user, olympiad=self.olympiad,
+            score=0, correct_count=0, wrong_count=0, total_questions=1, answers={},
+        )
+        self.submission = CodeSubmission.objects.create(
+            attempt=self.attempt, question=self.question,
+            submitted_code='print(1)', code_language='python',
+        )
+        # updated_at auto_now — .update() bilan chetlab, eskirgan qilib belgilaymiz.
+        old = timezone.now() - timezone.timedelta(minutes=30)
+        CodeSubmission.objects.filter(pk=self.submission.pk).update(updated_at=old)
+
+    def test_stuck_submission_requeued(self):
+        from questions.tasks import recover_stuck_code_submissions, run_code_async_task
+
+        with patch.object(run_code_async_task, 'delay') as mock_delay:
+            requeued = recover_stuck_code_submissions()
+            self.assertEqual(requeued, 1)
+            mock_delay.assert_called_once()
+            _, kwargs = mock_delay.call_args
+            self.assertEqual(kwargs.get('submission_id'), self.submission.id)
+
+    def test_stuck_submission_not_requeued_twice_while_locked(self):
+        from questions.tasks import recover_stuck_code_submissions, run_code_async_task
+
+        with patch.object(run_code_async_task, 'delay') as mock_delay:
+            first = recover_stuck_code_submissions()
+            second = recover_stuck_code_submissions()
+        self.assertEqual(first, 1)
+        self.assertEqual(second, 0)
+        mock_delay.assert_called_once()
+
+    def test_fresh_submission_not_touched(self):
+        from questions.tasks import recover_stuck_code_submissions, run_code_async_task
+
+        CodeSubmission.objects.filter(pk=self.submission.pk).update(
+            updated_at=timezone.now(),
+        )
+        with patch.object(run_code_async_task, 'delay') as mock_delay:
+            requeued = recover_stuck_code_submissions()
+        self.assertEqual(requeued, 0)
+        mock_delay.assert_not_called()
+
+    def test_graded_submission_not_touched(self):
+        from questions.tasks import recover_stuck_code_submissions, run_code_async_task
+
+        self.submission.all_tests_passed = True
+        self.submission.save(update_fields=['all_tests_passed'])
+        CodeSubmission.objects.filter(pk=self.submission.pk).update(
+            updated_at=timezone.now() - timezone.timedelta(minutes=30),
+        )
+        with patch.object(run_code_async_task, 'delay') as mock_delay:
+            requeued = recover_stuck_code_submissions()
+        self.assertEqual(requeued, 0)
+        mock_delay.assert_not_called()
+
+
+class LateGradingRankRecomputeTestCase(APITestCase):
+    """Kod savoli yoki insho kech baholansa, o'zgargan ball butun
+    olimpiadaning `rank`ini ham yangilashi kerak — nafaqat shu attempt'ning
+    o'zini. Avval faqat `attempt.score` yangilanardi, `rank` esa eskirib
+    qolardi (sertifikat/reyting notog'ri chiqishi mumkin edi)."""
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='Rank Markaz', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center, title='Reyting olimpiadasi', subject='Informatika',
+            status='active', event_type='olympiad',
+        )
+        self.code_q = Question.objects.create(
+            center=self.center, subject='Informatika', text="Ikkitasini qo'shing.",
+            question_type=Question.QUESTION_TYPE_CODE, score=50,
+        )
+        self.olympiad.questions.add(self.code_q)
+
+        self.leader = User.objects.create_user(
+            phone='+998901110096', password='StrongPass123', full_name='Yetakchi',
+        )
+        self.latecomer = User.objects.create_user(
+            phone='+998901110095', password='StrongPass123', full_name='Kech baholangan',
+        )
+        # Boshlang'ich holat: leader oldinda (rank 1), latecomer orqada (rank 2)
+        # — latecomer'ning kod savoli hali Judge0'da tekshirilmagan.
+        self.leader_attempt = TestAttempt.objects.create(
+            user=self.leader, olympiad=self.olympiad,
+            score=50, correct_count=1, wrong_count=0, total_questions=1,
+            answers={}, rank=1,
+        )
+        self.latecomer_attempt = TestAttempt.objects.create(
+            user=self.latecomer, olympiad=self.olympiad,
+            score=0, correct_count=0, wrong_count=1, total_questions=1,
+            answers={}, rank=2,
+        )
+        TestSession.objects.create(user=self.latecomer, olympiad=self.olympiad)
+        self.submission = CodeSubmission.objects.create(
+            attempt=self.latecomer_attempt, question=self.code_q,
+            submitted_code='print(1)', code_language='python',
+        )
+
+    @patch('attempts.session_utils.score_session_answers')
+    def test_late_code_grading_reorders_ranks(self, mock_score):
+        from questions.tasks import _recompute_attempt_score_for_submission
+
+        # Judge0 kech tugab, latecomer to'liq ball oladi — endi leader'dan
+        # ustun turishi kerak.
+        mock_score.return_value = {
+            'score': 100, 'correct': 1, 'wrong': 0, 'total': 1,
+        }
+        _recompute_attempt_score_for_submission(self.submission.id)
+
+        self.latecomer_attempt.refresh_from_db()
+        self.leader_attempt.refresh_from_db()
+        self.assertEqual(self.latecomer_attempt.score, 100)
+        self.assertEqual(self.latecomer_attempt.rank, 1)
+        self.assertEqual(self.leader_attempt.rank, 2)
+
+    @patch('attempts.session_utils.score_session_answers')
+    def test_late_essay_grading_reorders_ranks(self, mock_score):
+        from attempts.views_essay import _recompute_attempt_score
+
+        essay_q = Question.objects.create(
+            center=self.center, subject='Ona tili', text='Insho yozing.',
+            question_type=Question.QUESTION_TYPE_ESSAY, score=50,
+        )
+        self.olympiad.questions.add(essay_q)
+        self.latecomer_attempt.answers = {str(essay_q.id): {'text': 'javob'}}
+        self.latecomer_attempt.total_questions = 2
+        self.latecomer_attempt.save(update_fields=['answers', 'total_questions'])
+
+        mock_score.return_value = {
+            'score': 100, 'correct': 2, 'wrong': 0, 'total': 2,
+        }
+        _recompute_attempt_score(self.latecomer_attempt)
+
+        self.latecomer_attempt.refresh_from_db()
+        self.leader_attempt.refresh_from_db()
+        self.assertEqual(self.latecomer_attempt.rank, 1)
+        self.assertEqual(self.leader_attempt.rank, 2)
 
 
 class PremiumQuestionFeaturesTestCase(APITestCase):

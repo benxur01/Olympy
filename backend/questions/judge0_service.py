@@ -57,6 +57,21 @@ def is_supported(language: str) -> bool:
     return str(language or '').lower() in LANGUAGE_IDS
 
 
+def _is_retryable_http_error(exc) -> bool:
+    """`raise_for_status()` ko'targan HTTPError vaqtinchalikmi?
+
+    429 (limit) va 5xx (Judge0 serverida nosozlik) — o'zi tuzaladigan xatolar,
+    qayta urinish mantiqiy. Qolgan 4xx (masalan 400 — noto'g'ri so'rov) qayta
+    urinishda ham aynan shu javobni qaytaradi. Status umuman o'qilmasa —
+    noma'lum deb vaqtinchalik hisoblaymiz (task baribir max_retries bilan
+    cheklangan).
+    """
+    status_code = getattr(getattr(exc, 'response', None), 'status_code', None)
+    if status_code is None:
+        return True
+    return status_code == 429 or status_code >= 500
+
+
 def get_judge0_credentials():
     from django.conf import settings
     api_key = getattr(settings, 'JUDGE0_API_KEY', '')
@@ -76,7 +91,13 @@ def get_judge0_credentials():
 def submit_code_batch(submissions: list, timeout: int = 10) -> dict:
     """
     Submits a batch of code runs to Judge0 and returns their tokens.
-    Returns a dict: {'ok': True, 'tokens': list, 'valid_indices': list} or {'ok': False, 'error': str}
+    Returns a dict: {'ok': True, 'tokens': list, 'valid_indices': list} or
+    {'ok': False, 'error': str, 'retryable': bool}.
+
+    `retryable=True` — xato o'zi tuzalishi mumkin (limit, tarmoq, Judge0 5xx),
+    chaqiruvchi (run_code_async_task) qayta urinib ko'rishi kerak.
+    `retryable=False` — qayta urinish ayni shu natijani beradi (til
+    qo'llab-quvvatlanmaydi, kirish rad etildi, javob formati buzuq).
     """
     base_url, headers = get_judge0_credentials()
 
@@ -98,7 +119,11 @@ def submit_code_batch(submissions: list, timeout: int = 10) -> dict:
 
     valid_indices = [i for i, x in enumerate(batch_submissions) if x is not None]
     if not valid_indices:
-        return {'ok': False, 'error': "Qo'llab-quvvatlanmaydigan dasturlash tili yoki bo'sh so'rov"}
+        return {
+            'ok': False,
+            'error': "Qo'llab-quvvatlanmaydigan dasturlash tili yoki bo'sh so'rov",
+            'retryable': False,
+        }
 
     payload = {
         'submissions': [batch_submissions[i] for i in valid_indices]
@@ -110,27 +135,61 @@ def submit_code_batch(submissions: list, timeout: int = 10) -> dict:
             json=payload, headers=headers, timeout=20,
         )
         if resp.status_code == 429:
-            return {'ok': False, 'error': 'Kod runner limiti tugadi. Biroz kuting va qayta urining.'}
+            return {
+                'ok': False,
+                'error': 'Kod runner limiti tugadi. Biroz kuting va qayta urining.',
+                'retryable': True,
+            }
         if resp.status_code in (401, 403):
-            return {'ok': False, 'error': 'Kod runner xizmatiga kirish rad etildi.'}
+            return {
+                'ok': False,
+                'error': 'Kod runner xizmatiga kirish rad etildi.',
+                'retryable': False,
+            }
         resp.raise_for_status()
 
         tokens_data = resp.json()
         if not isinstance(tokens_data, list) or len(tokens_data) != len(valid_indices):
-            return {'ok': False, 'error': 'Kod runner tokenlarini olishda xato'}
+            return {
+                'ok': False,
+                'error': 'Kod runner tokenlarini olishda xato',
+                'retryable': False,
+            }
 
         tokens = [item.get('token') for item in tokens_data]
         if any(not t for t in tokens):
-            return {'ok': False, 'error': "Ayrim kod runner tokenlarini yuklab bo'lmadi"}
+            return {
+                'ok': False,
+                'error': "Ayrim kod runner tokenlarini yuklab bo'lmadi",
+                'retryable': False,
+            }
 
         return {'ok': True, 'tokens': tokens, 'valid_indices': valid_indices}
 
     except requests.exceptions.Timeout:
-        return {'ok': False, 'error': 'Kod bajarilishi vaqt limitini oshdi'}
+        return {
+            'ok': False,
+            'error': 'Kod bajarilishi vaqt limitini oshdi',
+            'retryable': True,
+        }
     except requests.exceptions.ConnectionError:
-        return {'ok': False, 'error': "Kod runner serveriga ulanib bo'lmadi"}
+        return {
+            'ok': False,
+            'error': "Kod runner serveriga ulanib bo'lmadi",
+            'retryable': True,
+        }
+    except requests.exceptions.HTTPError as e:
+        return {
+            'ok': False,
+            'error': f'Kod ishga tushirishda xato: {str(e)[:100]}',
+            'retryable': _is_retryable_http_error(e),
+        }
     except Exception as e:
-        return {'ok': False, 'error': f'Kod ishga tushirishda xato: {str(e)[:100]}'}
+        return {
+            'ok': False,
+            'error': f'Kod ishga tushirishda xato: {str(e)[:100]}',
+            'retryable': True,
+        }
 
 
 def check_batch_status(tokens: list, valid_indices: list, total_count: int) -> dict:
@@ -139,7 +198,8 @@ def check_batch_status(tokens: list, valid_indices: list, total_count: int) -> d
     Returns:
       {'ok': True, 'status': 'PENDING'} if still processing.
       {'ok': True, 'status': 'COMPLETED', 'results': list} if finished.
-      {'ok': False, 'error': str} on error.
+      {'ok': False, 'error': str, 'retryable': bool} on error
+      (`retryable` ma'nosi `submit_code_batch` dagi bilan bir xil).
     """
     base_url, headers = get_judge0_credentials()
     tokens_str = ",".join(tokens)
@@ -154,7 +214,11 @@ def check_batch_status(tokens: list, valid_indices: list, total_count: int) -> d
         subs = batch_result.get('submissions') or []
         
         if not subs or len(subs) != len(valid_indices):
-            return {'ok': False, 'error': 'Natijalarni olishda xato yuz berdi'}
+            return {
+                'ok': False,
+                'error': 'Natijalarni olishda xato yuz berdi',
+                'retryable': False,
+            }
             
         # Check if any is still processing/in queue (status 1 or 2)
         if any(item.get('status', {}).get('id', 0) in (1, 2) for item in subs):
@@ -185,5 +249,27 @@ def check_batch_status(tokens: list, valid_indices: list, total_count: int) -> d
             }
         return {'ok': True, 'status': 'COMPLETED', 'results': results}
 
+    except requests.exceptions.Timeout:
+        return {
+            'ok': False,
+            'error': 'Status tekshirish vaqt limitini oshdi',
+            'retryable': True,
+        }
+    except requests.exceptions.ConnectionError:
+        return {
+            'ok': False,
+            'error': "Kod runner serveriga ulanib bo'lmadi",
+            'retryable': True,
+        }
+    except requests.exceptions.HTTPError as e:
+        return {
+            'ok': False,
+            'error': f"Status tekshirishda xatolik: {str(e)[:100]}",
+            'retryable': _is_retryable_http_error(e),
+        }
     except Exception as e:
-        return {'ok': False, 'error': f"Status tekshirishda xatolik: {str(e)[:100]}"}
+        return {
+            'ok': False,
+            'error': f"Status tekshirishda xatolik: {str(e)[:100]}",
+            'retryable': True,
+        }
