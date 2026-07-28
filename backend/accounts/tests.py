@@ -208,6 +208,83 @@ class LoginLogoutTestCase(APITestCase):
         self.assertFalse(LoginEvent.objects.filter(user=self.user).exists())
 
 
+class StaleCredentialTestCase(APITestCase):
+    """Eskirgan kredensial AllowAny endpoint'larni bloklamasligi kerak.
+
+    Frontend saqlangan access tokenni HAR bir so'rovga `Authorization: Bearer`
+    sifatida qo'shadi (src/services/api.js), shu jumladan login va
+    token/refresh ga. Access token 30 daqiqada eskiradi, shuning uchun qaytib
+    kelgan foydalanuvchining har bir so'rovi eskirgan token bilan ketadi.
+    Avval `OlympyJWTAuthentication` bu holatda 401 "Given token not valid for
+    any token type" ko'tarardi (cookie uchun esa yo'q) va foydalanuvchi
+    "Sessiya muddati tugadi. Iltimos, qayta kiring." xabariga qamalib qolardi.
+    """
+
+    def setUp(self):
+        self.phone = '+998905550001'
+        self.password = 'StrongPass123'
+        self.user = User.objects.create_user(
+            phone=self.phone, password=self.password, full_name='Stale Cred',
+        )
+
+    def _expired_access_token(self, user=None):
+        from rest_framework_simplejwt.tokens import AccessToken
+        token = AccessToken.for_user(user or self.user)
+        token['token_version'] = (user or self.user).token_version
+        token.set_exp(
+            from_time=timezone.now() - timedelta(hours=2),
+            lifetime=timedelta(minutes=30),
+        )
+        return str(token)
+
+    def test_login_succeeds_with_expired_bearer_header(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self._expired_access_token()}')
+        res = self.client.post(reverse('login'), {
+            'phone': self.phone,
+            'password': self.password,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    def test_login_succeeds_with_malformed_bearer_header(self):
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer not-a-real-token')
+        res = self.client.post(reverse('login'), {
+            'phone': self.phone,
+            'password': self.password,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    def test_token_refresh_succeeds_with_expired_bearer_header(self):
+        """Silent refresh: refresh token yaroqli, access token esa eskirgan."""
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = RefreshToken.for_user(self.user)
+        refresh['token_version'] = self.user.token_version
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self._expired_access_token()}')
+        res = self.client.post(
+            reverse('token-refresh'), {'refresh': str(refresh)}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    def test_protected_endpoint_still_rejects_expired_bearer_header(self):
+        """Yumshoq muomala FAQAT AllowAny uchun — himoyalangan yo'l baribir 401."""
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {self._expired_access_token()}')
+        self.assertEqual(
+            self.client.get(reverse('me')).status_code, status.HTTP_401_UNAUTHORIZED,
+        )
+
+    def test_invalid_bearer_header_does_not_fall_back_to_cookie(self):
+        """Header bo'lsa cookie'ga qaytilmaydi (impersonatsiya xavfsizligi)."""
+        login = self.client.post(reverse('login'), {
+            'phone': self.phone,
+            'password': self.password,
+        }, format='json')
+        self.assertEqual(login.status_code, status.HTTP_200_OK)
+        self.assertIn('olympy_access', self.client.cookies)
+        self.client.credentials(HTTP_AUTHORIZATION='Bearer not-a-real-token')
+        self.assertEqual(
+            self.client.get(reverse('me')).status_code, status.HTTP_401_UNAUTHORIZED,
+        )
+
+
 class IsPremiumDefaultTestCase(APITestCase):
     """`is_premium` maydoni default False bo'lishi kerak."""
 

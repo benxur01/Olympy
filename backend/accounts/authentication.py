@@ -28,19 +28,48 @@ class OlympyJWTAuthentication(JWTAuthentication):
     """
 
     def authenticate(self, request):
+        # Manba tanlash: Authorization header cookie'dan USTUN turadi va header
+        # bo'lganda cookie'ga UMUMAN qaytilmaydi — impersonatsiya aynan shunga
+        # tayanadi (aks holda seans bekor qilingach so'rov jimgina adminning
+        # cookie'si bilan bajarilib ketardi).
         header = self.get_header(request)
         if header is not None:
-            return super().authenticate(request)
-        raw_token = request.COOKIES.get(getattr(settings, 'JWT_ACCESS_COOKIE_NAME', 'olympy_access'))
+            try:
+                raw_token = self.get_raw_token(header)
+            except Exception:
+                # Buzilgan Authorization header — yaroqsiz kredensial bilan bir
+                # xil muomala (pastdagi izoh).
+                return None
+        else:
+            raw_token = request.COOKIES.get(getattr(settings, 'JWT_ACCESS_COOKIE_NAME', 'olympy_access'))
         if raw_token is None:
             return None
         try:
             validated_token = self.get_validated_token(raw_token)
             return self.get_user(validated_token), validated_token
         except Exception:
-            # Cookie eskirgan yoki yaroqsiz — AllowAny endpoint'larni (login,
-            # register) bloklamaslik uchun None qaytaramiz. IsAuthenticated
-            # endpoint'lar anonim so'rovni standart DRF 401 bilan rad etadi.
+            # Kredensial eskirgan yoki yaroqsiz — AllowAny endpoint'larni
+            # (login, register, token/refresh) bloklamaslik uchun None
+            # qaytaramiz. IsAuthenticated endpoint'lar anonim so'rovni
+            # standart DRF 401 bilan rad etadi.
+            #
+            # NEGA HEADER UCHUN HAM: avval bu yumshoq muomala FAQAT cookie'ga
+            # tegishli edi, header esa to'g'ridan-to'g'ri
+            # `super().authenticate()` ga ketardi va u muddati o'tgan token
+            # uchun `InvalidToken` (401 "Given token not valid for any token
+            # type") ko'tarardi — permission_classes=[AllowAny] bo'lsa ham,
+            # chunki autentifikatsiya ruxsatdan OLDIN ishlaydi. Frontend esa
+            # saqlangan access tokenni HAR bir so'rovga qo'shadi
+            # (src/services/api.js — `Authorization: Bearer ...`), shu jumladan
+            # `/api/auth/login/` va `/api/auth/token/refresh/` ga. Natijada
+            # access token muddati tugagan (30 daqiqa) foydalanuvchi uchun:
+            #   1) silent refresh 401 olardi — refresh token 90 kun yaroqli
+            #      bo'lsa ham view'gacha yetib bormasdi → majburiy logout;
+            #   2) login ham 401 "token not valid" olardi va foydalanuvchi
+            #      "Sessiya muddati tugadi. Iltimos, qayta kiring." xabarini
+            #      ko'rib, hech qanday yo'l bilan qayta kira olmasdi.
+            # Eskirgan kredensial hech qachon YANGI kirishga to'sqinlik
+            # qilmasligi kerak — shuning uchun ikkala manba ham bir xil.
             return None
 
     def get_user(self, validated_token):

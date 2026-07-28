@@ -412,7 +412,7 @@ const _waitBeforeNetworkRetry = (ms, signal) => new Promise((resolve, reject) =>
 
 const request = async (
   path,
-  { method = 'GET', body, token, headers = {}, retryOnAuth = true, keepalive = false, signal, silent = false } = {},
+  { method = 'GET', body, token, headers = {}, retryOnAuth = true, keepalive = false, signal, silent = false, speculative = false } = {},
 ) => {
   const requestHeaders = {
     Accept: 'application/json',
@@ -555,6 +555,20 @@ const request = async (
           status: 401,
           data: { ...(typeof data === 'object' && data ? data : {}), code: 'session_expired' },
         });
+      }
+      // SPEKULYATIV bootstrap tekshiruvi (app.jsx `restoreFromCookieSession`) —
+      // "storage bo'sh, lekin HttpOnly cookie hali tirikmi?" degan FON so'rovi.
+      // Uning 401'i "sessiya buzildi" emas, shunchaki "sessiya yo'q" degani,
+      // shuning uchun global logout'ni TRIGGERLAMAYDI va storage'ga TEGMAYDI.
+      // 4c135cc bu tekshiruvni fonga chiqargandan keyin login formasi uning
+      // tugashini kutmaydi: sekin mobil tarmoqda kech kelgan 401 foydalanuvchi
+      // ENDIGINA kirgan YANGI sessiyani o'chirib yuborardi (`olympy:logout` →
+      // handleLogout → clearAuth(), u tokenlarni tozalash bilan birga
+      // /api/auth/logout/ ni chaqirib yangi refresh tokenni server tomonda
+      // blacklist ham qiladi) — natijada foydalanuvchi kirgan zahoti
+      // "Sessiya muddati tugadi" bilan qaytarib chiqarilardi.
+      if (speculative) {
+        throw new ApiError('No session', { status: 401, data });
       }
       // Autentifikatsiyali so'rovda token muddati tugagan — auth tozalanadi.
       _removeAuth(AUTH_TOKEN_KEY);
@@ -1147,7 +1161,10 @@ export const OlympyApi = {
   // qiladi (token o'g'irlansa tajovuzkor 2FA'ni o'chira olmasin). credentials
   // = {totp_code} yoki {password}.
   twoFactorDisable: (credentials, token) => request('/api/auth/2fa/disable/', { method: 'POST', body: credentials || {}, token }),
-  getMe: async (token) => {
+  // `speculative: true` — bootstrap'dagi "cookie hali tirikmi?" fon tekshiruvi
+  // uchun: 401 kelsa global logout qilinmaydi (yuqoridagi `request` izohiga
+  // qarang), chaqiruvchi xatoni o'zi jimgina yutadi.
+  getMe: async (token, { speculative = false } = {}) => {
     // Avval sessionStorage keshini ko'ramiz — sahifa yangilangach in-memory
     // _currentUser yo'qoladi, kesh esa darhol qiymat beradi. Keyin serverdan
     // yangilab, javobni keshga yozamiz (kesh faqat UI uchun; ruxsat har doim
@@ -1155,7 +1172,7 @@ export const OlympyApi = {
     // qiymatni fallback qilamiz, aks holda xatoni qayta otamiz.
     const cached = _readCachedUser();
     try {
-      const data = await request('/api/me/', { token });
+      const data = await request('/api/me/', { token, speculative });
       _writeCachedUser(data);
       return data;
     } catch (error) {
