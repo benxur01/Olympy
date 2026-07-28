@@ -375,9 +375,14 @@ const App = () => {
       // Cookie-only sessiyani tekshirish: storage'da user cache'i bo'lmasa ham
       // HttpOnly cookie hali tirik bo'lishi mumkin. true => sessiya topildi va
       // sahifa o'rnatildi. Hech qachon reject qilmaydi — fonda ham chaqiriladi.
-      const restoreFromCookieSession = async () => {
+      //
+      // `speculative` — FON rejimi (pastdagi "cache umuman yo'q" tarmog'i):
+      // 401 "sessiya yo'q" degani, majburiy logout emas. Aks holda sekin
+      // tarmoqda kech kelgan javob foydalanuvchi shu orada kirgan yangi
+      // sessiyani o'chirib yuborardi (api.js'dagi izohga qarang).
+      const restoreFromCookieSession = async ({ speculative = false } = {}) => {
         try {
-          const freshUser = await globalThis.OlympyApi?.getMe?.(null);
+          const freshUser = await globalThis.OlympyApi?.getMe?.(null, { speculative });
           if (!freshUser || cancelled) return false;
           const mappedUser = globalThis.OlympyApi.mapBackendUser(freshUser);
           globalThis.OlympyApi.saveAuth({ user: mappedUser, cookieAuth: true });
@@ -453,7 +458,7 @@ const App = () => {
       // qanday await'dan oldin URL'dan o'qib olingan.
       keepRequestedPage();
       setBootstrapping(false);
-      restoreFromCookieSession();
+      restoreFromCookieSession({ speculative: true });
     };
     try {
       restore().finally(() => { if (!cancelled) setBootstrapping(false); });
