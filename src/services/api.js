@@ -2098,6 +2098,11 @@ export const OlympyApi = {
   // chetlab o'tib qayta hisoblaydi.
   getAdminMetrics: (token, { refresh = false } = {}) =>
     request(`/api/analytics/metrics/${refresh ? '?refresh=1' : ''}`, { token }),
+  // Platforma admini — hozir onlayn foydalanuvchilar soni (Boshqaruv paneli).
+  // `getAdminMetrics`dan alohida, chunki u 10 daqiqa cache'lanadi; bu esa
+  // cache'siz va yengil, har 15 soniyada so'raladi. Javob:
+  // {online_count, window_minutes}. Redis sozlanmagan bo'lsa online_count=null.
+  getOnlineCount: (token) => request('/api/analytics/online/', { token }),
   // Admin panel "Tahlil" tabidagi kengaytirilgan diagrammalar (faqat admin).
   // Har biri alohida endpoint — bo'sh jadvalda backend bo'sh massiv qaytaradi.
   getAttemptsTrend: (token) => request('/api/analytics/attempts-trend/', { token }),
