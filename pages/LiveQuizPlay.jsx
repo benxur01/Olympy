@@ -9,6 +9,12 @@
 //   type_answer                             → matn maydoni, javob = matn
 //   slider                                  → range slayder, javob = raqam
 
+// Xona kodi — Kahoot'dagi "game PIN" kabi FAQAT RAQAM, 6 xona (server tomonda
+// RoomService.CODE_MIN..CODE_MAX bilan bir xil). Raqamli bo'lgani uchun kirish
+// maydoni telefonda to'liq QWERTY klaviaturasi o'rniga raqamli klaviaturani
+// ochadi — kod terishdagi xatolarning asosiy manbasi shu edi.
+const LIVE_QUIZ_CODE_LENGTH = 6;
+
 const LiveQuizPlayPage = ({ user, onNavigate }) => {
   const { useState, useEffect, useRef, useCallback } = React;
 
@@ -66,6 +72,12 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
   // Qayta ulanish tugmasi uchun xona kodi (`codeInput` foydalanuvchi
   // tahrirlaydigan maydon, ulangandan keyin unga tayanib bo'lmaydi).
   const roomCodeRef = useRef('');
+  // Har bir `openSocket` chaqiruvi uchun raqam. Ulanish butunlay barbod
+  // bo'lgandan keyin sababini aniqlash uchun xona holatini qayta so'raymiz —
+  // o'sha so'rov javob bergunicha foydalanuvchi "Qayta ulanish"ni bosgan
+  // bo'lishi mumkin, shunda eskirgan javob yangi urinishning xabarini
+  // bosib ketmasligi kerak.
+  const socketGenRef = useRef(0);
 
   const cleanupWs = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -151,6 +163,8 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
   // holatni ekranga chiqaramiz.
   const openSocket = useCallback((code) => {
     roomCodeRef.current = code;
+    socketGenRef.current += 1;
+    const gen = socketGenRef.current;
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
     setConnState('connecting');
     wsRef.current = OlympyApi.connectQuizSocket({
@@ -168,9 +182,22 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
           // qolardi; endi aniq xabar + qayta urinish tugmasi beramiz.
           joiningRef.current = false;
           setJoining(false);
-          setError(reason === 'auth'
-            ? 'Sessiya muddati tugagan. Tizimga qayta kiring.'
-            : "Serverga ulanib bo'lmadi. Internetni tekshirib, qayta urinib ko'ring.");
+          if (reason === 'auth') {
+            setError('Sessiya muddati tugagan. Tizimga qayta kiring.');
+            return;
+          }
+          setError("Serverga ulanib bo'lmadi. Internetni tekshirib, qayta urinib ko'ring.");
+          // Handshake rad etilganda brauzer sababni bermaydi, shuning uchun
+          // eng ko'p uchraydigan sabab — xona endi mavjud emasligi (ustoz
+          // yakunlagan, xizmat qayta ishga tushgan) — o'quvchiga internetini
+          // tekshirish taklifi bo'lib ko'rinardi. Xona holatini qayta so'rab,
+          // xabarni aniqlashtiramiz.
+          OlympyApi.getQuizRoom(code).then((room) => {
+            if (socketGenRef.current !== gen) return; // yangi urinish boshlangan
+            if (room.unavailable) return;             // xizmat yiqilgan — xabar to'g'ri
+            if (room.finished) setError('Bu viktorina allaqachon tugagan.');
+            else if (!room.exists) setError("Xona yopilgan. Ustozdan yangi kod so'rang.");
+          }).catch(() => {});
         }
       },
     });
@@ -180,8 +207,16 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
     // Takroriy bosishlarni to'xtatamiz — yuqoridagi izohga qarang (joiningRef).
     if (joiningRef.current) return;
     setError('');
-    const code = codeInput.trim().toUpperCase();
+    // Faqat raqamlarni qoldiramiz. Avval `trim().toUpperCase()` edi va
+    // "Kod: 482913" ko'rinishida nusxa ko'chirilgan (yoki orasida bo'sh joy
+    // qolgan) kod serverga o'sha ko'yi ketib, o'quvchiga "Bunday xona
+    // topilmadi. Kodni tekshiring." deb ko'rsatilardi — kod esa to'g'ri edi.
+    const code = codeInput.replace(/\D/g, '');
     if (!code) { setError('Xona kodini kiriting'); return; }
+    if (code.length !== LIVE_QUIZ_CODE_LENGTH) {
+      setError(`Xona kodi ${LIVE_QUIZ_CODE_LENGTH} ta raqamdan iborat`);
+      return;
+    }
     joiningRef.current = true;
     setJoining(true);
     try {
@@ -264,17 +299,31 @@ const LiveQuizPlayPage = ({ user, onNavigate }) => {
           <div className="text-center mb-8">
             <div className="text-5xl mb-3">⚡</div>
             <h1 className="text-3xl font-black">Jonli viktorina</h1>
-            <p className="text-white/50 text-sm mt-1">Ustoz bergan kodni kiriting</p>
+            <p className="text-white/50 text-sm mt-1">Ustoz bergan {LIVE_QUIZ_CODE_LENGTH} xonali kodni kiriting</p>
           </div>
 
           <div className="glass rounded-2xl p-5 space-y-3">
+            {/* Raqamli kod maydoni (Kahoot "game PIN" bilan bir xil):
+                `inputMode="numeric"` + `pattern="[0-9]*"` — iOS va Android
+                aynan shu juftlikda raqamli klaviatura ochadi. `type="text"`
+                ataylab: `type="number"` maydonida `maxLength` ishlamaydi va
+                brauzer o'q tugmachalarini qo'shadi. Avtomatik tuzatish/bosh
+                harf o'chirilgan — iOS aks holda terilgan kodni "tuzatib"
+                yuborardi. */}
             <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               value={codeInput}
-              onChange={(e) => setCodeInput(e.target.value.toUpperCase())}
+              onChange={(e) => setCodeInput(e.target.value.replace(/\D/g, '').slice(0, LIVE_QUIZ_CODE_LENGTH))}
               onKeyDown={(e) => e.key === 'Enter' && join()}
               placeholder="XONA KODI"
-              maxLength={8}
-              className="w-full bg-white/5 border border-white/15 rounded-xl px-4 py-4 text-center text-2xl font-black tracking-[0.3em] text-white outline-none focus:border-indigo-500/60 uppercase placeholder:tracking-normal placeholder:text-base placeholder:text-white/30"
+              maxLength={LIVE_QUIZ_CODE_LENGTH}
+              className="w-full bg-white/5 border border-white/15 rounded-xl px-4 py-4 text-center text-2xl font-black tracking-[0.3em] tabular-nums text-white outline-none focus:border-indigo-500/60 placeholder:tracking-normal placeholder:text-base placeholder:text-white/30"
             />
             <input
               value={nameInput}

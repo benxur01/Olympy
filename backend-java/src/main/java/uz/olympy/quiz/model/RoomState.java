@@ -53,11 +53,27 @@ public class RoomState {
     /** Timer that auto-reveals the current question when its window elapses. */
     public ScheduledFuture<?> questionTimer;
 
+    /**
+     * Last time anyone touched this room (created / connected / answered /
+     * host command). Drives the abandoned-room sweep in
+     * {@link uz.olympy.quiz.service.RoomService}: a host who closes the tab
+     * without ending the quiz otherwise leaves the room — and its code —
+     * alive forever.
+     */
+    public long lastActivityMillis = System.currentTimeMillis();
+    /** When {@link #finished} was set; 0 while the quiz is still running. */
+    public long finishedAtMillis = 0L;
+
     public RoomState(String roomCode, long hostUserId, String title, List<QuizQuestion> questions) {
         this.roomCode = roomCode;
         this.hostUserId = hostUserId;
         this.title = title;
         this.questions = questions;
+    }
+
+    /** Mark the room as still in use (see {@link #lastActivityMillis}). */
+    public void touch() {
+        this.lastActivityMillis = System.currentTimeMillis();
     }
 
     public boolean isHost(long userId) {
