@@ -230,7 +230,7 @@ class QuizResultTestCase(APITestCase):
 
     def _payload(self):
         return {
-            'room_code': 'ABC123',
+            'room_code': '482913',
             'title': 'Matematika viktorina',
             'host_id': self.host.id,
             'participants': [
@@ -243,7 +243,7 @@ class QuizResultTestCase(APITestCase):
         resp = self.client.post(self.url, self._payload(), format='json', **HDR)
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         row = QuizResult.objects.get(pk=resp.data['id'])
-        self.assertEqual(row.room_code, 'ABC123')
+        self.assertEqual(row.room_code, '482913')
         self.assertEqual(row.title, 'Matematika viktorina')
         self.assertEqual(row.host_id, self.host.id)
         self.assertEqual(len(row.participants), 2)

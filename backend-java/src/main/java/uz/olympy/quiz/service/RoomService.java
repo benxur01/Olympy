@@ -44,19 +44,44 @@ public class RoomService {
     private static final int MAX_POINTS = 1000;
     /** How many entries the leaderboard broadcasts carry. */
     private static final int LEADERBOARD_TOP_N = 10;
-    /** Unambiguous room-code alphabet (no 0/O/1/I to avoid typos). */
-    private static final char[] CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789".toCharArray();
-    private static final int CODE_LENGTH = 6;
+
+    // Room codes are PURE DIGITS, exactly like a Kahoot game PIN: the join
+    // screen can then open the phone's numeric keypad instead of the full
+    // QWERTY keyboard, which is where most mistyped codes came from. The range
+    // deliberately starts at 100000 so every code is 6 digits with no leading
+    // zero — a leading zero is the one digit a student reliably drops when
+    // copying the code off the teacher's screen.
+    private static final int CODE_MIN = 100_000;
+    private static final int CODE_MAX = 999_999;
+    private static final int CODE_SPACE = CODE_MAX - CODE_MIN + 1; // 900_000
+
+    /** How long a finished room stays joinable before it is discarded. */
+    private static final long FINISHED_GRACE_MS = TimeUnit.MINUTES.toMillis(5);
+    /** How long a room with no activity at all survives before it is discarded. */
+    private static final long IDLE_ROOM_TTL_MS = TimeUnit.HOURS.toMillis(4);
+    /** How often abandoned/finished rooms are swept. */
+    private static final long SWEEP_INTERVAL_MS = TimeUnit.MINUTES.toMillis(5);
 
     private final DjangoClient djangoClient;
     private final ObjectMapper mapper = new ObjectMapper();
-    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    // 3 threads: per-question auto-reveal timers plus the periodic room sweep.
+    // The sweep briefly takes each room's lock, and finish() holds that lock
+    // across a (bounded) HTTP call to Django, so the sweep must never be able
+    // to starve a question timer.
+    private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(3);
 
     /** roomCode -> live room state. */
     private final Map<String, RoomState> rooms = new java.util.concurrent.ConcurrentHashMap<>();
 
     public RoomService(DjangoClient djangoClient) {
         this.djangoClient = djangoClient;
+        // Rooms were only ever removed by finish(), so a host who just closed
+        // the tab left the room in this map forever: the memory never came
+        // back and, worse, the stale code still passed the join probe — a
+        // student typing yesterday's code landed in a lobby whose host was
+        // long gone and waited there indefinitely.
+        scheduler.scheduleWithFixedDelay(this::sweepDeadRooms,
+                SWEEP_INTERVAL_MS, SWEEP_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
 
     // ─── Room lifecycle ──────────────────────────────────────────────────────
@@ -71,22 +96,63 @@ public class RoomService {
     }
 
     public RoomState getRoom(String roomCode) {
-        return roomCode == null ? null : rooms.get(roomCode.toUpperCase());
+        if (roomCode == null) {
+            return null;
+        }
+        // Trim only: codes are digits, so there is no case to fold. A stray
+        // space (query strings and copy-pasted codes pick them up easily) used
+        // to be reported to the student as "no such room".
+        return rooms.get(roomCode.trim());
     }
 
+    /**
+     * Free 6-digit code. Random first — with at most a few hundred live rooms
+     * against 900k codes the first draw practically always wins.
+     */
     private String uniqueCode() {
         for (int attempt = 0; attempt < 50; attempt++) {
-            StringBuilder sb = new StringBuilder(CODE_LENGTH);
-            for (int i = 0; i < CODE_LENGTH; i++) {
-                sb.append(CODE_ALPHABET[ThreadLocalRandom.current().nextInt(CODE_ALPHABET.length)]);
-            }
-            String code = sb.toString();
+            String code = Integer.toString(ThreadLocalRandom.current().nextInt(CODE_MIN, CODE_MAX + 1));
             if (!rooms.containsKey(code)) {
                 return code;
             }
         }
-        // Astronomically unlikely; fall back to a longer random code.
-        return "Q" + Long.toString(System.nanoTime(), 36).toUpperCase();
+        // Effectively unreachable — it needs the code space to be nearly full.
+        // Probe sequentially from a random offset rather than switching to a
+        // wider alphabet: the join screen accepts digits only, so the letter
+        // code this branch used to return could not be typed in at all.
+        int start = ThreadLocalRandom.current().nextInt(CODE_SPACE);
+        for (int i = 0; i < CODE_SPACE; i++) {
+            String code = Integer.toString(CODE_MIN + (start + i) % CODE_SPACE);
+            if (!rooms.containsKey(code)) {
+                return code;
+            }
+        }
+        throw new IllegalStateException("Bo'sh xona kodi qolmadi");
+    }
+
+    /**
+     * Discards rooms nobody can use any more: finished ones past their grace
+     * window (see {@link #finish}) and rooms that saw no activity for hours
+     * because the host closed the tab without ending the quiz.
+     */
+    private void sweepDeadRooms() {
+        try {
+            long now = System.currentTimeMillis();
+            rooms.values().removeIf(room -> {
+                synchronized (room) {
+                    boolean expired = room.finished
+                            ? now - room.finishedAtMillis > FINISHED_GRACE_MS
+                            : now - room.lastActivityMillis > IDLE_ROOM_TTL_MS;
+                    if (expired) {
+                        log.info("Discarding {} quiz room {}", room.finished ? "finished" : "abandoned", room.roomCode);
+                    }
+                    return expired;
+                }
+            });
+        } catch (Exception e) {
+            // Never let a sweep failure kill the scheduled task.
+            log.warn("Quiz room sweep failed: {}", e.getMessage());
+        }
     }
 
     // ─── Connections ─────────────────────────────────────────────────────────
@@ -94,6 +160,7 @@ public class RoomService {
     /** Register the host's big-screen socket and send them the current state. */
     public void onHostConnect(RoomState room, WebSocketSession session) {
         synchronized (room) {
+            room.touch();
             room.hostSession = session;
             sendTo(session, hostStatePayload(room));
         }
@@ -102,6 +169,21 @@ public class RoomService {
     /** Register a student's socket; put them in the lobby (or the live question). */
     public void onStudentConnect(RoomState room, long userId, String name, String avatar, WebSocketSession session) {
         synchronized (room) {
+            room.touch();
+
+            // Reconnecting into an already-finished room (the socket dropped
+            // while the last round was being scored): replay the podium and
+            // change nothing else — a newcomer must not be appended to a
+            // leaderboard that was already posted to Django. Without this the
+            // student stayed on the "next question soon" screen with a red
+            // "connection lost" banner and never saw their final place: the
+            // room used to be dropped the instant the quiz ended, so every
+            // reconnect attempt was refused.
+            if (room.finished) {
+                sendTo(session, finalPayload(room));
+                return;
+            }
+
             room.studentSessions.put(userId, session);
             room.names.put(userId, (name == null || name.isBlank()) ? ("O'quvchi #" + userId) : name.trim());
             // Avatar ixtiyoriy: eski klient yubormasa bo'sh qoladi va host
@@ -120,7 +202,7 @@ public class RoomService {
             sendTo(session, welcome);
 
             // If they joined mid-question (reconnect / late), catch them up.
-            if (room.started && !room.finished && room.currentIndex >= 0 && !room.revealed) {
+            if (room.started && room.currentIndex >= 0 && !room.revealed) {
                 sendTo(session, questionPayload(room));
             }
 
@@ -142,6 +224,7 @@ public class RoomService {
             if (!room.isHost(userId) || room.finished) {
                 return;
             }
+            room.touch();
             switch (command) {
                 case "start" -> { if (!room.started) startQuiz(room); }
                 // "next": reveal the live question if it hasn't been revealed yet,
@@ -220,6 +303,7 @@ public class RoomService {
             if (!room.answeredThisRound.add(userId)) {
                 return; // already answered this round
             }
+            room.touch();
             QuizQuestion q = room.questions.get(room.currentIndex);
             boolean correct = isCorrect(q, answer);
             long elapsedMs = System.currentTimeMillis() - room.questionStartMillis;
@@ -362,15 +446,13 @@ public class RoomService {
             return;
         }
         room.finished = true;
+        room.finishedAtMillis = System.currentTimeMillis();
+        room.touch();
         if (room.questionTimer != null) {
             room.questionTimer.cancel(false);
         }
         List<Map<String, Object>> full = leaderboard(room, Integer.MAX_VALUE);
-        broadcast(room, Map.of(
-                "type", "final",
-                "roomCode", room.roomCode,
-                "title", room.title,
-                "leaderboard", full));
+        broadcast(room, finalPayload(room));
 
         // Persist the finished quiz to Django (source of truth). Best-effort.
         List<Map<String, Object>> participants = new ArrayList<>();
@@ -384,7 +466,11 @@ public class RoomService {
         }
         djangoClient.postQuizResult(room.roomCode, room.title, room.hostUserId, participants);
 
-        rooms.remove(room.roomCode);
+        // The room is intentionally NOT dropped here. It used to be, which
+        // meant a student whose socket was mid-reconnect when the quiz ended
+        // could never get back in (unknown room => handshake refused) and a
+        // late joiner got "no such room" instead of "already finished". The
+        // sweeper discards it after FINISHED_GRACE_MS.
         log.info("Quiz room {} finished with {} participants", room.roomCode, participants.size());
     }
 
@@ -471,6 +557,20 @@ public class RoomService {
             case QuizQuestion.TYPE_SLIDER -> payload.put("correctValue", q.correctValue());
             default -> payload.put("correctIndex", q.correctIndex());
         }
+    }
+
+    /**
+     * Final podium message. Built here (not inline in {@link #finish}) because
+     * a student reconnecting after the quiz ended has to receive the exact
+     * same message to render the podium.
+     */
+    private Map<String, Object> finalPayload(RoomState room) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "final");
+        payload.put("roomCode", room.roomCode);
+        payload.put("title", room.title);
+        payload.put("leaderboard", leaderboard(room, Integer.MAX_VALUE));
+        return payload;
     }
 
     private Map<String, Object> hostStatePayload(RoomState room) {

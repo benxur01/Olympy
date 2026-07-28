@@ -440,7 +440,9 @@ const LiveQuizHostPage = ({ user, onNavigate }) => {
         <div className="max-w-3xl mx-auto p-4 sm:p-8 text-center">
           <p className="text-white/50 text-sm mb-2">O'quvchilar quyidagi kod bilan qo'shilishadi</p>
           <div className="inline-block px-8 py-5 rounded-3xl bg-gradient-to-br from-indigo-500/20 to-purple-600/20 border border-indigo-500/30 mb-2">
-            <div className="text-5xl sm:text-7xl font-black tracking-[0.2em] text-white">{roomCode}</div>
+            {/* Kod endi faqat raqam — `tabular-nums` bilan har bir raqam bir xil
+                kenglikda chiqadi va uzoqdan o'qish osonlashadi. */}
+            <div className="text-5xl sm:text-7xl font-black tracking-[0.2em] tabular-nums text-white">{roomCode}</div>
           </div>
           <p className="text-white/40 text-xs mb-8">prolymp.uz → Jonli viktorina → kodni kiriting</p>
 
