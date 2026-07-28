@@ -23,6 +23,7 @@ from rest_framework.response import Response
 from accounts.permissions import IsPlatformAdmin
 
 from .metrics import METRICS_CACHE_SECONDS, get_metrics
+from .presence import ONLINE_WINDOW_SECONDS, get_online_count
 
 
 @api_view(['GET'])
@@ -38,6 +39,25 @@ def metrics_dashboard(request):
     return Response({
         **metrics,
         'cache_minutes': METRICS_CACHE_SECONDS // 60,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def online_users(request):
+    """GET /api/analytics/online/ — hozir onlayn foydalanuvchilar soni.
+
+    `metrics_dashboard`dan ATAYIN alohida va CACHE'LANMAYDI: u yerdagi 10
+    daqiqalik cache "hozir onlayn" ko'rsatkichini ma'nosiz qilardi. Hisob
+    Redis sorted set'dan o'qiladi (`analytics.presence`) — DB'ga umuman
+    tegmaydi, shu sababli har 15 soniyada so'ralishi arzon.
+
+    Faqat agregat son qaytadi (kim onlayn ekani emas). Redis sozlanmagan yoki
+    javob bermasa `online_count: null` — frontend "—" ko'rsatadi.
+    """
+    return Response({
+        'online_count': get_online_count(),
+        'window_minutes': ONLINE_WINDOW_SECONDS // 60,
     })
 
 

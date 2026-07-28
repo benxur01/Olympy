@@ -570,6 +570,12 @@ _has_real_broker = bool(
     os.environ.get('CELERY_BROKER_URL', '').strip()
     or os.environ.get('REDIS_URL', '').strip()
 )
+# Boshqa modullar uchun ochiq bayroq: Redis HAQIQATAN sozlanganmi. `REDIS_URL`
+# doim qiymatga ega (yuqoridagi lokal fallback), shu sababli uning o'zi "Redis
+# bor" degani emas. Ixtiyoriy Redis xususiyatlari (`analytics.presence` —
+# onlayn foydalanuvchilar sanog'i) shu bayroqqa qarab jimgina o'chadi, aks
+# holda Redis'siz dev mashinada har so'rov ulanishni kutib turardi.
+REDIS_CONFIGURED = _has_real_broker
 CELERY_TASK_ALWAYS_EAGER = (
     os.environ.get('CELERY_EAGER', 'false').lower() == 'true'
     or not _has_real_broker

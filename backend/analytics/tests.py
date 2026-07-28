@@ -3,10 +3,12 @@
 Sun'iy foydalanuvchi/obuna/attempt yaratib, retention va conversion
 hisob-kitoblari kutilgan natijani berishini tekshiramiz.
 """
+import time
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from django.utils import timezone
 
 from attempts.models import TestAttempt
@@ -14,6 +16,7 @@ from billing.models import SubscriptionPlan, UserSubscription
 from centers.models import EducationCenter
 from olympiads.models import Olympiad
 
+from . import presence
 from .metrics import compute_metrics
 
 User = get_user_model()
@@ -110,3 +113,93 @@ class PremiumMetricsTests(TestCase):
         self.assertEqual(prem['premium_active'], 2)  # flag + trial
         self.assertEqual(prem['paid_flag'], 1)
         self.assertEqual(prem['trial_only'], 1)
+
+
+# ─── Onlayn foydalanuvchilar sanog'i (analytics.presence) ────────────────────
+
+
+class _FakePipeline:
+    """`presence.get_online_count` ishlatadigan ikki buyruq uchun yetarli."""
+
+    def __init__(self, client):
+        self.client = client
+        self.results = []
+
+    def zremrangebyscore(self, key, min_score, max_score):
+        # presence.py faqat '-inf' .. '(<float>' shaklini yuboradi.
+        cutoff = float(str(max_score).lstrip('('))
+        members = self.client.zset.setdefault(key, {})
+        for member in [m for m, score in members.items() if score < cutoff]:
+            del members[member]
+        self.results.append(None)
+        return self
+
+    def zcard(self, key):
+        self.results.append(len(self.client.zset.get(key, {})))
+        return self
+
+    def execute(self):
+        results, self.results = self.results, []
+        return results
+
+
+class _FakeRedis:
+    """Redis sorted set'ining in-memory nusxasi (fakeredis bog'liqligisiz)."""
+
+    def __init__(self):
+        self.zset = {}
+
+    def zadd(self, key, mapping):
+        self.zset.setdefault(key, {}).update(mapping)
+
+    def pipeline(self):
+        return _FakePipeline(self)
+
+
+class _BrokenRedis:
+    """Ishlamayotgan Redis — har qanday buyruq ulanish xatosi bilan tugaydi."""
+
+    def zadd(self, *args, **kwargs):
+        raise ConnectionError('redis down')
+
+    def pipeline(self):
+        raise ConnectionError('redis down')
+
+
+class PresenceTests(SimpleTestCase):
+    def setUp(self):
+        # Modul darajasidagi backoff holati testlar orasida sizib o'tmasin.
+        presence._disabled_until = 0.0
+        self.addCleanup(setattr, presence, '_disabled_until', 0.0)
+
+    def test_record_then_count(self):
+        fake = _FakeRedis()
+        with patch.object(presence, '_get_client', return_value=fake):
+            presence.record_activity(1)
+            presence.record_activity(2)
+            presence.record_activity(1)  # takroriy so'rov sonni oshirmaydi
+            self.assertEqual(presence.get_online_count(), 2)
+
+    def test_stale_entries_are_pruned_on_read(self):
+        fake = _FakeRedis()
+        with patch.object(presence, '_get_client', return_value=fake):
+            presence.record_activity(1)
+            # Oynadan chiqib ketgan yozuv — o'qish paytida o'chishi kerak.
+            fake.zset[presence.ONLINE_KEY]['9'] = (
+                time.time() - presence.ONLINE_WINDOW_SECONDS - 5
+            )
+            self.assertEqual(presence.get_online_count(), 1)
+            self.assertNotIn('9', fake.zset[presence.ONLINE_KEY])
+
+    def test_missing_redis_config_is_silent(self):
+        with self.settings(REDIS_CONFIGURED=False):
+            presence.record_activity(1)  # istisno ko'tarmasligi kerak
+            self.assertIsNone(presence.get_online_count())
+
+    def test_unreachable_redis_does_not_raise(self):
+        with patch.object(presence, '_get_client', return_value=_BrokenRedis()):
+            presence.record_activity(1)  # jimgina yutiladi
+            # Xatodan keyin qisqa muddat umuman urinilmaydi.
+            self.assertGreater(presence._disabled_until, 0)
+            presence._disabled_until = 0.0  # o'qish yo'lini ham sinaymiz
+            self.assertIsNone(presence.get_online_count())

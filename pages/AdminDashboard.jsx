@@ -992,6 +992,42 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     [isApi, detailBackendId],
   );
 
+  // "Hozir onlayn" sanog'i — Boshqaruv panelidagi karta uchun. `useApiData`
+  // ishlatilmaydi: unda poll yo'q, bu ko'rsatkich esa doim yangi bo'lishi
+  // kerak. ManagerDashboard'dagi bilan bir xil naqsh — interval faqat tab
+  // ko'rinib turganda ishlaydi (fon tabda batareya/trafik sarflamaslik uchun)
+  // va unmount'da tozalanadi. null = "ma'lumot yo'q" (403, tarmoq xatosi yoki
+  // backendda Redis sozlanmagan) — karta "—" ko'rsatadi.
+  const [onlineCount, setOnlineCount] = React.useState(null);
+  React.useEffect(() => {
+    if (!isApi) return undefined;
+    let cancelled = false;
+    const refresh = () => {
+      OlympyApi.getOnlineCount(OlympyApi.getToken())
+        .then(res => {
+          if (!cancelled) {
+            setOnlineCount(typeof res?.online_count === 'number' ? res.online_count : null);
+          }
+        })
+        .catch(err => {
+          if (!cancelled) {
+            console.warn('getOnlineCount failed:', err);
+            setOnlineCount(null);
+          }
+        });
+    };
+    refresh();
+    const intervalId = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        refresh();
+      }
+    }, 15000);
+    return () => {
+      cancelled = true;
+      clearInterval(intervalId);
+    };
+  }, [isApi]);
+
   const apiCenters = isApi && Array.isArray(apiCentersRes.data)
     ? apiCentersRes.data.map(mapApiCenter)
     : null;
@@ -1895,9 +1931,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <AdminMetricCard label="Olimpiadalar" value={totalOlympiads.toLocaleString()} delta={`${activeOlympiadCount} ta faol`} icon={<Icon name="trophy" size={16} />} tone="rose" />
       </div>
 
-      <div className="grid gap-[12px] md:grid-cols-3">
+      <div className="grid gap-[12px] md:grid-cols-2 xl:grid-cols-4">
         <AdminMetricCard label="O'quvchilar" value={studentCount.toLocaleString()} delta="Tasdiqlangan" icon={<Icon name="users" size={16} />} tone="indigo" />
         <AdminMetricCard label="Faol olimpiadalar" value={activeOlympiadCount.toLocaleString()} delta={activeOlympiadCount ? "Hozir o'tmoqda" : "Hech qaysi faol emas"} icon={<Icon name="bolt" size={16} />} tone="emerald" />
+        <AdminMetricCard label="Hozir onlayn" value={onlineCount == null ? '—' : onlineCount.toLocaleString()} delta={onlineCount == null ? "Ma'lumot yo'q" : "Oxirgi 3 daqiqada faol"} icon={<Icon name="users" size={16} />} tone="sky" />
         <AdminMetricCard label="Tasdiqlangan tashkilotlar foizi" value={`${approvedCenterPct}%`} delta="Hammasi ichidan" icon={<Icon name="chart" size={16} />} tone="rose" />
       </div>
 

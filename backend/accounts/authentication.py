@@ -3,6 +3,8 @@ from django.core.cache import cache
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import AuthenticationFailed
 
+from analytics.presence import record_activity
+
 
 def impersonation_block_key(jti):
     """Bekor qilingan impersonatsiya tokenining cache kaliti.
@@ -46,7 +48,7 @@ class OlympyJWTAuthentication(JWTAuthentication):
             return None
         try:
             validated_token = self.get_validated_token(raw_token)
-            return self.get_user(validated_token), validated_token
+            user = self.get_user(validated_token)
         except Exception:
             # Kredensial eskirgan yoki yaroqsiz — AllowAny endpoint'larni
             # (login, register, token/refresh) bloklamaslik uchun None
@@ -71,6 +73,17 @@ class OlympyJWTAuthentication(JWTAuthentication):
             # Eskirgan kredensial hech qachon YANGI kirishga to'sqinlik
             # qilmasligi kerak — shuning uchun ikkala manba ham bir xil.
             return None
+        # Admin panelidagi "Hozir onlayn" sanog'i uchun faollik belgisi. Aynan
+        # shu yer: API JWT-only (SessionAuthentication yo'q), shu sababli
+        # Django'ning `AuthenticationMiddleware`'i API so'rovlarida doim
+        # AnonymousUser ko'radi — oddiy middleware hech qachon ishlamasdi.
+        # Bu nuqta esa har bir autentifikatsiyalangan so'rovda (FBV, CBV —
+        # farqi yo'q) bir marta bajariladi va JWT dekod mantig'i takrorlanmaydi.
+        # `try`dan TASHQARIDA: bu yerdagi kutilmagan xato yaroqli seansni
+        # anonimga aylantirib qo'ymasligi kerak (`record_activity` o'zi ham
+        # hech qachon otmaydi).
+        record_activity(user.id)
+        return user, validated_token
 
     def get_user(self, validated_token):
         # Impersonatsiya tokeni erta bekor qilingan bo'lishi mumkin. Tekshiruv
