@@ -11,25 +11,6 @@ export const API_BASE_URL = (
   DEFAULT_API_BASE_URL
 ).replace(/\/+$/, '');
 
-// Real-time (Java Spring Boot) xizmatning bazaviy URL'i — jonli duel va
-// "Kahoot uslubidagi" jonli viktorina shu yerda ishlaydi. Django'dan alohida
-// (lokalda 8081-portda). Deploy'da VITE_REALTIME_BASE_URL orqali beriladi;
-// o'rnatilmasa Django bilan bir xil origin'ga tushadi (reverse-proxy orqali
-// /ws/* va /api/quiz/* Java'ga yo'naltirilishi mumkin).
-const DEFAULT_REALTIME_BASE_URL = (
-  (import.meta.env?.DEV === true || import.meta.env?.MODE === 'development')
-    ? 'http://localhost:8081'
-    : API_BASE_URL
-);
-export const REALTIME_BASE_URL = (
-  import.meta.env?.VITE_REALTIME_BASE_URL ||
-  DEFAULT_REALTIME_BASE_URL
-).replace(/\/+$/, '');
-
-// REALTIME_BASE_URL (http[s]://...) → ws[s]://... — WebSocket sxemasiga
-// aylantiramiz (https→wss, http→ws).
-const realtimeWsBase = () => REALTIME_BASE_URL.replace(/^http/i, 'ws');
-
 const makeAssetUrl = (url) => {
   if (!url) return '';
   const value = String(url);
@@ -513,7 +494,6 @@ const request = async (
         _writeImpersonation(null);
         _clearCachedUser();
         _clearSwApiCache();
-        _realtimeToken = null;
         try { window.dispatchEvent(new CustomEvent('olympy:impersonation_ended')); } catch {}
         throw new ApiError("Ko'rish seansi tugadi", { status: 401, data });
       }
@@ -806,9 +786,6 @@ const clearAuth = async () => {
   _writeImpersonation(null);
   _clearCachedUser();
   _clearSwApiCache();
-  // Jonli xizmat tokeni keshi ham tozalanadi — aks holda bir tabda boshqa
-  // foydalanuvchi kirsa oldingi hisobning tokeni bilan xonaga ulanib qolardi.
-  _realtimeToken = null;
   // await — logout so'rovi tugashini kutamiz, aks holda refresh token
   // server tomonda blacklist'ga tushmasdan qolib ketishi mumkin (fetch
   // boshlanmasdan sahifa o'zgarsa). Chaqiruvchilar natijani kutmaydi.
@@ -816,294 +793,11 @@ const clearAuth = async () => {
 };
 
 // Impersonatsiya faol bo'lsa uning tokeni qaytadi: `request()`dan tashqarida
-// to'g'ridan-to'g'ri `fetch` qiladigan joylar (fayl yuklab olishlar, jonli
-// xizmat) ham AYNAN o'sha foydalanuvchi sifatida ishlashi kerak.
+// to'g'ridan-to'g'ri `fetch` qiladigan joylar (fayl yuklab olishlar) ham
+// AYNAN o'sha foydalanuvchi sifatida ishlashi kerak.
 const getToken = () => {
   const impersonation = _readImpersonation();
   return (impersonation && impersonation.token) || _readAuth(AUTH_TOKEN_KEY);
-};
-
-// ─── Jonli viktorina (Java real-time xizmat) ─────────────────────────────────
-// Bu chaqiruvlar Django emas, Java xizmatga (REALTIME_BASE_URL) ketadi, shuning
-// uchun umumiy `request()` (Django JWT/cookie oqimi) o'rniga to'g'ridan-to'g'ri
-// `fetch` ishlatiladi. Java xizmat JWT'ni o'zi tekshirmaydi — token'ni
-// Django'ning introspection endpoint'iga uzatadi (source of truth).
-
-// XOM JWT olish. Bu yerda `getToken()` YETARLI EMAS: production'da token
-// storage'ga umuman yozilmaydi (ALLOW_TOKEN_STORAGE=false, JWT faqat HttpOnly
-// cookie'da), shuning uchun getToken() null qaytarardi va Java xizmat
-// "Invalid token" (401) berardi — jonli viktorina xonasi yaratilmasdi.
-// Cookie'ni esa boshqa origin'dagi Java xizmatga yuborib bo'lmaydi, token
-// body/query orqali ketishi shart. Yechim: Django'dan (cookie bilan
-// autentifikatsiya qilingan holda) qisqa muddatli access token so'raymiz.
-// Muddati tugagunicha keshlaymiz — har WebSocket ulanishida qayta so'ralmasin.
-let _realtimeToken = null; // { value, expiresAt }
-// Parallel chaqiruvlar shu bitta so'rovni kutadi (pastdagi single-flight).
-let _realtimeTokenInflight = null;
-// Muddat tugashidan 30s oldin yangilaymiz (soat farqi / tarmoq kechikishi).
-const REALTIME_TOKEN_SKEW_MS = 30000;
-// `expires_in` kelmasa ishlatiladigan zaxira muddat. Avval bunda
-// `expiresAt = now` chiqib, kesh HAR SAFAR eskirgan hisoblanardi — ya'ni har
-// bir soket ulanishi Django'ga alohida so'rov yuborardi (30 o'quvchi bir
-// vaqtda qo'shilganda aynan shu kerak emas edi).
-const REALTIME_TOKEN_FALLBACK_TTL_MS = 120000;
-
-// `force: true` — keshni chetlab o'tib yangi token so'raymiz. Handshake rad
-// etilganda shu bilan qayta urinamiz: kesh muddati "tugamagan" bo'lsa ham
-// token server tomonda yaroqsiz bo'lishi mumkin (Django restart, chiqib qayta
-// kirish), va eski tokenni qayta-qayta ishlatish bir xil xatoga olib borardi.
-const getRealtimeToken = async ({ force = false } = {}) => {
-  const now = Date.now();
-  if (!force && _realtimeToken && _realtimeToken.expiresAt - REALTIME_TOKEN_SKEW_MS > now) {
-    return _realtimeToken.value;
-  }
-  if (force) _realtimeToken = null;
-  // Single-flight: bir necha soket bir vaqtda ulansa ham Django'ga bitta
-  // so'rov ketadi. (Inflight so'rov aynan hozir olinayotgani uchun `force`
-  // bo'lsa ham uni kutish to'g'ri — u allaqachon yangi token.)
-  if (!_realtimeTokenInflight) {
-    _realtimeTokenInflight = (async () => {
-      const data = await request('/api/auth/realtime-token/', { method: 'POST' });
-      const value = data?.token || '';
-      if (!value) {
-        throw new ApiError('Sessiya topilmadi. Tizimga qayta kiring.', { status: 401 });
-      }
-      const ttlMs = (Number(data?.expires_in) || 0) * 1000 || REALTIME_TOKEN_FALLBACK_TTL_MS;
-      _realtimeToken = { value, expiresAt: Date.now() + ttlMs };
-      return value;
-    })().finally(() => { _realtimeTokenInflight = null; });
-  }
-  return _realtimeTokenInflight;
-};
-
-const createQuizRoom = async ({ title, questions }, token) => {
-  const jwt = token || await getRealtimeToken();
-  const res = await fetch(`${REALTIME_BASE_URL}/api/quiz/rooms`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: jwt, title, questions }),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new ApiError(data?.detail || "Xona yaratib bo'lmadi", { status: res.status, data });
-  }
-  return data; // { roomCode, hostId, title, totalQuestions }
-};
-
-// Xona holati probe'i. HECH QACHON throw qilmaydi — chaqiruvchi uchta holatni
-// ajrata olishi kerak, chunki ularning har biri o'quvchiga boshqa narsani
-// aytadi:
-//   unavailable=true → Java xizmatning o'ziga yetib bo'lmadi (o'chgan, qayta
-//     deploy bo'lyapti, tarmoq yo'q). DIQQAT: Render/Cloudflare qirrasi
-//     qaytargan 502/503 sahifasida CORS sarlavhalari bo'lmaydi, shuning uchun
-//     brauzer cross-origin `fetch`ni umuman rad etadi — bu ham shu yerga
-//     tushadi.
-//   exists=false   → xizmat ishlayapti va "bunday xona yo'q" dedi (404).
-//   exists=true    → xona bor.
-// Avval xizmat yiqilgan holat ham `exists: false` bo'lib chiqardi va o'quvchiga
-// "Bunday xona topilmadi. Kodni tekshiring." deb ko'rsatilardi — o'quvchi esa
-// to'g'ri kodni behuda qayta-qayta terib chiqardi.
-//
-// Bu probe qo'shilishdan OLDIN ketadi, shuning uchun bitta lahzalik uzilish
-// butun qo'shilish urinishini bekor qilardi: o'quvchi "xizmat javob bermayapti"
-// ni ko'rib, "Qo'shilish"ni QO'LDA qayta bosishga majbur bo'lardi (Kahoot'da
-// birinchi urinishdayoq kiriladi). Endi `request()` dagi bilan AYNAN bir xil
-// qisqa backoff ishlatiladi (NETWORK_RETRY_DELAYS_MS — jami 3 urinish).
-// Qayta uriniladigan holatlar FAQAT ikkitasi: `fetch` ning o'zi qulashi va
-// 404 bo'lmagan xato status (5xx / shlyuz xatosi). Toza 404 — xizmatning
-// aniq javobi ("bunday xona yo'q"), u vaqtinchalik xato EMAS, shuning uchun
-// darhol qaytariladi; muvaffaqiyatli javob ham xuddi shunday.
-const getQuizRoom = async (roomCode) => {
-  for (let attempt = 0; ; attempt += 1) {
-    const canRetry = attempt < NETWORK_RETRY_DELAYS_MS.length;
-    let res;
-    try {
-      res = await fetch(`${REALTIME_BASE_URL}/api/quiz/rooms/${encodeURIComponent(roomCode)}`);
-    } catch {
-      if (canRetry) {
-        await _waitBeforeNetworkRetry(NETWORK_RETRY_DELAYS_MS[attempt]);
-        continue;
-      }
-      return { ok: false, status: 0, unavailable: true };
-    }
-    const data = await res.json().catch(() => ({}));
-    // 404 — Java xizmatning aniq javobi ("xona yo'q"). Qolgan xato statuslar
-    // (502/503/500...) xizmatning o'zi ishlamayotganini bildiradi.
-    if (!res.ok && res.status !== 404) {
-      if (canRetry) {
-        await _waitBeforeNetworkRetry(NETWORK_RETRY_DELAYS_MS[attempt]);
-        continue;
-      }
-      return { ok: false, status: res.status, unavailable: true };
-    }
-    return { ok: res.ok, status: res.status, ...data }; // { ok, exists, title, started, finished }
-  }
-};
-
-// WebSocket URL quruvchi. role='host'|'student'. Token query param orqali
-// yuboriladi (Java handshake interceptor uni Django'ga tekshirtiradi) — duel
-// oqimidagi bilan bir xil yondashuv. `createQuizRoom` bilan bir xil sababga
-// ko'ra async: xom JWT Django'dan olinadi (odatda keshdan, tarmoqsiz).
-// `avatar` — o'quvchi kirish ekranida tanlagan emoji (Kahoot'dagi personaj
-// o'rnida). `name` bilan bir xil yo'l: handshake query param'i, Java tomon uni
-// xona holatiga yozib, host'ga ketadigan ro'yxatlarga qo'shadi.
-const quizWsUrl = async ({ roomCode, role = 'student', name = '', avatar = '' }, token) => {
-  const jwt = token || await getRealtimeToken();
-  const params = new URLSearchParams({ token: jwt, roomCode, role });
-  if (name) params.set('name', name);
-  if (avatar) params.set('avatar', avatar);
-  return `${realtimeWsBase()}/ws/quiz?${params.toString()}`;
-};
-
-// ─── Jonli viktorina soketi: heartbeat + avtomatik qayta ulanish ─────────────
-// Sahifalar avval `new WebSocket(url)`ni to'g'ridan-to'g'ri ishlatardi. Bu
-// uchta real shikoyatning manbasi edi:
-//
-//  1) LOBBIDA "O'ZIDAN-O'ZI CHIQIB KETISH". Kutish xonasida trafik umuman
-//     yo'q — ustoz sinfni yig'guncha bir necha daqiqa o'tadi — va oradagi
-//     proksi (Render/CDN) bo'sh turgan WebSocket'ni ~60s dan keyin yopadi.
-//     Klientda qayta ulanish yo'q edi, shuning uchun o'quvchi spinner bilan
-//     muzlab qolardi va viktorina boshlanganda savol umuman kelmasdi.
-//     Yechim: ~25s da bir marta yengil `ping` matni (brauzerdan WebSocket
-//     ping FRAME'ini yuborib bo'lmaydi, shuning uchun oddiy xabar) + uzilish
-//     bo'lsa avtomatik qayta ulanish. Java xizmat buni allaqachon qo'llaydi:
-//     `onStudentConnect` o'quvchini userId bo'yicha topib, ballini saqlab
-//     qoladi va kerak bo'lsa joriy savolni qaytadan yuboradi; notanish
-//     `type`li xabarlar (bizning `ping`) jimgina e'tiborsiz qoldiriladi.
-//
-//  2) HAMMA BIR VAQTDA QO'SHILGANDA XATO. Har bir handshake Java tomonda
-//     Django introspection javobini kutadi; 30 o'quvchi bir zumda bosganda
-//     bir qismi rad etiladi. Bitta urinish o'rniga eksponensial backoff +
-//     jitter bilan qayta urinamiz — to'lqin vaqt bo'yicha yoyiladi va
-//     o'quvchi qo'lda qayta-qayta bosishi shart emas.
-//
-//  3) ABADIY "ULANMOQDA...". Handshake osilib qolsa (Java Django javobini
-//     kutib turibdi) brauzer na `open`, na `close`, na `error` beradi —
-//     tugma cheksiz "Ulanmoqda..." holatida qolardi. Har bir urinishga qat'iy
-//     timeout qo'yamiz.
-//
-// `onStatus(state, reason)` holatlari: 'connecting' | 'open' | 'reconnecting'
-// | 'failed'. 'failed' — urinishlar tugadi (reason: 'auth' bo'lsa sessiya
-// yaroqsiz, qayta urinishning ma'nosi yo'q).
-const QUIZ_WS_CONNECT_TIMEOUT_MS = 12000;
-const QUIZ_WS_HEARTBEAT_MS = 25000;
-const QUIZ_WS_MAX_ATTEMPTS = 8;
-
-const connectQuizSocket = ({ roomCode, role = 'student', name = '', avatar = '', onMessage, onStatus }) => {
-  let socket = null;
-  let attempts = 0;
-  let disposed = false;
-  let sawOpen = false;    // joriy urinishda `open` bo'ldimi
-  let openedOnce = false; // umuman bir marta ulandikmi ('connecting' vs 'reconnecting')
-  let retryTimer = null;
-  let connectTimer = null;
-  let heartbeatTimer = null;
-
-  const emit = (state, reason) => { try { onStatus?.(state, reason); } catch {} };
-
-  const stopTimers = () => {
-    if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
-    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
-  };
-
-  // Eski soketdan butunlay uzilamiz: handlerlarsiz yopilgan soket endi holatga
-  // tegmaydi (avval almashtirilgan soketlar ochiq qolib, keyin `onclose` bilan
-  // UI'ni buzardi).
-  const detach = (s) => {
-    if (!s) return;
-    s.onopen = null; s.onmessage = null; s.onerror = null; s.onclose = null;
-    try { s.close(); } catch {}
-  };
-
-  // `handshakeRejected` — soket umuman ochilmadi. Sabab eskirgan token
-  // bo'lishi mumkin, shuning uchun keyingi urinishda uni majburan yangilaymiz.
-  const retry = (reason, handshakeRejected) => {
-    stopTimers();
-    const dead = socket;
-    socket = null;
-    detach(dead);
-    if (disposed) return;
-    if (attempts >= QUIZ_WS_MAX_ATTEMPTS) { emit('failed', reason); return; }
-    // Backoff + jitter: bitta uzilishdan 30 o'quvchi barobar ta'sirlansa ham
-    // hammasi bir zumda qaytib kelib xizmatni yana bo'g'masin.
-    const base = Math.min(500 * 2 ** Math.max(0, attempts - 1), 8000);
-    const delay = base + Math.random() * Math.min(base, 1000);
-    emit(openedOnce ? 'reconnecting' : 'connecting', reason);
-    retryTimer = setTimeout(() => { retryTimer = null; start(handshakeRejected); }, delay);
-  };
-
-  const start = async (forceFreshToken = false) => {
-    if (disposed) return;
-    attempts += 1;
-    sawOpen = false;
-    emit(openedOnce ? 'reconnecting' : 'connecting');
-
-    let url;
-    try {
-      const jwt = await getRealtimeToken({ force: forceFreshToken });
-      url = await quizWsUrl({ roomCode, role, name, avatar }, jwt);
-    } catch (e) {
-      // Sessiyaning o'zi yaroqsiz — qayta urinish holatni o'zgartirmaydi.
-      if (e?.status === 401) { emit('failed', 'auth'); return; }
-      retry('token', true);
-      return;
-    }
-    if (disposed) return;
-
-    let s;
-    try { s = new WebSocket(url); } catch { retry('open', false); return; }
-    socket = s;
-
-    connectTimer = setTimeout(() => {
-      connectTimer = null;
-      if (socket === s && !sawOpen) retry('timeout', false);
-    }, QUIZ_WS_CONNECT_TIMEOUT_MS);
-
-    s.onopen = () => {
-      if (socket !== s) return;
-      sawOpen = true;
-      openedOnce = true;
-      attempts = 0;
-      if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
-      heartbeatTimer = setInterval(() => {
-        if (s.readyState === WebSocket.OPEN) { try { s.send('{"type":"ping"}'); } catch {} }
-      }, QUIZ_WS_HEARTBEAT_MS);
-      emit('open');
-    };
-    s.onmessage = (evt) => {
-      if (socket !== s) return;
-      let msg;
-      try { msg = JSON.parse(evt.data); } catch { return; }
-      try { onMessage?.(msg); } catch {}
-    };
-    // `error` ortidan doim `close` keladi — qayta ulanish o'sha yerda hal
-    // bo'ladi, bu yerda ikki marta ishlamaslik uchun hech narsa qilmaymiz.
-    s.onerror = () => {};
-    s.onclose = () => {
-      if (socket !== s) return;
-      retry(sawOpen ? 'dropped' : 'refused', !sawOpen);
-    };
-  };
-
-  start();
-
-  return {
-    // `false` — soket hozir ochiq emas (qayta ulanmoqda). Chaqiruvchi buni
-    // foydalanuvchiga aytishi kerak: avval yuborilmagan javob jimgina
-    // yo'qolar, o'quvchi esa javobim ketdi deb o'ylardi.
-    send: (payload) => {
-      if (!socket || socket.readyState !== WebSocket.OPEN) return false;
-      try { socket.send(JSON.stringify(payload)); return true; } catch { return false; }
-    },
-    close: () => {
-      disposed = true;
-      stopTimers();
-      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-      const dead = socket;
-      socket = null;
-      detach(dead);
-    },
-  };
 };
 
 // Backend sekin Gemini chaqiruvlarini Celery task'iga ko'chirdi: POST darhol
@@ -1151,12 +845,6 @@ const pollAiTask = async (startRes, statusPath, {
 
 export const OlympyApi = {
   API_BASE_URL,
-  REALTIME_BASE_URL,
-  createQuizRoom,
-  getQuizRoom,
-  quizWsUrl,
-  connectQuizSocket,
-  getRealtimeToken,
   ApiError,
   toUserMessage,
   mapBackendUser,
@@ -1415,12 +1103,11 @@ export const OlympyApi = {
       name: (data.user && data.user.full_name) || '',
     });
     // Profil keshi hamon ADMINNIKI — tozalamasak banner ostida eski ism/rol
-    // ko'rinardi. Jonli xizmat tokeni ham hisobga bog'liq. Service worker
-    // keshidagi /api/ javoblari ham adminniki (logout'dagi bilan bir xil
-    // sabab: bir hisobning javoblari ikkinchisiga ko'rinmasin).
+    // ko'rinardi. Service worker keshidagi /api/ javoblari ham adminniki
+    // (logout'dagi bilan bir xil sabab: bir hisobning javoblari ikkinchisiga
+    // ko'rinmasin).
     _clearCachedUser();
     _clearSwApiCache();
-    _realtimeToken = null;
     return data;
   },
   // Yakunlash: avval LOKAL holat tozalanadi — shundan keyingi so'rovlar
@@ -1431,7 +1118,6 @@ export const OlympyApi = {
     _writeImpersonation(null);
     _clearCachedUser();
     _clearSwApiCache();
-    _realtimeToken = null;
     if (!info || !info.userId) return null;
     return request(`/api/admin/users/${info.userId}/impersonate/end/`, {
       method: 'POST',
@@ -1531,11 +1217,8 @@ export const OlympyApi = {
   // Backend savollar ro'yxatini paginatsiya qiladi (LargePageNumberPagination,
   // max 200/page). requestAllPages barcha sahifalarni ketma-ket yuklaydi —
   // markazda 200+ savol bo'lsa ham to'liq ro'yxat keladi.
-  // `purpose` ixtiyoriy: 'live_quiz' berilsa faqat shu o'qituvchining shaxsiy
-  // jonli viktorina savollari keladi. Berilmasa parametr umuman qo'shilmaydi va
-  // backend avvalgidek markazning umumiy (olimpiada) bankini qaytaradi.
-  getQuestions: (centerId, token, purpose) => requestAllPages(
-    `/api/questions/?center=${centerId}${purpose ? `&purpose=${encodeURIComponent(purpose)}` : ''}`,
+  getQuestions: (centerId, token) => requestAllPages(
+    `/api/questions/?center=${centerId}`,
     { token },
   ),
   createQuestion: (payload, token) => request('/api/questions/', { method: 'POST', body: payload, token }),

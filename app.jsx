@@ -28,8 +28,6 @@ const PAGE_URLS = {
   admin: '/dashboard/admin',
   questions: '/dashboard/questions',
   leaderboard: '/leaderboard',
-  'live-quiz-host': '/live-quiz/host',
-  'live-quiz': '/live-quiz',
   profile: '/profile',
   pending: '/pending',
   'pending-home': '/pending',
@@ -89,7 +87,7 @@ const URL_PAGES = (() => {
 // Auth talab qiladigan sahifalar. Component tashqarisida `const` sifatida —
 // har render'da qayta yaratilmasligi va useEffect bog'liqliklarini bekorga
 // o'zgartirmasligi uchun.
-const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','questions','live-quiz-host','live-quiz'];
+const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','questions'];
 
 const pageFromPath = () => {
   try {
@@ -831,8 +829,6 @@ const App = () => {
         }
         return <MockTestPage mock={activeMock} user={user} onFinish={handleTestFinish} onNavigate={navigate} />;
       }
-      case 'live-quiz-host': return <LiveQuizHostPage user={user} onNavigate={navigate} />;
-      case 'live-quiz':      return <LiveQuizPlayPage user={user} onNavigate={navigate} />;
       case 'leaderboard': return (
         <div className="min-h-screen" style={{ background: '#050508' }}>
           <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">

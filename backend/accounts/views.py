@@ -773,43 +773,6 @@ refresh_token.cls.throttle_scope = 'auth'
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def realtime_token(request):
-    """POST /api/auth/realtime-token/ — real-time (Java) xizmat uchun access JWT.
-
-    Nega kerak: production'da JWT faqat HttpOnly cookie'da yashaydi (JS uni
-    o'qiy olmaydi) va cookie boshqa origin'dagi real-time xizmatga
-    (olympy-realtime) yuborilmaydi. Jonli viktorina esa tokenni AYNAN so'rov
-    body'sida (xona yaratish) va WebSocket query'sida uzatadi — cookie bu
-    yerda ishlamaydi. Klient tokenni shu endpoint orqali oladi: so'rovning
-    o'zi cookie bilan autentifikatsiya qilinadi.
-
-    Faqat ACCESS token qaytariladi — refresh token hech qachon body'ga
-    chiqmaydi. Java xizmat tokenni o'zi tekshirmaydi: uni
-    /api/accounts/introspect/ ga uzatadi, u yerda token_version ham
-    tekshiriladi (majburiy logout'dan keyin token darhol yaroqsiz bo'ladi).
-
-    Impersonatsiya tokeni bilan ISHLAMAYDI: aks holda 15 daqiqalik, belgili
-    (`impersonated_by`) va erta bekor qilinadigan token shu yerda 30 daqiqalik
-    TOZA tokenga almashtirilardi — u seans yakunlangandan keyin ham yashab,
-    yana o'zidan yangisini olib, cheksiz uzayishi mumkin edi. Amaliy zarari
-    ham yo'q: support tekshiruvi jonli viktorinaga o'quvchi nomidan
-    ulanishni talab qilmaydi.
-    """
-    if request.auth is not None and request.auth.get('impersonated_by'):
-        return Response(
-            {'detail': "Foydalanuvchi sifatida ko'rish rejimida bu amal mumkin emas"},
-            status=status.HTTP_403_FORBIDDEN,
-        )
-    token = AccessToken.for_user(request.user)
-    token['token_version'] = request.user.token_version
-    return Response({
-        'token': str(token),
-        'expires_in': int(settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'].total_seconds()),
-    })
-
-
-@api_view(['POST'])
 @permission_classes([AllowAny])
 def logout(request):
     # Avval logout `bump_token_version` chaqirardi va bu BARCHA qurilmalardan
@@ -2398,8 +2361,8 @@ def admin_end_impersonation(request, user_id):
 # Dizayn qoidalari:
 #  * Ko'chiriladigan to'plam ATAYLAB TOR — faqat o'quvchining o'z progressi
 #    (balans, streak, urinish/mashq tarixi, kirish tarixi). Buxgalteriya
-#    (obuna/to'lov), markaz a'zoligi, ikki tomonlama yozuvlar (duel) va
-#    e'lon qilingan reyting natijalari TEGILMAYDI — pastdagi
+#    (obuna/to'lov), markaz a'zoligi va e'lon qilingan reyting
+#    natijalari TEGILMAYDI — pastdagi
 #    `_merge_untouched_models` ro'yxatiga qarang.
 #  * Manba hisob HECH QACHON o'chirilmaydi: bloklanadi (batch 3 mexanizmi,
 #    doimiy) va qatorlari joyida qoladi — audit izi ham, tekshirish imkoni
@@ -2445,12 +2408,10 @@ def _merge_untouched_models(source):
     bo'lsa qo'lda (mavjud vositalar bilan — premium berish, markazga qayta
     qabul qilish) hal qiladi. Faqat NOL bo'lmagan qatorlar qaytariladi.
     """
-    from django.db.models import Q
-
     from billing.models import PaymentTransaction, UserSubscription
     from centers.models import CenterMembership
 
-    from .models import Duel, WeeklyContestResult
+    from .models import WeeklyContestResult
 
     rows = [
         (
@@ -2477,12 +2438,6 @@ def _merge_untouched_models(source):
             WeeklyContestResult.objects.filter(user=source).count(),
             "Yakunlangan musobaqa reytingi o'zgartirilmaydi — bir odam bir "
             "musobaqada ikki marta turib qolmasligi kerak.",
-        ),
-        (
-            'accounts.Duel', 'Duellar',
-            Duel.objects.filter(Q(challenger=source) | Q(opponent=source)).count(),
-            "Duel ikki tomonlama yozuv — ko'chirilsa raqibning tarixi ham "
-            "o'zgarib ketardi.",
         ),
     ]
     return [
