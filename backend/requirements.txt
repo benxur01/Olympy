@@ -4,7 +4,18 @@ djangorestframework>=3.14
 django-cors-headers>=4.0
 psycopg[binary]>=3.1
 djangorestframework-simplejwt>=5.3
-PyJWT>=2.6
+# >=2.10 MAJBURIY (>=2.6 emas): accounts/views.py Google ID Token'ni mahalliy
+# tekshirishda `jwt.decode(..., issuer=GOOGLE_ISSUERS)` ga bir NECHTA issuer
+# (tuple) uzatadi. Bir nechta issuer'ni qabul qilish PyJWT 2.10.0 da qo'shilgan
+# — undan oldingi versiyalarda `_validate_iss` oddiy `!=` solishtiruv qiladi,
+# ya'ni tuple HECH QACHON mos kelmaydi va HAR BIR haqiqiy Google login
+# `InvalidIssuerError` bilan 401 oladi. Bundan tashqari `PyJWKClient(timeout=)`
+# 2.8.0 da qo'shilgan — 2.6/2.7 da modul import paytida TypeError beradi.
+# `PyJWT>=2.6` pin'i bu ikkalasini ham qoplamasdi: simplejwt PyJWT'ni
+# tranzitiv tortadi (`>=1.7.1,<3`), shuning uchun build keshida qolgan eski
+# 2.8/2.9 pin'ni qanoatlantirib, pip uni YANGILAMASDI — natijada lokalda
+# (yangi PyJWT) testlar o'tib, productionda Google login ishlamasdi.
+PyJWT>=2.10
 Pillow>=10.0
 qrcode>=7.4
 pypdf>=3.0
