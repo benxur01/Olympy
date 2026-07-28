@@ -1591,9 +1591,6 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           <p className="text-white/40 text-sm">{centerType} · Ustoz paneli · tadbirlar va savollar</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button onClick={() => onNavigate('live-quiz-host')} className="btn-ghost px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
-            <Icon name="bolt" size={16} /> Jonli viktorina
-          </button>
           <button onClick={openCreateEvent} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
             <Icon name="plus" size={16} /> Tadbir yaratish
           </button>

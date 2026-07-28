@@ -53,15 +53,16 @@ class Question(models.Model):
         (QUESTION_TYPE_SLIDER, 'Slayder (raqamli)'),
     ]
 
-    # Savol maqsadi (purpose) — savol banki ikkiga bo'linadi:
-    #   olympiad  → markazning UMUMIY banki: olimpiada/test uchun, markazdagi
-    #               barcha tasdiqlangan o'qituvchi/menejer/egaga ko'rinadi.
-    #   live_quiz → o'qituvchining SHAXSIY jonli viktorina (Kahoot uslubi)
-    #               banki: faqat savolni yaratgan o'qituvchi ko'radi va
-    #               ishlatadi, hamkasblariga (hatto menejer/egaga ham) ko'rinmaydi.
-    # Ikki bank kesishmaydi — olimpiada savoli viktorinada, viktorina savoli
-    # olimpiadada tanlanmaydi. Default `olympiad`: mavjud barcha savollar
-    # avvalgidek umumiy bankda qoladi.
+    # Savol maqsadi (purpose):
+    #   olympiad  → markazning UMUMIY banki: olimpiada/test/mashq uchun,
+    #               markazdagi barcha tasdiqlangan o'qituvchi/menejer/egaga
+    #               ko'rinadi. Yangi savollar HAR DOIM shu bankka tushadi.
+    #   live_quiz → LEGACY: olib tashlangan Jonli Viktorina (Kahoot uslubi)
+    #               funksiyasining shaxsiy banki. Yangi qator yaratilmaydi,
+    #               lekin eskilari bazada qolgan.
+    # `live_quiz` qatorlar o'quvchi ko'radigan HECH BIR oqimga tushmasligi
+    # kerak, shuning uchun barcha o'quvchi yo'nalishidagi so'rovlar
+    # `purpose=olympiad` bilan filtrlanadi (maydonning yagona vazifasi shu).
     QUESTION_PURPOSE_OLYMPIAD = 'olympiad'
     QUESTION_PURPOSE_LIVE_QUIZ = 'live_quiz'
     QUESTION_PURPOSE_CHOICES = [

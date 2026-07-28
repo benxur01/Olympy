@@ -5,7 +5,6 @@ from billing import views as billing_views
 from . import export_views
 from . import views
 from . import views_b2b
-from . import views_duel
 from . import views_me_premium
 from . import views_retention
 from . import views_student
@@ -60,7 +59,6 @@ urlpatterns = [
         views_me_premium.ai_audio_analysis_status,
         name='me-ai-audio-analysis-status',
     ),
-    path('me/duels/', views_duel.my_duels, name='me-duels'),
     path('me/history-chart/', views_student.history_chart, name='me-history-chart'),
     path('me/score-timeline/', views_student.score_timeline, name='me-score-timeline'),
     path('me/weakest-topics/', views_student.weakest_topics, name='me-weakest-topics'),

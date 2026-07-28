@@ -120,10 +120,7 @@ def _question_is_protected(question):
 @permission_classes([IsAuthenticated])
 @parser_classes([JSONParser, MultiPartParser, FormParser])
 def questions_list_create(request):
-    """GET /api/questions/?center=<id>[&purpose=olympiad|live_quiz]
-        — list questions for a center. `purpose=olympiad` (default, parametr
-          berilmasa ham) markazning umumiy banki; `purpose=live_quiz` esa
-          faqat so'rov yuborgan o'qituvchining shaxsiy viktorina savollari.
+    """GET /api/questions/?center=<id>  — list a center's question bank.
     POST /api/questions/                 — create one (approved teacher/manager/owner only).
     """
     if request.method == 'GET':
@@ -147,29 +144,18 @@ def questions_list_create(request):
                 {'detail': 'Forbidden'},
                 status=http_status.HTTP_403_FORBIDDEN,
             )
-        # `?purpose=` — qaysi savol bankidan o'qiymiz. Parametr berilmasa (yoki
-        # noma'lum qiymat kelsa) `olympiad`: mavjud barcha chaqiruvchilar
-        # (olimpiada yaratish, savol banki, statistika) avvalgidek markazning
-        # umumiy bankini oladi.
-        raw_purpose = request.query_params.get('purpose')
-        purpose = (
-            Question.QUESTION_PURPOSE_LIVE_QUIZ
-            if raw_purpose == Question.QUESTION_PURPOSE_LIVE_QUIZ
-            else Question.QUESTION_PURPOSE_OLYMPIAD
-        )
         # Arxivlangan (is_active=False) savollarni ro'yxatdan chiqaramiz — bu
         # endpoint savol banki ko'rinishi ham, yangi olimpiadaga savol tanlash
         # manbai ham. Arxivlangan savol mavjud olimpiada/baholarda saqlanadi,
         # lekin bu yerda ko'rinmaydi va yangi olimpiadaga tanlanmaydi.
+        # `purpose=olympiad` — markazning umumiy banki. Jonli viktorina banki
+        # olib tashlandi, lekin eski `purpose='live_quiz'` qatorlar bazada
+        # qolgan: ular umumiy bankda KO'RINMASLIGI kerak (avval ham hech qachon
+        # ko'rinmagan), shuning uchun filtr saqlanadi.
         qs = Question.objects.filter(
-            center_id=center_id, is_active=True, purpose=purpose,
+            center_id=center_id, is_active=True,
+            purpose=Question.QUESTION_PURPOSE_OLYMPIAD,
         )
-        if purpose == Question.QUESTION_PURPOSE_LIVE_QUIZ:
-            # Jonli viktorina banki SHAXSIY: o'qituvchi faqat o'zi yaratgan
-            # savollarni ko'radi. Bu pool administrativ emas — menejer/ega va
-            # platforma admini ham hamkasbining viktorina savollarini ko'rmaydi
-            # (markaz bo'ylab umumiy bank faqat `olympiad`).
-            qs = qs.filter(created_by=request.user)
         # Pagination: bitta markazda yuzlab savol to'planishi mumkin — butun
         # ro'yxatni bitta response'da uzatish xotira/trafik jihatdan og'ir.
         # olympiads_list_create kabi LargePageNumberPagination ishlatamiz:

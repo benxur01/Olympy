@@ -1,14 +1,9 @@
 from django.urls import path
 
-from . import views, views_essay, views_internal
+from . import views, views_essay
 
 # Mounted under /api/attempts/
 urlpatterns = [
-    # Internal, server-to-server (shared-secret gated) — real-time duel result
-    # ingest from the Java "Brain Battles" service.
-    path('duel-result/', views_internal.duel_result, name='internal-duel-result'),
-    # Internal — live "Kahoot-style" classroom quiz final leaderboard ingest.
-    path('quiz-result/', views_internal.quiz_result, name='internal-quiz-result'),
     path('cheating/', views.report_cheating, name='report-cheating'),
     path('cheating/review/', views.review_cheating_case, name='review-cheating-case'),
     path('camera-consent/', views.camera_consent, name='camera-consent'),

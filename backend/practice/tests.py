@@ -1,8 +1,8 @@
 """Mashq (practice) rejimi testlari.
 
 Mashq rejimi markazning UMUMIY (olimpiada) savollar bankidan savol beradi.
-O'qituvchining shaxsiy Jonli Viktorina (`purpose=live_quiz`) savoli bu yerga
-tushmasligi kerak — u faqat o'qituvchining o'z viktorina xonasida ishlatiladi.
+Olib tashlangan Jonli Viktorina funksiyasidan qolgan `purpose=live_quiz`
+qatorlar bu yerga tushmasligi kerak.
 """
 from django.contrib.auth import get_user_model
 from django.urls import reverse

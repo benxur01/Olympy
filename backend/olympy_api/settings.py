@@ -525,13 +525,6 @@ JWT_REFRESH_COOKIE_NAME = os.environ.get('JWT_REFRESH_COOKIE_NAME', 'olympy_refr
 _default_samesite = 'Lax' if DEBUG else 'None'
 JWT_COOKIE_SAMESITE = os.environ.get('OLYMPY_JWT_COOKIE_SAMESITE', _default_samesite)
 
-# Server-to-server shared secret for internal-only endpoints (JWT introspection,
-# duel-result ingest). The Java "Brain Battles" Spring service sends this in the
-# `X-Internal-Service-Secret` header; requests without a matching secret are
-# rejected with 403. Left empty in dev unless configured — when empty, the
-# internal endpoints reject ALL callers (fail closed), so set it to exercise them.
-INTERNAL_SERVICE_SECRET = os.environ.get('INTERNAL_SERVICE_SECRET', '').strip()
-
 # Redis ulanish manzili — rate limit cache, Celery broker va result backend
 # uchun yagona manba. REDIS_URL o'rnatilmagan bo'lsa CELERY_BROKER_URL'dan,
 # u ham bo'lmasa lokal fallback'dan o'qiladi. Bitta o'zgaruvchini o'rnatish

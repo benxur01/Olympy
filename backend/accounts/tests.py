@@ -2317,9 +2317,9 @@ class GoogleAuthTestCase(APITestCase):
 class LiveQuizQuestionIsolationTestCase(APITestCase):
     """O'qituvchining shaxsiy Jonli Viktorina savoli o'quvchilarga chiqmaydi.
 
-    `purpose=live_quiz` savol faqat o'qituvchining o'z jonli viktorina xonasida
-    ishlatiladi. Duel (Brain Battles) savol tanlash va kunlik savol generatori
-    umumiy (olimpiada) bankidan tashqariga chiqmasligi kerak.
+    `purpose=live_quiz` bankka yozilgan eski savollar o'quvchi ko'radigan
+    hech bir oqimga tushmasligi kerak — kunlik savol generatori faqat umumiy
+    (olimpiada) bankidan tanlaydi.
     """
 
     def setUp(self):
@@ -2351,43 +2351,6 @@ class LiveQuizQuestionIsolationTestCase(APITestCase):
             created_by=self.teacher,
             purpose=Question.QUESTION_PURPOSE_LIVE_QUIZ,
         )
-
-    def test_duel_question_pick_skips_live_quiz(self):
-        from accounts.views_duel import _pick_duel_questions
-
-        picked = _pick_duel_questions('')
-        picked_ids = {q.id for q in picked}
-        self.assertEqual(picked_ids, {q.id for q in self.olympiad_questions})
-        self.assertNotIn(self.live_quiz_question.id, picked_ids)
-
-    def test_duel_question_pick_by_subject_skips_live_quiz(self):
-        """Fan bo'yicha tanlash tarmog'ida ham viktorina savoli chiqmaydi.
-
-        `Fizika`da 10 ta umumiy savol bor — shu sababli fan bo'yicha
-        toraytirish tarmog'i ishga tushadi (subject_qs >= 10).
-        """
-        from questions.models import Question
-
-        from accounts.views_duel import DUEL_QUESTION_COUNT, _pick_duel_questions
-
-        physics_ids = {
-            Question.objects.create(
-                center=self.center, subject='Fizika',
-                text=f'Fizika savoli {i}', options=['1', '2'],
-                correct_answer=0, score=5,
-            ).id
-            for i in range(DUEL_QUESTION_COUNT)
-        }
-        live_quiz_physics = Question.objects.create(
-            center=self.center, subject='Fizika',
-            text='Fizika viktorina savoli', options=['1', '2'],
-            correct_answer=0, score=5, created_by=self.teacher,
-            purpose=Question.QUESTION_PURPOSE_LIVE_QUIZ,
-        )
-
-        picked_ids = {q.id for q in _pick_duel_questions('Fizika')}
-        self.assertEqual(picked_ids, physics_ids)
-        self.assertNotIn(live_quiz_physics.id, picked_ids)
 
     def test_daily_question_generator_skips_live_quiz(self):
         from accounts.models import DailyQuestion
@@ -2885,18 +2848,12 @@ class AdminImpersonationTestCase(APITestCase):
         bo'lmaydi — aks holda 15 daqiqalik oyna ma'nosini yo'qotardi."""
         data = self._start()
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {data['token']}")
-        # 1) Refresh sifatida yaramaydi (access token, token_type mos emas).
+        # Refresh sifatida yaramaydi (access token, token_type mos emas).
         self.assertEqual(
             self.client.post(
                 reverse('token-refresh'), {'refresh': data['token']}, format='json',
             ).status_code,
             status.HTTP_401_UNAUTHORIZED,
-        )
-        # 2) Jonli xizmat tokenini ham bermaydi — u belgisiz (`impersonated_by`
-        #    yo'q) va uzunroq bo'lardi, ya'ni seansdan keyin ham yashardi.
-        self.assertEqual(
-            self.client.post(reverse('realtime-token'), {}, format='json').status_code,
-            status.HTTP_403_FORBIDDEN,
         )
 
     def test_end_revokes_token_and_logs_audit(self):
