@@ -202,6 +202,15 @@ class LoginLogoutTestCase(APITestCase):
         self.assertIsNotNone(event)
         self.assertEqual(event.ip_address, '10.1.2.3')
         self.assertEqual(event.user_agent, 'TestBrowser/1.0')
+        # jti aynan REFRESH tokenning jti'si bo'lishi kerak — ya'ni
+        # `OutstandingToken` yozuvi bilan mos tushishi shart, aks holda
+        # bitta seansni majburiy tugatish ishlamaydi.
+        from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+
+        self.assertTrue(event.jti)
+        self.assertTrue(
+            OutstandingToken.objects.filter(user=self.user, jti=event.jti).exists()
+        )
 
     def test_failed_login_records_nothing(self):
         self.client.post(reverse('login'), {
@@ -2622,6 +2631,305 @@ class AdminSuspensionTestCase(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.data['block_reason'], 'Spam')
         self.assertIsNotNone(res.data['blocked_until'])
+
+
+class AdminUserWarningTestCase(APITestCase):
+    """POST /api/admin/users/<id>/warn/ + GET .../warnings/ — bloklashdan
+    oldingi rasmiy ogohlantirish."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            phone='+998907770001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.target = User.objects.create_user(
+            phone='+998907770002', password='UserPass123', full_name='Target',
+        )
+        self.other = User.objects.create_user(
+            phone='+998907770003', password='UserPass123', full_name='Other',
+        )
+        self.url = reverse('admin-warn-user', args=[self.target.id])
+        self.list_url = reverse('admin-user-warnings', args=[self.target.id])
+
+    def test_warn_creates_notification_and_audit_row(self):
+        from notifications.models import Notification
+
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {
+            'reason': 'Imtihonda shubhali xatti-harakat',
+            'message': "Iltimos, imtihon qoidalariga rioya qiling.",
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        note = Notification.objects.get(pk=res.data['id'])
+        self.assertEqual(note.user_id, self.target.id)
+        self.assertEqual(note.type, Notification.TYPE_ACCOUNT_WARNING)
+        self.assertEqual(note.title, 'Ogohlantirish')
+        self.assertEqual(note.message, "Iltimos, imtihon qoidalariga rioya qiling.")
+        self.assertIsNone(note.center_id)
+        log = AuditLog.objects.filter(action='admin_user_warn', target_id=self.target.id).first()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.extra['reason'], 'Imtihonda shubhali xatti-harakat')
+        self.assertEqual(log.extra['phone'], mask_phone(self.target.normalized_phone))
+
+    def test_warning_does_not_block_or_end_sessions(self):
+        old_version = self.target.token_version
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {
+            'reason': 'Spam', 'message': 'Spam yubormang',
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.is_active)
+        self.assertEqual(self.target.token_version, old_version)
+        self.assertEqual(self.target.block_reason, '')
+        self.assertIsNone(self.target.blocked_until)
+
+    def test_missing_reason_is_400(self):
+        from notifications.models import Notification
+
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {'message': 'Matn'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(Notification.objects.exists())
+
+    def test_missing_message_is_400(self):
+        from notifications.models import Notification
+
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {'reason': 'Spam', 'message': '   '}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(Notification.objects.exists())
+
+    def test_unknown_user_is_404(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('admin-warn-user', args=[99999]),
+            {'reason': 'Spam', 'message': 'Matn'}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_admin_is_403(self):
+        self.client.force_authenticate(user=self.target)
+        res = self.client.post(self.url, {
+            'reason': 'Spam', 'message': 'Matn',
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        res = self.client.get(self.list_url)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_list_returns_newest_first_for_this_user_only(self):
+        from notifications.models import Notification
+
+        now = timezone.now()
+        for i, text in enumerate(['Birinchi', 'Ikkinchi', 'Uchinchi']):
+            note = Notification.objects.create(
+                user=self.target,
+                type=Notification.TYPE_ACCOUNT_WARNING,
+                title='Ogohlantirish',
+                message=text,
+            )
+            # created_at — auto_now_add, aniq tartib uchun qo'lda suramiz
+            # (i=0 eng eskisi).
+            Notification.objects.filter(pk=note.pk).update(created_at=now - timedelta(minutes=10 - i))
+        # Boshqa foydalanuvchining ogohlantirishi va shu foydalanuvchining
+        # boshqa turdagi xabarnomasi ro'yxatga tushmasligi kerak.
+        Notification.objects.create(
+            user=self.other, type=Notification.TYPE_ACCOUNT_WARNING,
+            title='Ogohlantirish', message="Boshqa hisob",
+        )
+        Notification.objects.create(
+            user=self.target, type=Notification.TYPE_OLYMPIAD_PUBLISHED,
+            title='Yangi olimpiada', message="Olimpiada boshlandi",
+        )
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self.list_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['user_id'], self.target.id)
+        self.assertEqual(
+            [w['message'] for w in res.data['warnings']],
+            ['Uchinchi', 'Ikkinchi', 'Birinchi'],
+        )
+        self.assertFalse(res.data['warnings'][0]['is_read'])
+
+    def test_list_is_empty_not_error_for_user_without_warnings(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self.list_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['warnings'], [])
+
+    def test_list_unknown_user_is_404(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(reverse('admin-user-warnings', args=[99999]))
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class AdminUserSessionTestCase(APITestCase):
+    """GET /api/admin/users/<id>/sessions/ + POST .../<event_id>/force-logout/
+    — bitta seansni ko'rish va yakunlash (barcha qurilmalarni emas)."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            phone='+998907771001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.target = User.objects.create_user(
+            phone='+998907771002', password='UserPass123', full_name='Target',
+        )
+        self.other = User.objects.create_user(
+            phone='+998907771003', password='UserPass123', full_name='Other',
+        )
+        self.list_url = reverse('admin-user-sessions', args=[self.target.id])
+
+    def _session(self, user, jti, *, expired=False, ip='10.0.0.1'):
+        """LoginEvent + unga mos OutstandingToken juftligi (haqiqiy login kabi)."""
+        from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+
+        event = LoginEvent.objects.create(
+            user=user, ip_address=ip, user_agent='Mozilla/5.0 Test', jti=jti,
+        )
+        outstanding = OutstandingToken.objects.create(
+            user=user,
+            jti=jti,
+            token='not-a-real-token',
+            created_at=timezone.now(),
+            expires_at=timezone.now() + (timedelta(days=-1) if expired else timedelta(days=90)),
+        )
+        return event, outstanding
+
+    def test_list_marks_live_token_active(self):
+        event, _ = self._session(self.target, 'jti-live')
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self.list_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['user_id'], self.target.id)
+        self.assertEqual(len(res.data['sessions']), 1)
+        row = res.data['sessions'][0]
+        self.assertEqual(row['login_event_id'], event.id)
+        self.assertEqual(row['ip_address'], '10.0.0.1')
+        self.assertEqual(row['user_agent'], 'Mozilla/5.0 Test')
+        self.assertTrue(row['is_active'])
+        self.assertIsNotNone(row['expires_at'])
+
+    def test_list_marks_blacklisted_and_expired_tokens_inactive(self):
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+
+        _, outstanding = self._session(self.target, 'jti-blacklisted')
+        BlacklistedToken.objects.create(token=outstanding)
+        self._session(self.target, 'jti-expired', expired=True)
+        # Umuman OutstandingToken'siz yozuv (token tozalab yuborilgan).
+        LoginEvent.objects.create(user=self.target, jti='jti-orphan')
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self.list_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res.data['sessions']), 3)
+        self.assertTrue(all(s['is_active'] is False for s in res.data['sessions']))
+        orphan = [s for s in res.data['sessions'] if s['expires_at'] is None]
+        self.assertEqual(len(orphan), 1)
+
+    def test_list_excludes_blank_jti_events_and_other_users(self):
+        self._session(self.target, 'jti-mine')
+        # `jti` maydoni qo'shilishidan oldingi kirish — alohida yakunlab
+        # bo'lmaydi, shuning uchun ro'yxatga tushmaydi.
+        LoginEvent.objects.create(user=self.target, ip_address='10.0.0.9', jti='')
+        self._session(self.other, 'jti-theirs')
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self.list_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(res.data['sessions']), 1)
+        self.assertEqual(res.data['sessions'][0]['ip_address'], '10.0.0.1')
+
+    def test_list_unknown_user_is_404(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(reverse('admin-user-sessions', args=[99999]))
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_force_logout_blacklists_token_and_writes_audit_row(self):
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+
+        event, outstanding = self._session(self.target, 'jti-kill')
+        old_version = self.target.token_version
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('admin-force-logout-session', args=[self.target.id, event.id]),
+            {}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(res.data['is_active'])
+        self.assertTrue(BlacklistedToken.objects.filter(token=outstanding).exists())
+        log = AuditLog.objects.filter(
+            action='admin_force_logout_session', target_id=self.target.id,
+        ).first()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.extra['login_event_id'], event.id)
+        self.assertEqual(log.extra['ip_address'], '10.0.0.1')
+        # Boshqa qurilmalar tegilmaydi: bu "barchasidan chiqarish" emas.
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.token_version, old_version)
+        # Ro'yxat endi seansni tugagan deb ko'rsatadi.
+        res = self.client.get(self.list_url)
+        self.assertFalse(res.data['sessions'][0]['is_active'])
+
+    def test_force_logout_twice_is_not_an_error(self):
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+
+        event, outstanding = self._session(self.target, 'jti-twice')
+        url = reverse('admin-force-logout-session', args=[self.target.id, event.id])
+        self.client.force_authenticate(user=self.admin)
+        self.assertEqual(self.client.post(url, {}, format='json').status_code,
+                         status.HTTP_200_OK)
+        self.assertEqual(self.client.post(url, {}, format='json').status_code,
+                         status.HTTP_200_OK)
+        self.assertEqual(BlacklistedToken.objects.filter(token=outstanding).count(), 1)
+
+    def test_force_logout_blank_jti_session_is_400(self):
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+
+        event = LoginEvent.objects.create(user=self.target, ip_address='10.0.0.9', jti='')
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('admin-force-logout-session', args=[self.target.id, event.id]),
+            {}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(BlacklistedToken.objects.exists())
+
+    def test_force_logout_without_outstanding_token_is_400(self):
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+
+        event = LoginEvent.objects.create(user=self.target, jti='jti-gone')
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('admin-force-logout-session', args=[self.target.id, event.id]),
+            {}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(BlacklistedToken.objects.exists())
+
+    def test_force_logout_other_users_session_is_404(self):
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+
+        event, _ = self._session(self.other, 'jti-not-yours')
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            # ID mavjud, lekin BOSHQA foydalanuvchiniki — yakunlanmasligi kerak.
+            reverse('admin-force-logout-session', args=[self.target.id, event.id]),
+            {}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(BlacklistedToken.objects.exists())
+
+    def test_non_admin_is_403(self):
+        event, _ = self._session(self.target, 'jti-guarded')
+        self.client.force_authenticate(user=self.target)
+        res = self.client.get(self.list_url)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        res = self.client.post(
+            reverse('admin-force-logout-session', args=[self.target.id, event.id]),
+            {}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class AdminResetTotpTestCase(APITestCase):

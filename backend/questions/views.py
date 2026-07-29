@@ -9,6 +9,7 @@ from rest_framework.throttling import UserRateThrottle
 
 from accounts.models import AuditLog
 from centers.models import CenterMembership
+from moderation.models import ModerationFlag
 
 from .models import Question
 from .serializers import QuestionSerializer
@@ -126,6 +127,29 @@ def _question_is_protected(question):
         or question.code_submissions.exists()
         or question.essay_grades.exists()
     )
+
+
+def _question_snapshot(question):
+    """Bayroq ichida saqlanadigan savol nusxasi — o'zgarmas dalil.
+
+    Admin navbati savolni `target_id` bo'yicha JONLI o'qimaydi: bayroq
+    qo'yilgandan keyin savol tahrirlanishi yoki butunlay o'chirilishi mumkin
+    va o'shanda tekshiruvchi 404 yoki BOSHQA matnni ko'rardi. Shu sababli
+    tekshirish uchun kerak bo'ladigan maydonlar (matn, variantlar, to'g'ri
+    javob) bayroq yaratilgan paytdagi holatida `extra` ga ko'chiriladi.
+    """
+    return {
+        'question_id': question.id,
+        'center_id': question.center_id,
+        'subject': question.subject,
+        'question_type': question.question_type,
+        'difficulty': question.difficulty,
+        'text': question.text,
+        'options': question.options,
+        'correct_answer': question.correct_answer,
+        'correct_text': question.correct_text,
+        'created_by': question.created_by.full_name if question.created_by else '',
+    }
 
 
 @api_view(['GET', 'POST'])
@@ -279,6 +303,64 @@ def question_detail(request, question_id):
     serializer.is_valid(raise_exception=True)
     serializer.save()
     return Response(QuestionSerializer(question, context={'request': request}).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def flag_question(request, question_id):
+    """POST /api/questions/{id}/flag/  body: {"reason": str}
+
+    Markaz xodimi sifatsiz savolni platforma admini tekshiruviga qo'yadi
+    (`ModerationFlag`, `flag_type='question'`). O'QUVCHI bu endpointga kira
+    olmaydi: bu savol bankining ichki sifat nazorati, ommaviy shikoyat oqimi
+    emas.
+
+    Ruxsat AYNAN savol yaratish ruxsati bilan bir xil
+    (`_user_can_create_for_center`): markazning istalgan tasdiqlangan
+    o'qituvchi/menejer/egasi, savol muallifi bo'lmasa ham. `question_detail`
+    dagi qo'shimcha "faqat o'z savoling" cheklovi bu yerda ATAYLAB yo'q —
+    bayroqning butun ma'nosi hamkasbning yomon savolini ko'rsatishda.
+
+    Bayroq savolni YASHIRMAYDI: `is_active` tegilmaydi, chunki savol
+    ketayotgan imtihonda bir qism o'quvchiga allaqachon berilgan bo'lishi
+    mumkin. Arxivlash faqat admin bayroqni yopayotganda ochiq so'raganda
+    bo'ladi (`moderation.views.admin_moderation_resolve`, `archive=true`).
+    """
+    question = get_object_or_404(Question, pk=question_id)
+    if not _user_can_create_for_center(request.user, question.center_id):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    reason = (request.data.get('reason') or '').strip()
+    if not reason:
+        return Response(
+            {'detail': 'Sabab (reason) majburiy'},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    # Bitta savolga bitta ochiq bayroq: ikkinchi xodim o'sha savolni qayta
+    # belgilaganda navbatga dublikat qator tushmaydi. Bu yerda `get_or_create`
+    # ishlaydi (detektordagi qo'lda tekshiruvdan farqli — u JSON kaliti
+    # bo'yicha qidirardi): barcha qidiruv maydonlari oddiy ustunlar.
+    flag, created = ModerationFlag.objects.get_or_create(
+        flag_type=ModerationFlag.FLAG_TYPE_QUESTION,
+        target_type='Question',
+        target_id=question.id,
+        status=ModerationFlag.STATUS_PENDING,
+        defaults={
+            'reason': reason[:255],
+            'raised_by': request.user,
+            'extra': _question_snapshot(question),
+        },
+    )
+    # Mavjud yozuv xato emas — `centers.views.join_center` naqshi: yangisi 201,
+    # allaqachon bori 200 bilan qaytadi va chaqiruvchi `created` orqali ajratadi.
+    return Response(
+        {
+            'flag_id': flag.id,
+            'created': created,
+            'detail': ("Savol admin tekshiruviga qo'yildi." if created
+                       else "Bu savol allaqachon tekshiruvga qo'yilgan."),
+        },
+        status=http_status.HTTP_201_CREATED if created else http_status.HTTP_200_OK,
+    )
 
 
 @api_view(['DELETE'])

@@ -122,6 +122,12 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [newSubjectModal, setNewSubjectModal] = React.useState(false);
   const [newSubject, setNewSubject] = React.useState('');
   const [deleteId, setDeleteId] = React.useState(null);
+  // Savolni admin tekshiruviga qo'yish (moderatsiya bayrog'i). Faqat API
+  // rejimida: bayroq backendda saqlanadi, lokal (demo) store'da bunday
+  // navbat yo'q. `flagId` — qaysi savol, sabab esa majburiy.
+  const [flagId, setFlagId] = React.useState(null);
+  const [flagReason, setFlagReason] = React.useState('');
+  const [flaggingQuestion, setFlaggingQuestion] = React.useState(false);
   const [deleteAllConfirm, setDeleteAllConfirm] = React.useState(false);
   const [selectedIds, setSelectedIds] = React.useState([]);
   const [bulkSaving, setBulkSaving] = React.useState(false);
@@ -832,6 +838,28 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     setMode('list');
   };
 
+  // Savolni admin tekshiruviga qo'yish. Backend dublikat bayroq yaratmaydi:
+  // shu savolda ochiq bayroq bo'lsa `created: false` qaytadi (xato emas).
+  const submitFlagQuestion = () => {
+    const reason = flagReason.trim();
+    if (!reason || flaggingQuestion) return;
+    setFlaggingQuestion(true);
+    const target = questions.find(q => String(q.id) === String(flagId));
+    const backendId = target?.backendId ?? flagId;
+    OlympyApi.flagQuestion(backendId, reason, OlympyApi.getToken())
+      .then(res => {
+        showApiToast(res?.created === false
+          ? "⚠ Bu savol allaqachon tekshiruvda"
+          : '✓ Savol admin tekshiruviga yuborildi');
+        setFlagId(null);
+      })
+      .catch(err => {
+        console.warn('flagQuestion failed:', err);
+        showApiToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Yuborib bo'lmadi"}`);
+      })
+      .finally(() => setFlaggingQuestion(false));
+  };
+
   const saveAiQuestions = () => {
     if (!aiResult || aiResult.length === 0) return;
     if (isApi) {
@@ -1272,6 +1300,9 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 </div>
                 {/* Mobile'da har doim ko'rinadi (hover yo'q), desktop'da hover'da */}
                 <div className="flex gap-0.5 md:gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">
+                  {isApi && (
+                    <button onClick={() => { setFlagReason(''); setFlagId(q.id); }} title="Admin tekshiruviga qo'yish" className="text-white/40 hover:text-amber-400 transition-colors p-2 rounded-lg hover:bg-white/5"><Icon name="shield" size={15} /></button>
+                  )}
                   <button onClick={() => startEditQuestion(q)} className="text-white/40 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-white/5"><Icon name="edit" size={15} /></button>
                   <button onClick={() => setDeleteId(q.id)} className="text-white/40 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-white/5"><Icon name="trash" size={15} /></button>
                 </div>
@@ -1976,6 +2007,27 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             OlympyStore.deleteQuestion(deleteId);
             setDeleteId(null);
           }} disabled={deletingQuestion} className="btn-danger flex-1 py-3 rounded-xl font-semibold disabled:opacity-50">{deletingQuestion ? "O'chirilmoqda..." : "O'chirish"}</button>
+        </div>
+      </Modal>
+
+      {/* Savolni admin tekshiruviga qo'yish */}
+      <Modal open={!!flagId} onClose={() => !flaggingQuestion && setFlagId(null)} title="Savolni tekshiruvga qo'yish">
+        <p className="text-white/60 text-sm mb-4 leading-relaxed">
+          Savol platforma admini navbatiga tushadi. Savol bankdan darhol yo'qolmaydi —
+          uni faqat admin tekshiruvdan keyin arxivlashi mumkin.
+        </p>
+        <label className="block text-xs text-white/50 mb-1.5 font-medium">Sabab</label>
+        <textarea
+          className="input-field mb-5"
+          rows={3}
+          maxLength={255}
+          placeholder="Masalan: to'g'ri javob noto'g'ri belgilangan"
+          value={flagReason}
+          onChange={e => setFlagReason(e.target.value)}
+        />
+        <div className="flex gap-3">
+          <button onClick={() => setFlagId(null)} disabled={flaggingQuestion} className="btn-ghost flex-1 py-3 rounded-xl disabled:opacity-50">Bekor qilish</button>
+          <button onClick={submitFlagQuestion} disabled={flaggingQuestion || !flagReason.trim()} className="btn-primary flex-1 py-3 rounded-xl font-semibold disabled:opacity-50">{flaggingQuestion ? 'Yuborilmoqda...' : 'Yuborish'}</button>
         </div>
       </Modal>
 

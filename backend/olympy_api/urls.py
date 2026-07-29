@@ -44,6 +44,10 @@ urlpatterns = [
     path('api/notifications/', include('notifications.urls')),
     path('api/subjects/', subjects_list_create, name='subjects-list-create'),
     path('api/billing/', include('billing.urls')),
+    # Moderatsiya navbati (faqat admin): avtomatik detektorlar qo'ygan
+    # bayroqlar. "Xavfsizlik" tabining bloklaridan farqli o'laroq bu yerda
+    # yozuvning O'Z holati bor (kutilmoqda/hal qilindi/rad etildi).
+    path('api/admin/moderation/', include('moderation.urls')),
     # Retention/conversion/premium metrikalari (faqat admin). Hisoblash
     # analytics.metrics'da, admin dashboard ham shu funksiyani ishlatadi.
     path('api/analytics/', include('analytics.urls')),

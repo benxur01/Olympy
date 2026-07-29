@@ -1013,6 +1013,17 @@ export const OlympyApi = {
   // shuni tekshiradi.
   getAdminUserBillingHistory: (userId, token) => request(`/api/admin/users/${userId}/billing-history/`, { token }),
   getAdminUserLoginHistory: (userId, token) => request(`/api/admin/users/${userId}/login-history/`, { token }),
+  // Bloklashdan oldingi rasmiy ogohlantirish. `reason` ICHKI izoh (faqat
+  // audit jurnaliga tushadi), `message` esa foydalanuvchi o'qiydigan matn —
+  // ikkalasi ham majburiy (backend bo'shini 400 bilan rad etadi). Hisob
+  // holati (blok, sessiyalar) o'zgarmaydi.
+  adminWarnUser: (userId, { reason, message } = {}, token) => request(
+    `/api/admin/users/${userId}/warn/`,
+    { method: 'POST', body: { reason: reason || '', message: message || '' }, token },
+  ),
+  // Shu foydalanuvchiga yuborilgan oxirgi ogohlantirishlar ("Batafsil"
+  // oynasidagi tarix bloki). Yuqoridagilar kabi javobda `user_id` qaytadi.
+  getAdminUserWarnings: (userId, token) => request(`/api/admin/users/${userId}/warnings/`, { token }),
   // Bloklash/ochish. Bloklashda `reason` MAJBURIY (backend bo'sh sababni 400
   // bilan rad etadi), `durationDays` esa ixtiyoriy: berilmasa blok doimiy,
   // berilsa (1|7|14|30) o'sha muddatdan keyin avtomatik ochiladi. Ochishda
@@ -1098,6 +1109,69 @@ export const OlympyApi = {
   // Bloklamasdan barcha qurilmalardagi sessiyalarni yakunlash (token_version
   // bump) — o'g'irlangan qurilma yoki bo'lishilgan hisob uchun yengil chora.
   adminForceLogoutUser: (userId, token) => request(`/api/admin/users/${userId}/force-logout/`, { method: 'POST', token }),
+  // Seanslar ro'yxati ("Batafsil" oynasidagi "Faol seanslar" bloki). Kirish
+  // tarixidan farqi — har bir qatorda seans hali tirikmi (`is_active`) degan
+  // HOZIRGI holat keladi. Yuqoridagilar kabi javobda `user_id` qaytadi.
+  getAdminUserSessions: (userId, token) => request(`/api/admin/users/${userId}/sessions/`, { token }),
+  // BITTA seansni yakunlash — `adminForceLogoutUser` dan farqli o'laroq
+  // qolgan qurilmalar ishlashda davom etadi. Eski (jti'siz) yoki allaqachon
+  // tugagan seansni backend 400 bilan rad etadi.
+  adminForceLogoutSession: (userId, loginEventId, token) => request(
+    `/api/admin/users/${userId}/sessions/${loginEventId}/force-logout/`,
+    { method: 'POST', token },
+  ),
+  // ─── Xavfsizlik tabi ───
+  // Bitta IP'dan kirgan turli hisoblar. `minAccounts`/`days` backendda
+  // clamp qilinadi va AYNAN qo'llanilgan qiymat javobda qaytadi — panel
+  // filtrni shu qiymat bilan ko'rsatadi (yuborilgani bilan emas).
+  getAdminSharedIpAccounts: ({ minAccounts = 5, days = 30 } = {}, token) => {
+    const qs = new URLSearchParams({ min_accounts: String(minAccounts), days: String(days) });
+    return request(`/api/admin/security/shared-ip/?${qs.toString()}`, { token });
+  },
+  // Bitta IP ortidagi hisoblar ro'yxati (ro'yxatdagi "Ko'rish" tugmasi).
+  // IPv6 manzilida ikki nuqta bor — encodeURIComponent majburiy.
+  getAdminSharedIpDetail: (ipAddress, token) => request(
+    `/api/admin/security/shared-ip/${encodeURIComponent(ipAddress)}/`,
+    { token },
+  ),
+  // ─── Moderatsiya navbati (avtomatik bayroqlar) ───
+  // Soatlik detektor qo'ygan bayroqlar. `status` berilmasa backend faqat
+  // ochiqlarini (`pending`) beradi — navbat aynan shu uchun; butun tarix
+  // uchun `status: 'all'`. Ro'yxat cheksiz o'sadi, shuning uchun audit
+  // jurnalidagidek server tomon paginatsiya (`page`/`page_size`).
+  getAdminModerationQueue: ({ flagType = '', status = '', page = 1, pageSize = 50 } = {}, token) => {
+    const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (flagType) qs.set('flag_type', flagType);
+    if (status) qs.set('status', status);
+    return request(`/api/admin/moderation/queue/?${qs.toString()}`, { token });
+  },
+  // Bayroqni yopish: `resolved` (chora ko'rildi) yoki `dismissed` (yolg'on
+  // signal). Allaqachon yopilgan bayroqni backend 400 bilan rad etadi.
+  // `archive` — faqat savol bayrog'ida: savolni bankdan olib tashlaydi
+  // (is_active=false). Backend javobida `archived` haqiqatan bajarilganini
+  // bildiradi (savol shu orada o'chirilgan bo'lsa false).
+  adminResolveModerationFlag: (flagId, { status, note = '', archive = false }, token) => request(
+    `/api/admin/moderation/queue/${flagId}/resolve/`,
+    { method: 'POST', body: { status, note, archive }, token },
+  ),
+  // ─── Firibgarlik holatlari (barcha markazlar bo'yicha) ───
+  // Diskvalifikatsiya qilingan va tekshiruv kutayotgan sessiyalar. FAQAT
+  // o'qish uchun: qaror (diskvalifikatsiya / davom ettirish) menejer
+  // panelidagi jonli kuzatuv ekranida qoladi. `status` bo'sh bo'lsa ikkala
+  // holat ham keladi; sana filtrlari YYYY-MM-DD. Ro'yxat cheksiz o'sadi —
+  // moderatsiya navbatidagidek server tomon paginatsiya.
+  getAdminCheatingOverview: (
+    { centerId = '', status = '', dateFrom = '', dateTo = '', search = '', page = 1, pageSize = 50 } = {},
+    token,
+  ) => {
+    const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    if (centerId) qs.set('center_id', String(centerId));
+    if (status) qs.set('status', status);
+    if (dateFrom) qs.set('date_from', dateFrom);
+    if (dateTo) qs.set('date_to', dateTo);
+    if (search) qs.set('search', search);
+    return request(`/api/admin/attempts/cheating-overview/?${qs.toString()}`, { token });
+  },
   // ─── Takrorlangan hisoblarni birlashtirish ───
   // SIM kartasini yo'qotgan o'quvchi yangi raqam bilan qayta ro'yxatdan
   // o'tadi — tanga/streak/urinishlar ikkiga bo'linadi. `preview` HECH
@@ -1409,6 +1483,10 @@ export const OlympyApi = {
   },
   updateQuestion: (questionId, payload, token) => request(`/api/questions/${questionId}/`, { method: 'PATCH', body: payload, token }),
   deleteQuestion: (questionId, token) => request(`/api/questions/${questionId}/`, { method: 'DELETE', token }),
+  // Sifatsiz savolni platforma admini tekshiruviga qo'yish (markaz xodimlari
+  // uchun). Savol YASHIRILMAYDI — bayroq faqat navbatga tushadi. Shu savolda
+  // ochiq bayroq allaqachon bo'lsa xato emas: javob `created: false` bo'ladi.
+  flagQuestion: (questionId, reason, token) => request(`/api/questions/${questionId}/flag/`, { method: 'POST', body: { reason }, token }),
   deleteAllQuestions: (centerId, token, ids) => {
     const url = `/api/questions/delete-all/?center=${centerId}${ids && ids.length ? `&ids=${ids.join(',')}` : ''}`;
     return request(url, { method: 'DELETE', token });

@@ -4,7 +4,7 @@
 // manziliga bog'lanadi (home → /dashboard/admin).
 const ADMIN_DASHBOARD_PAGES = [
   'home', 'users', 'centers', 'olympiads', 'requests',
-  'subjects', 'analytics', 'logs', 'settings', 'myprofile', 'support',
+  'subjects', 'analytics', 'logs', 'security', 'settings', 'myprofile', 'support',
 ];
 const adminDashUrl = makeDashboardUrlSync('/dashboard/admin', ADMIN_DASHBOARD_PAGES);
 
@@ -22,6 +22,64 @@ const ROLE_MODAL_KEYS = [
 // Amallar tarixi (audit jurnali) bir sahifada nechta yozuv ko'rsatadi.
 // Backend LargePageNumberPagination'ga `page_size` sifatida yuboriladi.
 const AUDIT_PAGE_SIZE = 50;
+
+// "Xavfsizlik" tabining ichki bo'limlari. Tab bir nechta mustaqil kuzatuv
+// blokini birlashtiradi — yangisini qo'shish uchun shu ro'yxatga element va
+// `securitySectionRenderers` ga o'sha kalitli renderer qo'shiladi, tabning
+// qolgan qismi (segment tugmalari, sarlavha, tanlov holati) o'zgarmaydi.
+const SECURITY_SECTIONS = [
+  { key: 'shared-ip', label: "Bir xil IP'dan kirish" },
+  { key: 'auto-flags', label: 'Avtomatik bayroqlar' },
+  { key: 'cheating', label: 'Firibgarlik holatlari' },
+];
+
+// "Bir xil IP" bloki filtrlari — backend ham AYNAN shu chegaralarga clamp
+// qiladi (accounts/views_security.py), bu yerdagilar shunchaki tayyor
+// variantlar.
+const SHARED_IP_MIN_ACCOUNT_OPTIONS = [2, 3, 5, 10, 20];
+const SHARED_IP_DAY_OPTIONS = [7, 30, 90, 365];
+
+// "Avtomatik bayroqlar" bloki filtrlari. Kalitlar backend
+// `ModerationFlag.FLAG_TYPE_CHOICES` / `STATUS_CHOICES` bilan bir xil.
+// Bo'sh satr — "tur filtri yo'q"; holat uchun esa 'all' kerak, chunki
+// bo'sh qoldirilsa backend default sifatida `pending` ni qo'llaydi.
+const MODERATION_FLAG_TYPE_OPTIONS = [
+  { key: '', label: 'Barcha turlar' },
+  { key: 'suspicious_ip', label: 'Shubhali IP' },
+  { key: 'question', label: 'Savol' },
+];
+const MODERATION_STATUS_OPTIONS = [
+  { key: 'pending', label: 'Kutilmoqda' },
+  { key: 'resolved', label: 'Hal qilindi' },
+  { key: 'dismissed', label: 'Rad etildi' },
+  { key: 'all', label: 'Barchasi' },
+];
+// Bir sahifada nechta bayroq (backend LargePageNumberPagination `page_size`).
+const MODERATION_PAGE_SIZE = 50;
+// Bayroq holati → AdminPill rangi. Ko'rinadigan matn backenddan keladi
+// (`status_label`), bu yerda faqat rang tanlanadi.
+const MODERATION_STATUS_PILL = {
+  pending: 'pending',
+  resolved: 'approved',
+  dismissed: 'rejected',
+};
+
+// "Firibgarlik holatlari" bloki filtrlari. Kalitlar backend
+// `TestSession.STATUS_*` bilan bir xil; bo'sh satr — ikkala holat ham
+// (ro'yxatning o'zi allaqachon shu ikkitasi bilan chegaralangan).
+const CHEATING_STATUS_OPTIONS = [
+  { key: '', label: 'Barchasi' },
+  { key: 'pending_review', label: 'Tekshiruv kutilmoqda' },
+  { key: 'disqualified', label: 'Diskvalifikatsiya' },
+];
+// Sessiya holati → AdminPill rangi va o'zbekcha yorlig'i. Backend bu ro'yxatda
+// xom kod qaytaradi (jonli kuzatuv ekranidagi kabi), yorliq esa panelniki.
+const CHEATING_STATUS_META = {
+  pending_review: { pill: 'pending', label: 'Tekshiruv kutilmoqda' },
+  disqualified: { pill: 'rejected', label: 'Diskvalifikatsiya' },
+};
+// Bir sahifada nechta qator (backend LargePageNumberPagination `page_size`).
+const CHEATING_PAGE_SIZE = 50;
 
 const formatAdminDate = (value) => {
   if (!value) return '';
@@ -731,6 +789,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   // tozalanadi — oldingi foydalanuvchining sababi qolib ketmasin.
   const [blockReason, setBlockReason] = React.useState('');
   const [blockDuration, setBlockDuration] = React.useState(null);
+  // Ogohlantirish — bloklashdan OLDINGI qadam: hisob holati o'zgarmaydi,
+  // foydalanuvchi faqat xabarnoma oladi. `warnReason` ichki izoh (audit
+  // jurnaliga tushadi), `warnMessage` esa foydalanuvchi o'qiydigan matn.
+  const [warnModal, setWarnModal] = React.useState(null);
+  const [warnReason, setWarnReason] = React.useState('');
+  const [warnMessage, setWarnMessage] = React.useState('');
+  const [warnBusy, setWarnBusy] = React.useState(false);
+  // Yakunlanayotgan seansning `login_event_id`si — faqat o'sha qatordagi
+  // tugma bloklanadi (bitta umumiy bayroq butun ro'yxatni o'chirib qo'yardi).
+  const [sessionLogoutId, setSessionLogoutId] = React.useState(null);
   // Markaz rad etish / premium bekor qilish — destruktiv/qaytarib
   // bo'lmaydigan amallar avval tasdiqlashsiz zudlik bilan bajarilardi.
   const [rejectCenterConfirm, setRejectCenterConfirm] = React.useState(null);
@@ -809,6 +877,36 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   // Audit qidiruvi backendga ketadi (server tomon filtr) — har bosishda
   // so'rov yubormaslik uchun u ham debounce qilinadi.
   const debouncedAuditSearch = useDebounce(auditSearch, 300);
+  // Xavfsizlik tabi: qaysi ichki bo'lim ochiq (SECURITY_SECTIONS kalitlari).
+  const [securitySection, setSecuritySection] = React.useState(SECURITY_SECTIONS[0].key);
+  // "Bir xil IP" bloki filtrlari — o'zgarsa ro'yxat qayta so'raladi.
+  const [sharedIpMinAccounts, setSharedIpMinAccounts] = React.useState(5);
+  const [sharedIpDays, setSharedIpDays] = React.useState(30);
+  // "Ko'rish" bosilgan IP — shu manzil ortidagi hisoblar oynasi uchun.
+  const [sharedIpDetailAddress, setSharedIpDetailAddress] = React.useState(null);
+  // "Avtomatik bayroqlar" bloki: filtrlar + server tomon sahifa raqami.
+  const [flagType, setFlagType] = React.useState('');
+  const [flagStatus, setFlagStatus] = React.useState('pending');
+  const [flagPage, setFlagPage] = React.useState(1);
+  // Yopish oynasi: `{ flag, status }` — qaysi bayroq va qaysi qaror bilan.
+  const [flagResolve, setFlagResolve] = React.useState(null);
+  const [flagResolveNote, setFlagResolveNote] = React.useState('');
+  const [flagResolveBusy, setFlagResolveBusy] = React.useState(false);
+  // Savol bayrog'ini yopishdagi ixtiyoriy chora: savolni arxivlash. Har
+  // oynada noldan boshlanadi — arxivlash tasodifan "yodda qolmasin".
+  const [flagResolveArchive, setFlagResolveArchive] = React.useState(false);
+  // "Firibgarlik holatlari" bloki: filtrlar + server tomon sahifa raqami.
+  // Sana filtrlari `<input type="date">` dan YYYY-MM-DD ko'rinishida keladi —
+  // backend ham aynan shu formatni kutadi.
+  const [cheatingCenterId, setCheatingCenterId] = React.useState('');
+  const [cheatingStatus, setCheatingStatus] = React.useState('');
+  const [cheatingDateFrom, setCheatingDateFrom] = React.useState('');
+  const [cheatingDateTo, setCheatingDateTo] = React.useState('');
+  const [cheatingSearch, setCheatingSearch] = React.useState('');
+  const [cheatingPage, setCheatingPage] = React.useState(1);
+  // Qidiruv backendga ketadi — har bosishda so'rov yubormaslik uchun debounce
+  // (audit jurnalidagi bilan bir xil).
+  const debouncedCheatingSearch = useDebounce(cheatingSearch, 300);
 
   // Profile settings state
   const [editFirstName, setEditFirstName] = React.useState('');
@@ -967,6 +1065,60 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       : Promise.resolve(null),
     [isApi, page, auditPage, debouncedAuditSearch],
   );
+  // Bir xil IP'dan kirgan hisoblar — faqat "security" tabining shu bo'limi
+  // ochilganda so'raladi (agregat so'rov arzon emas). Filtr o'zgarsa qayta
+  // yuklanadi.
+  const apiSharedIpRes = useApiData(
+    () => (isApi && page === 'security' && securitySection === 'shared-ip')
+      ? OlympyApi.getAdminSharedIpAccounts(
+          { minAccounts: sharedIpMinAccounts, days: sharedIpDays },
+          OlympyApi.getToken(),
+        )
+      : Promise.resolve(null),
+    [isApi, page, securitySection, sharedIpMinAccounts, sharedIpDays],
+  );
+  // Tanlangan IP ortidagi hisoblar — oyna ochilgandagina so'raladi.
+  const apiSharedIpDetailRes = useApiData(
+    () => (isApi && sharedIpDetailAddress)
+      ? OlympyApi.getAdminSharedIpDetail(sharedIpDetailAddress, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, sharedIpDetailAddress],
+  );
+  // Moderatsiya navbati — faqat "security" tabining shu bo'limi ochilganda.
+  // Ro'yxat cheksiz o'sadi (soatlik detektor), shuning uchun audit
+  // jurnalidagidek server tomon paginatsiya.
+  const apiModerationRes = useApiData(
+    () => (isApi && page === 'security' && securitySection === 'auto-flags')
+      ? OlympyApi.getAdminModerationQueue(
+          {
+            flagType, status: flagStatus,
+            page: flagPage, pageSize: MODERATION_PAGE_SIZE,
+          },
+          OlympyApi.getToken(),
+        )
+      : Promise.resolve(null),
+    [isApi, page, securitySection, flagType, flagStatus, flagPage],
+  );
+  // Barcha markazlar bo'yicha firibgarlik holatlari — faqat "security"
+  // tabining shu bo'limi ochilganda. Bu ham cheksiz o'sadigan ro'yxat, ya'ni
+  // server tomon paginatsiya (filtr o'zgarsa birinchi sahifaga qaytamiz).
+  const apiCheatingRes = useApiData(
+    () => (isApi && page === 'security' && securitySection === 'cheating')
+      ? OlympyApi.getAdminCheatingOverview(
+          {
+            centerId: cheatingCenterId, status: cheatingStatus,
+            dateFrom: cheatingDateFrom, dateTo: cheatingDateTo,
+            search: debouncedCheatingSearch,
+            page: cheatingPage, pageSize: CHEATING_PAGE_SIZE,
+          },
+          OlympyApi.getToken(),
+        )
+      : Promise.resolve(null),
+    [
+      isApi, page, securitySection, cheatingCenterId, cheatingStatus,
+      cheatingDateFrom, cheatingDateTo, debouncedCheatingSearch, cheatingPage,
+    ],
+  );
   // "Batafsil" oynasi ochilganda o'sha foydalanuvchining to'liq profili.
   const detailBackendId = detailUser?.backendId
     ?? (typeof detailUser?.id === 'string' && detailUser.id.startsWith('api:') ? Number(detailUser.id.slice(4)) : null);
@@ -988,6 +1140,22 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const apiUserLoginsRes = useApiData(
     () => (isApi && detailBackendId)
       ? OlympyApi.getAdminUserLoginHistory(detailBackendId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, detailBackendId],
+  );
+  // Yuborilgan ogohlantirishlar — bloklash qarorini qabul qilishdan oldin
+  // admin bu hisob avval necha marta ogohlantirilganini ko'radi.
+  const apiUserWarningsRes = useApiData(
+    () => (isApi && detailBackendId)
+      ? OlympyApi.getAdminUserWarnings(detailBackendId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, detailBackendId],
+  );
+  // Faol seanslar — kirish tarixidan farqli o'laroq HOZIRGI holat: qaysi
+  // qurilma hali hisobga kira oladi va uni alohida yakunlash mumkin.
+  const apiUserSessionsRes = useApiData(
+    () => (isApi && detailBackendId)
+      ? OlympyApi.getAdminUserSessions(detailBackendId, OlympyApi.getToken())
       : Promise.resolve(null),
     [isApi, detailBackendId],
   );
@@ -1190,6 +1358,60 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     setBlockedIds(prev => ({ ...prev, [row.id]: !prev[row.id] }));
     setBlockModal(null);
     showToast('Foydalanuvchi holati yangilandi');
+  };
+
+  // Ogohlantirish modali ham har safar toza ochiladi (oldingi foydalanuvchining
+  // matni qolib ketmasin).
+  const openWarnModal = (row) => {
+    setWarnReason('');
+    setWarnMessage('');
+    setWarnModal(row);
+  };
+
+  const sendWarning = () => {
+    if (!warnModal || warnBusy) return;
+    if (!isApi) { showToast('Ogohlantirish faqat API rejimida yuboriladi'); return; }
+    const numericUserId = warnModal?.backendId ?? (typeof warnModal?.id === 'string' && warnModal.id.startsWith('api:') ? Number(warnModal.id.slice(4)) : null);
+    if (!numericUserId) { showToast('Backend ID topilmadi'); setWarnModal(null); return; }
+    // Backend ikkalasini ham majburiy deb biladi — bo'shini u yerga
+    // yubormasdan shu yerda to'xtatamiz.
+    const reason = warnReason.trim();
+    const message = warnMessage.trim();
+    if (!reason) { showToast('Ogohlantirish sababini kiriting'); return; }
+    if (!message) { showToast('Foydalanuvchiga yuboriladigan matnni kiriting'); return; }
+
+    setWarnBusy(true);
+    OlympyApi.adminWarnUser(numericUserId, { reason, message }, OlympyApi.getToken())
+      .then(() => {
+        showToast('Ogohlantirish yuborildi');
+        setWarnModal(null);
+        // "Batafsil" oynasi ochiq bo'lsa, tarix bloki darhol yangilansin.
+        apiUserWarningsRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminWarnUser failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setWarnBusy(false));
+  };
+
+  // Bitta seansni yakunlash. "Barcha seanslarni yakunlash" dan farqli
+  // o'laroq tasdiqlash modali yo'q: amal tor (faqat shu qurilma), qaytarib
+  // bo'lmaydigan zarari yo'q va foydalanuvchi qayta kira oladi.
+  const endUserSession = (loginEventId) => {
+    if (!isApi || sessionLogoutId) return;
+    if (!detailBackendId) { showToast('Backend ID topilmadi'); return; }
+    setSessionLogoutId(loginEventId);
+    OlympyApi.adminForceLogoutSession(detailBackendId, loginEventId, OlympyApi.getToken())
+      .then(() => {
+        showToast('Seans yakunlandi');
+        apiUserSessionsRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminForceLogoutSession failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setSessionLogoutId(null));
   };
 
   // Sabab + muddat maydonlari. Bitta foydalanuvchilik va ommaviy bloklash
@@ -1742,6 +1964,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'subjects', icon: 'book', label: 'Fanlar' },
     { key: 'analytics', icon: 'chart', label: 'Tahlil' },
     { key: 'logs', icon: 'shield', label: 'Amallar tarixi' },
+    { key: 'security', icon: 'lock', label: 'Xavfsizlik' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
     { key: 'myprofile', icon: 'user', label: 'Mening profilim' },
     { key: 'support', icon: 'sparkles', label: 'AI Support' },
@@ -2166,14 +2389,25 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const logins = isApi && apiUserLoginsRes.data?.user_id === detailBackendId
       ? apiUserLoginsRes.data
       : null;
+    const warnings = isApi && apiUserWarningsRes.data?.user_id === detailBackendId
+      ? apiUserWarningsRes.data
+      : null;
+    const sessions = isApi && apiUserSessionsRes.data?.user_id === detailBackendId
+      ? apiUserSessionsRes.data
+      : null;
     const txRows = Array.isArray(billing?.transactions) ? billing.transactions : [];
     const loginRows = Array.isArray(logins?.events) ? logins.events : [];
+    const warningRows = Array.isArray(warnings?.warnings) ? warnings.warnings : [];
+    const sessionRows = Array.isArray(sessions?.sessions) ? sessions.sessions : [];
+    const activeSessionCount = sessionRows.filter(s => s.is_active).length;
     // `res.loading` yolg'iz yetarli emas: useApiData effekti render'dan KEYIN
     // ishga tushadi, ya'ni oyna ochilgan birinchi kadrda bayroq hali `false`
     // va bir lahza "bo'sh" holat ko'rinib qolardi. Javob hali shu
     // foydalanuvchiniki bo'lmagan holat ham yuklanish deb qaraladi.
     const billingLoading = apiUserBillingRes.loading || (!billing && !apiUserBillingRes.error);
     const loginsLoading = apiUserLoginsRes.loading || (!logins && !apiUserLoginsRes.error);
+    const warningsLoading = apiUserWarningsRes.loading || (!warnings && !apiUserWarningsRes.error);
+    const sessionsLoading = apiUserSessionsRes.loading || (!sessions && !apiUserSessionsRes.error);
     // Ikkala tarix bloki bir xil holatlarni boshqaradi (API emas / yuklanmoqda
     // / xato / bo'sh / ro'yxat) — bitta o'ram orqali.
     const renderHistorySection = ({ title, note, loading, error, rows, emptyText, renderRow }) => (
@@ -2323,11 +2557,94 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               ),
             })}
 
+            {/* Faol seanslar — yuqoridagi "Kirish tarixi" O'TMISHNI ko'rsatadi,
+                bu esa HOZIRGI holatni: qaysi qurilma hali hisobga kira oladi.
+                Bitta qatorni yakunlash faqat o'sha qurilmani chiqaradi
+                ("Barcha seanslarni yakunlash" esa hammasini). Eski, jti'siz
+                kirishlar bu ro'yxatga tushmaydi — ularni alohida yakunlash
+                imkoni yo'q, shuning uchun ro'yxat kirish tarixidan qisqaroq
+                bo'lishi normal. */}
+            {renderHistorySection({
+              title: 'Faol seanslar',
+              note: activeSessionCount > 0 ? `${activeSessionCount} ta faol` : null,
+              loading: sessionsLoading,
+              error: apiUserSessionsRes.error,
+              rows: sessionRows,
+              emptyText: "Yakunlash mumkin bo'lgan seans yo'q",
+              renderRow: (session) => {
+                const busy = sessionLogoutId === session.login_event_id;
+                return (
+                  <div key={session.login_event_id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] font-bold text-white" title={session.user_agent || ''}>
+                        {adminDeviceLabel(session.user_agent)}
+                      </div>
+                      <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                        {formatAdminDateTime(session.created_at)} · <span className="font-mono">{session.ip_address || '—'}</span>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className={`text-[10px] font-bold ${session.is_active ? 'text-emerald-400' : 'text-slate-500'}`}>
+                        {session.is_active ? 'Faol' : 'Tugagan'}
+                      </span>
+                      {/* Tugagan seansda yakunlaydigan narsa yo'q — backend ham
+                          uni 400 bilan rad etadi, shuning uchun tugma faqat
+                          faol qatorlarda. */}
+                      {session.is_active && (
+                        <button
+                          onClick={() => endUserSession(session.login_event_id)}
+                          disabled={busy}
+                          className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-bold text-rose-400 transition hover:bg-rose-500/20 disabled:opacity-50"
+                        >
+                          {busy ? '...' : 'Yakunlash'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              },
+            })}
+
+            {/* Ogohlantirishlar tarixi — bloklashdan oldin bu hisob avval
+                necha marta ogohlantirilganini ko'rsatadi. Ichki sabab bu
+                yerda yo'q (u faqat audit jurnalida): ro'yxatda foydalanuvchi
+                o'qigan matnning o'zi turadi. */}
+            {renderHistorySection({
+              title: 'Ogohlantirishlar tarixi',
+              note: warningRows.length > 0 ? `${warningRows.length} ta` : null,
+              loading: warningsLoading,
+              error: apiUserWarningsRes.error,
+              rows: warningRows,
+              emptyText: 'Ogohlantirishlar yuborilmagan',
+              renderRow: (warn) => (
+                <div key={warn.id} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold text-white break-words">{warn.message}</div>
+                    <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                      {formatAdminDateTime(warn.created_at)} · {warn.title}
+                    </div>
+                  </div>
+                  <div className={`shrink-0 text-[10px] font-bold ${warn.is_read ? 'text-emerald-400' : 'text-amber-400'}`}>
+                    {warn.is_read ? "O'qilgan" : "O'qilmagan"}
+                  </div>
+                </div>
+              ),
+            })}
+
             {/* Xavfsizlik amallari. Ikkalasi ham "Batafsil" oynasida: jadval
                 qatoridagi tugmalar allaqachon to'lib ketgan va bularning
                 ikkalasi ham kundalik emas, aniq holat uchun kerak. */}
             {isApi && (
               <div className="flex flex-wrap gap-2">
+                {/* Bloklashdan oldingi eng yumshoq chora — shu sabab birinchi. */}
+                <button
+                  onClick={() => openWarnModal({
+                    backendId: detailBackendId, name: info.name, phone: info.phone,
+                  })}
+                  className="rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition"
+                >
+                  Ogohlantirish
+                </button>
                 {info.totpEnabled && (
                   <button
                     onClick={() => setResetTotpConfirm({ backendId: detailBackendId, name: info.name })}
@@ -2508,6 +2825,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       <button onClick={() => setResetPasswordConfirm(row)} className="rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition">
                         Parolni tiklash
                       </button>
+                      {/* Bloklashdan oldingi qadam — tugma ham aynan "Bloklash"
+                          yonida turadi. */}
+                      <button onClick={() => openWarnModal(row)} className="rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition">
+                        Ogohlantirish
+                      </button>
                       <button onClick={() => openBlockModal(row)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${row.status === 'Bloklangan' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'}`}>
                         {row.status === 'Bloklangan' ? 'Ochish' : 'Bloklash'}
                       </button>
@@ -2521,6 +2843,53 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
       </section>
 
+      {/* Ogohlantirish — bloklashdan oldingi qadam. Hisob holatiga tegmaydi,
+          foydalanuvchi faqat xabarnoma oladi. */}
+      <Modal open={!!warnModal} onClose={() => !warnBusy && setWarnModal(null)} title="Ogohlantirish yuborish">
+        <div className="mb-5">
+          <div className="mb-4 flex items-center gap-3 rounded-xl bg-white/5 p-3">
+            <Avatar name={warnModal?.name || ''} size={36} />
+            <div><div className="text-sm font-semibold text-white">{warnModal?.name}</div><div className="text-xs text-white/40">{warnModal?.phone}</div></div>
+          </div>
+          <p className="text-sm text-white/60">
+            Foydalanuvchi xabarnoma oladi. Hisob bloklanmaydi va sessiyalari yakunlanmaydi.
+          </p>
+        </div>
+        <div className="mb-5 space-y-4">
+          <div>
+            <label className="block text-xs text-white/50 mb-1.5 font-medium">Ogohlantirish sababi (ichki)</label>
+            <textarea
+              value={warnReason}
+              onChange={e => setWarnReason(e.target.value)}
+              rows={2}
+              className="w-full admin-input resize-none px-3 py-2.5 text-sm outline-none"
+              placeholder="Masalan: imtihonda shubhali xatti-harakat"
+            />
+            <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+              Faqat amallar tarixiga yoziladi — foydalanuvchi buni ko'rmaydi.
+            </p>
+          </div>
+          <div>
+            <label className="block text-xs text-white/50 mb-1.5 font-medium">Foydalanuvchiga xabar</label>
+            <textarea
+              value={warnMessage}
+              onChange={e => setWarnMessage(e.target.value)}
+              rows={4}
+              className="w-full admin-input resize-none px-3 py-2.5 text-sm outline-none"
+              placeholder="Nima buzilgani va keyingi safar nima bo'lishini yozing"
+            />
+            <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+              Shu matn foydalanuvchining xabarnomalarida "Ogohlantirish" sarlavhasi bilan ko'rinadi.
+            </p>
+          </div>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={() => setWarnModal(null)} disabled={warnBusy} className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">Bekor qilish</button>
+          <button onClick={sendWarning} disabled={warnBusy} className="btn-primary flex-1 rounded-xl py-3 font-semibold text-xs font-bold disabled:opacity-50">
+            {warnBusy ? '...' : 'Yuborish'}
+          </button>
+        </div>
+      </Modal>
 
       <Modal open={!!blockModal} onClose={() => !blocking && setBlockModal(null)} title={blockModal?.status === 'Bloklangan' ? 'Blokni ochish' : 'Foydalanuvchini bloklash'}>
         <div className="mb-5">
@@ -3459,6 +3828,647 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     );
   };
 
+  // ─── Xavfsizlik tabi ───────────────────────────────────────────────────────
+  // Tab bir nechta MUSTAQIL kuzatuv blokini birlashtiradi. Umumiy qobiq
+  // (sarlavha + segment tugmalari + tanlangan bo'lim) bitta joyda turadi,
+  // har bir blok esa o'z renderer'ida: yangisini qo'shish uchun
+  // SECURITY_SECTIONS ga element va quyidagi `securitySectionRenderers` ga
+  // o'sha kalitli funksiya qo'shiladi, qobiqqa tegilmaydi.
+
+  // Ro'yxatdagi hisobni "Foydalanuvchilar" tabining "Batafsil" oynasida
+  // ochadi. Bu yerda alohida profil oynasi yasalmaydi: blok, ogohlantirish,
+  // seanslar — hammasi o'sha oynada, ikkinchi nusxasi ajralib qolardi.
+  const openUserFromSecurity = (userId) => {
+    const row = userRows.find(r => r.backendId === userId);
+    if (!row) {
+      // Platforma adminlari `allUsers` ga umuman kirmaydi (ro'yxat ularni
+      // chiqarib tashlaydi) — bunday hisob uchun "Batafsil" oynasi yo'q.
+      showToast("Bu hisob foydalanuvchilar ro'yxatida yo'q");
+      return;
+    }
+    setSharedIpDetailAddress(null);
+    setDetailUser(row);
+    setPage('users');
+  };
+
+  // Bayroqni yopish. Tasdiqlash oynasi bor: backend yopilgan bayroqni qayta
+  // ochishga ruxsat bermaydi (400), ya'ni amal qaytarilmaydi — va aynan shu
+  // oyna ixtiyoriy izohni yozib qolish uchun yagona joy.
+  const askResolveFlag = (flag, status) => {
+    setFlagResolveNote('');
+    setFlagResolveArchive(false);
+    setFlagResolve({ flag, status });
+  };
+
+  // Arxivlash faqat 'resolved' qarorli SAVOL bayrog'ida taklif qilinadi:
+  // "rad etildi" degani yolg'on signal, savolga chora ko'rilmaydi.
+  const canArchiveFlag = flagResolve?.flag.flag_type === 'question'
+    && flagResolve?.status === 'resolved';
+
+  const submitResolveFlag = () => {
+    if (!flagResolve || flagResolveBusy) return;
+    setFlagResolveBusy(true);
+    OlympyApi.adminResolveModerationFlag(
+      flagResolve.flag.id,
+      {
+        status: flagResolve.status,
+        note: flagResolveNote.trim(),
+        archive: canArchiveFlag && flagResolveArchive,
+      },
+      OlympyApi.getToken(),
+    )
+      .then(res => {
+        showToast(res?.archived
+          ? 'Bayroq yopildi, savol arxivlandi'
+          : flagResolve.status === 'resolved' ? 'Bayroq hal qilindi' : 'Bayroq rad etildi');
+        setFlagResolve(null);
+        apiModerationRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminResolveModerationFlag failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setFlagResolveBusy(false));
+  };
+
+  const renderSharedIpSection = () => {
+    const res = isApi ? apiSharedIpRes.data : null;
+    const rows = Array.isArray(res?.results) ? res.results : [];
+    const failed = isApi && !!apiSharedIpRes.error;
+    // Backend filtrni o'z chegaralariga siqishi mumkin — ekranda AYNAN
+    // qo'llanilgan qiymat ko'rsatiladi.
+    const appliedMinAccounts = res?.min_accounts ?? sharedIpMinAccounts;
+    const appliedDays = res?.window_days ?? sharedIpDays;
+    // Oyna uchun javob AYNAN ochilgan IP'niki ekanini tekshiramiz: ketma-ket
+    // ochilgan IP'larda eski ro'yxat ko'rinib qolmasin. `res.loading` yolg'iz
+    // yetarli emas — useApiData effekti render'dan KEYIN ishga tushadi
+    // ("Batafsil" oynasidagi bloklar bilan bir xil naqsh).
+    const detail = isApi && apiSharedIpDetailRes.data?.ip_address === sharedIpDetailAddress
+      ? apiSharedIpDetailRes.data
+      : null;
+    const detailRows = Array.isArray(detail?.accounts) ? detail.accounts : [];
+    const detailLoading = apiSharedIpDetailRes.loading || (!detail && !apiSharedIpDetailRes.error);
+    return (
+      <>
+        <section className="admin-card p-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Kamida nechta hisob</label>
+              <div className="flex flex-wrap gap-2">
+                {SHARED_IP_MIN_ACCOUNT_OPTIONS.map(opt => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setSharedIpMinAccounts(opt)}
+                    className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${
+                      sharedIpMinAccounts === opt
+                        ? 'bg-indigo-600 text-white border-indigo-600 font-extrabold shadow'
+                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                    }`}>
+                    {opt} ta
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Qaysi davr uchun</label>
+              <div className="flex flex-wrap gap-2">
+                {SHARED_IP_DAY_OPTIONS.map(opt => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => setSharedIpDays(opt)}
+                    className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${
+                      sharedIpDays === opt
+                        ? 'bg-indigo-600 text-white border-indigo-600 font-extrabold shadow'
+                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                    }`}>
+                    {opt} kun
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p className="mt-4 text-[11px] text-white/40 leading-relaxed">
+            Bir manzil ortida bir nechta hisob bo'lishi o'z-o'zicha qoidabuzarlik emas:
+            markaz kompyuter sinfi, oila Wi-Fi'si yoki mobil operator tarmog'i ham
+            bir xil IP beradi. Ro'yxat faqat qo'lda tekshirish uchun nomzod beradi.
+          </p>
+        </section>
+        <section className="overflow-hidden admin-card">
+          <div className="overflow-x-auto admin-scroll">
+            <table className="w-full min-w-[760px] text-left">
+              <thead className="admin-table-hdr">
+                <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  {['IP manzil', 'Hisoblar', 'Birinchi kirish', 'Oxirgi kirish', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {!isApi ? (
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
+                ) : apiSharedIpRes.loading ? (
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Yuklanmoqda...</td></tr>
+                ) : failed ? (
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</td></tr>
+                ) : rows.length === 0 ? (
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">
+                    Oxirgi {appliedDays} kunda {appliedMinAccounts} tadan ko'p hisob kirgan IP topilmadi
+                  </td></tr>
+                ) : rows.map(row => (
+                  <tr key={row.ip_address} className="text-xs admin-table-row text-slate-300">
+                    <td className="px-5 py-4 font-mono text-[11px] font-bold text-white">{row.ip_address}</td>
+                    <td className="px-5 py-4">
+                      <span className="rounded-md bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-400">
+                        {row.distinct_users} ta hisob
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">{formatAdminDateTime(row.first_seen)}</td>
+                    <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">{formatAdminDateTime(row.last_seen)}</td>
+                    <td className="px-5 py-4">
+                      <button
+                        onClick={() => setSharedIpDetailAddress(row.ip_address)}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white transition">
+                        <Icon name="eye" size={12} /> Ko'rish
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+        <Modal
+          open={!!sharedIpDetailAddress}
+          onClose={() => setSharedIpDetailAddress(null)}
+          title="Shu IP'dan kirgan hisoblar"
+          width="max-w-xl"
+        >
+          <div className="mb-4 rounded-xl bg-white/5 px-4 py-3 font-mono text-sm font-bold text-white">
+            {sharedIpDetailAddress}
+          </div>
+          <div className="max-h-80 overflow-y-auto admin-scroll divide-y divide-white/5 rounded-xl border border-white/10 bg-white/[0.02]">
+            {detailLoading ? (
+              <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Yuklanmoqda...</div>
+            ) : apiSharedIpDetailRes.error ? (
+              <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</div>
+            ) : detailRows.length === 0 ? (
+              <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Hisoblar topilmadi</div>
+            ) : detailRows.map(acc => (
+              <div key={acc.user_id} className="flex items-center gap-3 px-4 py-3">
+                <Avatar name={acc.full_name} size={34} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-bold text-white">{acc.full_name}</div>
+                  <div className="font-mono text-[10px] text-white/40">{maskPhoneDisplay(acc.phone, '')}</div>
+                </div>
+                <div className="text-right">
+                  <AdminPill status={acc.is_active ? 'approved' : 'rejected'}>
+                    {acc.is_active ? 'Faol' : 'Bloklangan'}
+                  </AdminPill>
+                  <div className="mt-1 text-[10px] font-semibold text-slate-500 whitespace-nowrap">
+                    {formatAdminDateTime(acc.last_login_at)}
+                  </div>
+                </div>
+                <button
+                  onClick={() => openUserFromSecurity(acc.user_id)}
+                  className="shrink-0 rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white transition">
+                  Batafsil
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => setSharedIpDetailAddress(null)}
+            className="btn-ghost mt-5 w-full rounded-xl py-3 text-xs font-bold">
+            Yopish
+          </button>
+        </Modal>
+      </>
+    );
+  };
+
+  const renderAutoFlagsSection = () => {
+    const res = isApi ? apiModerationRes.data : null;
+    const rows = Array.isArray(res?.results) ? res.results : [];
+    const total = typeof res?.count === 'number' ? res.count : rows.length;
+    const lastPage = Math.max(1, Math.ceil(total / MODERATION_PAGE_SIZE));
+    const failed = isApi && !!apiModerationRes.error;
+    return (
+      <>
+        <section className="admin-card p-5">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Holat</label>
+              <div className="flex flex-wrap gap-2">
+                {MODERATION_STATUS_OPTIONS.map(opt => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => { setFlagStatus(opt.key); setFlagPage(1); }}
+                    className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${
+                      flagStatus === opt.key
+                        ? 'bg-indigo-600 text-white border-indigo-600 font-extrabold shadow'
+                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                    }`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Bayroq turi</label>
+              <div className="flex flex-wrap gap-2">
+                {MODERATION_FLAG_TYPE_OPTIONS.map(opt => (
+                  <button
+                    key={opt.key || 'all'}
+                    type="button"
+                    onClick={() => { setFlagType(opt.key); setFlagPage(1); }}
+                    className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${
+                      flagType === opt.key
+                        ? 'bg-indigo-600 text-white border-indigo-600 font-extrabold shadow'
+                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                    }`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p className="mt-4 text-[11px] text-white/40 leading-relaxed">
+            Bayroqlarni har soatda ishlaydigan avtomatik tekshiruv qo'yadi. Hech qanday
+            chora avtomatik ko'rilmaydi: "Hal qilindi" — tekshirib chora ko'rildi,
+            "Rad etildi" — yolg'on signal. Yopilgan bayroqni qayta ochib bo'lmaydi.
+          </p>
+        </section>
+        <section className="overflow-hidden admin-card">
+          <div className="overflow-x-auto admin-scroll">
+            <table className="w-full min-w-[900px] text-left">
+              <thead className="admin-table-hdr">
+                <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  {['Vaqt', 'Tur', 'Sabab', 'Kim qo\'ydi', 'Holat', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {!isApi ? (
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
+                ) : apiModerationRes.loading ? (
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Yuklanmoqda...</td></tr>
+                ) : failed ? (
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</td></tr>
+                ) : rows.length === 0 ? (
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Bayroqlar yo'q</td></tr>
+                ) : rows.map(flag => (
+                  <tr key={flag.id} className="text-xs admin-table-row text-slate-300">
+                    <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">{formatAdminDateTime(flag.created_at)}</td>
+                    <td className="px-5 py-4">
+                      <span className="rounded-md bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-400">
+                        {flag.flag_type_label || flag.flag_type}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 font-semibold text-white">
+                      {flag.reason}
+                      {/* Savol bayrog'ida — bayroq qo'yilgan paytdagi savol
+                          NUSXASI (`extra`). Savol keyin tahrirlangan yoki
+                          o'chirilgan bo'lsa ham tekshiruvchi asl matnni ko'radi. */}
+                      {flag.flag_type === 'question' && flag.extra?.text && (
+                        <div className="mt-1.5 max-w-md whitespace-pre-wrap text-[11px] font-medium text-slate-400">
+                          {flag.extra.text}
+                          {Array.isArray(flag.extra.options) && flag.extra.options.length > 0 && (
+                            <div className="mt-1 text-slate-500">
+                              {flag.extra.options.map((opt, i) => (
+                                <span key={i} className={i === flag.extra.correct_answer ? 'text-emerald-400' : undefined}>
+                                  {i > 0 ? ' · ' : ''}{opt}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-5 py-4 font-semibold text-slate-400">{flag.raised_by}</td>
+                    <td className="px-5 py-4">
+                      <AdminPill status={MODERATION_STATUS_PILL[flag.status]}>
+                        {flag.status_label || flag.status}
+                      </AdminPill>
+                    </td>
+                    <td className="px-5 py-4">
+                      {flag.status === 'pending' ? (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => askResolveFlag(flag, 'resolved')}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition">
+                            <Icon name="check" size={12} /> Hal qilindi
+                          </button>
+                          <button
+                            onClick={() => askResolveFlag(flag, 'dismissed')}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white transition">
+                            <Icon name="x" size={12} /> Rad etish
+                          </button>
+                        </div>
+                      ) : (
+                        // Yopilgan qatorda tugma o'rniga qaror izi: kim yopgan
+                        // va qanday izoh qoldirgan.
+                        <div className="text-[11px] font-semibold text-slate-500">
+                          {flag.resolved_by || '—'}
+                          {flag.resolution_note ? ` · ${flag.resolution_note}` : ''}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+        {/* Server tomon paginatsiya — navbat cheksiz o'sadi (amallar tarixidagidek). */}
+        {total > MODERATION_PAGE_SIZE && (
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={() => setFlagPage(p => Math.max(1, p - 1))}
+              disabled={apiModerationRes.loading || flagPage <= 1}
+              className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
+            </button>
+            <div className="px-3 py-2 rounded-xl bg-white/5 text-[11px] font-bold text-white/60 tabular-nums">
+              {flagPage} / {lastPage}
+            </div>
+            <button
+              onClick={() => setFlagPage(p => Math.min(lastPage, p + 1))}
+              disabled={apiModerationRes.loading || flagPage >= lastPage}
+              className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Keyingisi <Icon name="chevronRight" size={12} />
+            </button>
+          </div>
+        )}
+        <Modal
+          open={!!flagResolve}
+          onClose={() => !flagResolveBusy && setFlagResolve(null)}
+          title={flagResolve?.status === 'resolved' ? 'Bayroqni yopish' : 'Bayroqni rad etish'}
+        >
+          <div className="mb-5 rounded-xl bg-white/5 px-4 py-3">
+            <div className="text-sm font-bold text-white">{flagResolve?.flag.reason}</div>
+            <div className="mt-1 text-[11px] font-semibold text-white/40">
+              {flagResolve?.flag.flag_type_label} · {formatAdminDateTime(flagResolve?.flag.created_at)}
+            </div>
+          </div>
+          <div className="mb-5">
+            <label className="block text-xs text-white/50 mb-1.5 font-medium">Izoh (ixtiyoriy)</label>
+            <textarea
+              value={flagResolveNote}
+              onChange={e => setFlagResolveNote(e.target.value)}
+              rows={3}
+              maxLength={255}
+              className="w-full admin-input resize-none px-3 py-2.5 text-sm outline-none"
+              placeholder="Masalan: markaz kompyuter sinfi, qoidabuzarlik yo'q"
+            />
+            <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+              Faqat moderatsiya tarixiga yoziladi — foydalanuvchi buni ko'rmaydi.
+            </p>
+          </div>
+          {/* Savol bayrog'i uchun ixtiyoriy chora. Belgilanmasa savolga
+              umuman tegilmaydi: bayroq faqat navbatdan yopiladi. */}
+          {canArchiveFlag && (
+            <label className="mb-5 flex cursor-pointer items-start gap-3 rounded-xl bg-white/5 px-4 py-3">
+              <input
+                type="checkbox"
+                checked={flagResolveArchive}
+                onChange={e => setFlagResolveArchive(e.target.checked)}
+                className="mt-0.5 h-4 w-4 cursor-pointer rounded border-white/15 bg-white/5 text-indigo-500 focus:ring-indigo-500/30"
+              />
+              <span>
+                <span className="block text-xs font-bold text-white">Savolni arxivlash</span>
+                <span className="mt-1 block text-[11px] leading-relaxed text-white/40">
+                  Savol markaz bankidan olib tashlanadi va yangi olimpiadaga tanlanmaydi.
+                  Mavjud natijalar va baholar saqlanib qoladi.
+                </span>
+              </span>
+            </label>
+          )}
+          <div className="flex gap-3">
+            <button
+              onClick={() => setFlagResolve(null)}
+              disabled={flagResolveBusy}
+              className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">
+              Bekor qilish
+            </button>
+            <button
+              onClick={submitResolveFlag}
+              disabled={flagResolveBusy}
+              className="btn-primary flex-1 rounded-xl py-3 font-semibold text-xs font-bold disabled:opacity-50">
+              {flagResolveBusy ? '...' : 'Tasdiqlash'}
+            </button>
+          </div>
+        </Modal>
+      </>
+    );
+  };
+
+  const renderCheatingOverviewSection = () => {
+    const res = isApi ? apiCheatingRes.data : null;
+    const rows = Array.isArray(res?.results) ? res.results : [];
+    const total = typeof res?.count === 'number' ? res.count : rows.length;
+    const lastPage = Math.max(1, Math.ceil(total / CHEATING_PAGE_SIZE));
+    const failed = isApi && !!apiCheatingRes.error;
+    return (
+      <>
+        <section className="admin-card p-5">
+          {/* Har bir filtr o'zgarishida birinchi sahifaga qaytamiz — aks holda
+              3-sahifada turib filtrlansa bo'sh ro'yxat ko'rinardi. */}
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Markaz</label>
+              <select
+                value={cheatingCenterId}
+                onChange={e => { setCheatingCenterId(e.target.value); setCheatingPage(1); }}
+                className="h-9 w-full admin-input px-2 text-xs outline-none">
+                <option value="">Barcha markazlar</option>
+                {centers.map(c => (
+                  <option key={c.id} value={c.backendId ?? c.id}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Holat</label>
+              <select
+                value={cheatingStatus}
+                onChange={e => { setCheatingStatus(e.target.value); setCheatingPage(1); }}
+                className="h-9 w-full admin-input px-2 text-xs outline-none">
+                {CHEATING_STATUS_OPTIONS.map(opt => (
+                  <option key={opt.key || 'all'} value={opt.key}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Sana oralig'i</label>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={cheatingDateFrom}
+                  onChange={e => { setCheatingDateFrom(e.target.value); setCheatingPage(1); }}
+                  className="h-9 w-full admin-input px-2 text-xs outline-none" />
+                <input
+                  type="date"
+                  value={cheatingDateTo}
+                  onChange={e => { setCheatingDateTo(e.target.value); setCheatingPage(1); }}
+                  className="h-9 w-full admin-input px-2 text-xs outline-none" />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Qidiruv</label>
+              <div className="relative">
+                <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  value={cheatingSearch}
+                  onChange={e => { setCheatingSearch(e.target.value); setCheatingPage(1); }}
+                  className="h-9 w-full admin-input pl-9 pr-3 text-xs outline-none"
+                  placeholder="Ism yoki telefon..." />
+              </div>
+            </div>
+          </div>
+          <p className="mt-4 text-[11px] text-white/40 leading-relaxed">
+            Barcha markazlar bo'yicha diskvalifikatsiya qilingan va tekshiruv kutayotgan
+            sessiyalar. Ro'yxat faqat ko'rish uchun: qaror (diskvalifikatsiya yoki davom
+            ettirish) o'sha olimpiadaning menejer panelidagi jonli kuzatuv ekranida
+            qabul qilinadi.
+          </p>
+        </section>
+        <section className="overflow-hidden admin-card">
+          <div className="overflow-x-auto admin-scroll">
+            <table className="w-full min-w-[1100px] text-left">
+              <thead className="admin-table-hdr">
+                <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  {["O'quvchi", 'Olimpiada', 'Markaz', 'Holat', 'Sabab', 'Vaqt', 'Kim qaror qildi', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {!isApi ? (
+                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
+                ) : apiCheatingRes.loading ? (
+                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Yuklanmoqda...</td></tr>
+                ) : failed ? (
+                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</td></tr>
+                ) : rows.length === 0 ? (
+                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Firibgarlik holatlari topilmadi</td></tr>
+                ) : rows.map(row => {
+                  const meta = CHEATING_STATUS_META[row.status];
+                  return (
+                    <tr key={row.session_id} className="text-xs admin-table-row text-slate-300">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <Avatar name={row.student_name} size={34} />
+                          <div className="min-w-0">
+                            <div className="truncate font-bold text-white">{row.student_name}</div>
+                            <div className="font-mono text-[10px] text-white/40">{maskPhoneDisplay(row.student_phone, '')}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 font-semibold text-slate-400">{row.olympiad_title}</td>
+                      <td className="px-5 py-4 font-semibold text-slate-400">{row.center_name}</td>
+                      <td className="px-5 py-4">
+                        <AdminPill status={meta?.pill}>{meta?.label || row.status}</AdminPill>
+                      </td>
+                      {/* Sabab kodini o'zbekchaga menejer panelidagi bir xil
+                          xarita aylantiradi (yagona manba) — noma'lum kod xom
+                          holda ko'rinadi. */}
+                      <td className="px-5 py-4 font-semibold text-slate-400">{cheatingReasonLabel(row.cheating_reason) || '—'}</td>
+                      {/* Diskvalifikatsiyada — DQ vaqti, kutayotganda esa
+                          tekshiruv so'ralgan vaqt (backend ro'yxatni AYNAN shu
+                          vaqt bo'yicha tartiblaydi). */}
+                      <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">
+                        {formatAdminDateTime(row.disqualified_at || row.review_requested_at)}
+                      </td>
+                      <td className="px-5 py-4 font-semibold text-slate-400">
+                        {row.reviewed_by_name || (row.reviewed_at ? 'Tizim' : '—')}
+                      </td>
+                      {/* Jonli kuzatuv ekraniga to'g'ridan-to'g'ri havola yo'q:
+                          u menejer panelining ichki holati (`liveOlympiadId`),
+                          URL'ga yozilmaydi va menejer huquqini talab qiladi.
+                          Shuning uchun havola o'rniga qayerga borishni
+                          ko'rsatamiz — buzilgan link berishdan ko'ra aniqroq. */}
+                      <td className="px-5 py-4">
+                        <span
+                          title={`Olimpiada: ${row.olympiad_title} (markaz: ${row.center_name})`}
+                          className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">
+                          Menejer panelida ko'ring
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+        {/* Server tomon paginatsiya — ro'yxat platforma o'sishi bilan cheksiz
+            o'sadi (moderatsiya navbatidagidek). */}
+        {total > CHEATING_PAGE_SIZE && (
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={() => setCheatingPage(p => Math.max(1, p - 1))}
+              disabled={apiCheatingRes.loading || cheatingPage <= 1}
+              className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
+            </button>
+            <div className="px-3 py-2 rounded-xl bg-white/5 text-[11px] font-bold text-white/60 tabular-nums">
+              {cheatingPage} / {lastPage}
+            </div>
+            <button
+              onClick={() => setCheatingPage(p => Math.min(lastPage, p + 1))}
+              disabled={apiCheatingRes.loading || cheatingPage >= lastPage}
+              className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Keyingisi <Icon name="chevronRight" size={12} />
+            </button>
+          </div>
+        )}
+      </>
+    );
+  };
+
+  const securitySectionRenderers = {
+    'shared-ip': renderSharedIpSection,
+    'auto-flags': renderAutoFlagsSection,
+    cheating: renderCheatingOverviewSection,
+  };
+
+  const renderSecurity = () => {
+    const activeSection = securitySectionRenderers[securitySection]
+      ? securitySection
+      : SECURITY_SECTIONS[0].key;
+    return (
+      <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
+        <div>
+          <h1 className="text-[20px] font-black leading-tight text-white">Xavfsizlik</h1>
+          <p className="mt-1 text-[11px] font-bold text-slate-400">
+            Foydalanuvchi hisoblari bo'yicha kuzatuv bloklari. Hech bir blok avtomatik
+            chora ko'rmaydi — qaror adminniki.
+          </p>
+        </div>
+        {/* Bo'limlar segmenti. Bitta bo'limda ham ko'rinadi: tab bir nechta
+            blokdan iborat ekani darhol o'qiladi va keyingisi qo'shilganda
+            joylashuv o'zgarmaydi. */}
+        <div className="flex flex-wrap gap-2">
+          {SECURITY_SECTIONS.map(section => (
+            <button
+              key={section.key}
+              type="button"
+              onClick={() => setSecuritySection(section.key)}
+              className={`px-4 py-2 rounded-xl text-[11px] font-bold transition-all border ${
+                activeSection === section.key
+                  ? 'bg-indigo-600 text-white border-indigo-600 font-extrabold shadow'
+                  : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+              }`}>
+              {section.label}
+            </button>
+          ))}
+        </div>
+        {securitySectionRenderers[activeSection]()}
+      </div>
+    );
+  };
+
   const renderOlympiads = () => (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div>
@@ -3874,6 +4884,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     users: renderUsers,
     analytics: renderAnalytics,
     logs: renderLogs,
+    security: renderSecurity,
     olympiads: renderOlympiads,
     subjects: renderSubjects,
     settings: renderSettings,

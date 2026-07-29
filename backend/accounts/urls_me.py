@@ -1,5 +1,6 @@
 from django.urls import path
 
+from attempts import views_admin as attempts_admin_views
 from billing import views as billing_views
 
 from . import export_views
@@ -7,6 +8,7 @@ from . import views
 from . import views_b2b
 from . import views_me_premium
 from . import views_retention
+from . import views_security
 from . import views_student
 from . import views_support
 
@@ -117,6 +119,19 @@ urlpatterns = [
          name='admin-user-billing-history'),
     path('admin/users/<int:user_id>/login-history/', views.admin_user_login_history,
          name='admin-user-login-history'),
+    # Bloklashdan oldingi qadam: rasmiy ogohlantirish yuborish va shu
+    # foydalanuvchiga avval yuborilganlarini ko'rish ("Batafsil" oynasi).
+    path('admin/users/<int:user_id>/warn/', views.admin_warn_user,
+         name='admin-warn-user'),
+    path('admin/users/<int:user_id>/warnings/', views.admin_user_warnings,
+         name='admin-user-warnings'),
+    # Faol seanslar ro'yxati va BITTA seansni yakunlash. Pastdagi
+    # `.../force-logout/` (token_version bump) barcha qurilmalarni chiqaradi,
+    # bu esa faqat tanlangan qurilmani — ikkalasi alohida amal.
+    path('admin/users/<int:user_id>/sessions/', views.admin_user_sessions,
+         name='admin-user-sessions'),
+    path('admin/users/<int:user_id>/sessions/<int:login_event_id>/force-logout/',
+         views.admin_force_logout_session, name='admin-force-logout-session'),
     path('admin/users/<int:user_id>/set-active/', views.admin_set_user_active,
          name='admin-set-user-active'),
     path('admin/users/<int:user_id>/toggle-premium/', views.admin_toggle_user_premium,
@@ -145,6 +160,19 @@ urlpatterns = [
     path('admin/users/<int:user_id>/impersonate/end/', views.admin_end_impersonation,
          name='admin-end-impersonation'),
     path('admin/audit-log/', views.audit_log_list, name='admin-audit-log'),
+    # "Xavfsizlik" tabi — foydalanuvchilar bo'yicha kuzatuv bloklari.
+    # `<str:ip_address>` IPv6 uchun ham yetarli: Django'ning `str`
+    # konvertori bo'sh bo'lmagan va `/` ichida bo'lmagan har qanday matnni
+    # (shu jumladan ikki nuqtali `2001:db8::1` ni) qamrab oladi.
+    path('admin/security/shared-ip/', views_security.admin_shared_ip_accounts,
+         name='admin-shared-ip-accounts'),
+    path('admin/security/shared-ip/<str:ip_address>/', views_security.admin_shared_ip_detail,
+         name='admin-shared-ip-detail'),
+    # Barcha markazlar bo'yicha diskvalifikatsiya/tekshiruv kutayotgan
+    # sessiyalar. View `attempts` app'ida (ma'lumot o'sha yerda), lekin URL
+    # boshqa admin amallari bilan bir joyda — to'lovlar tarixidagi kabi.
+    path('admin/attempts/cheating-overview/', attempts_admin_views.admin_cheating_overview,
+         name='admin-cheating-overview'),
     path('support/chat/', views_support.support_chat, name='support-chat'),
     path('admin/support/chats/', views_support.admin_support_threads, name='admin-support-chats'),
     path('admin/support/chats/<str:chat_key>/', views_support.admin_support_thread_detail, name='admin-support-chat-detail'),
