@@ -224,7 +224,10 @@ const AdminCenterLogo = ({ name, src, color = 'bg-indigo-600/30 text-indigo-400 
   );
 };
 
-const AdminMetricCard = ({ label, value, delta, icon, tone = 'indigo' }) => {
+// `onClick` ixtiyoriy: berilgan kartagina bosiladigan bo'ladi (kursor, fokus
+// halqasi, Enter/Probel). Qolgan kartalar avvalgidek oddiy ko'rsatkich —
+// bosilmaydigan elementga role="button" qo'yish skrinriderni chalg'itardi.
+const AdminMetricCard = ({ label, value, delta, icon, tone = 'indigo', onClick }) => {
   const tones = {
     indigo: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.05)]',
     emerald: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]',
@@ -232,8 +235,21 @@ const AdminMetricCard = ({ label, value, delta, icon, tone = 'indigo' }) => {
     rose: 'text-purple-400 bg-purple-500/10 border-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.05)]',
     sky: 'text-sky-400 bg-sky-500/10 border-sky-500/20 shadow-[0_0_15px_rgba(56,189,248,0.05)]',
   };
+  const clickProps = onClick ? {
+    onClick,
+    onKeyDown: (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(e); }
+    },
+    role: 'button',
+    tabIndex: 0,
+  } : {};
   return (
-    <GlowCard className="admin-card p-4 relative overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:-translate-y-0.5">
+    <GlowCard
+      className={`admin-card p-4 relative overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:-translate-y-0.5${
+        onClick ? ' cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60' : ''
+      }`}
+      {...clickProps}
+    >
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">{label}</div>
@@ -1196,6 +1212,18 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     };
   }, [isApi]);
 
+  // "Hozir onlayn" kartasi bosilganda ochiladigan ro'yxat: barcha
+  // foydalanuvchilar onlayn/oflayn belgisi bilan. So'rov FAQAT oyna ochilganda
+  // ketadi — ro'yxat to'liq (bir necha sahifa) va kartadagi 15 soniyalik
+  // pollingdan ancha og'ir.
+  const [onlineListOpen, setOnlineListOpen] = React.useState(false);
+  const apiOnlineUsersRes = useApiData(
+    () => (isApi && onlineListOpen)
+      ? OlympyApi.getOnlineUsers(OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, onlineListOpen],
+  );
+
   const apiCenters = isApi && Array.isArray(apiCentersRes.data)
     ? apiCentersRes.data.map(mapApiCenter)
     : null;
@@ -2138,6 +2166,19 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       const r = u.roles || {};
       return r.student?.status === 'approved';
     }).length;
+    // "Hozir onlayn" oynasi. Backend onlaynlarni ro'yxat boshiga qo'yib
+    // qaytaradi — bu yerda qayta saralash shart emas.
+    const presenceRows = Array.isArray(apiOnlineUsersRes.data) ? apiOnlineUsersRes.data : [];
+    // `res.loading` yolg'iz yetarli emas: useApiData effekti render'dan KEYIN
+    // ishga tushadi, ya'ni oyna ochilgan birinchi kadrda bayroq hali `false`
+    // va bir lahza "bo'sh ro'yxat" ko'rinib qolardi ("Batafsil" oynasidagi
+    // bloklar bilan bir xil naqsh).
+    const presenceLoading = apiOnlineUsersRes.loading
+      || (!apiOnlineUsersRes.data && !apiOnlineUsersRes.error);
+    // Redis javob bermasa backend HAR qatorga `is_online: null` qo'yadi —
+    // hammani "oflayn" deb ko'rsatish yolg'on bo'lardi.
+    const presenceUnknown = presenceRows.some(row => row.is_online === null);
+    const presenceOnlineCount = presenceRows.filter(row => row.is_online === true).length;
     return (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -2157,7 +2198,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <div className="grid gap-[12px] md:grid-cols-2 xl:grid-cols-4">
         <AdminMetricCard label="O'quvchilar" value={studentCount.toLocaleString()} delta="Tasdiqlangan" icon={<Icon name="users" size={16} />} tone="indigo" />
         <AdminMetricCard label="Faol olimpiadalar" value={activeOlympiadCount.toLocaleString()} delta={activeOlympiadCount ? "Hozir o'tmoqda" : "Hech qaysi faol emas"} icon={<Icon name="bolt" size={16} />} tone="emerald" />
-        <AdminMetricCard label="Hozir onlayn" value={onlineCount == null ? '—' : onlineCount.toLocaleString()} delta={onlineCount == null ? "Ma'lumot yo'q" : "Oxirgi 3 daqiqada faol"} icon={<Icon name="users" size={16} />} tone="sky" />
+        {/* Yagona bosiladigan karta: ro'yxat faqat API rejimida mavjud
+            (mock store'da onlayn holati yo'q), shuning uchun onClick ham
+            shundagina beriladi — aks holda karta bosilar-u, hech narsa
+            ochilmasdi. */}
+        <AdminMetricCard label="Hozir onlayn" value={onlineCount == null ? '—' : onlineCount.toLocaleString()} delta={onlineCount == null ? "Ma'lumot yo'q" : "Oxirgi 3 daqiqada faol — ro'yxat uchun bosing"} icon={<Icon name="users" size={16} />} tone="sky" onClick={isApi ? () => setOnlineListOpen(true) : undefined} />
         <AdminMetricCard label="Tasdiqlangan tashkilotlar foizi" value={`${approvedCenterPct}%`} delta="Hammasi ichidan" icon={<Icon name="chart" size={16} />} tone="rose" />
       </div>
 
@@ -2250,6 +2295,60 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </div>
         </section>
       </div>
+
+      <Modal
+        open={onlineListOpen}
+        onClose={() => setOnlineListOpen(false)}
+        title="Foydalanuvchilar holati"
+        width="max-w-xl"
+      >
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-white/5 px-4 py-3">
+          <div className="text-[11px] font-bold text-white/60">
+            {presenceUnknown ? "Onlayn holati mavjud emas" : `${presenceOnlineCount.toLocaleString()} ta onlayn`}
+          </div>
+          <div className="text-[11px] font-bold text-white/40">
+            Jami {presenceRows.length.toLocaleString()} ta
+          </div>
+        </div>
+        <div className="max-h-96 overflow-y-auto admin-scroll divide-y divide-white/5 rounded-xl border border-white/10 bg-white/[0.02]">
+          {presenceLoading ? (
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Yuklanmoqda...</div>
+          ) : apiOnlineUsersRes.error ? (
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</div>
+          ) : presenceRows.length === 0 ? (
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Foydalanuvchilar yo'q</div>
+          ) : presenceRows.map(row => (
+            <div key={row.user_id} className="flex items-center gap-3 px-4 py-2.5">
+              <span
+                className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+                  row.is_online === true
+                    ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
+                    : 'bg-slate-600'
+                }`}
+              />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-bold text-white">{row.full_name || "Foydalanuvchi"}</div>
+                <div className="font-mono text-[10px] text-white/40">{maskPhoneDisplay(row.phone, '')}</div>
+              </div>
+              <span className={`shrink-0 text-[10px] font-extrabold uppercase tracking-wider ${
+                row.is_online === true ? 'text-emerald-400' : 'text-slate-500'
+              }`}>
+                {row.is_online === null ? "Noma'lum" : row.is_online ? 'Onlayn' : 'Oflayn'}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-[10px] font-semibold text-slate-500 leading-relaxed">
+          "Onlayn" — oxirgi 3 daqiqada kamida bitta so'rov yuborgan foydalanuvchi.
+          Sahifani ochib qo'yib, hech narsa qilmayotgan foydalanuvchi bir necha
+          daqiqadan keyin oflayn ko'rinadi.
+        </p>
+        <button
+          onClick={() => setOnlineListOpen(false)}
+          className="btn-ghost mt-5 w-full rounded-xl py-3 text-xs font-bold">
+          Yopish
+        </button>
+      </Modal>
     </div>
     );
   };

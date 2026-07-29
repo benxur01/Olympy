@@ -23,7 +23,7 @@ from rest_framework.response import Response
 from accounts.permissions import IsPlatformAdmin
 
 from .metrics import METRICS_CACHE_SECONDS, get_metrics
-from .presence import ONLINE_WINDOW_SECONDS, get_online_count
+from .presence import ONLINE_WINDOW_SECONDS, get_online_count, get_online_user_ids
 
 
 @api_view(['GET'])
@@ -59,6 +59,67 @@ def online_users(request):
         'online_count': get_online_count(),
         'window_minutes': ONLINE_WINDOW_SECONDS // 60,
     })
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def online_users_detail(request):
+    """GET /api/analytics/online/users/ — BARCHA foydalanuvchilar + onlayn holati.
+
+    "Hozir onlayn" kartasi bosilganda ochiladigan ro'yxat uchun. Sanoq
+    endpointidan farqli o'laroq bu yerda kim onlayn ekani ham ko'rinadi —
+    faqat platforma admini uchun (`IsPlatformAdmin`).
+
+    Onlayn foydalanuvchilar ro'yxat boshida turadi (`online_rank`), keyin
+    qolganlari eng yangisidan boshlab — admin kartani bosgan zahoti kimlar
+    faolligini birinchi sahifadayoq ko'radi.
+
+    Platforma adminlari ham ro'yxatda qoladi. `admin_users_list` ularni
+    chiqarib tashlaydi, chunki u yerdagi ro'yxat statistikani (foydalanuvchilar
+    soni, o'sish grafigi) oziqlantiradi; bu ro'yxat esa statistika emas —
+    "hozir kim ishlayapti" degan savolga javob.
+
+    Redis sozlanmagan yoki javob bermasa har qatordagi `is_online` `null`
+    bo'ladi: hammani "oflayn" deb ko'rsatish yolg'on bo'lardi (`presence`
+    moduli bo'yicha "ma'lumot yo'q" != "hech kim yo'q").
+
+    Paginatsiya: `?page=` / `?page_size=` (default 100, max 200) —
+    `admin_users_list` bilan bir xil, foydalanuvchilar jadvali o'n minglab
+    qator bo'lishi mumkin.
+    """
+    from django.contrib.auth import get_user_model
+    from django.db.models import Case, IntegerField, Value, When
+
+    from olympy_api.pagination import LargePageNumberPagination
+
+    User = get_user_model()
+    online_ids = get_online_user_ids()
+    # Redis yo'q bo'lsa tartib oddiy "eng yangisi birinchi" bo'lib qoladi.
+    rank_ids = list(online_ids) if online_ids else []
+    qs = (
+        User.objects
+        .only('id', 'full_name', 'normalized_phone', 'created_at')
+        .annotate(online_rank=Case(
+            When(pk__in=rank_ids, then=Value(0)),
+            default=Value(1),
+            output_field=IntegerField(),
+        ))
+        .order_by('online_rank', '-created_at')
+    )
+
+    paginator = LargePageNumberPagination()
+    paginator.page_size = 100
+    page = paginator.paginate_queryset(qs, request)
+    rows = [{
+        'user_id': u.id,
+        'full_name': u.full_name,
+        # Raqam maskalanmaydi: endpoint faqat platforma admini uchun va aynan
+        # hisobni tanib olish uchun kerak (`admin_shared_ip_detail` bilan bir
+        # xil qoida).
+        'phone': u.normalized_phone,
+        'is_online': (u.id in online_ids) if online_ids is not None else None,
+    } for u in page]
+    return paginator.get_paginated_response(rows)
 
 
 def _weak_threshold():

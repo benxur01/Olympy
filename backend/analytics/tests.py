@@ -9,7 +9,9 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import SimpleTestCase, TestCase
+from django.urls import reverse
 from django.utils import timezone
+from rest_framework.test import APITestCase
 
 from attempts.models import TestAttempt
 from billing.models import SubscriptionPlan, UserSubscription
@@ -119,7 +121,7 @@ class PremiumMetricsTests(TestCase):
 
 
 class _FakePipeline:
-    """`presence.get_online_count` ishlatadigan ikki buyruq uchun yetarli."""
+    """`presence` o'qish yo'llari ishlatadigan buyruqlar uchun yetarli."""
 
     def __init__(self, client):
         self.client = client
@@ -136,6 +138,13 @@ class _FakePipeline:
 
     def zcard(self, key):
         self.results.append(len(self.client.zset.get(key, {})))
+        return self
+
+    def zrange(self, key, start, end):
+        # Haqiqiy redis-py `decode_responses=False` bilan bytes qaytaradi —
+        # `get_online_user_ids` shuni ham hazm qilishi kerak.
+        members = sorted(self.client.zset.get(key, {}), key=lambda m: self.client.zset[key][m])
+        self.results.append([str(m).encode() for m in members[start:(None if end == -1 else end + 1)]])
         return self
 
     def execute(self):
@@ -203,3 +212,63 @@ class PresenceTests(SimpleTestCase):
             self.assertGreater(presence._disabled_until, 0)
             presence._disabled_until = 0.0  # o'qish yo'lini ham sinaymiz
             self.assertIsNone(presence.get_online_count())
+
+    def test_online_user_ids_returns_members(self):
+        fake = _FakeRedis()
+        with patch.object(presence, '_get_client', return_value=fake):
+            presence.record_activity(1)
+            presence.record_activity(7)
+            # Oynadan chiqib ketgan yozuv sanoqdagi kabi o'qishda o'chadi.
+            fake.zset[presence.ONLINE_KEY]['9'] = (
+                time.time() - presence.ONLINE_WINDOW_SECONDS - 5
+            )
+            self.assertEqual(presence.get_online_user_ids(), {1, 7})
+
+    def test_online_user_ids_none_when_redis_unavailable(self):
+        # Bo'sh to'plam EMAS: "ma'lumot yo'q" != "hech kim onlayn emas".
+        with self.settings(REDIS_CONFIGURED=False):
+            self.assertIsNone(presence.get_online_user_ids())
+        with patch.object(presence, '_get_client', return_value=_BrokenRedis()):
+            self.assertIsNone(presence.get_online_user_ids())
+
+
+# ─── /api/analytics/online/users/ (barcha foydalanuvchilar + holat) ──────────
+
+
+class OnlineUsersDetailViewTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            phone='+998903000001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.other = User.objects.create_user(
+            phone='+998903000002', password='UserPass123', full_name='Oddiy',
+        )
+        self.url = reverse('analytics-online-users')
+
+    def _get(self, online_ids):
+        self.client.force_authenticate(user=self.admin)
+        with patch('analytics.views.get_online_user_ids', return_value=online_ids):
+            return self.client.get(self.url)
+
+    def test_requires_platform_admin(self):
+        self.client.force_authenticate(user=self.other)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+
+    def test_lists_all_users_online_first(self):
+        res = self._get({self.other.pk})
+        self.assertEqual(res.status_code, 200)
+        rows = res.data['results']
+        # Platforma admini ham ro'yxatda (admin_users_list dan farqli o'laroq).
+        self.assertEqual(res.data['count'], 2)
+        self.assertEqual(rows[0]['user_id'], self.other.pk)
+        self.assertIs(rows[0]['is_online'], True)
+        self.assertIs(rows[1]['is_online'], False)
+        self.assertEqual(rows[0]['full_name'], 'Oddiy')
+
+    def test_is_online_null_when_redis_unavailable(self):
+        # Hammani "oflayn" deb ko'rsatish yolg'on bo'lardi.
+        res = self._get(None)
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(all(row['is_online'] is None for row in res.data['results']))

@@ -1883,6 +1883,15 @@ export const OlympyApi = {
   // cache'siz va yengil, har 15 soniyada so'raladi. Javob:
   // {online_count, window_minutes}. Redis sozlanmagan bo'lsa online_count=null.
   getOnlineCount: (token) => request('/api/analytics/online/', { token }),
+  // Platforma admini — "Hozir onlayn" kartasi bosilganda ochiladigan ro'yxat:
+  // BARCHA foydalanuvchilar, har birida `is_online` bayrog'i (onlaynlar ro'yxat
+  // boshida). `getAdminUsers` kabi backend sahifalab qaytaradi va bu yerda
+  // to'liq ro'yxat kerak — requestAllPages barcha sahifalarni yig'adi.
+  // `is_online: null` = Redis javob bermadi, ya'ni "ma'lumot yo'q" (oflayn EMAS).
+  getOnlineUsers: (token) => requestAllPages(
+    '/api/analytics/online/users/',
+    { token, pageSize: 100 },
+  ),
   // Admin panel "Tahlil" tabidagi kengaytirilgan diagrammalar (faqat admin).
   // Har biri alohida endpoint — bo'sh jadvalda backend bo'sh massiv qaytaradi.
   getAttemptsTrend: (token) => request('/api/analytics/attempts-trend/', { token }),
