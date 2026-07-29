@@ -294,6 +294,15 @@ class QuestionPurposeApiTestCase(APITestCase):
                 user=user, center=self.center, role=CenterMembership.ROLE_TEACHER,
                 status=CenterMembership.STATUS_APPROVED,
             )
+        # Markaz bo'ylab umumiy bankni faqat manager/owner ko'radi (teacher o'z
+        # savollarini ko'radi — QuestionVisibilityScopeTestCase).
+        self.manager = User.objects.create_user(
+            phone='+998901440003', password='StrongPass123', full_name='Menejer',
+        )
+        CenterMembership.objects.create(
+            user=self.manager, center=self.center, role=CenterMembership.ROLE_MANAGER,
+            status=CenterMembership.STATUS_APPROVED,
+        )
         self.url = reverse('questions-list-create')
 
     def _rows(self, response):
@@ -333,12 +342,152 @@ class QuestionPurposeApiTestCase(APITestCase):
             purpose=Question.QUESTION_PURPOSE_LIVE_QUIZ,
         )
 
-        self.client.force_authenticate(user=self.other_teacher)
+        self.client.force_authenticate(user=self.manager)
         response = self.client.get(self.url, {'center': self.center.id})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         texts = sorted(row['text'] for row in self._rows(response))
-        # Hamkasbning savoli ham ko'rinadi (markaz bo'ylab umumiy).
+        # Manager uchun har ikkala ustozning savoli ko'rinadi (markaz bo'ylab
+        # umumiy bank), eski viktorina qatori esa yo'q.
         self.assertEqual(texts, ['Umumiy 1', 'Umumiy 2'])
+
+
+class QuestionVisibilityScopeTestCase(APITestCase):
+    """Savol banki rolga qarab ko'rinadi.
+
+    - Faqat teacher roli bo'lgan a'zo o'zi yaratgan savollarni ko'radi;
+    - manager/owner (va platforma admini) markazning butun bankini ko'radi;
+    - bir markazda ham teacher, ham manager qatoriga ega a'zoda manager
+      huquqi ustun keladi (CenterMembership rolni alohida qatorda saqlaydi).
+    Xuddi shu qoida yakka savol endpoint'iga (GET/PATCH/DELETE) ham tegishli —
+    ro'yxatdan yashiringan savolni ID orqali ochib bo'lmaydi.
+    """
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='Scope Academy', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.teacher = User.objects.create_user(
+            phone='+998901550001', password='StrongPass123', full_name='Ustoz 1',
+        )
+        self.other_teacher = User.objects.create_user(
+            phone='+998901550002', password='StrongPass123', full_name='Ustoz 2',
+        )
+        self.manager = User.objects.create_user(
+            phone='+998901550003', password='StrongPass123', full_name='Menejer',
+        )
+        self.owner = User.objects.create_user(
+            phone='+998901550004', password='StrongPass123', full_name='Egasi',
+        )
+        # Ham teacher, ham manager: ikkita alohida a'zolik qatori.
+        self.teacher_manager = User.objects.create_user(
+            phone='+998901550005', password='StrongPass123', full_name='Ustoz-Menejer',
+        )
+        self.admin = User.objects.create_user(
+            phone='+998901550006', password='StrongPass123', full_name='Platforma admini',
+            is_platform_admin=True,
+        )
+        roles = [
+            (self.teacher, CenterMembership.ROLE_TEACHER),
+            (self.other_teacher, CenterMembership.ROLE_TEACHER),
+            (self.manager, CenterMembership.ROLE_MANAGER),
+            (self.owner, CenterMembership.ROLE_OWNER),
+            (self.teacher_manager, CenterMembership.ROLE_TEACHER),
+            (self.teacher_manager, CenterMembership.ROLE_MANAGER),
+        ]
+        for user, role in roles:
+            CenterMembership.objects.create(
+                user=user, center=self.center, role=role,
+                status=CenterMembership.STATUS_APPROVED,
+            )
+        self.my_question = self._make_question('Mening savolim', self.teacher)
+        self.other_question = self._make_question('Hamkasb savoli', self.other_teacher)
+        self.url = reverse('questions-list-create')
+
+    def _make_question(self, text, author):
+        return Question.objects.create(
+            center=self.center, subject='Matematika', text=text,
+            options=['1', '2'], correct_answer=0, score=3,
+            created_by=author,
+        )
+
+    def _texts(self, user):
+        self.client.force_authenticate(user=user)
+        response = self.client.get(self.url, {'center': self.center.id})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data
+        rows = data['results'] if isinstance(data, dict) else data
+        return sorted(row['text'] for row in rows)
+
+    def test_teacher_sees_only_own_questions(self):
+        self.assertEqual(self._texts(self.teacher), ['Mening savolim'])
+        self.assertEqual(self._texts(self.other_teacher), ['Hamkasb savoli'])
+
+    def test_manager_sees_whole_center_bank(self):
+        self.assertEqual(self._texts(self.manager), ['Hamkasb savoli', 'Mening savolim'])
+
+    def test_owner_sees_whole_center_bank(self):
+        self.assertEqual(self._texts(self.owner), ['Hamkasb savoli', 'Mening savolim'])
+
+    def test_teacher_and_manager_in_same_center_sees_whole_bank(self):
+        """Qo'shaloq rolda manager huquqi teacher cheklovidan ustun keladi."""
+        own = self._make_question('Ustoz-menejer savoli', self.teacher_manager)
+        self.assertEqual(
+            self._texts(self.teacher_manager),
+            ['Hamkasb savoli', 'Mening savolim', own.text],
+        )
+
+    def test_platform_admin_sees_whole_center_bank(self):
+        self.assertEqual(self._texts(self.admin), ['Hamkasb savoli', 'Mening savolim'])
+
+    def test_manager_role_in_other_center_does_not_widen_scope(self):
+        """Boshqa markazdagi manager a'zoligi bu markazda huquq bermaydi."""
+        other_center = EducationCenter.objects.create(
+            name='Boshqa markaz', city='Samarqand',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        CenterMembership.objects.create(
+            user=self.teacher, center=other_center,
+            role=CenterMembership.ROLE_MANAGER,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        self.assertEqual(self._texts(self.teacher), ['Mening savolim'])
+
+    def test_pending_manager_membership_does_not_widen_scope(self):
+        """Tasdiqlanmagan manager arizasi bankni ochmaydi."""
+        CenterMembership.objects.create(
+            user=self.teacher, center=self.center,
+            role=CenterMembership.ROLE_MANAGER,
+            status=CenterMembership.STATUS_PENDING,
+        )
+        self.assertEqual(self._texts(self.teacher), ['Mening savolim'])
+
+    def test_teacher_cannot_read_or_edit_other_teachers_question(self):
+        """Ro'yxatdan yashiringan savol ID orqali ham ochilmaydi."""
+        self.client.force_authenticate(user=self.teacher)
+        url = reverse('questions-detail', args=[self.other_question.id])
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_403_FORBIDDEN)
+        patch = self.client.patch(url, {'text': 'O\'zgartirildi'}, format='json')
+        self.assertEqual(patch.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self.client.delete(url).status_code, status.HTTP_403_FORBIDDEN)
+        self.other_question.refresh_from_db()
+        self.assertEqual(self.other_question.text, 'Hamkasb savoli')
+
+    def test_teacher_can_edit_own_question(self):
+        self.client.force_authenticate(user=self.teacher)
+        url = reverse('questions-detail', args=[self.my_question.id])
+        response = self.client.patch(url, {'text': 'Yangilangan savol'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.my_question.refresh_from_db()
+        self.assertEqual(self.my_question.text, 'Yangilangan savol')
+
+    def test_manager_can_edit_any_center_question(self):
+        self.client.force_authenticate(user=self.manager)
+        url = reverse('questions-detail', args=[self.other_question.id])
+        response = self.client.patch(url, {'text': 'Menejer tahriri'}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.other_question.refresh_from_db()
+        self.assertEqual(self.other_question.text, 'Menejer tahriri')
 
 
 class RunCodeViewTestCase(APITestCase):
@@ -810,9 +959,13 @@ class QuestionDeleteProtectionTestCase(APITestCase):
         )
 
     def _make_question(self, text='2+2 = ?'):
+        # created_by — API orqali yaratilgan savoldagidek muallif: yakka savol
+        # endpoint'i teacher uchun o'z savollari bilan chegaralangan
+        # (QuestionVisibilityScopeTestCase).
         return Question.objects.create(
             center=self.center, subject='Matematika', text=text,
             options=['3', '4', '5'], correct_answer=1, score=5,
+            created_by=self.teacher,
         )
 
     def _make_attempt(self, olympiad):
@@ -959,6 +1112,7 @@ class QuestionDeleteProtectionTestCase(APITestCase):
             center=self.center, subject='Matematika', text='Insho yozing',
             options=[], correct_answer=0, score=10,
             question_type=Question.QUESTION_TYPE_ESSAY,
+            created_by=self.teacher,
         )
         olympiad = self._make_olympiad(Olympiad.STATUS_ACTIVE)
         olympiad.questions.add(essay_q)

@@ -55,6 +55,27 @@ def _user_can_create_for_center(user, center_id):
     ).exists()
 
 
+def _user_is_center_manager(user, center_id):
+    """Platforma admini yoki markazning tasdiqlangan manager/owner'imi?
+
+    CenterMembership rolni qator boshiga bitta saqlaydi (unique (user, center,
+    role)) — ya'ni bitta foydalanuvchi bir markazda ham teacher, ham manager
+    qatoriga ega bo'lishi mumkin. Shu sababli tekshiruv "manager/owner qatori
+    bormi" ko'rinishida yoziladi: qo'shaloq rolda manager/owner huquqi teacher
+    cheklovidan ustun keladi.
+    """
+    if user.is_platform_admin:
+        return True
+    return CenterMembership.objects.filter(
+        user=user, center_id=center_id,
+        role__in=[
+            CenterMembership.ROLE_MANAGER,
+            CenterMembership.ROLE_OWNER,
+        ],
+        status=CenterMembership.STATUS_APPROVED,
+    ).exists()
+
+
 def _user_can_explain_question(user, question):
     """AI tushuntirishga kim ruxsat oladi.
 
@@ -80,16 +101,7 @@ def _user_can_bulk_delete_for_center(user, center_id):
     o'chirish (delete-all) yanada xavfli — shu sababli teacher'ni chiqarib,
     faqat manager/owner (yoki platform admin) uchun ruxsat beramiz.
     """
-    if user.is_platform_admin:
-        return True
-    return CenterMembership.objects.filter(
-        user=user, center_id=center_id,
-        role__in=[
-            CenterMembership.ROLE_MANAGER,
-            CenterMembership.ROLE_OWNER,
-        ],
-        status=CenterMembership.STATUS_APPROVED,
-    ).exists()
+    return _user_is_center_manager(user, center_id)
 
 
 def _question_is_protected(question):
@@ -122,6 +134,10 @@ def _question_is_protected(question):
 def questions_list_create(request):
     """GET /api/questions/?center=<id>  — list a center's question bank.
     POST /api/questions/                 — create one (approved teacher/manager/owner only).
+
+    GET rolga qarab cheklanadi: manager/owner (va platforma admini) markazning
+    butun bankini ko'radi, faqat teacher roli bo'lgan a'zo esa o'zi yaratgan
+    savollarni ko'radi.
     """
     if request.method == 'GET':
         raw_center = request.query_params.get('center')
@@ -156,6 +172,11 @@ def questions_list_create(request):
             center_id=center_id, is_active=True,
             purpose=Question.QUESTION_PURPOSE_OLYMPIAD,
         )
+        # Rolga qarab ko'rinish: manager/owner (va platforma admini) markazning
+        # butun bankini ko'radi, faqat teacher roli bo'lgan a'zo esa o'zi
+        # yaratgan savollarnigina — hamkasbining savollari unga ko'rinmaydi.
+        if not _user_is_center_manager(request.user, center_id):
+            qs = qs.filter(created_by=request.user)
         # Pagination: bitta markazda yuzlab savol to'planishi mumkin — butun
         # ro'yxatni bitta response'da uzatish xotira/trafik jihatdan og'ir.
         # olympiads_list_create kabi LargePageNumberPagination ishlatamiz:
@@ -199,6 +220,16 @@ def question_detail(request, question_id):
     question = get_object_or_404(Question, pk=question_id)
     if not _user_can_create_for_center(request.user, question.center_id):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+    # Ro'yxat rolga qarab cheklangani kabi (questions_list_create), yakka savol
+    # ham ID orqali ochilib qolmasin: faqat teacher roli bo'lgan a'zo o'zi
+    # yaratmagan savolni ko'ra/tahrirlay/o'chira olmaydi. Manager/owner va
+    # platforma admini avvalgidek butun bankni boshqaradi.
+    if (not _user_is_center_manager(request.user, question.center_id)
+            and question.created_by_id != request.user.id):
+        return Response(
+            {'detail': "Bu savolni faqat uni yaratgan o'qituvchi yoki markaz menejeri boshqara oladi"},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
     if request.method == 'GET':
         return Response(QuestionSerializer(question, context={'request': request}).data)
     if request.method == 'DELETE':
