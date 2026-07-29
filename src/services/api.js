@@ -800,6 +800,26 @@ const getToken = () => {
   return (impersonation && impersonation.token) || _readAuth(AUTH_TOKEN_KEY);
 };
 
+// ─── Yuklanadigan fayl hajmini KLIENT tomonda tekshirish ────────────────────
+// Backend limitlari bilan bir xil (settings.AI_QUESTION_PDF_MAX_BYTES va
+// AI_QUESTION_IMPORT_MAX_BYTES). Nega klientda ham tekshiramiz: limitdan katta
+// fayl baribir rad etiladi, ammo server javobni fayl to'liq yuklanishidan
+// oldin qaytarsa brauzer ulanish uzilganini ko'radi va `fetch()` TypeError
+// bilan qulaydi — foydalanuvchi "Fayl juda katta" o'rniga "Server bilan
+// bog'lanishda xatolik" degan chalg'ituvchi xabar olardi. Umuman yubormaslik
+// eng ishonchli yechim (backend uchun DrainRequestBodyMiddleware bor).
+const AI_PDF_MAX_BYTES = 20 * 1024 * 1024;
+const AI_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
+const _assertUploadSize = (file, maxBytes) => {
+  const size = file && typeof file.size === 'number' ? file.size : 0;
+  if (size > maxBytes) {
+    throw new ApiError(
+      `Fayl juda katta (${(size / (1024 * 1024)).toFixed(1)} MB). Limit: ${Math.round(maxBytes / (1024 * 1024))} MB`,
+      { status: 413 },
+    );
+  }
+};
+
 // Backend sekin Gemini chaqiruvlarini Celery task'iga ko'chirdi: POST darhol
 // `{task_id}` (202) qaytaradi, natija esa `<endpoint>/<task_id>/status/` orqali
 // olinadi ({status: PENDING|COMPLETED|FAILED}). Bu yordamchi o'sha polling
@@ -840,7 +860,13 @@ const pollAiTask = async (startRes, statusPath, {
       );
     }
   }
-  throw new ApiError(timeoutMessage);
+  // MUHIM: status BERILISHI shart. `ApiError` konstruktori berilmagan statusni
+  // 0 ga aylantiradi, `toUserMessage` esa 0 ni "so'rov serverga umuman yetib
+  // bormadi" deb talqin qilib aniq xabar o'rniga umumiy "Server bilan
+  // bog'lanishda xatolik yuz berdi" ni ko'rsatardi — ya'ni haqiqiy sabab
+  // (vazifa vaqtida tugamadi) foydalanuvchiga ham, xato hisobotiga ham
+  // yetib bormasdi. 504 — "kutish vaqti tugadi" ning halol status kodi.
+  throw new ApiError(timeoutMessage, { status: 504 });
 };
 
 export const OlympyApi = {
@@ -1255,7 +1281,7 @@ export const OlympyApi = {
     const startRes = await request('/api/questions/run-code/start/', { method: 'POST', body: payload, token, signal });
     const taskId = startRes?.task_id;
     if (!taskId) {
-      throw new ApiError(startRes?.detail || "Kodni ishga tushirib bo'lmadi");
+      throw new ApiError(startRes?.detail || "Kodni ishga tushirib bo'lmadi", { status: 503, data: startRes });
     }
 
     // 2. Natijani keshdan olguncha polling qilamiz (maksimal 30 soniya). Har
@@ -1278,10 +1304,10 @@ export const OlympyApi = {
         return statusRes.result;
       }
       if (statusRes?.status === 'FAILED') {
-        throw new ApiError(statusRes?.error || "Kodni ishga tushirishda xatolik yuz berdi");
+        throw new ApiError(statusRes?.error || "Kodni ishga tushirishda xatolik yuz berdi", { status: 503, data: statusRes });
       }
     }
-    throw new ApiError("Kod ishga tushirish vaqti tugadi (Timeout)");
+    throw new ApiError("Kod ishga tushirish vaqti tugadi (Timeout)", { status: 504 });
   },
   // Ustoz/menejer uchun olimpiadaning barcha kod javoblari + AI tavsiyalari.
   getCodeSubmissions: (olympiadId, token) => request(`/api/olympiads/${olympiadId}/code-submissions/`, { token }),
@@ -1303,6 +1329,7 @@ export const OlympyApi = {
     // bu yerda natija tayyor bo'lguncha polling qilamiz (runCode naqshiga o'xshash).
     const aborted = () => signal && signal.aborted;
     if (aborted()) throw new ApiError('aborted', { status: 0 });
+    _assertUploadSize(pdfFile, AI_PDF_MAX_BYTES);
     const fd = new FormData();
     fd.append('pdf', pdfFile);
     Object.keys(payload || {}).forEach(k => {
@@ -1337,7 +1364,7 @@ export const OlympyApi = {
         throw new ApiError(statusRes?.detail || statusRes?.error || "PDFdan savollarni ajratib bo'lmadi", { status: 503, data: statusRes });
       }
     }
-    throw new ApiError("PDF tahlil qilish vaqti tugadi (Timeout)");
+    throw new ApiError("PDF tahlil qilish vaqti tugadi (Timeout)", { status: 504 });
   },
   // Word (.docx) matnidan AI yordamida savol ajratish. extractPdfQuestions bilan
   // bir xil oqim (Celery task → status polling); backend kesh kaliti PDF bilan
@@ -1346,6 +1373,7 @@ export const OlympyApi = {
   extractWordAiQuestions: async (wordFile, payload, token, signal) => {
     const aborted = () => signal && signal.aborted;
     if (aborted()) throw new ApiError('aborted', { status: 0 });
+    _assertUploadSize(wordFile, AI_IMPORT_MAX_BYTES);
     const fd = new FormData();
     fd.append('word', wordFile);
     Object.keys(payload || {}).forEach(k => {
@@ -1377,7 +1405,7 @@ export const OlympyApi = {
         throw new ApiError(statusRes?.detail || statusRes?.error || "Word matnidan savollarni ajratib bo'lmadi", { status: 503, data: statusRes });
       }
     }
-    throw new ApiError("Word tahlil qilish vaqti tugadi (Timeout)");
+    throw new ApiError("Word tahlil qilish vaqti tugadi (Timeout)", { status: 504 });
   },
   updateQuestion: (questionId, payload, token) => request(`/api/questions/${questionId}/`, { method: 'PATCH', body: payload, token }),
   deleteQuestion: (questionId, token) => request(`/api/questions/${questionId}/`, { method: 'DELETE', token }),
