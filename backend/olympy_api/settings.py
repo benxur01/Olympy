@@ -110,6 +110,12 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
+    # Eng tashqi qatlamga yaqin: view ishga tushmasdan qaytgan javoblarda ham
+    # (401/403/429, redirect) o'qilmagan so'rov tanasi socketga javob
+    # yozilishidan OLDIN oxirigacha o'qib tashlanadi. Aks holda katta fayl
+    # yuklayotgan brauzer RST oladi va haqiqiy status o'rniga "tarmoq xatosi"
+    # ko'rsatiladi (izohi middleware.py da).
+    'olympy_api.middleware.DrainRequestBodyMiddleware',
     'django.middleware.security.SecurityMiddleware',
     # GZipMiddleware ATAYIN o'chirilgan: CSRF token kabi maxfiy qiymatlarni
     # o'z ichiga olgan dinamik HTTP javoblarni siqish BREACH hujumiga imkon
@@ -979,6 +985,16 @@ AI_QUESTION_PDF_MAX_CHUNKS = int(os.environ.get('AI_QUESTION_PDF_MAX_CHUNKS', '2
 # Ketma-ket emas, parallel yuborish katta PDF tahlilini sezilarli tezlashtiradi;
 # Gemini kvotasini bosib qo'ymaslik uchun default 5.
 AI_QUESTION_PDF_MAX_PARALLEL = int(os.environ.get('AI_QUESTION_PDF_MAX_PARALLEL', '5'))
+
+# DrainRequestBodyMiddleware chegarasi: view ishga tushmasdan qaytgan javobda
+# (401/403/429) shu hajmgacha bo'lgan so'rov tanasi oxirigacha o'qib tashlanadi,
+# aks holda brauzer RST olib haqiqiy status o'rniga "tarmoq xatosi" ko'rsatadi.
+# Qabul qilinadigan ENG KATTA yuklamadan (PDF limiti) katta bo'lishi shart —
+# aks holda limitga sig'adigan fayl ham chalg'ituvchi xato beradi. Ustiga
+# multipart sarlavhalari va boshqa maydonlar uchun zaxira qo'shamiz.
+MAX_DRAIN_REQUEST_BODY_BYTES = int(
+    os.environ.get('MAX_DRAIN_REQUEST_BODY_BYTES', '0')
+) or (max(AI_QUESTION_PDF_MAX_BYTES, AI_QUESTION_IMPORT_MAX_BYTES) + 4 * 1024 * 1024)
 
 # Logging: WARNING va undan yuqori darajadagi xabarlar console'ga (stderr)
 # chiqadi — Render kabi platformalar stdout/stderr'ni avtomatik yig'adi.
