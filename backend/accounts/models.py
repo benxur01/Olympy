@@ -808,46 +808,6 @@ class DailyQuestionAnswer(models.Model):
         return f'daily-ans:{self.user_id}@{self.daily_question_id}={self.selected_option}'
 
 
-class DailyPracticeSet(models.Model):
-    """O1 (premium): Kunlik AI mashq to'plami — har o'quvchi uchun kuniga 5 ta savol.
-
-    Standart+ tarifidagi o'quvchi `/api/me/daily-practice/` so'raganda, o'sha kun
-    uchun bir marta (eng zaif fani bo'yicha) Gemini orqali 5 ta savol generatsiya
-    qilinadi va shu yerga saqlanadi. Kun davomidagi keyingi so'rovlar aynan shu
-    saqlangan to'plamni qaytaradi — qayta AI chaqiruvi bo'lmaydi. Har (user, date)
-    juftligi yagona. `DailyQuestion` dan farqi: bu GLOBAL emas, PER-USER.
-    """
-    user = models.ForeignKey(
-        'accounts.User',
-        on_delete=models.CASCADE,
-        related_name='daily_practice_sets',
-    )
-    date = models.DateField(db_index=True)
-    subject = models.CharField(max_length=80, blank=True, default='')
-    # generate_questions qaytargan savollar ro'yxati (har biri text, options,
-    # correct_answer indeksi bilan) — client-side scoring uchun to'liq saqlanadi.
-    questions = models.JSONField(default=list)
-    # O'quvchi bergan javoblar: {savol_indeksi: tanlangan_variant_indeksi}.
-    # Bo'sh — hali topshirilmagan. `submitted_at` topshirilgan vaqt (null bo'lsa
-    # mashq hali bajarilmagan). Bu bo'lmaganda kun davomida har qayta ochilganda
-    # mashq qaytadan "javob berilmagan" holatda ko'rinardi.
-    answers = models.JSONField(default=dict)
-    submitted_at = models.DateTimeField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ['-date', 'id']
-        constraints = [
-            models.UniqueConstraint(
-                fields=['user', 'date'],
-                name='unique_daily_practice_set_per_user_date',
-            ),
-        ]
-
-    def __str__(self):
-        return f'daily-practice:{self.date} user:{self.user_id}'
-
-
 class WeeklyContest(models.Model):
     """DH4: Haftalik musobaqa — dushanba–yakshanba oralig'idagi reyting.
 

@@ -455,152 +455,11 @@ const WeeklyContestHistoryCard = ({ user }) => {
   );
 };
 
-// ─── O1 (premium). Kunlik AI mashq to'plami (Standart+) ──────────────────────
-// Backenddan bugungi 5 ta AI savol (eng zaif fan bo'yicha) olinadi va inline
-// quiz sifatida ko'rsatiladi. Baholash client-side: har savolda correct_answer
-// indeksi bor, variant tanlangan zahoti to'g'ri/xato ranglanadi va (bo'lsa)
-// izoh ochiladi, so'ng savol ro'yxatdan yo'qoladi. Standart+ gate frontend'da
-// (canStandart) — bu yerda 403 kelsa ham xushmuomala xabar chiqadi.
-const DailyAIPracticeCard = ({ user }) => {
-  const { data, loading, error } = useApiData(
-    () => OlympyApi.getDailyPracticeSet(_retToken()),
-    [user?.id, user?.backendId],
-  );
-  const [answers, setAnswers] = React.useState({});   // {savolIndeks: variantIndeks}
-  // Javob berilgan savol natijasi qisqa vaqt turadi: feedback map'da 'show' →
-  // 'fade' → o'chirish (savol ro'yxatdan chiqadi). Map faqat shu sessiyadagi
-  // javoblar bilan to'ladi.
-  const [feedback, setFeedback] = React.useState(() => new Map());
-  // Barcha javoblar bir marta fon rejimida serverga yoziladi.
-  const savedRef = React.useRef(false);
-  const timersRef = React.useRef([]);
-
-  React.useEffect(() => () => timersRef.current.forEach(t => clearTimeout(t)), []);
-
-  const questions = Array.isArray(data?.questions) ? data.questions : [];
-
-  const handleAnswer = (qi, oi) => {
-    if (answers[qi] != null) return;
-    const next = { ...answers, [qi]: oi };
-    setAnswers(next);
-    // setTimeout eski feedback'ni ushlab qolmasligi uchun faqat funksional
-    // yangilash ishlatiladi.
-    setFeedback(prev => new Map(prev).set(qi, 'show'));
-    timersRef.current.push(setTimeout(() => {
-      setFeedback(prev => new Map(prev).set(qi, 'fade'));
-      timersRef.current.push(setTimeout(() => {
-        setFeedback(prev => {
-          const rest = new Map(prev);
-          rest.delete(qi);
-          return rest;
-        });
-      }, DAILY_Q_FADE_MS));
-    }, DAILY_Q_FEEDBACK_MS));
-    // Oxirgi savolga javob berilgach saqlaymiz — javoblar mahalliy bo'lgani
-    // uchun server javobini kutmaymiz (kun davomida "bajarilgan" holat qolsin).
-    if (!savedRef.current && questions.every((_, i) => next[i] != null)) {
-      savedRef.current = true;
-      OlympyApi.submitDailyPracticeSet(next, _retToken())
-        .catch(err => console.warn('submitDailyPracticeSet failed:', err));
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
-        <div className="text-center text-white/40 text-sm py-6">Kunlik mashq tayyorlanmoqda...</div>
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="glass rounded-2xl p-4 md:p-5 border border-amber-500/20">
-        <h3 className="font-bold text-white text-sm md:text-base mb-1 flex items-center gap-2">
-          <Icon name="sparkles" size={16} /> Kunlik AI mashq
-        </h3>
-        <p className="text-xs text-amber-300">
-          {error?.status === 429
-            ? "Kunlik AI mashq limiti tugadi, ertaga qayta urinib ko'ring."
-            : (OlympyApi.toUserMessage?.(error) || "Mashq to'plamini yuklab bo'lmadi. Keyinroq urinib ko'ring.")}
-        </p>
-      </div>
-    );
-  }
-  if (!questions.length) return null;
-  // `data` faqat mount'da yuklanadi, shuning uchun `submitted` = "shu sessiya
-  // boshlanishidan oldin topshirilgan": bunda natija qayta chaqnab ketmasligi
-  // uchun karta o'sha kun uchun umuman ko'rsatilmaydi. Shu sessiyada berilgan
-  // javoblar esa faqat feedback map'ida bo'ladi.
-  if (data.submitted) return null;
-  const isVisible = (qi) => answers[qi] == null || feedback.has(qi);
-  if (!questions.some((_, qi) => isVisible(qi))) return null;
-
-  const optClass = (qi, oi, correctIdx) => {
-    if (answers[qi] == null) return 'border-white/10 bg-white/[0.03] text-white/70 hover:border-white/25';
-    if (oi === correctIdx) return 'border-emerald-400 bg-emerald-500/15 text-emerald-100';
-    if (answers[qi] === oi) return 'border-rose-400 bg-rose-500/15 text-rose-100';
-    return 'border-white/10 bg-white/[0.02] text-white/40';
-  };
-
-  return (
-    <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
-      <div className="flex items-center gap-2 mb-3">
-        <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
-          <Icon name="sparkles" size={16} />
-        </div>
-        <div>
-          <h3 className="font-bold text-white text-sm md:text-base leading-none">Kunlik AI mashq</h3>
-          <span className="text-[9px] text-white/40 mt-1 block">
-            {data?.subject ? `${data.subject} · ` : ''}bugungi 5 ta savol
-          </span>
-        </div>
-      </div>
-
-      <div className="space-y-4">
-        {questions.map((q, qi) => {
-          if (!isVisible(qi)) return null;
-          const options = Array.isArray(q.options) ? q.options : [];
-          const chosen = answers[qi];
-          const isCorrect = chosen === q.correct_answer;
-          return (
-            <div key={qi} className={`glass rounded-xl p-3 border border-indigo-500/10 transition-opacity duration-300 ${feedback.get(qi) === 'fade' ? 'opacity-0' : 'opacity-100'}`}>
-              <div className="text-xs md:text-sm text-white/85 font-medium mb-2 leading-relaxed">
-                <span className="text-indigo-300 font-bold">{qi + 1}.</span> {q.text}
-              </div>
-              <div className="space-y-1.5">
-                {options.map((opt, oi) => (
-                  <button
-                    key={oi}
-                    type="button"
-                    disabled={chosen != null}
-                    onClick={() => handleAnswer(qi, oi)}
-                    className={`w-full text-left flex items-center gap-2 rounded-lg border px-3 py-2 text-xs md:text-sm transition-all disabled:cursor-default ${optClass(qi, oi, q.correct_answer)}`}
-                  >
-                    <span className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center text-[9px] ${chosen === oi ? 'border-current' : 'border-white/30'}`}>
-                      {chosen === oi ? '●' : ''}
-                    </span>
-                    <span className="flex-1">{opt}</span>
-                  </button>
-                ))}
-              </div>
-              {chosen != null && q.explanation ? (
-                <div className={`mt-2 text-[11px] md:text-xs leading-relaxed rounded-lg px-3 py-2 ${isCorrect ? 'bg-emerald-500/10 text-emerald-200' : 'bg-white/[0.04] text-white/60'}`}>
-                  <span className="font-bold">Izoh: </span>{q.explanation}
-                </div>
-              ) : null}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
 // ─── O3 (premium). Shaxsiy AI test generatori (Plus+) ────────────────────────
 // Foydalanuvchi fan/mavzu/qiyinlikni tanlaydi, "Generatsiya" bosilganda backend
-// Gemini orqali 10 ta ko'p tanlovli savol qaytaradi (saqlanmaydi). Inline quiz
-// DailyAIPracticeCard bilan bir xil ko'rinishda: baholash client-side, correct_answer
-// indeksi bo'yicha ranglash va yakuniy natija (n/10). Plus gate frontend'da (canPlus)
+// Gemini orqali 10 ta ko'p tanlovli savol qaytaradi (saqlanmaydi). Inline quiz:
+// baholash client-side, correct_answer indeksi bo'yicha ranglash va yakuniy
+// natija (n/10). Plus gate frontend'da (canPlus)
 // — bu yerda 403 kelsa ham xushmuomala xabar chiqadi.
 const CUSTOM_TEST_DIFFICULTIES = [
   { value: 'easy', label: 'Oson' },
@@ -910,7 +769,6 @@ Object.assign(window, {
   ReferralWidget,
   RivalActivityWidget,
   WeeklyContestHistoryCard,
-  DailyAIPracticeCard,
   CustomTestBuilderCard,
   PeerComparisonCard,
   SuggestedOlympiadCard,

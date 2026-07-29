@@ -417,19 +417,6 @@ REST_FRAMEWORK = {
         # so'rovlar soni tabiiy ravishda cheklangan — shu sababli alohida,
         # kengroq kunlik limit xavfsiz.
         'ai_predictions': '50/day',
-        # Kunlik AI mashq to'plami (daily_practice_set) — `ai_predictions` bilan
-        # BIR XIL toifadagi passiv widget: o'quvchi "AI ishlat" tugmasini
-        # bosmaydi, StudentDashboard har ochilganda avtomatik so'raladi. Avval
-        # 'ai' scope'ini (10/day) explain_question, explain_all_mistakes va
-        # study_plan bilan BIRGA ishlatardi — natijada o'quvchi shu boshqa AI
-        # tugmalarini kun davomida ~10 marta bossa umumiy bucket tugab, keyin
-        # bosh sahifadagi kunlik mashq widjeti 429 qaytarardi va foydalanuvchiga
-        # ~20 soatlik ("Request was throttled. Expected available in N seconds")
-        # xatosini ko'rsatardi. Natija butun kunga DailyPracticeS'da
-        # (get_or_create) cache'langani uchun HAQIQIY AI so'rov kuniga atigi 1 ta
-        # — throttle faqat abuse himoyasi, shu sababli alohida, kengroq kunlik
-        # limit xavfsiz va oddiy navigatsiyada hech qachon urilmaydi.
-        'ai_daily_practice': '50/day',
         # AI tahlil audio (O4) — gTTS + Telegram, qimmat va sekin. Spec
         # bo'yicha kuniga 3 ta.
         'ai_audio': '3/day',
@@ -1136,5 +1123,5 @@ if 'test' in _sys.argv or os.environ.get('OLYMPY_DISABLE_THROTTLE') == '1':
         key: '10000/min' for key in REST_FRAMEWORK.get('DEFAULT_THROTTLE_RATES', {})
     }
     # scope'lar ham to'liq bo'lishi uchun
-    for _scope in ('anon', 'user', 'auth', 'register', 'ai_question', 'submit', 'ai', 'ai_prep', 'ai_predictions', 'ai_daily_practice'):
+    for _scope in ('anon', 'user', 'auth', 'register', 'ai_question', 'submit', 'ai', 'ai_prep', 'ai_predictions'):
         REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'].setdefault(_scope, '10000/min')
