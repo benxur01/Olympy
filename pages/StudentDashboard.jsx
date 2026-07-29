@@ -1428,17 +1428,6 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             />
       )}
 
-      {/* Kunlik AI mashq to'plami — Standart+ tarif; bepulga qulflangan karta */}
-      {isApi && (
-        canStandart
-          ? <DailyAIPracticeCard user={user} />
-          : <LockedFeatureCard
-              tier="standart"
-              title="Kunlik AI mashq"
-              desc="Har kuni eng zaif faningizga moslangan 5 ta AI savol — inline quiz bilan. Standart tarifida ochiladi."
-            />
-      )}
-
       {/* Shaxsiy AI test generatori — Plus+ tarif; bepul/standartga qulflangan karta */}
       {isApi && (
         canPlus

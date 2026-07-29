@@ -2484,13 +2484,12 @@ def _merge_movable_models():
     from attempts.models import TestAttempt, TestSession
 
     from .models import (
-        Achievement, DailyGoal, DailyPracticeSet, DailyQuestionAnswer,
+        Achievement, DailyGoal, DailyQuestionAnswer,
         LoginEvent, RewardRedemption,
     )
     return [
         (TestAttempt, 'Olimpiada urinishlari', 'olympiad_id'),
         (TestSession, 'Test sessiyalari', 'olympiad_id'),
-        (DailyPracticeSet, 'Kunlik mashq to\'plamlari', 'date'),
         (DailyQuestionAnswer, 'Kunlik savol javoblari', 'daily_question_id'),
         (DailyGoal, 'Kunlik maqsadlar', 'date'),
         (Achievement, 'Yutuqlar', 'type'),
