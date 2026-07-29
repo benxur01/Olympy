@@ -8,6 +8,9 @@ urlpatterns = [
     # Cache'siz, yengil: "hozir onlayn" sanog'i (Boshqaruv paneli har 15 s
     # so'raydi). `metrics/` 10 daqiqa cache'lanadi, shuning uchun alohida.
     path('online/', views.online_users, name='analytics-online'),
+    # "Hozir onlayn" kartasi bosilganda ochiladigan ro'yxat: barcha
+    # foydalanuvchilar, har birida onlayn/oflayn belgisi (faqat admin).
+    path('online/users/', views.online_users_detail, name='analytics-online-users'),
     path('group-stats/', views.group_stats, name='analytics-group-stats'),
     # Admin panel "Tahlil" tabidagi kengaytirilgan diagrammalar (faqat admin).
     path('attempts-trend/', views.attempts_trend, name='analytics-attempts-trend'),
