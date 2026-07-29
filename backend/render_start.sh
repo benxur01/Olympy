@@ -30,22 +30,22 @@ else
 fi
 
 # gthread worker class — har worker ko'p thread bilan bir vaqtda I/O-bound
-# so'rovlarni (DB, tashqi API) parallel ishlaydi. Worker soni bir vaqtlar 1 ga
-# tushirilgan edi: o'shanda konteynerda 512MB xotira chegarasi bor edi va
-# Celery worker+beat AYNAN shu web konteynerda ishlardi, ya'ni har qo'shimcha
-# gunicorn worker (butun Django appning yana bir nusxasi) OOM xavfini oshirardi.
-# Ikkala shart ham endi o'rinli emas: render.yaml'da olympy-api uchun
-# CELERY_EXTERNAL_WORKER=1 — Celery alohida `olympy-celery` service'ida ishlaydi
-# va bu konteyner xotirasidan umuman joy olmaydi; xizmat esa `plan: standard`
-# da (512MB'dan sezilarli ko'p). Shu sababli default 2 ga qaytarildi:
-# 2 worker x 6 thread = bir vaqtda 12 so'rov (avvalgi 6 o'rniga) va ikkinchi
-# worker bitta jarayon qotib qolganda ham xizmatni tirik saqlaydi.
+# so'rovlarni (DB, tashqi API) parallel ishlaydi. Worker soni 1 da qoladi:
+# render.yaml'da olympy-api uchun `plan: standard` deb yozilgan bo'lsa-da,
+# 2026-07-29 holatiga ko'ra Render'dagi HAQIQIY xizmat hali `starter` (512MB)
+# rejada ishlamoqda — render.yaml'dagi reja o'zgarishi mavjud xizmatni avtomatik
+# resize qilmaydi, buni Render dashboard'da qo'lda tasdiqlash/sozlash kerak.
+# Bu nomuvofiqlik tufayli qisqa vaqt (2026-07-28 kechqurun — 2026-07-29 ertalab)
+# default 2 worker bilan ishlab, xizmat har 2-4 daqiqada OOM bo'lib qulab
+# tushgan (har qo'shimcha gunicorn worker butun Django appning yana bir
+# nusxasini xotiraga yuklaydi). Shu sababli xavfsiz holatga — 1 workerga —
+# qaytarildi. Agar Render'da reja haqiqatan HAM standard'ga (yoki undan
+# yuqoriga) o'tkazilsa, GUNICORN_WORKERS=2 env var orqali qayta yoqish mumkin
+# (kodni o'zgartirish shart emas).
 # Thread soni 3'dan 6'ga oshirilgan — bitta worker ko'proq parallel so'rovni
 # I/O-bound holatda ushlab turishi uchun (GIL thread'lar orasida I/O paytida
 # bo'shatiladi; bu yerdagi view'lar asosan DB/tashqi API kutadi, CPU emas —
-# shu sababli qo'shimcha thread deyarli tekin). Ikkalasi ham GUNICORN_WORKERS /
-# GUNICORN_THREADS env var orqali override qilinadi — masalan kichikroq planga
-# qaytilsa GUNICORN_WORKERS=1 qilib qo'yish kifoya.
+# shu sababli qo'shimcha thread deyarli tekin).
 #
 # --timeout 300: AI savol yaratish va PDF generatsiya kabi og'ir so'rovlar 120s
 # dan oshib worker kill bo'lib foydalanuvchiga 502 qaytarardi. 300s ularning
@@ -53,7 +53,7 @@ fi
 # so'rovlarni bloklamaydi).
 exec gunicorn olympy_api.wsgi:application \
     --bind "0.0.0.0:${PORT:-10000}" \
-    --workers "${GUNICORN_WORKERS:-2}" \
+    --workers "${GUNICORN_WORKERS:-1}" \
     --threads "${GUNICORN_THREADS:-6}" \
     --worker-class gthread \
     --timeout 300 \
