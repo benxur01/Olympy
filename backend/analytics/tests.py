@@ -272,3 +272,19 @@ class OnlineUsersDetailViewTests(APITestCase):
         res = self._get(None)
         self.assertEqual(res.status_code, 200)
         self.assertTrue(all(row['is_online'] is None for row in res.data['results']))
+
+    def test_last_seen_at_is_returned(self):
+        """Oflayn qator uchun "qachondan beri" — Redis'da bunday ma'lumot yo'q.
+
+        Presence to'plami 3 daqiqalik oynadan chiqqan yozuvni o'chiradi,
+        shuning uchun qiymat DB ustunidan (`User.touch_last_seen`) keladi va
+        Redis holatiga bog'liq emas.
+        """
+        seen = timezone.now() - timedelta(hours=2)
+        User.objects.filter(pk=self.other.pk).update(last_seen_at=seen)
+        res = self._get(set())
+        self.assertEqual(res.status_code, 200)
+        rows = {row['user_id']: row for row in res.data['results']}
+        self.assertEqual(rows[self.other.pk]['last_seen_at'], seen.isoformat())
+        # Hech qachon so'rov yubormagan hisob — NULL (frontend "Hech qachon").
+        self.assertIsNone(rows[self.admin.pk]['last_seen_at'])

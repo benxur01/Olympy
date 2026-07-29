@@ -17,6 +17,12 @@ from .utils import normalize_phone
 
 logger = logging.getLogger(__name__)
 
+# `User.touch_last_seen()` DB'ga shundan tez-tez yozmaydi. Faollik belgisi HAR
+# bir autentifikatsiyalangan so'rovda qo'yiladi, lekin "oxirgi ko'rilgan"
+# ko'rsatkichi uchun daqiqalik aniqlik yetarli — 1 daqiqalik oraliq yozuv
+# yukini so'rovlar soniga emas, faol foydalanuvchilar soniga bog'laydi.
+LAST_SEEN_WRITE_INTERVAL_SECONDS = 60
+
 
 class UserManager(BaseUserManager):
     """Manager that enforces phone normalization at creation time."""
@@ -175,6 +181,15 @@ class User(AbstractBaseUser, PermissionsMixin):
     blocked_until = models.DateTimeField(null=True, blank=True, db_index=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Admin panelidagi "Foydalanuvchilar holati" ro'yxati uchun: foydalanuvchi
+    # oxirgi marta qachon so'rov yuborgan ("2 soat oldin"). Redis presence
+    # to'plami (`analytics.presence`) bu savolga javob BERA OLMAYDI — u 3
+    # daqiqalik oynadan chiqib ketgan yozuvni butunlay o'chiradi, ya'ni
+    # oflayn foydalanuvchining vaqti u yerda umuman qolmaydi. Yozuv
+    # `touch_last_seen()` orqali va har so'rovda emas (bkz. o'sha metod).
+    # DIQQAT: yuqoridagi `last_active_date` — BOSHQA maydon (kunlik streak),
+    # bu yerga aloqasi yo'q.
+    last_seen_at = models.DateTimeField(null=True, blank=True)
     # Soft-delete: foydalanuvchi o'z hisobini o'chirganda hard delete o'rniga
     # shu vaqt yoziladi. Grace period (ACCOUNT_DELETE_GRACE_DAYS) ichida
     # /api/auth/restore/ orqali qayta tiklash mumkin; muddatdan keyin Celery
@@ -216,6 +231,40 @@ class User(AbstractBaseUser, PermissionsMixin):
         self.block_reason = ''
         self.blocked_until = None
         self.save(update_fields=['is_active', 'block_reason', 'blocked_until'])
+        return True
+
+    def touch_last_seen(self):
+        """`last_seen_at` ni yangilaydi — lekin HAR so'rovda emas.
+
+        Chaqiruvchi `accounts.authentication`, ya'ni har bir
+        autentifikatsiyalangan so'rov. Shu sababli ikkita qoida:
+
+        1) Chegara tekshiruvi BEPUL: `self` allaqachon JWT autentifikatsiyasi
+           uchun DB'dan o'qilgan, ya'ni `last_seen_at` xotirada turibdi —
+           qo'shimcha SELECT ham, qo'shimcha Redis so'rovi ham kerak emas.
+           Yozuv esa faqat qiymat `LAST_SEEN_WRITE_INTERVAL_SECONDS` dan
+           eskirgan bo'lsa yuboriladi.
+        2) `save()` emas, `update()`: `save()` signal'lardan tashqari
+           `normalize_phone`/`full_name` mantig'ini ham qayta ishga tushirardi
+           (`update_streak` dagi `_persist_streak` bilan bir xil sabab).
+
+        Xato jimgina yutiladi (`AuditLog.log` naqshi): faollik belgisi yaroqli
+        seansni buzib qo'ymasligi kerak — chaqiruv nuqtasi `authenticate()`
+        ichida, `try`dan tashqarida.
+
+        Yozuv bo'ldimi — True qaytaradi.
+        """
+        now = timezone.now()
+        if self.last_seen_at and (
+            (now - self.last_seen_at).total_seconds() < LAST_SEEN_WRITE_INTERVAL_SECONDS
+        ):
+            return False
+        try:
+            User.objects.filter(pk=self.pk).update(last_seen_at=now)
+        except Exception:
+            logger.exception('touch_last_seen xatosi: user_id=%s', self.pk)
+            return False
+        self.last_seen_at = now
         return True
 
     @property
