@@ -3932,3 +3932,62 @@ class BadgeQueryCountTestCase(APITestCase):
         for _ in range(7):
             self._add_attempt(100)
         self.assertEqual(self._badge_ids(), {'math_king', 'veteran'})
+
+
+class LastSeenTestCase(APITestCase):
+    """`User.touch_last_seen()` — admin panelidagi "oxirgi ko'rilgan" ustuni.
+
+    Metod HAR bir autentifikatsiyalangan so'rovda chaqiriladi
+    (`OlympyJWTAuthentication.authenticate`), shuning uchun eng muhim shart —
+    u har safar DB'ga YOZMASLIGI. Chegara tekshiruvi xotiradagi qiymatga
+    tayanadi: qo'shimcha SELECT ham bo'lmasligi kerak.
+    """
+
+    def setUp(self):
+        self.phone = '+998905550777'
+        self.password = 'StrongPass123'
+        self.user = User.objects.create_user(
+            phone=self.phone, password=self.password, full_name='Oxirgi Faollik',
+        )
+
+    def test_first_touch_writes(self):
+        self.assertIsNone(self.user.last_seen_at)
+        self.assertTrue(self.user.touch_last_seen())
+        self.user.refresh_from_db()
+        self.assertIsNotNone(self.user.last_seen_at)
+
+    def test_second_touch_within_interval_makes_no_query(self):
+        self.user.touch_last_seen()
+        with self.assertNumQueries(0):
+            self.assertFalse(self.user.touch_last_seen())
+
+    def test_touch_after_interval_writes_again(self):
+        from accounts.models import LAST_SEEN_WRITE_INTERVAL_SECONDS
+
+        stale = timezone.now() - timedelta(
+            seconds=LAST_SEEN_WRITE_INTERVAL_SECONDS + 1,
+        )
+        User.objects.filter(pk=self.user.pk).update(last_seen_at=stale)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.touch_last_seen())
+        self.user.refresh_from_db()
+        self.assertGreater(self.user.last_seen_at, stale)
+
+    def test_authenticated_request_records_last_seen(self):
+        """Integratsiya: yozuv aynan JWT autentifikatsiyasida sodir bo'ladi.
+
+        Login javobi tokenlarni HttpOnly cookie'ga qo'yadi (body'da faqat
+        `JWT_EXPOSE_TOKENS_IN_BODY` bo'lsa) — test klienti cookie'ni saqlaydi,
+        shuning uchun keyingi so'rov autentifikatsiyalangan bo'ladi.
+        """
+        login = self.client.post(reverse('login'), {
+            'phone': self.phone,
+            'password': self.password,
+        }, format='json')
+        self.assertEqual(login.status_code, status.HTTP_200_OK)
+        # Login o'zi `authenticate()` dan o'tmaydi — belgi hali qo'yilmagan.
+        self.user.refresh_from_db()
+        self.assertIsNone(self.user.last_seen_at)
+        self.assertEqual(self.client.get(reverse('me')).status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertIsNotNone(self.user.last_seen_at)

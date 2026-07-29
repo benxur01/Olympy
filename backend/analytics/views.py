@@ -81,7 +81,9 @@ def online_users_detail(request):
 
     Redis sozlanmagan yoki javob bermasa har qatordagi `is_online` `null`
     bo'ladi: hammani "oflayn" deb ko'rsatish yolg'on bo'lardi (`presence`
-    moduli bo'yicha "ma'lumot yo'q" != "hech kim yo'q").
+    moduli bo'yicha "ma'lumot yo'q" != "hech kim yo'q"). `last_seen_at` esa
+    Redis'ga bog'liq emas — u DB ustuni (`User.touch_last_seen`) va Redis
+    o'chgan paytda ham to'g'ri qoladi.
 
     Paginatsiya: `?page=` / `?page_size=` (default 100, max 200) —
     `admin_users_list` bilan bir xil, foydalanuvchilar jadvali o'n minglab
@@ -98,7 +100,7 @@ def online_users_detail(request):
     rank_ids = list(online_ids) if online_ids else []
     qs = (
         User.objects
-        .only('id', 'full_name', 'normalized_phone', 'created_at')
+        .only('id', 'full_name', 'normalized_phone', 'created_at', 'last_seen_at')
         .annotate(online_rank=Case(
             When(pk__in=rank_ids, then=Value(0)),
             default=Value(1),
@@ -118,6 +120,12 @@ def online_users_detail(request):
         # xil qoida).
         'phone': u.normalized_phone,
         'is_online': (u.id in online_ids) if online_ids is not None else None,
+        # Oflayn qatorlar uchun "qachondan beri" (frontend nisbiy satrga
+        # aylantiradi). Redis'dan olib bo'lmaydi — u oynadan chiqqan yozuvni
+        # o'chiradi; qiymat `User.touch_last_seen()` yozgan doimiy ustundan
+        # keladi. Hech qachon so'rov yubormagan (yoki ustun to'lgunicha faol
+        # bo'lmagan) hisoblarda NULL.
+        'last_seen_at': u.last_seen_at.isoformat() if u.last_seen_at else None,
     } for u in page]
     return paginator.get_paginated_response(rows)
 

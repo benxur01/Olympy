@@ -83,6 +83,12 @@ class OlympyJWTAuthentication(JWTAuthentication):
         # anonimga aylantirib qo'ymasligi kerak (`record_activity` o'zi ham
         # hech qachon otmaydi).
         record_activity(user.id)
+        # Redis to'plami faqat "hozir onlaynmi" degan savolga javob beradi —
+        # 3 daqiqalik oynadan chiqqan yozuv o'chib ketadi, ya'ni "2 soat oldin
+        # oflayn bo'ldi" ma'lumoti u yerda saqlanmaydi. Doimiy ustun shu
+        # sababli kerak. `touch_last_seen` o'zi throttle qiladi (daqiqada bir
+        # marta) va hech qachon otmaydi — `record_activity` bilan bir xil.
+        user.touch_last_seen()
         return user, validated_token
 
     def get_user(self, validated_token):

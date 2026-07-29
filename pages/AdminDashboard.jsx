@@ -99,6 +99,24 @@ const formatAdminDateTime = (value) => {
   });
 };
 
+// "Oxirgi ko'rilgan" — nisbiy vaqt ("5 daqiqa oldin"). Oflayn foydalanuvchi
+// qachondan beri yo'qligini aniq sana/soatdan ko'ra tezroq o'qitadi.
+// Loyihada sana kutubxonasi (date-fns/dayjs) yo'q va faqat shu bitta joy
+// uchun qo'shilmaydi. Qiymat yo'q bo'lsa "" — chaqiruvchi o'zi hal qiladi.
+// Serverdan kelgan vaqt brauzer soatidan bir oz oldinda bo'lishi mumkin
+// (soat farqi) — manfiy oraliq ham "Hozirgina" bo'lib chiqadi.
+const formatAdminRelativeTime = (value) => {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  const minutes = Math.floor((Date.now() - d.getTime()) / 60000);
+  if (minutes < 1) return 'Hozirgina';
+  if (minutes < 60) return `${minutes} daqiqa oldin`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} soat oldin`;
+  return `${Math.floor(hours / 24)} kun oldin`;
+};
+
 // To'lov summasi — "149 000 so'm" ko'rinishida (panelning boshqa joylaridagi
 // daromad tooltipi bilan bir xil format).
 const formatAdminAmount = (amount) => `${(Number(amount) || 0).toLocaleString('uz-UZ')} so'm`;
@@ -2330,18 +2348,31 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 <div className="truncate text-xs font-bold text-white">{row.full_name || "Foydalanuvchi"}</div>
                 <div className="font-mono text-[10px] text-white/40">{maskPhoneDisplay(row.phone, '')}</div>
               </div>
-              <span className={`shrink-0 text-[10px] font-extrabold uppercase tracking-wider ${
-                row.is_online === true ? 'text-emerald-400' : 'text-slate-500'
-              }`}>
-                {row.is_online === null ? "Noma'lum" : row.is_online ? 'Onlayn' : 'Oflayn'}
-              </span>
+              <div className="shrink-0 text-right">
+                <span className={`text-[10px] font-extrabold uppercase tracking-wider ${
+                  row.is_online === true ? 'text-emerald-400' : 'text-slate-500'
+                }`}>
+                  {row.is_online === null ? "Noma'lum" : row.is_online ? 'Onlayn' : 'Oflayn'}
+                </span>
+                {/* Faqat oflayn qatorlarda: qachondan beri yo'q. `is_online`
+                    null bo'lsa (Redis o'chgan) holat noma'lum — "3 soat oldin"
+                    yozish "hozir oflayn" degan yolg'on xulosaga olib kelardi. */}
+                {row.is_online === false && (
+                  <div className="mt-0.5 text-[10px] font-semibold text-slate-500"
+                       title={row.last_seen_at ? formatAdminDateTime(row.last_seen_at) : ''}>
+                    {row.last_seen_at ? formatAdminRelativeTime(row.last_seen_at) : 'Hech qachon'}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
         </div>
         <p className="mt-3 text-[10px] font-semibold text-slate-500 leading-relaxed">
           "Onlayn" — oxirgi 3 daqiqada kamida bitta so'rov yuborgan foydalanuvchi.
           Sahifani ochib qo'yib, hech narsa qilmayotgan foydalanuvchi bir necha
-          daqiqadan keyin oflayn ko'rinadi.
+          daqiqadan keyin oflayn ko'rinadi. Oflayn qatordagi vaqt — oxirgi
+          faollikdan beri o'tgan muddat; "Hech qachon" hisob yaratilgandan
+          keyin ilovaga umuman kirmaganini bildiradi.
         </p>
         <button
           onClick={() => setOnlineListOpen(false)}
