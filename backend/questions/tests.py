@@ -9,6 +9,7 @@ from rest_framework.test import APITestCase
 
 from attempts.models import CodeSubmission, EssayGrade, TestAttempt, TestSession
 from centers.models import CenterMembership, EducationCenter
+from moderation.models import ModerationFlag
 from olympiads.models import Olympiad
 from questions.grading import (
     RESULT_BLANK,
@@ -1347,3 +1348,140 @@ class CodeReviewAsyncTestCase(APITestCase):
         )
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 
+
+
+class FlagQuestionApiTestCase(APITestCase):
+    """POST /api/questions/<id>/flag/ — savolni admin tekshiruviga qo'yish.
+
+    Bayroqni faqat markaz XODIMI qo'yadi (o'qituvchi/menejer/egasi), o'quvchi
+    emas. Bayroq savolni yashirmaydi: `is_active` tegilmaydi — arxivlash
+    faqat admin bayroqni yopganda (moderation) bo'ladi.
+    """
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='Flag Academy', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.other_center = EducationCenter.objects.create(
+            name='Boshqa markaz', city='Samarqand',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.author = User.objects.create_user(
+            phone='+998901660001', password='StrongPass123', full_name='Muallif',
+        )
+        # Savol muallifi EMAS — bayroqni hamkasb ham qo'ya oladi.
+        self.colleague = User.objects.create_user(
+            phone='+998901660002', password='StrongPass123', full_name='Hamkasb',
+        )
+        self.other_teacher = User.objects.create_user(
+            phone='+998901660003', password='StrongPass123', full_name='Begona ustoz',
+        )
+        self.student = User.objects.create_user(
+            phone='+998901660004', password='StrongPass123', full_name='Talaba',
+        )
+        for user, center in [
+            (self.author, self.center),
+            (self.colleague, self.center),
+            (self.other_teacher, self.other_center),
+        ]:
+            CenterMembership.objects.create(
+                user=user, center=center,
+                role=CenterMembership.ROLE_TEACHER,
+                status=CenterMembership.STATUS_APPROVED,
+            )
+        CenterMembership.objects.create(
+            user=self.student, center=self.center,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        self.question = Question.objects.create(
+            center=self.center, subject='Matematika', text='2 + 2 = ?',
+            options=['3', '4', '5'], correct_answer=1, score=5,
+            created_by=self.author,
+        )
+        self.url = reverse('questions-flag', args=[self.question.id])
+
+    def _flag(self, user, reason='Javob noto\'g\'ri'):
+        self.client.force_authenticate(user=user)
+        return self.client.post(self.url, {'reason': reason}, format='json')
+
+    def test_colleague_flags_question_with_snapshot(self):
+        resp = self._flag(self.colleague)
+
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(resp.data['created'])
+        flag = ModerationFlag.objects.get(pk=resp.data['flag_id'])
+        self.assertEqual(flag.flag_type, ModerationFlag.FLAG_TYPE_QUESTION)
+        self.assertEqual(flag.status, ModerationFlag.STATUS_PENDING)
+        self.assertEqual(flag.target_type, 'Question')
+        self.assertEqual(flag.target_id, self.question.id)
+        self.assertEqual(flag.raised_by, self.colleague)
+        self.assertEqual(flag.reason, "Javob noto'g'ri")
+        # Dalil nusxasi: savol keyin tahrirlansa ham bayroqda asl matn qoladi.
+        self.assertEqual(flag.extra['question_id'], self.question.id)
+        self.assertEqual(flag.extra['text'], '2 + 2 = ?')
+        self.assertEqual(flag.extra['options'], ['3', '4', '5'])
+        self.assertEqual(flag.extra['correct_answer'], 1)
+        self.assertEqual(flag.extra['subject'], 'Matematika')
+        self.assertEqual(flag.extra['created_by'], 'Muallif')
+
+    def test_flagging_does_not_hide_question(self):
+        """Bayroq savolni arxivlamaydi — ketayotgan imtihon buzilmasin."""
+        self._flag(self.colleague)
+        self.question.refresh_from_db()
+        self.assertTrue(self.question.is_active)
+
+    def test_second_flag_returns_existing_open_one(self):
+        first = self._flag(self.author)
+        second = self._flag(self.colleague, reason='Yana bir sabab')
+
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertFalse(second.data['created'])
+        self.assertEqual(second.data['flag_id'], first.data['flag_id'])
+        self.assertEqual(ModerationFlag.objects.count(), 1)
+        # Mavjud bayroq qayta yozilmaydi — birinchi sabab va muallif qoladi.
+        flag = ModerationFlag.objects.get()
+        self.assertEqual(flag.reason, "Javob noto'g'ri")
+        self.assertEqual(flag.raised_by, self.author)
+
+    def test_closed_flag_does_not_block_new_one(self):
+        """Yopilgan bayroqdan keyin savol yana belgilanishi mumkin."""
+        self._flag(self.author)
+        ModerationFlag.objects.update(status=ModerationFlag.STATUS_RESOLVED)
+
+        resp = self._flag(self.colleague)
+
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ModerationFlag.objects.count(), 2)
+
+    def test_other_center_teacher_is_forbidden(self):
+        resp = self._flag(self.other_teacher)
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(ModerationFlag.objects.count(), 0)
+
+    def test_student_is_forbidden(self):
+        resp = self._flag(self.student)
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(ModerationFlag.objects.count(), 0)
+
+    def test_missing_reason_is_rejected(self):
+        for value in ('', '   '):
+            resp = self._flag(self.colleague, reason=value)
+            self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(ModerationFlag.objects.count(), 0)
+
+    def test_unknown_question_returns_404(self):
+        self.client.force_authenticate(user=self.colleague)
+        resp = self.client.post(
+            reverse('questions-flag', args=[self.question.id + 999]),
+            {'reason': 'Sabab'}, format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_anonymous_is_denied(self):
+        resp = self.client.post(self.url, {'reason': 'Sabab'}, format='json')
+        self.assertIn(
+            resp.status_code,
+            (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+        )

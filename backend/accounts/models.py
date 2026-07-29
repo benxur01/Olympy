@@ -899,6 +899,11 @@ class AuditLog(models.Model):
         ('admin_phone_change', "Telefon raqami o'zgartirildi"),
         ('admin_totp_reset', "2FA majburan o'chirildi"),
         ('admin_force_logout', 'Barcha seanslar yakunlandi'),
+        # Bitta seansni (LoginEvent.jti orqali topilgan refresh token) tugatish
+        # — `admin_force_logout` dan farqli, boshqa qurilmalar ishlashda davom
+        # etadi.
+        ('admin_force_logout_session', 'Bitta seans majburiy tugatildi'),
+        ('admin_user_warn', 'Foydalanuvchiga ogohlantirish yuborildi'),
         # Impersonatsiya ("foydalanuvchi sifatida ko'rish") — boshi va oxiri
         # ALOHIDA yoziladi: token qisqa muddatli bo'lsa ham, admin qancha
         # vaqt boshqa hisobda bo'lganini keyin faqat shu ikki yozuv ko'rsatadi.
@@ -992,6 +997,13 @@ class LoginEvent(models.Model):
     # User-Agent to'liq saqlanmaydi (ba'zi brauzerlarda 500+ belgi) —
     # qurilma/brauzerni ajratish uchun boshlang'ich qismi yetarli.
     user_agent = models.CharField(max_length=255, blank=True, default='')
+    # Shu kirishda berilgan REFRESH tokenning `jti` da'vosi. Aynan shu qiymat
+    # `token_blacklist.OutstandingToken.jti` ga yoziladi (simplejwt'ning
+    # BlacklistMixin.for_user), shuning uchun bitta seansni (barcha
+    # qurilmalarni emas) majburiy tugatish uchun yetarli.
+    # Token o'zi HECH QACHON saqlanmaydi — faqat identifikator.
+    # Eski yozuvlarda bo'sh: ular uchun seansni aniqlab bo'lmaydi.
+    jti = models.CharField(max_length=255, blank=True, default='', db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -1000,6 +1012,9 @@ class LoginEvent(models.Model):
             # Admin paneli faqat bitta foydalanuvchining oxirgi yozuvlarini
             # so'raydi: filter(user=...).order_by('-created_at')[:N].
             models.Index(fields=['user', '-created_at']),
+            # Bir IP'dan kirgan hisoblarni topish (ko'p hisobli / shubhali
+            # kirishlar tekshiruvi): filter(ip_address=...) — user'siz.
+            models.Index(fields=['ip_address']),
         ]
 
     def __str__(self):

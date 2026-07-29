@@ -106,6 +106,7 @@ INSTALLED_APPS = [
     'practice',
     'billing',
     'analytics',
+    'moderation',
 ]
 
 MIDDLEWARE = [
@@ -708,6 +709,14 @@ CELERY_BEAT_SCHEDULE = {
     'recover-stuck-code-submissions': {
         'task': 'questions.tasks.recover_stuck_code_submissions',
         'schedule': timedelta(minutes=10),
+    },
+    # Har soatda shubhali faollikni (bir xil IP ortidagi ko'p hisob) topib,
+    # moderatsiya navbatiga bayroq qo'yadi. Soatlik: detektor 1 kunlik oyna
+    # bo'yicha ishlaydi, tez-tez ishga tushirish esa faqat bir xil natijani
+    # qayta hisoblardi (task idempotent — ochiq bayrog'i bor IP takrorlanmaydi).
+    'detect-suspicious-activity': {
+        'task': 'moderation.detect_suspicious_activity',
+        'schedule': timedelta(hours=1),
     },
 }
 

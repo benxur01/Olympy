@@ -75,6 +75,12 @@ def _jwt_payload(user):
         'token': str(refresh.access_token),
         'refresh': str(refresh),
         'cookie_auth': True,
+        # REFRESH tokenning jti'si — `RefreshToken.for_user` yaratgan
+        # `OutstandingToken.jti` bilan aynan bir xil (access tokenning jti'si
+        # BOSHQA va blacklist jadvalida kuzatilmaydi). LoginEvent shu qiymatni
+        # saqlaydi, shuning uchun keyinchalik aynan bitta seansni blacklist
+        # qilish mumkin.
+        'jti': str(refresh['jti']),
     }
 
 
@@ -112,6 +118,7 @@ def _auth_response(request, user, *, extra=None, status_code=status.HTTP_200_OK)
             user=user,
             ip_address=(forwarded[-1] if forwarded else request.META.get('REMOTE_ADDR')) or None,
             user_agent=(request.META.get('HTTP_USER_AGENT') or '')[:255],
+            jti=payload['jti'],
         )
     except Exception:
         security_logger.exception('LoginEvent yozilmadi user_id=%s', user.pk)
@@ -1569,6 +1576,231 @@ def admin_user_login_history(request, user_id):
             'created_at': e.created_at.isoformat(),
         } for e in events],
     })
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_warn_user(request, user_id):
+    """POST /api/admin/users/{id}/warn/ — rasmiy ogohlantirish yuborish.
+
+    Body: {"reason": "...", "message": "..."}. Bu bloklashdan OLDINGI qadam:
+    hisob holati (`is_active`, `token_version`, `blocked_until`) umuman
+    o'zgarmaydi — foydalanuvchi faqat xabarnoma oladi va xatosini o'zi
+    tuzatish imkoniyatini topadi. Avval admin qo'lida faqat blok bor edi va
+    kichik qoidabuzarlik ham hisobni yopishga olib kelardi.
+
+    `reason` — ICHKI izoh: faqat audit jurnaliga tushadi, foydalanuvchi uni
+    ko'rmaydi. `message` — foydalanuvchi o'qiydigan matn (xabarnoma tanasi).
+    Ikkalasi ham majburiy: sababsiz ogohlantirish keyingi blok qaroriga asos
+    bo'la olmaydi, matnsizi esa foydalanuvchiga hech narsa tushuntirmaydi.
+    """
+    from django.contrib.auth import get_user_model
+    from notifications.models import Notification
+
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    reason = str(request.data.get('reason') or '').strip()
+    if not reason:
+        return Response({'detail': 'Ogohlantirish sababini kiriting'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    message = str(request.data.get('message') or '').strip()
+    if not message:
+        return Response({'detail': "Foydalanuvchiga yuboriladigan matnni kiriting"},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    warning = Notification.objects.create(
+        user=target,
+        # `center` ixtiyoriy va ATAYLAB bo'sh: ogohlantirishni platforma
+        # admini yuboradi, u hech qaysi markaz nomidan chiqmaydi.
+        center=None,
+        type=Notification.TYPE_ACCOUNT_WARNING,
+        title='Ogohlantirish',
+        message=message,
+    )
+    AuditLog.log(request, 'admin_user_warn', target=target, extra={
+        'phone': mask_phone(target.normalized_phone),
+        'reason': reason,
+        'message': message,
+    })
+    return Response({
+        'id': warning.id,
+        'created_at': warning.created_at.isoformat(),
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def admin_user_warnings(request, user_id):
+    """GET /api/admin/users/{id}/warnings/ — yuborilgan ogohlantirishlar.
+
+    "Batafsil" oynasidagi "Ogohlantirishlar tarixi" bloki uchun: bloklash
+    qarorini qabul qilishdan oldin admin bu foydalanuvchi avval necha marta
+    va nima uchun ogohlantirilganini ko'rishi kerak.
+
+    Sabab (`reason`) bu yerda QAYTARILMAYDI — u ichki izoh bo'lib faqat audit
+    jurnalida qoladi; bu ro'yxat foydalanuvchiga yuborilgan matnning o'zini
+    ko'rsatadi. `is_read` esa xabar o'qilganini bildiradi (ogohlantirish
+    yetib bormagan bo'lsa, blok o'rniga yana bir marta yozish mumkin).
+
+    `user_id` javobda qaytariladi — `admin_user_login_history` bilan bir xil
+    sabab: ketma-ket ochilgan oynalarda eski javob ko'rinib qolmasin.
+    """
+    from django.contrib.auth import get_user_model
+    from notifications.models import Notification
+
+    User = get_user_model()
+    if not User.objects.filter(pk=user_id).exists():
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    warnings = (
+        Notification.objects
+        .filter(user_id=user_id, type=Notification.TYPE_ACCOUNT_WARNING)
+        .order_by('-created_at')[:50]
+    )
+    return Response({
+        'user_id': int(user_id),
+        'warnings': [{
+            'id': w.id,
+            'title': w.title,
+            'message': w.message,
+            'is_read': w.is_read,
+            'created_at': w.created_at.isoformat(),
+        } for w in warnings],
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def admin_user_sessions(request, user_id):
+    """GET /api/admin/users/{id}/sessions/ — foydalanuvchining seanslari.
+
+    "Batafsil" oynasidagi "Faol seanslar" bloki uchun. "Kirish tarixi" dan
+    farqi shundaki, u O'TMISHNI ko'rsatadi (har bir kirish hodisasi), bu esa
+    HOZIRGI holatni: qaysi qurilma hozir ham hisobga kira oladi. Shu sababli
+    har bir qatorda "Yakunlash" tugmasi mumkin bo'ladi
+    (`admin_force_logout_session`).
+
+    `jti` bo'sh yozuvlar ATAYLAB tushib qoladi: bu maydon qo'shilishidan
+    oldingi kirishlar uchun refresh tokenni topib bo'lmaydi, ya'ni ularni
+    alohida yakunlash imkoni yo'q — "faol" deb ko'rsatish esa admin bosa
+    olmaydigan tugmani va'da qilardi.
+
+    Seans FAOL deb hisoblanadi, agar shu `jti` uchun OutstandingToken bor
+    bo'lsa, muddati o'tmagan bo'lsa VA blacklistda bo'lmasa. Ikkala jadval
+    ham BITTA so'rovda o'qiladi va Python tomonda birlashtiriladi — qator
+    boshiga so'rov (N+1) yo'q.
+
+    `user_id` javobda qaytariladi — `admin_user_login_history` bilan bir xil
+    sabab: ketma-ket ochilgan oynalarda eski javob ko'rinib qolmasin.
+    """
+    from django.contrib.auth import get_user_model
+    from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+
+    User = get_user_model()
+    if not User.objects.filter(pk=user_id).exists():
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    events = list(
+        LoginEvent.objects
+        .filter(user_id=user_id)
+        .exclude(jti='')
+        .order_by('-created_at')[:50]
+    )
+    jtis = [e.jti for e in events]
+    # `OutstandingToken.jti` unikal — dict xavfsiz.
+    expires_by_jti = dict(
+        OutstandingToken.objects.filter(jti__in=jtis).values_list('jti', 'expires_at')
+    )
+    blacklisted_jtis = set(
+        BlacklistedToken.objects
+        .filter(token__jti__in=jtis)
+        .values_list('token__jti', flat=True)
+    )
+    now = timezone.now()
+    return Response({
+        'user_id': int(user_id),
+        'sessions': [{
+            'login_event_id': e.id,
+            'ip_address': e.ip_address,
+            'user_agent': e.user_agent,
+            'created_at': e.created_at.isoformat(),
+            'is_active': (
+                e.jti in expires_by_jti
+                and expires_by_jti[e.jti] > now
+                and e.jti not in blacklisted_jtis
+            ),
+            # Token topilmasa (muddati o'tib tozalangan) — muddat ham noma'lum.
+            'expires_at': (
+                expires_by_jti[e.jti].isoformat() if e.jti in expires_by_jti else None
+            ),
+        } for e in events],
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_force_logout_session(request, user_id, login_event_id):
+    """POST /api/admin/users/{id}/sessions/{login_event_id}/force-logout/
+
+    BITTA seansni yakunlaydi. `admin_force_logout_user` dan farqi: u
+    `token_version` ni oshirib BARCHA qurilmalarni bir yo'la chiqaradi, bu
+    esa faqat shu kirishda berilgan refresh tokenni blacklistga qo'shadi —
+    qolgan qurilmalar ishlashda davom etadi. Tipik holat: foydalanuvchi
+    begona qurilmada ochiq qolgan seansni ko'rsatadi, lekin o'z telefonidan
+    chiqib qolishni xohlamaydi.
+
+    Blacklist yozuvi to'g'ridan-to'g'ri OutstandingToken ustidan yaratiladi:
+    `logout` dagidek `RefreshToken(...)` orqali qilib bo'lmaydi, chunki admin
+    qo'lida token satrining o'zi yo'q (va hech qachon bo'lmasligi ham kerak)
+    — faqat `LoginEvent.jti` bor.
+
+    KELISHILGAN CHEGARA — mahsulot bilan tasdiqlangan, tuzatilishi kerak
+    bo'lgan xato EMAS: blacklist refresh tokenni bekor qiladi, ya'ni bu seans
+    boshqa YANGI access token ola olmaydi. Lekin allaqachon berilgan JORIY
+    access token o'z muddati tugagunicha ishlayveradi — SIMPLE_JWT
+    ['ACCESS_TOKEN_LIFETIME'] = 30 daqiqa, ya'ni chiqarish eng ko'pi 30
+    daqiqagacha kechikishi mumkin. Sababi: har bir so'rovdagi tekshiruv
+    global `token_version` da'vosiga qaraydi, seans-ma-seans blacklist
+    holatiga emas (aks holda har bir so'rov qo'shimcha DB o'qishini talab
+    qilardi). Zudlik bilan uzish kerak bo'lsa "Barcha qurilmalardan
+    chiqarish" ishlatiladi.
+    """
+    from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+
+    # `user_id` ham shartda: boshqa foydalanuvchining seans ID'si tasodifan
+    # (yoki ataylab) yuborilsa 404 qaytadi, begona seans yakunlanib ketmaydi.
+    login_event = (
+        LoginEvent.objects
+        .select_related('user')  # audit yozuvi uchun — alohida so'rovsiz
+        .filter(pk=login_event_id, user_id=user_id)
+        .first()
+    )
+    if not login_event:
+        return Response({'detail': 'Seans topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    if not login_event.jti:
+        return Response(
+            {'detail': "Bu seans eski, alohida yakunlab bo'lmaydi — "
+                       "'Barcha qurilmalardan chiqarish' funksiyasidan foydalaning"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    outstanding = OutstandingToken.objects.filter(jti=login_event.jti).first()
+    if not outstanding:
+        # Muddati o'tgan yoki `flushexpiredtokens` bilan tozalangan: bekor
+        # qilinadigan narsa qolmagan. Jimgina "muvaffaqiyat" qaytarish
+        # adminni chalg'itardi ("yakunladim" deb o'ylardi) — aniq aytamiz.
+        return Response({'detail': "Bu seans allaqachon tugagan — bekor qilinadigan token yo'q"},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    BlacklistedToken.objects.get_or_create(token=outstanding)
+    AuditLog.log(request, 'admin_force_logout_session', target=login_event.user, extra={
+        'login_event_id': login_event.id,
+        'ip_address': login_event.ip_address,
+    })
+    return Response({'login_event_id': login_event.id, 'is_active': False})
 
 
 # Blok muddati uchun ruxsat etilgan variantlar (kun). Admin panelidagi

@@ -41,6 +41,9 @@ class Notification(models.Model):
     # owner buni faqat manager approve tugmasini bosib xato toast'ini o'qigan
     # holatdagina bilardi. `type` — choices'siz CharField, migratsiya shart emas.
     TYPE_STUDENT_LIMIT_REACHED = 'student_limit_reached'
+    # Platforma admini yuboradigan rasmiy ogohlantirish — bloklashdan OLDINGI
+    # qadam. Hisob holatiga tegmaydi, faqat foydalanuvchini xabardor qiladi.
+    TYPE_ACCOUNT_WARNING = 'account_warning'
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
