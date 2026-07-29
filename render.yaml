@@ -64,7 +64,15 @@ services:
     rootDir: backend
     env: python
     region: ohio
-    plan: standard
+    # DIQQAT: bu yerda "standard" deb yozilgan bo'lsa ham, Render blueprint
+    # bu maydonni MAVJUD xizmatga avtomatik qo'llamaydi (reja o'zgarishi
+    # dashboard'da qo'lda tasdiqlanishi kerak). 2026-07-29 holatiga ko'ra
+    # Render'dagi haqiqiy olympy-api hali `starter` (512MB) rejada edi — shu
+    # nomuvofiqlik gunicorn worker sonini oshirgan 2166ef7 bilan birga OOM'ga
+    # olib keldi (qarang: backend/render_start.sh). Reja shu yerda "starter"
+    # qilib ko'rsatilgan — haqiqatan standard'ga o'tkazilsa, buni ikkalasini
+    # ham (shu qatorni va GUNICORN_WORKERS'ni) mos ravishda yangilang.
+    plan: starter
     branch: main
     buildCommand: ./render_build.sh
     startCommand: ./render_start.sh
