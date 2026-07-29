@@ -646,6 +646,16 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'accounts.tasks.cleanup_phone_verifications',
         'schedule': timedelta(hours=1),
     },
+    # Har kuni 02:30 UTC — muddati o'tgan `OutstandingToken` yozuvlari.
+    # Jadvalga har login va har token yangilanishida qator qo'shiladi va uni
+    # hech narsa tozalamasdi; o'sib borgan indekslar aynan LOGIN'dagi
+    # INSERT'ni sekinlashtiradi (izohi accounts/tasks.py). Boshqa kechalik
+    # sweep'lardan (03:15, 03:45, 04:05) oldin — ular `accounts_user` ga
+    # tegadi, bu esa boshqa jadvalga.
+    'flush-expired-jwt-tokens': {
+        'task': 'accounts.flush_expired_jwt_tokens',
+        'schedule': crontab(hour=2, minute=30, nowfun=lambda: datetime.now(dt_timezone.utc)),
+    },
     # Soft-delete grace muddati o'tgan hisoblarni hard-delete.
     'purge-soft-deleted-accounts': {
         'task': 'accounts.purge_soft_deleted_accounts',

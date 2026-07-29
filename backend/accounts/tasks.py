@@ -35,6 +35,54 @@ def cleanup_phone_verifications():
     return f'Cleaned {deleted[0]} phone verification rows'
 
 
+@shared_task(name='accounts.flush_expired_jwt_tokens')
+def flush_expired_jwt_tokens(batch_size=2000, max_batches=50):
+    """Muddati o'tgan `OutstandingToken` yozuvlarini o'chiradi.
+
+    NEGA KERAK: `rest_framework_simplejwt.token_blacklist` o'rnatilgani uchun
+    HAR BIR yangi refresh token (`RefreshToken.for_user`) jadvalga bitta qator
+    yozadi — ya'ni har bir login (jumladan Google login) va, ROTATE_REFRESH_
+    TOKENS=True bo'lgani uchun, har bir `/api/auth/token/refresh/`. Faol
+    foydalanuvchi access token muddati (30 daqiqa) bo'yicha yangilanib turadi,
+    demak bitta sessiya kuniga ~48 qator qoldiradi va `token` ustunida to'liq
+    JWT saqlanadi. Hech narsa ularni o'chirmasdi.
+
+    Jadval o'sgan sari LOGIN sekinlashadi: har kirishdagi INSERT ikkita
+    indeksni (`jti` unique va `user_id`) yangilashi kerak, ular esa kichik
+    Postgres instansiyasining keshiga sig'may qoladi.
+
+    Batch bilan o'chiramiz: bitta katta `DELETE` cascade uchun barcha PK'larni
+    xotiraga yig'adi — 512MB konteynerda bu xavfli. `max_batches` — bitta
+    ishga tushishda o'chiriladigan yuqori chegara; qolgani ertangi kunga
+    qoladi (task idempotent, takror ishga tushirish xavfsiz).
+    """
+    import logging
+
+    from rest_framework_simplejwt.token_blacklist.models import OutstandingToken
+
+    logger = logging.getLogger(__name__)
+    now = timezone.now()
+    total = 0
+
+    for _ in range(max_batches):
+        ids = list(
+            OutstandingToken.objects
+            .filter(expires_at__lte=now)
+            .values_list('id', flat=True)[:batch_size]
+        )
+        if not ids:
+            break
+        # Cascade `BlacklistedToken` ga ham tegadi (FK on_delete=CASCADE).
+        deleted, _detail = OutstandingToken.objects.filter(id__in=ids).delete()
+        total += deleted
+        if len(ids) < batch_size:
+            break
+
+    if total:
+        logger.info('flush_expired_jwt_tokens: deleted %s rows', total)
+    return {'deleted_rows': total}
+
+
 @shared_task(name='accounts.purge_soft_deleted_accounts')
 def purge_soft_deleted_accounts():
     """Grace muddati o'tgan soft-delete hisoblarni hard-delete qiladi.

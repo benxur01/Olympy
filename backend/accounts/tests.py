@@ -1,6 +1,9 @@
 import json
+import time
 from datetime import timedelta
 from unittest.mock import patch
+
+import jwt
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
@@ -2056,7 +2059,11 @@ class PortfolioVerifyTestCase(APITestCase):
         self.assertEqual(resp.data['reason'], 'not_found')
 
 
-GOOGLE_JWKS_PATCH = 'accounts.views._google_jwks_client.get_signing_key_from_jwt'
+# Google'ning ochiq kalitini olish (yagona tarmoq nuqtasi) shu helper ichida:
+# u `PyJWKClient` keshini ishlatadi va noma'lum `kid` uchun tarmoqqa chiqishni
+# cheklaydi (izohi `accounts/views.py`). Testlar aynan shu chegarani mock
+# qiladi — imzo/`aud`/`iss`/`exp` tekshiruvlari haqiqiy kod yo'lidan o'tadi.
+GOOGLE_JWKS_PATCH = 'accounts.views._google_signing_key'
 
 
 @override_settings(GOOGLE_CLIENT_ID=None)
@@ -2312,6 +2319,189 @@ class GoogleAuthTestCase(APITestCase):
         user = User.objects.get(phone=self._google_phone(sub))
         self.assertIn('owner', user.roles)
         self.assertIn('teacher', user.roles)
+
+
+@override_settings(GOOGLE_CLIENT_ID=None)
+class GoogleJwksNetworkBudgetTestCase(APITestCase):
+    """`/api/auth/google/` Google'ning JWKS'iga necha marta chiqadi?
+
+    Bu view'dagi YAGONA tashqi tarmoq chaqiruvi va u so'rov thread'ini
+    bloklaydi — web konteynerda esa jami 6 ta gunicorn thread bor. Shu sababli
+    chiqishlar soni xulqning bir qismi hisoblanadi va shu yerda qulflanadi.
+
+    Tuzatilgunga qadar `PyJWKClient` faqat MUVAFFAQIYATLI qidiruvni keshlardi:
+    `kid`i mos kelmaydigan har bir token (soxta yoki skaner trafigi) JWKS'ni
+    majburan qayta yuklatardi — o'lchov: 5 ta shunday so'rov → 5 ta bloklovchi
+    HTTPS chiqishi.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        cls.key_current = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        cls.key_rotated = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        cls.key_forged = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+    @staticmethod
+    def _jwks(keys):
+        """`keys` ({kid: private_key}) dan Google JWKS javobini yasaydi."""
+        import base64
+
+        def b64(value):
+            raw = value.to_bytes((value.bit_length() + 7) // 8, 'big')
+            return base64.urlsafe_b64encode(raw).rstrip(b'=').decode()
+
+        entries = []
+        for kid, key in keys.items():
+            numbers = key.public_key().public_numbers()
+            entries.append({
+                'kty': 'RSA', 'alg': 'RS256', 'use': 'sig', 'kid': kid,
+                'n': b64(numbers.n), 'e': b64(numbers.e),
+            })
+        return {'keys': entries}
+
+    def setUp(self):
+        from accounts import views
+
+        # Modul darajasidagi kesh testlar orasida saqlanadi — tozalaymiz.
+        views._google_known_kids.clear()
+        views._google_jwks_next_refresh_at = 0.0
+        if views._google_jwks_client.jwk_set_cache is not None:
+            views._google_jwks_client.jwk_set_cache.jwk_set_with_timestamp = None
+        views._google_jwks_client.get_signing_key.cache_clear()
+
+        self.url = reverse('google-login')
+        self.published = self._jwks({'kid-current': self.key_current})
+        self.fetches = 0
+
+    def _patched_fetch(self):
+        """`PyJWKClient.fetch_data` o'rniga — tarmoqqa chiqishlarni sanaydi."""
+        from accounts import views
+
+        def fetch_data():
+            self.fetches += 1
+            cache = views._google_jwks_client.jwk_set_cache
+            if cache is not None:
+                cache.put(self.published)
+            return self.published
+
+        return patch.object(views._google_jwks_client, 'fetch_data', fetch_data)
+
+    def _warm_jwks(self):
+        """JWKS keshini isitib, hisoblagich va oynani nolga qaytaradi.
+
+        Production'dagi normal holat aynan shu: haqiqiy kirishlar keshni
+        allaqachon to'ldirgan bo'ladi. Sovuq keshda esa noma'lum `kid` ikkita
+        chiqishga tushadi (avval keshni to'ldirish, keyin majburiy refresh) —
+        testlar aynan bir holatdan boshlashi uchun oldindan isitamiz.
+        """
+        from accounts import views
+
+        self._login(self.key_current, 'kid-current', '555000')
+        views._google_jwks_next_refresh_at = 0.0
+        self.fetches = 0
+
+    def _login(self, key, kid, sub):
+        now = int(time.time())
+        token = jwt.encode(
+            {
+                'iss': 'https://accounts.google.com',
+                'aud': 'olympy-test.apps.googleusercontent.com',
+                'iat': now, 'exp': now + 3600,
+                'sub': sub, 'email': f'{sub}@gmail.com', 'name': 'Kid Probe',
+            },
+            key, algorithm='RS256', headers={'kid': kid},
+        )
+        response = self.client.post(self.url, {'id_token': token}, format='json')
+        # Muvaffaqiyatli kirish cookie qoldiradi — keyingi so'rov o'sha cookie
+        # bilan autentifikatsiya qilinmasin (bu qo'shimcha DB so'rovi bo'lardi).
+        self.client.cookies.clear()
+        return response
+
+    def test_valid_kid_hits_network_once(self):
+        """Haqiqiy `kid` — birinchi kirish JWKS'ni yuklaydi, qolganlari keshdan."""
+        with self._patched_fetch():
+            for i in range(5):
+                response = self._login(self.key_current, 'kid-current', f'55500{i}')
+                self.assertIn(
+                    response.status_code,
+                    (status.HTTP_200_OK, status.HTTP_201_CREATED),
+                )
+        self.assertEqual(self.fetches, 1)
+
+    def test_unknown_kid_cannot_force_a_fetch_per_request(self):
+        """Noma'lum `kid` — oynada eng ko'pi bilan BITTA tarmoq chiqishi.
+
+        Regressiya himoyasi: avval bu 5 ta so'rov uchun 5 ta bloklovchi HTTPS
+        chaqiruvi (har biri thread'ni band qilib) bo'lardi.
+        """
+        with self._patched_fetch():
+            self._warm_jwks()
+            before = User.objects.count()
+            for i in range(5):
+                response = self._login(self.key_forged, 'forged-kid', f'55510{i}')
+                self.assertIn(
+                    response.status_code,
+                    (status.HTTP_401_UNAUTHORIZED, status.HTTP_503_SERVICE_UNAVAILABLE),
+                )
+        self.assertEqual(self.fetches, 1)
+        self.assertEqual(User.objects.count(), before)
+
+    def test_each_random_kid_cannot_force_its_own_fetch(self):
+        """Har safar BOSHQA `kid` yuborilsa ham chegara oyna bo'yicha ushlanadi."""
+        with self._patched_fetch():
+            self._warm_jwks()
+            for i in range(5):
+                self._login(self.key_forged, f'random-kid-{i}', f'55520{i}')
+        self.assertEqual(self.fetches, 1)
+
+    def test_google_key_rotation_still_resolves(self):
+        """Google yangi kalitga o'tsa kirish ishlashi SHART (fail-closed emas).
+
+        Chegara faqat tarmoq chiqishlari CHASTOTASINI kamaytiradi; oyna ochiq
+        bo'lganda yangi `kid` yuklab olinadi va keyin keshdan ishlaydi.
+        """
+        from accounts import views
+
+        with self._patched_fetch():
+            first = self._login(self.key_current, 'kid-current', '555300')
+            self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+            # Google JWKS'ga yangi kalit qo'shdi va endi shu bilan imzolaydi.
+            self.published = self._jwks({
+                'kid-current': self.key_current,
+                'kid-next': self.key_rotated,
+            })
+            views._google_jwks_next_refresh_at = 0.0  # oyna ochildi
+
+            rotated = self._login(self.key_rotated, 'kid-next', '555301')
+            self.assertEqual(rotated.status_code, status.HTTP_201_CREATED)
+            fetches_after_rotation = self.fetches
+
+            # Yangi kalit endi keshda — qo'shimcha chiqish bo'lmasin.
+            again = self._login(self.key_rotated, 'kid-next', '555302')
+            self.assertEqual(again.status_code, status.HTTP_201_CREATED)
+            self.assertEqual(self.fetches, fetches_after_rotation)
+
+            # Eski kalit bilan imzolangan tokenlar ham ishlayveradi.
+            old = self._login(self.key_current, 'kid-current', '555303')
+            self.assertEqual(old.status_code, status.HTTP_201_CREATED)
+
+    def test_token_without_kid_is_rejected_without_network(self):
+        """`kid` sarlavhasisiz token — 401 va tarmoqqa umuman chiqilmaydi."""
+        with self._patched_fetch():
+            now = int(time.time())
+            token = jwt.encode(
+                {
+                    'iss': 'https://accounts.google.com', 'iat': now,
+                    'exp': now + 3600, 'sub': '555400', 'email': 'nokid@gmail.com',
+                },
+                self.key_current, algorithm='RS256',
+            )
+            response = self.client.post(self.url, {'id_token': token}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(self.fetches, 0)
 
 
 class LiveQuizQuestionIsolationTestCase(APITestCase):
