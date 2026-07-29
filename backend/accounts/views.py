@@ -3,6 +3,8 @@ import json
 import logging
 import os
 import secrets
+import threading
+import time
 import urllib.parse
 import urllib.request
 from datetime import timedelta
@@ -559,12 +561,96 @@ login.cls.throttle_scope = 'auth'
 # qidiradi.
 GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs'
 GOOGLE_ISSUERS = ('https://accounts.google.com', 'accounts.google.com')
+# `timeout` ATAYIN qisqa (avval 10s edi). Bu kutish gunicorn thread'ini band
+# qilib turadi, web konteynerda esa jami 6 ta thread bor (render_start.sh) —
+# ya'ni har bir sekund butun sayt uchun sig'im. Google'ning JWKS'i global CDN
+# endpoint'i: 3 sekundda javob bermasa, kutishning ma'nosi yo'q, 503 qaytarib
+# thread'ni bo'shatgan afzal (support_chat'dagi byudjet bilan bir xil mantiq).
 _google_jwks_client = jwt.PyJWKClient(
     GOOGLE_JWKS_URL,
     cache_keys=True,
     lifespan=3600,
-    timeout=10,
+    timeout=3,
 )
+
+# ─── Noma'lum `kid` uchun tarmoq chiqishini cheklash ─────────────────────────
+# MUAMMO: `PyJWKClient.get_signing_key(kid)` faqat MUVAFFAQIYATLI natijani
+# keshlaydi (lru_cache istisnolarni saqlamaydi). Kalit keshda topilmasa u
+# JWKS'ni `refresh=True` bilan qayta yuklaydi — ya'ni `kid`i Google'nikiga mos
+# kelmaydigan HAR BIR token (soxta, buzilgan, boshqa provayderdan kelgan yoki
+# oddiy skaner trafigi) `www.googleapis.com` ga BLOKLOVCHI HTTPS so'rov
+# yuborishga majbur qiladi. O'lchangan: bir xil noma'lum `kid` bilan 5 so'rov →
+# 5 ta tarmoq chiqishi (haqiqiy `kid` bilan 5 so'rov → 1 ta).
+#
+# Bu endpoint `AllowAny` va throttle faqat IP bo'yicha (10/min), shuning uchun
+# bir nechta manba osongina 6 ta thread'ning hammasini shu kutishga bog'lab
+# qo'yishi mumkin — o'shanda sayt bo'ylab (jumladan HAQIQIY Google login uchun)
+# so'rovlar navbatda kutadi. Aynan shu "bir necha thread'ni bloklash" naqshi.
+#
+# YECHIM: allaqachon hal qilingan `kid`lar to'plamini yuritamiz — ular uchun
+# `get_signing_key` lru_cache'dan qaytadi va tarmoqqa umuman chiqilmaydi.
+# Noma'lum `kid` esa tarmoqqa faqat oynada BIR MARTA chiqa oladi; qolganlari
+# darhol (tarmoqsiz) rad etiladi. Kalit rotatsiyasi buzilmaydi: Google yangi
+# kalitga o'tsa, birinchi kirish uni yuklab oladi va keyingilari keshdan
+# ishlaydi — eng yomon holatda rotatsiya bir oyna davomida sekinlashadi.
+_GOOGLE_JWKS_REFRESH_INTERVAL = 60  # sekund
+_google_known_kids = set()
+_google_jwks_lock = threading.Lock()
+_google_jwks_next_refresh_at = 0.0
+
+
+class GoogleJwksThrottled(jwt.PyJWKClientConnectionError):
+    """Noma'lum `kid` — oyna ichida tarmoqqa qayta chiqilmadi.
+
+    `PyJWKClientConnectionError` dan meros oladi, chunki natija mijoz uchun
+    aynan bir xil: kalitni tasdiqlab bo'lmadi, qayta urinib ko'rish kerak
+    (503). Alohida tur faqat LOG darajasini ajratish uchun — bu kutilgan
+    holat (soxta token / skaner trafigi), haqiqiy tarmoq nosozligi emas.
+    """
+
+
+def _google_signing_key(id_token):
+    """Token `kid`iga mos Google ochiq kalitini qaytaradi.
+
+    Ma'lum `kid` — tarmoqsiz (kesh). Noma'lum `kid` — tarmoqqa chiqish
+    `_GOOGLE_JWKS_REFRESH_INTERVAL` bilan cheklangan; oyna ichida ikkinchi
+    urinish `GoogleJwksThrottled` bilan rad etiladi (view uni 503 — qayta
+    urinsa bo'ladigan holat deb qaytaradi).
+    """
+    global _google_jwks_next_refresh_at
+
+    kid = jwt.get_unverified_header(id_token).get('kid')
+    if not kid:
+        raise jwt.PyJWKClientError("Google tokenida `kid` sarlavhasi yo'q")
+    if kid in _google_known_kids:
+        return _google_jwks_client.get_signing_key(kid)
+
+    with _google_jwks_lock:
+        now = time.monotonic()
+        if now < _google_jwks_next_refresh_at:
+            raise GoogleJwksThrottled(f'unknown kid {kid!r} within refresh window')
+        _google_jwks_next_refresh_at = now + _GOOGLE_JWKS_REFRESH_INTERVAL
+
+    key = _google_jwks_client.get_signing_key(kid)
+    _google_known_kids.add(kid)
+    return key
+
+
+def _google_user_lookup(google_phone):
+    """Google identifikatori bo'yicha foydalanuvchi (yoki ``None``).
+
+    `.order_by()` ATAYIN: `User.Meta.ordering = ['-created_at']` bo'lgani uchun
+    `.first()` so'rovga `ORDER BY created_at DESC` qo'shib yuborardi. `created_at`
+    da indeks yo'q, izlanayotgan ikkala ustun esa UNIQUE — ya'ni mos keladigan
+    qator ko'pi bilan bitta. Tartib hech narsani o'zgartirmaydi, lekin
+    PostgreSQL rejasiga indekssiz sort kaliti qo'shadi.
+    """
+    from django.contrib.auth import get_user_model
+    from django.db import models
+
+    return get_user_model().objects.filter(
+        models.Q(normalized_phone=google_phone) | models.Q(phone=google_phone)
+    ).order_by().first()
 
 
 @api_view(['POST'])
@@ -580,14 +666,13 @@ def google_login(request):
 
     import hashlib
     from django.contrib.auth import get_user_model
-    from django.db import models
 
     User = get_user_model()
 
     google_client_id = getattr(settings, 'GOOGLE_CLIENT_ID', None)
 
     try:
-        signing_key = _google_jwks_client.get_signing_key_from_jwt(id_token)
+        signing_key = _google_signing_key(id_token)
         # `jwt.decode` imzo, muddat (`exp`) va `iss` ni ham shu yerda tekshiradi
         # — ya'ni tokeninfo endpoint'i Google tomonida bajargan tekshiruvlarning
         # hammasi saqlanib qoladi.
@@ -610,6 +695,17 @@ def google_login(request):
     except jwt.InvalidAudienceError as exc:
         logger.warning("Google token audience mismatch: expected=%s (%s)", google_client_id, exc)
         return Response({'detail': "Google Client ID mos kelmadi."}, status=status.HTTP_401_UNAUTHORIZED)
+    except GoogleJwksThrottled as exc:
+        # KUTILGAN holat: noma'lum `kid` oyna ichida qayta tarmoqqa chiqara
+        # olmadi (deyarli har doim soxta token yoki skaner trafigi). Javob
+        # `PyJWKClientConnectionError` bilan bir xil — 503, qayta urinsa
+        # bo'ladi — lekin log darajasi WARNING: aks holda bu oddiy fon
+        # trafigi production loglarini (va Sentry'ni) ERROR bilan to'ldirardi.
+        logger.warning('Google JWKS refresh throttled: %s', exc)
+        return Response(
+            {'detail': "Google bilan bog'lanib bo'lmadi. Birozdan so'ng qayta urinib ko'ring."},
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
     except jwt.PyJWKClientConnectionError as exc:
         # Google'ning JWKS endpoint'iga chiqa olmadik (tarmoq/timeout) — bu
         # SERVER tomonidagi vaqtinchalik nosozlik, foydalanuvchi tokeni bilan
@@ -653,9 +749,7 @@ def google_login(request):
     google_phone = f"google_{sub_digest[:13]}"      # 7 + 13 = 20 belgi (phone maks.)
     google_username = f"google_{sub_digest[:12]}"   # 7 + 12 = 19 belgi (username maks. 32)
 
-    user = User.objects.filter(
-        models.Q(normalized_phone=google_phone) | models.Q(phone=google_phone)
-    ).first()
+    user = _google_user_lookup(google_phone)
 
     if user:
         # Parol bilan login oqimidagi kabi: muddatli blok tugagan bo'lsa
@@ -685,7 +779,13 @@ def google_login(request):
 
     try:
         with transaction.atomic():
-            user = User.objects.create(
+            # Avval `User.objects.create(...)` + `user.save()` chaqirilardi —
+            # bu ikkita DB yozuvi (INSERT, so'ng butun qatorni qayta yozadigan
+            # UPDATE) demakdi, chunki parol faqat obyekt saqlangandan KEYIN
+            # o'rnatilardi. Parolni INSERT'dan oldin qo'yamiz: bitta yozuv
+            # yetarli (`set_unusable_password` hash hisoblamaydi — u tasodifiy
+            # "!" prefiksli qiymat yozadi, ya'ni tekin).
+            user = User(
                 phone=google_phone,
                 normalized_phone=google_phone,
                 username=google_username,
@@ -698,12 +798,10 @@ def google_login(request):
                 premium_trial_end=timezone.now() + timedelta(days=30),
             )
             user.set_unusable_password()
-            user.save()
+            user.save(force_insert=True)
     except IntegrityError:
         # Bir vaqtda ikkita birinchi login (race) — mavjud yozuvni qaytaramiz.
-        user = User.objects.filter(
-            models.Q(normalized_phone=google_phone) | models.Q(phone=google_phone)
-        ).first()
+        user = _google_user_lookup(google_phone)
         if not user:
             raise
         return _auth_response(request, user)
