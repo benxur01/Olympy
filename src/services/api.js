@@ -969,9 +969,14 @@ export const OlympyApi = {
     return request(`/api/centers/${centerId}/image/`, { method: 'POST', body: fd, token });
   },
   joinCenter: (centerId, payload, token) => request(`/api/centers/${centerId}/join/`, { method: 'POST', body: payload, token }),
-  getPendingMemberships: (centerId, role, token) => request(`/api/centers/${centerId}/memberships/pending/${role ? '?role=' + role : ''}`, { token }).then(unwrapList),
-  getStaffMemberships: (centerId, role, token) => request(`/api/centers/${centerId}/memberships/staff/${role ? '?role=' + encodeURIComponent(role) : ''}`, { token }).then(unwrapList),
-  getStudentMemberships: (centerId, statusFilter, token) => request(`/api/centers/${centerId}/memberships/students/${statusFilter ? '?status=' + encodeURIComponent(statusFilter) : ''}`, { token }).then(unwrapList),
+  // Roster ro'yxatlari (arizalar / xodimlar / o'quvchilar) backend'da
+  // sahifalanadi (LargePageNumberPagination, max 200/page). Manager paneli
+  // butun ro'yxatga tayanadi (qidiruv, statistika, guruh filtri), shu sababli
+  // unwrapList bilan faqat 1-sahifani olish yaramaydi — requestAllPages
+  // barcha sahifalarni ketma-ket yig'adi (getAdminCenters/getQuestions naqshi).
+  getPendingMemberships: (centerId, role, token) => requestAllPages(`/api/centers/${centerId}/memberships/pending/${role ? '?role=' + role : ''}`, { token }),
+  getStaffMemberships: (centerId, role, token) => requestAllPages(`/api/centers/${centerId}/memberships/staff/${role ? '?role=' + encodeURIComponent(role) : ''}`, { token }),
+  getStudentMemberships: (centerId, statusFilter, token) => requestAllPages(`/api/centers/${centerId}/memberships/students/${statusFilter ? '?status=' + encodeURIComponent(statusFilter) : ''}`, { token }),
   getStudentDetail: (membershipId, token) => request(`/api/centers/students/${membershipId}/`, { token }),
   createManager: (centerId, payload, token) => request(`/api/centers/${centerId}/managers/create/`, { method: 'POST', body: payload, token }),
   createTeacher: (centerId, payload, token) => request(`/api/centers/${centerId}/teachers/create/`, { method: 'POST', body: payload, token }),

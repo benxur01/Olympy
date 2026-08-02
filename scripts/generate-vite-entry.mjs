@@ -42,15 +42,14 @@ let entry = `import * as React from 'react';\n`;
 entry += `import * as ReactDOMClient from 'react-dom/client';\n`;
 entry += `import { createPortal } from 'react-dom';\n\n`;
 entry += `import * as Sentry from '@sentry/react';\n`;
-entry += `import * as Recharts from 'recharts';\n`;
 entry += `import { OlympyApi } from './services/api.js';\n`;
 entry += `import { OlympyOfflineQueue } from './services/offlineQueue.js';\n`;
 entry += `import DOMPurify from 'dompurify';\n`;
-entry += `import katex from 'katex';\n`;
 entry += `import './services/codemirror-loader.js';\n`;
+entry += `import './services/recharts-loader.js';\n`;
+entry += `import './services/katex-loader.js';\n`;
 entry += `import './proctoring/proctorLoader.js';\n`;
 entry += `import './proctoring/voiceProctorLoader.js';\n`;
-entry += `import 'katex/dist/katex.min.css';\n`;
 entry += `import './index.css';\n\n`;
 
 // Sentry — frontend xato monitoring. Faqat VITE_SENTRY_DSN build paytida
@@ -73,11 +72,12 @@ entry += `globalThis.React = React;\n`;
 entry += `globalThis.ReactDOM = { ...ReactDOMClient, createPortal };\n\n`;
 entry += `globalThis.OlympyApi = OlympyApi;\n`;
 entry += `globalThis.OlympyOfflineQueue = OlympyOfflineQueue;\n`;
-entry += `globalThis.DOMPurify = DOMPurify;\n`;
-entry += `globalThis.Recharts = Recharts;\n`;
-// KaTeX — matematik ifodalarni ($...$ / $$...$$) chiroyli render qilish uchun.
-// shared.jsx ichidagi MathText komponenti global `katex` orqali foydalanadi.
-entry += `globalThis.katex = katex;\n\n`;
+entry += `globalThis.DOMPurify = DOMPurify;\n\n`;
+// Recharts (admin "Tahlil" diagrammalari) va KaTeX (matematik ifodalar)
+// AGARDA kerak bo'lsa lazy tushadi — yuqoridagi `*-loader.js` modullari
+// `globalThis.OlympyRecharts` / `globalThis.OlympyKatex` ni ochadi va
+// og'ir kutubxonani faqat birinchi `load()` chaqiruvida `import()` qiladi.
+// (CodeMirror va proktoring bilan bir xil naqsh.)
 
 // PWA: service worker'ni ro'yxatdan o'tkazish (oflayn rejim + kesh).
 // Faqat brauzer qo'llasa va xavfsiz kontekstda (https/localhost) ishlaydi;

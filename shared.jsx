@@ -374,8 +374,9 @@ const MATH_SPLIT_RE = /(\$\$[\s\S]+?\$\$|\$[^$\n]+?\$)/g;
 const CODE_SPLIT_RE = /(```[\s\S]*?```|`[^`\n]+?`)/g;
 
 // Faqat matematikani render qiladi (kod bo'laklari allaqachon ajratilgan).
-const renderMathParts = (raw, keyBase) => {
-  const k = (typeof katex !== 'undefined' && katex) || (typeof window !== 'undefined' && window.katex);
+// `k` — yuklab bo'lingan katex moduli yoki null (hali kelmagan bo'lsa; u
+// holda ifoda oddiy matn ko'rinishida chiqadi).
+const renderMathParts = (raw, keyBase, k) => {
   if (!k || raw.indexOf('$') === -1) {
     return [<React.Fragment key={`${keyBase}t`}>{raw}</React.Fragment>];
   }
@@ -407,18 +408,40 @@ const renderMathParts = (raw, keyBase) => {
   return nodes;
 };
 
+// KaTeX moduli LAZY yuklanadi (src/services/katex-loader.js) — matnda `$`
+// bo'lgan birinchi MathText render'ida so'raladi va alohida chunkda tushadi.
+const olympyKatex = () => (globalThis.OlympyKatex ? globalThis.OlympyKatex.get() : null);
+
 // React.memo — OlympiadTest.jsx'da har sekundlik timer tick butun daraxtni
 // qayta render qiladi; savol matni/variantlar o'zgarmagan bo'lsa ham MathText
 // memo qilinmagan holda har safar KaTeX'ni qaytadan renderToString qilardi
 // (og'ir, sinxron). Memo bilan `text`/`className` o'zgarmasa qayta hisoblanmaydi.
 const MathText = React.memo(({ text, className }) => {
   const raw = text == null ? '' : String(text);
+  const hasCode = raw.indexOf('`') !== -1;
+  const hasMath = raw.indexOf('$') !== -1;
+
+  // KaTeX kelmaguncha matematik ifoda oddiy matn ($x^2$) sifatida chiqadi;
+  // modul tayyor bo'lgach state o'zgarib qayta render bo'ladi va ifoda
+  // chiroyli ko'rinishga o'tadi. (Hook'lar har doim chaqiriladi — quyidagi
+  // erta `return`lardan OLDIN.)
+  const [katexReady, setKatexReady] = useState(() => !!olympyKatex());
+  useEffect(() => {
+    if (!hasMath || katexReady) return undefined;
+    const loader = globalThis.OlympyKatex;
+    if (!loader) return undefined;
+    let alive = true;
+    loader.load()
+      .then(() => { if (alive) setKatexReady(true); })
+      .catch((err) => { console.warn('KaTeX yuklanmadi:', err); });
+    return () => { alive = false; };
+  }, [hasMath, katexReady]);
+  const katexModule = katexReady ? olympyKatex() : null;
+
   if (!raw) {
     return className ? <span className={className} /> : null;
   }
 
-  const hasCode = raw.indexOf('`') !== -1;
-  const hasMath = raw.indexOf('$') !== -1;
   // Maxsus belgi bo'lmasa — tezkor yo'l, oddiy matn.
   if (!hasCode && !hasMath) {
     return <span className={className}>{raw}</span>;
@@ -426,7 +449,7 @@ const MathText = React.memo(({ text, className }) => {
 
   // Kod yo'q bo'lsa — to'g'ridan-to'g'ri matematikani render qilamiz.
   if (!hasCode) {
-    return <span className={className}>{renderMathParts(raw, 'm')}</span>;
+    return <span className={className}>{renderMathParts(raw, 'm', katexModule)}</span>;
   }
 
   // Avval kod bo'laklarini ajratamiz.
@@ -473,7 +496,7 @@ const MathText = React.memo(({ text, className }) => {
 
     // Oddiy matn bo'lagi — ichida matematika bo'lishi mumkin.
     nodes.push(
-      <React.Fragment key={`s-${index}`}>{renderMathParts(seg, `m${index}`)}</React.Fragment>,
+      <React.Fragment key={`s-${index}`}>{renderMathParts(seg, `m${index}`, katexModule)}</React.Fragment>,
     );
   });
 

@@ -43,6 +43,10 @@ fi
 BACKUP_DIR="$(dirname "$0")/../backups"
 mkdir -p "$BACKUP_DIR"
 
+# Eski dump'larni necha kun saqlaymiz. Hech narsa ularni o'chirmasdi — VPS
+# diskida har kunlik backup to'planib borardi.
+BACKUP_RETENTION_DAYS="${BACKUP_RETENTION_DAYS:-14}"
+
 FILENAME="backup_$(date +%Y%m%d_%H%M%S).dump"
 BACKUP_PATH="$BACKUP_DIR/$FILENAME"
 
@@ -55,6 +59,11 @@ SIZE=$(du -sh "$BACKUP_PATH" | cut -f1)
 echo ""
 echo "Backup muvaffaqiyatli yakunlandi!"
 echo "Fayl: $BACKUP_PATH ($SIZE)"
+
+# Faqat backup MUVAFFAQIYATLI bo'lgandan keyin eskilarini tozalaymiz.
+echo ""
+echo "Eski backup'lar tozalanmoqda (> $BACKUP_RETENTION_DAYS kun)..."
+find "$BACKUP_DIR" -maxdepth 1 -type f -name 'backup_*.dump' -mtime +"$BACKUP_RETENTION_DAYS" -delete
 echo ""
 echo "Restore qilish uchun:"
 echo "  ./scripts/db_restore.sh $BACKUP_PATH 'yangi_db_url'"

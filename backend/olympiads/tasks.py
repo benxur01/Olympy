@@ -300,35 +300,47 @@ def finish_expired_olympiads():
     User = get_user_model()
     
     expired_subs = UserSubscription.objects.filter(is_active=True, end_date__lte=now)
-    expired_users = list(expired_subs.values_list('user_id', flat=True).distinct())
+    expired_users = set(expired_subs.values_list('user_id', flat=True).distinct())
     # Obunasi yangi tugab organization premiumdan tushgan markazlar — ortiqcha
     # o'quvchi limitidan oshib turgan bo'lsa owner'ga ogohlantirish yuboramiz.
     downgraded_center_owner_ids = []
-    if expired_subs.exists():
+    if expired_users:
         expired_subs.update(is_active=False)
-        for uid in expired_users:
-            u = User.objects.filter(pk=uid).first()
-            if not u:
-                continue
-            has_active = UserSubscription.objects.filter(user=u, is_active=True, end_date__gt=now).exists()
-            if not has_active:
-                u.is_premium = False
-                u.save(update_fields=['is_premium'])
+        # Avval har foydalanuvchi uchun alohida `first()` + ikkita `exists()` +
+        # `save()` bajarilardi — ya'ni obunasi tugagan har bir user uchun 4+
+        # query. Task har 5 daqiqada ishlaydi, shuning uchun bu to'plam (set)
+        # asosidagi guruh so'rovlariga ko'chirildi. Shartlar aynan o'sha:
+        # "hali amal qiluvchi (is_active=True, end_date > now) obunasi bor"
+        # foydalanuvchilar chetda qoladi, qolganlarining bayrog'i o'chadi.
+        still_premium = set(
+            UserSubscription.objects
+            .filter(user_id__in=expired_users, is_active=True, end_date__gt=now)
+            .values_list('user_id', flat=True)
+        )
+        User.objects.filter(pk__in=expired_users - still_premium).update(is_premium=False)
 
-            has_active_org = UserSubscription.objects.filter(
-                user=u, is_active=True, plan__plan_type='organization', end_date__gt=now
-            ).exists()
-            if not has_active_org:
-                # Faqat haqiqatan premiumdan tushganlarni (avval True bo'lgan)
-                # ogohlantiramiz — allaqachon bepul bo'lganlarga takror xabar
-                # yubormaslik uchun.
-                downgraded_ids = list(
-                    EducationCenter.objects
-                    .filter(owner=u, is_premium=True)
-                    .values_list('id', flat=True)
-                )
-                EducationCenter.objects.filter(owner=u).update(is_premium=False)
-                downgraded_center_owner_ids.extend(downgraded_ids)
+        still_premium_org = set(
+            UserSubscription.objects
+            .filter(
+                user_id__in=expired_users, is_active=True,
+                plan__plan_type='organization', end_date__gt=now,
+            )
+            .values_list('user_id', flat=True)
+        )
+        org_downgraded_owners = expired_users - still_premium_org
+        if org_downgraded_owners:
+            # Faqat haqiqatan premiumdan tushganlarni (avval True bo'lgan)
+            # ogohlantiramiz — allaqachon bepul bo'lganlarga takror xabar
+            # yubormaslik uchun. Ro'yxat UPDATE'dan OLDIN olinadi, aks holda
+            # `is_premium=True` filtriga hech kim tushmay qolardi.
+            downgraded_center_owner_ids = list(
+                EducationCenter.objects
+                .filter(owner_id__in=org_downgraded_owners, is_premium=True)
+                .values_list('id', flat=True)
+            )
+            EducationCenter.objects.filter(
+                owner_id__in=org_downgraded_owners,
+            ).update(is_premium=False)
 
     # Limitdan oshib turgan markaz egalariga Telegram ogohlantirishi. O'quvchilar
     # AVTOMATIK O'CHIRILMAYDI (bu noto'g'ri bo'lardi) — faqat owner'ga tarifni
@@ -341,18 +353,26 @@ def finish_expired_olympiads():
     # obuna blokiga tushmaydi. Faqat sinovi tugagan VA amal qiluvchi obunasi
     # bo'lmagan foydalanuvchilarning flag'ini qaytaramiz (trial->obuna o'tgan
     # foydalanuvchini xato o'chirib qo'ymaslik uchun aktiv obuna tekshiriladi).
-    trial_expired = User.objects.filter(
-        is_premium=True,
-        premium_trial_end__isnull=False,
-        premium_trial_end__lte=now,
+    trial_expired = set(
+        User.objects
+        .filter(
+            is_premium=True,
+            premium_trial_end__isnull=False,
+            premium_trial_end__lte=now,
+        )
+        .values_list('id', flat=True)
     )
-    for u in trial_expired:
-        has_active = UserSubscription.objects.filter(
-            user=u, is_active=True, end_date__gt=now,
-        ).exists()
-        if not has_active:
-            u.is_premium = False
-            u.save(update_fields=['is_premium'])
+    if trial_expired:
+        # Yuqoridagi blok bilan bir xil batching: har user uchun `exists()` +
+        # `save()` o'rniga bitta guruh so'rovi va bitta UPDATE.
+        trial_still_premium = set(
+            UserSubscription.objects
+            .filter(user_id__in=trial_expired, is_active=True, end_date__gt=now)
+            .values_list('user_id', flat=True)
+        )
+        User.objects.filter(
+            pk__in=trial_expired - trial_still_premium,
+        ).update(is_premium=False)
 
     return f'{count} ta olimpiada yakunlandi va obunalar yangilandi'
 

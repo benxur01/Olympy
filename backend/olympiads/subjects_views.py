@@ -23,19 +23,28 @@ from .models import Olympiad
 
 CACHE_KEY = 'olympy:extra_subjects'
 
+# DB'dan yig'ilgan fanlar uchun alohida cache. Ikkala `.distinct()` so'rovi
+# ham butun jadval bo'ylab skan qiladi (`subject` ustunida indeks yo'q) va bu
+# ro'yxat har auth foydalanuvchi uchun ochiladi. Fanlar juda kam o'zgaradi —
+# yangi fan faqat yangi olimpiada/savol yaratilganda paydo bo'ladi, ya'ni
+# 10 daqiqalik kechikish sezilmaydi. Admin qo'shgan fan (`CACHE_KEY` extras)
+# esa cache'dan TASHQARIDA qo'shiladi va POST javobida darhol ko'rinadi.
+DB_SUBJECTS_CACHE_KEY = 'olympy:db_subjects'
+DB_SUBJECTS_CACHE_SECONDS = 10 * 60
+
 DEFAULT_SUBJECTS = [
     'Matematika', 'Ingliz tili', 'Ona tili', 'Informatika', 'IT',
     'Fizika', 'Kimyo', 'Biologiya', 'Tarix', 'Geografiya',
 ]
 
 
-def _collect_subjects():
+def _db_subjects():
+    """Mavjud qatorlardan (Olympiad + Question) yig'ilgan fanlar, cache'langan."""
+    cached = cache.get(DB_SUBJECTS_CACHE_KEY)
+    if cached is not None:
+        return cached
     seen = set()
     out = []
-    for s in DEFAULT_SUBJECTS:
-        if s not in seen:
-            seen.add(s)
-            out.append(s)
     for source in (
         Olympiad.objects.values_list('subject', flat=True).distinct(),
         # Faqat umumiy (olimpiada) banki: bu ro'yxatni har qanday
@@ -49,6 +58,21 @@ def _collect_subjects():
             if s and s not in seen:
                 seen.add(s)
                 out.append(s)
+    cache.set(DB_SUBJECTS_CACHE_KEY, out, DB_SUBJECTS_CACHE_SECONDS)
+    return out
+
+
+def _collect_subjects():
+    seen = set()
+    out = []
+    for s in DEFAULT_SUBJECTS:
+        if s not in seen:
+            seen.add(s)
+            out.append(s)
+    for s in _db_subjects():
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
     for s in cache.get(CACHE_KEY, []) or []:
         if s and s not in seen:
             seen.add(s)

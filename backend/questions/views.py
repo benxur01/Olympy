@@ -179,7 +179,13 @@ def questions_list_create(request):
                 {'detail': "center parametri son bo'lishi kerak"},
                 status=http_status.HTTP_400_BAD_REQUEST,
             )
-        if not _user_can_create_for_center(request.user, center_id):
+        # Bu tekshiruv `QuestionSerializer.to_representation` ichidagi
+        # per-savol CenterMembership so'roviga TENG (owner/manager/teacher +
+        # approved, platform admin esa avtomatik). Natijani context orqali
+        # uzatamiz — aks holda sahifadagi har savol uchun o'sha so'rov
+        # takrorlanardi (N+1).
+        can_manage = _user_can_create_for_center(request.user, center_id)
+        if not can_manage:
             return Response(
                 {'detail': 'Forbidden'},
                 status=http_status.HTTP_403_FORBIDDEN,
@@ -209,11 +215,12 @@ def questions_list_create(request):
         from olympy_api.pagination import LargePageNumberPagination
         paginator = LargePageNumberPagination()
         page = paginator.paginate_queryset(qs, request)
+        serializer_context = {'request': request, 'can_manage': can_manage}
         if page is not None:
             return paginator.get_paginated_response(
-                QuestionSerializer(page, many=True, context={'request': request}).data
+                QuestionSerializer(page, many=True, context=serializer_context).data
             )
-        return Response(QuestionSerializer(qs, many=True, context={'request': request}).data)
+        return Response(QuestionSerializer(qs, many=True, context=serializer_context).data)
 
     serializer = QuestionSerializer(data=request.data, context={'request': request})
     serializer.is_valid(raise_exception=True)

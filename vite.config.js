@@ -1,6 +1,13 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+// Recharts va uning butun bog'liqlik daraxti (d3-*, victory-vendor, redux
+// oilasi, es-toolkit va h.k.). Ro'yxat `recharts` package.json'idan olingan;
+// bu paketlar loyihada boshqa hech qayerda ishlatilmaydi, shuning uchun
+// hammasini bitta lazy chunkka yig'ish xavfsiz.
+const RECHARTS_CHUNK_RE =
+  /[\\/]node_modules[\\/](recharts|victory-vendor|d3-[^\\/]+|internmap|decimal\.js-light|es-toolkit|eventemitter3|immer|clsx|tiny-invariant|redux|redux-thunk|reselect|react-redux|react-is|hoist-non-react-statics|use-sync-external-store|@reduxjs[\\/]toolkit)[\\/]/;
+
 export default defineConfig({
   plugins: [react()],
   esbuild: {
@@ -73,6 +80,22 @@ export default defineConfig({
           // lazy tushadi; o'z chunkida qolib boshqa vendor bilan aralashmasin.
           if (id.includes('node_modules/@codemirror') || id.includes('node_modules/@lezer')) {
             return 'vendor-codemirror';
+          }
+          // Recharts (+ d3/redux/es-toolkit bog'liqliklari) — faqat admin
+          // "Tahlil" bo'limida kerak, src/services/recharts-loader.js orqali
+          // dinamik import bilan lazy tushadi. Umumiy `vendor` chunkiga
+          // qo'shilib ketmasligi uchun butun bog'liqlik daraxti alohida
+          // chunkda saqlanadi (aks holda `vendor` eager yuklanadi va lazy
+          // importdan foyda qolmaydi). Bu paketlarning barchasi faqat
+          // recharts uchun o'rnatilgan — boshqa joyda ishlatilmaydi.
+          if (RECHARTS_CHUNK_RE.test(id)) {
+            return 'vendor-recharts';
+          }
+          // KaTeX — matematik ifodalar; src/services/katex-loader.js orqali
+          // lazy tushadi (JS + CSS + shriftlar). Matematikasiz sahifalarda
+          // umuman yuklanmaydi.
+          if (/[\\/]node_modules[\\/]katex[\\/]/.test(id)) {
+            return 'vendor-katex';
           }
           // Sentry — yiriq monitoring kutubxonasi.
           if (id.includes('node_modules/@sentry')) {

@@ -25,6 +25,7 @@ from centers.services import user_can_manage_center_staff
 
 from .models import RewardProduct
 from .serializers import RewardProductSerializer
+from .utils import delete_replaced_image_file
 
 
 logger = logging.getLogger(__name__)
@@ -114,6 +115,10 @@ def _validate_and_attach_image(product, request):
     Rasm yuborilmasa hech narsa qilmaydi (mavjud rasm saqlanadi). Yaroqsiz
     yoki juda katta rasmda xato matn (string) qaytaradi, aks holda None.
     Cloudinary yoqilgan bo'lsa ImageField avtomatik o'sha storage'ga yozadi.
+
+    Faqat biriktiradi — saqlash chaqiruvchida. Mavjud rasm almashtirilganda
+    eski fayl chaqiruvchida `delete_replaced_image_file` bilan tozalanadi
+    (save'dan KEYIN, aks holda saqlash xato bersa rasmsiz qolardik).
     """
     image = (
         request.FILES.get('image')
@@ -223,14 +228,19 @@ def center_shop_product_detail(request, product_id):
         product, data=request.data, partial=partial, context={'request': request}
     )
     serializer.is_valid(raise_exception=True)
-    # center read-only — serializer saqlamaydi, ammo aniqlik uchun saqlab
-    # qolamiz (mahsulot markazi o'zgarmaydi).
-    serializer.save()
+    # Rasmni `serializer.save()` dan OLDIN biriktiramiz: `image` serializer'da
+    # ham yozuvchi maydon, ya'ni saqlash faylni allaqachon storage'ga yozadi.
+    # Avval biriktirish `save()` dan keyingi ikkinchi yozuvni (ya'ni ortiqcha,
+    # hech qayerdan havola qilinmagan nusxani) yo'q qiladi.
+    old_image_name = product.image.name if product.image else ''
     img_err = _validate_and_attach_image(product, request)
     if img_err:
         return Response({'detail': img_err}, status=status.HTTP_400_BAD_REQUEST)
-    if request.FILES:
-        product.save(update_fields=['image'])
+    # center read-only — serializer saqlamaydi, ammo aniqlik uchun saqlab
+    # qolamiz (mahsulot markazi o'zgarmaydi).
+    serializer.save()
+    # Yangi rasm saqlangach eski faylni storage'dan o'chiramiz.
+    delete_replaced_image_file(product.image, old_image_name)
     return Response(
         RewardProductSerializer(product, context={'request': request}).data
     )

@@ -644,6 +644,14 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'accounts.flush_expired_jwt_tokens',
         'schedule': crontab(hour=2, minute=30, nowfun=lambda: datetime.now(dt_timezone.utc)),
     },
+    # Har kuni 02:50 UTC — 90 kundan eski O'QILGAN xabarnomalar. Har hodisa
+    # har bir qabul qiluvchiga bitta qator yozadi (olimpiada nashri — butun
+    # markazga fan-out) va hech narsa ularni tozalamasdi. O'qilmaganlar
+    # tegilmaydi. `flush-expired-jwt-tokens` (02:30) tugagach, boshqa jadval.
+    'purge-old-notifications': {
+        'task': 'notifications.purge_old_notifications',
+        'schedule': crontab(hour=2, minute=50, nowfun=lambda: datetime.now(dt_timezone.utc)),
+    },
     # Soft-delete grace muddati o'tgan hisoblarni hard-delete.
     'purge-soft-deleted-accounts': {
         'task': 'accounts.purge_soft_deleted_accounts',

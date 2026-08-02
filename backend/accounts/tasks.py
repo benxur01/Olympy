@@ -209,6 +209,39 @@ def send_telegram_message_task(self, chat_id, text, reply_markup=None, bot='auth
     )
 
 
+@shared_task(name='accounts.delete_storage_file')
+def delete_storage_file_task(name):
+    """Storage'dagi (disk yoki Cloudinary) faylni background'da o'chiradi.
+
+    `accounts.utils.delete_replaced_image_file` shu task orqali ishlaydi.
+    Sabab `send_telegram_message_task` bilan bir xil: Cloudinary yoqilganda
+    (production) `storage.delete()` — bu Cloudinary API'ga tarmoq so'rovi va u
+    HTTP so'rov-javob sikli ichida bajarilardi, ya'ni jami 6 ta Gunicorn
+    thread'idan bittasini rasm almashtirilgan har safar ushlab turardi.
+
+    Fire-and-forget: rasm allaqachon saqlangan, eski faylni o'chirish faqat
+    tozalash. Xato bo'lsa qayta urinilmaydi — avvalgi sinxron xulq aynan shu
+    edi (yetim fayl qolishi so'rovni buzishdan arzonroq), faqat log yoziladi.
+
+    Celery chegarasidan storage obyekti emas, faqat fayl NOMI o'tkaziladi
+    (loyihadagi "task'ga model emas, ID/nom beriladi" naqshi). Rasm maydonlari
+    (`User.avatar`, `EducationCenter.image`, `RewardProduct.image`) alohida
+    `storage=` bermaydi — hammasi default storage'da, shuning uchun
+    `default_storage` `field_file.storage` bilan bir xil obyekt.
+    """
+    from django.core.files.storage import default_storage
+
+    logger = logging.getLogger(__name__)
+    try:
+        default_storage.delete(name)
+    except Exception:
+        logger.warning(
+            "eski rasm faylini o'chirib bo'lmadi: %s", name, exc_info=True,
+        )
+        return {'deleted': False, 'name': name}
+    return {'deleted': True, 'name': name}
+
+
 @shared_task(name='accounts.generate_daily_questions')
 def generate_daily_questions(count=DAILY_QUESTION_COUNT):
     """DH1: Bugungi `count` ta kunlik savolni tanlaydi (idempotent).

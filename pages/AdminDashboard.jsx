@@ -349,28 +349,70 @@ const AdminDonut = ({ segments }) => {
 };
 
 // ─── Recharts-asoslangan Tahlil diagrammalari ──────────────────────────────
-// Komponentlar `globalThis.Recharts` (generate-vite-entry orqali ulangan)
-// dan destructure qilinadi — pages/*.jsx ESM import qila olmaydi (blok ichida
-// konkatenatsiya qilinadi), shuning uchun React/OlympyApi bilan bir xil global
-// pattern ishlatiladi.
-const {
-  ResponsiveContainer: RC,
-  AreaChart: ReAreaChart,
-  Area: ReArea,
-  BarChart: ReBarChart,
-  Bar: ReBar,
-  LineChart: ReLineChart,
-  Line: ReLine,
-  PieChart: RePieChart,
-  Pie: RePie,
-  Cell: ReCell,
-  XAxis: ReXAxis,
-  YAxis: ReYAxis,
-  CartesianGrid: ReGrid,
-  Tooltip: ReTooltip,
-  Legend: ReLegend,
-  LabelList: ReLabelList,
-} = (typeof globalThis !== 'undefined' && globalThis.Recharts) || {};
+// Recharts LAZY yuklanadi: `globalThis.OlympyRecharts.load()`
+// (src/services/recharts-loader.js) dinamik `import()` qiladi, ya'ni
+// kutubxona alohida chunkda qoladi va faqat "Tahlil" bo'limi ochilganda
+// tushadi. Modul kelgunicha quyidagi o'zgaruvchilar `undefined` bo'ladi
+// (diagrammalar o'rniga "Yuklanmoqda..." ko'rinadi); kelgach `bindRecharts`
+// ularni to'ldiradi va `useRecharts` hook'i qayta renderni boshlaydi.
+// pages/*.jsx ESM import qila olmaydi (blok ichida konkatenatsiya qilinadi),
+// shuning uchun React/OlympyApi bilan bir xil global pattern ishlatiladi.
+let RC;
+let ReAreaChart;
+let ReArea;
+let ReBarChart;
+let ReBar;
+let ReLineChart;
+let ReLine;
+let RePieChart;
+let RePie;
+let ReCell;
+let ReXAxis;
+let ReYAxis;
+let ReGrid;
+let ReTooltip;
+let ReLegend;
+let ReLabelList;
+
+const bindRecharts = (R) => {
+  RC = R.ResponsiveContainer;
+  ReAreaChart = R.AreaChart;
+  ReArea = R.Area;
+  ReBarChart = R.BarChart;
+  ReBar = R.Bar;
+  ReLineChart = R.LineChart;
+  ReLine = R.Line;
+  RePieChart = R.PieChart;
+  RePie = R.Pie;
+  ReCell = R.Cell;
+  ReXAxis = R.XAxis;
+  ReYAxis = R.YAxis;
+  ReGrid = R.CartesianGrid;
+  ReTooltip = R.Tooltip;
+  ReLegend = R.Legend;
+  ReLabelList = R.LabelList;
+};
+
+// Recharts'ni (bir marta) yuklaydi va tayyor bo'lganini qaytaradi.
+// `enabled` false bo'lsa hech narsa yuklanmaydi — admin boshqa bo'limlarda
+// ishlayotganda diagramma kutubxonasi umuman so'ralmaydi.
+const useRecharts = (enabled) => {
+  const [ready, setReady] = React.useState(() => !!RC);
+  React.useEffect(() => {
+    if (!enabled || ready) return undefined;
+    const loader = globalThis.OlympyRecharts;
+    if (!loader) return undefined;
+    let alive = true;
+    loader.load()
+      .then((R) => {
+        bindRecharts(R);
+        if (alive) setReady(true);
+      })
+      .catch((err) => { console.warn('Recharts yuklanmadi:', err); });
+    return () => { alive = false; };
+  }, [enabled, ready]);
+  return ready;
+};
 
 // So'm formatlash — daromad diagrammasi tooltip va o'qlarida ishlatiladi.
 // 1 250 000 → "1.25M", 450 000 → "450K", kichik son shundayligicha.
@@ -1088,6 +1130,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     () => isApi ? OlympyApi.getCenterAnalytics(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+  // Recharts kutubxonasi — faqat "Tahlil" tabi ochilganda lazy yuklanadi
+  // (backend so'rovlari bilan bir xil mantiq: kerak bo'lmasa so'ralmaydi).
+  const rechartsReady = useRecharts(page === 'analytics');
   // Amallar tarixi — faqat "logs" tabi ochilganda so'raladi (boshqa tablarda
   // keraksiz so'rov bo'lmasin). Sahifa/qidiruv o'zgarganda qayta yuklanadi.
   const apiAuditRes = useApiData(
@@ -3630,8 +3675,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   );
 
   const renderAnalytics = () => {
+    // Recharts lazy chunk hali tushmagan bo'lsa, barcha diagrammalar
+    // "Yuklanmoqda..." holatida turadi (metrik kartalar esa darrov ko'rinadi).
+    const chartsLoading = !rechartsReady;
     const metrics = isApi ? apiMetricsRes.data : null;
-    const metricsLoading = isApi && apiMetricsRes.loading;
+    const metricsLoading = (isApi && apiMetricsRes.loading) || chartsLoading;
     // 403 (admin emas) yoki boshqa xato — backend diagrammalar o'rniga
     // "Ma'lumot yo'q" ko'rsatamiz. Foydalanuvchi o'sishi (frontend hisob)
     // baribir ishlaydi.
@@ -3684,19 +3732,19 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     // Har bir endpoint mustaqil: loading/error/empty alohida boshqariladi.
     // 403 (admin emas) yoki tarmoq xatosi → "Ma'lumot yo'q" ko'rsatamiz.
     const attemptsTrend = Array.isArray(apiAttemptsTrendRes.data) ? apiAttemptsTrendRes.data : [];
-    const attemptsLoading = isApi && apiAttemptsTrendRes.loading;
+    const attemptsLoading = (isApi && apiAttemptsTrendRes.loading) || chartsLoading;
     const attemptsEmpty = !attemptsTrend.length || attemptsTrend.every(d => !d.count);
 
     const olympiadStats = Array.isArray(apiOlympiadStatsRes.data) ? apiOlympiadStatsRes.data : [];
-    const olympiadStatsLoading = isApi && apiOlympiadStatsRes.loading;
+    const olympiadStatsLoading = (isApi && apiOlympiadStatsRes.loading) || chartsLoading;
 
     const qStats = apiQuestionStatsRes.data || {};
     const qBySubject = Array.isArray(qStats.by_subject) ? qStats.by_subject : [];
     const qBySource = Array.isArray(qStats.by_source) ? qStats.by_source : [];
-    const qStatsLoading = isApi && apiQuestionStatsRes.loading;
+    const qStatsLoading = (isApi && apiQuestionStatsRes.loading) || chartsLoading;
 
     const revenueTrend = Array.isArray(apiRevenueTrendRes.data) ? apiRevenueTrendRes.data : [];
-    const revenueLoading = isApi && apiRevenueTrendRes.loading;
+    const revenueLoading = (isApi && apiRevenueTrendRes.loading) || chartsLoading;
     const revenueEmpty = !revenueTrend.length || revenueTrend.every(d => !d.amount);
 
     const centerAnalytics = apiCenterAnalyticsRes.data || {};
@@ -3704,7 +3752,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const premiumVsFree = Array.isArray(centerAnalytics.premium_vs_free) ? centerAnalytics.premium_vs_free : [];
     const dqTrend = Array.isArray(centerAnalytics.dq_trend) ? centerAnalytics.dq_trend : [];
     const topCentersRating = Array.isArray(centerAnalytics.top_centers_rating) ? centerAnalytics.top_centers_rating : [];
-    const centerAnalyticsLoading = isApi && apiCenterAnalyticsRes.loading;
+    const centerAnalyticsLoading = (isApi && apiCenterAnalyticsRes.loading) || chartsLoading;
     const pvfEmpty = !premiumVsFree.length || premiumVsFree.every(d => !d.premium && !d.free);
     const dqEmpty = !dqTrend.length || dqTrend.every(d => !d.count);
     const ratingEmpty = !topCentersRating.length || topCentersRating.every(s => !(s.points || []).length);
@@ -3731,7 +3779,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
         {/* Diagramma 1 — Foydalanuvchi o'sishi (AreaChart) */}
         <ChartCard title="Foydalanuvchi o'sishi" subtitle="Oxirgi 6 oy bo'yicha yangi ro'yxatlar">
-          <UserGrowthArea data={growthData} />
+          {chartsLoading ? loadingBox(200) : <UserGrowthArea data={growthData} />}
         </ChartCard>
 
         {/* Diagramma 2 — Premium breakdown + Retention */}
