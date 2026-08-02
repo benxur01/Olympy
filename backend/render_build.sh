@@ -53,7 +53,11 @@ PYEOF
 echo "=== STEP 2 OK ==="
 
 echo "=== STEP 3: collectstatic ==="
-if python manage.py collectstatic --no-input; then
+# --clear: WhiteNoise ManifestStaticFilesStorage fayllarni content-hash bilan
+# nomlaydi — --clear bo'lmasa oldingi deploy'larning eski hash'li JS/CSS
+# bundle'lari STATIC_ROOT'da abadiy to'planib borardi (Render'da har deploy
+# yangi konteyner olgani uchun ko'rinmasdi, in-place deploy'da esa o'sadi).
+if python manage.py collectstatic --no-input --clear; then
     echo "=== collectstatic OK ==="
 else
     echo "=== collectstatic FAILED (exit $?) ===" && exit 1

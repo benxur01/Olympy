@@ -22,8 +22,13 @@ from rest_framework.response import Response
 
 from accounts.permissions import IsPlatformAdmin
 
-from .metrics import METRICS_CACHE_SECONDS, get_metrics
+from .metrics import METRICS_CACHE_SECONDS, get_cached_block, get_metrics
 from .presence import ONLINE_WINDOW_SECONDS, get_online_count, get_online_user_ids
+
+
+def _refresh_requested(request):
+    """`?refresh=1` — cache'ni chetlab o'tish (metrics_dashboard bilan bir xil)."""
+    return request.GET.get('refresh') in ('1', 'true', 'True')
 
 
 @api_view(['GET'])
@@ -34,7 +39,7 @@ def metrics_dashboard(request):
     Faqat platforma admini (is_platform_admin) uchun. `?refresh=1` cache'ni
     chetlab o'tib qayta hisoblaydi (admin dashboard bilan bir xil xulq).
     """
-    force = request.GET.get('refresh') in ('1', 'true', 'True')
+    force = _refresh_requested(request)
     metrics = get_metrics(force_refresh=force)
     return Response({
         **metrics,
@@ -344,16 +349,15 @@ def group_stats(request):
 # (IsPlatformAdmin) — metrics_dashboard bilan bir xil himoya. Hisoblash oddiy
 # ORM aggregate'lari bilan bajariladi; jadval bo'sh bo'lsa bo'sh ro'yxat
 # qaytariladi (frontend graceful fallback ko'rsatadi).
+#
+# Har bir bloknig natijasi `get_cached_block` orqali metrics_dashboard bilan
+# AYNAN bir xil muddatga (METRICS_CACHE_SECONDS) cache'lanadi va `?refresh=1`
+# bilan qayta hisoblanadi. Hisoblash mantig'i `_..._data()` funksiyalarida —
+# metrics.py'dagi `_retention_block`/`compute_metrics` ajratmasi bilan bir xil.
 
 
-@api_view(['GET'])
-@permission_classes([IsPlatformAdmin])
-def attempts_trend(request):
-    """GET /api/analytics/attempts-trend/ — oxirgi 30 kun kunlik attempt soni.
-
-    Response: [{"date": "2026-06-01", "count": 42}, ...]. Attempt yozilmagan
-    kunlar 0 bilan to'ldiriladi (grafik uzluksiz chiziq chizishi uchun).
-    """
+def _attempts_trend_data():
+    """Oxirgi 30 kun kunlik attempt soni (0 bilan to'ldirilgan)."""
     from attempts.models import TestAttempt
 
     now = timezone.now()
@@ -375,18 +379,24 @@ def attempts_trend(request):
     while day <= today:
         data.append({'date': day.isoformat(), 'count': counts.get(day, 0)})
         day += timedelta(days=1)
-    return Response(data)
+    return data
 
 
 @api_view(['GET'])
 @permission_classes([IsPlatformAdmin])
-def olympiad_stats(request):
-    """GET /api/analytics/olympiad-stats/ — eng ko'p ishtirokchili 10 olimpiada.
+def attempts_trend(request):
+    """GET /api/analytics/attempts-trend/ — oxirgi 30 kun kunlik attempt soni.
 
-    Har olimpiada uchun ishtirokchilar soni (attempt) va o'rtacha ball.
-    Response: [{"name": "...", "participants": 120, "avg_score": 74.5}, ...].
-    Diskvalifikatsiya qilingan attempt'lar hisobga olinmaydi.
+    Response: [{"date": "2026-06-01", "count": 42}, ...]. Attempt yozilmagan
+    kunlar 0 bilan to'ldiriladi (grafik uzluksiz chiziq chizishi uchun).
     """
+    return Response(get_cached_block(
+        'attempts_trend', _attempts_trend_data, _refresh_requested(request),
+    ))
+
+
+def _olympiad_stats_data():
+    """Eng ko'p ishtirokchili 10 olimpiada (DQ'siz)."""
     from django.db.models import Q
 
     from olympiads.models import Olympiad
@@ -411,18 +421,25 @@ def olympiad_stats(request):
         }
         for row in rows
     ]
-    return Response(data)
+    return data
 
 
 @api_view(['GET'])
 @permission_classes([IsPlatformAdmin])
-def question_stats(request):
-    """GET /api/analytics/question-stats/ — fan va manba bo'yicha savol taqsimoti.
+def olympiad_stats(request):
+    """GET /api/analytics/olympiad-stats/ — eng ko'p ishtirokchili 10 olimpiada.
 
-    Response: {"by_subject": [{"name": "Matematika", "count": 120}, ...],
-               "by_source": [{"name": "manual", "count": 300}, ...]}.
-    Fan bo'yicha eng ko'p 12 ta fan qaytariladi (uzun grafikni oldini olish).
+    Har olimpiada uchun ishtirokchilar soni (attempt) va o'rtacha ball.
+    Response: [{"name": "...", "participants": 120, "avg_score": 74.5}, ...].
+    Diskvalifikatsiya qilingan attempt'lar hisobga olinmaydi.
     """
+    return Response(get_cached_block(
+        'olympiad_stats', _olympiad_stats_data, _refresh_requested(request),
+    ))
+
+
+def _question_stats_data():
+    """Fan va manba bo'yicha savol taqsimoti (umumiy bank)."""
     from questions.models import Question
 
     # Taqsimot faqat umumiy (olimpiada) banki bo'yicha: o'qituvchilarning
@@ -456,18 +473,25 @@ def question_stats(request):
         )
     ]
 
-    return Response({'by_subject': by_subject, 'by_source': by_source})
+    return {'by_subject': by_subject, 'by_source': by_source}
 
 
 @api_view(['GET'])
 @permission_classes([IsPlatformAdmin])
-def revenue_trend(request):
-    """GET /api/analytics/revenue-trend/ — oxirgi 12 oy oylik daromad.
+def question_stats(request):
+    """GET /api/analytics/question-stats/ — fan va manba bo'yicha savol taqsimoti.
 
-    Faqat muvaffaqiyatli (success) to'lovlar yig'iladi. Response:
-    [{"month": "2026-01", "amount": 450000}, ...]. To'lov bo'lmagan oylar 0.
-    PaymentTransaction bo'sh bo'lsa — barcha oylar 0 bilan qaytadi.
+    Response: {"by_subject": [{"name": "Matematika", "count": 120}, ...],
+               "by_source": [{"name": "manual", "count": 300}, ...]}.
+    Fan bo'yicha eng ko'p 12 ta fan qaytariladi (uzun grafikni oldini olish).
     """
+    return Response(get_cached_block(
+        'question_stats', _question_stats_data, _refresh_requested(request),
+    ))
+
+
+def _revenue_trend_data():
+    """Oxirgi 12 oy oylik daromad (faqat success to'lovlar)."""
     from billing.models import PaymentTransaction
 
     now = timezone.now()
@@ -499,23 +523,25 @@ def revenue_trend(request):
     for key in reversed(months):
         amount = totals.get(key)
         data.append({'month': key, 'amount': int(amount) if amount else 0})
-    return Response(data)
+    return data
 
 
 @api_view(['GET'])
 @permission_classes([IsPlatformAdmin])
-def center_stats(request):
-    """GET /api/analytics/center-stats/ — markazlar bo'yicha kengaytirilgan analitika.
+def revenue_trend(request):
+    """GET /api/analytics/revenue-trend/ — oxirgi 12 oy oylik daromad.
 
-    Response:
-      by_region        — viloyat bo'yicha tasdiqlangan markazlar soni
-      premium_vs_free  — oxirgi 6 oy premium va free markazlar olimpiada soni
-      dq_trend         — oxirgi 8 hafta diskvalifikatsiya/cheating attempt soni
-      top_centers_rating — eng yuqori reytingli 5 markazning rating dinamikasi
-
-    Har bo'lim mustaqil hisoblanadi; tegishli jadval bo'sh bo'lsa o'sha bo'lim
-    bo'sh ro'yxat qaytaradi (frontend "Ma'lumot yo'q" ko'rsatadi).
+    Faqat muvaffaqiyatli (success) to'lovlar yig'iladi. Response:
+    [{"month": "2026-01", "amount": 450000}, ...]. To'lov bo'lmagan oylar 0.
+    PaymentTransaction bo'sh bo'lsa — barcha oylar 0 bilan qaytadi.
     """
+    return Response(get_cached_block(
+        'revenue_trend', _revenue_trend_data, _refresh_requested(request),
+    ))
+
+
+def _center_stats_data():
+    """Markazlar bo'yicha kengaytirilgan analitika (4 ta mustaqil bo'lim)."""
     from attempts.models import TestAttempt
     from centers.models import CenterRatingHistory, EducationCenter
     from olympiads.models import Olympiad
@@ -621,9 +647,28 @@ def center_stats(request):
         for c in top_centers
     ]
 
-    return Response({
+    return {
         'by_region': by_region,
         'premium_vs_free': premium_vs_free,
         'dq_trend': dq_trend,
         'top_centers_rating': top_centers_rating,
-    })
+    }
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def center_stats(request):
+    """GET /api/analytics/center-stats/ — markazlar bo'yicha kengaytirilgan analitika.
+
+    Response:
+      by_region        — viloyat bo'yicha tasdiqlangan markazlar soni
+      premium_vs_free  — oxirgi 6 oy premium va free markazlar olimpiada soni
+      dq_trend         — oxirgi 8 hafta diskvalifikatsiya/cheating attempt soni
+      top_centers_rating — eng yuqori reytingli 5 markazning rating dinamikasi
+
+    Har bo'lim mustaqil hisoblanadi; tegishli jadval bo'sh bo'lsa o'sha bo'lim
+    bo'sh ro'yxat qaytaradi (frontend "Ma'lumot yo'q" ko'rsatadi).
+    """
+    return Response(get_cached_block(
+        'center_stats', _center_stats_data, _refresh_requested(request),
+    ))

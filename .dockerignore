@@ -1,0 +1,40 @@
+# Ildiz build context — FAQAT frontend image uchun ishlatiladi
+# (docker-compose.yml: nginx xizmati, build.context: ., dockerfile: nginx/Dockerfile).
+# Vite build'iga kerak bo'lgan fayllar: package*.json, vite.config.js,
+# postcss/tailwind config, Olympy.html, app.jsx, shared.jsx, pages/, src/,
+# public/, scripts/generate-vite-entry.mjs.
+
+# ─── Maxfiy konfiguratsiya ────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ─── Backend (o'z build context'i bor: ./backend) ─────────────────────────
+backend/
+
+# ─── Node / Vite ──────────────────────────────────────────────────────────
+# node_modules image ichida `npm ci` bilan qaytadan o'rnatiladi — lokal
+# nusxa (ko'p yuz MB, linux'ga mos kelmasligi ham mumkin) yuborilmasin.
+node_modules/
+dist/
+npm-debug.log*
+.npm
+
+# ─── Python (ildizdagi lokal venv) ────────────────────────────────────────
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# ─── Git / IDE / OS / deploy artefaktlari ─────────────────────────────────
+.git/
+.github/
+.gitignore
+.idea/
+.vscode/
+.claude/
+.antigravitycli/
+.DS_Store
+*.swp
+backups/
+deploy/certbot/

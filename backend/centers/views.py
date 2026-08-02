@@ -16,6 +16,7 @@ from rest_framework.response import Response
 
 from accounts.models import AuditLog
 from accounts.permissions import IsPlatformAdmin
+from accounts.utils import delete_replaced_image_file
 from .models import CenterMembership, CenterQuestion, EducationCenter
 from .serializers import (
     AdminEducationCenterSerializer,
@@ -61,6 +62,57 @@ def _annotate_center_counts(queryset):
         ),
         olympiads_count=Count('olympiads', distinct=True),
     )
+
+
+def _roster_users_map(user_ids):
+    """{user_id: User} — `UserSerializer` uchun oldindan tayyorlangan obyektlar.
+
+    `UserSerializer` har bir foydalanuvchi uchun uchta qo'shimcha so'rov
+    qiladi: badge'lar (attempts count), `roles_detail` (memberships) va
+    aktiv obunalar. Roster ro'yxatlarida (o'quvchilar/xodimlar/arizalar) bu
+    N+1 ga aylanardi — a'zolik qatorining `m.user` obyekti hech qanday
+    prefetch/annotate'siz kelardi.
+
+    `accounts.views.admin_users_list` bilan AYNAN bir xil to'plam:
+    `attempts_100_count`/`total_attempts_count` annotatsiyalari
+    (`User.get_badges` shularni o'qiydi), `memberships` prefetch'i
+    (`get_roles_detail` prefetch cache'idan o'qiydi) va
+    `prefetched_active_subscriptions` (`_active_subscriptions`).
+    """
+    if not user_ids:
+        return {}
+    from django.contrib.auth import get_user_model
+    from django.db.models import Prefetch
+    from billing.models import UserSubscription
+
+    users = (
+        get_user_model().objects
+        .filter(id__in=user_ids)
+        .annotate(
+            attempts_100_count=Count(
+                'attempts',
+                filter=Q(attempts__score=100, attempts__disqualified=False),
+                distinct=True,
+            ),
+            total_attempts_count=Count(
+                'attempts',
+                filter=Q(attempts__disqualified=False),
+                distinct=True,
+            ),
+        )
+        .prefetch_related(
+            Prefetch(
+                'memberships',
+                queryset=CenterMembership.objects.select_related('center').order_by('-created_at'),
+            ),
+            Prefetch(
+                'subscriptions',
+                queryset=UserSubscription.objects.filter(is_active=True).select_related('plan').order_by('-end_date'),
+                to_attr='prefetched_active_subscriptions',
+            ),
+        )
+    )
+    return {u.id: u for u in users}
 
 
 def _make_approval_code():
@@ -301,8 +353,13 @@ def update_center_image(request, center_id):
         image.seek(0)
     except Exception:
         return Response({'detail': 'Yaroqsiz rasm fayli'}, status=http_status.HTTP_400_BAD_REQUEST)
+    # Almashtirilgan logo storage'da yetim qolmasin: eski nomni yozishdan
+    # OLDIN olamiz, o'chirishni esa save'dan KEYIN bajaramiz (save xato bersa
+    # eski rasm joyida qoladi).
+    old_image_name = center.image.name if center.image else ''
     center.image = image
     center.save(update_fields=['image'])
+    delete_replaced_image_file(center.image, old_image_name)
     return Response(EducationCenterSerializer(center, context={'request': request}).data)
 
 
@@ -520,18 +577,28 @@ def pending_memberships(request, center_id):
     qs = CenterMembership.objects.filter(
         center=center,
         status=CenterMembership.STATUS_PENDING,
-    ).select_related('user')
+    )
     if role:
         qs = qs.filter(role=role)
     from accounts.serializers import UserSerializer
+    from olympy_api.pagination import LargePageNumberPagination
+
+    # Pagination: arizalar ro'yxati cheklanmagan edi — katta markazda butun
+    # ro'yxat bitta response'da kelardi. ?page= / ?page_size= (max 200).
+    paginator = LargePageNumberPagination()
+    page = paginator.paginate_queryset(qs, request)
+    memberships = list(qs) if page is None else page
+    users_map = _roster_users_map([m.user_id for m in memberships])
     data = [{
         'membership_id': m.id,
-        'user': UserSerializer(m.user, context={'request': request}).data,
+        'user': UserSerializer(users_map[m.user_id], context={'request': request}).data,
         'role': m.role,
         'subject': m.subject,
         'approval_code': m.approval_code,
         'created_at': str(m.created_at),
-    } for m in qs]
+    } for m in memberships]
+    if page is not None:
+        return paginator.get_paginated_response(data)
     return Response(data)
 
 
@@ -556,14 +623,23 @@ def students_memberships(request, center_id):
         center=center,
         role=CenterMembership.ROLE_STUDENT,
         status=status_filter,
-    ).select_related('user').order_by('-created_at')
+    ).order_by('-created_at')
     from accounts.serializers import UserSerializer
     from attempts.models import TestAttempt
     from django.db.models import Avg, Count
+    from olympy_api.pagination import LargePageNumberPagination
+
+    # Pagination: o'quvchilar ro'yxati cheklanmagan edi — minglab o'quvchili
+    # markazda butun roster bitta response'da kelardi. ?page= / ?page_size=
+    # (max 200).
+    paginator = LargePageNumberPagination()
+    page = paginator.paginate_queryset(qs, request)
+    memberships = list(qs) if page is None else page
 
     # Bir so'rov bilan barcha o'quvchilarning shu center'dagi attempt
     # statistikasini yig'amiz — N+1 dan saqlanish uchun.
-    user_ids = [m.user_id for m in qs]
+    user_ids = [m.user_id for m in memberships]
+    users_map = _roster_users_map(user_ids)
     stats_map = {}
     if user_ids:
         stats_qs = (
@@ -580,7 +656,7 @@ def students_memberships(request, center_id):
 
     data = [{
         'membership_id': m.id,
-        'user': UserSerializer(m.user, context={'request': request}).data,
+        'user': UserSerializer(users_map[m.user_id], context={'request': request}).data,
         'role': m.role,
         'subject': m.subject,
         'approval_code': m.approval_code,
@@ -589,7 +665,9 @@ def students_memberships(request, center_id):
         'created_at': str(m.created_at),
         'olympiads_count': stats_map.get(m.user_id, {}).get('olympiads_count', 0),
         'avg_score': stats_map.get(m.user_id, {}).get('avg_score', 0),
-    } for m in qs]
+    } for m in memberships]
+    if page is not None:
+        return paginator.get_paginated_response(data)
     return Response(data)
 
 
@@ -692,18 +770,28 @@ def staff_memberships(request, center_id):
         center=center,
         status=CenterMembership.STATUS_APPROVED,
         role__in=[CenterMembership.ROLE_MANAGER, CenterMembership.ROLE_TEACHER],
-    ).select_related('user')
+    )
     if role:
         qs = qs.filter(role=role)
     from accounts.serializers import UserSerializer
+    from olympy_api.pagination import LargePageNumberPagination
+
+    # Pagination: xodimlar ro'yxati cheklanmagan edi — ?page= / ?page_size=
+    # (max 200).
+    paginator = LargePageNumberPagination()
+    page = paginator.paginate_queryset(qs, request)
+    memberships = list(qs) if page is None else page
+    users_map = _roster_users_map([m.user_id for m in memberships])
     data = [{
         'membership_id': m.id,
-        'user': UserSerializer(m.user, context={'request': request}).data,
+        'user': UserSerializer(users_map[m.user_id], context={'request': request}).data,
         'role': m.role,
         'subject': m.subject,
         'status': m.status,
         'created_at': str(m.created_at),
-    } for m in qs]
+    } for m in memberships]
+    if page is not None:
+        return paginator.get_paginated_response(data)
     return Response(data)
 
 
@@ -934,7 +1022,11 @@ def admin_list_centers(request):
     surfaces every center so admins can see and act on pending and
     rejected ones too. Optional ``status`` query param narrows the list.
     """
-    qs = EducationCenter.objects.all().order_by('-created_at')
+    # select_related('owner') — AdminEducationCenterSerializer har qatorda
+    # `owner.full_name` / `owner.normalized_phone` o'qiydi; JOIN'siz bu har
+    # markaz uchun alohida so'rov edi (centers_list_create va my_centers
+    # allaqachon shunday qiladi).
+    qs = EducationCenter.objects.select_related('owner').order_by('-created_at')
     status_filter = request.query_params.get('status')
     if status_filter:
         qs = qs.filter(status=status_filter)
@@ -1077,10 +1169,15 @@ def center_ratings(request):
     Rating: average_score / 20 (0..5 oraliqda). EducationCenter.rating
     maydoni bulk_update orqali yangilanadi — keyingi list endpoint'da
     so'rov qilmasdan ko'rinadi.
+
+    Saralash va `limit` DB darajasida (order_by + slice) bajariladi —
+    `center_ranking` bilan bir xil Subquery naqshi. Avval BARCHA tasdiqlangan
+    markazlar xotiraga olinib (`list(centers_qs)`), Python'da sortlanib
+    keyin kesilardi.
     """
-    from django.db.models import Avg, Count
+    from django.db.models import Avg, Count, OuterRef, Subquery
+    from django.db.models.functions import Coalesce
     from attempts.models import TestAttempt
-    from olympiads.models import Olympiad
 
     region = (request.query_params.get('region') or '').strip()
     subject = (request.query_params.get('subject') or '').strip()
@@ -1090,50 +1187,44 @@ def center_ratings(request):
         limit = 20
     limit = max(1, min(limit, 100))
 
-    centers_qs = EducationCenter.objects.filter(status=EducationCenter.STATUS_APPROVED)
-    if region:
-        centers_qs = centers_qs.filter(region__icontains=region)
-
-    # Attempts aggregate: faqat valid (diskvalifikatsiya bo'lmagan) attempts.
-    attempts_qs = TestAttempt.objects.filter(
+    # Attempt agregatlari Subquery orqali: total_olympiads (olympiads
+    # relation) bilan bir vaqtda JOIN qilinsa cross-join hosil bo'lib
+    # Avg/Count ko'paytirilib ketardi (center_ranking'dagi bilan bir xil
+    # sabab).
+    valid_attempts = TestAttempt.objects.filter(
+        olympiad__center=OuterRef('pk'),
         disqualified=False,
         olympiad__is_deleted=False,
     )
     if subject:
-        attempts_qs = attempts_qs.filter(olympiad__subject__iexact=subject)
-
-    # Per-center aggregate — bitta query bilan.
-    agg_rows = (
-        attempts_qs
-        .values('olympiad__center_id')
-        .annotate(
-            avg_score=Avg('score'),
-            total_attempts=Count('id'),
-        )
+        valid_attempts = valid_attempts.filter(olympiad__subject__iexact=subject)
+    attempt_total_sq = (
+        valid_attempts.values('olympiad__center')
+        .annotate(c=Count('id')).values('c')
     )
-    agg_map = {row['olympiad__center_id']: row for row in agg_rows if row['olympiad__center_id']}
-
-    # Olympiad soni — markaz bo'yicha alohida aggregate.
-    olympiads_count_rows = (
-        Olympiad.objects.filter(is_deleted=False)
-        .values('center_id')
-        .annotate(total=Count('id'))
+    attempt_avg_sq = (
+        valid_attempts.values('olympiad__center')
+        .annotate(a=Avg('score')).values('a')
     )
-    olympiads_count_map = {row['center_id']: row['total'] for row in olympiads_count_rows if row['center_id']}
 
-    centers = list(centers_qs)
-    enriched = []
-    for c in centers:
-        row = agg_map.get(c.id)
-        if not row or not row.get('total_attempts'):
-            # subject filter mavjud bo'lsa, qatnashmagan markazlarni o'tkazib yuboramiz.
-            if subject:
-                continue
-            avg_score = 0
-            total_attempts = 0
-        else:
-            avg_score = round(row.get('avg_score') or 0, 1)
-            total_attempts = row.get('total_attempts') or 0
+    centers_qs = EducationCenter.objects.filter(status=EducationCenter.STATUS_APPROVED)
+    if region:
+        centers_qs = centers_qs.filter(region__icontains=region)
+    centers_qs = centers_qs.annotate(
+        total_attempts=Coalesce(Subquery(attempt_total_sq), 0),
+        average_score=Coalesce(Subquery(attempt_avg_sq), 0.0),
+        # total_olympiads — yagona relation Count, JOIN multiplication yo'q.
+        total_olympiads=Count(
+            'olympiads', filter=Q(olympiads__is_deleted=False), distinct=True,
+        ),
+    ).order_by('-average_score', '-total_attempts', 'id')
+    if subject:
+        # subject filter mavjud bo'lsa, qatnashmagan markazlar chiqmaydi.
+        centers_qs = centers_qs.filter(total_attempts__gt=0)
+
+    rows = []
+    for i, c in enumerate(centers_qs[:limit]):
+        avg_score = round(float(c.average_score or 0), 1)
         # Rating: 0..100 ballni 0..5 reytingga o'tkazamiz, max 5.0.
         # MUHIM: bu GET endpoint — EducationCenter.rating maydoni BU YERDA
         # YOZILMAYDI. Avval har so'rovda 1000+ markaz uchun bulk_update
@@ -1142,24 +1233,19 @@ def center_ratings(request):
         # endpoint yoki Celery task orqali yangilanishi kerak. Bu yerda faqat
         # joriy hisoblangan natija qaytariladi.
         new_rating = round(min(5.0, (avg_score / 20.0)), 1) if avg_score else 0.0
-        enriched.append({
+        rows.append({
             'center_id': c.id,
             'center_name': c.name,
             'city': c.city,
             'region': c.region,
             'organization_type': c.organization_type,
             'average_score': avg_score,
-            'total_attempts': total_attempts,
-            'total_olympiads': olympiads_count_map.get(c.id, 0),
+            'total_attempts': c.total_attempts or 0,
+            'total_olympiads': c.total_olympiads or 0,
             'rating': new_rating,
+            'rank': i + 1,
         })
-
-    # Sort: avg_score desc, total_attempts desc (tie-breaker).
-    enriched.sort(key=lambda x: (-x['average_score'], -x['total_attempts']))
-    enriched = enriched[:limit]
-    for i, row in enumerate(enriched):
-        row['rank'] = i + 1
-    return Response(enriched)
+    return Response(rows)
 
 
 @api_view(['GET'])

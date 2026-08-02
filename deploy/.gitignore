@@ -1,0 +1,5 @@
+# Let's Encrypt ishchi kataloglari (VPS'da certbot yaratadi):
+#   certbot/conf — sertifikatlar va MAXFIY kalitlar
+#   certbot/www  — ACME HTTP-01 tekshiruv fayllari
+# HECH QACHON commit qilinmasin.
+certbot/

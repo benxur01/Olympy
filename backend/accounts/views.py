@@ -42,7 +42,7 @@ from .serializers import (
     UserSerializer,
     VerifyOtpSerializer,
 )
-from .utils import mask_phone, normalize_phone
+from .utils import delete_replaced_image_file, mask_phone, normalize_phone
 
 
 # Pillow decompression-bomb limitini modul yuklanishida BIR MARTA o'rnatamiz.
@@ -1309,8 +1309,13 @@ def update_my_avatar(request):
         image.seek(0)
     except Exception:
         return Response({'detail': 'Yaroqsiz rasm fayli'}, status=status.HTTP_400_BAD_REQUEST)
+    # Almashtirilgan avatar storage'da yetim qolmasin (DELETE oqimidagi
+    # tozalash bilan bir xil maqsad). Eski nomni yozishdan OLDIN olamiz,
+    # o'chirishni esa save'dan KEYIN — save xato bersa eski rasm joyida qoladi.
+    old_avatar_name = request.user.avatar.name if request.user.avatar else ''
     request.user.avatar = image
     request.user.save(update_fields=['avatar'])
+    delete_replaced_image_file(request.user.avatar, old_avatar_name)
     return Response(UserSerializer(request.user, context={'request': request}).data)
 
 

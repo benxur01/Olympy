@@ -1,5 +1,13 @@
 // pages/Results.jsx
 
+// Insho AI tahlili — on-demand backend ishi. 3 soniyada bir so'raymiz, lekin
+// CHEKSIZ emas: 60 urinish (≈3 daqiqa) dan keyin to'xtaymiz va foydalanuvchini
+// keyinroq urinib ko'rishga taklif qilamiz (boshqa pollinglar bilan bir xil
+// yondashuv — TeacherDashboard/ManagerDashboard Telegram polling'i ham
+// MAX_TRIES bilan cheklangan).
+const ESSAY_AI_POLL_MS = 3000;
+const ESSAY_AI_MAX_TRIES = 60;
+
 const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const store = useStore();
   const isApi = !!user?._api;
@@ -30,7 +38,28 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
     const attemptId = reviewAttemptId;
     if (!attemptId || essayAILoading[qid]) return;
     setEssayAILoading((prev) => ({ ...prev, [qid]: true }));
+    let tries = 0;
+    const stopWith = (text) => {
+      setEssayAI((prev) => ({ ...prev, [qid]: { status: 'failed', text } }));
+      setEssayAILoading((prev) => ({ ...prev, [qid]: false }));
+    };
+    const scheduleNext = () => {
+      if (tries >= ESSAY_AI_MAX_TRIES) {
+        stopWith("AI tahlil hali tayyor emas. Birozdan so'ng qayta urinib ko'ring.");
+        return;
+      }
+      essayPollRef.current[qid] = setTimeout(poll, ESSAY_AI_POLL_MS);
+    };
     const poll = async () => {
+      // Faqat tab ko'rinib turganda so'rov yuboramiz — fon tab'da (yoki
+      // Telegram WebView minimallashtirilganda) tarmoq/batareya sarflashning
+      // foydasi yo'q. Urinish ham hisoblanmaydi: foydalanuvchi qaytganda
+      // polling o'z limiti bilan davom etadi.
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+        essayPollRef.current[qid] = setTimeout(poll, ESSAY_AI_POLL_MS);
+        return;
+      }
+      tries += 1;
       try {
         const res = await OlympyApi.getEssayAIFeedback(attemptId, qid, OlympyApi.getToken());
         const st = res?.status;
@@ -38,15 +67,13 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
           setEssayAI((prev) => ({ ...prev, [qid]: { status: 'ready', text: res.feedback || '' } }));
           setEssayAILoading((prev) => ({ ...prev, [qid]: false }));
         } else if (st === 'failed') {
-          setEssayAI((prev) => ({ ...prev, [qid]: { status: 'failed', text: res.feedback || "AI tahlil hozircha tayyor emas. Keyinroq urinib ko'ring." } }));
-          setEssayAILoading((prev) => ({ ...prev, [qid]: false }));
+          stopWith(res.feedback || "AI tahlil hozircha tayyor emas. Keyinroq urinib ko'ring.");
         } else {
-          // pending — davriy tekshiruvni davom ettiramiz.
-          essayPollRef.current[qid] = setTimeout(poll, 3000);
+          // pending — davriy tekshiruvni davom ettiramiz (limitgacha).
+          scheduleNext();
         }
       } catch (err) {
-        setEssayAI((prev) => ({ ...prev, [qid]: { status: 'failed', text: OlympyApi.toUserMessage?.(err) || "AI tahlilni yuklab bo'lmadi." } }));
-        setEssayAILoading((prev) => ({ ...prev, [qid]: false }));
+        stopWith(OlympyApi.toUserMessage?.(err) || "AI tahlilni yuklab bo'lmadi.");
       }
     };
     poll();

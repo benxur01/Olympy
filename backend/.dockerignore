@@ -1,0 +1,40 @@
+# Backend image build context (docker-compose.yml: build.context: ./backend).
+# Maqsad: image'ga faqat ilova kodi tushsin — maxfiy fayllar, lokal muhit va
+# artefaktlar EMAS.
+
+# ─── Maxfiy konfiguratsiya ────────────────────────────────────────────────
+# .env HECH QACHON image ichiga tushmasin — muhit o'zgaruvchilari compose'dagi
+# `env_file:` orqali RUNTIME'da beriladi (image'da qolsa, image'ni ko'rgan
+# har kim sirlarni o'qiy oladi).
+.env
+.env.*
+!.env.example
+!.env.production.example
+
+# ─── Lokal Python muhiti va cache ─────────────────────────────────────────
+.venv/
+venv/
+env/
+.deps/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# ─── Lokal runtime artefaktlari ───────────────────────────────────────────
+# db.sqlite3 lokal dev bazasi (~1MB+), production'da Postgres ishlatiladi.
+db.sqlite3
+db.sqlite3-journal
+media/
+staticfiles/
+*.log
+scratch/
+
+# ─── Test artefaktlari ────────────────────────────────────────────────────
+test_certificate_output.png
+
+# ─── Render'ga xos fayllar (Compose'da ishlatilmaydi) ─────────────────────
+render_build.sh
+render_start.sh

@@ -1,0 +1,184 @@
+# Olympy — Contabo VPS uchun to'liq stack (Docker Compose).
+#
+# Xizmatlar: postgres, redis, backend (gunicorn), celery-worker, celery-beat,
+# nginx (frontend `dist/` + reverse proxy).
+#
+# Ishga tushirish (batafsil: deploy/README.md):
+#   cp backend/.env.production.example backend/.env   # va qiymatlarni to'ldiring
+#   docker compose build
+#   docker compose up -d postgres redis
+#   docker compose run --rm backend release            # migrate + collectstatic + bootstrap
+#   docker compose up -d
+#
+# DIQQAT: `version:` kaliti ATAYIN yo'q — Compose v2 da u eskirgan va
+# ogohlantirish beradi.
+
+name: olympy
+
+# ─── Umumiy log sozlamasi ───────────────────────────────────────────────────
+# Docker'ning default json-file drayveri log'larni CHEKSIZ o'stiradi va bir
+# necha oydan keyin VPS diskini to'ldirib qo'yishi mumkin. Har konteyner uchun
+# maksimum 30MB (3 x 10MB) qoldiramiz.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+# ─── Backend uchun umumiy konfiguratsiya ────────────────────────────────────
+# Uchala Django xizmati (web, celery worker, celery beat) AYNAN bitta image va
+# bitta muhit bilan ishlaydi — farqi faqat `command:` da (docker-entrypoint.sh).
+x-backend-common: &backend-common
+  build:
+    context: ./backend
+  # Bir xil tag — image faqat bir marta quriladi, qolgan ikkitasi cache'dan.
+  image: olympy-backend:latest
+  env_file:
+    - backend/.env
+  environment:
+    # Compose'da Celery ALOHIDA konteynerlarda ishlaydi. Bu o'zgaruvchi
+    # render_start.sh uchun edi (u web ichida celery ishga tushirardi) —
+    # docker-entrypoint.sh hech qachon embedded celery ishlatmaydi, ammo
+    # niyatni aniq qoldiramiz.
+    CELERY_EXTERNAL_WORKER: "1"
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+  logging: *default-logging
+
+services:
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    # POSTGRES_DB / POSTGRES_USER / POSTGRES_PASSWORD ham backend/.env dan
+    # o'qiladi — bitta manba, ikki fayl orasida parol nomuvofiqligi bo'lmasin.
+    # (Postgres image tanimagan o'zgaruvchilarni e'tiborsiz qoldiradi.)
+    env_file:
+      - backend/.env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      # FAQAT loopback! Tashqi dunyoga ochilmaydi. Bu port host'dagi
+      # scripts/db_restore.sh va psql uchun kerak:
+      #   ./scripts/db_restore.sh backups/xxx.dump 'postgresql://olympy:PAROL@127.0.0.1:5432/olympy'
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      # $$ — Compose interpolatsiyasidan qochish: o'zgaruvchi KONTEYNER ichida
+      # ochiladi, ya'ni backend/.env dagi haqiqiy qiymat ishlatiladi.
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER:-olympy}\" -d \"$${POSTGRES_DB:-olympy}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ── Redis (Celery broker + result backend + Django cache) ─────────────────
+  redis:
+    image: redis:7-alpine
+    # --save 60 1        : navbatdagi task'lar restart'da yo'qolmasin.
+    # --maxmemory-policy noeviction : Celery broker uchun MAJBURIY — eviction
+    #   yoqilsa Redis xotira to'lganda navbatdagi task'larni jimgina o'chiradi.
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "no", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
+
+  # ── Django API (gunicorn) ─────────────────────────────────────────────────
+  backend:
+    <<: *backend-common
+    command: ["web"]
+    volumes:
+      # collectstatic natijasi — nginx ham shu volume'dan /static/ ni beradi.
+      - static_data:/app/staticfiles
+      # Yuklangan media (Cloudinary o'chiq bo'lganda ishlatiladi).
+      - media_data:/app/media
+    # Port ATAYIN publish qilinmagan — backend faqat Docker tarmog'i ichida,
+    # tashqariga yagona kirish nuqtasi nginx.
+    expose:
+      - "8000"
+    healthcheck:
+      # X-Forwarded-Proto: https — aks holda SECURE_SSL_REDIRECT (production'da
+      # default yoniq) 301 qaytaradi va tekshiruv hech narsani sinamaydi.
+      # 127.0.0.1 OLYMPY_ALLOWED_HOSTS ro'yxatida bo'lishi SHART, aks holda
+      # Django 400 (DisallowedHost) beradi — .env.production.example ga kiritilgan.
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null -H 'X-Forwarded-Proto: https' http://127.0.0.1:8000/api/health/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ── Celery worker ─────────────────────────────────────────────────────────
+  celery-worker:
+    <<: *backend-common
+    command: ["worker"]
+    volumes:
+      # Task'lar ham media yozadi (sertifikat, hisobot rasmlari).
+      - media_data:/app/media
+
+  # ── Celery beat (davriy jadval) ───────────────────────────────────────────
+  # FAQAT BITTA nusxada ishlashi kerak — aks holda davriy task'lar (olimpiada
+  # yakunlash, eslatmalar) ikki marta bajariladi. Shu sababli hech qachon
+  # `docker compose up --scale celery-beat=2` qilmang.
+  celery-beat:
+    <<: *backend-common
+    command: ["beat"]
+
+  # ── Nginx: frontend + reverse proxy ───────────────────────────────────────
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
+      args:
+        # Frontend va API bitta domenda — nisbiy yo'l. Batafsil izoh:
+        # nginx/Dockerfile. Bo'sh QOLDIRMANG.
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-/}"
+        # Ixtiyoriy. Kerak bo'lsa build oldidan eksport qiling, masalan:
+        #   export VITE_SENTRY_DSN=https://...ingest.sentry.io/...
+        VITE_SENTRY_DSN: "${VITE_SENTRY_DSN:-}"
+        VITE_GOOGLE_CLIENT_ID: "${VITE_GOOGLE_CLIENT_ID:-}"
+    image: olympy-nginx:latest
+    ports:
+      - "80:80"
+      # TLS o'rnatilgunga qadar 443 bo'sh turadi (nginx/nginx.conf dagi HTTPS
+      # bloki izohda). Port oldindan ochib qo'yiladi — sertifikat olingach
+      # faqat konfiguratsiyani yangilash kifoya.
+      - "443:443"
+    volumes:
+      # Django statik/media fayllari. Yo'l ATAYIN /var/www/olympy/{static,media}:
+      # nginx.conf `alias` emas, `root /var/www/olympy` ishlatadi (alias +
+      # try_files nginx'da nozik xatolarga sabab bo'ladi).
+      - static_data:/var/www/olympy/static:ro
+      - media_data:/var/www/olympy/media:ro
+      # Let's Encrypt HTTP-01 tekshiruvi uchun webroot.
+      - ./deploy/certbot/www:/var/www/certbot:ro
+      # TLS sertifikatlari (certbot olgandan keyin izohdan chiqaring):
+      # - ./deploy/certbot/conf:/etc/letsencrypt:ro
+    depends_on:
+      # ATAYIN service_healthy EMAS: backend nosoz bo'lsa ham frontend va
+      # xato sahifasi ochilishi kerak (aks holda butun sayt "ulanmadi" beradi).
+      #
+      # Ammo service_started SHART: static_data/media_data volume'lari BO'SH
+      # bo'lganda ularni birinchi bo'lib ulagan konteyner egalikni belgilaydi.
+      # Nginx birinchi ulasa volume root egaligida qolib, backend'ning non-root
+      # `app` foydalanuvchisi collectstatic natijasini yoza olmasdi.
+      backend:
+        condition: service_started
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  postgres_data:
+  redis_data:
+  static_data:
+  media_data:

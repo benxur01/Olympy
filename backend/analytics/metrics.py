@@ -232,3 +232,22 @@ def get_metrics(force_refresh=False):
     data = compute_metrics()
     cache.set(CACHE_KEY, data, METRICS_CACHE_SECONDS)
     return data
+
+
+def get_cached_block(name, compute, force_refresh=False):
+    """``get_metrics`` bilan bir xil naqsh, lekin ixtiyoriy alohida blok uchun.
+
+    Admin panelining qo'shimcha diagrammalari (attempt trendi, olimpiada /
+    savol / daromad / markaz statistikasi) ham og'ir agregatlar ustida
+    ishlaydi va faqat platforma admini ochadi — ular ham shu yerda, aynan
+    ``METRICS_CACHE_SECONDS`` muddatiga saqlanadi. ``force_refresh=True``
+    (`?refresh=1`) cache'ni chetlab o'tadi.
+    """
+    key = f'{CACHE_KEY}:{name}'
+    if not force_refresh:
+        cached = cache.get(key)
+        if cached is not None:
+            return cached
+    data = compute()
+    cache.set(key, data, METRICS_CACHE_SECONDS)
+    return data

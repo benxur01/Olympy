@@ -33,6 +33,13 @@ class QuestionSerializer(serializers.ModelSerializer):
         ketmasligi uchun bu yerda ham himoya qo'yamiz: context'da `request`
         bo'lib, foydalanuvchi savolni boshqara olmasa — `correct_answer`
         javobdan olib tashlanadi.
+
+        Ro'yxat view'i (`questions_list_create`) butun sahifa bitta markazga
+        tegishli bo'lgani uchun bu huquqni BIR MARTA hisoblab context'ning
+        `can_manage` kalitida uzatadi — aks holda har savol uchun alohida
+        CenterMembership so'rovi ketardi (N+1). Kalit bo'lmaganda (masalan
+        `question_detail` bitta obyekt uchun) eski per-instance tekshiruv
+        ishlaydi.
         """
         data = super().to_representation(instance)
         request = (self.context or {}).get('request')
@@ -42,23 +49,27 @@ class QuestionSerializer(serializers.ModelSerializer):
         if getattr(user, 'is_platform_admin', False):
             return data
         # Savolni boshqarish huquqi — markaz owner/manager/teacher.
-        try:
-            from centers.models import CenterMembership
-            can_manage = (
-                instance.center_id
-                and CenterMembership.objects.filter(
-                    user=user,
-                    center_id=instance.center_id,
-                    role__in=[
-                        CenterMembership.ROLE_OWNER,
-                        CenterMembership.ROLE_MANAGER,
-                        CenterMembership.ROLE_TEACHER,
-                    ],
-                    status=CenterMembership.STATUS_APPROVED,
-                ).exists()
-            )
-        except Exception:
-            can_manage = False
+        context_can_manage = (self.context or {}).get('can_manage')
+        if context_can_manage is not None:
+            can_manage = bool(context_can_manage)
+        else:
+            try:
+                from centers.models import CenterMembership
+                can_manage = (
+                    instance.center_id
+                    and CenterMembership.objects.filter(
+                        user=user,
+                        center_id=instance.center_id,
+                        role__in=[
+                            CenterMembership.ROLE_OWNER,
+                            CenterMembership.ROLE_MANAGER,
+                            CenterMembership.ROLE_TEACHER,
+                        ],
+                        status=CenterMembership.STATUS_APPROVED,
+                    ).exists()
+                )
+            except Exception:
+                can_manage = False
         if not can_manage:
             data.pop('correct_answer', None)
             # `correct_text` ham to'g'ri javobni saqlaydi (fill_blank/fill_blanks/

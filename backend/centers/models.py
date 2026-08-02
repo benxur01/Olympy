@@ -139,6 +139,11 @@ class CenterMembership(models.Model):
             # Foydalanuvchining ma'lum roldagi (approved/pending) a'zoligini
             # tez topish — primary_center_for_user va ruxsat tekshiruvlarida.
             models.Index(fields=['user', 'role', 'status']),
+            # Markaz roster'i: students/staff/pending ro'yxatlari, guruh va
+            # markaz statistikasi hamda eksport view'lari doim
+            # center + role + status bo'yicha filtrlaydi — teskari tartibdagi
+            # (user boshida turgan) indeks bu so'rovlarga yaramaydi.
+            models.Index(fields=['center', 'role', 'status']),
         ]
 
     def __str__(self):

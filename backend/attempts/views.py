@@ -41,6 +41,42 @@ from .session_utils import (
 )
 
 
+# Qisqa muddatli cache TTL'lari (`analytics.metrics.METRICS_CACHE_SECONDS`
+# naqshi: modul darajasidagi konstanta + `?refresh=1` bilan chetlab o'tish).
+#
+# Global (olimpiadasiz) leaderboard — eng qimmat so'rov: window (RowNumber
+# PARTITION BY user) subquery'si `count()` va sahifa slice'i uchun IKKI marta
+# materializatsiya qilinadi. 20 soniya reytingni "jonli" ko'rsatish uchun
+# yetarli darajada qisqa.
+LEADERBOARD_CACHE_SECONDS = 20
+
+# Savol qiyinligi statistikasi — markazning BUTUN attempt tarixini o'qib,
+# har javobni Python'da qayta baholaydi (sana chegarasi yo'q). Bu menejer
+# dashboard'i ko'rsatkichi, real vaqt talab qilmaydi.
+QUESTION_DIFFICULTY_CACHE_SECONDS = 5 * 60
+
+
+def _cache_refresh_requested(request):
+    """`?refresh=1` — cache'ni chetlab o'tish (analytics.metrics bilan bir xil)."""
+    return request.query_params.get('refresh') in ('1', 'true', 'True')
+
+
+def _global_leaderboard_cache_key(period_key, allowed_center_ids, page, page_size):
+    """Global leaderboard sahifasining cache kaliti.
+
+    Natijani o'zgartiradigan HAMMA narsa kalitga kiradi: davr filtri va
+    foydalanuvchining ko'ra oladigan markazlari (competition tadbirlari shu
+    ro'yxat bo'yicha filtrlanadi) hamda sahifa raqami/o'lchami. Markazlar
+    ro'yxati sha256 bilan qisqartiriladi — builtin `hash()` PYTHONHASHSEED'ga
+    bog'liq va worker'lar orasida farq qilardi (questions.embeddings naqshi).
+    """
+    import hashlib
+
+    scope = ','.join(str(cid) for cid in sorted(allowed_center_ids))
+    digest = hashlib.sha256(scope.encode('utf-8')).hexdigest()[:32]
+    return f'leaderboard:global:v1:{period_key}:{digest}:{page}:{page_size}'
+
+
 def _extract_review_chosen(chosen, q_type):
     """Saqlangan javob payload'idan review uchun xom qiymatni ajratadi.
 
@@ -1793,6 +1829,20 @@ def question_difficulty_stats(request):
     if not (is_admin or is_owner or is_staff):
         return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
 
+    # Cache: quyidagi hisob markazning BUTUN attempt tarixini oqim ko'rinishida
+    # o'qib, har javobni Python'da qayta baholaydi — sana chegarasi yo'q, ya'ni
+    # ma'lumot o'sgan sayin so'rov ham qimmatlashadi. Bu menejer dashboard'i
+    # ko'rsatkichi (real vaqt emas), shu sababli natija bir necha daqiqaga
+    # saqlanadi. Kalit — markaz (funksiyaning yagona parametri); `?refresh=1`
+    # chetlab o'tadi (analytics.metrics naqshi).
+    from django.core.cache import cache
+
+    cache_key = f'question_difficulty_stats:v1:{center_id}'
+    if not _cache_refresh_requested(request):
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return Response(cached)
+
     DIFFICULTY_LABELS = {
         'easy': 'Oson',
         'medium': "O'rta",
@@ -1817,7 +1867,9 @@ def question_difficulty_stats(request):
     ))
     total = len(questions)
     if total == 0:
-        return Response({'total_questions': 0, 'by_difficulty': []})
+        payload = {'total_questions': 0, 'by_difficulty': []}
+        cache.set(cache_key, payload, QUESTION_DIFFICULTY_CACHE_SECONDS)
+        return Response(payload)
 
     # Markaz tegishli barcha attempts'larni olib, savol bo'yicha
     # to'g'ri/jami javob hisoblaymiz. Bu markaz olimpiadalarida qatnashgan
@@ -1899,10 +1951,12 @@ def question_difficulty_stats(request):
             'avg_correct_rate': avg_rate,
         })
 
-    return Response({
+    payload = {
         'total_questions': total,
         'by_difficulty': by_difficulty,
-    })
+    }
+    cache.set(cache_key, payload, QUESTION_DIFFICULTY_CACHE_SECONDS)
+    return Response(payload)
 
 
 @api_view(['GET'])
@@ -1991,6 +2045,10 @@ def leaderboard(request):
     # include_disqualified — faqat tanlangan olimpiada + uni boshqara oluvchi
     # foydalanuvchida True bo'ladi (quyida aniqlanadi).
     include_disqualified = False
+    # Global (olimpiadasiz) rejimda natijani cache'lash uchun kalit bo'laklari:
+    # (davr, ko'rinadigan markazlar). Bitta olimpiada rejimida None qoladi va
+    # cache umuman ishlatilmaydi.
+    global_scope = None
     if olympiad_id:
         olympiad = get_object_or_404(Olympiad.objects.select_related('center'), pk=olympiad_id)
         can_manage = user_can_manage_center_event(request.user, olympiad.center)
@@ -2040,10 +2098,12 @@ def leaderboard(request):
         # Davr filtri (`?period=week` yoki `7d`) — window'dan OLDIN:
         # shu davrdagi urinishlar ichidan har user uchun eng yaxshisini olamiz.
         period = (request.query_params.get('period') or '').strip().lower()
-        if period in ('week', '7d', 'hafta'):
+        is_week = period in ('week', '7d', 'hafta')
+        if is_week:
             from datetime import timedelta
             from django.utils import timezone as dj_tz
             qs = qs.filter(submitted_at__gte=dj_tz.now() - timedelta(days=7))
+        global_scope = ('week' if is_week else 'all', allowed_center_ids)
         # Global rejimda har foydalanuvchi faqat BIR marta ko'rinadi — eng
         # yaxshi attempti bilan (eng yuqori ball, teng bo'lsa eng tez vaqt).
         # Avval har bir attempt alohida qator edi va 5 ta olimpiadada
@@ -2088,45 +2148,72 @@ def leaderboard(request):
     except (TypeError, ValueError):
         page_size = 100
     page_size = max(1, min(page_size, 500))
-    total_count = qs.count()
     offset = (page - 1) * page_size
-    qs = qs[offset:offset + page_size]
-    # Rank submit ichida yangilanmaydi (DB yukini kamaytirish uchun). Shu
-    # sababli leaderboard'da har doim joriy tartiblash (`-score`,
-    # `time_spent`, `submitted_at`) bo'yicha `i+1` o'rin beriladi. Bu
-    # filter (masalan, faqat bitta olimpiada) uchun ham to'g'ri natija
-    # qaytaradi, chunki tartiblash querysetda allaqachon qo'llanilgan.
-    from accounts.utils import avatar_url_for
-    entries = []
-    for i, a in enumerate(qs):
-        # Public olimpiadalarda `center` NULL bo'lishi mumkin — `a.olympiad.
-        # center.name` to'g'ridan-to'g'ri o'qilsa AttributeError (500) berardi.
-        # Markaz bo'lmasa markazga bog'liq maydonlar bo'sh qaytariladi.
-        center = a.olympiad.center if a.olympiad.center_id else None
-        entries.append({
-            'rank': offset + i + 1,
-            'attempt_id': a.id,
-            'user_id': a.user_id,
-            'name': a.user.full_name,
-            'avatar_url': avatar_url_for(a.user, request),
-            'is_premium': a.user.is_premium,
-            'center': center.name if center else '',
-            'organization_type': center.organization_type if center else '',
-            'country': center.country if center else '',
-            'region': center.region if center else '',
-            'district': center.district if center else '',
-            'subject': a.olympiad.subject,
-            'olympiad_id': a.olympiad_id,
-            'olympiad_title': a.olympiad.title,
-            'olympiad_status': a.olympiad.status,
-            'score': a.score,
-            'correct_count': a.correct_count,
-            'wrong_count': a.wrong_count,
-            'total_questions': a.total_questions,
-            'disqualified': a.disqualified,
-            'time_spent': a.time_spent,
-            'submitted_at': a.submitted_at.isoformat(),
-        })
+    # Global reyting cache'i: window'li (RowNumber PARTITION BY user) queryset
+    # `count()` uchun bir marta, sahifa slice'i uchun yana bir marta
+    # materializatsiya qilinadi — reyting sahifasi eng ko'p ochiladigan
+    # ekranlardan biri bo'lgani uchun bu ikkilangan og'ir so'rov har so'rovda
+    # takrorlanardi. Natija (sahifa + umumiy son) qisqa TTL bilan saqlanadi;
+    # `?refresh=1` chetlab o'tadi (analytics.metrics naqshi). Bitta olimpiada
+    # rejimi ATAYIN cache'lanmaydi — u yerda tayanch indeks bor va manager
+    # o'z tadbirining DQ holatini kechikishsiz ko'rishi kerak.
+    from django.core.cache import cache
+
+    cache_key = None
+    entries = None
+    total_count = 0
+    if global_scope is not None:
+        cache_key = _global_leaderboard_cache_key(*global_scope, page, page_size)
+        if not _cache_refresh_requested(request):
+            cached = cache.get(cache_key)
+            if cached is not None:
+                entries = cached['entries']
+                total_count = cached['total']
+    if entries is None:
+        total_count = qs.count()
+        qs = qs[offset:offset + page_size]
+        # Rank submit ichida yangilanmaydi (DB yukini kamaytirish uchun). Shu
+        # sababli leaderboard'da har doim joriy tartiblash (`-score`,
+        # `time_spent`, `submitted_at`) bo'yicha `i+1` o'rin beriladi. Bu
+        # filter (masalan, faqat bitta olimpiada) uchun ham to'g'ri natija
+        # qaytaradi, chunki tartiblash querysetda allaqachon qo'llanilgan.
+        from accounts.utils import avatar_url_for
+        entries = []
+        for i, a in enumerate(qs):
+            # Public olimpiadalarda `center` NULL bo'lishi mumkin — `a.olympiad.
+            # center.name` to'g'ridan-to'g'ri o'qilsa AttributeError (500) berardi.
+            # Markaz bo'lmasa markazga bog'liq maydonlar bo'sh qaytariladi.
+            center = a.olympiad.center if a.olympiad.center_id else None
+            entries.append({
+                'rank': offset + i + 1,
+                'attempt_id': a.id,
+                'user_id': a.user_id,
+                'name': a.user.full_name,
+                'avatar_url': avatar_url_for(a.user, request),
+                'is_premium': a.user.is_premium,
+                'center': center.name if center else '',
+                'organization_type': center.organization_type if center else '',
+                'country': center.country if center else '',
+                'region': center.region if center else '',
+                'district': center.district if center else '',
+                'subject': a.olympiad.subject,
+                'olympiad_id': a.olympiad_id,
+                'olympiad_title': a.olympiad.title,
+                'olympiad_status': a.olympiad.status,
+                'score': a.score,
+                'correct_count': a.correct_count,
+                'wrong_count': a.wrong_count,
+                'total_questions': a.total_questions,
+                'disqualified': a.disqualified,
+                'time_spent': a.time_spent,
+                'submitted_at': a.submitted_at.isoformat(),
+            })
+        if cache_key is not None:
+            cache.set(
+                cache_key,
+                {'entries': entries, 'total': total_count},
+                LEADERBOARD_CACHE_SECONDS,
+            )
     pagination_meta = {
         'page': page,
         'page_size': page_size,

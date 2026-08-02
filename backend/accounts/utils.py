@@ -12,7 +12,11 @@ Examples that all collapse to ``+998901234567``:
 """
 import base64
 import hashlib
+import logging
 import re
+
+
+logger = logging.getLogger(__name__)
 
 
 # ─── TOTP secret shifrlash ────────────────────────────────────────────────────
@@ -267,6 +271,47 @@ def avatar_url_for(user, request=None):
         except Exception:
             return url
     return url
+
+
+def delete_replaced_image_file(field_file, old_name):
+    """Almashtirilgan rasm faylini storage'dan (disk yoki Cloudinary) o'chiradi.
+
+    Rasm yangisiga ALMASHTIRILGANDA eski fayl storage'da yetim qolib ketardi —
+    faqat "rasmni butunlay o'chirish" oqimi (`.delete(save=False)`) tozalardi.
+    Render'da har deploy konteyner fayl tizimini yangilagani uchun bu
+    ko'rinmasdi; doimiy VPS diskida esa yetim fayllar to'planib boradi.
+
+    `field_file` — YANGI fayl SAQLANGANDAN keyingi maydon (`user.avatar`,
+    `center.image` ...), `old_name` — almashtirishdan oldin olingan storage
+    nomi. Chaqiruv save'dan KEYIN bo'lishi shart: saqlash xato bersa eski
+    rasm joyida qoladi.
+
+    `FieldFile.delete()` ataylab ishlatilmaydi: u `instance.<field>` ni ham
+    None qilib qo'yadi va javobdagi yangi rasm yo'qolib ketardi. Nomlar teng
+    bo'lsa (storage yangi faylni eskisining ustiga yozgan) hech narsa
+    o'chirilmaydi — hali ishlatilayotgan fayl o'chib ketmasligi uchun.
+
+    O'chirishning O'ZI `accounts.delete_storage_file` task'iga topshiriladi:
+    Cloudinary yoqilganda `storage.delete()` tashqi API'ga tarmoq so'rovi
+    bo'lib, so'rov-javob sikli ichida Gunicorn thread'ini (jami 6 ta) bloklardi
+    (`send_telegram_message_task` bilan bir xil sabab va naqsh). Bu yerda faqat
+    arzon tekshiruv qoladi. Lokal/dev'da broker bo'lmaganda
+    `CELERY_TASK_ALWAYS_EAGER` tufayli task sinxron bajariladi — FileSystem
+    storage'da o'chirish baribir bir zumda, eski xulq saqlanadi.
+
+    Tozalash xatosi so'rovni buzmaydi (rasm allaqachon saqlangan) — faqat log.
+    """
+    if not old_name or old_name == (field_file.name or ''):
+        return
+    # Circular import oldini olish uchun lokal import (tasks → models → utils).
+    from .tasks import delete_storage_file_task
+    try:
+        delete_storage_file_task.delay(old_name)
+    except Exception:
+        logger.warning(
+            "eski rasm faylini o'chirish navbatga qo'yilmadi: %s",
+            old_name, exc_info=True,
+        )
 
 
 def mask_phone(raw):
