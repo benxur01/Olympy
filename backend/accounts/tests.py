@@ -3847,6 +3847,282 @@ class AdminUserMergeTestCase(APITestCase):
         )
 
 
+class AdminDeleteUserTestCase(APITestCase):
+    """POST /api/admin/users/<id>/delete/ — admin nomidan soft-delete."""
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            phone='+998907790001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.other_admin = User.objects.create_user(
+            phone='+998907790002', password='AdminPass123', full_name='Boshqa admin',
+        )
+        self.other_admin.is_platform_admin = True
+        self.other_admin.save()
+        self.password = 'UserPass123'
+        self.target = User.objects.create_user(
+            phone='+998907790003', password=self.password, full_name='Target',
+        )
+        self.url = reverse('admin-delete-user', args=[self.target.id])
+
+    def test_soft_deletes_and_revokes_sessions(self):
+        before = self.target.token_version
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {'reason': 'Foydalanuvchi so\'radi'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertTrue(res.data['soft_deleted'])
+        self.assertTrue(res.data['restorable_until'])
+        self.target.refresh_from_db()
+        self.assertFalse(self.target.is_active)
+        self.assertIsNotNone(self.target.deleted_at)
+        # Barcha qurilmalardagi JWT'lar bekor bo'lishi kerak.
+        self.assertEqual(self.target.token_version, before + 1)
+
+    def test_audit_log_records_reason(self):
+        self.client.force_authenticate(user=self.admin)
+        self.client.post(self.url, {'reason': 'Spam hisob'}, format='json')
+        log = AuditLog.objects.get(action='admin_account_delete')
+        self.assertEqual(log.target_id, self.target.id)
+        self.assertEqual(log.actor_id, self.admin.id)
+        self.assertEqual(log.extra['reason'], 'Spam hisob')
+        self.assertEqual(log.extra['phone'], mask_phone(self.target.normalized_phone))
+
+    def test_reason_is_optional(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIsNone(AuditLog.objects.get(action='admin_account_delete').extra['reason'])
+
+    def test_user_can_restore_within_grace(self):
+        # Admin o'chirgan hisob ham grace ichida foydalanuvchining o'zi
+        # tomonidan tiklanadi — bu bloklash emas, "hisobimni yoping" javobi.
+        self.client.force_authenticate(user=self.admin)
+        self.client.post(self.url, {}, format='json')
+        self.client.force_authenticate(user=None)
+        res = self.client.post(reverse('restore-my-account'), {
+            'phone': self.target.normalized_phone, 'password': self.password,
+        }, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.is_active)
+        self.assertIsNone(self.target.deleted_at)
+
+    def test_cannot_delete_self(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(reverse('admin-delete-user', args=[self.admin.id]), {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_active)
+
+    def test_cannot_delete_another_admin(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            reverse('admin-delete-user', args=[self.other_admin.id]), {}, format='json',
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.other_admin.refresh_from_db()
+        self.assertTrue(self.other_admin.is_active)
+
+    def test_center_owner_is_409(self):
+        from centers.models import EducationCenter
+
+        EducationCenter.objects.create(name='Markaz', city='Toshkent', owner=self.target)
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_409_CONFLICT)
+        self.target.refresh_from_db()
+        self.assertIsNone(self.target.deleted_at)
+
+    def test_second_delete_is_400_and_keeps_first_deadline(self):
+        self.client.force_authenticate(user=self.admin)
+        self.client.post(self.url, {}, format='json')
+        self.target.refresh_from_db()
+        first_deleted_at = self.target.deleted_at
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.deleted_at, first_deleted_at)
+
+    def test_unknown_user_is_404(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(reverse('admin-delete-user', args=[99999]), {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_non_admin_is_403(self):
+        self.client.force_authenticate(user=self.target)
+        res = self.client.post(self.url, {}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class AdminUserContentTestCase(APITestCase):
+    """Foydalanuvchi kontenti: tarix ro'yxati + bitta elementni o'chirish.
+
+    GET /api/admin/users/<id>/content-history/ va
+    DELETE /api/admin/users/<id>/content/<type>/<content_id>/.
+    """
+
+    def setUp(self):
+        from attempts.models import TestAttempt
+        from centers.models import EducationCenter
+        from olympiads.models import Olympiad
+        from questions.models import Question
+
+        self.admin = User.objects.create_user(
+            phone='+998907791001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.teacher = User.objects.create_user(
+            phone='+998907791002', password='UserPass123', full_name='Ustoz',
+        )
+        self.other = User.objects.create_user(
+            phone='+998907791003', password='UserPass123', full_name='Boshqa',
+        )
+        self.center = EducationCenter.objects.create(name='Markaz', city='Toshkent')
+        self.question = Question.objects.create(
+            center=self.center, subject='Matematika', text='2+2=?',
+            options=['3', '4'], correct_answer=1, created_by=self.teacher,
+        )
+        self.other_question = Question.objects.create(
+            center=self.center, subject='Fizika', text='Boshqaning savoli',
+            options=['1', '2'], correct_answer=0, created_by=self.other,
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center, title='Draft olimpiada', subject='Matematika',
+            status=Olympiad.STATUS_DRAFT, created_by=self.teacher,
+            start_datetime=timezone.now() + timedelta(days=1), duration_minutes=60,
+        )
+        self.active_olympiad = Olympiad.objects.create(
+            center=self.center, title='Faol olimpiada', subject='Fizika',
+            status=Olympiad.STATUS_ACTIVE, created_by=self.teacher,
+            start_datetime=timezone.now() - timedelta(minutes=10), duration_minutes=60,
+        )
+        TestAttempt.objects.create(
+            user=self.teacher, olympiad=self.active_olympiad, score=80,
+        )
+        self.history_url = reverse('admin-user-content-history', args=[self.teacher.id])
+
+    def _delete_url(self, content_type, content_id, user_id=None):
+        return reverse(
+            'admin-delete-user-content',
+            args=[user_id or self.teacher.id, content_type, content_id],
+        )
+
+    # ─── content-history ──────────────────────────────────────────────────
+
+    def test_history_returns_only_this_user_content(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self.history_url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data['user_id'], self.teacher.id)
+        self.assertEqual(res.data['totals'], {'questions': 1, 'olympiads': 2, 'attempts': 1})
+        self.assertEqual([q['id'] for q in res.data['questions']], [self.question.id])
+        self.assertEqual(res.data['questions'][0]['center_name'], 'Markaz')
+        self.assertEqual(
+            {o['id'] for o in res.data['olympiads']},
+            {self.olympiad.id, self.active_olympiad.id},
+        )
+        self.assertEqual(res.data['attempts'][0]['olympiad_title'], 'Faol olimpiada')
+
+    def test_history_is_capped_but_totals_are_exact(self):
+        from questions.models import Question
+
+        for i in range(25):
+            Question.objects.create(
+                center=self.center, subject='Matematika', text=f'Savol {i}',
+                options=['1', '2'], correct_answer=0, created_by=self.teacher,
+            )
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(self.history_url)
+        self.assertEqual(len(res.data['questions']), 20)
+        self.assertEqual(res.data['totals']['questions'], 26)
+
+    def test_history_unknown_user_is_404(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(reverse('admin-user-content-history', args=[99999]))
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_history_non_admin_is_403(self):
+        self.client.force_authenticate(user=self.teacher)
+        self.assertEqual(self.client.get(self.history_url).status_code,
+                         status.HTTP_403_FORBIDDEN)
+
+    # ─── content delete ───────────────────────────────────────────────────
+
+    def test_unused_question_is_deleted_and_account_untouched(self):
+        from questions.models import Question
+
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.delete(self._delete_url('question', self.question.id))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(res.data['archived'])
+        self.assertFalse(Question.objects.filter(pk=self.question.id).exists())
+        # Hisobga tegilmasligi kerak.
+        self.teacher.refresh_from_db()
+        self.assertTrue(self.teacher.is_active)
+        self.assertIsNone(self.teacher.deleted_at)
+
+    def test_question_in_use_is_archived_not_deleted(self):
+        from questions.models import Question
+
+        # Faol olimpiadaga biriktirilgan savol — o'chirish tarixiy baholash
+        # ma'lumotini yo'qotardi, shuning uchun arxivlanadi.
+        self.active_olympiad.questions.add(self.question)
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.delete(self._delete_url('question', self.question.id))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertTrue(res.data['archived'])
+        self.assertTrue(Question.objects.filter(pk=self.question.id).exists())
+        self.question.refresh_from_db()
+        self.assertFalse(self.question.is_active)
+
+    def test_olympiad_is_soft_deleted(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.delete(self._delete_url('olympiad', self.olympiad.id))
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.olympiad.refresh_from_db()
+        self.assertTrue(self.olympiad.is_deleted)
+
+    def test_active_olympiad_cannot_be_deleted(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.delete(self._delete_url('olympiad', self.active_olympiad.id))
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.active_olympiad.refresh_from_db()
+        self.assertFalse(self.active_olympiad.is_deleted)
+
+    def test_audit_log_targets_content_owner(self):
+        self.client.force_authenticate(user=self.admin)
+        self.client.delete(self._delete_url('question', self.question.id))
+        log = AuditLog.objects.get(action='admin_content_delete')
+        self.assertEqual(log.target_id, self.teacher.id)
+        self.assertEqual(log.target_type, 'User')
+        self.assertEqual(log.extra['content_type'], 'question')
+        self.assertEqual(log.extra['content_id'], self.question.id)
+
+    def test_content_of_another_user_is_404(self):
+        from questions.models import Question
+
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.delete(self._delete_url('question', self.other_question.id))
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(Question.objects.filter(pk=self.other_question.id).exists())
+
+    def test_unknown_content_type_is_400(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.delete(self._delete_url('attempt', 1))
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_delete_non_admin_is_403(self):
+        from questions.models import Question
+
+        self.client.force_authenticate(user=self.teacher)
+        res = self.client.delete(self._delete_url('question', self.question.id))
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Question.objects.filter(pk=self.question.id).exists())
+
+
 class BadgeQueryCountTestCase(APITestCase):
     """`User.get_badges()` — bitta so'rov (login javobining bir qismi).
 

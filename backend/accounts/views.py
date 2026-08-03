@@ -1583,6 +1583,213 @@ def admin_user_login_history(request, user_id):
     })
 
 
+# "Batafsil" oynasidagi kontent bloklarining qator chegarasi.
+# `admin_user_login_history` dagi 20 bilan bir xil sabab: bu ko'rinish
+# "hisob nima yaratgan va nima topshirgan" savoliga javob berish uchun, to'liq
+# katalog emas. Butun ro'yxat kerak bo'lsa markaz paneli (savol banki,
+# olimpiadalar ro'yxati) ochiladi.
+ADMIN_CONTENT_HISTORY_LIMIT = 20
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def admin_user_content_history(request, user_id):
+    """GET /api/admin/users/{id}/content-history/ — hisobning kontent tarixi.
+
+    "Batafsil" oynasidagi "Kontent va faollik" bloki uchun: shikoyat kelgan
+    hisob nima YARATGANI (savollar, olimpiadalar) va nima TOPSHIRGANI (test
+    urinishlari) bir joyda ko'rinadi. Avval admin bu savolga faqat markaz
+    panelini qo'lda ochib javob topardi. Shu ro'yxatdan bitta element hisobga
+    tegmasdan o'chiriladi (`admin_delete_user_content`).
+
+    Har blok oxirgi `ADMIN_CONTENT_HISTORY_LIMIT` ta yozuv bilan cheklangan
+    (sahifalash yo'q — `admin_user_login_history` dagi bilan bir xil sabab),
+    lekin `totals` HAQIQIY umumiy sonni beradi: kesilgan ro'yxat adminga "bor
+    yo'g'i shuncha" degan noto'g'ri taassurot qoldirmasin.
+
+    Arxivlangan savol va soft-delete qilingan olimpiada ro'yxatdan
+    CHIQARILMAYDI: admin ularga allaqachon chora ko'rilganini bilishi kerak
+    (aks holda "o'chirdimmi yoki yo'qmi" savoli har safar qaytadi) — holat
+    `is_active` / `is_deleted` bayroqlari bilan uzatiladi.
+
+    `user_id` javobda qaytariladi — ketma-ket ochilgan oynalarda eski javob
+    ko'rinib qolmasin (boshqa "Batafsil" endpointlari bilan bir xil).
+    """
+    from django.contrib.auth import get_user_model
+    from attempts.models import TestAttempt
+    from olympiads.models import Olympiad
+    from questions.models import Question
+
+    User = get_user_model()
+    if not User.objects.filter(pk=user_id).exists():
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+
+    questions = (
+        Question.objects
+        .filter(created_by_id=user_id)
+        .select_related('center')
+        .order_by('-created_at')
+    )
+    olympiads = (
+        Olympiad.objects
+        .filter(created_by_id=user_id)
+        .select_related('center')
+        .order_by('-created_at')
+    )
+    attempts = (
+        TestAttempt.objects
+        .filter(user_id=user_id)
+        .select_related('olympiad')
+        .order_by('-submitted_at')
+    )
+    limit = ADMIN_CONTENT_HISTORY_LIMIT
+    return Response({
+        'user_id': int(user_id),
+        'totals': {
+            'questions': questions.count(),
+            'olympiads': olympiads.count(),
+            'attempts': attempts.count(),
+        },
+        'questions': [{
+            'id': q.id,
+            # Savol matni juda uzun bo'lishi mumkin — ro'yxat qatoriga
+            # sig'adigan qismini yuboramiz (to'liq matn savol bankida).
+            'text': q.text[:160],
+            'subject': q.subject,
+            'center_name': q.center.name,
+            'source': q.source,
+            'is_active': q.is_active,
+            'created_at': q.created_at.isoformat(),
+        } for q in questions[:limit]],
+        'olympiads': [{
+            'id': o.id,
+            'title': o.title,
+            'subject': o.subject,
+            'center_name': o.center.name,
+            'status': o.status,
+            'is_deleted': o.is_deleted,
+            'created_at': o.created_at.isoformat(),
+        } for o in olympiads[:limit]],
+        'attempts': [{
+            'id': a.id,
+            'olympiad_title': a.olympiad.title,
+            'score': a.score,
+            'disqualified': a.disqualified,
+            'submitted_at': a.submitted_at.isoformat(),
+        } for a in attempts[:limit]],
+    })
+
+
+# `admin_delete_user_content` qabul qiladigan kontent turlari — aynan
+# `admin_user_content_history` yaratilgan kontent sifatida qaytaradigan ikkita
+# blok. Urinishlar (`attempts`) ATAYLAB yo'q: ular foydalanuvchi YARATGAN
+# kontent emas, balki baholash natijasi — ularni o'chirish leaderboard va
+# sertifikatlarni buzadi (hisoblarni birlashtirishdagi bilan bir xil qoida).
+ADMIN_CONTENT_TYPES = ('question', 'olympiad')
+
+
+@api_view(['DELETE'])
+@permission_classes([IsPlatformAdmin])
+def admin_delete_user_content(request, user_id, content_type, content_id):
+    """DELETE /api/admin/users/{id}/content/{type}/{content_id}/ — bitta element.
+
+    `type` — `ADMIN_CONTENT_TYPES` dan biri. Hisobga UMUMAN tegilmaydi:
+    bloklash, seanslar, rollar va premium o'zgarmaydi. Bu chora sifatsiz yoki
+    nomaqbul kontentni hisobni yopmasdan olib tashlash uchun — shikoyat kelgan
+    bitta savol butun o'qituvchi hisobini bloklashga arzimaydi.
+
+    Element AYNAN shu foydalanuvchi yaratgan bo'lishi shart (`created_by`),
+    aks holda 404. URL'da `user_id` shuning uchun bor: admin "Batafsil"
+    oynasida KO'RGAN qatorni o'chiradi va tasodifiy ID bilan boshqa markazning
+    kontentiga tegib ketmaydi.
+
+    O'chirish qoidasi kontent turining O'Z qoidasi bilan bir xil — admin yo'li
+    markaz xodimining yo'lidan boshqacha natija bermasligi kerak:
+      * savol foydalanishda bo'lsa (faol/tugagan olimpiadada, kod yuborish
+        yoki essay bahosi bor) o'chirilmaydi, ARXIVLANADI
+        (`questions.views.question_detail` bilan bir xil tekshiruv);
+      * olimpiada har doim soft-delete (`is_deleted=True`,
+        `olympiads.views.olympiad_detail` dagidek), faol tadbir esa umuman
+        rad etiladi — o'quvchilar hozir topshirayotgan imtihonni olib qo'yish
+        ularning ishini yo'qotadi.
+
+    Javobdagi `archived` — QATOR SAQLANDIMI degani: savol arxivlangan yoki
+    olimpiada soft-delete bo'lgan bo'lsa `true`, faqat foydalanishda bo'lmagan
+    savol o'chirilganda `false` (yagona hard-delete yo'li).
+    """
+    from django.contrib.auth import get_user_model
+
+    User = get_user_model()
+    owner = User.objects.filter(pk=user_id).first()
+    if not owner:
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    if content_type not in ADMIN_CONTENT_TYPES:
+        return Response({'detail': "Kontent turi noto'g'ri (savol yoki olimpiada)"},
+                        status=status.HTTP_400_BAD_REQUEST)
+
+    if content_type == 'question':
+        from questions.models import Question
+        # Qoida ikki joyda takrorlanmasin: himoyalanganlik tekshiruvi savol
+        # o'chirish yo'lining o'z moduldagi manbasidan olinadi (aylanma
+        # importni oldini olish uchun funksiya ichida).
+        from questions.views import _question_is_protected
+
+        item = Question.objects.filter(pk=content_id, created_by_id=owner.id).first()
+        if not item:
+            return Response({'detail': 'Savol topilmadi'},
+                            status=status.HTTP_404_NOT_FOUND)
+        archived = _question_is_protected(item)
+        detail = (
+            "Savol foydalanishda bo'lgani uchun o'chirilmadi, balki arxivlandi: "
+            "u savol bankidan olib tashlandi, lekin mavjud natijalar va baholar "
+            "uchun saqlab qolindi."
+            if archived else "Savol o'chirildi"
+        )
+    else:
+        from olympiads.models import Olympiad
+
+        item = Olympiad.objects.filter(pk=content_id, created_by_id=owner.id).first()
+        if not item:
+            return Response({'detail': 'Olimpiada topilmadi'},
+                            status=status.HTTP_404_NOT_FOUND)
+        if item.status == Olympiad.STATUS_ACTIVE:
+            return Response(
+                {'detail': "Faol tadbirni o'chirish mumkin emas. Avval uni nofaol qiling."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        # Olimpiada hech qachon hard-delete qilinmaydi — natijalar unga
+        # bog'langan holda qoladi.
+        archived = True
+        detail = "Olimpiada o'chirildi"
+
+    # Audit yozuvi amaldan OLDIN: savol hard-delete bo'lsa keyin `pk` yo'qoladi
+    # va `extra` da id qolmasdi. Yozuv KONTENT EGASIGA bog'lanadi — "Amallar
+    # tarixi" foydalanuvchi bo'yicha qidiriladi.
+    AuditLog.log(request, 'admin_content_delete', target=owner, extra={
+        'content_type': content_type,
+        'content_id': int(content_id),
+        'center_id': item.center_id,
+        'archived': archived,
+    })
+    if not archived:
+        item.delete()
+    elif content_type == 'question':
+        item.is_active = False
+        item.save(update_fields=['is_active'])
+    else:
+        item.is_deleted = True
+        item.save(update_fields=['is_deleted'])
+
+    return Response({
+        'content_type': content_type,
+        'content_id': int(content_id),
+        'archived': archived,
+        'detail': detail,
+    })
+
+
 @api_view(['POST'])
 @permission_classes([IsPlatformAdmin])
 def admin_warn_user(request, user_id):
@@ -1998,6 +2205,100 @@ def admin_bulk_set_user_active(request):
         _apply_suspension(request, target, desired, reason, blocked_until, bulk=True)
         succeeded.append(target.id)
     return Response({'succeeded': succeeded, 'failed': failed})
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_delete_user(request, user_id):
+    """POST /api/admin/users/{id}/delete/ — hisobni admin nomidan o'chirish.
+
+    Body: {"reason": "..."} — ixtiyoriy ICHKI izoh, faqat audit jurnaliga
+    tushadi (foydalanuvchi uni ko'rmaydi, `admin_warn_user` dagi `reason`
+    bilan bir xil ma'no).
+
+    Bu `delete_my_account` ning admin yo'li: telefonini yoki parolini
+    yo'qotgan foydalanuvchi hisobini o'zi o'chira olmaydi va support'ga
+    murojaat qiladi. Parol/2FA so'ralmaydi — bu yerda admin huquqining o'zi
+    hujjat (`IsPlatformAdmin`), foydalanuvchining maxfiy ma'lumoti esa
+    adminda umuman yo'q.
+
+    Bloklashning O'RNINI BOSMAYDI: qoidabuzar hisob uchun `set-active`
+    (sababli, muddatli blok) qoladi. Farqi shundaki o'chirilgan hisob grace
+    muddati (`ACCOUNT_DELETE_GRACE_DAYS`, default 30 kun) tugagach Celery
+    tomonidan butunlay yo'q qilinadi va shu muddat ichida foydalanuvchining
+    O'ZI telefon va parol bilan tiklab olishi mumkin
+    (`restore_my_account`) — ya'ni bu quvib chiqarish emas, "hisobimni
+    yoping" so'roviga javob.
+
+    Cheklovlar boshqa admin amallari bilan bir xil:
+      * o'zini o'chirish yo'q (`admin_set_user_active` dagidek),
+      * boshqa platforma adminini o'chirish yo'q — admin qatlamini bir-biriga
+        ochib qo'ymaslik uchun,
+      * allaqachon o'chirilgan hisob 400 qaytaradi: aks holda takroriy so'rov
+        grace soatini jimgina qaytadan boshlab yuborardi,
+      * markaz egasini o'chirish yo'q (`delete_my_account` dagi bilan bir xil
+        409) — `EducationCenter.owner` PROTECT va markaz egasiz qolmasligi
+        kerak, avval egalik boshqa hisobga o'tkaziladi.
+
+    Soft-delete: `is_active=False` + `deleted_at` + `token_version` oshadi —
+    barcha qurilmalardagi JWT'lar `admin_force_logout_user` dagidek darhol
+    bekor bo'ladi. Hech qanday qator O'CHIRILMAYDI (urinishlar, to'lovlar,
+    audit izi joyida qoladi).
+    """
+    from django.contrib.auth import get_user_model
+    from centers.models import EducationCenter
+
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'},
+                        status=status.HTTP_404_NOT_FOUND)
+    if target.id == request.user.id:
+        return Response({'detail': "O'z hisobingizni bu yerdan o'chirib bo'lmaydi"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if target.is_platform_admin:
+        return Response({'detail': "Boshqa adminning hisobini o'chirib bo'lmaydi"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if target.deleted_at:
+        return Response({'detail': "Bu hisob allaqachon o'chirilgan"},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if EducationCenter.objects.filter(owner_id=target.id).exists():
+        return Response(
+            {'detail': "Bu foydalanuvchi tashkilot egasi. Hisobni o'chirishdan "
+                       "oldin tashkilot egaligini boshqa foydalanuvchiga o'tkazing."},
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    # max_length yo'q (JSONField), lekin blok sababi bilan bir xil chegara —
+    # jurnalga cheksiz matn tushmasin.
+    reason = str(request.data.get('reason') or '').strip()[:255]
+    grace_days = int(getattr(settings, 'ACCOUNT_DELETE_GRACE_DAYS', 30))
+    now = timezone.now()
+    restorable_until = now + timedelta(days=grace_days)
+
+    AuditLog.log(request, 'admin_account_delete', target=target, extra={
+        'phone': mask_phone(target.normalized_phone),
+        'soft_delete': True,
+        'reason': reason or None,
+        'restorable_until': restorable_until.isoformat(),
+    })
+
+    with transaction.atomic():
+        locked = User.objects.select_for_update().get(pk=target.pk)
+        locked.is_active = False
+        locked.deleted_at = now
+        locked.token_version = (locked.token_version or 0) + 1
+        locked.save(update_fields=['is_active', 'deleted_at', 'token_version'])
+
+    return Response({
+        'detail': (
+            f"Hisob o'chirildi. {grace_days} kun ichida foydalanuvchi uni "
+            "telefon va parol bilan tiklashi mumkin, keyin butunlay yo'q qilinadi."
+        ),
+        'soft_deleted': True,
+        'restorable_until': restorable_until.isoformat(),
+        'grace_days': grace_days,
+    })
 
 
 # Tashkilotga bog'langan rollar: bunday hisobda SHAXSIY premium (`is_premium`
