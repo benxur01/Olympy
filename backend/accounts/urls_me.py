@@ -119,6 +119,14 @@ urlpatterns = [
          name='admin-user-billing-history'),
     path('admin/users/<int:user_id>/login-history/', views.admin_user_login_history,
          name='admin-user-login-history'),
+    # "Batafsil" oynasidagi "Kontent va faollik" bloki: hisob nima yaratgani
+    # (savol/olimpiada) va nima topshirgani (urinishlar). Ikkinchi yo'l shu
+    # ro'yxatdagi BITTA elementni hisobga tegmasdan o'chiradi — element aynan
+    # shu foydalanuvchiniki bo'lishi shart, shu sababli `user_id` URL'da.
+    path('admin/users/<int:user_id>/content-history/', views.admin_user_content_history,
+         name='admin-user-content-history'),
+    path('admin/users/<int:user_id>/content/<str:content_type>/<int:content_id>/',
+         views.admin_delete_user_content, name='admin-delete-user-content'),
     # Bloklashdan oldingi qadam: rasmiy ogohlantirish yuborish va shu
     # foydalanuvchiga avval yuborilganlarini ko'rish ("Batafsil" oynasi).
     path('admin/users/<int:user_id>/warn/', views.admin_warn_user,
@@ -134,6 +142,11 @@ urlpatterns = [
          views.admin_force_logout_session, name='admin-force-logout-session'),
     path('admin/users/<int:user_id>/set-active/', views.admin_set_user_active,
          name='admin-set-user-active'),
+    # Hisobni admin nomidan o'chirish (soft-delete, grace ichida tiklanadi) —
+    # o'z-o'ziga xizmat qiladigan `auth/me/` DELETE ning support yo'li.
+    # Bloklashning o'rnini bosmaydi, shuning uchun alohida amal.
+    path('admin/users/<int:user_id>/delete/', views.admin_delete_user,
+         name='admin-delete-user'),
     path('admin/users/<int:user_id>/toggle-premium/', views.admin_toggle_user_premium,
          name='admin-toggle-user-premium'),
     path('admin/users/<int:user_id>/set-roles/', views.admin_set_user_roles,

@@ -945,6 +945,13 @@ class AuditLog(models.Model):
         # qaytarardi va admin panelidagi "Amallar tarixi" jadvalida shu
         # ko'rinardi.
         ('admin_password_reset', 'Parol majburan tiklandi'),
+        # Admin nomidan soft-delete: `account_delete` (foydalanuvchining o'zi)
+        # dan ATAYLAB ajratilgan — "kim o'chirdi" savoliga javob aynan shu
+        # ikki kod orqali beriladi.
+        ('admin_account_delete', "Hisob admin tomonidan o'chirildi"),
+        # Hisobga tegmasdan bitta kontent elementini (savol/olimpiada)
+        # o'chirish. Yozuv kontent EGASIGA bog'lanadi, turi va id'si `extra` da.
+        ('admin_content_delete', "Foydalanuvchi kontenti o'chirildi"),
         ('admin_phone_change', "Telefon raqami o'zgartirildi"),
         ('admin_totp_reset', "2FA majburan o'chirildi"),
         ('admin_force_logout', 'Barcha seanslar yakunlandi'),

@@ -167,6 +167,9 @@ const adminStatusMeta = (status) => {
     rejected: { label: 'Rad etildi', cls: 'admin-badge-rejected' },
     active: { label: 'Faol', cls: 'admin-badge-active' },
     draft: { label: 'Draft', cls: 'admin-badge-draft' },
+    // Olimpiada holati — "Kontent va faollik" bloki shu yorliqlarni ishlatadi
+    // (Olympiad.STATUS_CHOICES bilan bir xil nomlar).
+    inactive: { label: 'Nofaol', cls: 'admin-badge-draft' },
     finished: { label: 'Tugagan', cls: 'admin-badge-draft' },
   };
   return map[status] || map.draft;
@@ -906,6 +909,18 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   // alohida tasdiqlash oynasi va faqat "Batafsil" oynasidan chaqiriladi.
   const [impersonateConfirm, setImpersonateConfirm] = React.useState(null);
   const [impersonateBusy, setImpersonateBusy] = React.useState(false);
+  // Hisobni o'chirish (soft-delete) — paneldagi eng qaytarib bo'lmaydigan
+  // amal, shuning uchun oddiy tasdiqlash yetmaydi: birlashtirish oqimidagi
+  // kabi foydalanuvchi raqamini QO'LDA yozish talab qilinadi. `reason`
+  // ixtiyoriy va faqat audit jurnaliga tushadi.
+  const [deleteUserModal, setDeleteUserModal] = React.useState(null);
+  const [deleteUserReason, setDeleteUserReason] = React.useState('');
+  const [deleteUserConfirmPhone, setDeleteUserConfirmPhone] = React.useState('');
+  const [deleteUserBusy, setDeleteUserBusy] = React.useState(false);
+  // "Batafsil" oynasidagi kontent ro'yxatidan bitta elementni o'chirish:
+  // `{ type, id, label }` — hisobga tegilmaydi.
+  const [contentDeleteConfirm, setContentDeleteConfirm] = React.useState(null);
+  const [contentDeleteBusy, setContentDeleteBusy] = React.useState(false);
   // Takrorlangan hisoblarni birlashtirish: SIM raqamini yo'qotib yangi raqam
   // bilan qayta ro'yxatdan o'tgan o'quvchida ikkita hisob qoladi. Oqim ikki
   // bosqichli — avval quruq yurish (`preview`, hech narsa o'zgarmaydi), keyin
@@ -1238,6 +1253,15 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       : Promise.resolve(null),
     [isApi, detailBackendId],
   );
+  // Hisob yaratgan kontent va topshirgan urinishlar — shikoyat kelganda
+  // "bu hisob nima qilgan" savoliga javob. Har bir yaratilgan element shu
+  // ro'yxatdan hisobga tegmasdan o'chiriladi.
+  const apiUserContentRes = useApiData(
+    () => (isApi && detailBackendId)
+      ? OlympyApi.getAdminUserContentHistory(detailBackendId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, detailBackendId],
+  );
 
   // "Hozir onlayn" sanog'i — Boshqaruv panelidagi karta uchun. `useApiData`
   // ishlatilmaydi: unda poll yo'q, bu ko'rsatkich esa doim yangi bo'lishi
@@ -1505,6 +1529,30 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       .finally(() => setSessionLogoutId(null));
   };
 
+  // "Batafsil" oynasidagi kontent qatorini o'chirish (tasdiqlashdan keyin).
+  // Hisobga tegilmaydi — bu bloklashning o'rnini bosmaydigan tor chora.
+  // Foydalanishdagi savol o'chirilmasdan arxivlanadi: qaysi yo'l tanlanganini
+  // backend javobdagi matnda aytadi, shuning uchun toast o'sha matndan.
+  const runContentDelete = () => {
+    if (!contentDeleteConfirm || contentDeleteBusy) return;
+    if (!isApi) { showToast("Kontent faqat API rejimida o'chiriladi"); return; }
+    if (!detailBackendId) { showToast('Backend ID topilmadi'); setContentDeleteConfirm(null); return; }
+    setContentDeleteBusy(true);
+    OlympyApi.adminDeleteUserContent(
+      detailBackendId, contentDeleteConfirm.type, contentDeleteConfirm.id, OlympyApi.getToken(),
+    )
+      .then(res => {
+        showToast(res?.detail || "Kontent o'chirildi");
+        setContentDeleteConfirm(null);
+        apiUserContentRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminDeleteUserContent failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setContentDeleteBusy(false));
+  };
+
   // Sabab + muddat maydonlari. Bitta foydalanuvchilik va ommaviy bloklash
   // modallari AYNAN shu bloklardan foydalanadi — qoidalar (majburiy sabab,
   // qat'iy muddat variantlari) ikkalasida bir xil bo'lishi kerak.
@@ -1739,6 +1787,46 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         setImpersonateBusy(false);
         setImpersonateConfirm(null);
       });
+  };
+
+  // Hisobni o'chirish oynasi har safar toza ochiladi — oldingi
+  // foydalanuvchining sababi va yozilgan raqami qolib ketmasin.
+  const openDeleteUserModal = (row) => {
+    setDeleteUserReason('');
+    setDeleteUserConfirmPhone('');
+    setDeleteUserModal(row);
+  };
+
+  // Tasdiqlash: hisob raqamini AYNAN yozish talab qilinadi (birlashtirish
+  // oqimidagi bilan bir xil himoya) — bir bosishda hisob o'chib ketmasin.
+  const deleteUserConfirmOk = !!deleteUserModal?.phone
+    && deleteUserConfirmPhone.replace(/\s/g, '') === deleteUserModal.phone;
+
+  const runDeleteUser = () => {
+    if (!deleteUserModal || deleteUserBusy || !deleteUserConfirmOk) return;
+    if (!isApi) { showToast("Hisob faqat API rejimida o'chiriladi"); return; }
+    const numericUserId = deleteUserModal.backendId
+      ?? (typeof deleteUserModal.id === 'string' && deleteUserModal.id.startsWith('api:')
+        ? Number(deleteUserModal.id.slice(4)) : null);
+    if (!numericUserId) { showToast('Backend ID topilmadi'); setDeleteUserModal(null); return; }
+
+    setDeleteUserBusy(true);
+    OlympyApi.adminDeleteUser(numericUserId, deleteUserReason.trim(), OlympyApi.getToken())
+      .then(res => {
+        // Backend matnida tiklash muddati bor — uni o'zgartirmasdan
+        // ko'rsatamiz (grace kunlari sozlamadan keladi).
+        showToast(res?.detail || "Hisob o'chirildi");
+        setDeleteUserModal(null);
+        // Hisob endi "Bloklangan" holatida ko'rinadi — ro'yxat ham, ochiq
+        // "Batafsil" oynasi ham yangilanishi kerak.
+        apiUsersRes.reload();
+        apiUserDetailRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminDeleteUser failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setDeleteUserBusy(false));
   };
 
   const userRows = allUsers.map(u => {
@@ -2570,11 +2658,21 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const sessions = isApi && apiUserSessionsRes.data?.user_id === detailBackendId
       ? apiUserSessionsRes.data
       : null;
+    const content = isApi && apiUserContentRes.data?.user_id === detailBackendId
+      ? apiUserContentRes.data
+      : null;
     const txRows = Array.isArray(billing?.transactions) ? billing.transactions : [];
     const loginRows = Array.isArray(logins?.events) ? logins.events : [];
     const warningRows = Array.isArray(warnings?.warnings) ? warnings.warnings : [];
     const sessionRows = Array.isArray(sessions?.sessions) ? sessions.sessions : [];
     const activeSessionCount = sessionRows.filter(s => s.is_active).length;
+    // Kontent bloklari bitta so'rovdan keladi (savollar, olimpiadalar,
+    // urinishlar) — ro'yxatlar oxirgi 20 tasi bilan cheklangan, `totals` esa
+    // haqiqiy umumiy son (sarlavha yonida ko'rsatiladi).
+    const contentQuestionRows = Array.isArray(content?.questions) ? content.questions : [];
+    const contentOlympiadRows = Array.isArray(content?.olympiads) ? content.olympiads : [];
+    const contentAttemptRows = Array.isArray(content?.attempts) ? content.attempts : [];
+    const contentTotals = content?.totals || {};
     // `res.loading` yolg'iz yetarli emas: useApiData effekti render'dan KEYIN
     // ishga tushadi, ya'ni oyna ochilgan birinchi kadrda bayroq hali `false`
     // va bir lahza "bo'sh" holat ko'rinib qolardi. Javob hali shu
@@ -2583,6 +2681,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const loginsLoading = apiUserLoginsRes.loading || (!logins && !apiUserLoginsRes.error);
     const warningsLoading = apiUserWarningsRes.loading || (!warnings && !apiUserWarningsRes.error);
     const sessionsLoading = apiUserSessionsRes.loading || (!sessions && !apiUserSessionsRes.error);
+    const contentLoading = apiUserContentRes.loading || (!content && !apiUserContentRes.error);
     // Ikkala tarix bloki bir xil holatlarni boshqaradi (API emas / yuklanmoqda
     // / xato / bo'sh / ro'yxat) — bitta o'ram orqali.
     const renderHistorySection = ({ title, note, loading, error, rows, emptyText, renderRow }) => (
@@ -2806,6 +2905,121 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               ),
             })}
 
+            {/* Kontent va faollik — hisob NIMA YARATGAN (savol, olimpiada) va
+                NIMA TOPSHIRGAN (urinishlar). Shikoyat kelganda admin buni
+                markaz panelini qo'lda ochmasdan ko'radi va bitta elementni
+                hisobga tegmasdan olib tashlaydi. Uchala blok bitta so'rovdan
+                keladi, shuning uchun yuklanish/xato holati ham umumiy. */}
+            {renderHistorySection({
+              title: 'Yaratgan savollari',
+              // Ro'yxat oxirgi 20 tasi — jami son sarlavha yonida turadi,
+              // aks holda kesilgan ro'yxat "bor yo'g'i shuncha" deb ko'rinardi.
+              note: contentTotals.questions ? `jami ${contentTotals.questions} ta` : null,
+              loading: contentLoading,
+              error: apiUserContentRes.error,
+              rows: contentQuestionRows,
+              emptyText: 'Savol yaratmagan',
+              renderRow: (q) => (
+                <div key={q.id} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold text-white break-words">{q.text}</div>
+                    <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                      {q.subject} · {q.center_name} · {formatAdminDateTime(q.created_at)}
+                    </div>
+                  </div>
+                  {/* Arxivlangan savolda o'chiradigan narsa qolmagan — holat
+                      ko'rsatiladi, tugma esa faqat faol qatorlarda (faol
+                      seanslar ro'yxatidagi bilan bir xil qoida). */}
+                  {q.is_active ? (
+                    <button
+                      onClick={() => setContentDeleteConfirm({
+                        type: 'question', id: q.id, label: q.text,
+                      })}
+                      className="shrink-0 rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-bold text-rose-400 transition hover:bg-rose-500/20"
+                    >
+                      O'chirish
+                    </button>
+                  ) : (
+                    <span className="shrink-0 text-[10px] font-bold text-slate-500">Arxivlangan</span>
+                  )}
+                </div>
+              ),
+            })}
+
+            {renderHistorySection({
+              title: 'Yaratgan olimpiadalari',
+              note: contentTotals.olympiads ? `jami ${contentTotals.olympiads} ta` : null,
+              loading: contentLoading,
+              error: apiUserContentRes.error,
+              rows: contentOlympiadRows,
+              emptyText: 'Olimpiada yaratmagan',
+              renderRow: (o) => (
+                <div key={o.id} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
+                  <div className="min-w-0">
+                    <div className="truncate text-[11px] font-bold text-white">{o.title}</div>
+                    <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                      {o.subject} · {o.center_name} · {formatAdminDateTime(o.created_at)}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <AdminPill status={o.status} />
+                    {o.is_deleted ? (
+                      <span className="text-[10px] font-bold text-slate-500">O'chirilgan</span>
+                    ) : o.status === 'active' ? (
+                      // Backend ham faol tadbirni rad etadi: o'quvchilar hozir
+                      // topshirayotgan imtihonni olib qo'yish ularning ishini
+                      // yo'qotadi. Tugma ko'rinadi, lekin sababi bilan o'chiq.
+                      <button
+                        type="button"
+                        disabled
+                        title="Faol tadbirni o'chirib bo'lmaydi — avval uni nofaol qiling"
+                        className="cursor-not-allowed rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-slate-500"
+                      >
+                        O'chirish
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setContentDeleteConfirm({
+                          type: 'olympiad', id: o.id, label: o.title,
+                        })}
+                        className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-bold text-rose-400 transition hover:bg-rose-500/20"
+                      >
+                        O'chirish
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ),
+            })}
+
+            {/* Urinishlar faqat O'QISH uchun: ular foydalanuvchi yaratgan
+                kontent emas, baholash natijasi — o'chirish reyting va
+                sertifikatlarni buzardi (backend ham qabul qilmaydi). */}
+            {renderHistorySection({
+              title: 'Test urinishlari',
+              note: contentTotals.attempts ? `jami ${contentTotals.attempts} ta` : null,
+              loading: contentLoading,
+              error: apiUserContentRes.error,
+              rows: contentAttemptRows,
+              emptyText: 'Test topshirmagan',
+              renderRow: (a) => (
+                <div key={a.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                  <div className="min-w-0">
+                    <div className="truncate text-[11px] font-bold text-white">{a.olympiad_title}</div>
+                    <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                      {formatAdminDateTime(a.submitted_at)}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="text-[11px] font-bold tabular-nums text-white">{a.score}%</div>
+                    {a.disqualified && (
+                      <div className="mt-0.5 text-[10px] font-bold text-rose-400">Diskvalifikatsiya</div>
+                    )}
+                  </div>
+                </div>
+              ),
+            })}
+
             {/* Xavfsizlik amallari. Ikkalasi ham "Batafsil" oynasida: jadval
                 qatoridagi tugmalar allaqachon to'lib ketgan va bularning
                 ikkalasi ham kundalik emas, aniq holat uchun kerak. */}
@@ -3008,6 +3222,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       <button onClick={() => openBlockModal(row)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${row.status === 'Bloklangan' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'}`}>
                         {row.status === 'Bloklangan' ? 'Ochish' : 'Bloklash'}
                       </button>
+                      {/* Bloklashdan keyingi oxirgi qadam — shu sabab aynan
+                          uning yonida. Admin hisobiga qo'llanmaydi (backend ham
+                          rad etadi), shuning uchun tugma ham ko'rsatilmaydi. */}
+                      {!row.isPlatformAdmin && (
+                        <button onClick={() => openDeleteUserModal(row)} className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-[11px] font-bold text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition">
+                          Hisobni o'chirish
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -3083,6 +3305,72 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             {blocking ? '...' : (blockModal?.status === 'Bloklangan' ? 'Blokni ochish' : 'Bloklash')}
           </button>
         </div>
+      </Modal>
+
+      {/* Hisobni o'chirish (soft-delete). Oddiy tasdiqlash oynasi ATAYLAB
+          ishlatilmadi: bu jonli hisobni yopadi, shuning uchun birlashtirish
+          oqimidagi kabi raqamni qo'lda yozish talab qilinadi. */}
+      <Modal
+        open={!!deleteUserModal}
+        onClose={() => !deleteUserBusy && setDeleteUserModal(null)}
+        title="Hisobni o'chirish">
+        {deleteUserModal && (
+          <div className="space-y-5">
+            <div className="flex items-center gap-3 rounded-xl bg-white/5 p-3">
+              <Avatar name={deleteUserModal.name || ''} size={36} />
+              <div>
+                <div className="text-sm font-semibold text-white">{deleteUserModal.name}</div>
+                <div className="text-xs font-mono text-white/40">{deleteUserModal.phone || '—'}</div>
+              </div>
+            </div>
+
+            <p className="text-sm leading-relaxed text-white/60">
+              Hisob o'chiriladi: foydalanuvchi tizimga kira olmaydi va barcha
+              qurilmalaridagi seanslari yakunlanadi. Ma'lumotlari (urinishlar,
+              to'lovlar) darhol yo'q qilinmaydi — tiklash muddati tugagach
+              butunlay o'chadi. Shu muddat ichida foydalanuvchining o'zi telefon
+              va parol bilan hisobini tiklab olishi mumkin.
+            </p>
+            <p className="text-[11px] leading-relaxed text-amber-300/80">
+              Qoidabuzarlik uchun bu emas, "Bloklash" ishlatiladi — blok sababi
+              va muddati bilan yoziladi hamda foydalanuvchi uni o'zi ocholmaydi.
+            </p>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-white/50">O'chirish sababi (ichki, ixtiyoriy)</label>
+              <input
+                value={deleteUserReason}
+                onChange={e => setDeleteUserReason(e.target.value)}
+                maxLength={255}
+                className="w-full admin-input px-3 py-2.5 text-sm outline-none"
+                placeholder="Masalan: foydalanuvchi support orqali so'radi"
+              />
+              <p className="mt-2 text-[11px] leading-relaxed text-white/40">
+                Faqat amallar tarixiga yoziladi — foydalanuvchi buni ko'rmaydi.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                Tasdiqlash uchun hisob raqamini yozing: <span className="font-mono text-rose-300">{deleteUserModal.phone}</span>
+              </label>
+              <input
+                value={deleteUserConfirmPhone}
+                onChange={e => setDeleteUserConfirmPhone(e.target.value)}
+                placeholder={deleteUserModal.phone || ''}
+                className="w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 font-mono text-xs font-semibold text-white placeholder:text-slate-600 focus:border-rose-500/50 focus:outline-none"
+                inputMode="tel"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setDeleteUserModal(null)} disabled={deleteUserBusy} className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">Bekor qilish</button>
+              <button onClick={runDeleteUser} disabled={deleteUserBusy || !deleteUserConfirmOk} className="btn-danger flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">
+                {deleteUserBusy ? '...' : "Hisobni o'chirish"}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Ommaviy bloklash / blokni ochish */}
@@ -3409,6 +3697,25 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         confirmText="Ha, yakunlash"
         danger
         busy={forceLogoutBusy}
+      />
+
+      {/* Kontent qatorini o'chirish. Hisobga tegilmaydi — matn buni ochiq
+          aytadi, chunki tugma "Batafsil" oynasida bloklash amallari yonida
+          turadi. Savolning haqiqatan o'chgani yoki arxivlangani backend
+          javobidagi matnda keladi (foydalanishdagi savol saqlanadi). */}
+      <ConfirmModal
+        open={!!contentDeleteConfirm}
+        onClose={() => !contentDeleteBusy && setContentDeleteConfirm(null)}
+        onConfirm={runContentDelete}
+        title={contentDeleteConfirm?.type === 'olympiad' ? "Olimpiadani o'chirish" : "Savolni o'chirish"}
+        message={`"${(contentDeleteConfirm?.label || '').slice(0, 80)}" o'chiriladi. Hisob bloklanmaydi va seanslari yakunlanmaydi. ${
+          contentDeleteConfirm?.type === 'olympiad'
+            ? "Olimpiada ro'yxatlardan olib tashlanadi, mavjud natijalar esa saqlanib qoladi."
+            : "Savol foydalanishda bo'lsa (olimpiadada, kod yuborish yoki baho bor) o'chirilmaydi, balki arxivlanadi."
+        } Davom etasizmi?`}
+        confirmText="Ha, o'chirish"
+        danger
+        busy={contentDeleteBusy}
       />
 
       <ConfirmModal

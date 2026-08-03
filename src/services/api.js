@@ -1018,6 +1018,20 @@ export const OlympyApi = {
   // shuni tekshiradi.
   getAdminUserBillingHistory: (userId, token) => request(`/api/admin/users/${userId}/billing-history/`, { token }),
   getAdminUserLoginHistory: (userId, token) => request(`/api/admin/users/${userId}/login-history/`, { token }),
+  // Hisob YARATGAN kontent (savollar, olimpiadalar) va TOPSHIRGAN urinishlar
+  // — "Batafsil" oynasidagi "Kontent va faollik" bloki. Har ro'yxat oxirgi
+  // 20 ta yozuv bilan cheklangan, `totals` esa haqiqiy umumiy sonni beradi.
+  getAdminUserContentHistory: (userId, token) => request(
+    `/api/admin/users/${userId}/content-history/`, { token },
+  ),
+  // Yuqoridagi ro'yxatdan BITTA elementni o'chirish — hisobga tegilmaydi
+  // (bloklanmaydi, seanslari yakunlanmaydi). `contentType`: 'question' yoki
+  // 'olympiad'. Foydalanishdagi savol o'chirilmaydi, arxivlanadi — javobdagi
+  // `archived` bayrog'i shuni bildiradi.
+  adminDeleteUserContent: (userId, contentType, contentId, token) => request(
+    `/api/admin/users/${userId}/content/${contentType}/${contentId}/`,
+    { method: 'DELETE', token },
+  ),
   // Bloklashdan oldingi rasmiy ogohlantirish. `reason` ICHKI izoh (faqat
   // audit jurnaliga tushadi), `message` esa foydalanuvchi o'qiydigan matn —
   // ikkalasi ham majburiy (backend bo'shini 400 bilan rad etadi). Hisob
@@ -1042,6 +1056,15 @@ export const OlympyApi = {
         : { is_active: false, reason: reason || '', duration_days: durationDays ?? null },
       token,
     },
+  ),
+  // Hisobni admin nomidan o'chirish (soft-delete). Bloklashning o'rnini
+  // BOSMAYDI: o'chirilgan hisob grace muddati (backend javobidagi
+  // `grace_days`) tugagach butunlay yo'q qilinadi va shu muddat ichida
+  // foydalanuvchining O'ZI telefon+parol bilan tiklab olishi mumkin.
+  // `reason` ixtiyoriy va faqat audit jurnaliga tushadi.
+  adminDeleteUser: (userId, reason, token) => request(
+    `/api/admin/users/${userId}/delete/`,
+    { method: 'POST', body: { reason: reason || '' }, token },
   ),
   // Ommaviy bloklash/ochish. Sabab/muddat qoidalari bitta foydalanuvchilikdagi
   // bilan bir xil. Javob QISMAN muvaffaqiyat qaytaradi:
