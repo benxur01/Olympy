@@ -388,6 +388,42 @@ const _refreshTokens = () => {
 // ta'sirlanmaydi.
 const NETWORK_RETRY_DELAYS_MS = [600, 1200];
 
+// `fetch()` "osilib qolgan" ulanishda HECH QACHON rad etmaydi: TCP/TLS o'rnatilgan,
+// lekin javob kelmasa promise abadiy kutib qoladi — yuqoridagi qayta urinish
+// oqimi ham ishga tushmaydi (chunki xato tashlanmagan). Natijada UI shu holatda
+// qotib qoladi: Login tugmasi doimiy "Kirish..." (disabled) bo'lib turadi,
+// foydalanuvchiga na xato, na qayta urinish imkoni ko'rinadi.
+// Shuning uchun HAR BIR urinishga vaqt chegarasi qo'yamiz — chegara tugasa
+// so'rov abort qilinadi va odatdagi tarmoq-xatosi oqimiga tushadi.
+// 15s — Render'ning "uyqudan uyg'onayotgan" instansiyasi uchun yetarli darajada
+// saxiy, lekin foydalanuvchi tugmani abadiy kutmasligi uchun yetarlicha qisqa.
+// Qayta urinishlar bilan birga eng yomon holat ~47s, birinchi qayta urinish 15s.
+const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+const REQUEST_TIMEOUT_MESSAGE = 'Server javob bermadi — internetni tekshirib, qaytadan urinib ko‘ring';
+
+// Chaqiruvchining `signal`i va vaqt chegarasini bitta signalga birlashtiradi.
+// (`AbortSignal.any()` eski mobil brauzerlarda yo'q — qo'lda ulaymiz.)
+// `timedOut()` chaqiruvchi ATAYIN bekor qilgan holatni (abort — jimgina yutiladi)
+// vaqt tugashidan (tarmoq xatosi — qayta urinish + xabar) ajratish uchun kerak.
+const _abortAfter = (signal, ms) => {
+  const controller = new AbortController();
+  let expired = false;
+  const onCallerAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', onCallerAbort, { once: true });
+  }
+  const timer = ms ? setTimeout(() => { expired = true; controller.abort(); }, ms) : null;
+  return {
+    signal: controller.signal,
+    timedOut: () => expired,
+    cleanup: () => {
+      if (timer) clearTimeout(timer);
+      if (signal) signal.removeEventListener('abort', onCallerAbort);
+    },
+  };
+};
+
 // Backoff kutuvi abort'ni darhol sezishi kerak: aks holda unmount bo'lgan
 // komponent so'rovni bekor qilsa ham loop 1.2s "osilib" turardi.
 const _waitBeforeNetworkRetry = (ms, signal) => new Promise((resolve, reject) => {
@@ -406,7 +442,7 @@ const _waitBeforeNetworkRetry = (ms, signal) => new Promise((resolve, reject) =>
 
 const request = async (
   path,
-  { method = 'GET', body, token, headers = {}, retryOnAuth = true, keepalive = false, signal, silent = false, speculative = false } = {},
+  { method = 'GET', body, token, headers = {}, retryOnAuth = true, keepalive = false, signal, silent = false, speculative = false, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {},
 ) => {
   const requestHeaders = {
     Accept: 'application/json',
@@ -440,24 +476,34 @@ const request = async (
   // takroriy yuborish serverda dublikat yozuv qoldirishi mumkin.
   const maxNetworkRetries = keepalive ? 0 : NETWORK_RETRY_DELAYS_MS.length;
 
+  // Fayl yuklash (FormData) sekin mobil internetda 20 soniyadan oshishi
+  // TABIIY — yuklanish javob sarlavhalaridan OLDIN tugashi kerak. Shu sababli
+  // multipart so'rovlarga va `keepalive` (sahifa yopilayotgandagi) so'rovlarga
+  // vaqt chegarasi qo'yilmaydi.
+  const effectiveTimeoutMs = (keepalive || isFormData) ? 0 : timeoutMs;
+
   let response;
   for (let attempt = 0; ; attempt += 1) {
+    const attemptAbort = _abortAfter(signal, effectiveTimeoutMs);
     try {
       response = await fetch(`${API_BASE_URL}${path}`, {
         method,
         headers: requestHeaders,
         credentials: 'include',
         keepalive,
-        signal,
+        signal: attemptAbort.signal,
         body: requestBody,
       });
       break;
     } catch (error) {
+      // Vaqt chegarasi tugadi — bu ATAYIN abort emas, haqiqiy tarmoq nosozligi
+      // (server javob bermayapti). Quyidagi qayta urinish oqimiga tushadi.
+      const expired = attemptAbort.timedOut();
       // AbortController.abort() — chaqiruvchi (masalan, unmount bo'lgan komponent)
       // so'rovni atayin bekor qilgan. Buni "server bilan bog'lanish xatosi" deb
       // ko'rsatmaymiz va HECH QACHON qayta urinmaymiz; chaqiruvchi catch'da
       // abort'ni jimgina yutadi.
-      if (error?.name === 'AbortError' || signal?.aborted) {
+      if (!expired && (error?.name === 'AbortError' || signal?.aborted)) {
         throw new ApiError('aborted', { status: 0 });
       }
       // Bir lahzalik uzilish bo'lishi mumkin — qisqa backoff bilan yana
@@ -474,10 +520,24 @@ const request = async (
       // o'zini-o'zi ochib, foydalanuvchini (ayniqsa ro'yxatdan o'tgach
       // navbatdagi so'rovlar to'lqinida server hali "uyg'onmagan" paytda)
       // bejiz bezovta qilardi.
+      // Vaqt chegarasi tugagan holatda sabab ANIQ ma'lum — "server javob
+      // bermadi". Uni umumiy "bog‘lanishda xatolik" bilan almashtirmaymiz:
+      // status 0 (so'rov serverga yetib bormadi) noto'g'ri bo'lardi, 504 esa
+      // "kutish vaqti tugadi" ning halol status kodi (pollAiTask bilan bir xil).
+      const message = attemptAbort.timedOut()
+        ? REQUEST_TIMEOUT_MESSAGE
+        : "Server bilan bog‘lanishda xatolik yuz berdi";
       if (!silent) {
-        dispatchSupportNeeded('network_error', "Server bilan bog‘lanishda xatolik yuz berdi");
+        dispatchSupportNeeded('network_error', message);
       }
-      throw new ApiError("Server bilan bog‘lanishda xatolik yuz berdi", { status: 0 });
+      throw new ApiError(message, { status: attemptAbort.timedOut() ? 504 : 0 });
+    } finally {
+      // Timer va chaqiruvchi signalidagi listener har urinishdan keyin
+      // tozalanadi (aks holda uzoq yashaydigan `signal`da to'planib qolardi).
+      // MUHIM: muvaffaqiyatli javobdan keyin ham tozalanadi — ya'ni vaqt
+      // chegarasi FAQAT javob sarlavhalarigacha amal qiladi, katta javob
+      // tanasini o'qish (`response.json()`) yarim yo'lda uzilmaydi.
+      attemptAbort.cleanup();
     }
   }
 
