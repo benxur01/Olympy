@@ -496,3 +496,171 @@ class StartingSoonReminderBatchTestCase(APITestCase):
         _, kwargs = mock_webpush.call_args
         self.assertIn('/student', kwargs['data'])
 
+
+
+class FlagOlympiadTestCase(APITestCase):
+    """POST /api/olympiads/<id>/flag/ — tadbirni admin tekshiruviga qo'yish.
+
+    `questions.tests` dagi savol bayrog'i testlarining tadbir uchun nusxasi:
+    bayroq chora KO'RMAYDI, takrorlanmaydi va faqat markaz xodimiga ochiq.
+    """
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='Bayroq Markaz', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.other_center = EducationCenter.objects.create(
+            name='Begona Markaz', city='Samarqand',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.author = User.objects.create_user(
+            phone='+998901670001', password='StrongPass123', full_name='Muallif',
+        )
+        # Tadbir muallifi EMAS — bayroqni hamkasb ham qo'ya oladi.
+        self.colleague = User.objects.create_user(
+            phone='+998901670002', password='StrongPass123', full_name='Hamkasb',
+        )
+        self.other_teacher = User.objects.create_user(
+            phone='+998901670003', password='StrongPass123', full_name='Begona ustoz',
+        )
+        self.student = User.objects.create_user(
+            phone='+998901670004', password='StrongPass123', full_name='Talaba',
+        )
+        for user, center in [
+            (self.author, self.center),
+            (self.colleague, self.center),
+            (self.other_teacher, self.other_center),
+        ]:
+            CenterMembership.objects.create(
+                user=user, center=center,
+                role=CenterMembership.ROLE_TEACHER,
+                status=CenterMembership.STATUS_APPROVED,
+            )
+        CenterMembership.objects.create(
+            user=self.student, center=self.center,
+            role=CenterMembership.ROLE_STUDENT,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center,
+            title='Fizika Tadbiri',
+            subject='Fizika',
+            event_type=Olympiad.EVENT_TYPE_COMPETITION,
+            status=Olympiad.STATUS_ACTIVE,
+            start_datetime=timezone.now() + timezone.timedelta(hours=1),
+            duration_minutes=60,
+            created_by=self.author,
+        )
+        self.url = reverse('olympiad-flag', args=[self.olympiad.id])
+
+    def _flag(self, user, reason='Sarlavha nomaqbul'):
+        self.client.force_authenticate(user=user)
+        return self.client.post(self.url, {'reason': reason}, format='json')
+
+    def test_colleague_flags_olympiad_with_snapshot(self):
+        from moderation.models import ModerationFlag
+
+        resp = self._flag(self.colleague)
+
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(resp.data['created'])
+        flag = ModerationFlag.objects.get(pk=resp.data['flag_id'])
+        self.assertEqual(flag.flag_type, ModerationFlag.FLAG_TYPE_OLYMPIAD)
+        self.assertEqual(flag.status, ModerationFlag.STATUS_PENDING)
+        self.assertEqual(flag.target_type, 'Olympiad')
+        self.assertEqual(flag.target_id, self.olympiad.id)
+        self.assertEqual(flag.raised_by, self.colleague)
+        self.assertEqual(flag.reason, 'Sarlavha nomaqbul')
+        # Dalil nusxasi: tadbir keyin tahrirlansa ham bayroqda asl holat qoladi.
+        self.assertEqual(flag.extra['olympiad_id'], self.olympiad.id)
+        self.assertEqual(flag.extra['title'], 'Fizika Tadbiri')
+        self.assertEqual(flag.extra['subject'], 'Fizika')
+        self.assertEqual(flag.extra['status'], Olympiad.STATUS_ACTIVE)
+        self.assertEqual(flag.extra['created_by'], 'Muallif')
+
+    def test_flagging_does_not_hide_olympiad(self):
+        """Bayroq tadbirni to'xtatmaydi — ketayotgan imtihon buzilmasin."""
+        self._flag(self.colleague)
+        self.olympiad.refresh_from_db()
+        self.assertEqual(self.olympiad.status, Olympiad.STATUS_ACTIVE)
+        self.assertFalse(self.olympiad.is_deleted)
+
+    def test_second_flag_returns_existing_open_one(self):
+        from moderation.models import ModerationFlag
+
+        first = self._flag(self.author)
+        second = self._flag(self.colleague, reason='Yana bir sabab')
+
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertFalse(second.data['created'])
+        self.assertEqual(second.data['flag_id'], first.data['flag_id'])
+        self.assertEqual(ModerationFlag.objects.count(), 1)
+        # Mavjud bayroq qayta yozilmaydi — birinchi sabab va muallif qoladi.
+        flag = ModerationFlag.objects.get()
+        self.assertEqual(flag.reason, 'Sarlavha nomaqbul')
+        self.assertEqual(flag.raised_by, self.author)
+
+    def test_closed_flag_does_not_block_new_one(self):
+        from moderation.models import ModerationFlag
+
+        self._flag(self.author)
+        ModerationFlag.objects.update(status=ModerationFlag.STATUS_RESOLVED)
+
+        resp = self._flag(self.colleague)
+
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ModerationFlag.objects.count(), 2)
+
+    def test_question_flag_for_same_id_is_independent(self):
+        """Takror tekshiruvi turni ham hisobga oladi, faqat ID'ni emas."""
+        from moderation.models import ModerationFlag
+
+        ModerationFlag.objects.create(
+            flag_type=ModerationFlag.FLAG_TYPE_QUESTION,
+            target_type='Question',
+            target_id=self.olympiad.id,
+            reason='Boshqa turdagi bayroq',
+        )
+
+        resp = self._flag(self.colleague)
+
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ModerationFlag.objects.count(), 2)
+
+    def test_other_center_teacher_is_forbidden(self):
+        from moderation.models import ModerationFlag
+
+        resp = self._flag(self.other_teacher)
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(ModerationFlag.objects.count(), 0)
+
+    def test_student_is_forbidden(self):
+        from moderation.models import ModerationFlag
+
+        resp = self._flag(self.student)
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(ModerationFlag.objects.count(), 0)
+
+    def test_missing_reason_is_rejected(self):
+        from moderation.models import ModerationFlag
+
+        for value in ('', '   '):
+            resp = self._flag(self.colleague, reason=value)
+            self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(ModerationFlag.objects.count(), 0)
+
+    def test_unknown_olympiad_returns_404(self):
+        self.client.force_authenticate(user=self.colleague)
+        resp = self.client.post(
+            reverse('olympiad-flag', args=[self.olympiad.id + 1000]),
+            {'reason': 'Sabab'}, format='json',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_anonymous_is_denied(self):
+        resp = self.client.post(self.url, {'reason': 'Sabab'}, format='json')
+        self.assertIn(
+            resp.status_code,
+            (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+        )

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import ModerationFlag
+from .models import BlockedIP, ModerationFlag
 
 
 @admin.register(ModerationFlag)
@@ -13,4 +13,14 @@ class ModerationFlagAdmin(admin.ModelAdmin):
     search_fields = ('reason', 'resolution_note')
     # Bayroqlarni admin sahifasidan qo'lda yaratish yo'li yo'q: ular yo
     # detektor tomonidan, yo endpoint orqali paydo bo'ladi.
+    readonly_fields = ('created_at',)
+
+
+@admin.register(BlockedIP)
+class BlockedIPAdmin(admin.ModelAdmin):
+    """Ops uchun oxirgi chora: panel ishlamay qolsa (yoki admin o'zini
+    bloklab qo'ysa) blokni shu yerdan olib tashlash mumkin. Kundalik ish
+    "Xavfsizlik" tabida."""
+    list_display = ('id', 'created_at', 'cidr', 'reason', 'blocked_by', 'expires_at')
+    search_fields = ('ip_address', 'reason')
     readonly_fields = ('created_at',)

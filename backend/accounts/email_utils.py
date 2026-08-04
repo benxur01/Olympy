@@ -12,6 +12,7 @@ faollashtirish, markaz tasdiqlash va h.k.) buzilmaydi.
 """
 from django.core.mail import send_mail
 from django.conf import settings
+from django.utils.html import escape
 import logging
 
 logger = logging.getLogger(__name__)
@@ -168,6 +169,48 @@ def send_email_verification_code(user, email, code, ttl_minutes):
         <p style="font-size:28px;font-weight:700;letter-spacing:6px">{code}</p>
         <p>Kod <b>{ttl_minutes} daqiqa</b> amal qiladi.</p>
         <p>Agar bu so'rovni siz yubormagan bo'lsangiz, bu xatni e'tiborsiz qoldiring.</p>
+        <br><p>Olympy jamoasi</p>
+        ''',
+        recipient_list=[email],
+    )
+
+
+def send_account_warning(user, message):
+    """Platforma admini yuborgan rasmiy ogohlantirish (`admin_warn_user`).
+
+    In-app xabarnomaga (`Notification.TYPE_ACCOUNT_WARNING`) QO'SHIMCHA kanal:
+    ogohlantirish bloklashdan oldingi oxirgi qadam, shuning uchun u
+    foydalanuvchi platformaga qaytib kirmasa ham yetib borishi kerak. Manzil
+    bo'lmasa (ko'pchilikda bo'sh) jimgina o'tib ketadi — in-app xabar baribir
+    yaratilgan.
+
+    ICHKI sabab (`reason`) ATAYLAB uzatilmaydi: u faqat audit jurnalida qoladi
+    (`admin_warn_user`), foydalanuvchi esa in-app xabarda ko'radigan AYNAN shu
+    `message` matnini oladi — ikkala kanalda bir xil so'z.
+    """
+    email = _user_email(user)
+    if not email:
+        return
+    # Boshqa `send_*` funksiyalardan farqli o'laroq bu yerda matn admin
+    # qo'lda yozgan ERKIN matn (ko'p qatorli bo'lishi mumkin), qisqa nom emas
+    # — HTML'da `<` belgisi bilan buzilmasligi va qator uzilishlari
+    # yo'qolmasligi uchun escape + `pre-wrap`.
+    message_html = escape(message)
+    send_async_email(
+        subject='Olympy: Rasmiy ogohlantirish',
+        message=(
+            f'Hurmatli {user.full_name},\n\n'
+            f'Olympy ma\'muriyatidan rasmiy ogohlantirish:\n\n{message}\n\n'
+            "Iltimos, platforma qoidalariga rioya qiling. Qoidabuzarlik "
+            "takrorlansa hisobingiz bloklanishi mumkin.\n\nOlympy jamoasi"
+        ),
+        html_message=f'''
+        <h2>Rasmiy ogohlantirish ⚠️</h2>
+        <p>Hurmatli <b>{user.full_name}</b>,</p>
+        <p>Olympy ma'muriyatidan rasmiy ogohlantirish:</p>
+        <p style="white-space:pre-wrap">{message_html}</p>
+        <p>Iltimos, platforma qoidalariga rioya qiling. Qoidabuzarlik takrorlansa
+        hisobingiz bloklanishi mumkin.</p>
         <br><p>Olympy jamoasi</p>
         ''',
         recipient_list=[email],

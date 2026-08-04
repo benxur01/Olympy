@@ -10,6 +10,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.models import AuditLog
+from moderation.models import ModerationFlag
+
 from .models import Olympiad
 from .serializers import OlympiadSerializer
 from .services import (
@@ -669,6 +671,84 @@ def code_submissions(request, olympiad_id):
         .order_by('question_id', 'attempt__user_id')
     )
     return Response(CodeSubmissionSerializer(submissions, many=True).data)
+
+
+def _olympiad_snapshot(olympiad):
+    """Bayroq ichida saqlanadigan tadbir nusxasi — o'zgarmas dalil.
+
+    `questions.views._question_snapshot` bilan bir xil sabab: navbat nishonni
+    `target_id` bo'yicha JONLI o'qimaydi, tadbir esa bayroqdan keyin
+    tahrirlanishi yoki soft-delete qilinishi mumkin.
+    """
+    return {
+        'olympiad_id': olympiad.id,
+        'center_id': olympiad.center_id,
+        'title': olympiad.title,
+        'subject': olympiad.subject,
+        'event_type': olympiad.event_type,
+        'status': olympiad.status,
+        'created_by': olympiad.created_by.full_name if olympiad.created_by else '',
+    }
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def flag_olympiad(request, olympiad_id):
+    """POST /api/olympiads/{id}/flag/  body: {"reason": str}
+
+    `questions.views.flag_question` ning tadbirlar uchun nusxasi: markaz
+    xodimi nomaqbul yoki sifatsiz TADBIRNI platforma admini tekshiruviga
+    qo'yadi (`ModerationFlag`, `flag_type='olympiad'`). Savol bayrog'i faqat
+    savol bankini qamrab olardi, tadbirning o'zi (sarlavha, tavsif, qoidalar)
+    esa hech qanday shikoyat yo'liga ega emas edi.
+
+    Ruxsat AYNAN tadbir yaratish/boshqarish ruxsati bilan bir xil
+    (`user_can_manage_center_event` — markazning tasdiqlangan
+    o'qituvchi/menejer/egasi yoki platforma admini). O'QUVCHI bu endpointga
+    kira olmaydi: bu ichki sifat nazorati, ommaviy shikoyat oqimi emas.
+    Tadbir muallifi bo'lish shart emas — bayroqning butun ma'nosi
+    hamkasbning yomon tadbirini ko'rsatishda.
+
+    Bayroq tadbirni YASHIRMAYDI: `status`/`is_deleted` tegilmaydi, chunki
+    o'quvchilar aynan hozir shu tadbirni topshirayotgan bo'lishi mumkin —
+    uni ostidan olib qo'yish ularning ishini yo'qotadi. Chora ko'rish admin
+    qo'lida qoladi (`admin_delete_user_content`).
+    """
+    olympiad = get_object_or_404(
+        Olympiad.objects.select_related('center', 'created_by'),
+        pk=olympiad_id,
+    )
+    if not user_can_manage_center_event(request.user, olympiad.center):
+        return Response({'detail': 'Forbidden'},
+                        status=http_status.HTTP_403_FORBIDDEN)
+    reason = (request.data.get('reason') or '').strip()
+    if not reason:
+        return Response(
+            {'detail': 'Sabab (reason) majburiy'},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    # Bitta tadbirga bitta ochiq bayroq — `flag_question` dagi bilan bir xil
+    # (barcha qidiruv maydonlari oddiy ustunlar, shuning uchun `get_or_create`).
+    flag, created = ModerationFlag.objects.get_or_create(
+        flag_type=ModerationFlag.FLAG_TYPE_OLYMPIAD,
+        target_type='Olympiad',
+        target_id=olympiad.id,
+        status=ModerationFlag.STATUS_PENDING,
+        defaults={
+            'reason': reason[:255],
+            'raised_by': request.user,
+            'extra': _olympiad_snapshot(olympiad),
+        },
+    )
+    return Response(
+        {
+            'flag_id': flag.id,
+            'created': created,
+            'detail': ("Tadbir admin tekshiruviga qo'yildi." if created
+                       else "Bu tadbir allaqachon tekshiruvga qo'yilgan."),
+        },
+        status=http_status.HTTP_201_CREATED if created else http_status.HTTP_200_OK,
+    )
 
 
 @api_view(['GET'])

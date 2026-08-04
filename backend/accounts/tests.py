@@ -2758,6 +2758,81 @@ class AdminUserWarningTestCase(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.data['warnings'], [])
 
+    def test_warn_emails_the_message_but_never_the_internal_reason(self):
+        from django.core import mail
+
+        self.target.email = 'target@example.com'
+        self.target.save(update_fields=['email'])
+        self.client.force_authenticate(user=self.admin)
+
+        res = self.client.post(self.url, {
+            'reason': 'ICHKI: uchinchi shikoyat',
+            'message': "Iltimos, imtihon qoidalariga rioya qiling.",
+        }, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertEqual(sent.to, ['target@example.com'])
+        self.assertIn("Iltimos, imtihon qoidalariga rioya qiling.", sent.body)
+        # `reason` — ichki izoh, faqat audit jurnalida qoladi.
+        self.assertNotIn('ICHKI', sent.body)
+        self.assertNotIn('ICHKI', str(sent.alternatives))
+
+    def test_warn_without_email_still_creates_notification(self):
+        from django.core import mail
+        from notifications.models import Notification
+
+        # Manzil IXTIYORIY va ko'pchilikda bo'sh — email jimgina o'tkazib
+        # yuboriladi, ogohlantirishning o'zi baribir yetkaziladi.
+        self.assertFalse(self.target.email)
+        self.client.force_authenticate(user=self.admin)
+
+        res = self.client.post(self.url, {
+            'reason': 'Spam', 'message': 'Spam yubormang',
+        }, format='json')
+
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertTrue(Notification.objects.filter(pk=res.data['id']).exists())
+
+    def test_third_warning_in_window_raises_moderation_flag(self):
+        from moderation.models import ModerationFlag
+        from moderation.services import WARNING_STRIKE_THRESHOLD
+
+        self.client.force_authenticate(user=self.admin)
+        flag_ids = []
+        for i in range(WARNING_STRIKE_THRESHOLD):
+            res = self.client.post(self.url, {
+                'reason': f'Sabab {i}', 'message': f'Ogohlantirish {i}',
+            }, format='json')
+            self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+            flag_ids.append(res.data['moderation_flag_id'])
+
+        # Chegaraga yetgan AYNAN oxirgi chaqiruv bayroq ko'taradi.
+        self.assertEqual(flag_ids[:-1], [None] * (WARNING_STRIKE_THRESHOLD - 1))
+        self.assertIsNotNone(flag_ids[-1])
+        flag = ModerationFlag.objects.get(pk=flag_ids[-1])
+        self.assertEqual(flag.flag_type, ModerationFlag.FLAG_TYPE_WARNING_THRESHOLD)
+        self.assertEqual(flag.target_id, self.target.id)
+        self.assertEqual(flag.status, ModerationFlag.STATUS_PENDING)
+        # Bayroq — faqat tekshiruv nomzodi: hisob bloklanmaydi.
+        self.target.refresh_from_db()
+        self.assertTrue(self.target.is_active)
+
+    def test_further_warnings_do_not_duplicate_open_flag(self):
+        from moderation.models import ModerationFlag
+        from moderation.services import WARNING_STRIKE_THRESHOLD
+
+        self.client.force_authenticate(user=self.admin)
+        for i in range(WARNING_STRIKE_THRESHOLD + 2):
+            res = self.client.post(self.url, {
+                'reason': f'Sabab {i}', 'message': f'Ogohlantirish {i}',
+            }, format='json')
+            self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+        self.assertEqual(ModerationFlag.objects.count(), 1)
+
     def test_list_unknown_user_is_404(self):
         self.client.force_authenticate(user=self.admin)
         res = self.client.get(reverse('admin-user-warnings', args=[99999]))

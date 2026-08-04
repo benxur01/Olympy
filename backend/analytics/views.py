@@ -11,7 +11,7 @@ funksiyani HTTP orqali taqdim etadi.
 """
 from datetime import timedelta
 
-from django.db.models import Avg, Count, Sum
+from django.db.models import Avg, Count, Max, Sum
 from django.db.models.functions import TruncDate, TruncMonth, TruncWeek
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -671,4 +671,198 @@ def center_stats(request):
     """
     return Response(get_cached_block(
         'center_stats', _center_stats_data, _refresh_requested(request),
+    ))
+
+
+# ─── Suiiste'mol (abuse) signallari ──────────────────────────────────────────
+# "Tahlil" tabining oxirgi bo'limi. Yuqoridagi bloklardan farqi faqat
+# MAVZUDA: himoya (IsPlatformAdmin), cache (get_cached_block) va javob shakli
+# aynan o'shalarnikidek.
+#
+# Bu yerdagi hech bir signal chora KO'RMAYDI va bayroq YARATMAYDI —
+# `moderation.tasks` bilan aralashtirmaslik kerak: u navbatga yozadi, bu esa
+# navbat va ogohlantirishlar tarixini faqat SANAYDI. Ro'yxatlar qo'lda
+# tekshirish uchun nomzod beradi, xolos.
+
+# Bayroq/ogohlantirish dinamikasi oynasi — `_attempts_trend_data` bilan bir
+# xil granularlik (kunlik, 30 kun).
+ABUSE_TREND_DAYS = 30
+
+# "Eng ko'p ogohlantirilgan" ro'yxati qaysi davr uchun va nechta qator
+# (kesim `_olympiad_stats_data` dagi top-10 bilan bir xil).
+ABUSE_TOP_WINDOW_DAYS = 30
+ABUSE_TOP_LIMIT = 10
+
+# Kontent portlashi: qisqa vaqtda g'ayrioddiy ko'p savol yaratgan hisoblar.
+# Chegara ATAYLAB oddiy va qat'iy konstanta (statistik model emas) — bu
+# birinchi bosqich signali, ro'yxatdagi hisobga avtomatik chora ko'rilmaydi.
+# Oyna `moderation.tasks.SUSPICIOUS_IP_WINDOW_DAYS` bilan bir xil sababdan
+# 1 kun: aynan oxirgi sutkadagi portlash ko'rinadi. Uzunroq oynada bir necha
+# hafta davomida savol bankini to'ldirgan oddiy o'qituvchi ham ro'yxatga
+# tushib qolardi.
+CONTENT_BURST_WINDOW_DAYS = 1
+CONTENT_BURST_MIN_QUESTIONS = 100
+
+# Ogohlantirishlar seriyasining kaliti. `ModerationFlag.FLAG_TYPE_CHOICES`
+# kalitlari bilan to'qnashmasligi kerak — shuning uchun xuddi manba
+# maydonidagidek nom (`Notification.TYPE_ACCOUNT_WARNING`).
+WARNING_SERIES_KEY = 'account_warning'
+
+
+def _abuse_stats_data():
+    """Suiiste'mol signallari (3 ta mustaqil bo'lim)."""
+    from moderation.models import ModerationFlag
+    from notifications.models import Notification
+    from questions.models import Question
+
+    now = timezone.now()
+
+    # 1) Kunlik bayroq + ogohlantirish soni (oxirgi 30 kun).
+    #
+    # Seriyalar ro'yxati ham javobda qaytadi: bayroq turining o'zbekcha nomi
+    # BITTA joyda — modelning `FLAG_TYPE_CHOICES` ida — turadi (moderatsiya
+    # navbatidagi `flag_type_label` bilan bir xil qoida), ya'ni yangi tur
+    # qo'shilganda diagramma frontendga tegmasdan o'zi yangilanadi.
+    series = [
+        {'key': key, 'label': label}
+        for key, label in ModerationFlag.FLAG_TYPE_CHOICES
+    ]
+    # Admin qo'lda yuborgan ogohlantirishlar avtomatik bayroq EMAS (alohida
+    # jadval — `Notification`), lekin bir xil savolga javob beradi: "qancha
+    # ish ochildi". Shuning uchun bir diagrammada, alohida seriya sifatida.
+    series.append({'key': WARNING_SERIES_KEY, 'label': 'Ogohlantirish'})
+
+    trend_start = now - timedelta(days=ABUSE_TREND_DAYS)
+    # {sana: {seriya_kaliti: son}} — ikkala manba ham DB'da guruhlanadi.
+    counts = {}
+    for row in (
+        ModerationFlag.objects
+        .filter(created_at__gte=trend_start)
+        .annotate(day=TruncDate('created_at'))
+        .values('day', 'flag_type')
+        .annotate(count=Count('id'))
+    ):
+        counts.setdefault(row['day'], {})[row['flag_type']] = row['count']
+    for row in (
+        Notification.objects
+        .filter(
+            type=Notification.TYPE_ACCOUNT_WARNING,
+            created_at__gte=trend_start,
+        )
+        .annotate(day=TruncDate('created_at'))
+        .values('day')
+        .annotate(count=Count('id'))
+    ):
+        counts.setdefault(row['day'], {})[WARNING_SERIES_KEY] = row['count']
+
+    # Bo'sh kunlar 0 bilan to'ldiriladi (attempt trendi bilan bir xil).
+    #
+    # Kunlar `timezone.localdate()` bo'yicha sanaladi, `now.date()` bo'yicha
+    # emas: `TruncDate` sanani MAHALLIY zonada (settings.TIME_ZONE =
+    # Asia/Tashkent, UTC+5) kesadi. UTC sanasi bilan solishtirilsa har kuni
+    # 19:00 UTC dan keyin yozilgan qatorlar "ertangi" kunga tushib, oxirgi
+    # kun grafikdan butunlay yo'qolardi. Filtr esa oddiy rolling oyna —
+    # oynadan chetdagi kun quyidagi siklga umuman kirmaydi.
+    today = timezone.localdate()
+    flag_trend = []
+    day = today - timedelta(days=ABUSE_TREND_DAYS - 1)
+    while day <= today:
+        bucket = counts.get(day, {})
+        flag_trend.append({
+            'date': day.isoformat(),
+            **{s['key']: bucket.get(s['key'], 0) for s in series},
+        })
+        day += timedelta(days=1)
+
+    # 2) Eng ko'p ogohlantirilgan hisoblar (oxirgi 30 kun).
+    # Telefon raqami maskalanmaydi — endpoint faqat platforma admini uchun va
+    # aynan hisobni tanib olish uchun kerak (`online_users_detail` bilan bir
+    # xil qoida).
+    top_warned_users = [
+        {
+            'user_id': row['user_id'],
+            'full_name': row['user__full_name'],
+            'phone': row['user__normalized_phone'],
+            'warnings': row['warnings'],
+            'last_warned_at': row['last_warned_at'].isoformat(),
+        }
+        for row in (
+            Notification.objects
+            .filter(
+                type=Notification.TYPE_ACCOUNT_WARNING,
+                created_at__gte=now - timedelta(days=ABUSE_TOP_WINDOW_DAYS),
+            )
+            .values('user_id', 'user__full_name', 'user__normalized_phone')
+            .annotate(warnings=Count('id'), last_warned_at=Max('created_at'))
+            # Ikkinchi darajali tartib (`user_id`) — teng sonli hisoblar
+            # kesib olinganda natija har safar bir xil bo'lsin.
+            .order_by('-warnings', 'user_id')[:ABUSE_TOP_LIMIT]
+        )
+    ]
+
+    # 3) Kontent portlashi: 1 kunda chegaradan ko'p savol yaratgan hisoblar.
+    # Filtr agregatdan KEYIN qo'llanadi (HAVING) — barcha qatorlarni Python'ga
+    # olib sanash emas. Muallifi yo'q (`created_by=NULL`) savollar tushib
+    # qoladi: ular hech kimga bog'lanmaydi, ya'ni signal ham bermaydi.
+    content_outliers = [
+        {
+            'user_id': row['created_by_id'],
+            'full_name': row['created_by__full_name'],
+            'phone': row['created_by__normalized_phone'],
+            'questions': row['questions'],
+            'last_created_at': row['last_created_at'].isoformat(),
+        }
+        for row in (
+            Question.objects
+            .filter(
+                created_by__isnull=False,
+                created_at__gte=now - timedelta(days=CONTENT_BURST_WINDOW_DAYS),
+            )
+            .values(
+                'created_by_id', 'created_by__full_name',
+                'created_by__normalized_phone',
+            )
+            .annotate(questions=Count('id'), last_created_at=Max('created_at'))
+            .filter(questions__gte=CONTENT_BURST_MIN_QUESTIONS)
+            .order_by('-questions', 'created_by_id')[:ABUSE_TOP_LIMIT]
+        )
+    ]
+
+    return {
+        'flag_series': series,
+        'flag_trend': flag_trend,
+        'top_warned_users': top_warned_users,
+        'content_outliers': content_outliers,
+        # Ekranda AYNAN qo'llanilgan chegaralar ko'rinsin (shared-IP bloki
+        # `min_accounts`/`window_days` ni qaytargani bilan bir xil sabab):
+        # chegarani o'zgartirish frontend matniga tegmaydi.
+        'thresholds': {
+            'trend_days': ABUSE_TREND_DAYS,
+            'top_window_days': ABUSE_TOP_WINDOW_DAYS,
+            'burst_window_days': CONTENT_BURST_WINDOW_DAYS,
+            'burst_min_questions': CONTENT_BURST_MIN_QUESTIONS,
+        },
+    }
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def abuse_stats(request):
+    """GET /api/analytics/abuse-stats/ — suiiste'mol signallari.
+
+    Response:
+      flag_series      — diagramma seriyalari: [{"key", "label"}, ...]
+                         (bayroq turlari + "Ogohlantirish")
+      flag_trend       — oxirgi 30 kun kunlik soni, har kunda har seriya
+                         uchun kalit: [{"date", "question", "suspicious_ip",
+                         "account_warning"}, ...]
+      top_warned_users — oxirgi 30 kunda eng ko'p ogohlantirilgan 10 hisob
+      content_outliers — oxirgi 1 kunda 100+ savol yaratgan hisoblar
+      thresholds       — yuqoridagi chegaralarning qo'llanilgan qiymatlari
+
+    Faqat o'qish uchun: hech kim bloklanmaydi, bayroq qo'yilmaydi. Bo'sh
+    jadvalda tegishli bo'lim bo'sh ro'yxat qaytaradi.
+    """
+    return Response(get_cached_block(
+        'abuse_stats', _abuse_stats_data, _refresh_requested(request),
     ))
