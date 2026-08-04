@@ -129,6 +129,12 @@ MIDDLEWARE = [
     # WhiteNoise statik fayllarni production'da samarali serve qiladi —
     # SecurityMiddleware'dan keyin va boshqa middleware'lardan oldin.
     'whitenoise.middleware.WhiteNoiseMiddleware',
+    # Admin bloklagan IP/tarmoqlar (moderation.BlockedIP) — bu yerdan pastga
+    # so'rov umuman o'tmaydi. WhiteNoise'dan KEYIN: statik fayl so'rovi shu
+    # nuqtaga yetib kelmaydi va bitta ham DB so'rovi qo'shilmaydi (JS/CSS
+    # bloklashning ma'nosi ham yo'q). Sessiya/auth'dan OLDIN: bloklangan
+    # manzil uchun hech qanday sessiya o'qilmaydi va view'gacha borilmaydi.
+    'moderation.middleware.BlockedIPMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

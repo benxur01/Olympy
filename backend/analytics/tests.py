@@ -8,6 +8,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -16,10 +17,18 @@ from rest_framework.test import APITestCase
 from attempts.models import TestAttempt
 from billing.models import SubscriptionPlan, UserSubscription
 from centers.models import EducationCenter
+from moderation.models import ModerationFlag
+from notifications.models import Notification
 from olympiads.models import Olympiad
+from questions.models import Question
 
 from . import presence
 from .metrics import compute_metrics
+from .views import (
+    ABUSE_TREND_DAYS,
+    CONTENT_BURST_MIN_QUESTIONS,
+    WARNING_SERIES_KEY,
+)
 
 User = get_user_model()
 
@@ -288,3 +297,155 @@ class OnlineUsersDetailViewTests(APITestCase):
         self.assertEqual(rows[self.other.pk]['last_seen_at'], seen.isoformat())
         # Hech qachon so'rov yubormagan hisob — NULL (frontend "Hech qachon").
         self.assertIsNone(rows[self.admin.pk]['last_seen_at'])
+
+
+# ─── /api/analytics/abuse-stats/ (suiiste'mol signallari) ────────────────────
+
+
+class AbuseStatsViewTests(APITestCase):
+    """Bayroq dinamikasi, eng ko'p ogohlantirilganlar va kontent portlashi."""
+
+    def setUp(self):
+        # Blok `get_cached_block` orqali saqlanadi va LocMem cache testlar
+        # orasida yashaydi — har testda toza hisobdan boshlaymiz.
+        cache.clear()
+        self.addCleanup(cache.clear)
+        self.admin = User.objects.create_user(
+            phone='+998904000001', password='AdminPass123', full_name='Admin',
+        )
+        self.admin.is_platform_admin = True
+        self.admin.save()
+        self.url = reverse('analytics-abuse-stats')
+
+    def _warn(self, user, days_ago=0):
+        note = Notification.objects.create(
+            user=user, type=Notification.TYPE_ACCOUNT_WARNING,
+            title='Ogohlantirish', message='Matn',
+        )
+        if days_ago:
+            Notification.objects.filter(pk=note.pk).update(
+                created_at=timezone.now() - timedelta(days=days_ago),
+            )
+        return note
+
+    def _flag(self, flag_type, days_ago=0):
+        flag = ModerationFlag.objects.create(flag_type=flag_type, reason='Sabab')
+        if days_ago:
+            ModerationFlag.objects.filter(pk=flag.pk).update(
+                created_at=timezone.now() - timedelta(days=days_ago),
+            )
+        return flag
+
+    def _questions(self, author, count, days_ago=0):
+        center = EducationCenter.objects.create(name='Markaz', city='Tashkent')
+        created = Question.objects.bulk_create([
+            Question(
+                center=center, subject='Matematika', text=f'Savol {i}',
+                created_by=author,
+            )
+            for i in range(count)
+        ])
+        if days_ago:
+            Question.objects.filter(pk__in=[q.pk for q in created]).update(
+                created_at=timezone.now() - timedelta(days=days_ago),
+            )
+
+    def test_requires_platform_admin(self):
+        outsider = User.objects.create_user(
+            phone='+998904000009', password='UserPass123', full_name='Boshqa',
+        )
+        self.client.force_authenticate(user=outsider)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+
+    def test_flag_trend_is_bucketed_by_day_and_series(self):
+        self._flag(ModerationFlag.FLAG_TYPE_SUSPICIOUS_IP)
+        self._flag(ModerationFlag.FLAG_TYPE_SUSPICIOUS_IP)
+        self._flag(ModerationFlag.FLAG_TYPE_QUESTION)
+        self._warn(self.admin)
+        # Oynadan tashqaridagi bayroq umuman ko'rinmasligi kerak.
+        self._flag(ModerationFlag.FLAG_TYPE_QUESTION, days_ago=ABUSE_TREND_DAYS + 2)
+        self.client.force_authenticate(user=self.admin)
+
+        res = self.client.get(self.url)
+
+        self.assertEqual(res.status_code, 200)
+        # Seriyalar model choices'idan (qaysi tartibda bo'lsa) + ogohlantirish.
+        self.assertEqual(
+            [s['key'] for s in res.data['flag_series']],
+            [key for key, _ in ModerationFlag.FLAG_TYPE_CHOICES] + [WARNING_SERIES_KEY],
+        )
+        trend = res.data['flag_trend']
+        # Bo'sh kunlar ham qatorda (uzluksiz grafik).
+        self.assertEqual(len(trend), ABUSE_TREND_DAYS)
+        today = trend[-1]
+        self.assertEqual(today['date'], timezone.localdate().isoformat())
+        self.assertEqual(today[ModerationFlag.FLAG_TYPE_SUSPICIOUS_IP], 2)
+        self.assertEqual(today[ModerationFlag.FLAG_TYPE_QUESTION], 1)
+        self.assertEqual(today[WARNING_SERIES_KEY], 1)
+        # Oynadan chetdagi bayroq hech bir kunda sanalmagan.
+        self.assertEqual(
+            sum(row[ModerationFlag.FLAG_TYPE_QUESTION] for row in trend), 1,
+        )
+
+    def test_top_warned_users_are_ranked_by_count(self):
+        loud = User.objects.create_user(
+            phone='+998904000002', password='UserPass123', full_name='Ko\'p',
+        )
+        quiet = User.objects.create_user(
+            phone='+998904000003', password='UserPass123', full_name='Kam',
+        )
+        for _ in range(3):
+            self._warn(loud)
+        self._warn(quiet)
+        # Oynadan tashqaridagi ogohlantirish sanalmaydi.
+        self._warn(quiet, days_ago=400)
+        self.client.force_authenticate(user=self.admin)
+
+        rows = self.client.get(self.url).data['top_warned_users']
+
+        self.assertEqual([r['user_id'] for r in rows], [loud.pk, quiet.pk])
+        self.assertEqual(rows[0]['warnings'], 3)
+        self.assertEqual(rows[0]['full_name'], "Ko'p")
+        self.assertEqual(rows[0]['phone'], loud.normalized_phone)
+        self.assertEqual(rows[1]['warnings'], 1)
+
+    def test_content_outliers_only_above_threshold_and_inside_window(self):
+        burst = User.objects.create_user(
+            phone='+998904000004', password='UserPass123', full_name='Portlash',
+        )
+        normal = User.objects.create_user(
+            phone='+998904000005', password='UserPass123', full_name='Oddiy',
+        )
+        old_burst = User.objects.create_user(
+            phone='+998904000006', password='UserPass123', full_name='Eski',
+        )
+        self._questions(burst, CONTENT_BURST_MIN_QUESTIONS)
+        # Chegaradan bitta kam — ro'yxatga tushmaydi.
+        self._questions(normal, CONTENT_BURST_MIN_QUESTIONS - 1)
+        # Chegaradan oshgan, lekin oynadan tashqarida (2 kun oldin).
+        self._questions(old_burst, CONTENT_BURST_MIN_QUESTIONS, days_ago=2)
+        self.client.force_authenticate(user=self.admin)
+
+        res = self.client.get(self.url)
+
+        rows = res.data['content_outliers']
+        self.assertEqual([r['user_id'] for r in rows], [burst.pk])
+        self.assertEqual(rows[0]['questions'], CONTENT_BURST_MIN_QUESTIONS)
+        self.assertEqual(rows[0]['full_name'], 'Portlash')
+        # Chegaralar javobda ham qaytadi — panel matni shu qiymatlardan quriladi.
+        self.assertEqual(
+            res.data['thresholds']['burst_min_questions'],
+            CONTENT_BURST_MIN_QUESTIONS,
+        )
+
+    def test_empty_tables_return_empty_sections(self):
+        self.client.force_authenticate(user=self.admin)
+
+        res = self.client.get(self.url)
+
+        self.assertEqual(res.data['top_warned_users'], [])
+        self.assertEqual(res.data['content_outliers'], [])
+        self.assertTrue(all(
+            row[ModerationFlag.FLAG_TYPE_SUSPICIOUS_IP] == 0
+            for row in res.data['flag_trend']
+        ))

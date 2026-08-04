@@ -25,7 +25,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
-from .email_utils import send_email_verification_code
+from .email_utils import send_account_warning, send_email_verification_code
 from .models import AuditLog, EmailVerification, LoginEvent, PhoneVerification
 from .permissions import IsPlatformAdmin
 from .throttling import PasswordChangePerUserThrottle
@@ -110,7 +110,7 @@ def _auth_response(request, user, *, extra=None, status_code=status.HTTP_200_OK)
         # X-Forwarded-For'dan OXIRGI qiymat olinadi: proxy (Render) mijoz
         # yuborgan headerni saqlab oxiriga haqiqiy IP'ni qo'shadi, ya'ni
         # birinchi element spoof qilinishi mumkin. Bir xil mantiq —
-        # olympy_api.security_logging._client_ip.
+        # olympy_api.security_logging.client_ip.
         forwarded = [
             p.strip() for p in request.META.get('HTTP_X_FORWARDED_FOR', '').split(',') if p.strip()
         ]
@@ -1805,8 +1805,17 @@ def admin_warn_user(request, user_id):
     ko'rmaydi. `message` — foydalanuvchi o'qiydigan matn (xabarnoma tanasi).
     Ikkalasi ham majburiy: sababsiz ogohlantirish keyingi blok qaroriga asos
     bo'la olmaydi, matnsizi esa foydalanuvchiga hech narsa tushuntirmaydi.
+
+    Ikkita yon ta'sir bor va ikkalasi ham hisob holatiga TEGMAYDI:
+      * `message` email orqali ham yuboriladi (manzil bo'lsa) — ogohlantirish
+        platformaga qaytib kirmagan foydalanuvchiga ham yetib borsin;
+      * ogohlantirishlar soni chegaradan oshsa moderatsiya navbatiga bayroq
+        qo'yiladi (`moderation.services.maybe_flag_warning_threshold`).
+        Javobdagi `moderation_flag_id` — AYNAN shu chaqiruv bayroq
+        ko'targanmi degani (aks holda `null`).
     """
     from django.contrib.auth import get_user_model
+    from moderation.services import maybe_flag_warning_threshold
     from notifications.models import Notification
 
     User = get_user_model()
@@ -1832,6 +1841,12 @@ def admin_warn_user(request, user_id):
         title='Ogohlantirish',
         message=message,
     )
+    # Email — `send_async_email` ichida try/except bor, ya'ni SMTP xatosi
+    # ogohlantirishning o'zini (xabarnoma + audit yozuvi) buzmaydi.
+    send_account_warning(target, message)
+    # Chegara xabarnoma YARATILGANDAN keyin tekshiriladi — shu ogohlantirish
+    # ham sanoqqa kirsin.
+    flag = maybe_flag_warning_threshold(target)
     AuditLog.log(request, 'admin_user_warn', target=target, extra={
         'phone': mask_phone(target.normalized_phone),
         'reason': reason,
@@ -1840,6 +1855,7 @@ def admin_warn_user(request, user_id):
     return Response({
         'id': warning.id,
         'created_at': warning.created_at.isoformat(),
+        'moderation_flag_id': flag.id if flag else None,
     }, status=status.HTTP_201_CREATED)
 
 

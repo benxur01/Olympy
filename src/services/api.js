@@ -1238,9 +1238,49 @@ export const OlympyApi = {
   // `archive` — faqat savol bayrog'ida: savolni bankdan olib tashlaydi
   // (is_active=false). Backend javobida `archived` haqiqatan bajarilganini
   // bildiradi (savol shu orada o'chirilgan bo'lsa false).
-  adminResolveModerationFlag: (flagId, { status, note = '', archive = false }, token) => request(
+  // `blockIp`/`blockDays` — faqat shubhali IP bayrog'ida: bayroqdagi manzilni
+  // AYNAN shu chaqiruvda bloklaydi (`blockDays` berilmasa blok doimiy).
+  // Javobdagi `blocked_ip` blok haqiqatan qo'yilganini bildiradi: manzil
+  // allaqachon bloklangan yoki adminning o'zi bo'lsa null qaytadi.
+  adminResolveModerationFlag: (
+    flagId,
+    { status, note = '', archive = false, blockIp = false, blockDays = null },
+    token,
+  ) => request(
     `/api/admin/moderation/queue/${flagId}/resolve/`,
-    { method: 'POST', body: { status, note, archive }, token },
+    {
+      method: 'POST',
+      body: { status, note, archive, block_ip: blockIp, block_days: blockDays },
+      token,
+    },
+  ),
+  // ─── Bloklangan IP'lar ───
+  // Barcha bloklar, yangisidan boshlab. Muddati o'tganlari ham keladi
+  // (`is_active: false`) — ular hech nimani to'smaydi, lekin "bu manzil avval
+  // nega bloklangan edi" degan savolga javob beradi. Ro'yxat o'sib boradi,
+  // shuning uchun moderatsiya navbatidagidek server tomon paginatsiya.
+  getAdminBlockedIps: ({ page = 1, pageSize = 50 } = {}, token) => {
+    const qs = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+    return request(`/api/admin/moderation/blocked-ips/?${qs.toString()}`, { token });
+  },
+  // Yangi blok. `ipAddress` — bitta manzil ham, CIDR tarmoq ham bo'lishi
+  // mumkin (`1.2.3.4` yoki `1.2.3.0/24`). `reason` MAJBURIY, `durationDays`
+  // ixtiyoriy: berilmasa blok doimiy (foydalanuvchi blokidagi bilan bir xil
+  // qoida). Noto'g'ri manzil, takror blok va o'zini bloklashni backend 400 +
+  // {detail} bilan rad etadi.
+  adminBlockIp: ({ ipAddress, reason, durationDays = null } = {}, token) => request(
+    '/api/admin/moderation/blocked-ips/',
+    {
+      method: 'POST',
+      body: { ip_address: ipAddress, reason, duration_days: durationDays },
+      token,
+    },
+  ),
+  // Blokni olib tashlash — qator butunlay o'chiriladi (yo'qoladigan tarix
+  // yo'q: blokning qo'yilishi ham, olinishi ham audit jurnalida qoladi).
+  adminUnblockIp: (blockedIpId, token) => request(
+    `/api/admin/moderation/blocked-ips/${blockedIpId}/`,
+    { method: 'DELETE', token },
   ),
   // ─── Firibgarlik holatlari (barcha markazlar bo'yicha) ───
   // Diskvalifikatsiya qilingan va tekshiruv kutayotgan sessiyalar. FAQAT
@@ -1575,6 +1615,10 @@ export const OlympyApi = {
   // uchun). Savol YASHIRILMAYDI — bayroq faqat navbatga tushadi. Shu savolda
   // ochiq bayroq allaqachon bo'lsa xato emas: javob `created: false` bo'ladi.
   flagQuestion: (questionId, reason, token) => request(`/api/questions/${questionId}/flag/`, { method: 'POST', body: { reason }, token }),
+  // Tadbir uchun xuddi shu yo'l (`flag_type='olympiad'`): sarlavha/tavsif
+  // nomaqbul bo'lsa markaz xodimi uni admin navbatiga qo'yadi. Tadbir
+  // to'xtatilmaydi — ketayotgan imtihon buzilmasin.
+  flagOlympiad: (olympiadId, reason, token) => request(`/api/olympiads/${olympiadId}/flag/`, { method: 'POST', body: { reason }, token }),
   deleteAllQuestions: (centerId, token, ids) => {
     const url = `/api/questions/delete-all/?center=${centerId}${ids && ids.length ? `&ids=${ids.join(',')}` : ''}`;
     return request(url, { method: 'DELETE', token });
@@ -1991,6 +2035,11 @@ export const OlympyApi = {
   getQuestionStats: (token) => request('/api/analytics/question-stats/', { token }),
   getRevenueTrend: (token) => request('/api/analytics/revenue-trend/', { token }),
   getCenterAnalytics: (token) => request('/api/analytics/center-stats/', { token }),
+  // Suiiste'mol signallari: bayroq/ogohlantirish dinamikasi, eng ko'p
+  // ogohlantirilgan hisoblar va kontent portlashi. FAQAT o'qish uchun —
+  // hech kim bloklanmaydi, bayroq ham qo'yilmaydi (chora "Xavfsizlik"
+  // tabidagi moderatsiya navbatida ko'riladi).
+  getAbuseStats: (token) => request('/api/analytics/abuse-stats/', { token }),
   // ─── B2B / O'sish (growth) funksiyalari ───
   // Feature #1: B2B markaz onboarding — owner sehrgarini tugatish/o'tkazib yuborish.
   completeCenterOnboarding: (token) => request('/api/me/center-onboarding/', { method: 'PATCH', token }),

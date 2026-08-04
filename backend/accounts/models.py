@@ -969,6 +969,13 @@ class AuditLog(models.Model):
         # hisobga bog'lanadi, manba id'si `extra.source_id` da — manba hisob
         # o'z tarixida alohida `user_block` yozuvini oladi.
         ('admin_user_merge', 'Hisoblar birlashtirildi'),
+        # IP/tarmoq bloki (`moderation.BlockedIP`). Qo'yilishi ham, olinishi
+        # ham yoziladi: qator o'chirilganda ("blokni olib tashlash") jadvalda
+        # hech qanday iz qolmaydi, ya'ni jurnal yagona manba
+        # (`admin_content_delete` bilan bir xil sabab). Yozuv `BlockedIP`
+        # qatoriga bog'lanadi, manzilning o'zi `extra.ip_address` da.
+        ('admin_ip_block', 'IP manzil bloklandi'),
+        ('admin_ip_unblock', 'IP bloki olib tashlandi'),
         ('center_approve', 'Markaz tasdiqlandi'),
         ('center_reject', 'Markaz rad etildi'),
         ('olympiad_create', 'Olimpiada yaratildi'),

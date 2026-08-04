@@ -18,4 +18,7 @@ urlpatterns = [
     path('question-stats/', views.question_stats, name='analytics-question-stats'),
     path('revenue-trend/', views.revenue_trend, name='analytics-revenue-trend'),
     path('center-stats/', views.center_stats, name='analytics-center-stats'),
+    # Suiiste'mol signallari: bayroq/ogohlantirish dinamikasi, eng ko'p
+    # ogohlantirilgan hisoblar va kontent portlashi (faqat o'qish uchun).
+    path('abuse-stats/', views.abuse_stats, name='analytics-abuse-stats'),
 ]

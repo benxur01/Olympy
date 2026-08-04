@@ -22,8 +22,13 @@ from rest_framework.views import exception_handler as drf_exception_handler
 security_logger = logging.getLogger('security')
 
 
-def _client_ip(request):
+def client_ip(request):
     """Reverse-proxy (Render) ortidagi haqiqiy mijoz IP'sini aniqlash.
+
+    Nomi ATAYLAB ochiq (`_` siz): funksiyani boshqa app'lar ham ishlatadi —
+    `moderation.middleware.BlockedIPMiddleware` aynan shu qiymat bo'yicha
+    bloklaydi. Ikki joyda ikki xil mantiq bo'lsa "loglardagi IP boshqa,
+    bloklangan IP boshqa" degan holat chiqardi.
 
     X-Forwarded-For ni mijoz to'liq nazorat qila olmaydigan tarafdan o'qiymiz.
     Hujumchi `X-Forwarded-For: 1.2.3.4` qo'shsa, Render uni saqlab oxiriga
@@ -68,7 +73,7 @@ def security_exception_handler(exc, context):
             security_logger.warning(
                 'security event=%s status=%s method=%s path=%s view=%s ip=%s %s',
                 label, status_code, method, path, view_name,
-                _client_ip(request), _user_ident(request),
+                client_ip(request), _user_ident(request),
             )
     except Exception:
         # Logging asosiy oqimni hech qachon buzmasin.

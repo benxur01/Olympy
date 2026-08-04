@@ -30,6 +30,7 @@ const AUDIT_PAGE_SIZE = 50;
 const SECURITY_SECTIONS = [
   { key: 'shared-ip', label: "Bir xil IP'dan kirish" },
   { key: 'auto-flags', label: 'Avtomatik bayroqlar' },
+  { key: 'blocked-ips', label: "Bloklangan IP'lar" },
   { key: 'cheating', label: 'Firibgarlik holatlari' },
 ];
 
@@ -63,6 +64,19 @@ const MODERATION_STATUS_PILL = {
   resolved: 'approved',
   dismissed: 'rejected',
 };
+
+// IP bloki muddati — backend `moderation/views.py: BLOCK_DURATION_DAYS` bilan
+// AYNAN bir xil ro'yxat (foydalanuvchi blokidagi variantlar ham shu).
+// `null` — muddat umuman yuborilmaydi, ya'ni blok doimiy.
+const IP_BLOCK_DURATION_OPTIONS = [
+  { value: 1, label: '1 kun' },
+  { value: 7, label: '7 kun' },
+  { value: 14, label: '14 kun' },
+  { value: 30, label: '30 kun' },
+  { value: null, label: 'Doimiy' },
+];
+// Bir sahifada nechta blok (backend LargePageNumberPagination `page_size`).
+const BLOCKED_IP_PAGE_SIZE = 50;
 
 // "Firibgarlik holatlari" bloki filtrlari. Kalitlar backend
 // `TestSession.STATUS_*` bilan bir xil; bo'sh satr — ikkala holat ham
@@ -855,6 +869,85 @@ const TopCentersRatingChart = ({ series }) => {
   );
 };
 
+// ─── Sektion 6: Suiiste'mol signallari ─────────────────────────────────────
+
+// Kunlik bayroq va ogohlantirish soni (terilgan/stacked BarChart).
+// Seriyalar BACKENDDAN keladi (`flag_series`: kalit + o'zbekcha yorliq) —
+// bayroq turlarining nomi `ModerationFlag.FLAG_TYPE_CHOICES` da, ya'ni bitta
+// joyda turadi va yangi tur qo'shilganda diagramma o'zi bilan yangilanadi.
+//
+// Ustunlar yonma-yon EMAS, bir-birining ustiga teriladi (`stackId`): 30
+// kunlik oynada uchta yonma-yon ustun o'qib bo'lmas darajada ingichka
+// bo'lardi; terilgan ustun esa kunlik UMUMIY hajmni ham ko'rsatadi.
+const ABUSE_SERIES_COLORS = ['#f59e0b', '#f43f5e', '#a855f7', '#6366f1', '#34d399'];
+const AbuseFlagTrendChart = ({ data, series }) => {
+  if (!RC) return null;
+  return (
+    <div className="h-[220px] w-full">
+      <RC width="100%" height="100%">
+        <ReBarChart data={data} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
+          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+          <ReXAxis dataKey="date" tickFormatter={shortDay} tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} interval={4} minTickGap={12} />
+          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" />} cursor={{ fill: 'rgba(148,163,184,0.06)' }} labelFormatter={shortDay} />
+          {ReLegend && <ReLegend wrapperStyle={{ fontSize: 10, fontWeight: 700, paddingTop: 4 }} iconType="circle" iconSize={8} />}
+          {series.map((s, i) => (
+            <ReBar
+              key={s.key}
+              dataKey={s.key}
+              name={s.label}
+              stackId="abuse"
+              fill={ABUSE_SERIES_COLORS[i % ABUSE_SERIES_COLORS.length]}
+              maxBarSize={18}
+            />
+          ))}
+        </ReBarChart>
+      </RC>
+    </div>
+  );
+};
+
+// Bo'limdagi ikkala reyting ro'yxati (eng ko'p ogohlantirilganlar va kontent
+// portlashi) bir xil shaklda: o'rin, hisob, son, oxirgi vaqt — shuning uchun
+// bitta komponent. Diagramma EMAS: ism va aniq son ustun grafikdan ko'ra
+// jadvalda tez o'qiladi, ko'rinish esa "Bir xil IP" va audit jurnali
+// jadvallari bilan bir xil.
+const ABUSE_COUNT_TONES = {
+  rose: 'bg-rose-500/10 border-rose-500/20 text-rose-400',
+  amber: 'bg-amber-500/10 border-amber-500/20 text-amber-400',
+};
+const AbuseRankTable = ({ rows, countKey, countLabel, dateKey, dateLabel, tone = 'rose' }) => (
+  <div className="overflow-x-auto admin-scroll">
+    <table className="w-full min-w-[420px] text-left">
+      <thead className="admin-table-hdr">
+        <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+          <th className="px-3 py-2.5">#</th>
+          <th className="px-3 py-2.5">Hisob</th>
+          <th className="px-3 py-2.5">{countLabel}</th>
+          <th className="px-3 py-2.5">{dateLabel}</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-white/5">
+        {rows.map((row, i) => (
+          <tr key={row.user_id} className="text-xs admin-table-row text-slate-300">
+            <td className="px-3 py-3 font-mono text-[11px] font-bold text-slate-500">{i + 1}</td>
+            <td className="px-3 py-3">
+              <div className="font-bold text-white">{row.full_name || '—'}</div>
+              <div className="font-mono text-[10px] text-white/40">{maskPhoneDisplay(row.phone, '')}</div>
+            </td>
+            <td className="px-3 py-3">
+              <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${ABUSE_COUNT_TONES[tone]}`}>
+                {row[countKey]} ta
+              </span>
+            </td>
+            <td className="px-3 py-3 font-semibold text-slate-400 whitespace-nowrap">{formatAdminDateTime(row[dateKey])}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
+
 
 const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
@@ -986,6 +1079,24 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   // Savol bayrog'ini yopishdagi ixtiyoriy chora: savolni arxivlash. Har
   // oynada noldan boshlanadi — arxivlash tasodifan "yodda qolmasin".
   const [flagResolveArchive, setFlagResolveArchive] = React.useState(false);
+  // Shubhali IP bayrog'ini yopishdagi ixtiyoriy chora: o'sha manzilni
+  // bloklash. Arxivlash bilan bir xil qoida — har oynada noldan boshlanadi,
+  // muddat esa "Doimiy" (null) dan.
+  const [flagResolveBlockIp, setFlagResolveBlockIp] = React.useState(false);
+  const [flagResolveBlockDays, setFlagResolveBlockDays] = React.useState(null);
+  // "Bloklangan IP'lar" bloki: server tomon sahifa raqami.
+  const [blockedIpPage, setBlockedIpPage] = React.useState(1);
+  // Yangi blok oynasi (ochiq/yopiq) va uning maydonlari. Manzil bitta
+  // maydonda — tarmoq ham shu yerga CIDR ko'rinishida yoziladi.
+  const [blockIpModal, setBlockIpModal] = React.useState(false);
+  const [blockIpAddress, setBlockIpAddress] = React.useState('');
+  const [blockIpReason, setBlockIpReason] = React.useState('');
+  const [blockIpDuration, setBlockIpDuration] = React.useState(null);
+  const [blockIpBusy, setBlockIpBusy] = React.useState(false);
+  // Blokni olib tashlash tasdig'i: `{ id, cidr }` — qatorning o'zi emas,
+  // chunki tasdiqlash matni faqat shu ikkisini ko'rsatadi.
+  const [unblockIpConfirm, setUnblockIpConfirm] = React.useState(null);
+  const [unblockIpBusy, setUnblockIpBusy] = React.useState(false);
   // "Firibgarlik holatlari" bloki: filtrlar + server tomon sahifa raqami.
   // Sana filtrlari `<input type="date">` dan YYYY-MM-DD ko'rinishida keladi —
   // backend ham aynan shu formatni kutadi.
@@ -1145,6 +1256,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     () => isApi ? OlympyApi.getCenterAnalytics(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+  // Suiiste'mol signallari (bayroq dinamikasi, ogohlantirish reytingi,
+  // kontent portlashi) — "Tahlil" tabining oxirgi bo'limi uchun.
+  const apiAbuseStatsRes = useApiData(
+    () => isApi ? OlympyApi.getAbuseStats(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
   // Recharts kutubxonasi — faqat "Tahlil" tabi ochilganda lazy yuklanadi
   // (backend so'rovlari bilan bir xil mantiq: kerak bo'lmasa so'ralmaydi).
   const rechartsReady = useRecharts(page === 'analytics');
@@ -1192,6 +1309,18 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         )
       : Promise.resolve(null),
     [isApi, page, securitySection, flagType, flagStatus, flagPage],
+  );
+  // Bloklangan IP'lar — faqat "security" tabining shu bo'limi ochilganda.
+  // Ro'yxatda muddati o'tgan bloklar ham qoladi, ya'ni u ham o'sib boradi —
+  // navbatdagidek server tomon paginatsiya.
+  const apiBlockedIpsRes = useApiData(
+    () => (isApi && page === 'security' && securitySection === 'blocked-ips')
+      ? OlympyApi.getAdminBlockedIps(
+          { page: blockedIpPage, pageSize: BLOCKED_IP_PAGE_SIZE },
+          OlympyApi.getToken(),
+        )
+      : Promise.resolve(null),
+    [isApi, page, securitySection, blockedIpPage],
   );
   // Barcha markazlar bo'yicha firibgarlik holatlari — faqat "security"
   // tabining shu bo'limi ochilganda. Bu ham cheksiz o'sadigan ro'yxat, ya'ni
@@ -4064,6 +4193,27 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const dqEmpty = !dqTrend.length || dqTrend.every(d => !d.count);
     const ratingEmpty = !topCentersRating.length || topCentersRating.every(s => !(s.points || []).length);
 
+    // Suiiste'mol signallari. Chegaralar (necha kun, nechta savol) backenddan
+    // keladi — ekrandagi matn va hisob bir joydan chiqishi uchun.
+    const abuse = apiAbuseStatsRes.data || {};
+    const abuseSeries = Array.isArray(abuse.flag_series) ? abuse.flag_series : [];
+    const flagTrend = Array.isArray(abuse.flag_trend) ? abuse.flag_trend : [];
+    const topWarned = Array.isArray(abuse.top_warned_users) ? abuse.top_warned_users : [];
+    const contentOutliers = Array.isArray(abuse.content_outliers) ? abuse.content_outliers : [];
+    const abuseLimits = abuse.thresholds || {};
+    // Reyting jadvallari Recharts'siz ishlaydi — ular uchun `chartsLoading`
+    // kutilmaydi (aks holda kutubxona tushmaguncha tayyor ro'yxat bekorga
+    // "Yuklanmoqda..." holatida turardi).
+    const abuseListsLoading = isApi && apiAbuseStatsRes.loading;
+    const abuseTrendLoading = abuseListsLoading || chartsLoading;
+    const flagTrendEmpty = !flagTrend.length || !abuseSeries.length
+      || flagTrend.every(d => abuseSeries.every(s => !d[s.key]));
+    // Xato (403/tarmoq) bo'lsa "hech narsa topilmadi" degan aniq matn
+    // YOLG'ON bo'lardi — bunday holatda metrik bloklaridagi umumiy matn.
+    const abuseEmptyText = (isApi && apiAbuseStatsRes.error)
+      ? "Ma'lumot yo'q (admin huquqi kerak)"
+      : null;
+
     // Loading spinner — diagrammalar uchun bir xil ko'rinish (DRY).
     const loadingBox = (h = 200) => (
       <div className="flex items-center justify-center text-[11px] font-bold text-slate-500" style={{ height: `${h}px` }}>Yuklanmoqda...</div>
@@ -4220,6 +4370,62 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </ChartCard>
           </div>
         </div>
+
+        {/* ─── Sektion 6: Suiiste'mol signallari ─── */}
+        <div className="space-y-[14px]">
+          <h2 className="text-[13px] font-black uppercase tracking-wider text-slate-500">Suiiste'mol signallari</h2>
+          <p className="text-[11px] font-semibold leading-relaxed text-slate-500">
+            Bo'lim faqat KUZATUV uchun: hech kim avtomatik bloklanmaydi va bayroq ham
+            qo'yilmaydi. Ochiq ishlar va ular bo'yicha qaror "Xavfsizlik" tabidagi
+            moderatsiya navbatida qoladi.
+          </p>
+
+          <ChartCard
+            title="Bayroq va ogohlantirishlar dinamikasi"
+            subtitle={`Oxirgi ${abuseLimits.trend_days || 30} kun, turi bo'yicha`}
+            empty={!abuseTrendLoading && flagTrendEmpty}
+          >
+            {abuseTrendLoading ? loadingBox(220) : <AbuseFlagTrendChart data={flagTrend} series={abuseSeries} />}
+          </ChartCard>
+
+          <div className="grid gap-5 xl:grid-cols-2">
+            <ChartCard
+              title="Eng ko'p ogohlantirilgan hisoblar"
+              subtitle={`Oxirgi ${abuseLimits.top_window_days || 30} kun bo'yicha top-10`}
+              empty={!abuseListsLoading && !topWarned.length}
+              emptyText={abuseEmptyText || 'Ogohlantirish yuborilmagan'}
+            >
+              {abuseListsLoading ? loadingBox(200) : (
+                <AbuseRankTable
+                  rows={topWarned}
+                  countKey="warnings"
+                  countLabel="Ogohlantirish"
+                  dateKey="last_warned_at"
+                  dateLabel="Oxirgisi"
+                  tone="rose"
+                />
+              )}
+            </ChartCard>
+
+            <ChartCard
+              title="Kontent portlashi"
+              subtitle={`Oxirgi ${abuseLimits.burst_window_days || 1} kunda ${abuseLimits.burst_min_questions || 100} tadan ko'p savol yaratganlar`}
+              empty={!abuseListsLoading && !contentOutliers.length}
+              emptyText={abuseEmptyText || "Chegaradan oshgan hisob yo'q"}
+            >
+              {abuseListsLoading ? loadingBox(200) : (
+                <AbuseRankTable
+                  rows={contentOutliers}
+                  countKey="questions"
+                  countLabel="Savol"
+                  dateKey="last_created_at"
+                  dateLabel="Oxirgisi"
+                  tone="amber"
+                />
+              )}
+            </ChartCard>
+          </div>
+        </div>
       </div>
     );
   };
@@ -4342,6 +4548,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const askResolveFlag = (flag, status) => {
     setFlagResolveNote('');
     setFlagResolveArchive(false);
+    setFlagResolveBlockIp(false);
+    setFlagResolveBlockDays(null);
     setFlagResolve({ flag, status });
   };
 
@@ -4350,8 +4558,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const canArchiveFlag = flagResolve?.flag.flag_type === 'question'
     && flagResolve?.status === 'resolved';
 
+  // IP bloki ham AYNAN shu qoidaga bo'ysunadi, faqat boshqa bayroq turida:
+  // manzil bayroqning `extra.ip_address` kalitida turadi (admin uni qo'lda
+  // ko'chirmaydi), shuning uchun manzili yo'q eski yozuvda taklif ham yo'q.
+  const canBlockFlagIp = flagResolve?.flag.flag_type === 'suspicious_ip'
+    && flagResolve?.status === 'resolved'
+    && !!flagResolve?.flag.extra?.ip_address;
+
   const submitResolveFlag = () => {
     if (!flagResolve || flagResolveBusy) return;
+    const blockIp = canBlockFlagIp && flagResolveBlockIp;
     setFlagResolveBusy(true);
     OlympyApi.adminResolveModerationFlag(
       flagResolve.flag.id,
@@ -4359,13 +4575,22 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         status: flagResolve.status,
         note: flagResolveNote.trim(),
         archive: canArchiveFlag && flagResolveArchive,
+        blockIp,
+        blockDays: blockIp ? flagResolveBlockDays : null,
       },
       OlympyApi.getToken(),
     )
       .then(res => {
-        showToast(res?.archived
-          ? 'Bayroq yopildi, savol arxivlandi'
-          : flagResolve.status === 'resolved' ? 'Bayroq hal qilindi' : 'Bayroq rad etildi');
+        // Blok so'ralgan bo'lsa ham bajarilmasligi mumkin (manzil allaqachon
+        // bloklangan yoki adminning o'ziniki) — javobdagi `blocked_ip` shuni
+        // aytadi, shuning uchun toast AYNAN bajarilgan ishni yozadi.
+        showToast(res?.blocked_ip
+          ? `Bayroq hal qilindi, ${res.blocked_ip.cidr} bloklandi`
+          : res?.archived
+            ? 'Bayroq yopildi, savol arxivlandi'
+            : blockIp
+              ? "Bayroq hal qilindi, IP bloklanmadi (allaqachon bloklangan yoki o'zingizniki)"
+              : flagResolve.status === 'resolved' ? 'Bayroq hal qilindi' : 'Bayroq rad etildi');
         setFlagResolve(null);
         apiModerationRes.reload();
       })
@@ -4374,6 +4599,64 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         showToast(OlympyApi.toUserMessage(err));
       })
       .finally(() => setFlagResolveBusy(false));
+  };
+
+  // Yangi blok oynasi ham har safar toza ochiladi (bloklash modalidagi bilan
+  // bir xil qoida): manzil va sabab bo'sh, muddat "Doimiy".
+  const openBlockIpModal = () => {
+    setBlockIpAddress('');
+    setBlockIpReason('');
+    setBlockIpDuration(null);
+    setBlockIpModal(true);
+  };
+
+  const submitBlockIp = () => {
+    if (blockIpBusy) return;
+    if (!isApi) { showToast("IP faqat API rejimida bloklanadi"); return; }
+    // Backend ikkalasini ham majburiy deb biladi — bo'shini u yerga
+    // yubormasdan shu yerda to'xtatamiz (ogohlantirish modalidagidek).
+    // Manzilning O'ZI esa faqat backendda tekshiriladi: `ipaddress` bilan
+    // parse qilish yagona haqiqat, panelda ikkinchi (va boshqacha) qoida
+    // paydo bo'lmasin.
+    const ipAddress = blockIpAddress.trim();
+    const reason = blockIpReason.trim();
+    if (!ipAddress) { showToast('IP manzilni kiriting'); return; }
+    if (!reason) { showToast('Bloklash sababini kiriting'); return; }
+
+    setBlockIpBusy(true);
+    OlympyApi.adminBlockIp(
+      { ipAddress, reason, durationDays: blockIpDuration },
+      OlympyApi.getToken(),
+    )
+      .then(res => {
+        showToast(`${res?.cidr || ipAddress} bloklandi`);
+        setBlockIpModal(false);
+        // Yangi blok ro'yxatning boshida turadi — birinchi sahifaga qaytamiz,
+        // aks holda u ko'rinmay qolardi.
+        setBlockedIpPage(1);
+        apiBlockedIpsRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminBlockIp failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setBlockIpBusy(false));
+  };
+
+  const runUnblockIp = () => {
+    if (!unblockIpConfirm || unblockIpBusy) return;
+    setUnblockIpBusy(true);
+    OlympyApi.adminUnblockIp(unblockIpConfirm.id, OlympyApi.getToken())
+      .then(() => {
+        showToast(`${unblockIpConfirm.cidr} bloki olib tashlandi`);
+        setUnblockIpConfirm(null);
+        apiBlockedIpsRes.reload();
+      })
+      .catch(err => {
+        console.warn('adminUnblockIp failed:', err);
+        showToast(OlympyApi.toUserMessage(err));
+      })
+      .finally(() => setUnblockIpBusy(false));
   };
 
   const renderSharedIpSection = () => {
@@ -4730,6 +5013,54 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </span>
             </label>
           )}
+          {/* Shubhali IP bayrog'i uchun ixtiyoriy chora — arxivlash bilan bir
+              xil qoida: belgilanmasa manzilga umuman tegilmaydi. Muddat faqat
+              belgilangandan keyin so'raladi (aks holda hech nimaga ta'sir
+              qilmaydigan tanlov ko'rinib turardi). */}
+          {canBlockFlagIp && (
+            <div className="mb-5">
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-white/5 px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={flagResolveBlockIp}
+                  onChange={e => setFlagResolveBlockIp(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 cursor-pointer rounded border-white/15 bg-white/5 text-indigo-500 focus:ring-indigo-500/30"
+                />
+                <span>
+                  <span className="block text-xs font-bold text-white">Shu IP manzilni ham blokla</span>
+                  <span className="mt-1 block text-[11px] leading-relaxed text-white/40">
+                    <span className="font-mono text-white/60">{flagResolve?.flag.extra?.ip_address}</span> —
+                    shu manzildan kelgan so'rovlar butun saytga kirita olmaydi.
+                    Manzil ortida bir nechta foydalanuvchi bo'lishi mumkin (markaz
+                    sinfxonasi, operator tarmog'i).
+                  </span>
+                </span>
+              </label>
+              {flagResolveBlockIp && (
+                <div className="mt-3">
+                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Blok muddati</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {IP_BLOCK_DURATION_OPTIONS.map(opt => (
+                      <button
+                        key={String(opt.value)}
+                        type="button"
+                        onClick={() => setFlagResolveBlockDays(opt.value)}
+                        className={`px-2 py-2 rounded-xl text-[11px] font-bold transition-all border ${
+                          flagResolveBlockDays === opt.value
+                            ? opt.value === null
+                              ? 'bg-rose-600 text-white border-rose-600 font-extrabold shadow'
+                              : 'bg-amber-500 text-indigo-950 border-amber-500 font-extrabold shadow'
+                            : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
           <div className="flex gap-3">
             <button
               onClick={() => setFlagResolve(null)}
@@ -4745,6 +5076,192 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </button>
           </div>
         </Modal>
+      </>
+    );
+  };
+
+  const renderBlockedIpsSection = () => {
+    const res = isApi ? apiBlockedIpsRes.data : null;
+    const rows = Array.isArray(res?.results) ? res.results : [];
+    const total = typeof res?.count === 'number' ? res.count : rows.length;
+    const lastPage = Math.max(1, Math.ceil(total / BLOCKED_IP_PAGE_SIZE));
+    const failed = isApi && !!apiBlockedIpsRes.error;
+    return (
+      <>
+        <section className="admin-card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+              Yangi blok qo'yish
+            </div>
+            <button
+              type="button"
+              onClick={openBlockIpModal}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)] transition">
+              <Icon name="plus" size={14} /> IP manzilni bloklash
+            </button>
+          </div>
+          <p className="mt-4 text-[11px] text-white/40 leading-relaxed">
+            Bloklangan manzildan kelgan so'rov saytga UMUMAN kirmaydi — bu bitta
+            hisobni bloklashdan ko'ra keng chora: bir manzil ortida markaz sinfxonasi
+            yoki butun operator tarmog'i turishi mumkin. Blokni faqat admin qo'yadi,
+            avtomatik tekshiruv hech qachon bloklamaydi. Muddati o'tgan bloklar
+            ro'yxatda qoladi, lekin hech nimani to'smaydi.
+          </p>
+        </section>
+        <section className="overflow-hidden admin-card">
+          <div className="overflow-x-auto admin-scroll">
+            <table className="w-full min-w-[1000px] text-left">
+              <thead className="admin-table-hdr">
+                <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                  {['IP manzil', 'Sabab', 'Kim bloklagan', 'Qo\'yilgan', 'Muddat', 'Holat', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {!isApi ? (
+                  <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
+                ) : apiBlockedIpsRes.loading ? (
+                  <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Yuklanmoqda...</td></tr>
+                ) : failed ? (
+                  <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</td></tr>
+                ) : rows.length === 0 ? (
+                  <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Bloklangan IP manzillar yo'q</td></tr>
+                ) : rows.map(row => (
+                  <tr key={row.id} className="text-xs admin-table-row text-slate-300">
+                    <td className="px-5 py-4 font-mono text-[11px] font-bold text-white">{row.cidr}</td>
+                    <td className="px-5 py-4 font-semibold text-white">{row.reason}</td>
+                    {/* Blokni qo'ygan admin hisobi o'chirilgan bo'lsa backend
+                        null qaytaradi (bayroqdagi "Tizim" holati bu yerda yo'q:
+                        IP blokini hech qachon tizim qo'ymaydi). */}
+                    <td className="px-5 py-4 font-semibold text-slate-400">{row.blocked_by || '—'}</td>
+                    <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">{formatAdminDateTime(row.created_at)}</td>
+                    <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">
+                      {row.expires_at ? formatAdminDateTime(row.expires_at) : 'Doimiy'}
+                    </td>
+                    <td className="px-5 py-4">
+                      <AdminPill status={row.is_active ? 'rejected' : 'draft'}>
+                        {row.is_active ? 'Bloklangan' : "Muddati o'tgan"}
+                      </AdminPill>
+                    </td>
+                    <td className="px-5 py-4">
+                      <button
+                        onClick={() => setUnblockIpConfirm({ id: row.id, cidr: row.cidr })}
+                        className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-400 transition hover:bg-emerald-500/20">
+                        Blokni ochish
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+        {/* Server tomon paginatsiya — muddati o'tgan bloklar ro'yxatda
+            qolgani uchun u ham o'sib boradi (navbatdagidek). */}
+        {total > BLOCKED_IP_PAGE_SIZE && (
+          <div className="flex items-center justify-center gap-2">
+            <button
+              onClick={() => setBlockedIpPage(p => Math.max(1, p - 1))}
+              disabled={apiBlockedIpsRes.loading || blockedIpPage <= 1}
+              className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
+            </button>
+            <div className="px-3 py-2 rounded-xl bg-white/5 text-[11px] font-bold text-white/60 tabular-nums">
+              {blockedIpPage} / {lastPage}
+            </div>
+            <button
+              onClick={() => setBlockedIpPage(p => Math.min(lastPage, p + 1))}
+              disabled={apiBlockedIpsRes.loading || blockedIpPage >= lastPage}
+              className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Keyingisi <Icon name="chevronRight" size={12} />
+            </button>
+          </div>
+        )}
+        <Modal
+          open={blockIpModal}
+          onClose={() => !blockIpBusy && setBlockIpModal(false)}
+          title="IP manzilni bloklash"
+        >
+          <div className="mb-5 space-y-4">
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">IP manzil yoki tarmoq</label>
+              <input
+                value={blockIpAddress}
+                onChange={e => setBlockIpAddress(e.target.value)}
+                className="w-full admin-input px-3 py-2.5 text-sm font-mono outline-none"
+                placeholder="1.2.3.4 yoki 1.2.3.0/24"
+              />
+              <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+                Bitta manzil ham, butun tarmoq ham shu maydonga yoziladi. Tarmoq
+                CIDR ko'rinishida bo'ladi va undagi BARCHA manzillar bloklanadi —
+                keng prefiks (masalan /8) tasodifan minglab foydalanuvchini yopib
+                qo'yishi mumkin.
+              </p>
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Bloklash sababi</label>
+              <input
+                value={blockIpReason}
+                onChange={e => setBlockIpReason(e.target.value)}
+                maxLength={255}
+                className="w-full admin-input px-3 py-2.5 text-sm outline-none"
+                placeholder="Masalan: bir manzildan ommaviy soxta hisob"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-white/50 mb-1.5 font-medium">Muddat</label>
+              <div className="grid grid-cols-3 gap-2">
+                {IP_BLOCK_DURATION_OPTIONS.map(opt => (
+                  <button
+                    key={String(opt.value)}
+                    type="button"
+                    onClick={() => setBlockIpDuration(opt.value)}
+                    className={`px-2 py-2 rounded-xl text-[11px] font-bold transition-all border ${
+                      blockIpDuration === opt.value
+                        ? opt.value === null
+                          ? 'bg-rose-600 text-white border-rose-600 font-extrabold shadow'
+                          : 'bg-amber-500 text-indigo-950 border-amber-500 font-extrabold shadow'
+                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+                Muddat tanlansa, blok o'sha kunlar o'tgach avtomatik kuchini yo'qotadi.
+                "Doimiy" — admin qo'lda ochmaguncha bloklangan qoladi.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setBlockIpModal(false)}
+              disabled={blockIpBusy}
+              className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50">
+              Bekor qilish
+            </button>
+            <button
+              onClick={submitBlockIp}
+              disabled={blockIpBusy}
+              className="btn-danger flex-1 rounded-xl py-3 font-semibold text-xs font-bold disabled:opacity-50">
+              {blockIpBusy ? '...' : 'Bloklash'}
+            </button>
+          </div>
+        </Modal>
+        {/* Blokni olib tashlash — qator butunlay o'chiriladi, shuning uchun
+            boshqa qaytarib bo'lmaydigan amallardagidek tasdiqlash oynasi. */}
+        <ConfirmModal
+          open={!!unblockIpConfirm}
+          onClose={() => !unblockIpBusy && setUnblockIpConfirm(null)}
+          onConfirm={runUnblockIp}
+          title="Blokni ochish"
+          message={`${unblockIpConfirm?.cidr || ''} bloki olib tashlanadi va shu manzil saytga qaytadan kira oladi. Yozuv ro'yxatdan butunlay o'chadi (blokning qo'yilishi ham, olinishi ham amallar tarixida qoladi) — davom etasizmi?`}
+          confirmText="Ha, ochish"
+          danger
+          busy={unblockIpBusy}
+        />
       </>
     );
   };
@@ -4915,6 +5432,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const securitySectionRenderers = {
     'shared-ip': renderSharedIpSection,
     'auto-flags': renderAutoFlagsSection,
+    'blocked-ips': renderBlockedIpsSection,
     cheating: renderCheatingOverviewSection,
   };
 
