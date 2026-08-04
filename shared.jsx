@@ -1272,34 +1272,89 @@ const BarChart = ({ data }) => {
 // ─── SvgLineChart ─────────────────────────────────────────────────────────────
 // Kutubxonasiz oddiy SVG line chart. `points` = [{ label, value (0..100), title }].
 // Har bir nuqtaga hover'da `<title>` orqali tooltip ko'rinadi.
+//
+// viewBox konteynerning haqiqiy piksel kengligiga tenglashtiriladi (1:1 masshtab),
+// shuning uchun SVG cho'zilmaydi. Ilgari qat'iy 320px viewBox + preserveAspectRatio="none"
+// ishlatilardi: keng kartochkada butun rasm gorizontal 2-3 barobar cho'zilib,
+// X o'qi yorliqlari va nuqtalar qiyshaygan/yamalgan ko'rinardi.
+//
+// Yagona natija (n === 1) alohida ishlanadi: bunday holda chiziq path'i faqat
+// "M x,y" bo'lib hech narsa chizmasdi va grafik bo'sh maydonda "osilib qolgan"
+// bitta nuqtaga aylanardi. Endi tekis punktir daraja ko'rsatiladi.
 const SvgLineChart = ({ points = [], height = 160, stroke = '#6366f1' }) => {
-  if (!points.length) {
-    return <div className="text-center text-white/40 text-sm py-8">Hozircha ma'lumot yo'q</div>;
-  }
-  const W = 320, H = height, padX = 14, padTop = 14, padBottom = 22;
+  const wrapRef = useRef(null);
+  const [boxW, setBoxW] = React.useState(0);
+  React.useLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const measure = () => setBoxW(Math.round(el.clientWidth || 0));
+    measure();
+    if (typeof ResizeObserver === 'function') {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
+  const n = points.length;
+  const W = Math.max(240, boxW || 320), H = height, padX = 14, padTop = 14, padBottom = 22;
   const innerW = W - padX * 2;
   const innerH = H - padTop - padBottom;
-  const n = points.length;
-  const xAt = (i) => n === 1 ? W / 2 : padX + (innerW * i) / (n - 1);
-  const yAt = (v) => padTop + innerH - (innerH * Math.max(0, Math.min(100, v))) / 100;
+  const baseY = padTop + innerH;
+  const xAt = (i) => n <= 1 ? W / 2 : padX + (innerW * i) / (n - 1);
+  const yAt = (v) => baseY - (innerH * Math.max(0, Math.min(100, v))) / 100;
   const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xAt(i).toFixed(1)},${yAt(p.value).toFixed(1)}`).join(' ');
-  const areaPath = `${linePath} L${xAt(n - 1).toFixed(1)},${(padTop + innerH).toFixed(1)} L${xAt(0).toFixed(1)},${(padTop + innerH).toFixed(1)} Z`;
+  const areaPath = `${linePath} L${xAt(n - 1).toFixed(1)},${baseY.toFixed(1)} L${xAt(0).toFixed(1)},${baseY.toFixed(1)} Z`;
+  const flatY = n === 1 ? yAt(points[0].value) : 0;
+  // Yorliqlar ustma-ust tushmasligi uchun qadam: joy yetmasa bir nechtasi
+  // o'tkazib yuboriladi (oxirgisi doim ko'rinadi).
+  const LABEL_FONT = 9;
+  const maxLabelChars = points.reduce((m, p) => Math.max(m, String(p.label ?? '').length), 0);
+  const labelW = Math.max(20, maxLabelChars * LABEL_FONT * 0.62 + 8);
+  const labelStep = Math.max(1, Math.ceil(n / Math.max(1, Math.floor(innerW / labelW))));
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ height: H }} preserveAspectRatio="none">
-      {[0, 25, 50, 75, 100].map(g => (
-        <line key={g} x1={padX} x2={W - padX} y1={yAt(g)} y2={yAt(g)} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
-      ))}
-      <path d={areaPath} fill={stroke} opacity="0.12" />
-      <path d={linePath} fill="none" stroke={stroke} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-      {points.map((p, i) => (
-        <g key={i}>
-          <circle cx={xAt(i)} cy={yAt(p.value)} r="4" fill={stroke} stroke="#0b0b14" strokeWidth="1.5">
-            <title>{p.title || `${p.label}: ${p.value}%`}</title>
-          </circle>
-          <text x={xAt(i)} y={H - 6} textAnchor="middle" fill="rgba(255,255,255,0.4)" fontSize="9">{p.label}</text>
-        </g>
-      ))}
-    </svg>
+    <div ref={wrapRef} className="w-full">
+      {n === 0 ? (
+        <div className="text-center text-white/40 text-sm py-8">Hozircha ma'lumot yo'q</div>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full block" style={{ height: H }}>
+          {[0, 25, 50, 75, 100].map(g => (
+            <line key={g} x1={padX} x2={W - padX} y1={yAt(g)} y2={yAt(g)} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+          ))}
+          {n > 1 ? (
+            <>
+              <path d={areaPath} fill={stroke} opacity="0.12" />
+              <path d={linePath} fill="none" stroke={stroke} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+            </>
+          ) : (
+            <>
+              <rect x={padX} y={flatY} width={innerW} height={Math.max(0, baseY - flatY)} fill={stroke} opacity="0.1" />
+              <line x1={padX} x2={W - padX} y1={flatY} y2={flatY} stroke={stroke} strokeWidth="2" strokeDasharray="5 5" strokeLinecap="round" opacity="0.6" />
+            </>
+          )}
+          {points.map((p, i) => {
+            // Chekka yorliqlar SVG'dan chiqib ketmasligi uchun boshi/oxiri
+            // chetiga tiraladi (start/end anchor).
+            const isFirst = n > 1 && i === 0;
+            const isLast = n > 1 && i === n - 1;
+            const labelX = isFirst ? padX : isLast ? W - padX : xAt(i);
+            return (
+              <g key={i}>
+                <circle cx={xAt(i)} cy={yAt(p.value)} r="4" fill={stroke} stroke="#0b0b14" strokeWidth="1.5">
+                  <title>{p.title || `${p.label}: ${p.value}%`}</title>
+                </circle>
+                {(n - 1 - i) % labelStep === 0 && (
+                  <text x={labelX} y={H - 6} textAnchor={isFirst ? 'start' : isLast ? 'end' : 'middle'}
+                    fill="rgba(255,255,255,0.4)" fontSize={LABEL_FONT}>{p.label}</text>
+                )}
+              </g>
+            );
+          })}
+        </svg>
+      )}
+    </div>
   );
 };
 
