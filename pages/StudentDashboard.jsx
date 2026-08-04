@@ -1815,8 +1815,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     const history = Array.isArray(apiHistoryChartRes.data) ? apiHistoryChartRes.data : [];
     const competitor = apiCompetitorRes.data;
     const weakness = Array.isArray(apiWeaknessRes.data) ? apiWeaknessRes.data : [];
+    // X o'qi yorlig'i — sana (MM-DD). Olimpiada nomi 8 harfga kesilganda
+    // yorliqlar takrorlanib/ma'nosiz bo'lib qolardi; to'liq nom tooltipda.
     const chartPoints = history.map(h => ({
-      label: (h.olympiad_name || '').slice(0, 8),
+      label: (h.date || '').slice(5),
       value: h.pct || 0,
       title: `${h.olympiad_name} · ${h.score}/${h.max_score} (${h.pct}%)${h.rank ? ' · #' + h.rank : ''} · ${h.date}`,
     }));
@@ -1831,7 +1833,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             </div>
             <div>
               <h3 className="font-bold text-white text-sm md:text-base leading-none">Olimpiada tarixi</h3>
-              <span className="text-[9px] text-white/40 mt-1 block">Oxirgi {history.length} ta tadbirdagi ball foizi</span>
+              <span className="text-[9px] text-white/40 mt-1 block">
+                {history.length ? `Oxirgi ${history.length} ta tadbirdagi ball foizi` : 'Tadbirlar bo\'yicha ball foizi'}
+              </span>
             </div>
           </div>
           {apiHistoryChartRes.loading
