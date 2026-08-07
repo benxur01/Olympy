@@ -5,26 +5,135 @@ on:
     - cron: '0 2 * * 1'  # Har dushanba soat 02:00 UTC
   workflow_dispatch:       # Qo'lda ham ishga tushirish mumkin
 
+# Bu workflow repo kodini umuman o'qimaydi (checkout ham yo'q) — eng kichik
+# huquq. upload-artifact@v4 GITHUB_TOKEN emas, alohida runtime token ishlatadi,
+# shuning uchun bu cheklov artifact yuklashga ta'sir qilmaydi.
+permissions:
+  contents: read
+
 jobs:
   backup:
     runs-on: ubuntu-latest
     steps:
+      # ── FAIL-CLOSED darvoza ───────────────────────────────────────────────
+      # Shifrlash paroli yo'q bo'lsa hech qanday dump OLINMAYDI. Tekshiruv
+      # ATAYIN eng birinchi qadam: aks holda pg_dump ishlab, keyin "shifrlab
+      # bo'lmadi" holatida runner diskida ochiq baza qolib ketardi.
+      - name: Shifrlash parolini tekshirish (majburiy)
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BACKUP_PASSPHRASE:-}" ]; then
+            echo "::error::BACKUP_PASSPHRASE secret o'rnatilmagan. Backup TO'XTATILDI."
+            echo "::error::Baza dump'i foydalanuvchi ismlari, telefon raqamlari, email"
+            echo "::error::manzillari va parol xeshlarini o'z ichiga oladi — shifrlanmagan"
+            echo "::error::holda GitHub artifact'ga yuklash mumkin emas."
+            echo "::error::Qo'shish: Settings → Secrets and variables → Actions →"
+            echo "::error::New repository secret → BACKUP_PASSPHRASE (batafsil: DB_MIGRATION.md)."
+            exit 1
+          fi
+          # Kuchsiz parol brute-force'ga ochiq — artifact'ni repo'ga o'qish
+          # huquqi bor har kim yuklab olishi mumkin, ya'ni offline hujum arzon.
+          if [ "${#BACKUP_PASSPHRASE}" -lt 20 ]; then
+            echo "::error::BACKUP_PASSPHRASE juda qisqa (${#BACKUP_PASSPHRASE} belgi, minimum 20)."
+            echo "::error::Yarating: openssl rand -base64 48"
+            exit 1
+          fi
+          echo "OK: BACKUP_PASSPHRASE mavjud (${#BACKUP_PASSPHRASE} belgi)."
+
       - name: PostgreSQL client o'rnatish
         run: sudo apt-get install -y postgresql-client
 
-      - name: Backup olish
+      # ── Dump + shifrlash (BITTA qadam, quvur orqali) ──────────────────────
+      # pg_dump natijasi to'g'ridan-to'g'ri gpg'ga uzatiladi: shifrlanmagan
+      # `.dump` fayl runner diskida BIR MARTA HAM paydo bo'lmaydi, ya'ni
+      # keyingi qadam yiqilsa ham ochiq nusxa qolib ketmaydi.
+      #
+      # NEGA gpg (age emas)?
+      #   • gpg ubuntu-latest runner'ida OLDINDAN o'rnatilgan — qo'shimcha
+      #     `apt-get install` qadami va uning tarmoq xatolari yo'q;
+      #   • simmetrik (parol) rejimi to'liq non-interactive: `--batch`
+      #     `--passphrase-fd 0` `--pinentry-mode loopback`;
+      #   • ochish uchun foydalanuvchiga hech narsa o'rnatish shart emas —
+      #     `gpg --decrypt` deyarli har bir Linux/macOS mashinasida bor.
+      #   age'ning ochiq-kalit rejimi (runner shifrni ochishga qodir emas)
+      #   nazariy jihatdan kuchliroq, ammo `age` runner'da yo'q va uning parol
+      #   rejimi TTY talab qiladi (env orqali parol bermaydi) — CI'da ishonchsiz.
+      - name: Backup olish va shifrlash
+        shell: bash
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL_EXTERNAL }}
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
         run: |
-          FILENAME="backup_$(date +%Y%m%d_%H%M%S).dump"
-          pg_dump --format=custom --no-acl --no-owner "$DATABASE_URL" -f "$FILENAME"
-          echo "BACKUP_FILE=$FILENAME" >> $GITHUB_ENV
-          SIZE=$(du -sh "$FILENAME" | cut -f1)
-          echo "Backup tayyor: $FILENAME ($SIZE)"
+          set -euo pipefail
+          if [ -z "${DATABASE_URL:-}" ]; then
+            echo "::error::DATABASE_URL_EXTERNAL secret o'rnatilmagan."
+            exit 1
+          fi
 
-      - name: Backup ni saqlash (90 kun)
-        uses: actions/upload-artifact@v4
+          FILENAME="backup_$(date +%Y%m%d_%H%M%S).dump.gpg"
+
+          # pg_dump → gpg HAQIQIY quvur (pipeline) orqali ulanadi, `pipefail`
+          # bilan birga: pg_dump yiqilsa butun qadam yiqiladi va yarim yozilgan
+          # fayl yuklanmaydi. (Diqqat: `< <(pg_dump ...)` ko'rinishi ISHLAMASDI —
+          # process substitution'ning chiqish kodi tekshirilmaydi.)
+          #
+          # Parol 3-fayl deskriptori orqali beriladi:
+          #   • `--passphrase` argv'da ko'rinardi (runner'dagi har qanday jarayon
+          #     /proc/PID/cmdline dan o'qiy olardi);
+          #   • stdin band (dump o'sha yerdan keladi), shuning uchun fd 0 emas;
+          #   • `3< <(printf ...)` — parolni faqat fd 3'ga uzatadi, diskka
+          #     hech narsa yozilmaydi.
+          # --s2k-* : parol inson tanlagan bo'lishi mumkin, shu sababli KDF
+          #   iteratsiyalari maksimumga qo'yiladi (offline brute-force qimmat
+          #   bo'lsin). Ochishda qo'shimcha flag TALAB QILMAYDI — parametrlar
+          #   fayl sarlavhasida saqlanadi, `gpg --decrypt` o'zi o'qiydi.
+          pg_dump --format=custom --no-acl --no-owner "$DATABASE_URL" \
+            | gpg --batch --yes --quiet \
+                --pinentry-mode loopback --passphrase-fd 3 \
+                --symmetric --cipher-algo AES256 \
+                --s2k-mode 3 --s2k-digest-algo SHA512 --s2k-count 65011712 \
+                --compress-algo zlib \
+                --output "$FILENAME" \
+                3< <(printf '%s' "$BACKUP_PASSPHRASE")
+
+          echo "BACKUP_FILE=$FILENAME" >> "$GITHUB_ENV"
+          echo "Shifrlangan backup tayyor: $FILENAME ($(du -sh "$FILENAME" | cut -f1))"
+
+      # ── Tekshiruv: fayl ochiladimi va dump buzilmaganmi ───────────────────
+      # Ochib bo'lmaydigan yoki buzilgan backup — backup emas. Ochilgan oqim
+      # faqat quvurda (xotirada) yashaydi, diskka yozilmaydi.
+      - name: Shifr va dump butunligini tekshirish
+        shell: bash
+        env:
+          BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          # `pg_restore --list` fayl nomi berilmasa stdin'dan o'qiydi va
+          # arxivning TOC'ini chiqaradi — dump buzilgan bo'lsa xato beradi.
+          # Ochilgan ma'lumot FAQAT quvurda (xotirada) yashaydi.
+          gpg --batch --quiet --pinentry-mode loopback --passphrase-fd 3 \
+              --decrypt "$BACKUP_FILE" 3< <(printf '%s' "$BACKUP_PASSPHRASE") \
+            | pg_restore --list > /dev/null
+          echo "OK: shifr ochildi va pg_restore dump tarkibini muvaffaqiyatli o'qidi."
+
+          # Himoya to'ri: shifrlanmagan hech qanday dump ish katalogida
+          # QOLMAGANINI tasdiqlaymiz (yuklash qadami keyinchalik noto'g'ri
+          # o'zgartirilsa ham ochiq fayl chiqib ketmasin).
+          if find . -maxdepth 1 \( -name '*.dump' -o -name '*.sql' \) | grep -q .; then
+            echo "::error::Shifrlanmagan dump fayl topildi — yuklash to'xtatildi."
+            find . -maxdepth 1 \( -name '*.dump' -o -name '*.sql' \)
+            exit 1
+          fi
+
+      - name: Backup ni saqlash (90 kun, shifrlangan)
+        # Tag ko'chirilishi mumkin — to'liq commit SHA bilan pin qilingan.
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: olympy-db-backup-${{ github.run_number }}
+          # ATAYIN aniq fayl nomi (glob emas): faqat .gpg yuklanadi.
           path: ${{ env.BACKUP_FILE }}
+          # Fayl topilmasa jimgina bo'sh artifact yaratilmasin.
+          if-no-files-found: error
           retention-days: 90
