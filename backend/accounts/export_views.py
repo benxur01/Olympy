@@ -15,6 +15,8 @@ import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
 from io import BytesIO
 
+from olympy_api.export_utils import spreadsheet_safe
+
 
 def _style_header(ws, headers):
     """Sarlavha qatorini ko'k fon + oq qalin shrift bilan bezaydi."""
@@ -73,10 +75,12 @@ def export_center_members_excel(request, center_id):
         .select_related('user')
         .order_by('-created_at')
     )
+    # `full_name`/`phone` — foydalanuvchi o'zi yozadigan matn, shu sababli
+    # katakchaga `spreadsheet_safe` orqali yoziladi (Excel formula injection).
     for row, m in enumerate(members, 2):
         ws.cell(row=row, column=1, value=row - 1)
-        ws.cell(row=row, column=2, value=m.user.full_name)
-        ws.cell(row=row, column=3, value=m.user.phone or '')
+        ws.cell(row=row, column=2, value=spreadsheet_safe(m.user.full_name))
+        ws.cell(row=row, column=3, value=spreadsheet_safe(m.user.phone or ''))
         ws.cell(row=row, column=4, value=m.role)
         ws.cell(row=row, column=5, value=m.status)
         ws.cell(row=row, column=6, value=m.created_at.strftime('%Y-%m-%d') if m.created_at else '')
@@ -127,8 +131,8 @@ def export_olympiad_results_excel(request, olympiad_id):
     )
     for row, a in enumerate(attempts, 2):
         ws.cell(row=row, column=1, value=row - 1)
-        ws.cell(row=row, column=2, value=a.user.full_name)
-        ws.cell(row=row, column=3, value=a.user.phone or '')
+        ws.cell(row=row, column=2, value=spreadsheet_safe(a.user.full_name))
+        ws.cell(row=row, column=3, value=spreadsheet_safe(a.user.phone or ''))
         ws.cell(row=row, column=4, value=float(a.score) if a.score else 0)
         ws.cell(row=row, column=5, value=a.correct_count)
         ws.cell(row=row, column=6, value=a.wrong_count)

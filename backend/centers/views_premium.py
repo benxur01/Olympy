@@ -22,6 +22,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.renderers import BaseRenderer, JSONRenderer
 from rest_framework.response import Response
 
+from olympy_api.export_utils import spreadsheet_safe
+
 from .models import CenterMembership, EducationCenter
 from .services import user_can_manage_center
 
@@ -633,9 +635,12 @@ def export_all_results(request, center_id):
         score = a.score or 0
         max_score = a.olympiad.max_score or 100
         pct = round((score / max_score) * 100, 1) if max_score else 0
+        # O'quvchi ismi va olimpiada sarlavhasi foydalanuvchi yozadigan matn —
+        # `spreadsheet_safe` Excel formula injection'ini to'sadi. Qator ikkala
+        # (CSV va XLSX) yo'lda ham shu funksiyadan o'tadi.
         return [
-            a.user.full_name or a.user.normalized_phone or '—',
-            a.olympiad.title or '—',
+            spreadsheet_safe(a.user.full_name or a.user.normalized_phone or '—'),
+            spreadsheet_safe(a.olympiad.title or '—'),
             a.submitted_at.strftime('%Y-%m-%d %H:%M') if a.submitted_at else '',
             score,
             pct,

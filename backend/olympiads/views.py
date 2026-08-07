@@ -11,6 +11,7 @@ from rest_framework.response import Response
 
 from accounts.models import AuditLog
 from moderation.models import ModerationFlag
+from olympy_api.export_utils import spreadsheet_safe
 
 from .models import Olympiad
 from .serializers import OlympiadSerializer
@@ -408,8 +409,11 @@ def _export_row_values(idx, attempt):
     `idx` — 1 dan boshlanadigan tartib raqami (rank bo'sh bo'lsa fallback).
     """
     user = attempt.user
-    full_name = getattr(user, 'full_name', '') or '—'
-    username = getattr(user, 'username', '') or '—'
+    # Ism/username — foydalanuvchi yozadigan matn. `spreadsheet_safe` `=`/`+`/
+    # `-`/`@` bilan boshlangan qiymat Excel'da FORMULA bo'lib bajarilishini
+    # to'sadi (CSV, XLSX va PDF — uchalasi ham shu funksiyadan o'tadi).
+    full_name = spreadsheet_safe(getattr(user, 'full_name', '') or '—')
+    username = spreadsheet_safe(getattr(user, 'username', '') or '—')
     total = attempt.total_questions or 0
     answered = (attempt.correct_count or 0) + (attempt.wrong_count or 0)
     pct = round((attempt.correct_count / total) * 100) if total else 0
