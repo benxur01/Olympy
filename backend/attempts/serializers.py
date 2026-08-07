@@ -86,7 +86,13 @@ class CodeSubmissionSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'attempt', 'question', 'question_text', 'student_id',
             'student_name', 'student_avatar_url', 'submitted_code', 'code_language',
-            'ai_code_review', 'ai_code_score', 'created_at',
+            'ai_code_review', 'ai_code_score',
+            # Judge0 natijasi va baholash oqimining holati. `evaluation_status`
+            # `pending_review` bo'lsa — runner nosozligi tufayli javob avtomatik
+            # baholanmagan va uni menejer/o'qituvchi qo'lda ko'rishi kerak.
+            # Bularsiz nosozlik panelda jimgina yo'qolib ketardi.
+            'all_tests_passed', 'evaluation_status', 'evaluation_error',
+            'created_at',
         ]
         read_only_fields = fields
 
