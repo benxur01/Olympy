@@ -27,7 +27,7 @@ from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from .email_utils import send_account_warning, send_email_verification_code
 from .models import AuditLog, EmailVerification, LoginEvent, PhoneVerification
-from .permissions import IsPlatformAdmin
+from .permissions import IsPlatformAdmin, TrustedOrigin
 from .throttling import PasswordChangePerUserThrottle
 from .serializers import (
     ChangePasswordSerializer,
@@ -42,7 +42,7 @@ from .serializers import (
     UserSerializer,
     VerifyOtpSerializer,
 )
-from .utils import delete_replaced_image_file, mask_phone, normalize_phone
+from .utils import delete_replaced_image_file, mask_phone, normalize_phone, verify_totp_code
 
 
 # Pillow decompression-bomb limitini modul yuklanishida BIR MARTA o'rnatamiz.
@@ -537,11 +537,11 @@ def login(request):
         if not totp_code:
             # Parol to'g'ri, lekin 2FA kodi kerak — token bermaymiz.
             return Response({'requires_2fa': True})
-        import pyotp
-        totp = pyotp.TOTP(user.totp_secret)
-        if not totp.verify(totp_code, valid_window=1):
+        # `verify_totp_code` — replay himoyasi bilan (bitta kod ikki marta
+        # ishlatilmaydi); qolgan xulq `pyotp.verify(valid_window=1)` bilan bir xil.
+        if not verify_totp_code(user, totp_code):
             security_logger.warning(
-                'login failed (wrong 2FA code) user_id=%s', user.pk,
+                'login failed (wrong or reused 2FA code) user_id=%s', user.pk,
             )
             return Response(
                 {'detail': "Noto'g'ri 2FA kod", 'requires_2fa': True},
@@ -1113,10 +1113,9 @@ def _verify_account_delete_credentials(request, user):
                 {'detail': "2FA kodi talab qilinadi", 'requires_2fa': True},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        import pyotp
-        if not pyotp.TOTP(user.totp_secret).verify(totp_code, valid_window=1):
+        if not verify_totp_code(user, totp_code):
             security_logger.warning(
-                'account_delete failed (wrong 2FA) user_id=%s', user.pk,
+                'account_delete failed (wrong or reused 2FA) user_id=%s', user.pk,
             )
             return Response(
                 {'detail': "Noto'g'ri 2FA kod", 'requires_2fa': True},
@@ -1238,8 +1237,7 @@ def restore_my_account(request):
                 {'detail': "2FA kodi talab qilinadi", 'requires_2fa': True},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        import pyotp
-        if not pyotp.TOTP(user.totp_secret).verify(totp_code, valid_window=1):
+        if not verify_totp_code(user, totp_code):
             return Response(
                 {'detail': "Noto'g'ri 2FA kod", 'requires_2fa': True},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -1267,7 +1265,7 @@ restore_my_account.cls.throttle_scope = 'auth'
 
 @api_view(['POST', 'DELETE'])
 @parser_classes([JSONParser, MultiPartParser, FormParser])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TrustedOrigin])
 def update_my_avatar(request):
     """POST /api/auth/me/avatar/ — upload current user's profile image.
     DELETE /api/auth/me/avatar/ — delete current user's profile image.
@@ -1434,15 +1432,15 @@ ADMIN_EXPORT_HEADERS = [
 
 
 def _csv_text(value):
-    """Excel formula injection himoyasi.
+    """Excel formula injection himoyasi (umumiy `spreadsheet_safe` ustidan).
 
-    `full_name` foydalanuvchining o'zi yozadigan matn: `=`/`+`/`-`/`@` bilan
-    boshlansa Excel uni FORMULA deb hisoblaydi va admin faylni ochganda
-    bajarishga urinadi. Bir tirnoq qo'shilsa Excel qiymatni matn sifatida
-    ko'rsatadi (ekranda tirnoq ko'rinmaydi).
+    Mantiq loyihaning barcha eksportlari uchun BITTA joyda —
+    `olympy_api.export_utils.spreadsheet_safe`. Bu yerda faqat qiymatni
+    satrga keltiramiz: CSV ustunlari har doim matn bo'lishi kerak.
     """
-    text = str(value or '')
-    return f"'{text}" if text[:1] in ('=', '+', '-', '@') else text
+    from olympy_api.export_utils import spreadsheet_safe
+
+    return spreadsheet_safe(str(value or ''))
 
 
 @api_view(['GET'])
@@ -4820,12 +4818,10 @@ def totp_setup(request):
 @throttle_classes([ScopedRateThrottle])
 def totp_verify(request):
     """POST /api/auth/2fa/verify/ — kodni tekshiradi va 2FA'ni yoqadi."""
-    import pyotp
     code = str(request.data.get('code', '')).strip()
     if not request.user.totp_secret:
         return Response({'detail': 'Avval 2FA sozlang'}, status=status.HTTP_400_BAD_REQUEST)
-    totp = pyotp.TOTP(request.user.totp_secret)
-    if totp.verify(code, valid_window=1):
+    if verify_totp_code(request.user, code):
         request.user.totp_enabled = True
         request.user.save(update_fields=['totp_enabled'])
         return Response({'detail': '2FA faollashtirildi'})
@@ -4842,15 +4838,12 @@ def totp_disable(request):
     egallab olmasin uchun — o'chirishdan avval JORIY TOTP kodi yoki parol
     tasdig'i talab qilinadi. Ikkalasidan biri to'g'ri kelmasa 403.
     """
-    import pyotp
     totp_code = str(request.data.get('totp_code', '')).strip()
     password = request.data.get('password') or ''
 
     verified = False
     if totp_code:
-        if request.user.totp_secret and pyotp.TOTP(request.user.totp_secret).verify(
-            totp_code, valid_window=1,
-        ):
+        if verify_totp_code(request.user, totp_code):
             verified = True
     elif password:
         if request.user.check_password(password):
