@@ -4342,3 +4342,210 @@ class LastSeenTestCase(APITestCase):
         self.assertEqual(self.client.get(reverse('me')).status_code, status.HTTP_200_OK)
         self.user.refresh_from_db()
         self.assertIsNotNone(self.user.last_seen_at)
+
+
+@override_settings(
+    CORS_ALLOWED_ORIGINS=['https://prolymp.uz'],
+    CSRF_TRUSTED_ORIGINS=['https://prolymp.uz'],
+)
+class TrustedOriginPermissionTestCase(APITestCase):
+    """`TrustedOrigin` — multipart endpointlar uchun CSRF himoyasi.
+
+    Bu API'da Django/DRF CSRF mexanizmi ishlamaydi (SessionAuthentication
+    o'chirilgan), o'rniga ikki bilvosita himoya bor: faqat-JSON parser va
+    qat'iy CORS. Fayl yuklaydigan view'lar `MultiPartParser`/`FormParser` ni
+    yoqib IKKALASINI ham chetlab o'tadi — oddiy cross-site HTML forma
+    preflight talab qilmaydi va JSON emas. Shu bo'shliqni Origin allowlist
+    yopadi.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            phone='+998905551234', password='StrongPass123', full_name='Avatarchi',
+        )
+        self.client.force_authenticate(user=self.user)
+        self.url = reverse('update-my-avatar')
+
+    def test_cross_site_form_post_is_rejected(self):
+        resp = self.client.post(
+            self.url, {'x': '1'}, format='multipart',
+            HTTP_ORIGIN='https://evil.example',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_null_origin_is_rejected(self):
+        """Sandboxed iframe / `file://` `Origin: null` yuboradi — u ham rad etiladi."""
+        resp = self.client.post(
+            self.url, {'x': '1'}, format='multipart', HTTP_ORIGIN='null',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_cross_site_referer_without_origin_is_rejected(self):
+        resp = self.client.post(
+            self.url, {'x': '1'}, format='multipart',
+            HTTP_REFERER='https://evil.example/csrf.html',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_allowed_origin_passes_to_the_view(self):
+        """403 emas — view ishga tushadi va o'z validatsiyasini qaytaradi (400)."""
+        resp = self.client.post(
+            self.url, {'x': '1'}, format='multipart',
+            HTTP_ORIGIN='https://prolymp.uz',
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_no_origin_and_no_referer_passes(self):
+        """Brauzer bo'lmagan klient (mobil ilova, server-to-server) buzilmasin."""
+        resp = self.client.post(self.url, {'x': '1'}, format='multipart')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_safe_method_is_never_blocked(self):
+        resp = self.client.get(reverse('me'), HTTP_ORIGIN='https://evil.example')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+
+class AuditLogClientIpTestCase(APITestCase):
+    """`AuditLog` X-Forwarded-For ning OXIRGI (spoof qilib bo'lmaydigan) elementini yozadi.
+
+    Avval BIRINCHI element olinardi — mijoz `X-Forwarded-For: 1.2.3.4` qo'shib
+    audit jurnaliga istalgan IP'ni yozdira olardi.
+    """
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            phone='+998905559911', password='StrongPass123', full_name='Audit',
+        )
+
+    def _log(self, **meta):
+        request = self.client.request().wsgi_request
+        request.user = self.user
+        request.META.update(meta)
+        AuditLog.log(request, 'user_block')
+        return AuditLog.objects.latest('created_at')
+
+    def test_spoofed_first_xff_entry_is_ignored(self):
+        entry = self._log(
+            HTTP_X_FORWARDED_FOR='1.2.3.4, 203.0.113.9',
+            REMOTE_ADDR='10.0.0.1',
+        )
+        self.assertEqual(entry.ip_address, '203.0.113.9')
+
+    def test_falls_back_to_remote_addr(self):
+        entry = self._log(HTTP_X_FORWARDED_FOR='', REMOTE_ADDR='198.51.100.7')
+        self.assertEqual(entry.ip_address, '198.51.100.7')
+
+    def test_missing_address_is_stored_as_null(self):
+        """`client_ip` '-' qaytarsa NULL yoziladi — aks holda Postgres xato berardi."""
+        request = self.client.request().wsgi_request
+        request.user = self.user
+        request.META.pop('HTTP_X_FORWARDED_FOR', None)
+        request.META.pop('REMOTE_ADDR', None)
+        AuditLog.log(request, 'user_block')
+        self.assertIsNone(AuditLog.objects.latest('created_at').ip_address)
+
+
+class TotpReplayTestCase(APITestCase):
+    """`verify_totp_code` bitta kodni ikki marta qabul qilmaydi.
+
+    `valid_window=1` bilan kod ~90 soniya yaroqli bo'ladi; ishlatilgan
+    time-step eslab qolinmasa, ushlab olingan kod o'sha oynada qayta
+    ishlatilishi mumkin edi.
+    """
+
+    def setUp(self):
+        import pyotp
+
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = User.objects.create_user(
+            phone='+998905557788', password='StrongPass123', full_name='2FA',
+        )
+        self.user.totp_secret = pyotp.random_base32()
+        self.user.totp_enabled = True
+        self.user.save(update_fields=['encrypted_totp_secret', 'totp_enabled'])
+        self.totp = pyotp.TOTP(self.user.totp_secret)
+
+    def test_code_is_accepted_once_then_rejected(self):
+        from accounts.utils import verify_totp_code
+
+        code = self.totp.now()
+        self.assertTrue(verify_totp_code(self.user, code))
+        self.assertFalse(verify_totp_code(self.user, code))
+
+    def test_wrong_code_is_rejected(self):
+        from accounts.utils import verify_totp_code
+
+        self.assertFalse(verify_totp_code(self.user, '000000'))
+
+    def test_previous_step_code_cannot_be_replayed_after_current(self):
+        """Joriy kod ishlatilgach, oldingi step kodi ham qabul qilinmaydi."""
+        import time as _time
+
+        from accounts.utils import verify_totp_code
+
+        now = int(_time.time())
+        previous = self.totp.at(now - self.totp.interval)
+        self.assertTrue(verify_totp_code(self.user, self.totp.now()))
+        self.assertFalse(verify_totp_code(self.user, previous))
+
+    def test_login_rejects_reused_2fa_code(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        code = self.totp.now()
+        payload = {
+            'phone': '+998905557788',
+            'password': 'StrongPass123',
+            'totp_code': code,
+        }
+        first = self.client.post(reverse('login'), payload, format='json')
+        self.assertEqual(first.status_code, status.HTTP_200_OK)
+        self.client.credentials()
+        self.client.cookies.clear()
+        second = self.client.post(reverse('login'), payload, format='json')
+        self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(second.data.get('requires_2fa'))
+
+
+class LoginTimingEnumerationTestCase(APITestCase):
+    """Login javob vaqti telefon raqam mavjudligini oshkor qilmasligi kerak.
+
+    Mavjud raqam + noto'g'ri parol qimmat PBKDF2 (600 000 iteratsiya) hisoblaydi;
+    mavjud bo'lmagan raqam uchun avval hech qanday hash hisoblanmasdi va ~90 ms
+    barqaror farq qolardi. Vaqtni testda o'lchash ishonchsiz, shuning uchun
+    HISOBLASH SODIR BO'LGANINI tekshiramiz: bo'sh `User` ustida `set_password`
+    chaqirilishi (Django'ning `ModelBackend` bilan bir xil yondashuv).
+    """
+
+    def setUp(self):
+        from django.core.cache import cache
+
+        cache.clear()
+        self.user = User.objects.create_user(
+            phone='+998905552211', password='StrongPass123', full_name='Mavjud',
+        )
+
+    def test_unknown_phone_still_hashes_a_password(self):
+        with patch.object(User, 'set_password', autospec=True) as mock_set:
+            resp = self.client.post(reverse('login'), {
+                'phone': '+998905550000',
+                'password': 'AnyPassword123',
+            }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        mock_set.assert_called_once()
+        # Aynan yuborilgan parol hash'lanadi — bo'sh/None bo'lsa
+        # `set_unusable_password` yo'liga tushib narx tenglashmasdi.
+        self.assertEqual(mock_set.call_args.args[1], 'AnyPassword123')
+
+    def test_unknown_and_wrong_password_share_one_message(self):
+        unknown = self.client.post(reverse('login'), {
+            'phone': '+998905550001', 'password': 'AnyPassword123',
+        }, format='json')
+        wrong = self.client.post(reverse('login'), {
+            'phone': '+998905552211', 'password': 'WrongPassword123',
+        }, format='json')
+        self.assertEqual(unknown.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(wrong.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(json.dumps(unknown.data), json.dumps(wrong.data))

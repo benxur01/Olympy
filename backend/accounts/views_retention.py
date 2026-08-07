@@ -14,6 +14,7 @@ autentifikatsiyalangan foydalanuvchining O'Z ma'lumotlari bilan ishlaydi.
 from collections import OrderedDict
 from datetime import timedelta
 
+from django.db import IntegrityError, transaction
 from django.db.models import Avg, Count, Q, Sum
 from django.utils import timezone
 from rest_framework import status as http_status
@@ -359,18 +360,30 @@ def daily_question_answer(request, daily_id):
         return Response({'detail': 'selected_option majburiy'},
                         status=http_status.HTTP_400_BAD_REQUEST)
 
+    # Qulfsiz tez yo'l: takroriy javobni odatiy holatda shu yerda to'samiz.
     if DailyQuestionAnswer.objects.filter(user=request.user, daily_question=dq).exists():
         return Response({'detail': 'Bu savolga allaqachon javob bergansiz'},
                         status=http_status.HTTP_400_BAD_REQUEST)
 
     correct = dq.question.correct_answer if dq.question else -1
     is_correct = (selected == correct)
-    DailyQuestionAnswer.objects.create(
-        user=request.user,
-        daily_question=dq,
-        selected_option=selected,
-        is_correct=is_correct,
-    )
+    # Parallel ikki so'rovda yuqoridagi `.exists()` ikkalasida ham False
+    # qaytaradi va ikkinchi INSERT (user, daily_question) unique cheklovini
+    # buzadi. Coin dublikatsiyasi bo'lmaydi (DB to'sadi), lekin ushlanmagan
+    # IntegrityError foydalanuvchiga 500 sifatida ko'rinardi — redeem_reward
+    # naqshi bo'yicha aniq 400 qaytaramiz. atomic() bloki: xatodan keyin
+    # tranzaksiya "buzilgan" holatda qolmasin (keyingi so'rovlar ishlaydi).
+    try:
+        with transaction.atomic():
+            DailyQuestionAnswer.objects.create(
+                user=request.user,
+                daily_question=dq,
+                selected_option=selected,
+                is_correct=is_correct,
+            )
+    except IntegrityError:
+        return Response({'detail': 'Bu savolga allaqachon javob bergansiz'},
+                        status=http_status.HTTP_400_BAD_REQUEST)
     # Kunlik faollik streak'ini yangilaymiz (mavjud logikadan foydalanib).
     # Xatolik javobni buzmaydi (foydalanuvchiga ko'rsatilmaydi), lekin jim
     # yutilmasligi uchun log'ga yoziladi — aks holda streak yangilanmay

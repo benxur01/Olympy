@@ -288,8 +288,19 @@ class LoginSerializer(serializers.Serializer):
         try:
             user = User.objects.get(normalized_phone=norm)
         except User.DoesNotExist:
+            # Timing enumeratsiyasiga qarshi: mavjud telefon uchun qimmat
+            # PBKDF2 (600 000 iteratsiya, ~93 ms) hisoblanadi, mavjud bo'lmagan
+            # telefon uchun esa `check_password` umuman chaqirilmasdi — bu
+            # barqaror ~90 ms farq bergan va statistik o'rtachalash bilan
+            # raqam bazada bor-yo'qligini aniqlash mumkin edi. Django'ning
+            # o'z yechimi (`ModelBackend.authenticate`) kabi bo'sh User ustida
+            # `set_password` chaqiramiz: u AYNAN o'sha default hasher'ni
+            # ishlatadi, ya'ni narx tabiiy ravishda teng bo'ladi (qattiq
+            # kodlangan dummy hash bilan iteratsiya soni ajralib qolmaydi).
+            # Natija hech qayerga saqlanmaydi.
+            User().set_password(attrs.get('password') or '')
             # Mavjud bo'lmagan telefon uchun ham counter oshiramiz, aks holda
-            # hujumchi telefon raqam mavjudligini timing orqali aniqlay olardi.
+            # hujumchi telefon raqam mavjudligini lockout orqali aniqlay olardi.
             cache.set(cache_key, current_failed + 1, self.LOCKOUT_TTL_SECONDS)
             security_logger.warning(
                 'login failed (unknown phone) phone=%s attempt=%s',
