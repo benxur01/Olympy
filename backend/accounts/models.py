@@ -1018,10 +1018,23 @@ class AuditLog(models.Model):
         harakat (bloklash, tasdiqlash va h.k.) buzilmasligi kerak.
         """
         try:
-            ip = (
-                request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0].strip()
-                or request.META.get('REMOTE_ADDR')
-            )
+            # IP'ni aniqlash mantig'i BITTA joyda — `security_logging.client_ip`.
+            # Avval bu yerda X-Forwarded-For ning BIRINCHI elementi olinardi,
+            # ya'ni mijoz `X-Forwarded-For: 1.2.3.4` qo'shib audit jurnaliga
+            # istalgan IP'ni yozdira olardi (jurnal `admin_ip_block`,
+            # `admin_account_delete`, `user_block` kabi sezgir amallarni
+            # saqlaydi — soxta IP forensikani chalg'itadi). `client_ip` proxy
+            # zanjirining OXIRGI, spoof qilib bo'lmaydigan elementini oladi.
+            # Import funksiya ichida: `accounts.models` app registry yuklanish
+            # paytida import qilinadi va `security_logging` DRF'ni tortadi.
+            from olympy_api.security_logging import client_ip
+
+            ip = client_ip(request)
+            # `client_ip` manzil topilmasa '-' qaytaradi; `ip_address` esa
+            # GenericIPAddressField — '-' yozilsa Postgres'da DataError bo'lib
+            # audit yozuvi butunlay yo'qolardi.
+            if ip in ('', '-'):
+                ip = None
             cls.objects.create(
                 actor=request.user if request.user.is_authenticated else None,
                 action=action,

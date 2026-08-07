@@ -81,6 +81,67 @@ def decrypt_totp_secret(stored):
         return str(stored)
 
 
+# ─── TOTP kodini bir martalik qilib tekshirish ────────────────────────────────
+# `valid_window=1` bilan bitta kod ~90 soniya (oldingi + joriy + keyingi
+# time-step) davomida yaroqli bo'ladi. Qaysi step ishlatilgani eslab
+# qolinmasa, kod o'sha oyna ichida QAYTA ishlatilishi mumkin: yelka ortidan
+# ko'rilgan, log/proxy'da qolgan yoki phishing sahifasida ushlangan kod
+# bilan tajovuzkor ikkinchi amalni bajara oladi.
+#
+# Yechim: oxirgi MUVAFFAQIYATLI time-step raqamini cache'da saqlaymiz va undan
+# kichik yoki TENG step bilan kelgan kodni rad etamiz. Saqlash uchun DB maydoni
+# EMAS, cache tanlandi: qiymat bor-yo'g'i bir necha o'nlab soniya kerak
+# (login lockout hisoblagichi bilan bir xil yondashuv), migratsiya talab
+# qilmaydi va har 2FA tekshiruvida DB'ga yozishdan qutqaradi.
+TOTP_USED_STEP_CACHE_PREFIX = 'totp_used_step:'
+
+
+def verify_totp_code(user, code, valid_window=1):
+    """TOTP kodini tekshiradi va uni "ishlatilgan" deb belgilaydi (replay himoyasi).
+
+    `pyotp.TOTP(...).verify(code, valid_window=1)` o'rniga ishlatiladi:
+    tekshiruvdan tashqari qaysi time-step mos kelganini aniqlaydi va o'sha
+    step (yoki undan eskisi) bilan ikkinchi marta kelgan kodni rad etadi.
+
+    Taqqoslash `pyotp.utils.strings_equal` bilan — `verify()` ning o'zi ham
+    aynan shuni ishlatadi (doimiy vaqtli, timing side-channel yo'q).
+
+    Cache o'chib qolsa (Redis restart, locmem tozalanishi) eng yomon holatda
+    xulq avvalgi holatga qaytadi — ya'ni bu himoya hech qachon halol
+    foydalanuvchini bloklamaydi.
+    """
+    import time as _time
+
+    import pyotp
+    from django.core.cache import cache
+
+    secret = getattr(user, 'totp_secret', '')
+    code = str(code or '').strip()
+    if not secret or not code:
+        return False
+
+    totp = pyotp.TOTP(secret)
+    interval = totp.interval or 30
+    now = int(_time.time())
+    matched_step = None
+    for offset in range(-valid_window, valid_window + 1):
+        for_time = now + offset * interval
+        if pyotp.utils.strings_equal(code, totp.at(for_time)):
+            matched_step = for_time // interval
+            break
+    if matched_step is None:
+        return False
+
+    cache_key = f'{TOTP_USED_STEP_CACHE_PREFIX}{user.pk}'
+    last_step = cache.get(cache_key)
+    if last_step is not None and matched_step <= int(last_step):
+        return False
+    # TTL — butun yaroqlilik oynasidan bir step uzunroq: undan keyin bu kod
+    # baribir eskiradi va yozuvni saqlashning ma'nosi qolmaydi.
+    cache.set(cache_key, int(matched_step), interval * (2 * valid_window + 2))
+    return True
+
+
 # ─── User-scoped cache helpers ────────────────────────────────────────────────
 # Bashorat (predictions) va obuna (subscription) holatlari har HTTP so'rovda
 # DB aggregate/filter talab qiladi. Bularni qisqa muddatli cache'da saqlaymiz

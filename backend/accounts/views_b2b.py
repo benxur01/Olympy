@@ -16,9 +16,10 @@ import secrets
 from django.db import transaction
 from django.db.models import Avg, Count
 from rest_framework import status as http_status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 
 from centers.models import CenterMembership, EducationCenter
 from olympiads.models import Olympiad
@@ -258,8 +259,25 @@ def my_referral(request):
     })
 
 
+def _lock_users_in_pk_order(User, *pks):
+    """Berilgan foydalanuvchi qatorlarini `select_for_update` bilan qulflaydi.
+
+    Qulflar DOIMO pk o'sish tartibida olinadi va natija {pk: user} ko'rinishida
+    qaytariladi. Tartib muhim: ikki foydalanuvchi bir vaqtda bir-birining
+    referral kodini ishlatsa, qulflar "avval o'zim, keyin taklif qiluvchi"
+    tartibida olinsa ikki tranzaksiya bir-birini kutib deadlock'ka tushardi
+    (Postgres bittasini o'ldiradi → 500). Yagona global tartib bunga yo'l
+    qo'ymaydi.
+    """
+    return {
+        pk: User.objects.select_for_update().get(pk=pk)
+        for pk in sorted(set(pks))
+    }
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ScopedRateThrottle])
 def use_referral(request):
     """POST /api/me/referral/use/ — boshqa foydalanuvchi kodini ishlatish.
 
@@ -268,6 +286,9 @@ def use_referral(request):
       * o'zining kodini ishlatib bo'lmaydi;
       * bir foydalanuvchi har qanday referral kodni faqat bir marta ishlata
         oladi (avval birorta kod ishlatgan bo'lsa qayta bonus yo'q).
+
+    Bir martalik kafolat QULF ostida ta'minlanadi (pastdagi izohga qarang) —
+    aks holda parallel so'rovlar bitta kod uchun cheksiz coin bera olardi.
     """
     code = str((request.data or {}).get('code') or '').strip().upper()
     if not code:
@@ -279,6 +300,9 @@ def use_referral(request):
     # Foydalanuvchi avval birorta referral kodni ishlatganmi? Bir martadan
     # ko'p bonus berilmaydi (o'zining kodi yaratilgani — `referral_code` —
     # bunga kirmaydi; faqat `used_referral_codes` hisobga olinadi).
+    # Bu — qulfsiz TEZ YO'L (fast path): ko'pchilik takroriy so'rovni ortiqcha
+    # qator qulflamasdan to'sadi. Haqiqiy (avtoritativ) tekshiruv pastda,
+    # tranzaksiya va qulf ostida qayta bajariladi.
     if request.user.used_referral_codes.exists():
         return Response(
             {'detail': "Siz allaqachon referral kodidan foydalangansiz"},
@@ -303,16 +327,33 @@ def use_referral(request):
     bonus = referral.bonus_coins or 50
 
     with transaction.atomic():
-        # M2M unique emas, shuning uchun qayta qo'shishni oldini olamiz.
-        if referral.used_by.filter(pk=request.user.pk).exists():
+        # 1) AVVAL qulf. `used_by` M2M da (referral, user) juftligi uchun DB
+        #    unique cheklovi bor, lekin `add()` dublikat uchun XATO BERMAYDI —
+        #    jimgina no-op qiladi. Ya'ni unique cheklov o'zi bonusni ikki marta
+        #    berishdan saqlamaydi: tekshiruv qulfsiz bajarilsa, parallel ikki
+        #    so'rov ham "ishlatilmagan" holatni ko'rib, ikkalasi ham coin
+        #    qo'shardi (cheksiz coin).
+        locked = _lock_users_in_pk_order(User, referral.user_id, request.user.pk)
+        inviter = locked[referral.user_id]
+        invited = locked[request.user.pk]
+
+        # 2) SO'NGRA tekshiruv. Ikkinchi parallel tranzaksiya shu qulfda
+        #    navbat kutadi va birinchisi commit bo'lgandan keyingina bu
+        #    yergacha yetadi — o'shanda "allaqachon ishlatilgan" holatni
+        #    ko'radi va bonus bermaydi.
+        if invited.used_referral_codes.exists():
+            return Response(
+                {'detail': "Siz allaqachon referral kodidan foydalangansiz"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        if referral.used_by.filter(pk=invited.pk).exists():
             return Response(
                 {'detail': "Bu kodni allaqachon ishlatgansiz"},
                 status=http_status.HTTP_400_BAD_REQUEST,
             )
-        referral.used_by.add(request.user)
-        # Coinlarni lock bilan yangilaymiz (lost update'ni oldini olish).
-        inviter = User.objects.select_for_update().get(pk=referral.user_id)
-        invited = User.objects.select_for_update().get(pk=request.user.pk)
+
+        # 3) Faqat endi yozamiz.
+        referral.used_by.add(invited)
         inviter.coins = (inviter.coins or 0) + bonus
         invited.coins = (invited.coins or 0) + bonus
         inviter.save(update_fields=['coins'])
@@ -325,3 +366,11 @@ def use_referral(request):
         'bonus_coins': bonus,
         'coins': invited.coins,
     })
+
+
+# ScopedRateThrottle FBV'da scope'ni view'ning .cls atributidan o'qiydi.
+# Referral kodini kiritish — hisob umri davomida BIR MARTALIK amal, shuning
+# uchun qattiq limit UX'ga zarar qilmaydi (xato kod terish uchun 5 urinish
+# yetarli), ammo qulf fix'i ustiga qo'shimcha qatlam sifatida burst-abuse
+# (bir vaqtda o'nlab so'rov) xarajatini nolga tushiradi.
+use_referral.cls.throttle_scope = 'referral_use'

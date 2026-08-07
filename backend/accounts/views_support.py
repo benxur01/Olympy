@@ -34,6 +34,23 @@ logger = logging.getLogger('accounts.views_support')
 _SUPPORT_CHAT_PER_REQUEST_TIMEOUT = 4
 _SUPPORT_CHAT_TOTAL_TIME_BUDGET = 8
 
+# POST kirish chegaralari. `messages` to'g'ridan-to'g'ri Gemini `contents`
+# ga uzatiladi va endpoint AllowAny — ilgari yagona chegara Django'ning
+# tabiiy ~2.5MB body limiti edi, ya'ni bitta so'rov bilan megabaytlab matn
+# (juda ko'p token) yuborish mumkin edi.
+#
+# DIQQAT — nega hamma joyda 400 emas: frontend (pages/AISupportWidget.jsx)
+# har yuborishda BUTUN chat tarixini qayta jo'natadi, tarix esa GET orqali
+# DB'dan cheklovsiz yuklanadi (SupportMessage.text — TextField). Shu sababli
+# "xabarlar soni ko'p" yoki "eski xabar uzun" holatida 400 qaytarish uzoq
+# muddatli foydalanuvchining chatini butunlay ishdan chiqarardi. Buning
+# o'rniga oxirgi N xabardan iborat oyna olinadi (kontekst uchun yetarli), va
+# 400 faqat aniq abuse ko'rsatkichlarida qaytariladi.
+_SUPPORT_CHAT_MAX_MESSAGES = 40        # Gemini'ga ketadigan oxirgi xabarlar
+_SUPPORT_CHAT_MAX_INPUT_MESSAGES = 400  # bundan ortig'i — abuse, 400
+_SUPPORT_CHAT_MAX_TEXT_LEN = 4000      # bitta xabar matni (~1 sahifa savol)
+_SUPPORT_CHAT_MAX_TOTAL_CHARS = 20000  # oynadagi umumiy matn hajmi
+
 # Mehmon chat sessiyasi — server tomonida cryptographically random cookie.
 # Klient `session_id` ni erkin yuborib boshqa mehmon chatini o'qiy olmasin.
 GUEST_SUPPORT_COOKIE = 'olympy_support_sid'
@@ -72,6 +89,62 @@ def _set_guest_session_cookie(response, session_id):
     return response
 
 
+def _sanitize_support_messages(raw):
+    """Klient yuborgan `messages` ni Gemini `contents` uchun xavfsiz shaklga keltiradi.
+
+    Qaytaradi `(contents, error_detail)`: `error_detail` bo'sh bo'lmasa —
+    chaqiruvchi 400 qaytarishi kerak va Gemini'ga umuman borilmaydi.
+    """
+    if not isinstance(raw, list):
+        return [], "Suhbat xabarlari (messages) ro'yxat ko'rinishida bo'lishi kerak."
+    if len(raw) > _SUPPORT_CHAT_MAX_INPUT_MESSAGES:
+        return [], "Suhbat tarixi juda uzun. Iltimos, chatni yangidan boshlang."
+
+    window = raw[-_SUPPORT_CHAT_MAX_MESSAGES:]
+    last_index = len(window) - 1
+    cleaned = []
+    for index, item in enumerate(window):
+        if not isinstance(item, dict):
+            return [], "Xabar formati noto'g'ri."
+        parts = item.get('parts')
+        if not isinstance(parts, list):
+            return [], "Xabar formati noto'g'ri."
+        text = ''.join(
+            part['text'] for part in parts
+            if isinstance(part, dict) and isinstance(part.get('text'), str)
+        ).strip()
+        if not text:
+            continue
+        if len(text) > _SUPPORT_CHAT_MAX_TEXT_LEN:
+            if index == last_index:
+                # Bu — foydalanuvchi HOZIR yozgan savol, ya'ni yagona haqiqiy
+                # yangi kirish. Faqat shu holatda aniq 400 beramiz.
+                return [], (
+                    f"Xabar juda uzun (maksimal {_SUPPORT_CHAT_MAX_TEXT_LEN} belgi)."
+                )
+            # Eski tarix cheklovsiz saqlangan bo'lishi mumkin — kesib
+            # o'tkazamiz, aks holda mavjud chat butunlay ishlamay qolardi.
+            text = text[:_SUPPORT_CHAT_MAX_TEXT_LEN]
+        # Gemini `role` sifatida faqat 'user'/'model' ni qabul qiladi. DB'da
+        # admin javoblari ham bor ('admin') va ular GET orqali frontend'ga
+        # qaytadi — ularni model javobi sifatida uzatamiz.
+        cleaned.append({
+            'role': 'user' if item.get('role') == 'user' else 'model',
+            'parts': [{'text': text}],
+        })
+
+    # Umumiy hajm byudjeti — eng eskisidan boshlab tashlaymiz. Har bir xabar
+    # MAX_TEXT_LEN dan oshmagani uchun (MAX_TOTAL_CHARS dan kichik) oxirgi
+    # yangi savol hech qachon tushib qolmaydi.
+    total = sum(len(m['parts'][0]['text']) for m in cleaned)
+    while cleaned and total > _SUPPORT_CHAT_MAX_TOTAL_CHARS:
+        total -= len(cleaned.pop(0)['parts'][0]['text'])
+
+    if not cleaned:
+        return [], "Suhbat xabarlari (messages) jo'natilishi shart."
+    return cleaned, ''
+
+
 @api_view(['GET', 'POST'])
 @permission_classes([AllowAny])
 @throttle_classes([ScopedRateThrottle])
@@ -105,13 +178,20 @@ def support_chat(request):
         return Response({'messages': serialized})
 
     # ─── POST: Yangi xabar yuborish ───
-    messages = request.data.get('messages', [])
+    # Body dict bo'lmasa (masalan JSON massiv yuborilsa) `.get` 500 berardi.
+    data = request.data if isinstance(request.data, dict) else {}
+    messages = data.get('messages')
 
     if not messages:
         return Response(
             {'detail': "Suhbat xabarlari (messages) jo'natilishi shart."},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
+
+    # Gemini'ga (va DB'ga) faqat tozalangan/chegaralangan ro'yxat boradi.
+    messages, invalid = _sanitize_support_messages(messages)
+    if invalid:
+        return Response({'detail': invalid}, status=http_status.HTTP_400_BAD_REQUEST)
 
     keys = _gemini_api_keys()
     if not keys:

