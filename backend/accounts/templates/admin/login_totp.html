@@ -1,0 +1,80 @@
+{% extends "admin/login.html" %}
+{% comment %}
+Django admin login sahifasi + 2FA (TOTP) kodi maydoni.
+
+DIQQAT: `{% extends %}` shablonning ENG BIRINCHI tegi bo'lishi SHART (Django
+buni majburlaydi), shuning uchun bu izoh undan keyin turadi.
+
+Standart `admin/login.html` `content` blokida FAQAT `form.username` va
+`form.password` ni chizadi — `AdminTOTPAuthenticationForm.totp_code` u yerda
+umuman ko'rinmasdi (ya'ni 2FA yoqilgan admin kodni kirita olmasdi). Shu sababli
+Django shablonini `extends` qilamiz va faqat `content` blokini qayta yozamiz:
+qolgan bloklar (title/extrastyle/nav/...) Django'niki bo'lib qoladi.
+
+Bu blokning tanasi Django 5.2 dagi `admin/login.html` nusxasi — o'rtaga faqat
+`totp_code` qatori qo'shilgan. Django yangilanganda o'sha fayl o'zgarsa, bu
+yerni ham solishtirib yangilash kerak (`tests_admin_totp.py` dagi
+`test_login_page_renders_totp_field` maydon yo'qolib qolsa ogohlantiradi).
+
+Shablon ATAYIN `admin/login.html` deb nomlanmagan: `accounts` INSTALLED_APPS'da
+`django.contrib.admin` dan KEYIN turadi, ya'ni app-dirs loader baribir
+Django'nikini topardi va bu fayl hech qachon ishlatilmasdi. Nomi boshqa
+bo'lgani uchun `{% extends %}` ham rekursiyaga tushmaydi
+(`OlympyAdminSite.login_template` aynan shu nomga ishora qiladi).
+{% endcomment %}
+{% load i18n %}
+
+{% block content %}
+{% if form.errors and not form.non_field_errors %}
+<p class="errornote">
+{% blocktranslate count counter=form.errors.items|length %}Please correct the error below.{% plural %}Please correct the errors below.{% endblocktranslate %}
+</p>
+{% endif %}
+
+{% if form.non_field_errors %}
+{% for error in form.non_field_errors %}
+<p class="errornote">
+    {{ error }}
+</p>
+{% endfor %}
+{% endif %}
+
+<div id="content-main">
+
+{% if user.is_authenticated %}
+<p class="errornote">
+{% blocktranslate trimmed %}
+    You are authenticated as {{ username }}, but are not authorized to
+    access this page. Would you like to login to a different account?
+{% endblocktranslate %}
+</p>
+{% endif %}
+
+<form action="{{ app_path }}" method="post" id="login-form">{% csrf_token %}
+  <div class="form-row">
+    {{ form.username.errors }}
+    {{ form.username.label_tag }} {{ form.username }}
+  </div>
+  <div class="form-row">
+    {{ form.password.errors }}
+    {{ form.password.label_tag }} {{ form.password }}
+    <input type="hidden" name="next" value="{{ next }}">
+  </div>
+  <div class="form-row">
+    {{ form.totp_code.errors }}
+    {{ form.totp_code.label_tag }} {{ form.totp_code }}
+    <div class="help">{{ form.totp_code.help_text }}</div>
+  </div>
+  {% url 'admin_password_reset' as password_reset_url %}
+  {% if password_reset_url %}
+  <div class="password-reset-link">
+    <a href="{{ password_reset_url }}">{% translate 'Forgotten your login credentials?' %}</a>
+  </div>
+  {% endif %}
+  <div class="submit-row">
+    <input type="submit" value="{% translate 'Log in' %}">
+  </div>
+</form>
+
+</div>
+{% endblock %}

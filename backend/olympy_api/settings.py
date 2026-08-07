@@ -75,7 +75,12 @@ SITE_URL = os.environ.get('SITE_URL', 'https://prolymp.uz')
 USE_CLOUDINARY = bool(os.environ.get('CLOUDINARY_CLOUD_NAME'))
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
+    # `django.contrib.admin` O'RNIGA bizning AppConfig (accounts/admin_apps.py):
+    # yagona farqi `default_site` — `admin.site` 2FA (TOTP) talab qiladigan
+    # `accounts.admin_site.OlympyAdminSite` ga yechiladi. Barcha
+    # `@admin.register(...)` chaqiruvlari o'zgarishsiz qoladi (ular aynan shu
+    # lazy `admin.site` proxy'siga yoziladi), `urls.py` ham o'zgarmaydi.
+    'accounts.admin_apps.OlympyAdminConfig',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -261,6 +266,21 @@ AUTHENTICATION_BACKENDS = [
     'axes.backends.AxesStandaloneBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
+
+# Django admin login'ida 2FA (TOTP) MAJBURIYLIGI — faqat 2FA'ni umuman
+# SOZLAMAGAN staff hisoblariga taalluqli.
+#
+# 2FA YOQILGAN hisob uchun kod HAR DOIM talab qilinadi (bu flag'dan qat'i
+# nazar): aynan shu audit topilmasining tuzatilishi — batafsil
+# `accounts/admin_site.py`.
+#
+# Bu flag esa teskari tomonni yopadi: `totp_enabled=False` bo'lgan staff
+# hisobini umuman ichkariga kiritmaslik. ATAYIN default O'CHIQ — yoqilganda
+# 2FA sozlamagan HAMMA admin bir zumda admin panelidan chiqib qoladi, va bu
+# Contabo migratsiyasi o'rtasida (2FA'ni qayta sozlash uchun panelga kirish
+# kerak bo'lgan paytda) o'z-o'zini qulflab qo'yish demakdir. Migratsiya
+# tugagach `ADMIN_REQUIRE_TOTP=1` bilan yoqiladi.
+ADMIN_REQUIRE_TOTP = env_bool('ADMIN_REQUIRE_TOTP', False)
 
 # Parol kuchaytirildi: minimal uzunlik 6 → 8. Mavjud foydalanuvchilarning
 # saqlangan parollari qayta tekshirilmaydi (faqat ro'yxatdan o'tish, parol
