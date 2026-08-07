@@ -79,14 +79,58 @@ services:
   # ── Redis (Celery broker + result backend + Django cache) ─────────────────
   redis:
     image: redis:7-alpine
+    # REDIS_PASSWORD shu yerdan o'qiladi — postgres bilan bir xil yondashuv:
+    # bitta manba (backend/.env), ikki fayl orasida parol nomuvofiqligi yo'q.
+    # (Redis tanimagan o'zgaruvchilarni e'tiborsiz qoldiradi.)
+    env_file:
+      - backend/.env
     # --save 60 1        : navbatdagi task'lar restart'da yo'qolmasin.
     # --maxmemory-policy noeviction : Celery broker uchun MAJBURIY — eviction
     #   yoqilsa Redis xotira to'lganda navbatdagi task'larni jimgina o'chiradi.
-    command: ["redis-server", "--save", "60", "1", "--appendonly", "no", "--maxmemory-policy", "noeviction"]
+    # --requirepass       : AUTH majburiy. Port tashqariga publish qilinmagan,
+    #   ya'ni himoya avval FAQAT Docker tarmoq izolyatsiyasiga tayanardi. Bitta
+    #   qatlam yetarli emas: debug uchun `ports:` qo'shib unutilsa yoki boshqa
+    #   konteyner buzilsa, parolsiz Redis'da Celery task'larini o'zgartirish va
+    #   Django cache orqali login-lockout/throttle hisoblarini nolga tushirish
+    #   mumkin bo'lib qolardi.
+    #
+    # Nega `sh -c` va `$$REDIS_PASSWORD`?
+    #   1) `env_file:` qiymatlari Compose'ning `${...}` interpolatsiyasiga
+    #      TUSHMAYDI (u faqat shell env va repo ildizidagi `.env` ni o'qiydi).
+    #      `$$` — Compose interpolatsiyasidan qochish: o'zgaruvchi KONTEYNER
+    #      ichida, backend/.env dagi haqiqiy qiymat bilan ochiladi.
+    #   2) FAIL-CLOSED: `--requirepass ""` Redis'da parolni O'CHIRIB qo'yadi
+    #      (jimgina himoyasiz qolardi). Shu sababli bo'sh qiymatda konteyner
+    #      ataylab ishga tushmaydi.
+    # `exec` — redis PID 1 bo'lib qolsin, aks holda SIGTERM'ni olmaydi va
+    # `docker compose stop` har marta 10s timeout kutib majburan o'ldiradi.
+    #
+    # Ma'lum kelishuv: parol konteyner argv'sida ko'rinadi (`docker inspect`,
+    # konteyner ichidagi `ps`). Bu qabul qilinadi — host'ga kirish huquqi bor
+    # odam allaqachon backend/.env ni o'qiy oladi.
+    command:
+      - sh
+      - -c
+      - |
+        if [ -z "$$REDIS_PASSWORD" ]; then
+          echo "XATO: REDIS_PASSWORD bo'sh yoki o'rnatilmagan (backend/.env)." >&2
+          echo "Parolsiz Redis ishga tushirilmaydi." >&2
+          echo "Parol yarating (host'da: openssl rand -hex 32), backend/.env ga" >&2
+          echo "REDIS_PASSWORD=... deb yozing va REDIS_URL/CELERY_BROKER_URL ni" >&2
+          echo "redis://:PAROL@redis:6379/0 ko'rinishiga keltiring." >&2
+          exit 1
+        fi
+        exec redis-server --save 60 1 --appendonly no \
+          --maxmemory-policy noeviction \
+          --requirepass "$$REDIS_PASSWORD"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # Parol bilan: AUTH'siz `redis-cli ping` endi NOAUTH xatosi qaytaradi.
+      # --no-auth-warning — stderr'dagi "insecure" ogohlantirishini o'chiradi.
+      # `grep -q PONG` SHART: redis-cli noto'g'ri parolda ham 0 kod qaytaradi,
+      # ya'ni exit-kodning o'zi tekshiruv uchun yetarli emas.
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
