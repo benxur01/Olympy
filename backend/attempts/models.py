@@ -175,6 +175,28 @@ class CodeSubmission(models.Model):
     `ai_code_review` — AI matnli tavsiya/tahlil. Ustoz/menejer bularni
     olimpiada natijalari sahifasida ko'radi.
     """
+    # Judge0 baholash oqimining holati. `all_tests_passed` (True/False/None)
+    # o'quvchi KODINING natijasini bildiradi; bu maydon esa BAHOLASHNING O'ZI
+    # muvaffaqiyatli tugadimi degan savolga javob beradi. Ikkisi ajratilgan,
+    # chunki Judge0 kvotasi tugaganda (429), tarmoq uzilganda yoki retry zanjiri
+    # tugaganda `all_tests_passed=False` yoziladi — bu esa to'g'ri yozilgan
+    # kodni ham "xato javob" ko'rinishiga keltirardi va o'quvchi nohaq 0 ball
+    # olardi (imtihon adolati muammosi).
+    #   pending        → Judge0 hali javob bermagan (yangi yozuv default holati)
+    #   graded         → Judge0 natija berdi, `all_tests_passed` ishonchli
+    #   pending_review → infratuzilma nosozligi (kvota/timeout/tarmoq). Avtomatik
+    #                    ball hisobiga UMUMAN kirmaydi (baholanmagan insho kabi)
+    #                    va menejer/o'qituvchi qo'lda tekshirishi kutiladi.
+    #                    Naqsh `TestSession.STATUS_PENDING_REVIEW` dan olingan.
+    EVAL_PENDING = 'pending'
+    EVAL_GRADED = 'graded'
+    EVAL_PENDING_REVIEW = 'pending_review'
+    EVAL_STATUS_CHOICES = [
+        (EVAL_PENDING, 'Tekshirilmoqda'),
+        (EVAL_GRADED, 'Baholandi'),
+        (EVAL_PENDING_REVIEW, "Qo'lda tekshirish kerak (runner nosozligi)"),
+    ]
+
     attempt = models.ForeignKey(
         TestAttempt,
         on_delete=models.CASCADE,
@@ -194,6 +216,19 @@ class CodeSubmission(models.Model):
     # avtomatik ball hisoblash shu maydonga tayanadi (True bo'lsa savolning
     # to'liq balli beriladi).
     all_tests_passed = models.BooleanField(null=True, blank=True)
+    # Baholash oqimining holati — yuqoridagi EVAL_* izohiga qarang. Eski
+    # qatorlarda migratsiya `pending` qo'yadi; ball hisoblash faqat
+    # `pending_review` ni maxsus ko'radi, shu sababli eski yozuvlarning xulqi
+    # o'zgarmaydi.
+    evaluation_status = models.CharField(
+        max_length=20,
+        choices=EVAL_STATUS_CHOICES,
+        default=EVAL_PENDING,
+        db_index=True,
+    )
+    # Infratuzilma nosozligining sababi (429 kvota, timeout, tarmoq) — menejer
+    # panelida va adminda ko'rinadi, qo'lda qayta baholashda kontekst beradi.
+    evaluation_error = models.CharField(max_length=200, blank=True, default='')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

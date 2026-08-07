@@ -1179,3 +1179,51 @@ class AdminUserBillingHistoryTestCase(APITestCase):
         self.client.force_authenticate(user=self.admin)
         theirs = self.client.get(self._url(self.target.id))
         self.assertEqual(mine.data, theirs.data['subscription'])
+
+
+class ActivateSubscriptionAmountGuardTestCase(APITestCase):
+    """`_activate_subscription` kam to'langan summada obunani BERMAYDI.
+
+    Hozirgi oqimda `plan_id` va `amount` `create_checkout_session` da birga
+    yoziladi va webhook ikkalasini ham DB'dagi tranzaksiyadan oladi, ya'ni
+    nomuvofiqlikka erishib bo'lmaydi. Bu tekshiruv o'sha invariantni
+    MUSTAHKAMLAYDI: kelajakda plan va summa alohida manbalardan kelsa, arzon
+    planga to'lab qimmatini olish mumkin bo'lmasin.
+    """
+
+    def setUp(self):
+        SubscriptionPlan.objects.all().delete()
+        self.user = User.objects.create_user(
+            username='amount_guard', phone='+998901119988', password='testpassword',
+        )
+        self.plan = SubscriptionPlan.objects.create(
+            name='Pro Plan', price=Decimal('99000.00'),
+            duration_days=30, is_active=True,
+        )
+
+    def test_underpayment_does_not_activate(self):
+        from billing.views import _activate_subscription
+
+        self.assertFalse(
+            _activate_subscription(self.user, Decimal('1000.00'), plan_id=self.plan.id)
+        )
+        self.assertFalse(
+            UserSubscription.objects.filter(user=self.user).exists()
+        )
+
+    def test_exact_amount_activates(self):
+        from billing.views import _activate_subscription
+
+        self.assertTrue(
+            _activate_subscription(self.user, Decimal('99000.00'), plan_id=self.plan.id)
+        )
+        self.assertTrue(UserSubscription.objects.filter(user=self.user).exists())
+
+    def test_overpayment_still_activates(self):
+        """Ortiqcha to'lov (yoki checkout'dan keyin narx tushirilishi) bloklanmaydi."""
+        from billing.views import _activate_subscription
+
+        self.assertTrue(
+            _activate_subscription(self.user, Decimal('120000.00'), plan_id=self.plan.id)
+        )
+        self.assertTrue(UserSubscription.objects.filter(user=self.user).exists())

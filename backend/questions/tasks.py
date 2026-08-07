@@ -24,6 +24,13 @@ STUCK_CODE_RECOVERY_LOCK_TTL = 20 * 60
 # Bitta tick'da eng ko'pi bilan shuncha submission qayta yuboriladi — nosozlik
 # ommaviy bo'lsa Judge0 ni bir zumda ko'mib yubormaslik uchun.
 STUCK_CODE_RECOVERY_BATCH = 100
+# Shuncha kundan eski yozuvlar endi avtomatik qayta yuborilmaydi. Judge0 uzoq
+# vaqt ishlamasa (masalan API kaliti noto'g'ri), aks holda beat har 10 daqiqada
+# xuddi shu yozuvlarni abadiy navbatga qo'yib turardi. Bu muddatdan keyin
+# olimpiada allaqachon tugagan bo'ladi va to'g'ri yechim — qo'lda baholash
+# (yozuv `evaluation_status='pending_review'` bo'lib menejer/admin panelida
+# ko'rinib turadi).
+STUCK_CODE_RECOVERY_MAX_AGE_DAYS = 7
 
 # Sekin Gemini chaqiruvlarini so'rovdan tashqariga chiqargan AI task'larning
 # kesh prefikslari (`<prefix>:task:<task_id>`). View task'ni boshlaydi, mos
@@ -130,7 +137,9 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
                 time.sleep(1)
                 sub_res = submit_code_batch(batch_subs)
             if not sub_res.get('ok'):
-                _update_submission_tests_passed(submission_id, False)
+                _mark_submission_evaluation_failed(
+                    submission_id, sub_res.get('error') or 'Judge0 submit xatosi',
+                )
                 _set_run_state({
                     'status': 'FAILED',
                     'error': sub_res.get('error') or "Kodni ishga tushirib bo'lmadi",
@@ -149,7 +158,10 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
                         transient_left -= 1
                         time.sleep(1)
                         continue
-                    _update_submission_tests_passed(submission_id, False)
+                    _mark_submission_evaluation_failed(
+                        submission_id,
+                        status_res.get('error') or 'Judge0 status xatosi',
+                    )
                     _set_run_state({
                         'status': 'FAILED',
                         'error': status_res.get('error') or "Kodni ishga tushirib bo'lmadi",
@@ -159,7 +171,9 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
                     break
                 time.sleep(1)
             else:
-                _update_submission_tests_passed(submission_id, False)
+                _mark_submission_evaluation_failed(
+                    submission_id, 'Judge0 natijasi kelmadi (polling timeout)',
+                )
                 _set_run_state({
                     'status': 'FAILED',
                     'error': "Kod bajarilishini tekshirish vaqti tugadi (Timeout)",
@@ -188,10 +202,14 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
                     )
                     return
                 # Doimiy xato (til yo'q, kirish rad etildi) — qayta urinish
-                # foyda bermaydi, shu zahoti muvaffaqiyatsiz deb belgilaymiz
-                # (aks holda all_tests_passed abadiy None qolib, ball hech
-                # qachon hisoblanmagan holatda qolardi).
-                _update_submission_tests_passed(submission_id, False)
+                # foyda bermaydi. Baribir bu INFRATUZILMA nosozligi: o'quvchi
+                # kodi umuman ishga tushirilmagan, shu sababli uni "xato javob"
+                # deb emas, qo'lda tekshirish kutayotgan deb belgilaymiz
+                # (all_tests_passed baribir False qoladi — abadiy None bo'lib
+                # qolmasligi uchun).
+                _mark_submission_evaluation_failed(
+                    submission_id, sub_res.get('error') or 'Judge0 submit xatosi',
+                )
                 _set_run_state({
                     'status': 'FAILED',
                     'error': sub_res.get('error') or "Kodni ishga tushirib bo'lmadi"
@@ -216,7 +234,9 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
                     countdown=min(2 ** self.request.retries, 30),
                 )
                 return
-            _update_submission_tests_passed(submission_id, False)
+            _mark_submission_evaluation_failed(
+                submission_id, status_res.get('error') or 'Judge0 status xatosi',
+            )
             _set_run_state({
                 'status': 'FAILED',
                 'error': status_res.get('error') or "Kodni ishga tushirib bo'lmadi"
@@ -241,22 +261,30 @@ def run_code_async_task(self, task_id, source_code, language, stdin, question_id
         # Urinishlar tugadi — bu yozuv endi hech qachon o'z-o'zidan
         # baholanmaydi. `all_tests_passed` None qolsa ball hisoblash uni
         # abadiy "hali tekshirilmagan" deb ko'radi, shu sababli aniq
-        # muvaffaqiyatsiz (False) deb belgilaymiz.
-        _update_submission_tests_passed(submission_id, False)
+        # muvaffaqiyatsiz (False) deb belgilaymiz. LEKIN bu o'quvchining
+        # xatosi emas — Judge0 kunlik kvotasi tugagan bo'lishi mumkin
+        # (60 urinish ham 429 bilan tugaydi), shu sababli yozuv
+        # `pending_review` bo'ladi va ball hisobiga kirmaydi.
+        _mark_submission_evaluation_failed(
+            submission_id,
+            'Judge0 urinishlar limiti tugadi (kvota yoki uzoq nosozlik)',
+        )
         _set_run_state({
             'status': 'FAILED',
             'error': "Kod bajarilishini tekshirish vaqti tugadi (Timeout)"
         })
     except Exception as e:
         logger.exception(f"Async run code task failed: {e}")
-        _update_submission_tests_passed(submission_id, False)
+        _mark_submission_evaluation_failed(
+            submission_id, f'Kutilmagan xato: {str(e)[:120]}',
+        )
         _set_run_state({
             'status': 'FAILED',
             'error': str(e)
         })
 
 
-def _update_submission_tests_passed(submission_id, passed_all):
+def _update_submission_tests_passed(submission_id, passed_all, evaluation_error=''):
     """Submit oqimidagi CodeSubmission yozuvining `all_tests_passed` maydonini
     yangilaydi va shu attempt ballini qayta hisoblaydi.
 
@@ -267,6 +295,10 @@ def _update_submission_tests_passed(submission_id, passed_all):
     ishlaydi va Judge0 asinxron tugaydi, shu sababli submit javobida kod ball
     hali 0 bo'ladi. Judge0 shu yerda tugagach attempt ballini qayta hisoblab
     yozamiz — leaderboard va natijalar sahifasi to'g'ri ballni ko'rsatadi.
+
+    Bu funksiya FAQAT haqiqiy Judge0 natijasi bilan chaqiriladi — yozuv
+    `graded` deb belgilanadi. Infratuzilma nosozligi (kvota/timeout/tarmoq)
+    uchun `_mark_submission_evaluation_failed` ishlatiladi.
     """
     if not submission_id:
         return
@@ -274,6 +306,8 @@ def _update_submission_tests_passed(submission_id, passed_all):
         from attempts.models import CodeSubmission
         updated = CodeSubmission.objects.filter(pk=submission_id).update(
             all_tests_passed=bool(passed_all),
+            evaluation_status=CodeSubmission.EVAL_GRADED,
+            evaluation_error=(evaluation_error or '')[:200],
         )
         if updated:
             _recompute_attempt_score_for_submission(submission_id)
@@ -281,6 +315,70 @@ def _update_submission_tests_passed(submission_id, passed_all):
         logger.exception(
             'all_tests_passed yangilashda xato submission=%s', submission_id,
         )
+
+
+def _mark_submission_evaluation_failed(submission_id, reason):
+    """Judge0 baholashi INFRATUZILMA sababli bajarilmadi deb belgilaydi.
+
+    Farqi `_update_submission_tests_passed(..., False)` dan: u yerda o'quvchi
+    kodi haqiqatan test caslardan o'tmagan; bu yerda esa kod umuman ishga
+    tushirilmagan (kvota tugagan / timeout / tarmoq / retry zanjiri tugagan).
+    Ikkisini bir xil ko'rsatish imtihon adolatini buzardi — to'g'ri yozilgan
+    kod ham 0 ball olardi.
+
+    `all_tests_passed=False` saqlanadi (avvalgi mulohaza o'z kuchida: `None`
+    qolsa ball hisoblash uni abadiy "hali tekshirilmagan" deb ko'rardi), lekin
+    `evaluation_status=pending_review` bilan birga — `score_session_answers` bu
+    savolni ball hisobidan BUTUNLAY chiqarib tashlaydi (baholanmagan insho
+    kabi), shu sababli o'quvchining foizi pasaymaydi.
+
+    Natija jimgina yo'qolmaydi: logger.error + Sentry, menejer paneli
+    (`/api/olympiads/<id>/code-submissions/`) va Django admin `evaluation_status`
+    bo'yicha filtrlab ko'ra oladi, `recover_stuck_code_submissions` esa Judge0
+    tiklangach yozuvni avtomatik qayta tekshiruvga qo'yadi.
+    """
+    if not submission_id:
+        return
+    try:
+        from attempts.models import CodeSubmission
+        updated = CodeSubmission.objects.filter(pk=submission_id).update(
+            all_tests_passed=False,
+            evaluation_status=CodeSubmission.EVAL_PENDING_REVIEW,
+            evaluation_error=(reason or '')[:200],
+        )
+        if not updated:
+            return
+        # Bu operatsion nosozlik — o'quvchining xatosi emas. ERROR darajasi
+        # Sentry'ga ham boradi (LOGGING konfiguratsiyasidagi sentry handler),
+        # shunda menejer/admin imtihon davomida xabardor bo'ladi.
+        logger.error(
+            'Judge0 baholashi bajarilmadi — kod javobi QO\'LDA tekshirishni '
+            'kutmoqda: submission=%s sabab=%s', submission_id, reason,
+        )
+        _capture_evaluation_failure_to_sentry(submission_id, reason)
+        # Ball qayta hisoblanadi — shu savol endi max_possible dan chiqadi va
+        # o'quvchining foizi qolgan savollar bo'yicha adolatli bo'ladi.
+        _recompute_attempt_score_for_submission(submission_id)
+    except Exception:
+        logger.exception(
+            'evaluation_status yangilashda xato submission=%s', submission_id,
+        )
+
+
+def _capture_evaluation_failure_to_sentry(submission_id, reason):
+    """Sentry o'rnatilgan bo'lsa nosozlikni alohida hodisa sifatida yuboradi.
+
+    Sentry sozlanmagan (dev/test) bo'lsa jim o'tadi — billing/views.py dagi
+    naqshning aynan o'zi.
+    """
+    try:
+        import sentry_sdk
+        sentry_sdk.capture_message(
+            f'Judge0 baholash nosozligi: submission={submission_id} ({reason})',
+            level='error',
+        )
+    except Exception:
+        pass
 
 
 def _recompute_attempt_score_for_submission(submission_id):
@@ -343,6 +441,14 @@ def _finalize_results(task_id, batch_results, test_cases_meta, submission_id=Non
         if len(test_cases_meta) == 1 and test_cases_meta[0].get('is_single'):
             result = batch_results[0]
             if not result.get('ok'):
+                # Judge0 bu run uchun natija bermadi (masalan til
+                # qo'llab-quvvatlanmagani sababli placeholder) — o'quvchi kodi
+                # baholanmagan, avvalgidek jim qoldirmasdan qo'lda tekshirishga
+                # belgilaymiz.
+                _mark_submission_evaluation_failed(
+                    submission_id,
+                    result.get('error') or 'Judge0 natijasi olinmadi',
+                )
                 _cache_set_preserve_owner(f"run_code:task:{task_id}", {
                     'status': 'FAILED',
                     'error': result.get('error') or "Kodni ishga tushirib bo'lmadi"
@@ -380,6 +486,12 @@ def _finalize_results(task_id, batch_results, test_cases_meta, submission_id=Non
             
             result = batch_results[idx]
             if not result.get('ok'):
+                # Yuqoridagi single-case holati bilan bir xil: bu test cas
+                # uchun Judge0 natijasi yo'q → butun javob baholanmagan.
+                _mark_submission_evaluation_failed(
+                    submission_id,
+                    result.get('error') or 'Judge0 natijasi olinmadi',
+                )
                 _cache_set_preserve_owner(f"run_code:task:{task_id}", {
                     'status': 'FAILED',
                     'error': result.get('error') or "Kodni ishga tushirib bo'lmadi"
@@ -451,21 +563,35 @@ def recover_stuck_code_submissions():
     to'g'ri yozgan bo'lsa ham 0 ball oladi). Shu safety-net eskirgan
     yozuvlarni topib Judge0 tekshiruvini boshidan boshlaydi.
 
+    Bundan tashqari `evaluation_status='pending_review'` yozuvlar ham qayta
+    yuboriladi: bular Judge0 kvotasi/nosozligi sababli baholanmagan javoblar.
+    Kvota (odatda kunlik) tiklangach ular avtomatik to'g'ri baholanadi va
+    menejer qo'lda aralashishga majbur bo'lmaydi. Muvaffaqiyatli natija
+    `evaluation_status`ni `graded` ga qaytaradi.
+
     Har bir submission uchun qisqa kesh qulfi qo'yiladi — keyingi beat tick
     hali tugamagan urinishni ikkinchi marta navbatga qo'ymaydi.
     """
     import uuid
     from datetime import timedelta
 
+    from django.db.models import Q
     from django.utils import timezone
 
     from attempts.models import CodeSubmission
     from .judge0_service import is_supported
 
-    cutoff = timezone.now() - timedelta(minutes=STUCK_CODE_SUBMISSION_MINUTES)
+    now = timezone.now()
+    cutoff = now - timedelta(minutes=STUCK_CODE_SUBMISSION_MINUTES)
+    oldest = now - timedelta(days=STUCK_CODE_RECOVERY_MAX_AGE_DAYS)
     stuck = list(
         CodeSubmission.objects
-        .filter(all_tests_passed__isnull=True, updated_at__lt=cutoff)
+        .filter(
+            Q(all_tests_passed__isnull=True)
+            | Q(evaluation_status=CodeSubmission.EVAL_PENDING_REVIEW),
+            updated_at__lt=cutoff,
+            updated_at__gte=oldest,
+        )
         .values('id', 'submitted_code', 'code_language', 'question_id')
         [:STUCK_CODE_RECOVERY_BATCH]
     )
@@ -562,10 +688,95 @@ def process_pdf_questions_task(self, task_id, pdf_b64, subject, difficulty, ques
         }, timeout=900)
 
 
+# .docx ZIP a'zolarini bloklab o'qish uchun chunk hajmi (bounded read).
+_DOCX_READ_CHUNK = 1024 * 1024
+
+
+def _docx_limits():
+    """.docx uchun dekompressiya va matn cheklovlari (settings'dan)."""
+    from django.conf import settings as dj_settings
+
+    max_uncompressed = getattr(
+        dj_settings, 'AI_QUESTION_DOCX_MAX_UNCOMPRESSED_BYTES', 50 * 1024 * 1024,
+    )
+    max_chars = getattr(dj_settings, 'AI_QUESTION_DOCX_MAX_TEXT_CHARS', 300_000)
+    return int(max_uncompressed), int(max_chars)
+
+
+def assert_docx_within_limits(word_bytes):
+    """.docx dekompressiya bombasidan himoya. Muammoda ValueError ko'taradi.
+
+    `.docx` — ZIP arxiv. Yuklama hajmi (AI_QUESTION_IMPORT_MAX_BYTES, 10 MB)
+    faqat SIQILGAN baytlarni cheklaydi; ~1000:1 siqilish nisbati bilan shu 10 MB
+    gigabaytlab XML'ga ochilib gunicorn worker'ini OOM qilishi mumkin — va bu
+    faqat yuklovchini emas, BUTUN saytni ishdan chiqaradi. Shu sababli
+    `Document()` chaqirilishidan OLDIN ikki bosqichli tekshiruv:
+
+      1) ZIP markaziy katalogidagi barcha a'zolarning e'lon qilingan
+         dekompressiyalangan hajmi (`file_size`) yig'indisi — arzon, hech narsa
+         ochilmaydi.
+      2) `word/document.xml` (asosiy bomb vektori) haqiqatan chegara ichida
+         ochilishini bounded o'qish bilan tasdiqlaymiz — 1-bosqich faqat
+         metama'lumotga ishonadi va soxta markaziy katalog uni chetlab o'tishi
+         mumkin.
+
+    Xavfsiz deb topilsa hech narsa qaytarmaydi.
+    """
+    import io
+    import zipfile
+
+    max_uncompressed, _ = _docx_limits()
+    limit_mb = max_uncompressed // (1024 * 1024)
+
+    if word_bytes[:2] != b'PK':
+        # .docx har doim ZIP imzosi (PK\x03\x04) bilan boshlanadi.
+        raise ValueError("Fayl haqiqiy .docx emas (Word imzosi topilmadi)")
+
+    try:
+        archive = zipfile.ZipFile(io.BytesIO(word_bytes))
+    except zipfile.BadZipFile:
+        raise ValueError("Word faylni o'qib bo'lmadi (arxiv buzuq)")
+
+    with archive:
+        total_declared = sum(int(info.file_size or 0) for info in archive.infolist())
+        if total_declared > max_uncompressed:
+            raise ValueError(
+                f"Word fayl ochilganda juda katta bo'ladi (limit: {limit_mb} MB). "
+                "Hujjatni bo'laklarga bo'lib yuklang."
+            )
+
+        try:
+            member = archive.getinfo('word/document.xml')
+        except KeyError:
+            # Asosiy qism yo'q — python-docx baribir xato beradi, lekin bu
+            # yerda tushunarli xabar qaytaramiz.
+            raise ValueError("Word faylda hujjat qismi topilmadi (word/document.xml)")
+
+        # Bounded o'qish: chegaradan oshsa darrov to'xtaymiz — soxta
+        # `file_size` metama'lumoti bilan ham xotira portlamaydi.
+        read_bytes = 0
+        try:
+            with archive.open(member) as stream:
+                while True:
+                    chunk = stream.read(_DOCX_READ_CHUNK)
+                    if not chunk:
+                        break
+                    read_bytes += len(chunk)
+                    if read_bytes > max_uncompressed:
+                        raise ValueError(
+                            f"Word fayl ochilganda juda katta bo'ladi "
+                            f"(limit: {limit_mb} MB). Hujjatni bo'laklarga "
+                            "bo'lib yuklang."
+                        )
+        except (zipfile.BadZipFile, EOFError):
+            raise ValueError("Word faylni o'qib bo'lmadi (arxiv buzuq)")
+
+
 def _extract_docx_text(word_bytes):
     """.docx faylidan barcha matnni chiqaradi (paragraflar + jadval kataklari).
 
-    Qaytadi: matn (str). python-docx o'rnatilmagan bo'lsa ValueError ko'taradi.
+    Qaytadi: matn (str). python-docx o'rnatilmagan bo'lsa yoki fayl
+    dekompressiya cheklovlaridan oshsa ValueError ko'taradi.
     """
     import io
 
@@ -574,28 +785,52 @@ def _extract_docx_text(word_bytes):
     except ImportError:
         raise ValueError("python-docx o'rnatilmagan. Iltimos administratorga xabar bering.")
 
+    # Bomb tekshiruvi python-docx ga berishdan OLDIN.
+    assert_docx_within_limits(word_bytes)
+    _, max_chars = _docx_limits()
+
     # Hujjatdagi barcha matnni chiqaramiz: avval paragraflar, keyin jadval
     # kataklari (savollar jadvalda ham, erkin matnda ham bo'lishi mumkin).
     document = Document(io.BytesIO(word_bytes))
     parts = []
+    # Yig'ilgan belgilar soni — PDF yo'lidagi (_extract_pdf_text) naqsh: limitga
+    # yetganda o'qishni to'xtatamiz va oxirida `[:max_chars]` bilan kesamiz,
+    # shunda AI ga (va xotiraga) cheksiz matn tushmaydi.
+    collected = 0
+    truncated = False
     for para in document.paragraphs:
         t = (para.text or '').strip()
         if t:
             parts.append(t)
-    for table in document.tables:
-        for row in table.rows:
-            # Bitta katak gorizontal birlashtirilgan bo'lsa, cell bir necha
-            # marta takrorlanishi mumkin — id(cell._tc) bilan dedup qilamiz.
-            seen_tc = set()
-            for cell in row.cells:
-                tc_id = id(cell._tc)
-                if tc_id in seen_tc:
-                    continue
-                seen_tc.add(tc_id)
-                t = (cell.text or '').strip()
-                if t:
-                    parts.append(t)
-    return '\n'.join(parts).strip()
+            collected += len(t) + 1
+            if collected >= max_chars:
+                truncated = True
+                break
+    if not truncated:
+        for table in document.tables:
+            for row in table.rows:
+                # Bitta katak gorizontal birlashtirilgan bo'lsa, cell bir necha
+                # marta takrorlanishi mumkin — id(cell._tc) bilan dedup qilamiz.
+                seen_tc = set()
+                for cell in row.cells:
+                    tc_id = id(cell._tc)
+                    if tc_id in seen_tc:
+                        continue
+                    seen_tc.add(tc_id)
+                    t = (cell.text or '').strip()
+                    if t:
+                        parts.append(t)
+                        collected += len(t) + 1
+                if collected >= max_chars:
+                    truncated = True
+                    break
+            if truncated:
+                break
+    if truncated:
+        logger.warning(
+            '.docx matni %s belgidan oshdi va kesildi', max_chars,
+        )
+    return '\n'.join(parts).strip()[:max_chars]
 
 
 def _extract_txt_text(word_bytes):
