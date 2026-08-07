@@ -156,12 +156,29 @@ export async function startFaceMonitor({ stream, onWarn, onReport }) {
     }
   };
 
+  // Worker xatolarini BIR MARTA log qilamiz. Sabab: model yuklanmasa (masalan
+  // CSP `connect-src` bloklasa yoki model fayli yo'q bo'lsa) worker HAR kadrда
+  // (~350ms) xato yuboradi — guard bo'lmasa konsol/Sentry to'lib ketadi.
+  // Ilgari bu xabar UMUMAN o'qilmasdi (`type !== 'result'` bo'lsa darhol
+  // return qilinardi), ya'ni proktoring hech qanday belgi bermay JIMGINA
+  // o'chib qolardi va o'qituvchi buni sezmasdi. Imtihonni ataylab
+  // BLOKLAMAYMIZ, faqat ko'rinadigan qilamiz (console.error production
+  // build'da saqlanadi — qarang vite.config.js terserOptions.pure_funcs).
+  let workerErrorLogged = false;
+  const logWorkerError = (detail) => {
+    if (workerErrorLogged) return;
+    workerErrorLogged = true;
+    console.error('[proctoring] face worker ishlamadi — kamera proktoringi o\'chdi:', detail);
+  };
+
   worker.onmessage = (ev) => {
     const d = ev.data || {};
+    if (d.type === 'error') { logWorkerError(d.message); return; }
     if (d.type !== 'result') return;
     handleResult(d.faceCount || 0, d.gazeOffset || null, Date.now());
   };
-  worker.onerror = () => { /* worker xatosi — imtihonni bloklamaymiz */ };
+  // Worker xatosi — imtihonni bloklamaymiz, lekin jim ham qolmaymiz.
+  worker.onerror = (ev) => logWorkerError((ev && ev.message) || 'worker onerror');
 
   const sample = () => {
     if (stopped) return;
