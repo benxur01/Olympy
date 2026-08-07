@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 
 from centers.models import CenterMembership, EducationCenter
 from olympiads.models import Olympiad
+from olympy_api.export_utils import spreadsheet_safe
 from olympiads.services import (
     maybe_finish_expired_olympiad,
     user_can_manage_center_event,
@@ -223,8 +224,13 @@ def _save_code_submissions(attempt, olympiad, code_answers):
                 'submitted_code': code,
                 'code_language': language,
                 # Qayta submit (update) holatida eski natija qolib ketmasin —
-                # Judge0 qayta tekshirib yangilaydi.
+                # Judge0 qayta tekshirib yangilaydi. Baholash holati ham
+                # boshlang'ich (pending) ga qaytariladi, aks holda oldingi
+                # urinishdagi `pending_review` bayrog'i yangi javobga
+                # yopishib qolardi.
                 'all_tests_passed': None,
+                'evaluation_status': CodeSubmission.EVAL_PENDING,
+                'evaluation_error': '',
             },
         )
         if code.strip():
@@ -323,8 +329,12 @@ def export_olympiad_results_xlsx(request, olympiad_id):
 
     for idx, attempt in enumerate(attempts, start=1):
         user = attempt.user
-        full_name = getattr(user, 'full_name', '') or '—'
-        phone = getattr(user, 'normalized_phone', '') or getattr(user, 'phone', '') or '—'
+        # Ism/telefon foydalanuvchi yozadigan matn — Excel formula injection'ga
+        # qarshi `spreadsheet_safe` orqali yoziladi.
+        full_name = spreadsheet_safe(getattr(user, 'full_name', '') or '—')
+        phone = spreadsheet_safe(
+            getattr(user, 'normalized_phone', '') or getattr(user, 'phone', '') or '—'
+        )
         time_minutes = round((attempt.time_spent or 0) / 60.0, 1)
         submitted_date = (
             attempt.submitted_at.strftime('%Y-%m-%d %H:%M')
@@ -1241,6 +1251,7 @@ def event_user_answers(request, olympiad_id, user_id):
     """
     from questions.grading import _parse_correct_text
 
+    from .models import CodeSubmission
     from .session_utils import _deshuffle_index, _deshuffle_multi
 
     olympiad = get_object_or_404(
@@ -1296,8 +1307,16 @@ def event_user_answers(request, olympiad_id, user_id):
             item['submitted_code'] = cs.submitted_code if cs else ''
             item['code_language'] = cs.code_language if cs else ''
             item['ai_code_score'] = cs.ai_code_score if cs else None
+            item['evaluation_status'] = cs.evaluation_status if cs else None
             if cs is None:
                 item['is_correct'] = None  # javob berilmagan
+            elif cs.evaluation_status == CodeSubmission.EVAL_PENDING_REVIEW:
+                # Kod runner nosozligi (kvota/timeout/tarmoq) — kod umuman
+                # ishga tushirilmagan. "Xato" deb ko'rsatish noto'g'ri
+                # bo'lardi; ball hisobiga ham kirmagan, qo'lda tekshirish
+                # kutilmoqda.
+                item['is_correct'] = None
+                item['evaluation_error'] = cs.evaluation_error
             elif cs.all_tests_passed is None:
                 item['is_correct'] = None  # hali tekshirilmoqda
             else:
