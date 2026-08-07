@@ -8,6 +8,7 @@
     "dev": "vite --host 127.0.0.1",
     "prebuild": "node scripts/generate-vite-entry.mjs",
     "build": "vite build",
+    "postbuild": "node scripts/copy-privacy-alias.mjs",
     "convert-webp": "node scripts/convert-webp.mjs",
     "smoke": "node scripts/smoke-playwright.mjs"
   },

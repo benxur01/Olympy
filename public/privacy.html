@@ -129,7 +129,7 @@
       </a>
       <h1 id="page-title">Maxfiylik siyosati</h1>
       <p class="meta">
-        <span id="meta-line">Oxirgi yangilanish: 17-iyul 2026 · Amal qiladi: Olympy veb va mobil ilovalari (prolymp.uz)</span>
+        <span id="meta-line">Oxirgi yangilanish: 6-avgust 2026 · Amal qiladi: Olympy veb va mobil ilovalari (prolymp.uz)</span>
       </p>
       <div class="lang-switch" role="tablist" aria-label="Language">
         <button type="button" id="btn-uz" class="active" onclick="setLang('uz')">O‘zbekcha</button>
@@ -165,7 +165,6 @@
           <li><strong>Telegram bog‘lanishi:</strong> telefon tasdiqlash, parol tiklash va bildirishnomalar uchun Telegram foydalanuvchi/chat identifikatorlari.</li>
           <li><strong>Ta’lim faoliyati:</strong> olimpiada/test urinishlari, javoblar, ballar, reyting, sertifikatlar, amaliyot natijalari, kod yechimlari.</li>
           <li><strong>Tashkilot ma’lumotlari:</strong> o‘quv markazi nomi, manzil/hudud, a’zolik (o‘quvchi, o‘qituvchi, menejer, direktor), markaz rasmlari.</li>
-          <li><strong>Ota-ona bog‘lanishi:</strong> ota-ona farzand hisobiga telefon orqali so‘rov yuboradi; farzand tasdiqlagach, progress ko‘rinadi (farzand telefoni ota-onaga qaytarilmaydi).</li>
           <li><strong>To‘lovlar:</strong> obuna reja, summa, to‘lov holati va provayder tranzaksiya ID (Click / Payme). Karta raqami bizning serverlarimizda saqlanmaydi.</li>
           <li><strong>Qo‘llab-quvvatlash:</strong> AI yordamchi va admin chat xabarlari.</li>
           <li><strong>2FA (ixtiyoriy):</strong> TOTP maxfiy kaliti shifrlangan holda saqlanadi.</li>
@@ -174,9 +173,57 @@
         <h3>2.2. Avtomatik yig‘iladigan ma’lumotlar</h3>
         <ul>
           <li>Autentifikatsiya cookie’lari (JWT) va brauzer/ilova xotirasi (localStorage/sessionStorage) — sessiya, token va vaqtinchalik test holati.</li>
-          <li>Xavfsizlik loglari: muvaffaqiyatsiz login urinishlari, IP asosidagi himoya (brute-force oldini olish).</li>
+          <li><strong>IP manzil:</strong> IP manzilingiz vaqtincha ishlatilib qolmaydi — u <strong>bazada saqlanadi</strong>:
+            har bir muvaffaqiyatli kirish yozuvida (IP manzil, qurilma/brauzer satri va vaqt — “kirish tarixi”),
+            ma’muriy harakatlar audit jurnalida, xavfsizlik bayroqlarida (masalan, bitta IP ortida ko‘p hisob
+            aniqlanganda) va bloklangan IP manzil/tarmoqlar ro‘yxatida. Muvaffaqiyatsiz kirish urinishlari ham
+            IP manzil bilan qayd etilishi mumkin. Bu yozuvlarni faqat platforma administratori xavfsizlik
+            tekshiruvida ko‘radi.</li>
+          <li><strong>IP manzil nima uchun kerak:</strong> faqat xavfsizlik va suiste’molga qarshi kurash —
+            brute-force hamda hisobni o‘zlashtirish urinishlarini aniqlash, so‘rov cheklovlari (rate limit),
+            firibgarlik va ko‘p hisobli suiste’molni tekshirish, hamda zarur bo‘lganda IP manzil yoki tarmoqni
+            bloklash. IP manzil orqali aniq joylashuvingizni aniqlamaymiz, uni reklama yoki profillash uchun
+            ishlatmaymiz va uchinchi tomonlarga sotmaymiz.</li>
+          <li>Xavfsizlik loglari: ruxsatsiz so‘rovlar va cheklovga tushgan (rate limit) so‘rovlar — server loglarida
+            IP manzil bilan yoziladi.</li>
           <li>Texnik xatolik monitoringi (Sentry): qurilma/brauzer haqida cheklangan diagnostika ma’lumotlari.</li>
           <li>Foydalanish metrikalar: streak, coin, faollik sanalari, analitika (admin/markaz panellari uchun agregat ko‘rsatkichlar).</li>
+        </ul>
+
+        <h3>2.3. Kamera va mikrofon (imtihon proktoringi)</h3>
+        <p>
+          Ba’zi olimpiadalarda tashkilotchi <strong>imtihon proktoringi</strong>ni yoqishi mumkin. U bir-biridan
+          mustaqil ikki funksiyadan iborat — <strong>webkamera nazorati</strong> va <strong>mikrofon (ovoz) nazorati</strong> —
+          va har biri alohida yoqiladi. Ikkalasi ham sukut bo‘yicha <strong>o‘chiq</strong>: proktoring yoqilmagan
+          imtihonlarda kamera va mikrofon umuman so‘ralmaydi.
+        </p>
+        <div class="card">
+          <p style="margin:0">
+            <strong>Eng muhim jihat:</strong> hech qanday video, rasm, audio yozuv yoki ovoz namunasi qurilmangizdan
+            chiqmaydi. Biz ularni serverga yubormaymiz, saqlamaymiz va hech kimga ko‘rsatmaymiz. Yozib olish
+            (recording) funksiyasi umuman mavjud emas.
+          </p>
+        </div>
+        <ul>
+          <li><strong>Oldindan rozilik:</strong> kamera yoki mikrofon so‘ralishidan oldin sizga alohida rozilik ekrani
+            ko‘rsatiladi va nima uchun kerakligi tushuntiriladi. Rozilik bermasangiz, kamera/mikrofon ishga
+            tushmaydi. Serverda bu haqda faqat “rozilik berildi” belgisi va vaqt tamg‘asi saqlanadi.</li>
+          <li><strong>Qanday ishlaydi:</strong> kamera kadrlari va mikrofon signali faqat <strong>qurilmangiz ichida</strong>
+            (brauzer xotirasida, alohida Web Worker’da) real vaqtda tahlil qilinadi va darhol o‘chiriladi.
+            Kamera uchun yuz mavjudligi, yuzlar soni va qarash yo‘nalishi aniqlanadi; mikrofon uchun faqat ovoz
+            <em>energiyasi</em> o‘lchanadi — nutq mazmuni tanib olinmaydi, transkripsiya qilinmaydi, ovoz bo‘yicha
+            shaxs aniqlanmaydi.</li>
+          <li><strong>Serverga nima boradi:</strong> faqat qisqa signal nomi — masalan <code>no_face_detected</code>,
+            <code>multiple_faces_detected</code>, <code>gaze_away_sustained</code>,
+            <code>ambient_speech_detected</code>. Bu matn imtihon urinishi yozuvingizga ilova qilinadi va uni
+            imtihonni tashkil qilgan o‘quv markazi menejeri/o‘qituvchisi ko‘radi.</li>
+          <li><strong>Maqsad:</strong> faqat imtihon halolligini ta’minlash. Bu ma’lumotlar reklama, profillash,
+            biometrik identifikatsiya yoki boshqa hech qanday maqsadda ishlatilmaydi va uchinchi tomonlarga
+            berilmaydi.</li>
+          <li><strong>Ruxsatni qaytarib olish:</strong> kamera va mikrofon ruxsatini brauzer yoki qurilma
+            sozlamalaridan istalgan vaqtda bekor qilishingiz mumkin. Bunda proktoring talab qiladigan
+            imtihonda qatnashish imkoni bo‘lmasligi mumkin, lekin platformaning qolgan barcha funksiyalari
+            o‘zgarishsiz ishlaydi.</li>
         </ul>
       </section>
 
@@ -185,11 +232,13 @@
         <ul>
           <li>Hisob yaratish, telefon orqali kirish va xavfsizlikni ta’minlash.</li>
           <li>Olimpiadalar, testlar, liderbord, sertifikatlar va o‘quv progressini ko‘rsatish.</li>
-          <li>Markazlar, o‘qituvchilar va ota-onalar uchun boshqaruv panellari va hisobotlar.</li>
+          <li>Markazlar va o‘qituvchilar uchun boshqaruv panellari va hisobotlar.</li>
           <li>Premium/obuna xizmatlari va to‘lovlarni qayta ishlash.</li>
           <li>Telegram orqali OTP, eslatma va xizmat bildirishnomalari yuborish.</li>
           <li>AI yordamida savol generatsiyasi, PDF import, yordamchi chat va menejer bot funksiyalari.</li>
           <li>Xavfsizlik, firibgarlik oldini olish, xatoliklarni tuzatish va xizmat sifatini yaxshilash.</li>
+          <li>Proktoring yoqilgan imtihonlarda halollikni ta’minlash — tahlil qurilmada bajariladi, serverga
+            faqat qisqa signal nomi boradi (2.3-bo‘limga qarang).</li>
           <li>Qonuniy majburiyatlarni bajarish.</li>
         </ul>
       </section>
@@ -235,7 +284,7 @@
             </tr>
             <tr>
               <td>Hosting / DB / CDN</td>
-              <td>Render, PostgreSQL/Supabase, Redis, Cloudflare va boshqa infratuzilma</td>
+              <td>Ilova va ma’lumotlar bazasini joylashtirish: Contabo (VPS), Render, PostgreSQL/Supabase, Redis, Cloudflare va boshqa infratuzilma provayderlari</td>
             </tr>
             <tr>
               <td>Google Fonts</td>
@@ -261,7 +310,17 @@
           <li>Hisob ma’lumotlari — hisob faol bo‘lgan davrda va o‘chirish so‘rovidan keyin tizimdan olib tashlanguncha.</li>
           <li>Test natijalari va reyting — ta’lim tarixi va hisobotlar uchun saqlanadi (hisob o‘chirilganda bog‘liq yozuvlar odatda o‘chiriladi).</li>
           <li>To‘lov yozuvlari — buxgalteriya va nizolarni hal qilish uchun qonuniy muddat davomida saqlanishi mumkin.</li>
-          <li>Xavfsizlik va audit loglari — cheklangan muddatga saqlanadi.</li>
+          <li>O‘qilgan xabarnomalar — 90 kundan keyin avtomatik o‘chiriladi (o‘qilmaganlar tegilmaydi).</li>
+          <li>Kirish tarixi (IP manzil, qurilma satri) va ma’muriy audit yozuvlari — xavfsizlik tekshiruvi uchun
+            <strong>muddatsiz saqlanishi mumkin</strong>: hozircha bu yozuvlarni avtomatik o‘chiradigan tozalash
+            jarayoni yo‘q. Hisob butunlay o‘chirilganda <strong>kirish tarixi hisob bilan birga o‘chadi</strong>;
+            ma’muriy audit yozuvlari esa qoladi, lekin ular sizning hisobingizga bog‘lanmaydi (yozuvdagi
+            foydalanuvchi maydoni bo‘shatiladi).</li>
+          <li>Server loglari (masalan, ruxsatsiz va cheklovga tushgan so‘rovlar, xatolik xabarlari) — hosting
+            provayderining log saqlash muddati bo‘yicha saqlanadi; biz ularni alohida arxivlamaymiz.</li>
+          <li>Proktoring signallari — imtihon urinishi yozuvi bilan birga saqlanadi va urinish o‘chirilganda
+            ular ham o‘chadi. Video, rasm va audio hech qachon saqlanmaydi, shu sababli ular uchun saqlash
+            muddati ham mavjud emas.</li>
         </ul>
       </section>
 
@@ -279,18 +338,51 @@
       <section>
         <h2>8. Bolalar va o‘quvchilar</h2>
         <p>
-          Olympy ta’lim platformasi bo‘lib, maktab o‘quvchilari undan foydalanishi mumkin.
-          Ota-ona/vasiy farzand progressini kuzatishi uchun bog‘lanish funksiyasi mavjud; bog‘lanish farzand tasdig‘ini talab qiladi.
-          Agar bolaning ma’lumotlari ota-ona roziligisiz yig‘ilgan deb hisoblasangiz, biz bilan bog‘laning — tegishli choralarni ko‘ramiz.
+          Olympy — maktab o‘quvchilari uchun mo‘ljallangan ta’lim platformasi, shu sababli foydalanuvchilarimiz
+          orasida voyaga yetmaganlar ham bor. Bolalar ma’lumotlariga alohida e’tibor qaratamiz:
         </p>
+        <ul>
+          <li><strong>Reklama yo‘q:</strong> ilovada reklama ko‘rsatilmaydi. Biz reklama tarmoqlari, uchinchi tomon
+            tracking/analitika SDK’lari yoki xatti-harakatga asoslangan reklama texnologiyalaridan
+            <strong>umuman foydalanmaymiz</strong> va bolalarning ma’lumotlarini reklama maqsadida qayta ishlamaymiz
+            hamda hech kimga sotmaymiz.</li>
+          <li><strong>Faqat zarur ma’lumot:</strong> voyaga yetmagan foydalanuvchidan ham faqat ta’lim funksiyasi
+            uchun kerak bo‘lgan ma’lumot yig‘iladi (telefon, ism, sinf, test natijalari). Manzil, aniq
+            geolokatsiya yoki kontaktlar ro‘yxati yig‘ilmaydi.</li>
+          <li><strong>Ota-ona/vasiy roziligi:</strong> voyaga yetmagan o‘quvchi platformadan ota-onasi yoki
+            qonuniy vakilining xabardorligi va roziligi bilan foydalanishi kerak. Ro‘yxatdan o‘tishni
+            farzandi nomidan ota-ona amalga oshirishi mumkin.</li>
+          <li><strong>Kamera/mikrofon va voyaga yetmaganlar:</strong> proktoringni imtihon tashkilotchisi
+            (o‘quv markazi) yoqadi va u o‘quvchilar hamda ularning ota-onalarini bu haqda oldindan xabardor
+            qilishi shart. Rozilik ekrani har bir imtihondan oldin ko‘rsatiladi va rad etish mumkin.
+            Yuqorida ta’kidlanganidek, video va audio qurilmadan chiqmaydi va saqlanmaydi
+            (2.3-bo‘limga qarang).</li>
+          <li><strong>Ilovada ota-ona hisobi yo‘q:</strong> platformada ota-ona uchun alohida hisob turi,
+            paneli yoki farzand hisobiga “ulanish” funksiyasi <strong>mavjud emas</strong>. Ota-ona farzandining
+            natijalarini faqat farzandning o‘z hisobi orqali (uning qurilmasida) ko‘radi — biz ota-onaga alohida
+            kirish huquqi bermaymiz.</li>
+          <li><strong>Ota-ona huquqlari:</strong> ota-ona yoki vasiy farzandining ma’lumotlarini ko‘rish,
+            tuzatish yoki butunlay o‘chirishni
+            <a href="mailto:sanjarruzmetov017@gmail.com">sanjarruzmetov017@gmail.com</a> orqali so‘rashi mumkin.
+            Shaxsni tasdiqlagandan so‘ng so‘rovni bajaramiz. Bu huquqlar ilova ichidagi funksiya emas, aynan shu
+            email orqali amalga oshiriladi (hisobni o‘chirish tartibi —
+            <a href="/account-deletion.html">Hisobni o‘chirish</a> sahifasida).</li>
+          <li><strong>Ruxsatsiz yig‘ilgan ma’lumot:</strong> agar bolaning ma’lumotlari kerakli rozilik
+            olinmagan holda yig‘ilganini aniqlasak yoki bu haqda xabar olsak, tegishli hisob va ma’lumotlarni
+            o‘chiramiz.</li>
+        </ul>
       </section>
 
       <section>
         <h2>9. Sizning huquqlaringiz</h2>
         <ul>
           <li><strong>Kirish va tuzatish:</strong> profil va sozlamalar orqali ma’lumotlaringizni ko‘rish/yangilash.</li>
-          <li><strong>Hisobni o‘chirish:</strong> autentifikatsiya qilingan foydalanuvchi hisobini o‘chirish mumkin (markaz egasi avval egalikni o‘tkazishi kerak; platforma admini o‘z hisobini o‘chira olmaydi).</li>
-          <li><strong>Telegram bog‘lanishini bekor qilish</strong> va ota-ona bog‘lanishini uzish.</li>
+          <li><strong>Hisobni o‘chirish:</strong> autentifikatsiya qilingan foydalanuvchi hisobini o‘chirish mumkin (markaz egasi avval egalikni o‘tkazishi kerak; platforma admini o‘z hisobini o‘chira olmaydi). To‘liq yo‘riqnoma — <a href="/account-deletion.html">Hisobni o‘chirish</a> sahifasida.</li>
+          <li><strong>Telegram bog‘lanishi:</strong> hisobingizga bog‘langan Telegram akkauntini almashtirish yoki
+            bog‘lanishni uzishni email orqali so‘rashingiz mumkin. Bir Telegram akkaunti boshqa Olympy hisobiga
+            ulanganda avvalgi bog‘lanish avtomatik uziladi.</li>
+          <li><strong>Kamera/mikrofondan voz kechish:</strong> proktoring roziligini bermaslik yoki qurilma
+            sozlamalaridan ruxsatni keyinroq bekor qilish — platformaning boshqa funksiyalari cheklanmaydi.</li>
           <li><strong>Eksport:</strong> markaz rahbarlari a’zolar/natijalarni Excel ko‘rinishida yuklab olishi mumkin (ruxsat doirasida).</li>
         </ul>
         <p>So‘rov uchun: <a href="mailto:sanjarruzmetov017@gmail.com">sanjarruzmetov017@gmail.com</a></p>
@@ -301,7 +393,6 @@
         <p>Shaxsiy ma’lumotlaringizni quyidagi holatlarda ulashishimiz mumkin:</p>
         <ul>
           <li>Siz a’zo bo‘lgan o‘quv markazi rahbariyati/o‘qituvchilari (ta’lim maqsadida, ruxsat doirasida).</li>
-          <li>Tasdiqlangan ota-ona/vasiy (progress va hisobotlar).</li>
           <li>To‘lov, hosting, AI va monitoring provayderlari (xizmat ko‘rsatish uchun).</li>
           <li>Qonun talab qilganda yoki huquqlarimizni himoya qilish zarur bo‘lganda.</li>
         </ul>
@@ -362,7 +453,6 @@
           <li><strong>Telegram linkage:</strong> Telegram user/chat IDs for phone verification, password reset, and notifications.</li>
           <li><strong>Learning activity:</strong> olympiad/test attempts, answers, scores, rankings, certificates, practice results, code submissions.</li>
           <li><strong>Organization data:</strong> education center details, memberships (student, teacher, manager, owner), center images.</li>
-          <li><strong>Parent linking:</strong> a parent may request a link via the student’s phone; progress is shown only after student confirmation (the child’s phone is not returned to the parent in API responses).</li>
           <li><strong>Payments:</strong> subscription plan, amount, status, and provider transaction IDs (Click / Payme). We do not store full card numbers on our servers.</li>
           <li><strong>Support:</strong> AI assistant and admin support chat messages.</li>
           <li><strong>Optional 2FA:</strong> TOTP secrets stored encrypted.</li>
@@ -371,9 +461,53 @@
         <h3>2.2. Information collected automatically</h3>
         <ul>
           <li>Authentication cookies (JWT) and local/session storage for sessions, tokens, and temporary test state.</li>
-          <li>Security logs: failed login attempts and anti-abuse protections.</li>
+          <li><strong>IP address:</strong> your IP address is not merely used in passing — it is <strong>stored in our
+            database</strong>: with every successful sign-in record (IP address, device/browser string, and time —
+            your “login history”), in the administrative audit log, in security flags (for example when many
+            accounts are seen behind one IP), and in the list of blocked IP addresses/networks. Failed sign-in
+            attempts may also be recorded together with the IP address. These records are visible only to the
+            platform administrator during a security review.</li>
+          <li><strong>Why we need the IP address:</strong> security and anti-abuse only — detecting brute-force and
+            account-takeover attempts, rate limiting, investigating fraud and multi-account abuse, and blocking an
+            IP address or network when necessary. We do not derive your precise location from the IP address, do not
+            use it for advertising or profiling, and do not sell it to third parties.</li>
+          <li>Security logs: unauthorized and rate-limited requests are written to our server logs together with the
+            IP address.</li>
           <li>Error monitoring (Sentry): limited device/browser diagnostics.</li>
           <li>Usage metrics: streaks, coins, activity dates, and aggregate analytics for admin/center dashboards.</li>
+        </ul>
+
+        <h3>2.3. Camera and microphone (exam proctoring)</h3>
+        <p>
+          For some olympiads the organizer may enable <strong>exam proctoring</strong>. It consists of two
+          independent features — <strong>webcam monitoring</strong> and <strong>microphone (voice) monitoring</strong> —
+          each enabled separately. Both are <strong>off by default</strong>: in exams without proctoring, the camera
+          and microphone are never requested.
+        </p>
+        <div class="card">
+          <p style="margin:0">
+            <strong>Most important:</strong> no video, image, audio recording, or voice sample ever leaves your
+            device. We do not transmit, store, or show them to anyone. There is no recording functionality at all.
+          </p>
+        </div>
+        <ul>
+          <li><strong>Consent first:</strong> before the camera or microphone is requested, a separate consent
+            screen explains why it is needed. If you decline, the camera/microphone is never activated. The only
+            thing stored on our servers is a “consent given” flag and a timestamp.</li>
+          <li><strong>How it works:</strong> camera frames and the microphone signal are analysed in real time
+            <strong>entirely on your device</strong> (in browser memory, inside a dedicated Web Worker) and discarded
+            immediately. For the camera we detect face presence, the number of faces, and sustained gaze direction;
+            for the microphone we measure only sound <em>energy</em> — speech content is not recognised, nothing is
+            transcribed, and no voice-based identification is performed.</li>
+          <li><strong>What reaches our servers:</strong> only a short signal name — for example
+            <code>no_face_detected</code>, <code>multiple_faces_detected</code>, <code>gaze_away_sustained</code>,
+            <code>ambient_speech_detected</code>. This string is attached to your exam attempt record and is
+            visible to the manager/teacher of the education center that organised the exam.</li>
+          <li><strong>Purpose:</strong> exam integrity only. These signals are never used for advertising,
+            profiling, or biometric identification, and are not shared with third parties.</li>
+          <li><strong>Withdrawing permission:</strong> you can revoke camera and microphone permission at any time
+            in your browser or device settings. You may then be unable to take exams that require proctoring, but
+            every other part of the platform continues to work normally.</li>
         </ul>
       </section>
 
@@ -382,11 +516,13 @@
         <ul>
           <li>Create accounts, authenticate users by phone, and protect accounts.</li>
           <li>Run olympiads/tests, leaderboards, certificates, and learning progress.</li>
-          <li>Provide dashboards and reports for centers, teachers, and parents.</li>
+          <li>Provide dashboards and reports for centers and teachers.</li>
           <li>Process premium subscriptions and payments.</li>
           <li>Send OTP, reminders, and service notifications via Telegram.</li>
           <li>Power AI features (question generation, PDF import, support chat, manager bot).</li>
           <li>Security, fraud prevention, debugging, and service improvement.</li>
+          <li>Maintain exam integrity where proctoring is enabled — analysis happens on-device and only a short
+            signal name reaches our servers (see section 2.3).</li>
           <li>Comply with legal obligations.</li>
         </ul>
       </section>
@@ -432,7 +568,7 @@
             </tr>
             <tr>
               <td>Hosting / DB / CDN</td>
-              <td>Render, PostgreSQL/Supabase, Redis, Cloudflare, and related infrastructure</td>
+              <td>Application and database hosting: Contabo (VPS), Render, PostgreSQL/Supabase, Redis, Cloudflare, and related infrastructure providers</td>
             </tr>
             <tr>
               <td>Google Fonts</td>
@@ -458,7 +594,16 @@
           <li>Account data — while the account is active and until deletion is processed.</li>
           <li>Test results and rankings — for learning history and reports (related records are generally removed when an account is deleted).</li>
           <li>Payment records — may be retained for accounting and dispute resolution as required by law.</li>
-          <li>Security and audit logs — retained for a limited period.</li>
+          <li>Read notifications — deleted automatically after 90 days (unread ones are left untouched).</li>
+          <li>Login history (IP address, device string) and administrative audit records — <strong>may be retained
+            indefinitely</strong> for security review: there is currently no automated job that deletes these
+            records. When an account is permanently deleted, the <strong>login history is deleted with it</strong>;
+            administrative audit records remain, but they are no longer linked to your account (the user field is
+            cleared).</li>
+          <li>Server logs (for example unauthorized and rate-limited requests, and error messages) — retained
+            according to our hosting provider’s log retention period; we do not archive them separately.</li>
+          <li>Proctoring signals — stored alongside the exam attempt record and deleted when that attempt is
+            deleted. Video, images, and audio are never stored, so no retention period applies to them.</li>
         </ul>
       </section>
 
@@ -476,18 +621,46 @@
       <section>
         <h2>8. Children and students</h2>
         <p>
-          Olympy is an education platform and may be used by school students.
-          Parent/guardian linking requires student confirmation before progress is shared.
-          If you believe a child’s data was collected without appropriate consent, contact us and we will take appropriate action.
+          Olympy is an education platform intended for school students, which means some of our users are minors.
+          We treat children’s data with particular care:
         </p>
+        <ul>
+          <li><strong>No advertising:</strong> the app shows no ads. We use <strong>no</strong> advertising networks,
+            third-party tracking/analytics SDKs, or behavioural advertising technologies, and we never process
+            children’s data for advertising purposes or sell it to anyone.</li>
+          <li><strong>Data minimisation:</strong> from minors we collect only what the educational features require
+            (phone, name, grade, test results). We do not collect home address, precise location, or contact lists.</li>
+          <li><strong>Parental consent:</strong> a minor should use the platform with the knowledge and consent of a
+            parent or legal guardian. A parent may also complete registration on the child’s behalf.</li>
+          <li><strong>Camera/microphone and minors:</strong> proctoring is enabled by the exam organizer (the
+            education center), which is responsible for informing students and their parents in advance. A consent
+            screen is shown before every such exam and can be declined. As stated above, video and audio never
+            leave the device and are never stored (see section 2.3).</li>
+          <li><strong>No parent accounts in the app:</strong> the platform has <strong>no</strong> parent account
+            type, parent dashboard, or feature for “linking” to a child’s account. A parent sees their child’s
+            results only through the child’s own account, on the child’s device — we do not grant parents separate
+            access.</li>
+          <li><strong>Parental rights:</strong> a parent or guardian may request access to, correction of, or full
+            deletion of their child’s data at
+            <a href="mailto:sanjarruzmetov017@gmail.com">sanjarruzmetov017@gmail.com</a>. We fulfil such requests
+            after verifying identity. These rights are exercised through that email address rather than through an
+            in-app feature (for the deletion procedure, see the
+            <a href="/account-deletion.html?lang=en">Account deletion</a> page).</li>
+          <li><strong>Data collected without consent:</strong> if we learn that a child’s data was collected without
+            the required consent, we delete the account and associated data.</li>
+        </ul>
       </section>
 
       <section>
         <h2>9. Your rights</h2>
         <ul>
           <li><strong>Access and correction:</strong> view/update profile data in the app.</li>
-          <li><strong>Account deletion:</strong> authenticated users may delete their account (organization owners must transfer ownership first; platform admins cannot self-delete).</li>
-          <li><strong>Unlink Telegram</strong> and disconnect parent–student links.</li>
+          <li><strong>Account deletion:</strong> authenticated users may delete their account (organization owners must transfer ownership first; platform admins cannot self-delete). Full instructions are on the <a href="/account-deletion.html?lang=en">Account deletion</a> page.</li>
+          <li><strong>Telegram linkage:</strong> you may ask us by email to change or remove the Telegram account
+            linked to your profile. When one Telegram account is linked to a different Olympy account, the previous
+            link is removed automatically.</li>
+          <li><strong>Decline camera/microphone:</strong> refuse proctoring consent, or revoke the permission later
+            in device settings — no other platform feature is restricted.</li>
           <li><strong>Export:</strong> authorized center managers may export members/results to Excel within their permissions.</li>
         </ul>
         <p>Requests: <a href="mailto:sanjarruzmetov017@gmail.com">sanjarruzmetov017@gmail.com</a></p>
@@ -498,7 +671,6 @@
         <p>We may share personal data with:</p>
         <ul>
           <li>Education centers you join (staff with appropriate roles), for educational purposes.</li>
-          <li>Confirmed parents/guardians (progress and reports).</li>
           <li>Payment, hosting, AI, and monitoring processors needed to run the Service.</li>
           <li>Authorities when required by law or to protect our rights.</li>
         </ul>
@@ -558,7 +730,7 @@
         btnUz.classList.remove('active');
         btnEn.classList.add('active');
         title.textContent = 'Privacy Policy';
-        meta.textContent = 'Last updated: 17 July 2026 · Applies to: Olympy web and mobile apps (prolymp.uz)';
+        meta.textContent = 'Last updated: 6 August 2026 · Applies to: Olympy web and mobile apps (prolymp.uz)';
         document.documentElement.lang = 'en';
         document.title = 'Privacy Policy — Olympy (Prolymp)';
       } else {
@@ -567,7 +739,7 @@
         btnEn.classList.remove('active');
         btnUz.classList.add('active');
         title.textContent = 'Maxfiylik siyosati';
-        meta.textContent = 'Oxirgi yangilanish: 17-iyul 2026 · Amal qiladi: Olympy veb va mobil ilovalari (prolymp.uz)';
+        meta.textContent = 'Oxirgi yangilanish: 6-avgust 2026 · Amal qiladi: Olympy veb va mobil ilovalari (prolymp.uz)';
         document.documentElement.lang = 'uz';
         document.title = 'Maxfiylik siyosati — Olympy (Prolymp)';
       }
