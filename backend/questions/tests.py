@@ -684,6 +684,379 @@ class Judge0RetryTestCase(APITestCase):
         self.assertFalse(self.submission.all_tests_passed)
 
 
+class Judge0InfraFailureScoringTestCase(APITestCase):
+    """IMTIHON ADOLATI: Judge0 nosozligi (429 kvota / timeout / tarmoq)
+    o'quvchining ballini nolga tushirmasligi kerak.
+
+    Bepul Judge0 CE kvotasi kunlik (~50 so'rov) — jonli IT olimpiadasida bir
+    nechta o'quvchi bir vaqtda kod yuborsa kvota tugaydi va 60 ta retry ham
+    429 bilan yakunlanadi. Avval bunda `all_tests_passed=False` yozilib,
+    to'g'ri yozilgan kod ham "xato javob" bo'lib qolardi va o'quvchi nohaq
+    0 ball olardi.
+
+    Yangi xulq: bunday javob `evaluation_status='pending_review'` bo'ladi va
+    ball hisobidan BUTUNLAY chiqariladi (baholanmagan insho kabi) — foiz
+    faqat haqiqatan baholangan savollar bo'yicha hisoblanadi.
+    """
+
+    def setUp(self):
+        from django.test import override_settings
+
+        self.center = EducationCenter.objects.create(
+            name='Adolat Markaz', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.user = User.objects.create_user(
+            phone='+998901110094', password='StrongPass123', full_name='Halol Coder',
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center, title='Aralash olimpiada', subject='Informatika',
+            status='active', event_type='olympiad',
+        )
+        # Aralash olimpiada: 1 ta MCQ (to'g'ri javob berilgan) + 1 ta kod savol.
+        self.mcq = Question.objects.create(
+            center=self.center, subject='Informatika', text='2+2=?',
+            options=['4', '5'], correct_answer=0, score=10,
+        )
+        self.code_q = Question.objects.create(
+            center=self.center, subject='Informatika', text="Ikkitasini qo'shing.",
+            question_type=Question.QUESTION_TYPE_CODE, score=10,
+        )
+        self.olympiad.questions.add(self.mcq, self.code_q)
+        self.answers = {str(self.mcq.id): 0}
+        self.attempt = TestAttempt.objects.create(
+            user=self.user, olympiad=self.olympiad,
+            score=0, correct_count=0, wrong_count=0, total_questions=2,
+            answers=self.answers,
+        )
+        self.session = TestSession.objects.create(
+            user=self.user, olympiad=self.olympiad,
+            question_order=[self.mcq.id, self.code_q.id],
+            option_orders={str(self.mcq.id): [0, 1]},
+        )
+        self.submission = CodeSubmission.objects.create(
+            attempt=self.attempt, question=self.code_q,
+            submitted_code='print(4)', code_language='python',
+        )
+        self._override = override_settings(CELERY_TASK_ALWAYS_EAGER=False)
+        self._override.enable()
+        self.addCleanup(self._override.disable)
+
+    def _score(self):
+        from attempts.session_utils import score_session_answers
+
+        return score_session_answers(
+            self.session, self.olympiad, self.answers, attempt=self.attempt,
+        )
+
+    def test_quota_exhaustion_does_not_zero_student_score(self):
+        """ASOSIY KAFOLAT: 429 kvota tugab retry zanjiri yakunlansa, kod savol
+        ball hisobidan chiqariladi — o'quvchi 50% emas, 100% oladi."""
+        from celery.exceptions import MaxRetriesExceededError
+        from questions.tasks import run_code_async_task
+
+        with patch('questions.judge0_service.submit_code_batch') as mock_submit:
+            mock_submit.return_value = {
+                'ok': False, 'error': 'Kod runner limiti tugadi.', 'retryable': True,
+            }
+            with patch.object(
+                run_code_async_task, 'retry', side_effect=MaxRetriesExceededError(),
+            ):
+                run_code_async_task(
+                    'infra-task-1', 'print(4)', 'python', '', self.code_q.id,
+                    submission_id=self.submission.id,
+                )
+
+        self.submission.refresh_from_db()
+        self.assertEqual(
+            self.submission.evaluation_status,
+            CodeSubmission.EVAL_PENDING_REVIEW,
+        )
+        self.assertTrue(self.submission.evaluation_error)
+
+        scored = self._score()
+        # Kod savol umuman hisobga kirmaydi: faqat MCQ (10 ball) qoladi.
+        self.assertEqual(scored['total'], 1)
+        self.assertEqual(scored['max_possible'], 10)
+        self.assertEqual(scored['score'], 100)
+        self.assertEqual(scored['unevaluated_code_count'], 1)
+
+        # Attempt balli ham qayta hisoblangan (0 emas).
+        self.attempt.refresh_from_db()
+        self.assertEqual(self.attempt.score, 100)
+
+    def test_genuinely_wrong_code_still_counts_as_wrong(self):
+        """Teskari kafolat: haqiqiy noto'g'ri kod avvalgidek 0 ball oladi —
+        infratuzilma bahonasi bilan hech kim ball olmaydi."""
+        from questions.tasks import _finalize_results
+
+        _finalize_results(
+            'graded-task-1',
+            [{'ok': True, 'stdout': '5', 'stderr': '', 'compile_output': '',
+              'status': 'Accepted', 'time': 0.1, 'memory': 100}],
+            [{'is_single': False, 'input': '', 'expected': '4', 'is_hidden': False}],
+            submission_id=self.submission.id,
+        )
+
+        self.submission.refresh_from_db()
+        self.assertEqual(
+            self.submission.evaluation_status, CodeSubmission.EVAL_GRADED,
+        )
+        self.assertFalse(self.submission.all_tests_passed)
+
+        scored = self._score()
+        # Kod savol hisobga kiradi, lekin ball bermaydi → 10/20 = 50%.
+        self.assertEqual(scored['total'], 2)
+        self.assertEqual(scored['max_possible'], 20)
+        self.assertEqual(scored['score'], 50)
+        self.assertEqual(scored['unevaluated_code_count'], 0)
+
+    def test_correct_code_after_recovery_gets_full_score(self):
+        """Judge0 tiklangach qayta baholansa to'liq ball qaytadi."""
+        from questions.tasks import _finalize_results, _mark_submission_evaluation_failed
+
+        _mark_submission_evaluation_failed(self.submission.id, 'Judge0 429')
+        self.submission.refresh_from_db()
+        self.assertEqual(
+            self.submission.evaluation_status, CodeSubmission.EVAL_PENDING_REVIEW,
+        )
+
+        _finalize_results(
+            'graded-task-2',
+            [{'ok': True, 'stdout': '4', 'stderr': '', 'compile_output': '',
+              'status': 'Accepted', 'time': 0.1, 'memory': 100}],
+            [{'is_single': False, 'input': '', 'expected': '4', 'is_hidden': False}],
+            submission_id=self.submission.id,
+        )
+        self.submission.refresh_from_db()
+        self.assertEqual(
+            self.submission.evaluation_status, CodeSubmission.EVAL_GRADED,
+        )
+        self.assertTrue(self.submission.all_tests_passed)
+        self.assertEqual(self._score()['score'], 100)
+
+    def test_timeout_marks_pending_review_in_eager_mode(self):
+        """EAGER rejimda ham (dev/test) timeout `pending_review` beradi."""
+        from django.test import override_settings
+        from questions.tasks import run_code_async_task
+
+        with patch('questions.judge0_service.submit_code_batch') as mock_submit:
+            mock_submit.return_value = {
+                'ok': False, 'error': 'Kod bajarilishi vaqt limitini oshdi',
+                'retryable': True,
+            }
+            with override_settings(CELERY_TASK_ALWAYS_EAGER=True):
+                with patch('questions.tasks.time.sleep'):
+                    run_code_async_task(
+                        'infra-task-2', 'print(4)', 'python', '', self.code_q.id,
+                        submission_id=self.submission.id,
+                    )
+        self.submission.refresh_from_db()
+        self.assertEqual(
+            self.submission.evaluation_status, CodeSubmission.EVAL_PENDING_REVIEW,
+        )
+        self.assertEqual(self._score()['score'], 100)
+
+    def test_pending_review_visible_to_manager_serializer(self):
+        """Nosozlik jimgina yo'qolmaydi: menejer paneli serializer'i holatni
+        va sababni qaytaradi."""
+        from attempts.serializers import CodeSubmissionSerializer
+        from questions.tasks import _mark_submission_evaluation_failed
+
+        _mark_submission_evaluation_failed(self.submission.id, 'Judge0 429 kvota')
+        self.submission.refresh_from_db()
+        data = CodeSubmissionSerializer(self.submission).data
+        self.assertEqual(data['evaluation_status'], CodeSubmission.EVAL_PENDING_REVIEW)
+        self.assertIn('429', data['evaluation_error'])
+
+
+class Judge0ServiceHardeningTestCase(APITestCase):
+    """judge0_service: har bir submission tarmoqsiz ishlaydi va Judge0 javobi
+    bizning tomonimizda hajm bo'yicha cheklanadi."""
+
+    @patch('questions.judge0_service.requests.post')
+    def test_submission_disables_network(self, mock_post):
+        from questions.judge0_service import submit_code_batch
+
+        mock_post.return_value.status_code = 200
+        mock_post.return_value.json.return_value = [{'token': 'tok1'}]
+        mock_post.return_value.raise_for_status.return_value = None
+
+        submit_code_batch([{'source_code': 'print(1)', 'language': 'python', 'stdin': ''}])
+
+        payload = mock_post.call_args.kwargs['json']
+        self.assertEqual(payload['submissions'][0]['enable_network'], False)
+
+    @patch('questions.judge0_service.requests.get')
+    def test_output_is_truncated_independently_of_judge0(self, mock_get):
+        import base64
+
+        from questions.judge0_service import MAX_OUTPUT_CHARS, check_batch_status
+
+        huge = base64.b64encode(b'x' * (MAX_OUTPUT_CHARS + 5000)).decode()
+        mock_get.return_value.raise_for_status.return_value = None
+        mock_get.return_value.json.return_value = {
+            'submissions': [{'status': {'id': 3}, 'stdout': huge}],
+        }
+
+        res = check_batch_status(['tok1'], [0], 1)
+        self.assertEqual(res['status'], 'COMPLETED')
+        stdout = res['results'][0]['stdout']
+        self.assertLess(len(stdout), MAX_OUTPUT_CHARS + 200)
+        self.assertIn('qisqartirildi', stdout)
+
+
+class DocxDecompressionBombTestCase(APITestCase):
+    """.docx import — dekompressiya bombasi himoyasi.
+
+    `.docx` ZIP arxiv: 10 MB siqilgan yuklama gigabaytlab XML'ga ochilishi va
+    gunicorn worker'ini OOM qilishi mumkin (butun sayt uchun). Cheklov
+    siqilgan baytlarga emas, DEKOMPRESSIYALANGAN hajmga qo'yiladi.
+    """
+
+    @staticmethod
+    def _zip_with_document_xml(payload):
+        import io
+        import zipfile
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('word/document.xml', payload)
+        return buf.getvalue()
+
+    def test_rejects_non_zip_by_magic_bytes(self):
+        from questions.tasks import assert_docx_within_limits
+
+        with self.assertRaises(ValueError) as ctx:
+            assert_docx_within_limits(b'%PDF-1.7 aslida pdf')
+        self.assertIn('.docx emas', str(ctx.exception))
+
+    def test_rejects_oversized_uncompressed_content(self):
+        from django.test import override_settings
+
+        from questions.tasks import assert_docx_within_limits
+
+        # 200 KB matn juda yaxshi siqiladi (bir necha KB) — siqilgan hajm
+        # cheklovidan bemalol o'tadi, ochilgan hajm esa limitdan oshadi.
+        blob = self._zip_with_document_xml(b'A' * 200_000)
+        self.assertLess(len(blob), 10_000)
+        with override_settings(AI_QUESTION_DOCX_MAX_UNCOMPRESSED_BYTES=50_000):
+            with self.assertRaises(ValueError) as ctx:
+                assert_docx_within_limits(blob)
+        self.assertIn('juda katta', str(ctx.exception))
+
+    def test_accepts_normal_document(self):
+        from questions.tasks import assert_docx_within_limits
+
+        blob = self._zip_with_document_xml(b'<w:document/>')
+        # Istisno ko'tarilmasligi kerak.
+        assert_docx_within_limits(blob)
+
+    def test_extracted_text_is_truncated(self):
+        """Chiqarilgan matn `[:max_chars]` bilan kesiladi — PDF yo'lidagi naqsh."""
+        import io
+
+        from django.test import override_settings
+        from docx import Document
+
+        from questions.tasks import _extract_docx_text
+
+        document = Document()
+        for _ in range(50):
+            document.add_paragraph('X' * 200)
+        buf = io.BytesIO()
+        document.save(buf)
+
+        with override_settings(AI_QUESTION_DOCX_MAX_TEXT_CHARS=1000):
+            text = _extract_docx_text(buf.getvalue())
+        self.assertEqual(len(text), 1000)
+
+
+class ImportQuestionsWordEndpointTestCase(APITestCase):
+    """POST /api/questions/import-word/ — haqiqiy .docx hamon import qilinadi
+    (regressiya: fayl endi baytlarga o'qiladi), soxta imzoli fayl esa 400."""
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='Import Markaz', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.teacher = User.objects.create_user(
+            phone='+998901110093', password='StrongPass123', full_name="Import O'qituvchi",
+        )
+        CenterMembership.objects.create(
+            user=self.teacher, center=self.center,
+            role=CenterMembership.ROLE_TEACHER,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        self.client.force_authenticate(user=self.teacher)
+        self.url = f"{reverse('questions-import-word')}?center={self.center.id}"
+
+    @staticmethod
+    def _docx_upload(name='savollar.docx'):
+        import io
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from docx import Document
+
+        document = Document()
+        table = document.add_table(rows=1, cols=8)
+        header = table.rows[0].cells
+        for i, col in enumerate(
+            ['savol', 'a', 'b', 'c', 'd', 'togri_javob', 'qiyinlik', 'fan'],
+        ):
+            header[i].text = col
+        row = table.add_row().cells
+        for i, val in enumerate(['2+2=?', '3', '4', '5', '6', 'B', 'easy', 'Matematika']):
+            row[i].text = val
+        buf = io.BytesIO()
+        document.save(buf)
+        return SimpleUploadedFile(
+            name, buf.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        )
+
+    def test_valid_docx_still_imports(self):
+        response = self.client.post(
+            self.url, {'file': self._docx_upload()}, format='multipart',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get('created'), 1)
+        self.assertTrue(
+            Question.objects.filter(center=self.center, text='2+2=?').exists(),
+        )
+
+    def test_fake_docx_rejected_by_magic_bytes(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        fake = SimpleUploadedFile(
+            'zararli.docx', b'%PDF-1.7 bu aslida docx emas',
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        )
+        response = self.client.post(self.url, {'file': fake}, format='multipart')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('.docx emas', response.data.get('detail', ''))
+
+    def test_decompression_bomb_rejected(self):
+        import io
+        import zipfile
+
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from django.test import override_settings
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('word/document.xml', b'A' * 200_000)
+        bomb = SimpleUploadedFile(
+            'bomba.docx', buf.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        )
+        with override_settings(AI_QUESTION_DOCX_MAX_UNCOMPRESSED_BYTES=50_000):
+            response = self.client.post(self.url, {'file': bomb}, format='multipart')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('juda katta', response.data.get('detail', ''))
+
+
 class RecoverStuckCodeSubmissionsTestCase(APITestCase):
     """recover_stuck_code_submissions: eskirgan (Judge0 javobi kelmagan)
     CodeSubmission'larni qayta navbatga qo'yadi, va bir marta qulflangan
@@ -757,9 +1130,46 @@ class RecoverStuckCodeSubmissionsTestCase(APITestCase):
         from questions.tasks import recover_stuck_code_submissions, run_code_async_task
 
         self.submission.all_tests_passed = True
-        self.submission.save(update_fields=['all_tests_passed'])
+        self.submission.evaluation_status = CodeSubmission.EVAL_GRADED
+        self.submission.save(update_fields=['all_tests_passed', 'evaluation_status'])
         CodeSubmission.objects.filter(pk=self.submission.pk).update(
             updated_at=timezone.now() - timezone.timedelta(minutes=30),
+        )
+        with patch.object(run_code_async_task, 'delay') as mock_delay:
+            requeued = recover_stuck_code_submissions()
+        self.assertEqual(requeued, 0)
+        mock_delay.assert_not_called()
+
+    def test_infra_failed_submission_is_requeued(self):
+        """Judge0 kvotasi tugab `pending_review` bo'lgan javob ham qayta
+        yuboriladi — kvota (odatda kunlik) tiklangach avtomatik baholanadi va
+        menejer qo'lda aralashishga majbur bo'lmaydi."""
+        from questions.tasks import recover_stuck_code_submissions, run_code_async_task
+
+        CodeSubmission.objects.filter(pk=self.submission.pk).update(
+            all_tests_passed=False,
+            evaluation_status=CodeSubmission.EVAL_PENDING_REVIEW,
+            evaluation_error='Judge0 429',
+            updated_at=timezone.now() - timezone.timedelta(minutes=30),
+        )
+        with patch.object(run_code_async_task, 'delay') as mock_delay:
+            requeued = recover_stuck_code_submissions()
+        self.assertEqual(requeued, 1)
+        mock_delay.assert_called_once()
+
+    def test_very_old_submission_not_requeued_forever(self):
+        """Judge0 uzoq muddat ishlamasa beat bir xil yozuvlarni abadiy
+        navbatga qo'ymaydi — muddatdan keyin faqat qo'lda baholash qoladi."""
+        from questions.tasks import (
+            STUCK_CODE_RECOVERY_MAX_AGE_DAYS,
+            recover_stuck_code_submissions,
+            run_code_async_task,
+        )
+
+        CodeSubmission.objects.filter(pk=self.submission.pk).update(
+            updated_at=timezone.now() - timezone.timedelta(
+                days=STUCK_CODE_RECOVERY_MAX_AGE_DAYS + 1,
+            ),
         )
         with patch.object(run_code_async_task, 'delay') as mock_delay:
             requeued = recover_stuck_code_submissions()
@@ -1260,6 +1670,10 @@ class CodeReviewAsyncTestCase(APITestCase):
     emas, Celery task'da bajariladi: view 202 + task_id qaytaradi, natija
     `code-review/<task_id>/status/` orqali olinadi. Bu endpoint olimpiada
     vaqtida chaqirilgani uchun gunicorn thread'ini bloklamasligi shart.
+
+    Endpoint imtihon kontekstiga bog'langan (IDOR himoyasi), shu sababli
+    fixture o'quvchiga HAQIQIY imtihon holatini beradi: faol olimpiada +
+    aktiv `TestSession`. Ruxsatsiz holat alohida test sinfida.
     """
 
     def setUp(self):
@@ -1277,6 +1691,17 @@ class CodeReviewAsyncTestCase(APITestCase):
             center=self.center, subject='Informatika',
             text='Ikki sonni qo\'shing', question_type=Question.QUESTION_TYPE_CODE,
             programming_language='python', expected_output='7', score=10,
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center, title='Kod olimpiadasi', subject='Informatika',
+            status=Olympiad.STATUS_ACTIVE, event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timezone.timedelta(minutes=5),
+            duration_minutes=60,
+        )
+        self.olympiad.questions.add(self.code_question)
+        TestSession.objects.create(
+            user=self.student, olympiad=self.olympiad,
+            status=TestSession.STATUS_ACTIVE,
         )
         self.client.force_authenticate(user=self.student)
 
@@ -1348,6 +1773,159 @@ class CodeReviewAsyncTestCase(APITestCase):
         )
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
 
+
+
+class CodeRunAuthorizationTestCase(APITestCase):
+    """`run-code/start/` va `code-review/` uchun IDOR himoyasi.
+
+    Ikkala endpoint ham savolning test caslarini va yashirin test caslar
+    bo'yicha "o'tdi/o'tmadi" oracle'ini oshkor qiladi. Avval ular faqat
+    `IsAuthenticated` bilan himoyalangan edi: istalgan foydalanuvchi ketma-ket
+    `question_id` sanab, HALI BOSHLANMAGAN olimpiadaning baholash mezonini
+    aniqlab olardi. Endi ruxsat faqat (a) savol muallifi/markaz menejeriga va
+    (b) aynan hozir imtihon topshirayotgan o'quvchiga beriladi.
+    """
+
+    def setUp(self):
+        self.center = EducationCenter.objects.create(
+            name='IDOR Academy', city='Toshkent',
+            status=EducationCenter.STATUS_APPROVED,
+        )
+        self.teacher = User.objects.create_user(
+            phone='+998901460001', password='StrongPass123', full_name='Ustoz',
+        )
+        CenterMembership.objects.create(
+            user=self.teacher, center=self.center,
+            role=CenterMembership.ROLE_TEACHER,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        self.outsider = User.objects.create_user(
+            phone='+998901460002', password='StrongPass123', full_name='Begona',
+        )
+        self.examinee = User.objects.create_user(
+            phone='+998901460003', password='StrongPass123', full_name='Imtihonchi',
+        )
+        self.question = Question.objects.create(
+            center=self.center, subject='Informatika', text='Ikki sonni qo\'shing',
+            question_type=Question.QUESTION_TYPE_CODE, programming_language='python',
+            score=10, created_by=self.teacher,
+            test_cases=[{'input': '3 4', 'expected_output': '7', 'is_hidden': True}],
+        )
+        # Hali BOSHLANMAGAN olimpiada — aynan shu holat hujum uchun qimmatli.
+        self.future_olympiad = Olympiad.objects.create(
+            center=self.center, title='Kelasi olimpiada', subject='Informatika',
+            status=Olympiad.STATUS_ACTIVE, event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() + timezone.timedelta(hours=3),
+            duration_minutes=60,
+        )
+        self.future_olympiad.questions.add(self.question)
+
+    def _start(self, payload):
+        return self.client.post(reverse('questions-run-code-start'), payload, format='json')
+
+    @patch('questions.tasks.run_code_async_task.delay')
+    def test_outsider_cannot_run_code_for_question(self, mock_delay):
+        self.client.force_authenticate(user=self.outsider)
+        resp = self._start({
+            'source_code': 'print(7)', 'language': 'python',
+            'question_id': self.question.id,
+        })
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        mock_delay.assert_not_called()
+
+    @patch('questions.tasks.run_code_async_task.delay')
+    def test_session_for_not_started_olympiad_is_not_enough(self, mock_delay):
+        """Sessiya bor, lekin olimpiada hali boshlanmagan — rad etiladi.
+
+        Sessiya kamera/mikrofon rozilik endpointi orqali imtihon
+        boshlanishidan OLDIN ham yaratilishi mumkin, shu sababli sessiya
+        mavjudligining o'zi yetarli emas.
+        """
+        TestSession.objects.create(
+            user=self.examinee, olympiad=self.future_olympiad,
+            status=TestSession.STATUS_ACTIVE,
+        )
+        self.client.force_authenticate(user=self.examinee)
+        resp = self._start({
+            'source_code': 'print(7)', 'language': 'python',
+            'question_id': self.question.id,
+        })
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        mock_delay.assert_not_called()
+
+    @patch('questions.tasks.run_code_async_task.delay')
+    def test_examinee_with_active_session_can_run_code(self, mock_delay):
+        olympiad = Olympiad.objects.create(
+            center=self.center, title='Jonli olimpiada', subject='Informatika',
+            status=Olympiad.STATUS_ACTIVE, event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timezone.timedelta(minutes=5),
+            duration_minutes=60,
+        )
+        olympiad.questions.add(self.question)
+        TestSession.objects.create(
+            user=self.examinee, olympiad=olympiad,
+            status=TestSession.STATUS_ACTIVE,
+        )
+        self.client.force_authenticate(user=self.examinee)
+        resp = self._start({
+            'source_code': 'print(7)', 'language': 'python',
+            'question_id': self.question.id,
+        })
+        self.assertEqual(resp.status_code, status.HTTP_202_ACCEPTED)
+        mock_delay.assert_called_once()
+
+    @patch('questions.tasks.run_code_async_task.delay')
+    def test_author_can_run_own_question(self, mock_delay):
+        self.client.force_authenticate(user=self.teacher)
+        resp = self._start({
+            'source_code': 'print(7)', 'language': 'python',
+            'question_id': self.question.id,
+        })
+        self.assertEqual(resp.status_code, status.HTTP_202_ACCEPTED)
+        mock_delay.assert_called_once()
+
+    @patch('questions.tasks.run_code_async_task.delay')
+    def test_teacher_cannot_run_colleague_question(self, mock_delay):
+        """Faqat teacher roli bo'lgan a'zo hamkasbining savoliga tegolmaydi.
+
+        `question_detail` dagi (78a739a) cheklov bilan bir xil.
+        """
+        colleague = User.objects.create_user(
+            phone='+998901460004', password='StrongPass123', full_name='Hamkasb',
+        )
+        CenterMembership.objects.create(
+            user=colleague, center=self.center,
+            role=CenterMembership.ROLE_TEACHER,
+            status=CenterMembership.STATUS_APPROVED,
+        )
+        self.client.force_authenticate(user=colleague)
+        resp = self._start({
+            'source_code': 'print(7)', 'language': 'python',
+            'question_id': self.question.id,
+        })
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        mock_delay.assert_not_called()
+
+    @patch('questions.tasks.run_code_async_task.delay')
+    def test_run_without_question_id_still_allowed(self, mock_delay):
+        """Savolga bog'lanmagan sof "kodni ishga tushirish" buzilmasligi kerak."""
+        self.client.force_authenticate(user=self.outsider)
+        resp = self._start({
+            'source_code': 'print(7)', 'language': 'python', 'stdin': '',
+        })
+        self.assertEqual(resp.status_code, status.HTTP_202_ACCEPTED)
+        mock_delay.assert_called_once()
+
+    @patch('questions.tasks.code_review_task.delay')
+    def test_outsider_cannot_request_code_review(self, mock_delay):
+        self.client.force_authenticate(user=self.outsider)
+        resp = self.client.post(reverse('questions-code-review'), {
+            'question_id': self.question.id,
+            'submitted_code': 'print(7)',
+            'language': 'python',
+        }, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        mock_delay.assert_not_called()
 
 
 class FlagQuestionApiTestCase(APITestCase):

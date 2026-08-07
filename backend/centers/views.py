@@ -15,7 +15,7 @@ from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnl
 from rest_framework.response import Response
 
 from accounts.models import AuditLog
-from accounts.permissions import IsPlatformAdmin
+from accounts.permissions import IsPlatformAdmin, TrustedOrigin
 from accounts.utils import delete_replaced_image_file
 from .models import CenterMembership, CenterQuestion, EducationCenter
 from .serializers import (
@@ -322,7 +322,7 @@ def update_center_branding(request, center_id):
 
 @api_view(['POST'])
 @parser_classes([JSONParser, MultiPartParser, FormParser])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TrustedOrigin])
 def update_center_image(request, center_id):
     """POST /api/centers/{id}/image/ — owner/manager uploads center image."""
     center = get_object_or_404(EducationCenter, pk=center_id)

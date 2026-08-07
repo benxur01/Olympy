@@ -18,6 +18,8 @@ from rest_framework import status
 from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
+
+from accounts.permissions import TrustedOrigin
 from rest_framework.response import Response
 
 from centers.models import CenterMembership, EducationCenter
@@ -147,7 +149,7 @@ def _validate_and_attach_image(product, request):
 
 @api_view(['GET', 'POST'])
 @parser_classes([JSONParser, MultiPartParser, FormParser])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TrustedOrigin])
 def center_shop_products(request):
     """GET/POST /api/center/shop/products/
 
@@ -200,7 +202,7 @@ def center_shop_products(request):
 
 @api_view(['PUT', 'PATCH', 'DELETE'])
 @parser_classes([JSONParser, MultiPartParser, FormParser])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TrustedOrigin])
 def center_shop_product_detail(request, product_id):
     """PUT/PATCH/DELETE /api/center/shop/products/<id>/
 

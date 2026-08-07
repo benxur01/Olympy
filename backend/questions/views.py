@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.throttling import UserRateThrottle
 
 from accounts.models import AuditLog
+from accounts.permissions import TrustedOrigin
 from centers.models import CenterMembership
 from moderation.models import ModerationFlag
 
@@ -94,6 +95,104 @@ def _user_can_explain_question(user, question):
     ).exists()
 
 
+def _user_can_manage_question(user, question):
+    """Savolni boshqarish (ko'rish/tahrirlash/sinash) huquqi bormi.
+
+    `question_detail` dagi tekshiruv bilan AYNAN bir xil (78a739a):
+    markazning tasdiqlangan xodimi bo'lish yetarli emas — faqat teacher roli
+    bo'lgan a'zo o'zi YARATMAGAN savolga tegolmaydi. Manager/owner va
+    platforma admini butun markaz bankini boshqaradi.
+    """
+    if not _user_can_create_for_center(user, question.center_id):
+        return False
+    return (
+        _user_is_center_manager(user, question.center_id)
+        or question.created_by_id == user.id
+    )
+
+
+def _user_can_run_question_code(user, question):
+    """Kod (IT) savoli ustida Judge0/AI sinovini ishga tushirishga ruxsat bormi.
+
+    Bu tekshiruv `run_code_start_view` va `code_review` uchun. Ikkala endpoint
+    ham savolning test caslarini (`input`/`expected`) va yashirin test caslar
+    bo'yicha "o'tdi/o'tmadi" oracle'ini oshkor qiladi. Tekshiruvsiz istalgan
+    autentifikatsiyalangan foydalanuvchi ketma-ket `question_id` ni sanab
+    chiqib, HALI BOSHLANMAGAN (yoki draft) olimpiadaning baholash mezonini
+    oldindan bilib olardi.
+
+    Ikki toifa ruxsat oladi:
+
+    1. Savol muallifi / markaz menejeri — savol bankida savolini sinaydi
+       yoki oldindan ko'radi (`_user_can_manage_question`).
+    2. Shu savolni o'z ichiga olgan olimpiadada AYNAN HOZIR imtihon
+       topshirayotgan o'quvchi. "Hozir" uchta shart bilan aniqlanadi:
+         - olimpiada `STATUS_ACTIVE` va boshlanish vaqti kelgan
+           (`olympiad_questions` dagi tekshiruvlar bilan bir xil),
+         - o'quvchining AKTIV `TestSession` yozuvi bor — sessiya faqat
+           `olympiad_questions` barcha tekshiruvlaridan (jumladan
+           `user_can_participate_in_event`) o'tgandan keyin yaratiladi,
+         - sessiya muddati tugamagan (`session_is_expired` `paused_seconds`
+           ni ham hisobga oladi, ya'ni pending_review'da to'xtatilgan taymer
+           bilan ham to'g'ri ishlaydi).
+       `user_can_participate_in_event` qo'shimcha qatlam sifatida qayta
+       tekshiriladi: sessiya yaratilgandan keyin o'quvchi guruhdan
+       chiqarilgan bo'lishi mumkin.
+
+    Camera/microphone consent endpointlari sessiyani imtihon boshlanishidan
+    OLDIN ham yaratishi mumkin (`user_can_participate_in_event` FINISHED
+    olimpiadaga ham `True` qaytaradi), shu sababli sessiya mavjudligining
+    o'zi yetarli emas — olimpiada holati va vaqt oynasi alohida tekshiriladi.
+    """
+    if _user_can_manage_question(user, question):
+        return True
+
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from attempts.models import TestSession
+    from attempts.session_utils import session_is_expired
+    from olympiads.models import Olympiad
+    from olympiads.services import user_can_participate_in_event
+
+    now = timezone.now()
+    sessions = (
+        TestSession.objects
+        .filter(
+            user=user,
+            status=TestSession.STATUS_ACTIVE,
+            olympiad__questions=question,
+            olympiad__status=Olympiad.STATUS_ACTIVE,
+        )
+        .select_related('olympiad')
+        .distinct()
+    )
+    for session in sessions:
+        olympiad = session.olympiad
+        if olympiad.start_datetime and now < olympiad.start_datetime:
+            continue
+        if session_is_expired(session, olympiad):
+            continue
+        # Olimpiada vaqt oynasi: sessiya taymeri `paused_seconds` bilan
+        # uzaytirilgan bo'lishi mumkin, shuning uchun olimpiada oxiriga ham
+        # o'sha imtiyozni beramiz (aks holda tekshiruvni kutgan o'quvchi
+        # "Ishga tushirish" tugmasini yo'qotardi).
+        if olympiad.start_datetime and olympiad.duration_minutes:
+            paused = getattr(session, 'paused_seconds', 0) or 0
+            end_time = (
+                olympiad.start_datetime
+                + timedelta(minutes=olympiad.duration_minutes)
+                + timedelta(seconds=paused)
+            )
+            if now > end_time:
+                continue
+        if not user_can_participate_in_event(user, olympiad):
+            continue
+        return True
+    return False
+
+
 def _user_can_bulk_delete_for_center(user, center_id):
     """Faqat Manager/Owner ommaviy o'chirishga (delete-all) ruxsat oladi.
 
@@ -153,7 +252,7 @@ def _question_snapshot(question):
 
 
 @api_view(['GET', 'POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TrustedOrigin])
 @parser_classes([JSONParser, MultiPartParser, FormParser])
 def questions_list_create(request):
     """GET /api/questions/?center=<id>  — list a center's question bank.
@@ -240,7 +339,7 @@ def questions_list_create(request):
 
 
 @api_view(['GET', 'PATCH', 'PUT', 'DELETE'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TrustedOrigin])
 @parser_classes([JSONParser, MultiPartParser, FormParser])
 def question_detail(request, question_id):
     """GET/PATCH/PUT/DELETE /api/questions/{id}/
@@ -1004,7 +1103,7 @@ def _create_questions_from_rows(rows, center_id, user, fallback_subject):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TrustedOrigin])
 @parser_classes([MultiPartParser, FormParser])
 @throttle_classes([AiQuestionRateThrottle])
 def import_questions_excel(request):
@@ -1113,7 +1212,7 @@ def import_questions_excel(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TrustedOrigin])
 @parser_classes([MultiPartParser, FormParser])
 @throttle_classes([AiQuestionRateThrottle])
 def import_questions_word(request):
@@ -1175,9 +1274,35 @@ def import_questions_word(request):
             status=http_status.HTTP_503_SERVICE_UNAVAILABLE,
         )
 
+    import io
+
+    from .tasks import assert_docx_within_limits
+
+    # Faylni xotiraga o'qiymiz (hajmi yuqorida 10 MB bilan cheklangan) —
+    # `Document()` chaqirilishidan OLDIN dekompressiya bombasi tekshiruvi
+    # uchun ZIP katalogini o'qish kerak. Bu chaqiruv gunicorn so'rov ip'ida
+    # sinxron bajariladi, shu sababli himoya ayniqsa muhim: cheklovsiz .docx
+    # worker'ni OOM qilib butun saytni ishdan chiqarardi.
+    # `upload.size` ga tayanmasdan o'qishning o'zini ham cheklaymiz (limit+1
+    # bayt) — hajm noto'g'ri e'lon qilingan bo'lsa ham xotira portlamaydi.
+    word_bytes = upload.read(import_max_bytes + 1)
+    if not word_bytes:
+        return Response({'detail': "Fayl bo'sh"}, status=http_status.HTTP_400_BAD_REQUEST)
+    if len(word_bytes) > import_max_bytes:
+        return Response(
+            {'detail': f"Fayl juda katta. Limit: {import_max_bytes // (1024 * 1024)} MB"},
+            status=http_status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        # Magic-byte ('PK') tekshiruvi ham shu funksiya ichida — word_ai_preview
+        # bilan izchil (kengaytma yolg'on bo'lishi mumkin).
+        assert_docx_within_limits(word_bytes)
+    except ValueError as exc:
+        return Response({'detail': str(exc)}, status=http_status.HTTP_400_BAD_REQUEST)
+
     rows = []
     try:
-        document = Document(upload)
+        document = Document(io.BytesIO(word_bytes))
         # Faqat jadval(lar)dan qatorlarni yig'amiz. Bir nechta jadval bo'lsa
         # hammasini ketma-ket qo'shamiz — birinchi jadvalning header'i qolganlar
         # uchun ham amal qiladi (umumiy yadro birinchi qatorni tashlaydi).
@@ -1270,7 +1395,7 @@ def download_word_template(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TrustedOrigin])
 @parser_classes([MultiPartParser, FormParser])
 @throttle_classes([AiQuestionRateThrottle])
 def preview_pdf_questions(request):
@@ -1353,7 +1478,7 @@ def preview_pdf_questions(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, TrustedOrigin])
 @parser_classes([MultiPartParser, FormParser])
 @throttle_classes([AiQuestionRateThrottle])
 def word_ai_preview(request):
@@ -1744,6 +1869,12 @@ def code_review(request):
             {'detail': 'Bu kod (IT) savoli emas'},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
+    # IDOR himoyasi: avval faqat `IsAuthenticated` bor edi va istalgan
+    # foydalanuvchi savol ID'sini sanab chiqib boshqa markazning (yoki hali
+    # boshlanmagan olimpiadaning) kod savoli uchun AI tahlilini — savol matni
+    # va kutilgan yechim haqidagi ma'lumot bilan — ola olardi.
+    if not _user_can_run_question_code(request.user, question):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
 
     task_id = start_ai_task(CODE_REVIEW_TASK_PREFIX, request.user.id)
     code_review_task.delay(task_id, question.id, submitted_code, language)
@@ -1860,6 +1991,26 @@ def run_code_start_view(request):
             {'detail': f"'{language}' tili qo'llab-quvvatlanmaydi"},
             status=http_status.HTTP_400_BAD_REQUEST,
         )
+    # IDOR himoyasi. `question_id` berilganda javob o'sha savolning ko'rinadigan
+    # test caslari (`input`/`expected`) va YASHIRIN test caslar bo'yicha
+    # "o'tdi/o'tmadi" oracle'ini qaytaradi. Avval bu yerda hech qanday ruxsat
+    # tekshiruvi yo'q edi: istalgan foydalanuvchi ketma-ket ID'larni sanab,
+    # olimpiada boshlanmasdan turib baholash mezonini aniqlab olardi.
+    #
+    # `question_id` berilmagan holat (savolga bog'lanmagan sof "kodni ishga
+    # tushirib ko'rish") avvalgidek ishlaydi — u hech qanday savol ma'lumotini
+    # oshkor qilmaydi, faqat foydalanuvchining o'z kodini ishga tushiradi.
+    if question_id:
+        try:
+            question_id = int(question_id)
+        except (TypeError, ValueError):
+            return Response(
+                {'detail': "question_id son bo'lishi kerak"},
+                status=http_status.HTTP_400_BAD_REQUEST,
+            )
+        question = get_object_or_404(Question, pk=question_id)
+        if not _user_can_run_question_code(request.user, question):
+            return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
 
     task_id = str(uuid.uuid4())
     cache.set(
