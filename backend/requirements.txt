@@ -1,5 +1,18 @@
 # Requirements for production & local development
-Django>=5.0,<6.0
+#
+# DIQQAT: bu fayl faqat QABUL QILINADIGAN oraliqni belgilaydi. Deploy uchun
+# aynan qaysi versiya o'rnatilishini `requirements.lock` hal qiladi (u
+# `pip-compile` bilan generatsiya qilinadi va Dockerfile o'shani o'rnatadi).
+# Bu yerdagi versiyani o'zgartirgandan keyin lock'ni QAYTA generatsiya qiling:
+#     pip-compile --generate-hashes -o requirements.lock requirements.txt
+#
+# Quyidagi minimallarning bir qismi xavfsizlik auditi natijasida ko'tarilgan —
+# sababi har birining yonida.
+
+# >=5.2.16: `UpdateCacheMiddleware` `Vary` sarlavhasiga `Authorization` ni
+# qo'shmasligi (cache poisoning) va `DomainNameValidator` dagi sarlavha
+# inyeksiyasi teshigi 5.2.15/5.2.16 da yopilgan.
+Django>=5.2.16,<6.0
 djangorestframework>=3.14
 django-cors-headers>=4.0
 psycopg[binary]>=3.1
@@ -16,10 +29,24 @@ djangorestframework-simplejwt>=5.3
 # 2.8/2.9 pin'ni qanoatlantirib, pip uni YANGILAMASDI — natijada lokalda
 # (yangi PyJWT) testlar o'tib, productionda Google login ishlamasdi.
 PyJWT>=2.10
-Pillow>=10.0
+# >=12.3.0: decompression-bomb tekshiruvini chetlab o'tish teshiklari. Avatar
+# yuklash oqimi (`accounts/views.py` `img.load()`) aynan shu tekshiruvga
+# tayanadi, ya'ni teshik to'g'ridan-to'g'ri yetib boradi.
+Pillow>=12.3.0
 qrcode>=7.4
-pypdf>=3.0
-pdfplumber>=0.10
+# >=6.14.2: maxsus tayyorlangan PDF cheksiz siklga / katta xotira sarfiga olib
+# keladigan bir nechta DoS. Sink pdfplumber bilan bir xil: PDF import.
+pypdf>=6.14.2
+# >=0.11.10 MAJBURIY (>=0.10 emas): eski pin `pdfminer.six==20231228` ni
+# tortardi, unda `CMapDB._load_data()` ISHONCHSIZ `pickle.loads()` ishlatadi
+# (PYSEC-2026-1761/1762) — ya'ni maxsus tayyorlangan PDF kod ijrosiga olib
+# kelishi mumkin. Sink `questions/pdf_generation.py` da
+# `pdfplumber.open(io.BytesIO(pdf_bytes))` — bayt'lar to'g'ridan-to'g'ri
+# foydalanuvchidan keladi va endpoint (`questions/views.py`
+# `preview_pdf_questions`) platforma admini emas, HAR QANDAY tasdiqlangan
+# o'qituvchi/manager uchun ochiq. 0.11.10 `pdfminer.six==20260107` ni
+# pin qiladi (tuzatish 20251107/20251230 da chiqqan).
+pdfplumber>=0.11.10
 openpyxl>=3.1
 python-docx>=1.0
 reportlab>=4.0
@@ -30,7 +57,10 @@ gunicorn>=21.2
 whitenoise>=6.5
 requests>=2.31
 pyotp>=2.9
-cryptography>=41.0
+# >=46.0.7: sertifikat zanjirini tekshirishda DoS va `Hash.update()` da
+# uzluksiz bo'lmagan bufer bilan buffer overflow. TOTP sirlarini Fernet bilan
+# shifrlashda (`accounts/utils.py`) va JWT'da ishlatiladi.
+cryptography>=46.0.7
 cloudinary>=1.36
 django-cloudinary-storage>=0.3
 sentry-sdk[django]>=1.40

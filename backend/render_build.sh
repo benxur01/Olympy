@@ -4,6 +4,13 @@
 echo "=== ENV: Python=$(python --version 2>&1) Pip=$(pip --version 2>&1 | head -1) ==="
 
 echo "=== STEP 1: pip install ==="
+# ATAYIN `requirements.txt` (Docker/Contabo esa `requirements.lock` dan
+# o'rnatadi — `backend/Dockerfile`). Sabab: lock `--generate-hashes` bilan
+# AYNAN Python 3.12 uchun yechilgan (Docker base image shu), render.yaml da
+# esa PYTHON_VERSION umuman pin qilinmagan — Render o'z default versiyasini
+# tanlaydi va u 3.12 bo'lmasa `--require-hashes` o'rnatishni to'xtatib,
+# deploy'ni buzardi. Render baribir Contabo'ga ko'chirilmoqda; agar bu yerda
+# ham lock kerak bo'lsa, avval render.yaml da PYTHON_VERSION=3.12 pin qiling.
 if pip install --no-cache-dir -r requirements.txt; then
     echo "=== pip install OK ==="
 else
