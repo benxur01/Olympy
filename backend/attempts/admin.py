@@ -12,8 +12,9 @@ class TestAttemptAdmin(admin.ModelAdmin):
 
 @admin.register(CodeSubmission)
 class CodeSubmissionAdmin(admin.ModelAdmin):
-    list_display = ('attempt', 'question', 'code_language', 'ai_code_score', 'created_at')
-    list_filter = ('code_language',)
+    list_display = ('attempt', 'question', 'code_language', 'ai_code_score',
+                    'evaluation_status', 'created_at')
+    list_filter = ('code_language', 'evaluation_status')
     search_fields = ('attempt__user__full_name', 'question__text')
 
 
