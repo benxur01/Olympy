@@ -38,8 +38,24 @@ WORKDIR /app
 # requirements alohida qatlamda — ilova kodi o'zgarganda pip qayta ishlamaydi
 # (Docker layer cache). psycopg[binary] va Pillow wheel bilan keladi, shuning
 # uchun kompilyator (build-essential) kerak emas.
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+#
+# `requirements.txt` EMAS, `requirements.lock` o'rnatiladi. Sabab (audit):
+# requirements.txt faqat `>=` oralig'ini beradi, ya'ni o'rnatiladigan aniq
+# versiya build KESHI qachon bekor bo'lganiga qarab o'zgarardi — deploy
+# takrorlanmas edi va xavfsizlik patchi rejalashtirilgan bump orqali emas,
+# tasodifan tushardi. Lock aynan bitta versiyani qotirib qo'yadi.
+#
+# `--require-hashes`: lock'dagi har bir paket SHA256 hash bilan yozilgan, pip
+# esa mos kelmagan artefaktni rad etadi. Bu PyPI hisobi buzilishi yoki
+# oradagi proxy paketni almashtirib qo'yishidan himoya qiladi.
+#
+# Lock Python 3.12 uchun generatsiya qilingan — YUQORIDAGI `FROM
+# python:3.12-slim` bilan bir xil bo'lishi SHART. Base image versiyasi
+# o'zgarsa lock ham qayta generatsiya qilinsin:
+#     uv pip compile requirements.txt --python-version 3.12 \
+#         --generate-hashes --no-header -o requirements.lock
+COPY requirements.lock /app/requirements.lock
+RUN pip install --no-cache-dir --require-hashes -r /app/requirements.lock
 
 COPY . /app
 RUN chmod +x /app/docker-entrypoint.sh
