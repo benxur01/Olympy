@@ -7,12 +7,35 @@
 // Hech qachon xom rasm/piksel MA'LUMOTI asosiy thread'ga qaytarilmaydi va
 // hech qanday tarmoqqa yuborilmaydi — model chiqishi shu yerda raqamga aylanadi.
 //
-// tfjs runtime modeli birinchi ishga tushishda Google storage'dan yuklanadi
-// (statik model fayllari) — bu student rasmi EMAS, faqat model vaznlari.
+// MODEL FAYLLARI O'ZIMIZDA (self-hosted) — public/models/ ichida, ya'ni ular
+// bizning origin'imizdan (`'self'`) yuklanadi. Avval paket default URL'idan
+// (tfhub.dev → kaggle.com → storage.googleapis.com) yuklanardi va bu UCHTA
+// muammo tug'dirardi:
+//   1) CSP: `connect-src` da bu hostlarning hech biri yo'q — Contabo nginx
+//      CSP'ni haqiqatan yuborganda model yuklanmay, proktoring JIMGINA
+//      o'chib qolardi (pastdagi onerror/type:'error' izohiga qarang).
+//   2) Supply-chain: Google model faylini almashtirsa yoki URL'ni o'chirsa
+//      (tfhub.dev allaqachon deprecated va kaggle.com'ga redirect qiladi)
+//      anti-cheat butunlay ishlamay qolardi.
+//   3) Maxfiylik: har bir o'quvchining IP'si imtihon paytida Google/Kaggle'ga
+//      ko'rinardi — bu maxfiylik siyosatining uchinchi tomonlar jadvalida yo'q.
+//
+// DIQQAT: FaceMesh quvuri IKKITA modeldan iborat, ikkalasi ham ko'rsatilishi
+// SHART (faqat bittasini bersak, ikkinchisi yana tfhub.dev'ga ketadi):
+//   - landmarkModelUrl → 468 nuqtali face mesh (bizga keypoint beradi)
+//   - detectorModelUrl → BlazeFace "short range" yuz DETEKTORI; paket buni
+//     @tensorflow-models/face-detection orqali ichkarida yuklaydi
+//     (face-landmarks-detection/dist/tfjs/detector.js: load()).
+// URL'da 'https://tfhub.dev' bo'lmagani uchun paket `fromTFHub: false` ni
+// avtomatik tanlaydi va model.json'ni to'g'ridan-to'g'ri o'qiydi; shard
+// (.bin) fayllari model.json yoniga nisbatan hal qilinadi.
 
 import * as tf from '@tensorflow/tfjs-core';
 import '@tensorflow/tfjs-backend-webgl';
 import * as faceLandmarksDetection from '@tensorflow-models/face-landmarks-detection';
+
+const LANDMARK_MODEL_URL = '/models/face-mesh/model.json';
+const DETECTOR_MODEL_URL = '/models/face-detector-short/model.json';
 
 let detectorPromise = null;
 let busy = false;
@@ -39,6 +62,9 @@ async function getDetector() {
         refineLandmarks: false,
         // Ikkinchi (begona) yuzni ham aniqlash uchun >1 kerak.
         maxFaces: 3,
+        // Ikkalasi ham o'z origin'imizdan — tashqi tarmoqqa chiqilmaydi.
+        landmarkModelUrl: LANDMARK_MODEL_URL,
+        detectorModelUrl: DETECTOR_MODEL_URL,
       });
     })();
   }
