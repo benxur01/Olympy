@@ -472,6 +472,13 @@ REST_FRAMEWORK = {
         # call'iga aylanadi. Spec bo'yicha o'quvchi soatiga 20 marta ishga
         # tushira oladi; ortig'i abuse va tashqi limit'ni tez tugatadi.
         'code_run': '20/hour',
+        # Referral kodini ishlatish (use_referral) — hisob umri davomida bir
+        # martalik amal, lekin muvaffaqiyatida IKKI hisobga ham coin qo'shadi.
+        # Throttle bo'lmaganda hujumchi bitta haqiqiy kodni olib o'nlab
+        # parallel so'rov yuborib poyga oynasini kengaytirishga urinardi.
+        # 5/hour — noto'g'ri kod terish/qayta urinish uchun yetarli, ammo
+        # burst-abuse'ni amalda imkonsiz qiladi.
+        'referral_use': '5/hour',
         # A/B test event tracking (ab_track_event) — ochiq (AllowAny) endpoint.
         # Throttle bo'lmasa parallel/skriptli so'rovlar A/B counter'larni
         # sun'iy oshirib analitikani buzishi mumkin. IP bo'yicha 5/min normal
@@ -998,6 +1005,22 @@ AI_QUESTION_PDF_MAX_BYTES = int(os.environ.get('AI_QUESTION_PDF_MAX_BYTES', str(
 # Excel/CSV savol import fayli uchun hajm cheklovi (default 10 MB) — openpyxl
 # butun workbook'ni xotiraga yuklagani uchun katta fayldan himoyalaydi.
 AI_QUESTION_IMPORT_MAX_BYTES = int(os.environ.get('AI_QUESTION_IMPORT_MAX_BYTES', str(10 * 1024 * 1024)))
+# .docx — ZIP arxiv, ~1000:1 gacha siqilishi mumkin: 10 MB yuklama gigabaytlab
+# XML'ga ochilib gunicorn worker'ini OOM qilishi (butun sayt uchun) mumkin.
+# Shu sababli fayl baytlaridan TASHQARI dekompressiyalangan hajmga ham mustaqil
+# cheklov qo'yamiz — python-docx chaqirilishidan OLDIN ZIP katalogidagi
+# `file_size` metama'lumoti bo'yicha tekshiriladi (rasm yuklashdagi
+# MAX_IMAGE_PIXELS va PDF'dagi max_pages bilan bir xil yondashuv).
+# 50 MB — matnli .docx uchun juda katta zaxira (odatiy hujjat 1-2 MB XML),
+# ammo bomb hujumini bir necha tartibga kamaytiradi.
+AI_QUESTION_DOCX_MAX_UNCOMPRESSED_BYTES = int(
+    os.environ.get('AI_QUESTION_DOCX_MAX_UNCOMPRESSED_BYTES', str(50 * 1024 * 1024))
+)
+# .docx dan chiqarilgan matnga belgi cheklovi — PDF yo'lidagi
+# AI_QUESTION_PDF_MAX_TEXT_CHARS naqshining aynan o'zi.
+AI_QUESTION_DOCX_MAX_TEXT_CHARS = int(
+    os.environ.get('AI_QUESTION_DOCX_MAX_TEXT_CHARS', '300000')
+)
 AI_QUESTION_PDF_MAX_TEXT_CHARS = int(os.environ.get('AI_QUESTION_PDF_MAX_TEXT_CHARS', '300000'))
 AI_QUESTION_PDF_CHUNK_CHARS = int(os.environ.get('AI_QUESTION_PDF_CHUNK_CHARS', '25000'))
 AI_QUESTION_PDF_MAX_CHUNKS = int(os.environ.get('AI_QUESTION_PDF_MAX_CHUNKS', '20'))

@@ -35,6 +35,13 @@ LANGUAGE_IDS = {
     'r':          80,   # R (4.0.0)
 }
 
+# Judge0 qaytargan har bir oqim (stdout/stderr/compile_output) uchun bizning
+# tomondagi hajm cheklovi. Bu matn Redis keshiga yoziladi va JSON javob sifatida
+# brauzerga boradi — cheksiz chiqish keshni ham, klientni ham ko'mib yuboradi.
+# 50k belgi har qanday o'quv masalasi natijasi uchun ortig'i bilan yetarli.
+MAX_OUTPUT_CHARS = 50_000
+OUTPUT_TRUNCATED_SUFFIX = "\n… [chiqish juda uzun, qisqartirildi]"
+
 STATUS_MAP = {
     1: 'In Queue',
     2: 'Processing',
@@ -115,6 +122,12 @@ def submit_code_batch(submissions: list, timeout: int = 10) -> dict:
             'stdin': base64.b64encode((sub.get('stdin') or '').encode()).decode(),
             'cpu_time_limit': min(timeout, 15),
             'memory_limit': 128000,
+            # O'quvchi kodiga tarmoq kerak emas (stdin → stdout). Judge0 tashqi
+            # (self-hosted bo'lmagan) instansiyada ishlayotgan bo'lsa ham,
+            # sandbox'dan tashqariga chiqishga urinadigan kodni har bir
+            # submission darajasida to'samiz — Judge0 konfiguratsiyasiga
+            # tayanmasdan (CVE-2024-29021 konteksti: sandbox escape).
+            'enable_network': False,
         })
 
     valid_indices = [i for i, x in enumerate(batch_submissions) if x is not None]
@@ -229,9 +242,15 @@ def check_batch_status(tokens: list, valid_indices: list, total_count: int) -> d
             if not val:
                 return ''
             try:
-                return base64.b64decode(val).decode('utf-8', errors='replace')
+                text = base64.b64decode(val).decode('utf-8', errors='replace')
             except Exception:
-                return str(val)
+                text = str(val)
+            # Judge0 o'zining `max_file_size` sozlamasiga tayanmaymiz: bu matn
+            # Redis keshiga yoziladi va foydalanuvchi brauzeriga yuboriladi,
+            # shu sababli mustaqil (bizning tomondagi) hajm cheklovi qo'yamiz.
+            if len(text) > MAX_OUTPUT_CHARS:
+                return text[:MAX_OUTPUT_CHARS] + OUTPUT_TRUNCATED_SUFFIX
+            return text
 
         results = [{'ok': False, 'error': "Dasturlash tili qo'llab-quvvatlanmaydi"} for _ in range(total_count)]
         for idx, item in enumerate(subs):

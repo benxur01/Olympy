@@ -181,6 +181,30 @@ def _activate_subscription(user, amount, plan_id=None):
     if plan_id:
         plan = SubscriptionPlan.objects.filter(pk=plan_id, is_active=True).first()
         if plan and plan.price != amount:
+            if amount < plan.price:
+                # KAM to'langan. Hozircha bunga erishib bo'lmaydi (`plan_id` va
+                # `amount` `create_checkout_session` da BIRGA yoziladi, webhook
+                # ikkalasini ham DB'dagi tranzaksiyadan oladi va payload
+                # summasini `tx.amount` bilan solishtiradi), lekin bu faqat
+                # tasodifiy invariant. Agar kelajakda plan/summa alohida
+                # manbalardan kelsa, arzon planga to'lab qimmatini olish
+                # mumkin bo'lib qolardi — shuning uchun bu yerda qat'iy
+                # to'xtatamiz. To'lov o'tgan bo'lsa chaqiruvchi
+                # (`_handle_activation_failed`) foydalanuvchini xabardor qiladi
+                # va obuna qo'lda ulanadi, ya'ni pul yo'qolmaydi.
+                msg = (
+                    f"Obuna aktivlashtirish TO'XTATILDI: plan_id={plan_id} narxi "
+                    f"({plan.price}) to'langan summadan ({amount}) YUQORI. Obuna "
+                    f"avtomatik berilmadi — to'lov oqimi qo'lda tekshirilsin "
+                    f"(user_id={getattr(user, 'id', None)})."
+                )
+                logger.error(msg)
+                _capture_billing_issue(msg)
+                return False
+            # ORTIQCHA to'langan (yoki checkout'dan keyin plan narxi
+            # TUSHIRILGAN): foydalanuvchi plan narxidan kam bermagan, ya'ni
+            # xavfsizlik muammosi yo'q — obunani beramiz, faqat nomuvofiqlikni
+            # log'ga yozamiz.
             logger.warning(
                 "Obuna aktivlashtirish: plan_id=%s narxi (%s) to'langan summa (%s) "
                 "bilan mos kelmadi — payload tekshirilsin.",

@@ -167,8 +167,17 @@ def _gemini_extract_names_from_text(text):
     last_error = ''
     for index, api_key in enumerate(api_keys, start=1):
         model_path = urllib.parse.quote(model, safe='-_.~/')
-        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent?key={urllib.parse.quote(api_key)}'
-        req = urllib.request.Request(url, data=body, method='POST', headers={'Content-Type': 'application/json'})
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+        # Kalit URL query-string'da EMAS, `x-goog-api-key` header'ida yuboriladi —
+        # loyihaning qolgan barcha Gemini chaqiruvlari shu naqshda. URL Sentry
+        # tracing span/breadcrumb, proxy va server loglariga tushishi mumkin,
+        # header esa tushmaydi.
+        req = urllib.request.Request(
+            url,
+            data=body,
+            method='POST',
+            headers={'Content-Type': 'application/json', 'x-goog-api-key': api_key},
+        )
         try:
             with urllib.request.urlopen(req, timeout=35) as response:
                 raw = json.loads(response.read().decode('utf-8'))
@@ -246,8 +255,14 @@ def _gemini_extract_names_from_pdf_bytes(pdf_bytes):
     last_error = ''
     for index, api_key in enumerate(api_keys, start=1):
         model_path = urllib.parse.quote(model, safe='-_.~/')
-        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent?key={urllib.parse.quote(api_key)}'
-        req = urllib.request.Request(url, data=body, method='POST', headers={'Content-Type': 'application/json'})
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+        # Kalit header orqali (URL query-string emas) — yuqoridagi izohga qarang.
+        req = urllib.request.Request(
+            url,
+            data=body,
+            method='POST',
+            headers={'Content-Type': 'application/json', 'x-goog-api-key': api_key},
+        )
         try:
             with urllib.request.urlopen(req, timeout=60) as response:
                 raw = json.loads(response.read().decode('utf-8'))
@@ -342,12 +357,13 @@ def _gemini_extract_names_from_image(image_bytes, mime_type, caption=''):
     last_error = ''
     for index, api_key in enumerate(api_keys, start=1):
         model_path = urllib.parse.quote(model, safe='-_.~/')
-        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent?key={urllib.parse.quote(api_key)}'
+        url = f'https://generativelanguage.googleapis.com/v1beta/models/{model_path}:generateContent'
+        # Kalit header orqali (URL query-string emas) — yuqoridagi izohga qarang.
         req = urllib.request.Request(
             url,
             data=body,
             method='POST',
-            headers={'Content-Type': 'application/json'},
+            headers={'Content-Type': 'application/json', 'x-goog-api-key': api_key},
         )
         try:
             with urllib.request.urlopen(req, timeout=30) as response:

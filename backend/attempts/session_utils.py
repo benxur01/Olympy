@@ -315,6 +315,7 @@ def score_session_answers(session, olympiad, answers, attempt=None):
     # bo'yicha hisoblanadi va kod balli keyinroq Judge0 tugagach
     # `_recompute_attempt_score_for_submission` orqali to'liq yangilanadi.
     scored_questions = list(gradeable_questions)
+    unevaluated_code_count = 0
     if attempt is not None and code_questions:
         from .models import CodeSubmission
         latest_subs = {}
@@ -327,6 +328,18 @@ def score_session_answers(session, olympiad, answers, attempt=None):
             latest_subs.setdefault(cs.question_id, cs)
         for question in code_questions:
             cs = latest_subs.get(question.id)
+            # Judge0 (kod runner) infratuzilma nosozligi sababli baholanmagan
+            # javob — o'quvchi kodi umuman ishga tushirilmagan. Uni "xato
+            # javob" deb hisoblash imtihon adolatini buzadi (kvota tugaganda
+            # to'g'ri yozilgan kod ham 0 ball olardi), shu sababli savol ball
+            # hisobidan BUTUNLAY chiqariladi — baholanmagan insho bilan bir xil
+            # yondashuv: na `total`, na `max_possible`, na `answered` ga kiradi.
+            # Menejer/o'qituvchi bu javobni `evaluation_status='pending_review'`
+            # bo'yicha ko'radi va qo'lda baholay oladi; Judge0 tiklangach
+            # `recover_stuck_code_submissions` avtomatik qayta tekshiradi.
+            if cs is not None and cs.evaluation_status == CodeSubmission.EVAL_PENDING_REVIEW:
+                unevaluated_code_count += 1
+                continue
             if cs is not None and cs.all_tests_passed is True:
                 correct += 1
                 answered += 1
@@ -335,10 +348,10 @@ def score_session_answers(session, olympiad, answers, attempt=None):
                 # Javob yuborilgan, lekin test caslar o'tmadi (yoki hali
                 # tekshirilmagan) — javob berilgan deb hisoblanadi.
                 answered += 1
-        # Kod savollar ham max_possible va total hisobiga kiradi: aralash
-        # olimpiadada foiz to'g'ri chiqishi uchun (kodi to'g'ri o'quvchi
-        # 100% dan oshmaydi).
-        scored_questions += code_questions
+            # Kod savollar ham max_possible va total hisobiga kiradi: aralash
+            # olimpiadada foiz to'g'ri chiqishi uchun (kodi to'g'ri o'quvchi
+            # 100% dan oshmaydi).
+            scored_questions.append(question)
 
     # Essay savollar: faqat ustoz/menejer BAHOLAGAN essay'lar hisobga kiradi
     # (`attempt` rejimida). Baholanmagan essay'lar avvalgidek total/max_possible
@@ -386,4 +399,8 @@ def score_session_answers(session, olympiad, answers, attempt=None):
         # Essay savollar soni — ular avtomatik ball hisobiga kirmaydi
         # (qo'lda baholash tizimi qo'shilguncha).
         'essay_count': len(essay_questions),
+        # Kod runner (Judge0) nosozligi sababli baholanmay qolgan kod savollar
+        # soni. > 0 bo'lsa natija TO'LIQ EMAS: shu savollar ball hisobidan
+        # chiqarilgan va menejer/o'qituvchi qo'lda baholashi kutilmoqda.
+        'unevaluated_code_count': unevaluated_code_count,
     }
