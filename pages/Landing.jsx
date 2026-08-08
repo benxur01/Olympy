@@ -980,7 +980,20 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
     { category: 'center', icon: '🧠', iconName: 'brain', title: 'Savollar qiyinlik tahlili', desc: 'Markaz savollarining o\'quvchilar tomonidan xato qilinish foizlari bo\'yicha qiyinlik darajasini aniqlash (T4)', color: 'from-purple-500 to-indigo-600' },
     { category: 'center', icon: '⚠️', iconName: 'info', title: 'Nofaol o\'quvchilar ogohlantirishi', desc: 'Ma\'lum muddat davomida test topshirmagan nofaol o\'quvchilarni tizimli aniqlash va eslatish (T3)', color: 'from-amber-500 to-red-500' },
     { category: 'center', icon: '📥', iconName: 'download', title: 'Excel va CSV yig\'ma eksporti', desc: 'Markazning barcha o\'quvchilari natijalarini formatlangan Excel yoki CSV faylga bir tugma bilan yuklab olish (T6)', color: 'from-emerald-600 to-teal-500' },
- 
+    { category: 'center', icon: '📝', iconName: 'book', title: 'Word\'dan Savol Importi', desc: 'Tayyor .docx shablonni to\'ldiring va tizim savol, variant hamda to\'g\'ri javoblarni avtomatik ajratib olsin', color: 'from-blue-500 to-indigo-600', spotlight: true },
+    { category: 'center', icon: '📗', iconName: 'grid', title: 'Excel\'dan Ommaviy Import', desc: 'Minglab savolni bitta .xlsx jadval orqali savollar bazasiga bir zumda yuklang', color: 'from-emerald-500 to-green-600' },
+    { category: 'center', icon: '🎙️', iconName: 'mic', title: 'Ovozli AI Proktoring', desc: 'Mikrofon nazorati test paytida begona ovoz va suhbatni aniqlab, ogohlantirishlarni yozib boradi', color: 'from-rose-500 to-red-600' },
+    { category: 'center', icon: '🎨', iconName: 'building', title: 'Markaz Brendingi (White-Label)', desc: 'O\'z logotipingiz, firma ranglaringiz va oq yorliqli sertifikatlar bilan platformani o\'zingizniki qiling', color: 'from-violet-500 to-purple-600' },
+    { category: 'center', icon: '🚪', iconName: 'brain', title: 'Ketish Xavfi (Churn) Prognozi', desc: 'Faolligi tushayotgan o\'quvchilarni ular markazni tark etishidan oldin AI prognozi bilan aniqlang', color: 'from-amber-500 to-orange-600' },
+    { category: 'center', icon: '🏷️', iconName: 'filter', title: 'Guruh va Sinf Taqqoslashi', desc: 'O\'quvchilarga guruh yoki sinf tegini bering va guruhlar natijalarini yonma-yon solishtiring', color: 'from-cyan-500 to-teal-600' },
+    { category: 'center', icon: '📤', iconName: 'upload', title: 'Oflayn Natijalarni Import', desc: 'Tashqarida o\'tkazilgan olimpiada natijalarini tizimga yuklab, umumiy reyting va portfolioga qo\'shing', color: 'from-sky-500 to-blue-600' },
+    { category: 'center', icon: '🕵️', iconName: 'clock', title: 'Menejerlar Harakat Jurnali', desc: 'Har bir menejer va o\'qituvchi qaysi amalni qachon bajarganini shaffof audit jurnalida ko\'ring', color: 'from-slate-500 to-blue-600' },
+    { category: 'center', icon: '🧾', iconName: 'file', title: 'Markaz PDF Hisoboti', desc: 'Markazning to\'liq statistikasini tayyor PDF hisobot ko\'rinishida yuklab olib, rahbariyatga taqdim eting', color: 'from-rose-500 to-pink-600' },
+    { category: 'center', icon: '🎯', iconName: 'play', title: 'Sinov Olimpiadasi Yaratish', desc: 'Rasmiy olimpiadadan oldin o\'quvchilarni chiniqtirish uchun mashqiy sinov olimpiadalarini tuzing', color: 'from-teal-500 to-emerald-600' },
+    { category: 'center', icon: '🎁', iconName: 'tag', title: 'Markaz Sovg\'a Do\'koni', desc: 'O\'z mukofotlaringizni joylang va o\'quvchilar yiqqan tangalariga aynan sizning sovg\'alaringizni tanlasin', color: 'from-yellow-500 to-orange-600' },
+    { category: 'center', icon: '🗺️', iconName: 'star', title: 'Viloyat Bo\'yicha Reyting', desc: 'Markazingiz o\'z viloyati va hududidagi boshqa markazlar orasida nechanchi o\'rinda ekanini kuzating', color: 'from-amber-400 to-yellow-600' },
+    { category: 'center', icon: '✍️', iconName: 'edit', title: 'Insho Javoblarini AI Baholash', desc: 'Ochiq insho javoblariga sun\'iy intellekt izohli baho beradi, o\'qituvchi esa uni bir bosishda tasdiqlaydi', color: 'from-purple-500 to-fuchsia-600' },
+
     // Student features
     { category: 'student', icon: '🔥', iconName: 'bolt', title: 'Ketma-ketlik (Streak 🔥) Tizimi', desc: 'Kunlik faollikni va eng uzun streaklarni kuzatib borish orqali uzluksiz o\'rganish motivatsiyasi (O1)', color: 'from-orange-500 to-amber-500', spotlight: true },
     { category: 'student', icon: '🪙', iconName: 'tag', title: 'Virtual Sovg\'alar Do\'koni (Shop)', desc: 'Testlar va mashqlardan tangalar yig\'ib, qiziqarli brendli mukofotlar xarid qilish', color: 'from-yellow-400 to-orange-500', spotlight: true },
@@ -991,11 +1004,31 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
     { category: 'student', icon: '🏋️', iconName: 'bolt', title: 'Mustaqil Mashq Rejimi', desc: 'Fanlar va mavzular bo\'yicha o\'z ustida ishlash hamda faollik (streak) tizimi', color: 'from-blue-500 to-indigo-600' },
     { category: 'student', icon: '💻', iconName: 'code', title: 'Dasturlash Kod Redaktori', desc: 'Python, JS, C++ da topshiriqlarni interaktiv yechish', color: 'from-indigo-500 to-purple-600' },
     { category: 'student', icon: '🎖️', iconName: 'star', title: 'Premium Yutuqlar & Nishonlar', desc: 'Urinishlar soni, streaklar va eng yuqori ballarga erishganda beriladigan nishonlar (O5)', color: 'from-yellow-500 to-amber-600' },
+    { category: 'student', icon: '🧭', iconName: 'brain', title: 'AI Shaxsiy O\'quv Rejasi', desc: 'Sun\'iy intellekt natijalaringizni tahlil qilib, nimani qachon o\'qish kerakligini kunlik reja qilib beradi', color: 'from-indigo-500 to-violet-600', spotlight: true },
+    { category: 'student', icon: '📅', iconName: 'book', title: 'Kunlik Savollar', desc: 'Har kuni yangi savollarga javob berib, kuniga bir necha daqiqada bilimingizni mustahkamlang', color: 'from-cyan-500 to-sky-600' },
+    { category: 'student', icon: '✅', iconName: 'check', title: 'Kunlik Maqsad', desc: 'Kuniga nechta savol yechishni o\'zingiz belgilang va maqsad bajarilishini jonli kuzatib boring', color: 'from-emerald-500 to-green-600' },
+    { category: 'student', icon: '⏱️', iconName: 'play', title: 'Mock Olimpiada Rejimi', desc: 'Haqiqiy olimpiada muhitini vaqt chegarasi bilan mashq qilib, asosiy imtihonga bemalol tayyorlaning', color: 'from-orange-500 to-red-600' },
+    { category: 'student', icon: '🎛️', iconName: 'settings', title: 'Shaxsiy Test Generatori', desc: 'Fan, mavzu va savollar sonini o\'zingiz sozlab, faqat o\'zingiz uchun noyob test to\'plamini yarating', color: 'from-blue-500 to-indigo-600' },
+    { category: 'student', icon: '🔍', iconName: 'chart', title: 'Zaif Mavzular Tahlili', desc: 'Eng ko\'p xato qilayotgan mavzularingiz va olimpiadaga tayyorgarlik darajangiz foizda ko\'rsatiladi', color: 'from-rose-500 to-orange-500' },
+    { category: 'student', icon: '📑', iconName: 'download', title: 'Haftalik PDF Hisobot', desc: 'Bir haftalik natijalaringiz jamlangan chiroyli PDF hisobotni istalgan payt yuklab oling', color: 'from-teal-500 to-cyan-600' },
+    { category: 'student', icon: '🗓️', iconName: 'clock', title: 'Olimpiadalar Kalendari', desc: 'Yaqinlashib kelayotgan barcha olimpiadalar sanasini bitta kalendarda ko\'rib, hech birini o\'tkazib yubormang', color: 'from-indigo-500 to-blue-600' },
+    { category: 'student', icon: '🥇', iconName: 'trophy', title: 'Haftalik Konkurs', desc: 'Har hafta yangi musobaqada qatnashib, g\'oliblar ro\'yxatiga chiqish uchun ball to\'plang', color: 'from-amber-500 to-orange-600' },
+    { category: 'student', icon: '🏫', iconName: 'users', title: 'Sinfdoshlar Reytingi', desc: 'O\'z sinfdoshlaringiz orasidagi o\'rningizni va tengdoshlar bilan taqqoslash tahlilini ko\'ring', color: 'from-violet-500 to-purple-600' },
+    { category: 'student', icon: '🤖', iconName: 'send', title: '24/7 AI Yordamchi Chat', desc: 'Savolingiz bo\'lsa, sun\'iy intellekt yordamchisi kechayu kunduz bir zumda javob beradi', color: 'from-sky-500 to-indigo-600' },
+    { category: 'student', icon: '🧪', iconName: 'search', title: 'Boshlang\'ich Daraja Testi', desc: 'Ro\'yxatdan o\'tishda qisqa mini-test darajangizni aniqlaydi va sizga mos olimpiadalarni tavsiya qiladi', color: 'from-emerald-500 to-teal-600' },
+    { category: 'student', icon: '🎟️', iconName: 'plus', title: 'Do\'stni Taklif Qilish', desc: 'Taklif kodingiz orqali do\'stingizni chaqiring va ikkalangiz ham bonus tangalarga ega bo\'ling', color: 'from-pink-500 to-rose-600' },
 
     // Parent features
     { category: 'parent', icon: '👨‍👩‍👧', iconName: 'users', title: 'Ota-ona Profilini Ulash (Parent Link)', desc: 'Maxsus kod orqali farzand profiliga ulanib, test natijalarini realtime kuzatish', color: 'from-purple-500 to-pink-600', spotlight: true },
     { category: 'parent', icon: '💬', iconName: 'send', title: 'Telegram Avto-Hisobotlar', desc: 'Farzandning har bir olimpiada natijasi va streak holati haqida Telegram orqali lahzalik xabarnomalar', color: 'from-emerald-500 to-teal-600', spotlight: true },
     { category: 'parent', icon: '📊', iconName: 'chart', title: 'Farzand O\'sish Dinamikasi', desc: 'Farzandning fanlar bo\'yicha o\'sish foizlari va o\'zlashtirish tahlilini ko\'rish', color: 'from-indigo-500 to-blue-600', spotlight: true },
+
+    // Platform & xavfsizlik features (hamma foydalanuvchilar uchun)
+    { category: 'platform', icon: '📶', iconName: 'upload', title: 'Offline Test Rejimi', desc: 'Internet uzilib qolsa ham javoblaringiz saqlanadi va aloqa tiklanishi bilan avtomatik yuboriladi', color: 'from-emerald-500 to-teal-600', spotlight: true },
+    { category: 'platform', icon: '🔐', iconName: 'lock', title: 'Ikki Bosqichli Himoya (2FA)', desc: 'TOTP kodlar bilan hisobingizni himoyalang, parolni bilgan odam ham ruxsatsiz kira olmaydi', color: 'from-rose-500 to-red-600', spotlight: true },
+    { category: 'platform', icon: '🔔', iconName: 'bell', title: 'Push Bildirishnomalar', desc: 'Yangi olimpiada, natija va eslatmalar to\'g\'ridan-to\'g\'ri brauzeringizga push xabar bo\'lib keladi', color: 'from-amber-500 to-orange-600' },
+    { category: 'platform', icon: '🔑', iconName: 'user', title: 'Google Orqali Kirish', desc: 'Parol o\'ylab topmasdan, Google hisobingiz bilan bir bosishda tizimga kiring', color: 'from-blue-500 to-cyan-600' },
+    { category: 'platform', icon: '💳', iconName: 'tag', title: 'Click va Payme To\'lovlari', desc: 'Tarif va obunalarni Click yoki Payme orqali xavfsiz, bir necha soniyada to\'lang', color: 'from-indigo-500 to-blue-600' },
   ];
 
   const filteredFeatures = React.useMemo(() => {
@@ -1748,6 +1781,7 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
               { id: 'center', label: 'Tashkilotlar uchun', icon: 'building' },
               { id: 'student', label: 'O\'quvchilar uchun', icon: 'award' },
               { id: 'parent', label: 'Ota-onalar uchun', icon: 'users' },
+              { id: 'platform', label: 'Platforma & Xavfsizlik', icon: 'shield' },
             ].map(cat => {
               const active = selectedCategory === cat.id;
               return (
