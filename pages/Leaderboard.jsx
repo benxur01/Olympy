@@ -187,9 +187,13 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
       <>
       {/* Top 3 podium — podium tartibi (silver-gold-bronze) saqlanadi, lekin mobile'da kompakt */}
       <div className="grid grid-cols-3 gap-1.5 md:gap-3">
-        {[top3[1], top3[0], top3[2]].filter(Boolean).map((p, i) => {
-          const isFirst = i === 1;
-          const cls = isFirst ? 'leaderboard-gold' : i === 0 ? 'leaderboard-silver' : 'leaderboard-bronze';
+        {/* Podium o'rni indeksdan EMAS, `top3` dagi haqiqiy joydan olinadi:
+            `filter(Boolean)` bo'sh kataklarni olib tashlab qolganlarini suradi,
+            shuning uchun bitta ishtirokchi bo'lganda ([_, g'olib, _] → [g'olib])
+            indeks 1 dan 0 ga tushib, 1-o'rin egasi kumush rangda chiqardi. */}
+        {[top3[1], top3[0], top3[2]].map((p, slot) => (p ? { p, slot } : null)).filter(Boolean).map(({ p, slot }) => {
+          const isFirst = slot === 1;
+          const cls = isFirst ? 'leaderboard-gold' : slot === 0 ? 'leaderboard-silver' : 'leaderboard-bronze';
           return (
             <div key={p.key || p.rank} className={`rounded-2xl p-2 md:p-4 text-center card-hover min-w-0 ${cls} ${isFirst ? 'mt-0' : 'mt-3 md:mt-6'}`}>
               <div className="text-2xl md:text-3xl mb-0.5 md:mb-1">{p.badge}</div>
@@ -197,7 +201,7 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
               <div className="text-xs md:text-sm font-bold text-white mt-1.5 md:mt-2 truncate">{p.name.split(' ')[0]}</div>
               {p.isPremium && <div className="mt-1 flex justify-center"><span className="premium-badge premium-badge--sm" title="Premium o'quvchi">⭐ Premium</span></div>}
               <div className="hidden md:block text-xs text-white/40 truncate mb-2">{p.center} · {p.organizationType}</div>
-              <div className={`text-lg md:text-2xl font-black mt-1 md:mt-0 ${isFirst?'text-amber-400':i===0?'text-slate-300':'text-amber-600'}`}>{p.score}</div>
+              <div className={`text-lg md:text-2xl font-black mt-1 md:mt-0 ${isFirst?'text-amber-400':slot===0?'text-slate-300':'text-amber-600'}`}>{p.score}</div>
               <div className="hidden md:block"><SubjectBadge subject={p.subject} /></div>
             </div>
           );
