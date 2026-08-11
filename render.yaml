@@ -11,6 +11,12 @@ services:
       # Bo'sh bo'lsa Sentry init o'tkazib yuboriladi (graceful fallback).
       - key: VITE_SENTRY_DSN
         sync: false
+      # Web Push public kaliti — backend/olympy-celery servislaridagi
+      # VAPID_PUBLIC_KEY bilan BIR XIL qiymat kiritilishi shart (Render
+      # dashboard'da qo'lda). Faqat public key; VAPID_PRIVATE_KEY frontend
+      # env'iga hech qachon tushmasin.
+      - key: VITE_VAPID_PUBLIC_KEY
+        sync: false
     routes:
       # Maxfiylik siyosati — static HTML (Google Play / App Store uchun)
       - type: rewrite

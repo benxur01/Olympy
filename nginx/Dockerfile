@@ -39,9 +39,13 @@ COPY . .
 ARG VITE_API_BASE_URL=/
 ARG VITE_SENTRY_DSN=
 ARG VITE_GOOGLE_CLIENT_ID=
+# Web Push public kaliti — faqat public key, VAPID_PRIVATE_KEY bu yerga
+# HECH QACHON tushmasin (u faqat backend siri).
+ARG VITE_VAPID_PUBLIC_KEY=
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
     VITE_SENTRY_DSN=$VITE_SENTRY_DSN \
-    VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
+    VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID \
+    VITE_VAPID_PUBLIC_KEY=$VITE_VAPID_PUBLIC_KEY
 
 # `npm run build` avval prebuild (scripts/generate-vite-entry.mjs) ni ishga
 # tushiradi — u Olympy.html'dagi <script> ro'yxatidan src/olympy-entry.jsx va
