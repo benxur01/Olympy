@@ -35,8 +35,12 @@
   <!-- Tailwind CDN olib tashlandi: avval https://cdn.tailwindcss.com 1+ MB JS yuklardi
        va render kechikishi yaratardi. Endi Tailwind PostCSS plugin orqali build paytida
        CSS generatsiya qilinadi (tailwind.config.js + postcss.config.js + src/index.css). -->
-  <!-- Google Identity Services SDK (Google OAuth) -->
-  <script>window.GOOGLE_CLIENT_ID = "238943789457-rp81dheh17qfcc184323uaevg6act9ck.apps.googleusercontent.com";</script>
+  <!-- Google Identity Services SDK (Google OAuth).
+       Client ID bu yerda inline skript bilan berilmaydi: production CSP
+       `script-src` da 'unsafe-inline' saqlamaydi, shuning uchun bunday blok
+       brauzerda bloklanardi — `window.GOOGLE_CLIENT_ID` hech qachon
+       o'rnatilmasdi va konsolda CSP violation chiqardi. Qiymat build paytida
+       `VITE_GOOGLE_CLIENT_ID` env orqali beriladi (pages/Auth.jsx). -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body class="dark">

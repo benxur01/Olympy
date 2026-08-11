@@ -18,6 +18,9 @@ const GoogleAuthButton = ({ role = 'student', onLogin, setError, loading, setLoa
   const wrapRef = React.useRef(null);
   const [btnWidth, setBtnWidth] = React.useState(320);
 
+  // Amaldagi manba — `VITE_GOOGLE_CLIENT_ID` (build paytida). `window.GOOGLE_CLIENT_ID`
+  // faqat runtime'da (CSP nonce bilan) qiymat kiritilsa ishlaydi: Olympy.html dagi
+  // inline skript CSP tomonidan bloklangani uchun olib tashlandi.
   const clientId = window.GOOGLE_CLIENT_ID || import.meta.env?.VITE_GOOGLE_CLIENT_ID || '238943789457-rp81dheh17qfcc184323uaevg6act9ck.apps.googleusercontent.com';
 
   const triggerLoginWithCredential = async (credential) => {
