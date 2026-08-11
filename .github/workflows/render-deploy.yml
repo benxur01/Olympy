@@ -40,8 +40,27 @@ jobs:
       - name: Run Django test suite
         run: python manage.py test
 
+  # Frontend build gate: `npm run build` avval CI'da chaqirilmasdi — Vite
+  # build'ni buzadigan xato (masalan sintaksis xatosi, buzuq import) to'g'ridan
+  # -to'g'ri Render'ga o'tib ketardi va faqat u yerda build muvaffaqiyatsiz
+  # bo'lgach (yoki battarrog'i, eski dist qolib ketgach) bilinardi. Bu job
+  # backend `test:` bilan bir xil naqsh: deploy job'lari (needs: build) shu
+  # muvaffaqiyatli tugamaguncha boshlanmaydi.
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Build frontend
+        run: npm run build
+
   deploy:
-    needs: test
+    needs: [test, build]
     runs-on: ubuntu-latest
     steps:
       - name: Trigger backend deploy (olympy-api) and poll status
@@ -114,7 +133,7 @@ jobs:
 
 
 
-      - name: Trigger frontend deploy (olympy)
+      - name: Trigger frontend deploy (olympy) and poll status
         env:
           RENDER_TOKEN: ${{ secrets.RENDER_API_TOKEN }}
         run: |
@@ -124,4 +143,87 @@ jobs:
             -d '{"clearCache":"do_not_clear"}' \
             "https://api.render.com/v1/services/srv-d7t4avog4nts73edsbr0/deploys" \
             | tee /tmp/frontend_deploy.json
-          echo "Frontend deploy id: $(jq -r '.id' < /tmp/frontend_deploy.json)"
+          DEPLOY_ID=$(jq -r '.id // empty' < /tmp/frontend_deploy.json)
+          echo "Frontend deploy id: $DEPLOY_ID"
+
+          if [ -z "$DEPLOY_ID" ] || [ "$DEPLOY_ID" = "null" ]; then
+            echo "::error::Frontend deploy trigger'dan deploy ID olinmadi."
+            exit 1
+          fi
+
+          # Backend job'idagi kabi: status "live" bo'lguncha kutamiz — smoke
+          # test keyingi job'da ishlaydi, u yangi versiya ko'tarilmasdan turib
+          # eski (yoki bo'sh) sahifaga qarshi ishlab, yolg'on-o'tdi natija
+          # bermasin.
+          while true; do
+            STATUS_RESP=$(curl -fsS -H "Authorization: Bearer $RENDER_TOKEN" \
+              "https://api.render.com/v1/services/srv-d7t4avog4nts73edsbr0/deploys/$DEPLOY_ID")
+            STATUS=$(echo "$STATUS_RESP" | jq -r '.status')
+            echo "Frontend deploy status: $STATUS"
+            if [ "$STATUS" = "live" ]; then
+              echo "Frontend deploy succeeded!"
+              break
+            elif [ "$STATUS" = "build_failed" ] || [ "$STATUS" = "pre_deploy_failed" ] || [ "$STATUS" = "deactivated" ] || [ "$STATUS" = "canceled" ]; then
+              echo "::error::Frontend deploy failed with status: $STATUS"
+              echo "Full response: $STATUS_RESP"
+              exit 1
+            fi
+            sleep 15
+          done
+
+  # Deploy'dan KEYIN production URL'ga qarshi haqiqiy smoke test. Sabab
+  # smoke-playwright.mjs faylining boshida yozilgan: 2026-08-06/07 sanasida
+  # production'da CSP, X-Frame-Options, Referrer-Policy, HSTS va
+  # Permissions-Policy sarlavhalari yuborilmay qolgan holat yuz bergan — static
+  # site konfiguratsiyasi "to'g'ri" ko'rinardi, lekin hech kim haqiqiy javobni
+  # tekshirmagan edi. `deploy` job'i faqat Render "live" deb belgilashini
+  # kutadi, bu CDN/edge tarqalishi tugaganini kafolatlamaydi — shu sababli
+  # bu yerda ham qayta urinish (retry) mantig'i bor.
+  smoke:
+    needs: deploy
+    runs-on: ubuntu-latest
+    env:
+      FRONTEND_URL: https://prolymp.uz
+      API_BASE_URL: https://api.prolymp.uz
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      # Playwright browser binary'lari npm cache'da saqlanmaydi (alohida
+      # ~/.cache/ms-playwright joyi) — shu sababli alohida keshlanadi, aks
+      # holda har push'da ~100-200MB Chromium qayta yuklanardi.
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Install Playwright Chromium (+ OS deps)
+        run: npx playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+      # Cache hit bo'lsa ham OS darajasidagi shared library'lar (apt paketlar)
+      # runner image'ida allaqachon bo'lmasligi mumkin — faqat browser binary
+      # keshlanadi, shuning uchun --with-deps'siz ham yengil `install-deps`
+      # qadam qo'shilgan.
+      - name: Ensure Playwright OS dependencies
+        run: npx playwright install-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+      - name: Run smoke tests against production (with retry)
+        run: |
+          set +e
+          MAX_ATTEMPTS=5
+          ATTEMPT=1
+          until npm run smoke; do
+            if [ "$ATTEMPT" -ge "$MAX_ATTEMPTS" ]; then
+              echo "::error::Smoke test $MAX_ATTEMPTS urinishdan keyin ham muvaffaqiyatsiz. Production ($FRONTEND_URL) tekshiring — deploy allaqachon amalga oshgan, avtomatik rollback QILINMAYDI."
+              exit 1
+            fi
+            echo "Smoke test urinish $ATTEMPT/$MAX_ATTEMPTS muvaffaqiyatsiz. CDN/edge tarqalishi uchun 20 soniya kutib, qayta urinilmoqda..."
+            ATTEMPT=$((ATTEMPT + 1))
+            sleep 20
+          done
+          echo "Smoke test $ATTEMPT-urinishda muvaffaqiyatli o'tdi."
