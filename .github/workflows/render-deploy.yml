@@ -184,7 +184,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FRONTEND_URL: https://prolymp.uz
-      API_BASE_URL: https://api.prolymp.uz
+      # api.prolymp.uz DNS'da MAVJUD EMAS (render.yaml:74-75 izohida ham
+      # tasdiqlangan) — API xuddi shu domen ostida /api/ yo'li orqali
+      # xizmat qiladi (render.yaml:134 health check: prolymp.uz/api/health/).
+      # smoke-playwright.mjs o'zi `apiBase + '/api/health/'` qo'shadi, shuning
+      # uchun bu yerda /api qismi YOZILMAYDI.
+      API_BASE_URL: https://prolymp.uz
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
