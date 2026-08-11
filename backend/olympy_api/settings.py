@@ -915,6 +915,25 @@ VAPID_PUBLIC_KEY = os.environ.get('VAPID_PUBLIC_KEY', '').strip()
 VAPID_PRIVATE_KEY = os.environ.get('VAPID_PRIVATE_KEY', '').strip()
 VAPID_CLAIMS_SUB = os.environ.get('VAPID_CLAIMS_SUB', 'mailto:admin@olympy.uz')
 
+# Push endpoint allowlist — SSRF himoyasi. Foydalanuvchi yuborgan endpoint
+# URL'iga server o'zi POST qiladi, shu sababli host ma'lum brauzer push
+# xizmatlaridan biri bo'lishi shart — aks holda autentifikatsiyalangan har
+# qanday foydalanuvchi serverni ixtiyoriy ichki manzilga so'rov yuborishga
+# majburlay olardi (SSRF).
+#
+# Bo'sh qoldirilsa `notifications.validators.DEFAULT_PUSH_ENDPOINT_ALLOWED_HOSTS`
+# (fcm.googleapis.com, updates.push.services.mozilla.com, *.notify.windows.com,
+# web.push.apple.com, *.push.apple.com) ishlatiladi. Env berilsa u default
+# ro'yxatning O'RNIGA qo'yiladi — ALLOWED_HOSTS bilan bir xil semantika, ya'ni
+# kerakli default host'larni ham qayta sanab o'tish shart. `*.` — subdomen
+# wildcard'i:
+#   PUSH_ENDPOINT_ALLOWED_HOSTS=fcm.googleapis.com,*.push.example.com
+PUSH_ENDPOINT_ALLOWED_HOSTS = [
+    h.strip().lower() for h in
+    os.environ.get('PUSH_ENDPOINT_ALLOWED_HOSTS', '').split(',')
+    if h.strip()
+]
+
 # Production'da JWT tokenlarni response body'da qaytarmaslik (faqat HttpOnly cookie).
 # Telegram WebView / cookie-less klientlar uchun: JWT_EXPOSE_TOKENS_IN_BODY=1
 # yoki so'rovda header `X-Olympy-Auth-Storage: 1`.

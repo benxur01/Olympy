@@ -20,16 +20,91 @@ class WebPushTestCase(TestCase):
         )
         self.client.force_authenticate(user=self.user)
 
-    def test_subscribe_push(self):
-        response = self.client.post('/api/notifications/subscribe/', {
-            'endpoint': 'https://updates.push.services.mozilla.com/wpush/v2/gAAAAA...',
+    def _subscribe(self, endpoint):
+        return self.client.post('/api/notifications/subscribe/', {
+            'endpoint': endpoint,
             'keys': {
                 'p256dh': 'BIPMX4...',
                 'auth': '5sT...'
             }
         }, format='json')
+
+    def test_subscribe_push(self):
+        response = self._subscribe(
+            'https://updates.push.services.mozilla.com/wpush/v2/gAAAAA...',
+        )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertTrue(PushSubscription.objects.filter(user=self.user).exists())
+
+    def test_subscribe_accepts_fcm_endpoint(self):
+        response = self._subscribe('https://fcm.googleapis.com/fcm/send/abc123')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(
+            PushSubscription.objects.filter(
+                endpoint='https://fcm.googleapis.com/fcm/send/abc123',
+            ).exists()
+        )
+
+    def test_subscribe_accepts_wildcard_subdomain(self):
+        """`*.notify.windows.com` — haqiqiy subdomen qabul qilinadi."""
+        response = self._subscribe('https://foo.notify.windows.com/x')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(
+            PushSubscription.objects.filter(
+                endpoint='https://foo.notify.windows.com/x',
+            ).exists()
+        )
+
+    def test_subscribe_rejects_internal_metadata_endpoint(self):
+        """SSRF: bulut metadata manzili saqlanmasligi kerak (400)."""
+        response = self._subscribe('http://169.254.169.254/latest/meta-data/')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(PushSubscription.objects.exists())
+
+    def test_subscribe_rejects_arbitrary_host(self):
+        response = self._subscribe('https://evil.example.com/push')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(PushSubscription.objects.exists())
+
+    def test_subscribe_rejects_wildcard_suffix_lookalike(self):
+        """`evilnotify.windows.com` — `notify.windows.com` bilan TUGAYDI, lekin
+        uning subdomeni emas. Sodda `endswith` bu hujumni o'tkazib yuborardi."""
+        response = self._subscribe('https://evilnotify.windows.com/x')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(PushSubscription.objects.exists())
+
+    def test_subscribe_rejects_userinfo_bypass(self):
+        """`https://fcm.googleapis.com@evil.tld/` — haqiqiy host `evil.tld`."""
+        response = self._subscribe('https://fcm.googleapis.com@evil.example.com/x')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(PushSubscription.objects.exists())
+
+    @override_settings(PUSH_ENDPOINT_ALLOWED_HOSTS=['push.olympy.uz'])
+    def test_allowlist_is_configurable_via_settings(self):
+        """settings orqali berilgan ro'yxat default'ning o'rniga ishlaydi."""
+        self.assertEqual(
+            self._subscribe('https://push.olympy.uz/send/1').status_code,
+            status.HTTP_200_OK,
+        )
+        self.assertEqual(
+            self._subscribe('https://fcm.googleapis.com/fcm/send/abc').status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    @override_settings(VAPID_PRIVATE_KEY='test-vapid-private-key-not-for-prod')
+    @patch('pywebpush.webpush')
+    def test_send_web_push_skips_disallowed_stored_endpoint(self, mock_webpush):
+        """Chuqurlikda himoya: validatsiyadan oldin saqlangan yozuvga
+        yuborilmaydi (`.objects.create` view'ni chetlab o'tadi)."""
+        subscription = PushSubscription.objects.create(
+            user=self.user,
+            endpoint='http://169.254.169.254/latest/meta-data/',
+            p256dh='fake_p256dh',
+            auth='fake_auth',
+        )
+
+        self.assertFalse(send_web_push(subscription, 'Sarlavha', 'Matn'))
+        mock_webpush.assert_not_called()
 
     @override_settings(VAPID_PRIVATE_KEY='test-vapid-private-key-not-for-prod')
     @patch('pywebpush.webpush')

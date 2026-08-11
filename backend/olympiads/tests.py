@@ -315,9 +315,12 @@ class OlympiadPublishFanOutTestCase(APITestCase):
     def test_publish_enqueues_task_without_blocking_the_request(
         self, mock_delay, mock_telegram, mock_webpush,
     ):
+        # Endpoint host'i haqiqiy push xizmatiga tegishli bo'lishi shart —
+        # `send_web_push` allowlist'dan o'tmagan manzilga yubormaydi
+        # (SSRF himoyasi, notifications.validators).
         for student in self.students:
             PushSubscription.objects.create(
-                user=student, endpoint=f'https://push.example/{student.id}',
+                user=student, endpoint=f'https://fcm.googleapis.com/fcm/send/{student.id}',
                 p256dh='fake_p256dh', auth='fake_auth',
             )
 
@@ -347,9 +350,12 @@ class OlympiadPublishFanOutTestCase(APITestCase):
         """Task'ning o'zi (`.delay` orqali emas) eski xulqni saqlab qoladi."""
         from olympiads.tasks import send_olympiad_published_notifications_task
 
+        # Endpoint host'i haqiqiy push xizmatiga tegishli bo'lishi shart —
+        # `send_web_push` allowlist'dan o'tmagan manzilga yubormaydi
+        # (SSRF himoyasi, notifications.validators).
         for student in self.students:
             PushSubscription.objects.create(
-                user=student, endpoint=f'https://push.example/{student.id}',
+                user=student, endpoint=f'https://fcm.googleapis.com/fcm/send/{student.id}',
                 p256dh='fake_p256dh', auth='fake_auth',
             )
 
@@ -484,8 +490,9 @@ class StartingSoonReminderBatchTestCase(APITestCase):
         from olympiads.tasks import send_reminder_to_student_task
 
         student = self.students[0]
+        # Allowlist'dagi haqiqiy push host — notifications.validators.
         PushSubscription.objects.create(
-            user=student, endpoint='https://push.example/reminder',
+            user=student, endpoint='https://fcm.googleapis.com/fcm/send/reminder',
             p256dh='fake_p256dh', auth='fake_auth',
         )
 
