@@ -25,6 +25,33 @@ services:
       - type: rewrite
         source: /privacy/
         destination: /privacy.html
+      # Backend API proxy — `prolymp.uz/api/...` so'rovlarini olympy-api
+      # servisiga uzatadi.
+      #
+      # NEGA BU YERDA: qoida avval FAQAT Render dashboard'ida qo'lda yozilgan
+      # edi, render.yaml'da esa yo'q. 2026-08-11 da konfiguratsiya API orqali
+      # sinxronlana boshlagach (scripts/sync-render-static-config.mjs, PUT
+      # "replace all" semantikasiga ega) ro'yxatga kirmagan bu qoida
+      # O'CHIRILDI va prolymp.uz/api/health/ landing page qaytara boshladi.
+      # Endi yagona manba shu fayl — sinxronlash uni saqlab qoladi.
+      #
+      # Frontend bundle API'ni to'g'ridan-to'g'ri olympy-api.onrender.com'dan
+      # so'raydi (src/services/api.js DEFAULT_API_BASE_URL), ya'ni saytning
+      # o'zi bu proxy'ga bog'liq EMAS. Lekin undan boshqa iste'molchilar
+      # foydalanadi — eski keshlangan bundle'lar, mobil ilova va to'lov
+      # webhook'lari (Click/Payme) — shuning uchun qoida saqlanadi.
+      #
+      # SHAKLI: rewrite destination'i to'liq tashqi URL bo'lishi mumkin va
+      # `*` mos kelgan qismga almashadi, ya'ni /api/health/ →
+      # https://olympy-api.onrender.com/api/health/. Destination'da `/api`
+      # prefiksi ham TURISHI SHART — backend yo'llari /api/ ostida
+      # (`.../*` deb yozilsa prefiks yo'qolib 404 bo'lardi).
+      #
+      # TARTIB: bu qoida quyidagi SPA catch-all'dan OLDIN turishi shart, aks
+      # holda /api/... ham index.html'ga tushadi.
+      - type: rewrite
+        source: /api/*
+        destination: https://olympy-api.onrender.com/api/*
       - type: rewrite
         source: /*
         destination: /index.html
