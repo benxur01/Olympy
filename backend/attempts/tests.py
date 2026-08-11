@@ -2,6 +2,8 @@ import json
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -9,7 +11,7 @@ from rest_framework import status
 from centers.models import EducationCenter
 from olympiads.models import Olympiad
 from questions.models import Question
-from attempts.models import TestAttempt, TestSession
+from attempts.models import CodeSubmission, TestAttempt, TestSession
 
 User = get_user_model()
 
@@ -627,3 +629,91 @@ class ExplainAllMistakesAsyncTestCase(APITestCase):
             reverse('mistakes-explain-all-status', args=[start.data['task_id']]),
         )
         self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class AttemptTaskOnCommitTestCase(TestCase):
+    """Celery task'lari tranzaksiya COMMIT bo'lgandan KEYIN navbatga qo'yiladi.
+
+    `submit_attempt` butun ishni `transaction.atomic()` ichida bajaradi. Task
+    commit'dan oldin yuborilsa worker attempt/CodeSubmission qatorini
+    ko'rmaydi va `attempts.tasks` dagi `DoesNotExist` tutqichlari retry'siz
+    jimgina `return` qiladi — AI tahlil abadiy `pending` qolib, kod sharhi
+    (`ai_code_review`/`ai_code_score`) hech qachon to'ldirilmaydi.
+    """
+
+    def setUp(self):
+        self.student = User.objects.create_user(
+            username='oncommit_student',
+            phone='+998901112233',
+            password='testpassword',
+        )
+        self.center = EducationCenter.objects.create(
+            name='OnCommit Center', city='Toshkent',
+        )
+        self.olympiad = Olympiad.objects.create(
+            center=self.center,
+            title='Informatika',
+            subject='Informatika',
+            status='active',
+            event_type=Olympiad.EVENT_TYPE_OLYMPIAD,
+            start_datetime=timezone.now() - timezone.timedelta(minutes=10),
+            duration_minutes=60,
+        )
+        self.code_q = Question.objects.create(
+            center=self.center,
+            subject='Informatika',
+            text="Ikki sonni qo'shing",
+            question_type=Question.QUESTION_TYPE_CODE,
+            programming_language='python',
+            score=10,
+            test_cases=[{'input': '3 4', 'expected_output': '7'}],
+        )
+        self.olympiad.questions.add(self.code_q)
+        self.attempt = TestAttempt.objects.create(
+            user=self.student, olympiad=self.olympiad,
+            score=0, correct_count=0, wrong_count=0, total_questions=1,
+            answers={},
+        )
+
+    def test_ai_analysis_task_waits_for_commit(self):
+        from attempts.tasks import generate_attempt_ai_analysis_task
+        from attempts.views import _trigger_attempt_ai_analysis
+
+        with patch.object(generate_attempt_ai_analysis_task, 'delay') as mock_delay:
+            with self.captureOnCommitCallbacks(execute=True):
+                with transaction.atomic():
+                    _trigger_attempt_ai_analysis(self.attempt, self.olympiad, {})
+                # Blok tugadi, ammo tashqi tranzaksiya hali commit bo'lmagan.
+                mock_delay.assert_not_called()
+            mock_delay.assert_called_once_with(self.attempt.id)
+
+    def test_code_review_tasks_wait_for_commit(self):
+        from attempts.views import _save_code_submissions
+        from attempts.tasks import review_code_submissions_task
+        from questions.tasks import run_code_async_task
+
+        code_answers = {
+            str(self.code_q.id): {'code': 'print(7)', 'language': 'python'},
+        }
+        with patch.object(review_code_submissions_task, 'delay') as mock_review, \
+                patch.object(run_code_async_task, 'delay') as mock_run:
+            with self.captureOnCommitCallbacks(execute=True):
+                with transaction.atomic():
+                    _save_code_submissions(
+                        self.attempt, self.olympiad, code_answers,
+                    )
+                mock_review.assert_not_called()
+                mock_run.assert_not_called()
+
+            submission = CodeSubmission.objects.get(
+                attempt=self.attempt, question=self.code_q,
+            )
+            mock_review.assert_called_once_with([submission.id])
+            # Sikl ichidagi argumentlar to'g'ri bog'langan (late-binding yo'q).
+            self.assertEqual(
+                mock_run.call_args.args[1:],
+                ('print(7)', 'python', '', self.code_q.id),
+            )
+            self.assertEqual(
+                mock_run.call_args.kwargs, {'submission_id': submission.id},
+            )

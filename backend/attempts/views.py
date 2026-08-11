@@ -154,6 +154,33 @@ def _build_attempt_mistakes(attempt, olympiad, answers):
     return mistakes
 
 
+def _queue_after_commit(task, *args, **kwargs):
+    """Celery task'ni joriy tranzaksiya COMMIT bo'lgandan keyin navbatga qo'yadi.
+
+    `submit_attempt` butun ishni `transaction.atomic()` ichida bajaradi. Task
+    commit'dan oldin yuborilsa, worker attempt/submission qatorini hali
+    ko'rmaydi va `attempts.tasks` dagi `DoesNotExist` tutqichlari retry'siz
+    jimgina `return` qiladi — AI tahlil abadiy `pending` qolib, `ai_code_review`
+    /`ai_code_score` hech qachon to'ldirilmaydi.
+
+    Argumentlar shu yerda (funksiya freymida) bog'lanadi — sikl ichidan
+    chaqirilganda lambda'dagi kech bog'lanish (late-binding) muammosi yo'q.
+    Broker xatosi javobni buzmasligi kerak: on_commit hook'i atomic blok
+    chiqishida ishlaydi va chaqiruvchining try/except'idan tashqarida qoladi,
+    shu sababli istisno shu yerda log qilinadi (olympiads.services naqshi).
+    """
+    def _enqueue():
+        try:
+            task.delay(*args, **kwargs)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                'failed to queue task %s', getattr(task, 'name', task),
+            )
+
+    transaction.on_commit(_enqueue)
+
+
 def _trigger_attempt_ai_analysis(attempt, olympiad, answers):
     """O4: AttemptAIAnalysis pending yozuv yaratib, AI call'ni Celery'da bajaradi.
 
@@ -171,7 +198,7 @@ def _trigger_attempt_ai_analysis(attempt, olympiad, answers):
     if not created and obj.status == AttemptAIAnalysis.STATUS_READY:
         return
 
-    generate_attempt_ai_analysis_task.delay(attempt.id)
+    _queue_after_commit(generate_attempt_ai_analysis_task, attempt.id)
 
 
 def _save_code_submissions(attempt, olympiad, code_answers):
@@ -243,13 +270,14 @@ def _save_code_submissions(attempt, olympiad, code_answers):
             if is_supported(language):
                 task_id = str(uuid.uuid4())
                 cache.set(f"run_code:task:{task_id}", {'status': 'PENDING'}, timeout=300)
-                run_code_async_task.delay(
+                _queue_after_commit(
+                    run_code_async_task,
                     task_id, code, language, '', question.id,
                     submission_id=submission.id,
                 )
 
     if to_review:
-        review_code_submissions_task.delay(to_review)
+        _queue_after_commit(review_code_submissions_task, list(to_review))
 
 
 def _user_can_manage_olympiad(user, olympiad):
