@@ -196,7 +196,13 @@ const App = () => {
   const subscribeUserToPush = async () => {
     try {
       const registration = await navigator.serviceWorker.ready;
-      const publicVapidKey = 'BD9_OMAXcl4b5FYa6vk8WXkRGxZiiELY3wdujM8UJ7iwEuClqeaVtum5zIfga-IwqenvnRKn7-CyxwXWlZIe3zY';
+      // Backend'da bu kalit env orqali boshqariladi (VAPID_PUBLIC_KEY /
+      // VAPID_PRIVATE_KEY). Frontend ham build paytida o'sha qiymatni olsin,
+      // aks holda kalit rotatsiya qilinganda obuna muvaffaqiyatli
+      // ro'yxatdan o'tadi-yu, push yetkazilmaydi. Fallback — hozirgi kalit
+      // (VITE_GOOGLE_CLIENT_ID naqshi kabi).
+      const publicVapidKey = import.meta.env?.VITE_VAPID_PUBLIC_KEY
+        || 'BD9_OMAXcl4b5FYa6vk8WXkRGxZiiELY3wdujM8UJ7iwEuClqeaVtum5zIfga-IwqenvnRKn7-CyxwXWlZIe3zY';
       
       const padding = '='.repeat((4 - publicVapidKey.length % 4) % 4);
       const base64 = (publicVapidKey + padding).replace(/\-/g, '+').replace(/_/g, '/');
@@ -702,7 +708,8 @@ const App = () => {
         onOpenSwitcher: () => setSwitcherOpen(true),
         onUserUpdate: updateCurrentUser,
       };
-      if (role === 'student') return <StudentDashboard {...props} />;
+      // 'student' bu yerda YO'Q — tasdiqlangan o'quvchi yuqorida erta
+      // qaytariladi, `pending && owner` sharti esa o'quvchiga tegishli emas.
       if (role === 'manager') return <ManagerDashboard {...props} />;
       if (role === 'teacher') return <TeacherDashboard {...props} />;
       if (role === 'owner')   return <OwnerDashboard {...props} />;

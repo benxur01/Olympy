@@ -191,6 +191,10 @@ services:
         #   export VITE_SENTRY_DSN=https://...ingest.sentry.io/...
         VITE_SENTRY_DSN: "${VITE_SENTRY_DSN:-}"
         VITE_GOOGLE_CLIENT_ID: "${VITE_GOOGLE_CLIENT_ID:-}"
+        # Web Push ochiq bo'lishi uchun backend'dagi VAPID_PUBLIC_KEY bilan
+        # BIR XIL qiymat bo'lishi shart (backend/olympy-celery servislariga
+        # qarang). Faqat public key — VAPID_PRIVATE_KEY bu yerga TUSHMASIN.
+        VITE_VAPID_PUBLIC_KEY: "${VITE_VAPID_PUBLIC_KEY:-}"
     image: olympy-nginx:latest
     ports:
       - "80:80"
