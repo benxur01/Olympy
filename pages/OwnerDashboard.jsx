@@ -216,23 +216,6 @@ const OwnerSidebarItem = ({ item, active, onClick }) => (
   </button>
 );
 
-const FALLBACK_ORGANIZATION_PRICING = [
-  { id: 13, name: 'Standart (1 oy)', plan_type: 'organization', price: 199999, duration_days: 30, description: 'Kichik tashkilotlar uchun mos reja (1 oy)', features: ["1 ta tashkilot qo'shish", "Menejer boshqaruv paneli", "Olimpiadalar o'tkazish", "Asosiy tahlillar"], is_popular: false },
-  { id: 14, name: 'Standart (3 oy)', plan_type: 'organization', price: 539999, duration_days: 90, description: 'Kichik tashkilotlar uchun mos reja (3 oy)', features: ["1 ta tashkilot qo'shish", "Menejer boshqaruv paneli", "Olimpiadalar o'tkazish", "Asosiy tahlillar"], is_popular: false },
-  { id: 15, name: 'Standart (6 oy)', plan_type: 'organization', price: 959999, duration_days: 180, description: 'Kichik tashkilotlar uchun mos reja (6 oy)', features: ["1 ta tashkilot qo'shish", "Menejer boshqaruv paneli", "Olimpiadalar o'tkazish", "Asosiy tahlillar"], is_popular: false },
-  { id: 16, name: 'Standart (1 yil)', plan_type: 'organization', price: 1679999, duration_days: 365, description: 'Kichik tashkilotlar uchun mos reja (1 yil)', features: ["1 ta tashkilot qo'shish", "Menejer boshqaruv paneli", "Olimpiadalar o'tkazish", "Asosiy tahlillar"], is_popular: false },
-
-  { id: 17, name: 'Plus (1 oy)', plan_type: 'organization', price: 399999, duration_days: 30, description: 'O\'sib borayotgan tashkilotlar uchun (1 oy)', features: ["Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], is_popular: true },
-  { id: 18, name: 'Plus (3 oy)', plan_type: 'organization', price: 1079999, duration_days: 90, description: 'O\'sib borayotgan tashkilotlar uchun (3 oy)', features: ["Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], is_popular: true },
-  { id: 19, name: 'Plus (6 oy)', plan_type: 'organization', price: 1919999, duration_days: 180, description: 'O\'sib borayotgan tashkilotlar uchun (6 oy)', features: ["Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], is_popular: true },
-  { id: 20, name: 'Plus (1 yil)', plan_type: 'organization', price: 3359999, duration_days: 365, description: 'O\'sib borayotgan tashkilotlar uchun (1 yil)', features: ["Standart reja imkoniyatlari", "PDF hisobotlarni yuklash", "AI savollar generatori", "Batafsil tahlillar", "Telegram bot integratsiyasi"], is_popular: true },
-
-  { id: 21, name: 'Pro (1 oy)', plan_type: 'organization', price: 799999, duration_days: 30, description: 'Yirik ta\'lim tashkilotlari uchun (1 oy)', features: ["Plus reja imkoniyatlari", "Cheksiz olimpiada va o'quvchilar", "API kirish", "Maxsus qo'llab-quvvatlash"], is_popular: false },
-  { id: 22, name: 'Pro (3 oy)', plan_type: 'organization', price: 2159999, duration_days: 90, description: 'Yirik ta\'lim tashkilotlari uchun (3 oy)', features: ["Plus reja imkoniyatlari", "Cheksiz olimpiada va o'quvchilar", "API kirish", "Maxsus qo'llab-quvvatlash"], is_popular: false },
-  { id: 23, name: 'Pro (6 oy)', plan_type: 'organization', price: 3839999, duration_days: 180, description: 'Yirik ta\'lim tashkilotlari uchun (6 oy)', features: ["Plus reja imkoniyatlari", "Cheksiz olimpiada va o'quvchilar", "API kirish", "Maxsus qo'llab-quvvatlash"], is_popular: false },
-  { id: 24, name: 'Pro (1 yil)', plan_type: 'organization', price: 6719999, duration_days: 365, description: 'Yirik ta\'lim tashkilotlari uchun (1 yil)', features: ["Plus reja imkoniyatlari", "Cheksiz olimpiada va o'quvchilar", "API kirish", "Maxsus qo'llab-quvvatlash"], is_popular: false },
-];
-
 const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpdate }) => {
   const store = useStore();
   const isApi = !!user?._api;
@@ -254,14 +237,26 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [paymentError, setPaymentError] = React.useState('');
   const [plans, setPlans] = React.useState([]);
   const [plansLoading, setPlansLoading] = React.useState(true);
+  // Tariflar faqat backend katalogidan olinadi. Avval so'rov yiqilsa qattiq
+  // yozilgan narxlar ko'rsatilardi va o'sha obyektlarning id'si to'lovga
+  // yuborilardi — katalog o'zgargan bo'lsa ekrandagi narx bilan hisobdagi
+  // narx farq qilishi mumkin edi. Endi xato holati + "Qayta urinish"
+  // ko'rsatiladi, "Sotib olish" esa umuman chiqmaydi.
+  const [plansError, setPlansError] = React.useState('');
+  const [plansTick, setPlansTick] = React.useState(0);
   const [durationFilter, setDurationFilter] = React.useState(30);
   // Obuna limitlari + joriy foydalanish (Talabalar: 45/50, progress bar).
   // GET /api/billing/limits/ dan yuklanadi (premium sahifasi ochilganda).
   const [limits, setLimits] = React.useState(null);
-  const [toast, setToast] = React.useState('');
   // Tasdiqlash modali — Telegram WebApp'da window.confirm() bloklanadi.
   // { title, message, confirmText, onConfirm } yoki null.
   const [confirmDialog, setConfirmDialog] = React.useState(null);
+  // Tasdiqlash so'rovi ketayotganda ConfirmModal `busy` prop'i tugmalarni
+  // bloklaydi (AdminDashboard har bir ConfirmModal chaqiruvida shunday
+  // qiladi). Avval modal so'rov tugashini kutmasdan darhol yopilardi va
+  // sekin tarmoqda direktor ikkinchi marta bosib, ikkinchi DELETE'ni
+  // yuborardi — birinchisi muvaffaqiyatli bo'lsa ham "O'chirib bo'lmadi".
+  const [confirmBusy, setConfirmBusy] = React.useState(false);
   const askConfirm = (opts) => setConfirmDialog(opts);
   const [pendingTeachers, setPendingTeachers] = React.useState([]);
   const [pendingManagers, setPendingManagers] = React.useState([]);
@@ -271,6 +266,9 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [staffRole, setStaffRole] = React.useState('manager');
   const [staffSaving, setStaffSaving] = React.useState(false);
   const [removingMembershipId, setRemovingMembershipId] = React.useState(null);
+  // Ariza qabul/rad qilish ketayotgan qator id'si (ikki marta bosishdan
+  // himoya) — quyidagi `studentActionId` bilan bir xil naqsh.
+  const [requestActionId, setRequestActionId] = React.useState(null);
   // Rolni o'zgartirish modali: tanlangan a'zolik, yangi rol, holatlar.
   const [roleModalRow, setRoleModalRow] = React.useState(null);
   const [roleModalNewRole, setRoleModalNewRole] = React.useState('manager');
@@ -353,10 +351,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [brandColorInput, setBrandColorInput] = React.useState('#6366f1');
   const [brandSaving, setBrandSaving] = React.useState(false);
 
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(''), 2500);
-  };
+  // Avval bitta string state + bitta setTimeout edi: ikkinchi toast birinchisi
+  // so'nishidan oldin kelsa, birinchisining eski taymeri uni muddatidan oldin
+  // yashirib yuborardi. shared.jsx'dagi useToast() buni stacked, id-based
+  // ro'yxat bilan hal qiladi — imzosi bir xil (showToast(msg)) bo'lgani uchun
+  // mavjud chaqiruv joylari o'zgarishsiz ishlaydi (AdminDashboard ham shunday).
+  const { showToast, ToastHost } = useToast();
 
   const loadProctoring = React.useCallback(() => {
     if (!isApi || !liveOlympiadId) {
@@ -586,13 +586,20 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     if (page === 'premium') {
       let cancelled = false;
       setPlansLoading(true);
+      setPlansError('');
       (async () => {
         try {
           const data = await OlympyApi.getSubscriptionPlans();
           if (cancelled) return;
           const list = Array.isArray(data) ? data.filter(p => p.plan_type === 'organization') : [];
           setPlans(list);
-        } catch {
+          // Bo'sh katalog ham xato holati: narxsiz "Sotib olish" ko'rsatib
+          // bo'lmaydi.
+          if (!list.length) setPlansError("Tariflar yuklanmadi, qayta urinib ko'ring");
+        } catch (err) {
+          if (cancelled) return;
+          setPlans([]);
+          setPlansError(OlympyApi.toUserMessage?.(err) || "Tariflar yuklanmadi, qayta urinib ko'ring");
         } finally {
           if (!cancelled) setPlansLoading(false);
         }
@@ -602,10 +609,27 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       reloadBillingLimits();
       return () => { cancelled = true; };
     }
-  }, [page, isApi, ownerCenterId, reloadBillingLimits]);
+    // `plansTick` — "Qayta urinish" tugmasi uchun (useApiData'dagi `tick` +
+    // `reload` naqshi).
+  }, [page, isApi, ownerCenterId, reloadBillingLimits, plansTick]);
+
+  // To'lov oynasi yopilganda parvozdagi so'rovning javobi endi ishlatilmasin:
+  // aks holda direktor oynani yopib "bekor qildim" deb o'ylagan holatda ham
+  // javob kelganda openExternalLink() to'lov sahifasini kutilmaganda ochib
+  // yuborardi. `useApiData`'dagi `cancelled` bayrog'i bilan bir xil g'oya,
+  // faqat imperativ chaqiruv uchun ref'da.
+  const paymentReqRef = React.useRef(0);
+  const closePaymentModal = () => {
+    paymentReqRef.current += 1;
+    setPaymentPlan(null);
+    setPaymentError('');
+    setPaymentLoading(false);
+    payPolling.reset();
+  };
 
   const handleCreatePayment = async (provider) => {
-    if (!paymentPlan) return;
+    if (!paymentPlan || paymentLoading) return;
+    const reqId = ++paymentReqRef.current;
     setPaymentLoading(true);
     setPaymentError('');
     try {
@@ -614,6 +638,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         plan_id: paymentPlan.id,
         provider: provider
       }, token);
+      // Oyna yopilgan bo'lsa — havolani ochmaymiz va polling'ni boshlamaymiz.
+      if (paymentReqRef.current !== reqId) return;
       if (res && res.payment_url) {
         openExternalLink(res.payment_url);
         // To'lov sahifasi ochildi — backend webhook'i obunani faollashtirishini
@@ -639,9 +665,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         throw new Error("To'lov havolasini olishda xatolik yuz berdi");
       }
     } catch (err) {
+      if (paymentReqRef.current !== reqId) return;
       setPaymentError(OlympyApi.toUserMessage?.(err) || "To'lov havolasini generatsiya qilib bo'lmadi");
     } finally {
-      setPaymentLoading(false);
+      // Oyna yopilgan (yoki yangi so'rov boshlangan) bo'lsa bayroqni bu yerda
+      // tozalamaymiz — closePaymentModal allaqachon tozalagan.
+      if (paymentReqRef.current === reqId) setPaymentLoading(false);
     }
   };
 
@@ -1033,10 +1062,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     if (isApi) {
       const req = centerRequests.find(r => r.id === id);
       if (!req) { showToast('Ariza topilmadi'); return; }
+      setRequestActionId(id);
       callApiApproval(req, 'approved')
         .then(() => loadPendingStaff())
         .then(() => showToast('Ariza tasdiqlandi'))
-        .catch(err => { console.warn('approve failed:', err); showToast("Tasdiqlab bo'lmadi"); });
+        .catch(err => { console.warn('approve failed:', err); showToast("Tasdiqlab bo'lmadi"); })
+        .finally(() => setRequestActionId(null));
       return;
     }
     OlympyStore.approveRequest(id);
@@ -1047,10 +1078,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     if (isApi) {
       const req = centerRequests.find(r => r.id === id);
       if (!req) { showToast('Ariza topilmadi'); return; }
+      setRequestActionId(id);
       callApiApproval(req, 'rejected')
         .then(() => loadPendingStaff())
         .then(() => showToast('Ariza rad etildi'))
-        .catch(err => { console.warn('reject failed:', err); showToast("Rad etib bo'lmadi"); });
+        .catch(err => { console.warn('reject failed:', err); showToast("Rad etib bo'lmadi"); })
+        .finally(() => setRequestActionId(null));
       return;
     }
     OlympyStore.rejectRequest(id);
@@ -1787,13 +1820,15 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             <div className="flex shrink-0 gap-2">
               <button
                 onClick={() => approve(req.id)}
-                className="btn-success rounded-xl px-3 py-2 text-xs font-black"
+                disabled={requestActionId === req.id}
+                className="btn-success rounded-xl px-3 py-2 text-xs font-black disabled:opacity-50"
               >
-                Qabul
+                {requestActionId === req.id ? '...' : 'Qabul'}
               </button>
               <button
                 onClick={() => reject(req.id)}
-                className="btn-danger rounded-xl px-3 py-2 text-xs font-black"
+                disabled={requestActionId === req.id}
+                className="btn-danger rounded-xl px-3 py-2 text-xs font-black disabled:opacity-50"
               >
                 Rad
               </button>
@@ -3477,8 +3512,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   };
 
   const renderPremium = () => {
-    const pricing = (plans && plans.length) ? plans : FALLBACK_ORGANIZATION_PRICING;
-    const activePlans = pricing.filter(p => p.duration_days === durationFilter);
+    const activePlans = plans.filter(p => p.duration_days === durationFilter);
     return (
       <div className="space-y-6 p-4 lg:p-6 animate-in">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass rounded-3xl p-6 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
@@ -3635,6 +3669,19 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
         {plansLoading ? (
           <div className="text-center py-12 text-white/40 text-sm">Tariflar yuklanmoqda...</div>
+        ) : plansError ? (
+          // Katalog yuklanmagan — qattiq yozilgan narxlarni ko'rsatmaymiz,
+          // aks holda ekrandagi narx bilan hisobdagi narx farq qilishi mumkin.
+          <div className="text-center py-12 space-y-3">
+            <div className="text-sm text-rose-300">{plansError}</div>
+            <button
+              type="button"
+              onClick={() => setPlansTick(t => t + 1)}
+              className="btn-primary px-5 py-2.5 rounded-xl text-xs font-bold"
+            >
+              Qayta urinish
+            </button>
+          </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             {activePlans.map((p, i) => {
@@ -3981,14 +4028,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </form>
         </div>
       )}
-      {toast && (
-        <div
-          className="fixed bottom-6 right-6 z-50 rounded-xl border border-white/10 px-4 py-3 text-sm font-bold text-white shadow-2xl"
-          style={{ background: 'rgba(13, 14, 18, 0.98)' }}
-        >
-          {toast}
-        </div>
-      )}
+      <ToastHost />
 
       {/* Tasdiqlash modali — Telegram WebApp'da window.confirm() o'rniga */}
       <ConfirmModal
@@ -3996,13 +4036,19 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         onClose={() => setConfirmDialog(null)}
         onConfirm={() => {
           const cb = confirmDialog?.onConfirm;
-          setConfirmDialog(null);
-          cb?.();
+          if (!cb) { setConfirmDialog(null); return; }
+          // Modal so'rov tugagunicha ochiq va `busy` qoladi — barcha
+          // askConfirm chaqiruvlari promise qaytaradi.
+          setConfirmBusy(true);
+          Promise.resolve()
+            .then(cb)
+            .finally(() => { setConfirmBusy(false); setConfirmDialog(null); });
         }}
         title={confirmDialog?.title || 'Tasdiqlaysizmi?'}
         message={confirmDialog?.message || ''}
         confirmText={confirmDialog?.confirmText || 'Ha'}
         danger
+        busy={confirmBusy}
       />
 
       {/* F1: B2B markaz onboarding sehrgari (3 qadam). */}
@@ -4090,7 +4136,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       {paymentPlan && (
         <Modal
           open={!!paymentPlan}
-          onClose={() => { setPaymentPlan(null); setPaymentError(''); payPolling.reset(); }}
+          onClose={() => { if (!paymentLoading) closePaymentModal(); }}
           title={
             payPolling.status === 'success' ? "To'lov muvaffaqiyatli!"
               : payPolling.status === 'timeout' ? "To'lov tekshirilmoqda"
@@ -4113,7 +4159,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 </p>
               </div>
               <button
-                onClick={() => { setPaymentPlan(null); setPaymentError(''); payPolling.reset(); }}
+                onClick={closePaymentModal}
                 className="w-full py-3 rounded-2xl bg-emerald-500/90 hover:bg-emerald-500 text-white text-sm font-bold transition-colors"
               >
                 Yopish
@@ -4133,7 +4179,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 </p>
               </div>
               <button
-                onClick={() => { setPaymentPlan(null); setPaymentError(''); payPolling.reset(); }}
+                onClick={closePaymentModal}
                 className="w-full py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white text-sm font-bold transition-colors"
               >
                 Yopish
@@ -4153,7 +4199,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 </p>
               </div>
               <button
-                onClick={() => { setPaymentPlan(null); setPaymentError(''); payPolling.reset(); }}
+                onClick={closePaymentModal}
                 className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-sm font-bold transition-colors"
               >
                 Yopish
