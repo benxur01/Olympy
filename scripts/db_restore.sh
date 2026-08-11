@@ -1,6 +1,11 @@
 #!/bin/bash
 # DB restore skripti
-# Ishlatish: ./scripts/db_restore.sh <backup.dump> <DATABASE_URL>
+# Ishlatish: ./scripts/db_restore.sh <backup.dump[.gpg]> <DATABASE_URL>
+#
+# `.gpg` bilan tugaydigan fayllar avval deshifrlanadi (db_backup.sh AES256
+# bilan shifrlagan backup'lar uchun BACKUP_PASSPHRASE talab qilinadi).
+# `.gpg` bilan tugamaydigan eski shifrlanmagan `.dump` fayllar avvalgidek
+# to'g'ridan-to'g'ri tiklanadi (orqaga moslik).
 
 set -e
 
@@ -14,9 +19,11 @@ if ! command -v pg_restore &>/dev/null; then
 fi
 
 if [ -z "$BACKUP_FILE" ] || [ -z "$TARGET_URL" ]; then
-    echo "Ishlatish: ./scripts/db_restore.sh <backup.dump> <DATABASE_URL>"
+    echo "Ishlatish: ./scripts/db_restore.sh <backup.dump[.gpg]> <DATABASE_URL>"
     echo ""
-    echo "Misol:"
+    echo "Misol (shifrlangan):"
+    echo "  BACKUP_PASSPHRASE=\"...\" ./scripts/db_restore.sh backups/backup_20260602_120000.dump.gpg 'postgresql://user:pass@host:5432/dbname'"
+    echo "Misol (eski shifrlanmagan):"
     echo "  ./scripts/db_restore.sh backups/backup_20260602_120000.dump 'postgresql://user:pass@host:5432/dbname'"
     exit 1
 fi
@@ -41,9 +48,45 @@ if [ "$CONFIRM" != "yes" ]; then
 fi
 
 echo ""
+
+RESTORE_FILE="$BACKUP_FILE"
+DECRYPTED_TMP=""
+
+if [[ "$BACKUP_FILE" == *.gpg ]]; then
+    if ! command -v gpg &>/dev/null; then
+        echo "XATO: gpg topilmadi."
+        echo "O'rnatish: sudo apt-get install gnupg"
+        exit 1
+    fi
+    if [ -z "${BACKUP_PASSPHRASE:-}" ]; then
+        echo "XATO: BACKUP_PASSPHRASE o'rnatilmagan. Shifrlangan backup'ni ochib bo'lmaydi."
+        echo "Ishlatish: BACKUP_PASSPHRASE=\"...\" ./scripts/db_restore.sh $BACKUP_FILE '...'"
+        exit 1
+    fi
+
+    echo "Backup shifrlangan — deshifrlanmoqda..."
+    DECRYPTED_TMP="$(mktemp "$(dirname "$0")/../backups/.decrypted_XXXXXX.dump")"
+    cleanup() {
+        rm -f "$DECRYPTED_TMP"
+    }
+    trap cleanup EXIT
+
+    gpg --batch --yes --quiet \
+        --pinentry-mode loopback --passphrase-fd 3 \
+        --decrypt --output "$DECRYPTED_TMP" "$BACKUP_FILE" \
+        3< <(printf '%s' "$BACKUP_PASSPHRASE")
+
+    RESTORE_FILE="$DECRYPTED_TMP"
+    echo "Deshifrlash muvaffaqiyatli."
+fi
+
 echo "Restore boshlanmoqda..."
 
-pg_restore --no-acl --no-owner --clean --if-exists -d "$TARGET_URL" "$BACKUP_FILE"
+pg_restore --no-acl --no-owner --clean --if-exists -d "$TARGET_URL" "$RESTORE_FILE"
+
+if [ -n "$DECRYPTED_TMP" ]; then
+    rm -f "$DECRYPTED_TMP"
+fi
 
 echo ""
 echo "Restore muvaffaqiyatli yakunlandi!"
