@@ -5,6 +5,7 @@ from rest_framework.response import Response
 
 from .models import Notification, PushSubscription
 from .serializers import NotificationSerializer
+from .validators import is_allowed_push_endpoint
 
 
 @api_view(['POST'])
@@ -17,6 +18,15 @@ def subscribe_push(request):
 
     if not endpoint or not p256dh or not auth:
         return Response({'detail': "Noto'g'ri parametrlar"}, status=400)
+
+    # SSRF himoyasi: bu URL'ga keyinchalik server o'zi POST qiladi
+    # (`send_web_push`), shuning uchun faqat https va ma'lum brauzer push
+    # xizmatlari qabul qilinadi. Rad etilsa hech narsa saqlanmaydi.
+    if not is_allowed_push_endpoint(endpoint):
+        return Response(
+            {'detail': "Push endpoint manzili qo'llab-quvvatlanmaydi"},
+            status=400,
+        )
 
     PushSubscription.objects.update_or_create(
         endpoint=endpoint,

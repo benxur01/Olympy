@@ -81,9 +81,24 @@ def _send_telegram_to_user(user, message, reply_markup=None):
 
 def send_web_push(subscription_model, title, message, url='/', push_type=None):
     from pywebpush import webpush, WebPushException
+
+    from .validators import is_allowed_push_endpoint, push_endpoint_host
+
     # VAPID private key bo'lmasa push o'chiq — hardcoded default ishlatilmaydi.
     if not getattr(settings, 'VAPID_PRIVATE_KEY', None):
         logger.info('[webpush-skip] VAPID_PRIVATE_KEY sozlanmagan')
+        return False
+    # Chuqurlikda himoya: endpoint allowlist'i `subscribe_push` da ham
+    # tekshiriladi, lekin bazada validatsiya joriy qilinishidan OLDIN
+    # saqlangan (yoki allowlist keyinroq toraytirilgan) yozuvlar qolishi
+    # mumkin. Ular bo'yicha hech qachon so'rov yubormaymiz.
+    if not is_allowed_push_endpoint(subscription_model.endpoint):
+        logger.warning(
+            '[webpush-skip] ruxsat etilmagan endpoint host=%s sub=%s user=%s',
+            push_endpoint_host(subscription_model.endpoint) or '?',
+            subscription_model.pk,
+            subscription_model.user_id,
+        )
         return False
     try:
         subscription_info = {
