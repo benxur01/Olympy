@@ -30,6 +30,9 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
     // Unmount'da barcha polling timerlarini tozalaymiz.
     Object.values(essayPollRef.current).forEach((t) => clearTimeout(t));
   }, []);
+  // "Tushuntirish" AI task'i ham polling bilan olinadi (api.js ichida) —
+  // unmount'da o'sha loop to'xtasin.
+  const aiAbort = useAbortOnUnmount();
 
   // "Chuqur AI tahlil" tugmasi — insho javobini AI orqali tahlil qiladi.
   // Backend on-demand: birinchi so'rov {status:'pending'} qaytarsa, tayyor
@@ -44,6 +47,10 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
       setEssayAILoading((prev) => ({ ...prev, [qid]: false }));
     };
     const scheduleNext = () => {
+      // Unmount: `essayPollRef` timerlari yuqorida tozalanadi, lekin o'sha
+      // paytda yo'lda bo'lgan `poll()` javob kelgach yangi timer qo'yib,
+      // loop'ni komponentsiz ham davom ettirardi (3 daqiqagacha).
+      if (aiAbort.isAborted()) return;
       if (tries >= ESSAY_AI_MAX_TRIES) {
         stopWith("AI tahlil hali tayyor emas. Birozdan so'ng qayta urinib ko'ring.");
         return;
@@ -83,9 +90,11 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
     if (explanations[qid]) return;
     setExplaining(prev => ({ ...prev, [qid]: true }));
     try {
-      const res = await OlympyApi.explainQuestion(qid, OlympyApi.getToken());
+      const res = await OlympyApi.explainQuestion(qid, OlympyApi.getToken(), aiAbort.getSignal());
       setExplanations(prev => ({ ...prev, [qid]: res?.explanation || "Tushuntirish yuklanmadi." }));
     } catch (err) {
+      // Unmount'da atayin bekor qilindi — xato sifatida ko'rsatilmaydi.
+      if (aiAbort.isAborted()) return;
       setExplanations(prev => ({ ...prev, [qid]: OlympyApi.toUserMessage?.(err) || "Tushuntirish yuklab bo'lmadi." }));
     } finally {
       setExplaining(prev => ({ ...prev, [qid]: false }));

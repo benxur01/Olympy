@@ -689,6 +689,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // Judge0 "Ishga tushirish" natijasi: { [savolIndeksi]: { status, stdout, ... } }.
   const [runResults, setRunResults] = React.useState({});
   const [runningIndex, setRunningIndex] = React.useState(null);
+  // Kod ishga tushirish / AI tekshiruv Judge0 va Gemini task'ini ~30 soniya
+  // polling qiladi. Test sahifasidan chiqilganda (submit, DQ, orqaga) polling
+  // to'xtashi kerak — aks holda so'rovlar unmount'dan keyin ham davom etadi.
+  const aiAbort = useAbortOnUnmount();
   // Timer useEffect closure stale answers ushlab qolmasligi uchun ref —
   // har render'da yangilanadi va handleSubmit uni o'qiydi.
   const answersRef = React.useRef(answers);
@@ -1613,9 +1617,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       const res = await globalThis.OlympyApi.reviewCode(
         { question_id: qq.id, submitted_code: code, language: currentCodeLang(qq) },
         token,
+        aiAbort.getSignal(),
       );
       setCodeReview(prev => ({ ...prev, [current]: { score: res?.score, review: res?.review || '' } }));
     } catch (err) {
+      // Unmount'da atayin bekor qilindi — ko'rsatadigan ekran ham yo'q.
+      if (aiAbort.isAborted()) return;
       const detail = err?.data?.detail || err?.message || "AI tekshiruvni bajarib bo'lmadi.";
       setCodeReview(prev => ({ ...prev, [current]: { score: null, review: detail } }));
     } finally {
@@ -1636,9 +1643,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       const res = await globalThis.OlympyApi.runCode(
         { source_code: code, language: currentCodeLang(qq), question_id: qq.id },
         token,
+        aiAbort.getSignal(),
       );
       setRunResults(prev => ({ ...prev, [idx]: res }));
     } catch (err) {
+      if (aiAbort.isAborted()) return;
       const detail = err?.data?.detail || err?.message || "Kodni ishga tushirib bo'lmadi.";
       setRunResults(prev => ({ ...prev, [idx]: { status: 'Xato', error: detail } }));
     } finally {

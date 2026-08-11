@@ -368,6 +368,9 @@ function MistakesPage({ apiMistakesRes, showApiToast }) {
   const [selectedQuestion, setSelectedQuestion] = React.useState(null);
   const [explainingId, setExplainingId] = React.useState(null);
   const [explanationMap, setExplanationMap] = React.useState({});
+  // AI tushuntirish backend task'ini daqiqalab polling qiladi — sahifadan
+  // chiqilganda to'xtatamiz.
+  const aiAbort = useAbortOnUnmount();
 
   const handleExplainMistake = async (item) => {
     if (explanationMap[item.question_id]) {
@@ -376,7 +379,7 @@ function MistakesPage({ apiMistakesRes, showApiToast }) {
     }
     setExplainingId(item.question_id);
     try {
-      const resp = await OlympyApi.explainQuestion(item.question_id, OlympyApi.getToken());
+      const resp = await OlympyApi.explainQuestion(item.question_id, OlympyApi.getToken(), aiAbort.getSignal());
       if (resp?.explanation) {
         setExplanationMap(prev => ({ ...prev, [item.question_id]: resp.explanation }));
         setSelectedQuestion({ ...item, explanation: resp.explanation });
@@ -384,6 +387,8 @@ function MistakesPage({ apiMistakesRes, showApiToast }) {
         showApiToast("Tushuntirish olib bo'lmadi.");
       }
     } catch (err) {
+      // Unmount'da atayin bekor qilindi — toast ko'rsatadigan sahifa yo'q.
+      if (aiAbort.isAborted()) return;
       showApiToast(OlympyApi.toUserMessage?.(err) || "Xatolik yuz berdi");
     } finally {
       setExplainingId(null);
@@ -393,13 +398,14 @@ function MistakesPage({ apiMistakesRes, showApiToast }) {
   const handleOverallAnalysis = async () => {
     setAnalyzing(true);
     try {
-      const resp = await OlympyApi.explainAllMistakes(OlympyApi.getToken());
+      const resp = await OlympyApi.explainAllMistakes(OlympyApi.getToken(), aiAbort.getSignal());
       if (resp?.explanation) {
         setOverallAnalysis(resp.explanation);
       } else {
         showApiToast("Tahlil olib bo'lmadi.");
       }
     } catch (err) {
+      if (aiAbort.isAborted()) return;
       showApiToast(OlympyApi.toUserMessage?.(err) || "Xatolik yuz berdi");
     } finally {
       setAnalyzing(false);
@@ -1924,17 +1930,22 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     const [loading, setLoading] = React.useState(false);
     const [plan, setPlan] = React.useState(null);
     const [error, setError] = React.useState('');
+    // Reja AI task'i polling bilan olinadi — kartochka ekrandan ketganda
+    // so'rov to'xtasin.
+    const aiAbort = useAbortOnUnmount();
     const handleGetPlan = async () => {
       setLoading(true);
       setError('');
       try {
-        const resp = await OlympyApi.getStudyPlan(OlympyApi.getToken());
+        const resp = await OlympyApi.getStudyPlan(OlympyApi.getToken(), aiAbort.getSignal());
         setPlan(resp?.plan || []);
         if ((!resp?.plan || resp.plan.length === 0) && resp?.detail) setError(resp.detail);
       } catch (e) {
+        if (aiAbort.isAborted()) return;
         setError(OlympyApi.toUserMessage?.(e) || "Rejani olib bo'lmadi");
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
     return (
       <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
