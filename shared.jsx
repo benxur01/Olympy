@@ -1255,7 +1255,10 @@ const DonutChart = ({ value, max = 100, color = '#6366f1', size = 80, label }) =
 
 // ─── BarChart ─────────────────────────────────────────────────────────────────
 const BarChart = ({ data }) => {
-  const max = Math.max(...data.map(d => d.value));
+  // Pastki chegara 1 — barcha qiymat 0 bo'lganda (masalan o'quvchining hamma
+  // oyi uchun average_score = 0) `max` 0 bo'lib qolardi va `0 / 0` → NaN,
+  // ya'ni `height: "NaNpx"`. MonthBarChart/AdminBarChart bilan bir xil naqsh.
+  const max = Math.max(1, ...data.map(d => d.value || 0));
   return (
     <div className="flex items-end gap-2 h-24">
       {data.map((d, i) => (
@@ -1459,6 +1462,42 @@ const useApiData = (fetcher, deps = []) => {
   }, [...deps, tick]);
   return { data, loading, error, reload, mutate };
 };
+
+// ─── Unmount'da uzoq so'rovni bekor qilish hook'i ─────────────────────────
+// AI/polling chaqiruvlari (`generateAiQuestions`, `extractPdfQuestions`,
+// `runCode`, `explainQuestion`, `getStudyPlan` ...) backend Celery task'ini
+// 2 soniyada bir so'rab turadi — 150 urinishgacha, ya'ni 5 daqiqagacha.
+// Komponent unmount bo'lsa bu loop O'Z-O'ZIDAN TO'XTAMAYDI: `signal`
+// berilmasa foydalanuvchi sahifadan chiqib ketganidan keyin ham backend va
+// Gemini/Judge0 ga so'rov ketaveradi. Shu hook o'sha signalni beradi.
+//
+// Foydalanish:
+//   const abort = useAbortOnUnmount();
+//   const res = await OlympyApi.generateAiQuestions(payload, token, abort.getSignal());
+//   ... catch (err) { if (abort.isAborted()) return; /* keyin xatoni ko'rsatish */ }
+//
+// Bitta komponentning barcha so'rovlari bitta controller'ni bo'lishadi —
+// u FAQAT unmount'da bekor qilinadi, shuning uchun parallel so'rovlar
+// bir-birini uzmaydi.
+function useAbortOnUnmount() {
+  const ref = React.useRef(null);
+  // Lazy init (React'ning rasmiy naqshi) — controller birinchi render'da
+  // yaratiladi, keyingi render'larda o'sha-o'zi qoladi.
+  if (!ref.current) ref.current = new AbortController();
+  React.useEffect(() => {
+    // StrictMode qayta mount qilganda avvalgi controller allaqachon bekor
+    // qilingan bo'ladi — yangisiga almashtiramiz.
+    if (ref.current.signal.aborted) ref.current = new AbortController();
+    return () => ref.current.abort();
+  }, []);
+  return {
+    getSignal: () => ref.current.signal,
+    // Xato abort sababli chiqdimi (ya'ni komponent unmount bo'ldimi)?
+    // api.js abort'da native `AbortError` emas, `ApiError('aborted')` otadi —
+    // shuning uchun xato obyektiga emas, signal holatiga qaraymiz.
+    isAborted: () => ref.current.signal.aborted,
+  };
+}
 
 // useDebounce — qiymat o'zgarganidan keyin `delay` ms kutib, eng oxirgi
 // qiymatni qaytaradi. Qidiruv input'larida foydalaniladi: har bosishda

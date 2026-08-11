@@ -113,6 +113,10 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   const [wordAiProvider, setWordAiProvider] = React.useState('');
   const [wordAiWarning, setWordAiWarning] = React.useState('');
   const [wordAiChunks, setWordAiChunks] = React.useState(1);
+  // AI/PDF/Word generatsiyasi backend task'ini 2 soniyada bir, 150 martagacha
+  // (≈5 daqiqa) so'raydi. Foydalanuvchi sahifadan chiqib ketsa polling
+  // to'xtashi kerak — aks holda Gemini'ga so'rov ketaveradi.
+  const aiAbort = useAbortOnUnmount();
   const [newQ, setNewQ] = React.useState({ text:'', type:'Ko\'p tanlovli', subject: store.subjects[0] || 'Matematika', level:'O\'rta', score:3, options:['','','',''], correct:0, correctIndexes:[], correctText:'', blanks:[{ key:'1', answer:'' }], slider:{ ...DEFAULT_SLIDER }, programmingLanguage:'python', codeTemplate:'', expectedOutput:'', testCases:[] });
   const [editingQuestionId, setEditingQuestionId] = React.useState(null);
   // saveQuestion tugmasi so'rov davomida disabled bo'lishi uchun — avval
@@ -348,13 +352,15 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
         count: aiForm.count,
         difficulty: _diffToApi(aiForm.level, aiForm.subject),
         question_type: aiForm.type,
-      }, OlympyApi.getToken());
+      }, OlympyApi.getToken(), aiAbort.getSignal());
       const generated = (response?.questions || []).map(_mapAiGeneratedQuestion);
       setAiResult(generated);
       // Generatsiya muvaffaqiyatli — mahalliy hisoblagichni oshiramiz (backend
       // bilan keyingi limit so'rovda to'liq sinxronlanadi). Cheksizda o'zgarmaydi.
       setAiLimits(prev => prev.unlimited ? prev : { ...prev, used: prev.used + 1 });
     } catch (err) {
+      // Unmount'da atayin bekor qilindi — toast ko'rsatadigan sahifa yo'q.
+      if (aiAbort.isAborted()) return;
       console.warn('generateAiQuestions failed:', err);
       if (err?.status === 403 && err?.data?.upgrade_required) {
         setPremiumLockDetail(err.data.detail || "AI yordamida savol yaratish faqat premium tashkilotlar uchun. Premium obunani faollashtiring.");
@@ -396,7 +402,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
         subject: aiForm.subject,
         difficulty: _diffToApi(aiForm.level, aiForm.subject),
         question_type: aiForm.type,
-      }, OlympyApi.getToken());
+      }, OlympyApi.getToken(), aiAbort.getSignal());
       const extracted = (response?.questions || []).map(_mapPdfGeneratedQuestion);
       setPdfResult(extracted);
       setPdfProvider(response?.provider || '');
@@ -405,6 +411,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       setPdfChunks(response?.chunks || 1);
       if (!extracted.length) showApiToast("⚠ PDFdan savol topilmadi");
     } catch (err) {
+      if (aiAbort.isAborted()) return;
       console.warn('extractPdfQuestions failed:', err);
       if (err?.status === 403 && err?.data?.upgrade_required) {
         setPremiumLockDetail(err.data.detail || "PDF tahlil orqali savollar ajratish faqat premium tashkilotlar uchun. Premium obunani faollashtiring.");
@@ -444,7 +451,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
         subject: aiForm.subject,
         difficulty: _diffToApi(aiForm.level, aiForm.subject),
         question_type: aiForm.type,
-      }, OlympyApi.getToken());
+      }, OlympyApi.getToken(), aiAbort.getSignal());
       const extracted = (response?.questions || []).map(_mapWordAiGeneratedQuestion);
       setWordAiResult(extracted);
       setWordAiProvider(response?.provider || '');
@@ -452,6 +459,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       setWordAiChunks(response?.chunks || 1);
       if (!extracted.length) showApiToast("⚠ Word matnidan savol topilmadi");
     } catch (err) {
+      if (aiAbort.isAborted()) return;
       console.warn('extractWordAiQuestions failed:', err);
       if (err?.status === 403 && err?.data?.upgrade_required) {
         setPremiumLockDetail(err.data.detail || "Word matnidan AI savollar ajratish faqat premium tashkilotlar uchun. Premium obunani faollashtiring.");
