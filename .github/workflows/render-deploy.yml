@@ -171,6 +171,36 @@ jobs:
             sleep 15
           done
 
+      # ── render.yaml -> live servis konfiguratsiyasi ──────────────────────
+      # Render blueprint'dagi `headers:` va `routes:` ni MAVJUD servisga
+      # AVTOMATIK qo'llamaydi (render.yaml:113-115 da `plan` maydoni uchun
+      # izohlangan aynan shu cheklov). Natijada 2026-08-06/07 dan beri fayl
+      # to'g'ri ko'rinardi, lekin prod'da xavfsizlik sarlavhalari yuborilmasdi
+      # va `/privacy` landing page qaytarardi — smoke job'i aynan shundan
+      # yiqilardi. `public/_headers` / `public/_redirects` fayllari bu yerda
+      # YORDAM BERMAYDI: Render ularni konfiguratsiya emas, oddiy statik fayl
+      # deb beradi. Yagona yo'l — servis konfiguratsiyasini API orqali
+      # yangilash, shuning uchun bu qadam bor.
+      #
+      # Deploy "live" bo'lgandan KEYIN va `smoke` job'idan OLDIN ishlaydi
+      # (`smoke: needs: deploy` shu tartibni kafolatlaydi).
+      #
+      # Checkout job boshida emas, aynan shu yerda: yuqoridagi qadamlar faqat
+      # curl ishlatadi, ularga repo kerak emas. `npm ci` ham chaqirilmaydi —
+      # skript faqat Node builtinlari bilan ishlaydi (shu sababli unda YAML
+      # kutubxonasi ishlatilmagan).
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '20'
+      - name: Sync static site headers + routes (render.yaml -> Render API)
+        env:
+          RENDER_API_TOKEN: ${{ secrets.RENDER_API_TOKEN }}
+          # Frontend (olympy) static site — yuqoridagi deploy qadami bilan bir
+          # xil servis ID.
+          RENDER_STATIC_SERVICE_ID: srv-d7t4avog4nts73edsbr0
+        run: node scripts/sync-render-static-config.mjs
+
   # Deploy'dan KEYIN production URL'ga qarshi haqiqiy smoke test. Sabab
   # smoke-playwright.mjs faylining boshida yozilgan: 2026-08-06/07 sanasida
   # production'da CSP, X-Frame-Options, Referrer-Policy, HSTS va
