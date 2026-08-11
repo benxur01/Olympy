@@ -214,12 +214,25 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FRONTEND_URL: https://prolymp.uz
-      # api.prolymp.uz DNS'da MAVJUD EMAS (render.yaml:74-75 izohida ham
-      # tasdiqlangan) — API xuddi shu domen ostida /api/ yo'li orqali
-      # xizmat qiladi (render.yaml:134 health check: prolymp.uz/api/health/).
+      # ILOVA HAQIQATAN ISHLATADIGAN manzil (src/services/api.js dagi
+      # DEFAULT_API_BASE_URL, PROD tarmog'i) — smoke aynan shuni tekshirsin.
+      #
+      # Avval bu yerda `https://prolymp.uz` turardi va tekshiruv o'tardi, lekin
+      # FAQAT static site'dagi `/api/*` proxy qoidasi tufayli — o'sha qoida esa
+      # render.yaml'da yo'q, faqat Render dashboard'ida qo'lda yozilgan edi.
+      # 2026-08-11 da konfiguratsiyani sinxronlash (PUT "replace all") uni
+      # o'chirib yuborgach, prolymp.uz/api/health/ landing HTML qaytardi va
+      # smoke "health missing status" bilan yiqildi — ilovaning o'zi esa
+      # buzilmagan edi, chunki u bu proxy'ga umuman bog'liq emas. Ya'ni eski
+      # qiymat ilovaning haqiqiy yo'lini emas, yashirin proxy'ni sinardi.
+      #
+      # `/api/*` proxy'i endi render.yaml'ga qaytarildi (boshqa iste'molchilar
+      # uchun), lekin smoke ataylab to'g'ridan-to'g'ri backend'ga qaraydi.
+      # DIQQAT: bu manzil render.yaml'dagi `/api/*` route destination'i va
+      # src/services/api.js bilan BIR XIL bo'lishi kerak.
       # smoke-playwright.mjs o'zi `apiBase + '/api/health/'` qo'shadi, shuning
       # uchun bu yerda /api qismi YOZILMAYDI.
-      API_BASE_URL: https://prolymp.uz
+      API_BASE_URL: https://olympy-api.onrender.com
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
