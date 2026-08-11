@@ -168,7 +168,6 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [deleteEventId, setDeleteEventId] = React.useState(null);
   const [assignmentSaving, setAssignmentSaving] = React.useState(false);
   const [onlyUnused, setOnlyUnused] = React.useState(true);
-  const [toast, setToast] = React.useState('');
   const [premiumModal, setPremiumModal] = React.useState('');
   // O'qituvchi onboarding banneri (yengil orientatsiya, bir marta). Backend
   // `onboardingTeacherCompleted === false` bo'lsa uy tabida ko'rsatiladi.
@@ -183,10 +182,16 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [resultsModal, setResultsModal] = React.useState({
     open: false, event: null, data: [], loading: false, page: 1, total: 0,
   });
+  // Natijalar so'rovining oxirgi kaliti (eskirgan javobni ajratish uchun) —
+  // loadResultsPage'ga qarang. Bu yerda e'lon qilinadi, chunki quyida
+  // `if (!center)` early return'i bor (Rules of Hooks).
+  const resultsReqRef = React.useRef('');
   // Natijalar jadvalidan o'quvchi qatoriga bosilganda ochiladigan "O'quvchi
   // tahlili" modali: o'sha o'quvchining har bir savol bo'yicha javobi.
+  // `studentId` — hozir kimning javoblari kutilayotgani (eskirgan javobni
+  // ajratish uchun; openStudentReview'ga qarang).
   const [studentReviewModal, setStudentReviewModal] = React.useState({
-    open: false, studentName: '', data: null, loading: false, error: '',
+    open: false, studentId: null, studentName: '', data: null, loading: false, error: '',
   });
   const emptyEventForm = {
     eventType: 'competition',
@@ -210,6 +215,9 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // A'zolik arizalari (o'quvchi + o'qituvchi) — manager panel bilan bir xil.
   const [pendingStudents, setPendingStudents] = React.useState([]);
   const [pendingTeachers, setPendingTeachers] = React.useState([]);
+  // Ariza tasdiqlash/rad etish ketayotgan qator id'si (ikki marta bosishdan
+  // himoya) — OwnerDashboard'dagi `studentActionId` bilan bir xil naqsh.
+  const [requestActionId, setRequestActionId] = React.useState(null);
   // Jonli nazorat (proctoring) holatlari.
   const [liveOlympiadId, setLiveOlympiadId] = React.useState(null);
   const [proctoringData, setProctoringData] = React.useState([]);
@@ -228,10 +236,12 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [deleteProductId, setDeleteProductId] = React.useState(null);
   const [shopDeleting, setShopDeleting] = React.useState(false);
 
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(''), 2500);
-  };
+  // Avval bitta string state + bitta setTimeout edi: ikkinchi toast birinchisi
+  // so'nishidan oldin kelsa, birinchisining eski taymeri uni muddatidan oldin
+  // yashirib yuborardi. shared.jsx'dagi useToast() buni stacked, id-based
+  // ro'yxat bilan hal qiladi — imzosi bir xil (showToast(msg)) bo'lgani uchun
+  // mavjud chaqiruv joylari o'zgarishsiz ishlaydi (AdminDashboard ham shunday).
+  const { showToast, ToastHost } = useToast();
 
   const teacherRole = user?.roles?.teacher;
   const centerId = teacherRole?.centerId || null;
@@ -292,6 +302,20 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const center = centerId ? baseCenters.find(c => String(c.id) === String(centerId)) : null;
   const centerName = center?.name || 'Tashkilot';
   const centerType = center?.organizationType || "O'quv markaz";
+  // O'qituvchi arizasini kim tasdiqlay oladi — backend
+  // `user_can_approve_membership` (centers/services.py:121-140) ning aynan
+  // ko'zgusi: platform admin doim; markaz egasi esa markaz tasdiqlangan
+  // bo'lsa. O'qituvchi bo'lib turgan foydalanuvchi ayni paytda SHU markazning
+  // egasi ham bo'lishi mumkin (rol almashtirgich orqali kirgan) — o'shanda
+  // tugma ishlaydi va olib tashlanmasligi kerak.
+  // `center.ownerId` bu savolga ishonchli javob beradi: public serializer
+  // (centers/serializers.py get_owner) `owner` maydonini FAQAT o'sha markaz
+  // egasiga yoki platform adminga qaytaradi, qolganlarga `null`. Ya'ni
+  // "boshqa markaz egasi" holati o'z-o'zidan chetlab o'tiladi.
+  // Demo (store) rejimida arizalar ro'yxati umuman bo'sh — shart ishlatilmaydi.
+  const canApproveStaffRequests = isApi
+    ? (!!user?.isPlatformAdmin || (center?.ownerId != null && center?.status === 'approved'))
+    : true;
   const olympiads = (isApi ? (apiOlympiads || []) : store.olympiads).filter(o => String(o.centerId) === String(centerId));
   const questions = (isApi ? (apiQuestions || []) : store.questions).filter(q => String(q.centerId) === String(centerId));
   const activeEvents = olympiads.filter(o => o.status === 'active');
@@ -736,10 +760,20 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // Natijalar modali: tanlangan tadbirning bitta sahifasini yuklaydi.
   // page_size 200 — 200+ ishtirokchi bo'lsa "Keyingisi →" pagination ishlaydi.
   const RESULTS_PAGE_SIZE = 200;
+  // Eskirgan javob himoyasi (AdminDashboard:2751 dagi ID-solishtirish naqshi):
+  // tadbir tez almashtirilsa yoki "Keyingisi →" ketma-ket bosilsa, sekinroq
+  // birinchi javob ikkinchisidan KEYIN qaytib, sarlavhadagi tadbir ostiga
+  // boshqa tadbirning natijalarini yozib qo'yardi. Javobda tadbir id'si
+  // qaytmaydi, shuning uchun oxirgi so'rov kaliti `resultsReqRef` da saqlanadi
+  // (yuqorida, early return'dan oldin — Rules of Hooks talabi) va javob faqat
+  // o'sha kalit hali joriy bo'lsa qo'llanadi.
   const loadResultsPage = (olympiadBackendId, pageNum) => {
+    const reqKey = `${olympiadBackendId}:${pageNum}`;
+    resultsReqRef.current = reqKey;
     setResultsModal(m => ({ ...m, loading: true }));
     OlympyApi.getLeaderboardForOlympiad(olympiadBackendId, pageNum, RESULTS_PAGE_SIZE, OlympyApi.getToken())
       .then(res => {
+        if (resultsReqRef.current !== reqKey) return;
         setResultsModal(m => ({
           ...m,
           data: Array.isArray(res?.entries) ? res.entries : [],
@@ -749,6 +783,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         }));
       })
       .catch(err => {
+        if (resultsReqRef.current !== reqKey) return;
         console.warn('getLeaderboardForOlympiad failed:', err);
         showToast(`⚠ ${OlympyApi.toUserMessage?.(err) || "Natijalarni yuklab bo'lmadi"}`);
         setResultsModal(m => ({ ...m, loading: false }));
@@ -770,11 +805,16 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     const userId = row?.user_id;
     if (!olympiadBackendId || !userId) return;
     setStudentReviewModal({
-      open: true, studentName: row.name || "O'quvchi", data: null, loading: true, error: '',
+      open: true, studentId: userId, studentName: row.name || "O'quvchi", data: null, loading: true, error: '',
     });
+    // Eskirgan javob himoyasi (AdminDashboard:2751 dagi ID-solishtirish
+    // naqshi): ketma-ket ikki o'quvchi bosilib, birinchi so'rov ikkinchisidan
+    // keyin qaytsa, bitta o'quvchining ismi ustida boshqasining imtihon
+    // javoblari ko'rinardi — bu diskvalifikatsiya qaroriga asos bo'ladigan
+    // ma'lumot. Javob modal hali o'sha o'quvchida turgandagina qo'llanadi.
     OlympyApi.getEventUserAnswers(olympiadBackendId, userId, OlympyApi.getToken())
       .then(res => {
-        setStudentReviewModal(m => ({
+        setStudentReviewModal(m => (m.studentId !== userId ? m : {
           ...m,
           data: res || null,
           studentName: res?.student_name || m.studentName,
@@ -783,7 +823,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       })
       .catch(err => {
         console.warn('getEventUserAnswers failed:', err);
-        setStudentReviewModal(m => ({
+        setStudentReviewModal(m => (m.studentId !== userId ? m : {
           ...m,
           loading: false,
           error: OlympyApi.toUserMessage?.(err) || "Javoblarni yuklab bo'lmadi",
@@ -843,12 +883,19 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     const membershipId = requestRow?.membership_id ?? requestRow?.membershipId ?? requestRow?.backendId;
     if (!membershipId || !centerId) { showToast("⚠ API rejimida ariza ma'lumoti yetarli emas"); return; }
     const backendCenterId = center?.backendId ?? centerId;
+    // O'qituvchi arizasi uchun boshqa endpoint. Tugma faqat
+    // `canApproveStaffRequests` bo'lganda ko'rsatiladi (markaz egasi yoki
+    // platform admin) — aks holda backend 403 qaytaradi.
     const isTeacherRequest = requestEntry?.role === 'teacher';
     const approveFn = isTeacherRequest ? OlympyApi.approveTeacher : OlympyApi.approveStudent;
+    // Ikki marta yuborishdan himoya — OwnerDashboard'dagi `studentActionId`
+    // naqshi: amal ketayotgan ariza id'si saqlanadi, tugma disabled bo'ladi.
+    setRequestActionId(id);
     approveFn(backendCenterId, { membership_id: membershipId, decision: action === 'approve' ? 'approved' : 'rejected' }, token)
       .then(() => isTeacherRequest ? loadPendingTeachers() : loadPendingStudents())
       .then(() => showToast(action === 'approve' ? '✓ Ariza tasdiqlandi' : '✗ Ariza rad etildi'))
-      .catch(err => { console.warn('approveStudent/approveTeacher failed:', err); showToast(err?.message ? `⚠ ${err.message}` : "⚠ Tasdiqlab bo'lmadi"); });
+      .catch(err => { console.warn('approveStudent/approveTeacher failed:', err); showToast(err?.message ? `⚠ ${err.message}` : "⚠ Tasdiqlab bo'lmadi"); })
+      .finally(() => setRequestActionId(null));
   };
 
   // ─── Manager-parity: markaz do'koni CRUD ───
@@ -1003,12 +1050,24 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 <td className="px-4 py-3 text-xs font-mono text-white/50">{r.approvalCode || '—'}</td>
                 <td className="px-4 py-3"><Badge status={r.status} /></td>
                 <td className="px-4 py-3">
-                  {r.status === 'Kutilmoqda' ? (
+                  {r.status !== 'Kutilmoqda' ? (
+                    <span className="text-xs text-white/30">—</span>
+                  ) : (r.role !== 'student' && !canApproveStaffRequests) ? (
+                    // O'qituvchi arizasini backend faqat markaz egasiga (yoki
+                    // platform adminga) tasdiqlashga ruxsat beradi
+                    // (centers/services.py, user_can_approve_membership) —
+                    // oddiy o'qituvchi bosganda tugma doim 403 bilan yiqilardi.
+                    // Qator ko'rinadi (ro'yxatni ko'rish ruxsat etilgan), lekin
+                    // bajarib bo'lmaydigan amal taklif qilinmaydi.
+                    <span className="text-xs text-white/40">Direktor ko'rib chiqadi</span>
+                  ) : (
                     <div className="flex gap-2">
-                      <button onClick={() => handleRequest(r.id, 'approve')} className="btn-success text-xs px-3 py-1.5 rounded-xl">Tasdiqlash</button>
-                      <button onClick={() => handleRequest(r.id, 'reject')} className="btn-danger text-xs px-3 py-1.5 rounded-xl">Rad etish</button>
+                      <button onClick={() => handleRequest(r.id, 'approve')} disabled={requestActionId === r.id} className="btn-success text-xs px-3 py-1.5 rounded-xl disabled:opacity-50">
+                        {requestActionId === r.id ? '...' : 'Tasdiqlash'}
+                      </button>
+                      <button onClick={() => handleRequest(r.id, 'reject')} disabled={requestActionId === r.id} className="btn-danger text-xs px-3 py-1.5 rounded-xl disabled:opacity-50">Rad etish</button>
                     </div>
-                  ) : <span className="text-xs text-white/30">—</span>}
+                  )}
                 </td>
               </tr>
             ))}
@@ -2886,9 +2945,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         busy={shopDeleting}
       />
 
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 glass-strong rounded-2xl px-5 py-3.5 border border-indigo-500/30 animate-in text-sm font-medium text-white">{toast}</div>
-      )}
+      <ToastHost />
     </div>
   );
 };

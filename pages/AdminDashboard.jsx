@@ -5600,17 +5600,29 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       });
   }, []);
 
-  const loadThreadDetail = React.useCallback((userId) => {
+  // Eskirgan javob himoyasi: admin A suhbatini bosib, javob kelmasdan B ni
+  // bossa va #1 so'rov #2 dan KEYIN qaytsa, sarlavhada B ning ismi turib
+  // xabarlar A niki bo'lib qolardi. Endpoint javobi chat_key'ni qaytarmaydi,
+  // shuning uchun :2751 dagi ID-solishtirishni javob ustida bajarib
+  // bo'lmaydi — o'rniga useApiData'dagi `cancelled` bayrog'i bilan bir xil
+  // qoida: oxirgi so'ralgan kalit ref'da saqlanadi, eskirgan javob state'ga
+  // umuman yozmaydi (loading bayrog'ini ham o'zgartirmaydi).
+  const threadDetailReqRef = React.useRef(null);
+  const loadThreadDetail = React.useCallback((chatKey) => {
+    threadDetailReqRef.current = chatKey;
     setLoadingMessages(true);
     const token = OlympyApi.getToken();
-    OlympyApi.getAdminSupportChatDetail(userId, token)
+    OlympyApi.getAdminSupportChatDetail(chatKey, token)
       .then(res => {
+        if (threadDetailReqRef.current !== chatKey) return;
         setThreadMessages(res.messages || []);
       })
       .catch(err => {
+        if (threadDetailReqRef.current !== chatKey) return;
         console.error('Failed to load thread detail:', err);
       })
       .finally(() => {
+        if (threadDetailReqRef.current !== chatKey) return;
         setLoadingMessages(false);
       });
   }, []);
@@ -5625,6 +5637,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     if (selectedThread) {
       loadThreadDetail(selectedThread.chat_key);
     } else {
+      // Suhbat yopilganda parvozdagi so'rov ham "eskirgan" bo'ladi — kalitni
+      // tozalaymiz, aks holda uning javobi bo'shatilgan ro'yxatni to'ldirardi.
+      threadDetailReqRef.current = null;
       setThreadMessages([]);
     }
   }, [selectedThread, loadThreadDetail]);
