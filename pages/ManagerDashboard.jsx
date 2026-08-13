@@ -1107,22 +1107,25 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
   const renderHome = () => (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
+      {/* `.glass` hoshiyani inset box-shadow bilan chizadi — ustiga `border-*`
+          qo'yilsa ikkita halqa chiqadi. Shuning uchun urg'u faqat chap
+          chiziq bilan beriladi (bir tomonlama border halqa yasamaydi). */}
       {user?.onboardingManagerCompleted === false && !onboardingDismissed && (
-        <div className="glass rounded-2xl p-5 border border-indigo-500/30 glow-blue">
+        <div className="glass rounded-2xl p-5 border-l-4 border-l-accent">
           <div className="flex items-start gap-4">
-            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0 bg-accent-fill text-on-accent">
               <Icon name="sparkles" size={22} />
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="font-bold text-white">Manager paneliga xush kelibsiz!</h3>
-              <p className="text-white/50 text-sm mt-0.5">Ish boshlash uchun ikki asosiy qadam:</p>
+              <h3 className="font-display font-bold text-text-primary uppercase tracking-widest">Manager paneliga xush kelibsiz</h3>
+              <p className="text-text-secondary text-sm mt-0.5">Ish boshlash uchun ikki asosiy qadam:</p>
               <ul className="mt-3 space-y-2">
-                <li className="flex items-center gap-2 text-sm text-white/80">
-                  <Icon name="check" size={15} className="text-indigo-400 flex-shrink-0" />
+                <li className="flex items-center gap-2 text-sm text-text-primary">
+                  <Icon name="check" size={15} className="text-accent flex-shrink-0" />
                   O'quvchi va o'qituvchi arizalarini ko'rib chiqing
                 </li>
-                <li className="flex items-center gap-2 text-sm text-white/80">
-                  <Icon name="check" size={15} className="text-indigo-400 flex-shrink-0" />
+                <li className="flex items-center gap-2 text-sm text-text-primary">
+                  <Icon name="check" size={15} className="text-accent flex-shrink-0" />
                   Birinchi tadbir/olimpiada yarating
                 </li>
               </ul>
@@ -1143,8 +1146,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-black text-white">{centerName}</h2>
-          <p className="text-white/40 text-sm">{centerType} · Manager paneli · {new Date().toLocaleDateString('uz-UZ')}</p>
+          <h2 className="font-display text-2xl font-bold text-text-primary uppercase tracking-wide">{centerName}</h2>
+          <p className="text-text-secondary text-sm">{centerType} · Manager paneli · <span className="font-data">{new Date().toLocaleDateString('uz-UZ')}</span></p>
         </div>
         <button onClick={openCreateEvent} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
           <Icon name="plus" size={16} /> Tadbir yaratish
@@ -1153,9 +1156,13 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard label="Kutilayotgan arizalar" value={pendingCount} sub={pendingCount > 0 ? 'Yangi' : ''} icon={<Icon name="bell" size={20} />} color="from-rose-500 to-pink-600" glow="glow-blue" />
-        <StatCard label="Faol tadbirlar" value={olympiads.filter(o => o.status === 'active').length} icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />
-        <StatCard label="Jami tadbirlar" value={olympiads.length} icon={<Icon name="bolt" size={20} />} color="from-emerald-500 to-teal-600" />
+        {/* `StatCard` ikonka plitkasiga `bg-gradient-to-br ${color}` qo'yadi.
+            To'xtash nuqtasiz gradient chizilmaydi, shuning uchun `color` ga
+            oddiy yuza klassi berilsa plitka tekis qoladi (StudentDashboard
+            bilan bir xil naqsh). */}
+        <StatCard label="Kutilayotgan arizalar" value={pendingCount} sub={pendingCount > 0 ? 'Yangi' : ''} icon={<Icon name="bell" size={20} />} color="bg-surface-2 text-text-secondary" />
+        <StatCard label="Faol tadbirlar" value={olympiads.filter(o => o.status === 'active').length} icon={<Icon name="trophy" size={20} />} color="bg-surface-2 text-text-secondary" />
+        <StatCard label="Jami tadbirlar" value={olympiads.length} icon={<Icon name="bolt" size={20} />} color="bg-surface-2 text-text-secondary" />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -1163,94 +1170,104 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             arizalar bo'lsa — amal talab qiladigan yagona element sifatida
             to'liq kenglikda va vizual jihatdan ustuvor ko'rsatiladi;
             read-only kartalar pastda teng qatorda qoladi. */}
-        <div className={`glass rounded-2xl p-5 ${pendingCount > 0 ? 'xl:col-span-2 border border-amber-500/40 glow-blue' : 'border border-amber-500/20'}`}>
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <h3 className="font-bold text-white">Arizalar</h3>
+        {/* Amal talab qilinsa — chap chetdagi ogohlantirish chizig'i (shakl),
+            chip esa raqamni aytadi. Rang yagona signal emas. */}
+        <div className={`glass rounded-2xl p-5 ${pendingCount > 0 ? 'xl:col-span-2 border-l-4 border-l-warning' : ''}`}>
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="font-display font-bold text-text-primary uppercase tracking-widest">Arizalar</h3>
               {pendingCount > 0 && (
-                <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 bg-amber-500/15 border border-amber-500/30 rounded-full px-2 py-0.5">
-                  {pendingCount} ta amal talab qiladi
+                <span className="chip text-[10px] font-bold uppercase tracking-wider badge-pending">
+                  <span className="font-data">{pendingCount}</span> ta amal talab qiladi
                 </span>
               )}
             </div>
-            <button onClick={() => setPage('requests')} className="text-xs text-indigo-400">Barchasi</button>
+            <button onClick={() => setPage('requests')} className="btn-ghost text-xs px-3 py-1.5 rounded-lg font-semibold flex-shrink-0">Barchasi</button>
           </div>
           <div className="space-y-2">
             {requests.filter(r => r.status === 'Kutilmoqda').slice(0, 3).map(r => (
               <div key={r.id} className="flex items-center gap-3 p-3 rounded-xl glass">
-                <Avatar name={r.name} size={36} />
+                <Avatar name={r.name} size={36} gradient="bg-pencil-600" />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-white flex items-center gap-1.5">
+                  <div className="text-sm font-semibold text-text-primary flex items-center gap-1.5">
                     {r.name}
-                    <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full ${r.role === 'teacher' ? 'text-sky-300 bg-sky-500/15 border border-sky-500/30' : 'text-indigo-300 bg-indigo-500/15 border border-indigo-500/30'}`}>
+                    {/* Rol — holat emas, TOIFA. Shuning uchun `badge-*`
+                        semantikasi ishlatilmaydi: o'qituvchi qalam ko'kida,
+                        o'quvchi neytral — ikkalasi ham yozuvi bilan o'qiladi. */}
+                    <span className={`text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-surface-2 ${r.role === 'teacher' ? 'text-accent-2 border border-accent-2/45' : 'text-text-secondary border border-edge-strong'}`}>
                       {r.role === 'teacher' ? "O'qituvchi" : "O'quvchi"}
                     </span>
                   </div>
-                  <div className="text-xs text-white/40">{r.date} · {r.subject}</div>
+                  <div className="text-xs text-text-secondary"><span className="font-data">{r.date}</span> · {r.subject}</div>
                 </div>
                 {/* Arizalar jadvalidagi bilan bir xil qoida: o'qituvchi
                     arizasini faqat markaz egasi (yoki platform admin)
                     tasdiqlay oladi — backend user_can_approve_membership. */}
                 {(r.role !== 'student' && !canApproveStaffRequests) ? (
-                  <span className="text-[11px] text-white/40 shrink-0">Direktor ko'rib chiqadi</span>
+                  <span className="text-[11px] text-text-secondary shrink-0">Direktor ko'rib chiqadi</span>
                 ) : (
                   <div className="flex gap-2">
-                    <button onClick={() => handleRequest(r.id, 'approve')} disabled={requestActionId === r.id} className="btn-success text-xs px-3 py-1.5 rounded-lg disabled:opacity-50">✓</button>
-                    <button onClick={() => handleRequest(r.id, 'reject')} disabled={requestActionId === r.id} className="btn-danger text-xs px-3 py-1.5 rounded-lg disabled:opacity-50">✗</button>
+                    <button onClick={() => handleRequest(r.id, 'approve')} disabled={requestActionId === r.id} title="Tasdiqlash" aria-label="Tasdiqlash" className="btn-success text-xs px-3 py-1.5 rounded-lg disabled:opacity-50"><Icon name="check" size={14} /></button>
+                    <button onClick={() => handleRequest(r.id, 'reject')} disabled={requestActionId === r.id} title="Rad etish" aria-label="Rad etish" className="btn-danger text-xs px-3 py-1.5 rounded-lg disabled:opacity-50"><Icon name="x" size={14} /></button>
                   </div>
                 )}
               </div>
             ))}
-            {pendingCount === 0 && <div className="text-sm text-white/40 text-center py-10">Yangi arizalar yo'q</div>}
+            {pendingCount === 0 && <div className="text-sm text-text-secondary text-center py-10">Yangi arizalar yo'q</div>}
           </div>
         </div>
 
         {/* Musobaqalar */}
         <div className="glass rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-bold text-white">Musobaqalar</h3>
-            <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400">Ko'rish</button>
+          <div className="flex items-center justify-between mb-4 gap-2">
+            <h3 className="font-display font-bold text-text-primary uppercase tracking-widest">Musobaqalar</h3>
+            <button onClick={() => setPage('olympiads')} className="btn-ghost text-xs px-3 py-1.5 rounded-lg font-semibold flex-shrink-0">Ko'rish</button>
           </div>
           <div className="space-y-3">
             {olympiads.slice(0, 3).map(o => (
               <div key={o.id} className="flex items-center gap-3 p-3 rounded-xl glass">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0 ${o.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' : o.status === 'inactive' ? 'bg-amber-500/20 text-amber-300' : o.status === 'draft' ? 'bg-white/10 text-white/40' : 'bg-indigo-500/20 text-indigo-400'}`}>
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm flex-shrink-0 border ${o.status === 'active' ? 'bg-success/10 border-success/40 text-success' : o.status === 'inactive' ? 'bg-warning/10 border-warning/40 text-warning' : o.status === 'draft' ? 'bg-surface-2 border-edge text-text-secondary' : 'bg-accent-2/10 border-accent-2/40 text-accent-2'}`}>
                   <Icon name={o.status === 'active' ? 'trophy' : o.status === 'inactive' ? 'clock' : o.status === 'draft' ? 'edit' : 'check'} size={15} />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-white truncate">{o.title}</div>
-                  <div className="text-xs text-white/40">{[o.testLevel, testTypeLabel(o.testType)].filter(Boolean).join(' · ')}{(o.testLevel || o.testType) ? ' · ' : ''}{o.participants || 0} ishtirokchi</div>
+                  <div className="text-sm font-semibold text-text-primary truncate">{o.title}</div>
+                  <div className="text-xs text-text-secondary">{[o.testLevel, testTypeLabel(o.testType)].filter(Boolean).join(' · ')}{(o.testLevel || o.testType) ? ' · ' : ''}<span className="font-data">{o.participants || 0}</span> ishtirokchi</div>
                 </div>
                 <div className="flex items-center gap-2">
                   {o.status === 'active' && (
                     <button onClick={() => { setLiveOlympiadId(o.id); setPage('proctoring'); }}
-                      className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-bold text-emerald-300 hover:bg-emerald-500/20">
-                      Jonli
+                      className="btn-ghost rounded-lg px-2 py-1 text-[10px] font-bold inline-flex items-center gap-1">
+                      <Icon name="eye" size={11} /> Jonli
                     </button>
                   )}
                   <Badge status={statusLabel(o.status)} />
                 </div>
               </div>
             ))}
-            {olympiads.length === 0 && <div className="text-sm text-white/40">Hali tadbir yo'q</div>}
+            {olympiads.length === 0 && <div className="text-sm text-text-secondary">Hali tadbir yo'q</div>}
           </div>
         </div>
 
         {/* Eng yaxshi o'quvchilar */}
         <div className="glass rounded-2xl p-5">
-          <h3 className="font-bold text-white mb-4">Eng yaxshi o'quvchilar</h3>
+          <h3 className="font-display font-bold text-text-primary uppercase tracking-widest mb-4">Eng yaxshi o'quvchilar</h3>
           <div className="space-y-3">
             {[...students].sort((a,b) => b.avgScore - a.avgScore).slice(0,4).map((s, i) => (
               <div key={s.id} className="flex items-center gap-3">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black ${i === 0 ? 'bg-amber-500/30 text-amber-400' : i === 1 ? 'bg-slate-400/30 text-slate-300' : i === 2 ? 'bg-amber-700/30 text-amber-600' : 'glass text-white/40'}`}>
+                {/* Medal ranglari `--color-medal-*` CSS o'zgaruvchilarida turadi,
+                    lekin tailwind.config.js `colors` ichida YO'Q — `text-medal-1`
+                    kabi utility generatsiya bo'lmaydi. Shuning uchun ular inline
+                    `style` orqali olinadi (mavzu bilan baribir almashadi). */}
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold font-data border bg-surface-2 ${i > 2 ? 'border-edge text-text-secondary' : ''}`}
+                  style={i <= 2 ? { color: `rgb(var(--color-medal-${i + 1}))`, borderColor: `rgb(var(--color-medal-${i + 1}) / 0.5)` } : undefined}>
                   {i+1}
                 </div>
-                <Avatar name={s.name} size={30} gradient={i === 0 ? 'from-amber-400 to-orange-500' : 'from-indigo-500 to-purple-600'} />
-                <div className="flex-1 min-w-0"><div className="text-sm font-medium text-white truncate">{s.name}</div></div>
-                <div className="text-sm font-bold text-white">{s.avgScore}%</div>
+                <Avatar name={s.name} size={30} gradient="bg-pencil-600" />
+                <div className="flex-1 min-w-0"><div className="text-sm font-medium text-text-primary truncate">{s.name}</div></div>
+                <div className="text-sm font-bold font-data text-text-primary">{s.avgScore}%</div>
               </div>
             ))}
-            {students.length === 0 && <div className="text-sm text-white/40">Hali tasdiqlangan o'quvchilar yo'q</div>}
+            {students.length === 0 && <div className="text-sm text-text-secondary">Hali tasdiqlangan o'quvchilar yo'q</div>}
           </div>
         </div>
       </div>
@@ -1270,23 +1287,23 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     return (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <h2 className="text-xl font-black text-white">O'quvchilar ({filteredStudents.length}{searchQuery && filteredStudents.length !== students.length ? `/${students.length}` : ''})</h2>
-        <div className="relative w-full sm:w-72"><Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" /><input className="input-field pl-10 py-2 w-full" placeholder="Qidirish..." value={studentSearch} onChange={e => setStudentSearch(e.target.value)} /></div>
+        <h2 className="font-display text-xl font-bold text-text-primary uppercase tracking-wide">O'quvchilar <span className="font-data font-normal text-text-secondary">({filteredStudents.length}{searchQuery && filteredStudents.length !== students.length ? `/${students.length}` : ''})</span></h2>
+        <div className="relative w-full sm:w-72"><Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" /><input className="input-field pl-10 py-2 w-full" placeholder="Qidirish..." value={studentSearch} onChange={e => setStudentSearch(e.target.value)} /></div>
       </div>
       <div className="glass rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px]">
-          <thead><tr className="border-b border-white/5">
+          <thead><tr className="border-b border-edge bg-surface-2">
             {["O'quvchi", 'Telefon', 'Guruh', 'Musobaqalar', "O'rt. ball", 'Holat', 'Amal'].map(h => (
-              <th key={h} className="text-left px-4 py-3 text-xs text-white/40 font-medium">{h}</th>
+              <th key={h} className="text-left px-4 py-3 text-[11px] uppercase tracking-wider text-text-secondary font-bold">{h}</th>
             ))}
           </tr></thead>
           <tbody>
             {filteredStudents.map(s => {
               return (
                 <tr key={s.id} className="olympy-row">
-                  <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={s.name} src={s.avatarUrl || ''} size={32} premium={!!s.isPremium} /><div><div className="text-sm font-medium text-white">{s.isPremium && <span title="Premium o'quvchi">⭐ </span>}{s.name}</div><div className="text-xs text-white/40">{s.joined}</div></div></div></td>
-                  <td className="px-4 py-3 text-sm text-white/60">{maskPhoneDisplay(s.phone, '')}</td>
+                  <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={s.name} src={s.avatarUrl || ''} size={32} gradient="bg-pencil-600" premium={!!s.isPremium} /><div><div className="text-sm font-medium text-text-primary flex items-center gap-1">{s.isPremium && <span className="text-warning flex-shrink-0" title="Premium o'quvchi"><Icon name="star" size={12} /></span>}{s.name}</div><div className="text-xs font-data text-text-secondary">{s.joined}</div></div></div></td>
+                  <td className="px-4 py-3 text-sm font-data text-text-secondary">{maskPhoneDisplay(s.phone, '')}</td>
                   <td className="px-4 py-3">
                     {groupTagEdit && groupTagEdit.membershipId === s.membershipId ? (
                       <input
@@ -1302,15 +1319,15 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                     ) : (
                       <button
                         onClick={() => isApi && s.membershipId && setGroupTagEdit({ membershipId: s.membershipId, value: s.groupTag || '' })}
-                        className={`rounded-lg px-2 py-1 text-xs font-bold transition-colors ${s.groupTag ? 'bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25' : 'border border-dashed border-white/15 text-white/35 hover:text-white/60'}`}
+                        className={`rounded-lg px-2 py-1 text-xs font-bold transition-colors border ${s.groupTag ? 'border-edge-strong bg-surface-2 text-text-primary hover:border-accent' : 'border-dashed border-edge-strong text-text-secondary hover:text-text-primary hover:border-accent'}`}
                         title="Guruh/sinf tegini tahrirlash"
                       >
                         {s.groupTag || '+ guruh'}
                       </button>
                     )}
                   </td>
-                  <td className="px-4 py-3 text-sm text-white">{s.olympiads}</td>
-                  <td className="px-4 py-3"><span className={`font-bold text-sm ${s.avgScore >= 90 ? 'text-emerald-400' : s.avgScore >= 70 ? 'text-indigo-400' : 'text-amber-400'}`}>{s.avgScore || 0}%</span></td>
+                  <td className="px-4 py-3 text-sm font-data text-text-primary">{s.olympiads}</td>
+                  <td className="px-4 py-3"><span className={`font-bold font-data text-sm ${s.avgScore >= 90 ? 'text-success' : s.avgScore >= 70 ? 'text-accent-2' : 'text-warning'}`}>{s.avgScore || 0}%</span></td>
                   <td className="px-4 py-3"><Badge status={s.status} /></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -1321,7 +1338,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               );
             })}
             {filteredStudents.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-white/40 text-sm">
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-text-secondary text-sm">
                 {searchQuery ? "Qidiruv bo'yicha o'quvchi topilmadi" : "Tasdiqlangan o'quvchilar yo'q"}
               </td></tr>
             )}
@@ -1336,22 +1353,25 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const renderRequests = () => (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <h2 className="text-xl font-black text-white">Arizalar</h2>
-        <div className="flex items-center gap-2 text-sm text-white/40">
-          <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-          {pendingCount} ta kutilmoqda
+        <h2 className="font-display text-xl font-bold text-text-primary uppercase tracking-wide">Arizalar</h2>
+        <div className="flex items-center gap-2 text-sm text-text-secondary">
+          <span className="w-2 h-2 rounded-full bg-warning flex-shrink-0"></span>
+          <span className="font-data">{pendingCount}</span> ta kutilmoqda
         </div>
       </div>
 
-      <div className="glass rounded-2xl p-5 border border-indigo-500/10">
+      <div className="glass rounded-2xl p-5">
         <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-xl" style={{ background: '#2b5278' }}><div className="w-full h-full flex items-center justify-center text-white font-bold text-sm rounded-xl">TG</div></div>
+          <div className="w-10 h-10 rounded-xl flex-shrink-0" style={{ background: '#2b5278' }}>{/* Telegram brend rangi — tashqi tizim belgisi, mavzu bilan almashmaydi.
+                Matn ham statik bo'lishi shart: `paper` (#E7E4DC) shu fonda 6.41:1. */}<div className="w-full h-full flex items-center justify-center text-paper font-bold text-sm rounded-xl">TG</div></div>
           <div>
-            <div className="text-sm font-bold text-white">Telegram Bot Integratsiya</div>
-            <div className="text-xs text-white/40">Yangi o'quvchi arizalari botga avtomatik boradi</div>
+            <div className="text-sm font-bold text-text-primary">Telegram Bot Integratsiya</div>
+            <div className="text-xs text-text-secondary">Yangi o'quvchi arizalari botga avtomatik boradi</div>
           </div>
-          <div className={`ml-auto flex items-center gap-1.5 text-xs ${telegramLinked ? 'text-emerald-400' : 'text-amber-300'}`}>
-            <span className={`w-2 h-2 rounded-full ${telegramLinked ? 'bg-emerald-400 animate-pulse' : 'bg-amber-300'}`}></span>
+          {/* Holat shakl bilan ham kodlangan: ulangan — to'liq doira,
+              ulanmagan — bo'sh halqa (faqat rangga tayanmaydi). */}
+          <div className={`ml-auto flex items-center gap-1.5 text-xs font-semibold ${telegramLinked ? 'text-success' : 'text-warning'}`}>
+            <span className={`w-2 h-2 rounded-full flex-shrink-0 border ${telegramLinked ? 'bg-success border-success' : 'border-warning'}`}></span>
             {telegramLinked ? 'Ulangan' : 'Ulanmagan'}
           </div>
         </div>
@@ -1364,15 +1384,15 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             {telegramLink?.telegram_deep_link && (
               <a href={telegramLink.telegram_deep_link} target="_blank" rel="noreferrer"
                 onClick={(e) => { if (goToTelegramLink(telegramLink.telegram_deep_link)) e.preventDefault(); }}
-                className="text-xs text-indigo-300 hover:text-indigo-200">
+                className="text-xs font-semibold text-accent underline underline-offset-2 hover:text-text-primary">
                 Telegram botni ochish
               </a>
             )}
-            <span className="text-xs text-white/40">Ulanmaguncha arizalar faqat sayt ichida ko'rinadi.</span>
+            <span className="text-xs text-text-secondary">Ulanmaguncha arizalar faqat sayt ichida ko'rinadi.</span>
           </div>
         )}
         {telegramLinked && (
-          <div className="text-xs text-emerald-300 flex items-center gap-2">
+          <div className="text-xs text-success flex items-center gap-2">
             <Icon name="check" size={13} /> Botdagi tasdiq saytdagi ariza holatini ham avtomatik yangilaydi.
           </div>
         )}
@@ -1381,28 +1401,28 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       <div className="glass rounded-2xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px]">
-          <thead><tr className="border-b border-white/5">
+          <thead><tr className="border-b border-edge bg-surface-2">
             {['Ism', 'Rol', 'Telefon', 'Ariza sanasi', 'Fan', 'Kod', 'Holat', 'Amal'].map(h => (
-              <th key={h} className="text-left px-4 py-3 text-xs text-white/40 font-medium">{h}</th>
+              <th key={h} className="text-left px-4 py-3 text-[11px] uppercase tracking-wider text-text-secondary font-bold">{h}</th>
             ))}
           </tr></thead>
           <tbody>
             {requests.map(r => (
               <tr key={r.id} className="olympy-row">
-                <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={r.name} src={r.avatarUrl || ''} size={32} /><span className="text-sm font-medium text-white">{r.name}</span></div></td>
+                <td className="px-4 py-3"><div className="flex items-center gap-3"><Avatar name={r.name} src={r.avatarUrl || ''} size={32} gradient="bg-pencil-600" /><span className="text-sm font-medium text-text-primary">{r.name}</span></div></td>
                 <td className="px-4 py-3">
-                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${r.role === 'teacher' ? 'text-sky-300 bg-sky-500/15 border border-sky-500/30' : 'text-indigo-300 bg-indigo-500/15 border border-indigo-500/30'}`}>
+                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-surface-2 ${r.role === 'teacher' ? 'text-accent-2 border border-accent-2/45' : 'text-text-secondary border border-edge-strong'}`}>
                     {r.role === 'teacher' ? "O'qituvchi" : "O'quvchi"}
                   </span>
                 </td>
-                <td className="px-4 py-3 text-sm text-white/60">{maskPhoneDisplay(r.phone, '')}</td>
-                <td className="px-4 py-3 text-sm text-white/60">{r.date}</td>
-                <td className="px-4 py-3">{r.subject && r.subject !== '—' ? <SubjectBadge subject={r.subject} /> : <span className="text-xs text-white/30">—</span>}</td>
-                <td className="px-4 py-3 text-xs font-mono text-white/50">{r.approvalCode || '—'}</td>
+                <td className="px-4 py-3 text-sm font-data text-text-secondary">{maskPhoneDisplay(r.phone, '')}</td>
+                <td className="px-4 py-3 text-sm font-data text-text-secondary">{r.date}</td>
+                <td className="px-4 py-3">{r.subject && r.subject !== '—' ? <SubjectBadge subject={r.subject} /> : <span className="text-xs text-text-secondary">—</span>}</td>
+                <td className="px-4 py-3 text-xs font-mono font-data text-text-secondary">{r.approvalCode || '—'}</td>
                 <td className="px-4 py-3"><Badge status={r.status} /></td>
                 <td className="px-4 py-3">
                   {r.status !== 'Kutilmoqda' ? (
-                    <span className="text-xs text-white/30">—</span>
+                    <span className="text-xs text-text-secondary">—</span>
                   ) : (r.role !== 'student' && !canApproveStaffRequests) ? (
                     // O'qituvchi arizasini backend faqat markaz egasiga (yoki
                     // platform adminga) tasdiqlashga ruxsat beradi
@@ -1410,7 +1430,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                     // oddiy menejer bosganda tugma doim 403 bilan yiqilardi.
                     // Qator ko'rinadi (ro'yxatni ko'rish ruxsat etilgan), lekin
                     // bajarib bo'lmaydigan amal taklif qilinmaydi.
-                    <span className="text-xs text-white/40">Direktor ko'rib chiqadi</span>
+                    <span className="text-xs text-text-secondary">Direktor ko'rib chiqadi</span>
                   ) : (
                     <div className="flex gap-2">
                       <button onClick={() => handleRequest(r.id, 'approve')} disabled={requestActionId === r.id} className="btn-success text-xs px-3 py-1.5 rounded-xl disabled:opacity-50">
@@ -1423,7 +1443,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               </tr>
             ))}
             {requests.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-white/40 text-sm">Arizalar yo'q</td></tr>
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-text-secondary text-sm">Arizalar yo'q</td></tr>
             )}
           </tbody>
         </table>
@@ -1435,7 +1455,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const renderOlympiads = () => (
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-        <h2 className="text-xl font-black text-white">Musobaqalar</h2>
+        <h2 className="text-xl font-black text-text-primary">Musobaqalar</h2>
         <button onClick={openCreateEvent} className="btn-primary px-4 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
           <Icon name="plus" size={15} /> Yangi tadbir
         </button>
@@ -1452,12 +1472,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           const isReady = issues.length === 0;
           const canEdit = needsReadiness;
           const statusTone = o.status === 'active'
-            ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/20'
+            ? 'bg-success/15 text-success border-success/40'
             : o.status === 'inactive'
-              ? 'bg-amber-500/15 text-amber-300 border-amber-500/20'
+              ? 'bg-warning/15 text-warning border-warning/40'
               : o.status === 'draft'
-                ? 'bg-white/5 text-white/45 border-white/10'
-                : 'bg-indigo-500/15 text-indigo-300 border-indigo-500/20';
+                ? 'bg-surface-2 text-text-secondary border-edge'
+                : 'bg-accent-2/15 text-accent-2 border-accent-2/40';
           const statusIcon = o.status === 'active'
             ? 'trophy'
             : o.status === 'inactive'
@@ -1472,20 +1492,23 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 <Icon name={statusIcon} size={20} />
               </div>
               <div className="flex-1 min-w-0 space-y-3">
-                <div className="font-bold text-white mb-1">{o.title}</div>
-                <div className="flex flex-wrap items-center gap-3 text-xs text-white/40">
+                <div className="font-bold text-text-primary mb-1">{o.title}</div>
+                <div className="flex flex-wrap items-center gap-3 text-xs text-text-secondary">
                   <SubjectBadge subject={o.subject} />
-                  <span className={`rounded-lg px-2 py-1 font-bold ${o.eventType === 'olympiad' ? 'bg-cyan-500/15 text-cyan-300' : 'bg-amber-500/15 text-amber-300'}`}>{eventTypeLabel(o.eventType || 'competition')}</span>
-                  {o.testLevel && <span className="rounded-lg bg-violet-500/15 px-2 py-1 font-bold text-violet-300">Daraja: {o.testLevel}</span>}
-                  {o.testType && <span className="rounded-lg bg-sky-500/15 px-2 py-1 font-bold text-sky-300">Tur: {testTypeLabel(o.testType)}</span>}
+                  <span className={`rounded-lg px-2 py-1 font-bold ${o.eventType === 'olympiad' ? 'bg-accent-2/15 text-accent-2' : 'bg-warning/15 text-warning'}`}>{eventTypeLabel(o.eventType || 'competition')}</span>
+                  {/* Daraja — neytral metama'lumot: yonidagi "Tur:" chipi
+                      allaqachon `accent-2` ni egallagan, ikkisi bir xil
+                      ko'rinmasin. */}
+                  {o.testLevel && <span className="rounded-lg bg-surface-2 px-2 py-1 font-bold text-text-primary">Daraja: {o.testLevel}</span>}
+                  {o.testType && <span className="rounded-lg bg-accent-2/15 px-2 py-1 font-bold text-accent-2">Tur: {testTypeLabel(o.testType)}</span>}
                   <span className="inline-flex items-center gap-1"><Icon name="clock" size={12} /> {o.startDate || o.date || 'Sana yo\'q'} {o.startTime || ''}</span>
                   <span>{o.duration} min</span>
                   <span>{assignedCount} ta savol</span>
                   <span>{o.participants || 0} ishtirokchi</span>
-                  {o.avgScore > 0 && <span className="text-emerald-400">Ø {o.avgScore}%</span>}
+                  {o.avgScore > 0 && <span className="text-success">Ø {o.avgScore}%</span>}
                 </div>
                 {needsReadiness ? (
-                  <div className={`rounded-xl px-3 py-2 border text-xs ${isReady ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300' : 'bg-amber-500/10 border-amber-500/25 text-amber-300'}`}>
+                  <div className={`rounded-xl px-3 py-2 border text-xs ${isReady ? 'bg-success/10 border-success/40 text-success' : 'bg-warning/10 border-warning/40 text-warning'}`}>
                     <div className="flex items-center gap-2 font-semibold">
                       <Icon name={isReady ? 'check' : 'info'} size={13} />
                       {isReady ? 'Faollashtirishga tayyor' : 'Tayyor emas'}
@@ -1493,14 +1516,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                     {!isReady && (
                       <div className="mt-1 flex flex-wrap gap-1.5">
                         {issues.slice(0, 3).map(issue => (
-                          <span key={issue} className="rounded-lg bg-black/15 px-2 py-1">{issue}</span>
+                          <span key={issue} className="rounded-lg bg-surface-1 px-2 py-1">{issue}</span>
                         ))}
-                        {issues.length > 3 && <span className="rounded-lg bg-black/15 px-2 py-1">+{issues.length - 3}</span>}
+                        {issues.length > 3 && <span className="rounded-lg bg-surface-1 px-2 py-1">+{issues.length - 3}</span>}
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div className={`rounded-xl px-3 py-2 border text-xs ${o.status === 'active' ? 'bg-cyan-500/10 border-cyan-500/25 text-cyan-300' : 'bg-slate-500/10 border-white/10 text-white/45'}`}>
+                  <div className={`rounded-xl px-3 py-2 border text-xs ${o.status === 'active' ? 'bg-accent-2/10 border-accent-2/40 text-accent-2' : 'bg-surface-2 border-edge text-text-secondary'}`}>
                     <div className="flex items-center gap-2 font-semibold">
                       <Icon name={o.status === 'active' ? 'trophy' : 'check'} size={13} />
                       {o.status === 'active' ? "Hozir faol" : 'Yakunlangan'}
@@ -1516,7 +1539,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 </button>
                 {(canEdit || o.status === 'finished') && (
                   <button onClick={() => setDeleteEventId(o.id)}
-                    className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50 flex items-center justify-center gap-1">
+                    className="rounded-xl border border-error/40 bg-error/10 px-3 py-1.5 text-xs font-bold text-error hover:bg-error/20 disabled:opacity-50 flex items-center justify-center gap-1">
                     <Icon name="trash" size={13} /> O'chirish
                   </button>
                 )}
@@ -1534,7 +1557,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 {o.status === 'active' && (
                   <>
                     <button onClick={() => { setLiveOlympiadId(o.id); setPage('proctoring'); }}
-                      className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 flex items-center justify-center gap-1">
+                      className="rounded-xl border border-success/40 bg-success/10 px-3 py-1.5 text-xs font-bold text-success hover:bg-success/20 flex items-center justify-center gap-1">
                       👁️ Jonli nazorat
                     </button>
                     <button onClick={() => deactivateEvent(o)}
@@ -1573,25 +1596,29 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
     return (
       <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
-        <h2 className="text-lg md:text-xl font-black text-white">Natijalar</h2>
-        {apiLoading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+        <h2 className="text-lg md:text-xl font-black text-text-primary">Natijalar</h2>
+        {apiLoading && <div className="text-xs text-text-secondary">Yuklanmoqda...</div>}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
-          <StatCard label="O'rtacha ball" value={avgVal} icon={<Icon name="chart" size={18} />} color="from-indigo-500 to-purple-600" />
-          <StatCard label="Eng yuqori" value={bestVal} icon={<Icon name="trophy" size={18} />} color="from-amber-500 to-orange-500" />
-          <StatCard label="Qatnashuvchilar" value={participantsVal} icon={<Icon name="users" size={18} />} color="from-cyan-500 to-blue-600" />
+          {/* `color` — `StatCard` uni `bg-gradient-to-br` bilan qo'shadi;
+              to'xtash nuqtasiz gradient chizilmaydi, shuning uchun oddiy yuza
+              klassi berilsa plitka tekis qoladi (yuqoridagi bosh sahifa
+              kartalari bilan bir xil naqsh). */}
+          <StatCard label="O'rtacha ball" value={avgVal} icon={<Icon name="chart" size={18} />} color="bg-surface-2 text-text-secondary" />
+          <StatCard label="Eng yuqori" value={bestVal} icon={<Icon name="trophy" size={18} />} color="bg-surface-2 text-text-secondary" />
+          <StatCard label="Qatnashuvchilar" value={participantsVal} icon={<Icon name="users" size={18} />} color="bg-surface-2 text-text-secondary" />
         </div>
         <div className="glass rounded-2xl p-4 sm:p-5">
-          <h3 className="font-bold text-white mb-4">Tadbir natijalari</h3>
+          <h3 className="font-bold text-text-primary mb-4">Tadbir natijalari</h3>
           {isApi && apiEvents.length > 0 && apiEvents.filter(e => (e.participants || 0) > 0).map(e => (
             <div key={e.olympiad_id} className="p-4 glass rounded-xl mb-3">
               <div className="flex items-center gap-3 sm:gap-4">
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-white break-words">{e.title}</div>
-                  <div className="text-xs text-white/40 mt-0.5">{e.subject} · {e.participants} ishtirokchi · eng yuqori {e.best_score}%</div>
+                  <div className="font-semibold text-text-primary break-words">{e.title}</div>
+                  <div className="text-xs text-text-secondary mt-0.5">{e.subject} · {e.participants} ishtirokchi · eng yuqori {e.best_score}%</div>
                 </div>
                 <DonutChart value={Math.round(e.average_score || 0)} size={56} />
               </div>
-              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/5">
+              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-edge">
                 <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1">
                   <Icon name="trophy" size={12} /> Reyting
                 </button>
@@ -1636,10 +1663,10 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           {!isApi && localFinished.map(o => (
             <div key={o.id} className="p-4 glass rounded-xl mb-3">
               <div className="flex items-center gap-3 sm:gap-4">
-                <div className="flex-1 min-w-0"><div className="font-semibold text-white break-words">{o.title}</div><div className="text-xs text-white/40 mt-0.5">{[o.testLevel, testTypeLabel(o.testType)].filter(Boolean).join(' · ')}{(o.testLevel || o.testType) ? ' · ' : ''}{o.participants || 0} ishtirokchi</div></div>
+                <div className="flex-1 min-w-0"><div className="font-semibold text-text-primary break-words">{o.title}</div><div className="text-xs text-text-secondary mt-0.5">{[o.testLevel, testTypeLabel(o.testType)].filter(Boolean).join(' · ')}{(o.testLevel || o.testType) ? ' · ' : ''}{o.participants || 0} ishtirokchi</div></div>
                 <DonutChart value={o.avgScore || 0} size={56} />
               </div>
-              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/5">
+              <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-edge">
                 <button onClick={() => openResultsModal(o)} className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"><Icon name="eye" size={12} /> Ko'rish</button>
                 <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-3 py-2 rounded-xl inline-flex items-center gap-1"><Icon name="trophy" size={12} /> Reyting</button>
               </div>
@@ -1647,7 +1674,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           ))}
           {((isApi && apiEvents.filter(e => (e.participants || 0) > 0).length === 0)
             || (!isApi && localFinished.length === 0)) && (
-            <div className="text-sm text-white/40 px-3 py-2">Hali natijasi bor tadbirlar yo'q</div>
+            <div className="text-sm text-text-secondary px-3 py-2">Hali natijasi bor tadbirlar yo'q</div>
           )}
         </div>
       </div>
@@ -1661,8 +1688,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
           <div>
-            <h2 className="text-xl font-black text-white">Savollar analitikasi</h2>
-            <p className="text-xs text-white/40 mt-1">Eng ko'p noto'g'ri javob berilgan savollar (kamida 3 ta urinish, ≥30% xato).</p>
+            <h2 className="text-xl font-black text-text-primary">Savollar analitikasi</h2>
+            <p className="text-xs text-text-secondary mt-1">Eng ko'p noto'g'ri javob berilgan savollar (kamida 3 ta urinish, ≥30% xato).</p>
           </div>
           <button
             onClick={() => questionAnalyticsRes.reload?.()}
@@ -1671,34 +1698,36 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             <Icon name="bolt" size={13} /> Yangilash
           </button>
         </div>
-        {loading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+        {loading && <div className="text-xs text-text-secondary">Yuklanmoqda...</div>}
         {!loading && rows.length === 0 && (
-          <div className="glass rounded-2xl p-8 text-center text-sm text-white/40">
+          <div className="glass rounded-2xl p-8 text-center text-sm text-text-secondary">
             Hozircha tahlilga yaroqli savollar yo'q. O'quvchilar tadbirlarda qatnashgach, bu yerda ko'rinadi.
           </div>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {rows.map(r => {
             const rate = Number(r.wrong_rate || 0);
+            // `.glass` hoshiyani inset box-shadow bilan chizadi — ustiga
+            // `border` qo'yilsa ikkita halqa chiqadi. Urg'u faqat chap chetda.
             const tone = rate >= 70
-              ? { bar: 'bg-rose-500', text: 'text-rose-300', border: 'border-rose-500/30', bg: 'bg-rose-500/10' }
+              ? { bar: 'bg-error', text: 'text-error', border: 'border-l-error', bg: 'bg-error/10' }
               : rate >= 50
-                ? { bar: 'bg-amber-500', text: 'text-amber-300', border: 'border-amber-500/25', bg: 'bg-amber-500/10' }
-                : { bar: 'bg-sky-500', text: 'text-sky-300', border: 'border-sky-500/25', bg: 'bg-sky-500/10' };
+                ? { bar: 'bg-warning', text: 'text-warning', border: 'border-l-warning', bg: 'bg-warning/10' }
+                : { bar: 'bg-accent-2', text: 'text-accent-2', border: 'border-l-accent-2', bg: 'bg-accent-2/10' };
             return (
-              <div key={r.question_id} className={`glass rounded-2xl p-4 border ${tone.border}`}>
+              <div key={r.question_id} className={`glass rounded-2xl p-4 border-l-4 ${tone.border}`}>
                 <div className="flex items-start gap-3">
                   <div className={`flex-shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-xl ${tone.bg} ${tone.text} font-black text-xs`}>
                     {rate}%
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm text-white font-semibold leading-snug">{r.text || '—'}</div>
-                    <div className="text-[11px] text-white/45 mt-1">
+                    <div className="text-sm text-text-primary font-semibold leading-snug">{r.text || '—'}</div>
+                    <div className="text-[11px] text-text-secondary mt-1">
                       {r.subject || 'Umumiy'} · {r.total_attempts} urinish · {r.wrong_count} xato
                     </div>
                   </div>
                 </div>
-                <div className="mt-3 h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                <div className="mt-3 h-2 w-full rounded-full bg-surface-2 overflow-hidden">
                   <div
                     className={`h-full ${tone.bar} transition-all`}
                     style={{ width: `${Math.min(100, Math.max(0, rate))}%` }}
@@ -1753,14 +1782,14 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             </button>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-black text-white">Jonli nazorat paneli</h2>
+                <h2 className="text-xl font-black text-text-primary">Jonli nazorat paneli</h2>
                 <span className="flex h-2.5 w-2.5 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-error"></span>
                 </span>
-                <span className="text-[10px] uppercase tracking-wider font-extrabold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md">LIVE</span>
+                <span className="text-[10px] uppercase tracking-wider font-extrabold text-error bg-error/10 px-2 py-0.5 rounded-md">LIVE</span>
               </div>
-              <p className="text-white/40 text-xs mt-0.5">{activeOlym?.title || 'Tadbir'}</p>
+              <p className="text-text-secondary text-xs mt-0.5">{activeOlym?.title || 'Tadbir'}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -1778,40 +1807,40 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="glass rounded-2xl p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-white/40 font-medium">Jami faol</div>
-              <div className="text-2xl font-black text-white mt-1">{totalCount}</div>
+              <div className="text-xs text-text-secondary font-medium">Jami faol</div>
+              <div className="font-data text-2xl font-black text-text-primary mt-1">{totalCount}</div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+            <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center text-accent">
               <Icon name="users" size={18} />
             </div>
           </div>
           <div className="glass rounded-2xl p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-white/40 font-medium font-bold text-emerald-400 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <div className="text-xs text-text-secondary font-medium font-bold text-success flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-success animate-pulse"></span>
                 Onlayn
               </div>
-              <div className="text-2xl font-black text-white mt-1">{onlineCount}</div>
+              <div className="font-data text-2xl font-black text-text-primary mt-1">{onlineCount}</div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+            <div className="w-10 h-10 rounded-xl bg-success/10 flex items-center justify-center text-success">
               <Icon name="check" size={18} />
             </div>
           </div>
           <div className="glass rounded-2xl p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-white/40 font-medium text-slate-300">Tugatganlar</div>
-              <div className="text-2xl font-black text-white mt-1">{completedCount}</div>
+              <div className="text-xs text-text-secondary font-medium text-text-secondary">Tugatganlar</div>
+              <div className="font-data text-2xl font-black text-text-primary mt-1">{completedCount}</div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/45">
+            <div className="w-10 h-10 rounded-xl bg-surface-2 flex items-center justify-center text-text-secondary">
               <Icon name="trophy" size={18} />
             </div>
           </div>
           <div className="glass rounded-2xl p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-white/40 font-medium text-rose-400">Diskvalifikatsiya</div>
-              <div className="text-2xl font-black text-rose-400 mt-1">{disqualifiedCount}</div>
+              <div className="text-xs text-text-secondary font-medium text-error">Diskvalifikatsiya</div>
+              <div className="text-2xl font-black text-error mt-1">{disqualifiedCount}</div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-400">
+            <div className="w-10 h-10 rounded-xl bg-error/10 flex items-center justify-center text-error">
               <Icon name="info" size={18} />
             </div>
           </div>
@@ -1820,7 +1849,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         {/* Search */}
         <div className="flex justify-between items-center gap-3">
           <div className="relative w-full sm:w-80">
-            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
             <input
               className="input-field pl-10 py-2 w-full text-sm"
               placeholder="Ism yoki telefon bo'yicha qidirish..."
@@ -1835,13 +1864,13 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           <div className="overflow-x-auto">
             <table className="w-full min-w-[800px]">
               <thead>
-                <tr className="border-b border-white/5 bg-white/2">
+                <tr className="border-b border-edge bg-surface-2">
                   {["Ism / Telefon", 'Boshlash vaqti', 'Holati', 'Javoblar', 'Tab almashish', 'Natija / Sarflangan vaqt'].map(h => (
-                    <th key={h} className="text-left px-5 py-4 text-xs text-white/40 font-bold uppercase tracking-wider">{h}</th>
+                    <th key={h} className="text-left px-5 py-4 text-xs text-text-secondary font-bold uppercase tracking-wider">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-edge">
                 {filteredProctoring.map(p => {
                   const percent = p.total_questions > 0 ? Math.round((p.answered_count / p.total_questions) * 100) : 0;
                   
@@ -1851,59 +1880,59 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   
                   if (p.status === 'disqualified') {
                     statusBadge = (
-                      <span className="rounded-lg bg-rose-500/15 border border-rose-500/30 px-2 py-1 text-xs font-bold text-rose-400 inline-flex items-center gap-1">
+                      <span className="rounded-lg bg-error/15 border border-error/40 px-2 py-1 text-xs font-bold text-error inline-flex items-center gap-1">
                         ⚠️ Diskvalifikatsiya
                       </span>
                     );
                     onlineIndicator = (
-                      <span className="inline-flex items-center gap-1.5 text-xs text-rose-400">
-                        <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                      <span className="inline-flex items-center gap-1.5 text-xs text-error">
+                        <span className="w-2 h-2 rounded-full bg-error"></span>
                         Qizil chiroq
                       </span>
                     );
                   } else if (p.status === 'completed') {
                     statusBadge = (
-                      <span className="rounded-lg bg-indigo-500/15 border border-indigo-500/30 px-2 py-1 text-xs font-bold text-indigo-300 inline-flex items-center gap-1">
+                      <span className="rounded-lg bg-accent-2/15 border border-accent-2/40 px-2 py-1 text-xs font-bold text-accent-2 inline-flex items-center gap-1">
                         ✓ Yakunlandi
                       </span>
                     );
                     onlineIndicator = (
-                      <span className="inline-flex items-center gap-1.5 text-xs text-white/30">
-                        <span className="w-2 h-2 rounded-full bg-white/20"></span>
+                      <span className="inline-flex items-center gap-1.5 text-xs text-text-secondary">
+                        <span className="w-2 h-2 rounded-full bg-surface-2"></span>
                         Oflayn
                       </span>
                     );
                   } else if (p.pending_review || p.status === 'pending_review') {
                     // Cheating aniqlandi — menejer/owner qarorini kutmoqda (amber).
                     statusBadge = (
-                      <span className="rounded-lg bg-amber-500/15 border border-amber-500/40 px-2 py-1 text-xs font-bold text-amber-300 inline-flex items-center gap-1">
+                      <span className="rounded-lg bg-warning/15 border border-warning/40 px-2 py-1 text-xs font-bold text-warning inline-flex items-center gap-1">
                         ⏳ Tekshiruv kutilmoqda
                       </span>
                     );
                     onlineIndicator = (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-300">
-                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-warning">
+                        <span className="w-2 h-2 rounded-full bg-warning animate-pulse"></span>
                         Qaror kutilmoqda
                       </span>
                     );
                   } else {
                     // active
                     statusBadge = (
-                      <span className="rounded-lg bg-cyan-500/10 border border-cyan-500/25 px-2 py-1 text-xs font-bold text-cyan-300">
+                      <span className="rounded-lg bg-accent-2/10 border border-accent-2/40 px-2 py-1 text-xs font-bold text-accent-2">
                         Faol topshirmoqda
                       </span>
                     );
                     if (p.is_online) {
                       onlineIndicator = (
-                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-success">
+                          <span className="w-2 h-2 rounded-full bg-success animate-pulse"></span>
                           Yashil chiroq (Onlayn)
                         </span>
                       );
                     } else {
                       onlineIndicator = (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-white/40">
-                          <span className="w-2 h-2 rounded-full bg-white/30"></span>
+                        <span className="inline-flex items-center gap-1.5 text-xs text-text-secondary">
+                          <span className="w-2 h-2 rounded-full bg-surface-2"></span>
                           Oflayn (Aloqa yo'q)
                         </span>
                       );
@@ -1914,9 +1943,9 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   const hasEscapes = p.tab_escapes > 0;
                   const escapeTone = hasEscapes
                     ? (p.tab_escapes >= 60
-                        ? 'text-rose-400 bg-rose-500/10 border border-rose-500/20'
-                        : 'text-amber-400 bg-amber-500/10 border border-amber-500/20')
-                    : 'text-white/40 bg-white/5';
+                        ? 'text-error bg-error/10 border border-error/40'
+                        : 'text-warning bg-warning/10 border border-warning/40')
+                    : 'text-text-secondary bg-surface-2';
 
                   const formattedStart = p.started_at
                     ? new Date(p.started_at).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -1927,12 +1956,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                     : '—';
 
                   return (
-                    <tr key={p.student_id} className="olympy-row hover:bg-white/1.5 transition-colors">
+                    <tr key={p.student_id} className="olympy-row hover:bg-surface-2 transition-colors">
                       <td className="px-5 py-4">
-                        <div className="font-semibold text-white text-sm">{p.student_name}</div>
-                        <div className="text-xs text-white/40 mt-0.5">{p.phone}</div>
+                        <div className="font-semibold text-text-primary text-sm">{p.student_name}</div>
+                        <div className="text-xs text-text-secondary mt-0.5">{p.phone}</div>
                       </td>
-                      <td className="px-5 py-4 text-sm text-white/60">
+                      <td className="px-5 py-4 text-sm text-text-secondary">
                         {formattedStart}
                       </td>
                       <td className="px-5 py-4">
@@ -1941,12 +1970,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                           <div>{onlineIndicator}</div>
                           {cameraOn && (
                             p.camera_consent_given ? (
-                              <span className="text-[10px] font-semibold text-emerald-300/90 bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/30 inline-flex items-center gap-1"
+                              <span className="text-[10px] font-semibold text-success bg-success/20 px-2 py-0.5 rounded border border-success/40 inline-flex items-center gap-1"
                                 title={p.camera_consent_at ? `Rozilik: ${new Date(p.camera_consent_at).toLocaleString('uz-UZ')}` : 'Kamera roziligi berilgan'}>
                                 <Icon name="eye" size={11} /> Kamera roziligi
                               </span>
                             ) : (
-                              <span className="text-[10px] font-semibold text-white/40 bg-white/5 px-2 py-0.5 rounded border border-white/10 inline-flex items-center gap-1"
+                              <span className="text-[10px] font-semibold text-text-secondary bg-surface-2 px-2 py-0.5 rounded border border-edge inline-flex items-center gap-1"
                                 title="Kamera roziligi berilmagan">
                                 <Icon name="eyeOff" size={11} /> Rozilik yo'q
                               </span>
@@ -1954,19 +1983,19 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                           )}
                           {voiceOn && (
                             p.microphone_consent_given ? (
-                              <span className="text-[10px] font-semibold text-emerald-300/90 bg-emerald-950/20 px-2 py-0.5 rounded border border-emerald-900/30 inline-flex items-center gap-1"
+                              <span className="text-[10px] font-semibold text-success bg-success/20 px-2 py-0.5 rounded border border-success/40 inline-flex items-center gap-1"
                                 title={p.microphone_consent_at ? `Rozilik: ${new Date(p.microphone_consent_at).toLocaleString('uz-UZ')}` : 'Mikrofon roziligi berilgan'}>
                                 <Icon name="mic" size={11} /> Mikrofon roziligi
                               </span>
                             ) : (
-                              <span className="text-[10px] font-semibold text-white/40 bg-white/5 px-2 py-0.5 rounded border border-white/10 inline-flex items-center gap-1"
+                              <span className="text-[10px] font-semibold text-text-secondary bg-surface-2 px-2 py-0.5 rounded border border-edge inline-flex items-center gap-1"
                                 title="Mikrofon roziligi berilmagan">
                                 <Icon name="mic" size={11} /> Rozilik yo'q
                               </span>
                             )
                           )}
                           {p.cheating_reason && (
-                            <div className="text-[10px] text-rose-300/80 bg-rose-950/20 px-2 py-0.5 rounded border border-rose-900/30 max-w-[200px] truncate" title={cheatingReasonLabel(p.cheating_reason)}>
+                            <div className="text-[10px] text-error bg-error/20 px-2 py-0.5 rounded border border-error/40 max-w-[200px] truncate" title={cheatingReasonLabel(p.cheating_reason)}>
                               Sabab: {cheatingReasonLabel(p.cheating_reason)}
                             </div>
                           )}
@@ -1974,12 +2003,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                       </td>
                       <td className="px-5 py-4 min-w-[150px]">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono font-bold text-white/80">{p.answered_count} / {p.total_questions}</span>
-                          <span className="text-[10px] text-white/40 font-medium">({percent}%)</span>
+                          <span className="text-xs font-mono font-bold text-text-primary">{p.answered_count} / {p.total_questions}</span>
+                          <span className="text-[10px] text-text-secondary font-medium">({percent}%)</span>
                         </div>
-                        <div className="w-32 h-1.5 bg-white/5 rounded-full mt-1.5 overflow-hidden">
+                        <div className="w-32 h-1.5 bg-surface-2 rounded-full mt-1.5 overflow-hidden">
                           <div
-                            className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400 rounded-full transition-all duration-300"
+                            className="h-full bg-accent rounded-full transition-all duration-300"
                             style={{ width: `${percent}%` }}
                           />
                         </div>
@@ -1989,7 +2018,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                           <Icon name="info" size={11} /> {p.tab_escapes} soniya
                         </span>
                         {hasEscapes && (
-                          <div className="text-[9px] text-amber-300 mt-1 font-semibold">
+                          <div className="text-[9px] text-warning mt-1 font-semibold">
                             ⚠️ Tashqarida bo'lgan
                           </div>
                         )}
@@ -1997,11 +2026,11 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                       <td className="px-5 py-4 text-sm">
                         {p.status === 'completed' ? (
                           <div>
-                            <span className="font-extrabold text-emerald-400 text-base">{p.score}%</span>
-                            <div className="text-[10px] text-white/40 mt-0.5">Sarflandi: {formattedTimeSpent}</div>
+                            <span className="font-extrabold text-success text-base">{p.score}%</span>
+                            <div className="text-[10px] text-text-secondary mt-0.5">Sarflandi: {formattedTimeSpent}</div>
                           </div>
                         ) : p.status === 'disqualified' ? (
-                          <span className="font-bold text-rose-400 text-xs">Natija bekor qilingan</span>
+                          <span className="font-bold text-error text-xs">Natija bekor qilingan</span>
                         ) : (p.pending_review || p.status === 'pending_review') ? (
                           <div className="flex flex-col gap-1.5 min-w-[160px]">
                             <button
@@ -2014,13 +2043,13 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                             <button
                               onClick={() => handleReviewCheating(p.session_id, 'continue')}
                               disabled={!!reviewBusyIds[p.session_id]}
-                              className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-success/15 border border-success/40 text-success hover:bg-success/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               Davom etishga ruxsat
                             </button>
                           </div>
                         ) : (
-                          <span className="text-white/30 text-xs">Test topshirilmoqda...</span>
+                          <span className="text-text-secondary text-xs">Test topshirilmoqda...</span>
                         )}
                       </td>
                     </tr>
@@ -2028,7 +2057,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 })}
                 {filteredProctoring.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-16 text-center text-white/40 text-sm">
+                    <td colSpan={6} className="px-5 py-16 text-center text-text-secondary text-sm">
                       {searchQuery ? "Mos keladigan ishtirokchilar topilmadi" : "Ushbu tadbirda faol ishtirokchilar hozircha mavjud emas"}
                     </td>
                   </tr>
@@ -2056,8 +2085,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       <div className="space-y-5 p-4 md:p-6 mobile-content-pad">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
-            <h1 className="text-xl md:text-2xl font-black tracking-tight text-white">Mukofotlar do'koni</h1>
-            <p className="mt-1 text-sm font-semibold text-white/50">{centerName} o'quvchilari tangalarini almashtiradigan sovg'alar.</p>
+            <h1 className="text-xl md:text-2xl font-black tracking-tight text-text-primary">Mukofotlar do'koni</h1>
+            <p className="mt-1 text-sm font-semibold text-text-secondary">{centerName} o'quvchilari tangalarini almashtiradigan sovg'alar.</p>
           </div>
           <button onClick={() => openShopModal(null)} className="btn-primary flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-black self-start">
             <Icon name="plus" size={15} /> Yangi mahsulot
@@ -2065,9 +2094,9 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </div>
 
         <section className="rounded-2xl glass p-4 md:p-6">
-          <h2 className="mb-4 text-base font-black text-white">Mahsulotlar ({shopProducts.length})</h2>
+          <h2 className="mb-4 text-base font-black text-text-primary">Mahsulotlar ({shopProducts.length})</h2>
           {shopLoading ? (
-            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+            <div className="text-center text-text-secondary text-sm py-8">Yuklanmoqda...</div>
           ) : shopProducts.length === 0 ? (
             <EmptyState icon="award" title="Do'kon bo'sh" desc="Yuqoridagi tugma orqali birinchi mahsulotni qo'shing." />
           ) : (
@@ -2075,43 +2104,43 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               {shopProducts.map(p => {
                 const features = Array.isArray(p.features) ? p.features : [];
                 return (
-                  <div key={p.id} className={`rounded-xl border p-3.5 flex flex-col gap-3 ${p.is_active ? 'border-edge-strong bg-white/5' : 'border-edge bg-white/[0.02] opacity-70'}`}>
+                  <div key={p.id} className={`rounded-xl border p-3.5 flex flex-col gap-3 ${p.is_active ? 'border-edge-strong bg-surface-2' : 'border-edge bg-surface-2 opacity-70'}`}>
                     <div className="flex items-start gap-3">
                       {p.image_url ? (
                         <img src={p.image_url} alt={p.title} className="h-14 w-14 flex-shrink-0 rounded-xl object-cover" />
                       ) : (
-                        <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-white/5 text-2xl">{p.icon || '🎁'}</div>
+                        <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-surface-2 text-2xl">{p.icon || '🎁'}</div>
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <div className="truncate text-sm font-black text-white">{p.title}</div>
-                          {!p.is_active && <span className="flex-shrink-0 rounded-md bg-white/5 px-1.5 py-0.5 text-[9px] font-black uppercase text-white/40">Nofaol</span>}
+                          <div className="truncate text-sm font-black text-text-primary">{p.title}</div>
+                          {!p.is_active && <span className="flex-shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-[9px] font-black uppercase text-text-secondary">Nofaol</span>}
                         </div>
-                        <div className="mt-0.5 flex items-center gap-2 text-[11px] font-bold text-white/40">
-                          <span className="text-amber-300">🪙 {p.coin_cost}</span>
+                        <div className="mt-0.5 flex items-center gap-2 text-[11px] font-bold text-text-secondary">
+                          <span className="text-warning">🪙 {p.coin_cost}</span>
                           <span>·</span>
                           <span>Zaxira: {p.stock}</span>
                         </div>
                       </div>
                     </div>
-                    {p.description && <p className="text-xs leading-relaxed text-white/45 line-clamp-2">{p.description}</p>}
+                    {p.description && <p className="text-xs leading-relaxed text-text-secondary line-clamp-2">{p.description}</p>}
                     {features.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {features.map((f, i) => (
-                          <span key={i} className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-white/60">
+                          <span key={i} className="rounded-md border border-edge bg-surface-2 px-2 py-0.5 text-[10px] font-semibold text-text-secondary">
                             {typeof f === 'string' ? f : (f?.value || '')}
                           </span>
                         ))}
                       </div>
                     )}
-                    <div className="mt-auto flex items-center gap-2 border-t border-white/5 pt-3">
-                      <button onClick={() => openShopModal(p)} className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/70 hover:bg-white/10">
+                    <div className="mt-auto flex items-center gap-2 border-t border-edge pt-3">
+                      <button onClick={() => openShopModal(p)} className="flex-1 rounded-lg border border-edge bg-surface-2 px-3 py-1.5 text-xs font-bold text-text-secondary hover:bg-surface-2">
                         Tahrirlash
                       </button>
-                      <button onClick={() => toggleShopActive(p)} className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/70 hover:bg-white/10" title={p.is_active ? 'Nofaol qilish' : 'Faollashtirish'}>
+                      <button onClick={() => toggleShopActive(p)} className="rounded-lg border border-edge bg-surface-2 px-3 py-1.5 text-xs font-bold text-text-secondary hover:bg-surface-2" title={p.is_active ? 'Nofaol qilish' : 'Faollashtirish'}>
                         {p.is_active ? 'Yashirish' : "Ko'rsatish"}
                       </button>
-                      <button onClick={() => setDeleteProductId(p.id)} className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20">
+                      <button onClick={() => setDeleteProductId(p.id)} className="rounded-lg border border-error/40 bg-error/10 px-2.5 py-1.5 text-xs font-bold text-error hover:bg-error/20">
                         <Icon name="x" size={14} />
                       </button>
                     </div>
@@ -2123,11 +2152,11 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </section>
 
         {shopModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={closeShopModal}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-ground/80 p-4" onClick={closeShopModal}>
             <div className="modal w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               <div className="mb-5 flex items-start justify-between gap-4">
-                <h2 className="text-lg font-black text-white">{isEdit ? 'Mahsulotni tahrirlash' : 'Yangi mahsulot'}</h2>
-                <button type="button" onClick={closeShopModal} className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white">
+                <h2 className="text-lg font-black text-text-primary">{isEdit ? 'Mahsulotni tahrirlash' : 'Yangi mahsulot'}</h2>
+                <button type="button" onClick={closeShopModal} className="rounded-lg p-2 text-text-secondary hover:bg-surface-2 hover:text-text-primary">
                   <Icon name="x" size={18} />
                 </button>
               </div>
@@ -2136,44 +2165,44 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   {shopForm.image_url ? (
                     <img src={shopForm.image_url} alt="" className="h-16 w-16 flex-shrink-0 rounded-xl object-cover" />
                   ) : (
-                    <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl bg-white/5 text-2xl">{shopForm.icon || '🎁'}</div>
+                    <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl bg-surface-2 text-2xl">{shopForm.icon || '🎁'}</div>
                   )}
                   <label className="btn-ghost cursor-pointer rounded-lg px-3 py-2 text-xs font-bold">
                     Rasm yuklash
                     <input type="file" accept="image/*" className="hidden" onChange={onPickImage} />
                   </label>
                   {shopForm.image_url && (
-                    <button type="button" onClick={() => setShopForm(f => ({ ...f, imageFile: null, image_url: '' }))} className="text-xs font-bold text-rose-300 hover:text-rose-200">O'chirish</button>
+                    <button type="button" onClick={() => setShopForm(f => ({ ...f, imageFile: null, image_url: '' }))} className="text-xs font-bold text-error hover:text-error">O'chirish</button>
                   )}
                 </div>
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Nom</span>
+                  <span className="mb-1.5 block text-xs font-black uppercase text-text-secondary">Nom</span>
                   <input value={shopForm.title} onChange={e => setShopForm(f => ({ ...f, title: e.target.value }))} className="input-field" placeholder="Masalan, ProSkill futbolkasi" autoFocus />
                 </label>
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tavsif</span>
+                  <span className="mb-1.5 block text-xs font-black uppercase text-text-secondary">Tavsif</span>
                   <textarea value={shopForm.description} onChange={e => setShopForm(f => ({ ...f, description: e.target.value }))} className="input-field" rows={2} placeholder="Mahsulot haqida qisqacha..." />
                 </label>
                 <div className="grid grid-cols-3 gap-3">
                   <label className="block">
-                    <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tanga</span>
+                    <span className="mb-1.5 block text-xs font-black uppercase text-text-secondary">Tanga</span>
                     <input type="number" min={0} value={shopForm.coin_cost} onChange={e => setShopForm(f => ({ ...f, coin_cost: e.target.value }))} className="input-field" />
                   </label>
                   <label className="block">
-                    <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Zaxira</span>
+                    <span className="mb-1.5 block text-xs font-black uppercase text-text-secondary">Zaxira</span>
                     <input type="number" min={0} value={shopForm.stock} onChange={e => setShopForm(f => ({ ...f, stock: e.target.value }))} className="input-field" />
                   </label>
                   <label className="block">
-                    <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Belgi</span>
+                    <span className="mb-1.5 block text-xs font-black uppercase text-text-secondary">Belgi</span>
                     <input value={shopForm.icon} onChange={e => setShopForm(f => ({ ...f, icon: e.target.value }))} className="input-field text-center" maxLength={4} placeholder="🎁" />
                   </label>
                 </div>
                 <div className="space-y-2">
-                  <span className="block text-xs font-black uppercase text-white/40">Xususiyatlar</span>
+                  <span className="block text-xs font-black uppercase text-text-secondary">Xususiyatlar</span>
                   {(shopForm.features || []).map((f, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <input value={typeof f === 'string' ? f : (f?.value || '')} onChange={e => setFeature(i, e.target.value)} className="input-field w-full py-1.5 text-sm" placeholder="Masalan, Hajmi: L" />
-                      <button type="button" onClick={() => removeFeature(i)} className="flex-shrink-0 text-rose-300 hover:text-rose-200">
+                      <button type="button" onClick={() => removeFeature(i)} className="flex-shrink-0 text-error hover:text-error">
                         <Icon name="x" size={16} />
                       </button>
                     </div>
@@ -2181,8 +2210,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   <button type="button" onClick={addFeature} className="btn-ghost rounded-lg px-3 py-1.5 text-xs font-bold">+ Xususiyat qo'shish</button>
                 </div>
                 <label className="flex items-center gap-2.5 cursor-pointer">
-                  <input type="checkbox" checked={!!shopForm.is_active} onChange={e => setShopForm(f => ({ ...f, is_active: e.target.checked }))} className="h-4 w-4 rounded accent-indigo-500" />
-                  <span className="text-sm font-bold text-white/70">Faol (o'quvchilarga ko'rinadi)</span>
+                  <input type="checkbox" checked={!!shopForm.is_active} onChange={e => setShopForm(f => ({ ...f, is_active: e.target.checked }))} className="h-4 w-4 rounded accent-accent" />
+                  <span className="text-sm font-bold text-text-secondary">Faol (o'quvchilarga ko'rinadi)</span>
                 </label>
               </div>
               <div className="mt-6 flex gap-3">
@@ -2241,22 +2270,22 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {/* Kod (IT) javoblari modali */}
       <Modal open={!!codeSubModal} onClose={() => setCodeSubModal(null)} title="Kod javoblari" width="max-w-3xl">
         <div className="space-y-4">
-          <div className="text-sm text-white/60">{codeSubModal?.title}</div>
-          {codeSubLoading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+          <div className="text-sm text-text-secondary">{codeSubModal?.title}</div>
+          {codeSubLoading && <div className="text-xs text-text-secondary">Yuklanmoqda...</div>}
           {codeSubError && (
-            <div className="flex items-center gap-2 bg-rose-500/10 text-rose-300 rounded-xl px-3 py-2 text-xs border border-rose-500/20">
+            <div className="flex items-center gap-2 bg-error/10 text-error rounded-xl px-3 py-2 text-xs border border-error/40">
               <Icon name="info" size={14} /> {codeSubError}
             </div>
           )}
           {!codeSubLoading && !codeSubError && codeSubData.length === 0 && (
-            <div className="glass rounded-2xl p-8 text-center text-sm text-white/40">
+            <div className="glass rounded-2xl p-8 text-center text-sm text-text-secondary">
               Bu olimpiadada hali kod javoblari yo'q.
             </div>
           )}
           {codeSubData.length > 0 && (
             <div className="space-y-2.5 max-h-[60vh] overflow-y-auto">
               {/* Sarlavha qatori (desktop) */}
-              <div className="hidden md:grid grid-cols-12 gap-2 px-3 text-[10px] uppercase tracking-wide text-white/35 font-bold">
+              <div className="hidden md:grid grid-cols-12 gap-2 px-3 text-[10px] uppercase tracking-wide text-text-secondary font-bold">
                 <div className="col-span-3">O'quvchi</div>
                 <div className="col-span-4">Savol</div>
                 <div className="col-span-2">Til</div>
@@ -2269,18 +2298,18 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   <div key={sub.id} className="glass rounded-xl p-3">
                     <div className="grid grid-cols-2 md:grid-cols-12 gap-2 items-center">
                       <div className="md:col-span-3 min-w-0">
-                        <div className="text-sm font-semibold text-white truncate">{sub.student_name || '—'}</div>
+                        <div className="text-sm font-semibold text-text-primary truncate">{sub.student_name || '—'}</div>
                       </div>
                       <div className="md:col-span-4 min-w-0">
-                        <div className="text-xs text-white/55 truncate" title={sub.question_text}>{sub.question_text || '—'}</div>
+                        <div className="text-xs text-text-secondary truncate" title={sub.question_text}>{sub.question_text || '—'}</div>
                       </div>
                       <div className="md:col-span-2">
-                        <span className="text-[11px] px-2 py-0.5 rounded-md bg-white/5 text-white/60 font-semibold">{sub.code_language || '—'}</span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-md bg-surface-2 text-text-secondary font-semibold">{sub.code_language || '—'}</span>
                       </div>
                       <div className="md:col-span-1">
                         {typeof sub.ai_code_score === 'number'
-                          ? <span className="text-sm font-black text-indigo-300">{sub.ai_code_score}</span>
-                          : <span className="text-xs text-white/30">—</span>}
+                          ? <span className="text-sm font-black font-data text-accent">{sub.ai_code_score}</span>
+                          : <span className="text-xs text-text-secondary">—</span>}
                       </div>
                       <div className="md:col-span-2">
                         <button onClick={() => setCodeSubExpanded(p => ({ ...p, [sub.id]: !p[sub.id] }))}
@@ -2292,13 +2321,16 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                     {expanded && (
                       <div className="mt-3 space-y-3">
                         <div>
-                          <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">Kod</div>
-                          <pre className="text-xs text-white/80 bg-black/30 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap break-words border border-white/5">{sub.submitted_code || '(bo\'sh)'}</pre>
+                          <div className="text-[10px] uppercase tracking-wide text-text-secondary font-bold mb-1">Kod</div>
+                          <pre className="text-xs text-text-primary bg-surface-2 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap break-words border border-edge">{sub.submitted_code || '(bo\'sh)'}</pre>
                         </div>
                         {sub.ai_code_review && (
                           <div>
-                            <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">AI tavsiyasi</div>
-                            <div className="text-xs text-white/70 whitespace-pre-wrap break-words glass rounded-xl p-3 border border-indigo-500/20">{sub.ai_code_review}</div>
+                            <div className="text-[10px] uppercase tracking-wide text-text-secondary font-bold mb-1">AI tavsiyasi</div>
+                            {/* Yuqoridagi kod bloki bilan bir xil yuza. `glass`
+                                emas: u hoshiyani inset box-shadow bilan chizadi
+                                va `border` bilan birga ikkita halqa chiqardi. */}
+                            <div className="text-xs text-text-secondary whitespace-pre-wrap break-words bg-surface-2 rounded-xl p-3 border border-edge">{sub.ai_code_review}</div>
                           </div>
                         )}
                       </div>
@@ -2308,7 +2340,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               })}
             </div>
           )}
-          <div className="text-[11px] text-white/30">AI tavsiyasi va ball test yakunlangach bir necha soniyada hisoblanadi.</div>
+          <div className="text-[11px] text-text-secondary">AI tavsiyasi va ball test yakunlangach bir necha soniyada hisoblanadi.</div>
         </div>
       </Modal>
 
@@ -2316,8 +2348,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       <Modal open={!!essayModal} onClose={() => setEssayModal(null)} title="Essay baholash" width="max-w-3xl">
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
-            <div className="text-sm text-white/60">{essayModal?.title}</div>
-            <label className="flex items-center gap-2 text-xs text-white/50 cursor-pointer select-none">
+            <div className="text-sm text-text-secondary">{essayModal?.title}</div>
+            <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={essayOnlyUngraded}
@@ -2326,19 +2358,19 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   setEssayOnlyUngraded(v);
                   if (essayModal?.id) loadEssayAnswers(essayModal.id, v);
                 }}
-                className="accent-indigo-500"
+                className="accent-accent"
               />
               Faqat baholanmaganlar
             </label>
           </div>
-          {essayLoading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+          {essayLoading && <div className="text-xs text-text-secondary">Yuklanmoqda...</div>}
           {essayError && (
-            <div className="flex items-center gap-2 bg-rose-500/10 text-rose-300 rounded-xl px-3 py-2 text-xs border border-rose-500/20">
+            <div className="flex items-center gap-2 bg-error/10 text-error rounded-xl px-3 py-2 text-xs border border-error/40">
               <Icon name="info" size={14} /> {essayError}
             </div>
           )}
           {!essayLoading && !essayError && essayData.length === 0 && (
-            <div className="glass rounded-2xl p-8 text-center text-sm text-white/40">
+            <div className="glass rounded-2xl p-8 text-center text-sm text-text-secondary">
               {essayOnlyUngraded
                 ? 'Baholanmagan essay javoblar yo\'q.'
                 : 'Bu olimpiadada essay javoblar yo\'q.'}
@@ -2355,27 +2387,27 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 const feedbackVal = draft.feedback !== undefined ? draft.feedback : (entry.feedback || '');
                 const saving = essaySavingKey === key;
                 return (
-                  <div key={key} className={`glass rounded-xl p-4 ${entry.graded ? 'border border-emerald-500/20' : ''}`}>
+                  <div key={key} className={`glass rounded-xl p-4 ${entry.graded ? 'border-l-4 border-l-success' : ''}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <div className="text-sm font-semibold text-white truncate">{entry.student_name || '—'}</div>
-                        <div className="text-xs text-white/55 mt-1">{entry.question_text || '—'}</div>
+                        <div className="text-sm font-semibold text-text-primary truncate">{entry.student_name || '—'}</div>
+                        <div className="text-xs text-text-secondary mt-1">{entry.question_text || '—'}</div>
                       </div>
                       {entry.graded && (
-                        <span className="flex-shrink-0 text-[10px] uppercase tracking-wide font-extrabold text-emerald-300 bg-emerald-500/10 px-2 py-1 rounded-md">
+                        <span className="flex-shrink-0 text-[10px] uppercase tracking-wide font-extrabold text-success bg-success/10 px-2 py-1 rounded-md">
                           Baholangan · {entry.score}/{entry.max_score}
                         </span>
                       )}
                     </div>
                     <div className="mt-3">
-                      <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">O'quvchi javobi</div>
-                      <div className="text-xs text-white/80 bg-black/30 rounded-xl p-3 whitespace-pre-wrap break-words border border-white/5">
+                      <div className="text-[10px] uppercase tracking-wide text-text-secondary font-bold mb-1">O'quvchi javobi</div>
+                      <div className="text-xs text-text-primary bg-surface-2 rounded-xl p-3 whitespace-pre-wrap break-words border border-edge">
                         {entry.answer_text || "(bo'sh)"}
                       </div>
                     </div>
                     <div className="mt-3 flex flex-col sm:flex-row sm:items-end gap-2">
                       <div>
-                        <label className="block text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">
+                        <label className="block text-[10px] uppercase tracking-wide text-text-secondary font-bold mb-1">
                           Ball (0–{entry.max_score})
                         </label>
                         <input
@@ -2388,7 +2420,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                         />
                       </div>
                       <div className="flex-1">
-                        <label className="block text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">Izoh (ixtiyoriy)</label>
+                        <label className="block text-[10px] uppercase tracking-wide text-text-secondary font-bold mb-1">Izoh (ixtiyoriy)</label>
                         <input
                           type="text"
                           value={feedbackVal}
@@ -2410,7 +2442,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               })}
             </div>
           )}
-          <div className="text-[11px] text-white/30">Baho saqlangach o'quvchining umumiy foizi avtomatik qayta hisoblanadi.</div>
+          <div className="text-[11px] text-text-secondary">Baho saqlangach o'quvchining umumiy foizi avtomatik qayta hisoblanadi.</div>
         </div>
       </Modal>
 
@@ -2431,14 +2463,24 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           const avgScore = scored.length
             ? Math.round(scored.reduce((s, r) => s + (r.score || 0), 0) / scored.length)
             : null;
-          // Ball foiziga qarab rangli badge klasslari.
+          // Ball foiziga qarab badge klasslari. `bar` — tekis to'ldirish
+          // (gradient yo'q): progress matn ko'tarmaydi, shuning uchun belgi
+          // roli — `accent`/holat tokeni.
           const scoreTone = (pct) => {
-            if (pct >= 90) return { text: 'text-emerald-300', bar: 'from-emerald-500 to-emerald-400', track: 'bg-emerald-500/10', ring: 'border-emerald-500/25' };
-            if (pct >= 70) return { text: 'text-indigo-300', bar: 'from-indigo-500 to-violet-400', track: 'bg-indigo-500/10', ring: 'border-indigo-500/25' };
-            if (pct >= 50) return { text: 'text-amber-300', bar: 'from-amber-500 to-amber-400', track: 'bg-amber-500/10', ring: 'border-amber-500/25' };
-            return { text: 'text-rose-300', bar: 'from-rose-500 to-rose-400', track: 'bg-rose-500/10', ring: 'border-rose-500/25' };
+            if (pct >= 90) return { text: 'text-success', bar: 'bg-success', track: 'bg-success/10', ring: 'border-success/40' };
+            if (pct >= 70) return { text: 'text-accent-2', bar: 'bg-accent-2', track: 'bg-accent-2/10', ring: 'border-accent-2/40' };
+            if (pct >= 50) return { text: 'text-warning', bar: 'bg-warning', track: 'bg-warning/10', ring: 'border-warning/40' };
+            return { text: 'text-error', bar: 'bg-error', track: 'bg-error/10', ring: 'border-error/40' };
           };
-          const rankMedal = (rank) => (rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : null);
+          // O'rin belgisi emoji EMAS (🥇🥈🥉): 1/2/3-o'rin farqi `--color-medal-*`
+          // tokeni bilan chegarada beriladi — `pages/Leaderboard.jsx` naqshi.
+          // Raqam har doim ko'rinadi, ya'ni signal faqat rangda emas (rang
+          // ko'rligi uchun). Medal rangi MATNGA berilmaydi: qog'oz mavzuda
+          // oltin `surface-2` fonida 3.21:1 — chegara uchun yetarli (WCAG
+          // 1.4.11 → 3:1), matn uchun emas.
+          const medalBorderStyle = (rank) => (rank >= 1 && rank <= 3
+            ? { borderColor: `rgb(var(--color-medal-${rank}))` }
+            : undefined);
 
           return (
             <div className="space-y-5 -mt-2">
@@ -2446,7 +2488,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <div className="glass rounded-2xl p-4 sm:p-5">
                 <div className="flex items-start gap-3 flex-wrap">
                   <div className="min-w-0 flex-1">
-                    <div className="text-base sm:text-lg font-bold text-white leading-tight break-words">
+                    <div className="text-base sm:text-lg font-bold text-text-primary leading-tight break-words">
                       {resultsModal.event?.title || '—'}
                     </div>
                     {resultsModal.event?.subject && resultsModal.event.subject !== '—' && (
@@ -2457,41 +2499,41 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   </div>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 mt-4">
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2.5">
-                    <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold">Ishtirokchilar</div>
-                    <div className="text-lg font-black text-white mt-0.5">{resultsModal.total}</div>
+                  <div className="rounded-xl bg-surface-2 border border-edge px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-wide text-text-secondary font-bold">Ishtirokchilar</div>
+                    <div className="text-lg font-black text-text-primary mt-0.5">{resultsModal.total}</div>
                   </div>
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2.5">
-                    <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold">O'rtacha ball</div>
-                    <div className={`text-lg font-black mt-0.5 ${avgScore == null ? 'text-white/40' : scoreTone(avgScore).text}`}>
+                  <div className="rounded-xl bg-surface-2 border border-edge px-3 py-2.5">
+                    <div className="text-[10px] uppercase tracking-wide text-text-secondary font-bold">O'rtacha ball</div>
+                    <div className={`text-lg font-black mt-0.5 ${avgScore == null ? 'text-text-secondary' : scoreTone(avgScore).text}`}>
                       {avgScore == null ? '—' : `${avgScore}%`}
                     </div>
                   </div>
-                  <div className="rounded-xl bg-white/[0.03] border border-white/5 px-3 py-2.5 col-span-2 sm:col-span-1">
-                    <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold">Sahifa</div>
-                    <div className="text-lg font-black text-white mt-0.5">{resultsModal.page} <span className="text-sm text-white/30 font-bold">/ {lastPage}</span></div>
+                  <div className="rounded-xl bg-surface-2 border border-edge px-3 py-2.5 col-span-2 sm:col-span-1">
+                    <div className="text-[10px] uppercase tracking-wide text-text-secondary font-bold">Sahifa</div>
+                    <div className="text-lg font-black text-text-primary mt-0.5">{resultsModal.page} <span className="text-sm text-text-secondary font-bold">/ {lastPage}</span></div>
                   </div>
                 </div>
               </div>
 
               {/* ── Loading skeleton ── */}
               {resultsModal.loading && (
-                <div className="rounded-2xl border border-white/5 overflow-hidden">
-                  <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 bg-white/[0.03] text-[10px] uppercase tracking-wide text-white/35 font-bold">
+                <div className="rounded-2xl border border-edge overflow-hidden">
+                  <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 bg-surface-2 text-[10px] uppercase tracking-wide text-text-secondary font-bold">
                     <div className="col-span-1 text-center">#</div>
                     <div className="col-span-4">O'quvchi</div>
                     <div className="col-span-2 text-center">To'g'ri / Jami</div>
                     <div className="col-span-3">Ball</div>
                     <div className="col-span-2 text-center">Holat</div>
                   </div>
-                  <div className="divide-y divide-white/5">
+                  <div className="divide-y divide-edge">
                     {Array.from({ length: 5 }).map((_, i) => (
                       <div key={i} className="flex items-center gap-3 px-4 py-3.5 animate-pulse">
-                        <div className="h-6 w-6 rounded-md bg-white/10 flex-shrink-0" />
-                        <div className="h-4 rounded bg-white/10 flex-1 max-w-[40%]" />
-                        <div className="h-4 w-16 rounded bg-white/10" />
-                        <div className="h-2.5 flex-1 rounded-full bg-white/10" />
-                        <div className="h-5 w-20 rounded-md bg-white/10" />
+                        <div className="h-6 w-6 rounded-md bg-surface-2 flex-shrink-0" />
+                        <div className="h-4 rounded bg-surface-2 flex-1 max-w-[40%]" />
+                        <div className="h-4 w-16 rounded bg-surface-2" />
+                        <div className="h-2.5 flex-1 rounded-full bg-surface-2" />
+                        <div className="h-5 w-20 rounded-md bg-surface-2" />
                       </div>
                     ))}
                   </div>
@@ -2502,16 +2544,20 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               {!resultsModal.loading && rows.length === 0 && (
                 <div className="glass rounded-2xl p-10 text-center">
                   <div className="text-3xl mb-2">📭</div>
-                  <div className="text-sm text-white/40">Bu tadbirda hali ishtirokchi natijalari yo'q.</div>
+                  <div className="text-sm text-text-secondary">Bu tadbirda hali ishtirokchi natijalari yo'q.</div>
                 </div>
               )}
 
               {/* ── Natijalar jadvali ── */}
               {!resultsModal.loading && rows.length > 0 && (
-                <div className="rounded-2xl border border-white/5 overflow-hidden">
+                <div className="rounded-2xl border border-edge overflow-hidden">
                   <div className="max-h-[58vh] overflow-y-auto">
                     {/* Sticky sarlavha qatori (desktop) */}
-                    <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 sticky top-0 z-10 bg-[#15171f]/95 backdrop-blur-sm border-b border-white/10 text-[10px] uppercase tracking-wide text-white/40 font-bold">
+                    {/* Fon `bg-[#15171f]/95` edi — light mavzuda deyarli qora
+                        chiziq bo'lib qolardi. `surface-2` shu rolning (modal
+                        yuzasidan bir pog'ona pastda) mavzuga mos ekvivalenti;
+                        to'liq shaffofmas bo'lgani uchun blur ham kerak emas. */}
+                    <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 sticky top-0 z-10 bg-surface-2 border-b border-edge text-[10px] uppercase tracking-wide text-text-secondary font-bold">
                       <div className="col-span-1 text-center">#</div>
                       <div className="col-span-4">O'quvchi</div>
                       <div className="col-span-2 text-center">To'g'ri / Jami</div>
@@ -2526,7 +2572,6 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                         const pct = typeof row.score === 'number' ? row.score : 0;
                         const tone = scoreTone(pct);
                         const dq = row.disqualified;
-                        const medal = rankMedal(row.rank);
                         return (
                           <div
                             key={row.attempt_id ?? idx}
@@ -2535,22 +2580,21 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                             onClick={() => openStudentReview(row)}
                             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openStudentReview(row); } }}
                             title="Javoblarini ko'rish"
-                            className={`animate-in flex flex-col gap-2 md:grid md:grid-cols-12 md:gap-x-2 md:gap-y-0 md:items-center px-3 md:px-4 py-3 border-b border-white/[0.04] transition-colors cursor-pointer hover:bg-white/[0.06] focus:bg-white/[0.06] focus:outline-none ${
+                            className={`animate-in flex flex-col gap-2 md:grid md:grid-cols-12 md:gap-x-2 md:gap-y-0 md:items-center px-3 md:px-4 py-3 border-b border-edge transition-colors cursor-pointer hover:bg-surface-2 focus:bg-surface-2 focus:outline-none ${
                               dq
-                                ? 'bg-white/[0.015] opacity-60'
+                                ? 'bg-surface-2 opacity-60'
                                 : idx % 2 === 1
-                                  ? 'bg-white/[0.02]'
+                                  ? 'bg-surface-2'
                                   : ''
                             }`}
                           >
                             {/* Rank (desktop ustun) */}
                             <div className="hidden md:flex md:col-span-1 justify-center">
                               {dq ? (
-                                <span className="text-white/25 text-sm">—</span>
-                              ) : medal ? (
-                                <span className="text-xl leading-none" title={`${row.rank}-o'rin`}>{medal}</span>
+                                <span className="text-text-secondary text-sm">—</span>
                               ) : (
-                                <span className="inline-flex h-6 min-w-6 px-1.5 items-center justify-center rounded-md bg-white/5 text-xs font-bold text-white/50">
+                                <span className="font-data inline-flex h-6 min-w-6 px-1.5 items-center justify-center rounded-md border border-edge bg-surface-2 text-xs font-bold text-text-primary"
+                                  style={medalBorderStyle(row.rank)} title={`${row.rank}-o'rin`}>
                                   {row.rank}
                                 </span>
                               )}
@@ -2560,54 +2604,53 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                             <div className="flex items-center gap-2 md:contents">
                               <span className="md:hidden flex-shrink-0">
                                 {dq ? (
-                                  <span className="text-white/25 text-xs">—</span>
-                                ) : medal ? (
-                                  <span className="text-lg leading-none">{medal}</span>
+                                  <span className="text-text-secondary text-xs">—</span>
                                 ) : (
-                                  <span className="inline-flex h-5 min-w-5 px-1 items-center justify-center rounded-md bg-white/5 text-[10px] font-bold text-white/45">{row.rank}</span>
+                                  <span className="font-data inline-flex h-5 min-w-5 px-1 items-center justify-center rounded-md border border-edge bg-surface-2 text-[10px] font-bold text-text-primary"
+                                    style={medalBorderStyle(row.rank)} title={`${row.rank}-o'rin`}>{row.rank}</span>
                                 )}
                               </span>
                               {/* O'quvchi */}
                               <div className="min-w-0 flex-1 md:col-span-4 flex items-center">
-                                <span className={`text-sm font-semibold truncate ${dq ? 'text-white/45 line-through' : 'text-white'}`}>
+                                <span className={`text-sm font-semibold truncate ${dq ? 'text-text-secondary line-through' : 'text-text-primary'}`}>
                                   {row.name || '—'}
                                 </span>
                               </div>
                               {/* Mobil: ball foizi (o'ngga) */}
-                              <span className={`md:hidden flex-shrink-0 text-sm font-black tabular-nums ${dq ? 'text-white/40' : tone.text}`}>{pct}%</span>
+                              <span className={`md:hidden flex-shrink-0 text-sm font-black font-data ${dq ? 'text-text-secondary' : tone.text}`}>{pct}%</span>
                             </div>
 
                             {/* Mobil: 2-qator → Natija + Holat (bir qator) + progress bar (pastda) */}
                             <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-2 pl-7 md:contents md:pl-0">
                               {/* To'g'ri / Jami */}
                               <div className="flex items-center flex-shrink-0 md:col-span-2 md:justify-center">
-                                <span className="text-sm font-bold text-emerald-300">{correct}</span>
-                                <span className="text-sm text-white/40">/{total}</span>
+                                <span className="text-sm font-bold text-success">{correct}</span>
+                                <span className="text-sm text-text-secondary">/{total}</span>
                                 {wrong > 0 && (
-                                  <span className="ml-1.5 text-[11px] font-semibold text-rose-300/80">−{wrong}</span>
+                                  <span className="ml-1.5 text-[11px] font-semibold text-error">−{wrong}</span>
                                 )}
                               </div>
 
                               {/* Ball — progress bar (desktop'da foiz bilan) */}
                               <div className="md:col-span-3 flex items-center gap-2.5 flex-1 md:flex-none order-3 md:order-none w-full md:w-auto basis-full md:basis-auto">
                                 <div className={`hidden md:block flex-1 h-2 rounded-full overflow-hidden ${tone.track}`}>
-                                  <div className={`h-full rounded-full bg-gradient-to-r ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+                                  <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
                                 </div>
-                                <span className={`hidden md:inline text-sm font-black tabular-nums ${dq ? 'text-white/40' : tone.text}`}>{pct}%</span>
+                                <span className={`hidden md:inline text-sm font-black font-data ${dq ? 'text-text-secondary' : tone.text}`}>{pct}%</span>
                                 {/* Mobil progress bar (to'liq qatorda, pastda) */}
                                 <div className={`md:hidden flex-1 h-1.5 rounded-full overflow-hidden ${tone.track}`}>
-                                  <div className={`h-full rounded-full bg-gradient-to-r ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
+                                  <div className={`h-full rounded-full ${tone.bar}`} style={{ width: `${Math.min(100, Math.max(0, pct))}%` }} />
                                 </div>
                               </div>
 
                               {/* Holat */}
                               <div className="flex-shrink-0 md:col-span-2 md:text-center">
                                 {dq ? (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-500/15 text-rose-300 border border-rose-500/25">
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-error/15 text-error border border-error/40">
                                     <Icon name="info" size={11} /> DQ
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md bg-success/15 text-success border border-success/40">
                                     <Icon name="check" size={11} /> Topshirgan
                                   </span>
                                 )}
@@ -2634,7 +2677,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   >
                     <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
                   </button>
-                  <div className="px-3 py-2 rounded-xl bg-white/5 text-[11px] font-bold text-white/60 tabular-nums">
+                  <div className="px-3 py-2 rounded-xl bg-surface-2 text-[11px] font-bold text-text-secondary font-data">
                     {resultsModal.page} / {lastPage}
                   </div>
                   <button
@@ -2725,16 +2768,16 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             <div className="space-y-4 -mt-1">
               {/* Sarlavha: o'quvchi ismi + umumiy natija */}
               <div className="glass rounded-2xl p-4 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center flex-shrink-0">
-                  <Icon name="user" size={18} className="text-indigo-300" />
+                <div className="w-10 h-10 rounded-xl bg-accent/10 border border-accent/40 flex items-center justify-center flex-shrink-0">
+                  <Icon name="user" size={18} className="text-accent" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-bold text-white truncate">{studentReviewModal.studentName || "O'quvchi"}</div>
+                  <div className="text-sm font-bold text-text-primary truncate">{studentReviewModal.studentName || "O'quvchi"}</div>
                   {review && (
-                    <div className="text-[11px] text-white/45 mt-0.5">
-                      To'g'ri: <span className="text-emerald-300 font-semibold">{review.correct_count ?? 0}</span>
-                      {' · '}Xato: <span className="text-rose-300 font-semibold">{review.wrong_count ?? 0}</span>
-                      {' · '}Ball: <span className="text-white/70 font-semibold">{review.score ?? 0}%</span>
+                    <div className="text-[11px] text-text-secondary mt-0.5">
+                      To'g'ri: <span className="text-success font-semibold">{review.correct_count ?? 0}</span>
+                      {' · '}Xato: <span className="text-error font-semibold">{review.wrong_count ?? 0}</span>
+                      {' · '}Ball: <span className="text-text-secondary font-semibold">{review.score ?? 0}%</span>
                     </div>
                   )}
                 </div>
@@ -2744,16 +2787,16 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               {studentReviewModal.loading && (
                 <div className="space-y-2.5">
                   {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="h-16 rounded-xl bg-white/[0.04] border border-white/5 animate-pulse" />
+                    <div key={i} className="h-16 rounded-xl bg-surface-2 border border-edge animate-pulse" />
                   ))}
                 </div>
               )}
 
               {/* Xato */}
               {!studentReviewModal.loading && studentReviewModal.error && (
-                <div className="glass rounded-2xl p-8 text-center border border-rose-500/15">
+                <div className="glass rounded-2xl p-8 text-center border-l-4 border-l-error">
                   <div className="text-3xl mb-2">⚠️</div>
-                  <div className="text-sm text-rose-200/80">{studentReviewModal.error}</div>
+                  <div className="text-sm text-error">{studentReviewModal.error}</div>
                 </div>
               )}
 
@@ -2761,7 +2804,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               {!studentReviewModal.loading && !studentReviewModal.error && review && (review.questions || []).length === 0 && (
                 <div className="glass rounded-2xl p-8 text-center">
                   <div className="text-3xl mb-2">📭</div>
-                  <div className="text-sm text-white/40">Bu tadbirda savollar topilmadi.</div>
+                  <div className="text-sm text-text-secondary">Bu tadbirda savollar topilmadi.</div>
                 </div>
               )}
 
@@ -2773,38 +2816,38 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                     const wrong = q.is_correct === false;
                     // is_correct === null → essay/kod tekshirilmoqda (neytral).
                     const tone = correct
-                      ? 'bg-emerald-500/[0.07] border-emerald-500/25'
+                      ? 'bg-success/[0.07] border-success/40'
                       : wrong
-                        ? 'bg-rose-500/[0.07] border-rose-500/25'
-                        : 'bg-white/[0.03] border-white/10';
+                        ? 'bg-error/[0.07] border-error/40'
+                        : 'bg-surface-2 border-edge';
                     const chosenTxt = renderChosen(q);
                     const correctTxt = renderCorrect(q);
                     return (
                       <div key={q.id ?? i} className={`rounded-xl p-3 sm:p-3.5 border ${tone}`}>
                         <div className="flex items-start gap-2.5">
-                          <span className="inline-flex h-6 min-w-6 px-1.5 items-center justify-center rounded-md bg-white/10 text-[11px] font-bold text-white/60 flex-shrink-0 mt-0.5">
+                          <span className="inline-flex h-6 min-w-6 px-1.5 items-center justify-center rounded-md bg-surface-2 text-[11px] font-bold text-text-secondary flex-shrink-0 mt-0.5">
                             {i + 1}
                           </span>
                           <div className="min-w-0 flex-1">
-                            <div className="text-[13px] text-white/90 font-medium break-words leading-snug whitespace-pre-wrap">
+                            <div className="text-[13px] text-text-primary font-medium break-words leading-snug whitespace-pre-wrap">
                               {q.text ? <MathText text={q.text} /> : '—'}
                             </div>
                             <div className="mt-2 space-y-1">
                               {/* O'quvchining javobi */}
                               <div className="text-[12px] flex flex-wrap gap-x-1.5">
-                                <span className="text-white/40">Javobi:</span>
-                                <MathText className={`font-semibold break-words ${correct ? 'text-emerald-200' : wrong ? 'text-rose-200' : 'text-white/70'}`} text={chosenTxt} />
+                                <span className="text-text-secondary">Javobi:</span>
+                                <MathText className={`font-semibold break-words ${correct ? 'text-success' : wrong ? 'text-error' : 'text-text-secondary'}`} text={chosenTxt} />
                               </div>
                               {/* To'g'ri javob — faqat xato bo'lsa va mavjud bo'lsa ko'rsatamiz */}
                               {wrong && correctTxt && (
                                 <div className="text-[12px] flex flex-wrap gap-x-1.5">
-                                  <span className="text-white/40">To'g'ri javob:</span>
-                                  <MathText className="font-semibold text-emerald-200 break-words" text={correctTxt} />
+                                  <span className="text-text-secondary">To'g'ri javob:</span>
+                                  <MathText className="font-semibold text-success break-words" text={correctTxt} />
                                 </div>
                               )}
                               {/* Essay/kod baholanmagan bo'lsa izoh */}
                               {q.is_correct === null && (
-                                <div className="text-[11px] text-amber-300/80">
+                                <div className="text-[11px] text-warning">
                                   {q.question_type === 'essay'
                                     ? 'Qo\'lda baholanadi (hali baholanmagan)'
                                     : q.question_type === 'code'
@@ -2844,19 +2887,21 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   const selected = newOlympiad.eventType === opt.value;
                   return (
                     <button key={opt.value} onClick={() => setNewOlympiad({ ...newOlympiad, eventType: opt.value })}
-                      className={`p-4 rounded-2xl text-left border transition-all ${selected ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'border-white/10 bg-white/5 text-white/60 hover:bg-white/10'}`}>
+                      className={`p-4 rounded-2xl text-left border transition-colors ${selected ? 'border-accent bg-accent/10 text-text-primary' : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:bg-surface-2'}`}>
                       <div className="flex items-center gap-2 font-bold text-sm">
-                        <span className={`w-2.5 h-2.5 rounded-full ${selected ? 'bg-indigo-400' : 'bg-white/20'}`}></span>
+                        {/* Tanlanmagan nuqta `bg-surface-2` edi — karta foni bilan
+                            bir xil, ya'ni ko'rinmas. Endi `edge-strong`. */}
+                        <span className={`w-2.5 h-2.5 rounded-full ${selected ? 'bg-accent' : 'bg-edge-strong'}`}></span>
                         {opt.label}
                       </div>
-                      <div className="text-xs text-white/40 mt-1">{opt.desc}</div>
+                      <div className="text-xs text-text-secondary mt-1">{opt.desc}</div>
                     </button>
                   );
                 })}
               </div>
 
               <div>
-                <label className="block text-xs text-white/50 mb-1.5 font-medium">Tadbir nomi</label>
+                <label className="block text-xs text-text-secondary mb-1.5 font-medium">Tadbir nomi</label>
                 <input className="input-field"
                   placeholder={newOlympiad.eventType === 'olympiad' ? 'Matematika Olimpiadasi — May 2026' : 'Ichki matematika musobaqasi'}
                   value={newOlympiad.title}
@@ -2865,7 +2910,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Fan kategoriyasi</label>
+                  <label className="block text-xs text-text-secondary mb-1.5 font-medium">Fan kategoriyasi</label>
                   <select className="input-field" value={newOlympiad.subject} onChange={e => {
                     const newSubj = e.target.value;
                     let newLevel = newOlympiad.testLevel;
@@ -2898,7 +2943,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Davomiyligi (min)</label>
+                  <label className="block text-xs text-text-secondary mb-1.5 font-medium">Davomiyligi (min)</label>
                   <input type="number" min="1" className="input-field" value={newOlympiad.duration}
                     onChange={e => setNewOlympiad({ ...newOlympiad, duration: e.target.value })} />
                 </div>
@@ -2906,12 +2951,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Boshlanish sanasi</label>
+                  <label className="block text-xs text-text-secondary mb-1.5 font-medium">Boshlanish sanasi</label>
                   <input type="date" className="input-field" value={newOlympiad.startDate}
                     onChange={e => setNewOlympiad({ ...newOlympiad, startDate: e.target.value })} />
                 </div>
                 <div>
-                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Boshlanish vaqti</label>
+                  <label className="block text-xs text-text-secondary mb-1.5 font-medium">Boshlanish vaqti</label>
                   <input type="time" className="input-field" value={newOlympiad.startTime}
                     onChange={e => setNewOlympiad({ ...newOlympiad, startTime: e.target.value })} />
                 </div>
@@ -2919,7 +2964,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Daraja <span className="text-white/35">(ixtiyoriy)</span></label>
+                  <label className="block text-xs text-text-secondary mb-1.5 font-medium">Daraja <span className="text-text-secondary">(ixtiyoriy)</span></label>
                   <select className="input-field" value={newOlympiad.testLevel}
                     onChange={e => setNewOlympiad({ ...newOlympiad, testLevel: e.target.value })}>
                     <option value="">— Tanlanmagan —</option>
@@ -2942,7 +2987,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Test turi <span className="text-white/35">(ixtiyoriy)</span></label>
+                  <label className="block text-xs text-text-secondary mb-1.5 font-medium">Test turi <span className="text-text-secondary">(ixtiyoriy)</span></label>
                   <select className="input-field" value={newOlympiad.testType}
                     onChange={e => setNewOlympiad({ ...newOlympiad, testType: e.target.value })}>
                     <option value="">— Tanlanmagan —</option>
@@ -2956,31 +3001,31 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               </div>
 
               <div>
-                <label className="block text-xs text-white/50 mb-1.5 font-medium">Guruh filtri <span className="text-white/35">(ixtiyoriy)</span></label>
+                <label className="block text-xs text-text-secondary mb-1.5 font-medium">Guruh filtri <span className="text-text-secondary">(ixtiyoriy)</span></label>
                 <input className="input-field" placeholder="Masalan: 9-A — faqat shu guruh kiradi"
                   maxLength={50}
                   value={newOlympiad.groupFilter}
                   onChange={e => setNewOlympiad({ ...newOlympiad, groupFilter: e.target.value })} />
-                <p className="mt-1.5 text-[11px] text-white/35">To'ldirilsa, faqat shu guruh tegiga ega o'quvchilar tadbirga kira oladi.</p>
+                <p className="mt-1.5 text-[11px] text-text-secondary">To'ldirilsa, faqat shu guruh tegiga ega o'quvchilar tadbirga kira oladi.</p>
               </div>
 
               {/* Webkamera proktoring — ixtiyoriy opt-in. Yoqilsa, student
                   imtihonni boshlashdan oldin rozilik ekranini ko'radi va kamera
                   ruxsatini beradi. FAQAT hosila signallar (yuz yo'q/ko'p yuz/
                   nigoh) saqlanadi — video/rasm/audio HECH QACHON yozilmaydi. */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="rounded-2xl border border-edge bg-surface-2 p-4">
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
                     type="checkbox"
-                    className="mt-0.5 h-4 w-4 accent-indigo-500 flex-shrink-0"
+                    className="mt-0.5 h-4 w-4 accent-accent flex-shrink-0"
                     checked={!!newOlympiad.cameraProctoringEnabled}
                     onChange={e => setNewOlympiad({ ...newOlympiad, cameraProctoringEnabled: e.target.checked })}
                   />
                   <span>
-                    <span className="flex items-center gap-2 text-xs font-bold text-white/80">
+                    <span className="flex items-center gap-2 text-xs font-bold text-text-primary">
                       <Icon name="eye" size={14} /> Webkamera nazorati
                     </span>
-                    <span className="block mt-1 text-[11px] text-white/40 leading-relaxed">
+                    <span className="block mt-1 text-[11px] text-text-secondary leading-relaxed">
                       O'quvchi imtihon davomida kamera orqali kuzatiladi (yuz bor-yo'qligi,
                       begona yuz, nigoh). Video yozilmaydi — faqat aniqlangan signallar
                       saqlanadi. Yoqilsa, o'quvchi boshlashdan oldin rozilik beradi.
@@ -2994,19 +3039,19 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   rozilik ekranini ko'radi va mikrofon ruxsatini beradi. FAQAT
                   hosila signal (atrofdan ovoz aniqlandi) saqlanadi — audio HECH
                   QACHON yozilmaydi. */}
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <div className="rounded-2xl border border-edge bg-surface-2 p-4">
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
                     type="checkbox"
-                    className="mt-0.5 h-4 w-4 accent-indigo-500 flex-shrink-0"
+                    className="mt-0.5 h-4 w-4 accent-accent flex-shrink-0"
                     checked={!!newOlympiad.voiceProctoringEnabled}
                     onChange={e => setNewOlympiad({ ...newOlympiad, voiceProctoringEnabled: e.target.checked })}
                   />
                   <span>
-                    <span className="flex items-center gap-2 text-xs font-bold text-white/80">
+                    <span className="flex items-center gap-2 text-xs font-bold text-text-primary">
                       <Icon name="mic" size={14} /> Ovoz nazorati
                     </span>
-                    <span className="block mt-1 text-[11px] text-white/40 leading-relaxed">
+                    <span className="block mt-1 text-[11px] text-text-secondary leading-relaxed">
                       O'quvchi imtihon davomida mikrofon orqali kuzatiladi (atrofdan
                       gapirish/ovoz). Audio yozilmaydi va nutq tahlil qilinmaydi — faqat
                       "ovoz bor/yo'q" signali saqlanadi. Yoqilsa, o'quvchi boshlashdan
@@ -3020,12 +3065,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   olimpiada IT kategoriyasiga ega bo'ladi va kod savollarda til
                   cheklovi qo'llaniladi. */}
               {(newOlympiad.subject === 'IT' || newOlympiad.subject === 'Informatika') && (
-                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-3">
-                  <div className="flex items-center gap-2 text-xs font-bold text-white/70">
-                    <Icon name="brain" size={14} /> IT (dasturlash) sozlamalari <span className="text-white/35 font-normal">(ixtiyoriy)</span>
+                <div className="rounded-2xl border border-edge bg-surface-2 p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-text-secondary">
+                    <Icon name="brain" size={14} /> IT (dasturlash) sozlamalari <span className="text-text-secondary font-normal">(ixtiyoriy)</span>
                   </div>
                   <div>
-                    <label className="block text-xs text-white/50 mb-1.5 font-medium">IT kategoriya</label>
+                    <label className="block text-xs text-text-secondary mb-1.5 font-medium">IT kategoriya</label>
                     <select className="input-field" value={newOlympiad.itCategory}
                       onChange={e => setNewOlympiad({ ...newOlympiad, itCategory: e.target.value })}>
                       <option value="">— Tanlanmagan —</option>
@@ -3036,7 +3081,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs text-white/50 mb-1.5 font-medium">Ruxsat etilgan tillar</label>
+                    <label className="block text-xs text-text-secondary mb-1.5 font-medium">Ruxsat etilgan tillar</label>
                     <div className="flex flex-wrap gap-2">
                       {[['python','Python'],['javascript','JavaScript'],['java','Java'],['cpp','C++'],['c','C']].map(([val, label]) => {
                         const selected = (newOlympiad.allowedLanguages || []).includes(val);
@@ -3047,25 +3092,25 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                               const next = selected ? cur.filter(l => l !== val) : [...cur, val];
                               setNewOlympiad({ ...newOlympiad, allowedLanguages: next });
                             }}
-                            className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50 hover:text-white/70'}`}>
+                            className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-all ${selected ? 'gradient-bg text-text-primary' : 'glass text-text-secondary hover:text-text-secondary'}`}>
                             {label}
                           </button>
                         );
                       })}
                     </div>
-                    <p className="mt-1.5 text-[11px] text-white/35">Bo'sh qoldirilsa, kod savollarida barcha til ruxsat etiladi.</p>
+                    <p className="mt-1.5 text-[11px] text-text-secondary">Bo'sh qoldirilsa, kod savollarida barcha til ruxsat etiladi.</p>
                   </div>
                 </div>
               )}
 
-              <div className={`rounded-2xl p-4 border text-xs ${formIssues.length ? 'bg-amber-500/10 border-amber-500/25 text-amber-300' : 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'}`}>
+              <div className={`rounded-2xl p-4 border text-xs ${formIssues.length ? 'bg-warning/10 border-warning/40 text-warning' : 'bg-success/10 border-success/40 text-success'}`}>
                 <div className="flex items-center gap-2 font-semibold">
                   <Icon name={formIssues.length ? 'info' : 'check'} size={14} />
                   {formIssues.length ? "To'ldirilishi kerak" : "Asosiy ma'lumotlar tayyor"}
                 </div>
                 {formIssues.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    {formIssues.map(issue => <span key={issue} className="rounded-lg bg-black/15 px-2 py-1">{issue}</span>)}
+                    {formIssues.map(issue => <span key={issue} className="rounded-lg bg-surface-1 px-2 py-1">{issue}</span>)}
                   </div>
                 )}
               </div>
@@ -3085,8 +3130,8 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {/* Premium kerak modali (8-funksiya) */}
       <Modal open={!!premiumModal} onClose={() => setPremiumModal('')} title="Premium kerak" width="max-w-md">
         <div className="space-y-5 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white text-2xl">⭐</div>
-          <p className="text-sm text-white/75 leading-relaxed">{premiumModal}</p>
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-warning/40 bg-warning/15 text-warning text-2xl">⭐</div>
+          <p className="text-sm text-text-primary leading-relaxed">{premiumModal}</p>
           <div className="flex gap-3">
             <button onClick={() => setPremiumModal('')} className="btn-ghost flex-1 py-3 rounded-xl">Yopish</button>
             {user?.roles?.owner ? (
@@ -3103,7 +3148,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             ) : (
               <button
                 onClick={() => setPremiumModal('')}
-                className="btn-ghost flex-1 py-3 rounded-xl border border-white/10 text-white/50 cursor-not-allowed"
+                className="btn-ghost flex-1 py-3 rounded-xl border border-edge text-text-secondary cursor-not-allowed"
                 disabled
                 title="Premium faqat direktor (tashkilot egasi) hisobidan sotib olinadi"
               >
@@ -3122,32 +3167,32 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           const questionCount = (liveEvent.questionIds || []).length;
           return (
             <div className="space-y-5">
-              <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/10 p-4 text-sm text-emerald-200 flex items-start gap-3">
+              <div className="rounded-2xl border border-success/40 bg-success/10 p-4 text-sm text-success flex items-start gap-3">
                 <Icon name="check" size={18} className="mt-0.5 flex-shrink-0" />
                 <div>
-                  <div className="font-bold text-white mb-1">Hamma asosiy ma'lumotlar tayyor</div>
-                  <div className="text-emerald-200/80">Tasdiqlasangiz tadbir faol bo'ladi va o'quvchilar belgilangan vaqtda kirishi mumkin.</div>
+                  <div className="font-bold text-text-primary mb-1">Hamma asosiy ma'lumotlar tayyor</div>
+                  <div className="text-success">Tasdiqlasangiz tadbir faol bo'ladi va o'quvchilar belgilangan vaqtda kirishi mumkin.</div>
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                 <div className="glass rounded-xl p-3">
-                  <div className="text-xs text-white/35 mb-1">Turi</div>
-                  <div className="font-bold text-white">{eventTypeLabel(liveEvent.eventType || 'competition')}</div>
+                  <div className="text-xs text-text-secondary mb-1">Turi</div>
+                  <div className="font-bold text-text-primary">{eventTypeLabel(liveEvent.eventType || 'competition')}</div>
                 </div>
                 <div className="glass rounded-xl p-3">
-                  <div className="text-xs text-white/35 mb-1">Fan</div>
-                  <div className="font-bold text-white">{liveEvent.subject}</div>
+                  <div className="text-xs text-text-secondary mb-1">Fan</div>
+                  <div className="font-bold text-text-primary">{liveEvent.subject}</div>
                 </div>
                 <div className="glass rounded-xl p-3">
-                  <div className="text-xs text-white/35 mb-1">Boshlanish</div>
-                  <div className="font-bold text-white">{liveEvent.startDate} {liveEvent.startTime || ''}</div>
+                  <div className="text-xs text-text-secondary mb-1">Boshlanish</div>
+                  <div className="font-bold text-text-primary">{liveEvent.startDate} {liveEvent.startTime || ''}</div>
                 </div>
                 <div className="glass rounded-xl p-3">
-                  <div className="text-xs text-white/35 mb-1">Test</div>
-                  <div className="font-bold text-white">{questionCount} ta savol · {liveEvent.duration} min{liveEvent.testLevel ? ` · ${liveEvent.testLevel}` : ''}{liveEvent.testType ? ` · ${testTypeLabel(liveEvent.testType)}` : ''}</div>
+                  <div className="text-xs text-text-secondary mb-1">Test</div>
+                  <div className="font-bold text-text-primary">{questionCount} ta savol · {liveEvent.duration} min{liveEvent.testLevel ? ` · ${liveEvent.testLevel}` : ''}{liveEvent.testType ? ` · ${testTypeLabel(liveEvent.testType)}` : ''}</div>
                 </div>
               </div>
-              <div className="text-white font-bold">{liveEvent.title}</div>
+              <div className="text-text-primary font-bold">{liveEvent.title}</div>
               <div className="flex gap-3 pt-1">
                 <button onClick={() => {
                   const eventToEdit = liveEvent;
@@ -3283,35 +3328,37 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           };
           return (
             <div className="space-y-3">
-              <div className="text-sm text-white/60">{liveOlympiad.title} — {liveOlympiad.subject}</div>
-              <div className="text-xs text-white/40">
-                Tayinlangan: <span className="text-white">{assigned.size}</span>
+              <div className="text-sm text-text-secondary">{liveOlympiad.title} — {liveOlympiad.subject}</div>
+              <div className="text-xs text-text-secondary">
+                Tayinlangan: <span className="text-text-primary">{assigned.size}</span>
                 {assignmentLevel ? (
                   <span> / {filteredCount} ta mos savol ({centerQuestions.length} tadan)</span>
                 ) : (
                   <span> / {centerQuestions.length} ta mavjud</span>
                 )}
               </div>
-              <div className="rounded-2xl border border-violet-500/20 bg-violet-500/10 p-3.5 space-y-2">
-                <label className="block text-xs text-violet-200 mb-1 font-semibold">Tadbir darajasi (Test Level) <span className="text-white/35">(ixtiyoriy)</span></label>
+              {/* Neytral panel: pastdagi "Test Type" paneli `accent-2` ni
+                  egallagan, ikkita qo'shni panel bir xil ko'rinmasin. */}
+              <div className="rounded-2xl border border-edge bg-surface-2 p-3.5 space-y-2">
+                <label className="block text-xs text-text-primary mb-1 font-semibold">Tadbir darajasi (Test Level) <span className="text-text-secondary">(ixtiyoriy)</span></label>
                 <div className="flex flex-wrap gap-1.5">
                   {(liveOlympiad.subject === 'Ingliz tili'
                     ? ['Beginner', 'Elementary', 'Pre-Intermediate', 'Intermediate', 'Upper-Intermediate', 'Advanced']
                     : ['Beginner', "O'rta", 'Advanced']
                   ).map(level => (
-                    <button key={level} type="button" onClick={() => setAssignmentLevel(level)}
-                      className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all ${assignmentLevel === level ? 'bg-violet-500 text-white' : 'bg-white/5 text-white/55 hover:bg-white/10 hover:text-white'}`}>
+                    <button aria-pressed={assignmentLevel === level} key={level} type="button" onClick={() => setAssignmentLevel(level)}
+                      className={`rounded-lg border px-2.5 py-1 text-xs font-bold transition-colors ${assignmentLevel === level ? 'border-accent-fill bg-accent-fill text-on-accent' : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}>
                       {level}
                     </button>
                   ))}
                   {assignmentLevel && (
                     <button type="button" onClick={() => setAssignmentLevel('')}
-                      className="rounded-lg bg-white/5 px-2.5 py-1 text-xs font-bold text-white/45 hover:bg-white/10 hover:text-white">
+                      className="rounded-lg border border-edge bg-surface-1 px-2.5 py-1 text-xs font-bold text-text-secondary transition-colors hover:border-edge-strong hover:text-text-primary">
                       Tozalash (Barchasi)
                     </button>
                   )}
                 </div>
-                <div className="text-xs text-white/50 pt-1">
+                <div className="text-xs text-text-secondary pt-1">
                   {assignmentLevel ? (
                     <span>Tanlangan <strong>{assignmentLevel}</strong> darajasiga mos keluvchi savollar ko'rsatilmoqda. Saqlash bosilganda tadbir darajasi ham shunga yangilanadi.</span>
                   ) : (
@@ -3320,22 +3367,28 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 </div>
               </div>
 
-              <label className="flex items-center gap-2.5 p-3 rounded-2xl border border-white/5 bg-white/5 cursor-pointer hover:bg-white/10 transition-all select-none">
+              <label className="flex items-center gap-2.5 p-3 rounded-2xl border border-edge bg-surface-1 cursor-pointer hover:border-edge-strong hover:bg-surface-2 transition-colors select-none">
+                {/* `text-*`/`focus:ring-*` native checkbox'da ta'sir qilmasdi
+                    (forms plugini yo'q) — `accent-color` haqiqatan ishlaydi. */}
                 <input type="checkbox" checked={onlyUnused} onChange={(e) => setOnlyUnused(e.target.checked)}
-                  className="rounded border-white/20 bg-black/20 text-violet-500 focus:ring-violet-500/20" />
-                <span className="text-xs text-white/80 font-semibold">Faqat boshqa tadbirlarga ulanmagan savollarni ko'rsatish</span>
+                  className="rounded accent-accent" />
+                <span className="text-xs text-text-primary font-semibold">Faqat boshqa tadbirlarga ulanmagan savollarni ko'rsatish</span>
               </label>
 
-              <div className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-3.5 space-y-2">
+              <div className="rounded-2xl border border-accent-2/40 bg-accent-2/10 p-3.5 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-sky-200 font-semibold">Tadbir test turi (Test Type)</span>
-                  <span className={`text-xs px-2.5 py-0.5 rounded-lg font-bold ${
-                    assignmentType ? 'bg-sky-500 text-white' : 'bg-white/10 text-white/60'
+                  <span className="text-xs text-accent-2 font-semibold">Tadbir test turi (Test Type)</span>
+                  {/* `bg-accent-2` + `text-text-primary` ikkala mavzuda ham
+                      ~1.7:1 edi (och matn och/to'q ko'k ustida). `accent-2`
+                      uchun "on-" tokeni yo'q, shuning uchun belgi roli:
+                      shaffof fon + `text-accent-2`. */}
+                  <span className={`text-xs px-2.5 py-0.5 rounded-lg border font-bold ${
+                    assignmentType ? 'border-accent-2/40 bg-accent-2/15 text-accent-2' : 'border-edge bg-surface-2 text-text-secondary'
                   }`}>
                     {testTypeLabel(assignmentType) || 'Belgilanmagan'}
                   </span>
                 </div>
-                <div className="text-xs text-white/50">
+                <div className="text-xs text-text-secondary">
                   {assignmentType ? (
                     <span>Tanlangan savollar {testTypeLabel(assignmentType)} turiga mos kelishi kerak. Test turini o'zgartirish uchun tadbirni tahrirlang.</span>
                   ) : (
@@ -3345,12 +3398,12 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 {selectedQuestions.length > 0 && (
                   <div className="mt-2 flex flex-wrap gap-1.5 text-xs">
                     {Object.entries(selectedTypeCounts).map(([type, count]) => (
-                      <span key={type} className="rounded-lg bg-black/15 px-2 py-1 text-sky-100">{testTypeLabel(type)}: {count}</span>
+                      <span key={type} className="rounded-lg bg-surface-1 px-2 py-1 text-accent-2">{testTypeLabel(type)}: {count}</span>
                     ))}
                   </div>
                 )}
                 {typeMismatches.length > 0 && (
-                  <div className="mt-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                  <div className="mt-2 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
                     {typeMismatches.length} ta tanlangan savol {testTypeLabel(assignmentType)} turiga mos emas. Mos savollarni tanlang yoki tadbir test turini Aralash qiling.
                   </div>
                 )}
@@ -3358,50 +3411,50 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <div className="space-y-2 max-h-80 overflow-y-auto">
                 {subjectQs.length > 0 && (
                   <div className="flex items-center justify-between mt-1 mb-0.5">
-                    <div className="text-xs text-white/40 font-medium uppercase tracking-wider">Tegishli fan savollari</div>
+                    <div className="text-xs text-text-secondary font-medium uppercase tracking-wider">Tegishli fan savollari</div>
                     <button
                       type="button"
                       onClick={toggleAllSubjectQs}
-                      className="text-xs font-bold text-violet-400 hover:text-violet-300 transition-colors"
+                      className="text-xs font-bold text-accent hover:text-text-primary transition-colors"
                     >
                       {subjectQs.every(q => assigned.has(q.id)) ? "Barchasini o'chirish" : "Barchasini tanlash"}
                     </button>
                   </div>
                 )}
                 {subjectQs.map(q => (
-                  <label key={q.id} className="flex items-start gap-3 p-3 rounded-xl glass cursor-pointer hover:bg-white/5">
+                  <label key={q.id} className="flex items-start gap-3 p-3 rounded-xl glass cursor-pointer hover:bg-surface-2">
                     <input type="checkbox" checked={assigned.has(q.id)} onChange={() => toggle(q.id)} className="mt-1" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm text-white whitespace-pre-wrap"><MathText text={q.text} /></div>
-                      <div className="text-xs text-white/40 mt-1">
+                      <div className="text-sm text-text-primary whitespace-pre-wrap"><MathText text={q.text} /></div>
+                      <div className="text-xs text-text-secondary mt-1">
                         {testTypeLabel(inferQuestionTestType(q))} · {q.difficulty} · {q.score} ball · {q.source}
                         {otherOlympiadQuestionIds.has(String(q.id)) && (
-                          <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-medium font-sans">Boshqa tadbirda</span>
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded bg-warning/10 text-warning border border-warning/40 text-[10px] font-medium font-sans">Boshqa tadbirda</span>
                         )}
                       </div>
                     </div>
                   </label>
                 ))}
-                {otherQs.length > 0 && <div className="text-xs text-white/40 font-medium uppercase tracking-wider mt-3">Boshqa fan savollari</div>}
+                {otherQs.length > 0 && <div className="text-xs text-text-secondary font-medium uppercase tracking-wider mt-3">Boshqa fan savollari</div>}
                 {otherQs.map(q => (
-                  <label key={q.id} className="flex items-start gap-3 p-3 rounded-xl glass cursor-pointer hover:bg-white/5 opacity-70">
+                  <label key={q.id} className="flex items-start gap-3 p-3 rounded-xl glass cursor-pointer hover:bg-surface-2 opacity-70">
                     <input type="checkbox" checked={assigned.has(q.id)} onChange={() => toggle(q.id)} className="mt-1" />
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm text-white whitespace-pre-wrap"><MathText text={q.text} /></div>
-                      <div className="text-xs text-white/40 mt-1">
+                      <div className="text-sm text-text-primary whitespace-pre-wrap"><MathText text={q.text} /></div>
+                      <div className="text-xs text-text-secondary mt-1">
                         {q.subject} · {testTypeLabel(inferQuestionTestType(q))} · {q.difficulty} · {q.score} ball
                         {otherOlympiadQuestionIds.has(String(q.id)) && (
-                          <span className="ml-1.5 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 text-[10px] font-medium font-sans">Boshqa tadbirda</span>
+                          <span className="ml-1.5 px-1.5 py-0.5 rounded bg-warning/10 text-warning border border-warning/40 text-[10px] font-medium font-sans">Boshqa tadbirda</span>
                         )}
                       </div>
                     </div>
                   </label>
                 ))}
                 {centerQuestions.length > 0 && subjectQs.length === 0 && otherQs.length === 0 && (
-                  <div className="text-sm text-white/40 text-center py-6">Tanlangan darajaga mos savollar topilmadi.</div>
+                  <div className="text-sm text-text-secondary text-center py-6">Tanlangan darajaga mos savollar topilmadi.</div>
                 )}
                 {centerQuestions.length === 0 && (
-                  <div className="text-sm text-white/40 text-center py-6">Bu markaz uchun savollar yaratilmagan. <br/>Savollar bo'limidan boshlang.</div>
+                  <div className="text-sm text-text-secondary text-center py-6">Bu markaz uchun savollar yaratilmagan. <br/>Savollar bo'limidan boshlang.</div>
                 )}
               </div>
               <div className="flex gap-3 pt-2">
@@ -3418,58 +3471,58 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {/* Student detail modal */}
       <Modal open={!!studentDetailMembership} onClose={closeStudentDetail} title="O'quvchi profili" width="max-w-2xl">
         {studentDetailLoading && (
-          <div className="text-sm text-white/50">Yuklanmoqda...</div>
+          <div className="text-sm text-text-secondary">Yuklanmoqda...</div>
         )}
         {studentDetailError && (
-          <div className="text-sm text-rose-300">{studentDetailError}</div>
+          <div className="text-sm text-error">{studentDetailError}</div>
         )}
         {studentDetail && (
           <div className="space-y-5">
             <div className="flex items-center gap-3">
               <Avatar name={studentDetail.user?.full_name || '—'} src={studentDetail.user?.avatar_url || ''} size={56} />
               <div className="min-w-0 flex-1">
-                <div className="text-base font-bold text-white truncate">{studentDetail.user?.full_name || '—'}</div>
-                <div className="text-xs text-white/50">{maskPhoneDisplay(studentDetail.user?.normalized_phone || studentDetail.user?.phone || '')}</div>
-                <div className="text-xs text-white/40 mt-0.5">{studentDetail.center?.name} · {studentDetail.subject || '—'} · {(studentDetail.joined_at || '').slice(0,10)}</div>
+                <div className="text-base font-bold text-text-primary truncate">{studentDetail.user?.full_name || '—'}</div>
+                <div className="text-xs text-text-secondary">{maskPhoneDisplay(studentDetail.user?.normalized_phone || studentDetail.user?.phone || '')}</div>
+                <div className="text-xs text-text-secondary mt-0.5">{studentDetail.center?.name} · {studentDetail.subject || '—'} · {(studentDetail.joined_at || '').slice(0,10)}</div>
               </div>
               <Badge status={statusLabel(studentDetail.status)} />
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <div className="glass rounded-xl p-3 text-center">
-                <div className="text-lg font-black text-white">{studentDetail.stats?.total_attempts || 0}</div>
-                <div className="text-[11px] text-white/40">Musobaqalar</div>
+                <div className="text-lg font-black text-text-primary">{studentDetail.stats?.total_attempts || 0}</div>
+                <div className="text-[11px] text-text-secondary">Musobaqalar</div>
               </div>
               <div className="glass rounded-xl p-3 text-center">
-                <div className="text-lg font-black text-white">{studentDetail.stats?.average_score || 0}%</div>
-                <div className="text-[11px] text-white/40">O'rtacha</div>
+                <div className="text-lg font-black text-text-primary">{studentDetail.stats?.average_score || 0}%</div>
+                <div className="text-[11px] text-text-secondary">O'rtacha</div>
               </div>
               <div className="glass rounded-xl p-3 text-center">
-                <div className="text-lg font-black text-white">{studentDetail.stats?.best_score || 0}%</div>
-                <div className="text-[11px] text-white/40">Eng yuqori</div>
+                <div className="text-lg font-black text-text-primary">{studentDetail.stats?.best_score || 0}%</div>
+                <div className="text-[11px] text-text-secondary">Eng yuqori</div>
               </div>
               <div className="glass rounded-xl p-3 text-center">
-                <div className="text-lg font-black text-amber-400">{studentDetail.stats?.first_place_count || 0}</div>
-                <div className="text-[11px] text-white/40">1-o'rin</div>
+                <div className="text-lg font-black text-warning">{studentDetail.stats?.first_place_count || 0}</div>
+                <div className="text-[11px] text-text-secondary">1-o'rin</div>
               </div>
             </div>
 
             <div>
-              <h4 className="font-bold text-white mb-2 text-sm">So'nggi natijalar</h4>
+              <h4 className="font-bold text-text-primary mb-2 text-sm">So'nggi natijalar</h4>
               <div className="max-h-72 overflow-y-auto space-y-2">
                 {(studentDetail.attempts || []).length === 0 && (
-                  <div className="text-sm text-white/40">Hali natijalar yo'q</div>
+                  <div className="text-sm text-text-secondary">Hali natijalar yo'q</div>
                 )}
                 {(studentDetail.attempts || []).map(a => (
                   <div key={a.attempt_id} className="glass rounded-xl p-3 flex items-center gap-3">
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-black text-xs flex-shrink-0 ${a.rank === 1 ? 'bg-amber-500/20 text-amber-400' : 'bg-indigo-500/15 text-indigo-400'}`}>#{a.rank || '—'}</div>
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center font-black font-data text-xs flex-shrink-0 ${a.rank === 1 ? 'bg-warning/20 text-warning' : 'bg-surface-2 text-text-secondary'}`}>#{a.rank || '—'}</div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-white truncate">{a.olympiad_title}</div>
-                      <div className="text-xs text-white/40">{a.subject} · {(a.submitted_at || '').slice(0,10)}</div>
+                      <div className="text-sm font-medium text-text-primary truncate">{a.olympiad_title}</div>
+                      <div className="text-xs text-text-secondary">{a.subject} · {(a.submitted_at || '').slice(0,10)}</div>
                     </div>
                     <div className="text-right">
-                      <div className="text-base font-black text-white">{a.score}</div>
-                      <div className="text-[11px] text-emerald-400">{a.correct_count}/{a.total_questions}</div>
+                      <div className="text-base font-black text-text-primary">{a.score}</div>
+                      <div className="text-[11px] text-success">{a.correct_count}/{a.total_questions}</div>
                     </div>
                   </div>
                 ))}
@@ -3487,18 +3540,18 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           if (!event) return null;
           return (
             <div className="space-y-4">
-              <div className="text-sm text-white/70">
+              <div className="text-sm text-text-secondary">
                 Ushbu tadbirni o'chirishni tasdiqlaysizmi? Bu amalni ortga qaytarib bo'lmaydi.
               </div>
               <div className="glass rounded-xl p-3">
-                <div className="text-xs text-white/35 mb-0.5">Tadbir nomi</div>
-                <div className="font-bold text-white text-sm truncate">{event.title}</div>
+                <div className="text-xs text-text-secondary mb-0.5">Tadbir nomi</div>
+                <div className="font-bold text-text-primary text-sm truncate">{event.title}</div>
               </div>
               <div className="flex gap-3 pt-2">
                 <button onClick={() => setDeleteEventId(null)} disabled={eventSaving}
                   className="btn-ghost flex-1 py-2.5 rounded-xl text-xs font-semibold disabled:opacity-50">Yo'q</button>
                 <button onClick={deleteEvent} disabled={eventSaving}
-                  className="rounded-xl bg-rose-500 text-white hover:bg-rose-600 flex-1 py-2.5 text-xs font-bold disabled:opacity-50 transition-colors">
+                  className="btn-danger flex-1 rounded-xl py-2.5 text-xs font-bold disabled:opacity-50">
                   {eventSaving ? "O'chirilmoqda..." : "Ha, o'chirish"}
                 </button>
               </div>

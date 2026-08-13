@@ -90,11 +90,11 @@ const URL_PAGES = (() => {
 const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','questions'];
 
 // Light mavzu tayyor bo'lgan yuzalar. Qolgan hamma joyda ekran majburiy dark
-// bo'ladi (`OlympyTheme.setLocked`) — rol dashboardlari, test, natijalar va
-// profil hali minglab `text-white` / `bg-white/5` / `border-white/10`
-// klassiga tayanadi; ular faqat qora fon uchun yozilgan va light rejimda
-// o'qib bo'lmaydi. Majburiy dark foydalanuvchining SAQLANGAN TANLOVINI
-// o'chirmaydi: u theme-ready sahifaga qaytishi bilan light qayta tiklanadi.
+// bo'ladi (`OlympyTheme.setLocked`) — test (`OlympiadTest`), savol yaratuvchi,
+// natijalar, profil va analitika hali `text-white` / `bg-white/5` /
+// `border-white/10` klassiga tayanadi; ular faqat qora fon uchun yozilgan va
+// light rejimda o'qib bo'lmaydi. Majburiy dark foydalanuvchining SAQLANGAN
+// TANLOVINI o'chirmaydi: u theme-ready sahifaga qaytishi bilan light tiklanadi.
 //
 // DIQQAT: bu ro'yxat `public/theme-init.js` dagi URL tekshiruvi bilan mos
 // turishi kerak — o'sha skript React yuklanishidan oldin xuddi shu qarorni
@@ -111,9 +111,15 @@ const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','
 // shuning uchun u ham ro'yxatda. `/leaderboard` oson taxmin qilinadigan va
 // ulashiladigan manzil: light tanlagan foydalanuvchi uni to'g'ridan-to'g'ri
 // ochganda qorong'i sahifa ko'rmasligi kerak.
+//
+// Rol dashboardlari (`admin`, `owner`, `manager`, `teacher`) — 2-bosqichda
+// tokenlarga ko'chirildi: `text-white` va xom `indigo/purple/cyan` klasslari
+// olib tashlandi, gradient/glow/rangli soya yo'q. Ular ham ikkala mavzuda
+// ishlaydi.
 const THEME_READY_PAGES = new Set([
   'landing', 'pricing', 'login', 'register', 'student', 'pending', 'pending-home',
   'leaderboard',
+  'admin', 'owner', 'manager', 'teacher',
 ]);
 
 const pageFromPath = () => {

@@ -32,18 +32,17 @@
   //
   // Tayyor: `/` (landing), `/pricing`, `/login`, `/register`, `/pending`
   // (tasdiq kutish ekrani), `/leaderboard` (reyting jadvali) va
-  // `/dashboard[/...]` (o'quvchi dashboardi va uning ichki sahifalari).
-  // Tayyor emas: rol dashboardlari — ular `/dashboard/<rol>` namespace'ida.
+  // `/dashboard[/...]` — o'quvchi dashboardi hamda 2-bosqichda tokenlarga
+  // ko'chirilgan rol dashboardlari (`/dashboard/{admin,owner,manager,teacher}`).
+  //
+  // Tayyor emas: `/dashboard/questions` (savol yaratuvchi) — u hali
+  // `text-white` klassiga tayanadi va light rejimda o'qib bo'lmaydi.
   //
   // Aniq mos keladigan manzillar. `/dashboard` esa prefiks bo'yicha
   // tekshiriladi (pastdagi funksiyaga qarang) — uning ichki sahifalari ko'p.
   var READY_PATHS = ['/', '/pricing', '/login', '/register', '/pending', '/leaderboard'];
 
   var LOCKED_DASHBOARD_BASES = [
-    '/dashboard/owner',
-    '/dashboard/manager',
-    '/dashboard/admin',
-    '/dashboard/teacher',
     '/dashboard/questions',
   ];
 

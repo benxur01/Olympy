@@ -138,13 +138,13 @@ const formatAdminAmount = (amount) => `${(Number(amount) || 0).toLocaleString('u
 // Backend PaymentTransaction.STATUS_CHOICES → o'zbekcha yorliq + rang.
 // Noma'lum kod kelsa xom qiymat ko'rsatiladi (yashirib qo'yilmaydi).
 const ADMIN_PAYMENT_STATUS = {
-  success: { label: "To'langan", cls: 'text-emerald-400' },
-  pending: { label: 'Kutilmoqda', cls: 'text-amber-400' },
-  failed: { label: 'Xato', cls: 'text-rose-400' },
-  cancelled: { label: 'Bekor qilingan', cls: 'text-slate-400' },
+  success: { label: "To'langan", cls: 'text-success' },
+  pending: { label: 'Kutilmoqda', cls: 'text-warning' },
+  failed: { label: 'Xato', cls: 'text-error' },
+  cancelled: { label: 'Bekor qilingan', cls: 'text-text-secondary' },
 };
 const adminPaymentStatus = (status) => ADMIN_PAYMENT_STATUS[status]
-  || { label: status || '—', cls: 'text-slate-400' };
+  || { label: status || '—', cls: 'text-text-secondary' };
 
 // To'lov provayderi kodi → ko'rsatish nomi (backend 'click' / 'payme' yozadi).
 const ADMIN_PROVIDER_LABEL = { click: 'Click', payme: 'Payme' };
@@ -228,13 +228,13 @@ const AdminPill = ({ status, children }) => {
   );
 };
 
-const AdminInitial = ({ name, color = 'bg-indigo-600/30 text-indigo-400 border border-indigo-500/20' }) => (
-  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${color} text-sm font-bold shadow-[0_0_10px_rgba(99,102,241,0.05)]`}>
+const AdminInitial = ({ name, color = 'bg-surface-2 text-accent border border-accent/45' }) => (
+  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${color} text-sm font-bold`}>
     {(name || '?').trim()[0]?.toUpperCase() || '?'}
   </div>
 );
 
-const AdminCenterLogo = ({ name, src, color = 'bg-indigo-600/30 text-indigo-400 border border-indigo-500/20' }) => {
+const AdminCenterLogo = ({ name, src, color = 'bg-surface-2 text-accent border border-accent/45' }) => {
   const [hasError, setHasError] = React.useState(false);
 
   React.useEffect(() => {
@@ -246,14 +246,14 @@ const AdminCenterLogo = ({ name, src, color = 'bg-indigo-600/30 text-indigo-400 
       <img
         src={src}
         alt={name}
-        className="h-9 w-9 shrink-0 rounded-lg object-cover border border-white/10 shadow-[0_0_10px_rgba(255,255,255,0.05)]"
+        className="h-9 w-9 shrink-0 rounded-lg object-cover border border-edge"
         onError={() => setHasError(true)}
       />
     );
   }
 
   return (
-    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${color} text-sm font-bold shadow-[0_0_10px_rgba(99,102,241,0.05)]`}>
+    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${color} text-sm font-bold`}>
       {(name || '?').trim()[0]?.toUpperCase() || '?'}
     </div>
   );
@@ -262,13 +262,20 @@ const AdminCenterLogo = ({ name, src, color = 'bg-indigo-600/30 text-indigo-400 
 // `onClick` ixtiyoriy: berilgan kartagina bosiladigan bo'ladi (kursor, fokus
 // halqasi, Enter/Probel). Qolgan kartalar avvalgidek oddiy ko'rsatkich —
 // bosilmaydigan elementga role="button" qo'yish skrinriderni chalg'itardi.
-const AdminMetricCard = ({ label, value, delta, icon, tone = 'indigo', onClick }) => {
+// Ton kalitlari SEMANTIK. Avval xom palitra nomlari edi (`indigo`, `rose`,
+// `sky`) va qiymat nomga mos kelmasdi — `rose: 'text-purple-400 …'`. Nom bilan
+// rang bir-biridan ajralib ketgach `rose` va `sky` ikkalasi ham bitta tusga
+// (pencil ko'ki) tushib qolgandi: besh ton o'rniga to'rt ko'rinish.
+// Endi kalit qaysi tokenni tanlashini o'zi aytadi va beshtasi ham farq qiladi:
+// accent (shtamp qizili) · success (yashil) · warning (sarg'ish) ·
+// info (qalam ko'ki) · neutral (grafit).
+const AdminMetricCard = ({ label, value, delta, icon, tone = 'accent', onClick }) => {
   const tones = {
-    indigo: 'text-indigo-400 bg-indigo-500/10 border-indigo-500/20 shadow-[0_0_15px_rgba(99,102,241,0.05)]',
-    emerald: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20 shadow-[0_0_15px_rgba(16,185,129,0.05)]',
-    amber: 'text-amber-400 bg-amber-500/10 border-amber-500/20 shadow-[0_0_15px_rgba(245,158,11,0.05)]',
-    rose: 'text-purple-400 bg-purple-500/10 border-purple-500/20 shadow-[0_0_15px_rgba(168,85,247,0.05)]',
-    sky: 'text-sky-400 bg-sky-500/10 border-sky-500/20 shadow-[0_0_15px_rgba(56,189,248,0.05)]',
+    accent: 'text-accent bg-surface-2 border-accent/45',
+    success: 'text-success bg-surface-2 border-success/45',
+    warning: 'text-warning bg-surface-2 border-warning/45',
+    info: 'text-accent-2 bg-surface-2 border-accent-2/45',
+    neutral: 'text-text-secondary bg-surface-2 border-text-secondary/45',
   };
   const clickProps = onClick ? {
     onClick,
@@ -280,23 +287,23 @@ const AdminMetricCard = ({ label, value, delta, icon, tone = 'indigo', onClick }
   } : {};
   return (
     <GlowCard
-      className={`admin-card p-4 relative overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:-translate-y-0.5${
-        onClick ? ' cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/60' : ''
+      className={`admin-card p-4 relative overflow-hidden transition-all duration-300${
+        onClick ? ' cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-accent' : ''
       }`}
       {...clickProps}
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">{label}</div>
-          <div className="mt-3 text-2xl font-black leading-none tracking-tight text-white">{value}</div>
+          <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">{label}</div>
+          <div className="font-data mt-3 text-2xl font-bold leading-none tracking-tight text-text-primary">{value}</div>
           {delta && (
-            <div className="mt-2.5 text-[10px] font-semibold text-slate-400 flex items-center gap-1.5">
-              <span className="inline-block h-1 w-1 rounded-full bg-indigo-400" />
+            <div className="mt-2.5 text-[10px] font-semibold text-text-secondary flex items-center gap-1.5">
+              <span className="inline-block h-1 w-1 rounded-full bg-accent" />
               {delta}
             </div>
           )}
         </div>
-        <div className={`flex h-9 w-9 items-center justify-center rounded-lg border ${tones[tone] || tones.indigo}`}>
+        <div className={`flex h-9 w-9 items-center justify-center rounded-lg border ${tones[tone] || tones.accent}`}>
           {icon}
         </div>
       </div>
@@ -314,13 +321,13 @@ const AdminBarChart = ({ values = [], labels = [] }) => {
         <div key={i} className="flex flex-1 flex-col items-center gap-2 group">
           <div className="relative w-full flex justify-center">
             {/* Tooltip on hover */}
-            <div className="absolute -top-7 scale-0 group-hover:scale-100 transition-all duration-200 bg-slate-900 border border-white/10 text-white text-[10px] px-2 py-0.5 rounded font-bold pointer-events-none z-20">
+            <div className="absolute -top-7 scale-0 group-hover:scale-100 transition-all duration-200 bg-surface-2 border border-edge text-text-primary text-[10px] px-2 py-0.5 rounded font-bold pointer-events-none z-20">
               {v}
             </div>
-            <div className="w-full max-w-5 rounded-t-md bg-gradient-to-t from-indigo-600 to-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.2)] transition-all duration-500 ease-out hover:from-purple-500 hover:to-indigo-400" 
+            <div className="w-full max-w-5 rounded-t-md transition-all duration-500 ease-out" 
               style={{ height: `${Math.max((v / maxV) * 120, v > 0 ? 8 : 2)}px` }} />
           </div>
-          <div className="text-[11px] font-bold text-slate-400 mt-1">{safeLabels[i]}</div>
+          <div className="text-[11px] font-bold text-text-secondary mt-1">{safeLabels[i]}</div>
         </div>
       ))}
     </div>
@@ -342,22 +349,22 @@ const AdminDonut = ({ segments }) => {
     <div className="flex flex-col sm:flex-row items-center gap-8">
       <div className="relative flex items-center justify-center">
         <svg viewBox="0 0 36 36" className="h-32 w-32 -rotate-90">
-          <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="3" />
+          <circle cx="18" cy="18" r="15.9" fill="none" stroke="rgb(var(--color-edge))" strokeWidth="3" />
           {circles}
         </svg>
         <div className="absolute flex flex-col items-center">
-          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-400">Jami</span>
-          <span className="text-lg font-black text-white">100%</span>
+          <span className="text-[10px] uppercase font-bold tracking-wider text-text-secondary">Jami</span>
+          <span className="text-lg font-bold text-text-primary">100%</span>
         </div>
       </div>
       <div className="space-y-2 flex-1 w-full">
         {segments.map(s => (
-          <div key={s.label} className="flex items-center justify-between gap-3 text-xs font-bold text-slate-300 p-2 rounded-lg bg-white/5 border border-white/5 hover:border-white/10 transition">
+          <div key={s.label} className="flex items-center justify-between gap-3 text-xs font-bold text-text-primary p-2 rounded-lg bg-surface-2 border border-edge hover:border-edge-strong transition">
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full shadow-[0_0_8px_currentColor]" style={{ background: s.color, color: s.color }} />
-              <span className="text-slate-400 font-semibold">{s.label}</span>
+              <span className="h-2 w-2 rounded-full" style={{ background: s.color, color: s.color }} />
+              <span className="text-text-secondary font-semibold">{s.label}</span>
             </div>
-            <span className="text-white font-mono">{s.value}%</span>
+            <span className="text-text-primary font-mono">{s.value}%</span>
           </div>
         ))}
       </div>
@@ -453,14 +460,14 @@ const shortDay = (iso) => {
 const ChartTooltip = ({ active, payload, label, suffix = '', valueLabel }) => {
   if (!active || !payload || !payload.length) return null;
   return (
-    <div className="rounded-lg bg-slate-800 border border-white/10 px-3 py-2 shadow-xl">
+    <div className="rounded-lg bg-surface-2 border border-edge px-3 py-2">
       {label != null && label !== '' && (
-        <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
+        <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-text-secondary">{label}</div>
       )}
       {payload.map((p, i) => (
-        <div key={i} className="flex items-center gap-2 text-xs font-bold text-white">
-          <span className="h-2 w-2 rounded-full" style={{ background: p.color || p.fill || '#C0362C' }} />
-          <span className="text-slate-300">{valueLabel || p.name}:</span>
+        <div key={i} className="flex items-center gap-2 text-xs font-bold text-text-primary">
+          <span className="h-2 w-2 rounded-full" style={{ background: p.color || p.fill || 'rgb(var(--color-accent))' }} />
+          <span className="text-text-primary">{valueLabel || p.name}:</span>
           <span className="font-mono">{p.value}{suffix}</span>
         </div>
       ))}
@@ -473,12 +480,12 @@ const ChartCard = ({ title, subtitle, children, empty, emptyText = "Ma'lumot yo'
   <section className="admin-card p-5">
     <div className="mb-4 flex items-start justify-between gap-3">
       <div>
-        <h2 className="text-[11px] font-black tracking-wider uppercase text-slate-300">{title}</h2>
-        {subtitle && <p className="mt-1 text-[10px] font-semibold text-slate-500">{subtitle}</p>}
+        <h2 className="text-[11px] font-bold tracking-wider uppercase text-text-primary">{title}</h2>
+        {subtitle && <p className="mt-1 text-[10px] font-semibold text-text-secondary">{subtitle}</p>}
       </div>
     </div>
     {empty ? (
-      <div className="flex h-[180px] flex-col items-center justify-center gap-2 text-slate-500">
+      <div className="flex h-[180px] flex-col items-center justify-center gap-2 text-text-secondary">
         <Icon name="chart" size={22} className="opacity-40" />
         <span className="text-[11px] font-bold">{emptyText}</span>
       </div>
@@ -495,17 +502,17 @@ const UserGrowthArea = ({ data }) => {
         <ReAreaChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
           <defs>
             <linearGradient id="growthFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#C0362C" stopOpacity={0.5} />
-              <stop offset="100%" stopColor="#C0362C" stopOpacity={0} />
+              <stop offset="0%" stopColor="rgb(var(--color-accent))" stopOpacity={0.5} />
+              <stop offset="100%" stopColor="rgb(var(--color-accent))" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-          <ReXAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} />
-          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={34} />
-          <ReTooltip content={<ChartTooltip valueLabel="Yangi" />} cursor={{ stroke: 'rgba(99,102,241,0.3)' }} />
-          <ReArea type="monotone" dataKey="count" name="Yangi" stroke="#818cf8" strokeWidth={2.5}
-            fill="url(#growthFill)" dot={{ r: 3, fill: '#C0362C', strokeWidth: 0 }}
-            activeDot={{ r: 5, fill: '#E19F9A', stroke: '#C0362C', strokeWidth: 2 }} />
+          <ReGrid strokeDasharray="3 3" stroke="rgb(var(--color-edge))" vertical={false} />
+          <ReXAxis dataKey="label" tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} />
+          <ReYAxis tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={34} />
+          <ReTooltip content={<ChartTooltip valueLabel="Yangi" />} cursor={{ stroke: 'rgb(var(--color-edge-strong))' }} />
+          <ReArea type="monotone" dataKey="count" name="Yangi" stroke="rgb(var(--color-accent))" strokeWidth={2.5}
+            fill="url(#growthFill)" dot={{ r: 3, fill: 'rgb(var(--color-accent))', strokeWidth: 0 }}
+            activeDot={{ r: 5, fill: 'rgb(var(--color-surface-2))', stroke: 'rgb(var(--color-accent))', strokeWidth: 2 }} />
         </ReAreaChart>
       </RC>
     </div>
@@ -528,18 +535,18 @@ const PremiumPie = ({ data, total }) => {
           </RePieChart>
         </RC>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Jami</span>
-          <span className="text-lg font-black text-white">{total}</span>
+          <span className="text-[9px] font-bold uppercase tracking-wider text-text-secondary">Jami</span>
+          <span className="text-lg font-bold text-text-primary">{total}</span>
         </div>
       </div>
       <div className="w-full flex-1 space-y-2">
         {data.map(d => (
-          <div key={d.label} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-white/5 p-2 text-xs font-bold">
+          <div key={d.label} className="flex items-center justify-between gap-3 rounded-lg border border-edge bg-surface-2 p-2 text-xs font-bold">
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full shadow-[0_0_8px_currentColor]" style={{ background: d.color, color: d.color }} />
-              <span className="font-semibold text-slate-400">{d.label}</span>
+              <span className="h-2 w-2 rounded-full" style={{ background: d.color, color: d.color }} />
+              <span className="font-semibold text-text-secondary">{d.label}</span>
             </div>
-            <span className="font-mono text-white">{d.value}</span>
+            <span className="font-mono text-text-primary">{d.value}</span>
           </div>
         ))}
       </div>
@@ -554,18 +561,12 @@ const RetentionBars = ({ data }) => {
     <div className="h-[174px] w-full">
       <RC width="100%" height="100%">
         <ReBarChart data={data} margin={{ top: 16, right: 8, left: -22, bottom: 0 }}>
-          <defs>
-            <linearGradient id="retentionFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#34d399" stopOpacity={1} />
-              <stop offset="100%" stopColor="#059669" stopOpacity={0.85} />
-            </linearGradient>
-          </defs>
-          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-          <ReXAxis dataKey="label" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} />
-          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} width={36} />
-          <ReTooltip content={<ChartTooltip suffix="%" valueLabel="Qaytgan" />} cursor={{ fill: 'rgba(52,211,153,0.08)' }} />
-          <ReBar dataKey="pct" name="Qaytgan" fill="url(#retentionFill)" radius={[5, 5, 0, 0]} maxBarSize={40}>
-            <ReLabelList dataKey="pct" position="top" formatter={(v) => `${v}%`} fill="#cbd5e1" fontSize={10} fontWeight={700} />
+          <ReGrid strokeDasharray="3 3" stroke="rgb(var(--color-edge))" vertical={false} />
+          <ReXAxis dataKey="label" tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} />
+          <ReYAxis tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10 }} axisLine={false} tickLine={false} domain={[0, 100]} width={36} />
+          <ReTooltip content={<ChartTooltip suffix="%" valueLabel="Qaytgan" />} cursor={{ fill: 'rgb(var(--color-surface-2))' }} />
+          <ReBar dataKey="pct" name="Qaytgan" fill="rgb(var(--color-success))" radius={[5, 5, 0, 0]} maxBarSize={40}>
+            <ReLabelList dataKey="pct" position="top" formatter={(v) => `${v}%`} fill="rgb(var(--color-text-primary))" fontSize={10} fontWeight={700} />
           </ReBar>
         </ReBarChart>
       </RC>
@@ -580,18 +581,12 @@ const ConversionFunnel = ({ data }) => {
     <div className="h-[200px] w-full">
       <RC width="100%" height="100%">
         <ReBarChart data={data} layout="vertical" margin={{ top: 4, right: 56, left: 8, bottom: 4 }}>
-          <defs>
-            <linearGradient id="funnelFill" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#2F5D8C" stopOpacity={0.95} />
-              <stop offset="100%" stopColor="#C0362C" stopOpacity={0.95} />
-            </linearGradient>
-          </defs>
-          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-          <ReXAxis type="number" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
-          <ReYAxis type="category" dataKey="label" tick={{ fill: '#cbd5e1', fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} width={132} />
-          <ReTooltip content={<ChartTooltip suffix=" ta" />} cursor={{ fill: 'rgba(168,85,247,0.08)' }} />
-          <ReBar dataKey="value" name="Foydalanuvchi" fill="url(#funnelFill)" radius={[0, 6, 6, 0]} maxBarSize={34}>
-            <ReLabelList dataKey="value" position="right" fill="#e2e8f0" fontSize={11} fontWeight={800} />
+          <ReGrid strokeDasharray="3 3" stroke="rgb(var(--color-edge))" horizontal={false} />
+          <ReXAxis type="number" tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+          <ReYAxis type="category" dataKey="label" tick={{ fill: 'rgb(var(--color-text-primary))', fontSize: 11, fontWeight: 700 }} axisLine={false} tickLine={false} width={132} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" />} cursor={{ fill: 'rgb(var(--color-surface-2))' }} />
+          <ReBar dataKey="value" name="Foydalanuvchi" fill="rgb(var(--color-accent-2))" radius={[0, 6, 6, 0]} maxBarSize={34}>
+            <ReLabelList dataKey="value" position="right" fill="rgb(var(--color-text-primary))" fontSize={11} fontWeight={800} />
           </ReBar>
         </ReBarChart>
       </RC>
@@ -608,12 +603,12 @@ const AttemptsTrendChart = ({ data }) => {
     <div className="h-[220px] w-full">
       <RC width="100%" height="100%">
         <ReLineChart data={data} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
-          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-          <ReXAxis dataKey="date" tickFormatter={shortDay} tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} interval={4} minTickGap={12} />
-          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
-          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="Attempt" />} cursor={{ stroke: 'rgba(129,140,248,0.3)' }} labelFormatter={shortDay} />
-          <ReLine type="monotone" dataKey="count" name="Attempt" stroke="#818cf8" strokeWidth={2.5}
-            dot={false} activeDot={{ r: 5, fill: '#E19F9A', stroke: '#C0362C', strokeWidth: 2 }} />
+          <ReGrid strokeDasharray="3 3" stroke="rgb(var(--color-edge))" vertical={false} />
+          <ReXAxis dataKey="date" tickFormatter={shortDay} tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} interval={4} minTickGap={12} />
+          <ReYAxis tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="Attempt" />} cursor={{ stroke: 'rgb(var(--color-edge-strong))' }} labelFormatter={shortDay} />
+          <ReLine type="monotone" dataKey="count" name="Attempt" stroke="rgb(var(--color-accent))" strokeWidth={2.5}
+            dot={false} activeDot={{ r: 5, fill: 'rgb(var(--color-surface-2))', stroke: 'rgb(var(--color-accent))', strokeWidth: 2 }} />
         </ReLineChart>
       </RC>
     </div>
@@ -627,18 +622,12 @@ const OlympiadParticipationChart = ({ data }) => {
     <div className="w-full" style={{ height: `${Math.max(200, data.length * 30 + 24)}px` }}>
       <RC width="100%" height="100%">
         <ReBarChart data={data} layout="vertical" margin={{ top: 4, right: 52, left: 8, bottom: 4 }}>
-          <defs>
-            <linearGradient id="olympPartFill" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#2F5D8C" stopOpacity={0.95} />
-              <stop offset="100%" stopColor="#C0362C" stopOpacity={0.95} />
-            </linearGradient>
-          </defs>
-          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-          <ReXAxis type="number" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
-          <ReYAxis type="category" dataKey="name" tick={{ fill: '#cbd5e1', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} width={120} tickFormatter={(v) => (v && v.length > 16 ? v.slice(0, 15) + '…' : v)} />
-          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="Ishtirokchi" />} cursor={{ fill: 'rgba(168,85,247,0.08)' }} />
-          <ReBar dataKey="participants" name="Ishtirokchi" fill="url(#olympPartFill)" radius={[0, 6, 6, 0]} maxBarSize={26}>
-            <ReLabelList dataKey="participants" position="right" fill="#e2e8f0" fontSize={11} fontWeight={800} />
+          <ReGrid strokeDasharray="3 3" stroke="rgb(var(--color-edge))" horizontal={false} />
+          <ReXAxis type="number" tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+          <ReYAxis type="category" dataKey="name" tick={{ fill: 'rgb(var(--color-text-primary))', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} width={120} tickFormatter={(v) => (v && v.length > 16 ? v.slice(0, 15) + '…' : v)} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="Ishtirokchi" />} cursor={{ fill: 'rgb(var(--color-surface-2))' }} />
+          <ReBar dataKey="participants" name="Ishtirokchi" fill="rgb(var(--color-accent-2))" radius={[0, 6, 6, 0]} maxBarSize={26}>
+            <ReLabelList dataKey="participants" position="right" fill="rgb(var(--color-text-primary))" fontSize={11} fontWeight={800} />
           </ReBar>
         </ReBarChart>
       </RC>
@@ -655,18 +644,12 @@ const QuestionBySubjectChart = ({ data }) => {
     <div className="w-full" style={{ height: `${Math.max(200, data.length * 28 + 24)}px` }}>
       <RC width="100%" height="100%">
         <ReBarChart data={data} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
-          <defs>
-            <linearGradient id="qSubjectFill" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.95} />
-              <stop offset="100%" stopColor="#f97316" stopOpacity={0.95} />
-            </linearGradient>
-          </defs>
-          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-          <ReXAxis type="number" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
-          <ReYAxis type="category" dataKey="name" tick={{ fill: '#cbd5e1', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} width={110} tickFormatter={(v) => (v && v.length > 14 ? v.slice(0, 13) + '…' : v)} />
-          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="Savol" />} cursor={{ fill: 'rgba(245,158,11,0.08)' }} />
-          <ReBar dataKey="count" name="Savol" fill="url(#qSubjectFill)" radius={[0, 6, 6, 0]} maxBarSize={24}>
-            <ReLabelList dataKey="count" position="right" fill="#e2e8f0" fontSize={11} fontWeight={800} />
+          <ReGrid strokeDasharray="3 3" stroke="rgb(var(--color-edge))" horizontal={false} />
+          <ReXAxis type="number" tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+          <ReYAxis type="category" dataKey="name" tick={{ fill: 'rgb(var(--color-text-primary))', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} width={110} tickFormatter={(v) => (v && v.length > 14 ? v.slice(0, 13) + '…' : v)} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="Savol" />} cursor={{ fill: 'rgb(var(--color-surface-2))' }} />
+          <ReBar dataKey="count" name="Savol" fill="rgb(var(--color-warning))" radius={[0, 6, 6, 0]} maxBarSize={24}>
+            <ReLabelList dataKey="count" position="right" fill="rgb(var(--color-text-primary))" fontSize={11} fontWeight={800} />
           </ReBar>
         </ReBarChart>
       </RC>
@@ -675,7 +658,7 @@ const QuestionBySubjectChart = ({ data }) => {
 };
 
 // Savol manbai taqsimoti (PieChart: manual/ai/pdf/import).
-const QUESTION_SOURCE_COLORS = ['#C0362C', '#2F5D8C', '#34d399', '#f59e0b', '#f43f5e'];
+const QUESTION_SOURCE_COLORS = ['rgb(var(--color-accent))', 'rgb(var(--color-accent-2))', 'rgb(var(--color-success))', 'rgb(var(--color-warning))', 'rgb(var(--color-error))'];
 const QuestionBySourceChart = ({ data }) => {
   if (!RC) return null;
   const total = data.reduce((s, d) => s + (d.count || 0), 0);
@@ -692,18 +675,18 @@ const QuestionBySourceChart = ({ data }) => {
           </RePieChart>
         </RC>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Jami</span>
-          <span className="text-lg font-black text-white">{total.toLocaleString()}</span>
+          <span className="text-[9px] font-bold uppercase tracking-wider text-text-secondary">Jami</span>
+          <span className="text-lg font-bold text-text-primary">{total.toLocaleString()}</span>
         </div>
       </div>
       <div className="w-full flex-1 space-y-2">
         {data.map((d, i) => (
-          <div key={d.name} className="flex items-center justify-between gap-3 rounded-lg border border-white/5 bg-white/5 p-2 text-xs font-bold">
+          <div key={d.name} className="flex items-center justify-between gap-3 rounded-lg border border-edge bg-surface-2 p-2 text-xs font-bold">
             <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full shadow-[0_0_8px_currentColor]" style={{ background: QUESTION_SOURCE_COLORS[i % QUESTION_SOURCE_COLORS.length], color: QUESTION_SOURCE_COLORS[i % QUESTION_SOURCE_COLORS.length] }} />
-              <span className="font-semibold text-slate-400">{d.label || d.name}</span>
+              <span className="h-2 w-2 rounded-full" style={{ background: QUESTION_SOURCE_COLORS[i % QUESTION_SOURCE_COLORS.length], color: QUESTION_SOURCE_COLORS[i % QUESTION_SOURCE_COLORS.length] }} />
+              <span className="font-semibold text-text-secondary">{d.label || d.name}</span>
             </div>
-            <span className="font-mono text-white">{d.count}</span>
+            <span className="font-mono text-text-primary">{d.count}</span>
           </div>
         ))}
       </div>
@@ -718,11 +701,11 @@ const RevenueTooltip = ({ active, payload, label }) => {
   if (!active || !payload || !payload.length) return null;
   const v = Number(payload[0].value) || 0;
   return (
-    <div className="rounded-lg bg-slate-800 border border-white/10 px-3 py-2 shadow-xl">
-      <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">{shortDay(label)}</div>
-      <div className="flex items-center gap-2 text-xs font-bold text-white">
-        <span className="h-2 w-2 rounded-full" style={{ background: '#34d399' }} />
-        <span className="text-slate-300">Daromad:</span>
+    <div className="rounded-lg bg-surface-2 border border-edge px-3 py-2">
+      <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-text-secondary">{shortDay(label)}</div>
+      <div className="flex items-center gap-2 text-xs font-bold text-text-primary">
+        <span className="h-2 w-2 rounded-full" style={{ background: 'rgb(var(--color-success))' }} />
+        <span className="text-text-primary">Daromad:</span>
         <span className="font-mono">{v.toLocaleString('uz-UZ')} so'm</span>
       </div>
     </div>
@@ -738,17 +721,17 @@ const RevenueTrendChart = ({ data }) => {
         <ReAreaChart data={data} margin={{ top: 8, right: 12, left: 4, bottom: 0 }}>
           <defs>
             <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#34d399" stopOpacity={0.5} />
-              <stop offset="100%" stopColor="#34d399" stopOpacity={0} />
+              <stop offset="0%" stopColor="rgb(var(--color-success))" stopOpacity={0.5} />
+              <stop offset="100%" stopColor="rgb(var(--color-success))" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-          <ReXAxis dataKey="month" tickFormatter={shortDay} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
-          <ReYAxis tickFormatter={formatSom} tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} width={42} />
-          <ReTooltip content={<RevenueTooltip />} cursor={{ stroke: 'rgba(52,211,153,0.3)' }} />
-          <ReArea type="monotone" dataKey="amount" name="Daromad" stroke="#10b981" strokeWidth={2.5}
-            fill="url(#revenueFill)" dot={{ r: 3, fill: '#059669', strokeWidth: 0 }}
-            activeDot={{ r: 5, fill: '#6ee7b7', stroke: '#059669', strokeWidth: 2 }} />
+          <ReGrid strokeDasharray="3 3" stroke="rgb(var(--color-edge))" vertical={false} />
+          <ReXAxis dataKey="month" tickFormatter={shortDay} tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
+          <ReYAxis tickFormatter={formatSom} tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10 }} axisLine={false} tickLine={false} width={42} />
+          <ReTooltip content={<RevenueTooltip />} cursor={{ stroke: 'rgb(var(--color-edge-strong))' }} />
+          <ReArea type="monotone" dataKey="amount" name="Daromad" stroke="rgb(var(--color-success))" strokeWidth={2.5}
+            fill="url(#revenueFill)" dot={{ r: 3, fill: 'rgb(var(--color-success))', strokeWidth: 0 }}
+            activeDot={{ r: 5, fill: 'rgb(var(--color-surface-2))', stroke: 'rgb(var(--color-success))', strokeWidth: 2 }} />
         </ReAreaChart>
       </RC>
     </div>
@@ -764,18 +747,12 @@ const CentersByRegionChart = ({ data }) => {
     <div className="w-full" style={{ height: `${Math.max(200, data.length * 28 + 24)}px` }}>
       <RC width="100%" height="100%">
         <ReBarChart data={data} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
-          <defs>
-            <linearGradient id="regionFill" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#C0362C" stopOpacity={0.95} />
-              <stop offset="100%" stopColor="#818cf8" stopOpacity={0.95} />
-            </linearGradient>
-          </defs>
-          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-          <ReXAxis type="number" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
-          <ReYAxis type="category" dataKey="name" tick={{ fill: '#cbd5e1', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} width={120} tickFormatter={(v) => (v && v.length > 16 ? v.slice(0, 15) + '…' : v)} />
-          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="Markaz" />} cursor={{ fill: 'rgba(99,102,241,0.08)' }} />
-          <ReBar dataKey="count" name="Markaz" fill="url(#regionFill)" radius={[0, 6, 6, 0]} maxBarSize={24}>
-            <ReLabelList dataKey="count" position="right" fill="#e2e8f0" fontSize={11} fontWeight={800} />
+          <ReGrid strokeDasharray="3 3" stroke="rgb(var(--color-edge))" horizontal={false} />
+          <ReXAxis type="number" tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+          <ReYAxis type="category" dataKey="name" tick={{ fill: 'rgb(var(--color-text-primary))', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} width={120} tickFormatter={(v) => (v && v.length > 16 ? v.slice(0, 15) + '…' : v)} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="Markaz" />} cursor={{ fill: 'rgb(var(--color-surface-2))' }} />
+          <ReBar dataKey="count" name="Markaz" fill="rgb(var(--color-accent))" radius={[0, 6, 6, 0]} maxBarSize={24}>
+            <ReLabelList dataKey="count" position="right" fill="rgb(var(--color-text-primary))" fontSize={11} fontWeight={800} />
           </ReBar>
         </ReBarChart>
       </RC>
@@ -790,13 +767,13 @@ const PremiumVsFreeChart = ({ data }) => {
     <div className="h-[220px] w-full">
       <RC width="100%" height="100%">
         <ReBarChart data={data} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
-          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-          <ReXAxis dataKey="month" tickFormatter={shortDay} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
-          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
-          <ReTooltip content={<ChartTooltip suffix=" ta" />} cursor={{ fill: 'rgba(148,163,184,0.06)' }} labelFormatter={shortDay} />
+          <ReGrid strokeDasharray="3 3" stroke="rgb(var(--color-edge))" vertical={false} />
+          <ReXAxis dataKey="month" tickFormatter={shortDay} tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
+          <ReYAxis tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" />} cursor={{ fill: 'rgb(var(--color-surface-2))' }} labelFormatter={shortDay} />
           {ReLegend && <ReLegend wrapperStyle={{ fontSize: 10, fontWeight: 700, paddingTop: 4 }} iconType="circle" iconSize={8} />}
-          <ReBar dataKey="premium" name="Premium" fill="#2F5D8C" radius={[4, 4, 0, 0]} maxBarSize={18} />
-          <ReBar dataKey="free" name="Bepul" fill="#475569" radius={[4, 4, 0, 0]} maxBarSize={18} />
+          <ReBar dataKey="premium" name="Premium" fill="rgb(var(--color-accent-2))" radius={[4, 4, 0, 0]} maxBarSize={18} />
+          <ReBar dataKey="free" name="Bepul" fill="rgb(var(--color-text-secondary))" radius={[4, 4, 0, 0]} maxBarSize={18} />
         </ReBarChart>
       </RC>
     </div>
@@ -810,13 +787,13 @@ const DqTrendChart = ({ data }) => {
     <div className="h-[220px] w-full">
       <RC width="100%" height="100%">
         <ReLineChart data={data} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
-          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-          <ReXAxis dataKey="week" tickFormatter={shortDay} tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
-          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={30} />
-          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="DQ" />} cursor={{ stroke: 'rgba(244,63,94,0.3)' }} labelFormatter={shortDay} />
-          <ReLine type="monotone" dataKey="count" name="DQ" stroke="#f43f5e" strokeWidth={2.5}
-            dot={{ r: 3, fill: '#e11d48', strokeWidth: 0 }}
-            activeDot={{ r: 5, fill: '#fb7185', stroke: '#e11d48', strokeWidth: 2 }} />
+          <ReGrid strokeDasharray="3 3" stroke="rgb(var(--color-edge))" vertical={false} />
+          <ReXAxis dataKey="week" tickFormatter={shortDay} tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10, fontWeight: 700 }} axisLine={false} tickLine={false} />
+          <ReYAxis tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={30} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="DQ" />} cursor={{ stroke: 'rgb(var(--color-edge-strong))' }} labelFormatter={shortDay} />
+          <ReLine type="monotone" dataKey="count" name="DQ" stroke="rgb(var(--color-error))" strokeWidth={2.5}
+            dot={{ r: 3, fill: 'rgb(var(--color-error))', strokeWidth: 0 }}
+            activeDot={{ r: 5, fill: 'rgb(var(--color-surface-2))', stroke: 'rgb(var(--color-error))', strokeWidth: 2 }} />
         </ReLineChart>
       </RC>
     </div>
@@ -824,7 +801,7 @@ const DqTrendChart = ({ data }) => {
 };
 
 // Top-5 markaz rating dinamikasi (ko'p chiziqli LineChart).
-const TOP_CENTER_COLORS = ['#C0362C', '#34d399', '#f59e0b', '#2F5D8C', '#f43f5e'];
+const TOP_CENTER_COLORS = ['rgb(var(--color-accent))', 'rgb(var(--color-success))', 'rgb(var(--color-warning))', 'rgb(var(--color-accent-2))', 'rgb(var(--color-error))'];
 const TopCentersRatingChart = ({ series }) => {
   if (!RC) return null;
   // Har markaz {points:[{date,score}]} — barcha sanalarni birlashtirib, har
@@ -845,10 +822,10 @@ const TopCentersRatingChart = ({ series }) => {
     <div className="h-[240px] w-full">
       <RC width="100%" height="100%">
         <ReLineChart data={rows} margin={{ top: 8, right: 12, left: -20, bottom: 0 }}>
-          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-          <ReXAxis dataKey="date" tickFormatter={shortDay} tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} minTickGap={20} />
-          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
-          <ReTooltip content={<ChartTooltip suffix=" ball" />} cursor={{ stroke: 'rgba(148,163,184,0.2)' }} labelFormatter={shortDay} />
+          <ReGrid strokeDasharray="3 3" stroke="rgb(var(--color-edge))" vertical={false} />
+          <ReXAxis dataKey="date" tickFormatter={shortDay} tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} minTickGap={20} />
+          <ReYAxis tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10 }} axisLine={false} tickLine={false} width={30} />
+          <ReTooltip content={<ChartTooltip suffix=" ball" />} cursor={{ stroke: 'rgb(var(--color-edge-strong))' }} labelFormatter={shortDay} />
           {ReLegend && <ReLegend wrapperStyle={{ fontSize: 9, fontWeight: 700, paddingTop: 4 }} iconType="circle" iconSize={7} />}
           {series.map((s, i) => (
             <ReLine
@@ -879,17 +856,17 @@ const TopCentersRatingChart = ({ series }) => {
 // Ustunlar yonma-yon EMAS, bir-birining ustiga teriladi (`stackId`): 30
 // kunlik oynada uchta yonma-yon ustun o'qib bo'lmas darajada ingichka
 // bo'lardi; terilgan ustun esa kunlik UMUMIY hajmni ham ko'rsatadi.
-const ABUSE_SERIES_COLORS = ['#f59e0b', '#f43f5e', '#2F5D8C', '#C0362C', '#34d399'];
+const ABUSE_SERIES_COLORS = ['rgb(var(--color-warning))', 'rgb(var(--color-error))', 'rgb(var(--color-accent-2))', 'rgb(var(--color-accent))', 'rgb(var(--color-success))'];
 const AbuseFlagTrendChart = ({ data, series }) => {
   if (!RC) return null;
   return (
     <div className="h-[220px] w-full">
       <RC width="100%" height="100%">
         <ReBarChart data={data} margin={{ top: 8, right: 12, left: -18, bottom: 0 }}>
-          <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-          <ReXAxis dataKey="date" tickFormatter={shortDay} tick={{ fill: '#94a3b8', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} interval={4} minTickGap={12} />
-          <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
-          <ReTooltip content={<ChartTooltip suffix=" ta" />} cursor={{ fill: 'rgba(148,163,184,0.06)' }} labelFormatter={shortDay} />
+          <ReGrid strokeDasharray="3 3" stroke="rgb(var(--color-edge))" vertical={false} />
+          <ReXAxis dataKey="date" tickFormatter={shortDay} tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 9, fontWeight: 700 }} axisLine={false} tickLine={false} interval={4} minTickGap={12} />
+          <ReYAxis tick={{ fill: 'rgb(var(--color-text-secondary))', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
+          <ReTooltip content={<ChartTooltip suffix=" ta" />} cursor={{ fill: 'rgb(var(--color-surface-2))' }} labelFormatter={shortDay} />
           {ReLegend && <ReLegend wrapperStyle={{ fontSize: 10, fontWeight: 700, paddingTop: 4 }} iconType="circle" iconSize={8} />}
           {series.map((s, i) => (
             <ReBar
@@ -912,35 +889,37 @@ const AbuseFlagTrendChart = ({ data, series }) => {
 // bitta komponent. Diagramma EMAS: ism va aniq son ustun grafikdan ko'ra
 // jadvalda tez o'qiladi, ko'rinish esa "Bir xil IP" va audit jurnali
 // jadvallari bilan bir xil.
+// Kalitlar `AdminMetricCard` bilan bir xil semantik nomlashda — xom palitra
+// nomi (`rose`) qiymatdagi tokendan (`error`) ajralib turmasin.
 const ABUSE_COUNT_TONES = {
-  rose: 'bg-rose-500/10 border-rose-500/20 text-rose-400',
-  amber: 'bg-amber-500/10 border-amber-500/20 text-amber-400',
+  error: 'bg-surface-2 border-error/45 text-error',
+  warning: 'bg-surface-2 border-warning/45 text-warning',
 };
-const AbuseRankTable = ({ rows, countKey, countLabel, dateKey, dateLabel, tone = 'rose' }) => (
+const AbuseRankTable = ({ rows, countKey, countLabel, dateKey, dateLabel, tone = 'error' }) => (
   <div className="overflow-x-auto admin-scroll">
     <table className="w-full min-w-[420px] text-left">
       <thead className="admin-table-hdr">
-        <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+        <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
           <th className="px-3 py-2.5">#</th>
           <th className="px-3 py-2.5">Hisob</th>
           <th className="px-3 py-2.5">{countLabel}</th>
           <th className="px-3 py-2.5">{dateLabel}</th>
         </tr>
       </thead>
-      <tbody className="divide-y divide-white/5">
+      <tbody className="divide-y divide-edge">
         {rows.map((row, i) => (
-          <tr key={row.user_id} className="text-xs admin-table-row text-slate-300">
-            <td className="px-3 py-3 font-mono text-[11px] font-bold text-slate-500">{i + 1}</td>
+          <tr key={row.user_id} className="text-xs admin-table-row text-text-primary">
+            <td className="px-3 py-3 font-mono text-[11px] font-bold text-text-secondary">{i + 1}</td>
             <td className="px-3 py-3">
-              <div className="font-bold text-white">{row.full_name || '—'}</div>
-              <div className="font-mono text-[10px] text-white/40">{maskPhoneDisplay(row.phone, '')}</div>
+              <div className="font-bold text-text-primary">{row.full_name || '—'}</div>
+              <div className="font-mono text-[10px] text-text-secondary">{maskPhoneDisplay(row.phone, '')}</div>
             </td>
             <td className="px-3 py-3">
               <span className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${ABUSE_COUNT_TONES[tone]}`}>
                 {row[countKey]} ta
               </span>
             </td>
-            <td className="px-3 py-3 font-semibold text-slate-400 whitespace-nowrap">{formatAdminDateTime(row[dateKey])}</td>
+            <td className="px-3 py-3 font-semibold text-text-secondary whitespace-nowrap">{formatAdminDateTime(row[dateKey])}</td>
           </tr>
         ))}
       </tbody>
@@ -1688,7 +1667,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const blockReasonFields = (
     <div className="mb-5 space-y-4">
       <div>
-        <label className="block text-xs text-white/50 mb-1.5 font-medium">Bloklash sababi</label>
+        <label className="block text-xs text-text-secondary mb-1.5 font-medium">Bloklash sababi</label>
         <input
           value={blockReason}
           onChange={e => setBlockReason(e.target.value)}
@@ -1698,7 +1677,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         />
       </div>
       <div>
-        <label className="block text-xs text-white/50 mb-1.5 font-medium">Muddat</label>
+        <label className="block text-xs text-text-secondary mb-1.5 font-medium">Muddat</label>
         <div className="grid grid-cols-3 gap-2">
           {[
             { value: 1, label: '1 kun' },
@@ -1714,16 +1693,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               className={`px-2 py-2 rounded-xl text-[11px] font-bold transition-all border ${
                 blockDuration === opt.value
                   ? opt.value === null
-                    ? 'bg-rose-600 text-white border-rose-600 font-extrabold shadow'
-                    : 'bg-amber-500 text-indigo-950 border-amber-500 font-extrabold shadow'
-                  : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                    ? 'btn-danger font-bold'
+                    : 'btn-primary font-bold'
+                  : 'btn-ghost'
               }`}
             >
               {opt.label}
             </button>
           ))}
         </div>
-        <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+        <p className="mt-2 text-[11px] text-text-secondary leading-relaxed">
           Muddat tanlansa, blok o'sha kunlar o'tgach avtomatik ochiladi. "Doimiy" —
           admin qo'lda ochmaguncha bloklangan qoladi.
         </p>
@@ -2286,15 +2265,22 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   });
   const dashboardNotifications = recentActivity.slice(0, 4);
   const AdminSidebar = () => (
-    <aside className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-60 flex-col admin-sidebar text-slate-300 shadow-2xl transition-transform duration-200 lg:static lg:translate-x-0 lg:shadow-none`}>
-      <div className="flex h-[54px] items-center gap-2 border-b border-white/5 px-4 bg-white/[0.01]">
+    <aside className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-60 flex-col admin-sidebar text-text-primary transition-transform duration-200 lg:static lg:translate-x-0 lg:shadow-none`}>
+      <div className="flex h-[54px] items-center gap-2 border-b border-edge px-4 bg-surface-1">
         <button onClick={() => setPage('home')} className="flex items-center gap-2">
-          <div className="relative flex h-7 w-7 items-center justify-center rounded-md bg-white text-base font-black text-ground">
+          {/* Avval `bg-white text-ground` edi: to'ldirilgan yuza mavzu bilan
+              almashadigan matn tokeni ostida. Qog'oz mavzuda oq plita ustida
+              qog'oz rangli "O" qolib, harf 1.25:1 ga tushardi. Endi shtamp
+              plitasi + `on-accent` — juftlik ikkala mavzuda 5.52:1.
+              Ostidagi bo'sh `<span>` shu yerda edi: `bg-gradient-to-r
+              from-amber-500 to-indigo-500` chizig'i. Gradient olib
+              tashlanganda klasslari yechilgan-u element qolib ketgan —
+              hech narsa chizmaydigan qoldiq, o'chirildi. */}
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent-fill text-base font-bold text-on-accent">
             O
-            <span className="absolute -bottom-1 left-1 h-1 w-5 rounded-full bg-gradient-to-r from-amber-500 to-indigo-500" />
           </div>
           <div className="text-left">
-            <div className="text-[14px] font-black leading-none text-white tracking-wide">olympy <span className="font-medium text-indigo-400 text-[10px]">admin</span></div>
+            <div className="font-display text-[14px] font-bold leading-none text-text-primary tracking-wide">olympy <span className="font-medium text-accent text-[10px]">admin</span></div>
           </div>
         </button>
       </div>
@@ -2305,51 +2291,51 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             <button key={item.key}
               onClick={() => { setPage(item.key); setMobileMenu(false); }}
               className={`sidebar-item w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-left ${isActive ? 'active' : ''}`}>
-              <span className={`sidebar-icon transition-colors duration-200 ${isActive ? 'text-indigo-400' : 'text-white/40'}`}>
+              <span className={`sidebar-icon transition-colors duration-200 ${isActive ? 'text-accent' : 'text-text-secondary'}`}>
                 <Icon name={item.icon} size={20} />
               </span>
-              <span className={`text-[15px] font-semibold tracking-wide transition-colors duration-200 flex-1 ${isActive ? 'text-white' : 'text-white/65'}`}>
+              <span className={`text-[15px] font-semibold tracking-wide transition-colors duration-200 flex-1 ${isActive ? 'text-text-primary' : 'text-text-secondary'}`}>
                 {item.label}
               </span>
               {item.badge && (
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${isActive ? 'bg-indigo-500/20 text-indigo-300' : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'}`}>{item.badge}</span>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${isActive ? 'bg-surface-2 text-accent' : 'bg-surface-2 text-error border border-error/45'}`}>{item.badge}</span>
               )}
             </button>
           );
         })}
       </nav>
-      <div className="border-t border-white/5 px-4 py-5 bg-white/[0.01]">
+      <div className="border-t border-edge px-4 py-5 bg-surface-1">
         <div className="mb-6">
-          <div className="mb-2 text-[9px] font-extrabold uppercase tracking-widest text-slate-500">Tizim holati</div>
-          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-300">
+          <div className="mb-2 text-[9px] font-bold uppercase tracking-widest text-text-secondary">Tizim holati</div>
+          <div className="flex items-center gap-2 text-[10px] font-bold text-text-primary">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-success opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-success"></span>
             </span>
             Tizim faol
           </div>
         </div>
-        <div className="mb-4 text-[10px] leading-relaxed text-slate-600 font-semibold">
+        <div className="mb-4 text-[10px] leading-relaxed text-text-secondary font-semibold">
           © 2026 Olympy Admin
         </div>
-        <button onClick={onLogout} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-[11px] font-bold text-slate-400 hover:bg-white/5 hover:text-white transition">
-          <Icon name="logout" size={13} className="text-slate-500" /> Chiqish
+        <button onClick={onLogout} className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-[11px] font-bold text-text-secondary hover:bg-surface-1 hover:text-text-primary transition">
+          <Icon name="logout" size={13} className="text-text-secondary" /> Chiqish
         </button>
       </div>
     </aside>
   );
 
   const AdminTopbar = () => (
-    <header className="sticky top-0 z-30 flex h-[54px] items-center justify-between border-b border-white/5 bg-ground/95 px-4 lg:px-5">
+    <header className="sticky top-0 z-30 flex h-[54px] items-center justify-between border-b border-edge bg-ground/95 px-4 lg:px-5">
       <div className="flex items-center gap-3">
-        <button className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 lg:hidden" onClick={() => setMobileMenu(true)}>
+        <button className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-1 lg:hidden" onClick={() => setMobileMenu(true)}>
           <Icon name="menu" size={18} />
         </button>
-        <button className="hidden h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 lg:inline-flex">
+        <button className="hidden h-9 w-9 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-1 lg:inline-flex">
           <Icon name="menu" size={16} />
         </button>
         <div className="relative hidden w-[310px] max-w-[35vw] md:block">
-          <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+          <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
           <input
             value={globalSearch}
             onChange={e => setGlobalSearch(e.target.value)}
@@ -2359,26 +2345,26 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       </div>
       <div className="flex items-center gap-3">
         {onOpenSwitcher && (
-          <button onClick={onOpenSwitcher} className="inline-flex items-center gap-1.5 rounded-lg border border-white/5 px-2 md:px-3 py-1.5 text-[10px] font-bold text-slate-300 hover:bg-white/5 transition">
+          <button onClick={onOpenSwitcher} className="inline-flex items-center gap-1.5 rounded-lg border border-edge px-2 md:px-3 py-1.5 text-[10px] font-bold text-text-primary hover:bg-surface-1 transition">
             <Icon name="users" size={11} /><span className="hidden md:inline">Rolni almashtirish</span>
           </button>
         )}
-        <button onClick={() => setPage('requests')} className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 transition">
+        <button onClick={() => setPage('requests')} className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-1 transition">
           <Icon name="bell" size={15} />
           {pendingCenterReqs.length > 0 && (
-            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-black text-white shadow-[0_0_8px_rgba(239,68,68,0.4)]">
+            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-fill px-1 text-[9px] font-bold text-on-accent">
               {pendingCenterReqs.length}
             </span>
           )}
         </button>
-        <button className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 transition">
+        <button className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-1 transition">
           <Icon name="info" size={15} />
         </button>
-        <div className="flex items-center gap-2 pl-2 border-l border-white/5">
-          <Avatar name={user?.name || 'Admin'} src={user?.avatarUrl || ''} size={28} gradient="from-indigo-600 to-purple-600" />
+        <div className="flex items-center gap-2 pl-2 border-l border-edge">
+          <Avatar name={user?.name || 'Admin'} src={user?.avatarUrl || ''} size={28} gradient="bg-accent-fill" />
           <div className="hidden text-right sm:block">
-            <div className="text-[11px] font-black leading-tight text-white">{user?.name || 'Admin'}</div>
-            <div className="text-[9px] font-bold leading-tight text-indigo-400 mt-0.5">{(() => {
+            <div className="text-[11px] font-bold leading-tight text-text-primary">{user?.name || 'Admin'}</div>
+            <div className="text-[9px] font-bold leading-tight text-accent mt-0.5">{(() => {
               if (user?.is_platform_admin || user?.roles?.admin) return 'Platform Admin';
               if (user?.roles?.owner) return 'Tashkilot direktori';
               if (user?.roles?.manager) return 'Manager';
@@ -2386,7 +2372,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               return 'Admin';
             })()}</div>
           </div>
-          <Icon name="chevronDown" size={12} className="hidden text-slate-500 sm:block" />
+          <Icon name="chevronDown" size={12} className="hidden text-text-secondary sm:block" />
         </div>
       </div>
     </header>
@@ -2399,29 +2385,29 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         const owner = getOwnerInfo(center, req);
         if (!center) return null;
         return (
-          <div key={req.id} className="rounded-lg border border-white/5 bg-white/[0.02] p-4 shadow-[0_4px_20px_rgba(0,0,0,0.15)]">
+          <div key={req.id} className="rounded-lg border border-edge bg-surface-1 p-4">
             <div className="flex flex-col gap-4 md:flex-row md:items-center">
               <div className="flex flex-1 items-center gap-3">
-                <AdminCenterLogo name={center.name} src={center.imageUrl} color="bg-amber-500/20 text-amber-400 border border-amber-500/30" />
+                <AdminCenterLogo name={center.name} src={center.imageUrl} color="bg-surface-2 text-warning border border-warning/45" />
                 <div className="min-w-0">
-                  <div className="truncate text-sm font-extrabold text-white">{center.name}</div>
-                  <div className="mt-1 text-xs font-semibold text-slate-400">
-                    {center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · Direktor: <span className="text-slate-300 font-bold">{owner.name}</span>{owner.phone ? ` · ${owner.phone}` : ''}
+                  <div className="truncate text-sm font-bold text-text-primary">{center.name}</div>
+                  <div className="mt-1 text-xs font-semibold text-text-secondary">
+                    {center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · Direktor: <span className="text-text-primary font-bold">{owner.name}</span>{owner.phone ? ` · ${owner.phone}` : ''}
                   </div>
                   {!compact && (center.subjects || []).length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {center.subjects.slice(0, 5).map(s => (
-                        <span key={s} className="rounded bg-white/5 border border-white/5 px-2 py-0.5 text-[10px] font-bold text-slate-400">{s}</span>
+                        <span key={s} className="rounded bg-surface-2 border border-edge px-2 py-0.5 text-[10px] font-bold text-text-secondary">{s}</span>
                       ))}
                     </div>
                   )}
                 </div>
               </div>
               <div className="flex shrink-0 gap-2">
-                <button onClick={() => approveCenterReq(req)} className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 px-3 py-2 text-xs font-bold text-white transition shadow-[0_0_15px_rgba(16,185,129,0.15)]">
+                <button onClick={() => approveCenterReq(req)} className="inline-flex items-center gap-1.5 rounded-lg btn-success px-3 py-2 text-xs font-bold transition">
                   <Icon name="check" size={14} /> Qabul qilish
                 </button>
-                <button onClick={() => rejectCenterReq(req)} className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-2 text-xs font-bold text-rose-400 border border-rose-500/20 hover:bg-rose-500/10 transition">
+                <button onClick={() => rejectCenterReq(req)} className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-2 text-xs font-bold text-error border border-error/45 hover:bg-surface-2 transition">
                   <Icon name="x" size={14} /> Rad etish
                 </button>
               </div>
@@ -2430,7 +2416,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         );
       })}
       {pendingCenterReqs.length === 0 && (
-        <div className="rounded-lg border border-white/5 bg-white/[0.02] px-4 py-10 text-center text-sm font-semibold text-slate-400">
+        <div className="rounded-lg border border-edge bg-surface-1 px-4 py-10 text-center text-sm font-semibold text-text-secondary">
           Hozircha tasdiqlash kutilayotgan direktor arizasi yo'q
         </div>
       )}
@@ -2463,80 +2449,80 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-[20px] font-black leading-tight text-white">Boshqaruv paneli</h1>
-          <p className="mt-1 text-[11px] font-bold text-slate-400">Olympy platformasi ko'rsatkichlari va arizalar holati.</p>
+          <h1 className="text-[20px] font-bold leading-tight text-text-primary">Boshqaruv paneli</h1>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">Olympy platformasi ko'rsatkichlari va arizalar holati.</p>
         </div>
       </div>
 
       <div className="grid gap-[12px] md:grid-cols-2 xl:grid-cols-4">
-        <AdminMetricCard label="Tashkilotlar" value={approvedCenters.length.toLocaleString()} delta={pendingCenterReqs.length ? `${pendingCenterReqs.length} ta tasdiqlash kutilmoqda` : 'Barchasi ko\'rib chiqilgan'} icon={<Icon name="building" size={16} />} tone="indigo" />
-        <AdminMetricCard label="Pending arizalar" value={pendingCenterReqs.length.toLocaleString()} delta={pendingCenterReqs.length ? "Ko'rib chiqish kerak" : "Bo'sh"} icon={<Icon name="bell" size={16} />} tone="emerald" />
-        <AdminMetricCard label="Foydalanuvchilar" value={allUsers.length.toLocaleString()} delta={`${activeUsersCount} ta faol`} icon={<Icon name="users" size={16} />} tone="amber" />
-        <AdminMetricCard label="Olimpiadalar" value={totalOlympiads.toLocaleString()} delta={`${activeOlympiadCount} ta faol`} icon={<Icon name="trophy" size={16} />} tone="rose" />
+        <AdminMetricCard label="Tashkilotlar" value={approvedCenters.length.toLocaleString()} delta={pendingCenterReqs.length ? `${pendingCenterReqs.length} ta tasdiqlash kutilmoqda` : 'Barchasi ko\'rib chiqilgan'} icon={<Icon name="building" size={16} />} tone="accent" />
+        <AdminMetricCard label="Pending arizalar" value={pendingCenterReqs.length.toLocaleString()} delta={pendingCenterReqs.length ? "Ko'rib chiqish kerak" : "Bo'sh"} icon={<Icon name="bell" size={16} />} tone="success" />
+        <AdminMetricCard label="Foydalanuvchilar" value={allUsers.length.toLocaleString()} delta={`${activeUsersCount} ta faol`} icon={<Icon name="users" size={16} />} tone="warning" />
+        <AdminMetricCard label="Olimpiadalar" value={totalOlympiads.toLocaleString()} delta={`${activeOlympiadCount} ta faol`} icon={<Icon name="trophy" size={16} />} tone="neutral" />
       </div>
 
       <div className="grid gap-[12px] md:grid-cols-2 xl:grid-cols-4">
-        <AdminMetricCard label="O'quvchilar" value={studentCount.toLocaleString()} delta="Tasdiqlangan" icon={<Icon name="users" size={16} />} tone="indigo" />
-        <AdminMetricCard label="Faol olimpiadalar" value={activeOlympiadCount.toLocaleString()} delta={activeOlympiadCount ? "Hozir o'tmoqda" : "Hech qaysi faol emas"} icon={<Icon name="bolt" size={16} />} tone="emerald" />
+        <AdminMetricCard label="O'quvchilar" value={studentCount.toLocaleString()} delta="Tasdiqlangan" icon={<Icon name="users" size={16} />} tone="accent" />
+        <AdminMetricCard label="Faol olimpiadalar" value={activeOlympiadCount.toLocaleString()} delta={activeOlympiadCount ? "Hozir o'tmoqda" : "Hech qaysi faol emas"} icon={<Icon name="bolt" size={16} />} tone="success" />
         {/* Yagona bosiladigan karta: ro'yxat faqat API rejimida mavjud
             (mock store'da onlayn holati yo'q), shuning uchun onClick ham
             shundagina beriladi — aks holda karta bosilar-u, hech narsa
             ochilmasdi. */}
-        <AdminMetricCard label="Hozir onlayn" value={onlineCount == null ? '—' : onlineCount.toLocaleString()} delta={onlineCount == null ? "Ma'lumot yo'q" : "Oxirgi 3 daqiqada faol — ro'yxat uchun bosing"} icon={<Icon name="users" size={16} />} tone="sky" onClick={isApi ? () => setOnlineListOpen(true) : undefined} />
-        <AdminMetricCard label="Tasdiqlangan tashkilotlar foizi" value={`${approvedCenterPct}%`} delta="Hammasi ichidan" icon={<Icon name="chart" size={16} />} tone="rose" />
+        <AdminMetricCard label="Hozir onlayn" value={onlineCount == null ? '—' : onlineCount.toLocaleString()} delta={onlineCount == null ? "Ma'lumot yo'q" : "Oxirgi 3 daqiqada faol — ro'yxat uchun bosing"} icon={<Icon name="users" size={16} />} tone="info" onClick={isApi ? () => setOnlineListOpen(true) : undefined} />
+        <AdminMetricCard label="Tasdiqlangan tashkilotlar foizi" value={`${approvedCenterPct}%`} delta="Hammasi ichidan" icon={<Icon name="chart" size={16} />} tone="neutral" />
       </div>
 
       <div className="grid gap-[12px] xl:grid-cols-[1.55fr_1.45fr]">
         <section className="admin-card p-4">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-[12px] font-black uppercase tracking-wider text-slate-300">Eng so'nggi tashkilotlar</h2>
-            <button onClick={() => setPage('centers')} className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 transition">Hammasi</button>
+            <h2 className="text-[12px] font-bold uppercase tracking-wider text-text-primary">Eng so'nggi tashkilotlar</h2>
+            <button onClick={() => setPage('centers')} className="text-[11px] font-bold text-accent hover:text-accent transition">Hammasi</button>
           </div>
-          <div className="grid grid-cols-[1fr_70px_100px] border-b border-white/5 pb-2 text-[9px] font-black uppercase tracking-widest text-slate-500">
+          <div className="grid grid-cols-[1fr_70px_100px] border-b border-edge pb-2 text-[9px] font-bold uppercase tracking-widest text-text-secondary">
             <span>Tashkilot</span><span className="text-right">O'quvchi</span><span className="text-right">Holat</span>
           </div>
-          <div className="divide-y divide-white/5">
+          <div className="divide-y divide-edge">
             {dashboardCenters.map(center => (
               <div key={center.id} className="grid grid-cols-[1fr_70px_100px] items-center gap-2 py-3 admin-table-row">
                 <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/5 bg-white/5 text-xs font-black text-white">{center.name?.[0] || 'O'}</div>
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-edge bg-surface-2 text-xs font-bold text-text-primary">{center.name?.[0] || 'O'}</div>
                   <div className="min-w-0">
-                    <div className="truncate text-[12px] font-bold text-slate-200">{center.name}</div>
-                    <div className="truncate text-[10px] text-slate-500 font-semibold">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)}</div>
+                    <div className="truncate text-[12px] font-bold text-text-primary">{center.name}</div>
+                    <div className="truncate text-[10px] text-text-secondary font-semibold">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)}</div>
                   </div>
                 </div>
-                <div className="text-right text-[11px] font-bold text-slate-400">{(center.students || 0).toLocaleString()}</div>
+                <div className="text-right text-[11px] font-bold text-text-secondary">{(center.students || 0).toLocaleString()}</div>
                 <div className="text-right"><AdminPill status={center.status} /></div>
               </div>
             ))}
-            {dashboardCenters.length === 0 && <div className="py-10 text-center text-[12px] font-semibold text-slate-500">Tashkilotlar yo'q</div>}
+            {dashboardCenters.length === 0 && <div className="py-10 text-center text-[12px] font-semibold text-text-secondary">Tashkilotlar yo'q</div>}
           </div>
         </section>
 
         <section className="admin-card p-4">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-[12px] font-black uppercase tracking-wider text-slate-300">Pending direktor arizalari</h2>
-            <button onClick={() => setPage('requests')} className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 transition">Hammasi</button>
+            <h2 className="text-[12px] font-bold uppercase tracking-wider text-text-primary">Pending direktor arizalari</h2>
+            <button onClick={() => setPage('requests')} className="text-[11px] font-bold text-accent hover:text-accent transition">Hammasi</button>
           </div>
           <div className="space-y-3">
             {dashboardRequests.map(({ req, center, owner }) => (
-              <div key={req.id} className="flex items-start justify-between gap-2 p-2 rounded-lg bg-white/[0.01] border border-white/5 hover:border-white/10 transition duration-200">
+              <div key={req.id} className="flex items-start justify-between gap-2 p-2 rounded-lg bg-surface-1 border border-edge hover:border-edge-strong transition duration-200">
                 <div className="min-w-0">
-                  <div className="text-[12px] font-bold text-slate-200 truncate">{center?.name || 'Yangi tashkilot'}</div>
-                  <div className="mt-0.5 truncate text-[11px] font-bold text-slate-400">{owner.name}</div>
-                  <div className="mt-0.5 truncate text-[10px] text-slate-500 font-semibold">{center?.organizationType || "O'quv markaz"} · {formatCenterLocation(center)}</div>
+                  <div className="text-[12px] font-bold text-text-primary truncate">{center?.name || 'Yangi tashkilot'}</div>
+                  <div className="mt-0.5 truncate text-[11px] font-bold text-text-secondary">{owner.name}</div>
+                  <div className="mt-0.5 truncate text-[10px] text-text-secondary font-semibold">{center?.organizationType || "O'quv markaz"} · {formatCenterLocation(center)}</div>
                 </div>
                 <div className="shrink-0 text-right">
                   <AdminPill status="pending">Kutilmoqda</AdminPill>
                   <div className="mt-2 flex justify-end gap-1.5">
-                    <button onClick={() => approveCenterReq(req)} className="rounded bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-1 text-[10px] font-bold text-emerald-400 border border-emerald-500/20 transition">Qabul</button>
-                    <button onClick={() => rejectCenterReq(req)} className="rounded bg-rose-500/10 hover:bg-rose-500/20 px-2 py-1 text-[10px] font-bold text-rose-400 border border-rose-500/20 transition">Rad</button>
+                    <button onClick={() => approveCenterReq(req)} className="rounded bg-surface-2 hover:bg-surface-1 px-2 py-1 text-[10px] font-bold text-success border border-success/45 transition">Qabul</button>
+                    <button onClick={() => rejectCenterReq(req)} className="rounded bg-surface-2 hover:bg-surface-1 px-2 py-1 text-[10px] font-bold text-error border border-error/45 transition">Rad</button>
                   </div>
                 </div>
               </div>
             ))}
             {dashboardRequests.length === 0 && (
-              <div className="py-10 text-center text-[12px] font-semibold text-slate-500">Pending arizalar yo'q</div>
+              <div className="py-10 text-center text-[12px] font-semibold text-text-secondary">Pending arizalar yo'q</div>
             )}
           </div>
         </section>
@@ -2544,33 +2530,33 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
       <div className="grid gap-[12px] xl:grid-cols-[1fr_1fr]">
         <section className="admin-card p-5">
-          <h2 className="mb-4 text-[12px] font-black uppercase tracking-wider text-slate-300">Tashkilotlar holati</h2>
+          <h2 className="mb-4 text-[12px] font-bold uppercase tracking-wider text-text-primary">Tashkilotlar holati</h2>
           <AdminDonut segments={[
-            { label: 'Tasdiqlangan', value: approvedCenterPct, color: '#C0362C' },
-            { label: 'Kutilmoqda', value: pendingCenterPct, color: '#f59e0b' },
-            { label: 'Boshqa', value: otherCenterPct, color: '#10b981' },
+            { label: 'Tasdiqlangan', value: approvedCenterPct, color: 'rgb(var(--color-success))' },
+            { label: 'Kutilmoqda', value: pendingCenterPct, color: 'rgb(var(--color-warning))' },
+            { label: 'Boshqa', value: otherCenterPct, color: 'rgb(var(--color-text-secondary))' },
           ]} />
         </section>
 
         <section className="admin-card p-5">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-[12px] font-black uppercase tracking-wider text-slate-300">Bildirishnomalar</h2>
-            <button onClick={() => setPage('requests')} className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 transition">Hammasi</button>
+            <h2 className="text-[12px] font-bold uppercase tracking-wider text-text-primary">Bildirishnomalar</h2>
+            <button onClick={() => setPage('requests')} className="text-[11px] font-bold text-accent hover:text-accent transition">Hammasi</button>
           </div>
           <div className="space-y-4">
             {dashboardNotifications.map(item => (
               <div key={item.id} className="flex items-start gap-3 p-1">
-                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${item.tone === 'rose' ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 shadow-[0_0_10px_rgba(239,68,68,0.1)]' : item.tone === 'emerald' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]' : 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20 shadow-[0_0_10px_rgba(99,102,241,0.1)]'}`}>
+                <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border ${item.tone === 'rose' ? 'bg-surface-2 text-error border-error/45' : item.tone === 'emerald' ? 'bg-surface-2 text-success border-success/45' : 'bg-surface-2 text-accent border-accent/45'}`}>
                   <Icon name={item.tone === 'rose' ? 'info' : item.tone === 'emerald' ? 'check' : 'bell'} size={14} />
                 </div>
                 <div className="min-w-0">
-                  <div className="truncate text-[12px] font-bold text-slate-200">{item.title}</div>
-                  <div className="mt-0.5 truncate text-[10px] text-slate-500 font-bold">{item.time || ''}</div>
+                  <div className="truncate text-[12px] font-bold text-text-primary">{item.title}</div>
+                  <div className="mt-0.5 truncate text-[10px] text-text-secondary font-bold">{item.time || ''}</div>
                 </div>
               </div>
             ))}
             {dashboardNotifications.length === 0 && (
-              <div className="py-10 text-center text-[12px] font-semibold text-slate-500">Yangi bildirishnomalar yo'q</div>
+              <div className="py-10 text-center text-[12px] font-semibold text-text-secondary">Yangi bildirishnomalar yo'q</div>
             )}
           </div>
         </section>
@@ -2582,37 +2568,37 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         title="Foydalanuvchilar holati"
         width="max-w-xl"
       >
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-white/5 px-4 py-3">
-          <div className="text-[11px] font-bold text-white/60">
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-xl bg-surface-2 px-4 py-3">
+          <div className="text-[11px] font-bold text-text-secondary">
             {presenceUnknown ? "Onlayn holati mavjud emas" : `${presenceOnlineCount.toLocaleString()} ta onlayn`}
           </div>
-          <div className="text-[11px] font-bold text-white/40">
+          <div className="text-[11px] font-bold text-text-secondary">
             Jami {presenceRows.length.toLocaleString()} ta
           </div>
         </div>
-        <div className="max-h-96 overflow-y-auto admin-scroll divide-y divide-white/5 rounded-xl border border-white/10 bg-white/[0.02]">
+        <div className="max-h-96 overflow-y-auto admin-scroll divide-y divide-edge rounded-xl border border-edge bg-surface-1">
           {presenceLoading ? (
-            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Yuklanmoqda...</div>
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-text-secondary">Yuklanmoqda...</div>
           ) : apiOnlineUsersRes.error ? (
-            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</div>
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-text-secondary">Ma'lumotni yuklab bo'lmadi</div>
           ) : presenceRows.length === 0 ? (
-            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Foydalanuvchilar yo'q</div>
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-text-secondary">Foydalanuvchilar yo'q</div>
           ) : presenceRows.map(row => (
             <div key={row.user_id} className="flex items-center gap-3 px-4 py-2.5">
               <span
                 className={`inline-block h-2 w-2 shrink-0 rounded-full ${
                   row.is_online === true
-                    ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
-                    : 'bg-slate-600'
+                    ? 'bg-success'
+                    : 'bg-edge-strong'
                 }`}
               />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-bold text-white">{row.full_name || "Foydalanuvchi"}</div>
-                <div className="font-mono text-[10px] text-white/40">{maskPhoneDisplay(row.phone, '')}</div>
+                <div className="truncate text-xs font-bold text-text-primary">{row.full_name || "Foydalanuvchi"}</div>
+                <div className="font-mono text-[10px] text-text-secondary">{maskPhoneDisplay(row.phone, '')}</div>
               </div>
               <div className="shrink-0 text-right">
-                <span className={`text-[10px] font-extrabold uppercase tracking-wider ${
-                  row.is_online === true ? 'text-emerald-400' : 'text-slate-500'
+                <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                  row.is_online === true ? 'text-success' : 'text-text-secondary'
                 }`}>
                   {row.is_online === null ? "Noma'lum" : row.is_online ? 'Onlayn' : 'Oflayn'}
                 </span>
@@ -2620,7 +2606,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     null bo'lsa (Redis o'chgan) holat noma'lum — "3 soat oldin"
                     yozish "hozir oflayn" degan yolg'on xulosaga olib kelardi. */}
                 {row.is_online === false && (
-                  <div className="mt-0.5 text-[10px] font-semibold text-slate-500"
+                  <div className="mt-0.5 text-[10px] font-semibold text-text-secondary"
                        title={row.last_seen_at ? formatAdminDateTime(row.last_seen_at) : ''}>
                     {row.last_seen_at ? formatAdminRelativeTime(row.last_seen_at) : 'Hech qachon'}
                   </div>
@@ -2629,7 +2615,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </div>
           ))}
         </div>
-        <p className="mt-3 text-[10px] font-semibold text-slate-500 leading-relaxed">
+        <p className="mt-3 text-[10px] font-semibold text-text-secondary leading-relaxed">
           "Onlayn" — oxirgi 3 daqiqada kamida bitta so'rov yuborgan foydalanuvchi.
           Sahifani ochib qo'yib, hech narsa qilmayotgan foydalanuvchi bir necha
           daqiqadan keyin oflayn ko'rinadi. Oflayn qatordagi vaqt — oxirgi
@@ -2649,8 +2635,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderRequests = () => (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div>
-        <h1 className="text-[20px] font-black leading-tight text-white">Direktor arizalari</h1>
-        <p className="mt-1 text-[11px] font-bold text-slate-400">Direktor tashkilot yoki markaz ro'yxatdan o'tkazish uchun yuborgan arizalari.</p>
+        <h1 className="text-[20px] font-bold leading-tight text-text-primary">Direktor arizalari</h1>
+        <p className="mt-1 text-[11px] font-bold text-text-secondary">Direktor tashkilot yoki markaz ro'yxatdan o'tkazish uchun yuborgan arizalari.</p>
       </div>
       <CenterApprovalList />
     </div>
@@ -2660,8 +2646,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-[20px] font-black leading-tight text-white">Tashkilotlar va markazlar</h1>
-          <p className="mt-1 text-[11px] font-bold text-slate-400">Faqat qabul qilingan tashkilotlar o'quvchilar va mehmonlarga ko'rinadi.</p>
+          <h1 className="text-[20px] font-bold leading-tight text-text-primary">Tashkilotlar va markazlar</h1>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">Faqat qabul qilingan tashkilotlar o'quvchilar va mehmonlarga ko'rinadi.</p>
         </div>
         <div className="flex gap-2">
           <AdminPill status="approved">{approvedCenters.length} tasdiqlangan</AdminPill>
@@ -2673,55 +2659,55 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <div className="overflow-x-auto admin-scroll">
           <table className="w-full min-w-[1120px] text-left">
             <thead className="admin-table-hdr">
-              <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+              <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
                 {['Tashkilot', 'Turi', 'Manzil', 'Direktor', 'O\'quvchi', 'Olimpiada', 'Holat', 'Premium', 'Amal'].map(h => (
                   <th key={h} className="px-5 py-3.5">{h}</th>
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-edge">
               {centers.map(center => {
                 const owner = getOwnerInfo(center);
                 return (
-                  <tr key={center.id} className="text-xs admin-table-row text-slate-300">
+                  <tr key={center.id} className="text-xs admin-table-row text-text-primary">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <AdminCenterLogo name={center.name} src={center.imageUrl} />
                         <div>
-                          <div className="font-bold text-white">{center.name}</div>
-                          <div className="text-[10px] font-semibold text-slate-500">{formatAdminDate(center.createdAt)}</div>
+                          <div className="font-bold text-text-primary">{center.name}</div>
+                          <div className="text-[10px] font-semibold text-text-secondary">{formatAdminDate(center.createdAt)}</div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-5 py-4 font-semibold text-slate-400">{center.organizationType || "O'quv markaz"}</td>
-                    <td className="px-5 py-4 font-semibold text-slate-400">{formatCenterLocation(center)}</td>
+                    <td className="px-5 py-4 font-semibold text-text-secondary">{center.organizationType || "O'quv markaz"}</td>
+                    <td className="px-5 py-4 font-semibold text-text-secondary">{formatCenterLocation(center)}</td>
                     <td className="px-5 py-4">
-                      <div className="font-semibold text-slate-300">{owner.name}</div>
-                      {owner.phone && <div className="text-[10px] text-slate-500 font-semibold">{owner.phone}</div>}
+                      <div className="font-semibold text-text-primary">{owner.name}</div>
+                      {owner.phone && <div className="text-[10px] text-text-secondary font-semibold">{owner.phone}</div>}
                     </td>
-                    <td className="px-5 py-4 font-bold text-slate-300">{center.students || 0}</td>
-                    <td className="px-5 py-4 font-bold text-slate-300">{center.olympiads || 0}</td>
+                    <td className="px-5 py-4 font-bold text-text-primary">{center.students || 0}</td>
+                    <td className="px-5 py-4 font-bold text-text-primary">{center.olympiads || 0}</td>
                     <td className="px-5 py-4"><AdminPill status={center.status} /></td>
                     <td className="px-5 py-4">
                       {center.isPremium ? (
                         <div className="flex items-center gap-2">
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-0.5 text-[10px] font-bold text-emerald-400">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 border border-success/45 px-2.5 py-0.5 text-[10px] font-bold text-success">
                             <Icon name="check" size={11} /> Premium
                           </span>
-                          <button onClick={() => setRevokePremiumConfirm(center)} className="rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] font-bold text-rose-400 ring-1 ring-rose-500/20 hover:bg-rose-500/10 transition">Bekor qilish</button>
+                          <button onClick={() => setRevokePremiumConfirm(center)} className="rounded-lg bg-surface-2 px-2.5 py-1.5 text-[11px] font-bold text-error ring-1 ring-error/45 hover:bg-surface-2 transition">Bekor qilish</button>
                         </div>
                       ) : (
-                        <button onClick={() => togglePremium(center)} className="rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-400 ring-1 ring-amber-500/20 hover:bg-amber-500/20 transition">Premium berish</button>
+                        <button onClick={() => togglePremium(center)} className="rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-warning ring-1 ring-warning/45 hover:bg-surface-2 transition">Premium berish</button>
                       )}
                     </td>
                     <td className="px-5 py-4">
                       {center.status === 'pending' ? (
                         <div className="flex gap-2">
-                          <button onClick={() => approveCenterDirect(center)} className="rounded-lg bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)] transition">Qabul</button>
-                          <button onClick={() => setRejectCenterConfirm(center)} className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-[11px] font-bold text-rose-400 ring-1 ring-rose-500/20 hover:bg-rose-500/20 transition">Rad</button>
+                          <button onClick={() => approveCenterDirect(center)} className="rounded-lg btn-success px-3 py-1.5 text-[11px] font-bold transition">Qabul</button>
+                          <button onClick={() => setRejectCenterConfirm(center)} className="rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-error ring-1 ring-error/45 hover:bg-surface-2 transition">Rad</button>
                         </div>
                       ) : (
-                        <button onClick={() => setRejectCenterConfirm(center)} className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 hover:bg-white/10 hover:text-white transition">
+                        <button onClick={() => setRejectCenterConfirm(center)} className="rounded-lg border border-edge bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-primary hover:bg-surface-2 hover:text-text-primary transition">
                           Ro'yxatdan olish
                         </button>
                       )}
@@ -2730,7 +2716,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 );
               })}
               {centers.length === 0 && (
-                <tr><td colSpan={9} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Tashkilotlar yo'q</td></tr>
+                <tr><td colSpan={9} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Tashkilotlar yo'q</td></tr>
               )}
             </tbody>
           </table>
@@ -2816,18 +2802,18 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const renderHistorySection = ({ title, note, loading, error, rows, emptyText, renderRow }) => (
       <div>
         <div className="mb-2 flex items-baseline justify-between gap-2">
-          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">{title}</div>
-          {note && <div className="text-[10px] font-bold text-indigo-400 truncate">{note}</div>}
+          <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">{title}</div>
+          {note && <div className="text-[10px] font-bold text-accent truncate">{note}</div>}
         </div>
-        <div className="max-h-56 overflow-y-auto admin-scroll divide-y divide-white/5 rounded-xl border border-white/10 bg-white/[0.02]">
+        <div className="max-h-56 overflow-y-auto admin-scroll divide-y divide-edge rounded-xl border border-edge bg-surface-1">
           {!isApi ? (
-            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Faqat API rejimida ko'rinadi</div>
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-text-secondary">Faqat API rejimida ko'rinadi</div>
           ) : loading ? (
-            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Yuklanmoqda...</div>
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-text-secondary">Yuklanmoqda...</div>
           ) : error ? (
-            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</div>
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-text-secondary">Ma'lumotni yuklab bo'lmadi</div>
           ) : rows.length === 0 ? (
-            <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">{emptyText}</div>
+            <div className="px-4 py-5 text-center text-[11px] font-semibold text-text-secondary">{emptyText}</div>
           ) : rows.map(renderRow)}
         </div>
       </div>
@@ -2841,14 +2827,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       >
         {info && (
           <div className="space-y-5">
-            <div className="flex items-center gap-3 rounded-xl bg-white/5 p-3">
-              <Avatar name={info.name} src={info.avatarUrl} size={44} />
+            <div className="flex items-center gap-3 rounded-xl bg-surface-2 p-3">
+              <Avatar name={info.name} src={info.avatarUrl} size={44} gradient="bg-pencil-600" />
               <div className="min-w-0">
-                <div className="text-sm font-semibold text-white truncate">{info.name}</div>
-                <div className="text-xs text-white/40 font-mono">{info.phone || '—'}</div>
+                <div className="text-sm font-semibold text-text-primary truncate">{info.name}</div>
+                <div className="text-xs text-text-secondary font-mono">{info.phone || '—'}</div>
               </div>
               {apiUserDetailRes.loading && (
-                <span className="ml-auto text-[10px] font-bold text-white/30">Yuklanmoqda...</span>
+                <span className="ml-auto text-[10px] font-bold text-text-secondary">Yuklanmoqda...</span>
               )}
             </div>
 
@@ -2859,23 +2845,23 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 { label: 'Tashkilot', value: info.center || '—' },
                 { label: 'Tarif', value: info.planName || '—' },
               ].map(f => (
-                <div key={f.label} className="rounded-xl bg-white/5 px-3 py-2.5">
-                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">{f.label}</div>
-                  <div className="mt-1 text-xs font-bold text-white break-words">{f.value}</div>
+                <div key={f.label} className="rounded-xl bg-surface-2 px-3 py-2.5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">{f.label}</div>
+                  <div className="mt-1 text-xs font-bold text-text-primary break-words">{f.value}</div>
                 </div>
               ))}
             </div>
 
             <div>
-              <div className="mb-2 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Rollar</div>
+              <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Rollar</div>
               <div className="flex flex-wrap gap-2">
                 {roleEntries.length > 0 ? roleEntries.map(([key, val]) => (
-                  <span key={key} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1.5 text-[11px] font-bold text-indigo-400">
+                  <span key={key} className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 border border-accent/45 px-2.5 py-1.5 text-[11px] font-bold text-accent">
                     {ROLE_META[key]?.label || key}
                     <AdminPill status={val?.status || 'pending'} />
                   </span>
                 )) : (
-                  <span className="rounded-lg bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1.5 text-[11px] font-bold text-indigo-400">
+                  <span className="rounded-lg bg-surface-2 border border-accent/45 px-2.5 py-1.5 text-[11px] font-bold text-accent">
                     {detailUser?.role || '—'}
                   </span>
                 )}
@@ -2894,10 +2880,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             {/* Blok sababi va muddati — faqat hozir bloklangan foydalanuvchida.
                 Muddat ko'rsatilmagan bo'lsa blok doimiy. */}
             {!info.isActive && info.blockReason && (
-              <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-3.5 py-3">
-                <div className="text-[10px] font-extrabold uppercase tracking-wider text-rose-300/70">Bloklash sababi</div>
-                <div className="mt-1 text-xs font-bold text-rose-100 break-words">{info.blockReason}</div>
-                <div className="mt-2 text-[11px] font-semibold text-rose-300/80">
+              <div className="rounded-xl border border-error/45 bg-surface-2 px-3.5 py-3">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-error">Bloklash sababi</div>
+                <div className="mt-1 text-xs font-bold text-text-primary break-words">{info.blockReason}</div>
+                <div className="mt-2 text-[11px] font-semibold text-error">
                   {info.blockedUntil
                     ? `Ochilish vaqti: ${formatAdminDateTime(info.blockedUntil)}`
                     : 'Muddat: doimiy (admin qo\'lda ochadi)'}
@@ -2922,13 +2908,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 return (
                   <div key={tx.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
                     <div className="min-w-0">
-                      <div className="truncate text-[11px] font-bold text-white">{tx.plan_name}</div>
-                      <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                      <div className="truncate text-[11px] font-bold text-text-primary">{tx.plan_name}</div>
+                      <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
                         {formatAdminDateTime(tx.created_at)} · {adminProviderLabel(tx.provider)}
                       </div>
                     </div>
                     <div className="shrink-0 text-right">
-                      <div className="text-[11px] font-bold tabular-nums text-white">{formatAdminAmount(tx.amount)}</div>
+                      <div className="text-[11px] font-bold font-data text-text-primary">{formatAdminAmount(tx.amount)}</div>
                       <div className={`mt-0.5 text-[10px] font-bold ${st.cls}`}>{st.label}</div>
                     </div>
                   </div>
@@ -2948,14 +2934,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               renderRow: (event) => (
                 <div key={event.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
                   <div className="min-w-0">
-                    <div className="truncate text-[11px] font-bold text-white" title={event.user_agent || ''}>
+                    <div className="truncate text-[11px] font-bold text-text-primary" title={event.user_agent || ''}>
                       {adminDeviceLabel(event.user_agent)}
                     </div>
-                    <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                    <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
                       {formatAdminDateTime(event.created_at)}
                     </div>
                   </div>
-                  <div className="shrink-0 font-mono text-[10px] text-slate-400">{event.ip || '—'}</div>
+                  <div className="shrink-0 font-mono text-[10px] text-text-secondary">{event.ip || '—'}</div>
                 </div>
               ),
             })}
@@ -2979,15 +2965,15 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 return (
                   <div key={session.login_event_id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
                     <div className="min-w-0">
-                      <div className="truncate text-[11px] font-bold text-white" title={session.user_agent || ''}>
+                      <div className="truncate text-[11px] font-bold text-text-primary" title={session.user_agent || ''}>
                         {adminDeviceLabel(session.user_agent)}
                       </div>
-                      <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                      <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
                         {formatAdminDateTime(session.created_at)} · <span className="font-mono">{session.ip_address || '—'}</span>
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      <span className={`text-[10px] font-bold ${session.is_active ? 'text-emerald-400' : 'text-slate-500'}`}>
+                      <span className={`text-[10px] font-bold ${session.is_active ? 'text-success' : 'text-text-secondary'}`}>
                         {session.is_active ? 'Faol' : 'Tugagan'}
                       </span>
                       {/* Tugagan seansda yakunlaydigan narsa yo'q — backend ham
@@ -2997,7 +2983,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                         <button
                           onClick={() => endUserSession(session.login_event_id)}
                           disabled={busy}
-                          className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-bold text-rose-400 transition hover:bg-rose-500/20 disabled:opacity-50"
+                          className="rounded-lg border border-error/45 bg-surface-2 px-2.5 py-1.5 text-[10px] font-bold text-error transition hover:bg-surface-2 disabled:opacity-50"
                         >
                           {busy ? '...' : 'Yakunlash'}
                         </button>
@@ -3022,12 +3008,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               renderRow: (warn) => (
                 <div key={warn.id} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
                   <div className="min-w-0">
-                    <div className="text-[11px] font-bold text-white break-words">{warn.message}</div>
-                    <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                    <div className="text-[11px] font-bold text-text-primary break-words">{warn.message}</div>
+                    <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
                       {formatAdminDateTime(warn.created_at)} · {warn.title}
                     </div>
                   </div>
-                  <div className={`shrink-0 text-[10px] font-bold ${warn.is_read ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  <div className={`shrink-0 text-[10px] font-bold ${warn.is_read ? 'text-success' : 'text-warning'}`}>
                     {warn.is_read ? "O'qilgan" : "O'qilmagan"}
                   </div>
                 </div>
@@ -3051,8 +3037,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               renderRow: (q) => (
                 <div key={q.id} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
                   <div className="min-w-0">
-                    <div className="text-[11px] font-bold text-white break-words">{q.text}</div>
-                    <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                    <div className="text-[11px] font-bold text-text-primary break-words">{q.text}</div>
+                    <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
                       {q.subject} · {q.center_name} · {formatAdminDateTime(q.created_at)}
                     </div>
                   </div>
@@ -3064,12 +3050,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       onClick={() => setContentDeleteConfirm({
                         type: 'question', id: q.id, label: q.text,
                       })}
-                      className="shrink-0 rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-bold text-rose-400 transition hover:bg-rose-500/20"
+                      className="shrink-0 rounded-lg border border-error/45 bg-surface-2 px-2.5 py-1.5 text-[10px] font-bold text-error transition hover:bg-surface-2"
                     >
                       O'chirish
                     </button>
                   ) : (
-                    <span className="shrink-0 text-[10px] font-bold text-slate-500">Arxivlangan</span>
+                    <span className="shrink-0 text-[10px] font-bold text-text-secondary">Arxivlangan</span>
                   )}
                 </div>
               ),
@@ -3085,15 +3071,15 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               renderRow: (o) => (
                 <div key={o.id} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
                   <div className="min-w-0">
-                    <div className="truncate text-[11px] font-bold text-white">{o.title}</div>
-                    <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                    <div className="truncate text-[11px] font-bold text-text-primary">{o.title}</div>
+                    <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
                       {o.subject} · {o.center_name} · {formatAdminDateTime(o.created_at)}
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <AdminPill status={o.status} />
                     {o.is_deleted ? (
-                      <span className="text-[10px] font-bold text-slate-500">O'chirilgan</span>
+                      <span className="text-[10px] font-bold text-text-secondary">O'chirilgan</span>
                     ) : o.status === 'active' ? (
                       // Backend ham faol tadbirni rad etadi: o'quvchilar hozir
                       // topshirayotgan imtihonni olib qo'yish ularning ishini
@@ -3102,7 +3088,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                         type="button"
                         disabled
                         title="Faol tadbirni o'chirib bo'lmaydi — avval uni nofaol qiling"
-                        className="cursor-not-allowed rounded-lg border border-white/10 bg-white/5 px-2.5 py-1.5 text-[10px] font-bold text-slate-500"
+                        className="cursor-not-allowed rounded-lg border border-edge bg-surface-2 px-2.5 py-1.5 text-[10px] font-bold text-text-secondary"
                       >
                         O'chirish
                       </button>
@@ -3111,7 +3097,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                         onClick={() => setContentDeleteConfirm({
                           type: 'olympiad', id: o.id, label: o.title,
                         })}
-                        className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1.5 text-[10px] font-bold text-rose-400 transition hover:bg-rose-500/20"
+                        className="rounded-lg border border-error/45 bg-surface-2 px-2.5 py-1.5 text-[10px] font-bold text-error transition hover:bg-surface-2"
                       >
                         O'chirish
                       </button>
@@ -3134,15 +3120,15 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               renderRow: (a) => (
                 <div key={a.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
                   <div className="min-w-0">
-                    <div className="truncate text-[11px] font-bold text-white">{a.olympiad_title}</div>
-                    <div className="mt-0.5 text-[10px] font-semibold text-slate-500">
+                    <div className="truncate text-[11px] font-bold text-text-primary">{a.olympiad_title}</div>
+                    <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
                       {formatAdminDateTime(a.submitted_at)}
                     </div>
                   </div>
                   <div className="shrink-0 text-right">
-                    <div className="text-[11px] font-bold tabular-nums text-white">{a.score}%</div>
+                    <div className="text-[11px] font-bold font-data text-text-primary">{a.score}%</div>
                     {a.disqualified && (
-                      <div className="mt-0.5 text-[10px] font-bold text-rose-400">Diskvalifikatsiya</div>
+                      <div className="mt-0.5 text-[10px] font-bold text-error">Diskvalifikatsiya</div>
                     )}
                   </div>
                 </div>
@@ -3159,21 +3145,21 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   onClick={() => openWarnModal({
                     backendId: detailBackendId, name: info.name, phone: info.phone,
                   })}
-                  className="rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition"
+                  className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] font-bold text-warning border border-warning/45 hover:bg-surface-2 transition"
                 >
                   Ogohlantirish
                 </button>
                 {info.totpEnabled && (
                   <button
                     onClick={() => setResetTotpConfirm({ backendId: detailBackendId, name: info.name })}
-                    className="rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition"
+                    className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] font-bold text-warning border border-warning/45 hover:bg-surface-2 transition"
                   >
                     2FA'ni o'chirish
                   </button>
                 )}
                 <button
                   onClick={() => setForceLogoutConfirm({ backendId: detailBackendId, name: info.name })}
-                  className="rounded-lg bg-white/5 px-3 py-2 text-[11px] font-bold text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white transition"
+                  className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] font-bold text-text-primary border border-edge hover:bg-surface-2 hover:text-text-primary transition"
                 >
                   Barcha seanslarni yakunlash
                 </button>
@@ -3183,7 +3169,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 {!info.isPlatformAdmin && info.isActive && (
                   <button
                     onClick={() => setImpersonateConfirm({ backendId: detailBackendId, name: info.name })}
-                    className="rounded-lg bg-amber-500/10 px-3 py-2 text-[11px] font-bold text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition"
+                    className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] font-bold text-warning border border-warning/45 hover:bg-surface-2 transition"
                   >
                     Foydalanuvchi sifatida ko'rish
                   </button>
@@ -3196,7 +3182,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     onClick={() => openMergeModal({
                       backendId: detailBackendId, name: info.name, phone: info.phone,
                     })}
-                    className="rounded-lg bg-indigo-500/10 px-3 py-2 text-[11px] font-bold text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition"
+                    className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] font-bold text-accent border border-accent/45 hover:bg-surface-1 transition"
                   >
                     Hisoblarni birlashtirish
                   </button>
@@ -3217,12 +3203,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <h1 className="text-[20px] font-black leading-tight text-white">Foydalanuvchilar</h1>
-          <p className="mt-1 text-[11px] font-bold text-slate-400">Platformadagi foydalanuvchi rollari va holati. Admin userlar hisobga olinmaydi.</p>
+          <h1 className="text-[20px] font-bold leading-tight text-text-primary">Foydalanuvchilar</h1>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">Platformadagi foydalanuvchi rollari va holati. Admin userlar hisobga olinmaydi.</p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center md:w-auto">
           <div className="relative w-full md:w-72">
-            <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
             <input
               value={userSearch}
               onChange={e => setUserSearch(e.target.value)}
@@ -3234,7 +3220,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             onClick={handleExportUsersCsv}
             disabled={csvBusy}
             title="Joriy qidiruv bo'yicha filtrlangan ro'yxatni CSV qilib yuklaydi (eng ko'pi 5000 qator)"
-            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 text-[11px] font-bold text-slate-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50">
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-edge bg-surface-2 px-3 text-[11px] font-bold text-text-primary transition hover:bg-surface-2 hover:text-text-primary disabled:opacity-50">
             <Icon name="download" size={13} /> {csvBusy ? 'Yuklanmoqda...' : 'CSV yuklab olish'}
           </button>
         </div>
@@ -3244,31 +3230,31 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           2FA tiklash / seanslarni yakunlash / premium ATAYLAB yo'q: ular bitta
           foydalanuvchilik amallar bo'lib qoladi. */}
       {selectedUserIds.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-indigo-500/25 bg-indigo-500/10 px-4 py-3">
-          <span className="text-xs font-extrabold text-white">{selectedUserIds.length} ta tanlandi</span>
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-accent/45 bg-surface-2 px-4 py-3">
+          <span className="text-xs font-bold text-text-primary">{selectedUserIds.length} ta tanlandi</span>
           <div className="flex flex-wrap items-center gap-2 md:ml-auto">
             <button
               type="button"
               onClick={() => openBulkBlockModal('block')}
-              className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-1.5 text-[11px] font-bold text-rose-400 transition hover:bg-rose-500/20">
+              className="rounded-lg border border-error/45 bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-error transition hover:bg-surface-2">
               Bloklash
             </button>
             <button
               type="button"
               onClick={() => openBulkBlockModal('unblock')}
-              className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-400 transition hover:bg-emerald-500/20">
+              className="rounded-lg border border-success/45 bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-success transition hover:bg-surface-1">
               Blokni ochish
             </button>
             <button
               type="button"
               onClick={openBulkRoleModal}
-              className="rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-1.5 text-[11px] font-bold text-indigo-400 transition hover:bg-indigo-500/20">
+              className="rounded-lg border border-accent/45 bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-accent transition hover:bg-surface-1">
               Rol o'zgartirish
             </button>
             <button
               type="button"
               onClick={() => setSelectedUserIds([])}
-              className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 transition hover:bg-white/10 hover:text-white">
+              className="rounded-lg border border-edge bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-primary transition hover:bg-surface-2 hover:text-text-primary">
               Tanlovni bekor qilish
             </button>
           </div>
@@ -3278,84 +3264,84 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <div className="overflow-x-auto admin-scroll">
           <table className="w-full min-w-[760px] text-left">
             <thead className="admin-table-hdr">
-              <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+              <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
                 <th className="px-5 py-3.5">
                   {/* Faqat ko'rinayotgan (filtrlangan) qatorlarni tanlaydi. */}
-                  <button
+                  <button aria-pressed={allVisibleSelected}
                     type="button"
                     onClick={toggleSelectAllVisible}
                     aria-label="Hammasini tanlash"
-                    className={`flex h-4 w-4 items-center justify-center rounded border transition ${allVisibleSelected ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-white/25 hover:border-white/50'}`}>
+                    className={`flex h-4 w-4 items-center justify-center rounded border transition ${allVisibleSelected ? 'border-accent-fill bg-accent-fill text-on-accent' : 'border-edge-strong hover:border-text-secondary'}`}>
                     {allVisibleSelected && <Icon name="check" size={12} />}
                   </button>
                 </th>
                 {['Foydalanuvchi', 'Telefon', 'Rol', 'Tashkilot', 'Qo\'shilgan', 'Holat', 'Premium', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-edge">
               {(() => {
                 if (visibleUserRows.length === 0) {
-                  return <tr><td colSpan={9} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">{userTableQuery ? 'Qidiruv natijasi topilmadi' : 'Foydalanuvchilar yo\'q'}</td></tr>;
+                  return <tr><td colSpan={9} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">{userTableQuery ? 'Qidiruv natijasi topilmadi' : 'Foydalanuvchilar yo\'q'}</td></tr>;
                 }
                 return visibleUserRows.map(row => (
-                <tr key={row.id} className="text-xs admin-table-row text-slate-300">
+                <tr key={row.id} className="text-xs admin-table-row text-text-primary">
                   <td className="px-5 py-4">
-                    <button
+                    <button aria-pressed={selectedUserIds.includes(row.id)}
                       type="button"
                       onClick={() => toggleUserSelected(row.id)}
                       aria-label={`${row.name} — tanlash`}
-                      className={`flex h-4 w-4 items-center justify-center rounded border transition ${selectedUserIds.includes(row.id) ? 'bg-indigo-500 border-indigo-500 text-white' : 'border-white/25 hover:border-white/50'}`}>
+                      className={`flex h-4 w-4 items-center justify-center rounded border transition ${selectedUserIds.includes(row.id) ? 'border-accent-fill bg-accent-fill text-on-accent' : 'border-edge-strong hover:border-text-secondary'}`}>
                       {selectedUserIds.includes(row.id) && <Icon name="check" size={12} />}
                     </button>
                   </td>
-                  <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={row.name} src={row.avatarUrl || ''} size={34} /><span className="font-bold text-white">{row.name}</span></div></td>
-                  <td className="px-5 py-4 font-mono text-[11px] text-slate-400">{maskPhoneDisplay(row.phone, '')}</td>
-                  <td className="px-5 py-4"><span className="rounded-md bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-400">{row.role}</span></td>
-                  <td className="px-5 py-4 font-semibold text-slate-400">{row.center}</td>
-                  <td className="px-5 py-4 font-semibold text-slate-400">{row.joined}</td>
+                  <td className="px-5 py-4"><div className="flex items-center gap-3"><Avatar name={row.name} src={row.avatarUrl || ''} size={34} gradient="bg-pencil-600" /><span className="font-bold text-text-primary">{row.name}</span></div></td>
+                  <td className="px-5 py-4 font-mono text-[11px] text-text-secondary">{maskPhoneDisplay(row.phone, '')}</td>
+                  <td className="px-5 py-4"><span className="rounded-md bg-surface-2 border border-accent/45 px-2 py-0.5 text-[10px] font-bold text-accent">{row.role}</span></td>
+                  <td className="px-5 py-4 font-semibold text-text-secondary">{row.center}</td>
+                  <td className="px-5 py-4 font-semibold text-text-secondary">{row.joined}</td>
                   <td className="px-5 py-4"><AdminPill status={row.status === 'Faol' ? 'approved' : 'rejected'}>{row.status}</AdminPill></td>
                   <td className="px-5 py-4">
                     {row.isPremium ? (
-                      <button onClick={() => openPremiumModal(row)} className="rounded-lg bg-amber-500/15 px-3 py-1.5 text-[11px] font-bold text-amber-400 ring-1 ring-amber-500/30 hover:bg-amber-500/25 transition">⭐ Premium ✓</button>
+                      <button onClick={() => openPremiumModal(row)} className="rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-warning ring-1 ring-warning/45 hover:bg-surface-1 transition">⭐ Premium ✓</button>
                     ) : row.orgBoundPremium ? (
                       <button
                         type="button"
                         disabled
                         title="O'qituvchi va manager premiumi markazning (tashkilotning) obunasidan keladi — shaxsiy premium berilmaydi"
-                        className="cursor-not-allowed rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-500 ring-1 ring-white/10">
+                        className="cursor-not-allowed rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-secondary ring-1 ring-edge">
                         Tashkilot obunasi
                       </button>
                     ) : (
-                      <button onClick={() => openPremiumModal(row)} className="rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 ring-1 ring-white/10 hover:bg-amber-500/10 hover:text-amber-400 transition">Premium berish</button>
+                      <button onClick={() => openPremiumModal(row)} className="rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-primary ring-1 ring-edge hover:bg-surface-2 hover:text-warning transition">Premium berish</button>
                     )}
                   </td>
                   <td className="px-5 py-4">
                     <div className="flex flex-wrap items-center gap-2">
-                      <button onClick={() => setDetailUser(row)} className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white transition">
+                      <button onClick={() => setDetailUser(row)} className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-primary border border-edge hover:bg-surface-2 hover:text-text-primary transition">
                         <Icon name="eye" size={12} /> Batafsil
                       </button>
-                      <button onClick={() => openRoleModal(row)} className="rounded-lg bg-indigo-500/10 px-3 py-1.5 text-[11px] font-bold text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20 transition">
+                      <button onClick={() => openRoleModal(row)} className="rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-accent border border-accent/45 hover:bg-surface-1 transition">
                         Rol
                       </button>
-                      <button onClick={() => openPhoneModal(row)} className="rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white transition">
+                      <button onClick={() => openPhoneModal(row)} className="rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-primary border border-edge hover:bg-surface-2 hover:text-text-primary transition">
                         Telefon raqamini o'zgartirish
                       </button>
-                      <button onClick={() => setResetPasswordConfirm(row)} className="rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition">
+                      <button onClick={() => setResetPasswordConfirm(row)} className="rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-warning border border-warning/45 hover:bg-surface-2 transition">
                         Parolni tiklash
                       </button>
                       {/* Bloklashdan oldingi qadam — tugma ham aynan "Bloklash"
                           yonida turadi. */}
-                      <button onClick={() => openWarnModal(row)} className="rounded-lg bg-amber-500/10 px-3 py-1.5 text-[11px] font-bold text-amber-400 border border-amber-500/20 hover:bg-amber-500/20 transition">
+                      <button onClick={() => openWarnModal(row)} className="rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-warning border border-warning/45 hover:bg-surface-2 transition">
                         Ogohlantirish
                       </button>
-                      <button onClick={() => openBlockModal(row)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${row.status === 'Bloklangan' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20'}`}>
+                      <button onClick={() => openBlockModal(row)} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition ${row.status === 'Bloklangan' ? 'bg-surface-2 text-success border border-success/45 hover:bg-surface-1' : 'bg-surface-2 text-error border border-error/45 hover:bg-surface-2'}`}>
                         {row.status === 'Bloklangan' ? 'Ochish' : 'Bloklash'}
                       </button>
                       {/* Bloklashdan keyingi oxirgi qadam — shu sabab aynan
                           uning yonida. Admin hisobiga qo'llanmaydi (backend ham
                           rad etadi), shuning uchun tugma ham ko'rsatilmaydi. */}
                       {!row.isPlatformAdmin && (
-                        <button onClick={() => openDeleteUserModal(row)} className="rounded-lg bg-rose-500/10 px-3 py-1.5 text-[11px] font-bold text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition">
+                        <button onClick={() => openDeleteUserModal(row)} className="rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-error border border-error/45 hover:bg-surface-2 transition">
                           Hisobni o'chirish
                         </button>
                       )}
@@ -3373,17 +3359,17 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           foydalanuvchi faqat xabarnoma oladi. */}
       <Modal open={!!warnModal} onClose={() => !warnBusy && setWarnModal(null)} title="Ogohlantirish yuborish">
         <div className="mb-5">
-          <div className="mb-4 flex items-center gap-3 rounded-xl bg-white/5 p-3">
-            <Avatar name={warnModal?.name || ''} size={36} />
-            <div><div className="text-sm font-semibold text-white">{warnModal?.name}</div><div className="text-xs text-white/40">{warnModal?.phone}</div></div>
+          <div className="mb-4 flex items-center gap-3 rounded-xl bg-surface-2 p-3">
+            <Avatar name={warnModal?.name || ''} size={36} gradient="bg-pencil-600" />
+            <div><div className="text-sm font-semibold text-text-primary">{warnModal?.name}</div><div className="text-xs text-text-secondary">{warnModal?.phone}</div></div>
           </div>
-          <p className="text-sm text-white/60">
+          <p className="text-sm text-text-secondary">
             Foydalanuvchi xabarnoma oladi. Hisob bloklanmaydi va sessiyalari yakunlanmaydi.
           </p>
         </div>
         <div className="mb-5 space-y-4">
           <div>
-            <label className="block text-xs text-white/50 mb-1.5 font-medium">Ogohlantirish sababi (ichki)</label>
+            <label className="block text-xs text-text-secondary mb-1.5 font-medium">Ogohlantirish sababi (ichki)</label>
             <textarea
               value={warnReason}
               onChange={e => setWarnReason(e.target.value)}
@@ -3391,12 +3377,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               className="w-full admin-input resize-none px-3 py-2.5 text-sm outline-none"
               placeholder="Masalan: imtihonda shubhali xatti-harakat"
             />
-            <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+            <p className="mt-2 text-[11px] text-text-secondary leading-relaxed">
               Faqat amallar tarixiga yoziladi — foydalanuvchi buni ko'rmaydi.
             </p>
           </div>
           <div>
-            <label className="block text-xs text-white/50 mb-1.5 font-medium">Foydalanuvchiga xabar</label>
+            <label className="block text-xs text-text-secondary mb-1.5 font-medium">Foydalanuvchiga xabar</label>
             <textarea
               value={warnMessage}
               onChange={e => setWarnMessage(e.target.value)}
@@ -3404,7 +3390,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               className="w-full admin-input resize-none px-3 py-2.5 text-sm outline-none"
               placeholder="Nima buzilgani va keyingi safar nima bo'lishini yozing"
             />
-            <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+            <p className="mt-2 text-[11px] text-text-secondary leading-relaxed">
               Shu matn foydalanuvchining xabarnomalarida "Ogohlantirish" sarlavhasi bilan ko'rinadi.
             </p>
           </div>
@@ -3419,11 +3405,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
       <Modal open={!!blockModal} onClose={() => !blocking && setBlockModal(null)} title={blockModal?.status === 'Bloklangan' ? 'Blokni ochish' : 'Foydalanuvchini bloklash'}>
         <div className="mb-5">
-          <div className="mb-4 flex items-center gap-3 rounded-xl bg-white/5 p-3">
-            <Avatar name={blockModal?.name || ''} size={36} />
-            <div><div className="text-sm font-semibold text-white">{blockModal?.name}</div><div className="text-xs text-white/40">{blockModal?.phone}</div></div>
+          <div className="mb-4 flex items-center gap-3 rounded-xl bg-surface-2 p-3">
+            <Avatar name={blockModal?.name || ''} size={36} gradient="bg-pencil-600" />
+            <div><div className="text-sm font-semibold text-text-primary">{blockModal?.name}</div><div className="text-xs text-text-secondary">{blockModal?.phone}</div></div>
           </div>
-          <p className="text-sm text-white/60">{blockModal?.status === 'Bloklangan' ? 'Bu foydalanuvchining blokini ochasizmi?' : 'Bu foydalanuvchini bloklamoqchimisiz?'}</p>
+          <p className="text-sm text-text-secondary">{blockModal?.status === 'Bloklangan' ? 'Bu foydalanuvchining blokini ochasizmi?' : 'Bu foydalanuvchini bloklamoqchimisiz?'}</p>
         </div>
         {/* Sabab va muddat faqat bloklashda so'raladi — ochishda backend
             ikkalasini ham o'zi tozalaydi. */}
@@ -3445,28 +3431,28 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         title="Hisobni o'chirish">
         {deleteUserModal && (
           <div className="space-y-5">
-            <div className="flex items-center gap-3 rounded-xl bg-white/5 p-3">
-              <Avatar name={deleteUserModal.name || ''} size={36} />
+            <div className="flex items-center gap-3 rounded-xl bg-surface-2 p-3">
+              <Avatar name={deleteUserModal.name || ''} size={36} gradient="bg-pencil-600" />
               <div>
-                <div className="text-sm font-semibold text-white">{deleteUserModal.name}</div>
-                <div className="text-xs font-mono text-white/40">{deleteUserModal.phone || '—'}</div>
+                <div className="text-sm font-semibold text-text-primary">{deleteUserModal.name}</div>
+                <div className="text-xs font-mono text-text-secondary">{deleteUserModal.phone || '—'}</div>
               </div>
             </div>
 
-            <p className="text-sm leading-relaxed text-white/60">
+            <p className="text-sm leading-relaxed text-text-secondary">
               Hisob o'chiriladi: foydalanuvchi tizimga kira olmaydi va barcha
               qurilmalaridagi seanslari yakunlanadi. Ma'lumotlari (urinishlar,
               to'lovlar) darhol yo'q qilinmaydi — tiklash muddati tugagach
               butunlay o'chadi. Shu muddat ichida foydalanuvchining o'zi telefon
               va parol bilan hisobini tiklab olishi mumkin.
             </p>
-            <p className="text-[11px] leading-relaxed text-amber-300/80">
+            <p className="text-[11px] leading-relaxed text-warning">
               Qoidabuzarlik uchun bu emas, "Bloklash" ishlatiladi — blok sababi
               va muddati bilan yoziladi hamda foydalanuvchi uni o'zi ocholmaydi.
             </p>
 
             <div>
-              <label className="mb-1.5 block text-xs font-medium text-white/50">O'chirish sababi (ichki, ixtiyoriy)</label>
+              <label className="mb-1.5 block text-xs font-medium text-text-secondary">O'chirish sababi (ichki, ixtiyoriy)</label>
               <input
                 value={deleteUserReason}
                 onChange={e => setDeleteUserReason(e.target.value)}
@@ -3474,20 +3460,20 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 className="w-full admin-input px-3 py-2.5 text-sm outline-none"
                 placeholder="Masalan: foydalanuvchi support orqali so'radi"
               />
-              <p className="mt-2 text-[11px] leading-relaxed text-white/40">
+              <p className="mt-2 text-[11px] leading-relaxed text-text-secondary">
                 Faqat amallar tarixiga yoziladi — foydalanuvchi buni ko'rmaydi.
               </p>
             </div>
 
             <div>
-              <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-                Tasdiqlash uchun hisob raqamini yozing: <span className="font-mono text-rose-300">{deleteUserModal.phone}</span>
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                Tasdiqlash uchun hisob raqamini yozing: <span className="font-mono text-error">{deleteUserModal.phone}</span>
               </label>
               <input
                 value={deleteUserConfirmPhone}
                 onChange={e => setDeleteUserConfirmPhone(e.target.value)}
                 placeholder={deleteUserModal.phone || ''}
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 font-mono text-xs font-semibold text-white placeholder:text-slate-600 focus:border-rose-500/50 focus:outline-none"
+                className="w-full rounded-xl border border-edge bg-surface-2 px-3.5 py-2.5 font-mono text-xs font-semibold text-text-primary placeholder:text-text-secondary focus:border-accent focus:outline-none"
                 inputMode="tel"
               />
             </div>
@@ -3508,12 +3494,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         onClose={() => !bulkBusy && setBulkBlockModal(null)}
         title={bulkBlockModal === 'unblock' ? 'Ommaviy blokni ochish' : 'Ommaviy bloklash'}>
         <div className="mb-5">
-          <p className="text-sm text-white/60">
+          <p className="text-sm text-text-secondary">
             {bulkBlockModal === 'unblock'
               ? `Tanlangan ${selectedUserIds.length} ta foydalanuvchining blokini ochasizmi?`
               : `Tanlangan ${selectedUserIds.length} ta foydalanuvchini bloklaysizmi?`}
           </p>
-          <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+          <p className="mt-2 text-[11px] text-text-secondary leading-relaxed">
             Admin hisoblari va o'zingiz amaldan chetda qoladi — natijada nechtasi
             o'tkazib yuborilgani ko'rsatiladi.
           </p>
@@ -3531,12 +3517,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           backend ham bu huquqni ommaviy amalda qabul qilmaydi. */}
       <Modal open={bulkRoleModal} onClose={() => !bulkBusy && setBulkRoleModal(false)} title="Ommaviy rol o'zgartirish">
         <div className="space-y-5">
-          <p className="text-sm text-white/60">
+          <p className="text-sm text-text-secondary">
             Tanlangan {selectedUserIds.length} ta foydalanuvchining rollari quyidagi
             tanlov bilan TO'LIQ almashtiriladi.
           </p>
           <div>
-            <label className="block text-xs text-white/50 mb-2 font-medium">Rollar</label>
+            <label className="block text-xs text-text-secondary mb-2 font-medium">Rollar</label>
             <div className="space-y-2">
               {ROLE_MODAL_KEYS.filter(opt => opt.value !== 'admin').map(opt => {
                 const checked = bulkRoleSelection.includes(opt.value);
@@ -3549,11 +3535,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       : [...prev, opt.value])}
                     className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-xs font-bold transition-all ${
                       checked
-                        ? 'bg-indigo-500/15 text-white border-indigo-500/40'
-                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                        ? 'border-accent bg-surface-2 text-text-primary'
+                        : 'btn-ghost'
                     }`}
                   >
-                    <span className={`flex h-4 w-4 items-center justify-center rounded border transition ${checked ? 'bg-indigo-500 border-indigo-500' : 'border-white/25'}`}>
+                    <span className={`flex h-4 w-4 items-center justify-center rounded border transition ${checked ? 'border-accent-fill bg-accent-fill text-on-accent' : 'border-edge-strong'}`}>
                       {checked && <Icon name="check" size={12} />}
                     </span>
                     {opt.label}
@@ -3561,7 +3547,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 );
               })}
             </div>
-            <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+            <p className="mt-2 text-[11px] text-text-secondary leading-relaxed">
               Hech biri tanlanmasa, tanlangan hisoblarning barcha rollari olib tashlanadi.
             </p>
           </div>
@@ -3608,16 +3594,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <Modal open={!!roleModal} onClose={() => setRoleModal(null)} title="Rol o'zgartirish">
         {roleModal && (
           <div className="space-y-5">
-            <div className="flex items-center gap-3 rounded-xl bg-white/5 p-3">
-              <Avatar name={roleModal.name || ''} size={36} />
+            <div className="flex items-center gap-3 rounded-xl bg-surface-2 p-3">
+              <Avatar name={roleModal.name || ''} size={36} gradient="bg-pencil-600" />
               <div>
-                <div className="text-sm font-semibold text-white">{roleModal.name}</div>
-                <div className="text-xs text-white/40">{roleModal.phone}</div>
+                <div className="text-sm font-semibold text-text-primary">{roleModal.name}</div>
+                <div className="text-xs text-text-secondary">{roleModal.phone}</div>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs text-white/50 mb-2 font-medium">Rollar</label>
+              <label className="block text-xs text-text-secondary mb-2 font-medium">Rollar</label>
               <div className="space-y-2">
                 {ROLE_MODAL_KEYS.map(opt => {
                   const checked = roleSelection.includes(opt.value);
@@ -3628,11 +3614,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       onClick={() => toggleRoleCheckbox(opt.value)}
                       className={`flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-xs font-bold transition-all ${
                         checked
-                          ? 'bg-indigo-500/15 text-white border-indigo-500/40'
-                          : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                          ? 'border-accent bg-surface-2 text-text-primary'
+                          : 'btn-ghost'
                       }`}
                     >
-                      <span className={`flex h-4 w-4 items-center justify-center rounded border transition ${checked ? 'bg-indigo-500 border-indigo-500' : 'border-white/25'}`}>
+                      <span className={`flex h-4 w-4 items-center justify-center rounded border transition ${checked ? 'border-accent-fill bg-accent-fill text-on-accent' : 'border-edge-strong'}`}>
                         {checked && <Icon name="check" size={12} />}
                       </span>
                       {opt.label}
@@ -3656,16 +3642,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <Modal open={!!premiumUser} onClose={() => setPremiumUser(null)} title="Premium hisobni boshqarish">
         {premiumUser && (
           <div className="space-y-5">
-            <div className="flex items-center gap-3 rounded-xl bg-white/5 p-3">
-              <Avatar name={premiumUser.name || ''} size={36} />
+            <div className="flex items-center gap-3 rounded-xl bg-surface-2 p-3">
+              <Avatar name={premiumUser.name || ''} size={36} gradient="bg-pencil-600" />
               <div>
-                <div className="text-sm font-semibold text-white">{premiumUser.name}</div>
-                <div className="text-xs text-white/40">{premiumUser.phone}</div>
+                <div className="text-sm font-semibold text-text-primary">{premiumUser.name}</div>
+                <div className="text-xs text-text-secondary">{premiumUser.phone}</div>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Premium turi</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Premium turi</label>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { value: 'student', label: "O'quvchi (Student)" },
@@ -3677,8 +3663,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     onClick={() => setPremiumPlanType(opt.value)}
                     className={`px-3 py-2.5 rounded-xl text-xs font-bold transition-all border ${
                       premiumPlanType === opt.value
-                        ? 'bg-indigo-500 text-white border-indigo-500 font-extrabold'
-                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                        ? 'btn-primary font-bold'
+                        : 'btn-ghost'
                     }`}
                   >
                     {opt.label}
@@ -3689,7 +3675,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
             {premiumDuration > 0 && (
               <div>
-                <label className="block text-xs text-white/50 mb-1.5 font-medium">Tarif turi (Darajasi)</label>
+                <label className="block text-xs text-text-secondary mb-1.5 font-medium">Tarif turi (Darajasi)</label>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { value: 'Standart', label: 'Standart' },
@@ -3702,8 +3688,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       onClick={() => setPremiumPlanName(opt.value)}
                       className={`px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
                         premiumPlanName === opt.value
-                          ? 'bg-indigo-500 text-white border-indigo-500 font-extrabold shadow'
-                          : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                          ? 'btn-primary font-bold'
+                          : 'btn-ghost'
                       }`}
                     >
                       {opt.label}
@@ -3714,7 +3700,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             )}
 
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Muddat</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Muddat</label>
               <div className="grid grid-cols-3 gap-2">
                 {[
                   { value: 30, label: '1 oy (30 kun)' },
@@ -3731,9 +3717,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     className={`px-2 py-2 rounded-xl text-[11px] font-bold transition-all border ${
                       premiumDuration === opt.value
                         ? opt.value === -1
-                          ? 'bg-rose-600 text-white border-rose-600 font-extrabold shadow'
-                          : 'bg-amber-500 text-indigo-950 border-amber-500 font-extrabold shadow'
-                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                          ? 'btn-danger font-bold'
+                          : 'btn-primary font-bold'
+                        : 'btn-ghost'
                     }`}
                   >
                     {opt.label}
@@ -3748,7 +3734,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 onClick={handleSavePremium}
                 disabled={premiumSaving}
                 className={`flex-1 rounded-xl py-3 font-semibold text-xs font-bold ${
-                  premiumDuration === -1 ? 'bg-rose-600 hover:bg-rose-500 text-white' : 'btn-primary'
+                  premiumDuration === -1 ? 'btn-danger' : 'btn-primary'
                 }`}
               >
                 {premiumSaving ? 'Saqlanmoqda...' : premiumDuration === -1 ? 'O\'chirish' : 'Saqlash'}
@@ -3762,16 +3748,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <Modal open={!!phoneModal} onClose={() => !phoneSaving && setPhoneModal(null)} title="Telefon raqamini o'zgartirish">
         {phoneModal && (
           <div className="space-y-5">
-            <div className="flex items-center gap-3 rounded-xl bg-white/5 p-3">
-              <Avatar name={phoneModal.name || ''} size={36} />
+            <div className="flex items-center gap-3 rounded-xl bg-surface-2 p-3">
+              <Avatar name={phoneModal.name || ''} size={36} gradient="bg-pencil-600" />
               <div>
-                <div className="text-sm font-semibold text-white">{phoneModal.name}</div>
-                <div className="text-xs text-white/40">{phoneModal.phone}</div>
+                <div className="text-sm font-semibold text-text-primary">{phoneModal.name}</div>
+                <div className="text-xs text-text-secondary">{phoneModal.phone}</div>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Yangi telefon raqam</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Yangi telefon raqam</label>
               <input
                 value={phoneInput}
                 onChange={e => setPhoneInput(e.target.value)}
@@ -3779,7 +3765,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 placeholder="+998 90 123 45 67"
                 inputMode="tel"
               />
-              <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+              <p className="mt-2 text-[11px] text-text-secondary leading-relaxed">
                 Foydalanuvchi shu raqam bilan tizimga kiradi. Amal bajarilgandan keyin
                 uning barcha joriy sessiyalari bekor qilinadi.
               </p>
@@ -3863,11 +3849,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <Modal open={!!newPasswordInfo} onClose={() => setNewPasswordInfo(null)} title="Yangi parol">
         {newPasswordInfo && (
           <div className="space-y-4">
-            <p className="text-sm text-white/60 leading-relaxed">
-              <span className="font-semibold text-white">{newPasswordInfo.name}</span> uchun yangi parol yaratildi.
+            <p className="text-sm text-text-secondary leading-relaxed">
+              <span className="font-semibold text-text-primary">{newPasswordInfo.name}</span> uchun yangi parol yaratildi.
             </p>
             <div className="flex items-center gap-2">
-              <code className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-indigo-200 font-mono break-all select-all">
+              <code className="flex-1 bg-surface-2 border border-edge rounded-xl px-3 py-2 text-sm text-accent font-mono break-all select-all">
                 {newPasswordInfo.password}
               </code>
               <button
@@ -3879,7 +3865,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 <Icon name="copy" size={13} />
               </button>
             </div>
-            <p className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-amber-300">
+            <p className="rounded-xl border border-warning/45 bg-surface-2 px-3 py-2.5 text-[11px] font-semibold leading-relaxed text-warning">
               Diqqat: bu parol qayta ko'rsatilmaydi, uni foydalanuvchiga xavfsiz yo'l bilan yetkazing.
             </p>
             <button onClick={() => setNewPasswordInfo(null)} className="btn-primary w-full rounded-xl py-3 text-xs font-bold">
@@ -3901,63 +3887,63 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       >
         {mergeModal && (
           <div className="space-y-4">
-            <p className="text-[11px] font-semibold leading-relaxed text-slate-400">
+            <p className="text-[11px] font-semibold leading-relaxed text-text-secondary">
               Raqamini yo'qotib qayta ro'yxatdan o'tgan o'quvchining ikkita hisobi bitta hisobga yig'iladi:
               tangalar qo'shiladi, streak kattasi olinadi, urinish va mashq tarixi ko'chadi. Ikkinchi hisob
               o'chirilmaydi — doimiy bloklanadi va tekshirish uchun joyida qoladi.
             </p>
 
-            <div className="rounded-xl bg-white/5 px-3.5 py-3">
-              <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Ochilgan hisob</div>
-              <div className="mt-1 text-xs font-bold text-white">{mergeModal.name}</div>
-              <div className="text-[11px] font-mono text-white/40">{mergeModal.phone || '—'}</div>
+            <div className="rounded-xl bg-surface-2 px-3.5 py-3">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Ochilgan hisob</div>
+              <div className="mt-1 text-xs font-bold text-text-primary">{mergeModal.name}</div>
+              <div className="text-[11px] font-mono text-text-secondary">{mergeModal.phone || '—'}</div>
             </div>
 
             {/* Ikkinchi hisob qidiruvi — jadval bilan bir xil manba (ism yoki
                 telefon bo'yicha). */}
             <div>
-              <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+              <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-text-secondary">
                 Ikkinchi hisob (ism yoki telefon)
               </label>
               <input
                 value={mergeSearch}
                 onChange={(e) => { setMergeSearch(e.target.value); setMergeOtherId(null); resetMergePreview(); }}
                 placeholder="Masalan: Ali yoki +99890..."
-                className="w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 text-xs font-semibold text-white placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none"
+                className="w-full rounded-xl border border-edge bg-surface-2 px-3.5 py-2.5 text-xs font-semibold text-text-primary placeholder:text-text-secondary focus:border-accent/50 focus:outline-none"
               />
               {mergeOther ? (
-                <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-indigo-500/25 bg-indigo-500/10 px-3 py-2.5">
-                  <Avatar name={mergeOther.name || ''} src={mergeOther.avatarUrl} size={32} />
+                <div className="mt-2 flex items-center gap-2.5 rounded-xl border border-accent/45 bg-surface-2 px-3 py-2.5">
+                  <Avatar name={mergeOther.name || ''} src={mergeOther.avatarUrl} size={32} gradient="bg-pencil-600" />
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[11px] font-bold text-white">{mergeOther.name}</div>
-                    <div className="truncate font-mono text-[10px] text-white/40">{mergeOther.phone}</div>
+                    <div className="truncate text-[11px] font-bold text-text-primary">{mergeOther.name}</div>
+                    <div className="truncate font-mono text-[10px] text-text-secondary">{mergeOther.phone}</div>
                   </div>
                   <button
                     onClick={() => { setMergeOtherId(null); resetMergePreview(); }}
-                    className="shrink-0 text-[10px] font-bold text-slate-400 hover:text-white"
+                    className="shrink-0 text-[10px] font-bold text-text-secondary hover:text-text-primary"
                   >
                     Bekor qilish
                   </button>
                 </div>
               ) : mergeCandidates.length > 0 ? (
-                <div className="mt-2 divide-y divide-white/5 overflow-hidden rounded-xl border border-white/10 bg-white/[0.02]">
+                <div className="mt-2 divide-y divide-edge overflow-hidden rounded-xl border border-edge bg-surface-1">
                   {mergeCandidates.map(row => (
                     <button
                       key={row.id}
                       onClick={() => { setMergeOtherId(row.backendId); resetMergePreview(); }}
-                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-white/5"
+                      className="flex w-full items-center gap-2.5 px-3 py-2.5 text-left transition hover:bg-surface-1"
                     >
-                      <Avatar name={row.name || ''} src={row.avatarUrl} size={28} />
+                      <Avatar name={row.name || ''} src={row.avatarUrl} size={28} gradient="bg-pencil-600" />
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-[11px] font-bold text-white">{row.name}</div>
-                        <div className="truncate font-mono text-[10px] text-white/40">{row.phone}</div>
+                        <div className="truncate text-[11px] font-bold text-text-primary">{row.name}</div>
+                        <div className="truncate font-mono text-[10px] text-text-secondary">{row.phone}</div>
                       </div>
-                      <span className="shrink-0 text-[10px] font-bold text-slate-500">#{row.backendId}</span>
+                      <span className="shrink-0 text-[10px] font-bold text-text-secondary">#{row.backendId}</span>
                     </button>
                   ))}
                 </div>
               ) : debouncedMergeSearch.trim() ? (
-                <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.02] px-3.5 py-3 text-center text-[11px] font-semibold text-slate-500">
+                <div className="mt-2 rounded-xl border border-edge bg-surface-1 px-3.5 py-3 text-center text-[11px] font-semibold text-text-secondary">
                   Mos hisob topilmadi
                 </div>
               ) : null}
@@ -3967,7 +3953,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 jiddiy xato bo'lgani uchun alohida, aniq savol. */}
             {mergeOther && (
               <div>
-                <div className="mb-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-text-secondary">
                   Qaysi hisob saqlanadi?
                 </div>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -3980,13 +3966,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       onClick={() => { setMergeKeepOpened(opt.keep); resetMergePreview(); }}
                       className={`rounded-xl border px-3 py-2.5 text-left transition ${
                         mergeKeepOpened === opt.keep
-                          ? 'border-emerald-500/40 bg-emerald-500/10'
-                          : 'border-white/10 bg-white/[0.02] hover:bg-white/5'
+                          ? 'border-success/45 bg-surface-2'
+                          : 'border-edge bg-surface-1 hover:bg-surface-1'
                       }`}
                     >
-                      <div className="truncate text-[11px] font-bold text-white">{opt.label}</div>
-                      <div className="truncate font-mono text-[10px] text-white/40">{opt.phone}</div>
-                      <div className={`mt-1 text-[10px] font-bold ${mergeKeepOpened === opt.keep ? 'text-emerald-400' : 'text-slate-500'}`}>
+                      <div className="truncate text-[11px] font-bold text-text-primary">{opt.label}</div>
+                      <div className="truncate font-mono text-[10px] text-text-secondary">{opt.phone}</div>
+                      <div className={`mt-1 text-[10px] font-bold ${mergeKeepOpened === opt.keep ? 'text-success' : 'text-text-secondary'}`}>
                         {mergeKeepOpened === opt.keep ? 'Saqlanadi' : 'Bloklanadi'}
                       </div>
                     </button>
@@ -4007,11 +3993,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
             {/* Quruq yurish natijasi */}
             {mergePreview && !mergePreview.can_merge && (
-              <div className="rounded-xl border border-rose-500/25 bg-rose-500/10 px-3.5 py-3">
-                <div className="text-[10px] font-extrabold uppercase tracking-wider text-rose-300/70">Birlashtirib bo'lmaydi</div>
+              <div className="rounded-xl border border-error/45 bg-surface-2 px-3.5 py-3">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-error">Birlashtirib bo'lmaydi</div>
                 <ul className="mt-1.5 space-y-1">
                   {(mergePreview.blockers || []).map((b, i) => (
-                    <li key={i} className="text-[11px] font-bold text-rose-100">• {b}</li>
+                    <li key={i} className="text-[11px] font-bold text-text-primary">• {b}</li>
                   ))}
                 </ul>
               </div>
@@ -4019,34 +4005,34 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
             {mergePreview?.can_merge && (
               <div className="space-y-3.5">
-                <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3.5 py-3">
-                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Ko'chadigan ma'lumot</div>
+                <div className="rounded-xl border border-edge bg-surface-1 px-3.5 py-3">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Ko'chadigan ma'lumot</div>
                   <div className="mt-2 space-y-1.5">
                     {(mergePreview.moves || []).filter(m => m.move || m.skip).map(m => (
                       <div key={m.model} className="flex items-baseline justify-between gap-3">
-                        <span className="text-[11px] font-semibold text-slate-300">{m.label}</span>
-                        <span className="shrink-0 text-[11px] font-bold tabular-nums text-white">
+                        <span className="text-[11px] font-semibold text-text-primary">{m.label}</span>
+                        <span className="shrink-0 text-[11px] font-bold font-data text-text-primary">
                           {m.move} ta
                           {m.skip > 0 && (
-                            <span className="ml-1.5 font-bold text-amber-400">({m.skip} ta o'tkazib yuboriladi)</span>
+                            <span className="ml-1.5 font-bold text-warning">({m.skip} ta o'tkazib yuboriladi)</span>
                           )}
                         </span>
                       </div>
                     ))}
                     {(mergePreview.totals?.move || 0) === 0 && (
-                      <div className="text-[11px] font-semibold text-slate-500">Ko'chadigan yozuv yo'q</div>
+                      <div className="text-[11px] font-semibold text-text-secondary">Ko'chadigan yozuv yo'q</div>
                     )}
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2 border-t border-white/5 pt-2.5">
+                  <div className="mt-3 grid grid-cols-2 gap-2 border-t border-edge pt-2.5">
                     <div>
-                      <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Tangalar</div>
-                      <div className="mt-0.5 text-xs font-bold tabular-nums text-white">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Tangalar</div>
+                      <div className="mt-0.5 text-xs font-bold font-data text-text-primary">
                         {mergePreview.balances?.coins?.target} + {mergePreview.balances?.coins?.source} = {mergePreview.balances?.coins?.result}
                       </div>
                     </div>
                     <div>
-                      <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">Streak</div>
-                      <div className="mt-0.5 text-xs font-bold tabular-nums text-white">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Streak</div>
+                      <div className="mt-0.5 text-xs font-bold font-data text-text-primary">
                         {mergePreview.balances?.streak_count?.result} kun
                       </div>
                     </div>
@@ -4056,13 +4042,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 {/* Ko'chirilmaydigan ma'lumot — admin buni bilib, kerak bo'lsa
                     mavjud vositalar bilan qo'lda hal qiladi. */}
                 {(mergePreview.untouched || []).length > 0 && (
-                  <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3.5 py-3">
-                    <div className="text-[10px] font-extrabold uppercase tracking-wider text-amber-300/70">Ko'chirilmaydi</div>
+                  <div className="rounded-xl border border-warning/45 bg-surface-2 px-3.5 py-3">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-warning">Ko'chirilmaydi</div>
                     <div className="mt-2 space-y-2">
                       {mergePreview.untouched.map(row => (
                         <div key={row.model}>
-                          <div className="text-[11px] font-bold text-amber-100">{row.label} ({row.count} ta)</div>
-                          <div className="text-[10px] font-semibold leading-relaxed text-amber-200/70">{row.note}</div>
+                          <div className="text-[11px] font-bold text-warning">{row.label} ({row.count} ta)</div>
+                          <div className="text-[10px] font-semibold leading-relaxed text-warning">{row.note}</div>
                         </div>
                       ))}
                     </div>
@@ -4071,14 +4057,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
                 {/* Tasdiqlash: bloklanadigan hisobning raqamini AYNAN yozish. */}
                 <div>
-                  <label className="mb-1.5 block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-                    Tasdiqlash uchun bloklanadigan hisob raqamini yozing: <span className="font-mono text-rose-300">{mergePreview.source?.phone}</span>
+                  <label className="mb-1.5 block text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                    Tasdiqlash uchun bloklanadigan hisob raqamini yozing: <span className="font-mono text-error">{mergePreview.source?.phone}</span>
                   </label>
                   <input
                     value={mergeConfirmPhone}
                     onChange={(e) => setMergeConfirmPhone(e.target.value)}
                     placeholder={mergePreview.source?.phone || ''}
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3.5 py-2.5 font-mono text-xs font-semibold text-white placeholder:text-slate-600 focus:border-rose-500/50 focus:outline-none"
+                    className="w-full rounded-xl border border-edge bg-surface-2 px-3.5 py-2.5 font-mono text-xs font-semibold text-text-primary placeholder:text-text-secondary focus:border-accent focus:outline-none"
                   />
                 </div>
               </div>
@@ -4144,9 +4130,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const trialOnly = prem.trial_only || 0;
     const freeUsers = Math.max(0, (prem.total_users || 0) - paidFlag - trialOnly);
     const premiumPieData = [
-      { label: 'Pullik', value: paidFlag, color: '#C0362C' },
-      { label: 'Faqat trial', value: trialOnly, color: '#2F5D8C' },
-      { label: 'Bepul', value: freeUsers, color: '#334155' },
+      { label: 'Pullik', value: paidFlag, color: 'rgb(var(--color-accent))' },
+      { label: 'Faqat trial', value: trialOnly, color: 'rgb(var(--color-accent-2))' },
+      { label: 'Bepul', value: freeUsers, color: 'rgb(var(--color-text-secondary))' },
     ];
     const premiumPieEmpty = !hasMetrics || (paidFlag + trialOnly + freeUsers) === 0;
 
@@ -4216,22 +4202,22 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
     // Loading spinner — diagrammalar uchun bir xil ko'rinish (DRY).
     const loadingBox = (h = 200) => (
-      <div className="flex items-center justify-center text-[11px] font-bold text-slate-500" style={{ height: `${h}px` }}>Yuklanmoqda...</div>
+      <div className="flex items-center justify-center text-[11px] font-bold text-text-secondary" style={{ height: `${h}px` }}>Yuklanmoqda...</div>
     );
 
     return (
       <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
         <div>
-          <h1 className="text-[20px] font-black leading-tight text-white">Tahlil</h1>
-          <p className="mt-1 text-[11px] font-bold text-slate-400">Platforma statistikasi, o'sish va konversiya ko'rsatkichlari.</p>
+          <h1 className="text-[20px] font-bold leading-tight text-text-primary">Tahlil</h1>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">Platforma statistikasi, o'sish va konversiya ko'rsatkichlari.</p>
         </div>
 
         {/* Yuqori metrik kartalar */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <AdminMetricCard label="Jami foydalanuvchilar" value={totalUsers.toLocaleString()} delta={hasMetrics ? `${prem.active_users || 0} ta faol` : 'Mahalliy hisob'} icon={<Icon name="users" size={16} />} tone="indigo" />
-          <AdminMetricCard label="Bugun yangi" value={hasMetrics ? todayNew.toLocaleString() : '—'} delta={hasMetrics ? `7 kunda ${signups.last_7d || 0} ta` : "Ma'lumot yo'q"} icon={<Icon name="chart" size={16} />} tone="emerald" />
-          <AdminMetricCard label="Premium %" value={hasMetrics ? `${premiumPct}%` : '—'} delta={hasMetrics ? `${prem.premium_active || 0} ta faol premium` : "Ma'lumot yo'q"} icon={<Icon name="star" size={16} />} tone="amber" />
-          <AdminMetricCard label="Trial → Paid" value={hasMetrics ? `${trialToPaidPct}%` : '—'} delta={hasMetrics ? `${conv.trial_to_paid || 0} / ${conv.trial_started || 0}` : "Ma'lumot yo'q"} icon={<Icon name="chart" size={16} />} tone="rose" />
+          <AdminMetricCard label="Jami foydalanuvchilar" value={totalUsers.toLocaleString()} delta={hasMetrics ? `${prem.active_users || 0} ta faol` : 'Mahalliy hisob'} icon={<Icon name="users" size={16} />} tone="accent" />
+          <AdminMetricCard label="Bugun yangi" value={hasMetrics ? todayNew.toLocaleString() : '—'} delta={hasMetrics ? `7 kunda ${signups.last_7d || 0} ta` : "Ma'lumot yo'q"} icon={<Icon name="chart" size={16} />} tone="success" />
+          <AdminMetricCard label="Premium %" value={hasMetrics ? `${premiumPct}%` : '—'} delta={hasMetrics ? `${prem.premium_active || 0} ta faol premium` : "Ma'lumot yo'q"} icon={<Icon name="star" size={16} />} tone="warning" />
+          <AdminMetricCard label="Trial → Paid" value={hasMetrics ? `${trialToPaidPct}%` : '—'} delta={hasMetrics ? `${conv.trial_to_paid || 0} / ${conv.trial_started || 0}` : "Ma'lumot yo'q"} icon={<Icon name="chart" size={16} />} tone="neutral" />
         </div>
 
         {/* Diagramma 1 — Foydalanuvchi o'sishi (AreaChart) */}
@@ -4248,7 +4234,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             emptyText={metricsFailed ? "Ma'lumot yo'q (admin huquqi kerak)" : "Ma'lumot yo'q"}
           >
             {metricsLoading
-              ? <div className="flex h-[180px] items-center justify-center text-[11px] font-bold text-slate-500">Yuklanmoqda...</div>
+              ? <div className="flex h-[180px] items-center justify-center text-[11px] font-bold text-text-secondary">Yuklanmoqda...</div>
               : <PremiumPie data={premiumPieData} total={(paidFlag + trialOnly + freeUsers).toLocaleString()} />}
           </ChartCard>
 
@@ -4259,7 +4245,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             emptyText={metricsFailed ? "Ma'lumot yo'q (admin huquqi kerak)" : "Ma'lumot yo'q"}
           >
             {metricsLoading
-              ? <div className="flex h-[174px] items-center justify-center text-[11px] font-bold text-slate-500">Yuklanmoqda...</div>
+              ? <div className="flex h-[174px] items-center justify-center text-[11px] font-bold text-text-secondary">Yuklanmoqda...</div>
               : <RetentionBars data={retentionData} />}
           </ChartCard>
         </div>
@@ -4272,13 +4258,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           emptyText={metricsFailed ? "Ma'lumot yo'q (admin huquqi kerak)" : "Ma'lumot yo'q"}
         >
           {metricsLoading
-            ? <div className="flex h-[200px] items-center justify-center text-[11px] font-bold text-slate-500">Yuklanmoqda...</div>
+            ? <div className="flex h-[200px] items-center justify-center text-[11px] font-bold text-text-secondary">Yuklanmoqda...</div>
             : <ConversionFunnel data={funnelData} />}
         </ChartCard>
 
         {/* ─── Sektion 2: Platforma faoliyati ─── */}
         <div className="space-y-[14px]">
-          <h2 className="text-[13px] font-black uppercase tracking-wider text-slate-500">Platforma faoliyati</h2>
+          <h2 className="text-[13px] font-bold uppercase tracking-wider text-text-secondary">Platforma faoliyati</h2>
 
           {/* Kunlik attemptlar — to'liq kenglik */}
           <ChartCard
@@ -4301,7 +4287,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
         {/* ─── Sektion 3: Kontent tahlil ─── */}
         <div className="space-y-[14px]">
-          <h2 className="text-[13px] font-black uppercase tracking-wider text-slate-500">Kontent tahlil</h2>
+          <h2 className="text-[13px] font-bold uppercase tracking-wider text-text-secondary">Kontent tahlil</h2>
           <div className="grid gap-5 xl:grid-cols-2">
             <ChartCard
               title="Fan bo'yicha savollar"
@@ -4323,7 +4309,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
         {/* ─── Sektion 4: Moliya ─── */}
         <div className="space-y-[14px]">
-          <h2 className="text-[13px] font-black uppercase tracking-wider text-slate-500">Moliya</h2>
+          <h2 className="text-[13px] font-bold uppercase tracking-wider text-text-secondary">Moliya</h2>
           <ChartCard
             title="Oylik daromad"
             subtitle="Oxirgi 12 oy muvaffaqiyatli to'lovlar (so'm)"
@@ -4335,7 +4321,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
         {/* ─── Sektion 5: Markazlar ─── */}
         <div className="space-y-[14px]">
-          <h2 className="text-[13px] font-black uppercase tracking-wider text-slate-500">Markazlar</h2>
+          <h2 className="text-[13px] font-bold uppercase tracking-wider text-text-secondary">Markazlar</h2>
           <div className="grid gap-5 xl:grid-cols-2">
             <ChartCard
               title="Viloyat bo'yicha markazlar"
@@ -4373,8 +4359,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
         {/* ─── Sektion 6: Suiiste'mol signallari ─── */}
         <div className="space-y-[14px]">
-          <h2 className="text-[13px] font-black uppercase tracking-wider text-slate-500">Suiiste'mol signallari</h2>
-          <p className="text-[11px] font-semibold leading-relaxed text-slate-500">
+          <h2 className="text-[13px] font-bold uppercase tracking-wider text-text-secondary">Suiiste'mol signallari</h2>
+          <p className="text-[11px] font-semibold leading-relaxed text-text-secondary">
             Bo'lim faqat KUZATUV uchun: hech kim avtomatik bloklanmaydi va bayroq ham
             qo'yilmaydi. Ochiq ishlar va ular bo'yicha qaror "Xavfsizlik" tabidagi
             moderatsiya navbatida qoladi.
@@ -4402,7 +4388,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   countLabel="Ogohlantirish"
                   dateKey="last_warned_at"
                   dateLabel="Oxirgisi"
-                  tone="rose"
+                  tone="error"
                 />
               )}
             </ChartCard>
@@ -4420,7 +4406,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   countLabel="Savol"
                   dateKey="last_created_at"
                   dateLabel="Oxirgisi"
-                  tone="amber"
+                  tone="warning"
                 />
               )}
             </ChartCard>
@@ -4443,13 +4429,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-[20px] font-black leading-tight text-white">Amallar tarixi</h1>
-            <p className="mt-1 text-[11px] font-bold text-slate-400">
+            <h1 className="text-[20px] font-bold leading-tight text-text-primary">Amallar tarixi</h1>
+            <p className="mt-1 text-[11px] font-bold text-text-secondary">
               Admin va tashkilot rahbarlari bajargan muhim amallar: kim, qachon, kimga va qaysi IP dan.
             </p>
           </div>
           <div className="relative w-full md:w-72">
-            <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+            <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
             <input
               value={auditSearch}
               onChange={e => { setAuditSearch(e.target.value); setAuditPage(1); }}
@@ -4461,32 +4447,32 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <div className="overflow-x-auto admin-scroll">
             <table className="w-full min-w-[860px] text-left">
               <thead className="admin-table-hdr">
-                <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
                   {['Vaqt', 'Kim', 'Amal', 'Obyekt', 'IP'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-edge">
                 {!isApi ? (
-                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Amallar tarixi faqat API rejimida ko'rinadi</td></tr>
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Amallar tarixi faqat API rejimida ko'rinadi</td></tr>
                 ) : apiAuditRes.loading ? (
-                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Yuklanmoqda...</td></tr>
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Yuklanmoqda...</td></tr>
                 ) : failed ? (
-                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</td></tr>
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Ma'lumotni yuklab bo'lmadi</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">{auditSearch ? 'Qidiruv natijasi topilmadi' : 'Yozuvlar yo\'q'}</td></tr>
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">{auditSearch ? 'Qidiruv natijasi topilmadi' : 'Yozuvlar yo\'q'}</td></tr>
                 ) : rows.map(log => (
-                  <tr key={log.id} className="text-xs admin-table-row text-slate-300">
-                    <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">{formatAdminDateTime(log.created_at)}</td>
-                    <td className="px-5 py-4"><div className="flex items-center gap-3"><AdminInitial name={log.actor} /><span className="font-bold text-white">{log.actor}</span></div></td>
+                  <tr key={log.id} className="text-xs admin-table-row text-text-primary">
+                    <td className="px-5 py-4 font-semibold text-text-secondary whitespace-nowrap">{formatAdminDateTime(log.created_at)}</td>
+                    <td className="px-5 py-4"><div className="flex items-center gap-3"><AdminInitial name={log.actor} /><span className="font-bold text-text-primary">{log.actor}</span></div></td>
                     <td className="px-5 py-4">
-                      <span className="rounded-md bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-400">
+                      <span className="rounded-md bg-surface-2 border border-accent/45 px-2 py-0.5 text-[10px] font-bold text-accent">
                         {log.action_label || log.action}
                       </span>
                     </td>
-                    <td className="px-5 py-4 font-semibold text-slate-400">
+                    <td className="px-5 py-4 font-semibold text-text-secondary">
                       {log.target_name || (log.target_id ? `${log.target_type || 'Obyekt'} #${log.target_id}` : '—')}
                     </td>
-                    <td className="px-5 py-4 font-mono text-[11px] text-slate-400">{log.ip || '—'}</td>
+                    <td className="px-5 py-4 font-mono text-[11px] text-text-secondary">{log.ip || '—'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -4503,7 +4489,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             >
               <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
             </button>
-            <div className="px-3 py-2 rounded-xl bg-white/5 text-[11px] font-bold text-white/60 tabular-nums">
+            <div className="px-3 py-2 rounded-xl bg-surface-2 text-[11px] font-bold text-text-secondary font-data">
               {auditPage} / {lastPage}
             </div>
             <button
@@ -4681,7 +4667,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <section className="admin-card p-5">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Kamida nechta hisob</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Kamida nechta hisob</label>
               <div className="flex flex-wrap gap-2">
                 {SHARED_IP_MIN_ACCOUNT_OPTIONS.map(opt => (
                   <button
@@ -4690,8 +4676,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     onClick={() => setSharedIpMinAccounts(opt)}
                     className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${
                       sharedIpMinAccounts === opt
-                        ? 'bg-indigo-600 text-white border-indigo-600 font-extrabold shadow'
-                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                        ? 'btn-primary font-bold'
+                        : 'btn-ghost'
                     }`}>
                     {opt} ta
                   </button>
@@ -4699,7 +4685,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </div>
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Qaysi davr uchun</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Qaysi davr uchun</label>
               <div className="flex flex-wrap gap-2">
                 {SHARED_IP_DAY_OPTIONS.map(opt => (
                   <button
@@ -4708,8 +4694,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     onClick={() => setSharedIpDays(opt)}
                     className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${
                       sharedIpDays === opt
-                        ? 'bg-indigo-600 text-white border-indigo-600 font-extrabold shadow'
-                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                        ? 'btn-primary font-bold'
+                        : 'btn-ghost'
                     }`}>
                     {opt} kun
                   </button>
@@ -4717,7 +4703,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </div>
             </div>
           </div>
-          <p className="mt-4 text-[11px] text-white/40 leading-relaxed">
+          <p className="mt-4 text-[11px] text-text-secondary leading-relaxed">
             Bir manzil ortida bir nechta hisob bo'lishi o'z-o'zicha qoidabuzarlik emas:
             markaz kompyuter sinfi, oila Wi-Fi'si yoki mobil operator tarmog'i ham
             bir xil IP beradi. Ro'yxat faqat qo'lda tekshirish uchun nomzod beradi.
@@ -4727,35 +4713,35 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <div className="overflow-x-auto admin-scroll">
             <table className="w-full min-w-[760px] text-left">
               <thead className="admin-table-hdr">
-                <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
                   {['IP manzil', 'Hisoblar', 'Birinchi kirish', 'Oxirgi kirish', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-edge">
                 {!isApi ? (
-                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
                 ) : apiSharedIpRes.loading ? (
-                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Yuklanmoqda...</td></tr>
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Yuklanmoqda...</td></tr>
                 ) : failed ? (
-                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</td></tr>
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Ma'lumotni yuklab bo'lmadi</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">
+                  <tr><td colSpan={5} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">
                     Oxirgi {appliedDays} kunda {appliedMinAccounts} tadan ko'p hisob kirgan IP topilmadi
                   </td></tr>
                 ) : rows.map(row => (
-                  <tr key={row.ip_address} className="text-xs admin-table-row text-slate-300">
-                    <td className="px-5 py-4 font-mono text-[11px] font-bold text-white">{row.ip_address}</td>
+                  <tr key={row.ip_address} className="text-xs admin-table-row text-text-primary">
+                    <td className="px-5 py-4 font-mono text-[11px] font-bold text-text-primary">{row.ip_address}</td>
                     <td className="px-5 py-4">
-                      <span className="rounded-md bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-400">
+                      <span className="rounded-md bg-surface-2 border border-warning/45 px-2 py-0.5 text-[10px] font-bold text-warning">
                         {row.distinct_users} ta hisob
                       </span>
                     </td>
-                    <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">{formatAdminDateTime(row.first_seen)}</td>
-                    <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">{formatAdminDateTime(row.last_seen)}</td>
+                    <td className="px-5 py-4 font-semibold text-text-secondary whitespace-nowrap">{formatAdminDateTime(row.first_seen)}</td>
+                    <td className="px-5 py-4 font-semibold text-text-secondary whitespace-nowrap">{formatAdminDateTime(row.last_seen)}</td>
                     <td className="px-5 py-4">
                       <button
                         onClick={() => setSharedIpDetailAddress(row.ip_address)}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white transition">
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-primary border border-edge hover:bg-surface-2 hover:text-text-primary transition">
                         <Icon name="eye" size={12} /> Ko'rish
                       </button>
                     </td>
@@ -4771,34 +4757,34 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           title="Shu IP'dan kirgan hisoblar"
           width="max-w-xl"
         >
-          <div className="mb-4 rounded-xl bg-white/5 px-4 py-3 font-mono text-sm font-bold text-white">
+          <div className="mb-4 rounded-xl bg-surface-2 px-4 py-3 font-mono text-sm font-bold text-text-primary">
             {sharedIpDetailAddress}
           </div>
-          <div className="max-h-80 overflow-y-auto admin-scroll divide-y divide-white/5 rounded-xl border border-white/10 bg-white/[0.02]">
+          <div className="max-h-80 overflow-y-auto admin-scroll divide-y divide-edge rounded-xl border border-edge bg-surface-1">
             {detailLoading ? (
-              <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Yuklanmoqda...</div>
+              <div className="px-4 py-5 text-center text-[11px] font-semibold text-text-secondary">Yuklanmoqda...</div>
             ) : apiSharedIpDetailRes.error ? (
-              <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</div>
+              <div className="px-4 py-5 text-center text-[11px] font-semibold text-text-secondary">Ma'lumotni yuklab bo'lmadi</div>
             ) : detailRows.length === 0 ? (
-              <div className="px-4 py-5 text-center text-[11px] font-semibold text-slate-500">Hisoblar topilmadi</div>
+              <div className="px-4 py-5 text-center text-[11px] font-semibold text-text-secondary">Hisoblar topilmadi</div>
             ) : detailRows.map(acc => (
               <div key={acc.user_id} className="flex items-center gap-3 px-4 py-3">
-                <Avatar name={acc.full_name} size={34} />
+                <Avatar name={acc.full_name} size={34} gradient="bg-pencil-600" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-bold text-white">{acc.full_name}</div>
-                  <div className="font-mono text-[10px] text-white/40">{maskPhoneDisplay(acc.phone, '')}</div>
+                  <div className="truncate text-xs font-bold text-text-primary">{acc.full_name}</div>
+                  <div className="font-mono text-[10px] text-text-secondary">{maskPhoneDisplay(acc.phone, '')}</div>
                 </div>
                 <div className="text-right">
                   <AdminPill status={acc.is_active ? 'approved' : 'rejected'}>
                     {acc.is_active ? 'Faol' : 'Bloklangan'}
                   </AdminPill>
-                  <div className="mt-1 text-[10px] font-semibold text-slate-500 whitespace-nowrap">
+                  <div className="mt-1 text-[10px] font-semibold text-text-secondary whitespace-nowrap">
                     {formatAdminDateTime(acc.last_login_at)}
                   </div>
                 </div>
                 <button
                   onClick={() => openUserFromSecurity(acc.user_id)}
-                  className="shrink-0 rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white transition">
+                  className="shrink-0 rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-primary border border-edge hover:bg-surface-2 hover:text-text-primary transition">
                   Batafsil
                 </button>
               </div>
@@ -4825,7 +4811,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <section className="admin-card p-5">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Holat</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Holat</label>
               <div className="flex flex-wrap gap-2">
                 {MODERATION_STATUS_OPTIONS.map(opt => (
                   <button
@@ -4834,8 +4820,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     onClick={() => { setFlagStatus(opt.key); setFlagPage(1); }}
                     className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${
                       flagStatus === opt.key
-                        ? 'bg-indigo-600 text-white border-indigo-600 font-extrabold shadow'
-                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                        ? 'btn-primary font-bold'
+                        : 'btn-ghost'
                     }`}>
                     {opt.label}
                   </button>
@@ -4843,7 +4829,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </div>
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Bayroq turi</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Bayroq turi</label>
               <div className="flex flex-wrap gap-2">
                 {MODERATION_FLAG_TYPE_OPTIONS.map(opt => (
                   <button
@@ -4852,8 +4838,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     onClick={() => { setFlagType(opt.key); setFlagPage(1); }}
                     className={`px-3 py-2 rounded-xl text-[11px] font-bold transition-all border ${
                       flagType === opt.key
-                        ? 'bg-indigo-600 text-white border-indigo-600 font-extrabold shadow'
-                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                        ? 'btn-primary font-bold'
+                        : 'btn-ghost'
                     }`}>
                     {opt.label}
                   </button>
@@ -4861,7 +4847,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </div>
             </div>
           </div>
-          <p className="mt-4 text-[11px] text-white/40 leading-relaxed">
+          <p className="mt-4 text-[11px] text-text-secondary leading-relaxed">
             Bayroqlarni har soatda ishlaydigan avtomatik tekshiruv qo'yadi. Hech qanday
             chora avtomatik ko'rilmaydi: "Hal qilindi" — tekshirib chora ko'rildi,
             "Rad etildi" — yolg'on signal. Yopilgan bayroqni qayta ochib bo'lmaydi.
@@ -4871,39 +4857,39 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <div className="overflow-x-auto admin-scroll">
             <table className="w-full min-w-[900px] text-left">
               <thead className="admin-table-hdr">
-                <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
                   {['Vaqt', 'Tur', 'Sabab', 'Kim qo\'ydi', 'Holat', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-edge">
                 {!isApi ? (
-                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
                 ) : apiModerationRes.loading ? (
-                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Yuklanmoqda...</td></tr>
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Yuklanmoqda...</td></tr>
                 ) : failed ? (
-                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</td></tr>
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Ma'lumotni yuklab bo'lmadi</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Bayroqlar yo'q</td></tr>
+                  <tr><td colSpan={6} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Bayroqlar yo'q</td></tr>
                 ) : rows.map(flag => (
-                  <tr key={flag.id} className="text-xs admin-table-row text-slate-300">
-                    <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">{formatAdminDateTime(flag.created_at)}</td>
+                  <tr key={flag.id} className="text-xs admin-table-row text-text-primary">
+                    <td className="px-5 py-4 font-semibold text-text-secondary whitespace-nowrap">{formatAdminDateTime(flag.created_at)}</td>
                     <td className="px-5 py-4">
-                      <span className="rounded-md bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-400">
+                      <span className="rounded-md bg-surface-2 border border-accent/45 px-2 py-0.5 text-[10px] font-bold text-accent">
                         {flag.flag_type_label || flag.flag_type}
                       </span>
                     </td>
-                    <td className="px-5 py-4 font-semibold text-white">
+                    <td className="px-5 py-4 font-semibold text-text-primary">
                       {flag.reason}
                       {/* Savol bayrog'ida — bayroq qo'yilgan paytdagi savol
                           NUSXASI (`extra`). Savol keyin tahrirlangan yoki
                           o'chirilgan bo'lsa ham tekshiruvchi asl matnni ko'radi. */}
                       {flag.flag_type === 'question' && flag.extra?.text && (
-                        <div className="mt-1.5 max-w-md whitespace-pre-wrap text-[11px] font-medium text-slate-400">
+                        <div className="mt-1.5 max-w-md whitespace-pre-wrap text-[11px] font-medium text-text-secondary">
                           {flag.extra.text}
                           {Array.isArray(flag.extra.options) && flag.extra.options.length > 0 && (
-                            <div className="mt-1 text-slate-500">
+                            <div className="mt-1 text-text-secondary">
                               {flag.extra.options.map((opt, i) => (
-                                <span key={i} className={i === flag.extra.correct_answer ? 'text-emerald-400' : undefined}>
+                                <span key={i} className={i === flag.extra.correct_answer ? 'text-success' : undefined}>
                                   {i > 0 ? ' · ' : ''}{opt}
                                 </span>
                               ))}
@@ -4912,7 +4898,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                         </div>
                       )}
                     </td>
-                    <td className="px-5 py-4 font-semibold text-slate-400">{flag.raised_by}</td>
+                    <td className="px-5 py-4 font-semibold text-text-secondary">{flag.raised_by}</td>
                     <td className="px-5 py-4">
                       <AdminPill status={MODERATION_STATUS_PILL[flag.status]}>
                         {flag.status_label || flag.status}
@@ -4923,19 +4909,19 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                         <div className="flex gap-2">
                           <button
                             onClick={() => askResolveFlag(flag, 'resolved')}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition">
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-success border border-success/45 hover:bg-surface-1 transition">
                             <Icon name="check" size={12} /> Hal qilindi
                           </button>
                           <button
                             onClick={() => askResolveFlag(flag, 'dismissed')}
-                            className="inline-flex items-center gap-1.5 rounded-lg bg-white/5 px-3 py-1.5 text-[11px] font-bold text-slate-300 border border-white/10 hover:bg-white/10 hover:text-white transition">
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-text-primary border border-edge hover:bg-surface-2 hover:text-text-primary transition">
                             <Icon name="x" size={12} /> Rad etish
                           </button>
                         </div>
                       ) : (
                         // Yopilgan qatorda tugma o'rniga qaror izi: kim yopgan
                         // va qanday izoh qoldirgan.
-                        <div className="text-[11px] font-semibold text-slate-500">
+                        <div className="text-[11px] font-semibold text-text-secondary">
                           {flag.resolved_by || '—'}
                           {flag.resolution_note ? ` · ${flag.resolution_note}` : ''}
                         </div>
@@ -4957,7 +4943,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             >
               <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
             </button>
-            <div className="px-3 py-2 rounded-xl bg-white/5 text-[11px] font-bold text-white/60 tabular-nums">
+            <div className="px-3 py-2 rounded-xl bg-surface-2 text-[11px] font-bold text-text-secondary font-data">
               {flagPage} / {lastPage}
             </div>
             <button
@@ -4974,14 +4960,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           onClose={() => !flagResolveBusy && setFlagResolve(null)}
           title={flagResolve?.status === 'resolved' ? 'Bayroqni yopish' : 'Bayroqni rad etish'}
         >
-          <div className="mb-5 rounded-xl bg-white/5 px-4 py-3">
-            <div className="text-sm font-bold text-white">{flagResolve?.flag.reason}</div>
-            <div className="mt-1 text-[11px] font-semibold text-white/40">
+          <div className="mb-5 rounded-xl bg-surface-2 px-4 py-3">
+            <div className="text-sm font-bold text-text-primary">{flagResolve?.flag.reason}</div>
+            <div className="mt-1 text-[11px] font-semibold text-text-secondary">
               {flagResolve?.flag.flag_type_label} · {formatAdminDateTime(flagResolve?.flag.created_at)}
             </div>
           </div>
           <div className="mb-5">
-            <label className="block text-xs text-white/50 mb-1.5 font-medium">Izoh (ixtiyoriy)</label>
+            <label className="block text-xs text-text-secondary mb-1.5 font-medium">Izoh (ixtiyoriy)</label>
             <textarea
               value={flagResolveNote}
               onChange={e => setFlagResolveNote(e.target.value)}
@@ -4990,23 +4976,23 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               className="w-full admin-input resize-none px-3 py-2.5 text-sm outline-none"
               placeholder="Masalan: markaz kompyuter sinfi, qoidabuzarlik yo'q"
             />
-            <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+            <p className="mt-2 text-[11px] text-text-secondary leading-relaxed">
               Faqat moderatsiya tarixiga yoziladi — foydalanuvchi buni ko'rmaydi.
             </p>
           </div>
           {/* Savol bayrog'i uchun ixtiyoriy chora. Belgilanmasa savolga
               umuman tegilmaydi: bayroq faqat navbatdan yopiladi. */}
           {canArchiveFlag && (
-            <label className="mb-5 flex cursor-pointer items-start gap-3 rounded-xl bg-white/5 px-4 py-3">
+            <label className="mb-5 flex cursor-pointer items-start gap-3 rounded-xl bg-surface-2 px-4 py-3">
               <input
                 type="checkbox"
                 checked={flagResolveArchive}
                 onChange={e => setFlagResolveArchive(e.target.checked)}
-                className="mt-0.5 h-4 w-4 cursor-pointer rounded border-white/15 bg-white/5 text-indigo-500 focus:ring-indigo-500/30"
+                className="mt-0.5 h-4 w-4 cursor-pointer rounded border-edge-strong bg-surface-2 accent-accent focus:ring-accent/40"
               />
               <span>
-                <span className="block text-xs font-bold text-white">Savolni arxivlash</span>
-                <span className="mt-1 block text-[11px] leading-relaxed text-white/40">
+                <span className="block text-xs font-bold text-text-primary">Savolni arxivlash</span>
+                <span className="mt-1 block text-[11px] leading-relaxed text-text-secondary">
                   Savol markaz bankidan olib tashlanadi va yangi olimpiadaga tanlanmaydi.
                   Mavjud natijalar va baholar saqlanib qoladi.
                 </span>
@@ -5019,17 +5005,17 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               qilmaydigan tanlov ko'rinib turardi). */}
           {canBlockFlagIp && (
             <div className="mb-5">
-              <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-white/5 px-4 py-3">
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl bg-surface-2 px-4 py-3">
                 <input
                   type="checkbox"
                   checked={flagResolveBlockIp}
                   onChange={e => setFlagResolveBlockIp(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 cursor-pointer rounded border-white/15 bg-white/5 text-indigo-500 focus:ring-indigo-500/30"
+                  className="mt-0.5 h-4 w-4 cursor-pointer rounded border-edge-strong bg-surface-2 accent-accent focus:ring-accent/40"
                 />
                 <span>
-                  <span className="block text-xs font-bold text-white">Shu IP manzilni ham blokla</span>
-                  <span className="mt-1 block text-[11px] leading-relaxed text-white/40">
-                    <span className="font-mono text-white/60">{flagResolve?.flag.extra?.ip_address}</span> —
+                  <span className="block text-xs font-bold text-text-primary">Shu IP manzilni ham blokla</span>
+                  <span className="mt-1 block text-[11px] leading-relaxed text-text-secondary">
+                    <span className="font-mono text-text-secondary">{flagResolve?.flag.extra?.ip_address}</span> —
                     shu manzildan kelgan so'rovlar butun saytga kirita olmaydi.
                     Manzil ortida bir nechta foydalanuvchi bo'lishi mumkin (markaz
                     sinfxonasi, operator tarmog'i).
@@ -5038,7 +5024,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </label>
               {flagResolveBlockIp && (
                 <div className="mt-3">
-                  <label className="block text-xs text-white/50 mb-1.5 font-medium">Blok muddati</label>
+                  <label className="block text-xs text-text-secondary mb-1.5 font-medium">Blok muddati</label>
                   <div className="grid grid-cols-3 gap-2">
                     {IP_BLOCK_DURATION_OPTIONS.map(opt => (
                       <button
@@ -5048,9 +5034,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                         className={`px-2 py-2 rounded-xl text-[11px] font-bold transition-all border ${
                           flagResolveBlockDays === opt.value
                             ? opt.value === null
-                              ? 'bg-rose-600 text-white border-rose-600 font-extrabold shadow'
-                              : 'bg-amber-500 text-indigo-950 border-amber-500 font-extrabold shadow'
-                            : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                              ? 'btn-danger font-bold'
+                              : 'btn-primary font-bold'
+                            : 'btn-ghost'
                         }`}
                       >
                         {opt.label}
@@ -5090,17 +5076,17 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <>
         <section className="admin-card p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
               Yangi blok qo'yish
             </div>
             <button
               type="button"
               onClick={openBlockIpModal}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)] transition">
+              className="inline-flex items-center justify-center gap-2 rounded-lg btn-primary px-4 py-2 text-xs font-bold transition">
               <Icon name="plus" size={14} /> IP manzilni bloklash
             </button>
           </div>
-          <p className="mt-4 text-[11px] text-white/40 leading-relaxed">
+          <p className="mt-4 text-[11px] text-text-secondary leading-relaxed">
             Bloklangan manzildan kelgan so'rov saytga UMUMAN kirmaydi — bu bitta
             hisobni bloklashdan ko'ra keng chora: bir manzil ortida markaz sinfxonasi
             yoki butun operator tarmog'i turishi mumkin. Blokni faqat admin qo'yadi,
@@ -5112,29 +5098,29 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <div className="overflow-x-auto admin-scroll">
             <table className="w-full min-w-[1000px] text-left">
               <thead className="admin-table-hdr">
-                <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
                   {['IP manzil', 'Sabab', 'Kim bloklagan', 'Qo\'yilgan', 'Muddat', 'Holat', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-edge">
                 {!isApi ? (
-                  <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
+                  <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
                 ) : apiBlockedIpsRes.loading ? (
-                  <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Yuklanmoqda...</td></tr>
+                  <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Yuklanmoqda...</td></tr>
                 ) : failed ? (
-                  <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</td></tr>
+                  <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Ma'lumotni yuklab bo'lmadi</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Bloklangan IP manzillar yo'q</td></tr>
+                  <tr><td colSpan={7} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Bloklangan IP manzillar yo'q</td></tr>
                 ) : rows.map(row => (
-                  <tr key={row.id} className="text-xs admin-table-row text-slate-300">
-                    <td className="px-5 py-4 font-mono text-[11px] font-bold text-white">{row.cidr}</td>
-                    <td className="px-5 py-4 font-semibold text-white">{row.reason}</td>
+                  <tr key={row.id} className="text-xs admin-table-row text-text-primary">
+                    <td className="px-5 py-4 font-mono text-[11px] font-bold text-text-primary">{row.cidr}</td>
+                    <td className="px-5 py-4 font-semibold text-text-primary">{row.reason}</td>
                     {/* Blokni qo'ygan admin hisobi o'chirilgan bo'lsa backend
                         null qaytaradi (bayroqdagi "Tizim" holati bu yerda yo'q:
                         IP blokini hech qachon tizim qo'ymaydi). */}
-                    <td className="px-5 py-4 font-semibold text-slate-400">{row.blocked_by || '—'}</td>
-                    <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">{formatAdminDateTime(row.created_at)}</td>
-                    <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">
+                    <td className="px-5 py-4 font-semibold text-text-secondary">{row.blocked_by || '—'}</td>
+                    <td className="px-5 py-4 font-semibold text-text-secondary whitespace-nowrap">{formatAdminDateTime(row.created_at)}</td>
+                    <td className="px-5 py-4 font-semibold text-text-secondary whitespace-nowrap">
                       {row.expires_at ? formatAdminDateTime(row.expires_at) : 'Doimiy'}
                     </td>
                     <td className="px-5 py-4">
@@ -5145,7 +5131,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     <td className="px-5 py-4">
                       <button
                         onClick={() => setUnblockIpConfirm({ id: row.id, cidr: row.cidr })}
-                        className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-1.5 text-[11px] font-bold text-emerald-400 transition hover:bg-emerald-500/20">
+                        className="rounded-lg border border-success/45 bg-surface-2 px-3 py-1.5 text-[11px] font-bold text-success transition hover:bg-surface-1">
                         Blokni ochish
                       </button>
                     </td>
@@ -5166,7 +5152,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             >
               <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
             </button>
-            <div className="px-3 py-2 rounded-xl bg-white/5 text-[11px] font-bold text-white/60 tabular-nums">
+            <div className="px-3 py-2 rounded-xl bg-surface-2 text-[11px] font-bold text-text-secondary font-data">
               {blockedIpPage} / {lastPage}
             </div>
             <button
@@ -5185,14 +5171,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         >
           <div className="mb-5 space-y-4">
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">IP manzil yoki tarmoq</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">IP manzil yoki tarmoq</label>
               <input
                 value={blockIpAddress}
                 onChange={e => setBlockIpAddress(e.target.value)}
                 className="w-full admin-input px-3 py-2.5 text-sm font-mono outline-none"
                 placeholder="1.2.3.4 yoki 1.2.3.0/24"
               />
-              <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+              <p className="mt-2 text-[11px] text-text-secondary leading-relaxed">
                 Bitta manzil ham, butun tarmoq ham shu maydonga yoziladi. Tarmoq
                 CIDR ko'rinishida bo'ladi va undagi BARCHA manzillar bloklanadi —
                 keng prefiks (masalan /8) tasodifan minglab foydalanuvchini yopib
@@ -5200,7 +5186,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </p>
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Bloklash sababi</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Bloklash sababi</label>
               <input
                 value={blockIpReason}
                 onChange={e => setBlockIpReason(e.target.value)}
@@ -5210,7 +5196,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               />
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Muddat</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Muddat</label>
               <div className="grid grid-cols-3 gap-2">
                 {IP_BLOCK_DURATION_OPTIONS.map(opt => (
                   <button
@@ -5220,16 +5206,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     className={`px-2 py-2 rounded-xl text-[11px] font-bold transition-all border ${
                       blockIpDuration === opt.value
                         ? opt.value === null
-                          ? 'bg-rose-600 text-white border-rose-600 font-extrabold shadow'
-                          : 'bg-amber-500 text-indigo-950 border-amber-500 font-extrabold shadow'
-                        : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                          ? 'btn-danger font-bold'
+                          : 'btn-primary font-bold'
+                        : 'btn-ghost'
                     }`}
                   >
                     {opt.label}
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-[11px] text-white/40 leading-relaxed">
+              <p className="mt-2 text-[11px] text-text-secondary leading-relaxed">
                 Muddat tanlansa, blok o'sha kunlar o'tgach avtomatik kuchini yo'qotadi.
                 "Doimiy" — admin qo'lda ochmaguncha bloklangan qoladi.
               </p>
@@ -5279,7 +5265,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               3-sahifada turib filtrlansa bo'sh ro'yxat ko'rinardi. */}
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Markaz</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Markaz</label>
               <select
                 value={cheatingCenterId}
                 onChange={e => { setCheatingCenterId(e.target.value); setCheatingPage(1); }}
@@ -5291,7 +5277,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </select>
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Holat</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Holat</label>
               <select
                 value={cheatingStatus}
                 onChange={e => { setCheatingStatus(e.target.value); setCheatingPage(1); }}
@@ -5302,7 +5288,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </select>
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Sana oralig'i</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Sana oralig'i</label>
               <div className="flex gap-2">
                 <input
                   type="date"
@@ -5317,9 +5303,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </div>
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">Qidiruv</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">Qidiruv</label>
               <div className="relative">
-                <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <Icon name="search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
                 <input
                   value={cheatingSearch}
                   onChange={e => { setCheatingSearch(e.target.value); setCheatingPage(1); }}
@@ -5328,7 +5314,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </div>
             </div>
           </div>
-          <p className="mt-4 text-[11px] text-white/40 leading-relaxed">
+          <p className="mt-4 text-[11px] text-text-secondary leading-relaxed">
             Barcha markazlar bo'yicha diskvalifikatsiya qilingan va tekshiruv kutayotgan
             sessiyalar. Ro'yxat faqat ko'rish uchun: qaror (diskvalifikatsiya yoki davom
             ettirish) o'sha olimpiadaning menejer panelidagi jonli kuzatuv ekranida
@@ -5339,48 +5325,48 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <div className="overflow-x-auto admin-scroll">
             <table className="w-full min-w-[1100px] text-left">
               <thead className="admin-table-hdr">
-                <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
                   {["O'quvchi", 'Olimpiada', 'Markaz', 'Holat', 'Sabab', 'Vaqt', 'Kim qaror qildi', 'Amal'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-edge">
                 {!isApi ? (
-                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
+                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Xavfsizlik ma'lumotlari faqat API rejimida ko'rinadi</td></tr>
                 ) : apiCheatingRes.loading ? (
-                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Yuklanmoqda...</td></tr>
+                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Yuklanmoqda...</td></tr>
                 ) : failed ? (
-                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Ma'lumotni yuklab bo'lmadi</td></tr>
+                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Ma'lumotni yuklab bo'lmadi</td></tr>
                 ) : rows.length === 0 ? (
-                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Firibgarlik holatlari topilmadi</td></tr>
+                  <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Firibgarlik holatlari topilmadi</td></tr>
                 ) : rows.map(row => {
                   const meta = CHEATING_STATUS_META[row.status];
                   return (
-                    <tr key={row.session_id} className="text-xs admin-table-row text-slate-300">
+                    <tr key={row.session_id} className="text-xs admin-table-row text-text-primary">
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
-                          <Avatar name={row.student_name} size={34} />
+                          <Avatar name={row.student_name} size={34} gradient="bg-pencil-600" />
                           <div className="min-w-0">
-                            <div className="truncate font-bold text-white">{row.student_name}</div>
-                            <div className="font-mono text-[10px] text-white/40">{maskPhoneDisplay(row.student_phone, '')}</div>
+                            <div className="truncate font-bold text-text-primary">{row.student_name}</div>
+                            <div className="font-mono text-[10px] text-text-secondary">{maskPhoneDisplay(row.student_phone, '')}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-4 font-semibold text-slate-400">{row.olympiad_title}</td>
-                      <td className="px-5 py-4 font-semibold text-slate-400">{row.center_name}</td>
+                      <td className="px-5 py-4 font-semibold text-text-secondary">{row.olympiad_title}</td>
+                      <td className="px-5 py-4 font-semibold text-text-secondary">{row.center_name}</td>
                       <td className="px-5 py-4">
                         <AdminPill status={meta?.pill}>{meta?.label || row.status}</AdminPill>
                       </td>
                       {/* Sabab kodini o'zbekchaga menejer panelidagi bir xil
                           xarita aylantiradi (yagona manba) — noma'lum kod xom
                           holda ko'rinadi. */}
-                      <td className="px-5 py-4 font-semibold text-slate-400">{cheatingReasonLabel(row.cheating_reason) || '—'}</td>
+                      <td className="px-5 py-4 font-semibold text-text-secondary">{cheatingReasonLabel(row.cheating_reason) || '—'}</td>
                       {/* Diskvalifikatsiyada — DQ vaqti, kutayotganda esa
                           tekshiruv so'ralgan vaqt (backend ro'yxatni AYNAN shu
                           vaqt bo'yicha tartiblaydi). */}
-                      <td className="px-5 py-4 font-semibold text-slate-400 whitespace-nowrap">
+                      <td className="px-5 py-4 font-semibold text-text-secondary whitespace-nowrap">
                         {formatAdminDateTime(row.disqualified_at || row.review_requested_at)}
                       </td>
-                      <td className="px-5 py-4 font-semibold text-slate-400">
+                      <td className="px-5 py-4 font-semibold text-text-secondary">
                         {row.reviewed_by_name || (row.reviewed_at ? 'Tizim' : '—')}
                       </td>
                       {/* Jonli kuzatuv ekraniga to'g'ridan-to'g'ri havola yo'q:
@@ -5391,7 +5377,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       <td className="px-5 py-4">
                         <span
                           title={`Olimpiada: ${row.olympiad_title} (markaz: ${row.center_name})`}
-                          className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">
+                          className="text-[11px] font-semibold text-text-secondary whitespace-nowrap">
                           Menejer panelida ko'ring
                         </span>
                       </td>
@@ -5413,7 +5399,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             >
               <Icon name="chevronRight" size={12} className="rotate-180" /> Oldingisi
             </button>
-            <div className="px-3 py-2 rounded-xl bg-white/5 text-[11px] font-bold text-white/60 tabular-nums">
+            <div className="px-3 py-2 rounded-xl bg-surface-2 text-[11px] font-bold text-text-secondary font-data">
               {cheatingPage} / {lastPage}
             </div>
             <button
@@ -5443,8 +5429,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     return (
       <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
         <div>
-          <h1 className="text-[20px] font-black leading-tight text-white">Xavfsizlik</h1>
-          <p className="mt-1 text-[11px] font-bold text-slate-400">
+          <h1 className="text-[20px] font-bold leading-tight text-text-primary">Xavfsizlik</h1>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">
             Foydalanuvchi hisoblari bo'yicha kuzatuv bloklari. Hech bir blok avtomatik
             chora ko'rmaydi — qaror adminniki.
           </p>
@@ -5460,8 +5446,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               onClick={() => setSecuritySection(section.key)}
               className={`px-4 py-2 rounded-xl text-[11px] font-bold transition-all border ${
                 activeSection === section.key
-                  ? 'bg-indigo-600 text-white border-indigo-600 font-extrabold shadow'
-                  : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                  ? 'btn-primary font-bold'
+                  : 'btn-ghost'
               }`}>
               {section.label}
             </button>
@@ -5475,34 +5461,34 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderOlympiads = () => (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div>
-        <h1 className="text-[20px] font-black leading-tight text-white">Musobaqalar</h1>
-        <p className="mt-1 text-[11px] font-bold text-slate-400">Platformadagi olimpiada va musobaqalar ro'yxati.</p>
+        <h1 className="text-[20px] font-bold leading-tight text-text-primary">Musobaqalar</h1>
+        <p className="mt-1 text-[11px] font-bold text-text-secondary">Platformadagi olimpiada va musobaqalar ro'yxati.</p>
       </div>
       <section className="overflow-hidden admin-card">
         <div className="overflow-x-auto admin-scroll">
           <table className="w-full min-w-[860px] text-left">
             <thead className="admin-table-hdr">
-              <tr className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
+              <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
                 {['Tadbir', 'Tashkilot', 'Fan', 'Daraja', 'Test turi', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/5">
+            <tbody className="divide-y divide-edge">
               {(() => {
                 const olympiadList = isApi ? (apiOlympiads || []) : store.olympiads;
                 if (olympiadList.length === 0) {
-                  return <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-slate-500">Hali tadbirlar yo'q</td></tr>;
+                  return <tr><td colSpan={8} className="px-5 py-12 text-center text-sm font-semibold text-text-secondary">Hali tadbirlar yo'q</td></tr>;
                 }
                 return olympiadList.map(o => {
                   const center = centers.find(c => String(c.id) === String(o.centerId));
                   return (
-                    <tr key={o.id} className="text-xs admin-table-row text-slate-300">
-                      <td className="px-5 py-4 font-bold text-white">{o.title}</td>
-                      <td className="px-5 py-4 font-semibold text-slate-400">{center?.name || '—'}</td>
-                      <td className="px-5 py-4"><span className="rounded-md bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 text-[10px] font-bold text-indigo-400">{o.subject}</span></td>
-                      <td className="px-5 py-4">{o.testLevel ? <span className="rounded-md bg-violet-500/10 border border-violet-500/20 px-2 py-0.5 text-[10px] font-bold text-violet-400">{o.testLevel}</span> : <span className="text-slate-500">—</span>}</td>
-                      <td className="px-5 py-4">{o.testType ? <span className="rounded-md bg-sky-500/10 border border-sky-500/20 px-2 py-0.5 text-[10px] font-bold text-sky-400">{testTypeLabel(o.testType)}</span> : <span className="text-slate-500">—</span>}</td>
-                      <td className="px-5 py-4 font-semibold text-slate-400">{o.startDate || '—'}</td>
-                      <td className="px-5 py-4 font-bold text-slate-300">{o.participants || 0}</td>
+                    <tr key={o.id} className="text-xs admin-table-row text-text-primary">
+                      <td className="px-5 py-4 font-bold text-text-primary">{o.title}</td>
+                      <td className="px-5 py-4 font-semibold text-text-secondary">{center?.name || '—'}</td>
+                      <td className="px-5 py-4"><span className="rounded-md bg-surface-2 border border-accent/45 px-2 py-0.5 text-[10px] font-bold text-accent">{o.subject}</span></td>
+                      <td className="px-5 py-4">{o.testLevel ? <span className="rounded-md bg-surface-2 border border-accent-2/45 px-2 py-0.5 text-[10px] font-bold text-accent-2">{o.testLevel}</span> : <span className="text-text-secondary">—</span>}</td>
+                      <td className="px-5 py-4">{o.testType ? <span className="rounded-md bg-surface-2 border border-accent-2/45 px-2 py-0.5 text-[10px] font-bold text-accent-2">{testTypeLabel(o.testType)}</span> : <span className="text-text-secondary">—</span>}</td>
+                      <td className="px-5 py-4 font-semibold text-text-secondary">{o.startDate || '—'}</td>
+                      <td className="px-5 py-4 font-bold text-text-primary">{o.participants || 0}</td>
                       <td className="px-5 py-4"><AdminPill status={o.status} /></td>
                     </tr>
                   );
@@ -5518,11 +5504,11 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderSubjects = () => (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div>
-        <h1 className="text-[20px] font-black leading-tight text-white">Fanlar</h1>
-        <p className="mt-1 text-[11px] font-bold text-slate-400">Platformada ishlatiladigan fan kategoriyalari.</p>
+        <h1 className="text-[20px] font-bold leading-tight text-text-primary">Fanlar</h1>
+        <p className="mt-1 text-[11px] font-bold text-text-secondary">Platformada ishlatiladigan fan kategoriyalari.</p>
       </div>
       <section className="admin-card p-5">
-        <div className="mb-3 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Yangi fan qo'shish</div>
+        <div className="mb-3 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Yangi fan qo'shish</div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <input className="h-10 flex-1 admin-input px-3 text-xs outline-none"
             placeholder="Fan nomi" value={newSubjectName} onChange={e => setNewSubjectName(e.target.value)} />
@@ -5539,7 +5525,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             OlympyStore.addSubject(name);
             setNewSubjectName('');
             showToast(`"${name}" qo'shildi`);
-          }} className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)] transition">
+          }} className="inline-flex items-center justify-center gap-2 rounded-lg btn-primary px-4 py-2 text-xs font-bold transition">
             <Icon name="plus" size={14} /> Qo'shish
           </button>
         </div>
@@ -5547,7 +5533,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <section className="admin-card p-5">
         <div className="flex flex-wrap gap-2">
           {subjects.map(s => (
-            <span key={s} className="rounded-md bg-indigo-500/10 border border-indigo-500/20 px-3 py-2 text-xs font-bold text-indigo-400">
+            <span key={s} className="rounded-md bg-surface-2 border border-accent/45 px-3 py-2 text-xs font-bold text-accent">
               {s}
             </span>
           ))}
@@ -5647,25 +5633,25 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderSupport = () => (
     <div className="min-h-[calc(100vh-54px)] p-[18px] flex flex-col space-y-[14px]">
       <div>
-        <h1 className="text-[20px] font-black leading-tight text-white">AI Support Yozishmalari</h1>
-        <p className="mt-1 text-[11px] font-bold text-slate-400">Foydalanuvchilarning sun'iy intellekt yordamchisi bilan qilgan suhbatlari tarixi.</p>
+        <h1 className="text-[20px] font-bold leading-tight text-text-primary">AI Support Yozishmalari</h1>
+        <p className="mt-1 text-[11px] font-bold text-text-secondary">Foydalanuvchilarning sun'iy intellekt yordamchisi bilan qilgan suhbatlari tarixi.</p>
       </div>
 
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 min-h-[500px]">
         {/* Thread list */}
         <div className="admin-card p-4 flex flex-col h-[600px] overflow-hidden">
-          <h2 className="text-xs font-black tracking-wider uppercase text-slate-300 mb-3 flex items-center justify-between">
+          <h2 className="text-xs font-bold tracking-wider uppercase text-text-primary mb-3 flex items-center justify-between">
             Suhbatlar
-            <button onClick={loadSupportThreads} className="p-1 rounded bg-white/5 hover:bg-white/10 text-indigo-400 transition cursor-pointer" title="Yangilash">
+            <button onClick={loadSupportThreads} className="p-1 rounded bg-surface-2 hover:bg-surface-2 text-accent transition cursor-pointer" title="Yangilash">
               <Icon name="chevronRight" size={12} className="rotate-90" />
             </button>
           </h2>
 
           <div className="flex-1 overflow-y-auto space-y-2 pr-1 admin-scroll">
             {loadingThreads ? (
-              <div className="py-8 text-center text-xs text-slate-500 font-semibold">Yuklanmoqda...</div>
+              <div className="py-8 text-center text-xs text-text-secondary font-semibold">Yuklanmoqda...</div>
             ) : supportThreads.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-500 font-semibold">Murojaatlar topilmadi</div>
+              <div className="py-8 text-center text-xs text-text-secondary font-semibold">Murojaatlar topilmadi</div>
             ) : (
               supportThreads.map(t => {
                 const isSelected = selectedThread?.chat_key === t.chat_key;
@@ -5675,14 +5661,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     onClick={() => setSelectedThread(t)}
                     className={`w-full text-left p-3 rounded-xl border transition-all cursor-pointer ${
                       isSelected
-                        ? 'bg-indigo-600/10 border-indigo-500/30 text-white'
-                        : 'bg-white/[0.01] border-white/5 hover:border-white/10 text-slate-300'
+                        ? 'border-accent bg-surface-2 text-text-primary'
+                        : 'bg-surface-1 border-edge hover:border-edge-strong text-text-primary'
                     }`}
                   >
                     <div className="font-bold text-xs truncate">{t.full_name || 'Noma\'lum user'}</div>
-                    <div className="text-[10px] text-slate-500 font-medium mt-0.5">{t.phone}</div>
-                    <div className="text-[11px] text-slate-400 truncate mt-1.5 font-medium">
-                      <span className="text-[9px] font-extrabold uppercase mr-1 opacity-70">
+                    <div className="text-[10px] text-text-secondary font-medium mt-0.5">{t.phone}</div>
+                    <div className="text-[11px] text-text-secondary truncate mt-1.5 font-medium">
+                      <span className="text-[9px] font-bold uppercase mr-1 opacity-70">
                         {t.last_message_role === 'user' ? 'Foydalanuvchi' : 'AI Yordamchi'}:
                       </span>
                       {t.last_message}
@@ -5699,14 +5685,14 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           {selectedThread ? (
             <>
               {/* Header */}
-              <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between bg-white/[0.01]">
+              <div className="px-5 py-4 border-b border-edge flex items-center justify-between bg-surface-1">
                 <div>
-                  <h3 className="text-sm font-extrabold text-white">{selectedThread.full_name}</h3>
-                  <p className="text-[10px] text-slate-400 font-bold mt-0.5">{selectedThread.phone}</p>
+                  <h3 className="text-sm font-bold text-text-primary">{selectedThread.full_name}</h3>
+                  <p className="text-[10px] text-text-secondary font-bold mt-0.5">{selectedThread.phone}</p>
                 </div>
                 <button
                   onClick={() => loadThreadDetail(selectedThread.chat_key)}
-                  className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 text-xs font-bold text-indigo-400 transition cursor-pointer"
+                  className="px-3 py-1.5 rounded-lg bg-surface-2 border border-edge hover:bg-surface-2 text-xs font-bold text-accent transition cursor-pointer"
                 >
                   Yangilash
                 </button>
@@ -5715,7 +5701,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               {/* Message history */}
               <div className="flex-1 overflow-y-auto p-5 space-y-4 admin-scroll">
                 {loadingMessages ? (
-                  <div className="h-full flex items-center justify-center text-xs text-slate-500 font-semibold">Yuklanmoqda...</div>
+                  <div className="h-full flex items-center justify-center text-xs text-text-secondary font-semibold">Yuklanmoqda...</div>
                 ) : (
                   threadMessages.map((m, idx) => {
                     const isUser = m.role === 'user';
@@ -5725,10 +5711,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                         <div
                           className={`max-w-[75%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed ${
                             isUser
-                              ? 'bg-indigo-600 text-white rounded-tr-none'
+                              ? 'bg-accent-fill text-on-accent rounded-tr-none'
                               : isAdmin
-                              ? 'bg-amber-600/10 text-amber-200 border border-amber-500/20 rounded-tl-none font-semibold'
-                              : 'bg-white/5 text-slate-300 border border-white/5 rounded-tl-none'
+                              ? 'bg-surface-2 text-warning border border-warning/45 rounded-tl-none font-semibold'
+                              : 'bg-surface-2 text-text-primary border border-edge rounded-tl-none'
                           }`}
                         >
                           <div className="font-semibold mb-1 opacity-60 text-[9px] uppercase tracking-wider">
@@ -5748,29 +5734,29 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </div>
 
               {/* Reply Form */}
-              <form onSubmit={handleSendAdminReply} className="p-4 border-t border-white/5 bg-white/[0.01] flex gap-2">
+              <form onSubmit={handleSendAdminReply} className="p-4 border-t border-edge bg-surface-1 flex gap-2">
                 <input
                   type="text"
                   value={adminReplyText}
                   onChange={e => setAdminReplyText(e.target.value)}
-                  className="flex-1 h-9 px-3 bg-white/5 border border-white/5 rounded-xl text-xs text-white outline-none focus:border-indigo-500/30 transition"
+                  className="flex-1 h-9 px-3 bg-surface-2 border border-edge rounded-xl text-xs text-text-primary outline-none focus:border-accent/45 transition"
                   placeholder="Foydalanuvchiga javob yozing..."
                   disabled={sendingAdminReply}
                 />
                 <button
                   type="submit"
                   disabled={sendingAdminReply || !adminReplyText.trim()}
-                  className="h-9 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white transition disabled:opacity-50 flex items-center justify-center cursor-pointer"
+                  className="h-9 px-4 rounded-xl btn-primary text-xs font-bold transition disabled:opacity-50 flex items-center justify-center cursor-pointer"
                 >
                   {sendingAdminReply ? 'Yuborilmoqda...' : 'Yuborish'}
                 </button>
               </form>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-slate-500">
+            <div className="flex-1 flex flex-col items-center justify-center text-center p-8 text-text-secondary">
               <span className="text-4xl mb-3">💬</span>
-              <h3 className="text-sm font-extrabold text-slate-400">Suhbat tanlanmagan</h3>
-              <p className="text-[10px] text-slate-500 max-w-xs mt-1 font-semibold">Foydalanuvchilar suhbat tarixini ko'rish uchun chap tomondagi ro'yxatdan birorta suhbatni tanlang.</p>
+              <h3 className="text-sm font-bold text-text-secondary">Suhbat tanlanmagan</h3>
+              <p className="text-[10px] text-text-secondary max-w-xs mt-1 font-semibold">Foydalanuvchilar suhbat tarixini ko'rish uchun chap tomondagi ro'yxatdan birorta suhbatni tanlang.</p>
             </div>
           )}
         </div>
@@ -5781,20 +5767,20 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderSettings = () => (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div>
-        <h1 className="text-[20px] font-black leading-tight text-white">Sozlamalar</h1>
-        <p className="mt-1 text-[11px] font-bold text-slate-400">Profil ma'lumotlari va parolni o'zgartirish.</p>
+        <h1 className="text-[20px] font-bold leading-tight text-text-primary">Sozlamalar</h1>
+        <p className="mt-1 text-[11px] font-bold text-text-secondary">Profil ma'lumotlari va parolni o'zgartirish.</p>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         {/* Profil Sozlamalari */}
         <section className="admin-card p-5 space-y-4">
-          <h2 className="text-xs font-black tracking-wider uppercase text-slate-300 mb-2 flex items-center gap-2">
-            <Icon name="edit" size={14} className="text-indigo-400" />
+          <h2 className="text-xs font-bold tracking-wider uppercase text-text-primary mb-2 flex items-center gap-2">
+            <Icon name="edit" size={14} className="text-accent" />
             Profil Sozlamalari
           </h2>
           <form onSubmit={handleUpdateProfile} className="space-y-4">
             <div>
-              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Ism</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Ism</label>
               <input
                 type="text"
                 value={editFirstName}
@@ -5804,7 +5790,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               />
             </div>
             <div>
-              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Familiya</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Familiya</label>
               <input
                 type="text"
                 value={editLastName}
@@ -5814,7 +5800,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               />
             </div>
             <div>
-              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Username</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Username</label>
               <input
                 type="text"
                 value={editUsername}
@@ -5824,7 +5810,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               />
             </div>
             <div>
-              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Telefon Raqami</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Telefon Raqami</label>
               <input
                 type="text"
                 value={user?.phone || ''}
@@ -5833,12 +5819,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 className="h-9 w-full admin-input px-3 text-xs outline-none opacity-60 cursor-not-allowed"
                 placeholder="+998901234567"
               />
-              <div className="text-[10px] text-slate-500 mt-1">Telefon raqamini tasdiqsiz o'zgartirib bo'lmaydi.</div>
+              <div className="text-[10px] text-text-secondary mt-1">Telefon raqamini tasdiqsiz o'zgartirib bo'lmaydi.</div>
             </div>
             <button
               type="submit"
               disabled={savingProfile}
-              className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 py-3 text-xs font-bold transition disabled:opacity-50"
+              className="w-full rounded-xl btn-primary py-3 text-xs font-bold transition disabled:opacity-50"
             >
               {savingProfile ? "Saqlanmoqda..." : "Saqlash"}
             </button>
@@ -5847,13 +5833,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
         {/* Parolni Yangilash */}
         <section className="admin-card p-5 space-y-4">
-          <h2 className="text-xs font-black tracking-wider uppercase text-slate-300 mb-2 flex items-center gap-2">
-            <Icon name="shield" size={14} className="text-emerald-400" />
+          <h2 className="text-xs font-bold tracking-wider uppercase text-text-primary mb-2 flex items-center gap-2">
+            <Icon name="shield" size={14} className="text-success" />
             Parolni O'zgartirish
           </h2>
           <form onSubmit={handleUpdatePassword} className="space-y-4">
             <div>
-              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Joriy Parol</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Joriy Parol</label>
               <input
                 type="password"
                 value={oldPassword}
@@ -5863,7 +5849,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               />
             </div>
             <div>
-              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Yangi Parol</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Yangi Parol</label>
               <input
                 type="password"
                 value={newPassword}
@@ -5873,7 +5859,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               />
             </div>
             <div>
-              <label className="block text-[10px] font-extrabold uppercase tracking-wider text-slate-400 mb-1.5">Yangi Parolni Tasdiqlash</label>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Yangi Parolni Tasdiqlash</label>
               <input
                 type="password"
                 value={confirmPassword}
@@ -5885,7 +5871,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             <button
               type="submit"
               disabled={savingPassword}
-              className="w-full rounded-xl bg-emerald-600 hover:bg-emerald-500 py-3 text-xs font-bold transition disabled:opacity-50"
+              className="w-full rounded-xl btn-success py-3 text-xs font-bold transition disabled:opacity-50"
             >
               {savingPassword ? "Yangilanmoqda..." : "Parolni Yangilash"}
             </button>
@@ -5918,8 +5904,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   ].filter(Boolean);
 
   return (
-    <div className="h-screen overflow-hidden admin-bg text-slate-100">
-      {mobileMenu && <div className="fixed inset-0 z-40 bg-slate-950/60 lg:hidden" onClick={() => setMobileMenu(false)} />}
+    <div className="h-screen overflow-hidden admin-bg text-text-primary">
+      {mobileMenu && <div className="fixed inset-0 z-40 bg-ground/80 lg:hidden" onClick={() => setMobileMenu(false)} />}
       <div className="flex h-full">
         <AdminSidebar />
         <div className="flex min-w-0 flex-1 flex-col">
