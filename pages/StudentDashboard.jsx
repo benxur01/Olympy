@@ -54,12 +54,14 @@ const studentPageFromPath = () => {
 
 const BadgeList = ({ badges }) => {
   if (!badges || badges.length === 0) return null;
+  // Backend `b.color` gradient klassi ATAYIN e'tiborsiz qoldirildi —
+  // nishonlar bir xil neytral chip bo'lib turadi, rang faqat holat uchun.
   return (
     <div className="flex flex-wrap gap-2 mt-2">
       {badges.map(b => (
         <span
           key={b.id}
-          className={`inline-flex items-center gap-1.5 text-[10px] md:text-xs font-bold text-white bg-gradient-to-r ${b.color || 'from-indigo-500 to-purple-500'} px-2.5 py-1.5 rounded-xl shadow-[0_4px_12px_rgba(99,102,241,0.2)]`}
+          className="inline-flex items-center gap-1.5 rounded-xl border border-edge bg-surface-2 px-2.5 py-1.5 text-[10px] font-bold text-text-primary md:text-xs"
           title={b.description}
         >
           <span>{b.icon}</span>
@@ -73,22 +75,22 @@ const BadgeList = ({ badges }) => {
 // Premium funksiya o'rniga ko'rsatiladigan qulf ekrani.
 const PremiumLock = ({ title = 'Bu funksiya premium o\'quvchilar uchun', onUpgrade }) => (
   <div className="glass rounded-2xl p-6 md:p-10 text-center flex flex-col items-center gap-4">
-    <div className="w-16 h-16 rounded-2xl bg-amber-500/15 flex items-center justify-center text-3xl">
-      ⭐
+    <div className="w-16 h-16 rounded-2xl border border-edge bg-surface-2 flex items-center justify-center text-text-secondary">
+      <Icon name="lock" size={26} />
     </div>
     <div>
-      <h3 className="font-black text-white text-base md:text-lg">{title}</h3>
-      <p className="text-white/50 text-xs md:text-sm mt-2 max-w-sm mx-auto leading-relaxed">
+      <h3 className="font-display font-bold text-text-primary text-base md:text-lg">{title}</h3>
+      <p className="text-text-secondary text-xs md:text-sm mt-2 max-w-sm mx-auto leading-relaxed">
         Premium bilan tarixiy tahlil, raqobatchi tahlili, fan bo'yicha zaiflik xaritasi, AI o'quv rejasi va tayyorlik darajasi ochiladi.
       </p>
     </div>
     <div className="flex items-center gap-3">
-      <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-amber-400 bg-amber-500/10 ring-1 ring-amber-500/20 px-3 py-1.5 rounded-xl">
-        🔒 Premium
+      <span className="inline-flex items-center gap-1.5 rounded-xl border border-warning/40 bg-warning/10 px-3 py-1.5 text-[11px] font-bold text-warning">
+        <Icon name="lock" size={12} /> Premium
       </span>
       {onUpgrade && (
-        <button onClick={onUpgrade} className="text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3.5 py-1.5 rounded-xl shadow-md transition-all">
-          Premiumga o'tish ⚡
+        <button onClick={onUpgrade} className="btn-primary text-[11px] font-bold px-3.5 py-1.5 rounded-xl">
+          Premiumga o'tish
         </button>
       )}
     </div>
@@ -112,13 +114,15 @@ const fmtAmount = (amount) => `${(Number(amount) || 0).toLocaleString('ru-RU').r
 
 // Tranzaksiya holati → ruscha emas, foydalanuvchiga ko'rinadigan o'zbekcha
 // matn + emoji. Backend status kodlari: pending/success/failed/cancelled.
+// Holat endi emoji bilan emas, chip (shakl) + semantik rang bilan kodlanadi —
+// bir qarashda o'qiladi va rang ko'rmaydigan foydalanuvchida ham ishlaydi.
 const RECEIPT_STATUS = {
-  success: { label: "To'langan", icon: '✅', cls: 'text-emerald-300' },
-  pending: { label: 'Kutilmoqda', icon: '⏳', cls: 'text-amber-300' },
-  failed: { label: 'Xato', icon: '❌', cls: 'text-rose-300' },
-  cancelled: { label: 'Bekor qilingan', icon: '↩️', cls: 'text-white/50' },
+  success: { label: "To'langan", cls: 'badge-approved' },
+  pending: { label: 'Kutilmoqda', cls: 'badge-pending' },
+  failed: { label: 'Xato', cls: 'badge-rejected' },
+  cancelled: { label: 'Bekor qilingan', cls: 'badge-draft' },
 };
-const receiptStatus = (status) => RECEIPT_STATUS[status] || { label: status || '—', icon: 'ℹ️', cls: 'text-white/60' };
+const receiptStatus = (status) => RECEIPT_STATUS[status] || { label: status || '—', cls: 'badge-draft' };
 
 // Provayder kodi → ko'rsatish nomi.
 const PROVIDER_LABEL = { click: 'Click', payme: 'Payme' };
@@ -184,31 +188,30 @@ function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate, user, on
   };
 
   return (
-    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass rounded-2xl p-4 md:p-6 border border-amber-500/20 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in motion-reduce:animate-none mobile-content-pad">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass rounded-2xl p-4 md:p-6">
         <div>
-          <h2 className="text-lg md:text-xl font-black text-white flex items-center gap-2">
-            <span>Mukofotlar Do'koni</span>
-            <span className="text-[10px] uppercase tracking-wider font-extrabold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md">STORE</span>
-          </h2>
-          <p className="text-white/40 text-xs mt-0.5">Testlarda to'g'ri javob berib tangalar yiging va ularni ajoyib sovg'alarga almashtiring.</p>
+          <h2 className="font-display text-lg md:text-xl font-bold text-text-primary">Mukofotlar do'koni</h2>
+          <p className="text-text-secondary text-xs mt-0.5">Testlarda to'g'ri javob berib tangalar yiging va ularni sovg'alarga almashtiring.</p>
         </div>
-        <div className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/30 px-4 py-2.5 rounded-2xl self-start sm:self-auto shadow-[0_4px_12px_rgba(245,158,11,0.1)]">
-          <span className="text-lg">🪙</span>
+        {/* Xulosa detaldan oldin: balans o'ng chetda alohida "kvitansiya"
+            blokida turadi — sahifani ochgan o'quvchi avval shuni ko'radi. */}
+        <div className="flex items-center gap-3 rounded-2xl border border-edge px-4 py-2.5 self-start sm:self-auto">
+          <Icon name="award" size={18} className="text-text-secondary flex-shrink-0" />
           <div className="min-w-0">
-            <div className="text-[10px] text-amber-400 uppercase tracking-widest font-black leading-none">Mening balansim</div>
-            <div className="text-lg font-black text-amber-300 leading-none mt-1">{coins} tanga</div>
+            <div className="text-[10px] text-text-secondary uppercase tracking-widest font-bold leading-none">Mening balansim</div>
+            <div className="text-lg font-data font-bold text-text-primary leading-none mt-1">{coins} tanga</div>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-4">
-          <h3 className="text-sm font-black text-white/50 uppercase tracking-wider">Mavjud sovg'alar</h3>
+          <h3 className="text-xs font-bold uppercase tracking-widest text-text-secondary">Mavjud sovg'alar</h3>
           {loading ? (
-            <div className="text-center py-12 text-white/40 text-sm">Mukofotlar yuklanmoqda...</div>
+            <div className="text-center py-12 text-text-secondary text-sm">Mukofotlar yuklanmoqda...</div>
           ) : products.length === 0 ? (
-            <div className="glass rounded-2xl p-8 text-center text-white/40 text-sm">Do'kon hozircha bo'sh.</div>
+            <div className="glass rounded-2xl p-8 text-center text-text-secondary text-sm">Do'kon hozircha bo'sh.</div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {products.map(p => {
@@ -216,71 +219,62 @@ function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate, user, on
                 const isPremiumLocked = p.is_premium_only && !isPremium;
                 const features = Array.isArray(p.features) ? p.features : [];
                 return (
-                  <div 
-                    key={p.id} 
-                    className={`glass rounded-2xl p-4 md:p-5 flex flex-col justify-between gap-4 card-hover relative overflow-hidden transition-all ${
-                      isPremiumLocked 
-                        ? 'border-indigo-500/30 bg-gradient-to-b from-indigo-950/20 to-transparent' 
-                        : 'border-white/5'
-                    }`}
+                  <div
+                    key={p.id}
+                    className={`glass rounded-2xl p-4 md:p-5 flex flex-col justify-between gap-4 card-hover relative overflow-hidden ${
+ isPremiumLocked ? 'border-warning/40' : ''
+ }`}
                   >
                     {p.is_premium_only && (
-                      <div className="absolute top-3 right-3 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-[8px] text-white px-2 py-0.5 rounded-full font-black uppercase tracking-wider flex items-center gap-1 shadow-lg shadow-indigo-500/25 border border-indigo-400/20">
-                        <span>👑 Premium</span>
+                      <div className="absolute top-3 right-3 flex items-center gap-1 rounded-full border border-warning/40 bg-warning/10 px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider text-warning">
+                        <Icon name="star" size={9} /> Premium
                       </div>
                     )}
                     <div className="space-y-2">
                       {p.image_url ? (
-                        <div className="w-full h-32 rounded-2xl overflow-hidden bg-white/5 relative">
+                        <div className="w-full h-32 rounded-2xl overflow-hidden border border-edge bg-surface-2 relative">
                           <img src={p.image_url} alt={p.title} className={`w-full h-full object-cover ${isPremiumLocked ? 'blur-[3px] opacity-60' : ''}`} loading="lazy" />
                           {isPremiumLocked && (
-                            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
-                              <span className="text-2xl animate-pulse">🔒</span>
+                            <div className="absolute inset-0 flex items-center justify-center bg-ground/70 text-text-primary">
+                              <Icon name="lock" size={22} />
                             </div>
                           )}
                         </div>
                       ) : (
-                        <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center text-2xl shadow-inner relative">
-                          {isPremiumLocked ? '🔒' : (p.icon || '🎁')}
+                        <div className="w-12 h-12 rounded-2xl border border-edge bg-surface-2 flex items-center justify-center text-text-secondary relative">
+                          {isPremiumLocked ? <Icon name="lock" size={18} /> : (p.icon ? <span className="text-xl">{p.icon}</span> : <Icon name="award" size={18} />)}
                         </div>
                       )}
-                      <div className="font-bold text-white text-base leading-snug flex items-center gap-1.5">
-                        <span>{p.title}</span>
-                      </div>
-                      <p className="text-white/40 text-xs leading-relaxed">{p.description || "O'quv markazi tomonidan premium sovg'a."}</p>
+                      <div className="font-bold text-text-primary text-base leading-snug">{p.title}</div>
+                      <p className="text-text-secondary text-xs leading-relaxed">{p.description || "O'quv markazi tomonidan premium sovg'a."}</p>
                       {features.length > 0 && (
                         <div className="flex flex-wrap gap-1.5 pt-1">
                           {features.map((f, i) => (
-                            <span key={i} className="text-[10px] font-semibold text-white/60 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">
+                            <span key={i} className="text-[10px] font-semibold text-text-secondary border border-edge px-2 py-0.5 rounded-md">
                               {typeof f === 'string' ? f : (f?.value ? `${f.key ? f.key + ': ' : ''}${f.value}` : '')}
                             </span>
                           ))}
                         </div>
                       )}
                     </div>
-                    <div className="flex items-center justify-between border-t border-white/5 pt-3 mt-1">
-                      <div className="flex items-center gap-1">
-                        <span className="text-sm">🪙</span>
-                        <span className="text-sm font-black text-amber-300">{p.coin_cost}</span>
+                    <div className="flex items-center justify-between border-t border-edge pt-3 mt-1">
+                      <div className="font-data text-sm font-bold text-text-primary">
+                        {p.coin_cost} <span className="font-sans text-xs font-normal text-text-secondary">tanga</span>
                       </div>
                       {isPremiumLocked ? (
                         <button
                           onClick={() => setShowUnlockModal(true)}
-                          className="text-xs font-bold px-4 py-2 rounded-xl transition-all bg-gradient-to-r from-indigo-600 to-purple-700 text-white shadow-lg shadow-indigo-600/35 hover:from-indigo-500 hover:to-purple-600 flex items-center gap-1"
+                          className="btn-primary text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-1.5"
                         >
-                          Qulfni ochish 🔑
+                          <Icon name="lock" size={12} /> Qulfni ochish
                         </button>
                       ) : (
                         <button
                           onClick={() => handleBuy(p)}
-                          disabled={buyingId === p.id}
-                          className={`text-xs font-bold px-4 py-2 rounded-xl transition-all ${
-                            cantAfford
-                              ? 'bg-white/5 text-white/30 cursor-not-allowed'
-                              : 'bg-amber-500 hover:bg-amber-600 text-slate-900 shadow-[0_4px_12px_rgba(245,158,11,0.2)]'
-                          }`}
+                          disabled={buyingId === p.id || cantAfford}
+                          className="btn-primary text-xs font-bold px-4 py-2 rounded-xl"
                         >
-                          {buyingId === p.id ? 'Sotib olinmoqda...' : 'Sotib olish'}
+                          {buyingId === p.id ? 'Sotib olinmoqda...' : (cantAfford ? 'Tanga yetmaydi' : 'Sotib olish')}
                         </button>
                       )}
                     </div>
@@ -291,11 +285,13 @@ function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate, user, on
           )}
         </div>
 
-        <Modal open={showUnlockModal} onClose={() => setShowUnlockModal(false)} title="👑 Premium Do'kon" width="max-w-md">
+        <Modal open={showUnlockModal} onClose={() => setShowUnlockModal(false)} title="Premium do'kon" width="max-w-md">
           <div className="text-center p-4 space-y-4">
-            <div className="text-5xl animate-bounce">🎁</div>
-            <h3 className="text-lg font-black text-white">Premium-eksklyuziv sovg'alar</h3>
-            <p className="text-xs text-white/60 leading-relaxed">
+            <div className="mx-auto w-14 h-14 rounded-2xl border border-edge bg-surface-2 flex items-center justify-center text-text-secondary">
+              <Icon name="lock" size={22} />
+            </div>
+            <h3 className="font-display text-lg font-bold text-text-primary">Premium-eksklyuziv sovg'alar</h3>
+            <p className="text-xs text-text-secondary leading-relaxed">
               Premium obunaga o'tish orqali do'kondagi maxsus kiyimlar, nishonlar va platforma sovg'alarini tangalarga sotib olish imkoniyatiga ega bo'lasiz.
             </p>
             <div className="pt-4 flex flex-col gap-2">
@@ -304,13 +300,13 @@ function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate, user, on
                   setShowUnlockModal(false);
                   if (onNavigate) onNavigate('premium');
                 }}
-                className="btn-primary py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-md shadow-indigo-600/20"
+                className="btn-primary py-3 rounded-xl font-bold text-sm"
               >
-                Premiumga o'tish ⚡
+                Premiumga o'tish
               </button>
               <button
                 onClick={() => setShowUnlockModal(false)}
-                className="btn-ghost py-2 rounded-xl text-xs font-semibold text-white/50"
+                className="btn-ghost py-2 rounded-xl text-xs font-semibold"
               >
                 Yopish
               </button>
@@ -319,11 +315,11 @@ function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate, user, on
         </Modal>
 
         <div className="space-y-4">
-          <h3 className="text-sm font-black text-white/50 uppercase tracking-wider">Buyurtmalar tarixi</h3>
+          <h3 className="text-xs font-bold uppercase tracking-widest text-text-secondary">Buyurtmalar tarixi</h3>
           {redemptionsLoading ? (
-            <div className="text-center py-6 text-white/40 text-xs">Yuklanmoqda...</div>
+            <div className="text-center py-6 text-text-secondary text-xs">Yuklanmoqda...</div>
           ) : redemptions.length === 0 ? (
-            <div className="glass rounded-2xl p-6 text-center text-white/40 text-xs">
+            <div className="glass rounded-2xl p-6 text-center text-text-secondary text-xs">
               Siz hali sovg'a buyurtma qilmagansiz.
             </div>
           ) : (
@@ -333,15 +329,13 @@ function RewardsPage({ apiRewardsRes, page, showApiToast, onUserUpdate, user, on
                 return (
                   <div key={r.id} className="glass rounded-xl p-3 flex items-center gap-3 justify-between">
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-9 h-9 bg-white/5 rounded-xl flex items-center justify-center text-lg">{r.product_icon || '🎁'}</div>
+                      <div className="w-9 h-9 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-base text-text-secondary">{r.product_icon || <Icon name="award" size={16} />}</div>
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-white truncate">{r.product_title}</div>
-                        <div className="text-[10px] text-white/40 mt-0.5">{new Date(r.redeemed_at).toLocaleDateString()}</div>
+                        <div className="text-xs font-bold text-text-primary truncate">{r.product_title}</div>
+                        <div className="text-[10px] font-data text-text-secondary mt-0.5">{new Date(r.redeemed_at).toLocaleDateString()}</div>
                       </div>
                     </div>
-                    <span className={`text-[9px] uppercase tracking-wider font-extrabold px-2 py-1 rounded-md ${
-                      isPending ? 'bg-amber-500/10 text-amber-400' : 'bg-emerald-500/10 text-emerald-400'
-                    }`}>
+                    <span className={`chip text-[10px] flex-shrink-0 ${isPending ? 'badge-pending' : 'badge-approved'}`}>
                       {r.status_display}
                     </span>
                   </div>
@@ -413,11 +407,11 @@ function MistakesPage({ apiMistakesRes, showApiToast }) {
   };
 
   return (
-    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in motion-reduce:animate-none mobile-content-pad">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg md:text-xl font-black text-white">Xatolar Sandig'i</h2>
-          <p className="text-white/40 text-xs mt-0.5">Imtihonlarda yo'l qo'ygan xatolaringiz ustida ishlang va bilimingizni mustahkamlang.</p>
+          <h2 className="font-display text-lg md:text-xl font-bold text-text-primary">Xatolar sandig'i</h2>
+          <p className="text-text-secondary text-xs mt-0.5">Imtihonlarda yo'l qo'ygan xatolaringiz ustida ishlang va bilimingizni mustahkamlang.</p>
         </div>
         {mistakes.length > 0 && (
           <button
@@ -431,24 +425,24 @@ function MistakesPage({ apiMistakesRes, showApiToast }) {
       </div>
 
       {overallAnalysis && (
-        <div className="glass-strong rounded-2xl p-4 md:p-5 border border-indigo-500/30 animate-in">
+        <div className="glass-strong rounded-2xl p-4 md:p-5 animate-in motion-reduce:animate-none">
           <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
+            <div className="w-8 h-8 rounded-xl border border-edge bg-surface-1 flex items-center justify-center text-text-secondary">
               <Icon name="sparkles" size={16} />
             </div>
-            <div className="font-bold text-white text-sm">AI Umumiy Tavsiyalari</div>
+            <div className="font-display font-bold text-text-primary text-sm">AI umumiy tavsiyalari</div>
           </div>
-          <div className="text-xs md:text-sm text-white/70 leading-relaxed whitespace-pre-line border-t border-white/10 pt-3">
+          <div className="text-xs md:text-sm text-text-secondary leading-relaxed whitespace-pre-line border-t border-edge pt-3">
             {overallAnalysis}
           </div>
         </div>
       )}
 
       {loading ? (
-        <div className="text-center py-12 text-white/40 text-sm">Xatolar yuklanmoqda...</div>
+        <div className="text-center py-12 text-text-secondary text-sm">Xatolar yuklanmoqda...</div>
       ) : mistakes.length === 0 ? (
-        <div className="glass rounded-2xl p-8 text-center text-white/40 text-sm">
-          🎉 Tabriklaymiz! Sizda hech qanday xato aniqlanmagan. O'qishda davom eting!
+        <div className="glass rounded-2xl p-8 text-center text-text-secondary text-sm">
+          Tabriklaymiz — sizda hech qanday xato aniqlanmagan. O'qishda davom eting!
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4">
@@ -456,24 +450,24 @@ function MistakesPage({ apiMistakesRes, showApiToast }) {
             <div key={idx} className="glass rounded-2xl p-4 md:p-5 flex flex-col md:flex-row md:items-start justify-between gap-4 card-hover">
               <div className="flex-1 space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] tracking-wider uppercase font-extrabold text-indigo-400 bg-indigo-500/10 px-2.5 py-0.5 rounded-md">
+                  <span className="text-[10px] tracking-wider uppercase font-bold text-text-primary border border-edge bg-surface-2 px-2.5 py-0.5 rounded-md">
                     {item.subject || 'Boshqa'}
                   </span>
-                  <span className="text-xs text-white/40">Savol ID: #{item.question_id}</span>
+                  <span className="text-xs font-data text-text-secondary">Savol ID: #{item.question_id}</span>
                 </div>
-                <div className="text-sm font-bold text-white leading-relaxed">{item.text}</div>
+                <div className="text-sm font-bold text-text-primary leading-relaxed">{item.text}</div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                   {(item.options || []).map((opt, oIdx) => {
                     const isCorrect = oIdx === item.correct_answer;
                     const isChosen = oIdx === item.chosen_answer;
-                    let bgClass = 'bg-white/5 text-white/60';
-                    if (isCorrect) bgClass = 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-medium';
-                    else if (isChosen) bgClass = 'bg-rose-500/10 border border-rose-500/30 text-rose-400';
+                    let bgClass = 'border border-edge text-text-secondary';
+                    if (isCorrect) bgClass = 'border border-success bg-success/10 text-text-primary font-medium';
+                    else if (isChosen) bgClass = 'border border-error bg-error/10 text-text-primary font-medium';
                     return (
-                      <div key={oIdx} className={`px-3 py-2 rounded-xl text-xs flex items-center justify-between ${bgClass}`}>
+                      <div key={oIdx} className={`px-3 py-2 rounded-xl text-xs flex items-center justify-between gap-2 ${bgClass}`}>
                         <span>{opt}</span>
-                        {isCorrect && <span className="text-[10px] bg-emerald-500/20 px-1.5 py-0.5 rounded">To'g'ri</span>}
-                        {isChosen && <span className="text-[10px] bg-rose-500/20 px-1.5 py-0.5 rounded">Sizning javobingiz</span>}
+                        {isCorrect && <span className="text-[10px] font-bold uppercase tracking-wide flex-shrink-0 text-text-primary">To'g'ri</span>}
+                        {isChosen && <span className="text-[10px] font-bold uppercase tracking-wide flex-shrink-0 text-text-primary">Sizning javobingiz</span>}
                       </div>
                     );
                   })}
@@ -497,10 +491,10 @@ function MistakesPage({ apiMistakesRes, showApiToast }) {
         {selectedQuestion && (
           <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
             <div className="glass rounded-xl p-3 md:p-4">
-              <div className="text-xs text-indigo-400 font-extrabold uppercase mb-1">{selectedQuestion.subject}</div>
-              <div className="font-bold text-white text-sm leading-relaxed">{selectedQuestion.text}</div>
+              <div className="text-xs text-text-secondary font-bold uppercase tracking-wide mb-1">{selectedQuestion.subject}</div>
+              <div className="font-bold text-text-primary text-sm leading-relaxed">{selectedQuestion.text}</div>
             </div>
-            <div className="text-xs md:text-sm text-white/80 leading-relaxed whitespace-pre-line border-t border-white/10 pt-3">
+            <div className="text-xs md:text-sm text-text-secondary leading-relaxed whitespace-pre-line border-t border-edge pt-3">
               {selectedQuestion.explanation}
             </div>
             <button onClick={() => setSelectedQuestion(null)} className="btn-primary w-full py-2.5 rounded-xl text-sm font-semibold">Tushundim</button>
@@ -518,7 +512,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // xaritasi, AI o'quv rejasi, tayyorlik %) faqat premium o'quvchilarga ochiq.
   // Mock rejimda barchasi ochiq qoladi (test qulayligi uchun).
   const isPremium = isApi ? !!(user?.isPremium ?? user?.is_premium) : true;
-  // Vizual premium belgisi (⭐ + oltin halqa) faqat haqiqiy premium o'quvchida
+  // Vizual premium belgisi (Premium chip) faqat haqiqiy premium o'quvchida
   // ko'rinadi. Mock/demo rejimida `isPremium` doim true bo'lgani uchun bu yerda
   // alohida bayroq ishlatamiz, aks holda hamma o'quvchiga belgi chiqib qolardi.
   const showPremiumBadge = !!(user?.isPremium ?? user?.is_premium);
@@ -1082,7 +1076,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   // dan kelib chiqib hisob-kitob qilamiz. Avval bu blok qattiq kodlangan
   // (Informatika 87%, Tarix 91% ...) raqamlar edi; endi haqiqiy o'rtacha ball
   // ko'rsatiladi.
-  const SUBJECT_PALETTE = ['#6366f1', '#22d3ee', '#a855f7', '#f59e0b', '#10b981', '#ef4444'];
+  const SUBJECT_PALETTE = ['#C0362C', '#698AAC', '#2F5D8C', '#f59e0b', '#10b981', '#ef4444'];
   const subjectStats = (() => {
     const apiSubjects = isApi && apiStatsRes.data?.subjects;
     if (Array.isArray(apiSubjects) && apiSubjects.length > 0) {
@@ -1196,7 +1190,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     setDownloadingWeekly(true);
     try {
       await OlympyApi.downloadWeeklyReport(OlympyApi.getToken());
-      showApiToast('✓ Haftalik hisobot yuklandi');
+      showApiToast('Haftalik hisobot yuklandi');
     } catch (err) {
       // Tier yetarli bo'lmasa (403 upgrade_required) — premiumga yo'naltiramiz.
       if (err && err.status === 403 && err.data && err.data.upgrade_required) {
@@ -1218,7 +1212,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     setDownloadingPortfolio(true);
     try {
       await OlympyApi.downloadPortfolio(OlympyApi.getToken());
-      showApiToast('✓ Yutuqlar portfoliosi yuklandi');
+      showApiToast('Yutuqlar portfoliosi yuklandi');
     } catch (err) {
       // Tier yetarli bo'lmasa (403 upgrade_required) — premiumga yo'naltiramiz.
       if (err && err.status === 403 && err.data && err.data.upgrade_required) {
@@ -1279,15 +1273,16 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   };
 
   const renderHome = () => (
-    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
-      {/* Welcome */}
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in motion-reduce:animate-none mobile-content-pad">
+      {/* Byulleten sarlavhasi: ism + sana chap chetdagi shtamp chizig'i bilan
+          ajratiladi (imtihon varaqasidagi hoshiya belgisi). */}
       <div className="flex items-start justify-between flex-wrap gap-3 md:gap-4">
-        <div className="min-w-0 flex-1">
-          <h2 className="text-xl md:text-2xl font-black text-white flex items-center gap-2 truncate">
-            {showPremiumBadge && <span title="Premium o'quvchi">⭐</span>}
-            Salom, {user.name.split(' ')[0]}! 👋
+        <div className="min-w-0 flex-1 border-l-2 border-accent pl-3">
+          <h2 className="font-display text-xl md:text-2xl font-bold text-text-primary flex items-center gap-2 truncate">
+            Salom, {user.name.split(' ')[0]}!
+            {showPremiumBadge && <span className="chip text-[10px] border border-warning/40 bg-warning/10 text-warning flex-shrink-0" title="Premium o'quvchi">Premium</span>}
           </h2>
-          <p className="text-white/40 text-xs md:text-sm mt-1">{new Date().toLocaleDateString('uz-UZ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          <p className="text-text-secondary text-xs md:text-sm mt-1 font-data">{new Date().toLocaleDateString('uz-UZ', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
         </div>
         {/* O'ng chekka: premiumga o'tmagan o'quvchi uchun upsell CTA (premium
             foydalanuvchida ko'rinmaydi). */}
@@ -1295,16 +1290,15 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           <button
             onClick={() => setPage('premium')}
             title="Premiumga o'ting"
-            className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs md:text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-xl shadow-md transition-all min-h-[40px]"
+            className="btn-primary flex-shrink-0 inline-flex items-center gap-1.5 text-xs md:text-sm font-bold px-4 py-2 rounded-xl min-h-[40px]"
           >
-            <span>👑</span>
-            Premium
+            <Icon name="star" size={14} /> Premium
           </button>
         )}
         {!hasCenter && (
-          <div className="glass rounded-2xl p-4 border border-indigo-500/20 w-full sm:max-w-xs">
-            <div className="text-xs text-indigo-300 font-medium mb-1">💡 Maslahat</div>
-            <p className="text-xs text-white/50 mb-3">Olimpiadalar ochiq, musobaqalar uchun tashkilot tasdig'i kerak</p>
+          <div className="glass rounded-2xl p-4 w-full sm:max-w-xs">
+            <div className="text-[11px] uppercase tracking-widest text-text-secondary font-bold mb-1">Maslahat</div>
+            <p className="text-xs text-text-secondary mb-3">Olimpiadalar ochiq, musobaqalar uchun tashkilot tasdig'i kerak</p>
             <button onClick={() => setPage('centers')} className="btn-primary text-xs px-4 py-2 rounded-xl font-semibold min-h-[40px]">Tashkilot topish</button>
           </div>
         )}
@@ -1321,10 +1315,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         const total = statsData?.total_attempts ?? myResults.length;
         return (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
-            <StatCard label="O'rtacha ball" value={avg || '—'} icon={<Icon name="chart" size={20} />} color="from-indigo-500 to-purple-600" glow="glow-blue" />
-            <StatCard label="Reytingdagi o'rn" value={bestRank ? `#${bestRank}` : '—'} icon={<Icon name="trophy" size={20} />} color="from-amber-500 to-orange-500" />
-            <StatCard label="Musobaqalar" value={total} icon={<Icon name="bolt" size={20} />} color="from-cyan-500 to-blue-600" />
-            <StatCard label="Sertifikatlar" value={(myResults || []).filter(r => r.rank === 1).length} icon={<Icon name="award" size={20} />} color="from-emerald-500 to-teal-600" />
+            <StatCard label="O'rtacha ball" value={avg || '—'} icon={<Icon name="chart" size={20} />} color="bg-surface-2 text-text-secondary" />
+            <StatCard label="Reytingdagi o'rn" value={bestRank ? `#${bestRank}` : '—'} icon={<Icon name="trophy" size={20} />} color="bg-surface-2 text-text-secondary" />
+            <StatCard label="Musobaqalar" value={total} icon={<Icon name="bolt" size={20} />} color="bg-surface-2 text-text-secondary" />
+            <StatCard label="Sertifikatlar" value={(myResults || []).filter(r => r.rank === 1).length} icon={<Icon name="award" size={20} />} color="bg-surface-2 text-text-secondary" />
           </div>
         );
       })()}
@@ -1338,11 +1332,12 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </>
       )}
 
-      {/* Center status */}
+      {/* Center status — jiddiylik chap chetdagi chiziq bilan kodlanadi, rad
+          etilgan ariza ro'yxatdan bir qarashda ajralib tursin. */}
       {studentStatus && studentCenterId && myCenter && (
-        <div className={`glass rounded-2xl p-4 md:p-5 border ${studentStatus === 'approved' ? 'border-indigo-500/10' : studentStatus === 'rejected' ? 'border-rose-500/20' : 'border-amber-500/20'}`}>
+        <div className={`glass rounded-2xl p-4 md:p-5 border-l-4 ${studentStatus === 'approved' ? 'border-l-success' : studentStatus === 'rejected' ? 'border-l-error' : 'border-l-warning'}`}>
           <div className="flex items-center justify-between mb-3 gap-2">
-            <div className="text-sm font-semibold text-white truncate">Tashkilot/markaz holati</div>
+            <div className="text-[11px] font-bold uppercase tracking-widest text-text-secondary truncate">Tashkilot/markaz holati</div>
             <Badge status={statusLabel(studentStatus)} />
           </div>
           <div className="flex items-center gap-3">
@@ -1353,20 +1348,20 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                   e.currentTarget.nextElementSibling?.classList.remove('hidden');
                 }} />
             ) : null}
-            <div className={`w-10 h-10 gradient-bg rounded-xl flex items-center justify-center text-white font-bold flex-shrink-0 ${myCenter.imageUrl ? 'hidden' : ''}`}>{myCenter.name[0]}</div>
+            <div className={`w-10 h-10 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-text-primary font-bold flex-shrink-0 ${myCenter.imageUrl ? 'hidden' : ''}`}>{myCenter.name[0]}</div>
             <div className="flex-1 min-w-0">
-              <div className="font-semibold text-white truncate">{myCenter.name}</div>
-              <div className="text-xs text-white/40 truncate">{myCenter.organizationType || "O'quv markaz"} · {formatCenterLocation(myCenter)}</div>
-              <div className="text-xs text-white/30 truncate">{user.joined ? `A'zo bo'lgan: ${user.joined}` : ''}</div>
+              <div className="font-semibold text-text-primary truncate">{myCenter.name}</div>
+              <div className="text-xs text-text-secondary truncate">{myCenter.organizationType || "O'quv markaz"} · {formatCenterLocation(myCenter)}</div>
+              <div className="text-xs text-text-secondary truncate">{user.joined ? `A'zo bo'lgan: ${user.joined}` : ''}</div>
             </div>
           </div>
           {studentStatus === 'pending' && (
-            <div className="mt-3 text-xs text-amber-300 flex items-center gap-1.5">
+            <div className="mt-3 text-xs text-warning flex items-center gap-1.5">
               <Icon name="info" size={12} /> Manager tasdig'i kutilmoqda — markaz ichki musobaqalarida qatnasha olmaysiz
             </div>
           )}
           {studentStatus === 'rejected' && (
-            <div className="mt-3 text-xs text-rose-300 flex items-center gap-1.5">
+            <div className="mt-3 text-xs text-error flex items-center gap-1.5">
               <Icon name="info" size={12} /> Ariza rad etildi. Boshqa tashkilot tanlashingiz mumkin.
             </div>
           )}
@@ -1379,18 +1374,18 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {visibleOlympiads.filter(o => o.status === 'active').length > 0 && (
       <div>
         <div className="flex items-center justify-between mb-3 md:mb-4 gap-2">
-          <h3 className="font-bold text-white text-sm md:text-base">Bugungi tadbirlar</h3>
+          <h3 className="font-display text-sm md:text-base font-bold uppercase tracking-widest text-text-secondary">Bugungi tadbirlar</h3>
           <div className="flex items-center gap-3 flex-shrink-0">
             {isApi && (
-              <button onClick={() => setCalendarOpen(true)} className="text-xs text-indigo-400 hover:text-indigo-300 py-1 flex items-center gap-1">
+              <button onClick={() => setCalendarOpen(true)} className="text-xs font-semibold text-accent hover:text-text-primary transition-colors py-1 flex items-center gap-1">
                 <Icon name="clock" size={13} /> Kalendar
               </button>
             )}
-            <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400 hover:text-indigo-300 py-1">Barchasini ko'rish →</button>
+            <button onClick={() => setPage('olympiads')} className="text-xs font-semibold text-accent hover:text-text-primary transition-colors py-1 flex items-center gap-1">Barchasini ko'rish <Icon name="chevronRight" size={12} /></button>
           </div>
         </div>
         {!isCenterApproved && (
-          <div className="glass rounded-2xl p-4 border border-amber-500/20 mb-4 text-sm text-amber-300 flex items-center gap-2">
+          <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4 mb-4 text-sm text-warning flex items-center gap-2">
             <Icon name="info" size={14} /> Olimpiadalar ochiq. Musobaqaga qatnashish uchun tashkilot tasdig'i kerak.
           </div>
         )}
@@ -1449,8 +1444,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {visibleOlympiads.filter(o => o.status === 'inactive').length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3 md:mb-4 gap-2">
-            <h3 className="font-bold text-white text-sm md:text-base">Yaqinda boshlanadi</h3>
-            <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400 hover:text-indigo-300 flex-shrink-0 py-1">Barchasini ko'rish →</button>
+            <h3 className="font-display text-sm md:text-base font-bold uppercase tracking-widest text-text-secondary">Yaqinda boshlanadi</h3>
+            <button onClick={() => setPage('olympiads')} className="text-xs font-semibold text-accent hover:text-text-primary transition-colors py-1 flex items-center gap-1 flex-shrink-0">Barchasini ko'rish <Icon name="chevronRight" size={12} /></button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {visibleOlympiads.filter(o => o.status === 'inactive').slice(0, 2).map(o => {
@@ -1482,8 +1477,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {visibleOlympiads.filter(o => o.status === 'finished').length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-3 md:mb-4 gap-2">
-            <h3 className="font-bold text-white text-sm md:text-base">So'nggi yakunlangan tadbirlar</h3>
-            <button onClick={() => setPage('olympiads')} className="text-xs text-indigo-400 hover:text-indigo-300 flex-shrink-0 py-1">Barchasini ko'rish →</button>
+            <h3 className="font-display text-sm md:text-base font-bold uppercase tracking-widest text-text-secondary">So'nggi yakunlangan tadbirlar</h3>
+            <button onClick={() => setPage('olympiads')} className="text-xs font-semibold text-accent hover:text-text-primary transition-colors py-1 flex items-center gap-1 flex-shrink-0">Barchasini ko'rish <Icon name="chevronRight" size={12} /></button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {visibleOlympiads.filter(o => o.status === 'finished').slice(0, 2).map(o => {
@@ -1507,16 +1502,16 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {!isNewStudent && (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         <div className="glass rounded-2xl p-4 md:p-5">
-          <h3 className="font-bold text-white mb-3 md:mb-4 text-sm md:text-base">Fanlar bo'yicha natijalar</h3>
+          <h3 className="font-display text-sm md:text-base font-bold uppercase tracking-widest text-text-secondary mb-3 md:mb-4">Fanlar bo'yicha natijalar</h3>
           <div className="space-y-3">
             {subjectStats.length === 0 && (
-              <div className="text-sm text-white/40">Hali fan kesimida natijalar yo'q.</div>
+              <div className="text-sm text-text-secondary">Hali fan kesimida natijalar yo'q.</div>
             )}
             {subjectStats.map((s, i) => (
               <div key={`${s.subject}-${i}`}>
                 <div className="flex items-center justify-between mb-1 gap-2">
-                  <span className="text-xs md:text-sm text-white/70 truncate">{s.subject}</span>
-                  <span className="text-xs md:text-sm font-bold text-white flex-shrink-0">{s.score}%</span>
+                  <span className="text-xs md:text-sm text-text-secondary truncate">{s.subject}</span>
+                  <span className="text-xs md:text-sm font-data font-bold text-text-primary flex-shrink-0">{s.score}%</span>
                 </div>
                 <div className="progress-bar h-2">
                   <div className="progress-fill" style={{ width: `${s.score}%`, background: s.color }} />
@@ -1527,24 +1522,24 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </div>
 
         <div className="glass rounded-2xl p-4 md:p-5">
-          <h3 className="font-bold text-white mb-3 md:mb-4 text-sm md:text-base">So'nggi natijalar</h3>
+          <h3 className="font-display text-sm md:text-base font-bold uppercase tracking-widest text-text-secondary mb-3 md:mb-4">So'nggi natijalar</h3>
           <div className="space-y-3">
-            {myResults.length === 0 && <div className="text-sm text-white/40">Hali tadbir topshirmagansiz.</div>}
+            {myResults.length === 0 && <div className="text-sm text-text-secondary">Hali tadbir topshirmagansiz.</div>}
             {myResults.slice(0, 5).map(r => (
-              <div key={r.id} className="flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-xl hover:bg-white/5 transition-colors cursor-pointer"
+              <button key={r.id} type="button" className="w-full text-left flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-xl border border-transparent hover:border-edge-strong transition-colors"
                 onClick={() => onNavigate('results', { ...r.attempt, olympiad: baseOlympiads.find(o => String(o.id) === String(r.attempt.olympiadId)) })}>
-                <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0 ${r.rank === 1 ? 'bg-amber-500/20 text-amber-400' : r.rank <= 3 ? 'bg-indigo-500/20 text-indigo-400' : 'glass text-white/40'}`}>
+                <div className={`w-10 h-10 rounded-xl border flex items-center justify-center text-sm font-data font-bold flex-shrink-0 ${r.rank === 1 ? 'border-accent bg-accent/10 text-text-primary' : 'border-edge text-text-secondary'}`}>
                   #{r.rank || '—'}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs md:text-sm font-medium text-white truncate">{r.olympiad}</div>
-                  <div className="text-xs text-white/40">{r.date}</div>
+                  <div className="text-xs md:text-sm font-medium text-text-primary truncate">{r.olympiad}</div>
+                  <div className="text-xs font-data text-text-secondary">{r.date}</div>
                 </div>
                 <div className="text-right flex-shrink-0">
-                  <div className="text-xs md:text-sm font-bold text-white">{r.score}/100</div>
-                  <div className="text-xs text-emerald-400">{r.correct} to'g'ri</div>
+                  <div className="text-xs md:text-sm font-data font-bold text-text-primary">{r.score}/100</div>
+                  <div className="text-xs font-data text-success">{r.correct} to'g'ri</div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -1555,18 +1550,18 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   );
 
   const renderOlympiads = () => (
-    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in motion-reduce:animate-none mobile-content-pad">
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-lg md:text-xl font-black text-white">Musobaqalar</h2>
+        <h2 className="font-display text-lg md:text-xl font-bold text-text-primary">Musobaqalar</h2>
         <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           {['Barchasi', 'Faol', 'Kelayotgan', 'Tugagan'].map(f => (
-            <button key={f} onClick={() => setOlympiadFilter(f)}
-              className={`text-xs px-3 py-2 rounded-xl glass border transition-all min-h-[36px] ${olympiadFilter === f ? 'border-indigo-500/60 text-white' : 'border-white/10 text-white/60 hover:text-white hover:border-indigo-500/40'}`}>{f}</button>
+            <button key={f} onClick={() => setOlympiadFilter(f)} aria-pressed={olympiadFilter === f}
+              className={`text-xs px-3 py-2 rounded-xl border transition-colors min-h-[36px] font-semibold ${olympiadFilter === f ? 'border-edge-strong bg-surface-2 text-text-primary' : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}>{f}</button>
           ))}
         </div>
       </div>
       {!isCenterApproved && (
-        <div className="glass rounded-2xl p-4 border border-amber-500/20 text-sm text-amber-300 flex items-center gap-2">
+        <div className="rounded-2xl border border-warning/40 bg-warning/10 p-4 text-sm text-warning flex items-center gap-2">
           <Icon name="info" size={14} /> Olimpiadalar ochiq. Musobaqaga qatnashish uchun tashkilot tasdig'i kerak.
         </div>
       )}
@@ -1579,7 +1574,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             return true;
           });
           if (filteredOlympiads.length === 0) {
-            return <div className="md:col-span-2 glass rounded-2xl p-8 text-center text-white/40 text-sm">{olympiadFilter === 'Barchasi' ? "Hozircha tadbirlar mavjud emas" : `${olympiadFilter} tadbirlar topilmadi`}</div>;
+            return <div className="md:col-span-2 glass rounded-2xl p-8 text-center text-text-secondary text-sm">{olympiadFilter === 'Barchasi' ? "Hozircha tadbirlar mavjud emas" : `${olympiadFilter} tadbirlar topilmadi`}</div>;
           }
           return filteredOlympiads.map(o => {
             const attempt = getAttemptForOlympiad(o);
@@ -1619,14 +1614,14 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     return (
       <div className="space-y-4 md:space-y-6">
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
-          <StatCard label="O'rtacha ball" value={avg || '—'} icon={<Icon name="chart" size={18} />} color="from-indigo-500 to-purple-600" />
-          <StatCard label="Eng yaxshi o'rin" value={bestRank ? `#${bestRank}` : '—'} icon={<Icon name="trophy" size={18} />} color="from-amber-500 to-orange-500" />
-          <StatCard label="Jami tadbir" value={myResults.length} icon={<Icon name="bolt" size={18} />} color="from-cyan-500 to-blue-600" />
+          <StatCard label="O'rtacha ball" value={avg || '—'} icon={<Icon name="chart" size={18} />} color="bg-surface-2 text-text-secondary" />
+          <StatCard label="Eng yaxshi o'rin" value={bestRank ? `#${bestRank}` : '—'} icon={<Icon name="trophy" size={18} />} color="bg-surface-2 text-text-secondary" />
+          <StatCard label="Jami tadbir" value={myResults.length} icon={<Icon name="bolt" size={18} />} color="bg-surface-2 text-text-secondary" />
         </div>
         <div className="glass rounded-2xl overflow-hidden">
-          <div className="p-3 md:p-4 border-b border-white/5 font-semibold text-white text-sm">Natijalar tarixi</div>
+          <div className="p-3 md:p-4 border-b border-edge font-display text-sm font-bold uppercase tracking-widest text-text-secondary">Natijalar tarixi</div>
           {myResults.length === 0 && (
-            <div className="px-4 py-10 text-center text-white/40 text-sm">Hali topshirmagansiz. Faol tadbirlardan birini tanlab boshlang.</div>
+            <div className="px-4 py-10 text-center text-text-secondary text-sm">Hali topshirmagansiz. Faol tadbirlardan birini tanlab boshlang.</div>
           )}
           {myResults.map(r => {
             const linkedOlympiad = baseOlympiads.find(o => String(o.id) === String(r.attempt.olympiadId));
@@ -1635,25 +1630,25 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <div key={r.id} className="olympy-row px-3 md:px-4 py-3 md:py-4">
                 <div className="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
                   <div className="flex items-start gap-3 min-w-0 flex-1">
-                    <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-sm flex-shrink-0 ${r.rank === 1 ? 'bg-amber-500/20 text-amber-400' : 'glass text-white/40'}`}>#{r.rank || '—'}</div>
+                    <div className={`w-11 h-11 rounded-xl border flex items-center justify-center font-data font-bold text-sm flex-shrink-0 ${r.rank === 1 ? 'border-accent bg-accent/10 text-text-primary' : 'border-edge text-text-secondary'}`}>#{r.rank || '—'}</div>
                     <div className="min-w-0 pt-0.5">
-                      <div className="text-sm md:text-base font-semibold text-white truncate">{r.olympiad}</div>
+                      <div className="text-sm md:text-base font-semibold text-text-primary truncate">{r.olympiad}</div>
                       <div className="flex items-center flex-wrap gap-2 mt-1">
                         <SubjectBadge subject={r.subject} />
-                        <span className="text-xs text-white/35 whitespace-nowrap">{r.date || '—'}</span>
+                        <span className="text-xs font-data text-text-secondary whitespace-nowrap">{r.date || '—'}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="rounded-xl bg-white/[0.04] border border-white/5 px-3 py-2 md:bg-transparent md:border-transparent md:px-0 md:py-0 md:w-44 md:flex-shrink-0">
+                  <div className="rounded-xl border border-edge px-3 py-2 md:border-transparent md:px-0 md:py-0 md:w-44 md:flex-shrink-0">
                     <div className="flex items-baseline justify-between md:justify-end gap-2">
-                      <span className="text-xs text-white/40 md:hidden">Ball</span>
-                      <div className="text-lg font-black text-white">{score}<span className="text-white/30 text-sm">/100</span></div>
+                      <span className="text-xs text-text-secondary md:hidden">Ball</span>
+                      <div className="text-lg font-data font-bold text-text-primary">{score}<span className="text-text-secondary text-sm">/100</span></div>
                     </div>
                     <div className="progress-bar h-1.5 mt-1.5">
                       <div className="progress-fill" style={{ width: `${score}%` }} />
                     </div>
-                    <div className="text-xs text-white/40 mt-1.5 md:text-right">{r.correct} to'g'ri · {r.wrong} noto'g'ri</div>
+                    <div className="text-xs font-data text-text-secondary mt-1.5 md:text-right">{r.correct} to'g'ri · {r.wrong} noto'g'ri</div>
                   </div>
 
                   <button
@@ -1684,11 +1679,11 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       (!cityFilter || c.region === cityFilter || c.city === cityFilter)
     );
     return (
-      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
-        <h2 className="text-lg md:text-xl font-black text-white">Tashkilotlar va markazlar</h2>
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in motion-reduce:animate-none mobile-content-pad">
+        <h2 className="font-display text-lg md:text-xl font-bold text-text-primary">Tashkilotlar va markazlar</h2>
         <div className="flex flex-wrap gap-3">
           <div className="relative flex-1 min-w-full sm:min-w-48">
-            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
             <input className="input-field pl-10 py-2.5 w-full" placeholder="Nomi, turi, viloyat yoki tuman..." value={centerSearch}
               onChange={e => setCenterSearch(e.target.value)} />
           </div>
@@ -1711,26 +1706,26 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                         e.currentTarget.nextElementSibling?.classList.remove('hidden');
                       }} />
                   ) : null}
-                  <div className={`w-12 h-12 gradient-bg rounded-2xl flex items-center justify-center text-white font-black text-lg flex-shrink-0 ${c.imageUrl ? 'hidden' : ''}`}>{c.name[0]}</div>
+                  <div className={`w-12 h-12 rounded-2xl border border-edge bg-surface-2 flex items-center justify-center text-text-primary font-bold text-lg flex-shrink-0 ${c.imageUrl ? 'hidden' : ''}`}>{c.name[0]}</div>
                   <div className="flex-1 min-w-0">
-                    <div className="font-bold text-white truncate">{c.name}</div>
-                    <div className="text-xs text-white/40 truncate">{c.organizationType || "O'quv markaz"} · {formatCenterLocation(c)}</div>
-                    <div className="flex items-center gap-1 mt-1"><span className="text-amber-400 text-xs">★</span><span className="text-xs text-white/60">{c.rating || '—'}</span></div>
+                    <div className="font-bold text-text-primary truncate">{c.name}</div>
+                    <div className="text-xs text-text-secondary truncate">{c.organizationType || "O'quv markaz"} · {formatCenterLocation(c)}</div>
+                    <div className="flex items-center gap-1 mt-1 text-text-secondary"><Icon name="star" size={11} /><span className="text-xs font-data">{c.rating || '—'}</span></div>
                   </div>
                 </div>
                 <div className="flex gap-3 md:gap-4 mb-3 md:mb-4 text-center">
-                  <div className="flex-1 glass rounded-xl py-2"><div className="text-sm font-bold text-white">{c.students}</div><div className="text-xs text-white/40">O'quvchi</div></div>
-                  <div className="flex-1 glass rounded-xl py-2"><div className="text-sm font-bold text-white">{c.olympiads}</div><div className="text-xs text-white/40">Olimpiada</div></div>
+                  <div className="flex-1 rounded-xl border border-edge py-2"><div className="text-sm font-data font-bold text-text-primary">{c.students}</div><div className="text-xs text-text-secondary">O'quvchi</div></div>
+                  <div className="flex-1 rounded-xl border border-edge py-2"><div className="text-sm font-data font-bold text-text-primary">{c.olympiads}</div><div className="text-xs text-text-secondary">Olimpiada</div></div>
                 </div>
                 <div className="flex flex-wrap gap-1 mb-3 md:mb-4">
                   {(c.subjects || []).slice(0, 3).map(s => <SubjectBadge key={s} subject={s} />)}
                 </div>
                 {st === 'pending' ? (
-                  <div className="w-full text-center py-2.5 rounded-xl badge-pending text-sm font-medium">⏳ Kutilmoqda</div>
+                  <div className="w-full text-center py-2.5 rounded-xl badge-pending text-sm font-medium">Kutilmoqda</div>
                 ) : st === 'approved' || isMine ? (
-                  <div className="w-full text-center py-2.5 rounded-xl badge-approved text-sm font-medium">✓ Tasdiqlandi</div>
+                  <div className="w-full text-center py-2.5 rounded-xl badge-approved text-sm font-medium">Tasdiqlandi</div>
                 ) : st === 'rejected' ? (
-                  <div className="w-full text-center py-2.5 rounded-xl badge-rejected text-sm font-medium">✗ Rad etildi</div>
+                  <div className="w-full text-center py-2.5 rounded-xl badge-rejected text-sm font-medium">Rad etildi</div>
                 ) : (
                   <button onClick={() => setCenterModal(c)} className="btn-primary w-full py-2.5 rounded-xl text-sm font-semibold min-h-[44px]">Ariza yuborish</button>
                 )}
@@ -1751,14 +1746,14 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                       e.currentTarget.nextElementSibling?.classList.remove('hidden');
                     }} />
                 ) : null}
-                <div className={`w-12 h-12 gradient-bg rounded-xl flex items-center justify-center text-white font-black text-lg flex-shrink-0 ${centerModal.imageUrl ? 'hidden' : ''}`}>{centerModal.name[0]}</div>
+                <div className={`w-12 h-12 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-text-primary font-bold text-lg flex-shrink-0 ${centerModal.imageUrl ? 'hidden' : ''}`}>{centerModal.name[0]}</div>
                 <div className="min-w-0 flex-1">
-                  <div className="font-bold text-white truncate">{centerModal.name}</div>
-                  <div className="text-xs md:text-sm text-white/40 truncate">{centerModal.organizationType || "O'quv markaz"} · {formatCenterLocation(centerModal)} · {centerModal.students} o'quvchi</div>
+                  <div className="font-bold text-text-primary truncate">{centerModal.name}</div>
+                  <div className="text-xs md:text-sm text-text-secondary truncate">{centerModal.organizationType || "O'quv markaz"} · {formatCenterLocation(centerModal)} · {centerModal.students} o'quvchi</div>
                 </div>
               </div>
-              <p className="text-white/60 text-sm mb-4 md:mb-6 leading-relaxed">Ariza yuborilgandan so'ng, manager sizning arizangizni Telegram orqali ko'rib chiqadi va tasdiqlaydi.</p>
-              <div className="glass rounded-xl p-3 md:p-4 mb-4 md:mb-6 border border-indigo-500/20 overflow-x-auto">
+              <p className="text-text-secondary text-sm mb-4 md:mb-6 leading-relaxed">Ariza yuborilgandan so'ng, manager sizning arizangizni Telegram orqali ko'rib chiqadi va tasdiqlaydi.</p>
+              <div className="glass rounded-xl p-3 md:p-4 mb-4 md:mb-6 overflow-x-auto">
                 <TelegramMockup studentName={user.name} centerName={centerModal.name} onApprove={() => {}} onReject={() => {}} />
               </div>
               <div className="flex gap-3">
@@ -1771,10 +1766,10 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
         {/* Success toast */}
         {joinModal && (
-          <div className="fixed bottom-20 md:bottom-6 right-3 md:right-6 left-3 md:left-auto z-50 glass-strong rounded-2xl p-4 border border-emerald-500/30 animate-in md:max-w-sm">
+          <div className="fixed bottom-20 md:bottom-6 right-3 md:right-6 left-3 md:left-auto z-50 glass-strong rounded-2xl p-4 border-l-4 border-l-success animate-in motion-reduce:animate-none md:max-w-sm">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-emerald-500/20 rounded-xl flex items-center justify-center flex-shrink-0"><Icon name="check" size={16} className="text-emerald-400" /></div>
-              <div className="min-w-0"><div className="text-sm font-semibold text-white">Ariza yuborildi!</div><div className="text-xs text-white/40">Manager Telegram orqali xabardor qilindi</div></div>
+              <div className="w-8 h-8 rounded-xl border border-success/40 bg-success/10 flex items-center justify-center flex-shrink-0 text-success"><Icon name="check" size={16} /></div>
+              <div className="min-w-0"><div className="text-sm font-semibold text-text-primary">Ariza yuborildi!</div><div className="text-xs text-text-secondary">Manager Telegram orqali xabardor qilindi</div></div>
             </div>
           </div>
         )}
@@ -1798,26 +1793,35 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const LockedFeatureCard = ({ tier, title, desc }) => {
     const label = TIER_LABELS[tier] || 'Premium';
     return (
-      <div className="glass rounded-2xl p-4 md:p-5 border border-amber-500/20 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
+      <div className="glass rounded-2xl p-4 md:p-5 border-l-4 border-l-warning">
         <div className="flex items-center gap-2 mb-2">
-          <div className="w-8 h-8 bg-amber-500/15 rounded-xl flex items-center justify-center text-amber-400">
+          <div className="w-8 h-8 rounded-xl border border-warning/40 bg-warning/10 flex items-center justify-center text-warning flex-shrink-0">
             <Icon name="lock" size={16} />
           </div>
           <div>
-            <h3 className="font-bold text-white text-sm md:text-base leading-none">{title}</h3>
-            <span className="text-[9px] uppercase tracking-wider font-extrabold text-amber-400 mt-1 block">{label} tarif</span>
+            <h3 className="font-display font-bold text-text-primary text-sm md:text-base leading-none">{title}</h3>
+            <span className="text-[10px] uppercase tracking-widest font-bold text-warning mt-1 block">{label} tarif</span>
           </div>
         </div>
-        <p className="text-xs text-white/60 leading-relaxed mb-3">{desc}</p>
+        <p className="text-xs text-text-secondary leading-relaxed mb-3">{desc}</p>
         <button onClick={() => setPage('premium')}
-          className="text-[12px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-xl shadow-md transition-all">
-          {label} tarifga o'tish ⚡
+          className="btn-primary text-[12px] font-bold px-4 py-2 rounded-xl">
+          {label} tarifga o'tish
         </button>
       </div>
     );
   };
   const renderPremiumAnalysis = () => {
-    const weaknessColor = (pct) => pct >= 80 ? '#10b981' : pct >= 50 ? '#f59e0b' : '#ef4444';
+    // Jiddiylik semantik tokenlar bilan kodlanadi (akcentdan alohida) va
+    // yoniga matnli daraja qo'yiladi — holat faqat rang bilan kodlanmasin.
+    // Klass nomlari to'liq yozilgan: Tailwind JIT `text-${x}` kabi yig'ilgan
+    // nomni skanerda topa olmaydi va bunday klass bundle'ga umuman tushmaydi.
+    const WEAKNESS_TONES = {
+      strong: { badge: 'badge-approved', text: 'text-success', bar: 'bg-success', label: 'Mustahkam' },
+      mid: { badge: 'badge-pending', text: 'text-warning', bar: 'bg-warning', label: "O'rtacha" },
+      weak: { badge: 'badge-rejected', text: 'text-error', bar: 'bg-error', label: 'Zaif' },
+    };
+    const weaknessTone = (pct) => WEAKNESS_TONES[pct >= 80 ? 'strong' : pct >= 50 ? 'mid' : 'weak'];
     const history = Array.isArray(apiHistoryChartRes.data) ? apiHistoryChartRes.data : [];
     const competitor = apiCompetitorRes.data;
     const weakness = Array.isArray(apiWeaknessRes.data) ? apiWeaknessRes.data : [];
@@ -1834,18 +1838,18 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         {/* 1. Tarixiy tahlil grafigi (olimpiada kesimida) */}
         <div className="glass rounded-2xl p-4 md:p-5">
           <div className="flex items-center gap-2 mb-3">
-            <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
+            <div className="w-8 h-8 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-text-secondary flex-shrink-0">
               <Icon name="chart" size={16} />
             </div>
             <div>
-              <h3 className="font-bold text-white text-sm md:text-base leading-none">Olimpiada tarixi</h3>
-              <span className="text-[9px] text-white/40 mt-1 block">
+              <h3 className="font-display font-bold text-text-primary text-sm md:text-base leading-none">Olimpiada tarixi</h3>
+              <span className="text-[11px] text-text-secondary mt-1 block">
                 {history.length ? `Oxirgi ${history.length} ta tadbirdagi ball foizi` : 'Tadbirlar bo\'yicha ball foizi'}
               </span>
             </div>
           </div>
           {apiHistoryChartRes.loading
-            ? <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+            ? <div className="text-center text-text-secondary text-sm py-8">Yuklanmoqda...</div>
             : <SvgLineChart points={chartPoints} />}
         </div>
 
@@ -1858,24 +1862,29 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           />
         )}
         {canPlus && competitor && competitor.my_rank && (
-          <div className="glass rounded-2xl p-4 md:p-5 border border-amber-500/20 bg-gradient-to-r from-amber-500/5 to-orange-500/5">
+          <div className="glass rounded-2xl p-4 md:p-5">
             <div className="flex items-center gap-2 mb-3">
-              <span className="text-lg">🏅</span>
-              <h3 className="font-bold text-white text-sm md:text-base">Reytingdagi o'rnim</h3>
+              <div className="w-8 h-8 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-text-secondary flex-shrink-0">
+                <Icon name="award" size={16} />
+              </div>
+              <h3 className="font-display font-bold text-text-primary text-sm md:text-base">Reytingdagi o'rnim</h3>
             </div>
-            <div className="text-sm text-white/80 leading-relaxed">
-              <span className="text-white/50">{competitor.olympiad_name}</span> tadbirida siz{' '}
-              <span className="font-black text-amber-400">{competitor.my_rank}-o'rindasiz</span>
-              {competitor.total ? <span className="text-white/40"> ({competitor.total} ishtirokchidan)</span> : null}.
+            {/* Xulosa avval: katta o'rin raqami, tafsilot pastda. */}
+            <div className="flex items-baseline gap-2">
+              <span className="font-data text-3xl font-bold text-text-primary">{competitor.my_rank}</span>
+              <span className="text-sm text-text-secondary">-o'rin{competitor.total ? ` · ${competitor.total} ishtirokchidan` : ''}</span>
+            </div>
+            <div className="mt-2 text-sm text-text-secondary leading-relaxed border-t border-edge pt-2">
+              <span className="text-text-primary font-medium">{competitor.olympiad_name}</span>
               {competitor.above_me ? (
-                <span> {competitor.above_me.diff > 0
-                  ? <> {competitor.my_rank - 1}-o'ringa o'tish uchun <span className="font-bold text-emerald-400">+{competitor.above_me.diff} ball</span> kerak.</>
-                  : <> Siz yuqori o'rinlardasiz!</>}</span>
-              ) : <span> Siz birinchi o'rindasiz! 🎉</span>}
+                <span> — {competitor.above_me.diff > 0
+                  ? <>{competitor.my_rank - 1}-o'ringa o'tish uchun <span className="font-data font-bold text-success">+{competitor.above_me.diff} ball</span> kerak.</>
+                  : <>siz yuqori o'rinlardasiz.</>}</span>
+              ) : <span> — siz birinchi o'rindasiz.</span>}
             </div>
             {competitor.percentile != null && (
-              <div className="mt-2 text-xs text-white/50">
-                Siz ishtirokchilarning <span className="font-bold text-indigo-300">{competitor.percentile}%</span> dan oldindasiz.
+              <div className="mt-2 text-xs text-text-secondary">
+                Siz ishtirokchilarning <span className="font-data font-bold text-text-primary">{competitor.percentile}%</span> dan oldindasiz.
               </div>
             )}
           </div>
@@ -1884,28 +1893,37 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         {/* 3. Mavzu bo'yicha zaiflik xaritasi */}
         <div className="glass rounded-2xl p-4 md:p-5">
           <div className="flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 bg-rose-500/20 rounded-xl flex items-center justify-center text-rose-400">
+            <div className="w-8 h-8 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-text-secondary flex-shrink-0">
               <Icon name="bolt" size={16} />
             </div>
-            <h3 className="font-bold text-white text-sm md:text-base">Fan bo'yicha zaiflik xaritasi</h3>
+            <h3 className="font-display font-bold text-text-primary text-sm md:text-base">Fan bo'yicha zaiflik xaritasi</h3>
           </div>
           {apiWeaknessRes.loading ? (
-            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+            <div className="text-center text-text-secondary text-sm py-8">Yuklanmoqda...</div>
           ) : weakness.length === 0 ? (
-            <div className="text-center text-white/40 text-sm py-8">Hali ma'lumot yo'q</div>
+            <div className="text-center text-text-secondary text-sm py-8">Hali ma'lumot yo'q</div>
           ) : (
             <div className="space-y-3">
-              {weakness.map((w, i) => (
+              {/* Eng zaif fan tepada tursin — nimaga e'tibor kerakligi darhol
+                  ko'rinadi (xulosa detaldan oldin). */}
+              {weakness.slice().sort((a, b) => (a.pct || 0) - (b.pct || 0)).map((w, i) => {
+                const tone = weaknessTone(w.pct);
+                return (
                 <div key={i}>
-                  <div className="flex items-center justify-between mb-1 text-xs md:text-sm">
-                    <span className="text-white/80 font-medium">{w.subject}</span>
-                    <span className="text-white/50">{w.correct}/{w.total} · <span className="font-bold" style={{ color: weaknessColor(w.pct) }}>{w.pct}%</span></span>
+                  <div className="flex items-center justify-between mb-1 gap-2 text-xs md:text-sm">
+                    <span className="text-text-primary font-medium truncate">{w.subject}</span>
+                    <span className="flex items-center gap-2 flex-shrink-0">
+                      <span className={`chip text-[10px] ${tone.badge}`}>{tone.label}</span>
+                      <span className="font-data text-text-secondary">{w.correct}/{w.total}</span>
+                      <span className={`font-data font-bold ${tone.text}`}>{w.pct}%</span>
+                    </span>
                   </div>
-                  <div className="h-2.5 rounded-full bg-white/5 overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${w.pct}%`, background: weaknessColor(w.pct) }} />
+                  <div className="h-2.5 rounded-full bg-surface-2 border border-edge overflow-hidden">
+                    <div className={`h-full transition-all duration-500 ${tone.bar}`} style={{ width: `${w.pct}%` }} />
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1948,24 +1966,28 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       }
     };
     return (
-      <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+      <div className="glass rounded-2xl p-4 md:p-5">
         <div className="flex items-center gap-2 mb-3">
-          <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
+          <div className="w-8 h-8 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-text-secondary flex-shrink-0">
             <Icon name="sparkles" size={16} />
           </div>
           <div>
-            <h3 className="font-bold text-white text-sm md:text-base leading-none">AI o'quv rejasi</h3>
-            <span className="text-[9px] text-white/40 mt-1 block">Zaif fanlaringizga moslangan haftalik reja</span>
+            <h3 className="font-display font-bold text-text-primary text-sm md:text-base leading-none">AI o'quv rejasi</h3>
+            <span className="text-[11px] text-text-secondary mt-1 block">Zaif fanlaringizga moslangan haftalik reja</span>
           </div>
         </div>
         {Array.isArray(plan) && plan.length > 0 ? (
-          <div className="space-y-2 mb-3">
+          <ol className="space-y-2 mb-3">
+            {/* Raqamli marker o'rinli: reja bosqichlari haqiqiy ketma-ketlik. */}
             {plan.map((item, i) => (
-              <div key={i} className="glass rounded-xl p-3 text-xs md:text-sm text-white/80 leading-relaxed border border-indigo-500/10">{item}</div>
+              <li key={i} className="flex gap-2.5 rounded-xl border border-edge p-3 text-xs md:text-sm text-text-secondary leading-relaxed">
+                <span className="font-data font-bold text-text-primary flex-shrink-0">{i + 1}.</span>
+                <span>{item}</span>
+              </li>
             ))}
-          </div>
+          </ol>
         ) : null}
-        {error && <div className="text-xs text-amber-300 mb-3">{error}</div>}
+        {error && <div className="text-xs text-warning mb-3">{error}</div>}
         <button onClick={handleGetPlan} disabled={loading}
           className="btn-primary text-xs px-4 py-2.5 rounded-xl font-semibold min-h-[40px] disabled:opacity-50">
           {loading ? 'Tayyorlanmoqda...' : (Array.isArray(plan) && plan.length > 0 ? 'Yangilash' : 'Rejani olish')}
@@ -2007,23 +2029,23 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     }));
     // Fan progress-bar rangi: avval umumiy subjectColors palitrasidan solid
     // hex chiqaramiz (gradient klass emas), bo'lmasa indeks bo'yicha palitra.
-    const SUBJECT_BAR_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#84cc16', '#f43f5e'];
-    const barColor = (subject, i) => SUBJECT_BAR_COLORS[i % SUBJECT_BAR_COLORS.length];
+    // Fan barlari bir xil neytral yuzada — bu yerda rang ma'no tashimaydi,
+    // taqqoslash uzunlik bilan o'qiladi (rangli kod faqat holat uchun).
     const trendMeta = {
-      "o'sish": { color: '#10b981', icon: '↗', label: "O'sish" },
-      pasayish: { color: '#ef4444', icon: '↘', label: 'Pasayish' },
-      barqaror: { color: '#f59e0b', icon: '→', label: 'Barqaror' },
-    }[trend.direction] || { color: '#94a3b8', icon: '→', label: '—' };
+      "o'sish": { badge: 'badge-approved', icon: '↗', label: "O'sish" },
+      pasayish: { badge: 'badge-rejected', icon: '↘', label: 'Pasayish' },
+      barqaror: { badge: 'badge-pending', icon: '→', label: 'Barqaror' },
+    }[trend.direction] || { badge: 'badge-draft', icon: '→', label: '—' };
 
     return (
-      <div className="space-y-4 md:space-y-6 animate-in">
+      <div className="space-y-4 md:space-y-6 animate-in motion-reduce:animate-none">
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <p className="text-white/40 text-xs">Natijalaringiz dinamikasi va shaxsiy tavsiyalar</p>
+          <p className="text-text-secondary text-xs">Natijalaringiz dinamikasi va shaxsiy tavsiyalar</p>
           <div className="flex items-center gap-2 shrink-0">
             {/* To'liq analitika dashboardi (oylik ball, qiyinlik taqsimoti,
                 markazlar reytingi) — alohida app-level sahifa. */}
             <button onClick={() => onNavigate('analytics')}
-              className="text-[11px] md:text-xs font-semibold text-indigo-300 hover:text-indigo-200 px-2 py-1.5 transition-colors flex items-center gap-1">
+              className="text-[11px] md:text-xs font-semibold text-accent hover:text-text-primary px-2 py-1.5 transition-colors flex items-center gap-1">
               Batafsil analitika <Icon name="chevronRight" size={12} />
             </button>
             {/* Haftalik hisobot (PDF) — Plus+ tier. Standart/free o'quvchida
@@ -2031,12 +2053,12 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             {canPlus ? (
               <button onClick={handleWeeklyReport} disabled={downloadingWeekly}
                 title="Haftalik hisobot (PDF)"
-                className="text-[11px] md:text-xs font-semibold text-emerald-300 hover:text-emerald-200 px-2 py-1.5 transition-colors flex items-center gap-1 disabled:opacity-50">
+                className="text-[11px] md:text-xs font-semibold text-accent hover:text-text-primary px-2 py-1.5 transition-colors flex items-center gap-1 disabled:opacity-50">
                 <Icon name="download" size={12} /> {downloadingWeekly ? 'Yuklanmoqda...' : 'Haftalik PDF'}
               </button>
             ) : (
               <button onClick={() => setPage('premium')} title="Plus tarifda ochiladi"
-                className="text-[11px] md:text-xs font-semibold text-amber-400/80 hover:text-amber-300 px-2 py-1.5 transition-colors flex items-center gap-1">
+                className="text-[11px] md:text-xs font-semibold text-warning hover:text-text-primary px-2 py-1.5 transition-colors flex items-center gap-1">
                 <Icon name="lock" size={12} /> Haftalik PDF
               </button>
             )}
@@ -2045,20 +2067,20 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             {canPro ? (
               <button onClick={handlePortfolio} disabled={downloadingPortfolio}
                 title="Yutuqlar portfoliosi (PDF)"
-                className="text-[11px] md:text-xs font-semibold text-violet-300 hover:text-violet-200 px-2 py-1.5 transition-colors flex items-center gap-1 disabled:opacity-50">
+                className="text-[11px] md:text-xs font-semibold text-accent hover:text-text-primary px-2 py-1.5 transition-colors flex items-center gap-1 disabled:opacity-50">
                 <Icon name="download" size={12} /> {downloadingPortfolio ? 'Yuklanmoqda...' : 'Portfolio'}
               </button>
             ) : (
               <button onClick={() => setPage('premium')} title="Pro tarifda ochiladi"
-                className="text-[11px] md:text-xs font-semibold text-amber-400/80 hover:text-amber-300 px-2 py-1.5 transition-colors flex items-center gap-1">
+                className="text-[11px] md:text-xs font-semibold text-warning hover:text-text-primary px-2 py-1.5 transition-colors flex items-center gap-1">
                 <Icon name="lock" size={12} /> Portfolio
               </button>
             )}
             {/* Davr toggle: 30 kun / 3 oy / 6 oy */}
-            <div className="flex items-center gap-1 glass rounded-xl p-1">
+            <div className="flex items-center gap-1 rounded-xl border border-edge bg-surface-1 p-1">
               {periods.map((p) => (
-                <button key={p.value} onClick={() => setProgressPeriod(p.value)}
-                  className={`text-[11px] md:text-xs font-bold px-3 py-1.5 rounded-lg transition-colors ${progressPeriod === p.value ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30' : 'text-white/40 hover:text-white/70'}`}>
+                <button key={p.value} onClick={() => setProgressPeriod(p.value)} aria-pressed={progressPeriod === p.value}
+                  className={`text-[11px] md:text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${progressPeriod === p.value ? 'border-edge-strong bg-surface-2 text-text-primary' : 'border-transparent text-text-secondary hover:text-text-primary'}`}>
                   {p.label}
                 </button>
               ))}
@@ -2068,45 +2090,45 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
 
         {/* Umumiy stats kartochkalari */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          <StatCard label="Jami olimpiada" value={stats.total_olympiads || 0} icon={<Icon name="trophy" size={20} />} color="from-indigo-500 to-purple-600" />
-          <StatCard label="O'rtacha ball" value={`${stats.avg_score || 0}%`} icon={<Icon name="chart" size={20} />} color="from-emerald-500 to-teal-600" />
-          <StatCard label="Eng yaxshi" value={`${stats.best_score || 0}%`} icon={<Icon name="star" size={20} />} color="from-amber-500 to-orange-600" />
-          <StatCard label="Streak" value={`${stats.streak || 0} kun`} sub={stats.streak ? 'Ketma-ket' : "Bugun boshlang"} icon={<Icon name="bolt" size={20} />} color="from-rose-500 to-pink-600" />
+          <StatCard label="Jami olimpiada" value={stats.total_olympiads || 0} icon={<Icon name="trophy" size={20} />} color="bg-surface-2 text-text-secondary" />
+          <StatCard label="O'rtacha ball" value={`${stats.avg_score || 0}%`} icon={<Icon name="chart" size={20} />} color="bg-surface-2 text-text-secondary" />
+          <StatCard label="Eng yaxshi" value={`${stats.best_score || 0}%`} icon={<Icon name="star" size={20} />} color="bg-surface-2 text-text-secondary" />
+          <StatCard label="Streak" value={`${stats.streak || 0} kun`} sub={stats.streak ? 'Ketma-ket' : "Bugun boshlang"} icon={<Icon name="bolt" size={20} />} color="bg-surface-2 text-text-secondary" />
         </div>
 
         {/* Ball dinamikasi (chiziqli grafik) */}
         <div className="glass rounded-2xl p-4 md:p-5">
           <div className="flex items-center justify-between gap-2 mb-3">
             <div className="flex items-center gap-2 min-w-0">
-              <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400 shrink-0">
+              <div className="w-8 h-8 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-text-secondary shrink-0">
                 <Icon name="chart" size={16} />
               </div>
               <div className="min-w-0">
-                <h3 className="font-bold text-white text-sm md:text-base leading-none">Ball dinamikasi</h3>
-                <span className="text-[9px] text-white/40 mt-1 block truncate">
+                <h3 className="font-display font-bold text-text-primary text-sm md:text-base leading-none">Ball dinamikasi</h3>
+                <span className="text-[11px] text-text-secondary mt-1 block truncate">
                   {periods.find(p => p.value === progressPeriod)?.label} davridagi natijalar
                 </span>
               </div>
             </div>
-            {/* Trend belgisi (oxirgi natija o'rtachaga nisbatan) */}
+            {/* Trend belgisi (oxirgi natija o'rtachaga nisbatan) — chip shakli
+                bilan, faqat rang bilan emas. */}
             {timeline.length > 0 && (
-              <div className="flex items-center gap-1.5 shrink-0 px-2.5 py-1 rounded-lg" style={{ background: `${trendMeta.color}1a` }}>
-                <span className="text-sm font-black" style={{ color: trendMeta.color }}>{trendMeta.icon}</span>
-                <span className="text-[10px] md:text-[11px] font-bold" style={{ color: trendMeta.color }}>{trendMeta.label}</span>
-              </div>
+              <span className={`chip text-[11px] shrink-0 ${trendMeta.badge}`}>
+                <span aria-hidden="true">{trendMeta.icon}</span> {trendMeta.label}
+              </span>
             )}
           </div>
           {apiProgressRes.loading ? (
-            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+            <div className="text-center text-text-secondary text-sm py-8">Yuklanmoqda...</div>
           ) : chartPoints.length === 0 ? (
             <EmptyState icon="chart" title="Bu davrda natija yo'q"
               desc="Boshqa davrni tanlang yoki yangi tadbirda qatnashing" />
           ) : (
             <>
-              <SvgLineChart points={chartPoints} stroke="#6366f1" />
-              <div className="mt-2 text-[11px] text-white/50 text-center">
-                Oxirgi natija: <span className="font-bold text-indigo-300">{trend.last || 0}%</span>
-                <span className="text-white/30"> · {timeline.length} ta urinish</span>
+              <SvgLineChart points={chartPoints} stroke="rgb(var(--color-accent))" />
+              <div className="mt-2 text-[11px] text-text-secondary text-center font-data">
+                Oxirgi natija: <span className="font-bold text-text-primary">{trend.last || 0}%</span>
+                <span> · {timeline.length} ta urinish</span>
               </div>
             </>
           )}
@@ -2115,28 +2137,28 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         {/* Fanlar bo'yicha o'rtacha ball (progress bar) */}
         <div className="glass rounded-2xl p-4 md:p-5">
           <div className="flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 bg-emerald-500/20 rounded-xl flex items-center justify-center text-emerald-400 shrink-0">
+            <div className="w-8 h-8 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-text-secondary shrink-0">
               <Icon name="award" size={16} />
             </div>
             <div>
-              <h3 className="font-bold text-white text-sm md:text-base leading-none">Fanlar bo'yicha</h3>
-              <span className="text-[9px] text-white/40 mt-1 block">Har bir fan bo'yicha o'rtacha balingiz</span>
+              <h3 className="font-display font-bold text-text-primary text-sm md:text-base leading-none">Fanlar bo'yicha</h3>
+              <span className="text-[11px] text-text-secondary mt-1 block">Har bir fan bo'yicha o'rtacha balingiz</span>
             </div>
           </div>
           {apiProgressRes.loading ? (
-            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+            <div className="text-center text-text-secondary text-sm py-8">Yuklanmoqda...</div>
           ) : subjects.length === 0 ? (
-            <div className="text-center text-white/40 text-sm py-8">Hali fan bo'yicha ma'lumot yo'q</div>
+            <div className="text-center text-text-secondary text-sm py-8">Hali fan bo'yicha ma'lumot yo'q</div>
           ) : (
             <div className="space-y-3">
               {subjects.map((s, i) => (
                 <div key={s.subject || i}>
                   <div className="flex items-center justify-between mb-1.5 text-xs md:text-sm">
-                    <span className="text-white/80 font-semibold truncate pr-2">{s.subject}</span>
-                    <span className="font-bold shrink-0" style={{ color: barColor(s.subject, i) }}>{s.pct}%</span>
+                    <span className="text-text-primary font-semibold truncate pr-2">{s.subject}</span>
+                    <span className="font-data font-bold text-text-primary shrink-0">{s.pct}%</span>
                   </div>
-                  <div className="h-2.5 rounded-full bg-white/5 overflow-hidden">
-                    <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.max(0, Math.min(100, s.pct))}%`, background: barColor(s.subject, i) }} />
+                  <div className="progress-bar h-2.5">
+                    <div className="progress-fill" style={{ width: `${Math.max(0, Math.min(100, s.pct))}%` }} />
                   </div>
                 </div>
               ))}
@@ -2147,25 +2169,26 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         {/* AI tavsiya bo'limi (template — LLMsiz) */}
         <div className="space-y-3">
           <div className="flex items-center gap-2">
-            <span className="text-base">🤖</span>
-            <h3 className="font-bold text-white text-sm md:text-base">AI tavsiyalar</h3>
+            <Icon name="sparkles" size={15} className="text-text-secondary" />
+            <h3 className="font-display text-sm md:text-base font-bold uppercase tracking-widest text-text-secondary">AI tavsiyalar</h3>
           </div>
           {apiAiAdviceRes.loading ? (
-            <div className="glass rounded-2xl p-4 text-center text-white/40 text-sm py-6">Yuklanmoqda...</div>
+            <div className="glass rounded-2xl p-4 text-center text-text-secondary text-sm py-6">Yuklanmoqda...</div>
           ) : advices.length === 0 ? (
-            <div className="glass rounded-2xl p-4 text-center text-white/40 text-sm py-6">Hozircha tavsiya yo'q</div>
+            <div className="glass rounded-2xl p-4 text-center text-text-secondary text-sm py-6">Hozircha tavsiya yo'q</div>
           ) : (
             advices.map((a, i) => {
-              // tone: warning → sariq, success → yashil.
+              // Jiddiylik chap chetdagi chiziq + ikonka bilan kodlanadi.
               const isWarn = a.tone === 'warning';
-              const accent = isWarn ? '#f59e0b' : '#10b981';
               return (
-                <div key={i} className="glass rounded-2xl p-4 border-l-4" style={{ borderLeftColor: accent }}>
+                <div key={i} className={`glass rounded-2xl p-4 border-l-4 ${isWarn ? 'border-l-warning' : 'border-l-success'}`}>
                   <div className="flex items-start gap-2.5">
-                    <span className="text-lg shrink-0">{isWarn ? '⚠️' : '✅'}</span>
+                    <span className={`shrink-0 mt-0.5 ${isWarn ? 'text-warning' : 'text-success'}`}>
+                      <Icon name={isWarn ? 'info' : 'check'} size={16} />
+                    </span>
                     <div className="min-w-0">
-                      <div className="font-bold text-white text-sm mb-0.5" style={{ color: accent }}>{a.title}</div>
-                      <p className="text-white/70 text-xs md:text-sm leading-relaxed">{a.text}</p>
+                      <div className={`font-bold text-sm mb-0.5 ${isWarn ? 'text-warning' : 'text-success'}`}>{a.title}</div>
+                      <p className="text-text-secondary text-xs md:text-sm leading-relaxed">{a.text}</p>
                     </div>
                   </div>
                 </div>
@@ -2178,9 +2201,8 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             Premium o'quvchi to'liq ko'radi; bepul o'quvchiga blur + qulf CTA. */}
         <div className="pt-2">
           <div className="flex items-center gap-2 mb-3">
-            <span className="text-base">⭐</span>
-            <h3 className="font-bold text-white text-sm md:text-base">Chuqur tahlil</h3>
-            <span className="text-[9px] uppercase tracking-wider font-extrabold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">Premium</span>
+            <h3 className="font-display text-sm md:text-base font-bold uppercase tracking-widest text-text-secondary">Chuqur tahlil</h3>
+            <span className="chip text-[10px] border border-warning/40 bg-warning/10 text-warning">Premium</span>
           </div>
           {(isPremium && !premiumDenied) ? (
             <div className="space-y-4 md:space-y-6">
@@ -2192,13 +2214,13 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 {renderPremiumAnalysis()}
               </div>
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-4">
-                <span className="text-3xl">⭐</span>
-                <p className="text-white/80 text-sm font-bold max-w-xs leading-relaxed">
+                <span className="text-text-secondary"><Icon name="lock" size={26} /></span>
+                <p className="text-text-primary text-sm font-bold max-w-xs leading-relaxed">
                   Raqobatchi tahlili, fan bo'yicha zaiflik xaritasi va AI o'quv rejasini ko'rish uchun premium oling
                 </p>
                 <button onClick={() => setPage('premium')}
-                  className="text-[12px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-xl shadow-md transition-all">
-                  Premiumga o'tish ⚡
+                  className="btn-primary text-[12px] font-bold px-4 py-2 rounded-xl">
+                  Premiumga o'tish
                 </button>
               </div>
             </div>
@@ -2211,22 +2233,19 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const renderPremium = () => {
     const activePlans = plans.filter(p => p.duration_days === durationFilter);
     return (
-      <div className="p-3 md:p-6 space-y-6 animate-in mobile-content-pad">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass rounded-2xl p-4 md:p-6 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+      <div className="p-3 md:p-6 space-y-6 animate-in motion-reduce:animate-none mobile-content-pad">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass rounded-2xl p-4 md:p-6">
           <div>
-            <h2 className="text-lg md:text-xl font-black text-white flex items-center gap-2">
-              <span>Premium Obuna</span>
-              <span className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md">PREMIUM</span>
-            </h2>
-            <p className="text-white/40 text-xs mt-0.5">Premium orqali barcha tahlillar, AI yordamchi va eksklyuziv imkoniyatlarni ishga tushiring.</p>
+            <h2 className="font-display text-lg md:text-xl font-bold text-text-primary">Premium obuna</h2>
+            <p className="text-text-secondary text-xs mt-0.5">Premium orqali barcha tahlillar, AI yordamchi va eksklyuziv imkoniyatlarni ishga tushiring.</p>
           </div>
-          <div className="flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/30 px-4 py-2.5 rounded-2xl self-start sm:self-auto shadow-md">
-            <span className="text-lg">⭐</span>
-            <div className="min-w-0">
-              <div className="text-[10px] text-indigo-400 uppercase tracking-widest font-black leading-none">Sizning holatingiz</div>
-              <div className="text-sm font-black text-indigo-300 leading-none mt-1">
-                {isPremium ? "Faol (Premium 👑)" : "Bepul rejim"}
-              </div>
+          {/* Joriy holat — xulosa, tariflardan oldin. */}
+          <div className="rounded-2xl border border-edge px-4 py-2.5 self-start sm:self-auto">
+            <div className="text-[10px] text-text-secondary uppercase tracking-widest font-bold leading-none">Sizning holatingiz</div>
+            <div className="mt-1.5">
+              <span className={`chip text-[11px] ${isPremium ? 'badge-approved' : 'badge-draft'}`}>
+                {isPremium ? 'Premium faol' : 'Bepul rejim'}
+              </span>
             </div>
           </div>
         </div>
@@ -2234,28 +2253,27 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         {/* Mening abonementim — faqat premium foydalanuvchi uchun. To'lov tarixi
             va chekni shu yerdan ochish mumkin. */}
         {isPremium && (
-          <div className="glass rounded-2xl p-4 md:p-6 border border-emerald-500/20 bg-gradient-to-r from-emerald-500/5 to-indigo-500/5">
+          <div className="glass rounded-2xl p-4 md:p-6 border-l-4 border-l-success">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-2 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg">👑</span>
-                  <span className="text-sm md:text-base font-black text-white">Mening abonementim</span>
-                  <span className="text-[9px] uppercase tracking-wider font-extrabold text-emerald-300 bg-emerald-500/15 px-2 py-0.5 rounded-md border border-emerald-500/20">Faol</span>
+                  <span className="font-display text-sm md:text-base font-bold text-text-primary">Mening abonementim</span>
+                  <span className="chip text-[10px] badge-approved">Faol</span>
                 </div>
                 {currentSubLoading ? (
-                  <div className="text-xs text-white/40 animate-pulse">Yuklanmoqda...</div>
+                  <div className="text-xs text-text-secondary">Yuklanmoqda...</div>
                 ) : currentSub ? (
-                  <div className="space-y-1 text-xs md:text-sm text-white/70">
-                    <div>Tarif: <span className="font-bold text-white">{currentSub.plan_name}</span></div>
+                  <div className="space-y-1 text-xs md:text-sm text-text-secondary">
+                    <div>Tarif: <span className="font-bold text-text-primary">{currentSub.plan_name}</span></div>
                     <div>
-                      Muddat: <span className="font-bold text-white">{fmtReceiptDate(currentSub.end_date)}</span> gacha
+                      Muddat: <span className="font-data font-bold text-text-primary">{fmtReceiptDate(currentSub.end_date)}</span> gacha
                       {typeof currentSub.days_remaining === 'number' && (
-                        <span className="text-emerald-300 font-bold"> ({currentSub.days_remaining} kun qoldi)</span>
+                        <span className="font-data text-success font-bold"> ({currentSub.days_remaining} kun qoldi)</span>
                       )}
                     </div>
                   </div>
                 ) : (
-                  <div className="text-xs text-white/40">Faol obuna ma'lumotlari topilmadi.</div>
+                  <div className="text-xs text-text-secondary">Faol obuna ma'lumotlari topilmadi.</div>
                 )}
               </div>
               <div className="flex items-center gap-2 self-start sm:self-auto flex-shrink-0">
@@ -2267,7 +2285,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 </button>
                 <button
                   onClick={openBillingHistory}
-                  className="text-xs px-4 py-2.5 rounded-xl font-semibold min-h-[40px] bg-white/5 hover:bg-white/10 text-white/80 border border-white/5 transition-colors"
+                  className="btn-ghost text-xs px-4 py-2.5 rounded-xl font-semibold min-h-[40px]"
                 >
                   Tarix
                 </button>
@@ -2287,15 +2305,16 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             <button
               key={dur.days}
               onClick={() => setDurationFilter(dur.days)}
-              className={`relative px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
-                durationFilter === dur.days
-                  ? 'bg-white text-indigo-950 border-white shadow-lg font-black'
-                  : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
-              }`}
+              aria-pressed={durationFilter === dur.days}
+              className={`relative px-4 py-2 rounded-xl text-xs font-bold border transition-colors ${
+ durationFilter === dur.days
+ ? 'border-edge-strong bg-surface-2 text-text-primary'
+ : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'
+ }`}
             >
               {dur.label}
               {dur.discount && (
-                <span className="absolute -top-2 -right-2 bg-gradient-to-r from-pink-500 to-rose-500 text-[7px] text-white px-1 py-0.2 rounded font-extrabold shadow animate-pulse">
+                <span className="absolute -top-2 -right-2 rounded border border-accent-fill bg-accent-fill px-1 py-px text-[8px] font-data font-bold text-on-accent">
                   -{dur.discount}
                 </span>
               )}
@@ -2304,7 +2323,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </div>
 
         {plansLoading ? (
-          <div className="text-center py-12 text-white/40 text-sm">Tariflar yuklanmoqda...</div>
+          <div className="text-center py-12 text-text-secondary text-sm">Tariflar yuklanmoqda...</div>
         ) : (
           <div id="premium-plans" className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             {activePlans.map((p, i) => {
@@ -2312,28 +2331,28 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               const formattedPrice = `${priceNum.toLocaleString('ru-RU').replace(/ /g, ' ')} UZS`;
               const features = Array.isArray(p.features) ? p.features : [];
               return (
-                <div 
-                  key={i} 
-                  className={`glass rounded-2xl p-5 flex flex-col justify-between border ${p.is_popular ? 'border-indigo-500/40 bg-indigo-500/5 shadow-[0_12px_24px_rgba(99,102,241,0.06)]' : 'border-white/5'}`}
+                <div
+                  key={i}
+                  className={`glass rounded-2xl p-5 flex flex-col justify-between ${p.is_popular ? 'border-l-4 border-l-accent' : ''}`}
                 >
                   <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-bold text-white">{p.name.split(' ')[0]}</div>
-                      {p.is_popular && <span className="bg-indigo-500/20 text-indigo-300 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border border-indigo-500/30">Mashhur</span>}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-display text-sm font-bold uppercase tracking-widest text-text-secondary">{p.name.split(' ')[0]}</div>
+                      {p.is_popular && <span className="chip text-[10px] border border-accent text-text-primary">Mashhur</span>}
                     </div>
-                    <div className="text-2xl font-black text-indigo-400">{formattedPrice}</div>
-                    <p className="text-white/40 text-xs">{p.description}</p>
-                    <ul className="space-y-2 border-t border-white/5 pt-4">
+                    <div className="text-2xl font-data font-bold text-text-primary">{formattedPrice}</div>
+                    <p className="text-text-secondary text-xs">{p.description}</p>
+                    <ul className="space-y-2 border-t border-edge pt-4">
                       {features.map((f, idx) => (
-                        <li key={idx} className="text-xs text-white/60 flex items-center gap-1.5">
-                          <span className="text-indigo-400 font-bold">✓</span> {f}
+                        <li key={idx} className="text-xs text-text-secondary flex items-start gap-1.5">
+                          <span className="text-success flex-shrink-0 mt-0.5"><Icon name="check" size={12} /></span> {f}
                         </li>
                       ))}
                     </ul>
                   </div>
                   <button
                     onClick={() => setPaymentPlan(p)}
-                    className="w-full mt-6 py-2.5 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/10 transition-colors"
+                    className="btn-primary w-full mt-6 py-2.5 rounded-xl font-bold text-xs"
                   >
                     Sotib olish
                   </button>
@@ -2358,12 +2377,14 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   );
 
   // ── Kichik sub-tab tugmalari (bo'lim ichidagi navigatsiya uchun) ──────────
-  // Uslub Musobaqalar filtri / davr toggle bilan bir xil (glass + indigo aktiv).
+  // Uslub Musobaqalar filtri / davr toggle bilan bir xil. Faol tab pastdan
+  // shtamp chizig'i bilan belgilanadi — bosiladigan narsa bosiladigandek
+  // ko'rinsin, tanlangani esa bir qarashda ajralsin.
   const SubTabBar = ({ tabs, active, onSelect }) => (
     <div className="flex flex-wrap gap-2">
       {tabs.map(t => (
-        <button key={t.key} onClick={() => onSelect(t.key)}
-          className={`text-xs px-3 py-2 rounded-xl glass border transition-all min-h-[36px] flex items-center gap-1.5 ${active === t.key ? 'border-indigo-500/60 text-white' : 'border-white/10 text-white/60 hover:text-white hover:border-indigo-500/40'}`}>
+        <button key={t.key} onClick={() => onSelect(t.key)} aria-pressed={active === t.key}
+          className={`text-xs px-3 py-2 rounded-xl border border-b-2 transition-colors min-h-[36px] flex items-center gap-1.5 font-semibold ${active === t.key ? 'border-edge-strong border-b-accent bg-surface-2 text-text-primary' : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}>
           {t.icon && <Icon name={t.icon} size={14} />} {t.label}
         </button>
       ))}
@@ -2383,7 +2404,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     const last = myResults[0] || null;
     if (!last && !(statsData.total_attempts > 0)) {
       return (
-        <div className="glass rounded-2xl p-5 md:p-6 text-center text-white/50 text-sm">
+        <div className="glass rounded-2xl p-5 md:p-6 text-center text-text-secondary text-sm">
           Hali natijangiz yo'q. Birinchi tadbirda qatnashib, natijalaringizni shu yerda kuzating.
         </div>
       );
@@ -2398,43 +2419,44 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       : myResults.slice().reverse().map(r => ({ label: (r.date || '').slice(5), value: Math.round(r.score || 0), title: `${r.olympiad} · ${Math.round(r.score || 0)}%` }));
     let rankLine = null;
     if (competitor && competitor.my_rank && competitor.total) {
-      rankLine = <>Siz <span className="font-black text-indigo-300">{competitor.total}</span> talabadan <span className="font-black text-amber-400">{competitor.my_rank}-o'rindasiz</span>.</>;
+      rankLine = <>Siz <span className="font-data font-bold text-text-primary">{competitor.total}</span> talabadan <span className="font-data font-bold text-text-primary">{competitor.my_rank}-o'rindasiz</span>.</>;
     } else if (lastRank) {
-      rankLine = <>Oxirgi tadbirdagi o'rningiz: <span className="font-black text-amber-400">#{lastRank}</span>.</>;
+      rankLine = <>Oxirgi tadbirdagi o'rningiz: <span className="font-data font-bold text-text-primary">#{lastRank}</span>.</>;
     } else if (statsData.best_rank) {
-      rankLine = <>Eng yaxshi o'rningiz: <span className="font-black text-amber-400">#{statsData.best_rank}</span>.</>;
+      rankLine = <>Eng yaxshi o'rningiz: <span className="font-data font-bold text-text-primary">#{statsData.best_rank}</span>.</>;
     }
+    // Xulosa kartasi: oxirgi ball detallar (tab'lar) dan oldin turadi.
     return (
-      <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+      <div className="glass rounded-2xl p-4 md:p-5 border-l-4 border-l-accent">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="min-w-0">
-            <div className="text-[10px] uppercase tracking-wider font-extrabold text-white/40">Oxirgi natija</div>
+            <div className="text-[10px] uppercase tracking-widest font-bold text-text-secondary">Oxirgi natija</div>
             <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-3xl md:text-4xl font-black text-white">{lastScore}<span className="text-white/30 text-lg">%</span></span>
-              {lastRank ? <span className="text-sm font-bold text-amber-400">#{lastRank}</span> : null}
+              <span className="text-3xl md:text-4xl font-data font-bold text-text-primary">{lastScore}<span className="text-text-secondary text-lg">%</span></span>
+              {lastRank ? <span className="text-sm font-data font-bold text-text-secondary">#{lastRank}</span> : null}
             </div>
-            {last?.olympiad && <div className="text-xs text-white/50 mt-1 truncate max-w-[240px]">{last.olympiad}{last.date ? ` · ${last.date}` : ''}</div>}
+            {last?.olympiad && <div className="text-xs text-text-secondary mt-1 truncate max-w-[240px]">{last.olympiad}{last.date ? ` · ${last.date}` : ''}</div>}
           </div>
           {sparkPoints.length > 1 && (
             <div className="w-full sm:w-56 md:w-64 flex-shrink-0">
-              <SvgLineChart points={sparkPoints} stroke="#6366f1" height={64} />
+              <SvgLineChart points={sparkPoints} stroke="rgb(var(--color-accent))" height={64} />
               {/* Ball tarixi oynasi: 30/90 kun hammaga; "Barcha tarix" (365) —
                   faqat Pro. Pro bo'lmasa tugma qulflangan va premiumga yo'naltiradi. */}
               <div className="flex items-center justify-center gap-1 mt-2">
                 {[{ label: '30 kun', days: 30 }, { label: '90 kun', days: 90 }].map((w) => (
-                  <button key={w.days} onClick={() => setTimelineDays(w.days)}
-                    className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors ${timelineDays === w.days ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30' : 'text-white/40 hover:text-white/70'}`}>
+                  <button key={w.days} onClick={() => setTimelineDays(w.days)} aria-pressed={timelineDays === w.days}
+                    className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-colors ${timelineDays === w.days ? 'border-edge-strong bg-surface-2 text-text-primary' : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}>
                     {w.label}
                   </button>
                 ))}
                 {canPro ? (
-                  <button onClick={() => setTimelineDays(365)}
-                    className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-colors ${timelineDays === 365 ? 'bg-indigo-500/20 text-indigo-300 ring-1 ring-indigo-500/30' : 'text-white/40 hover:text-white/70'}`}>
+                  <button onClick={() => setTimelineDays(365)} aria-pressed={timelineDays === 365}
+                    className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border transition-colors ${timelineDays === 365 ? 'border-edge-strong bg-surface-2 text-text-primary' : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}>
                     Barcha tarix
                   </button>
                 ) : (
                   <button onClick={() => setPage('premium')} title="Pro tarifda ochiladi"
-                    className="text-[10px] font-bold px-2.5 py-1 rounded-lg text-amber-400/80 hover:text-amber-300 flex items-center gap-1">
+                    className="text-[10px] font-bold px-2.5 py-1 rounded-lg border border-warning/40 bg-warning/10 text-warning hover:border-warning flex items-center gap-1 transition-colors">
                     <Icon name="lock" size={10} /> Barcha tarix
                   </button>
                 )}
@@ -2443,7 +2465,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           )}
         </div>
         {rankLine && (
-          <div className="mt-3 pt-3 border-t border-white/5 text-sm text-white/70">{rankLine}</div>
+          <div className="mt-3 pt-3 border-t border-edge text-sm text-text-secondary">{rankLine}</div>
         )}
       </div>
     );
@@ -2456,9 +2478,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     { key: 'leaderboard', label: 'Reyting', icon: 'star' },
   ];
   const renderPerformance = () => (
-    <div className="animate-in mobile-content-pad">
+    <div className="animate-in motion-reduce:animate-none mobile-content-pad">
       <div className="p-3 md:p-6 space-y-4 md:space-y-6">
-        <h2 className="text-lg md:text-xl font-black text-white">Natijalarim</h2>
+        <h2 className="font-display text-lg md:text-xl font-bold text-text-primary">Natijalarim</h2>
         {renderPerformanceLanding()}
         <SubTabBar tabs={PERF_TABS} active={perfTab} onSelect={setPerfTab} />
         {perfTab === 'attempts' && renderAttempts()}
@@ -2484,7 +2506,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     const quotaUnlimited = !!(quota && (quota.unlimited || canPro));
     const quotaExhausted = !!(quota && !quotaUnlimited && quota.limit != null && quota.used >= quota.limit);
     return (
-    <div className="animate-in mobile-content-pad">
+    <div className="animate-in motion-reduce:animate-none mobile-content-pad">
       <div className="px-3 md:px-6 pt-3 md:pt-6">
         <SubTabBar tabs={PRACTICE_TABS} active={practiceTab} onSelect={setPracticeTab} />
       </div>
@@ -2492,18 +2514,18 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
       {practiceTab === 'practice' && quota && (
         <div className="px-3 md:px-6 pt-3">
           {quotaUnlimited ? (
-            <div className="glass rounded-xl px-3 py-2 flex items-center gap-2 text-xs text-white/70">
-              <Icon name="bolt" size={14} className="text-emerald-400" />
-              <span>Oylik mashq: <span className="font-bold text-emerald-300">Cheksiz</span></span>
+            <div className="glass rounded-xl px-3 py-2 flex items-center gap-2 text-xs text-text-secondary">
+              <Icon name="bolt" size={14} className="text-success" />
+              <span>Oylik mashq: <span className="font-bold text-success">Cheksiz</span></span>
             </div>
           ) : (
-            <div className={`glass rounded-xl px-3 py-2 flex items-center justify-between gap-2 text-xs ${quotaExhausted ? 'border border-amber-500/30 bg-amber-500/5' : ''}`}>
-              <span className="text-white/70">
-                Oylik mashq: <span className={`font-bold ${quotaExhausted ? 'text-amber-300' : 'text-indigo-300'}`}>{quota.used}/{quota.limit}</span> ta ishlatilgan
+            <div className={`glass rounded-xl px-3 py-2 flex items-center justify-between gap-2 text-xs ${quotaExhausted ? 'border-l-4 border-l-warning' : ''}`}>
+              <span className="text-text-secondary">
+                Oylik mashq: <span className={`font-data font-bold ${quotaExhausted ? 'text-warning' : 'text-text-primary'}`}>{quota.used}/{quota.limit}</span> ta ishlatilgan
               </span>
               {quotaExhausted && (
                 <button onClick={() => setPage('premium')}
-                  className="font-bold text-amber-300 hover:text-amber-200 flex items-center gap-1 shrink-0">
+                  className="font-bold text-warning hover:text-text-primary transition-colors flex items-center gap-1 shrink-0">
                   <Icon name="lock" size={12} /> Pro tarif
                 </button>
               )}
@@ -2544,7 +2566,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
     { key: 'premium', label: 'Premium', icon: 'star' },
   ];
   const renderProfileGroup = () => (
-    <div className="animate-in mobile-content-pad">
+    <div className="animate-in motion-reduce:animate-none mobile-content-pad">
       <div className="px-3 md:px-6 pt-3 md:pt-6">
         <SubTabBar tabs={PROFILE_HUB_TABS} active={page} onSelect={setPage} />
       </div>
@@ -2578,6 +2600,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           onMenuClick={() => setMobileMenu(true)}
           actions={
             <div className="flex items-center gap-2">
+              {/* Mavzu almashtirgich topbar'da turadi — avval suzuvchi tugma
+                  edi va AI widget panelini (z-999) yopib qo'yardi. */}
+              <ThemeToggle />
               {onOpenSwitcher && (
                 <button onClick={onOpenSwitcher} className="btn-ghost text-xs px-2 md:px-3 py-2 rounded-xl flex items-center gap-1.5">
                   <Icon name="users" size={13} /><span className="hidden md:inline">Rolni almashtirish</span>
@@ -2590,7 +2615,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           } />
         <main className="flex-1 overflow-x-hidden overflow-y-auto">
           {apiHasError && (
-            <div className="error-state mx-3 md:mx-6 mt-3 md:mt-4 rounded-2xl px-4 py-3 bg-rose-500/10 border border-rose-500/30 flex items-center gap-2.5 text-sm text-rose-200">
+            <div className="error-state mx-3 md:mx-6 mt-3 md:mt-4 rounded-2xl px-4 py-3 border border-edge border-l-4 border-l-error flex items-center gap-2.5 text-sm text-error">
               <Icon name="info" size={16} />
               <span>Ba'zi ma'lumotlar yuklanmadi. Internet aloqasini tekshirib, sahifani yangilang.</span>
             </div>
@@ -2603,7 +2628,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         <MobileBottomNav items={navItems} activePage={navActiveKey} setPage={setPageOrSpecial} />
       </div>
       {apiToast && (
-        <div className="fixed bottom-20 md:bottom-6 right-3 md:right-6 left-3 md:left-auto z-50 glass-strong rounded-2xl px-5 py-3.5 border border-rose-500/30 animate-in text-sm font-medium text-white md:max-w-sm">{apiToast}</div>
+        <div className="fixed bottom-20 md:bottom-6 right-3 md:right-6 left-3 md:left-auto z-50 glass-strong rounded-2xl px-5 py-3.5 border-l-4 border-l-accent animate-in motion-reduce:animate-none text-sm font-medium text-text-primary md:max-w-sm">{apiToast}</div>
       )}
 
       {/* Avval bu dialog o'zining raw `fixed inset-0` div'i bilan yasalgan
@@ -2640,7 +2665,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         }}
         title="Markaz tasdiqlash"
         message={centerConfirmOlympiad && (
-          <>Siz <span className="text-white font-medium">{centerConfirmOlympiad.centerName}</span> o'quv markazining o'quvchisimisiz?</>
+          <>Siz <span className="text-text-primary font-semibold">{centerConfirmOlympiad.centerName}</span> o'quv markazining o'quvchisimisiz?</>
         )}
         confirmText="Ha"
         cancelText="Yo'q"
@@ -2670,19 +2695,19 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             payPolling.status === 'success' ? (
               // Premium faollashdi — 2 soniyadan keyin modal avtomatik yopiladi.
               <div className="space-y-5 text-center py-2">
-                <div className="mx-auto w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
-                  <span className="text-3xl">✅</span>
+                <div className="mx-auto w-14 h-14 rounded-full border border-success/40 bg-success/10 flex items-center justify-center text-success">
+                  <Icon name="check" size={26} />
                 </div>
                 <div className="space-y-2">
-                  <p className="text-base font-bold text-white">To'lov muvaffaqiyatli!</p>
-                  <p className="text-sm text-white/60 leading-relaxed">
+                  <p className="text-base font-bold text-text-primary">To'lov muvaffaqiyatli!</p>
+                  <p className="text-sm text-text-secondary leading-relaxed">
                     Premium obunangiz faollashtirildi. Endi barcha premium funksiyalardan
                     foydalanishingiz mumkin.
                   </p>
                 </div>
                 <button
                   onClick={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); payPolling.reset(); }}
-                  className="w-full py-3 rounded-2xl bg-emerald-500/90 hover:bg-emerald-500 text-white text-sm font-bold transition-colors"
+                  className="btn-primary w-full py-3 rounded-2xl text-sm font-bold"
                 >
                   Yopish
                 </button>
@@ -2690,12 +2715,12 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             ) : payPolling.status === 'timeout' ? (
               // 2 daqiqa o'tdi, hali tasdiqlanmadi.
               <div className="space-y-5 text-center py-2">
-                <div className="mx-auto w-14 h-14 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
-                  <span className="text-3xl">⏳</span>
+                <div className="mx-auto w-14 h-14 rounded-full border border-warning/40 bg-warning/10 flex items-center justify-center text-warning">
+                  <Icon name="clock" size={26} />
                 </div>
                 <div className="space-y-2">
-                  <p className="text-base font-bold text-white">To'lov hali tasdiqlanmadi</p>
-                  <p className="text-sm text-white/60 leading-relaxed">
+                  <p className="text-base font-bold text-text-primary">To'lov hali tasdiqlanmadi</p>
+                  <p className="text-sm text-text-secondary leading-relaxed">
                     Bir oz kuting yoki qo'llab-quvvatlash bilan bog'laning. Premium
                     obunangiz tasdiqlangach Telegram orqali xabar yuboriladi va
                     sahifani yangilaganingizda faol bo'ladi.
@@ -2703,7 +2728,7 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 </div>
                 <button
                   onClick={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); payPolling.reset(); }}
-                  className="w-full py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white text-sm font-bold transition-colors"
+                  className="btn-primary w-full py-3 rounded-2xl text-sm font-bold"
                 >
                   Yopish
                 </button>
@@ -2711,23 +2736,23 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             ) : (
               // checking — to'lov tekshirilmoqda (polling davom etmoqda).
               <div className="space-y-5 text-center py-2">
-                <div className="mx-auto w-14 h-14 rounded-full bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center">
-                  <span className="text-3xl animate-spin">⏳</span>
+                <div className="mx-auto w-14 h-14 rounded-full border border-edge bg-surface-2 flex items-center justify-center text-text-secondary">
+                  <Icon name="clock" size={26} />
                 </div>
                 <div className="space-y-2">
-                  <p className="text-base font-bold text-white">To'lov tekshirilmoqda...</p>
-                  <p className="text-sm text-white/60 leading-relaxed">
+                  <p className="text-base font-bold text-text-primary">To'lov tekshirilmoqda...</p>
+                  <p className="text-sm text-text-secondary leading-relaxed">
                     To'lovingiz qabul qilindi. Premium obunangiz tasdiqlanishini
                     kutmoqdamiz — bu odatda bir necha soniya davom etadi.
                   </p>
-                  <p className="text-xs text-white/35 leading-relaxed">
+                  <p className="text-xs text-text-secondary leading-relaxed">
                     Bu oynani yopsangiz ham obunangiz tasdiqlangach Telegram orqali
                     xabar yuboriladi.
                   </p>
                 </div>
                 <button
                   onClick={() => { setPaymentPlan(null); setPaymentError(''); setPaymentSubmitted(false); payPolling.reset(); }}
-                  className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-sm font-bold transition-colors"
+                  className="btn-ghost w-full py-3 rounded-2xl text-sm font-bold"
                 >
                   Yopish
                 </button>
@@ -2735,21 +2760,21 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
             )
           ) : (
           <div className="space-y-6">
-            <div className="rounded-2xl bg-white/5 p-4 border border-white/10">
+            <div className="rounded-2xl border border-edge p-4">
               <div className="flex justify-between items-center mb-1">
-                <span className="text-xs text-white/40">Tanlangan tarif</span>
-                <span className="text-xs text-indigo-300 font-bold">O'quvchi</span>
+                <span className="text-xs uppercase tracking-widest font-bold text-text-secondary">Tanlangan tarif</span>
+                <span className="chip text-[10px] badge-draft">O'quvchi</span>
               </div>
-              <div className="flex justify-between items-end">
-                <span className="text-sm font-bold text-white">{paymentPlan.name}</span>
-                <span className="text-lg font-black text-indigo-400">
+              <div className="flex justify-between items-end gap-3">
+                <span className="text-sm font-bold text-text-primary">{paymentPlan.name}</span>
+                <span className="text-lg font-data font-bold text-text-primary">
                   {Number(paymentPlan.price).toLocaleString('ru-RU').replace(/ /g, ' ')} UZS
                 </span>
               </div>
             </div>
 
             {paymentError && (
-              <div className="rounded-xl bg-rose-500/15 border border-rose-500/30 p-3 text-xs text-rose-300">
+              <div className="rounded-xl border border-edge border-l-4 border-l-error p-3 text-xs text-error">
                 {paymentError}
               </div>
             )}
@@ -2758,23 +2783,23 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <button
                 disabled={paymentLoading}
                 onClick={() => handleCreatePayment('click')}
-                className="flex flex-col items-center justify-center p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-indigo-500/30 transition-all group min-h-[100px]"
+                className="flex flex-col items-center justify-center p-5 rounded-2xl border border-edge bg-surface-1 hover:bg-surface-2 hover:border-edge-strong transition-colors min-h-[100px] disabled:opacity-50"
               >
-                <span className="text-sm font-black text-[#00a3ff] group-hover:scale-105 transition-transform">CLICK</span>
-                <span className="text-[10px] text-white/30 mt-2">Click Up / Click Evolution</span>
+                <span className="text-sm font-bold text-[#00a3ff]">CLICK</span>
+                <span className="text-[10px] text-text-secondary mt-2">Click Up / Click Evolution</span>
               </button>
               <button
                 disabled={paymentLoading}
                 onClick={() => handleCreatePayment('payme')}
-                className="flex flex-col items-center justify-center p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-indigo-500/30 transition-all group min-h-[100px]"
+                className="flex flex-col items-center justify-center p-5 rounded-2xl border border-edge bg-surface-1 hover:bg-surface-2 hover:border-edge-strong transition-colors min-h-[100px] disabled:opacity-50"
               >
-                <span className="text-sm font-black text-[#00c9c9] group-hover:scale-105 transition-transform">Payme</span>
-                <span className="text-[10px] text-white/30 mt-2">Payme Checkout</span>
+                <span className="text-sm font-bold text-[#00857f]">Payme</span>
+                <span className="text-[10px] text-text-secondary mt-2">Payme Checkout</span>
               </button>
             </div>
 
             {paymentLoading && (
-              <div className="text-center text-xs text-white/40 animate-pulse">To'lov sahifasiga yo'naltirilmoqda...</div>
+              <div className="text-center text-xs text-text-secondary">To'lov sahifasiga yo'naltirilmoqda...</div>
             )}
           </div>
           )}
@@ -2785,9 +2810,9 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           qatordan chekni ochish mumkin. */}
       <Modal open={historyOpen} onClose={() => setHistoryOpen(false)} title="Billing tarixi" width="max-w-lg">
         {historyLoading ? (
-          <div className="text-center py-10 text-white/40 text-sm">Yuklanmoqda...</div>
+          <div className="text-center py-10 text-text-secondary text-sm">Yuklanmoqda...</div>
         ) : billingHistory.length === 0 ? (
-          <div className="text-center py-10 text-white/40 text-sm">Hozircha to'lovlar yo'q.</div>
+          <div className="text-center py-10 text-text-secondary text-sm">Hozircha to'lovlar yo'q.</div>
         ) : (
           <div className="space-y-2.5">
             {billingHistory.map((tx) => {
@@ -2795,21 +2820,22 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               return (
                 <div
                   key={tx.id}
-                  className="glass rounded-2xl p-3.5 border border-white/5 flex items-center justify-between gap-3"
+                  className="glass rounded-2xl p-3.5 flex items-center justify-between gap-3"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <span className="text-lg flex-shrink-0">📄</span>
+                    <span className="text-text-secondary flex-shrink-0"><Icon name="file" size={16} /></span>
                     <div className="min-w-0">
-                      <div className="text-sm font-bold text-white truncate">{tx.plan_name}</div>
-                      <div className="text-[11px] text-white/40 mt-0.5">
-                        {fmtAmount(tx.amount)} · <span className={st.cls}>{st.icon} {st.label}</span>
+                      <div className="text-sm font-bold text-text-primary truncate">{tx.plan_name}</div>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="text-[11px] font-data text-text-secondary">{fmtAmount(tx.amount)}</span>
+                        <span className={`chip text-[10px] ${st.cls}`}>{st.label}</span>
                       </div>
                     </div>
                   </div>
                   <button
                     onClick={() => openReceipt(tx.id)}
                     disabled={receiptLoading}
-                    className="text-xs px-3.5 py-2 rounded-xl font-semibold bg-white/5 hover:bg-white/10 text-white/80 border border-white/5 transition-colors flex-shrink-0 disabled:opacity-50"
+                    className="btn-ghost text-xs px-3.5 py-2 rounded-xl font-semibold flex-shrink-0 disabled:opacity-50"
                   >
                     Chek
                   </button>
@@ -2827,47 +2853,47 @@ const StudentDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           const st = receiptStatus(receipt.status);
           return (
             <div className="space-y-5">
-              <div className="receipt-print glass rounded-2xl p-5 border border-white/5 space-y-4">
-                <div className="text-center border-b border-white/10 pb-3">
-                  <div className="text-sm font-black text-white tracking-widest">TO'LOV CHEKI</div>
-                  <div className="text-[10px] text-white/30 mt-1">Olympy</div>
+              <div className="receipt-print glass rounded-2xl p-5 space-y-4">
+                <div className="text-center border-b border-edge pb-3">
+                  <div className="font-display text-sm font-bold text-text-primary tracking-widest">TO'LOV CHEKI</div>
+                  <div className="text-[10px] text-text-secondary mt-1">Olympy</div>
                 </div>
                 <div className="space-y-2.5 text-xs">
                   {receipt.user_name && (
                     <div className="flex justify-between gap-3">
-                      <span className="text-white/40">Foydalanuvchi</span>
-                      <span className="text-white font-semibold text-right">{receipt.user_name}</span>
+                      <span className="text-text-secondary">Foydalanuvchi</span>
+                      <span className="text-text-primary font-semibold text-right">{receipt.user_name}</span>
                     </div>
                   )}
                   <div className="flex justify-between gap-3">
-                    <span className="text-white/40">Sana</span>
-                    <span className="text-white font-semibold">{fmtReceiptDate(receipt.created_at)}</span>
+                    <span className="text-text-secondary">Sana</span>
+                    <span className="text-text-primary font-data font-semibold">{fmtReceiptDate(receipt.created_at)}</span>
                   </div>
                   <div className="flex justify-between gap-3">
-                    <span className="text-white/40">Tarif</span>
-                    <span className="text-white font-semibold text-right">{receipt.plan_name}</span>
+                    <span className="text-text-secondary">Tarif</span>
+                    <span className="text-text-primary font-semibold text-right">{receipt.plan_name}</span>
                   </div>
                   <div className="flex justify-between gap-3">
-                    <span className="text-white/40">Miqdor</span>
-                    <span className="text-indigo-300 font-black">{fmtAmount(receipt.amount)}</span>
+                    <span className="text-text-secondary">Miqdor</span>
+                    <span className="text-text-primary font-data font-bold">{fmtAmount(receipt.amount)}</span>
                   </div>
                   <div className="flex justify-between gap-3">
-                    <span className="text-white/40">Holat</span>
-                    <span className={`font-semibold ${st.cls}`}>{st.label} {st.icon}</span>
+                    <span className="text-text-secondary">Holat</span>
+                    <span className={`chip text-[10px] ${st.cls}`}>{st.label}</span>
                   </div>
                   <div className="flex justify-between gap-3">
-                    <span className="text-white/40">Provayder</span>
-                    <span className="text-white font-semibold">{providerLabel(receipt.provider)}</span>
+                    <span className="text-text-secondary">Provayder</span>
+                    <span className="text-text-primary font-semibold">{providerLabel(receipt.provider)}</span>
                   </div>
-                  <div className="flex justify-between gap-3 border-t border-white/10 pt-2.5">
-                    <span className="text-white/40">ID</span>
-                    <span className="text-white/70 font-mono">#TX-{receipt.id}</span>
+                  <div className="flex justify-between gap-3 border-t border-edge pt-2.5">
+                    <span className="text-text-secondary">ID</span>
+                    <span className="text-text-secondary font-mono">#TX-{receipt.id}</span>
                   </div>
                 </div>
               </div>
               <button
                 onClick={() => { try { window.print(); } catch {} }}
-                className="w-full py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-bold transition-colors no-print"
+                className="btn-primary w-full py-3 rounded-2xl text-sm font-bold no-print"
               >
                 Chop etish
               </button>
@@ -3003,28 +3029,28 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
   const answered = Object.keys(answers).length;
 
   return (
-    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in mobile-content-pad">
-      <div className="glass rounded-2xl w-full max-w-3xl mx-auto overflow-hidden flex flex-col border border-white/10">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in motion-reduce:animate-none mobile-content-pad">
+      <div className="glass rounded-2xl w-full max-w-3xl mx-auto overflow-hidden flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between gap-2 px-4 md:px-6 py-3.5 border-b border-white/10">
+        <div className="flex items-center justify-between gap-2 px-4 md:px-6 py-3.5 border-b border-edge">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl gradient-bg flex items-center justify-center flex-shrink-0 shadow-[0_0_15px_rgba(99,102,241,0.25)]">
-              <Icon name="bolt" size={16} className="text-white" />
+            <div className="w-9 h-9 rounded-xl border border-edge bg-surface-2 flex items-center justify-center flex-shrink-0 text-text-secondary">
+              <Icon name="bolt" size={16} />
             </div>
             <div className="min-w-0">
-              <div className="text-white font-bold text-sm md:text-base truncate">
+              <div className="font-display text-text-primary font-bold text-sm md:text-base truncate">
                 {step === 'setup' && 'Mashq rejimi'}
-                {step === 'quiz' && `Savol ${currentIdx + 1}/${total}`}
+                {step === 'quiz' && <span className="font-data">{`Savol ${currentIdx + 1}/${total}`}</span>}
                 {step === 'result' && 'Mashq natijasi'}
               </div>
-              <div className="text-[10px] text-white/40 truncate">
+              <div className="text-[11px] text-text-secondary truncate">
                 {step === 'setup' && 'Bilimingizni mashq qiling'}
                 {step === 'quiz' && (selectedSubject || '')}
                 {step === 'result' && (selectedSubject || '')}
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="text-white/40 hover:text-white p-1 flex-shrink-0 transition-colors">
+          <button onClick={onClose} className="text-text-secondary hover:text-text-primary p-1 flex-shrink-0 transition-colors" aria-label="Yopish">
             <Icon name="x" size={18} />
           </button>
         </div>
@@ -3032,7 +3058,7 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-4 md:px-6 py-5">
           {errorMsg && (
-            <div className="mb-4 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-200 text-xs px-3 py-2.5">
+            <div className="mb-4 rounded-xl border border-edge border-l-4 border-l-error text-error text-xs px-3 py-2.5">
               {errorMsg}
             </div>
           )}
@@ -3044,13 +3070,15 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setPracticeMode('bank')}
-                  className={`rounded-xl py-2.5 text-xs md:text-sm font-bold border transition-all duration-200 flex items-center justify-center gap-2 ${practiceMode === 'bank' ? 'bg-indigo-500/15 border-indigo-500/50 text-white shadow-[0_0_12px_rgba(99,102,241,0.12)]' : 'glass border-white/5 text-white/60 hover:text-white hover:border-white/10'}`}
+                  aria-pressed={practiceMode === 'bank'}
+                  className={`rounded-xl py-2.5 text-xs md:text-sm font-bold border border-b-2 transition-colors flex items-center justify-center gap-2 ${practiceMode === 'bank' ? 'border-edge-strong bg-surface-2 text-text-primary border-b-accent' : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}
                 >
                   <Icon name="book" size={14} /> Savol banki
                 </button>
                 <button
                   onClick={() => setPracticeMode('wrong')}
-                  className={`rounded-xl py-2.5 text-xs md:text-sm font-bold border transition-all duration-200 flex items-center justify-center gap-2 ${practiceMode === 'wrong' ? 'bg-rose-500/15 border-rose-500/50 text-white shadow-[0_0_12px_rgba(244,63,94,0.12)]' : 'glass border-white/5 text-white/60 hover:text-white hover:border-white/10'}`}
+                  aria-pressed={practiceMode === 'wrong'}
+                  className={`rounded-xl py-2.5 text-xs md:text-sm font-bold border border-b-2 transition-colors flex items-center justify-center gap-2 ${practiceMode === 'wrong' ? 'border-edge-strong bg-surface-2 text-text-primary border-b-accent' : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}
                 >
                   <Icon name="x" size={14} /> Xatolarim
                 </button>
@@ -3058,11 +3086,11 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
 
               {practiceMode === 'bank' && !allowed ? (
                 <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
-                  <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 mb-5 animate-pulse">
+                  <div className="w-16 h-16 rounded-2xl border border-warning/40 bg-warning/10 flex items-center justify-center text-warning mb-5">
                     <Icon name="info" size={32} />
                   </div>
-                  <h3 className="text-white font-bold text-lg mb-2">Tashkilot tasdig'i kutilmoqda</h3>
-                  <p className="text-white/50 text-sm max-w-sm mb-6 leading-relaxed">
+                  <h3 className="font-display text-text-primary font-bold text-lg mb-2">Tashkilot tasdig'i kutilmoqda</h3>
+                  <p className="text-text-secondary text-sm max-w-sm mb-6 leading-relaxed">
                     Mashq rejimidan foydalanish uchun o'quv markazingiz tomonidan arizangiz tasdiqlangan bo'lishi lozim.
                   </p>
                   <button
@@ -3075,17 +3103,17 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
               ) : (
                 <>
                   <div>
-                    <div className="text-xs text-white/60 font-semibold mb-2">Fan tanlang</div>
-                    {activeSubjectsLoading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+                    <div className="text-[11px] uppercase tracking-widest text-text-secondary font-bold mb-2">Fan tanlang</div>
+                    {activeSubjectsLoading && <div className="text-xs text-text-secondary">Yuklanmoqda...</div>}
                     {!activeSubjectsLoading && activeSubjects.length === 0 && (
                       <div className="flex flex-col items-center justify-center py-8 text-center">
-                        <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-white/20 mb-3">
+                        <div className="w-12 h-12 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-text-secondary mb-3">
                           <Icon name={practiceMode === 'wrong' ? 'check' : 'book'} size={24} />
                         </div>
-                        <div className="text-white/60 text-sm font-semibold mb-1">
+                        <div className="text-text-primary text-sm font-semibold mb-1">
                           {practiceMode === 'wrong' ? "Xato savollar yo'q" : 'Savollar mavjud emas'}
                         </div>
-                        <p className="text-white/30 text-xs max-w-xs leading-relaxed">
+                        <p className="text-text-secondary text-xs max-w-xs leading-relaxed">
                           {practiceMode === 'wrong'
                             ? "Siz hali biror olimpiadada noto'g'ri javob bermagansiz. Olimpiadalarda qatnashib boring."
                             : "Siz a'zo bo'lgan o'quv markazida hali mashq qilish uchun savollar yuklanmagan."}
@@ -3096,20 +3124,16 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
                         {activeSubjects.map(s => {
                           const isSelected = selectedSubject === s.subject;
-                          const accent = practiceMode === 'wrong'
-                            ? (isSelected ? 'bg-rose-500/15 border-rose-500/50 text-white shadow-[0_0_15px_rgba(244,63,94,0.15)]' : 'glass border-white/5 text-white/60 hover:text-white hover:border-white/10')
-                            : (isSelected ? 'bg-indigo-500/15 border-indigo-500/50 text-white shadow-[0_0_15px_rgba(99,102,241,0.15)]' : 'glass border-white/5 text-white/60 hover:text-white hover:border-white/10');
-                          const countAccent = practiceMode === 'wrong'
-                            ? (isSelected ? 'text-rose-300' : 'text-white/30')
-                            : (isSelected ? 'text-indigo-300' : 'text-white/30');
+                          const accent = isSelected ? 'border-edge-strong bg-surface-2 text-text-primary' : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary';
                           return (
                             <button
                               key={s.subject}
                               onClick={() => setSelectedSubject(s.subject)}
-                              className={`rounded-xl p-3 text-left border transition-all duration-200 flex flex-col justify-between min-h-[76px] ${accent}`}
+                              aria-pressed={isSelected}
+                              className={`rounded-xl p-3 text-left border transition-colors flex flex-col justify-between min-h-[76px] ${accent}`}
                             >
                               <div className="font-semibold text-xs md:text-sm truncate w-full">{s.subject}</div>
-                              <div className={`text-[10px] mt-1.5 font-medium ${countAccent}`}>
+                              <div className="text-[10px] mt-1.5 font-data font-medium text-text-secondary">
                                 {practiceMode === 'wrong' ? `${s.question_count} ta xato savol` : `${s.question_count} ta savol`}
                               </div>
                             </button>
@@ -3120,18 +3144,17 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
                   </div>
                   {activeSubjects.length > 0 && (
                     <div>
-                      <div className="text-xs text-white/60 font-semibold mb-2">Savol soni</div>
+                      <div className="text-[11px] uppercase tracking-widest text-text-secondary font-bold mb-2">Savol soni</div>
                       <div className="flex gap-2">
                         {[10, 20, 30].map(n => {
                           const isSelected = questionCount === n;
-                          const cls = practiceMode === 'wrong'
-                            ? (isSelected ? 'bg-rose-500/15 border-rose-500/50 text-white shadow-[0_0_12px_rgba(244,63,94,0.12)]' : 'glass border-white/5 text-white/60 hover:text-white hover:border-white/10')
-                            : (isSelected ? 'bg-indigo-500/15 border-indigo-500/50 text-white shadow-[0_0_12px_rgba(99,102,241,0.12)]' : 'glass border-white/5 text-white/60 hover:text-white hover:border-white/10');
+                          const cls = isSelected ? 'border-edge-strong bg-surface-2 text-text-primary' : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary';
                           return (
                             <button
                               key={n}
                               onClick={() => setQuestionCount(n)}
-                              className={`flex-1 rounded-xl py-2.5 text-xs md:text-sm font-bold border transition-all duration-200 ${cls}`}
+                              aria-pressed={isSelected}
+                              className={`flex-1 rounded-xl py-2.5 text-xs md:text-sm font-data font-bold border transition-colors ${cls}`}
                             >{n} ta</button>
                           );
                         })}
@@ -3155,7 +3178,7 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
                     <button
                       key={idx}
                       onClick={() => setCurrentIdx(idx)}
-                      className={`w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-bold transition-all border ${isCurrent ? 'bg-indigo-500 border-indigo-400 text-white' : (isAns ? 'bg-indigo-500/20 border-indigo-500/30 text-indigo-300' : 'glass border-white/5 text-white/40 hover:text-white hover:border-white/10')}`}
+                      className={`w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center text-xs font-data font-bold transition-colors border ${isCurrent ? 'bg-accent-fill border-accent-fill text-on-accent' : (isAns ? 'bg-accent/15 border-accent text-text-primary' : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary')}`}
                     >
                       {idx + 1}
                     </button>
@@ -3163,9 +3186,9 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
                 })}
               </div>
 
-              <div className="glass border-white/5 rounded-2xl p-4 md:p-5">
-                <div className="text-[10px] text-indigo-300 font-bold uppercase tracking-wider mb-1.5">Savol {currentIdx + 1} / {total}</div>
-                <div className="text-white text-base font-semibold leading-relaxed break-words whitespace-pre-wrap"><MathText text={q.text} /></div>
+              <div className="glass rounded-2xl p-4 md:p-5">
+                <div className="text-[10px] font-data text-text-secondary font-bold uppercase tracking-widest mb-1.5">Savol {currentIdx + 1} / {total}</div>
+                <div className="text-text-primary text-base font-semibold leading-relaxed break-words whitespace-pre-wrap"><MathText text={q.text} /></div>
               </div>
 
               <div className="space-y-2">
@@ -3175,23 +3198,24 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
                     <button
                       key={oi}
                       onClick={() => chooseAnswer(q.id, oi)}
-                      className={`w-full text-left rounded-2xl px-4 py-3 border flex items-center gap-4 text-sm transition-all duration-200 ${isChosen ? 'bg-indigo-500/10 border-indigo-500/50 text-white shadow-[0_4px_20px_rgba(99,102,241,0.1)]' : 'glass border-white/5 text-white/80 hover:text-white hover:border-white/10 hover:translate-x-1'}`}
+                      aria-pressed={isChosen}
+                      className={`w-full text-left rounded-2xl px-4 py-3 border flex items-center gap-4 text-sm transition-colors ${isChosen ? 'border-accent bg-accent/10 text-text-primary' : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}
                     >
-                      <span className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs flex-shrink-0 transition-colors duration-200 ${isChosen ? 'bg-indigo-500 text-white shadow-[0_0_10px_rgba(99,102,241,0.5)]' : 'bg-white/5 text-white/40'}`}>
+                      <span className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs flex-shrink-0 transition-colors ${isChosen ? 'bg-accent-fill text-on-accent' : 'border border-edge bg-surface-2 text-text-secondary'}`}>
                         {String.fromCharCode(65 + oi)}
                       </span>
                       <MathText className="flex-1 break-words" text={String(opt)} />
-                      {isChosen && <Icon name="check" size={14} className="text-indigo-300 flex-shrink-0 animate-pulse" />}
+                      {isChosen && <Icon name="check" size={14} className="text-accent flex-shrink-0" />}
                     </button>
                   );
                 })}
               </div>
-              
+
               <div className="space-y-1.5 mt-4">
                 <div className="progress-bar h-2">
-                  <div className="progress-fill" style={{ width: `${(answered / total) * 100}%`, background: 'linear-gradient(90deg, #6366f1, #a855f7)' }} />
+                  <div className="progress-fill" style={{ width: `${(answered / total) * 100}%`, background: 'rgb(var(--color-accent))' }} />
                 </div>
-                <div className="text-[10px] text-white/40 text-center font-medium">Javob berildi: {answered}/{total} ({Math.round((answered/total)*100)}%)</div>
+                <div className="text-[10px] font-data text-text-secondary text-center font-medium">Javob berildi: {answered}/{total} ({Math.round((answered/total)*100)}%)</div>
               </div>
             </div>
           )}
@@ -3201,77 +3225,77 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
             <div className="space-y-5">
               {/* Streak Celebration Banner */}
               {!!user?.streakCount && (
-                <div className="glass-strong rounded-2xl p-4 bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-orange-500/10 border border-orange-500/30 flex items-center justify-between gap-3 shadow-[0_8px_32px_rgba(249,115,22,0.08)] animate-in">
+                <div className="glass-strong rounded-2xl p-4 border-l-4 border-l-success flex items-center justify-between gap-3 animate-in motion-reduce:animate-none">
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl animate-bounce">🔥</span>
+                    <span className="text-success flex-shrink-0"><Icon name="bolt" size={20} /></span>
                     <div className="text-left">
-                      <div className="text-sm font-black text-white">Ketma-ket {user.streakCount} kun faollik!</div>
-                      <div className="text-[10px] text-white/50">Kundalik marrani bajardingiz, davom eting!</div>
+                      <div className="text-sm font-bold text-text-primary">Ketma-ket <span className="font-data">{user.streakCount}</span> kun faollik!</div>
+                      <div className="text-[11px] text-text-secondary">Kundalik marrani bajardingiz, davom eting.</div>
                     </div>
                   </div>
                 </div>
               )}
 
+              {/* Xulosa qatori: uch ko'rsatkich bir xil tuzilishda, urg'u faqat
+                  raqamda (tabular-nums — ustun sakramaydi). */}
               <div className="grid grid-cols-3 gap-3">
-                <div className="glass border-white/5 rounded-2xl p-4 text-center relative overflow-hidden flex flex-col justify-center min-h-[110px]">
-                  <div className="text-white/40 text-[10px] md:text-xs font-semibold uppercase tracking-wider mb-1">To'g'ri</div>
-                  <div className="text-emerald-400 text-2xl md:text-3xl font-black">{result.correct_count}</div>
-                  <div className="text-[10px] text-white/30 mt-1">savol</div>
-                  <div className="absolute top-0 right-0 w-8 h-8 bg-emerald-500/5 rounded-bl-full flex items-center justify-center"><Icon name="check" size={10} className="text-emerald-400/40" /></div>
+                <div className="glass rounded-2xl p-4 text-center flex flex-col justify-center min-h-[110px]">
+                  <div className="text-text-secondary text-[10px] md:text-xs font-semibold uppercase tracking-widest mb-1">To'g'ri</div>
+                  <div className="text-success text-2xl md:text-3xl font-data font-bold">{result.correct_count}</div>
+                  <div className="text-[10px] text-text-secondary mt-1">savol</div>
                 </div>
-                <div className="glass border-white/5 rounded-2xl p-4 text-center relative overflow-hidden flex flex-col justify-center min-h-[110px]">
-                  <div className="text-white/40 text-[10px] md:text-xs font-semibold uppercase tracking-wider mb-1">Noto'g'ri</div>
-                  <div className="text-rose-400 text-2xl md:text-3xl font-black">{result.wrong_count}</div>
-                  <div className="text-[10px] text-white/30 mt-1">savol</div>
-                  <div className="absolute top-0 right-0 w-8 h-8 bg-rose-500/5 rounded-bl-full flex items-center justify-center"><Icon name="x" size={10} className="text-rose-400/40" /></div>
+                <div className="glass rounded-2xl p-4 text-center flex flex-col justify-center min-h-[110px]">
+                  <div className="text-text-secondary text-[10px] md:text-xs font-semibold uppercase tracking-widest mb-1">Noto'g'ri</div>
+                  <div className="text-error text-2xl md:text-3xl font-data font-bold">{result.wrong_count}</div>
+                  <div className="text-[10px] text-text-secondary mt-1">savol</div>
                 </div>
-                <div className="glass border-white/5 rounded-2xl p-4 text-center relative overflow-hidden flex flex-col justify-center min-h-[110px]">
-                  <div className="text-white/40 text-[10px] md:text-xs font-semibold uppercase tracking-wider mb-1">Natija</div>
-                  <div className="text-indigo-400 text-2xl md:text-3xl font-black">{result.score}%</div>
-                  <div className="text-[10px] text-white/30 mt-1">{result.correct_count}/{result.total} ball</div>
-                  <div className="absolute top-0 right-0 w-8 h-8 bg-indigo-500/5 rounded-bl-full flex items-center justify-center"><Icon name="bolt" size={10} className="text-indigo-400/40" /></div>
+                <div className="glass rounded-2xl p-4 text-center flex flex-col justify-center min-h-[110px]">
+                  <div className="text-text-secondary text-[10px] md:text-xs font-semibold uppercase tracking-widest mb-1">Natija</div>
+                  <div className="text-text-primary text-2xl md:text-3xl font-data font-bold">{result.score}%</div>
+                  <div className="text-[10px] font-data text-text-secondary mt-1">{result.correct_count}/{result.total} ball</div>
                 </div>
               </div>
 
               <div className="space-y-3 max-h-80 overflow-y-auto pr-1 admin-scroll">
                 {(result.review || []).map((r, idx) => {
-                  const statusClass = r.is_correct 
-                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' 
-                    : (r.chosen_answer == null 
-                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' 
-                        : 'bg-rose-500/10 text-rose-400 border border-rose-500/20');
-                  const statusText = r.is_correct 
-                    ? "To'g'ri" 
+                  const statusClass = r.is_correct
+                    ? 'badge-approved'
+                    : (r.chosen_answer == null ? 'badge-pending' : 'badge-rejected');
+                  const statusText = r.is_correct
+                    ? "To'g'ri"
                     : (r.chosen_answer == null ? "Yechilmagan" : "Noto'g'ri");
-                  
+
                   return (
-                    <div key={r.id} className="glass border-white/5 rounded-2xl p-4 space-y-3">
+                    <div key={r.id} className="glass rounded-2xl p-4 space-y-3">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs text-white/40 font-bold">#{idx + 1}-savol</span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-lg ${statusClass}`}>
+                        <span className="text-xs font-data text-text-secondary font-bold">#{idx + 1}-savol</span>
+                        <span className={`chip text-[10px] ${statusClass}`}>
                           {statusText}
                         </span>
                       </div>
-                      <div className="text-white text-sm font-medium leading-relaxed break-words">{r.text}</div>
+                      <div className="text-text-primary text-sm font-medium leading-relaxed break-words">{r.text}</div>
                       <div className="space-y-1.5">
                         {(r.options || []).map((opt, oi) => {
                           const isCorrect = oi === r.correct_answer;
                           const isChosen = oi === r.chosen_answer;
-                          
-                          let optionClass = 'glass border-white/5 text-white/50';
+
+                          let optionClass = 'border-edge bg-surface-1 text-text-secondary';
+                          let markClass = 'border border-edge text-text-secondary';
                           let iconEl = null;
 
                           if (isCorrect) {
-                            optionClass = 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200 font-medium';
-                            iconEl = <Icon name="check" size={14} className="text-emerald-400 flex-shrink-0" />;
+                            optionClass = 'border-success bg-success/10 text-text-primary font-medium';
+                            markClass = 'bg-success/20 text-text-primary';
+                            iconEl = <Icon name="check" size={14} className="text-success flex-shrink-0" />;
                           } else if (isChosen) {
-                            optionClass = 'bg-rose-500/10 border-rose-500/30 text-rose-200 font-medium';
-                            iconEl = <Icon name="x" size={14} className="text-rose-400 flex-shrink-0" />;
+                            optionClass = 'border-error bg-error/10 text-text-primary font-medium';
+                            markClass = 'bg-error/20 text-text-primary';
+                            iconEl = <Icon name="x" size={14} className="text-error flex-shrink-0" />;
                           }
 
                           return (
-                            <div key={oi} className={`rounded-xl px-3 py-2 text-xs border flex items-center gap-3 transition-colors ${optionClass}`}>
-                              <span className={`w-5 h-5 rounded-md flex items-center justify-center font-bold text-[10px] flex-shrink-0 ${isCorrect ? 'bg-emerald-500/20 text-emerald-300' : (isChosen ? 'bg-rose-500/20 text-rose-300' : 'bg-white/5 text-white/30')}`}>
+                            <div key={oi} className={`rounded-xl px-3 py-2 text-xs border flex items-center gap-3 ${optionClass}`}>
+                              <span className={`w-5 h-5 rounded-md flex items-center justify-center font-bold text-[10px] flex-shrink-0 ${markClass}`}>
                                 {String.fromCharCode(65 + oi)}
                               </span>
                               <span className="flex-1 break-words">{String(opt)}</span>
@@ -3289,7 +3313,7 @@ const PracticeFlow = ({ user, centerId, isApproved, onClose, onNavigateToCenters
         </div>
 
         {/* Footer actions */}
-        <div className="px-4 md:px-6 py-3.5 border-t border-white/10 flex gap-3">
+        <div className="px-4 md:px-6 py-3.5 border-t border-edge flex gap-3">
           {step === 'setup' && (
             <>
               {!allowed || activeSubjects.length === 0 ? (
@@ -3362,8 +3386,9 @@ const OlympiadCard = ({ olympiad: o, onStart, locked, readinessPct, attempted, o
   const showPractice = !!canPractice && !!onPractice;
   const disabled = showResult ? false : (!isActive || locked);
   const label = showResult
-    ? '📊 Natijani ko\'rish'
-    : (locked ? "🔒 Tashkilot tasdig'i kerak" : (isActive ? '▶ Boshlash' : (isUpcoming ? 'Yaqinda boshlanadi' : (o.status === 'draft' ? 'Hali e\'lon qilinmagan' : 'Tugagan'))));
+    ? "Natijani ko'rish"
+    : (locked ? "Tashkilot tasdig'i kerak" : (isActive ? 'Boshlash' : (isUpcoming ? 'Yaqinda boshlanadi' : (o.status === 'draft' ? 'Hali e\'lon qilinmagan' : 'Tugagan'))));
+  const labelIcon = showResult ? 'chart' : (locked ? 'lock' : (isActive ? 'play' : null));
   const time = o.startTime || o.time || '';
   const qCount = (o.questionIds && o.questionIds.length) || o.questions || 0;
   const formattedStartDate = (() => {
@@ -3379,25 +3404,25 @@ const OlympiadCard = ({ olympiad: o, onStart, locked, readinessPct, attempted, o
       <div className="flex items-start justify-between mb-3 gap-2 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap min-w-0">
           <SubjectBadge subject={o.subject} />
-          <span className={`rounded-lg px-2 py-1 text-[10px] font-bold flex-shrink-0 ${o.eventType === 'olympiad' ? 'bg-cyan-500/15 text-cyan-300' : 'bg-amber-500/15 text-amber-300'}`}>{typeLabel}</span>
+          <span className="chip text-[10px] flex-shrink-0 border border-edge text-text-secondary">{typeLabel}</span>
         </div>
         <div className="flex items-center gap-2 flex-shrink-0">
           {readinessPct != null && (
-            <span className={`rounded-lg px-2 py-1 text-[10px] font-bold ${readinessPct >= 80 ? 'bg-emerald-500/15 text-emerald-300' : readinessPct >= 50 ? 'bg-amber-500/15 text-amber-300' : 'bg-rose-500/15 text-rose-300'}`} title="Sizning shu fandagi tayyorlik darajangiz">
+            <span className={`chip text-[10px] font-data ${readinessPct >= 80 ? 'badge-approved' : readinessPct >= 50 ? 'badge-pending' : 'badge-rejected'}`} title="Sizning shu fandagi tayyorlik darajangiz">
               {readinessPct}% tayyor
             </span>
           )}
           <Badge status={statusLabel(o.status)} />
         </div>
       </div>
-      <h3 className="font-bold text-white mb-1 break-words">{o.title}</h3>
-      <div className="flex flex-wrap gap-2 md:gap-3 text-xs text-white/40 mb-3 md:mb-4">
-        {o.testLevel && <span className="flex items-center gap-1 text-violet-300"><Icon name="star" size={12} /> {o.testLevel}</span>}
-        {o.testType && <span className="flex items-center gap-1 text-sky-300"><Icon name="file" size={12} /> {testTypeLabel(o.testType)}</span>}
-        {formattedStartDate && <span className="flex items-center gap-1">📅 {formattedStartDate}</span>}
-        <span className="flex items-center gap-1"><Icon name="clock" size={12} /> {time} · {o.duration} daqiqa</span>
-        <span className="flex items-center gap-1"><Icon name="file" size={12} /> {qCount} ta savol</span>
-        <span className="flex items-center gap-1"><Icon name="users" size={12} /> {o.participants || 0} ishtirokchi</span>
+      <h3 className="font-display font-bold text-text-primary mb-1 break-words">{o.title}</h3>
+      <div className="flex flex-wrap gap-2 md:gap-3 text-xs text-text-secondary mb-3 md:mb-4">
+        {o.testLevel && <span className="flex items-center gap-1"><Icon name="star" size={12} /> {o.testLevel}</span>}
+        {o.testType && <span className="flex items-center gap-1"><Icon name="file" size={12} /> {testTypeLabel(o.testType)}</span>}
+        {formattedStartDate && <span className="flex items-center gap-1 font-data"><Icon name="clock" size={12} /> {formattedStartDate}</span>}
+        <span className="flex items-center gap-1 font-data"><Icon name="clock" size={12} /> {time} · {o.duration} daqiqa</span>
+        <span className="flex items-center gap-1 font-data"><Icon name="file" size={12} /> {qCount} ta savol</span>
+        <span className="flex items-center gap-1 font-data"><Icon name="users" size={12} /> {o.participants || 0} ishtirokchi</span>
         {o.centerName && <span className="flex items-center gap-1"><Icon name="building" size={12} /> {o.centerName}</span>}
       </div>
       {/* Mashq tugmasi faqat tugagan olimpiadada (allaqachon topshirilgan)
@@ -3406,21 +3431,21 @@ const OlympiadCard = ({ olympiad: o, onStart, locked, readinessPct, attempted, o
       {showPractice ? (
         <div className="flex gap-2">
           <button onClick={showResult ? onViewResult : onStart}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all min-h-[44px] ${disabled ? 'btn-ghost opacity-50 cursor-not-allowed' : 'btn-primary'}`}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-semibold min-h-[44px] flex items-center justify-center gap-1.5 ${disabled ? 'btn-ghost opacity-50 cursor-not-allowed' : 'btn-primary'}`}
             disabled={disabled}>
-            {label}
+            {labelIcon && <Icon name={labelIcon} size={14} />} {label}
           </button>
           <button onClick={onPractice} disabled={!!practiceLoading}
-            className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all min-h-[44px] glass border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/10 disabled:opacity-50"
+            className="btn-ghost flex-1 py-2.5 rounded-xl text-sm font-semibold min-h-[44px] flex items-center justify-center gap-1.5 disabled:opacity-50"
             title="O'tib ketgan olimpiadani mashq rejimida ishlash (reytingga ta'sir qilmaydi)">
-            {practiceLoading ? 'Ochilmoqda...' : '🔁 Mashq qilish'}
+            <Icon name="bolt" size={14} /> {practiceLoading ? 'Ochilmoqda...' : 'Mashq qilish'}
           </button>
         </div>
       ) : (
         <button onClick={showResult ? onViewResult : onStart}
-          className={`w-full py-2.5 rounded-xl text-sm font-semibold transition-all min-h-[44px] ${disabled ? 'btn-ghost opacity-50 cursor-not-allowed' : 'btn-primary'}`}
+          className={`w-full py-2.5 rounded-xl text-sm font-semibold min-h-[44px] flex items-center justify-center gap-1.5 ${disabled ? 'btn-ghost opacity-50 cursor-not-allowed' : 'btn-primary'}`}
           disabled={disabled}>
-          {label}
+          {labelIcon && <Icon name={labelIcon} size={14} />} {label}
         </button>
       )}
     </div>

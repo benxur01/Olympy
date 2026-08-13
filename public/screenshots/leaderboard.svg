@@ -1,92 +1,149 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
-  <title id="title">Olympy leaderboard screenshot</title>
-  <desc id="desc">Leaderboard page with podium, filters and ranked student list.</desc>
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#050508"/>
-      <stop offset="0.56" stop-color="#090a0f"/>
-      <stop offset="1" stop-color="#050508"/>
-    </linearGradient>
-    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#fbbf24"/>
-      <stop offset="1" stop-color="#f59e0b"/>
-    </linearGradient>
-    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4f46e5"/>
-      <stop offset="0.55" stop-color="#06b6d4"/>
-      <stop offset="1" stop-color="#10b981"/>
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#000000" flood-opacity="0.34"/>
-    </filter>
-  </defs>
-  <rect width="1440" height="900" fill="url(#bg)"/>
-  <g filter="url(#shadow)" font-family="Inter, Arial, sans-serif">
-    <rect x="76" y="60" width="1288" height="780" rx="34" fill="#050508" stroke="#fff" stroke-opacity="0.11"/>
-    <g transform="translate(126 112)">
-      <text x="0" y="34" fill="#fff" font-size="32" font-weight="850">Reyting jadvali</text>
-      <text x="0" y="64" fill="#94a3b8" font-size="16">Matematika Olimpiadasi • May 2026</text>
-      <rect x="780" y="0" width="160" height="46" rx="14" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.11"/>
-      <text x="808" y="29" fill="#dbeafe" font-size="14" font-weight="800">Barcha fanlar</text>
-      <rect x="956" y="0" width="180" height="46" rx="14" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.11"/>
-      <text x="984" y="29" fill="#dbeafe" font-size="14" font-weight="800">Toshkent shahri</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="leaderboard-title leaderboard-desc" class="olympy-shot">
+  <title id="leaderboard-title">Olympy leaderboard screenshot</title>
+  <desc id="leaderboard-desc">Reyting jadvali: g'oliblar minbari, filtrlar va tartiblangan o'quvchilar ro'yxati.</desc>
+  <style>
+    /* ─── Ranglar bu yerda QATTIQ yozilmagan ──────────────────────────────
+       Qiymatlar sahifaning token qatlamidan (src/index.css) keladi. Bu fayl
+       DOM ichiga INLINE joylanadi (pages/Landing.jsx), shuning uchun :root
+       o'zgaruvchilari shu yerga meros bo'ladi va `data-theme` almashganda
+       skrinshot ham o'zi qayta bo'yaladi — ikkinchi (light) nusxa kerak emas.
+
+       var() zaxiralari faqat fayl ALOHIDA ochilganda ishlaydi (to'g'ridan
+       to'g'ri brauzerda yoki img tegi orqali) — img tegi tashqi CSS'ni
+       ko'rmaydi. Ilova ichida bu zaxiralar hech qachon qo'llanmaydi, shuning
+       uchun token qiymatlari o'zgarsa bu fayllarni yangilash SHART EMAS.
+
+       DIQQAT: bu style bloki ichida burchakli qavs ishlatilmaydi. SVG
+       markup'i HTML parseri orqali DOM'ga inline joylanadi va u yerda
+       style ichidagi burchakli qavs teg deb o'qilib, blokni buzadi.
+
+       Yo'nalish: gradient yo'q, glow yo'q, rangli soya yo'q. Ajratish uchun
+       1px chegara va bo'shliq. */
+    svg.olympy-shot {
+      --ground: rgb(var(--color-ground, 231 228 220));
+      --s1: rgb(var(--color-surface-1, 238 236 229));
+      --s2: rgb(var(--color-surface-2, 222 219 210));
+      --edge: rgb(var(--color-edge, 199 195 184));
+      --t2: rgb(var(--color-text-secondary, 98 101 111));
+      --accent: rgb(var(--color-accent, 192 54 44));
+      --stamp: rgb(var(--color-accent-fill, 192 54 44));
+      --on-stamp: rgb(var(--color-on-accent, 251 243 242));
+      --pencil: rgb(var(--color-accent-2, 47 93 140));
+      --ok: rgb(var(--color-success, 47 107 68));
+      --warn: rgb(var(--color-warning, 127 95 48));
+      --err: rgb(var(--color-error, 168 62 23));
+      color: rgb(var(--color-text-primary, 20 22 28));
+      font-family: 'PT Sans', Arial, sans-serif;
+    }
+    .olympy-shot text { fill: currentColor }
+    .olympy-shot .b { font-weight: 700 }
+    .olympy-shot .desk { fill: var(--s2) }
+    .olympy-shot .page { fill: var(--ground); stroke: var(--edge) }
+    .olympy-shot .rail { fill: var(--s1) }
+    .olympy-shot .card { fill: var(--s1); stroke: var(--edge) }
+    .olympy-shot .well { fill: var(--ground); stroke: var(--edge) }
+    .olympy-shot .chip { fill: var(--s2); stroke: var(--edge) }
+    .olympy-shot .avatar { fill: var(--s2); stroke: var(--edge) }
+    .olympy-shot .track { fill: var(--s2) }
+    .olympy-shot .rule { fill: none; stroke: var(--edge) }
+    /* Rang sinflari `color` ni ham o'rnatadi: shunda ayni shu elementdagi
+       `.icon` ning `stroke: currentColor` i o'sha rangni oladi va matn bilan
+       ikonka bir xil bo'yaladi (class="icon ok" kabi juftliklar uchun). */
+    .olympy-shot .dim { fill: var(--t2); color: var(--t2) }
+    .olympy-shot .ac { fill: var(--accent); color: var(--accent) }
+    .olympy-shot .stamp-fill { fill: var(--stamp) }
+    .olympy-shot .on-stamp { fill: var(--on-stamp); color: var(--on-stamp) }
+    .olympy-shot .pencil { fill: var(--pencil); color: var(--pencil) }
+    .olympy-shot .ok { fill: var(--ok); color: var(--ok) }
+    .olympy-shot .warn { fill: var(--warn); color: var(--warn) }
+    .olympy-shot .err { fill: var(--err); color: var(--err) }
+    /* Holat qutilari — ilovaning badge naqshi (12% to'ldirish, 35% chegara). */
+    .olympy-shot .ac-box { fill: var(--accent); fill-opacity: .12; stroke: var(--accent); stroke-opacity: .35 }
+    .olympy-shot .ok-box { fill: var(--ok); fill-opacity: .12; stroke: var(--ok); stroke-opacity: .35 }
+    .olympy-shot .warn-box { fill: var(--warn); fill-opacity: .12; stroke: var(--warn); stroke-opacity: .35 }
+    .olympy-shot .pencil-box { fill: var(--pencil); fill-opacity: .12; stroke: var(--pencil); stroke-opacity: .35 }
+    /* Ikonkalar — shared.jsx dagi Icon komponenti bilan bir xil Lucide geometriyasi. */
+    .olympy-shot .icon { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round }
+  </style>
+  <rect class="desk" width="1440" height="900"/>
+  <rect class="page" x="76" y="60" width="1288" height="780" rx="10"/>
+
+  <!-- Sarlavha va filtrlar -->
+  <g transform="translate(126 112)">
+    <text class="b" x="0" y="34" font-size="32">Reyting jadvali</text>
+    <text class="dim" x="0" y="64" font-size="16">Matematika Olimpiadasi • May 2026</text>
+    <rect class="chip" x="780" y="0" width="160" height="46" rx="4"/>
+    <text class="b" x="860" y="29" text-anchor="middle" font-size="14">Barcha fanlar</text>
+    <rect class="chip" x="956" y="0" width="180" height="46" rx="4"/>
+    <text class="b" x="1046" y="29" text-anchor="middle" font-size="14">Toshkent shahri</text>
+  </g>
+
+  <!-- Minbar. G'olib kartasi rangli soya bilan emas, ogohlantirish (kuydirilgan
+       sariq) tokenining ingichka chegarasi va yengil to'ldirishi bilan ajraladi. -->
+  <g transform="translate(126 216)">
+    <!-- 2-o'rin -->
+    <rect class="card" x="0" y="156" width="336" height="174" rx="8"/>
+    <circle class="avatar" cx="168" cy="118" r="50"/>
+    <text class="b" x="168" y="126" text-anchor="middle" font-size="27">SU</text>
+    <text class="b" x="168" y="206" text-anchor="middle" font-size="19">Sardor Usmonov</text>
+    <text class="dim" x="168" y="234" text-anchor="middle" font-size="14">Brilliant Education</text>
+    <text class="b" x="168" y="290" text-anchor="middle" font-size="40">91</text>
+    <text class="dim b" x="168" y="56" text-anchor="middle" font-size="34">2</text>
+
+    <!-- 1-o'rin -->
+    <rect class="warn-box" x="382" y="92" width="336" height="238" rx="8"/>
+    <circle class="avatar" cx="550" cy="58" r="58"/>
+    <text class="b" x="550" y="68" text-anchor="middle" font-size="30">MT</text>
+    <text class="b" x="550" y="164" text-anchor="middle" font-size="21">Malika Toshmatova</text>
+    <text class="dim" x="550" y="194" text-anchor="middle" font-size="14">ProSkill Academy</text>
+    <text class="warn b" x="550" y="266" text-anchor="middle" font-size="52">96</text>
+    <text class="warn b" x="550" y="-12" text-anchor="middle" font-size="42">1</text>
+
+    <!-- 3-o'rin -->
+    <rect class="card" x="764" y="182" width="336" height="148" rx="8"/>
+    <circle class="avatar" cx="932" cy="142" r="46"/>
+    <text class="b" x="932" y="150" text-anchor="middle" font-size="24">AV</text>
+    <text class="b" x="932" y="226" text-anchor="middle" font-size="19">Ali Valiyev</text>
+    <text class="dim" x="932" y="252" text-anchor="middle" font-size="14">ProSkill Academy</text>
+    <text class="b" x="932" y="306" text-anchor="middle" font-size="40">87</text>
+    <text class="dim b" x="932" y="84" text-anchor="middle" font-size="34">3</text>
+  </g>
+
+  <!-- Ro'yxat -->
+  <g transform="translate(126 590)">
+    <rect class="card" width="1136" height="176" rx="8"/>
+    <g class="dim b" font-size="13">
+      <text x="32" y="38">#</text>
+      <text x="110" y="38">O'quvchi</text>
+      <text x="420" y="38">Tashkilot</text>
+      <text x="698" y="38">Fan</text>
+      <text x="930" y="38">Ball</text>
+      <text x="1032" y="38">Vaqt</text>
     </g>
-    <g transform="translate(126 216)">
-      <rect x="0" y="156" width="336" height="174" rx="28" fill="#ffffff" fill-opacity="0.07" stroke="#94a3b8" stroke-opacity="0.26"/>
-      <circle cx="168" cy="118" r="50" fill="#334155"/>
-      <text x="168" y="126" text-anchor="middle" fill="#fff" font-size="27" font-weight="850">SU</text>
-      <text x="168" y="206" text-anchor="middle" fill="#fff" font-size="19" font-weight="850">Sardor Usmonov</text>
-      <text x="168" y="234" text-anchor="middle" fill="#94a3b8" font-size="14">Brilliant Education</text>
-      <text x="168" y="282" text-anchor="middle" fill="#cbd5e1" font-size="40" font-weight="900">91</text>
-      <text x="168" y="56" text-anchor="middle" fill="#cbd5e1" font-size="34" font-weight="900">2</text>
-      <rect x="382" y="92" width="336" height="238" rx="28" fill="#f59e0b" fill-opacity="0.13" stroke="#fbbf24" stroke-opacity="0.36"/>
-      <circle cx="550" cy="58" r="58" fill="url(#gold)"/>
-      <text x="550" y="68" text-anchor="middle" fill="#fff" font-size="30" font-weight="900">MT</text>
-      <text x="550" y="164" text-anchor="middle" fill="#fff" font-size="21" font-weight="850">Malika Toshmatova</text>
-      <text x="550" y="194" text-anchor="middle" fill="#fef3c7" font-size="14">ProSkill Academy</text>
-      <text x="550" y="260" text-anchor="middle" fill="#fbbf24" font-size="52" font-weight="950">96</text>
-      <text x="550" y="-12" text-anchor="middle" fill="#fbbf24" font-size="42" font-weight="950">1</text>
-      <rect x="764" y="182" width="336" height="148" rx="28" fill="#ffffff" fill-opacity="0.07" stroke="#b45309" stroke-opacity="0.32"/>
-      <circle cx="932" cy="142" r="46" fill="#92400e"/>
-      <text x="932" y="150" text-anchor="middle" fill="#fff" font-size="24" font-weight="850">AV</text>
-      <text x="932" y="226" text-anchor="middle" fill="#fff" font-size="19" font-weight="850">Ali Valiyev</text>
-      <text x="932" y="252" text-anchor="middle" fill="#94a3b8" font-size="14">ProSkill Academy</text>
-      <text x="932" y="298" text-anchor="middle" fill="#f59e0b" font-size="40" font-weight="900">87</text>
-      <text x="932" y="84" text-anchor="middle" fill="#f59e0b" font-size="34" font-weight="900">3</text>
+    <path class="rule" d="M0 58h1136"/>
+    <g transform="translate(0 68)">
+      <rect class="chip" x="24" y="6" width="36" height="36" rx="4"/>
+      <text class="b" x="42" y="30" text-anchor="middle" font-size="14">4</text>
+      <circle class="avatar" cx="116" cy="24" r="20"/>
+      <text class="b" x="116" y="29" text-anchor="middle" font-size="12">JN</text>
+      <text class="b" x="146" y="29" font-size="15">Jasur Normatov</text>
+      <text class="dim" x="420" y="29" font-size="14">Leader Academy</text>
+      <rect class="pencil-box" x="698" y="6" width="118" height="32" rx="4"/>
+      <text class="pencil b" x="757" y="27" text-anchor="middle" font-size="13">Fizika</text>
+      <text class="ok b" x="940" y="29" font-size="16">84</text>
+      <text class="dim" x="1032" y="29" font-size="14">25:14</text>
     </g>
-    <g transform="translate(126 590)">
-      <rect width="1136" height="176" rx="26" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.1"/>
-      <g fill="#94a3b8" font-size="13" font-weight="800">
-        <text x="32" y="38">#</text>
-        <text x="110" y="38">Oquvchi</text>
-        <text x="420" y="38">Tashkilot</text>
-        <text x="698" y="38">Fan</text>
-        <text x="930" y="38">Ball</text>
-        <text x="1032" y="38">Vaqt</text>
-      </g>
-      <path d="M0 58h1136" stroke="#fff" stroke-opacity="0.08"/>
-      <g transform="translate(0 68)">
-        <rect x="24" y="6" width="36" height="36" rx="12" fill="#ffffff" fill-opacity="0.07"/>
-        <text x="42" y="30" text-anchor="middle" fill="#fff" font-size="14" font-weight="850">4</text>
-        <circle cx="116" cy="24" r="20" fill="url(#brand)"/>
-        <text x="146" y="29" fill="#fff" font-size="15" font-weight="800">Jasur Normatov</text>
-        <text x="420" y="29" fill="#cbd5e1" font-size="14">Leader Academy</text>
-        <rect x="698" y="6" width="118" height="32" rx="10" fill="#2563eb" fill-opacity="0.17"/>
-        <text x="724" y="27" fill="#93c5fd" font-size="13" font-weight="800">Fizika</text>
-        <text x="940" y="29" fill="#22c55e" font-size="16" font-weight="900">84</text>
-        <text x="1032" y="29" fill="#94a3b8" font-size="14">25:14</text>
-      </g>
-      <g transform="translate(0 120)">
-        <rect x="24" y="6" width="36" height="36" rx="12" fill="#ffffff" fill-opacity="0.07"/>
-        <text x="42" y="30" text-anchor="middle" fill="#fff" font-size="14" font-weight="850">5</text>
-        <circle cx="116" cy="24" r="20" fill="#0f766e"/>
-        <text x="146" y="29" fill="#fff" font-size="15" font-weight="800">Nilufar Karimova</text>
-        <text x="420" y="29" fill="#cbd5e1" font-size="14">IT Park Academy</text>
-        <rect x="698" y="6" width="138" height="32" rx="10" fill="#10b981" fill-opacity="0.16"/>
-        <text x="724" y="27" fill="#6ee7b7" font-size="13" font-weight="800">Kimyo</text>
-        <text x="940" y="29" fill="#22c55e" font-size="16" font-weight="900">81</text>
-        <text x="1032" y="29" fill="#94a3b8" font-size="14">28:07</text>
-      </g>
+    <g transform="translate(0 120)">
+      <rect class="chip" x="24" y="6" width="36" height="36" rx="4"/>
+      <text class="b" x="42" y="30" text-anchor="middle" font-size="14">5</text>
+      <circle class="avatar" cx="116" cy="24" r="20"/>
+      <text class="b" x="116" y="29" text-anchor="middle" font-size="12">NK</text>
+      <text class="b" x="146" y="29" font-size="15">Nilufar Karimova</text>
+      <text class="dim" x="420" y="29" font-size="14">IT Park Academy</text>
+      <rect class="ok-box" x="698" y="6" width="138" height="32" rx="4"/>
+      <text class="ok b" x="767" y="27" text-anchor="middle" font-size="13">Kimyo</text>
+      <text class="ok b" x="940" y="29" font-size="16">81</text>
+      <text class="dim" x="1032" y="29" font-size="14">28:07</text>
     </g>
   </g>
 </svg>

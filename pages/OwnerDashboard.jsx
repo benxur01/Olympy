@@ -19,7 +19,7 @@ const ownerFormatDate = (value) => {
 };
 
 // Fan progress-bar ranglari — StudentDashboard palitrasi bilan bir xil.
-const OWNER_DRAWER_BAR_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#84cc16', '#f43f5e'];
+const OWNER_DRAWER_BAR_COLORS = ['#C0362C', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#2F5D8C', '#84cc16', '#f43f5e'];
 
 // O'quvchi ustiga bosilganda o'ngdan ochiladigan batafsil panel.
 // `student` — renderStudents'dagi qator obyekti ({userId, name, phone,
@@ -43,7 +43,7 @@ const OwnerStudentDetailDrawer = ({ student, onClose }) => {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
-      <div className="fixed right-0 top-0 h-full w-full max-w-[420px] glass-strong border-l border-white/10 z-50 flex flex-col animate-in">
+      <div className="fixed right-0 top-0 h-full w-full max-w-[420px] glass-strong z-50 flex flex-col animate-in">
         <div className="flex items-start gap-3 p-5 border-b border-white/10">
           <Avatar name={student?.name} src={student?.avatarUrl || d?.avatar_url || ''} size={48} gradient="from-emerald-500 to-teal-600" />
           <div className="min-w-0 flex-1">
@@ -348,7 +348,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   }, [isApi, user?.onboardingCenterCompleted]);
 
   // F6: Branding (white-label) — joriy markaz brand rangi.
-  const [brandColorInput, setBrandColorInput] = React.useState('#6366f1');
+  const [brandColorInput, setBrandColorInput] = React.useState('#C0362C');
   const [brandSaving, setBrandSaving] = React.useState(false);
 
   // Avval bitta string state + bitta setTimeout edi: ikkinchi toast birinchisi
@@ -1683,7 +1683,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               style={{ background: 'rgba(255,255,255,0.04)' }}
             >
               {ownerCenters.map(c => (
-                <option key={c.id} value={c.id} style={{ background: '#12141a' }}>{c.name} · {statusLabel(c.status)}</option>
+                <option key={c.id} value={c.id} style={{ background: 'rgb(var(--color-surface-1))' }}>{c.name} · {statusLabel(c.status)}</option>
               ))}
             </select>
           </label>
@@ -1743,7 +1743,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             className="hidden h-9 max-w-[220px] rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white/80 outline-none transition hover:bg-white/10 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30 md:block"
           >
             {ownerCenters.map(c => (
-              <option key={c.id} value={c.id} style={{ background: '#12141a' }}>{c.name} · {statusLabel(c.status)}</option>
+              <option key={c.id} value={c.id} style={{ background: 'rgb(var(--color-surface-1))' }}>{c.name} · {statusLabel(c.status)}</option>
             ))}
           </select>
         )}
@@ -1796,7 +1796,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const u = requestUser(req);
     const isManager = req.type === 'manager';
     return (
-      <div className="glass rounded-2xl p-4 transition-all hover:border-white/15 hover:bg-white/[0.06]">
+      <div className="glass rounded-2xl p-4 transition-all card-hover">
         <div className="flex items-start gap-3">
           <Avatar
             name={u?.name || '?'}
@@ -1842,10 +1842,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderHome = () => (
     <div className="space-y-6 p-4 lg:p-6">
       {/* Hero card */}
-      <section className="relative overflow-hidden rounded-3xl border border-white/8 glass-strong">
-        {/* Decorative glows */}
-        <div className="hero-glow" style={{ background: '#6366f1', top: '-200px', left: '-100px' }} />
-        <div className="hero-glow" style={{ background: '#a855f7', bottom: '-220px', right: '-120px' }} />
+      <section className="relative overflow-hidden rounded-3xl glass-strong">
 
         <div className="relative grid gap-0 lg:grid-cols-[1.3fr_.7fr]">
           <div className="p-6 lg:p-8">
@@ -1940,7 +1937,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
       {/* Pending requests + status panel */}
       <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
-        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+        <section className="rounded-2xl glass-strong p-5 lg:p-6">
           <div className="mb-5 flex items-center justify-between">
             <div>
               <h2 className="text-base font-black text-white">Kutilayotgan xodim arizalari</h2>
@@ -1965,7 +1962,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </div>
         </section>
 
-        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+        <section className="rounded-2xl glass-strong p-5 lg:p-6">
           <div className="mb-5 flex items-center justify-between">
             <h2 className="text-base font-black text-white">Tashkilot holati</h2>
             <OwnerStatusPill status={center.status} />
@@ -1973,9 +1970,9 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <div className="space-y-4">
             {[
               { label: 'Profil', pct: 100, color: '#10b981' },
-              { label: 'Xodimlar', pct: Math.min(100, myStaff.length * 25), color: '#22d3ee' },
-              { label: 'Fanlar', pct: Math.min(100, (center.subjects || []).length * 18), color: '#6366f1' },
-              { label: 'Olimpiadalar', pct: Math.min(100, (centerOlympiads.length) * 20), color: '#a855f7' },
+              { label: 'Xodimlar', pct: Math.min(100, myStaff.length * 25), color: '#698AAC' },
+              { label: 'Fanlar', pct: Math.min(100, (center.subjects || []).length * 18), color: '#C0362C' },
+              { label: 'Olimpiadalar', pct: Math.min(100, (centerOlympiads.length) * 20), color: '#2F5D8C' },
             ].map(row => (
               <div key={row.label}>
                 <div className="mb-1.5 flex justify-between text-xs font-bold">
@@ -1985,7 +1982,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 <div className="progress-bar h-2">
                   <div
                     className="h-full rounded-full transition-[width] duration-700"
-                    style={{ width: `${row.pct}%`, background: `linear-gradient(90deg, ${row.color}, #a855f7)` }}
+                    style={{ width: `${row.pct}%`, background: row.color }}
                   />
                 </div>
               </div>
@@ -2008,7 +2005,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <div className="grid gap-3">
         {requestRows.map(r => <RequestCard key={r.id} req={r} />)}
         {requestRows.length === 0 && (
-          <div className="rounded-2xl border border-white/8 glass-strong px-4 py-10 md:py-16 text-center">
+          <div className="rounded-2xl glass-strong px-4 py-10 md:py-16 text-center">
             <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full glass text-white/30">
               <Icon name="bell" size={22} />
             </div>
@@ -2042,7 +2039,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </button>
         </div>
       </div>
-      <section className="overflow-hidden rounded-2xl border border-white/8 glass-strong">
+      <section className="overflow-hidden rounded-2xl glass-strong">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left">
             <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
@@ -2199,7 +2196,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </div>
         )}
 
-        <section className="overflow-hidden rounded-2xl border border-white/8 glass-strong">
+        <section className="overflow-hidden rounded-2xl glass-strong">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left">
               <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
@@ -2335,7 +2332,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Musobaqalar</h1>
         <p className="mt-1 text-sm font-semibold text-white/50">Direktor uchun tashkilotdagi olimpiada va musobaqalar ko'rinishi.</p>
       </div>
-      <section className="overflow-hidden rounded-2xl border border-white/8 glass-strong">
+      <section className="overflow-hidden rounded-2xl glass-strong">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1020px] text-left">
             <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
@@ -2571,7 +2568,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
 
         {/* Proctoring table */}
-        <div className="glass rounded-2xl overflow-hidden border border-white/5">
+        <div className="glass rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[800px]">
               <thead>
@@ -2774,7 +2771,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </button>
         </div>
         {rankingLoading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
-        <section className="overflow-hidden rounded-2xl border border-white/8 glass-strong">
+        <section className="overflow-hidden rounded-2xl glass-strong">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-left">
               <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
@@ -2848,7 +2845,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </button>
         )}
       </div>
-      <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+      <section className="rounded-2xl glass-strong p-5 lg:p-6">
         <div className="flex flex-col gap-5 md:flex-row md:items-center">
           <div className="relative h-16 w-16 flex-shrink-0">
             {center.imageUrl ? (
@@ -2902,7 +2899,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Sozlamalar</h1>
         <p className="mt-1 text-sm font-semibold text-white/50">Direktor paneli sozlamalari.</p>
       </div>
-      <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+      <section className="rounded-2xl glass-strong p-5 lg:p-6">
         <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-xl glass p-4">
             <div className="mb-2 flex items-center gap-2">
@@ -2927,7 +2924,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
       {/* F6: Branding (white-label) — markaz brend rangi. */}
       {center && (
-        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+        <section className="rounded-2xl glass-strong p-5 lg:p-6">
           <div className="mb-4 flex items-center gap-2">
             <div className="feature-icon bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white" style={{ width: 32, height: 32, borderRadius: 10, fontSize: 14 }}>
               <Icon name="sparkles" size={16} />
@@ -3055,7 +3052,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
         <div className={`space-y-5 ${isStatisticsLocked ? 'blur-[6px] select-none pointer-events-none' : ''}`}>
           {/* Markaz faollik trendi — oylik o'rtacha ball */}
-          <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+          <section className="rounded-2xl glass-strong p-5 lg:p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-base font-black text-white">Markaz faollik trendi</h2>
               <span className="text-xs font-semibold text-white/45">Oylik o'rtacha ball</span>
@@ -3077,14 +3074,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     </div>
                   )}
                 </div>
-                <SvgLineChart points={trendPoints} height={170} stroke="#a855f7" />
+                <SvgLineChart points={trendPoints} height={170} stroke="#2F5D8C" />
               </>
             )}
           </section>
 
           {/* Hudud bo'yicha anonim o'rin */}
           {regionRank && (
-            <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+            <section className="rounded-2xl glass-strong p-5 lg:p-6">
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-base font-black text-white">Reytingdagi o'rningiz</h2>
                 <span className="text-xs font-semibold text-white/45">{regionRank.average_score} o'rt. ball asosida</span>
@@ -3099,7 +3096,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     {regionRank.region_total ? <span className="text-sm font-semibold text-white/45">/ {regionRank.region_total} markaz</span> : null}
                   </div>
                 </div>
-                <div className="rounded-xl bg-white/5 border border-white/8 p-4">
+                <div className="rounded-xl bg-white/5 border border-edge-strong p-4">
                   <div className="text-[11px] font-bold uppercase tracking-wide text-white/45">Umumiy reytingda</div>
                   <div className="mt-1 flex items-baseline gap-1.5">
                     <span className="text-3xl font-black text-white">{regionRank.global_rank ? `#${regionRank.global_rank}` : '—'}</span>
@@ -3114,7 +3111,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           )}
 
           {/* 6. O'quvchilar dinamikasi grafigi */}
-          <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+          <section className="rounded-2xl glass-strong p-5 lg:p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-base font-black text-white">O'quvchilar dinamikasi</h2>
               <span className="text-xs font-semibold text-white/45">Oxirgi 6 oyda qo'shilganlar</span>
@@ -3130,7 +3127,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </section>
 
           {/* 7. Top-10 o'quvchi karti */}
-          <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+          <section className="rounded-2xl glass-strong p-5 lg:p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-base font-black text-white">Top o'quvchilar</h2>
               <span className="text-xs font-semibold text-white/45">O'rtacha ball bo'yicha</span>
@@ -3161,7 +3158,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </section>
 
           {/* Guruhlar (sinflar) bo'yicha analitika */}
-          <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+          <section className="rounded-2xl glass-strong p-5 lg:p-6">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-base font-black text-white">Guruhlar</h2>
               <span className="text-xs font-semibold text-white/45">Sinf/guruh bo'yicha natija</span>
@@ -3177,7 +3174,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   const barColor = avg >= 70 ? 'bg-emerald-500' : avg >= 50 ? 'bg-amber-500' : 'bg-rose-500';
                   const weak = Array.isArray(g.weak_students) ? g.weak_students.slice(0, 3) : [];
                   return (
-                    <div key={g.group_tag || gi} className="rounded-xl bg-white/5 border border-white/8 p-4">
+                    <div key={g.group_tag || gi} className="rounded-xl bg-white/5 border border-edge-strong p-4">
                       <div className="mb-2 flex items-center justify-between gap-2">
                         <div className="min-w-0">
                           <div className="truncate text-sm font-black text-white">{g.group_tag || 'Guruhsiz'}</div>
@@ -3256,7 +3253,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
 
         {/* Savol qo'shish forma */}
-        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6 space-y-3">
+        <section className="rounded-2xl glass-strong p-5 lg:p-6 space-y-3">
           <h2 className="text-base font-black text-white">Yangi savol</h2>
           <textarea
             className="input-field w-full py-2.5 text-sm"
@@ -3314,7 +3311,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </section>
 
         {/* Saqlangan savollar */}
-        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+        <section className="rounded-2xl glass-strong p-5 lg:p-6">
           <h2 className="mb-4 text-base font-black text-white">Saqlangan savollar ({questionBank.length})</h2>
           {questionBankLoading ? (
             <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
@@ -3375,7 +3372,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </button>
         </div>
 
-        <section className="rounded-2xl border border-white/8 glass-strong p-5 lg:p-6">
+        <section className="rounded-2xl glass-strong p-5 lg:p-6">
           <h2 className="mb-4 text-base font-black text-white">Mahsulotlar ({shopProducts.length})</h2>
           {shopLoading ? (
             <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
@@ -3386,7 +3383,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               {shopProducts.map(p => {
                 const features = Array.isArray(p.features) ? p.features : [];
                 return (
-                  <div key={p.id} className={`rounded-xl border p-3.5 flex flex-col gap-3 ${p.is_active ? 'border-white/8 bg-white/5' : 'border-white/5 bg-white/[0.02] opacity-70'}`}>
+                  <div key={p.id} className={`rounded-xl border p-3.5 flex flex-col gap-3 ${p.is_active ? 'border-edge-strong bg-white/5' : 'border-edge bg-white/[0.02] opacity-70'}`}>
                     <div className="flex items-start gap-3">
                       {p.image_url ? (
                         <img src={p.image_url} alt={p.title} className="h-14 w-14 flex-shrink-0 rounded-xl object-cover" />
@@ -3603,7 +3600,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               const full = !unlimited && limit > 0 && used >= limit;
               const barColor = full ? 'bg-rose-500' : near ? 'bg-amber-500' : 'bg-indigo-500';
               return (
-                <div key={key} className="glass rounded-2xl p-4 border border-white/5">
+                <div key={key} className="glass rounded-2xl p-4">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-white/60 flex items-center gap-1.5">
                       <span>{icon}</span> {label}
@@ -3750,7 +3747,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   ].filter(Boolean);
 
   return (
-    <div className="h-screen overflow-hidden text-white" style={{ background: '#050508' }}>
+    <div className="h-screen overflow-hidden text-white" style={{ background: 'rgb(var(--color-ground))' }}>
       {mobileMenu && (
         <div
           className="fixed inset-0 z-40 lg:hidden"
@@ -3936,7 +3933,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   }))}
                   className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
                 >
-                  {centerOrganizationTypes.map(type => <option key={type} value={type} style={{ background: '#12141a' }}>{type}</option>)}
+                  {centerOrganizationTypes.map(type => <option key={type} value={type} style={{ background: 'rgb(var(--color-surface-1))' }}>{type}</option>)}
                 </select>
               </label>
               {centerForm.organizationType === 'Boshqa' && (
@@ -3958,7 +3955,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     onChange={e => updateCenterForm('country', e.target.value)}
                     className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
                   >
-                    <option value="O'zbekiston" style={{ background: '#12141a' }}>O'zbekiston</option>
+                    <option value="O'zbekiston" style={{ background: 'rgb(var(--color-surface-1))' }}>O'zbekiston</option>
                   </select>
                 </label>
                 <label className="block">
@@ -3968,8 +3965,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     onChange={e => setCenterForm(prev => ({ ...prev, region: e.target.value, district: '' }))}
                     className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
                   >
-                    <option value="" style={{ background: '#12141a' }}>Viloyatni tanlang</option>
-                    {centerRegions.map(region => <option key={region} value={region} style={{ background: '#12141a' }}>{region}</option>)}
+                    <option value="" style={{ background: 'rgb(var(--color-surface-1))' }}>Viloyatni tanlang</option>
+                    {centerRegions.map(region => <option key={region} value={region} style={{ background: 'rgb(var(--color-surface-1))' }}>{region}</option>)}
                   </select>
                 </label>
               </div>
@@ -3981,8 +3978,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   onChange={e => updateCenterForm('district', e.target.value)}
                   className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30 disabled:opacity-50"
                 >
-                  <option value="" style={{ background: '#12141a' }}>{centerForm.region ? 'Tumanni tanlang' : 'Avval viloyatni tanlang'}</option>
-                  {centerDistrictOptions.map(district => <option key={district} value={district} style={{ background: '#12141a' }}>{district}</option>)}
+                  <option value="" style={{ background: 'rgb(var(--color-surface-1))' }}>{centerForm.region ? 'Tumanni tanlang' : 'Avval viloyatni tanlang'}</option>
+                  {centerDistrictOptions.map(district => <option key={district} value={district} style={{ background: 'rgb(var(--color-surface-1))' }}>{district}</option>)}
                 </select>
               </label>
               <label className="block">
@@ -4082,7 +4079,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             <div className="modal w-full max-w-md">
               {/* Markaz logosi/nomi — mavjud markaz ma'lumotidan. */}
               {center && (
-                <div className="mb-5 flex items-center gap-3 rounded-xl border border-white/8 glass p-3">
+                <div className="mb-5 flex items-center gap-3 rounded-xl glass p-3">
                   {center.imageUrl ? (
                     <img src={center.imageUrl} alt={center.name} className="h-10 w-10 flex-shrink-0 rounded-xl object-cover" />
                   ) : (

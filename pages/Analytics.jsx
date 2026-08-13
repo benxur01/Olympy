@@ -67,8 +67,8 @@ const AnalyticsPage = ({ user, onNavigate }) => {
   );
 
   return (
-    <div className="min-h-screen" style={{ background: '#050508' }}>
-      <div className="glass border-b border-white/5 px-4 md:px-6 py-3 flex items-center gap-3">
+    <div className="min-h-screen" style={{ background: 'rgb(var(--color-ground))' }}>
+      <div className="glass px-4 md:px-6 py-3 flex items-center gap-3">
         <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={() => onNavigate(roleHomePage(user))} aria-label="Dashboardga qaytish">
           <BrandLogo size="sm" />
         </button>
@@ -172,7 +172,7 @@ const AnalyticsPage = ({ user, onNavigate }) => {
                             </span>
                           </div>
                           <div className="progress-bar h-2 mb-2">
-                            <div className="progress-fill" style={{ width: `${pct}%`, background: '#6366f1' }} />
+                            <div className="progress-fill" style={{ width: `${pct}%`, background: '#C0362C' }} />
                           </div>
                           <div className="flex items-center justify-between text-[10px] text-white/40">
                             <span>{pct}% bankdan</span>
@@ -204,10 +204,10 @@ const AnalyticsPage = ({ user, onNavigate }) => {
                   <select
                     value={regionFilter}
                     onChange={e => setRegionFilter(e.target.value)}
-                    className="glass border border-white/10 rounded-xl px-3 py-2 text-xs text-white bg-transparent"
+                    className="glass rounded-xl px-3 py-2 text-xs text-white bg-transparent"
                   >
-                    <option value="" className="bg-[#12141a]">Barcha viloyatlar</option>
-                    {allRegions.map(r => <option key={r} value={r} className="bg-[#12141a]">{r}</option>)}
+                    <option value="" className="bg-surface-1">Barcha viloyatlar</option>
+                    {allRegions.map(r => <option key={r} value={r} className="bg-surface-1">{r}</option>)}
                   </select>
                 </div>
               </div>

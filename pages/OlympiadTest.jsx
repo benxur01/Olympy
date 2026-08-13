@@ -147,7 +147,7 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
           const selected = chosen === i;
           return (
             <button key={i} onClick={() => onYesNo(i)}
-              className={`flex items-center justify-center gap-2 p-4 rounded-2xl font-semibold text-sm md:text-base transition-all min-h-[64px] ${selected ? (i === 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40') : 'glass text-white/70 border border-transparent hover:border-white/10'}`}>
+              className={`flex items-center justify-center gap-2 p-4 rounded-2xl font-semibold text-sm md:text-base transition-all min-h-[64px] ${selected ? (i === 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40') : 'glass text-white/70 border border-transparent hover:border-edge-strong'}`}>
               <span className="text-lg">{i === 0 ? '✓' : '✗'}</span>
               <MathText text={label} />
             </button>
@@ -166,8 +166,8 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
           const checked = selected.includes(i);
           return (
             <button key={i} onClick={() => onMultiToggle(i)}
-              className={`w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left transition-all min-h-[56px] ${checked ? 'border-indigo-500 bg-indigo-500/15 border glow-blue' : 'glass hover:bg-white/7 border border-transparent hover:border-white/10'}`}>
-              <div className={`w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${checked ? 'gradient-bg text-white' : 'glass text-white/30 border border-white/15'}`}>
+              className={`w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left transition-all min-h-[56px] ${checked ? 'border-indigo-500 bg-indigo-500/15 border glow-blue' : 'glass hover:bg-white/7 border border-transparent hover:border-edge-strong'}`}>
+              <div className={`w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${checked ? 'gradient-bg text-white' : 'glass text-white/30'}`}>
                 {checked && <Icon name="check" size={16} />}
               </div>
               <MathText className={`font-medium text-sm md:text-base break-words min-w-0 ${checked ? 'text-white' : 'text-white/70'}`} text={opt} />
@@ -186,7 +186,7 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
         const selected = mcqChosen === i;
         return (
           <button key={i} onClick={() => onMcq(i)}
-            className={`w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left transition-all min-h-[56px] ${selected ? 'border-indigo-500 bg-indigo-500/15 border glow-blue' : 'glass hover:bg-white/7 border border-transparent hover:border-white/10'}`}>
+            className={`w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left transition-all min-h-[56px] ${selected ? 'border-indigo-500 bg-indigo-500/15 border glow-blue' : 'glass hover:bg-white/7 border border-transparent hover:border-edge-strong'}`}>
             <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50'}`}>
               {isTrueFalse ? (i === 0 ? '✓' : '✗') : String.fromCharCode(65 + i)}
             </div>
@@ -391,7 +391,7 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#050508' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'rgb(var(--color-ground))' }}>
         <div className="text-center">
           <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
           <div className="text-white/60 text-sm">Mashq yuklanmoqda...</div>
@@ -402,7 +402,7 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
 
   if (loadError) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
         <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
           <div className="text-4xl">🔁</div>
           <h2 className="text-lg font-black text-white">Mashqni ochib bo'lmadi</h2>
@@ -415,7 +415,7 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
 
   if (TOTAL === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
         <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
           <div className="text-4xl">📭</div>
           <h2 className="text-lg font-black text-white">Mashqda savollar yo'q</h2>
@@ -428,7 +428,7 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
 
   if (timeUp && submitting) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
         <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
           <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto" />
           <h2 className="text-lg font-black text-white">Vaqt tugadi</h2>
@@ -439,9 +439,9 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: '#050508' }}>
+    <div className="min-h-screen" style={{ background: 'rgb(var(--color-ground))' }}>
       {/* Header */}
-      <div className="glass border-b border-white/5 px-4 md:px-6 py-3 flex items-center gap-3 sticky top-0 z-20">
+      <div className="glass px-4 md:px-6 py-3 flex items-center gap-3 sticky top-0 z-20">
         <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={goHome} aria-label="Orqaga">
           <BrandLogo size="sm" />
         </button>
@@ -536,7 +536,7 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
             const isCur = i === current;
             return (
               <button key={qq.id ?? i} onClick={() => setCurrent(i)}
-                className={`w-9 h-9 rounded-lg text-xs font-bold transition-all ${isCur ? 'gradient-bg text-white' : isAns ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'glass text-white/40 border border-white/10'}`}>
+                className={`w-9 h-9 rounded-lg text-xs font-bold transition-all ${isCur ? 'gradient-bg text-white' : isAns ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'glass text-white/40'}`}>
                 {i + 1}
               </button>
             );
@@ -1894,16 +1894,16 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         <div className="text-xs text-white/40 uppercase tracking-widest font-extrabold">Boshlanishigacha qoldi</div>
         <div className="flex justify-center gap-2">
           {hours > 0 && (
-            <div className="glass rounded-2xl p-3 min-w-[70px] border border-white/5 shadow-lg">
+            <div className="glass rounded-2xl p-3 min-w-[70px]">
               <div className="text-3xl font-black text-white font-mono leading-none">{String(hours).padStart(2, '0')}</div>
               <div className="text-[8px] text-white/40 uppercase font-bold tracking-wider mt-1.5 leading-none">Soat</div>
             </div>
           )}
-          <div className="glass rounded-2xl p-3 min-w-[70px] border border-white/5 shadow-lg">
+          <div className="glass rounded-2xl p-3 min-w-[70px]">
             <div className="text-3xl font-black text-white font-mono leading-none">{String(minutes).padStart(2, '0')}</div>
             <div className="text-[8px] text-white/40 uppercase font-bold tracking-wider mt-1.5 leading-none">Daqiqa</div>
           </div>
-          <div className="glass rounded-2xl p-3 min-w-[70px] border border-white/5 shadow-lg">
+          <div className="glass rounded-2xl p-3 min-w-[70px]">
             <div className="text-3xl font-black text-indigo-400 font-mono leading-none animate-pulse">{String(seconds).padStart(2, '0')}</div>
             <div className="text-[8px] text-white/40 uppercase font-bold tracking-wider mt-1.5 leading-none">Soniya</div>
           </div>
@@ -1932,7 +1932,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // ko'rsatiladi. Rozilik + kamera ruxsatisiz imtihon boshlanmaydi.
   if (cameraProctoringEnabled && !cameraConsentAcked && user?._api && liveOlympiad?.backendId && !submitted && !cheated) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
         <div className="glass rounded-2xl p-6 md:p-8 max-w-lg w-full space-y-5">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-300 flex-shrink-0">
@@ -2004,7 +2004,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // ruxsatisiz imtihon boshlanmaydi.
   if (voiceProctoringEnabled && !voiceConsentAcked && user?._api && liveOlympiad?.backendId && !submitted && !cheated) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
         <div className="glass rounded-2xl p-6 md:p-8 max-w-lg w-full space-y-5">
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-300 flex-shrink-0">
@@ -2093,7 +2093,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // Xotirjam qiluvchi ekran — aloqa tiklangach avtomatik yuboriladi.
   if (offlineQueued) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
         <div className="glass rounded-2xl p-8 max-w-md text-center space-y-5">
           <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-300 mx-auto">
             <Icon name="clock" size={26} />
@@ -2130,7 +2130,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         onBack={() => onNavigate('student')} />;
     }
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: '#050508' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'rgb(var(--color-ground))' }}>
         <div className="flex flex-col items-center gap-4 text-white/70">
           <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-white animate-spin" />
           <div className="text-sm font-semibold">Savollar yuklanmoqda...</div>
@@ -2173,7 +2173,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // bilan qaytadi, foydalanuvchi qayta urinishi mumkin.
   if (timeUp && submitting) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#050508' }}>
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
         <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
           <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto" />
           <h2 className="text-lg font-black text-white">Vaqt tugadi</h2>
@@ -2198,9 +2198,9 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const isTrueFalse = (q && !isCodeQuestion) ? (q.options || []).length === 2 && (q.options || []).every(o => /to'?g'?ri|no?to'?g'?ri/i.test(o)) : false;
 
   return (
-    <div className="min-h-screen flex flex-col select-none" style={{ background: '#050508', userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}>
+    <div className="min-h-screen flex flex-col select-none" style={{ background: 'rgb(var(--color-ground))', userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}>
       {/* Header bar */}
-      <div className="glass border-b border-white/5 px-3 md:px-8 py-2.5 md:py-3 flex items-center justify-between gap-2 sticky top-0 z-30">
+      <div className="glass px-3 md:px-8 py-2.5 md:py-3 flex items-center justify-between gap-2 sticky top-0 z-30">
         <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
           <BrandLogo compact size="xs" />
           <div className="min-w-0">
@@ -2229,7 +2229,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
       {/* Progress bar */}
       <div className="h-1 bg-white/5">
-        <div className="h-full transition-all duration-500" style={{ width: `${progress}%`, background: 'linear-gradient(90deg,#6366f1,#a855f7,#22d3ee)' }} />
+        <div className="h-full transition-all duration-500" style={{ width: `${progress}%`, background: 'rgb(var(--color-accent))' }} />
       </div>
 
       {/* Visibility-cheating ogohlantirish banner. Tab birinchi marta tark
@@ -2243,7 +2243,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       )}
 
       {/* Mobile question strip — horizontal scrollable navigator */}
-      <div className="md:hidden glass border-b border-white/5">
+      <div className="md:hidden glass">
         <div className="question-strip">
           {Array.from({ length: TOTAL }).map((_, i) => (
             <button key={i} onClick={() => setCurrent(i)}
@@ -2257,7 +2257,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       <div className="flex flex-1 overflow-hidden">
         {/* Question navigation sidebar — kod savolda yashiriladi (LeetCode
             split layoutiga joy kerak); mobil navigator pastda qoladi. */}
-        <div className={`hidden md:flex flex-col glass border-r border-white/5 w-52 p-4 overflow-y-auto ${isCodeQuestion ? '!hidden' : ''}`}>
+        <div className={`hidden md:flex flex-col glass w-52 p-4 overflow-y-auto ${isCodeQuestion ? '!hidden' : ''}`}>
           <div className="text-xs text-white/40 font-medium mb-3">Savollar ({answered}/{TOTAL})</div>
           <div className="grid grid-cols-4 gap-1.5 mb-4">
             {Array.from({ length: TOTAL }).map((_, i) => (
@@ -2422,7 +2422,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
                   {/* Judge0 natija paneli */}
                   {runResult && (
-                    <div className="mt-3 glass rounded-2xl p-3 md:p-4 space-y-2 border border-white/10">
+                    <div className="mt-3 glass rounded-2xl p-3 md:p-4 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className={`text-sm font-semibold ${runResult.status === 'Accepted' ? 'text-emerald-400' : 'text-rose-400'}`}>
                           ● {runResult.status || 'Xato'}
@@ -2566,7 +2566,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
         {/* Mobile sticky bottom nav */}
         <div
-          className="md:hidden fixed bottom-0 left-0 right-0 z-40 glass border-t border-white/5 px-3 py-3 flex items-center gap-2"
+          className="md:hidden fixed bottom-0 left-0 right-0 z-40 glass px-3 py-3 flex items-center gap-2"
           style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
         >
           <button onClick={() => setCurrent(Math.max(0, current-1))} disabled={current === 0}

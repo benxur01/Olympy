@@ -153,7 +153,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                 <Icon name="lock" size={12} /> Chuqur AI tahlil — Plus tarifi
               </button>
             ) : essayAI[q.id] ? (
-              <div className={`rounded-xl border p-3 text-xs whitespace-pre-wrap break-words ${essayAI[q.id].status === 'failed' ? 'bg-amber-500/10 border-amber-500/25 text-amber-200' : 'bg-[#12141a] border-indigo-500/20 text-white/80'}`}>
+              <div className={`rounded-xl border p-3 text-xs whitespace-pre-wrap break-words ${essayAI[q.id].status === 'failed' ? 'bg-amber-500/10 border-amber-500/25 text-amber-200' : 'bg-surface-1 border-indigo-500/20 text-white/80'}`}>
                 <div className="flex items-center gap-1.5 text-indigo-400 font-bold mb-2">
                   <Icon name="bolt" size={13} className="text-indigo-400" />
                   <span>Chuqur AI tahlil</span>
@@ -436,14 +436,14 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
 
   if (isLoadingAttempt) {
     return (
-      <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-4 py-10`} style={embedded ? {} : { background: '#050508' }}>
+      <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-4 py-10`} style={embedded ? {} : { background: 'rgb(var(--color-ground))' }}>
         <div className="glass rounded-2xl px-6 py-4 text-sm text-white/60">Natija yuklanmoqda...</div>
       </div>
     );
   }
   if (fetchError) {
     return (
-      <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-4 py-10`} style={embedded ? {} : { background: '#050508' }}>
+      <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-4 py-10`} style={embedded ? {} : { background: 'rgb(var(--color-ground))' }}>
         <div className="glass rounded-2xl px-6 py-5 text-center max-w-sm">
           <div className="text-rose-300 font-semibold text-sm mb-2">{fetchError}</div>
           <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-4 py-2 rounded-xl">Reytingga qaytish</button>
@@ -453,11 +453,10 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   }
 
   const content = (
-    <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-3 md:px-4 py-4 md:py-10 mobile-content-pad`} style={embedded ? {} : { background: '#050508' }}>
+    <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-3 md:px-4 py-4 md:py-10 mobile-content-pad`} style={embedded ? {} : { background: 'rgb(var(--color-ground))' }}>
       <div className="max-w-2xl w-full space-y-4 md:space-y-6 animate-in">
         {/* Hero result card */}
         <div className={`glass-strong rounded-3xl p-5 md:p-8 text-center bg-gradient-to-br ${grade.bg} border border-white/10 relative overflow-hidden`}>
-          <div className="hero-glow" style={{ background: '#6366f1', top: '-60%', left: '30%', opacity: 0.1 }} />
           <div className="relative z-10">
             <div className="text-4xl md:text-5xl mb-3 md:mb-4">{pct >= 90 ? '🏆' : pct >= 75 ? '🎉' : pct >= 60 ? '👍' : '💪'}</div>
             <div className="text-5xl md:text-7xl font-black text-white mb-2">{pct}<span className="text-white/30 text-2xl md:text-3xl">/100</span></div>
@@ -495,7 +494,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
             <div className="flex items-center justify-around md:justify-start md:gap-4 flex-wrap">
               <DonutChart value={r.correct} max={r.total} color="#22c55e" size={64} label="To'g'ri" />
               <DonutChart value={r.wrong} max={r.total} color="#ef4444" size={64} label="Noto'g'ri" />
-              <DonutChart value={pct} color="#6366f1" size={64} label="Umumiy %" />
+              <DonutChart value={pct} color="#C0362C" size={64} label="Umumiy %" />
             </div>
             <div className="flex-1 space-y-3 w-full min-w-0">
               <div>
@@ -588,7 +587,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                         {q.ai_code_review && (
                           <div className="mt-3">
                             <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">AI tavsiyasi</div>
-                            <div className="rounded-xl bg-[#12141a] border border-indigo-500/20 p-3 text-xs text-white/80 whitespace-pre-wrap break-words">{q.ai_code_review}</div>
+                            <div className="rounded-xl bg-surface-1 border border-indigo-500/20 p-3 text-xs text-white/80 whitespace-pre-wrap break-words">{q.ai_code_review}</div>
                           </div>
                         )}
                       </div>
@@ -614,7 +613,7 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                       {/* AI Explanation Button & Content */}
                       <div className="mt-4 pt-3 border-t border-white/5 space-y-2">
                         {explanations[q.id] ? (
-                          <div className="rounded-xl bg-[#12141a] border border-indigo-500/20 p-3 text-xs text-white/80 leading-relaxed animate-in">
+                          <div className="rounded-xl bg-surface-1 border border-indigo-500/20 p-3 text-xs text-white/80 leading-relaxed animate-in">
                             <div className="flex items-center gap-1.5 text-indigo-400 font-bold mb-2">
                               <Icon name="bolt" size={13} className="text-indigo-400 animate-pulse" />
                               <span>AI Yechim Tushuntirishi</span>

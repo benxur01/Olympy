@@ -379,7 +379,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
   // Avval bu blok 3 ta hardcoded fan bilan ko'rinardi (Tarix 91 va h.k.).
   // Endi /api/results/me/stats/ subjects ro'yxatidan yoki lokal myResults
   // o'rtacha qiymatlaridan haqiqiy fan kesimini olamiz.
-  const SUBJECT_PALETTE = ['#f59e0b', '#6366f1', '#22c55e', '#22d3ee', '#a855f7', '#ef4444'];
+  const SUBJECT_PALETTE = ['#f59e0b', '#C0362C', '#22c55e', '#698AAC', '#2F5D8C', '#ef4444'];
   const subjectStats = (() => {
     if (Array.isArray(apiStats?.subjects) && apiStats.subjects.length > 0) {
       return apiStats.subjects.slice(0, 6).map((row, i) => ({
@@ -482,7 +482,6 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
     <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in">
       {/* Profile hero — premium o'quvchida oltin tusli ramka va fon (.premium-hero). */}
       <div className={`glass-strong rounded-3xl p-4 md:p-6 relative overflow-hidden ${isPremium ? 'premium-hero' : ''}`}>
-        <div className="hero-glow" style={{ background: isPremium ? '#f59e0b' : '#6366f1', top:'-60%', left:'40%', opacity:0.08 }} />
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center gap-5">
           <div className="relative">
             <Avatar name={user?.name || 'Ali Valiyev'} src={user?.avatarUrl || ''} size={80} gradient="from-indigo-500 to-purple-600" premium={isPremium} />

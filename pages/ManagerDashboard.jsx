@@ -1466,7 +1466,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 ? 'edit'
                 : 'check';
           return (
-            <div key={o.id} className="glass rounded-2xl p-5 border border-white/10">
+            <div key={o.id} className="glass rounded-2xl p-5">
               <div className="flex flex-col xl:flex-row xl:items-start gap-4">
               <div className={`w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 border ${statusTone}`}>
                 <Icon name={statusIcon} size={20} />
@@ -1831,7 +1831,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </div>
 
         {/* Proctoring table */}
-        <div className="glass rounded-2xl overflow-hidden border border-white/5">
+        <div className="glass rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[800px]">
               <thead>
@@ -2064,7 +2064,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           </button>
         </div>
 
-        <section className="rounded-2xl border border-white/8 glass p-4 md:p-6">
+        <section className="rounded-2xl glass p-4 md:p-6">
           <h2 className="mb-4 text-base font-black text-white">Mahsulotlar ({shopProducts.length})</h2>
           {shopLoading ? (
             <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
@@ -2075,7 +2075,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               {shopProducts.map(p => {
                 const features = Array.isArray(p.features) ? p.features : [];
                 return (
-                  <div key={p.id} className={`rounded-xl border p-3.5 flex flex-col gap-3 ${p.is_active ? 'border-white/8 bg-white/5' : 'border-white/5 bg-white/[0.02] opacity-70'}`}>
+                  <div key={p.id} className={`rounded-xl border p-3.5 flex flex-col gap-3 ${p.is_active ? 'border-edge-strong bg-white/5' : 'border-edge bg-white/[0.02] opacity-70'}`}>
                     <div className="flex items-start gap-3">
                       {p.image_url ? (
                         <img src={p.image_url} alt={p.title} className="h-14 w-14 flex-shrink-0 rounded-xl object-cover" />
@@ -2266,7 +2266,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               {codeSubData.map(sub => {
                 const expanded = !!codeSubExpanded[sub.id];
                 return (
-                  <div key={sub.id} className="glass rounded-xl p-3 border border-white/5">
+                  <div key={sub.id} className="glass rounded-xl p-3">
                     <div className="grid grid-cols-2 md:grid-cols-12 gap-2 items-center">
                       <div className="md:col-span-3 min-w-0">
                         <div className="text-sm font-semibold text-white truncate">{sub.student_name || '—'}</div>
@@ -2355,7 +2355,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                 const feedbackVal = draft.feedback !== undefined ? draft.feedback : (entry.feedback || '');
                 const saving = essaySavingKey === key;
                 return (
-                  <div key={key} className={`glass rounded-xl p-4 border ${entry.graded ? 'border-emerald-500/20' : 'border-white/5'}`}>
+                  <div key={key} className={`glass rounded-xl p-4 ${entry.graded ? 'border border-emerald-500/20' : ''}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="text-sm font-semibold text-white truncate">{entry.student_name || '—'}</div>
@@ -2443,7 +2443,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           return (
             <div className="space-y-5 -mt-2">
               {/* ── Header: tadbir ma'lumotlari + statistik kartalar ── */}
-              <div className="glass rounded-2xl p-4 sm:p-5 border border-white/5">
+              <div className="glass rounded-2xl p-4 sm:p-5">
                 <div className="flex items-start gap-3 flex-wrap">
                   <div className="min-w-0 flex-1">
                     <div className="text-base sm:text-lg font-bold text-white leading-tight break-words">
@@ -2724,7 +2724,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           return (
             <div className="space-y-4 -mt-1">
               {/* Sarlavha: o'quvchi ismi + umumiy natija */}
-              <div className="glass rounded-2xl p-4 border border-white/10 flex items-center gap-3">
+              <div className="glass rounded-2xl p-4 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center flex-shrink-0">
                   <Icon name="user" size={18} className="text-indigo-300" />
                 </div>
@@ -3490,7 +3490,7 @@ const ManagerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <div className="text-sm text-white/70">
                 Ushbu tadbirni o'chirishni tasdiqlaysizmi? Bu amalni ortga qaytarib bo'lmaydi.
               </div>
-              <div className="glass rounded-xl p-3 border border-white/5">
+              <div className="glass rounded-xl p-3">
                 <div className="text-xs text-white/35 mb-0.5">Tadbir nomi</div>
                 <div className="font-bold text-white text-sm truncate">{event.title}</div>
               </div>

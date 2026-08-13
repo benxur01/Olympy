@@ -1,155 +1,219 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
-  <title id="title">Olympy dashboard screenshot</title>
-  <desc id="desc">Dark education dashboard with olympiad statistics, event cards and recent results.</desc>
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#050508"/>
-      <stop offset="0.55" stop-color="#090a0f"/>
-      <stop offset="1" stop-color="#050508"/>
-    </linearGradient>
-    <linearGradient id="brand" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#4f46e5"/>
-      <stop offset="0.52" stop-color="#0891b2"/>
-      <stop offset="1" stop-color="#10b981"/>
-    </linearGradient>
-    <linearGradient id="warm" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#f59e0b"/>
-      <stop offset="1" stop-color="#ef4444"/>
-    </linearGradient>
-    <linearGradient id="cool" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#22d3ee"/>
-      <stop offset="1" stop-color="#6366f1"/>
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="24" stdDeviation="24" flood-color="#000000" flood-opacity="0.36"/>
-    </filter>
-  </defs>
-  <rect width="1440" height="900" fill="url(#bg)"/>
-  <path d="M0 0h1440v900H0z" fill="none"/>
-  <g opacity="0.28">
-    <path d="M0 690c160-90 330-112 520-64 232 59 357 37 542-73 143-85 268-116 378-94v441H0z" fill="#0f766e"/>
-    <path d="M0 756c194-76 376-75 545 3 189 88 370 83 543-16 123-70 241-86 352-48v205H0z" fill="#172554"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="dashboard-title dashboard-desc" class="olympy-shot">
+  <title id="dashboard-title">Olympy dashboard screenshot</title>
+  <desc id="dashboard-desc">Olimpiada statistikasi, faol tadbirlar va fanlar bo'yicha progress ko'rsatilgan o'quvchi paneli.</desc>
+  <style>
+    /* ─── Ranglar bu yerda QATTIQ yozilmagan ──────────────────────────────
+       Qiymatlar sahifaning token qatlamidan (src/index.css) keladi. Bu fayl
+       DOM ichiga INLINE joylanadi (pages/Landing.jsx), shuning uchun :root
+       o'zgaruvchilari shu yerga meros bo'ladi va `data-theme` almashganda
+       skrinshot ham o'zi qayta bo'yaladi — ikkinchi (light) nusxa kerak emas.
+
+       var() zaxiralari faqat fayl ALOHIDA ochilganda ishlaydi (to'g'ridan
+       to'g'ri brauzerda yoki img tegi orqali) — img tegi tashqi CSS'ni
+       ko'rmaydi. Ilova ichida bu zaxiralar hech qachon qo'llanmaydi, shuning
+       uchun token qiymatlari o'zgarsa bu fayllarni yangilash SHART EMAS.
+
+       DIQQAT: bu style bloki ichida burchakli qavs ishlatilmaydi. SVG
+       markup'i HTML parseri orqali DOM'ga inline joylanadi va u yerda
+       style ichidagi burchakli qavs teg deb o'qilib, blokni buzadi.
+
+       Yo'nalish: gradient yo'q, glow yo'q, rangli soya yo'q. Ajratish uchun
+       1px chegara va bo'shliq. */
+    svg.olympy-shot {
+      --ground: rgb(var(--color-ground, 231 228 220));
+      --s1: rgb(var(--color-surface-1, 238 236 229));
+      --s2: rgb(var(--color-surface-2, 222 219 210));
+      --edge: rgb(var(--color-edge, 199 195 184));
+      --t2: rgb(var(--color-text-secondary, 98 101 111));
+      --accent: rgb(var(--color-accent, 192 54 44));
+      --stamp: rgb(var(--color-accent-fill, 192 54 44));
+      --on-stamp: rgb(var(--color-on-accent, 251 243 242));
+      --pencil: rgb(var(--color-accent-2, 47 93 140));
+      --ok: rgb(var(--color-success, 47 107 68));
+      --warn: rgb(var(--color-warning, 127 95 48));
+      --err: rgb(var(--color-error, 168 62 23));
+      color: rgb(var(--color-text-primary, 20 22 28));
+      font-family: 'PT Sans', Arial, sans-serif;
+    }
+    .olympy-shot text { fill: currentColor }
+    .olympy-shot .b { font-weight: 700 }
+    .olympy-shot .desk { fill: var(--s2) }
+    .olympy-shot .page { fill: var(--ground); stroke: var(--edge) }
+    .olympy-shot .rail { fill: var(--s1) }
+    .olympy-shot .card { fill: var(--s1); stroke: var(--edge) }
+    .olympy-shot .well { fill: var(--ground); stroke: var(--edge) }
+    .olympy-shot .chip { fill: var(--s2); stroke: var(--edge) }
+    .olympy-shot .avatar { fill: var(--s2); stroke: var(--edge) }
+    .olympy-shot .track { fill: var(--s2) }
+    .olympy-shot .rule { fill: none; stroke: var(--edge) }
+    /* Rang sinflari `color` ni ham o'rnatadi: shunda ayni shu elementdagi
+       `.icon` ning `stroke: currentColor` i o'sha rangni oladi va matn bilan
+       ikonka bir xil bo'yaladi (class="icon ok" kabi juftliklar uchun). */
+    .olympy-shot .dim { fill: var(--t2); color: var(--t2) }
+    .olympy-shot .ac { fill: var(--accent); color: var(--accent) }
+    .olympy-shot .stamp-fill { fill: var(--stamp) }
+    .olympy-shot .on-stamp { fill: var(--on-stamp); color: var(--on-stamp) }
+    .olympy-shot .pencil { fill: var(--pencil); color: var(--pencil) }
+    .olympy-shot .ok { fill: var(--ok); color: var(--ok) }
+    .olympy-shot .warn { fill: var(--warn); color: var(--warn) }
+    .olympy-shot .err { fill: var(--err); color: var(--err) }
+    /* Holat qutilari — ilovaning badge naqshi (12% to'ldirish, 35% chegara). */
+    .olympy-shot .ac-box { fill: var(--accent); fill-opacity: .12; stroke: var(--accent); stroke-opacity: .35 }
+    .olympy-shot .ok-box { fill: var(--ok); fill-opacity: .12; stroke: var(--ok); stroke-opacity: .35 }
+    .olympy-shot .warn-box { fill: var(--warn); fill-opacity: .12; stroke: var(--warn); stroke-opacity: .35 }
+    .olympy-shot .pencil-box { fill: var(--pencil); fill-opacity: .12; stroke: var(--pencil); stroke-opacity: .35 }
+    /* Ikonkalar — shared.jsx dagi Icon komponenti bilan bir xil Lucide geometriyasi. */
+    .olympy-shot .icon { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round }
+  </style>
+
+  <rect class="desk" width="1440" height="900"/>
+  <rect class="page" x="64" y="58" width="1312" height="784" rx="10"/>
+  <path class="rail" d="M74 58H310v784H74a10 10 0 0 1-10-10V68a10 10 0 0 1 10-10z"/>
+  <path class="rule" d="M310 58v784"/>
+
+  <!-- Logotip -->
+  <g transform="translate(96 94)">
+    <rect class="stamp-fill" width="40" height="40" rx="4"/>
+    <text class="on-stamp b" x="20" y="27" text-anchor="middle" font-size="20">O</text>
+    <text class="b" x="54" y="27" font-size="24">Olympy</text>
   </g>
-  <g filter="url(#shadow)">
-    <rect x="64" y="58" width="1312" height="784" rx="34" fill="#050508" stroke="#ffffff" stroke-opacity="0.11"/>
-    <rect x="64" y="58" width="246" height="784" rx="34" fill="#0d0e12"/>
-    <path d="M310 58v784" stroke="#ffffff" stroke-opacity="0.08"/>
-    <g transform="translate(96 94)">
-      <rect width="56" height="40" rx="12" fill="url(#brand)"/>
-      <text x="70" y="27" fill="#fff" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="800">Olympy</text>
+
+  <!-- Yon menyu. Faol band: yuza + chap chetdagi akcent chizig'i — bu
+       `src/index.css` dagi `.sidebar-item.active::before` naqshining aynan
+       o'zi (gradient/glow o'rniga). -->
+  <g transform="translate(96 164)" font-size="13">
+    <rect class="chip" x="-8" y="4" width="174" height="40" rx="4"/>
+    <rect class="ac" x="-8" y="14" width="3" height="20"/>
+    <g class="icon" transform="translate(14 15) scale(.75)"><path d="M15 21v-8a1 1 0 00-1-1h-4a1 1 0 00-1 1v8"/><path d="M3 10a2 2 0 01.709-1.528l7-5.999a2 2 0 012.582 0l7 5.999A2 2 0 0121 10v9a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></g>
+    <text class="b" x="46" y="29">Asosiy</text>
+
+    <g class="dim">
+      <g class="icon" transform="translate(14 65) scale(.75)"><path d="M6 9H4.5a2.5 2.5 0 010-5H6M18 9h1.5a2.5 2.5 0 000-5H18M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22M18 2H6v7a6 6 0 0012 0V2z"/></g>
+      <text x="46" y="79">Musobaqalar</text>
+      <g class="icon" transform="translate(14 115) scale(.75)"><path d="M4 14a1 1 0 01-.78-1.63l9.9-10.2a.5.5 0 01.86.46l-1.92 6.02A1 1 0 0013 10h7a1 1 0 01.78 1.63l-9.9 10.2a.5.5 0 01-.86-.46l1.92-6.02A1 1 0 0011 14z"/></g>
+      <text x="46" y="129">Mashq</text>
+      <g class="icon" transform="translate(14 165) scale(.75)"><path d="M3 3v16a2 2 0 002 2h16M18 17V9M13 17V5M8 17v-3"/></g>
+      <text x="46" y="179">Natijalar</text>
+      <g class="icon" transform="translate(14 215) scale(.75)"><path d="M11.525 2.295a.53.53 0 01.95 0l2.31 4.679a2.123 2.123 0 001.595 1.16l5.166.756a.53.53 0 01.294.904l-3.736 3.638a2.123 2.123 0 00-.611 1.878l.882 5.14a.53.53 0 01-.771.56l-4.618-2.428a2.122 2.122 0 00-1.973 0L6.396 21.01a.53.53 0 01-.77-.56l.881-5.139a2.122 2.122 0 00-.611-1.879L2.16 9.795a.53.53 0 01.294-.906l5.165-.755a2.122 2.122 0 001.597-1.16z"/></g>
+      <text x="46" y="229">Reyting</text>
+      <g class="icon" transform="translate(14 265) scale(.75)"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 01-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 011-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 011.52 0C14.51 3.81 17 5 19 5a1 1 0 011 1z"/></g>
+      <text x="46" y="279">Xatolar Sandig'i</text>
+      <g class="icon" transform="translate(14 315) scale(.75)"><path d="M12.586 2.586A2 2 0 0011.172 2H4a2 2 0 00-2 2v7.172a2 2 0 00.586 1.414l8.704 8.704a2.426 2.426 0 003.42 0l6.58-6.58a2.426 2.426 0 000-3.42z"/></g>
+      <text x="46" y="329">Do'kon</text>
+      <g class="icon" transform="translate(14 365) scale(.75)"><path d="M19 21v-2a4 4 0 00-4-4H9a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></g>
+      <text x="46" y="379">Profil</text>
     </g>
-    <g transform="translate(96 164)" fill="none" font-family="Inter, Arial, sans-serif">
-      <rect width="166" height="40" rx="12" fill="#4f46e5" fill-opacity="0.18" stroke="#6366f1" stroke-opacity="0.45" y="4"/>
-      <circle cx="25" cy="24" r="7" fill="#818cf8"/>
-      <text x="46" y="29" fill="#fff" font-size="13" font-weight="700">Asosiy</text>
-      <g opacity="0.65">
-        <circle cx="25" cy="74" r="7" fill="#22d3ee"/>
-        <text x="46" y="79" fill="#dbeafe" font-size="13" font-weight="600">Musobaqalar</text>
-        <circle cx="25" cy="124" r="7" fill="#a855f7"/>
-        <text x="46" y="129" fill="#dbeafe" font-size="13" font-weight="600">Mashq</text>
-        <circle cx="25" cy="174" r="7" fill="#10b981"/>
-        <text x="46" y="179" fill="#dbeafe" font-size="13" font-weight="600">Natijalar</text>
-        <circle cx="25" cy="224" r="7" fill="#f59e0b"/>
-        <text x="46" y="229" fill="#dbeafe" font-size="13" font-weight="600">Reyting</text>
-        <circle cx="25" cy="274" r="7" fill="#ef4444"/>
-        <text x="46" y="279" fill="#dbeafe" font-size="13" font-weight="600">Xatolar Sandig'i</text>
-        <circle cx="25" cy="324" r="7" fill="#fb7185"/>
-        <text x="46" y="329" fill="#dbeafe" font-size="13" font-weight="600">Do'kon</text>
-        <circle cx="25" cy="374" r="7" fill="#94a3b8"/>
-        <text x="46" y="379" fill="#dbeafe" font-size="13" font-weight="600">Profil</text>
-      </g>
+  </g>
+
+  <!-- Foydalanuvchi -->
+  <g transform="translate(96 720)">
+    <circle class="avatar" cx="24" cy="24" r="24"/>
+    <text class="b" x="24" y="30" text-anchor="middle" font-size="15">AV</text>
+    <text class="b" x="64" y="20" font-size="15">Ali Valiyev</text>
+    <text class="dim" x="64" y="42" font-size="13">O'quvchi</text>
+  </g>
+
+  <!-- Sarlavha -->
+  <g transform="translate(358 96)">
+    <text class="b" x="0" y="30" font-size="28">Salom, Ali!</text>
+    <text class="dim" x="0" y="58" font-size="15">Bugungi olimpiadalar va natijalar</text>
+    <rect class="chip" x="816" y="0" width="132" height="44" rx="4"/>
+    <text id="landing-date" class="dim" x="882" y="28" text-anchor="middle" font-size="14"></text>
+  </g>
+
+  <!-- Statistika kartalari -->
+  <g transform="translate(358 188)">
+    <g>
+      <rect class="card" width="218" height="132" rx="8"/>
+      <rect class="chip" x="24" y="24" width="46" height="46" rx="6"/>
+      <g class="icon ac" transform="translate(36 36) scale(.9167)"><path d="M3 3v16a2 2 0 002 2h16M18 17V9M13 17V5M8 17v-3"/></g>
+      <text class="b" x="24" y="106" font-size="30">87</text>
+      <text class="dim" x="83" y="50" font-size="14">O'rtacha ball</text>
+      <text class="ok b" x="83" y="73" font-size="13">+12%</text>
     </g>
-    <g transform="translate(96 720)">
-      <circle cx="24" cy="24" r="24" fill="url(#cool)"/>
-      <text x="64" y="20" fill="#fff" font-family="Inter, Arial, sans-serif" font-size="15" font-weight="800">Ali Valiyev</text>
-      <text x="64" y="42" fill="#94a3b8" font-family="Inter, Arial, sans-serif" font-size="13">Oquvchi</text>
+    <g transform="translate(242 0)">
+      <rect class="card" width="218" height="132" rx="8"/>
+      <rect class="chip" x="24" y="24" width="46" height="46" rx="6"/>
+      <g class="icon warn" transform="translate(36 36) scale(.9167)"><path d="M11.525 2.295a.53.53 0 01.95 0l2.31 4.679a2.123 2.123 0 001.595 1.16l5.166.756a.53.53 0 01.294.904l-3.736 3.638a2.123 2.123 0 00-.611 1.878l.882 5.14a.53.53 0 01-.771.56l-4.618-2.428a2.122 2.122 0 00-1.973 0L6.396 21.01a.53.53 0 01-.77-.56l.881-5.139a2.122 2.122 0 00-.611-1.879L2.16 9.795a.53.53 0 01.294-.906l5.165-.755a2.122 2.122 0 001.597-1.16z"/></g>
+      <text class="b" x="24" y="106" font-size="30">#3</text>
+      <text class="dim" x="83" y="50" font-size="14">Reytingdagi o'rn</text>
+      <text class="warn b" x="83" y="73" font-size="13">Top 5%</text>
     </g>
-    <g transform="translate(358 96)" font-family="Inter, Arial, sans-serif">
-      <text x="0" y="30" fill="#fff" font-size="28" font-weight="850">Salom, Ali!</text>
-      <text x="0" y="58" fill="#94a3b8" font-size="15">Bugungi olimpiadalar va natijalar</text>
-      <rect x="816" y="0" width="132" height="44" rx="14" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.1"/>
-      <text id="landing-date" x="840" y="28" fill="#dbeafe" font-size="14" font-weight="700"></text>
+    <g transform="translate(484 0)">
+      <rect class="card" width="218" height="132" rx="8"/>
+      <rect class="chip" x="24" y="24" width="46" height="46" rx="6"/>
+      <g class="icon pencil" transform="translate(36 36) scale(.9167)"><path d="M6 9H4.5a2.5 2.5 0 010-5H6M18 9h1.5a2.5 2.5 0 000-5H18M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22M18 2H6v7a6 6 0 0012 0V2z"/></g>
+      <text class="b" x="24" y="106" font-size="30">12</text>
+      <text class="dim" x="83" y="50" font-size="14">Musobaqalar</text>
+      <text class="pencil b" x="83" y="73" font-size="13">4 ta faol</text>
     </g>
-    <g transform="translate(358 188)" font-family="Inter, Arial, sans-serif">
-      <g>
-        <rect width="218" height="132" rx="22" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.1"/>
-        <rect x="24" y="24" width="46" height="46" rx="14" fill="url(#brand)"/>
-        <text x="24" y="98" fill="#fff" font-size="30" font-weight="850">87</text>
-        <text x="83" y="50" fill="#94a3b8" font-size="14">Ortacha ball</text>
-        <text x="83" y="73" fill="#22c55e" font-size="13" font-weight="700">+12%</text>
-      </g>
-      <g transform="translate(242 0)">
-        <rect width="218" height="132" rx="22" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.1"/>
-        <rect x="24" y="24" width="46" height="46" rx="14" fill="url(#warm)"/>
-        <text x="24" y="98" fill="#fff" font-size="30" font-weight="850">#3</text>
-        <text x="83" y="50" fill="#94a3b8" font-size="14">Reytingdagi orn</text>
-        <text x="83" y="73" fill="#fbbf24" font-size="13" font-weight="700">Top 5%</text>
-      </g>
-      <g transform="translate(484 0)">
-        <rect width="218" height="132" rx="22" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.1"/>
-        <rect x="24" y="24" width="46" height="46" rx="14" fill="url(#cool)"/>
-        <text x="24" y="98" fill="#fff" font-size="30" font-weight="850">12</text>
-        <text x="83" y="50" fill="#94a3b8" font-size="14">Musobaqalar</text>
-        <text x="83" y="73" fill="#38bdf8" font-size="13" font-weight="700">4 ta faol</text>
-      </g>
-      <g transform="translate(726 0)">
-        <rect width="218" height="132" rx="22" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.1"/>
-        <rect x="24" y="24" width="46" height="46" rx="14" fill="#10b981"/>
-        <text x="24" y="98" fill="#fff" font-size="30" font-weight="850">3</text>
-        <text x="83" y="50" fill="#94a3b8" font-size="14">Sertifikatlar</text>
-        <text x="83" y="73" fill="#34d399" font-size="13" font-weight="700">Yangi 1 ta</text>
-      </g>
+    <g transform="translate(726 0)">
+      <rect class="card" width="218" height="132" rx="8"/>
+      <rect class="chip" x="24" y="24" width="46" height="46" rx="6"/>
+      <g class="icon ok" transform="translate(36 36) scale(.9167)"><path d="M15.477 12.89l1.515 8.526a.5.5 0 01-.81.47l-3.58-2.687a1 1 0 00-1.197 0l-3.586 2.686a.5.5 0 01-.81-.469l1.514-8.526"/><circle cx="12" cy="8" r="6"/></g>
+      <text class="b" x="24" y="106" font-size="30">3</text>
+      <text class="dim" x="83" y="50" font-size="14">Sertifikatlar</text>
+      <text class="ok b" x="83" y="73" font-size="13">Yangi 1 ta</text>
     </g>
-    <g transform="translate(358 356)" font-family="Inter, Arial, sans-serif">
-      <rect width="602" height="306" rx="26" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.1"/>
-      <text x="28" y="42" fill="#fff" font-size="21" font-weight="850">Faol olimpiadalar</text>
-      <text x="28" y="68" fill="#94a3b8" font-size="14">Oquvchilar uchun ochiq tadbirlar</text>
-      <g transform="translate(28 96)">
-        <rect width="546" height="76" rx="18" fill="#12141a" stroke="#ffffff" stroke-opacity="0.09"/>
-        <rect x="18" y="19" width="38" height="38" rx="12" fill="url(#brand)"/>
-        <text x="74" y="32" fill="#fff" font-size="16" font-weight="800">Matematika Olimpiadasi</text>
-        <text x="74" y="56" fill="#94a3b8" font-size="13">60 daqiqa • 124 ishtirokchi</text>
-        <rect x="408" y="22" width="112" height="32" rx="10" fill="#10b981" fill-opacity="0.18"/>
-        <text x="438" y="43" fill="#34d399" font-size="13" font-weight="800">Faol</text>
-      </g>
-      <g transform="translate(28 188)">
-        <rect width="546" height="76" rx="18" fill="#12141a" stroke="#ffffff" stroke-opacity="0.09"/>
-        <rect x="18" y="19" width="38" height="38" rx="12" fill="url(#cool)"/>
-        <text x="74" y="32" fill="#fff" font-size="16" font-weight="800">Informatika Olimpiadasi</text>
-        <text x="74" y="56" fill="#94a3b8" font-size="13">90 daqiqa • 201 ishtirokchi</text>
-        <rect x="408" y="22" width="112" height="32" rx="10" fill="#64748b" fill-opacity="0.18"/>
-        <text x="429" y="43" fill="#cbd5e1" font-size="13" font-weight="800">Tugagan</text>
-      </g>
+  </g>
+
+  <!-- Faol olimpiadalar -->
+  <g transform="translate(358 356)">
+    <rect class="card" width="602" height="306" rx="8"/>
+    <text class="b" x="28" y="42" font-size="21">Faol olimpiadalar</text>
+    <text class="dim" x="28" y="68" font-size="14">O'quvchilar uchun ochiq tadbirlar</text>
+    <g transform="translate(28 96)">
+      <rect class="well" width="546" height="76" rx="6"/>
+      <rect class="chip" x="18" y="19" width="38" height="38" rx="4"/>
+      <g class="icon ac" transform="translate(27 28) scale(.8333)"><path d="M6 9H4.5a2.5 2.5 0 010-5H6M18 9h1.5a2.5 2.5 0 000-5H18M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22M18 2H6v7a6 6 0 0012 0V2z"/></g>
+      <text class="b" x="74" y="32" font-size="16">Matematika Olimpiadasi</text>
+      <text class="dim" x="74" y="56" font-size="13">60 daqiqa • 124 ishtirokchi</text>
+      <rect class="ok-box" x="408" y="22" width="112" height="32" rx="4"/>
+      <text class="ok b" x="464" y="43" text-anchor="middle" font-size="13">Faol</text>
     </g>
-    <g transform="translate(988 356)" font-family="Inter, Arial, sans-serif">
-      <rect width="328" height="306" rx="26" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.1"/>
-      <text x="28" y="42" fill="#fff" font-size="21" font-weight="850">Fanlar boyicha</text>
-      <g transform="translate(28 78)">
-        <text y="19" fill="#dbeafe" font-size="14" font-weight="700">Matematika</text>
-        <rect y="34" width="272" height="10" rx="5" fill="#1e293b"/>
-        <rect y="34" width="238" height="10" rx="5" fill="#6366f1"/>
-        <text x="244" y="20" fill="#fff" font-size="14" font-weight="800">87%</text>
-      </g>
-      <g transform="translate(28 136)">
-        <text y="19" fill="#dbeafe" font-size="14" font-weight="700">Informatika</text>
-        <rect y="34" width="272" height="10" rx="5" fill="#1e293b"/>
-        <rect y="34" width="222" height="10" rx="5" fill="#22d3ee"/>
-        <text x="244" y="20" fill="#fff" font-size="14" font-weight="800">81%</text>
-      </g>
-      <g transform="translate(28 194)">
-        <text y="19" fill="#dbeafe" font-size="14" font-weight="700">Fizika</text>
-        <rect y="34" width="272" height="10" rx="5" fill="#1e293b"/>
-        <rect y="34" width="196" height="10" rx="5" fill="#10b981"/>
-        <text x="244" y="20" fill="#fff" font-size="14" font-weight="800">72%</text>
-      </g>
+    <g transform="translate(28 188)">
+      <rect class="well" width="546" height="76" rx="6"/>
+      <rect class="chip" x="18" y="19" width="38" height="38" rx="4"/>
+      <g class="icon dim" transform="translate(27 28) scale(.8333)"><path d="M6 9H4.5a2.5 2.5 0 010-5H6M18 9h1.5a2.5 2.5 0 000-5H18M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22M18 2H6v7a6 6 0 0012 0V2z"/></g>
+      <text class="b" x="74" y="32" font-size="16">Informatika Olimpiadasi</text>
+      <text class="dim" x="74" y="56" font-size="13">90 daqiqa • 201 ishtirokchi</text>
+      <rect class="chip" x="408" y="22" width="112" height="32" rx="4"/>
+      <text class="dim b" x="464" y="43" text-anchor="middle" font-size="13">Tugagan</text>
     </g>
-    <g transform="translate(358 696)" font-family="Inter, Arial, sans-serif">
-      <rect width="958" height="86" rx="22" fill="#ffffff" fill-opacity="0.07" stroke="#ffffff" stroke-opacity="0.1"/>
-      <circle cx="42" cy="43" r="22" fill="#10b981"/>
-      <text x="78" y="36" fill="#fff" font-size="16" font-weight="800">Yangi sertifikat tayyor</text>
-      <text x="78" y="59" fill="#94a3b8" font-size="13">Informatika Olimpiadasi yakunlandi va natijalar hisoblandi</text>
-      <rect x="808" y="24" width="118" height="38" rx="13" fill="url(#brand)"/>
-      <text x="837" y="48" fill="#fff" font-size="14" font-weight="800">Korish</text>
+  </g>
+
+  <!-- Fanlar bo'yicha progress -->
+  <g transform="translate(988 356)">
+    <rect class="card" width="328" height="306" rx="8"/>
+    <text class="b" x="28" y="42" font-size="21">Fanlar bo'yicha</text>
+    <g transform="translate(28 78)">
+      <text class="b" y="19" font-size="14">Matematika</text>
+      <rect class="track" y="34" width="272" height="10" rx="5"/>
+      <rect class="ac" y="34" width="238" height="10" rx="5"/>
+      <text class="b" x="272" y="20" text-anchor="end" font-size="14">87%</text>
     </g>
+    <g transform="translate(28 136)">
+      <text class="b" y="19" font-size="14">Informatika</text>
+      <rect class="track" y="34" width="272" height="10" rx="5"/>
+      <rect class="pencil" y="34" width="222" height="10" rx="5"/>
+      <text class="b" x="272" y="20" text-anchor="end" font-size="14">81%</text>
+    </g>
+    <g transform="translate(28 194)">
+      <text class="b" y="19" font-size="14">Fizika</text>
+      <rect class="track" y="34" width="272" height="10" rx="5"/>
+      <rect class="ok" y="34" width="196" height="10" rx="5"/>
+      <text class="b" x="272" y="20" text-anchor="end" font-size="14">72%</text>
+    </g>
+  </g>
+
+  <!-- Pastki xabar -->
+  <g transform="translate(358 696)">
+    <rect class="card" width="958" height="86" rx="8"/>
+    <circle class="ok-box" cx="42" cy="43" r="22"/>
+    <g class="icon ok" transform="translate(32 33) scale(.8333)"><path d="M20 6L9 17l-5-5"/></g>
+    <text class="b" x="78" y="36" font-size="16">Yangi sertifikat tayyor</text>
+    <text class="dim" x="78" y="59" font-size="13">Informatika Olimpiadasi yakunlandi va natijalar hisoblandi</text>
+    <rect class="stamp-fill" x="808" y="24" width="118" height="38" rx="4"/>
+    <text class="on-stamp b" x="867" y="48" text-anchor="middle" font-size="14">Ko'rish</text>
   </g>
 </svg>

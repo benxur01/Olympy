@@ -10,7 +10,7 @@ const teacherDashUrl = makeDashboardUrlSync('/dashboard/teacher', TEACHER_DASHBO
 
 // Fan progress-bar ranglari — StudentDashboard'dagi palitra bilan bir xil
 // (gradient klass emas, solid hex; indeks bo'yicha aylanadi).
-const STUDENT_DRAWER_BAR_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#84cc16', '#f43f5e'];
+const STUDENT_DRAWER_BAR_COLORS = ['#C0362C', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#2F5D8C', '#84cc16', '#f43f5e'];
 
 // O'quvchi ustiga bosilganda o'ngdan ochiladigan batafsil panel.
 // `student` — ro'yxatdagi qator obyekti (kamida {id, full_name, phone}).
@@ -37,7 +37,7 @@ const TeacherStudentDetailDrawer = ({ student, onClose }) => {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
-      <div className="fixed right-0 top-0 h-full w-full max-w-[420px] glass-strong border-l border-white/10 z-50 flex flex-col animate-in">
+      <div className="fixed right-0 top-0 h-full w-full max-w-[420px] glass-strong z-50 flex flex-col animate-in">
         {/* Yuqori: avatar + ism + telefon + yopish */}
         <div className="flex items-start gap-3 p-5 border-b border-white/10">
           <Avatar name={student?.full_name} src={student?.avatar_url || d?.avatar_url || ''} size={48} />
@@ -1255,7 +1255,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         </div>
 
         {/* Proctoring table */}
-        <div className="glass rounded-2xl overflow-hidden border border-white/5">
+        <div className="glass rounded-2xl overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[800px]">
               <thead>
@@ -1484,7 +1484,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           </button>
         </div>
 
-        <section className="rounded-2xl border border-white/8 glass p-4 md:p-6">
+        <section className="rounded-2xl glass p-4 md:p-6">
           <h2 className="mb-4 text-base font-black text-white">Mahsulotlar ({shopProducts.length})</h2>
           {shopLoading ? (
             <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
@@ -1495,7 +1495,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               {shopProducts.map(p => {
                 const features = Array.isArray(p.features) ? p.features : [];
                 return (
-                  <div key={p.id} className={`rounded-xl border p-3.5 flex flex-col gap-3 ${p.is_active ? 'border-white/8 bg-white/5' : 'border-white/5 bg-white/[0.02] opacity-70'}`}>
+                  <div key={p.id} className={`rounded-xl border p-3.5 flex flex-col gap-3 ${p.is_active ? 'border-edge-strong bg-white/5' : 'border-edge bg-white/[0.02] opacity-70'}`}>
                     <div className="flex items-start gap-3">
                       {p.image_url ? (
                         <img src={p.image_url} alt={p.title} className="h-14 w-14 flex-shrink-0 rounded-xl object-cover" />
@@ -1732,7 +1732,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         )}
 
         {!loading && teacherStudents.length > 0 && (
-          <div className="glass rounded-2xl border border-white/10 overflow-hidden">
+          <div className="glass rounded-2xl overflow-hidden">
             {/* Sarlavha — faqat desktop. */}
             <div className="hidden md:grid grid-cols-12 gap-3 px-5 py-3 border-b border-white/10 text-xs font-bold uppercase tracking-wide text-white/40">
               <div className="col-span-5">Ism familiya</div>
@@ -1793,7 +1793,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           const isReady = issues.length === 0;
           const canEdit = needsReadiness;
           return (
-            <div key={o.id} className="glass rounded-2xl p-5 border border-white/10">
+            <div key={o.id} className="glass rounded-2xl p-5">
               <div className="flex flex-col xl:flex-row xl:items-start gap-4">
                 <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${o.eventType === 'olympiad' ? 'bg-cyan-500/15 text-cyan-300' : 'bg-amber-500/15 text-amber-300'}`}>
                   <Icon name="trophy" size={20} />
@@ -2469,7 +2469,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
               <div className="text-sm text-white/70">
                 Ushbu tadbirni o'chirishni tasdiqlaysizmi? Bu amalni ortga qaytarib bo'lmaydi.
               </div>
-              <div className="glass rounded-xl p-3 border border-white/5">
+              <div className="glass rounded-xl p-3">
                 <div className="text-xs text-white/35 mb-0.5">Tadbir nomi</div>
                 <div className="font-bold text-white text-sm truncate">{event.title}</div>
               </div>
@@ -2515,7 +2515,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           return (
             <div className="space-y-5 -mt-2">
               {/* ── Header: tadbir ma'lumotlari + statistik kartalar ── */}
-              <div className="glass rounded-2xl p-4 sm:p-5 border border-white/5">
+              <div className="glass rounded-2xl p-4 sm:p-5">
                 <div className="flex items-start gap-3 flex-wrap">
                   <div className="min-w-0 flex-1">
                     <div className="text-base sm:text-lg font-bold text-white leading-tight break-words">
@@ -2796,7 +2796,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
           return (
             <div className="space-y-4 -mt-1">
               {/* Sarlavha: o'quvchi ismi + umumiy natija */}
-              <div className="glass rounded-2xl p-4 border border-white/10 flex items-center gap-3">
+              <div className="glass rounded-2xl p-4 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/25 flex items-center justify-center flex-shrink-0">
                   <Icon name="user" size={18} className="text-indigo-300" />
                 </div>

@@ -17,20 +17,22 @@ const StreakWarningBanner = ({ onNavigate, user }) => {
   if (!data.warning) return null;
 
   return (
-    <div className="rounded-2xl p-4 border border-amber-500/30 bg-amber-500/10 flex items-center justify-between gap-3 shadow-[0_4px_12px_rgba(245,158,11,0.05)]">
+    // Ogohlantirish: jiddiylik chap chetdagi chiziq + ikonka bilan kodlanadi,
+    // faqat rang bilan emas.
+    <div className="glass rounded-2xl p-4 border-l-4 border-l-warning flex items-center justify-between gap-3">
       <div className="flex items-center gap-3 flex-1 min-w-0">
-        <div className="text-3xl flex-shrink-0">🔥</div>
+        <span className="text-warning flex-shrink-0"><Icon name="info" size={20} /></span>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-black text-amber-300">{data.streak_count} kunlik seriya xavf ostida!</div>
-          <div className="text-xs text-white/60 mt-0.5">{data.message} Uni premium bilan butunlay himoyalashni xohlaysizmi?</div>
+          <div className="text-sm font-bold text-warning"><span className="font-data">{data.streak_count}</span> kunlik seriya xavf ostida</div>
+          <div className="text-xs text-text-secondary mt-0.5">{data.message} Uni premium bilan butunlay himoyalashni xohlaysizmi?</div>
         </div>
       </div>
       {onNavigate && (
         <button
           onClick={() => onNavigate('premium')}
-          className="btn-primary text-xs px-3.5 py-1.5 rounded-xl font-bold flex-shrink-0 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white border-none shadow-md shadow-orange-500/20 hover:scale-105 transition-transform"
+          className="btn-primary text-xs px-3.5 py-1.5 rounded-xl font-bold flex-shrink-0"
         >
-          Muzlatish ⚡
+          Muzlatish
         </button>
       )}
     </div>
@@ -114,24 +116,25 @@ const DailyQuestionsWidget = ({ user }) => {
   const answeredCount = questions.filter(q => q.answered).length;
 
   return (
-    <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/15">
+    <div className="glass rounded-2xl p-4 md:p-5">
       <div className="flex items-center justify-between mb-3 gap-2">
-        <h3 className="font-bold text-white text-sm md:text-base flex items-center gap-2">
-          📅 Bugungi savollar
-          <span className="text-xs font-semibold text-white/40">{answeredCount}/{questions.length}</span>
+        <h3 className="font-display font-bold text-text-primary text-sm md:text-base flex items-center gap-2 uppercase tracking-widest">
+          Bugungi savollar
+          <span className="text-xs font-data font-semibold text-text-secondary normal-case tracking-normal">{answeredCount}/{questions.length}</span>
         </h3>
-        <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-300 bg-indigo-500/10 px-2.5 py-1 rounded-lg">
+        {/* Taymer `font-data` da — soniya almashganda kenglik sakramaydi. */}
+        <div className="flex items-center gap-1.5 text-xs font-data font-bold text-text-primary border border-edge bg-surface-2 px-2.5 py-1 rounded-lg">
           <Icon name="clock" size={12} /> {timeLeft}
         </div>
       </div>
       <div className="space-y-3">
         {questions.map((dq, qi) => !isVisible(dq) ? null : (
-          <div key={dq.id} className={`rounded-xl bg-white/[0.03] border border-white/5 p-3 transition-opacity duration-300 ${feedback.get(dq.id) === 'fade' ? 'opacity-0' : 'opacity-100'}`}>
-            <div className="text-sm font-semibold text-white mb-2 flex items-start gap-1.5">
-              <span className="text-white/40">{qi + 1}.</span>
+          <div key={dq.id} className={`rounded-xl border border-edge p-3 transition-opacity duration-300 ${feedback.get(dq.id) === 'fade' ? 'opacity-0' : 'opacity-100'}`}>
+            <div className="text-sm font-semibold text-text-primary mb-2 flex items-start gap-1.5">
+              <span className="font-data text-text-secondary">{qi + 1}.</span>
               <MathText className="flex-1" text={dq.text} />
               {dq.answered && (
-                <span className={dq.is_correct ? 'text-emerald-400' : 'text-rose-400'}>
+                <span className={dq.is_correct ? 'text-success' : 'text-error'}>
                   <Icon name={dq.is_correct ? 'check' : 'x'} size={16} />
                 </span>
               )}
@@ -140,8 +143,8 @@ const DailyQuestionsWidget = ({ user }) => {
               {(dq.options || []).map((opt, idx) => {
                 let cls = 'btn-ghost';
                 if (dq.answered) {
-                  if (idx === dq.correct_answer) cls = 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-200';
-                  else if (idx === dq.selected_option) cls = 'bg-rose-500/20 border border-rose-500/40 text-rose-200';
+                  if (idx === dq.correct_answer) cls = 'border border-success bg-success/10 text-text-primary font-medium';
+                  else if (idx === dq.selected_option) cls = 'border border-error bg-error/10 text-text-primary font-medium';
                   else cls = 'opacity-50 btn-ghost';
                 }
                 return (
@@ -150,7 +153,7 @@ const DailyQuestionsWidget = ({ user }) => {
                     type="button"
                     disabled={dq.answered || answering != null}
                     onClick={() => handleAnswer(dq, idx)}
-                    className={`text-left rounded-lg px-3 py-2 text-xs transition-all ${cls}`}
+                    className={`text-left rounded-lg px-3 py-2 text-xs transition-colors ${cls}`}
                   >
                     <MathText text={opt} />
                   </button>
@@ -165,7 +168,7 @@ const DailyQuestionsWidget = ({ user }) => {
 };
 
 // ─── F4. Streak + Kunlik maqsad (gamifikatsiya) ──────────────────────────────
-// Yuqorida streak kartochkasi (🔥 ketma-ket kunlar) va 7 kunlik rekord banneri,
+// Yuqorida streak kartochkasi (ketma-ket kunlar) va 7 kunlik rekord banneri,
 // pastda bugungi kunlik maqsad progress bari. Maqsad belgilanmagan bo'lsa
 // (target=0) 1/3/5/10 savol tanlash tugmalari ko'rsatiladi.
 const DAILY_GOAL_OPTIONS = [1, 3, 5, 10];
@@ -198,16 +201,16 @@ const DailyGoalWidget = ({ streakCount = 0, user }) => {
   return (
     <div className="space-y-3">
       {/* Streak kartochkasi — har doim ko'rsatiladi (0 bo'lsa motivatsion matn). */}
-      <div className={`glass rounded-2xl p-4 md:p-5 border ${recordReached ? 'border-orange-500/30 bg-orange-500/10' : 'border-orange-500/15'}`}>
+      <div className={`glass rounded-2xl p-4 md:p-5 ${recordReached ? 'border-l-4 border-l-success' : ''}`}>
         <div className="flex items-center gap-3">
-          <div className="text-3xl flex-shrink-0">🔥</div>
+          <span className="text-text-secondary flex-shrink-0"><Icon name="bolt" size={20} /></span>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-black text-white">
+            <div className="text-sm font-bold text-text-primary">
               {hasStreak
-                ? <>Ketma-ket <span className="text-orange-400">{streakCount}</span> kun!</>
+                ? <>Ketma-ket <span className="font-data">{streakCount}</span> kun</>
                 : 'Bugun mashq qilib seriyani boshlang'}
             </div>
-            <div className="text-xs text-white/50 mt-0.5">
+            <div className="text-xs text-text-secondary mt-0.5">
               {hasStreak
                 ? 'Har kuni faol bo\'lib seriyangizni uzaytiring.'
                 : 'Har kungi faollik bonus tanga va reyting beradi.'}
@@ -215,44 +218,42 @@ const DailyGoalWidget = ({ streakCount = 0, user }) => {
           </div>
         </div>
         {recordReached && (
-          <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/15 px-3 py-2 text-xs font-bold text-amber-200 flex items-center gap-2">
-            <span>🏆</span> 7 kunlik rekord! +50 coin
+          <div className="mt-3 rounded-xl border border-success px-3 py-2 text-xs font-bold text-success flex items-center gap-2">
+            <Icon name="award" size={14} /> 7 kunlik rekord — <span className="font-data">+50</span> coin
           </div>
         )}
       </div>
 
       {/* Kunlik maqsad */}
-      <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/15">
+      <div className="glass rounded-2xl p-4 md:p-5">
         <div className="flex items-center justify-between mb-3 gap-2">
-          <h3 className="font-bold text-white text-sm md:text-base flex items-center gap-2">🎯 Kunlik maqsad</h3>
+          <h3 className="font-display font-bold text-text-primary text-sm md:text-base uppercase tracking-widest">Kunlik maqsad</h3>
           {target > 0 && (
-            <span className={`text-xs font-bold px-2.5 py-1 rounded-lg ${isAchieved ? 'bg-emerald-500/15 text-emerald-300' : 'bg-indigo-500/10 text-indigo-300'}`}>
+            <span className={`chip text-[11px] font-data ${isAchieved ? 'badge-approved' : 'badge-draft'}`}>
               {completed}/{target} savol
             </span>
           )}
         </div>
         {target > 0 ? (
           <>
-            <div className="h-2.5 w-full rounded-full bg-white/10 overflow-hidden">
-              <div
-                className={`h-full rounded-full transition-all ${isAchieved ? 'bg-gradient-to-r from-emerald-500 to-teal-500' : 'bg-gradient-to-r from-indigo-500 to-purple-600'}`}
-                style={{ width: `${pct}%` }}
-              />
+            <div className="progress-bar h-2.5 w-full">
+              <div className="progress-fill" style={{ width: `${pct}%` }} />
             </div>
-            <div className="mt-2 text-xs text-white/55">
+            <div className="mt-2 text-xs text-text-secondary">
               {isAchieved
-                ? <span className="text-emerald-300 font-semibold">✓ Bugungi maqsad bajarildi! Ajoyib.</span>
-                : <>Bugun yana <span className="text-white font-semibold">{data?.remaining || 0}</span> ta savol yeching.</>}
+                ? <span className="text-success font-semibold inline-flex items-center gap-1"><Icon name="check" size={12} /> Bugungi maqsad bajarildi.</span>
+                : <>Bugun yana <span className="font-data text-text-primary font-semibold">{data?.remaining || 0}</span> ta savol yeching.</>}
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-white/40 font-medium mr-1">Maqsadni o'zgartirish:</span>
+              <span className="text-[11px] text-text-secondary font-medium mr-1">Maqsadni o'zgartirish:</span>
               {DAILY_GOAL_OPTIONS.map(n => (
                 <button
                   key={n}
                   type="button"
                   disabled={saving}
+                  aria-pressed={n === target}
                   onClick={() => setGoal(n)}
-                  className={`rounded-lg px-2.5 py-1 text-xs font-bold transition-all disabled:opacity-50 ${n === target ? 'bg-indigo-500 text-white' : 'bg-white/5 text-white/55 hover:bg-white/10 hover:text-white'}`}
+                  className={`rounded-lg border px-2.5 py-1 text-xs font-data font-bold transition-colors disabled:opacity-50 ${n === target ? 'border-accent-fill bg-accent-fill text-on-accent' : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}
                 >
                   {n}
                 </button>
@@ -261,7 +262,7 @@ const DailyGoalWidget = ({ streakCount = 0, user }) => {
           </>
         ) : (
           <div className="space-y-2.5">
-            <div className="text-xs text-white/55">Bugungi maqsadingizni belgilang — har kuni nechta savol yechasiz?</div>
+            <div className="text-xs text-text-secondary">Bugungi maqsadingizni belgilang — har kuni nechta savol yechasiz?</div>
             <div className="flex flex-wrap gap-2">
               {DAILY_GOAL_OPTIONS.map(n => (
                 <button
@@ -269,7 +270,7 @@ const DailyGoalWidget = ({ streakCount = 0, user }) => {
                   type="button"
                   disabled={saving}
                   onClick={() => setGoal(n)}
-                  className="rounded-xl bg-white/5 px-4 py-2 text-sm font-bold text-white/80 hover:bg-indigo-500/20 hover:text-white transition-all disabled:opacity-50"
+                  className="rounded-xl border border-edge bg-surface-1 px-4 py-2 text-sm font-data font-bold text-text-primary hover:border-edge-strong hover:bg-surface-2 transition-colors disabled:opacity-50"
                 >
                   {n} savol
                 </button>
@@ -325,12 +326,12 @@ const ReferralWidget = ({ user }) => {
   if (loading || !data) return null;
 
   return (
-    <div className="glass rounded-2xl p-4 md:p-5 border border-emerald-500/15">
-      <h3 className="font-bold text-white text-sm md:text-base mb-1 flex items-center gap-2">🎁 Do'stni taklif qiling</h3>
-      <p className="text-xs text-white/50 mb-3">Kodingizni do'stingizga yuboring — u kodni ishlatsa, ikkalangiz ham 50 coin olasiz.</p>
+    <div className="glass rounded-2xl p-4 md:p-5">
+      <h3 className="font-display font-bold text-text-primary text-sm md:text-base mb-1 uppercase tracking-widest">Do'stni taklif qiling</h3>
+      <p className="text-xs text-text-secondary mb-3">Kodingizni do'stingizga yuboring — u kodni ishlatsa, ikkalangiz ham 50 coin olasiz.</p>
 
       <div className="flex items-center gap-2">
-        <div className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2.5 font-mono text-base font-black tracking-widest text-white text-center select-all">
+        <div className="flex-1 rounded-xl border border-edge bg-surface-2 px-3 py-2.5 font-mono text-base font-bold tracking-widest text-text-primary text-center select-all">
           {data.code}
         </div>
         <button
@@ -343,13 +344,13 @@ const ReferralWidget = ({ user }) => {
         </button>
       </div>
 
-      <div className="mt-3 text-xs text-white/55">
-        Siz <span className="text-emerald-300 font-bold">{data.invited_count || 0}</span> ta do'st taklif qildingiz.
+      <div className="mt-3 text-xs text-text-secondary">
+        Siz <span className="font-data text-text-primary font-bold">{data.invited_count || 0}</span> ta do'st taklif qildingiz.
       </div>
 
       {/* Ixtiyoriy: do'st kodini kiritish. */}
-      <form onSubmit={handleUse} className="mt-4 border-t border-white/5 pt-3">
-        <label className="block text-[11px] font-bold uppercase tracking-wide text-white/40 mb-1.5">Do'stingiz kodi bormi?</label>
+      <form onSubmit={handleUse} className="mt-4 border-t border-edge pt-3">
+        <label className="block text-[11px] font-bold uppercase tracking-widest text-text-secondary mb-1.5">Do'stingiz kodi bormi?</label>
         <div className="flex items-center gap-2">
           <input
             value={codeInput}
@@ -367,7 +368,7 @@ const ReferralWidget = ({ user }) => {
           </button>
         </div>
         {msg.text && (
-          <div className={`mt-2 text-xs font-semibold ${msg.type === 'ok' ? 'text-emerald-300' : 'text-rose-300'}`}>
+          <div className={`mt-2 text-xs font-semibold ${msg.type === 'ok' ? 'text-success' : 'text-error'}`}>
             {msg.text}
           </div>
         )}
@@ -383,29 +384,32 @@ const RivalActivityWidget = ({ user }) => {
   const rivals = Array.isArray(data) ? data : [];
   if (!rivals.length) return null;
   return (
-    <div className="glass rounded-2xl p-4 md:p-5 border border-white/5">
-      <h3 className="font-bold text-white text-sm md:text-base mb-3 flex items-center gap-2">⚔️ Raqiblar</h3>
+    <div className="glass rounded-2xl p-4 md:p-5">
+      <h3 className="font-display font-bold text-text-primary text-sm md:text-base mb-3 uppercase tracking-widest">Raqiblar</h3>
       <div className="space-y-2">
         {rivals.map(r => (
-          <div key={r.rival_id} className={`flex items-center gap-3 rounded-xl p-2.5 ${r.rival_is_premium ? 'premium-row' : 'bg-white/[0.03]'}`}>
+          <div key={r.rival_id} className={`flex items-center gap-3 rounded-xl border p-2.5 ${r.rival_is_premium ? 'premium-row border-transparent' : 'border-edge'}`}>
+            {/* `gradient` propi tekis statik yuzaga almashtirildi: Avatar ichida
+                matn `text-text-primary` — fon ikkala mavzuda ham to'q bo'lishi shart. */}
             <Avatar
               name={r.rival_name}
               src={OlympyApi.makeAssetUrl ? OlympyApi.makeAssetUrl(r.rival_avatar_url || '') : (r.rival_avatar_url || '')}
               size={34}
+              gradient="bg-pencil-600"
               premium={!!r.rival_is_premium}
             />
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-white truncate flex items-center gap-1.5">
+              <div className="text-sm font-semibold text-text-primary truncate flex items-center gap-1.5">
                 <span className="truncate">{r.rival_name}</span>
                 {r.rival_is_premium && <span className="premium-badge premium-badge--sm flex-shrink-0" title="Premium o'quvchi">Premium</span>}
               </div>
-              <div className="text-xs text-white/50 truncate">{r.message}</div>
+              <div className="text-xs text-text-secondary truncate">{r.message}</div>
             </div>
-            <div className="text-right flex-shrink-0">
-              <div className={`text-xs font-bold ${r.rival_score_change > 0 ? 'text-emerald-400' : 'text-white/40'}`}>
+            <div className="text-right flex-shrink-0 font-data">
+              <div className={`text-xs font-bold ${r.rival_score_change > 0 ? 'text-success' : 'text-text-secondary'}`}>
                 {r.rival_score_change > 0 ? `+${r.rival_score_change}` : '0'}
               </div>
-              <div className="text-[10px] text-white/30">siz +{r.my_score_change}</div>
+              <div className="text-[10px] text-text-secondary">siz +{r.my_score_change}</div>
             </div>
           </div>
         ))}
@@ -426,27 +430,29 @@ const WeeklyContestHistoryCard = ({ user }) => {
   const rows = weeks.filter(w => w.my_entry && w.my_entry.rank != null);
   if (!rows.length) return null;
   const trendIcon = (t) => t === 'up' ? '▲' : t === 'down' ? '▼' : t === 'flat' ? '▬' : '';
-  const trendColor = (t) => t === 'up' ? 'text-emerald-400' : t === 'down' ? 'text-rose-400' : 'text-white/30';
+  const trendColor = (t) => t === 'up' ? 'text-success' : t === 'down' ? 'text-error' : 'text-text-secondary';
+  const trendTitle = (t) => t === 'up' ? "O'rin yaxshilandi" : t === 'down' ? "O'rin pasaydi" : t === 'flat' ? "O'rin o'zgarmadi" : '';
   const fmtWeek = (iso) => {
     const d = iso ? new Date(iso) : null;
     return d ? d.toLocaleDateString('uz-UZ', { day: 'numeric', month: 'short' }) : '';
   };
   return (
-    <div className="glass rounded-2xl p-4 md:p-5 border border-amber-500/15">
-      <h3 className="font-bold text-white text-sm md:text-base mb-3 flex items-center gap-2">
-        📜 Musobaqa tarixi
+    <div className="glass rounded-2xl p-4 md:p-5">
+      <h3 className="font-display font-bold text-text-primary text-sm md:text-base mb-3 uppercase tracking-widest">
+        Musobaqa tarixi
       </h3>
+      {/* Jadval: ustunlar `font-data` — o'rin va ball raqamlari tekis turadi. */}
       <div className="space-y-1.5">
         {rows.map(w => {
           const me = w.my_entry;
           return (
-            <div key={w.week_start} className="flex items-center gap-3 rounded-xl px-3 py-2 bg-white/[0.03]">
-              <div className="flex-1 min-w-0 text-xs text-white/50 truncate">
+            <div key={w.week_start} className="flex items-center gap-3 rounded-xl border border-edge px-3 py-2">
+              <div className="flex-1 min-w-0 text-xs font-data text-text-secondary truncate">
                 {fmtWeek(w.week_start)} – {fmtWeek(w.week_end)}
               </div>
-              <div className={`w-4 text-center text-xs font-black flex-shrink-0 ${trendColor(me.trend)}`}>{trendIcon(me.trend)}</div>
-              <div className="w-9 text-right text-sm font-black text-white flex-shrink-0">#{me.rank}</div>
-              <div className="w-12 text-right text-sm font-bold text-amber-300 flex-shrink-0">{me.score}</div>
+              <div className={`w-4 text-center text-xs font-bold flex-shrink-0 ${trendColor(me.trend)}`} title={trendTitle(me.trend)}>{trendIcon(me.trend)}</div>
+              <div className="w-9 text-right text-sm font-data font-bold text-text-primary flex-shrink-0">#{me.rank}</div>
+              <div className="w-12 text-right text-sm font-data font-bold text-text-secondary flex-shrink-0">{me.score}</div>
             </div>
           );
         })}
@@ -504,23 +510,23 @@ const CustomTestBuilderCard = () => {
   const optClass = (qi, oi, correctIdx) => {
     if (!submitted) {
       return answers[qi] === oi
-        ? 'border-indigo-400 bg-indigo-500/15 text-white'
-        : 'border-white/10 bg-white/[0.03] text-white/70 hover:border-white/25';
+        ? 'border-accent bg-accent/10 text-text-primary'
+        : 'border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary';
     }
-    if (oi === correctIdx) return 'border-emerald-400 bg-emerald-500/15 text-emerald-100';
-    if (answers[qi] === oi) return 'border-rose-400 bg-rose-500/15 text-rose-100';
-    return 'border-white/10 bg-white/[0.02] text-white/40';
+    if (oi === correctIdx) return 'border-success bg-success/10 text-text-primary font-medium';
+    if (answers[qi] === oi) return 'border-error bg-error/10 text-text-primary font-medium';
+    return 'border-edge bg-surface-1 text-text-secondary';
   };
 
   return (
-    <div className="glass rounded-2xl p-4 md:p-5 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+    <div className="glass rounded-2xl p-4 md:p-5">
       <div className="flex items-center gap-2 mb-3">
-        <div className="w-8 h-8 bg-indigo-500/20 rounded-xl flex items-center justify-center text-indigo-400">
+        <div className="w-8 h-8 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-text-secondary flex-shrink-0">
           <Icon name="sparkles" size={16} />
         </div>
         <div>
-          <h3 className="font-bold text-white text-sm md:text-base leading-none">Shaxsiy AI test</h3>
-          <span className="text-[9px] text-white/40 mt-1 block">Fan va mavzuni tanlang — 10 ta savol</span>
+          <h3 className="font-display font-bold text-text-primary text-sm md:text-base leading-none">Shaxsiy AI test</h3>
+          <span className="text-[11px] text-text-secondary mt-1 block">Fan va mavzuni tanlang — 10 ta savol</span>
         </div>
       </div>
 
@@ -562,7 +568,7 @@ const CustomTestBuilderCard = () => {
       </form>
 
       {error && (
-        <p className="mt-3 text-xs text-amber-300">{error}</p>
+        <p className="mt-3 text-xs text-warning">{error}</p>
       )}
 
       {questions.length > 0 && (
@@ -573,9 +579,9 @@ const CustomTestBuilderCard = () => {
               const chosen = answers[qi];
               const isCorrect = submitted && chosen === q.correct_answer;
               return (
-                <div key={qi} className="glass rounded-xl p-3 border border-indigo-500/10">
-                  <div className="text-xs md:text-sm text-white/85 font-medium mb-2 leading-relaxed">
-                    <span className="text-indigo-300 font-bold">{qi + 1}.</span> {q.text}
+                <div key={qi} className="rounded-xl border border-edge p-3">
+                  <div className="text-xs md:text-sm text-text-primary font-medium mb-2 leading-relaxed">
+                    <span className="font-data font-bold text-text-secondary">{qi + 1}.</span> {q.text}
                   </div>
                   <div className="space-y-1.5">
                     {options.map((opt, oi) => (
@@ -584,9 +590,10 @@ const CustomTestBuilderCard = () => {
                         type="button"
                         disabled={submitted}
                         onClick={() => setAnswers(a => ({ ...a, [qi]: oi }))}
-                        className={`w-full text-left flex items-center gap-2 rounded-lg border px-3 py-2 text-xs md:text-sm transition-all disabled:cursor-default ${optClass(qi, oi, q.correct_answer)}`}
+                        aria-pressed={chosen === oi}
+                        className={`w-full text-left flex items-center gap-2 rounded-lg border px-3 py-2 text-xs md:text-sm transition-colors disabled:cursor-default ${optClass(qi, oi, q.correct_answer)}`}
                       >
-                        <span className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center text-[9px] ${chosen === oi ? 'border-current' : 'border-white/30'}`}>
+                        <span className={`w-4 h-4 rounded-full border flex-shrink-0 flex items-center justify-center text-[9px] ${chosen === oi ? 'border-current' : 'border-edge-strong'}`}>
                           {chosen === oi ? '●' : ''}
                         </span>
                         <span className="flex-1">{opt}</span>
@@ -594,7 +601,7 @@ const CustomTestBuilderCard = () => {
                     ))}
                   </div>
                   {submitted && q.explanation ? (
-                    <div className={`mt-2 text-[11px] md:text-xs leading-relaxed rounded-lg px-3 py-2 ${isCorrect ? 'bg-emerald-500/10 text-emerald-200' : 'bg-white/[0.04] text-white/60'}`}>
+                    <div className={`mt-2 text-[11px] md:text-xs leading-relaxed rounded-lg px-3 py-2 ${isCorrect ? 'border border-success bg-success/10 text-text-primary' : 'border border-edge text-text-secondary'}`}>
                       <span className="font-bold">Izoh: </span>{q.explanation}
                     </div>
                   ) : null}
@@ -604,8 +611,8 @@ const CustomTestBuilderCard = () => {
           </div>
 
           {submitted ? (
-            <div className="mt-3 text-center text-sm font-bold text-white">
-              Natija: <span className="text-emerald-400">{correctCount}</span> / {questions.length} to'g'ri
+            <div className="mt-3 text-center text-sm font-bold text-text-primary">
+              Natija: <span className="font-data text-success">{correctCount}</span> / <span className="font-data">{questions.length}</span> to'g'ri
             </div>
           ) : (
             <button
@@ -627,14 +634,14 @@ const PeerComparisonCard = ({ user }) => {
   if (loading || !data) return null;
   if ((data.total_peers || 0) <= 1) return null;
   return (
-    <div className="glass rounded-2xl p-4 border border-cyan-500/15">
+    <div className="glass rounded-2xl p-4">
       <div className="flex items-center gap-3">
-        <div className="text-3xl flex-shrink-0">📊</div>
+        <span className="text-text-secondary flex-shrink-0"><Icon name="chart" size={20} /></span>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-bold text-white">{data.message}</div>
-          <div className="text-xs text-white/50 mt-0.5">
-            Sizning o'rtacha: <span className="text-cyan-300 font-semibold">{data.my_avg}</span> ·
-            Sinf o'rtacha: <span className="text-white/70 font-semibold"> {data.peer_avg}</span>
+          <div className="text-sm font-bold text-text-primary">{data.message}</div>
+          <div className="text-xs text-text-secondary mt-0.5">
+            Sizning o'rtacha: <span className="font-data text-text-primary font-semibold">{data.my_avg}</span> ·
+            Sinf o'rtacha: <span className="font-data font-semibold"> {data.peer_avg}</span>
             {data.grade ? ` · ${data.grade}-sinf` : ''}
           </div>
         </div>
@@ -655,13 +662,12 @@ const SuggestedOlympiadCard = ({ onNavigate, olympiads, user }) => {
     else onNavigate('olympiads');
   };
   return (
-    <div className="glass rounded-2xl p-4 border border-indigo-500/20">
+    <div className="glass rounded-2xl p-4 border-l-4 border-l-accent">
       <div className="flex items-center gap-3">
-        <div className="text-3xl flex-shrink-0">🎯</div>
         <div className="flex-1 min-w-0">
-          <div className="text-xs text-indigo-300 font-semibold mb-0.5">Siz uchun olimpiada</div>
-          <div className="text-sm font-bold text-white truncate">{data.name}</div>
-          <div className="text-xs text-white/50 mt-0.5">
+          <div className="text-[10px] uppercase tracking-widest text-text-secondary font-bold mb-0.5">Siz uchun olimpiada</div>
+          <div className="text-sm font-bold text-text-primary truncate">{data.name}</div>
+          <div className="text-xs text-text-secondary mt-0.5">
             {data.subject} · {data.time_until ? `${data.time_until}dan keyin` : 'tez orada'}
           </div>
         </div>
@@ -681,20 +687,22 @@ const ProgressComparisonCard = ({ user }) => {
   const growth = data.growth_percent || 0;
   const up = growth > 0;
   return (
-    <div className="glass rounded-2xl p-4 border border-white/5">
+    <div className="glass rounded-2xl p-4">
       <div className="flex items-center gap-3">
-        <div className={`text-3xl flex-shrink-0`}>{up ? '📈' : growth < 0 ? '📉' : '➡️'}</div>
+        <span className={`flex-shrink-0 ${growth === 0 ? 'text-text-secondary' : up ? 'text-success' : 'text-error'}`}>
+          <Icon name="chart" size={20} />
+        </span>
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-bold text-white">{data.message}</div>
-          <div className="text-xs text-white/50 mt-0.5">
-            Bu oy: <span className="text-white/70 font-semibold">{data.current_month?.avg_score} ball</span> ({data.current_month?.attempts} ta) ·
-            O'tgan oy: <span className="text-white/70 font-semibold"> {data.last_month?.avg_score} ball</span>
+          <div className="text-sm font-bold text-text-primary">{data.message}</div>
+          <div className="text-xs text-text-secondary mt-0.5">
+            Bu oy: <span className="font-data text-text-primary font-semibold">{data.current_month?.avg_score} ball</span> ({data.current_month?.attempts} ta) ·
+            O'tgan oy: <span className="font-data font-semibold"> {data.last_month?.avg_score} ball</span>
           </div>
         </div>
         {growth !== 0 && (
-          <div className={`text-sm font-black flex-shrink-0 ${up ? 'text-emerald-400' : 'text-rose-400'}`}>
+          <span className={`chip text-[11px] font-data flex-shrink-0 ${up ? 'badge-approved' : 'badge-rejected'}`}>
             {up ? '+' : ''}{growth}%
-          </div>
+          </span>
         )}
       </div>
     </div>
@@ -720,29 +728,29 @@ const OlympiadCalendarModal = ({ open, onClose, onNavigate }) => {
   });
 
   return (
-    <Modal open={open} onClose={onClose} title="📅 Olimpiada kalendari" width="max-w-lg">
+    <Modal open={open} onClose={onClose} title="Olimpiada kalendari" width="max-w-lg">
       <div className="space-y-4">
         {loading && (
-          <div className="text-center py-8 text-white/40 text-sm">Yuklanmoqda...</div>
+          <div className="text-center py-8 text-text-secondary text-sm">Yuklanmoqda...</div>
         )}
         {!loading && upcoming.length === 0 && (
-          <div className="text-center py-8 text-white/40 text-sm">Kelgusi 90 kunda olimpiada topilmadi</div>
+          <div className="text-center py-8 text-text-secondary text-sm">Kelgusi 90 kunda olimpiada topilmadi</div>
         )}
         {!loading && Object.entries(groups).map(([month, items]) => (
           <div key={month}>
-            <div className="text-xs font-bold text-indigo-300 uppercase tracking-wide mb-2">{month}</div>
+            <div className="font-display text-xs font-bold text-text-secondary uppercase tracking-widest mb-2 border-b border-edge pb-1">{month}</div>
             <div className="space-y-2">
               {items.map(o => (
-                <div key={o.id} className="flex items-center gap-3 rounded-xl bg-white/[0.03] border border-white/5 p-3">
+                <div key={o.id} className="flex items-center gap-3 rounded-xl border border-edge p-3">
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-white truncate">{o.name}</div>
-                    <div className="text-xs text-white/50">
-                      {o.subject} · {o.days_until === 0 ? 'Bugun' : `${o.days_until} kundan keyin`}
+                    <div className="text-sm font-semibold text-text-primary truncate">{o.name}</div>
+                    <div className="text-xs text-text-secondary">
+                      {o.subject} · <span className="font-data">{o.days_until === 0 ? 'Bugun' : `${o.days_until} kundan keyin`}</span>
                     </div>
                   </div>
                   {o.registered ? (
-                    <span className="text-xs font-semibold text-emerald-400 flex items-center gap-1 flex-shrink-0">
-                      <Icon name="check" size={13} /> Qatnashilgan
+                    <span className="chip text-[10px] badge-approved flex-shrink-0">
+                      <Icon name="check" size={11} /> Qatnashilgan
                     </span>
                   ) : (
                     <button

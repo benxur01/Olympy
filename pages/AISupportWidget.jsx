@@ -183,41 +183,39 @@ const AISupportWidget = ({ user }) => {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-[999] w-14 h-14 rounded-full bg-indigo-600 hover:bg-indigo-500 flex items-center justify-center text-white shadow-lg hover:scale-110 active:scale-95 transition-all duration-200 border border-white/10 cursor-pointer"
+        className="btn-primary fixed bottom-6 right-6 z-[999] w-14 h-14 rounded-full flex items-center justify-center"
         title="AI Support"
         aria-label="AI yordamchini ochish"
       >
         <Icon name="sparkles" size={24} />
-        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-[#050508] animate-pulse" />
+        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-success rounded-full border-2 border-ground" />
       </button>
     );
   }
 
   // Size classes based on isExpanded
   const sizeClasses = isExpanded
-    ? "fixed inset-0 md:inset-auto md:bottom-6 md:right-6 w-full h-full md:w-[640px] md:h-[780px] md:max-h-[85vh] rounded-none md:rounded-3xl border-0 md:border"
-    : "fixed inset-0 md:inset-auto md:bottom-6 md:right-6 w-full h-full md:w-[384px] md:h-[550px] md:max-h-[80vh] rounded-none md:rounded-3xl border-0 md:border";
+    ? "fixed inset-0 md:inset-auto md:bottom-6 md:right-6 w-full h-full md:w-[640px] md:h-[780px] md:max-h-[85vh] rounded-none md:rounded-3xl border-0 md:border md:border-edge-strong"
+    : "fixed inset-0 md:inset-auto md:bottom-6 md:right-6 w-full h-full md:w-[384px] md:h-[550px] md:max-h-[80vh] rounded-none md:rounded-3xl border-0 md:border md:border-edge-strong";
 
   return (
     <div
-      className={`${sizeClasses} z-[999] flex flex-col overflow-hidden shadow-2xl transition-all duration-300`}
-      style={{
-        background: '#0e1017',
-        borderColor: 'rgba(255, 255, 255, 0.08)',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)'
-      }}
+      className={`${sizeClasses} z-[999] flex flex-col overflow-hidden bg-surface-1 transition-all duration-300`}
     >
       {/* Header */}
-      <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between bg-white/5">
+      <div className="px-5 py-4 border-b border-edge flex items-center justify-between bg-surface-2">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg shadow-inner relative">
-            🤖
-            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-[#050508]" />
+          {/* Ustida belgi turgan to'ldirilgan yuza — `accent-fill` + `on-accent`
+              (avval indigo→binafsha gradient edi; Tailwind remap uni
+              qizil→ko'k gradientga aylantirib qo'ygandi). */}
+          <div className="w-10 h-10 rounded-xl bg-accent-fill text-on-accent flex items-center justify-center relative">
+            <Icon name="sparkles" size={20} />
+            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-success rounded-full border-2 border-surface-2" />
           </div>
           <div>
-            <div className="font-extrabold text-sm text-white tracking-tight">Olympy AI Yordamchi</div>
-            <div className="text-[11px] text-white/50 flex items-center gap-1.5 font-medium">
-              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+            <div className="font-bold text-sm text-text-primary tracking-tight">Olympy AI Yordamchi</div>
+            <div className="text-[11px] text-text-secondary flex items-center gap-1.5 font-medium">
+              <span className="w-1.5 h-1.5 bg-success rounded-full" />
               Faol · Tezkor javob
             </div>
           </div>
@@ -226,7 +224,7 @@ const AISupportWidget = ({ user }) => {
           {/* Maximize / Minimize toggle button */}
           <button
             onClick={() => setIsExpanded(!isExpanded)}
-            className="p-2 rounded-xl text-white/50 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+            className="p-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-surface-1 transition-colors cursor-pointer"
             title={isExpanded ? "Kichraytirish" : "Kengaytirish"}
             aria-label={isExpanded ? "Kichraytirish" : "Kengaytirish"}
           >
@@ -249,7 +247,7 @@ const AISupportWidget = ({ user }) => {
               setIsExpanded(false);
               setVisible(false);
             }}
-            className="p-2 rounded-xl text-white/50 hover:text-white hover:bg-white/5 transition-all cursor-pointer"
+            className="p-2 rounded-xl text-text-secondary hover:text-text-primary hover:bg-surface-1 transition-colors cursor-pointer"
             title="Yopish"
             aria-label="Yopish"
           >
@@ -269,14 +267,14 @@ const AISupportWidget = ({ user }) => {
               <div
                 className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                   isUser
-                    ? 'bg-indigo-600 text-white font-medium rounded-tr-none'
+                    ? 'bg-accent-fill text-on-accent font-medium rounded-tr-none'
                     : isAdmin
-                    ? 'bg-amber-600/10 text-amber-200 border border-amber-500/20 rounded-tl-none font-semibold'
-                    : 'bg-white/8 text-white/90 border border-white/5 rounded-tl-none'
+                    ? 'bg-surface-2 text-warning border border-warning/45 rounded-tl-none font-semibold'
+                    : 'bg-surface-2 text-text-primary border border-edge rounded-tl-none'
                 }`}
               >
                 {isAdmin && (
-                  <div className="text-[10px] text-amber-400 font-extrabold uppercase mb-1 flex items-center gap-1">
+                  <div className="text-[10px] text-warning font-bold uppercase mb-1 flex items-center gap-1">
                     <span>👑 Platforma Admini</span>
                   </div>
                 )}
@@ -291,11 +289,11 @@ const AISupportWidget = ({ user }) => {
           );
         })}
         {loading && (
-          <div className="flex justify-start animate-pulse">
-            <div className="bg-white/8 text-white/50 border border-white/5 rounded-2xl rounded-tl-none px-4 py-3 text-xs flex items-center gap-2">
-              <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-              <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-              <span className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          <div className="flex justify-start">
+            <div className="bg-surface-2 text-text-secondary border border-edge rounded-2xl rounded-tl-none px-4 py-3 text-xs flex items-center gap-2">
+              <span className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce motion-reduce:animate-none" style={{ animationDelay: '0ms' }} />
+              <span className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce motion-reduce:animate-none" style={{ animationDelay: '150ms' }} />
+              <span className="w-1.5 h-1.5 bg-accent rounded-full animate-bounce motion-reduce:animate-none" style={{ animationDelay: '300ms' }} />
               AI javob bermoqda...
             </div>
           </div>
@@ -305,12 +303,12 @@ const AISupportWidget = ({ user }) => {
 
       {/* Quick suggestions chips */}
       {messages.length === 1 && !loading && (
-        <div className="px-5 py-2 overflow-x-auto flex gap-2 no-scrollbar bg-white/2 border-t border-white/5">
+        <div className="px-5 py-2 overflow-x-auto flex gap-2 no-scrollbar border-t border-edge">
           {quickReplies.map((r, idx) => (
             <button
               key={idx}
               onClick={() => handleSend(r.query)}
-              className="whitespace-nowrap shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold text-white/70 hover:text-white bg-white/5 hover:bg-white/10 border border-white/5 hover:border-white/10 transition-all duration-200 cursor-pointer"
+              className="whitespace-nowrap shrink-0 px-3.5 py-1.5 rounded-full text-xs font-semibold text-text-secondary hover:text-text-primary bg-surface-2 border border-edge hover:border-edge-strong transition-colors duration-200 cursor-pointer"
             >
               {r.text}
             </button>
@@ -324,7 +322,7 @@ const AISupportWidget = ({ user }) => {
           e.preventDefault();
           handleSend();
         }}
-        className="p-4 border-t border-white/5 flex gap-2 items-center bg-white/2"
+        className="p-4 border-t border-edge flex gap-2 items-center"
       >
         <input
           type="text"
@@ -333,12 +331,12 @@ const AISupportWidget = ({ user }) => {
           onKeyDown={handleKeyPress}
           placeholder="Muammoingizni yozing..."
           disabled={loading}
-          className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-sm text-white placeholder-white/40 focus:outline-none focus:border-indigo-500/50 transition-all"
+          className="input-field flex-1 rounded-2xl text-sm"
         />
         <button
           type="submit"
           disabled={loading || !inputValue.trim()}
-          className="w-11 h-11 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center justify-center shrink-0 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+          className="btn-primary w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 disabled:opacity-50"
           aria-label="Yuborish"
         >
           <Icon name="send" size={16} />

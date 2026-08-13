@@ -5,6 +5,10 @@
 const mapApiLeaderboard = (entry) => ({
   key: 'api:' + (entry.attempt_id ?? `${entry.user_id}-${entry.rank}`),
   attemptId: entry.attempt_id ?? null,
+  // `user_id` avval tashlab ketilardi. U "Sizning o'rningiz" xulosasi uchun
+  // kerak: qaysi qator joriy foydalanuvchiniki ekanini faqat shu maydon
+  // aytadi (ism bo'yicha solishtirish ismdoshlarda xato natija beradi).
+  userId: entry.user_id ?? entry.userId ?? null,
   rank: entry.rank,
   name: entry.name || entry.user?.full_name || "Noma'lum",
   center: entry.center || '—',
@@ -24,6 +28,49 @@ const mapApiLeaderboard = (entry) => ({
     : (entry.avatar_url || entry.avatarUrl || ''),
   _api: true,
 });
+
+// ─── Medal chegarasi ────────────────────────────────────────────────────────
+// `--color-medal-1/2/3` tokenlari `tailwind.config.js` da utility sifatida
+// e'lon qilinmagan — ular `.leaderboard-gold/silver/bronze` klasslari uchun
+// CSS o'zgaruvchisi. Shuning uchun 1/2/3-o'rin chegarasi inline `style` bilan
+// beriladi (`app.jsx` dagi `style={{ background: 'rgb(var(--color-ground))' }}`
+// naqshi bilan bir xil).
+//
+// DIQQAT: medal rangi MATNGA berilmaydi. Qog'oz mavzuda oltin `surface-2`
+// fonida 3.21:1 — chegara va chiziq uchun yetarli (WCAG 1.4.11 → 3:1), lekin
+// matn uchun emas (4.5:1 kerak). Raqamlar `text-text-primary` bilan yoziladi,
+// o'rin farqini esa chegara + fon + chap chiziq birgalikda beradi — ya'ni
+// signal faqat rangda emas (rang ko'rligi uchun).
+const medalBorderStyle = (place) => (place >= 1 && place <= 3
+  ? { borderColor: `rgb(var(--color-medal-${place}))` }
+  : undefined);
+
+// ─── "Sizning o'rningiz" xulosasi ───────────────────────────────────────────
+// Reyting o'qiladigan hujjat emas, skaner qilinadigan jadval: "men
+// qayerdaman?" savoliga javob ro'yxatdan OLDIN va undan ajratilgan holda
+// turishi kerak. Avval bunday xulosa umuman yo'q edi — foydalanuvchi o'z
+// ismini 100 qator ichidan qidirardi.
+const RankSummary = ({ rank, total, valueLabel, value, meta }) => (
+  <div className="glass rounded-2xl border-l-4 border-l-accent p-4 md:p-5">
+    <div className="flex items-center gap-2 mb-2">
+      <div className="w-8 h-8 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-text-secondary flex-shrink-0">
+        <Icon name="award" size={16} />
+      </div>
+      <h3 className="font-display font-bold text-text-primary text-sm md:text-base">Sizning o'rningiz</h3>
+    </div>
+    <div className="flex flex-wrap items-baseline gap-x-2">
+      <span className="font-data text-3xl font-bold text-text-primary">{rank}</span>
+      <span className="text-sm text-text-secondary">
+        -o'rin
+        {total ? <> · <span className="font-data">{total}</span> ishtirokchidan</> : null}
+      </span>
+    </div>
+    <div className="mt-2 border-t border-edge pt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs md:text-sm text-text-secondary">
+      <span>{valueLabel}: <span className="font-data font-bold text-text-primary">{value}</span></span>
+      {meta}
+    </div>
+  </div>
+);
 
 const LeaderboardPage = ({ onNavigate, embedded, user }) => {
   const store = useStore();
@@ -64,6 +111,7 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
     const c = o ? store.centers.find(x => x.id === o.centerId) : null;
     return {
       key: a.id,
+      userId: a.userId ?? null,
       name: u?.name || 'Foydalanuvchi',
       center: c?.name || '—',
       organizationType: c?.organizationType || "O'quv markaz",
@@ -79,12 +127,13 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
   });
 
   // Production uses API results only.
+  // O'rin belgisi endi 🥇/🥈/🥉 emoji EMAS: farq `medal-*` tokenlari bilan
+  // (chegara + fon + chap chiziq) beriladi, raqam esa `.font-data` bilan.
   const merged = apiEntries
     ? apiEntries.slice().sort((a, b) => (a.rank || 999) - (b.rank || 999))
-        .map((d) => ({ ...d, badge: d.rank === 1 ? '🥇' : d.rank === 2 ? '🥈' : d.rank === 3 ? '🥉' : '' }))
     : (isApi ? [] : liveEntries)
         .sort((a, b) => b.score - a.score)
-        .map((d, i) => ({ ...d, rank: i + 1, badge: i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '' }));
+        .map((d, i) => ({ ...d, rank: i + 1 }));
   const apiLoading = isApi && apiLbRes.loading && !apiEntries;
   // Server xatosi (tarmoq, 500, token muddati) — "haqiqatan bo'sh" holatdan
   // farqlanadi: aks holda foydalanuvchi xatoni "natijam yo'q" deb tushunadi.
@@ -124,12 +173,26 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
   const top3 = filtered.slice(0, 3);
   const rest = filtered.slice(3);
 
+  // Joriy foydalanuvchining qatori. API rejimida `user_id` (backendId), lokal
+  // fallback'da store'dagi id bo'yicha topiladi — ikkalasi ham qatorda
+  // `userId` sifatida saqlanadi.
+  const myIds = [user?.backendId, user?.id].filter(v => v != null).map(String);
+  const me = myIds.length
+    ? filtered.find(d => d.userId != null && myIds.includes(String(d.userId)))
+    : null;
+
   const content = (
-    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6 animate-in motion-reduce:animate-none">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h2 className="text-xl font-black text-white">Reyting jadvali</h2>
-          <p className="text-white/40 text-sm">{(() => {
+          {/* Embedded rejimda (StudentDashboard → Natijalarim → Reyting)
+              sarlavha va sub-tab allaqachon tashqarida turadi — bu yerda
+              takrorlanmaydi. Fon ham takrorlanmaydi: ikkala rejimda sahifa
+              o'z foniga ega emas, `ground` ota elementdan keladi. */}
+          {!embedded && (
+            <h2 className="font-display text-lg md:text-xl font-bold text-text-primary">Reyting jadvali</h2>
+          )}
+          <p className="text-text-secondary text-sm">{(() => {
             // Filterlar tanlanganda subtitl ham ularga moslashadi.
             const parts = [];
             if (filterSubject) parts.push(filterSubject);
@@ -161,7 +224,8 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
       {/* Tabs — "Sinfdoshlar" faqat real API rejimida ko'rinadi (LT4). */}
       <div className="nav-tabs flex gap-1">
         {['all','center','subject', ...(isApi ? ['classmates'] : [])].map(t => (
-          <button key={t} onClick={() => setActiveTab(t)} className={`nav-tab ${activeTab===t?'active':''}`}>
+          <button key={t} onClick={() => setActiveTab(t)} aria-pressed={activeTab === t}
+            className={`nav-tab ${activeTab===t?'active':''}`}>
             {t==='all'?'Umumiy':t==='center'?'Tashkilot':t==='subject'?'Fan':'Sinfdoshlar'}
           </button>
         ))}
@@ -171,19 +235,45 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
       {activeTab === 'classmates' && <ClassmatesLeaderboard />}
 
       {activeTab !== 'classmates' && apiLoading && (
-        <div className="glass rounded-2xl p-6 text-center text-white/50 text-sm">Reyting yuklanmoqda...</div>
+        <div className="glass rounded-2xl p-6 text-center text-text-secondary text-sm">Reyting yuklanmoqda...</div>
       )}
 
       {activeTab !== 'classmates' && !apiLoading && apiError && (
         <div className="glass rounded-2xl p-6 text-center">
-          <div className="text-rose-300 text-sm font-semibold mb-3">
+          <div className="text-error text-sm font-semibold mb-3">
             {OlympyApi.toUserMessage?.(apiError) || "Reytingni yuklab bo'lmadi. Qayta urinib ko'ring."}
           </div>
           <button onClick={() => apiLbRes.reload()} className="btn-ghost text-xs px-4 py-2 rounded-xl">Qayta yuklash</button>
         </div>
       )}
 
-      {activeTab !== 'classmates' && !apiError && (
+      {activeTab !== 'classmates' && !apiError && !apiLoading && (
+      <>
+      {/* Xulosa detaldan oldin — foydalanuvchining o'z o'rni ro'yxatdan yuqorida. */}
+      {me ? (
+        <RankSummary
+          rank={me.rank}
+          total={filtered.length}
+          valueLabel="Ball"
+          value={me.score}
+          meta={<>
+            <span>Vaqt: <span className="font-data text-text-primary">{me.time}</span></span>
+            {me.subject && me.subject !== '—' && <span>Fan: <span className="text-text-primary">{me.subject}</span></span>}
+          </>}
+        />
+      ) : isApi && filtered.length > 0 ? (
+        <div className="glass rounded-2xl border-l-4 border-l-edge-strong px-4 py-3 text-sm text-text-secondary">
+          Bu ro'yxatda sizning natijangiz yo'q — tadbirda qatnashganingizdan keyin o'rningiz shu yerda ko'rinadi.
+        </div>
+      ) : null}
+
+      {filtered.length === 0 ? (
+        <div className="glass rounded-2xl p-6 text-center text-text-secondary text-sm">
+          {(filterSubject || filterCity || activeTab !== 'all')
+            ? "Tanlangan filtrlar bo'yicha natija topilmadi."
+            : "Reyting hozircha bo'sh."}
+        </div>
+      ) : (
       <>
       {/* Top 3 podium — podium tartibi (silver-gold-bronze) saqlanadi, lekin mobile'da kompakt */}
       <div className="grid grid-cols-3 gap-1.5 md:gap-3">
@@ -192,16 +282,40 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
             shuning uchun bitta ishtirokchi bo'lganda ([_, g'olib, _] → [g'olib])
             indeks 1 dan 0 ga tushib, 1-o'rin egasi kumush rangda chiqardi. */}
         {[top3[1], top3[0], top3[2]].map((p, slot) => (p ? { p, slot } : null)).filter(Boolean).map(({ p, slot }) => {
-          const isFirst = slot === 1;
-          const cls = isFirst ? 'leaderboard-gold' : slot === 0 ? 'leaderboard-silver' : 'leaderboard-bronze';
+          // `place` — podiumdagi o'rin (1/2/3). Medal klassi ham, chip
+          // chegarasi ham, yozuv ham SHU qiymatdan keladi: uchalasi hech
+          // qachon bir-biridan ajralib qolmaydi.
+          const place = slot === 1 ? 1 : slot === 0 ? 2 : 3;
+          const isFirst = place === 1;
+          const cls = place === 1 ? 'leaderboard-gold' : place === 2 ? 'leaderboard-silver' : 'leaderboard-bronze';
           return (
             <div key={p.key || p.rank} className={`rounded-2xl p-2 md:p-4 text-center card-hover min-w-0 ${cls} ${isFirst ? 'mt-0' : 'mt-3 md:mt-6'}`}>
-              <div className="text-2xl md:text-3xl mb-0.5 md:mb-1">{p.badge}</div>
-              <Avatar name={p.name} src={p.avatarUrl || ''} size={isFirst?40:32} gradient={isFirst?'from-amber-400 to-orange-500':'from-indigo-500 to-purple-600'} premium={!!p.isPremium} />
-              <div className="text-xs md:text-sm font-bold text-white mt-1.5 md:mt-2 truncate">{p.name.split(' ')[0]}</div>
-              {p.isPremium && <div className="mt-1 flex justify-center"><span className="premium-badge premium-badge--sm" title="Premium o'quvchi">⭐ Premium</span></div>}
-              <div className="hidden md:block text-xs text-white/40 truncate mb-2">{p.center} · {p.organizationType}</div>
-              <div className={`text-lg md:text-2xl font-black mt-1 md:mt-0 ${isFirst?'text-amber-400':slot===0?'text-slate-300':'text-amber-600'}`}>{p.score}</div>
+              {/* O'lcham va og'irlik `.chip` da qat'iy belgilangan (u
+                  `@tailwind utilities` dan keyin turadi va bir xil
+                  solishtirma og'irlikda yutadi), shuning uchun bu yerda faqat
+                  `.chip` o'zi bermaydigan xossalar beriladi. */}
+              <div className="flex justify-center mb-1.5">
+                <span className="chip border bg-surface-1 text-text-primary font-data"
+                  style={medalBorderStyle(place)}>
+                  {place}-o'rin
+                </span>
+              </div>
+              {/* Avatar — blok element, shuning uchun ota `text-center` uni
+                  markazga qo'ymaydi (avval podium rasmlari chapga yopishib
+                  turardi). `flex justify-center` — yagona ishlaydigan usul.
+                  `gradient` propi tekis statik yuzaga almashtirildi: Avatar
+                  ichida bosh harflar `text-white` — fon ikkala mavzuda ham
+                  to'q bo'lishi shart, gradient esa yo'nalish bo'yicha yo'q. */}
+              <div className="flex justify-center">
+                <Avatar name={p.name} src={p.avatarUrl || ''} size={isFirst?40:32} gradient="bg-pencil-600" premium={!!p.isPremium} />
+              </div>
+              <div className="text-xs md:text-sm font-bold text-text-primary mt-1.5 md:mt-2 truncate">{p.name.split(' ')[0]}</div>
+              {p.isPremium && <div className="mt-1 flex justify-center"><span className="premium-badge premium-badge--sm" title="Premium o'quvchi">Premium</span></div>}
+              {/* Medal tinti ustida `text-secondary` qog'oz mavzuda 4.45:1 ga
+                  tushadi (AA dan past), shuning uchun bu qator ham `text-primary`.
+                  Ierarxiya rang bilan emas — o'lcham va og'irlik bilan beriladi. */}
+              <div className="hidden md:block text-xs text-text-primary/90 truncate mb-2">{p.center} · {p.organizationType}</div>
+              <div className="text-lg md:text-2xl font-black font-data text-text-primary mt-1 md:mt-0">{p.score}</div>
               <div className="hidden md:block"><SubjectBadge subject={p.subject} /></div>
             </div>
           );
@@ -210,7 +324,7 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
 
       {/* Table */}
       <div className="glass rounded-2xl overflow-hidden">
-        <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 border-b border-white/5 text-xs text-white/40 font-medium">
+        <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 border-b border-edge font-display text-xs font-bold uppercase tracking-widest text-text-secondary">
           <div className="col-span-1">#</div>
           <div className="col-span-3">O'quvchi</div>
           <div className="col-span-3">Tashkilot</div>
@@ -221,31 +335,46 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
         </div>
         {(() => {
           // Reyting qatori — virtual scroll va oddiy map o'rtasida bir xil JSX.
-          const renderRow = (p) => (
-            <div key={p.key || p.rank} className={`olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5 ${p.isPremium ? 'premium-row' : ''}`}>
+          const renderRow = (p) => {
+            // `rest` — `filtered` ning 4-o'rindan boshlangan qismi, ya'ni
+            // podiumdagi uchta qator bu yerga tushmaydi. Solishtirish
+            // havola bo'yicha: `me` aynan `filtered` ichidagi obyekt.
+            const isMe = p === me;
+            // Chap chiziq HAR QATORDA joy egallaydi (`border-l-2` + shaffof
+            // rang) — aks holda faqat belgilangan qator 2px o'ngga suriladi va
+            // skaner qilinadigan jadvalda ustunlar tekisligi buziladi.
+            return (
+            <div key={p.key || p.rank}
+              className={`olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5 border-l-2 ${p.isPremium ? 'premium-row' : ''} ${isMe ? 'bg-accent/[0.08] border-l-accent' : 'border-l-transparent'}`}>
               <div className="md:col-span-1 flex-shrink-0">
-                <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
+                <div className="w-8 h-8 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-sm font-bold font-data text-text-primary">
                   {p.rank}
                 </div>
               </div>
               <div className="md:col-span-3 flex-1 flex items-center gap-2 min-w-0">
-                <Avatar name={p.name} src={p.avatarUrl || ''} size={32} premium={!!p.isPremium} />
+                <Avatar name={p.name} src={p.avatarUrl || ''} size={32} gradient="bg-pencil-600" premium={!!p.isPremium} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-white truncate flex items-center gap-1.5">
+                  <div className="text-sm font-medium text-text-primary truncate flex items-center gap-1.5">
                     <span className="truncate">{p.name}</span>
+                    {isMe && <span className="text-accent text-xs font-bold flex-shrink-0">(siz)</span>}
                     {p.isPremium && <span className="premium-badge premium-badge--sm flex-shrink-0" title="Premium o'quvchi">Premium</span>}
                   </div>
-                  <div className="text-xs text-white/30 truncate md:hidden">{p.center}</div>
+                  <div className="text-xs text-text-secondary truncate md:hidden">{p.center}</div>
                 </div>
               </div>
               <div className="col-span-3 hidden md:flex items-center">
-                <span className="text-sm text-white/50 truncate">{p.center}</span>
+                <span className="text-sm text-text-secondary truncate">{p.center}</span>
               </div>
               <div className="col-span-2 hidden md:block"><SubjectBadge subject={p.subject} /></div>
+              {/* Ball avval uch xil rangda edi (emerald / indigo / amber).
+                  Ro'yxat allaqachon ball bo'yicha tartiblangan — rang qo'shimcha
+                  ma'lumot bermasdi, faqat jadvalni rang-barang qilardi va
+                  `indigo` akcent bilan qorishardi. Endi bitta rang + `font-data`:
+                  ustun tik turadi, raqam almashganda sakramaydi. */}
               <div className="md:col-span-1 text-right flex-shrink-0">
-                <span className={`text-sm font-black ${p.score>=90?'text-emerald-400':p.score>=75?'text-indigo-400':'text-amber-400'}`}>{p.score}</span>
+                <span className="text-sm font-black font-data text-text-primary">{p.score}</span>
               </div>
-              <div className="md:col-span-1 text-right text-xs text-white/30 font-mono flex-shrink-0">{p.time}</div>
+              <div className="md:col-span-1 text-right text-xs text-text-secondary font-data flex-shrink-0">{p.time}</div>
               <div className="md:col-span-1 text-right flex-shrink-0">
                 {/* Avval bu tugma faqat dekorativ edi — hech narsa qilmasdi.
                     Endi natijani Results sahifasiga olib o'tadi (attemptId
@@ -253,13 +382,14 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
                 <button
                   onClick={() => p.attemptId && onNavigate && onNavigate('results', { attemptId: p.attemptId })}
                   disabled={!p.attemptId}
-                  className="text-white/30 hover:text-indigo-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                  className="text-text-secondary hover:text-accent transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   title="Natijani ko'rish">
                   <Icon name="eye" size={14} />
                 </button>
               </div>
             </div>
-          );
+            );
+          };
           // Ro'yxat juda uzun bo'lsa (100+ qator) virtual scroll bilan
           // ko'rsatamiz — faqat ekrandagi qatorlar DOM'da bo'ladi. Aks holda
           // oddiy .map() (qisqa ro'yxatlarda virtualizatsiya keraksiz).
@@ -269,6 +399,8 @@ const LeaderboardPage = ({ onNavigate, embedded, user }) => {
           return rest.map(renderRow);
         })()}
       </div>
+      </>
+      )}
       </>
       )}
     </div>
@@ -284,13 +416,13 @@ const ClassmatesLeaderboard = () => {
     [],
   );
   if (loading) {
-    return <div className="glass rounded-2xl p-6 text-center text-white/50 text-sm">Yuklanmoqda...</div>;
+    return <div className="glass rounded-2xl p-6 text-center text-text-secondary text-sm">Yuklanmoqda...</div>;
   }
   // Xato bo'lsa "bo'sh" xabari o'rniga aniq xato + qayta urinish ko'rsatamiz.
   if (error) {
     return (
       <div className="glass rounded-2xl p-6 text-center">
-        <div className="text-rose-300 text-sm font-semibold mb-3">
+        <div className="text-error text-sm font-semibold mb-3">
           {OlympyApi.toUserMessage?.(error) || "Sinfdoshlar reytingini yuklab bo'lmadi. Qayta urinib ko'ring."}
         </div>
         <button onClick={() => reload()} className="btn-ghost text-xs px-4 py-2 rounded-xl">Qayta yuklash</button>
@@ -299,49 +431,68 @@ const ClassmatesLeaderboard = () => {
   }
   const rows = Array.isArray(data) ? data : [];
   if (!rows.length) {
-    return <div className="glass rounded-2xl p-6 text-center text-white/40 text-sm">Sinfdoshlar reytingi hozircha bo'sh</div>;
+    return <div className="glass rounded-2xl p-6 text-center text-text-secondary text-sm">Sinfdoshlar reytingi hozircha bo'sh</div>;
   }
+  // Bu ro'yxatda podium yo'q, shuning uchun 1/2/3-o'rin farqi qator raqamining
+  // medal chegarasi bilan beriladi.
+  const meRow = rows.find(r => r.is_me);
   return (
-    <div className="glass rounded-2xl overflow-hidden">
-      <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 border-b border-white/5 text-xs text-white/40 font-medium">
-        <div className="col-span-1">#</div>
-        <div className="col-span-6">O'quvchi</div>
-        <div className="col-span-3 text-right">O'rtacha ball</div>
-        <div className="col-span-2 text-right">Streak</div>
-      </div>
-      {(() => {
-        const renderRow = (p) => (
-          <div
-            key={p.user_id}
-            className={`olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5 ${p.is_me ? 'bg-indigo-500/15 border-l-2 border-indigo-400' : ''}`}
-          >
-            <div className="md:col-span-1 flex-shrink-0">
-              <div className="w-8 h-8 rounded-xl glass flex items-center justify-center text-sm font-bold text-white/50">
-                {p.rank}
-              </div>
-            </div>
-            <div className="md:col-span-6 flex-1 flex items-center gap-2 min-w-0">
-              <Avatar name={p.full_name} size={32} />
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-medium text-white truncate">
-                  {p.full_name}{p.is_me && <span className="text-indigo-300"> (siz)</span>}
+    <div className="space-y-4 md:space-y-6">
+      {meRow && (
+        <RankSummary
+          rank={meRow.rank}
+          total={rows.length}
+          valueLabel="O'rtacha ball"
+          value={meRow.avg_score}
+          meta={meRow.streak ? <span>Ketma-ket faollik: <span className="font-data text-text-primary">{meRow.streak}</span> kun</span> : null}
+        />
+      )}
+      <div className="glass rounded-2xl overflow-hidden">
+        <div className="hidden md:grid grid-cols-12 gap-2 px-4 py-3 border-b border-edge font-display text-xs font-bold uppercase tracking-widest text-text-secondary">
+          <div className="col-span-1">#</div>
+          <div className="col-span-6">O'quvchi</div>
+          <div className="col-span-3 text-right">O'rtacha ball</div>
+          <div className="col-span-2 text-right">Faollik</div>
+        </div>
+        {(() => {
+          const renderRow = (p) => (
+            <div
+              key={p.user_id}
+              className={`olympy-row flex items-center gap-2 md:grid md:grid-cols-12 md:gap-2 px-4 py-3.5 border-l-2 ${p.is_me ? 'bg-accent/[0.08] border-l-accent' : 'border-l-transparent'}`}
+            >
+              <div className="md:col-span-1 flex-shrink-0">
+                <div className="w-8 h-8 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-sm font-bold font-data text-text-primary"
+                  style={medalBorderStyle(p.rank)}>
+                  {p.rank}
                 </div>
               </div>
+              <div className="md:col-span-6 flex-1 flex items-center gap-2 min-w-0">
+                <Avatar name={p.full_name} size={32} gradient="bg-pencil-600" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-text-primary truncate">
+                    {p.full_name}{p.is_me && <span className="text-accent font-bold"> (siz)</span>}
+                  </div>
+                </div>
+              </div>
+              <div className="md:col-span-3 text-right flex-shrink-0">
+                <span className="text-sm font-black font-data text-text-primary">{p.avg_score}</span>
+              </div>
+              {/* 🔥 emoji o'rniga ikonka + raqam: belgi sifatida emoji
+                  ishlatilmaydi va `font-data` ustunni tik ushlab turadi. */}
+              <div className="md:col-span-2 text-right text-xs text-text-secondary flex-shrink-0">
+                {p.streak
+                  ? <span className="inline-flex items-center gap-1 justify-end"><Icon name="bolt" size={11} /><span className="font-data">{p.streak}</span> kun</span>
+                  : '—'}
+              </div>
             </div>
-            <div className="md:col-span-3 text-right flex-shrink-0">
-              <span className={`text-sm font-black ${p.avg_score >= 90 ? 'text-emerald-400' : p.avg_score >= 75 ? 'text-indigo-400' : 'text-amber-400'}`}>{p.avg_score}</span>
-            </div>
-            <div className="md:col-span-2 text-right text-xs text-orange-400 font-semibold flex-shrink-0">
-              {p.streak ? `🔥 ${p.streak}` : '—'}
-            </div>
-          </div>
-        );
-        // 100+ sinfdosh bo'lsa virtual scroll; aks holda oddiy map.
-        if (rows.length > 100) {
-          return <VirtualList items={rows} itemHeight={68} containerHeight={640} renderItem={renderRow} />;
-        }
-        return rows.map(renderRow);
-      })()}
+          );
+          // 100+ sinfdosh bo'lsa virtual scroll; aks holda oddiy map.
+          if (rows.length > 100) {
+            return <VirtualList items={rows} itemHeight={68} containerHeight={640} renderItem={renderRow} />;
+          }
+          return rows.map(renderRow);
+        })()}
+      </div>
     </div>
   );
 };

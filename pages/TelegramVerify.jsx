@@ -3,6 +3,21 @@
 // Talks to the real Django backend via OlympyApi:
 //   POST /api/auth/phone/start-telegram-verification/
 //   POST /api/auth/phone/verify-otp/
+//
+// ─── Dizayn: "Imtihon byulleteni" ─────────────────────────────────────────────
+// Bu blok mustaqil ekran emas — u `Auth.jsx` ning ro'yxatdan o'tish 2-bosqichi
+// ICHIDA, forma maydonlari orasida chiziladi. Shu sababli o'zining alohida
+// ko'rinishi yo'q: panel `bg-surface-1 border-edge`, holat esa semantik
+// tokenlarda (`success` / `error`) — ikkala mavzuda ham o'qiladi.
+//
+// `glass` alias ATAYIN ishlatilmadi. Yuza tokenlardan ochiq yig'ilgan
+// (`bg-surface-1 border border-edge`), chunki holat chegarasi — `border-success/40`
+// yoki `border-error/40` — HAQIQIY, rangli `border` bo'lishi kerak; `glass`
+// esa o'z hoshiyasini `box-shadow: inset` bilan chizadi va yuza rangini
+// o'zi tanlaydi (src/index.css).
+//
+// Matn `text-primary`: panel foni surface-1, unda `text-secondary` to'q
+// mavzuda 4.45:1 beradi (AA uchun 4.5 kerak) — Auth.jsx modalidagi qoida.
 
 const OTP_TTL_MS = 5 * 60 * 1000;
 const MAX_ATTEMPTS = 5;
@@ -59,7 +74,7 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
 
   if (verified) {
     return (
-      <div className="glass rounded-xl p-3 border border-emerald-500/30 text-sm text-emerald-300 flex items-center gap-2">
+      <div className="rounded-xl border border-success/40 bg-success/10 p-3 text-sm text-success flex items-center gap-2">
         <Icon name="check" size={14} /> Telefon raqam muvaffaqiyatli tasdiqlandi
       </div>
     );
@@ -67,8 +82,8 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
 
   if (!phoneValid) {
     return (
-      <div className="glass rounded-xl p-3 border border-white/5 text-xs text-white/40 flex items-center gap-2">
-        <Icon name="info" size={12} /> Telefon raqamni to'g'ri kiriting va Telegram orqali tasdiqlang.
+      <div className="rounded-xl border border-edge bg-surface-1 p-3 text-xs text-text-primary flex items-center gap-2">
+        <Icon name="info" size={12} className="flex-shrink-0" /> Telefon raqamni to'g'ri kiriting va Telegram orqali tasdiqlang.
       </div>
     );
   }
@@ -157,11 +172,11 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
   };
 
   return (
-    <div className="glass rounded-xl p-3 border border-indigo-500/20 space-y-2.5">
+    <div className="rounded-xl border border-edge bg-surface-1 p-3 space-y-2.5">
       {status === 'idle' && (
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
-          <div className="flex items-center gap-2 text-xs text-white/60">
-            <span className="text-base leading-none">📱</span>
+          <div className="flex items-center gap-2 text-xs text-text-primary">
+            <Icon name="info" size={12} className="flex-shrink-0" />
             <span>Telegram orqali tasdiqlash kerak</span>
           </div>
           <button type="button" onClick={startFlow}
@@ -175,12 +190,12 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
       {status === 'opened' && (
         <>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
-            <span className="text-indigo-300">Bot kontaktni so'raydi → kod yuboradi</span>
+            <span className="text-text-primary">Bot kontaktni so'raydi → kod yuboradi</span>
             <div className="flex items-center gap-3">
               {expiresAt && !isExpired && (
-                <span className="text-white/40 font-mono text-[11px] inline-flex items-center gap-1"><Icon name="clock" size={10} /> {remainingLabel}</span>
+                <span className="text-text-primary font-data text-[11px] inline-flex items-center gap-1"><Icon name="clock" size={10} /> {remainingLabel}</span>
               )}
-              <button type="button" onClick={restart} className="text-white/40 hover:text-white text-xs underline-offset-2 hover:underline py-1">Qayta</button>
+              <button type="button" onClick={restart} className="text-text-primary text-xs underline-offset-2 hover:underline py-1">Qayta</button>
             </div>
           </div>
           {deepLink && (
@@ -194,7 +209,7 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
             <input value={code}
               onChange={e => { setCode(e.target.value.replace(/\D/g, '').slice(0, 6)); if (error) setError(''); }}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); submitCode(); } }}
-              className="input-field py-3 text-center font-mono tracking-[0.4em] flex-1"
+              className="input-field py-3 text-center font-data tracking-[0.4em] flex-1"
               placeholder="••••••" maxLength={6} inputMode="numeric" autoComplete="one-time-code" />
             <button type="button" onClick={submitCode} disabled={!code.trim() || verifying || isExpired}
               className="btn-primary px-4 py-3 rounded-xl text-xs font-semibold disabled:opacity-50 whitespace-nowrap w-full sm:w-auto">
@@ -203,9 +218,12 @@ const TelegramVerifyBlock = ({ phone, phoneValid, verified, onVerified }) => {
           </div>
         </>
       )}
+      {/* Xato — Auth.jsx dagi bilan bir xil naqsh: `error` tokeni va
+          `role="alert"` (ekran o'quvchi xabarni darhol aytadi; smoke test
+          ham aynan shu rolga bog'langan). */}
       {error && (
-        <div className="text-xs text-rose-400 flex items-center gap-1 mt-1">
-          <Icon name="info" size={12} /> {error}
+        <div className="text-xs text-error flex items-start gap-1.5 mt-1" role="alert">
+          <Icon name="info" size={12} className="flex-shrink-0 mt-0.5" /> {error}
         </div>
       )}
     </div>

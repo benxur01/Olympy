@@ -2,73 +2,285 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Duolingo rang sxemasi (CSS o'zgaruvchilari) ──────────────────────────
-   Onboarding, splash va auth (login/register) sahifalarida ishlatiladi.
-   Dark dashboard'lar o'z inline ranglarini saqlab qoladi — bu o'zgaruvchilar
-   faqat yangi light yuzalar uchun. */
-:root {
-  --duo-green: #58CC02;        /* primary — tugmalar, accent */
-  --duo-green-dark: #46A302;   /* hover / 3D tugma pastki qirrasi */
-  --duo-green-soft: #D7FFB8;   /* yengil yashil fon */
-  --duo-yellow: #FFD900;       /* streak / achievement */
-  --duo-blue: #1CB0F6;         /* ikkilamchi harakat */
-  --duo-blue-dark: #1899D6;
-  --duo-purple: #CE82FF;       /* premium */
-  --duo-red: #FF4B4B;          /* xato / danger */
-  --duo-red-dark: #E63F3F;
-  --duo-bg: #FFFFFF;
-  --duo-bg-dark: #131F24;
-  --duo-card: #F7F7F7;
-  --duo-border: #E5E5E5;
-  --duo-text: #3C3C3C;
-  --duo-text-secondary: #777777;
+/* ─── Shriftlar (self-hosted) ─────────────────────────────────────────────
+   Avval Google Fonts CDN'dan Plus Jakarta Sans yuklanardi. Endi fayllar
+   `public/fonts/` da — tashqi so'rov yo'q, CSP `font-src 'self'` yetarli.
+
+   PT Sans        — asosiy matn (body)
+   PT Sans Narrow — siqilgan sarlavhalar (display)
+
+   Har bir og'irlik latin va cyrillic bo'lib ajratilgan: interfeys o'zbek
+   lotinida, shuning uchun kirill fayllari `unicode-range` orqali faqat
+   kirill matn uchrasa yuklanadi (odatdagi yuk ~216 KB o'rniga ~414 KB emas).
+
+   ┌─ U+02BB (ʻ) — yamalgan ──────────────────────────────────────────────┐
+   │ U+02BB (MODIFIER LETTER TURNED COMMA) — o'zbek lotinidagi `oʻ`/`gʻ` │
+   │ belgisi. ParaType'ning original PT Sans / PT Sans Narrow shriftida  │
+   │ bu glif YO'Q edi (749 glif tekshirildi — Google subsetlash          │
+   │ artefakti emas). U+02BC (ʼ, tutuq belgisi) esa BOR edi.             │
+   │                                                                      │
+   │ Endi `public/fonts/*-latin.woff2` fayllari yamalgan:                │
+   │ `scripts/patch-font-uzbek-glyph.py` cmap'ga U+02BB → `quoteleft`    │
+   │ (U+2018 bilan bitta glif) yozuvini qo'shadi. Bu ParaType'ning o'z   │
+   │ naqshini takrorlaydi — ular U+02BC ni ayni shunday `quoteright`     │
+   │ ga ulagan. Demak `ʻ` endi PT Sans'ning O'ZIDAN keladi, matn bir     │
+   │ so'z ichida ikki shriftga bo'linmaydi.                              │
+   │                                                                      │
+   │ `font-family` zanjiridagi `system-ui` qoldirildi: endi u U+02BB     │
+   │ uchun ishga tushmaydi, lekin zaxira sifatida zarar qilmaydi         │
+   │ (masalan yamalmagan shrift keshdan kelib qolsa).                    │
+   └──────────────────────────────────────────────────────────────────────┘ */
+
+@font-face {
+  font-family: 'PT Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/pt-sans-400-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0100-017F, U+02B0-02FF, U+0300-036F, U+2000-206F, U+20A0-20BF, U+2116, U+2191, U+2193, U+2212, U+2215;
+}
+@font-face {
+  font-family: 'PT Sans';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/pt-sans-400-cyrillic.woff2') format('woff2');
+  unicode-range: U+0400-04FF;
+}
+@font-face {
+  font-family: 'PT Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/pt-sans-700-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0100-017F, U+02B0-02FF, U+0300-036F, U+2000-206F, U+20A0-20BF, U+2116, U+2191, U+2193, U+2212, U+2215;
+}
+@font-face {
+  font-family: 'PT Sans';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/pt-sans-700-cyrillic.woff2') format('woff2');
+  unicode-range: U+0400-04FF;
+}
+
+@font-face {
+  font-family: 'PT Sans Narrow';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/pt-sans-narrow-400-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0100-017F, U+02B0-02FF, U+0300-036F, U+2000-206F, U+20A0-20BF, U+2116, U+2191, U+2193, U+2212, U+2215;
+}
+@font-face {
+  font-family: 'PT Sans Narrow';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/pt-sans-narrow-400-cyrillic.woff2') format('woff2');
+  unicode-range: U+0400-04FF;
+}
+@font-face {
+  font-family: 'PT Sans Narrow';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/pt-sans-narrow-700-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0100-017F, U+02B0-02FF, U+0300-036F, U+2000-206F, U+20A0-20BF, U+2116, U+2191, U+2193, U+2212, U+2215;
+}
+@font-face {
+  font-family: 'PT Sans Narrow';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/pt-sans-narrow-700-cyrillic.woff2') format('woff2');
+  unicode-range: U+0400-04FF;
+}
+
+/* ─── "Imtihon byulleteni" token qatlami ───────────────────────────────────
+   Yo'nalish: bosma imtihon varaqasi intizomi. Gradient, glass va glow yo'q.
+
+   Qiymatlar `R G B` (probel bilan) formatida saqlanadi — Tailwind ularni
+   `rgb(var(--color-x) / <alpha-value>)` ichida ishlatadi, shuning uchun
+   `bg-ground/50` kabi opacity variantlari ham ishlaydi.
+
+   `data-theme` atributi <html> da turadi (index.html da default "dark").
+   Toggle mexanizmi hali qo'shilmagan — bu qatlam ikkala mavzu uchun tayyor. */
+:root {                                   /* light — qog'oz */
+  --color-ground: 231 228 220;            /* paper #E7E4DC */
+  --color-surface-1: 238 236 229;
+  --color-surface-2: 222 219 210;
+  --color-edge: 199 195 184;
+  --color-edge-strong: 168 163 150;
+  --color-text-primary: 20 22 28;
+  --color-text-secondary: 93 95 105;      /* #5D5F69 */
+  /* `wash` — badge/chip plastinkasi. ATAYIN neytral va har mavzuning ENG
+     CHETKI neytrali: light'da eng och (surface-1), dark'da eng to'q (ground).
+     Sabab pastda, `.badge-*` bloki ustidagi izohda. */
+  --color-wash: var(--color-surface-1);
+  /* `accent` va `accent-fill` — ATAYIN ikki har xil rol:
+       accent      — fon USTIGA chiziladigan belgi: matn, ikonka, chegara,
+                     progress chizig'i, hoshiya chizig'i. Vazifasi — fondan
+                     ajralib turish, shuning uchun dark mavzuda yorug'lashadi.
+       accent-fill — fonni ALMASHTIRADIGAN qattiq yuza, ustida `on-accent`
+                     matn/ikonka turadi (`.btn-primary`, faol nav pill, badge).
+                     Vazifasi — o'sha och matnni ko'tarish, shuning uchun ikkala
+                     mavzuda ham bir xil to'q qoladi.
+     Avval bitta `accent` ikkala rolni bajarardi. Dark uchun kelishuv sifatida
+     yorug' qiymat (#CD5E56) tanlangan edi — belgi roli uchun to'g'ri (ink fonda
+     4.59:1), lekin `.btn-primary` matnini 3.60:1 ga tushirardi. Endi ajratildi:
+     on-accent / accent-fill = 5.05:1, ikkala mavzuda ham bir xil. */
+  /* Belgi roli: stamp-500 dan bir tish to'qroq. Sof stamp-500 (#C0362C) qog'oz
+     `ground` da 4.34:1, `surface-2` da 3.99:1 berardi — AA dan past. #B52B22
+     ayni o'sha hue (ΔH 0.1°) va chroma (ΔC 0.000), faqat L 0.031 pastroq. */
+  --color-accent: 181 43 34;              /* #B52B22 */
+  --color-accent-fill: 192 54 44;         /* stamp-500 #C0362C */
+  --color-on-accent: 251 243 242;         /* stamp-50  #FBF3F2 */
+  --color-accent-2: 47 93 140;            /* pencil — qalam ko'ki */
+
+  /* Holat ranglari akcentdan alohida turadi. `error` atayin qizil EMAS:
+     stamp allaqachon qizilni egallagan, shuning uchun xato rangi kuydirilgan
+     to'q sariq (rust, hue ~20° vs stamp ~4°) — urg'u bilan aralashmaydi. */
+  --color-success: 47 107 68;             /* #2F6B44 */
+  --color-warning: 122 90 43;             /* #7A5A2B */
+  --color-error: 167 61 22;               /* #A73D16 */
+
+  /* Podium medallari — 1/2/3-o'rin. Qattiq metall ranglari (#F59E0B,
+     #94A3B8, #B45309) qog'ozda 2.1–2.6:1 berardi, shuning uchun mavzuga
+     bog'liq. Light'da oltin to'qlashganda bronzaga yaqinlashib ketadi, shu
+     sababli hue ATAYIN qadalgan: oltin 79°, kumush 256°, bronza 34° —
+     ajralish 44.7° dan kam emas. Yorug'lik tartibi ham tabiiy holicha
+     (oltin > kumush > bronza). */
+  --color-medal-1: 158 111 0;             /* #9E6F00 — oltin */
+  --color-medal-2: 107 121 140;           /* #6B798C — kumush */
+  --color-medal-3: 171 87 67;             /* #AB5743 — bronza */
+}
+:root[data-theme="dark"] {                /* dark — siyoh */
+  --color-ground: 20 22 28;               /* ink #14161C */
+  --color-surface-1: 27 30 38;
+  --color-surface-2: 35 38 47;
+  --color-edge: 44 47 57;
+  --color-edge-strong: 58 61 72;
+  --color-text-primary: 231 228 220;
+  /* ┌─ Dark shkala `surface-2` ga qarab sozlangan ────────────────────────┐
+     │ Avvalgi qiymatlar `ground` (#14161C) fonida o'lchangan edi va o'sha  │
+     │ fonda AA dan o'tardi. Lekin bu tokenlar amalda KO'TARILGAN yuzada    │
+     │ turadi: `.glass` = surface-1, `.glass-strong` / `.card-hover:hover`  │
+     │ = surface-2. O'sha yerda hammasi 3.84–4.45:1 ga tushardi.            │
+     │                                                                      │
+     │ Endi shart: HAR BIR token ground, surface-1 VA surface-2 fonida      │
+     │ ≥4.5:1. Bog'lovchi yuza — surface-2 (#23262F). Tuzatish faqat        │
+     │ OKLCH yorug'ligi bo'yicha: hue ±0.5°, chroma ±0.005 — palitra        │
+     │ o'ziga o'xshab qoladi, faqat bir tish yorug'roq.                     │
+     └──────────────────────────────────────────────────────────────────────┘ */
+  --color-text-secondary: 138 141 149;    /* #8A8D95 — surface-2 da 4.55:1 */
+  /* Belgi roli. `accent-fill` (#C0362C) dan L bo'yicha 0.120 uzoq — bu shu
+     shkaladagi ENG KENG ajralish. Hue farqi atigi 2.7°, ya'ni ikkalasi ham
+     bitta shtamp qizili oilasida qoladi (och shtamp / to'q shtamp), brend
+     ikkiga bo'linmaydi. Bundan yorug'roq qilib bo'lmaydi: L 0.70 dan keyin
+     rang pushti-pastelga o'tadi va oiladan chiqadi. */
+  --color-accent: 220 107 99;             /* #DC6B63 — surface-2 da 4.55:1 */
+  /* fill/on-accent atayin light bilan bir xil: shtamp qizili qog'oz rangiga
+     qarab o'zgarmaydi, va och matn faqat shu to'qlikda 4.5:1 dan o'tadi. */
+  --color-accent-fill: 192 54 44;
+  --color-on-accent: 251 243 242;
+  --color-accent-2: 109 145 180;          /* #6D91B4 — surface-2 da 4.58:1 */
+  /* Light'dagi kabi, faqat teskari chetda: dark'da eng to'q neytral. */
+  --color-wash: var(--color-ground);
+
+  --color-success: 106 152 122;           /* #6A987A — surface-2 da 4.59:1 */
+  --color-warning: 184 134 58;            /* #B8863A — surface-2 da 4.68:1, o'zgarmadi */
+  --color-error: 202 120 91;              /* #CA785B — surface-2 da 4.57:1 */
+
+  /* Siyoh fonda metallar o'z tabiiy yorug'ligida qoladi — hech biri
+     surilmadi (bronza bundan mustasno: +0.017, 3.2:1 zaxirasi uchun). */
+  --color-medal-1: 213 163 61;            /* #D5A33D — oltin */
+  --color-medal-2: 143 158 179;           /* #8F9EB3 — kumush */
+  --color-medal-3: 176 92 72;             /* #B05C48 — bronza */
 }
 
 /* ─── Global base ───────────────────────────────────────────────────────── */
 * { box-sizing: border-box; }
 body {
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  background: #050508;
-  color: #fff;
+  /* system-ui — endi ishga tushmaydigan zaxira, yuqoridagi izohga qarang. */
+  font-family: 'PT Sans', system-ui, sans-serif;
+  background: rgb(var(--color-ground));
+  color: rgb(var(--color-text-primary));
   margin: 0;
   overflow-x: hidden;
 }
 ::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #0d0e12; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+::-webkit-scrollbar-track { background: rgb(var(--color-surface-1)); }
+::-webkit-scrollbar-thumb { background: rgb(var(--color-edge-strong)); border-radius: 3px; }
 
-/* Telegram WebView'da backdrop-filter sekin ishlaydi. Solid semi-transparent. */
-.glass { 
-  background: rgba(255,255,255,0.07); 
-  border: 1px solid rgba(255,255,255,0.10); 
-  transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+/* Nomlar saqlandi (JSX ularga tayanadi), ko'rinish butunlay almashtirildi:
+   shaffof "oyna" o'rniga qattiq yuza + 1px hoshiya. Blur yo'q edi, yo'q ham.
+
+   ┌─ Nega hoshiya `border` emas, `inset box-shadow` ─────────────────────┐
+   │ Avval bu yerda `border: 1px solid ...` QISQARTMASI turardi va blok   │
+   │ `@tailwind utilities` dan KEYIN e'lon qilingan. Ikkalasining ham     │
+   │ solishtirma og'irligi (0,1,0), demak keyingisi yutadi — natijada shu │
+   │ elementga qo'yilgan `border-rose-500/30` kabi utility'lar HECH       │
+   │ QACHON qo'llanmasdi (42 ta chaqiruv jim o'tirardi, jumladan          │
+   │ `PendingAccessCard` dagi holat halqasi).                             │
+   │                                                                       │
+   │ Oddiy yechim — qoidani `@layer components` ga ko'chirish — utility'ni │
+   │ yutqazadi, lekin shu bilan birga 57 ta joydagi ESKIRGAN              │
+   │ `border-white/5…15` utility'sini ham tiriltiradi: qog'oz mavzuda oq  │
+   │ hoshiya ko'rinmaydi, ya'ni 57 karta hoshiyasiz qolardi. Bu tuzatishdan│
+   │ ko'ra ko'proq zarar.                                                 │
+   │                                                                       │
+   │ Shuning uchun token hoshiyasi `box-shadow: inset` ga o'tkazildi:      │
+   │ u `border-*` utility'lari bilan UMUMAN raqobatlashmaydi. Endi        │
+   │ rangli halqalar ishlaydi, eskirgan oq hoshiyalar esa token           │
+   │ hoshiyasini olib qo'ymaydi — ikkalasi ham o'z ishini qiladi.         │
+   │                                                                       │
+   │ `background-image: none` ATAYIN: `bg-gradient-*` utility'si          │
+   │ `background-color` ga tegmaydi, lekin `background-image` chizadi.    │
+   │ 7 ta joyda `.glass-strong` bilan birga gradient utility'si turibdi — │
+   │ yo'nalish bo'yicha gradient yo'q, shuning uchun ular o'chirilgan      │
+   │ holicha qoladi.                                                       │
+   └───────────────────────────────────────────────────────────────────────┘ */
+.glass {
+  background-color: rgb(var(--color-surface-1));
+  background-image: none;
+  box-shadow: inset 0 0 0 1px rgb(var(--color-edge));
+  transition: box-shadow 0.2s ease, background-color 0.2s ease;
 }
-.glass-strong { 
-  background: rgba(255,255,255,0.12); 
-  border: 1px solid rgba(255,255,255,0.15); 
-  transition: border-color 0.3s ease, background-color 0.3s ease, box-shadow 0.3s ease, transform 0.3s ease;
+.glass-strong {
+  background-color: rgb(var(--color-surface-2));
+  background-image: none;
+  box-shadow: inset 0 0 0 1px rgb(var(--color-edge-strong));
+  transition: box-shadow 0.2s ease, background-color 0.2s ease;
 }
-.glow-blue { box-shadow: 0 0 30px rgba(99,102,241,0.3); }
-.glow-purple { box-shadow: 0 0 30px rgba(168,85,247,0.25); }
-.glow-cyan { box-shadow: 0 0 30px rgba(34,211,238,0.2); }
-.glow-amber { box-shadow: 0 0 30px rgba(245,158,11,0.20); }
-.glow-rose { box-shadow: 0 0 30px rgba(244,63,94,0.25); }
+/* `.card-hover` hoshiya javobini `border-color` orqali berardi — `.glass` da
+   endi border yo'q, shuning uchun uni inset hoshiyaga ko'chiramiz. */
+.glass.card-hover:hover { box-shadow: inset 0 0 0 1px rgb(var(--color-edge-strong)); }
+.glass-strong.card-hover:hover { box-shadow: inset 0 0 0 1px rgb(var(--color-text-secondary)); }
+/* Rangli soya yo'q — imtihon varaqasida glow bo'lmaydi. */
+.glow-blue,
+.glow-purple,
+.glow-cyan,
+.glow-amber,
+.glow-rose { box-shadow: none; }
+/* Gradient matn o'rniga qattiq akcent rangi. */
 .gradient-text {
-  background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #22d3ee 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  -webkit-text-fill-color: currentColor;
+  color: rgb(var(--color-accent));
 }
+/* Gradient fon o'rniga qattiq yuza. */
 .gradient-bg {
-  background: linear-gradient(135deg, #6366f1 0%, #a855f7 50%, #22d3ee 100%);
-  background-size: 200% 200%;
-  animation: gradient 8s ease infinite;
+  background: rgb(var(--color-surface-2));
+  animation: none;
 }
-.card-hover { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.3s ease; }
-.card-hover:hover { 
-  transform: translateY(-5px); 
-  box-shadow: 0 20px 40px rgba(99,102,241,0.15), 0 0 25px rgba(168,85,247,0.1); 
-  border-color: rgba(99,102,241,0.35);
+/* Hover'da ko'tarilish (translateY) yo'q — faqat chegara va fon o'zgaradi. */
+.card-hover { transition: background-color 0.2s ease, border-color 0.2s ease; }
+.card-hover:hover {
+  background: rgb(var(--color-surface-2));
+  border-color: rgb(var(--color-edge-strong));
 }
 .sidebar-item {
   position: relative;
@@ -81,20 +293,18 @@ body {
   justify-content: center;
 }
 .sidebar-item:hover:not(.active) {
-  background: rgba(255, 255, 255, 0.04);
-  color: #fff;
-}
-/* Faqat collapsed bo'lmaganda o'ngga 4px suriladi */
-.sidebar-desktop:not(.w-16) .sidebar-item:hover:not(.active) {
-  transform: translateX(4px);
+  background: rgb(var(--color-surface-1));
+  color: rgb(var(--color-text-primary));
 }
 .sidebar-item:hover:not(.active) .sidebar-icon {
-  color: rgba(255, 255, 255, 0.85);
+  color: rgb(var(--color-text-primary));
 }
+/* Faol element: gradient va glow o'rniga qattiq yuza + chap chetdagi shtamp
+   chizig'i (imtihon varaqasidagi hoshiya belgisi kabi). */
 .sidebar-item.active {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.14) 0%, rgba(168, 85, 247, 0.08) 100%) !important;
-  border: 1px solid rgba(99, 102, 241, 0.24) !important;
-  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.12), inset 0 0 12px rgba(99, 102, 241, 0.04) !important;
+  background: rgb(var(--color-surface-2)) !important;
+  border: 1px solid rgb(var(--color-edge)) !important;
+  box-shadow: none !important;
 }
 .sidebar-item.active::before {
   content: '';
@@ -102,35 +312,120 @@ body {
   left: 0;
   top: 25%;
   height: 50%;
-  width: 3.5px;
-  background: #6366f1;
-  border-radius: 0 4px 4px 0;
-  box-shadow: 0 0 12px #6366f1;
+  width: 3px;
+  background: rgb(var(--color-accent));
+  border-radius: 0;
 }
 
-/* Status badges — "Tugagan" va "Draft" endi kulrang/ko'k, qizil emas. */
-.badge-pending { background: rgba(251,191,36,0.15); color: #fbbf24; border: 1px solid rgba(251,191,36,0.3); }
-.badge-approved { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
-.badge-rejected { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
-.badge-active { background: rgba(34,211,238,0.15); color: #22d3ee; border: 1px solid rgba(34,211,238,0.3); }
-.badge-draft { background: rgba(148,163,184,0.15); color: #94a3b8; border: 1px solid rgba(148,163,184,0.3); }
-.badge-finished { background: rgba(99,102,241,0.15); color: #818cf8; border: 1px solid rgba(99,102,241,0.3); }
+/* Status badges — semantik to'plam (success / warning / error / graphite /
+   pencil). `badge-active` endi cyan emas, qalam ko'ki.
 
-.btn-primary { background: linear-gradient(135deg, #6366f1, #a855f7); color: white; border: none; cursor: pointer; transition: all 0.3s; }
-.btn-primary:hover:not(:disabled) { opacity: 0.9; transform: translateY(-1px); box-shadow: 0 10px 30px rgba(99,102,241,0.4); }
-.btn-primary:disabled { background: rgba(255, 255, 255, 0.04) !important; border: 1px solid rgba(255, 255, 255, 0.08) !important; color: rgba(255, 255, 255, 0.2) !important; cursor: not-allowed; box-shadow: none !important; transform: none !important; }
-.btn-ghost { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.8); border: 1px solid rgba(255,255,255,0.1); cursor: pointer; transition: all 0.2s; }
-.btn-ghost:hover:not(:disabled) { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); }
+   ┌─ Nega fon `wash`, o'z rangining tinti EMAS ──────────────────────────┐
+   │ Avval har badge foni o'z MATN rangining 0.14 tinti edi. Bu qoida     │
+   │ matematik jihatdan o'z-o'ziga qarshi: tint fonni matn rangi TOMON    │
+   │ suradi, ya'ni kontrastni har doim KAMAYTIRADI. O'lchov:              │
+   │                                                                       │
+   │   token surface-2 da 4.50 → o'z 0.14 tinti ustida 3.7                │
+   │   token surface-2 da 5.00 → o'z 0.14 tinti ustida 4.0                │
+   │                                                                       │
+   │ Ya'ni AA ga chiqish uchun tokenlarni pastelgacha (OKLCH L≈0.70)      │
+   │ oqartirish kerak bo'lardi — butun palitrani bitta dekorativ yuvish   │
+   │ uchun qurbon qilish. Buning o'rniga yuvish NEYTRAL qilindi:          │
+   │ `--color-wash` har mavzuning eng chetki neytrali (light: surface-1,  │
+   │ dark: ground) — bu ayni paytda har token uchun ENG YAXSHI fon.       │
+   │ Rangni endi matn va chegara olib yuradi, fon emas.                   │
+   │                                                                       │
+   │ Natijada badge kontrasti ota-yuzaga ham bog'liq emas: fon shaffof    │
+   │ emas, shuning uchun `.glass-strong` ichida ham, `ground` ustida ham  │
+   │ bir xil o'lchanadi (dark 5.45–5.61, light 5.34–5.80).                │
+   └───────────────────────────────────────────────────────────────────────┘ */
+.badge-pending { background: rgb(var(--color-wash)); color: rgb(var(--color-warning)); border: 1px solid rgb(var(--color-warning) / 0.45); }
+.badge-approved { background: rgb(var(--color-wash)); color: rgb(var(--color-success)); border: 1px solid rgb(var(--color-success) / 0.45); }
+.badge-rejected { background: rgb(var(--color-wash)); color: rgb(var(--color-error)); border: 1px solid rgb(var(--color-error) / 0.45); }
+.badge-active { background: rgb(var(--color-wash)); color: rgb(var(--color-accent-2)); border: 1px solid rgb(var(--color-accent-2) / 0.45); }
+.badge-draft { background: rgb(var(--color-wash)); color: rgb(var(--color-text-secondary)); border: 1px solid rgb(var(--color-text-secondary) / 0.45); }
+.badge-finished { background: rgb(var(--color-wash)); color: rgb(var(--color-text-secondary)); border: 1px solid rgb(var(--color-edge-strong)); }
+
+/* Qattiq akcent fon — gradient ham, soya ham, ko'tarilish ham yo'q.
+   Hover bir tish to'qroq shtamp qizili.
+   Fon `accent` emas, `accent-fill`: dark'da `accent` belgi roli uchun
+   yorug'lashadi va ustidagi och matn 3.60:1 ga tushardi. `accent-fill` ikkala
+   mavzuda bir xil to'q (matn 5.05:1), shuning uchun quyidagi qattiq yozilgan
+   stamp-600 hover ham endi ikkala mavzuda to'g'ri yo'nalishda ishlaydi
+   (avval dark'da hover bazadan to'qroq bo'lib qolardi). */
+.btn-primary { background: rgb(var(--color-accent-fill)); color: rgb(var(--color-on-accent)); border: 1px solid rgb(var(--color-accent-fill)); cursor: pointer; transition: background-color 0.2s ease, border-color 0.2s ease; }
+.btn-primary:hover:not(:disabled) { background: #A52E26; border-color: #A52E26; }
+.btn-primary:disabled { background: rgb(var(--color-surface-2)) !important; border: 1px solid rgb(var(--color-edge)) !important; color: rgb(var(--color-text-secondary)) !important; cursor: not-allowed; box-shadow: none !important; transform: none !important; }
+/* Avval oq matn + oq fon edi (rgba(255,255,255,...)) — qog'oz mavzuda tugma
+   butunlay ko'rinmasdi. Endi oddiy yuza + chegara: ikkala mavzuda o'qiladi. */
+.btn-ghost { background: rgb(var(--color-surface-1)); color: rgb(var(--color-text-primary)); border: 1px solid rgb(var(--color-edge)); cursor: pointer; transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease; }
+.btn-ghost:hover:not(:disabled) { background: rgb(var(--color-surface-2)); border-color: rgb(var(--color-edge-strong)); }
 .btn-ghost:disabled { opacity: 0.3; cursor: not-allowed; }
-.btn-danger { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); cursor: pointer; transition: all 0.2s; }
-.btn-danger:hover { background: rgba(239,68,68,0.25); }
-.btn-success { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); cursor: pointer; transition: all 0.2s; }
-.btn-success:hover { background: rgba(34,197,94,0.25); }
+/* `danger` uchun qattiq #ef4444 emas, semantik `error` (rust) — akcent shtamp
+   qizilidan farq qilib tursin va qog'oz fonda ham yetarli kontrast bersin. */
+/* Fon `wash`: yuqoridagi `.badge-*` bilan bir xil sabab — o'z rangining tinti
+   matnni AA dan tushirardi (`.btn-danger` dark'da 3.72:1). Hover endi fonni
+   matn tomon surmaydi, balki `surface-2` ga o'tadi va chegarani to'liq
+   kuchga chiqaradi — `.btn-ghost:hover` bilan bir xil naqsh. */
+.btn-danger { background: rgb(var(--color-wash)); color: rgb(var(--color-error)); border: 1px solid rgb(var(--color-error) / 0.45); cursor: pointer; transition: background-color 0.2s ease, border-color 0.2s ease; }
+.btn-danger:hover:not(:disabled) { background: rgb(var(--color-surface-2)); border-color: rgb(var(--color-error)); }
+.btn-success { background: rgb(var(--color-wash)); color: rgb(var(--color-success)); border: 1px solid rgb(var(--color-success) / 0.45); cursor: pointer; transition: background-color 0.2s ease, border-color 0.2s ease; }
+.btn-success:hover:not(:disabled) { background: rgb(var(--color-surface-2)); border-color: rgb(var(--color-success)); }
+
+/* Klaviatura fokusi ko'rinadigan bo'lsin — sichqoncha bosishida chiqmaydi.
+   Avval faqat `.theme-toggle` da bor edi; qolgan tugmalarda fokus umuman
+   ko'rinmasdi (brauzer default outline `all 0.2s` transition ostida qolib
+   ketardi). */
+.btn-primary:focus-visible,
+.btn-ghost:focus-visible,
+.btn-danger:focus-visible,
+.btn-success:focus-visible,
+.sidebar-item:focus-visible,
+.mobile-bottom-nav-item:focus-visible,
+.question-nav-btn:focus-visible,
+.question-strip-btn:focus-visible {
+  outline: 2px solid rgb(var(--color-accent));
+  outline-offset: 2px;
+}
+
+/* ─── Mavzu almashtirish tugmasi ──────────────────────────────────────────────
+   Dizayn qoidasi: gradient, glow va `translateY` yo'q — holat faqat chegara,
+   fon va matn rangi bilan ko'rsatiladi (imtihon byulleteni intizomi). */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  background: rgb(var(--color-surface-1));
+  border: 1px solid rgb(var(--color-edge));
+  color: rgb(var(--color-text-secondary));
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+.theme-toggle:hover {
+  background: rgb(var(--color-surface-2));
+  border-color: rgb(var(--color-edge-strong));
+  color: rgb(var(--color-text-primary));
+}
+/* Klaviatura fokusi ko'rinadigan bo'lsin (sichqoncha bosishida chiqmaydi). */
+.theme-toggle:focus-visible {
+  outline: 2px solid rgb(var(--color-accent));
+  outline-offset: 2px;
+  color: rgb(var(--color-text-primary));
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle { transition: none; }
+}
 
 @layer components {
-  .input-field { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 10px; padding: 12px 16px; width: 100%; transition: all 0.2s; }
-  .input-field:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
-  .input-field::placeholder { color: rgba(255,255,255,0.3); }
+  .input-field { background: rgb(var(--color-surface-1)); border: 1px solid rgb(var(--color-edge)); color: rgb(var(--color-text-primary)); border-radius: 10px; padding: 12px 16px; width: 100%; transition: border-color 0.2s ease, background-color 0.2s ease; }
+  .input-field:focus { outline: none; border-color: rgb(var(--color-accent)); box-shadow: 0 0 0 2px rgb(var(--color-accent) / 0.2); }
+  .input-field::placeholder { color: rgb(var(--color-text-secondary)); }
 }
 
 /* Prevent browser default yellow background and dark text on autofill in dark mode globally */
@@ -144,16 +439,16 @@ textarea:-webkit-autofill:focus,
 select:-webkit-autofill,
 select:-webkit-autofill:hover,
 select:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0 1000px #12141a inset !important;
-  -webkit-text-fill-color: #ffffff !important;
-  caret-color: #ffffff;
+  -webkit-box-shadow: 0 0 0 1000px rgb(var(--color-surface-1)) inset !important;
+  -webkit-text-fill-color: rgb(var(--color-text-primary)) !important;
+  caret-color: rgb(var(--color-text-primary));
   transition: background-color 5000s ease-in-out 0s;
 }
 
-.overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 50; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
+.overlay { position: fixed; inset: 0; background: rgb(var(--color-ground) / 0.82); z-index: 50; display: flex; align-items: center; justify-content: center; animation: fadeIn 0.2s ease; }
 .modal {
-  background: #12141a;
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgb(var(--color-surface-1));
+  border: 1px solid rgb(var(--color-edge));
   border-radius: 20px;
   padding: 32px;
   max-width: 520px;
@@ -170,31 +465,35 @@ select:-webkit-autofill:focus {
   background: transparent;
 }
 .modal::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+  background: rgb(var(--color-edge-strong));
   border-radius: 99px;
 }
 .modal::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: rgb(var(--color-text-secondary));
 }
 .stat-card { position: relative; overflow: hidden; }
-.stat-card::before { content: ''; position: absolute; top: -50%; right: -30%; width: 120px; height: 120px; border-radius: 50%; opacity: 0.1; filter: blur(30px); }
-.olympy-row { border-bottom: 1px solid rgba(255,255,255,0.05); transition: background 0.15s; }
-.olympy-row:hover { background: rgba(255,255,255,0.03); }
-.progress-bar { background: rgba(255,255,255,0.1); border-radius: 99px; overflow: hidden; }
-.progress-fill { height: 100%; border-radius: 99px; background: linear-gradient(90deg, #6366f1, #a855f7); transition: width 0.8s ease; }
-.nav-tabs { border-bottom: 1px solid rgba(255,255,255,0.08); }
-.nav-tab { padding: 10px 18px; cursor: pointer; color: rgba(255,255,255,0.5); border-bottom: 2px solid transparent; transition: all 0.2s; font-size: 14px; }
-.nav-tab.active { color: white; border-bottom-color: #6366f1; }
-.nav-tab:hover { color: rgba(255,255,255,0.8); }
-.orbit { position: absolute; border-radius: 50%; border: 1px solid rgba(99,102,241,0.15); animation: spin 20s linear infinite; }
+/* Burchakdagi rangli blur dog' olib tashlandi — endi hech narsa chizmaydi. */
+.stat-card::before { content: none; }
+.olympy-row { border-bottom: 1px solid rgb(var(--color-edge)); transition: background-color 0.15s; }
+.olympy-row:hover { background: rgb(var(--color-surface-1)); }
+.progress-bar { background: rgb(var(--color-surface-2)); border-radius: 99px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 99px; background: rgb(var(--color-accent)); transition: width 0.8s ease; }
+.nav-tabs { border-bottom: 1px solid rgb(var(--color-edge)); }
+.nav-tab { padding: 10px 18px; cursor: pointer; color: rgb(var(--color-text-secondary)); border-bottom: 2px solid transparent; transition: color 0.2s ease, border-color 0.2s ease; font-size: 14px; }
+.nav-tab.active { color: rgb(var(--color-text-primary)); border-bottom-color: rgb(var(--color-accent)); }
+.nav-tab:hover { color: rgb(var(--color-text-primary)); }
+/* Aylanuvchi halqa neytrallashtirildi — ko'rinmas, animatsiyasiz.
+   JSX chaqiruvlari Bosqich 2 da o'chirildi, ta'rif nom uchun qoldi. */
+.orbit { display: none; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-.hero-glow { position: absolute; width: 600px; height: 600px; border-radius: 50%; filter: blur(120px); opacity: 0.15; pointer-events: none; }
+/* Blur dog' — endi hech qanday effekt bermaydi (JSX chaqiruvlari o'chirildi). */
+.hero-glow { display: none; }
 .feature-icon { width: 48px; height: 48px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 22px; }
-select.input-field option { background: #12141a; }
-.question-nav-btn { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid rgba(255,255,255,0.1); transition: all 0.2s; }
-.question-nav-btn.answered { background: rgba(99,102,241,0.3); border-color: #6366f1; color: white; }
-.question-nav-btn.marked { background: rgba(251,191,36,0.2); border-color: #fbbf24; color: #fbbf24; }
-.question-nav-btn.current { border-color: white; background: rgba(255,255,255,0.1); }
+select.input-field option { background: rgb(var(--color-surface-1)); }
+.question-nav-btn { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid rgb(var(--color-edge)); transition: background-color 0.2s ease, border-color 0.2s ease; }
+.question-nav-btn.answered { background: rgb(var(--color-accent) / 0.16); border-color: rgb(var(--color-accent)); color: rgb(var(--color-text-primary)); }
+.question-nav-btn.marked { background: rgb(var(--color-warning) / 0.16); border-color: rgb(var(--color-warning)); color: rgb(var(--color-warning)); }
+.question-nav-btn.current { border-color: rgb(var(--color-text-primary)); background: rgb(var(--color-surface-2)); }
 .animate-in { animation: slideUp 0.5s ease forwards; }
 
 /* Desktop sidebar — hidden below lg (1024px) */
@@ -221,56 +520,85 @@ select.input-field option { background: #12141a; }
   font-weight: 800;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+  /* Oltin GRADIENT o'rniga bitta qattiq oltin — yo'nalish qoidasi bo'yicha
+     gradient yo'q. Rang gradientning o'rta to'xtash nuqtasidan (#F59E0B)
+     olindi, ya'ni chip avvalgidek "oltin" ko'rinadi. Ustidagi #1A1205 matn
+     shu fonda 9.24:1 — avvalgi gradientda esa to'xtash nuqtasiga qarab
+     6.9:1 dan 11.9:1 gacha suzardi. Rangli soya ham olib tashlandi. */
   color: #1a1205;
-  background: linear-gradient(135deg, #fde68a 0%, #f59e0b 55%, #d97706 100%);
-  border: 1px solid rgba(253,230,138,0.6);
-  box-shadow: 0 2px 8px rgba(245,158,11,0.25);
+  background: #f59e0b;
+  border: 1px solid #d97706;
   white-space: nowrap;
 }
 .premium-badge--sm { padding: 1px 7px; font-size: 9px; gap: 2px; }
 
-/* Premium profil hero kartasi — oltin tusli gradient fon + oltin border. */
+/* Premium profil hero kartasi — oltin tusli fon + oltin border.
+   Gradientdagi indigo (#6366f1) to'xtash nuqtasi olib tashlandi. */
 .premium-hero {
-  background: linear-gradient(135deg, rgba(245,158,11,0.12) 0%, rgba(217,119,6,0.05) 45%, rgba(99,102,241,0.06) 100%);
+  background: rgba(245,158,11,0.10);
   border: 1px solid rgba(245,158,11,0.35);
-  box-shadow: 0 8px 30px rgba(245,158,11,0.08);
 }
 
-/* Premium foydalanuvchi ismi — oltin gradient matn. */
+/* Premium foydalanuvchi ismi — gradient MATN olib tashlandi (`.gradient-text`
+   bilan bir xil sabab). Gradient matnda har harf boshqa kontrastda bo'ladi va
+   `#FDE68A` to'xtash nuqtasi qog'oz fonda 1.4:1 ga tushardi. Endi bitta
+   qattiq oltin: dark fonda 7.4:1, qog'ozda esa `warning` tokeniga tayanadi. */
 .premium-name {
-  background: linear-gradient(135deg, #fde68a 0%, #f59e0b 60%, #fbbf24 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: #f59e0b;
+  background: none;
+  -webkit-background-clip: border-box;
+  background-clip: border-box;
+  -webkit-text-fill-color: currentColor;
+  color: rgb(var(--color-warning));
 }
 
-/* Reyting qatorida premium o'quvchiga nozik oltin urg'u (chap chiziq). */
+/* Reyting qatorida premium o'quvchiga nozik oltin urg'u (chap chiziq).
+   Gradient (o'ngga so'nuvchi) olib tashlandi — tekis yuvish + chap chiziq.
+   Qattiq #F59E0B o'rniga `warning` tokeni: qog'oz mavzuda o'sha oltin 2:1 ga
+   tushardi, token esa uchala yuzada 4.56–5.61. `RetentionWidgets` bu qatorga
+   `border-transparent` qo'yadi, ya'ni chap chiziq — yagona chegara belgisi,
+   shuning uchun u `box-shadow` da qoladi (border utility'si uni o'chira olmaydi). */
 .premium-row {
-  background: linear-gradient(90deg, rgba(245,158,11,0.07) 0%, rgba(245,158,11,0) 60%);
-  box-shadow: inset 2px 0 0 0 rgba(245,158,11,0.55);
+  background: rgb(var(--color-warning) / 0.07);
+  box-shadow: inset 2px 0 0 0 rgb(var(--color-warning));
 }
 
-.leaderboard-gold { background: linear-gradient(135deg, rgba(251,191,36,0.1), rgba(245,158,11,0.05)); border: 1px solid rgba(251,191,36,0.3); }
-.leaderboard-silver { background: linear-gradient(135deg, rgba(148,163,184,0.1), rgba(100,116,139,0.05)); border: 1px solid rgba(148,163,184,0.3); }
-.leaderboard-bronze { background: linear-gradient(135deg, rgba(180,83,9,0.1), rgba(146,64,14,0.05)); border: 1px solid rgba(180,83,9,0.3); }
+/* ── Podium: 1/2/3-o'rin ──────────────────────────────────────────────────
+   Gradientlar olib tashlandi. O'rin farqi BEZAK EMAS, haqiqiy ma'lumot,
+   shuning uchun u uch kanal bilan beriladi: tekis yuvish + chegara + chap
+   chiziq. Har uchala token `medal-*` — mavzuga bog'liq, chunki qattiq
+   metall ranglari ikkala mavzuda birdek ishlamaydi (masalan #F59E0B qog'ozda
+   2.1:1). Belgi matn emas, shuning uchun me'yor WCAG 1.4.11 → 3:1; o'lchangan
+   eng past qiymat 3.20:1 (light, `surface-2`).
+
+   Chap chiziq ATAYIN `box-shadow` da: `.card-hover:hover` `border-color` ni
+   `edge-strong` ga o'zgartiradi va hover paytida medal chegarasini yuvib
+   yuborardi — inset chiziq esa hover'da ham joyida qoladi. */
+.leaderboard-gold { background: rgb(var(--color-medal-1) / 0.10); border: 1px solid rgb(var(--color-medal-1) / 0.45); box-shadow: inset 3px 0 0 0 rgb(var(--color-medal-1)); }
+.leaderboard-silver { background: rgb(var(--color-medal-2) / 0.10); border: 1px solid rgb(var(--color-medal-2) / 0.45); box-shadow: inset 3px 0 0 0 rgb(var(--color-medal-2)); }
+.leaderboard-bronze { background: rgb(var(--color-medal-3) / 0.10); border: 1px solid rgb(var(--color-medal-3) / 0.45); box-shadow: inset 3px 0 0 0 rgb(var(--color-medal-3)); }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border-radius: 99px; font-size: 12px; font-weight: 500; }
 .donut-ring { transition: stroke-dashoffset 1s ease; }
 textarea.input-field { resize: vertical; min-height: 100px; }
-.ai-shimmer { background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.03) 75%); background-size: 200% 100%; animation: shimmer 2s infinite; }
+/* Skeleton shimmer — dekorativ emas, yuklanish belgisi. Shakli saqlandi,
+   ranglari token qatlamiga ko'chirildi (light mavzuda ham ko'rinadi). */
+.ai-shimmer { background: linear-gradient(90deg, rgb(var(--color-surface-1)) 25%, rgb(var(--color-surface-2)) 50%, rgb(var(--color-surface-1)) 75%); background-size: 200% 100%; animation: shimmer 2s infinite; }
 @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 
 /* ── Mobile drawer ───────────────────────────────────────── */
-.mobile-drawer-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.78); z-index: 60; animation: fadeIn 0.2s ease; }
-.mobile-drawer { position: fixed; top: 0; left: 0; bottom: 0; width: 280px; z-index: 61; display: flex; flex-direction: column; background: rgba(5,5,8,0.98); border-right: 1px solid rgba(255,255,255,0.07); animation: drawerIn 0.28s cubic-bezier(0.32,0.72,0,1); overflow-y: auto; }
+.mobile-drawer-backdrop { position: fixed; inset: 0; background: rgb(var(--color-ground) / 0.82); z-index: 60; animation: fadeIn 0.2s ease; }
+.mobile-drawer { position: fixed; top: 0; left: 0; bottom: 0; width: 280px; z-index: 61; display: flex; flex-direction: column; background: rgb(var(--color-ground)); border-right: 1px solid rgb(var(--color-edge)); animation: drawerIn 0.28s cubic-bezier(0.32,0.72,0,1); overflow-y: auto; }
 @keyframes drawerIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 
 /* ── Mobile bottom nav ───────────────────────────────────── */
-.mobile-bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; background: rgba(5,5,8,0.99); border-top: 1px solid rgba(255,255,255,0.07); display: flex; padding-bottom: env(safe-area-inset-bottom); }
-.mobile-bottom-nav-item { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 4px 10px; gap: 3px; cursor: pointer; border: none; background: transparent; transition: all 0.15s; -webkit-tap-highlight-color: transparent; }
+.mobile-bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 40; background: rgb(var(--color-ground)); border-top: 1px solid rgb(var(--color-edge)); display: flex; padding-bottom: env(safe-area-inset-bottom); }
+/* `position: relative` MAJBURIY: element ichidagi badge `absolute` bilan
+   joylashadi. Usiz badge eng yaqin joylashgan ajdodga — `position: fixed`
+   turgan `.mobile-bottom-nav` ga bog'lanardi, ya'ni hamma badge o'z tugmasi
+   ustida emas, butun panelning chap yuqori burchagida to'planib qolardi. */
+.mobile-bottom-nav-item { position: relative; flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 4px 10px; gap: 3px; cursor: pointer; border: none; background: transparent; transition: color 0.15s ease; -webkit-tap-highlight-color: transparent; }
 .mobile-bottom-nav-item span.label { font-size: 10px; font-weight: 600; letter-spacing: 0.01em; }
-.mobile-bottom-nav-item.active { color: #818cf8; }
-.mobile-bottom-nav-item:not(.active) { color: rgba(255,255,255,0.3); }
+.mobile-bottom-nav-item.active { color: rgb(var(--color-accent)); }
+.mobile-bottom-nav-item:not(.active) { color: rgb(var(--color-text-secondary)); }
 
 /* ── Mobile modal → bottom sheet ────────────────────────── */
 @media (max-width: 1023px) {
@@ -294,16 +622,16 @@ textarea.input-field { resize: vertical; min-height: 100px; }
 
 /* ── Mobile card-table (replaces <table> on small screens) ── */
 .mobile-card-row { display: flex; flex-direction: column; gap: 0; }
-.mobile-card-item { padding: 14px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.mobile-card-item { padding: 14px 16px; border-bottom: 1px solid rgb(var(--color-edge)); }
 .mobile-card-item:last-child { border-bottom: none; }
 
 /* ── Mobile test — question strip ───────────────────────── */
 .question-strip { display: flex; gap: 6px; overflow-x: auto; padding: 10px 16px; scrollbar-width: none; }
 .question-strip::-webkit-scrollbar { display: none; }
-.question-strip-btn { width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; border: 1px solid rgba(255,255,255,0.12); background: transparent; color: rgba(255,255,255,0.4); cursor: pointer; transition: all 0.15s; }
-.question-strip-btn.answered { background: rgba(99,102,241,0.35); border-color: #6366f1; color: white; }
-.question-strip-btn.marked { background: rgba(251,191,36,0.2); border-color: #fbbf24; color: #fbbf24; }
-.question-strip-btn.current { border-color: white; background: rgba(255,255,255,0.12); color: white; }
+.question-strip-btn { width: 32px; height: 32px; border-radius: 8px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; border: 1px solid rgb(var(--color-edge)); background: transparent; color: rgb(var(--color-text-secondary)); cursor: pointer; transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease; }
+.question-strip-btn.answered { background: rgb(var(--color-accent) / 0.18); border-color: rgb(var(--color-accent)); color: rgb(var(--color-text-primary)); }
+.question-strip-btn.marked { background: rgb(var(--color-warning) / 0.18); border-color: rgb(var(--color-warning)); color: rgb(var(--color-warning)); }
+.question-strip-btn.current { border-color: rgb(var(--color-text-primary)); background: rgb(var(--color-surface-2)); color: rgb(var(--color-text-primary)); }
 
 /* ── Touch-friendly tap targets ─────────────────────────── */
 @media (max-width: 1023px) {
@@ -311,13 +639,14 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   .btn-primary, .btn-ghost, .btn-danger, .btn-success { min-height: 44px; }
 }
 
-/* Keyframes used by animations above (fadeIn, slideUp, gradient) bo'lib,
-   Tailwind config tomonidan extend qilingan. Lekin animation utility'siz
-   ham, masalan `.overlay` ichida ishlatiladi. Shuning uchun base'ga ham
-   qo'shamiz. */
+/* Keyframes used by animations above (fadeIn, slideUp) bo'lib, Tailwind
+   config tomonidan extend qilingan. Lekin animation utility'siz ham,
+   masalan `.overlay` ichida ishlatiladi. Shuning uchun base'ga ham
+   qo'shamiz.
+   `gradient` keyframe olib tashlandi — uni faqat `.gradient-bg` ishlatardi,
+   u endi qattiq fon. */
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-@keyframes gradient { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
 
 /* Onboarding mini-test natija "pop" — yengil (transform/opacity), WebView'da
    ravon ishlaydi. */
@@ -344,23 +673,10 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   transform: translateZ(40px);
 }
 
+/* Sichqoncha ortidan yuruvchi yorug'lik dog'i olib tashlandi — hech narsa
+   chizmaydi. Ta'rif nom uchun qoldi (JSX chaqiruvlari Bosqich 2 da o'chirildi). */
 .tilt-glow {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(
-    circle 250px at var(--mouse-x, 50%) var(--mouse-y, 50%),
-    rgba(255, 255, 255, 0.12) 0%,
-    rgba(255, 255, 255, 0) 60%
-  );
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  z-index: 10;
-}
-
-.tilt-card:hover .tilt-glow {
-  opacity: 1;
+  display: none;
 }
 
 /* ─── Scroll Reveal Engine ─────────────────────────────────────────────── */
@@ -385,95 +701,48 @@ textarea.input-field { resize: vertical; min-height: 100px; }
 .scroll-reveal-delay-3 { transition-delay: 300ms; }
 .scroll-reveal-delay-4 { transition-delay: 400ms; }
 
-/* Interactive glowing buttons */
+/* Tugmadagi sichqoncha yorug'ligi olib tashlandi — `.btn-primary` qattiq
+   akcent fon bo'lib qoladi. */
 .btn-primary.glow-blue {
   position: relative;
   overflow: hidden;
 }
 
-.btn-primary.glow-blue::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(255, 255, 255, 0.2), transparent 60%);
-  opacity: 0;
-  transition: opacity 0.3s ease;
-  pointer-events: none;
-}
+/* Sichqoncha yorug'ligi olib tashlandi. */
 
-.btn-primary.glow-blue:hover::after {
-  opacity: 1;
-}
-
-/* Premium 3D float keyframes */
+/* Suzuvchi 3D animatsiya — harakat to'xtatildi. */
 .float-3d {
-  animation: float3D 6s ease-in-out infinite;
+  animation: none;
 }
 
-@keyframes float3D {
-  0%, 100% {
-    transform: translateY(0px) rotateX(0deg) rotateY(0deg);
-  }
-  50% {
-    transform: translateY(-10px) rotateX(2deg) rotateY(-2deg);
-  }
-}
-
-/* ─── Premium 3D/Interactive Elements ────────────────────────────────── */
+/* ─── Neytrallashtirilgan effekt primitivlari ─────────────────────────────
+   Quyidagi klasslar avval zarrachalar, glow halqalar va suzuvchi 3D
+   badge'lar chizardi. "Imtihon byulleteni" yo'nalishida ular yo'q, lekin
+   ta'riflar saqlanib qolyapti: JSX chaqiruvlarining bir qismi hali ham
+   ularga murojaat qiladi va nomlar keyingi bosqichlarda tozalanadi. */
 
 .particles-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 1;
+  display: none;
 }
 
+/* Endi oddiy qattiq yuza: gradient halqa ham, ko'tarilish ham, soya ham yo'q. */
 .glow-card {
   position: relative;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgb(var(--color-surface-1));
+  border: 1px solid rgb(var(--color-edge));
   overflow: hidden;
-  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.4s ease, border-color 0.4s ease;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
-.glow-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    400px circle at var(--mouse-x, 0px) var(--mouse-y, 0px),
-    rgba(99, 102, 241, 0.07),
-    transparent 80%
-  );
-  z-index: 1;
-  pointer-events: none;
-}
-
-/* Custom border-glow effect using mask */
+.glow-card::before,
 .glow-card::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(
-    300px circle at var(--mouse-x, 0px) var(--mouse-y, 0px),
-    rgba(99, 102, 241, 0.4),
-    rgba(168, 85, 247, 0.3) 50%,
-    transparent 80%
-  );
-  z-index: 0;
-  pointer-events: none;
-  border-radius: inherit;
-  padding: 1.5px;
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
+  content: none;
 }
 
 .glow-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 30px rgba(99, 102, 241, 0.12), 0 0 20px rgba(168, 85, 247, 0.08);
+  background: rgb(var(--color-surface-2));
+  border-color: rgb(var(--color-edge-strong));
 }
 
 .magnetic-item {
@@ -481,140 +750,101 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   will-change: transform;
 }
 
-/* Floating 3D Badge items */
-.float-badge-1 {
-  animation: floatBadge1 6s ease-in-out infinite;
-}
-
-.float-badge-2 {
-  animation: floatBadge2 7s ease-in-out infinite 0.5s;
-}
-
+/* Suzuvchi badge'lar — statik. */
+.float-badge-1,
+.float-badge-2,
 .float-badge-3 {
-  animation: floatBadge3 8s ease-in-out infinite 1s;
-}
-
-@keyframes floatBadge1 {
-  0%, 100% {
-    transform: translateY(0) rotate(2deg) translateZ(30px);
-  }
-  50% {
-    transform: translateY(-8px) rotate(-1deg) translateZ(30px);
-  }
-}
-
-@keyframes floatBadge2 {
-  0%, 100% {
-    transform: translateY(0) rotate(-2deg) translateZ(40px);
-  }
-  50% {
-    transform: translateY(-12px) rotate(1deg) translateZ(40px);
-  }
-}
-
-@keyframes floatBadge3 {
-  0%, 100% {
-    transform: translateY(0) rotate(1deg) translateZ(25px);
-  }
-  50% {
-    transform: translateY(-6px) rotate(-2deg) translateZ(25px);
-  }
+  animation: none;
 }
 
 
-/* ─── Premium Dark-Theme Dashboard Styles ─────────────────────────────── */
+/* ─── Admin dashboard yuzalari ────────────────────────────────────────────
+   Avval "premium dark" edi: qattiq #050508 fon, radial dog'lar va neon
+   soyali badge'lar. Endi token qatlamiga ko'chirildi — hech qanday glow yo'q. */
 
 .admin-bg {
-  background-color: #050508;
-  background-image: 
-    radial-gradient(at 0% 0%, rgba(255, 255, 255, 0.02) 0px, transparent 50%),
-    radial-gradient(at 100% 100%, rgba(255, 255, 255, 0.01) 0px, transparent 50%);
+  background-color: rgb(var(--color-ground));
 }
 
 .admin-card {
-  /* backdrop-filter: blur() olib tashlandi (sekin render, ayniqsa mobil/WebView).
-     blur o'rniga solid semi-transparent background ishlatamiz. */
-  background: rgba(20, 20, 25, 0.92);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgb(var(--color-surface-1));
+  border: 1px solid rgb(var(--color-edge));
   border-radius: 12px;
-  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
 }
 
 .admin-sidebar {
-  background: rgba(10, 10, 12, 0.98);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgb(var(--color-ground));
+  border-right: 1px solid rgb(var(--color-edge));
 }
 
 .admin-topbar {
-  background: rgba(10, 10, 12, 0.97);
-  border-b: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgb(var(--color-ground));
+  /* Avval `border-b` deb yozilgan edi — bunday CSS xossasi yo'q, shuning
+     uchun chegara umuman chizilmasdi. */
+  border-bottom: 1px solid rgb(var(--color-edge));
 }
 
 .admin-table-hdr {
-  background: rgba(255, 255, 255, 0.02) !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  color: rgba(156, 163, 175, 0.8) !important;
+  background: rgb(var(--color-surface-2)) !important;
+  border-bottom: 1px solid rgb(var(--color-edge));
+  color: rgb(var(--color-text-secondary)) !important;
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .admin-table-row {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-  transition: background-color 0.2s ease, transform 0.2s ease;
+  border-bottom: 1px solid rgb(var(--color-edge));
+  transition: background-color 0.2s ease;
 }
 
 .admin-table-row:hover {
-  background-color: rgba(255, 255, 255, 0.02);
+  background-color: rgb(var(--color-surface-1));
 }
 
-/* Custom styled neon status badges */
+/* Status badges — neon soya olib tashlandi, semantik tokenlarga ko'chirildi.
+   Fon `wash`: sabab `.badge-*` bloki ustidagi izohda. */
 .admin-badge-active {
-  background: rgba(16, 185, 129, 0.1);
-  color: #10b981;
-  border: 1px solid rgba(16, 185, 129, 0.2);
-  box-shadow: 0 0 10px rgba(16, 185, 129, 0.05);
+  background: rgb(var(--color-wash));
+  color: rgb(var(--color-success));
+  border: 1px solid rgb(var(--color-success) / 0.45);
 }
 
 .admin-badge-pending {
-  background: rgba(245, 158, 11, 0.1);
-  color: #f59e0b;
-  border: 1px solid rgba(245, 158, 11, 0.2);
-  box-shadow: 0 0 10px rgba(245, 158, 11, 0.05);
+  background: rgb(var(--color-wash));
+  color: rgb(var(--color-warning));
+  border: 1px solid rgb(var(--color-warning) / 0.45);
 }
 
 .admin-badge-rejected {
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  box-shadow: 0 0 10px rgba(239, 68, 68, 0.05);
+  background: rgb(var(--color-wash));
+  color: rgb(var(--color-error));
+  border: 1px solid rgb(var(--color-error) / 0.45);
 }
 
 .admin-badge-draft {
-  background: rgba(107, 114, 128, 0.1);
-  color: #9ca3af;
-  border: 1px solid rgba(107, 114, 128, 0.2);
+  background: rgb(var(--color-wash));
+  color: rgb(var(--color-text-secondary));
+  border: 1px solid rgb(var(--color-edge-strong));
 }
 
-/* Custom inputs for dark admin theme */
 .admin-input {
-  background: rgba(17, 24, 39, 0.7);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #f3f4f6;
+  background: rgb(var(--color-surface-1));
+  border: 1px solid rgb(var(--color-edge));
+  color: rgb(var(--color-text-primary));
   border-radius: 8px;
   outline: none;
-  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .admin-input:focus {
-  border-color: rgba(99, 102, 241, 0.5);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  border-color: rgb(var(--color-accent));
+  box-shadow: 0 0 0 2px rgb(var(--color-accent) / 0.2);
 }
 
 .admin-input::placeholder {
-  color: #4b5563;
+  color: rgb(var(--color-text-secondary));
 }
 
-/* Scrollbars for dark theme */
 .admin-scroll::-webkit-scrollbar {
   width: 5px;
   height: 5px;
@@ -623,14 +853,16 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   background: transparent;
 }
 .admin-scroll::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgb(var(--color-edge-strong));
   border-radius: 10px;
 }
 .admin-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgb(var(--color-text-secondary));
 }
 
-/* Scroll mask for tabs to fade edges and hide scrollbars */
+/* Scroll mask for tabs to fade edges and hide scrollbars.
+   Pastdagi `white` — RANG EMAS, mask yorqinligi (alfa kanali): oq = ko'rinadi,
+   shaffof = yashiriladi. Token'ga o'tkazilmaydi. */
 .scroll-mask {
   mask-image: linear-gradient(to right, transparent, white 16px, white calc(100% - 16px), transparent);
   -webkit-mask-image: linear-gradient(to right, transparent, white 16px, white calc(100% - 16px), transparent);
@@ -662,11 +894,41 @@ textarea.input-field { resize: vertical; min-height: 100px; }
    Harakatni kamaytirishni xohlagan foydalanuvchilar uchun og'ir
    animatsiyalarni o'chiramiz. */
 @media (prefers-reduced-motion: reduce) {
+  /* `.animate-in` (slideUp — `translateY(20px)`), modal/overlay/drawer kirish
+     animatsiyalari va shimmer loop'i shu ro'yxatda YO'Q edi: `.modal` va
+     `.overlay` har ochilganda shartsiz siljirdi. `animation: none` bilan
+     element o'z YAKUNIY holatida (opacity 1, transform 0) darrov ko'rinadi,
+     chunki keyframe'larning `to` holati elementning tabiiy holati bilan bir
+     xil — ya'ni hech narsa yashirin qolmaydi.
+     Mobil `.modal` `sheetUp` ni `!important` bilan qo'yadi, shuning uchun bu
+     yerda ham `!important` shart. */
+  .animate-in,
+  .modal,
+  .overlay,
+  .mobile-drawer,
+  .mobile-drawer-backdrop,
+  .onb-pop,
+  .ai-shimmer,
+  .animate-fade-in,
+  .animate-slide-up,
   .animate-pulse-slow,
   .float-badge-1,
   .float-badge-2,
   .float-badge-3 {
     animation: none !important;
+  }
+
+  /* Kengayish/siljish o'tishlari ham to'xtaydi — ular `transform`/`max-height`
+     bo'yicha harakat qiladi. Rang o'tishlariga tegilmaydi: ular harakat emas. */
+  .tilt-card,
+  .magnetic-item,
+  .accordion-content,
+  .accordion-content.open {
+    transition: none !important;
+  }
+  .tilt-card,
+  .tilt-inner {
+    transform: none !important;
   }
 
   /* scroll-reveal: 30+ elementda `filter: blur(4px)` + uzun `transition: filter`
@@ -683,26 +945,20 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   }
 }
 
-/* ─── Modern Grid Backdrop and Glow Accents ─────────────────────────────── */
+/* ─── Katakli fon ─────────────────────────────────────────────────────────
+   Daftar/imtihon varaqasi kataklari — yo'nalishga mos, shuning uchun qoldi.
+   Chiziqlar token qatlamiga ko'chirildi (light mavzuda ham ko'rinadi). */
 .grid-backdrop {
   background-size: 50px 50px;
-  background-image: 
-    linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+  background-image:
+    linear-gradient(to right, rgb(var(--color-edge) / 0.5) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(var(--color-edge) / 0.5) 1px, transparent 1px);
 }
 
+/* Katta blur "aura" dog'i — endi hech narsa chizmaydi (JSX chaqiruvlari
+   Bosqich 2 da o'chirildi, ta'rif nom uchun qoldi). */
 .aura-glow {
-  position: absolute;
-  width: 140%;
-  height: 140%;
-  top: -20%;
-  left: -20%;
-  border-radius: 50%;
-  filter: blur(120px);
-  opacity: 0.18;
-  pointer-events: none;
-  transition: background 0.8s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.8s ease;
-  z-index: 0;
+  display: none;
 }
 
 /* ─── Accordion Animation for FAQ ───────────────────────────────────────── */
@@ -783,7 +1039,11 @@ textarea.input-field { resize: vertical; min-height: 100px; }
    MathText ```...``` uchun .code-block, `...` uchun .code-inline chiqaradi.
    Kod o'z to'q foni bilan ko'rsatiladi — och ham, to'q ham kontekstda
    (oq dashboard matni / yashil variantlar) bir xil o'qiladi. Telegram
-   WebView'da yengil ishlashi uchun blur/og'ir animatsiya ishlatilmaydi. */
+   WebView'da yengil ishlashi uchun blur/og'ir animatsiya ishlatilmaydi.
+
+   DIQQAT: bu blokdagi qattiq ranglar (#1e242b fon, rgba(255,255,255,0.08)
+   chegara, one-dark token palitrasi) ATAYIN mavzudan bog'liq emas — sintaksis
+   palitrasi to'q fonga hisoblangan. Token'ga o'tkazilmaydi. */
 .code-block {
   position: relative;
   display: block;
@@ -820,11 +1080,16 @@ textarea.input-field { resize: vertical; min-height: 100px; }
   user-select: none;
   pointer-events: none;
 }
+/* `.code-block` dan farqli o'laroq inline kod ODDIY matn oqimida turadi, ya'ni
+   mavzu foniga tushadi. Avvalgi qattiq #e06c75 qog'oz fonda ~2.2:1 berardi —
+   endi token yuzasi + asosiy matn rangi (monospace shrift va chip o'zi
+   "kod" ekanini bildiradi). */
 .code-inline {
   font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', ui-monospace, monospace;
   font-size: 0.85em;
-  background: rgba(135, 131, 120, 0.22);
-  color: #e06c75;
+  background: rgb(var(--color-surface-2));
+  border: 1px solid rgb(var(--color-edge));
+  color: rgb(var(--color-text-primary));
   padding: 0.1em 0.4em;
   border-radius: 5px;
   white-space: pre-wrap;

@@ -19,7 +19,16 @@
   <meta name="twitter:title" content="Olympy — Online Olimpiada Platformasi" />
   <meta name="twitter:description" content="Ta'lim markazlari va maktablar uchun online olimpiada platformasi." />
   <meta name="twitter:image" content="https://prolymp.uz/icons/icon-512x512.png" />
-  <meta name="theme-color" content="#050508" />
+  <meta name="theme-color" content="#14161C" />
+  <!-- Mavzu bootstrap'i: saqlangan tanlovni (localStorage) React yuklanishidan
+       OLDIN <html data-theme> ga qo'llaydi va yuqoridagi theme-color'ni mos
+       yangilaydi — aks holda sahifa avval dark chizilib keyin light'ga
+       sakrardi (FOUC). Ataylab `defer`/`async`SIZ (bloklovchi) va ataylab
+       inline EMAS: CSP `script-src` da 'unsafe-inline' yo'q. Batafsil sabab
+       `public/theme-init.js` boshidagi izohda.
+       ?v= — sw.js statik fayllarni cache-first saqlaydi (public/sw.js),
+       hash'siz fayl eski keshda qolib ketmasin (sw.js?v=… bilan bir naqsh). -->
+  <script src="/theme-init.js?v=20260812-1"></script>
   <!-- PWA: "Uy ekraniga qo'shish" orqali ilovani o'rnatish uchun -->
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -30,8 +39,11 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
   <link rel="manifest" href="/site.webmanifest" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!-- Shriftlar self-hosted: `public/fonts/*.woff2` + src/index.css dagi
+       @font-face (PT Sans / PT Sans Narrow). Avval bu yerda Google Fonts
+       CDN'ga preconnect va Plus Jakarta Sans stylesheet link bor edi —
+       olib tashlandi: tashqi so'rov yo'q va matn render'i uchinchi tomon
+       javobiga bog'liq emas. -->
   <!-- Tailwind CDN olib tashlandi: avval https://cdn.tailwindcss.com 1+ MB JS yuklardi
        va render kechikishi yaratardi. Endi Tailwind PostCSS plugin orqali build paytida
        CSS generatsiya qilinadi (tailwind.config.js + postcss.config.js + src/index.css). -->
