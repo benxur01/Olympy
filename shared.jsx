@@ -721,7 +721,12 @@ const BrandLogo = ({ compact = false, size = 'md', className = '', variant = 'de
 
 // ─── Avatar ────────────────────────────────────────────────────────────────────
 // `premium` true bo'lsa avatar atrofida oltin glow halqa (.avatar-premium) ko'rinadi.
-const Avatar = ({ name = '', size = 36, gradient = 'from-indigo-500 to-purple-600', src = '', premium = false }) => {
+//
+// `gradient` prop nomi tarixiy (chaqiruv joylari ko'p) — endi u tekis token
+// klassini oladi, gradient emas. Standart qiymat avval
+// `'from-indigo-500 to-purple-600'` edi: remap'dan keyin u qizil→ko'k gradientga
+// aylanardi va prop berilmagan yagona joyda (SidebarContent) shu ko'rinardi.
+const Avatar = ({ name = '', size = 36, gradient = 'bg-pencil-600', src = '', premium = false }) => {
   const initials = name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
   const [hasError, setHasError] = useState(false);
 

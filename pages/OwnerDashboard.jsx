@@ -1,5 +1,18 @@
 // pages/OwnerDashboard.jsx — Center director panel scoped to one center
 
+// ─── Badge/plastinka foni: nega `bg-ground`, `bg-wash` EMAS ───────────────
+// `--color-wash` (src/index.css) badge foni uchun to'g'ri token, LEKIN u
+// `tailwind.config.js` ning `colors` bo'limida e'lon qilinmagan — ya'ni
+// `bg-wash` klassi umuman kompilyatsiya bo'lmaydi va fon shaffof qoladi
+// (`text-medal-1` ham xuddi shunday; Leaderboard.jsx buni allaqachon
+// `style={{ borderColor: 'rgb(var(--color-medal-N))' }}` bilan aylanib
+// o'tgan). Shu sababli bu yerda `bg-ground` ishlatiladi:
+//   dark  — `wash` AYNAN `ground` (bir xil qiymat), farq yo'q;
+//   light — `wash` = surface-1 #EEECE5, `ground` = paper #E7E4DC, ya'ni
+//           bir tish to'qroq. O'lchandi: accent 4.96, success 5.01,
+//           warning 4.97, error 5.01, text-secondary 4.93 — hammasi AA.
+// Agar `wash` config'ga qo'shilsa, bularni `bg-wash` ga qaytarsa bo'ladi.
+
 // Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/owner/<key>`
 // manziliga bog'lanadi (home → /dashboard/owner).
 // MUHIM: `analytics` ro'yxatda YO'Q — u app-level alohida sahifa
@@ -18,8 +31,11 @@ const ownerFormatDate = (value) => {
   return d.toLocaleDateString('uz-UZ', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
-// Fan progress-bar ranglari — StudentDashboard palitrasi bilan bir xil.
-const OWNER_DRAWER_BAR_COLORS = ['#C0362C', '#10b981', '#f59e0b', '#ec4899', '#06b6d4', '#2F5D8C', '#84cc16', '#f43f5e'];
+// Fan progress-barlari — StudentDashboard bilan bir xil qoida: bar rangi
+// MA'NO TASHIMAYDI (fan nomi yonida yozilgan), taqqoslash uzunlik bilan
+// o'qiladi. Shuning uchun avvalgi 8 rangli palitra o'rniga hamma bar bitta
+// `accent` tokenida — rangli kod faqat holat (success/warning/error) uchun
+// qoldirildi.
 
 // O'quvchi ustiga bosilganda o'ngdan ochiladigan batafsil panel.
 // `student` — renderStudents'dagi qator obyekti ({userId, name, phone,
@@ -42,18 +58,18 @@ const OwnerStudentDetailDrawer = ({ student, onClose }) => {
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/50" onClick={onClose} />
+      <div className="fixed inset-0 z-40 bg-ground/80" onClick={onClose} />
       <div className="fixed right-0 top-0 h-full w-full max-w-[420px] glass-strong z-50 flex flex-col animate-in">
-        <div className="flex items-start gap-3 p-5 border-b border-white/10">
-          <Avatar name={student?.name} src={student?.avatarUrl || d?.avatar_url || ''} size={48} gradient="from-emerald-500 to-teal-600" />
+        <div className="flex items-start gap-3 p-5 border-b border-edge">
+          <Avatar name={student?.name} src={student?.avatarUrl || d?.avatar_url || ''} size={48} gradient="bg-pencil-600" />
           <div className="min-w-0 flex-1">
-            <div className="font-black text-white truncate">{d?.full_name || student?.name || 'Foydalanuvchi'}</div>
-            <div className="text-sm text-white/45 truncate">{d?.phone || maskPhoneDisplay(student?.phone, '') || '—'}</div>
-            {d?.joined_at && <div className="text-xs text-white/30 mt-0.5">Qo'shilgan: {d.joined_at}</div>}
+            <div className="font-display text-lg font-bold text-text-primary truncate">{d?.full_name || student?.name || 'Foydalanuvchi'}</div>
+            <div className="text-sm font-data text-text-secondary truncate">{d?.phone || maskPhoneDisplay(student?.phone, '') || '—'}</div>
+            {d?.joined_at && <div className="text-xs font-data text-text-secondary mt-0.5">Qo'shilgan: {d.joined_at}</div>}
           </div>
           <button
             onClick={onClose}
-            className="shrink-0 rounded-lg p-1.5 text-white/40 hover:text-white hover:bg-white/10 transition-colors"
+            className="shrink-0 rounded-lg border border-edge p-1.5 text-text-secondary hover:text-text-primary hover:bg-surface-1 hover:border-edge-strong transition-colors"
             title="Yopish"
           >
             <Icon name="x" size={20} />
@@ -64,15 +80,15 @@ const OwnerStudentDetailDrawer = ({ student, onClose }) => {
           {detailRes.loading && (
             <div className="space-y-4">
               <div className="grid grid-cols-3 gap-2">
-                {[0, 1, 2].map(i => <div key={i} className="h-16 rounded-xl bg-white/5 animate-pulse" />)}
+                {[0, 1, 2].map(i => <div key={i} className="h-16 rounded-xl bg-surface-1 animate-pulse" />)}
               </div>
-              <div className="h-24 rounded-xl bg-white/5 animate-pulse" />
-              <div className="h-40 rounded-xl bg-white/5 animate-pulse" />
+              <div className="h-24 rounded-xl bg-surface-1 animate-pulse" />
+              <div className="h-40 rounded-xl bg-surface-1 animate-pulse" />
             </div>
           )}
 
           {!detailRes.loading && detailRes.error && (
-            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-300">
+            <div className="rounded-xl border-l-4 border-l-error border border-error/45 bg-ground px-4 py-3 text-sm font-semibold text-error">
               Ma'lumotni yuklab bo'lmadi.
             </div>
           )}
@@ -81,37 +97,36 @@ const OwnerStudentDetailDrawer = ({ student, onClose }) => {
             <>
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-xl glass p-3 text-center">
-                  <div className="text-lg font-black text-white">{d.total_attempts || 0}</div>
-                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">Jami urinish</div>
+                  <div className="font-data text-lg font-bold text-text-primary">{d.total_attempts || 0}</div>
+                  <div className="text-[11px] font-semibold text-text-secondary mt-0.5">Jami urinish</div>
                 </div>
                 <div className="rounded-xl glass p-3 text-center">
-                  <div className="text-lg font-black text-indigo-300">{fmtScore(d.avg_score)}</div>
-                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">O'rtacha ball</div>
+                  <div className="font-data text-lg font-bold text-accent">{fmtScore(d.avg_score)}</div>
+                  <div className="text-[11px] font-semibold text-text-secondary mt-0.5">O'rtacha ball</div>
                 </div>
                 <div className="rounded-xl glass p-3 text-center">
-                  <div className="text-lg font-black text-emerald-300">{fmtScore(d.best_score)}</div>
-                  <div className="text-[11px] font-semibold text-white/40 mt-0.5">Eng yaxshi</div>
+                  <div className="font-data text-lg font-bold text-success">{fmtScore(d.best_score)}</div>
+                  <div className="text-[11px] font-semibold text-text-secondary mt-0.5">Eng yaxshi</div>
                 </div>
               </div>
 
               {Array.isArray(d.subjects) && d.subjects.length > 0 && (
                 <div>
                   <div className="flex items-center gap-2 mb-2.5">
-                    <Icon name="chart" size={15} className="text-white/40" />
-                    <h3 className="text-sm font-black text-white">Fanlar bo'yicha</h3>
+                    <Icon name="chart" size={15} className="text-text-secondary" />
+                    <h3 className="font-display text-sm font-bold uppercase tracking-widest text-text-secondary">Fanlar bo'yicha</h3>
                   </div>
                   <div className="space-y-2.5">
                     {d.subjects.map((s, i) => {
                       const pct = Math.max(0, Math.min(100, fmtScore(s.avg_score)));
-                      const color = OWNER_DRAWER_BAR_COLORS[i % OWNER_DRAWER_BAR_COLORS.length];
                       return (
                         <div key={s.subject + i}>
                           <div className="flex items-center justify-between text-xs mb-1">
-                            <span className="font-semibold text-white/70 truncate">{s.subject}</span>
-                            <span className="font-bold text-white/50 shrink-0 ml-2">{fmtScore(s.avg_score)} · {s.attempts || 0} ta</span>
+                            <span className="font-semibold text-text-primary truncate">{s.subject}</span>
+                            <span className="font-data font-bold text-text-secondary shrink-0 ml-2">{fmtScore(s.avg_score)} · {s.attempts || 0} ta</span>
                           </div>
-                          <div className="h-2 rounded-full bg-white/8 overflow-hidden">
-                            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+                          <div className="progress-bar h-2">
+                            <div className="progress-fill" style={{ width: `${pct}%` }} />
                           </div>
                         </div>
                       );
@@ -122,26 +137,26 @@ const OwnerStudentDetailDrawer = ({ student, onClose }) => {
 
               <div>
                 <div className="flex items-center gap-2 mb-2.5">
-                  <Icon name="clock" size={15} className="text-white/40" />
-                  <h3 className="text-sm font-black text-white">So'nggi urinishlar</h3>
+                  <Icon name="clock" size={15} className="text-text-secondary" />
+                  <h3 className="font-display text-sm font-bold uppercase tracking-widest text-text-secondary">So'nggi urinishlar</h3>
                 </div>
                 {Array.isArray(d.recent_attempts) && d.recent_attempts.length > 0 ? (
                   <div className="space-y-2">
                     {d.recent_attempts.map((a, i) => (
                       <div key={i} className="flex items-center gap-3 rounded-xl glass px-3.5 py-2.5">
                         <div className="min-w-0 flex-1">
-                          <div className="text-sm font-semibold text-white truncate">{a.olympiad_title}</div>
-                          <div className="text-[11px] text-white/40 mt-0.5 flex items-center gap-2 flex-wrap">
+                          <div className="text-sm font-semibold text-text-primary truncate">{a.olympiad_title}</div>
+                          <div className="text-[11px] font-data text-text-secondary mt-0.5 flex items-center gap-2 flex-wrap">
                             <span>{a.date || '—'}</span>
                             {a.rank ? <span>· #{a.rank}{a.total_participants ? `/${a.total_participants}` : ''}</span> : null}
                           </div>
                         </div>
-                        <span className="shrink-0 rounded-lg bg-indigo-500/15 px-2.5 py-1 text-sm font-bold text-indigo-300">{fmtScore(a.score)}</span>
+                        <span className="shrink-0 rounded-lg border border-edge bg-ground px-2.5 py-1 font-data text-sm font-bold text-accent">{fmtScore(a.score)}</span>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-xl glass px-4 py-6 text-center text-sm text-white/35">
+                  <div className="rounded-xl glass px-4 py-6 text-center text-sm text-text-secondary">
                     Hali urinishlar yo'q
                   </div>
                 )}
@@ -169,24 +184,34 @@ const OwnerStatusPill = ({ status, children }) => {
   );
 };
 
-const OwnerMetric = ({ label, value, hint, icon, tone = 'indigo', glow }) => {
-  const tones = {
-    indigo: { grad: 'from-indigo-500 to-purple-600', glowCls: 'glow-purple' },
-    purple: { grad: 'from-purple-500 to-pink-500', glowCls: 'glow-purple' },
-    cyan: { grad: 'from-cyan-500 to-sky-500', glowCls: 'glow-cyan' },
-    amber: { grad: 'from-amber-500 to-orange-500', glowCls: '' },
-    emerald: { grad: 'from-emerald-500 to-teal-500', glowCls: '' },
-    rose: { grad: 'from-rose-500 to-red-500', glowCls: '' },
-  };
-  const t = tones[tone] || tones.indigo;
+// KPI plitkasi. Avval har `tone` o'z gradienti va glow halqasi bilan kelardi;
+// endi gradient ham, soya ham yo'q — belgi qutisi oddiy `wash` yuza + chegara,
+// rang esa faqat IKONKA va chap chetdagi chiziqda qoladi. Raqam `.font-data`
+// bilan: to'rt plitka yonma-yon turganda ustunlar sakramaydi.
+//
+// `tone` mavjud chaqiruv joylarini buzmaslik uchun eski nomlarni ham qabul
+// qiladi (indigo/purple/cyan/amber/emerald/rose), lekin ular semantik
+// tokenlarga yechiladi.
+const OWNER_METRIC_TONES = {
+  indigo: { mark: 'text-accent', rule: 'border-l-accent' },
+  accent: { mark: 'text-accent', rule: 'border-l-accent' },
+  purple: { mark: 'text-accent-2', rule: 'border-l-accent-2' },
+  cyan: { mark: 'text-accent-2', rule: 'border-l-accent-2' },
+  amber: { mark: 'text-warning', rule: 'border-l-warning' },
+  emerald: { mark: 'text-success', rule: 'border-l-success' },
+  rose: { mark: 'text-error', rule: 'border-l-error' },
+};
+
+const OwnerMetric = ({ label, value, hint, icon, tone = 'indigo' }) => {
+  const t = OWNER_METRIC_TONES[tone] || OWNER_METRIC_TONES.indigo;
   return (
-    <div className={`stat-card glass-strong rounded-2xl p-5 card-hover ${glow ? t.glowCls : ''}`}>
-      <div className="flex items-start justify-between mb-4">
-        <div className={`feature-icon bg-gradient-to-br ${t.grad} text-white shadow-lg`}>{icon}</div>
-        {hint && <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">{hint}</span>}
+    <div className={`stat-card glass rounded-2xl border-l-4 ${t.rule} p-5 card-hover`}>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div className={`flex h-11 w-11 items-center justify-center rounded-xl border border-edge bg-ground ${t.mark}`}>{icon}</div>
+        {hint && <span className="text-[10px] font-bold uppercase tracking-wider text-text-secondary text-right">{hint}</span>}
       </div>
-      <div className="text-3xl font-black text-white mb-1 tracking-tight">{value}</div>
-      <div className="text-xs font-semibold text-white/50">{label}</div>
+      <div className="font-data text-3xl font-bold text-text-primary mb-1 tracking-tight">{value}</div>
+      <div className="text-xs font-semibold text-text-secondary">{label}</div>
     </div>
   );
 };
@@ -194,22 +219,21 @@ const OwnerMetric = ({ label, value, hint, icon, tone = 'indigo', glow }) => {
 const OwnerSidebarItem = ({ item, active, onClick }) => (
   <button
     onClick={onClick}
+    aria-current={active ? 'page' : undefined}
     className={`sidebar-item w-full flex items-center gap-3.5 px-4 py-3 rounded-xl text-left ${
       active ? 'active' : ''
     }`}
   >
-    <span className={`sidebar-icon transition-colors duration-200 ${active ? 'text-indigo-400' : 'text-white/40'}`}>
+    <span className={`sidebar-icon transition-colors duration-200 ${active ? 'text-accent' : 'text-text-secondary'}`}>
       <Icon name={item.icon} size={20} />
     </span>
-    <span className={`text-[15px] font-semibold tracking-wide transition-colors duration-200 flex-1 ${active ? 'text-white' : 'text-white/65'}`}>
+    <span className={`text-[15px] font-semibold tracking-wide transition-colors duration-200 flex-1 ${active ? 'text-text-primary' : 'text-text-secondary'}`}>
       {item.label}
     </span>
+    {/* Kutilayotgan arizalar soni — `warning` (qaror kerak), akcent emas.
+        `.font-data`: son 1→10 ga o'zgarganda nav qatori qimirlamaydi. */}
     {item.badge && (
-      <span className={`rounded-full px-2 py-0.5 text-[11px] font-bold ${
-        active
-          ? 'bg-indigo-500/20 text-indigo-300'
-          : 'bg-amber-400/15 text-amber-300 ring-1 ring-amber-400/30'
-      }`}>
+      <span className="rounded-full border border-warning/45 bg-ground px-2 py-0.5 font-data text-[11px] font-bold text-warning">
         {item.badge}
       </span>
     )}
@@ -860,10 +884,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <div className="space-y-3">
             {center && (
               <div className="glass rounded-2xl p-4 inline-flex items-center gap-3">
-                <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center text-white font-bold">{center.name[0]}</div>
+                <div className="w-10 h-10 bg-surface-2 border border-edge rounded-xl flex items-center justify-center text-text-primary font-display font-bold">{center.name[0]}</div>
                 <div className="text-left">
-                  <div className="text-sm font-semibold text-white">{center.name}</div>
-                  <div className="text-xs text-white/40">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)}</div>
+                  <div className="text-sm font-semibold text-text-primary">{center.name}</div>
+                  <div className="text-xs text-text-secondary">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)}</div>
                 </div>
                 <span className={`chip ${center.status === 'rejected' ? 'badge-rejected' : 'badge-pending'}`}>
                   {statusLabel(center.status)}
@@ -876,12 +900,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 ochilmagani uchun faqat 3 qadamni ko'rsatamiz va "Tushunarli"
                 tugmasi onboarding'ni yakunlaydi (backend + user state). */}
             {showCenterOnboarding && (
-              <div className="glass-strong rounded-2xl p-5 text-left border border-indigo-500/25 max-w-md mx-auto">
+              <div className="glass-strong rounded-2xl p-5 text-left border-l-4 border-l-accent max-w-md mx-auto">
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-edge bg-ground text-accent">
                     <Icon name="trophy" size={18} />
                   </div>
-                  <div className="text-sm font-black text-white">Olympy'da nimalar qila olasiz</div>
+                  <div className="font-display text-sm font-bold uppercase tracking-widest text-text-secondary">Olympy'da nimalar qila olasiz</div>
                 </div>
                 <div className="space-y-2.5">
                   {[
@@ -890,12 +914,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     { icon: 'users', t: "O'quvchilarni qo'shing", d: 'Ular arizalarini yuborib markazingizga qo\'shiladi.' },
                   ].map((s, i) => (
                     <div key={i} className="flex items-start gap-3 rounded-xl glass p-3">
-                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-white/8 text-indigo-300">
+                      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-edge bg-ground text-accent">
                         <Icon name={s.icon} size={16} />
                       </div>
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-white">{s.t}</div>
-                        <div className="text-[11px] font-medium text-white/45 leading-relaxed">{s.d}</div>
+                        <div className="text-xs font-bold text-text-primary">{s.t}</div>
+                        <div className="text-[11px] font-medium text-text-secondary leading-relaxed">{s.d}</div>
                       </div>
                     </div>
                   ))}
@@ -904,7 +928,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   type="button"
                   onClick={finishCenterOnboarding}
                   disabled={onboardingSaving}
-                  className="mt-3 w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-50"
+                  className="btn-primary mt-3 w-full rounded-lg px-4 py-2.5 text-xs font-bold"
                 >
                   {onboardingSaving ? 'Saqlanmoqda...' : 'Tushunarli'}
                 </button>
@@ -914,38 +938,38 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             {/* F6: Brending (white-label) minimal sozlamasi — tasdiqlash
                 kutilayotganda ham brend rangini oldindan tanlab saqlash mumkin. */}
             {canPreviewBranding && (
-              <div className="glass-strong rounded-2xl p-5 text-left border border-fuchsia-500/20 max-w-md mx-auto">
+              <div className="glass-strong rounded-2xl p-5 text-left border-l-4 border-l-accent-2 max-w-md mx-auto">
                 <div className="flex items-center gap-2 mb-1">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-edge bg-ground text-accent-2">
                     <Icon name="sparkles" size={15} />
                   </div>
-                  <div className="text-sm font-black text-white">Brendingni sozlang</div>
+                  <div className="font-display text-sm font-bold uppercase tracking-widest text-text-secondary">Brendingni sozlang</div>
                 </div>
-                <div className="text-[11px] font-medium text-white/45 mb-3">Markazingiz brend rangini hozircha tanlab qo'ying.</div>
+                <div className="text-[11px] font-medium text-text-secondary mb-3">Markazingiz brend rangini hozircha tanlab qo'ying.</div>
                 <div className="flex flex-wrap items-end gap-3">
                   <div className="flex items-center gap-2">
                     <input
                       type="color"
                       value={brandColorInput}
                       onChange={e => setBrandColorInput(e.target.value)}
-                      className="h-10 w-14 cursor-pointer rounded-lg border border-white/10 bg-transparent p-1"
+                      className="h-10 w-14 cursor-pointer rounded-lg border border-edge bg-transparent p-1"
                       aria-label="Brend rangi"
                     />
                     <input
                       type="text"
                       value={brandColorInput}
                       onChange={e => setBrandColorInput(e.target.value)}
-                      className="input-field w-28 font-mono uppercase"
-                      placeholder="#6366F1"
+                      className="input-field w-28 font-data uppercase"
+                      placeholder="#C0362C"
                       maxLength={7}
                     />
                   </div>
-                  <div className="h-10 w-10 rounded-xl border border-white/10" style={{ background: brandColorInput }} title="Oldindan ko'rish" />
+                  <div className="h-10 w-10 rounded-xl border border-edge-strong" style={{ background: brandColorInput }} title="Oldindan ko'rish" />
                   <button
                     type="button"
                     onClick={saveBranding}
                     disabled={brandSaving}
-                    className="rounded-lg bg-indigo-600 px-4 py-2.5 text-xs font-black text-white hover:bg-indigo-700 disabled:opacity-60"
+                    className="btn-primary rounded-lg px-4 py-2.5 text-xs font-bold"
                   >
                     {brandSaving ? 'Saqlanmoqda...' : 'Saqlash'}
                   </button>
@@ -1636,25 +1660,24 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
   const Sidebar = () => (
     <aside
-      className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-60 flex-col border-r border-white/5 transition-transform duration-200 lg:static lg:translate-x-0`}
-      style={{ background: 'rgba(5,5,8,0.99)' }}
+      className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} admin-sidebar fixed inset-y-0 left-0 z-50 flex w-60 flex-col transition-transform duration-200 lg:static lg:translate-x-0`}
     >
-      <div className="border-b border-white/5 px-5 py-5">
+      <div className="border-b border-edge px-5 py-5">
         <button onClick={() => setPage('home')} className="flex w-full items-center gap-3 text-left">
           {center.imageUrl ? (
             <img
               src={center.imageUrl}
               alt={center.name}
-              className="h-11 w-11 rounded-xl object-cover shadow-lg shadow-indigo-900/40"
+              className="h-11 w-11 rounded-xl border border-edge object-cover"
             />
           ) : (
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl gradient-bg text-base font-black text-white shadow-lg shadow-indigo-900/40">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-edge bg-surface-2 font-display text-base font-bold text-text-primary">
               {center.name[0]}
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-black text-white">{center.name}</div>
-            <div className="truncate text-[11px] font-semibold text-white/40">
+            <div className="truncate font-display text-base font-bold text-text-primary">{center.name}</div>
+            <div className="truncate text-[11px] font-semibold text-text-secondary">
               {center.organizationType || "O'quv markaz"} · Direktor paneli
             </div>
           </div>
@@ -1672,15 +1695,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         ))}
       </nav>
 
-      <div className="space-y-2 border-t border-white/5 p-3">
+      <div className="space-y-2 border-t border-edge p-3">
         {ownerCenters.length > 1 && (
           <label className="block">
-            <span className="mb-1.5 block text-[10px] font-black uppercase tracking-wider text-white/35">Tashkilot</span>
+            <span className="mb-1.5 block font-display text-[10px] font-bold uppercase tracking-widest text-text-secondary">Tashkilot</span>
             <select
               value={ownerCenterId || ''}
               onChange={e => { setSelectedOwnerCenterId(e.target.value); setPage('home'); }}
-              className="h-10 w-full rounded-xl border border-white/10 bg-white/5 px-2 text-xs font-bold text-white/80 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
-              style={{ background: 'rgba(255,255,255,0.04)' }}
+              className="admin-input h-10 w-full px-2 text-xs font-bold text-text-primary"
             >
               {ownerCenters.map(c => (
                 <option key={c.id} value={c.id} style={{ background: 'rgb(var(--color-surface-1))' }}>{c.name} · {statusLabel(c.status)}</option>
@@ -1690,25 +1712,23 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         )}
         <button
           onClick={openCenterModal}
-          className="btn-primary flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-black"
+          className="btn-primary flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-xs font-bold"
         >
           <Icon name="plus" size={14} /> Yangi tashkilot
         </button>
-        <div className="rounded-xl glass p-3">
-          <div className="flex items-center gap-2 text-[11px] font-bold text-emerald-300">
-            <span className="relative flex h-2 w-2">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60 animate-ping" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-400" />
-            </span>
+        {/* Holat faqat rang bilan emas — chap chiziq + belgi bilan ham. */}
+        <div className="rounded-xl glass border-l-4 border-l-success p-3">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold text-success">
+            <Icon name="check" size={12} />
             Tashkilot faol
           </div>
-          <div className="mt-1 text-[10px] font-medium leading-relaxed text-white/40">
+          <div className="mt-1 text-[10px] font-medium leading-relaxed text-text-secondary">
             Faqat {center.name} ma'lumotlari ko'rsatiladi.
           </div>
         </div>
         <button
           onClick={onLogout}
-          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-white/55 transition-colors hover:bg-white/5 hover:text-rose-300"
+          className="flex w-full items-center gap-2 rounded-xl border border-transparent px-3 py-2 text-xs font-bold text-text-secondary transition-colors hover:border-edge hover:bg-surface-1 hover:text-error"
         >
           <Icon name="logout" size={14} /> Chiqish
         </button>
@@ -1717,21 +1737,19 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   );
 
   const Topbar = () => (
-    <header
-      className="sticky top-0 z-30 flex h-[64px] items-center justify-between border-b border-white/5 px-4 lg:px-6"
-      style={{ background: 'rgba(13, 14, 18, 0.97)' }}
-    >
+    <header className="admin-topbar sticky top-0 z-30 flex h-[64px] items-center justify-between px-4 lg:px-6">
       <div className="flex min-w-0 items-center gap-3">
         <button
-          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-white/60 transition-colors hover:bg-white/5 hover:text-white lg:hidden"
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-edge text-text-secondary transition-colors hover:bg-surface-1 hover:text-text-primary lg:hidden"
           onClick={() => setMobileMenu(true)}
+          aria-label="Menyuni ochish"
         >
           <Icon name="menu" size={20} />
         </button>
         <div className="min-w-0">
-          <div className="truncate text-[15px] font-black text-white">{navItems.find(n => n.key === page)?.label || 'Asosiy'}</div>
-          <div className="truncate text-[11px] font-semibold text-white/40">
-            {center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · {ownerFormatDate(center.createdAt)}
+          <div className="truncate font-display text-base font-bold text-text-primary">{navItems.find(n => n.key === page)?.label || 'Asosiy'}</div>
+          <div className="truncate text-[11px] font-semibold text-text-secondary">
+            {center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · <span className="font-data">{ownerFormatDate(center.createdAt)}</span>
           </div>
         </div>
       </div>
@@ -1740,7 +1758,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <select
             value={ownerCenterId || ''}
             onChange={e => { setSelectedOwnerCenterId(e.target.value); setPage('home'); }}
-            className="hidden h-9 max-w-[220px] rounded-xl border border-white/10 bg-white/5 px-3 text-xs font-bold text-white/80 outline-none transition hover:bg-white/10 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30 md:block"
+            className="admin-input hidden h-9 max-w-[220px] px-3 text-xs font-bold text-text-primary md:block"
           >
             {ownerCenters.map(c => (
               <option key={c.id} value={c.id} style={{ background: 'rgb(var(--color-surface-1))' }}>{c.name} · {statusLabel(c.status)}</option>
@@ -1749,7 +1767,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         )}
         <button
           onClick={openCenterModal}
-          className="btn-primary hidden rounded-xl px-3 py-2 text-xs font-black md:inline-flex"
+          className="btn-primary hidden rounded-xl px-3 py-2 text-xs font-bold md:inline-flex"
         >
           Yangi tashkilot
         </button>
@@ -1771,21 +1789,21 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         ) : (
           <button
             onClick={() => setPage('requests')}
-            className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-white/60 transition hover:bg-white/10 hover:text-white"
+            className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl border border-edge bg-surface-1 text-text-secondary transition hover:bg-surface-2 hover:text-text-primary"
           >
             <Icon name="bell" size={18} />
             {pendingCount > 0 && (
-              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-gradient-to-br from-amber-400 to-orange-500 px-1 text-[10px] font-black text-white shadow-lg shadow-amber-900/40">
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border border-accent-fill bg-accent-fill px-1 font-data text-[10px] font-bold text-on-accent">
                 {pendingCount}
               </span>
             )}
           </button>
         )}
         <div className="ml-2 flex items-center gap-2">
-          <Avatar name={user?.name || 'Director'} src={user?.avatarUrl || ''} size={34} />
+          <Avatar name={user?.name || 'Director'} src={user?.avatarUrl || ''} size={34} gradient="bg-pencil-600" />
           <div className="hidden text-right sm:block">
-            <div className="text-xs font-black text-white">{user?.name || 'Direktor'}</div>
-            <div className="text-[10px] font-semibold text-white/40">Direktor</div>
+            <div className="text-xs font-bold text-text-primary">{user?.name || 'Direktor'}</div>
+            <div className="text-[10px] font-semibold text-text-secondary">Direktor</div>
           </div>
         </div>
       </div>
@@ -1796,23 +1814,23 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const u = requestUser(req);
     const isManager = req.type === 'manager';
     return (
-      <div className="glass rounded-2xl p-4 transition-all card-hover">
+      <div className={`glass rounded-2xl border-l-4 p-4 card-hover ${req.status === 'pending' ? 'border-l-warning' : 'border-l-edge-strong'}`}>
         <div className="flex items-start gap-3">
           <Avatar
             name={u?.name || '?'}
             src={u?.avatarUrl || ''}
             size={42}
-            gradient={isManager ? 'from-indigo-500 to-purple-600' : 'from-cyan-500 to-sky-600'}
+            gradient="bg-pencil-600"
           />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="truncate text-sm font-black text-white">{u?.name || 'Noma\'lum'}</div>
+              <div className="truncate text-sm font-bold text-text-primary">{u?.name || 'Noma\'lum'}</div>
               <OwnerStatusPill status={req.status} />
             </div>
-            <div className="mt-1 text-xs font-semibold text-white/55">
+            <div className="mt-1 text-xs font-semibold text-text-secondary">
               {isManager ? 'Manager arizasi' : `O'qituvchi arizasi${req.subject ? ` · ${req.subject}` : ''}`}
             </div>
-            <div className="mt-1 text-[11px] font-medium text-white/35">
+            <div className="mt-1 font-data text-[11px] font-medium text-text-secondary">
               {u?.phone || '—'} · {ownerFormatDate(req.date)}
             </div>
           </div>
@@ -1821,14 +1839,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               <button
                 onClick={() => approve(req.id)}
                 disabled={requestActionId === req.id}
-                className="btn-success rounded-xl px-3 py-2 text-xs font-black disabled:opacity-50"
+                className="btn-success rounded-xl px-3 py-2 text-xs font-bold disabled:opacity-50"
               >
                 {requestActionId === req.id ? '...' : 'Qabul'}
               </button>
               <button
                 onClick={() => reject(req.id)}
                 disabled={requestActionId === req.id}
-                className="btn-danger rounded-xl px-3 py-2 text-xs font-black disabled:opacity-50"
+                className="btn-danger rounded-xl px-3 py-2 text-xs font-bold disabled:opacity-50"
               >
                 Rad
               </button>
@@ -1851,47 +1869,49 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               <span className="chip badge-draft">{center.region || center.city}</span>
               <span className="chip badge-draft">{center.organizationType || "O'quv markaz"}</span>
             </div>
-            <h1 className="text-3xl font-black tracking-tight text-white lg:text-4xl break-words">
-              <span className="gradient-text">{center.name}</span>
+            <h1 className="font-display text-3xl font-bold tracking-tight text-text-primary lg:text-4xl break-words">
+              {center.name}
             </h1>
-            <p className="mt-3 max-w-2xl text-sm font-medium leading-relaxed text-white/55">
+            <p className="mt-3 max-w-2xl text-sm font-medium leading-relaxed text-text-secondary">
               Direktor paneli faqat shu tashkilotga tegishli xodimlar, arizalar va ko'rsatkichlarni boshqaradi.
             </p>
             <div className="mt-5 flex flex-wrap gap-2">
               {(center.subjects || []).slice(0, 6).map(s => <SubjectBadge key={s} subject={s} />)}
               {(!center.subjects || center.subjects.length === 0) && (
-                <span className="text-xs font-semibold text-white/35">Fanlar kiritilmagan</span>
+                <span className="text-xs font-semibold text-text-secondary">Fanlar kiritilmagan</span>
               )}
             </div>
           </div>
 
-          <div className="border-t border-white/5 p-6 lg:border-l lg:border-t-0 lg:p-8" style={{ background: 'rgba(255,255,255,0.02)' }}>
-            <div className="text-[10px] font-black uppercase tracking-wider text-white/40">Bugungi vazifalar</div>
+          <div className="border-t border-edge bg-surface-1 p-6 lg:border-l lg:border-t-0 lg:p-8">
+            <div className="font-display text-[11px] font-bold uppercase tracking-widest text-text-secondary">Bugungi vazifalar</div>
             <div className="mt-4 space-y-3">
-              <div className="flex items-center justify-between rounded-xl glass p-3">
-                <span className="text-sm font-bold text-white/70">Xodim arizalari</span>
-                <span className="text-xl font-black text-amber-300">{pendingCount}</span>
+              {/* Qaror kutayotgan ish — chap chiziq + `warning`. Nol bo'lsa
+                  hech narsa kutmaydi, shuning uchun chiziq neytral. */}
+              <div className={`flex items-center justify-between rounded-xl border border-edge bg-ground border-l-4 p-3 ${pendingCount > 0 ? 'border-l-warning' : 'border-l-edge-strong'}`}>
+                <span className="text-sm font-bold text-text-primary">Xodim arizalari</span>
+                <span className={`font-data text-xl font-bold ${pendingCount > 0 ? 'text-warning' : 'text-text-secondary'}`}>{pendingCount}</span>
               </div>
-              <div className="flex items-center justify-between rounded-xl glass p-3">
-                <span className="text-sm font-bold text-white/70">Faol tadbirlar</span>
-                <span className="text-xl font-black text-cyan-300">{activeOlympiads.length}</span>
+              <div className={`flex items-center justify-between rounded-xl border border-edge bg-ground border-l-4 p-3 ${activeOlympiads.length > 0 ? 'border-l-accent-2' : 'border-l-edge-strong'}`}>
+                <span className="text-sm font-bold text-text-primary">Faol tadbirlar</span>
+                <span className={`font-data text-xl font-bold ${activeOlympiads.length > 0 ? 'text-accent-2' : 'text-text-secondary'}`}>{activeOlympiads.length}</span>
               </div>
               <button
                 onClick={() => setPage('requests')}
-                className="btn-primary w-full rounded-xl px-4 py-3 text-sm font-black"
+                className="btn-primary w-full rounded-xl px-4 py-3 text-sm font-bold"
               >
                 Arizalarni ko'rish
               </button>
               <div className="grid gap-2 sm:grid-cols-2">
                 <button
                   onClick={() => openStaffModal('manager')}
-                  className="btn-ghost rounded-xl px-3 py-3 text-xs font-black"
+                  className="btn-ghost rounded-xl px-3 py-3 text-xs font-bold"
                 >
                   Menejer yaratish
                 </button>
                 <button
                   onClick={() => openStaffModal('teacher')}
-                  className="btn-ghost rounded-xl px-3 py-3 text-xs font-black"
+                  className="btn-ghost rounded-xl px-3 py-3 text-xs font-bold"
                 >
                   Ustoz yaratish
                 </button>
@@ -1909,7 +1929,6 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           hint="Tasdiqlangan"
           icon={<Icon name="users" size={20} />}
           tone="indigo"
-          glow
         />
         <OwnerMetric
           label="Kutilayotgan arizalar"
@@ -1938,14 +1957,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       {/* Pending requests + status panel */}
       <div className="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
         <section className="rounded-2xl glass-strong p-5 lg:p-6">
-          <div className="mb-5 flex items-center justify-between">
+          <div className="mb-5 flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-base font-black text-white">Kutilayotgan xodim arizalari</h2>
-              <p className="mt-1 text-xs font-semibold text-white/45">Manager va o'qituvchi arizalarini shu yerdan tasdiqlang.</p>
+              <h2 className="font-display text-base font-bold uppercase tracking-widest text-text-secondary">Kutilayotgan xodim arizalari</h2>
+              <p className="mt-1 text-xs font-semibold text-text-secondary">Manager va o'qituvchi arizalarini shu yerdan tasdiqlang.</p>
             </div>
             <button
               onClick={() => setPage('requests')}
-              className="text-xs font-black text-indigo-300 transition-colors hover:text-indigo-200"
+              className="shrink-0 rounded-lg border border-edge px-2.5 py-1.5 text-xs font-bold text-accent transition-colors hover:border-edge-strong hover:bg-surface-1"
             >
               Barchasi →
             </button>
@@ -1963,27 +1982,26 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </section>
 
         <section className="rounded-2xl glass-strong p-5 lg:p-6">
-          <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-base font-black text-white">Tashkilot holati</h2>
+          <div className="mb-5 flex items-center justify-between gap-3">
+            <h2 className="font-display text-base font-bold uppercase tracking-widest text-text-secondary">Tashkilot holati</h2>
             <OwnerStatusPill status={center.status} />
           </div>
+          {/* To'ldirilganlik barlari — rang bo'yicha farqlanmaydi (qator nomi
+              yonida yozilgan), taqqoslash faqat uzunlik bilan o'qiladi. */}
           <div className="space-y-4">
             {[
-              { label: 'Profil', pct: 100, color: '#10b981' },
-              { label: 'Xodimlar', pct: Math.min(100, myStaff.length * 25), color: '#698AAC' },
-              { label: 'Fanlar', pct: Math.min(100, (center.subjects || []).length * 18), color: '#C0362C' },
-              { label: 'Olimpiadalar', pct: Math.min(100, (centerOlympiads.length) * 20), color: '#2F5D8C' },
+              { label: 'Profil', pct: 100 },
+              { label: 'Xodimlar', pct: Math.min(100, myStaff.length * 25) },
+              { label: 'Fanlar', pct: Math.min(100, (center.subjects || []).length * 18) },
+              { label: 'Olimpiadalar', pct: Math.min(100, (centerOlympiads.length) * 20) },
             ].map(row => (
               <div key={row.label}>
                 <div className="mb-1.5 flex justify-between text-xs font-bold">
-                  <span className="text-white/60">{row.label}</span>
-                  <span style={{ color: row.color }}>{row.pct}%</span>
+                  <span className="text-text-primary">{row.label}</span>
+                  <span className="font-data text-text-secondary">{row.pct}%</span>
                 </div>
                 <div className="progress-bar h-2">
-                  <div
-                    className="h-full rounded-full transition-[width] duration-700"
-                    style={{ width: `${row.pct}%`, background: row.color }}
-                  />
+                  <div className="progress-fill" style={{ width: `${row.pct}%` }} />
                 </div>
               </div>
             ))}
@@ -1997,8 +2015,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     <div className="space-y-5 p-4 lg:p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Xodim arizalari</h1>
-          <p className="mt-1 text-sm font-semibold text-white/50">Bu ro'yxat faqat {center.name} uchun.</p>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary lg:text-3xl">Xodim arizalari</h1>
+          <p className="mt-1 text-sm font-semibold text-text-secondary">Bu ro'yxat faqat {center.name} uchun.</p>
         </div>
         <OwnerStatusPill status="pending">{pendingCount} ta kutilmoqda</OwnerStatusPill>
       </div>
@@ -2006,11 +2024,11 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         {requestRows.map(r => <RequestCard key={r.id} req={r} />)}
         {requestRows.length === 0 && (
           <div className="rounded-2xl glass-strong px-4 py-10 md:py-16 text-center">
-            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full glass text-white/30">
+            <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full glass text-text-secondary">
               <Icon name="bell" size={22} />
             </div>
-            <div className="text-sm font-black text-white/70">Arizalar yo'q</div>
-            <div className="mt-1 text-xs font-semibold text-white/40">Yangi arizalar kelishi bilan shu yerda paydo bo'ladi.</div>
+            <div className="text-sm font-black text-text-primary">Arizalar yo'q</div>
+            <div className="mt-1 text-xs font-semibold text-text-secondary">Yangi arizalar kelishi bilan shu yerda paydo bo'ladi.</div>
           </div>
         )}
       </div>
@@ -2021,8 +2039,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     <div className="space-y-5 p-4 lg:p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Xodimlar</h1>
-          <p className="mt-1 text-sm font-semibold text-white/50">Tasdiqlangan manager va o'qituvchilar.</p>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary lg:text-3xl">Xodimlar</h1>
+          <p className="mt-1 text-sm font-semibold text-text-secondary">Tasdiqlangan manager va o'qituvchilar.</p>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <button
@@ -2042,8 +2060,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <section className="overflow-hidden rounded-2xl glass-strong">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[760px] text-left">
-            <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
-              <tr className="text-[10px] font-black uppercase tracking-wider text-white/40">
+            <thead className="admin-table-hdr">
+              <tr className="font-display text-[10px] tracking-widest">
                 {['Ism', 'Telefon', 'Rol', 'Fan', 'Holat', 'Amal'].map(h => (
                   <th key={h} className="px-5 py-3.5">{h}</th>
                 ))}
@@ -2061,11 +2079,11 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   <tr key={row.id} className="olympy-row text-sm">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
-                        <Avatar name={row.name} src={row.avatarUrl || ''} size={36} gradient={row.role === 'manager' ? 'from-indigo-500 to-purple-600' : 'from-cyan-500 to-sky-600'} />
-                        <span className="font-black text-white">{row.name}</span>
+                        <Avatar name={row.name} src={row.avatarUrl || ''} size={36} gradient="bg-pencil-600" />
+                        <span className="font-bold text-text-primary">{row.name}</span>
                       </div>
                     </td>
-                    <td className="px-5 py-4 font-mono text-xs text-white/55">
+                    <td className="px-5 py-4 font-data text-xs text-text-secondary">
                       {maskPhoneDisplay(row.phone, '')}
                     </td>
                     <td className="px-5 py-4">
@@ -2073,7 +2091,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                         {row.role === 'manager' ? 'Manager' : "O'qituvchi"}
                       </span>
                     </td>
-                    <td className="px-5 py-4 text-white/60">{row.subject || '—'}</td>
+                    <td className="px-5 py-4 text-text-secondary">{row.subject || '—'}</td>
                     <td className="px-5 py-4">
                       <OwnerStatusPill status={row.status || 'approved'} />
                     </td>
@@ -2084,7 +2102,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                             <button
                               onClick={() => openRoleModal(row)}
                               disabled={removing}
-                              className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-bold text-indigo-300 hover:bg-indigo-500/20 disabled:opacity-50"
+                              className="btn-ghost rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50"
                             >
                               Rolni o'zgartir
                             </button>
@@ -2093,14 +2111,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                             <button
                               onClick={() => removeStaffMember(row)}
                               disabled={removing}
-                              className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
+                              className="btn-danger rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50"
                             >
                               {removing ? '...' : 'Chiqarish'}
                             </button>
                           )}
                         </div>
                       ) : (
-                        <span className="text-xs text-white/30">—</span>
+                        <span className="text-xs text-text-secondary">—</span>
                       )}
                     </td>
                   </tr>
@@ -2108,7 +2126,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               })}
               {myStaff.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
+                  <td colSpan={6} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-text-secondary">
                     Hali tasdiqlangan xodimlar yo'q
                   </td>
                 </tr>
@@ -2151,8 +2169,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <div className="space-y-5 p-4 lg:p-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">O'quvchilar</h1>
-            <p className="mt-1 text-sm font-semibold text-white/50">{center.name} ga a'zo o'quvchilar ro'yxati.</p>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary lg:text-3xl">O'quvchilar</h1>
+            <p className="mt-1 text-sm font-semibold text-text-secondary">{center.name} ga a'zo o'quvchilar ro'yxati.</p>
           </div>
           <button
             onClick={() => { setStudentsLoading(true); loadStudents().finally(() => setStudentsLoading(false)); }}
@@ -2166,13 +2184,13 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap gap-2">
             {statusTabs.map(tab => (
-              <button
+              <button aria-pressed={studentStatusFilter === tab.key}
                 key={tab.key}
                 onClick={() => setStudentStatusFilter(tab.key)}
-                className={`rounded-xl px-4 py-2 text-xs font-black transition-colors ${
+                className={`rounded-xl px-4 py-2 text-xs font-bold transition-colors ${
                   studentStatusFilter === tab.key
-                    ? 'bg-indigo-600 text-white'
-                    : 'border border-white/10 bg-white/5 text-white/60 hover:bg-white/10'
+                    ? 'border border-accent-fill bg-accent-fill text-on-accent'
+                    : 'border border-edge bg-surface-1 text-text-secondary hover:bg-surface-2 hover:border-edge-strong'
                 }`}
               >
                 {tab.label}
@@ -2180,7 +2198,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             ))}
           </div>
           <div className="relative w-full sm:w-72">
-            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
             <input
               className="input-field w-full py-2 pl-10 text-sm"
               placeholder="Ism yoki telefon bo'yicha qidirish..."
@@ -2191,7 +2209,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
 
         {studentsError && (
-          <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-bold text-rose-300">
+          <div className="rounded-2xl border border-error/45 border-l-4 border-l-error bg-ground px-4 py-3 text-sm font-bold text-error">
             {studentsError}
           </div>
         )}
@@ -2199,8 +2217,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <section className="overflow-hidden rounded-2xl glass-strong">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left">
-              <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
-                <tr className="text-[10px] font-black uppercase tracking-wider text-white/40">
+              <thead className="admin-table-hdr">
+                <tr className="font-display text-[10px] tracking-widest">
                   {['Ism', 'Telefon', 'Guruh', "Qo'shilgan sana", 'Holat', 'Amal'].map(h => (
                     <th key={h} className="px-5 py-3.5">{h}</th>
                   ))}
@@ -2209,7 +2227,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               <tbody>
                 {studentsLoading && filteredStudents.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
+                    <td colSpan={6} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-text-secondary">
                       Yuklanmoqda...
                     </td>
                   </tr>
@@ -2225,14 +2243,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                           type="button"
                           onClick={() => row.userId && setSelectedStudent(row)}
                           disabled={!row.userId}
-                          className="flex items-center gap-3 text-left rounded-lg -mx-1 px-1 py-0.5 hover:bg-white/[0.04] transition-colors disabled:cursor-default disabled:hover:bg-transparent"
+                          className="flex items-center gap-3 text-left rounded-lg -mx-1 px-1 py-0.5 hover:bg-surface-2 transition-colors disabled:cursor-default disabled:hover:bg-transparent"
                           title={row.userId ? 'Batafsil ko\'rish' : ''}
                         >
-                          <Avatar name={row.name} src={row.avatarUrl || ''} size={36} gradient="from-emerald-500 to-teal-600" premium={!!row.isPremium} />
-                          <span className="font-black text-white">{row.isPremium && <span title="Premium o'quvchi">⭐ </span>}{row.name}</span>
+                          <Avatar name={row.name} src={row.avatarUrl || ''} size={36} gradient="bg-pencil-600" premium={!!row.isPremium} />
+                          <span className="font-bold text-text-primary">{row.isPremium && <span title="Premium o'quvchi">⭐ </span>}{row.name}</span>
                         </button>
                       </td>
-                      <td className="px-5 py-4 font-mono text-xs text-white/55">
+                      <td className="px-5 py-4 font-mono text-xs text-text-secondary">
                         {maskPhoneDisplay(row.phone, '')}
                       </td>
                       <td className="px-5 py-4">
@@ -2250,14 +2268,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                         ) : (
                           <button
                             onClick={() => isApi && row.membershipId && setGroupTagEdit({ membershipId: row.membershipId, value: row.groupTag || '' })}
-                            className={`rounded-lg px-2 py-1 text-xs font-bold transition-colors ${row.groupTag ? 'bg-indigo-500/15 text-indigo-300 hover:bg-indigo-500/25' : 'border border-dashed border-white/15 text-white/35 hover:text-white/60'}`}
+                            className={`rounded-lg px-2 py-1 text-xs font-bold transition-colors ${row.groupTag ? 'border border-edge bg-ground text-accent hover:bg-surface-2 hover:border-edge-strong' : 'border border-dashed border-edge-strong text-text-secondary hover:text-text-primary'}`}
                             title="Guruh/sinf tegini tahrirlash"
                           >
                             {row.groupTag || '+ guruh'}
                           </button>
                         )}
                       </td>
-                      <td className="px-5 py-4 text-white/55">{row.joined ? ownerFormatDate(row.joined) : '—'}</td>
+                      <td className="px-5 py-4 text-text-secondary">{row.joined ? ownerFormatDate(row.joined) : '—'}</td>
                       <td className="px-5 py-4">
                         <OwnerStatusPill status={row.status || 'approved'} />
                       </td>
@@ -2268,14 +2286,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                               <button
                                 onClick={() => decideStudent(row, 'approved')}
                                 disabled={busy}
-                                className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-300 hover:bg-emerald-500/20 disabled:opacity-50"
+                                className="btn-success rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50"
                               >
                                 {busy ? '...' : 'Tasdiqlash'}
                               </button>
                               <button
                                 onClick={() => decideStudent(row, 'rejected')}
                                 disabled={busy}
-                                className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
+                                className="btn-danger rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50"
                               >
                                 Rad etish
                               </button>
@@ -2285,7 +2303,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                             <button
                               onClick={() => openRoleModal(row)}
                               disabled={busy}
-                              className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-bold text-indigo-300 hover:bg-indigo-500/20 disabled:opacity-50"
+                              className="btn-ghost rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50"
                             >
                               Rolni o'zgartir
                             </button>
@@ -2294,7 +2312,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                             <button
                               onClick={() => removeStudentMember(row)}
                               disabled={busy}
-                              className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 disabled:opacity-50"
+                              className="btn-danger rounded-lg px-3 py-1.5 text-xs font-bold disabled:opacity-50"
                             >
                               {busy ? '...' : 'Chiqarib yuborish'}
                             </button>
@@ -2306,7 +2324,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 })}
                 {!studentsLoading && filteredStudents.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
+                    <td colSpan={6} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-text-secondary">
                       {query ? "Mos keladigan o'quvchilar topilmadi" : "O'quvchilar yo'q"}
                     </td>
                   </tr>
@@ -2329,14 +2347,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderOlympiads = () => (
     <div className="space-y-5 p-4 lg:p-6">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Musobaqalar</h1>
-        <p className="mt-1 text-sm font-semibold text-white/50">Direktor uchun tashkilotdagi olimpiada va musobaqalar ko'rinishi.</p>
+        <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary lg:text-3xl">Musobaqalar</h1>
+        <p className="mt-1 text-sm font-semibold text-text-secondary">Direktor uchun tashkilotdagi olimpiada va musobaqalar ko'rinishi.</p>
       </div>
       <section className="overflow-hidden rounded-2xl glass-strong">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1020px] text-left">
-            <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
-              <tr className="text-[10px] font-black uppercase tracking-wider text-white/40">
+            <thead className="admin-table-hdr">
+              <tr className="font-display text-[10px] tracking-widest">
                 {['Nomi', 'Turi', 'Fan', 'Daraja', 'Test turi', 'Sana', 'Ishtirokchilar', 'Holat', 'Amal'].map(h => (
                   <th key={h} className="px-5 py-3.5">{h}</th>
                 ))}
@@ -2345,7 +2363,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             <tbody>
               {centerOlympiads.map(o => (
                 <tr key={o.id} className="olympy-row text-sm">
-                  <td className="px-5 py-4 font-black text-white">{o.title}</td>
+                  <td className="px-5 py-4 font-black text-text-primary">{o.title}</td>
                   <td className="px-5 py-4">
                     <span className={`chip ${o.eventType === 'olympiad' ? 'badge-active' : 'badge-pending'}`}>
                       {eventTypeLabel(o.eventType || 'competition')}
@@ -2357,15 +2375,15 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   <td className="px-5 py-4">
                     {o.testLevel
                       ? <span className="chip badge-draft">{o.testLevel}</span>
-                      : <span className="text-white/30">—</span>}
+                      : <span className="text-text-secondary">—</span>}
                   </td>
                   <td className="px-5 py-4">
                     {o.testType
                       ? <span className="chip badge-active">{testTypeLabel(o.testType)}</span>
-                      : <span className="text-white/30">—</span>}
+                      : <span className="text-text-secondary">—</span>}
                   </td>
-                  <td className="px-5 py-4 text-white/55">{o.startDate || '—'}</td>
-                  <td className="px-5 py-4 font-bold text-white/75">{o.participants || 0}</td>
+                  <td className="px-5 py-4 text-text-secondary">{o.startDate || '—'}</td>
+                  <td className="px-5 py-4 font-bold text-text-primary">{o.participants || 0}</td>
                   <td className="px-5 py-4">
                     <OwnerStatusPill status={o.status} />
                   </td>
@@ -2425,7 +2443,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                           </button>
                         </>
                       ) : (
-                        <span className="text-white/30 text-xs">—</span>
+                        <span className="text-text-secondary text-xs">—</span>
                       )}
                       {isApi && o.status === 'active' && (
                         <button
@@ -2445,7 +2463,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               ))}
               {centerOlympiads.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
+                  <td colSpan={9} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-text-secondary">
                     Hali tadbirlar yo'q
                   </td>
                 </tr>
@@ -2477,7 +2495,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const disqualifiedCount = proctoringData.filter(p => p.status === 'disqualified').length;
 
     return (
-      <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in text-white">
+      <div className="p-3 md:p-6 space-y-4 md:space-y-6 mobile-content-pad animate-in text-text-primary">
         {/* Back and title */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -2490,14 +2508,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </button>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-xl font-black text-white">Jonli nazorat paneli</h2>
-                <span className="flex h-2.5 w-2.5 relative">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500"></span>
-                </span>
-                <span className="text-[10px] uppercase tracking-wider font-extrabold text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-md">LIVE</span>
+                <h2 className="font-display text-xl font-bold text-text-primary">Jonli nazorat paneli</h2>
+                {/* Jonli belgi: avval ikki qavatli `animate-ping` halqa edi —
+                    ambient animatsiya qoidasi bo'yicha olib tashlandi. Holat
+                    endi qattiq `error` nuqta va yozuv bilan o'qiladi. */}
+                <span className="inline-flex h-2 w-2 rounded-full bg-error"></span>
+                <span className="rounded-md border border-error/45 bg-ground px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-error">LIVE</span>
               </div>
-              <p className="text-white/40 text-xs mt-0.5">{activeOlym?.title || 'Tadbir'}</p>
+              <p className="text-text-secondary text-xs mt-0.5">{activeOlym?.title || 'Tadbir'}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -2515,40 +2533,40 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="glass rounded-2xl p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-white/40 font-medium font-bold">Jami faol</div>
-              <div className="text-2xl font-black text-white mt-1">{totalCount}</div>
+              <div className="text-xs font-bold text-text-secondary">Jami faol</div>
+              <div className="font-data text-2xl font-bold text-text-primary mt-1">{totalCount}</div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400">
+            <div className="w-10 h-10 rounded-xl border border-edge bg-ground flex items-center justify-center text-accent">
               <Icon name="users" size={18} />
             </div>
           </div>
           <div className="glass rounded-2xl p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-white/40 font-medium font-bold text-emerald-400 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <div className="text-xs font-bold text-success flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-success"></span>
                 Onlayn
               </div>
-              <div className="text-2xl font-black text-white mt-1">{onlineCount}</div>
+              <div className="font-data text-2xl font-bold text-text-primary mt-1">{onlineCount}</div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center text-emerald-400">
+            <div className="w-10 h-10 rounded-xl border border-success/45 bg-ground flex items-center justify-center text-success">
               <Icon name="check" size={18} />
             </div>
           </div>
           <div className="glass rounded-2xl p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-white/40 font-medium font-bold text-slate-300">Tugatganlar</div>
-              <div className="text-2xl font-black text-white mt-1">{completedCount}</div>
+              <div className="text-xs font-bold text-text-secondary">Tugatganlar</div>
+              <div className="font-data text-2xl font-bold text-text-primary mt-1">{completedCount}</div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center text-white/45">
+            <div className="w-10 h-10 rounded-xl border border-edge bg-ground flex items-center justify-center text-text-secondary">
               <Icon name="trophy" size={18} />
             </div>
           </div>
           <div className="glass rounded-2xl p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs text-white/40 font-medium font-bold text-rose-400">Diskvalifikatsiya</div>
-              <div className="text-2xl font-black text-rose-400 mt-1">{disqualifiedCount}</div>
+              <div className="text-xs font-bold text-error">Diskvalifikatsiya</div>
+              <div className="font-data text-2xl font-bold text-error mt-1">{disqualifiedCount}</div>
             </div>
-            <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-400">
+            <div className="w-10 h-10 rounded-xl border border-error/45 bg-ground flex items-center justify-center text-error">
               <Icon name="info" size={18} />
             </div>
           </div>
@@ -2557,9 +2575,9 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         {/* Search */}
         <div className="flex justify-between items-center gap-3">
           <div className="relative w-full sm:w-80">
-            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30" />
+            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary" />
             <input
-              className="input-field pl-10 py-2 w-full text-sm text-white bg-white/5 border border-white/10 rounded-xl"
+              className="input-field pl-10 py-2 w-full text-sm text-text-primary bg-surface-1 border border-edge rounded-xl"
               placeholder="Ism yoki telefon bo'yicha qidirish..."
               value={proctoringSearch}
               onChange={e => setProctoringSearch(e.target.value)}
@@ -2572,13 +2590,13 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <div className="overflow-x-auto">
             <table className="w-full min-w-[800px]">
               <thead>
-                <tr className="border-b border-white/5 bg-white/2 text-[11px] font-bold text-white/40 uppercase tracking-wider">
+                <tr className="border-b border-edge bg-surface-1 text-[11px] font-bold text-text-secondary uppercase tracking-wider">
                   {["Ism / Telefon", 'Boshlash vaqti', 'Holati', 'Javoblar', 'Tab almashish', 'Natija / Sarflangan vaqt'].map(h => (
                     <th key={h} className="text-left px-5 py-4">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-white/5">
+              <tbody className="divide-y divide-edge">
                 {filteredProctoring.map(p => {
                   const percent = p.total_questions > 0 ? Math.round((p.answered_count / p.total_questions) * 100) : 0;
                   
@@ -2586,61 +2604,63 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   let statusBadge = null;
                   let onlineIndicator = null;
                   
+                  // Holat belgilari — `.chip badge-*` (src/index.css) bilan bir xil
+                  // semantikada: rad etilgan / yakunlangan / kutilmoqda / faol.
                   if (p.status === 'disqualified') {
                     statusBadge = (
-                      <span className="rounded-lg bg-rose-500/15 border border-rose-500/30 px-2 py-1 text-xs font-bold text-rose-400 inline-flex items-center gap-1">
+                      <span className="chip badge-rejected inline-flex items-center gap-1">
                         ⚠️ Diskvalifikatsiya
                       </span>
                     );
                     onlineIndicator = (
-                      <span className="inline-flex items-center gap-1.5 text-xs text-rose-400">
-                        <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                      <span className="inline-flex items-center gap-1.5 text-xs text-error">
+                        <span className="w-2 h-2 rounded-full bg-error"></span>
                         Qizil chiroq
                       </span>
                     );
                   } else if (p.status === 'completed') {
                     statusBadge = (
-                      <span className="rounded-lg bg-indigo-500/15 border border-indigo-500/30 px-2 py-1 text-xs font-bold text-indigo-300 inline-flex items-center gap-1">
+                      <span className="chip badge-finished inline-flex items-center gap-1">
                         ✓ Yakunlandi
                       </span>
                     );
                     onlineIndicator = (
-                      <span className="inline-flex items-center gap-1.5 text-xs text-white/30">
-                        <span className="w-2 h-2 rounded-full bg-white/20"></span>
+                      <span className="inline-flex items-center gap-1.5 text-xs text-text-secondary">
+                        <span className="w-2 h-2 rounded-full bg-edge-strong"></span>
                         Oflayn
                       </span>
                     );
                   } else if (p.pending_review || p.status === 'pending_review') {
-                    // Cheating aniqlandi — menejer/owner qarorini kutmoqda (amber).
+                    // Cheating aniqlandi — menejer/owner qarorini kutmoqda (warning).
                     statusBadge = (
-                      <span className="rounded-lg bg-amber-500/15 border border-amber-500/40 px-2 py-1 text-xs font-bold text-amber-300 inline-flex items-center gap-1">
+                      <span className="chip badge-pending inline-flex items-center gap-1">
                         ⏳ Tekshiruv kutilmoqda
                       </span>
                     );
                     onlineIndicator = (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-300">
-                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-warning">
+                        <span className="w-2 h-2 rounded-full bg-warning"></span>
                         Qaror kutilmoqda
                       </span>
                     );
                   } else {
                     // active
                     statusBadge = (
-                      <span className="rounded-lg bg-cyan-500/10 border border-cyan-500/25 px-2 py-1 text-xs font-bold text-cyan-300">
+                      <span className="chip badge-active">
                         Faol topshirmoqda
                       </span>
                     );
                     if (p.is_online) {
                       onlineIndicator = (
-                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-success">
+                          <span className="w-2 h-2 rounded-full bg-success"></span>
                           Yashil chiroq (Onlayn)
                         </span>
                       );
                     } else {
                       onlineIndicator = (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-white/40">
-                          <span className="w-2 h-2 rounded-full bg-white/30"></span>
+                        <span className="inline-flex items-center gap-1.5 text-xs text-text-secondary">
+                          <span className="w-2 h-2 rounded-full bg-edge-strong"></span>
                           Oflayn (Aloqa yo'q)
                         </span>
                       );
@@ -2651,9 +2671,9 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   const hasEscapes = p.tab_escapes > 0;
                   const escapeTone = hasEscapes
                     ? (p.tab_escapes >= 60
-                        ? 'text-rose-400 bg-rose-500/10 border border-rose-500/20'
-                        : 'text-amber-400 bg-amber-500/10 border border-amber-500/20')
-                    : 'text-white/40 bg-white/5';
+                        ? 'text-error border border-error/45 bg-ground'
+                        : 'text-warning border border-warning/45 bg-ground')
+                    : 'text-text-secondary border border-edge bg-ground';
 
                   const formattedStart = p.started_at
                     ? new Date(p.started_at).toLocaleTimeString('uz-UZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -2664,12 +2684,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     : '—';
 
                   return (
-                    <tr key={p.student_id} className="olympy-row hover:bg-white/1.5 transition-colors">
+                    <tr key={p.student_id} className="olympy-row transition-colors">
                       <td className="px-5 py-4">
-                        <div className="font-semibold text-white text-sm">{p.student_name}</div>
-                        <div className="text-xs text-white/40 mt-0.5">{p.phone}</div>
+                        <div className="font-semibold text-text-primary text-sm">{p.student_name}</div>
+                        <div className="text-xs font-data text-text-secondary mt-0.5">{p.phone}</div>
                       </td>
-                      <td className="px-5 py-4 text-sm text-white/60">
+                      <td className="px-5 py-4 text-sm font-data text-text-secondary">
                         {formattedStart}
                       </td>
                       <td className="px-5 py-4">
@@ -2677,7 +2697,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                           <div>{statusBadge}</div>
                           <div>{onlineIndicator}</div>
                           {p.cheating_reason && (
-                            <div className="text-[10px] text-rose-300/80 bg-rose-950/20 px-2 py-0.5 rounded border border-rose-900/30 max-w-[200px] truncate" title={p.cheating_reason}>
+                            <div className="text-[10px] text-error bg-ground px-2 py-0.5 rounded border border-error/45 max-w-[200px] truncate" title={p.cheating_reason}>
                               Sabab: {p.cheating_reason}
                             </div>
                           )}
@@ -2685,22 +2705,19 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       </td>
                       <td className="px-5 py-4 min-w-[150px]">
                         <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono font-bold text-white/80">{p.answered_count} / {p.total_questions}</span>
-                          <span className="text-[10px] text-white/40 font-medium">({percent}%)</span>
+                          <span className="text-xs font-data font-bold text-text-primary">{p.answered_count} / {p.total_questions}</span>
+                          <span className="text-[10px] font-data text-text-secondary font-medium">({percent}%)</span>
                         </div>
-                        <div className="w-32 h-1.5 bg-white/5 rounded-full mt-1.5 overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-indigo-500 to-cyan-400 rounded-full transition-all duration-300"
-                            style={{ width: `${percent}%` }}
-                          />
+                        <div className="progress-bar w-32 h-1.5 mt-1.5">
+                          <div className="progress-fill" style={{ width: `${percent}%` }} />
                         </div>
                       </td>
                       <td className="px-5 py-4">
-                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold font-mono inline-flex items-center gap-1 ${escapeTone}`}>
+                        <span className={`px-2.5 py-1 rounded-lg text-xs font-bold font-data inline-flex items-center gap-1 ${escapeTone}`}>
                           <Icon name="info" size={11} /> {p.tab_escapes} soniya
                         </span>
                         {hasEscapes && (
-                          <div className="text-[9px] text-amber-300 mt-1 font-semibold">
+                          <div className="text-[9px] text-warning mt-1 font-semibold">
                             ⚠️ Tashqarida bo'lgan
                           </div>
                         )}
@@ -2708,11 +2725,11 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       <td className="px-5 py-4 text-sm">
                         {p.status === 'completed' ? (
                           <div>
-                            <span className="font-extrabold text-emerald-400 text-base">{p.score}%</span>
-                            <div className="text-[10px] text-white/40 mt-0.5">Sarflandi: {formattedTimeSpent}</div>
+                            <span className="font-data font-bold text-success text-base">{p.score}%</span>
+                            <div className="text-[10px] font-data text-text-secondary mt-0.5">Sarflandi: {formattedTimeSpent}</div>
                           </div>
                         ) : p.status === 'disqualified' ? (
-                          <span className="font-bold text-rose-400 text-xs">Natija bekor qilingan</span>
+                          <span className="font-bold text-error text-xs">Natija bekor qilingan</span>
                         ) : (p.pending_review || p.status === 'pending_review') ? (
                           <div className="flex flex-col gap-1.5 min-w-[160px]">
                             <button
@@ -2725,13 +2742,13 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                             <button
                               onClick={() => handleReviewCheating(p.session_id, 'continue')}
                               disabled={!!reviewBusyIds[p.session_id]}
-                              className="text-xs px-3 py-1.5 rounded-lg font-semibold bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="btn-success text-xs px-3 py-1.5 rounded-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               Davom etishga ruxsat
                             </button>
                           </div>
                         ) : (
-                          <span className="text-white/30 text-xs">Test topshirilmoqda...</span>
+                          <span className="text-text-secondary text-xs">Test topshirilmoqda...</span>
                         )}
                       </td>
                     </tr>
@@ -2739,7 +2756,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 })}
                 {filteredProctoring.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-16 text-center text-white/40 text-sm">
+                    <td colSpan={6} className="px-5 py-16 text-center text-text-secondary text-sm">
                       {searchQuery ? "Mos keladigan ishtirokchilar topilmadi" : "Ushbu tadbirda faol ishtirokchilar hozircha mavjud emas"}
                     </td>
                   </tr>
@@ -2760,8 +2777,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <div className="space-y-5 p-4 lg:p-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Markazlar reytingi</h1>
-            <p className="mt-1 text-sm font-semibold text-white/50">Platformadagi barcha tasdiqlangan tashkilotlar o'rtacha ball bo'yicha.</p>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary lg:text-3xl">Markazlar reytingi</h1>
+            <p className="mt-1 text-sm font-semibold text-text-secondary">Platformadagi barcha tasdiqlangan tashkilotlar o'rtacha ball bo'yicha.</p>
           </div>
           <button
             onClick={() => apiRankingRes.reload?.()}
@@ -2770,12 +2787,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             <Icon name="bolt" size={13} /> Yangilash
           </button>
         </div>
-        {rankingLoading && <div className="text-xs text-white/40">Yuklanmoqda...</div>}
+        {rankingLoading && <div className="text-xs text-text-secondary">Yuklanmoqda...</div>}
         <section className="overflow-hidden rounded-2xl glass-strong">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[860px] text-left">
-              <thead style={{ background: 'rgba(255,255,255,0.03)' }}>
-                <tr className="text-[10px] font-black uppercase tracking-wider text-white/40">
+              <thead className="admin-table-hdr">
+                <tr className="font-display text-[10px] tracking-widest">
                   {["O'rin", 'Markaz nomi', "O'quvchilar", 'Urinishlar', "O'rt. ball", 'Eng yuqori'].map(h => (
                     <th key={h} className="px-5 py-3.5">{h}</th>
                   ))}
@@ -2787,38 +2804,46 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   return (
                     <tr
                       key={row.center_id}
-                      className={`olympy-row text-sm ${isMine ? 'bg-indigo-500/10' : ''}`}
+                      className={`olympy-row text-sm ${isMine ? 'bg-surface-2' : ''}`}
                     >
-                      <td className="px-5 py-4 font-black text-white">
-                        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-xs font-black ${
-                          row.rank === 1 ? 'bg-amber-500/25 text-amber-300' :
-                          row.rank === 2 ? 'bg-slate-400/25 text-slate-200' :
-                          row.rank === 3 ? 'bg-orange-500/25 text-orange-300' :
-                          'bg-white/5 text-white/55'
+                      <td className="px-5 py-4 font-bold text-text-primary">
+                        {/* O'rin belgisi — Leaderboard.jsx bilan bir xil qoida:
+                            medal rangi MATNGA berilmaydi (light mavzuda oltin
+                            surface-2 da 3.2:1 — belgi uchun yetadi, matn uchun
+                            emas). Farq `.leaderboard-*` yuvish + chegara bilan,
+                            raqam esa `text-primary`. */}
+                        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg font-data text-xs font-bold ${
+                          row.rank === 1 ? 'leaderboard-gold text-text-primary' :
+                          row.rank === 2 ? 'leaderboard-silver text-text-primary' :
+                          row.rank === 3 ? 'leaderboard-bronze text-text-primary' :
+                          'border border-edge bg-ground text-text-secondary'
                         }`}>{row.rank}</span>
                       </td>
                       <td className="px-5 py-4">
-                        <div className="font-black text-white">{row.center_name}</div>
-                        <div className="text-[11px] font-semibold text-white/40">
+                        <div className="font-bold text-text-primary">{row.center_name}</div>
+                        <div className="text-[11px] font-semibold text-text-secondary">
                           {row.organization_type || "Tashkilot"}{row.region ? ` · ${row.region}` : ''}{isMine ? " · Sizning markazingiz" : ''}
                         </div>
                       </td>
-                      <td className="px-5 py-4 font-bold text-white/75">{row.student_count}</td>
-                      <td className="px-5 py-4 text-white/60">{row.total_attempts}</td>
+                      <td className="px-5 py-4 font-data font-bold text-text-primary">{row.student_count}</td>
+                      <td className="px-5 py-4 font-data text-text-secondary">{row.total_attempts}</td>
                       <td className="px-5 py-4">
-                        <span className={`font-black ${
-                          row.average_score >= 80 ? 'text-emerald-400' :
-                          row.average_score >= 60 ? 'text-cyan-400' :
-                          row.average_score >= 40 ? 'text-amber-400' : 'text-white/45'
+                        {/* Ball darajasi — holat semantikasi (success/warning),
+                            akcent emas: 60–79% oralig'i `accent-2` (qalam ko'ki)
+                            bilan neytral belgilanadi. */}
+                        <span className={`font-data font-bold ${
+                          row.average_score >= 80 ? 'text-success' :
+                          row.average_score >= 60 ? 'text-accent-2' :
+                          row.average_score >= 40 ? 'text-warning' : 'text-text-secondary'
                         }`}>{row.average_score}%</span>
                       </td>
-                      <td className="px-5 py-4 text-white/80 font-bold">{row.top_score}%</td>
+                      <td className="px-5 py-4 font-data text-text-primary font-bold">{row.top_score}%</td>
                     </tr>
                   );
                 })}
                 {rankingData.length === 0 && !rankingLoading && (
                   <tr>
-                    <td colSpan={6} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-white/40">
+                    <td colSpan={6} className="px-5 py-10 md:py-16 text-center text-sm font-bold text-text-secondary">
                       Reyting ma'lumotlari mavjud emas
                     </td>
                   </tr>
@@ -2835,8 +2860,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     <div className="space-y-5 p-4 lg:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Tashkilot profili</h1>
-          <p className="mt-1 text-sm font-semibold text-white/50">O'z tashkilotingiz bo'yicha asosiy ma'lumotlar.</p>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary lg:text-3xl">Tashkilot profili</h1>
+          <p className="mt-1 text-sm font-semibold text-text-secondary">O'z tashkilotingiz bo'yicha asosiy ma'lumotlar.</p>
         </div>
         {center?.status === 'approved' && (
           <button onClick={openEditCenterModal}
@@ -2855,14 +2880,14 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   e.currentTarget.nextElementSibling?.classList.remove('hidden');
                 }} />
             ) : null}
-            <div className={`flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-600 text-2xl font-black text-white ${center.imageUrl ? 'hidden' : ''}`}>{center.name[0]}</div>
+            <div className={`flex h-16 w-16 items-center justify-center rounded-2xl bg-accent-fill font-display text-2xl font-bold text-on-accent ${center.imageUrl ? 'hidden' : ''}`}>{center.name[0]}</div>
             {isApi && (
               <>
                 <input ref={centerImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleCenterImageUpload} />
                 <button
                   onClick={() => centerImageInputRef.current?.click()}
                   disabled={centerImageLoading}
-                  className="absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white shadow-lg hover:bg-emerald-600 disabled:opacity-60"
+                  className="btn-ghost absolute -bottom-2 -right-2 flex h-8 w-8 items-center justify-center rounded-full disabled:opacity-60"
                   title="Tashkilot rasmini yuklash"
                 >
                   <Icon name="upload" size={14} />
@@ -2871,8 +2896,8 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-xl font-black text-white">{center.name}</h2>
-            <p className="mt-1 text-sm font-semibold text-white/50">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · {ownerFormatDate(center.createdAt)}</p>
+            <h2 className="truncate font-display text-xl font-bold text-text-primary">{center.name}</h2>
+            <p className="mt-1 text-sm font-semibold text-text-secondary">{center.organizationType || "O'quv markaz"} · {formatCenterLocation(center)} · {ownerFormatDate(center.createdAt)}</p>
           </div>
           <OwnerStatusPill status={center.status} />
         </div>
@@ -2883,10 +2908,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <OwnerMetric label="Reyting" value={center.rating || '—'} icon={<Icon name="star" size={17} />} tone="amber" />
         </div>
         <div className="mt-6">
-          <div className="mb-2 text-xs font-black uppercase tracking-wide text-white/40">Yo'naltirilgan fanlar</div>
+          <div className="mb-2 font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Yo'naltirilgan fanlar</div>
           <div className="flex flex-wrap gap-2">
-            {(center.subjects || []).map(s => <span key={s} className="rounded-lg glass px-3 py-2 text-xs font-black text-white/70">{s}</span>)}
-            {(!center.subjects || center.subjects.length === 0) && <span className="text-sm font-semibold text-white/30">Fanlar kiritilmagan</span>}
+            {(center.subjects || []).map(s => <span key={s} className="rounded-lg glass px-3 py-2 text-xs font-bold text-text-primary">{s}</span>)}
+            {(!center.subjects || center.subjects.length === 0) && <span className="text-sm font-semibold text-text-secondary">Fanlar kiritilmagan</span>}
           </div>
         </div>
       </section>
@@ -2896,28 +2921,28 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const renderSettings = () => (
     <div className="space-y-5 p-4 lg:p-6">
       <div>
-        <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Sozlamalar</h1>
-        <p className="mt-1 text-sm font-semibold text-white/50">Direktor paneli sozlamalari.</p>
+        <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary lg:text-3xl">Sozlamalar</h1>
+        <p className="mt-1 text-sm font-semibold text-text-secondary">Direktor paneli sozlamalari.</p>
       </div>
       <section className="rounded-2xl glass-strong p-5 lg:p-6">
         <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-xl glass p-4">
             <div className="mb-2 flex items-center gap-2">
-              <div className="feature-icon bg-gradient-to-br from-indigo-500 to-purple-600 text-white" style={{ width: 32, height: 32, borderRadius: 10, fontSize: 14 }}>
+              <div className="feature-icon border border-edge bg-ground text-accent" style={{ width: 32, height: 32, borderRadius: 10, fontSize: 14 }}>
                 <Icon name="shield" size={16} />
               </div>
-              <div className="text-sm font-black text-white">Scope</div>
+              <div className="font-display text-sm font-bold text-text-primary">Scope</div>
             </div>
-            <div className="text-sm font-medium text-white/55">Direktor faqat o'z tashkiloti ma'lumotlarini ko'radi.</div>
+            <div className="text-sm font-medium text-text-secondary">Direktor faqat o'z tashkiloti ma'lumotlarini ko'radi.</div>
           </div>
           <div className="rounded-xl glass p-4">
             <div className="mb-2 flex items-center gap-2">
-              <div className="feature-icon bg-gradient-to-br from-cyan-500 to-sky-500 text-white" style={{ width: 32, height: 32, borderRadius: 10, fontSize: 14 }}>
+              <div className="feature-icon border border-edge bg-ground text-accent-2" style={{ width: 32, height: 32, borderRadius: 10, fontSize: 14 }}>
                 <Icon name="users" size={16} />
               </div>
-              <div className="text-sm font-black text-white">Xodim tasdig'i</div>
+              <div className="font-display text-sm font-bold text-text-primary">Xodim tasdig'i</div>
             </div>
-            <div className="text-sm font-medium text-white/55">Manager va o'qituvchi arizalari direktor qarori bilan yakunlanadi.</div>
+            <div className="text-sm font-medium text-text-secondary">Manager va o'qituvchi arizalari direktor qarori bilan yakunlanadi.</div>
           </div>
         </div>
       </section>
@@ -2926,42 +2951,42 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       {center && (
         <section className="rounded-2xl glass-strong p-5 lg:p-6">
           <div className="mb-4 flex items-center gap-2">
-            <div className="feature-icon bg-gradient-to-br from-fuchsia-500 to-pink-600 text-white" style={{ width: 32, height: 32, borderRadius: 10, fontSize: 14 }}>
+            <div className="feature-icon border border-edge bg-ground text-accent" style={{ width: 32, height: 32, borderRadius: 10, fontSize: 14 }}>
               <Icon name="sparkles" size={16} />
             </div>
             <div>
-              <div className="text-sm font-black text-white">Brending</div>
-              <div className="text-xs font-medium text-white/45">Markazingiz brend rangini sozlang.</div>
+              <div className="font-display text-sm font-bold text-text-primary">Brending</div>
+              <div className="text-xs font-medium text-text-secondary">Markazingiz brend rangini sozlang.</div>
             </div>
           </div>
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
             <label className="block">
-              <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Brend rangi</span>
+              <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Brend rangi</span>
               <div className="flex items-center gap-3">
                 <input
                   type="color"
                   value={brandColorInput}
                   onChange={e => setBrandColorInput(e.target.value)}
-                  className="h-11 w-16 cursor-pointer rounded-lg border border-white/10 bg-transparent p-1"
+                  className="h-11 w-16 cursor-pointer rounded-lg border border-edge bg-transparent p-1"
                   aria-label="Brend rangi"
                 />
                 <input
                   type="text"
                   value={brandColorInput}
                   onChange={e => setBrandColorInput(e.target.value)}
-                  className="input-field w-32 font-mono uppercase"
+                  className="input-field w-32 font-data uppercase"
                   placeholder="#6366F1"
                   maxLength={7}
                 />
               </div>
             </label>
             <div className="flex items-center gap-3">
-              <div className="h-11 w-11 rounded-xl border border-white/10" style={{ background: brandColorInput }} title="Oldindan ko'rish" />
+              <div className="h-11 w-11 rounded-xl border border-edge" style={{ background: brandColorInput }} title="Oldindan ko'rish" />
               <button
                 type="button"
                 onClick={saveBranding}
                 disabled={brandSaving}
-                className="rounded-lg bg-indigo-600 px-5 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-primary rounded-lg px-5 py-3 text-sm font-bold disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {brandSaving ? 'Saqlanmoqda...' : 'Saqlash'}
               </button>
@@ -3038,43 +3063,50 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       const monthNames = ['', 'Yan', 'Fev', 'Mar', 'Apr', 'May', 'Iyn', 'Iyl', 'Avg', 'Sen', 'Okt', 'Noy', 'Dek'];
       return { label: monthNames[parseInt(m, 10)] || d.month, value: d.joined || 0 };
     });
+    // O'rin plitkasi — `.leaderboard-*` (src/index.css) medal tokenlarini
+    // yuvish + chegara sifatida beradi; matn rangi `text-primary` bo'lib
+    // qoladi (oltin/kumush/bronza matn uchun AA dan o'tmaydi).
     const medalClass = (rank) =>
-      rank === 1 ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
-        : rank === 2 ? 'bg-slate-300/15 text-slate-200 border border-slate-300/30'
-          : rank === 3 ? 'bg-amber-700/15 text-amber-500 border border-amber-700/30'
-            : 'glass text-white/40 border border-white/5';
+      rank === 1 ? 'leaderboard-gold text-text-primary'
+        : rank === 2 ? 'leaderboard-silver text-text-primary'
+          : rank === 3 ? 'leaderboard-bronze text-text-primary'
+            : 'bg-ground text-text-secondary border border-edge';
     return (
       <div className="space-y-5 p-4 lg:p-6 relative">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Statistika</h1>
-          <p className="mt-1 text-sm font-semibold text-white/50">{center.name} bo'yicha o'sish va eng yaxshi o'quvchilar.</p>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary lg:text-3xl">Statistika</h1>
+          <p className="mt-1 text-sm font-semibold text-text-secondary">{center.name} bo'yicha o'sish va eng yaxshi o'quvchilar.</p>
         </div>
 
         <div className={`space-y-5 ${isStatisticsLocked ? 'blur-[6px] select-none pointer-events-none' : ''}`}>
           {/* Markaz faollik trendi — oylik o'rtacha ball */}
           <section className="rounded-2xl glass-strong p-5 lg:p-6">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-black text-white">Markaz faollik trendi</h2>
-              <span className="text-xs font-semibold text-white/45">Oylik o'rtacha ball</span>
+              <h2 className="font-display text-base font-bold uppercase tracking-widest text-text-secondary">Markaz faollik trendi</h2>
+              <span className="text-xs font-semibold text-text-secondary">Oylik o'rtacha ball</span>
             </div>
             {apiActivityTrendRes.loading && !isStatisticsLocked ? (
-              <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+              <div className="text-center text-text-secondary text-sm py-8">Yuklanmoqda...</div>
             ) : (
               <>
                 <div className="mb-3 flex flex-wrap items-end gap-x-6 gap-y-2">
                   <div>
-                    <div className="text-2xl font-black text-white">{lastTrend ? lastTrend.avg_score : 0}</div>
-                    <div className="text-[11px] font-semibold text-white/40">joriy oy o'rt. ball</div>
+                    <div className="font-data text-2xl font-bold text-text-primary">{lastTrend ? lastTrend.avg_score : 0}</div>
+                    <div className="text-[11px] font-semibold text-text-secondary">joriy oy o'rt. ball</div>
                   </div>
                   {trendDelta !== null && (
-                    <div className={`flex items-center gap-1 text-sm font-black ${trendDelta >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    <div className={`flex items-center gap-1 font-data text-sm font-bold ${trendDelta >= 0 ? 'text-success' : 'text-error'}`}>
                       <span>{trendDelta >= 0 ? '▲' : '▼'}</span>
                       {trendDelta >= 0 ? '+' : ''}{trendDelta}
-                      <span className="text-[11px] font-semibold text-white/40">o'tgan oyga nisbatan</span>
+                      <span className="text-[11px] font-semibold text-text-secondary">o'tgan oyga nisbatan</span>
                     </div>
                   )}
                 </div>
-                <SvgLineChart points={trendPoints} height={170} stroke="#2F5D8C" />
+                {/* `stroke` berilmaydi: SvgLineChart standarti `accent-fill`
+                    (#C0362C) — u ATAYIN mavzudan qat'i nazar bir xil, ikkala
+                    fonda ham 3:1 dan yuqori. Avvalgi qat'iy #2F5D8C siyoh
+                    fonda 2.15:1 berardi. */}
+                <SvgLineChart points={trendPoints} height={170} />
               </>
             )}
           </section>
@@ -3083,28 +3115,28 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           {regionRank && (
             <section className="rounded-2xl glass-strong p-5 lg:p-6">
               <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-black text-white">Reytingdagi o'rningiz</h2>
-                <span className="text-xs font-semibold text-white/45">{regionRank.average_score} o'rt. ball asosida</span>
+                <h2 className="font-display text-base font-bold uppercase tracking-widest text-text-secondary">Reytingdagi o'rningiz</h2>
+                <span className="text-xs font-semibold text-text-secondary">{regionRank.average_score} o'rt. ball asosida</span>
               </div>
               <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-xl bg-gradient-to-br from-indigo-500/15 to-purple-500/10 border border-indigo-400/20 p-4">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-indigo-300/80">
+                <div className="rounded-xl border border-edge-strong border-l-4 border-l-accent bg-ground p-4">
+                  <div className="font-display text-[11px] font-bold uppercase tracking-widest text-accent">
                     {regionRank.region ? `${regionRank.region} hududida` : 'Hudud ko\'rsatilmagan'}
                   </div>
                   <div className="mt-1 flex items-baseline gap-1.5">
-                    <span className="text-3xl font-black text-white">{regionRank.region_rank ? `#${regionRank.region_rank}` : '—'}</span>
-                    {regionRank.region_total ? <span className="text-sm font-semibold text-white/45">/ {regionRank.region_total} markaz</span> : null}
+                    <span className="font-data text-3xl font-bold text-text-primary">{regionRank.region_rank ? `#${regionRank.region_rank}` : '—'}</span>
+                    {regionRank.region_total ? <span className="text-sm font-semibold text-text-secondary">/ {regionRank.region_total} markaz</span> : null}
                   </div>
                 </div>
-                <div className="rounded-xl bg-white/5 border border-edge-strong p-4">
-                  <div className="text-[11px] font-bold uppercase tracking-wide text-white/45">Umumiy reytingda</div>
+                <div className="rounded-xl bg-surface-1 border border-edge-strong border-l-4 border-l-edge-strong p-4">
+                  <div className="font-display text-[11px] font-bold uppercase tracking-widest text-text-secondary">Umumiy reytingda</div>
                   <div className="mt-1 flex items-baseline gap-1.5">
-                    <span className="text-3xl font-black text-white">{regionRank.global_rank ? `#${regionRank.global_rank}` : '—'}</span>
-                    {regionRank.global_total ? <span className="text-sm font-semibold text-white/45">/ {regionRank.global_total} markaz</span> : null}
+                    <span className="font-data text-3xl font-bold text-text-primary">{regionRank.global_rank ? `#${regionRank.global_rank}` : '—'}</span>
+                    {regionRank.global_total ? <span className="text-sm font-semibold text-text-secondary">/ {regionRank.global_total} markaz</span> : null}
                   </div>
                 </div>
               </div>
-              <p className="mt-3 text-[11px] font-semibold text-white/35">
+              <p className="mt-3 text-[11px] font-semibold text-text-secondary">
                 O'rin o'rtacha ball bo'yicha aniqlanadi. Boshqa markazlar nomi yashirin.
               </p>
             </section>
@@ -3113,15 +3145,15 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           {/* 6. O'quvchilar dinamikasi grafigi */}
           <section className="rounded-2xl glass-strong p-5 lg:p-6">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-black text-white">O'quvchilar dinamikasi</h2>
-              <span className="text-xs font-semibold text-white/45">Oxirgi 6 oyda qo'shilganlar</span>
+              <h2 className="font-display text-base font-bold uppercase tracking-widest text-text-secondary">O'quvchilar dinamikasi</h2>
+              <span className="text-xs font-semibold text-text-secondary">Oxirgi 6 oyda qo'shilganlar</span>
             </div>
             {apiDynamicsRes.loading && !isStatisticsLocked
-              ? <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+              ? <div className="text-center text-text-secondary text-sm py-8">Yuklanmoqda...</div>
               : <MonthBarChart data={barData} />}
             {dynamics.length > 0 && (
-              <div className="mt-3 text-xs font-semibold text-white/45">
-                Jami tasdiqlangan o'quvchilar: <span className="text-white font-black">{dynamics[dynamics.length - 1]?.total || 0}</span>
+              <div className="mt-3 text-xs font-semibold text-text-secondary">
+                Jami tasdiqlangan o'quvchilar: <span className="font-data text-text-primary font-bold">{dynamics[dynamics.length - 1]?.total || 0}</span>
               </div>
             )}
           </section>
@@ -3129,27 +3161,31 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           {/* 7. Top-10 o'quvchi karti */}
           <section className="rounded-2xl glass-strong p-5 lg:p-6">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-black text-white">Top o'quvchilar</h2>
-              <span className="text-xs font-semibold text-white/45">O'rtacha ball bo'yicha</span>
+              <h2 className="font-display text-base font-bold uppercase tracking-widest text-text-secondary">Top o'quvchilar</h2>
+              <span className="text-xs font-semibold text-text-secondary">O'rtacha ball bo'yicha</span>
             </div>
             {apiTopStudentsRes.loading && !isStatisticsLocked ? (
-              <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+              <div className="text-center text-text-secondary text-sm py-8">Yuklanmoqda...</div>
             ) : topStudents.length === 0 ? (
               <EmptyState icon="trophy" title="Hali natijalar yo'q" desc="O'quvchilar olimpiadalarda qatnashgach shu yerda chiqadi." />
             ) : (
               <div className="space-y-2.5">
                 {topStudents.map(s => (
-                  <div key={s.rank} className="flex items-center gap-3 rounded-xl bg-white/5 border border-white/5 p-3">
-                    <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-sm font-black ${medalClass(s.rank)}`}>
-                      {s.rank === 1 ? '🥇' : s.rank === 2 ? '🥈' : s.rank === 3 ? '🥉' : `#${s.rank}`}
+                  <div key={s.rank} className="flex items-center gap-3 rounded-xl bg-surface-1 border border-edge p-3">
+                    <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg font-data text-sm font-bold ${medalClass(s.rank)}`}>
+                      {/* Medal emoji EMAS: 1/2/3-o'rin farqini `medalClass`
+                          (leaderboard-gold/silver/bronze) chegara va foni
+                          beradi — `pages/Leaderboard.jsx` naqshi. Raqam har
+                          doim ko'rinadi, ya'ni signal faqat rangda emas. */}
+                      {`#${s.rank}`}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-black text-white">{s.name}</div>
-                      <div className="text-[11px] font-semibold text-white/40">{s.attempts} ta tadbir</div>
+                      <div className="truncate text-sm font-bold text-text-primary">{s.name}</div>
+                      <div className="text-[11px] font-semibold text-text-secondary">{s.attempts} ta tadbir</div>
                     </div>
                     <div className="flex-shrink-0 text-right">
-                      <div className="text-base font-black text-indigo-300">{s.avg_score}</div>
-                      <div className="text-[10px] font-semibold text-white/40">o'rt. ball</div>
+                      <div className="font-data text-base font-bold text-accent">{s.avg_score}</div>
+                      <div className="text-[10px] font-semibold text-text-secondary">o'rt. ball</div>
                     </div>
                   </div>
                 ))}
@@ -3160,48 +3196,52 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           {/* Guruhlar (sinflar) bo'yicha analitika */}
           <section className="rounded-2xl glass-strong p-5 lg:p-6">
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-base font-black text-white">Guruhlar</h2>
-              <span className="text-xs font-semibold text-white/45">Sinf/guruh bo'yicha natija</span>
+              <h2 className="font-display text-base font-bold uppercase tracking-widest text-text-secondary">Guruhlar</h2>
+              <span className="text-xs font-semibold text-text-secondary">Sinf/guruh bo'yicha natija</span>
             </div>
             {apiGroupStatsRes.loading && !isStatisticsLocked ? (
-              <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+              <div className="text-center text-text-secondary text-sm py-8">Yuklanmoqda...</div>
             ) : groups.length === 0 ? (
               <EmptyState icon="users" title="Hali guruh ma'lumoti yo'q" desc="O'quvchilarga guruh tegi qo'shing va ular mashq/olimpiadalarda qatnashgach shu yerda chiqadi." />
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
                 {groups.map((g, gi) => {
                   const avg = g.avg_score || 0;
-                  const barColor = avg >= 70 ? 'bg-emerald-500' : avg >= 50 ? 'bg-amber-500' : 'bg-rose-500';
+                  // Bar rangi MA'NO tashiydi (guruh darajasi), shuning uchun
+                  // holat tokenlari — akcent emas.
+                  const barColor = avg >= 70 ? 'bg-success' : avg >= 50 ? 'bg-warning' : 'bg-error';
                   const weak = Array.isArray(g.weak_students) ? g.weak_students.slice(0, 3) : [];
                   return (
-                    <div key={g.group_tag || gi} className="rounded-xl bg-white/5 border border-edge-strong p-4">
+                    <div key={g.group_tag || gi} className="rounded-xl bg-surface-1 border border-edge-strong p-4">
                       <div className="mb-2 flex items-center justify-between gap-2">
                         <div className="min-w-0">
-                          <div className="truncate text-sm font-black text-white">{g.group_tag || 'Guruhsiz'}</div>
-                          <div className="text-[11px] font-semibold text-white/40">{g.student_count || 0} o'quvchi · {g.olympiad_participations || 0} qatnashuv</div>
+                          <div className="truncate text-sm font-bold text-text-primary">{g.group_tag || 'Guruhsiz'}</div>
+                          <div className="text-[11px] font-data font-semibold text-text-secondary">{g.student_count || 0} o'quvchi · {g.olympiad_participations || 0} qatnashuv</div>
                         </div>
                         <div className="flex-shrink-0 text-right">
-                          <div className="text-lg font-black text-indigo-300">{avg}%</div>
-                          <div className="text-[10px] font-semibold text-white/40">o'rt. ball</div>
+                          <div className="font-data text-lg font-bold text-accent">{avg}%</div>
+                          <div className="text-[10px] font-semibold text-text-secondary">o'rt. ball</div>
                         </div>
                       </div>
-                      <div className="mb-3 h-2 w-full overflow-hidden rounded-full bg-white/10">
+                      {/* Trek `progress-bar` (surface-2): avval `bg-surface-1`
+                          edi — kartochka foni bilan bir xil, ya'ni ko'rinmasdi. */}
+                      <div className="progress-bar mb-3 h-2 w-full">
                         <div className={`h-full rounded-full ${barColor}`} style={{ width: `${Math.min(100, Math.max(0, avg))}%` }} />
                       </div>
                       {g.top_student && (
-                        <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-amber-300">
+                        <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-warning">
                           <span>🏆</span>
                           <span className="truncate">{g.top_student.name}</span>
-                          <span className="text-white/40">({g.top_student.score}%)</span>
+                          <span className="text-text-secondary">({g.top_student.score}%)</span>
                         </div>
                       )}
                       {weak.length > 0 && (
                         <div className="space-y-1">
-                          <div className="text-[10px] font-bold uppercase tracking-wide text-rose-400/80">Yordam kerak</div>
+                          <div className="font-display text-[10px] font-bold uppercase tracking-widest text-error">Yordam kerak</div>
                           {weak.map((w, wi) => (
-                            <div key={w.user_id ?? wi} className="flex items-center justify-between rounded-lg bg-rose-500/10 px-2.5 py-1.5">
-                              <span className="truncate text-xs font-semibold text-rose-300">{w.name}</span>
-                              <span className="flex-shrink-0 text-xs font-black text-rose-400">{w.score}%</span>
+                            <div key={w.user_id ?? wi} className="flex items-center justify-between rounded-lg border border-error/45 bg-ground px-2.5 py-1.5">
+                              <span className="truncate text-xs font-semibold text-error">{w.name}</span>
+                              <span className="flex-shrink-0 font-data text-xs font-bold text-error">{w.score}%</span>
                             </div>
                           ))}
                         </div>
@@ -3215,17 +3255,19 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
 
         {isStatisticsLocked && (
-          <div className="absolute inset-x-4 bottom-4 top-24 z-10 flex flex-col items-center justify-center bg-slate-900/80 rounded-2xl p-6 text-center border border-white/5 shadow-2xl">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-tr from-amber-400 to-amber-600 text-white shadow-lg shadow-amber-500/20 mb-4 animate-bounce">
+          <div className="absolute inset-x-4 bottom-4 top-24 z-10 flex flex-col items-center justify-center bg-ground/95 rounded-2xl p-6 text-center border border-edge-strong">
+            {/* Gradient + rangli soya + `animate-bounce` olib tashlandi:
+                qulf belgisi `warning` chegara va ikonka bilan o'qiladi. */}
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-warning/45 bg-ground text-warning">
               <Icon name="star" size={32} />
             </div>
-            <h3 className="text-xl font-black text-white mb-2">Tashkilot tahlillari faqat Premium obunachilar uchun ochiq</h3>
-            <p className="text-white/75 text-sm max-w-sm mx-auto mb-6 leading-relaxed">
+            <h3 className="font-display text-xl font-bold text-text-primary mb-2">Tashkilot tahlillari faqat Premium obunachilar uchun ochiq</h3>
+            <p className="text-text-secondary text-sm max-w-sm mx-auto mb-6 leading-relaxed">
               O'quvchilar o'sish dinamikasi, top o'quvchilar reytingi va boshqa ko'rsatkichlarni ko'rish uchun Premium obunani faollashtiring.
             </p>
             <button
               onClick={() => setPage('premium')}
-              className="btn-primary px-8 py-3 rounded-xl font-bold flex items-center justify-center gap-2 text-sm shadow-xl shadow-indigo-600/30 hover:scale-105 transition-transform animate-pulse"
+              className="btn-primary px-8 py-3 rounded-xl font-bold flex items-center justify-center gap-2 text-sm"
             >
               <Icon name="star" size={16} /> Premium Obuna sahifasiga o'tish
             </button>
@@ -3248,13 +3290,13 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     return (
       <div className="space-y-5 p-4 lg:p-6">
         <div>
-          <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Savol banki</h1>
-          <p className="mt-1 text-sm font-semibold text-white/50">{center.name} ning shaxsiy savollar zaxirasi.</p>
+          <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary lg:text-3xl">Savol banki</h1>
+          <p className="mt-1 text-sm font-semibold text-text-secondary">{center.name} ning shaxsiy savollar zaxirasi.</p>
         </div>
 
         {/* Savol qo'shish forma */}
         <section className="rounded-2xl glass-strong p-5 lg:p-6 space-y-3">
-          <h2 className="text-base font-black text-white">Yangi savol</h2>
+          <h2 className="font-display text-base font-bold uppercase tracking-widest text-text-secondary">Yangi savol</h2>
           <textarea
             className="input-field w-full py-2.5 text-sm"
             rows={2}
@@ -3285,7 +3327,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 <button
                   type="button"
                   onClick={() => setCorrect(i)}
-                  className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-xs font-black ${o.correct ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'border border-white/15 text-white/40'}`}
+                  className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-xs font-bold ${o.correct ? 'border border-success/45 bg-ground text-success' : 'border border-edge-strong text-text-secondary hover:border-edge-strong hover:bg-surface-2'}`}
                   title="To'g'ri variant"
                 >
                   {o.correct ? '✓' : ''}
@@ -3297,7 +3339,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   onChange={e => setOpt(i, { text: e.target.value })}
                 />
                 {qbForm.options.length > 2 && (
-                  <button type="button" onClick={() => removeOpt(i)} className="flex-shrink-0 text-rose-300 hover:text-rose-200">
+                  <button type="button" onClick={() => removeOpt(i)} className="flex-shrink-0 text-text-secondary hover:text-error transition-colors">
                     <Icon name="x" size={16} />
                   </button>
                 )}
@@ -3305,38 +3347,38 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             ))}
             <button type="button" onClick={addOpt} className="btn-ghost rounded-lg px-3 py-1.5 text-xs font-bold">+ Variant qo'shish</button>
           </div>
-          <button onClick={addQbQuestion} disabled={qbSaving} className="btn-primary rounded-xl px-5 py-2.5 text-sm font-black disabled:opacity-50">
+          <button onClick={addQbQuestion} disabled={qbSaving} className="btn-primary rounded-xl px-5 py-2.5 text-sm font-bold disabled:opacity-50">
             {qbSaving ? 'Saqlanmoqda...' : 'Bankka qo\'shish'}
           </button>
         </section>
 
         {/* Saqlangan savollar */}
         <section className="rounded-2xl glass-strong p-5 lg:p-6">
-          <h2 className="mb-4 text-base font-black text-white">Saqlangan savollar ({questionBank.length})</h2>
+          <h2 className="mb-4 font-display text-base font-bold uppercase tracking-widest text-text-secondary">Saqlangan savollar ({questionBank.length})</h2>
           {questionBankLoading ? (
-            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+            <div className="text-center text-text-secondary text-sm py-8">Yuklanmoqda...</div>
           ) : questionBank.length === 0 ? (
             <EmptyState icon="file" title="Bank bo'sh" desc="Yuqoridagi forma orqali savol qo'shing." />
           ) : (
             <div className="space-y-3">
               {questionBank.map(q => (
-                <div key={q.id} className="rounded-xl bg-white/5 border border-white/5 p-3.5">
+                <div key={q.id} className="rounded-xl bg-surface-1 border border-edge p-3.5">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-bold text-white break-words whitespace-pre-wrap"><MathText text={q.text} /></div>
+                      <div className="text-sm font-bold text-text-primary break-words whitespace-pre-wrap"><MathText text={q.text} /></div>
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {(q.options || []).map((o, i) => (
-                          <span key={i} className={`rounded-lg px-2 py-1 text-[11px] font-semibold ${o.correct ? 'bg-emerald-500/15 text-emerald-300' : 'bg-white/5 text-white/50'}`}>
+                          <span key={i} className={`rounded-lg border px-2 py-1 text-[11px] font-semibold ${o.correct ? 'border-success/45 bg-ground text-success' : 'border-edge bg-ground text-text-secondary'}`}>
                             {o.correct ? '✓ ' : ''}<MathText text={o.text} />
                           </span>
                         ))}
                       </div>
-                      <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-semibold text-white/35">
+                      <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-semibold text-text-secondary">
                         {q.subject && <span>{q.subject}</span>}
                         <span>{difficultyLabel[q.difficulty] || q.difficulty}</span>
                       </div>
                     </div>
-                    <button onClick={() => deleteQbQuestion(q.id)} className="flex-shrink-0 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20">
+                    <button onClick={() => deleteQbQuestion(q.id)} className="btn-danger flex-shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-bold">
                       O'chirish
                     </button>
                   </div>
@@ -3364,18 +3406,18 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       <div className="space-y-5 p-4 lg:p-6">
         <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
           <div>
-            <h1 className="text-2xl font-black tracking-tight text-white lg:text-3xl">Mukofotlar do'koni</h1>
-            <p className="mt-1 text-sm font-semibold text-white/50">{center.name} o'quvchilari tangalarini almashtiradigan sovg'alar.</p>
+            <h1 className="font-display text-2xl font-bold tracking-tight text-text-primary lg:text-3xl">Mukofotlar do'koni</h1>
+            <p className="mt-1 text-sm font-semibold text-text-secondary">{center.name} o'quvchilari tangalarini almashtiradigan sovg'alar.</p>
           </div>
-          <button onClick={() => openShopModal(null)} className="btn-primary flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-black self-start">
+          <button onClick={() => openShopModal(null)} className="btn-primary flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold self-start">
             <Icon name="plus" size={15} /> Yangi mahsulot
           </button>
         </div>
 
         <section className="rounded-2xl glass-strong p-5 lg:p-6">
-          <h2 className="mb-4 text-base font-black text-white">Mahsulotlar ({shopProducts.length})</h2>
+          <h2 className="mb-4 font-display text-base font-bold uppercase tracking-widest text-text-secondary">Mahsulotlar ({shopProducts.length})</h2>
           {shopLoading ? (
-            <div className="text-center text-white/40 text-sm py-8">Yuklanmoqda...</div>
+            <div className="text-center text-text-secondary text-sm py-8">Yuklanmoqda...</div>
           ) : shopProducts.length === 0 ? (
             <EmptyState icon="award" title="Do'kon bo'sh" desc="Yuqoridagi tugma orqali birinchi mahsulotni qo'shing." />
           ) : (
@@ -3383,43 +3425,43 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               {shopProducts.map(p => {
                 const features = Array.isArray(p.features) ? p.features : [];
                 return (
-                  <div key={p.id} className={`rounded-xl border p-3.5 flex flex-col gap-3 ${p.is_active ? 'border-edge-strong bg-white/5' : 'border-edge bg-white/[0.02] opacity-70'}`}>
+                  <div key={p.id} className={`rounded-xl border p-3.5 flex flex-col gap-3 ${p.is_active ? 'border-edge-strong bg-surface-1' : 'border-edge bg-surface-1 opacity-70'}`}>
                     <div className="flex items-start gap-3">
                       {p.image_url ? (
                         <img src={p.image_url} alt={p.title} className="h-14 w-14 flex-shrink-0 rounded-xl object-cover" />
                       ) : (
-                        <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-white/5 text-2xl">{p.icon || '🎁'}</div>
+                        <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-surface-1 text-2xl">{p.icon || '🎁'}</div>
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <div className="truncate text-sm font-black text-white">{p.title}</div>
-                          {!p.is_active && <span className="flex-shrink-0 rounded-md bg-white/5 px-1.5 py-0.5 text-[9px] font-black uppercase text-white/40">Nofaol</span>}
+                          <div className="truncate text-sm font-bold text-text-primary">{p.title}</div>
+                          {!p.is_active && <span className="flex-shrink-0 rounded-md border border-edge bg-ground px-1.5 py-0.5 text-[9px] font-bold uppercase text-text-secondary">Nofaol</span>}
                         </div>
-                        <div className="mt-0.5 flex items-center gap-2 text-[11px] font-bold text-white/40">
-                          <span className="text-amber-300">🪙 {p.coin_cost}</span>
+                        <div className="mt-0.5 flex items-center gap-2 font-data text-[11px] font-bold text-text-secondary">
+                          <span className="text-warning">🪙 {p.coin_cost}</span>
                           <span>·</span>
                           <span>Zaxira: {p.stock}</span>
                         </div>
                       </div>
                     </div>
-                    {p.description && <p className="text-xs leading-relaxed text-white/45 line-clamp-2">{p.description}</p>}
+                    {p.description && <p className="text-xs leading-relaxed text-text-secondary line-clamp-2">{p.description}</p>}
                     {features.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {features.map((f, i) => (
-                          <span key={i} className="rounded-md border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-white/60">
+                          <span key={i} className="rounded-md border border-edge bg-surface-1 px-2 py-0.5 text-[10px] font-semibold text-text-secondary">
                             {typeof f === 'string' ? f : (f?.value || '')}
                           </span>
                         ))}
                       </div>
                     )}
-                    <div className="mt-auto flex items-center gap-2 border-t border-white/5 pt-3">
-                      <button onClick={() => openShopModal(p)} className="flex-1 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/70 hover:bg-white/10">
+                    <div className="mt-auto flex items-center gap-2 border-t border-edge pt-3">
+                      <button onClick={() => openShopModal(p)} className="flex-1 rounded-lg border border-edge bg-surface-1 px-3 py-1.5 text-xs font-bold text-text-primary hover:bg-surface-2">
                         Tahrirlash
                       </button>
-                      <button onClick={() => toggleShopActive(p)} className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-bold text-white/70 hover:bg-white/10" title={p.is_active ? 'Nofaol qilish' : 'Faollashtirish'}>
+                      <button onClick={() => toggleShopActive(p)} className="rounded-lg border border-edge bg-surface-1 px-3 py-1.5 text-xs font-bold text-text-primary hover:bg-surface-2" title={p.is_active ? 'Nofaol qilish' : 'Faollashtirish'}>
                         {p.is_active ? 'Yashirish' : "Ko'rsatish"}
                       </button>
-                      <button onClick={() => deleteShopProduct(p.id)} className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20">
+                      <button onClick={() => deleteShopProduct(p.id)} className="btn-danger rounded-lg px-2.5 py-1.5 text-xs font-bold">
                         <Icon name="x" size={14} />
                       </button>
                     </div>
@@ -3431,11 +3473,11 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </section>
 
         {shopModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={closeShopModal}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-ground/80 p-4" onClick={closeShopModal}>
             <div className="modal w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
               <div className="mb-5 flex items-start justify-between gap-4">
-                <h2 className="text-lg font-black text-white">{isEdit ? 'Mahsulotni tahrirlash' : 'Yangi mahsulot'}</h2>
-                <button type="button" onClick={closeShopModal} className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white">
+                <h2 className="font-display text-lg font-bold text-text-primary">{isEdit ? 'Mahsulotni tahrirlash' : 'Yangi mahsulot'}</h2>
+                <button type="button" onClick={closeShopModal} className="rounded-lg border border-edge p-2 text-text-secondary hover:bg-surface-2 hover:text-text-primary">
                   <Icon name="x" size={18} />
                 </button>
               </div>
@@ -3445,45 +3487,45 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   {shopForm.image_url ? (
                     <img src={shopForm.image_url} alt="" className="h-16 w-16 flex-shrink-0 rounded-xl object-cover" />
                   ) : (
-                    <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl bg-white/5 text-2xl">{shopForm.icon || '🎁'}</div>
+                    <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-xl bg-surface-1 text-2xl">{shopForm.icon || '🎁'}</div>
                   )}
                   <label className="btn-ghost cursor-pointer rounded-lg px-3 py-2 text-xs font-bold">
                     Rasm yuklash
                     <input type="file" accept="image/*" className="hidden" onChange={onPickImage} />
                   </label>
                   {shopForm.image_url && (
-                    <button type="button" onClick={() => setShopForm(f => ({ ...f, imageFile: null, image_url: '' }))} className="text-xs font-bold text-rose-300 hover:text-rose-200">O'chirish</button>
+                    <button type="button" onClick={() => setShopForm(f => ({ ...f, imageFile: null, image_url: '' }))} className="text-xs font-bold text-error hover:text-text-primary transition-colors">O'chirish</button>
                   )}
                 </div>
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Nom</span>
+                  <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Nom</span>
                   <input value={shopForm.title} onChange={e => setShopForm(f => ({ ...f, title: e.target.value }))} className="input-field" placeholder="Masalan, ProSkill futbolkasi" autoFocus />
                 </label>
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tavsif</span>
+                  <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Tavsif</span>
                   <textarea value={shopForm.description} onChange={e => setShopForm(f => ({ ...f, description: e.target.value }))} className="input-field" rows={2} placeholder="Mahsulot haqida qisqacha..." />
                 </label>
                 <div className="grid grid-cols-3 gap-3">
                   <label className="block">
-                    <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tanga</span>
+                    <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Tanga</span>
                     <input type="number" min={0} value={shopForm.coin_cost} onChange={e => setShopForm(f => ({ ...f, coin_cost: e.target.value }))} className="input-field" />
                   </label>
                   <label className="block">
-                    <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Zaxira</span>
+                    <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Zaxira</span>
                     <input type="number" min={0} value={shopForm.stock} onChange={e => setShopForm(f => ({ ...f, stock: e.target.value }))} className="input-field" />
                   </label>
                   <label className="block">
-                    <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Belgi</span>
+                    <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Belgi</span>
                     <input value={shopForm.icon} onChange={e => setShopForm(f => ({ ...f, icon: e.target.value }))} className="input-field text-center" maxLength={4} placeholder="🎁" />
                   </label>
                 </div>
                 {/* Xususiyatlar */}
                 <div className="space-y-2">
-                  <span className="block text-xs font-black uppercase text-white/40">Xususiyatlar</span>
+                  <span className="block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Xususiyatlar</span>
                   {(shopForm.features || []).map((f, i) => (
                     <div key={i} className="flex items-center gap-2">
                       <input value={typeof f === 'string' ? f : (f?.value || '')} onChange={e => setFeature(i, e.target.value)} className="input-field w-full py-1.5 text-sm" placeholder="Masalan, Hajmi: L" />
-                      <button type="button" onClick={() => removeFeature(i)} className="flex-shrink-0 text-rose-300 hover:text-rose-200">
+                      <button type="button" onClick={() => removeFeature(i)} className="flex-shrink-0 text-text-secondary hover:text-error transition-colors">
                         <Icon name="x" size={16} />
                       </button>
                     </div>
@@ -3491,12 +3533,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   <button type="button" onClick={addFeature} className="btn-ghost rounded-lg px-3 py-1.5 text-xs font-bold">+ Xususiyat qo'shish</button>
                 </div>
                 <label className="flex items-center gap-2.5 cursor-pointer">
-                  <input type="checkbox" checked={!!shopForm.is_active} onChange={e => setShopForm(f => ({ ...f, is_active: e.target.checked }))} className="h-4 w-4 rounded accent-indigo-500" />
-                  <span className="text-sm font-bold text-white/70">Faol (o'quvchilarga ko'rinadi)</span>
+                  <input type="checkbox" checked={!!shopForm.is_active} onChange={e => setShopForm(f => ({ ...f, is_active: e.target.checked }))} className="h-4 w-4 rounded accent-accent-fill" />
+                  <span className="text-sm font-bold text-text-primary">Faol (o'quvchilarga ko'rinadi)</span>
                 </label>
               </div>
               <div className="mt-6 flex gap-3">
-                <button onClick={submitShopProduct} disabled={shopSaving} className="btn-primary flex-1 rounded-xl py-2.5 text-sm font-black disabled:opacity-50">
+                <button onClick={submitShopProduct} disabled={shopSaving} className="btn-primary flex-1 rounded-xl py-2.5 text-sm font-bold disabled:opacity-50">
                   {shopSaving ? 'Saqlanmoqda...' : (isEdit ? 'Saqlash' : "Qo'shish")}
                 </button>
                 <button onClick={closeShopModal} className="btn-ghost rounded-xl px-5 py-2.5 text-sm font-bold">Bekor qilish</button>
@@ -3512,19 +3554,22 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const activePlans = plans.filter(p => p.duration_days === durationFilter);
     return (
       <div className="space-y-6 p-4 lg:p-6 animate-in">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass rounded-3xl p-6 border border-indigo-500/20 bg-gradient-to-r from-indigo-500/5 to-purple-500/5">
+        {/* `.glass` hoshiyani `box-shadow: inset` bilan chizadi, shuning uchun
+            ustiga `border` qo'yilmaydi (ikkita halqa chiqardi). Urg'u bir
+            tomonlama — `border-l-4`. Gradient olib tashlandi. */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 glass rounded-3xl p-6 border-l-4 border-l-accent">
           <div>
-            <h2 className="text-lg md:text-xl font-black text-white flex items-center gap-2">
+            <h2 className="font-display text-lg md:text-xl font-bold text-text-primary flex items-center gap-2">
               <span>Tashkilot Premium Obuna</span>
-              <span className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md">ORGANIZATION</span>
+              <span className="rounded-md border border-accent/45 bg-ground px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-accent">ORGANIZATION</span>
             </h2>
-            <p className="text-white/40 text-xs mt-0.5">Tashkilotingizni premium qilish orqali cheksiz olimpiadalar, tahlillar va AI savollar bazasini ishga tushiring.</p>
+            <p className="text-text-secondary text-xs mt-0.5">Tashkilotingizni premium qilish orqali cheksiz olimpiadalar, tahlillar va AI savollar bazasini ishga tushiring.</p>
           </div>
-          <div className="flex items-center gap-2 bg-indigo-500/10 border border-indigo-500/30 px-4 py-2.5 rounded-2xl self-start sm:self-auto shadow-md">
+          <div className="flex items-center gap-2 rounded-2xl border border-edge-strong bg-ground px-4 py-2.5 self-start sm:self-auto">
             <span className="text-lg">🏢</span>
             <div className="min-w-0">
-              <div className="text-[10px] text-indigo-400 uppercase tracking-widest font-black leading-none">Tashkilot holati</div>
-              <div className="text-sm font-black text-indigo-300 leading-none mt-1">
+              <div className="font-display text-[10px] uppercase tracking-widest font-bold leading-none text-text-secondary">Tashkilot holati</div>
+              <div className="text-sm font-bold leading-none mt-1 text-accent">
                 {center?.isPremium ? "Faol (Premium 👑)" : "Bepul rejim"}
               </div>
             </div>
@@ -3546,31 +3591,30 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
           };
           return (
-            <div className={`rounded-2xl p-4 md:p-5 border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+            <div className={`rounded-2xl p-4 md:p-5 bg-ground border border-l-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
               full
-                ? 'bg-rose-500/10 border-rose-500/30'
-                : 'bg-amber-500/10 border-amber-500/30'
+                ? 'border-error/45 border-l-error'
+                : 'border-warning/45 border-l-warning'
             }`}>
               <div className="flex items-start gap-3 min-w-0">
                 <span className="text-xl flex-shrink-0">{full ? '🚫' : '⚠️'}</span>
                 <div className="min-w-0">
-                  <div className={`text-sm font-black ${full ? 'text-rose-300' : 'text-amber-300'}`}>
+                  <div className={`text-sm font-bold ${full ? 'text-error' : 'text-warning'}`}>
                     {full ? "Talabalar limiti to'ldi" : "Talabalar limiti tugayapti"}
                   </div>
-                  <p className="text-xs text-white/60 mt-0.5">
+                  <p className="text-xs font-data text-text-secondary mt-0.5">
                     {full
                       ? `${s.used}/${s.limit} o'quvchi. Yangi o'quvchi qo'shish uchun tarifni yangilang.`
                       : `${s.used}/${s.limit} o'quvchi. Limit tugayapti — tarifni yangilang.`}
                   </p>
                 </div>
               </div>
+              {/* Holat rangini BANNER olib yuradi; tugma esa asosiy amal,
+                  shuning uchun `.btn-primary`. Avval to'ldirilgan rose/amber
+                  yuza ustida och matn turardi (amber ustida 2.4:1). */}
               <button
                 onClick={scrollToPlans}
-                className={`flex-shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold transition-all self-start sm:self-auto ${
-                  full
-                    ? 'bg-rose-500 hover:bg-rose-400 text-white'
-                    : 'bg-amber-500 hover:bg-amber-400 text-amber-950'
-                }`}
+                className="btn-primary flex-shrink-0 px-4 py-2.5 rounded-xl text-xs font-bold self-start sm:self-auto"
               >
                 Tarifni yangilash
               </button>
@@ -3598,35 +3642,37 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               const pct = (!unlimited && limit > 0) ? Math.min(100, Math.round((used / limit) * 100)) : 0;
               const near = !!b.near_limit;
               const full = !unlimited && limit > 0 && used >= limit;
-              const barColor = full ? 'bg-rose-500' : near ? 'bg-amber-500' : 'bg-indigo-500';
+              const barColor = full ? 'bg-error' : near ? 'bg-warning' : 'bg-accent';
               return (
                 <div key={key} className="glass rounded-2xl p-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-white/60 flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-text-secondary flex items-center gap-1.5">
                       <span>{icon}</span> {label}
                     </span>
-                    <span className="text-sm font-black text-white">
-                      {unavailable ? <span className="text-white/40">—</span> : <>{used}{unlimited ? '' : ` / ${limit}`}</>}
-                      {unlimited && <span className="ml-1 text-indigo-300">∞</span>}
+                    <span className="font-data text-sm font-bold text-text-primary">
+                      {unavailable ? <span className="text-text-secondary">—</span> : <>{used}{unlimited ? '' : ` / ${limit}`}</>}
+                      {unlimited && <span className="ml-1 text-accent">∞</span>}
                     </span>
                   </div>
                   {unavailable ? (
-                    <div className="mt-2 text-[10px] font-bold text-rose-300">Mavjud emas — tarifni yangilang</div>
+                    <div className="mt-2 text-[10px] font-bold text-error">Mavjud emas — tarifni yangilang</div>
                   ) : (
                     <>
+                      {/* Trek `progress-bar` (surface-2): avval `bg-surface-1`
+                          edi — `.glass` kartochka foni bilan bir xil. */}
                       {!unlimited && (
-                        <div className="mt-2.5 h-2 w-full rounded-full bg-white/5 overflow-hidden">
+                        <div className="progress-bar mt-2.5 h-2 w-full">
                           <div className={`h-full rounded-full ${barColor} transition-all`} style={{ width: `${pct}%` }} />
                         </div>
                       )}
                       {near && !full && (
-                        <div className="mt-2 text-[10px] font-bold text-amber-300">⚠️ Limit tugayapti</div>
+                        <div className="mt-2 text-[10px] font-bold text-warning">⚠️ Limit tugayapti</div>
                       )}
                       {full && (
-                        <div className="mt-2 text-[10px] font-bold text-rose-300">Limit to'ldi — tarifni yangilang</div>
+                        <div className="mt-2 text-[10px] font-bold text-error">Limit to'ldi — tarifni yangilang</div>
                       )}
                       {unlimited && (
-                        <div className="mt-2 text-[10px] font-bold text-indigo-300">Cheksiz</div>
+                        <div className="mt-2 text-[10px] font-bold text-accent">Cheksiz</div>
                       )}
                     </>
                   )}
@@ -3644,19 +3690,19 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             { label: '6 oy', days: 180, discount: '20%' },
             { label: '1 yil', days: 365, discount: '30%' },
           ].map((dur) => (
-            <button
+            <button aria-pressed={durationFilter === dur.days}
               key={dur.days}
               type="button"
               onClick={() => setDurationFilter(dur.days)}
-              className={`relative px-4 py-2 rounded-xl text-xs font-bold transition-all border ${
+              className={`relative px-4 py-2 rounded-xl text-xs font-bold transition-colors border ${
                 durationFilter === dur.days
-                  ? 'bg-white text-indigo-950 border-white shadow-lg font-black'
-                  : 'bg-white/5 text-white/70 border-white/5 hover:bg-white/10'
+                  ? 'bg-accent-fill text-on-accent border-accent-fill'
+                  : 'bg-surface-1 text-text-primary border-edge hover:bg-surface-2 hover:border-edge-strong'
               }`}
             >
               {dur.label}
               {dur.discount && (
-                <span className="absolute -top-2 -right-2 bg-gradient-to-r from-pink-500 to-rose-500 text-[7px] text-white px-1 py-0.2 rounded font-extrabold shadow animate-pulse">
+                <span className="absolute -top-2 -right-2 rounded border border-accent/45 bg-ground px-1 py-0.5 font-data text-[8px] font-bold text-accent">
                   -{dur.discount}
                 </span>
               )}
@@ -3665,12 +3711,12 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
 
         {plansLoading ? (
-          <div className="text-center py-12 text-white/40 text-sm">Tariflar yuklanmoqda...</div>
+          <div className="text-center py-12 text-text-secondary text-sm">Tariflar yuklanmoqda...</div>
         ) : plansError ? (
           // Katalog yuklanmagan — qattiq yozilgan narxlarni ko'rsatmaymiz,
           // aks holda ekrandagi narx bilan hisobdagi narx farq qilishi mumkin.
           <div className="text-center py-12 space-y-3">
-            <div className="text-sm text-rose-300">{plansError}</div>
+            <div className="text-sm text-error">{plansError}</div>
             <button
               type="button"
               onClick={() => setPlansTick(t => t + 1)}
@@ -3686,21 +3732,21 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               const formattedPrice = `${priceNum.toLocaleString('ru-RU').replace(/ /g, ' ')} UZS`;
               const features = Array.isArray(p.features) ? p.features : [];
               return (
-                <div 
-                  key={i} 
-                  className={`glass rounded-2xl p-5 flex flex-col justify-between border ${p.is_popular ? 'border-indigo-500/40 bg-indigo-500/5 shadow-[0_12px_24px_rgba(99,102,241,0.06)]' : 'border-white/5'}`}
+                <div
+                  key={i}
+                  className={`glass rounded-2xl p-5 flex flex-col justify-between ${p.is_popular ? 'border-l-4 border-l-accent' : ''}`}
                 >
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <div className="text-sm font-bold text-white">{p.name.split(' ')[0]}</div>
-                      {p.is_popular && <span className="bg-indigo-500/20 text-indigo-300 text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded border border-indigo-500/30">Mashhur</span>}
+                      <div className="text-sm font-bold text-text-primary">{p.name.split(' ')[0]}</div>
+                      {p.is_popular && <span className="rounded border border-accent/45 bg-ground px-2 py-0.5 text-[9px] font-bold uppercase tracking-widest text-accent">Mashhur</span>}
                     </div>
-                    <div className="text-2xl font-black text-indigo-400">{formattedPrice}</div>
-                    <p className="text-white/40 text-xs">{p.description}</p>
-                    <ul className="space-y-2 border-t border-white/5 pt-4">
+                    <div className="font-data text-2xl font-bold text-accent">{formattedPrice}</div>
+                    <p className="text-text-secondary text-xs">{p.description}</p>
+                    <ul className="space-y-2 border-t border-edge pt-4">
                       {features.map((f, idx) => (
-                        <li key={idx} className="text-xs text-white/60 flex items-center gap-1.5">
-                          <span className="text-indigo-400 font-bold">✓</span> {f}
+                        <li key={idx} className="text-xs text-text-secondary flex items-center gap-1.5">
+                          <span className="text-accent font-bold">✓</span> {f}
                         </li>
                       ))}
                     </ul>
@@ -3708,7 +3754,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   <button
                     type="button"
                     onClick={() => setPaymentPlan(p)}
-                    className="w-full mt-6 py-2.5 rounded-xl font-bold text-xs bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-600/10 transition-colors"
+                    className="btn-primary w-full mt-6 py-2.5 rounded-xl font-bold text-xs"
                   >
                     Sotib olish
                   </button>
@@ -3747,7 +3793,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   ].filter(Boolean);
 
   return (
-    <div className="h-screen overflow-hidden text-white" style={{ background: 'rgb(var(--color-ground))' }}>
+    <div className="h-screen overflow-hidden text-text-primary" style={{ background: 'rgb(var(--color-ground))' }}>
       {mobileMenu && (
         <div
           className="fixed inset-0 z-40 lg:hidden"
@@ -3766,20 +3812,20 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
       </div>
       {staffModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ground/80 p-4">
           <form onSubmit={submitStaff} className="modal w-full max-w-md">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-black text-white">{staffRole === 'teacher' ? 'Ustoz yaratish' : 'Menejer yaratish'}</h2>
-                <div className="mt-1 text-xs font-bold text-white/50">{center.name}</div>
+                <h2 className="font-display text-lg font-bold text-text-primary">{staffRole === 'teacher' ? 'Ustoz yaratish' : 'Menejer yaratish'}</h2>
+                <div className="mt-1 text-xs font-bold text-text-secondary">{center.name}</div>
               </div>
-              <button type="button" onClick={closeStaffModal} className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white">
+              <button type="button" onClick={closeStaffModal} className="rounded-lg border border-edge p-2 text-text-secondary hover:bg-surface-2 hover:text-text-primary">
                 <Icon name="x" size={18} />
               </button>
             </div>
             <div className="space-y-4">
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Ism familiya</span>
+                <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Ism familiya</span>
                 <input
                   value={staffForm.full_name}
                   onChange={e => updateStaffForm('full_name', e.target.value)}
@@ -3789,7 +3835,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Telefon login</span>
+                <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Telefon login</span>
                 <PhoneField
                   value={staffForm.phone}
                   onChange={phone => updateStaffForm('phone', phone)}
@@ -3797,7 +3843,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 />
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Parol</span>
+                <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Parol</span>
                 <input
                   value={staffForm.password}
                   onChange={e => updateStaffForm('password', e.target.value)}
@@ -3808,7 +3854,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </label>
               {staffRole === 'teacher' && (
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Fan</span>
+                  <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Fan</span>
                   <select
                     value={staffForm.subject}
                     onChange={e => updateStaffForm('subject', e.target.value)}
@@ -3821,10 +3867,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               )}
             </div>
             <div className="mt-6 flex gap-3">
-              <button type="button" onClick={closeStaffModal} className="flex-1 rounded-lg border border-white/10 px-4 py-3 text-sm font-black text-white/60 hover:bg-white/5">
+              <button type="button" onClick={closeStaffModal} className="btn-ghost flex-1 rounded-lg px-4 py-3 text-sm font-bold">
                 Bekor qilish
               </button>
-              <button disabled={staffSaving} className="flex-1 rounded-lg bg-emerald-600 px-4 py-3 text-sm font-black text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">
+              <button disabled={staffSaving} className="btn-primary flex-1 rounded-lg px-4 py-3 text-sm font-bold">
                 {staffSaving ? 'Yaratilmoqda...' : 'Yaratish'}
               </button>
             </div>
@@ -3832,24 +3878,24 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
       )}
       {roleModalRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ground/80 p-4">
           <div className="modal w-full max-w-md">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-black text-white">Rolni o'zgartirish</h2>
-                <div className="mt-1 text-xs font-bold text-white/50">{roleModalRow.name || 'Foydalanuvchi'}</div>
+                <h2 className="font-display text-lg font-bold text-text-primary">Rolni o'zgartirish</h2>
+                <div className="mt-1 text-xs font-bold text-text-secondary">{roleModalRow.name || 'Foydalanuvchi'}</div>
               </div>
               <button
                 type="button"
                 onClick={closeRoleModal}
                 disabled={roleModalSaving}
-                className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white disabled:opacity-50"
+                className="rounded-lg border border-edge p-2 text-text-secondary hover:bg-surface-2 hover:text-text-primary disabled:opacity-50"
               >
                 <Icon name="x" size={18} />
               </button>
             </div>
             <div className="space-y-3">
-              <span className="block text-xs font-black uppercase text-white/40">Yangi rol</span>
+              <span className="block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Yangi rol</span>
               <div className="grid grid-cols-1 gap-2">
                 {[
                   { value: 'student', label: "O'quvchi" },
@@ -3866,21 +3912,21 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       onClick={() => { setRoleModalNewRole(opt.value); setRoleModalError(''); }}
                       className={`flex items-center justify-between rounded-lg border px-4 py-3 text-sm font-bold transition-colors ${
                         isCurrent
-                          ? 'cursor-not-allowed border-white/10 bg-white/5 text-white/30'
+                          ? 'cursor-not-allowed border-edge bg-surface-1 text-text-secondary'
                           : isSelected
-                            ? 'border-indigo-500/50 bg-indigo-500/15 text-white'
-                            : 'border-white/10 bg-white/5 text-white/70 hover:bg-white/10'
+                            ? 'border-accent bg-ground text-accent'
+                            : 'border-edge bg-surface-1 text-text-primary hover:bg-surface-2'
                       }`}
                     >
                       <span>{opt.label}</span>
-                      {isCurrent && <span className="text-[10px] uppercase text-white/30">Joriy rol</span>}
+                      {isCurrent && <span className="text-[10px] uppercase text-text-secondary">Joriy rol</span>}
                       {!isCurrent && isSelected && <Icon name="check" size={16} />}
                     </button>
                   );
                 })}
               </div>
               {roleModalError && (
-                <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300">
+                <div className="rounded-lg border border-error/45 border-l-4 border-l-error bg-ground px-3 py-2 text-xs font-bold text-error">
                   {roleModalError}
                 </div>
               )}
@@ -3890,7 +3936,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 type="button"
                 onClick={closeRoleModal}
                 disabled={roleModalSaving}
-                className="flex-1 rounded-lg border border-white/10 px-4 py-3 text-sm font-black text-white/60 hover:bg-white/5 disabled:opacity-50"
+                className="btn-ghost flex-1 rounded-lg px-4 py-3 text-sm font-bold disabled:opacity-50"
               >
                 Bekor qilish
               </button>
@@ -3898,7 +3944,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 type="button"
                 onClick={submitRoleChange}
                 disabled={roleModalSaving || roleModalNewRole === roleModalRow.role}
-                className="flex-1 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-primary flex-1 rounded-lg px-4 py-3 text-sm font-bold"
               >
                 {roleModalSaving ? "O'zgartirilmoqda..." : "O'zgartirish"}
               </button>
@@ -3909,21 +3955,23 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       {centerModal && (
         // Owner dashboard markaz qo'shish/tahrirlash modali. Avval bu modal
         // light theme'da (bg-white, slate-200 border) ko'rinardi va qolgan dark
-        // dashboard'dan ajralib turardi. Endi dark theme'ga moslashtirilgan.
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/70 p-4">
-          <form onSubmit={submitCenter} className="w-full max-w-lg rounded-xl border border-white/10 bg-slate-900 p-5 shadow-2xl">
+        // dashboard'dan ajralib turardi; keyin `bg-slate-900` ga o'tkazilgan edi —
+        // u ham qat'iy rang. Endi yuza `surface-1` tokenida, ya'ni mavzu bilan
+        // almashadi (rangli soya `shadow-2xl` olib tashlandi).
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ground/80 p-4">
+          <form onSubmit={submitCenter} className="w-full max-w-lg rounded-xl border border-edge-strong bg-surface-1 p-5">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-black text-white">{editingCenterId ? 'Tashkilotni tahrirlash' : "Yangi tashkilot qo'shish"}</h2>
-                <div className="mt-1 text-xs font-bold text-white/50">{editingCenterId ? "Ma'lumotlarni yangilang va saqlang" : "Ariza Platform Admin tasdig'iga yuboriladi"}</div>
+                <h2 className="font-display text-lg font-bold text-text-primary">{editingCenterId ? 'Tashkilotni tahrirlash' : "Yangi tashkilot qo'shish"}</h2>
+                <div className="mt-1 text-xs font-bold text-text-secondary">{editingCenterId ? "Ma'lumotlarni yangilang va saqlang" : "Ariza Platform Admin tasdig'iga yuboriladi"}</div>
               </div>
-              <button type="button" onClick={closeCenterModal} className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white">
+              <button type="button" onClick={closeCenterModal} className="rounded-lg border border-edge p-2 text-text-secondary hover:bg-surface-2 hover:text-text-primary">
                 <Icon name="x" size={18} />
               </button>
             </div>
             <div className="space-y-4">
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tashkilot turi</span>
+                <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Tashkilot turi</span>
                 <select
                   value={centerForm.organizationType}
                   onChange={e => setCenterForm(prev => ({
@@ -3931,39 +3979,39 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                     organizationType: e.target.value,
                     customOrganizationType: e.target.value === 'Boshqa' ? prev.customOrganizationType : '',
                   }))}
-                  className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
+                  className="admin-input h-11 w-full px-3 text-sm font-semibold text-text-primary"
                 >
                   {centerOrganizationTypes.map(type => <option key={type} value={type} style={{ background: 'rgb(var(--color-surface-1))' }}>{type}</option>)}
                 </select>
               </label>
               {centerForm.organizationType === 'Boshqa' && (
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tashkilot turini yozing</span>
+                  <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Tashkilot turini yozing</span>
                   <input
                     value={centerForm.customOrganizationType}
                     onChange={e => updateCenterForm('customOrganizationType', e.target.value)}
-                    className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
+                    className="admin-input h-11 w-full px-3 text-sm font-semibold text-text-primary"
                     placeholder="Masalan, Respublika markazi"
                   />
                 </label>
               )}
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Davlat</span>
+                  <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Davlat</span>
                   <select
                     value={centerForm.country}
                     onChange={e => updateCenterForm('country', e.target.value)}
-                    className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
+                    className="admin-input h-11 w-full px-3 text-sm font-semibold text-text-primary"
                   >
                     <option value="O'zbekiston" style={{ background: 'rgb(var(--color-surface-1))' }}>O'zbekiston</option>
                   </select>
                 </label>
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Viloyat</span>
+                  <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Viloyat</span>
                   <select
                     value={centerForm.region}
                     onChange={e => setCenterForm(prev => ({ ...prev, region: e.target.value, district: '' }))}
-                    className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
+                    className="admin-input h-11 w-full px-3 text-sm font-semibold text-text-primary"
                   >
                     <option value="" style={{ background: 'rgb(var(--color-surface-1))' }}>Viloyatni tanlang</option>
                     {centerRegions.map(region => <option key={region} value={region} style={{ background: 'rgb(var(--color-surface-1))' }}>{region}</option>)}
@@ -3971,41 +4019,41 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 </label>
               </div>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tuman/Shahar</span>
+                <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Tuman/Shahar</span>
                 <select
                   value={centerForm.district}
                   disabled={!centerForm.region}
                   onChange={e => updateCenterForm('district', e.target.value)}
-                  className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30 disabled:opacity-50"
+                  className="admin-input h-11 w-full px-3 text-sm font-semibold text-text-primary disabled:opacity-50"
                 >
                   <option value="" style={{ background: 'rgb(var(--color-surface-1))' }}>{centerForm.region ? 'Tumanni tanlang' : 'Avval viloyatni tanlang'}</option>
                   {centerDistrictOptions.map(district => <option key={district} value={district} style={{ background: 'rgb(var(--color-surface-1))' }}>{district}</option>)}
                 </select>
               </label>
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black uppercase text-white/40">Tashkilot nomi</span>
+                <span className="mb-1.5 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Tashkilot nomi</span>
                 <input
                   value={centerForm.name}
                   onChange={e => updateCenterForm('name', e.target.value)}
-                  className="h-11 w-full rounded-lg border border-white/10 bg-white/5 px-3 text-sm font-semibold text-white outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/30"
+                  className="admin-input h-11 w-full px-3 text-sm font-semibold text-text-primary"
                   placeholder="Masalan, ProSkill Language"
                   autoFocus
                 />
               </label>
               <div>
-                <span className="mb-2 block text-xs font-black uppercase text-white/40">Yo'naltirilgan fanlar</span>
+                <span className="mb-2 block font-display text-xs font-bold uppercase tracking-widest text-text-secondary">Yo'naltirilgan fanlar</span>
                 <div className="flex flex-wrap gap-2">
                   {store.subjects.map(subject => {
                     const active = centerForm.subjects.includes(subject);
                     return (
-                      <button
+                      <button aria-pressed={active}
                         key={subject}
                         type="button"
                         onClick={() => setCenterForm(prev => ({
                           ...prev,
                           subjects: active ? prev.subjects.filter(s => s !== subject) : [...prev.subjects, subject],
                         }))}
-                        className={`rounded-lg px-3 py-1.5 text-xs font-black ring-1 transition ${active ? 'bg-indigo-600 text-white ring-indigo-500' : 'bg-white/5 text-white/70 ring-white/10 hover:bg-white/10'}`}
+                        className={`rounded-lg px-3 py-1.5 text-xs font-bold ring-1 transition-colors ${active ? 'bg-accent-fill text-on-accent ring-accent-fill' : 'bg-surface-1 text-text-primary ring-edge hover:bg-surface-2 hover:ring-edge-strong'}`}
                       >
                         {subject}
                       </button>
@@ -4015,10 +4063,10 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </div>
             </div>
             <div className="mt-6 flex gap-3">
-              <button type="button" onClick={closeCenterModal} className="flex-1 rounded-lg border border-white/10 px-4 py-3 text-sm font-black text-white/70 hover:bg-white/5">
+              <button type="button" onClick={closeCenterModal} className="btn-ghost flex-1 rounded-lg px-4 py-3 text-sm font-bold">
                 Bekor qilish
               </button>
-              <button disabled={centerSaving} className="flex-1 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">
+              <button disabled={centerSaving} className="btn-primary flex-1 rounded-lg px-4 py-3 text-sm font-bold">
                 {centerSaving ? 'Saqlanmoqda...' : (editingCenterId ? 'Saqlash' : 'Arizani yuborish')}
               </button>
             </div>
@@ -4075,7 +4123,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         ];
         const step = steps[onboardingStep] || steps[0];
         return (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 p-4">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ground/80 p-4">
             <div className="modal w-full max-w-md">
               {/* Markaz logosi/nomi — mavjud markaz ma'lumotidan. */}
               {center && (
@@ -4083,28 +4131,28 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   {center.imageUrl ? (
                     <img src={center.imageUrl} alt={center.name} className="h-10 w-10 flex-shrink-0 rounded-xl object-cover" />
                   ) : (
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl gradient-bg text-sm font-bold text-white">{(center.name || '?')[0]}</div>
+                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-accent-fill text-sm font-bold text-on-accent">{(center.name || '?')[0]}</div>
                   )}
                   <div className="min-w-0">
-                    <div className="truncate text-sm font-black text-white">{center.name}</div>
-                    <div className="truncate text-xs font-semibold text-white/45">{center.organizationType || "O'quv markaz"}</div>
+                    <div className="truncate text-sm font-bold text-text-primary">{center.name}</div>
+                    <div className="truncate text-xs font-semibold text-text-secondary">{center.organizationType || "O'quv markaz"}</div>
                   </div>
                 </div>
               )}
 
               <div className="mb-1 flex items-center gap-1.5">
                 {steps.map((_, i) => (
-                  <div key={i} className={`h-1.5 flex-1 rounded-full transition-all ${i <= onboardingStep ? 'bg-indigo-500' : 'bg-white/10'}`} />
+                  <div key={i} className={`h-1.5 flex-1 rounded-full transition-colors ${i <= onboardingStep ? 'bg-accent' : 'bg-surface-2'}`} />
                 ))}
               </div>
-              <div className="mb-4 text-[11px] font-bold uppercase tracking-wide text-white/40">Qadam {onboardingStep + 1} / {steps.length}</div>
+              <div className="mb-4 text-[11px] font-bold uppercase tracking-wide text-text-secondary">Qadam {onboardingStep + 1} / {steps.length}</div>
 
               <div className="mb-5 text-center">
-                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white">
+                <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-edge bg-ground text-accent">
                   <Icon name={step.icon} size={26} />
                 </div>
-                <h2 className="text-lg font-black text-white">{step.title}</h2>
-                <p className="mt-1.5 text-sm font-medium text-white/55">{step.desc}</p>
+                <h2 className="font-display text-lg font-bold text-text-primary">{step.title}</h2>
+                <p className="mt-1.5 text-sm font-medium text-text-secondary">{step.desc}</p>
               </div>
 
               <div className="flex items-center gap-3">
@@ -4112,7 +4160,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   type="button"
                   onClick={finishCenterOnboarding}
                   disabled={onboardingSaving}
-                  className="flex-1 rounded-lg border border-white/10 px-4 py-3 text-sm font-black text-white/60 hover:bg-white/5 disabled:opacity-50"
+                  className="btn-ghost flex-1 rounded-lg px-4 py-3 text-sm font-bold disabled:opacity-50"
                 >
                   O'tkazib yuborish
                 </button>
@@ -4120,7 +4168,7 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   type="button"
                   onClick={step.action}
                   disabled={onboardingSaving}
-                  className="flex-1 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-black text-white hover:bg-indigo-700 disabled:opacity-50"
+                  className="btn-primary flex-1 rounded-lg px-4 py-3 text-sm font-bold"
                 >
                   {step.cta}
                 </button>
@@ -4145,19 +4193,19 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           {payPolling.status === 'success' ? (
             // Premium faollashdi — 2 soniyadan keyin modal avtomatik yopiladi.
             <div className="space-y-5 text-center py-2">
-              <div className="mx-auto w-14 h-14 rounded-full bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center">
+              <div className="mx-auto w-14 h-14 rounded-full border border-success/45 bg-ground flex items-center justify-center">
                 <span className="text-3xl">✅</span>
               </div>
               <div className="space-y-2">
-                <p className="text-base font-bold text-white">To'lov muvaffaqiyatli!</p>
-                <p className="text-sm text-white/60 leading-relaxed">
+                <p className="text-base font-bold text-text-primary">To'lov muvaffaqiyatli!</p>
+                <p className="text-sm text-text-secondary leading-relaxed">
                   Obunangiz faollashtirildi. Endi tarifingizga mos barcha
                   imkoniyatlardan foydalanishingiz mumkin.
                 </p>
               </div>
               <button
                 onClick={closePaymentModal}
-                className="w-full py-3 rounded-2xl bg-emerald-500/90 hover:bg-emerald-500 text-white text-sm font-bold transition-colors"
+                className="btn-success w-full py-3 rounded-2xl text-sm font-bold"
               >
                 Yopish
               </button>
@@ -4165,19 +4213,19 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           ) : payPolling.status === 'timeout' ? (
             // 2 daqiqa o'tdi, hali tasdiqlanmadi.
             <div className="space-y-5 text-center py-2">
-              <div className="mx-auto w-14 h-14 rounded-full bg-amber-500/15 border border-amber-500/30 flex items-center justify-center">
+              <div className="mx-auto w-14 h-14 rounded-full border border-warning/45 bg-ground flex items-center justify-center">
                 <span className="text-3xl">⏳</span>
               </div>
               <div className="space-y-2">
-                <p className="text-base font-bold text-white">To'lov hali tasdiqlanmadi</p>
-                <p className="text-sm text-white/60 leading-relaxed">
+                <p className="text-base font-bold text-text-primary">To'lov hali tasdiqlanmadi</p>
+                <p className="text-sm text-text-secondary leading-relaxed">
                   Bir oz kuting yoki qo'llab-quvvatlash bilan bog'laning. Obunangiz
                   tasdiqlangach sahifani yangilaganingizda faol bo'ladi.
                 </p>
               </div>
               <button
                 onClick={closePaymentModal}
-                className="w-full py-3 rounded-2xl bg-indigo-500/90 hover:bg-indigo-500 text-white text-sm font-bold transition-colors"
+                className="btn-primary w-full py-3 rounded-2xl text-sm font-bold"
               >
                 Yopish
               </button>
@@ -4185,67 +4233,73 @@ const OwnerDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           ) : payPolling.status === 'checking' ? (
             // To'lov sahifasi ochildi — tasdiqlanishini kutmoqdamiz (polling).
             <div className="space-y-5 text-center py-2">
-              <div className="mx-auto w-14 h-14 rounded-full bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center">
+              <div className="mx-auto w-14 h-14 rounded-full border border-accent/45 bg-ground flex items-center justify-center">
                 <span className="text-3xl animate-spin">⏳</span>
               </div>
               <div className="space-y-2">
-                <p className="text-base font-bold text-white">To'lov tekshirilmoqda...</p>
-                <p className="text-sm text-white/60 leading-relaxed">
+                <p className="text-base font-bold text-text-primary">To'lov tekshirilmoqda...</p>
+                <p className="text-sm text-text-secondary leading-relaxed">
                   To'lovingiz qabul qilindi. Obunangiz tasdiqlanishini kutmoqdamiz —
                   bu odatda bir necha soniya davom etadi.
                 </p>
               </div>
               <button
                 onClick={closePaymentModal}
-                className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white text-sm font-bold transition-colors"
+                className="btn-ghost w-full py-3 rounded-2xl text-sm font-bold"
               >
                 Yopish
               </button>
             </div>
           ) : (
           <div className="space-y-6 text-left">
-            <div className="rounded-2xl bg-white/5 p-4 border border-white/10">
+            <div className="rounded-2xl bg-surface-1 p-4 border border-edge">
               <div className="flex justify-between items-center mb-1">
-                <span className="text-xs text-white/40">Tanlangan tarif</span>
-                <span className="text-xs text-indigo-300 font-bold">Tashkilot</span>
+                <span className="text-xs text-text-secondary">Tanlangan tarif</span>
+                <span className="text-xs text-accent font-bold">Tashkilot</span>
               </div>
               <div className="flex justify-between items-end">
-                <span className="text-sm font-bold text-white">{paymentPlan.name}</span>
-                <span className="text-lg font-black text-indigo-400">
+                <span className="text-sm font-bold text-text-primary">{paymentPlan.name}</span>
+                <span className="text-lg font-black text-text-primary font-data">
                   {Number(paymentPlan.price).toLocaleString('ru-RU').replace(/ /g, ' ')} UZS
                 </span>
               </div>
             </div>
 
             {paymentError && (
-              <div className="rounded-xl bg-rose-500/15 border border-rose-500/30 p-3 text-xs text-rose-300">
+              <div role="alert" className="rounded-xl bg-wash border border-error/45 p-3 text-xs text-error">
                 {paymentError}
               </div>
             )}
 
+            {/* To'lov tugmalari `Pricing.jsx` bilan bir xil naqshda: brend rangi
+                to'ldirilgan yuza sifatida, matn esa kontrasti tekshirilgan juftlikda
+                (Click #0072BC + oq = 5.1:1, Payme #00CCC0 + #003D3A = 6.0:1).
+                Avval brend rangi MATN edi (#00a3ff / #00c9c9) — qog'oz mavzuda u
+                past kontrast berardi. Bu hex'lar mavzudan qat'i nazar bir xil:
+                brend belgisi mavzu bilan o'zgarmaydi. */}
             <div className="grid grid-cols-2 gap-4">
               <button
                 type="button"
                 disabled={paymentLoading}
                 onClick={() => handleCreatePayment('click')}
-                className="flex flex-col items-center justify-center p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-indigo-500/30 transition-all group min-h-[100px]"
+                className="flex flex-col items-center justify-center p-5 rounded-2xl bg-[#0072BC] text-white transition-opacity hover:opacity-90 disabled:opacity-50 min-h-[100px]"
               >
-                <span className="text-sm font-black text-[#00a3ff] group-hover:scale-105 transition-transform">CLICK</span>
-                <span className="text-[10px] text-white/30 mt-2">Click Up / Click Evolution</span>
+                <span className="text-sm font-black">CLICK</span>
+                <span className="text-[10px] opacity-90 mt-2">Click Up / Click Evolution</span>
               </button>
               <button
                 type="button"
                 disabled={paymentLoading}
                 onClick={() => handleCreatePayment('payme')}
-                className="flex flex-col items-center justify-center p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-indigo-500/30 transition-all group min-h-[100px]"
+                className="flex flex-col items-center justify-center p-5 rounded-2xl bg-[#00CCC0] text-[#003D3A] transition-opacity hover:opacity-90 disabled:opacity-50 min-h-[100px]"
               >
-                <span className="text-sm font-black text-[#00c9c9] group-hover:scale-105 transition-transform">Payme</span>
-                <span className="text-[10px] text-white/30 mt-2">Payme Checkout</span>
+                <span className="text-sm font-black">Payme</span>
+                <span className="text-[10px] opacity-90 mt-2">Payme Checkout</span>
               </button>
             </div>
 
             {paymentLoading && (
-              <div className="text-center text-xs text-white/40 animate-pulse">To'lov sahifasiga yo'naltirilmoqda...</div>
+              <div className="text-center text-xs text-text-secondary animate-pulse">To'lov sahifasiga yo'naltirilmoqda...</div>
             )}
           </div>
           )}
