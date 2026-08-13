@@ -7,7 +7,25 @@
 // 3 ta tier (Standart/Plus/Pro) kartasi, o'quvchi/tashkilot toggle, oylik↔yillik
 // narx toggle (yillik 20% chegirma sifatida ko'rsatiladi — backendda har muddat
 // alohida plan yozuvi). Telegram WebView'da og'ir effekt yo'q (loyiha qoidasi):
-// backdrop-blur/animatsiya ishlatmaymiz, oddiy glass kartalar.
+// backdrop-blur/animatsiya ishlatmaymiz.
+//
+// ─── Dizayn: "Imtihon byulleteni" ─────────────────────────────────────────────
+// Narx bo'limi — bu O'QILADIGAN MATN emas, SKANER qilinadigan taqqoslash.
+// Shundan kelib chiqib:
+//
+//   · Uchala kartada narxdan yuqoridagi hamma narsa qat'iy balandlikda
+//     ("Tavsiya etilgan" qatori bo'sh bo'lsa ham joyini egallaydi) — shunda
+//     raqamlar uchala ustunda BIR SATHDA turadi va ko'z ular bo'ylab tik
+//     yuguradi.
+//   · Raqamlar `font-data` (tabular-nums) bilan — "1 200 000" va "990 000"
+//     bir xil kenglikdagi raqamlardan iborat bo'ladi.
+//   · Tavsiya etilgan tarif gradient/glow bilan emas, akcent chegara + yuqori
+//     chetdagi 3px shtamp chizig'i bilan ajratiladi.
+//
+// Sahifa theme-ready: qattiq yozilgan fon/matn ranglari yo'q, hammasi
+// semantik tokenlar orqali (`bg-ground`, `text-text-primary`, `border-edge`).
+// Yagona istisno — to'lov provayderlarining brend ranglari (pastdagi izohga
+// qarang): ular mavzuga bog'liq emas.
 
 // Tier nomidan asosiy belgini ajratamiz ("Plus (3 oy)" -> "Plus").
 const _pricingTierName = (name) => (name || '').split('(')[0].trim();
@@ -31,7 +49,13 @@ const TIER_LABELS = {
   pro: 'Enterprise',
 };
 
-const _fmtUZS = (n) => `${(Number(n) || 0).toLocaleString('ru-RU').replace(/ /g, ' ')} so'm`;
+// `ru-RU` guruh ajratkichi sifatida uzilmas probel (U+00A0) qaytaradi, ba'zi
+// muhitlarda esa tor uzilmas probel (U+202F). Ikkalasini ham U+00A0 ga
+// keltiramiz: narx qator oxirida "1 200" / "000" bo'lib ikkiga bo'linmasin.
+// (Avvalgi `.replace(/ /g, ' ')` oddiy probelni oddiy probelga almashtirardi —
+// ya'ni hech narsa qilmasdi.)
+const _fmtNum = (n) => (Number(n) || 0).toLocaleString('ru-RU').replace(/[\s\u202F]/g, '\u00A0');
+const _fmtUZS = (n) => `${_fmtNum(n)} so'm`;
 
 const PricingPage = ({ onNavigate, user, onUserUpdate }) => {
   const [plans, setPlans] = React.useState([]);
@@ -208,31 +232,39 @@ const PricingPage = ({ onNavigate, user, onUserUpdate }) => {
   };
 
   return (
-    <div className="min-h-screen text-white" style={{ background: '#050508' }}>
+    <div className="min-h-screen bg-ground text-text-primary">
       {/* Header */}
-      <header className="sticky top-0 z-30 border-b border-white/5 bg-[#050508]/95">
+      <header className="sticky top-0 z-30 border-b border-edge bg-ground/95">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5 lg:px-6">
           <button
             type="button"
             onClick={() => onNavigate('landing')}
-            className="flex items-center gap-2 text-sm font-black text-white"
+            className="flex items-center rounded-lg"
+            aria-label="Bosh sahifaga qaytish"
           >
-            <span className="text-lg">⚡</span> Olympy
+            {/* Avval ⚡ emoji + matn edi. Emoji brend belgisi sifatida
+                ishlatilmaydi — o'rniga umumiy wordmark (akcent nuqta + Olympy). */}
+            <BrandLogo variant="wordmark" size="xs" />
           </button>
+          {/* Mavzu tugmasi header'da — landing navbar'idagi kabi harakat
+              tugmalaridan chapda. Ilgari u app.jsx dan suzuvchi boshqaruv
+              sifatida chizilardi; endi har bir theme-ready sahifa uni o'z
+              sarlavhasida ko'rsatadi. */}
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             {isLoggedIn ? (
               <button
                 onClick={() => onNavigate(roleHomePage ? roleHomePage(user) : 'student')}
-                className="btn-ghost rounded-xl px-4 py-2 text-xs font-bold"
+                className="btn-ghost rounded-lg px-4 py-2 text-xs font-bold"
               >
                 Kabinet
               </button>
             ) : (
               <>
-                <button onClick={() => onNavigate('login')} className="btn-ghost rounded-xl px-4 py-2 text-xs font-bold">
+                <button onClick={() => onNavigate('login')} className="btn-ghost rounded-lg px-4 py-2 text-xs font-bold">
                   Kirish
                 </button>
-                <button onClick={() => onNavigate('register')} className="btn-primary rounded-xl px-4 py-2 text-xs font-black">
+                <button onClick={() => onNavigate('register')} className="btn-primary rounded-lg px-4 py-2 text-xs font-bold">
                   Ro'yxatdan o'tish
                 </button>
               </>
@@ -244,19 +276,27 @@ const PricingPage = ({ onNavigate, user, onUserUpdate }) => {
       <main className="mx-auto max-w-6xl px-4 py-10 lg:px-6 lg:py-14">
         {/* Sarlavha */}
         <div className="text-center">
-          <span className="inline-block rounded-full border border-indigo-500/30 bg-indigo-500/10 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-indigo-300">
+          {/* Sarlavha ustidagi yorliq — `text-accent` EMAS: 11px shtamp qizili
+              qog'oz fonda 4.34:1 beradi (AA uchun 4.5 kerak). Urg'uni rang
+              emas, harflar oralig'i va katta harf ko'taradi. */}
+          <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-text-primary">
             Tariflar
-          </span>
-          <h1 className="mt-4 text-3xl font-black md:text-4xl">O'zingizga mos tarifni tanlang</h1>
-          <p className="mx-auto mt-3 max-w-xl text-sm text-white/50">
+          </div>
+          <h1 className="font-display mt-3 text-3xl font-bold text-balance md:text-4xl">
+            O'zingizga mos tarifni tanlang
+          </h1>
+          <p className="mx-auto mt-3 max-w-xl text-balance text-sm leading-relaxed text-text-secondary">
             O'quvchilar uchun individual rejalar yoki ta'lim markazlari uchun to'liq boshqaruv.
             Istalgan vaqtda yangilash mumkin.
           </p>
         </div>
 
-        {/* O'quvchi / Tashkilot toggle */}
-        <div className="mt-8 flex justify-center">
-          <div className="inline-flex rounded-2xl border border-white/10 bg-white/5 p-1">
+        {/* Ikki tanlov ham bir xil segment boshqaruvi: avval yillik uchun
+            iOS uslubidagi dumaloq "switch" bor edi — u SaaS ilova belgisi va
+            yonidagi segmentga umuman o'xshamasdi. Endi ikkalasi bir juft
+            bo'lib turadi, holat faqat fon va chegara bilan ko'rsatiladi. */}
+        <div className="mt-8 flex flex-col items-center gap-3">
+          <div className="inline-flex rounded-lg border border-edge bg-surface-1 p-1">
             {[
               { key: 'student', label: "O'quvchi" },
               { key: 'organization', label: 'Tashkilot' },
@@ -264,60 +304,62 @@ const PricingPage = ({ onNavigate, user, onUserUpdate }) => {
               <button
                 key={t.key}
                 type="button"
+                aria-pressed={planType === t.key}
                 onClick={() => setPlanType(t.key)}
-                className={`rounded-xl px-5 py-2 text-xs font-black transition-colors ${
-                  planType === t.key ? 'bg-white text-indigo-950' : 'text-white/60 hover:text-white'
+                className={`rounded-md border px-5 py-2 text-xs font-bold transition-colors ${
+                  planType === t.key
+                    ? 'border-edge-strong bg-surface-2 text-text-primary'
+                    : 'border-transparent text-text-secondary hover:text-text-primary'
                 }`}
               >
                 {t.label}
               </button>
             ))}
           </div>
-        </div>
 
-        {/* Oylik / Yillik toggle (yillik -20%) */}
-        <div className="mt-4 flex items-center justify-center gap-3">
-          <span className={`text-xs font-bold ${billingCycle === 'monthly' ? 'text-white' : 'text-white/40'}`}>
-            Oylik
-          </span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={billingCycle === 'yearly'}
-            onClick={() => setBillingCycle((c) => (c === 'yearly' ? 'monthly' : 'yearly'))}
-            className={`relative h-7 w-13 rounded-full border transition-colors ${
-              billingCycle === 'yearly' ? 'border-indigo-500 bg-indigo-600' : 'border-white/20 bg-white/10'
-            }`}
-            style={{ width: '52px' }}
-          >
-            <span
-              className="absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all"
-              style={{ left: billingCycle === 'yearly' ? '28px' : '3px' }}
-            />
-          </button>
-          <span className={`text-xs font-bold ${billingCycle === 'yearly' ? 'text-white' : 'text-white/40'}`}>
-            Yillik
-          </span>
-          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-black text-emerald-300">
-            -20%
-          </span>
+          {/* Oylik / Yillik (yillik -20%) */}
+          <div className="flex items-center gap-2.5">
+            <div className="inline-flex rounded-lg border border-edge bg-surface-1 p-1">
+              {[
+                { key: 'monthly', label: 'Oylik' },
+                { key: 'yearly', label: 'Yillik' },
+              ].map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  aria-pressed={billingCycle === c.key}
+                  onClick={() => setBillingCycle(c.key)}
+                  className={`rounded-md border px-5 py-2 text-xs font-bold transition-colors ${
+                    billingCycle === c.key
+                      ? 'border-edge-strong bg-surface-2 text-text-primary'
+                      : 'border-transparent text-text-secondary hover:text-text-primary'
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+            <span className="font-data rounded border border-success/40 bg-success/10 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-success">
+              -20%
+            </span>
+          </div>
         </div>
 
         {/* Kartalar */}
         {loading ? (
-          <div className="mt-12 text-center text-sm text-white/40">Tariflar yuklanmoqda...</div>
+          <div className="mt-12 text-center text-sm text-text-secondary">Tariflar yuklanmoqda...</div>
         ) : loadError ? (
           <div className="mt-12 text-center">
-            <div className="inline-block rounded-xl border border-red-500/30 bg-red-500/10 px-5 py-4 text-sm text-red-200">
+            <div className="inline-block rounded-lg border border-error/40 bg-error/10 px-5 py-4 text-sm font-bold text-error">
               {loadError}
             </div>
           </div>
         ) : cards.length === 0 ? (
-          <div className="mt-12 text-center text-sm text-white/40">
+          <div className="mt-12 text-center text-sm text-text-secondary">
             Bu turdagi tariflar hozircha mavjud emas.
           </div>
         ) : (
-          <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-3">
+          <div className="mt-10 grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-5">
             {cards.map(({ key, plan }) => {
               const popular = !!plan.is_popular;
               const current = isCurrentPlan(plan);
@@ -328,58 +370,63 @@ const PricingPage = ({ onNavigate, user, onUserUpdate }) => {
               return (
                 <div
                   key={plan.id}
-                  className={`relative flex flex-col rounded-3xl border p-6 ${
-                    popular
-                      ? 'border-indigo-500/50 bg-gradient-to-b from-indigo-500/10 to-transparent shadow-[0_16px_40px_rgba(99,102,241,0.12)]'
-                      : 'border-white/10 bg-white/[0.03]'
+                  className={`relative flex flex-col overflow-hidden rounded-xl border bg-surface-1 p-6 ${
+                    popular ? 'border-accent' : 'border-edge'
                   }`}
                 >
-                  {popular && (
-                    <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-indigo-600 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white shadow-lg">
-                      Mashhur
-                    </span>
-                  )}
-                  {current && (
-                    <span className="absolute -top-3 right-4 rounded-full bg-emerald-500 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white shadow-lg">
-                      Joriy plan
-                    </span>
-                  )}
+                  {/* Tavsiya etilgan tarif belgisi: gradient/soya emas, yuqori
+                      chetdagi shtamp chizig'i (karta `overflow-hidden`, shuning
+                      uchun chiziq burchak radiusiga kesiladi). */}
+                  {popular && <span aria-hidden="true" className="absolute inset-x-0 top-0 h-[3px] bg-accent" />}
 
-                  <div className="text-sm font-black uppercase tracking-wider text-white/50">
+                  {/* Qat'iy balandlikdagi qator — bo'sh bo'lsa ham joyini
+                      egallaydi, shunda uchala kartada narx bir sathda turadi. */}
+                  <div className="flex h-6 items-center justify-between gap-2">
+                    {/* Matn `text-accent` emas (10px da dark mavzuda 4.23:1) —
+                        tavsiyani yuqoridagi shtamp chizig'i va akcent chegara
+                        ko'rsatadi, yorliq esa oddiy siyoh rangida. */}
+                    <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-primary">
+                      {popular ? 'Tavsiya etilgan' : ''}
+                    </span>
+                    {current && <span className="chip badge-approved">Joriy plan</span>}
+                  </div>
+
+                  <div className="font-display mt-1 text-lg font-bold uppercase tracking-wide text-text-primary">
                     {TIER_LABELS[key] || _pricingTierName(plan.name)}
                   </div>
-                  <div className="mt-3 flex items-end gap-1">
-                    <span className="text-3xl font-black text-white">{_fmtUZS(priceNum)}</span>
+
+                  <div className="mt-3 flex items-baseline gap-1.5">
+                    <span className="font-data text-3xl font-bold text-text-primary">{_fmtNum(priceNum)}</span>
+                    <span className="text-sm font-bold text-text-secondary">so'm</span>
                   </div>
-                  <div className="mt-1 text-xs text-white/40">
+                  <div className="mt-1 text-xs text-text-secondary">
                     {billingCycle === 'yearly' ? 'yiliga' : 'oyiga'}
                     {perMonth != null && (
-                      <span className="ml-1 text-white/30">(≈ {_fmtUZS(perMonth)}/oy)</span>
+                      <span className="font-data"> · ≈ {_fmtNum(perMonth)} so'm/oy</span>
                     )}
                   </div>
                   {plan.description && (
-                    <p className="mt-3 text-xs text-white/50">{plan.description}</p>
+                    <p className="mt-3 text-xs leading-relaxed text-text-secondary">{plan.description}</p>
                   )}
 
-                  <ul className="mt-5 flex-1 space-y-2.5 border-t border-white/5 pt-5">
+                  <ul className="mt-5 flex-1 space-y-2.5 border-t border-edge pt-5">
                     {features.map((f, i) => (
-                      <li key={i} className="flex items-start gap-2 text-xs text-white/70">
-                        <span className="mt-0.5 text-indigo-400 font-black">✓</span>
+                      <li key={i} className="flex items-start gap-2 text-xs leading-relaxed text-text-primary">
+                        <Icon name="check" size={14} className="mt-px flex-shrink-0 text-accent" />
                         <span>{f}</span>
                       </li>
                     ))}
                   </ul>
 
+                  {/* Joriy tarifda tugma `disabled` — `.btn-primary:disabled`
+                      o'zi neytral yuzaga o'tadi (surface-2 + edge + ikkilamchi
+                      matn), shuning uchun alohida "current" ko'rinishi shart emas. */}
                   <button
                     type="button"
                     disabled={current}
                     onClick={() => handleChoose(plan)}
-                    className={`mt-6 w-full rounded-xl py-3 text-sm font-black transition-colors ${
-                      current
-                        ? 'cursor-default bg-white/5 text-white/40'
-                        : popular
-                          ? 'bg-indigo-600 text-white hover:bg-indigo-700'
-                          : 'border border-white/15 bg-white/5 text-white hover:bg-white/10'
+                    className={`mt-6 w-full rounded-lg py-3 text-sm font-bold ${
+                      popular || current ? 'btn-primary' : 'btn-ghost'
                     }`}
                   >
                     {current ? 'Joriy tarifingiz' : 'Tanlash'}
@@ -390,33 +437,39 @@ const PricingPage = ({ onNavigate, user, onUserUpdate }) => {
           </div>
         )}
 
-        <p className="mt-10 text-center text-xs text-white/30">
+        <p className="mx-auto mt-10 max-w-lg text-balance text-center text-xs leading-relaxed text-text-secondary">
           To'lov Payme yoki Click orqali xavfsiz amalga oshiriladi. Savollar bo'lsa qo'llab-quvvatlash bilan bog'laning.
         </p>
       </main>
 
       {/* To'lov provayderini tanlash modali */}
       {paymentPlan && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-          <div className="modal w-full max-w-sm">
+        // `.overlay` + `.modal` — umumiy Modal komponenti ishlatadigan juftlik:
+        // fon token orqali (qog'ozda ham, siyohda ham to'g'ri), mobil ekranda
+        // esa modal pastdan chiqadigan varaqqa (bottom sheet) aylanadi.
+        // Fon bosilganda YOPILMAYDI: to'lov oqimida tasodifiy yopilish
+        // foydalanuvchini "to'ladimi yoki yo'qmi" holatida qoldiradi.
+        <div className="overlay">
+          <div className="modal">
             <div className="mb-5 flex items-start justify-between gap-4">
               <div>
-                <h2 className="text-lg font-black text-white">To'lov usulini tanlang</h2>
-                <div className="mt-1 text-xs font-bold text-white/50">
-                  {_pricingTierName(paymentPlan.name)} — {_fmtUZS(paymentPlan.price)}
+                <h2 className="font-display text-xl font-bold text-text-primary">To'lov usulini tanlang</h2>
+                <div className="mt-1 text-xs font-bold text-text-secondary">
+                  {_pricingTierName(paymentPlan.name)} — <span className="font-data">{_fmtUZS(paymentPlan.price)}</span>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={closePaymentModal}
-                className="rounded-lg p-2 text-white/40 hover:bg-white/10 hover:text-white"
+                aria-label="Yopish"
+                className="rounded-lg p-2 text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
               >
                 <Icon name="x" size={18} />
               </button>
             </div>
 
             {payError && (
-              <div className="mb-4 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-xs font-bold text-rose-300">
+              <div className="mb-4 rounded-lg border border-error/40 bg-error/10 px-3 py-2 text-xs font-bold text-error">
                 {payError}
               </div>
             )}
@@ -424,75 +477,72 @@ const PricingPage = ({ onNavigate, user, onUserUpdate }) => {
             {payPolling.status === 'success' ? (
               // Premium faollashdi — 2 soniyadan keyin modal avtomatik yopiladi.
               <div className="space-y-4 py-2 text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-emerald-500/30 bg-emerald-500/15">
-                  <span className="text-3xl">✅</span>
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-success/40 bg-success/10 text-success">
+                  <Icon name="check" size={26} />
                 </div>
                 <div>
-                  <p className="text-base font-black text-white">
+                  <p className="text-balance text-base font-bold text-text-primary">
                     Tabriklaymiz! Siz {_pricingTierName(paymentPlan.name)} tarifiga o'tdingiz.
                   </p>
-                  <p className="mt-1.5 text-xs text-white/50">
+                  <p className="mt-1.5 text-balance text-xs leading-relaxed text-text-secondary">
                     Obunangiz faollashtirildi. Endi barcha imkoniyatlardan foydalanishingiz mumkin.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={closePaymentModal}
-                  className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-black text-white transition-colors hover:bg-emerald-700"
-                >
+                <button type="button" onClick={closePaymentModal} className="btn-primary w-full rounded-lg py-3 text-sm font-bold">
                   Yopish
                 </button>
               </div>
             ) : payPolling.status === 'timeout' ? (
               // 2 daqiqa o'tdi, hali tasdiqlanmadi.
               <div className="space-y-4 py-2 text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-amber-500/30 bg-amber-500/15">
-                  <span className="text-3xl">⏳</span>
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-warning/40 bg-warning/10 text-warning">
+                  <Icon name="clock" size={26} />
                 </div>
                 <div>
-                  <p className="text-base font-black text-white">To'lov hali tasdiqlanmadi</p>
-                  <p className="mt-1.5 text-xs text-white/50">
+                  <p className="text-base font-bold text-text-primary">To'lov hali tasdiqlanmadi</p>
+                  <p className="mt-1.5 text-balance text-xs leading-relaxed text-text-secondary">
                     Biroz kuting yoki qo'llab-quvvatlash bilan bog'laning. Obunangiz
                     tasdiqlangach sahifani yangilaganingizda faol bo'ladi.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={closePaymentModal}
-                  className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-black text-white transition-colors hover:bg-indigo-700"
-                >
+                <button type="button" onClick={closePaymentModal} className="btn-primary w-full rounded-lg py-3 text-sm font-bold">
                   Yopish
                 </button>
               </div>
             ) : payPolling.status === 'checking' ? (
               // To'lov sahifasi ochildi — tasdiqlanishini kutmoqdamiz.
+              // Aylanuvchi ⏳ emoji o'rniga umumiy `Spinner` (border-current):
+              // u yagona harakatlanuvchi element va jarayon belgisidir, bezak emas.
               <div className="space-y-4 py-2 text-center">
-                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-indigo-500/30 bg-indigo-500/15">
-                  <span className="text-3xl animate-spin">⏳</span>
+                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-edge-strong bg-surface-2 text-accent">
+                  <Spinner size={24} />
                 </div>
                 <div>
-                  <p className="text-base font-black text-white">To'lov tekshirilmoqda...</p>
-                  <p className="mt-1.5 text-xs text-white/50">
+                  <p className="text-base font-bold text-text-primary">To'lov tekshirilmoqda...</p>
+                  <p className="mt-1.5 text-balance text-xs leading-relaxed text-text-secondary">
                     To'lovingiz qabul qilindi. Obunangiz tasdiqlanishini kutmoqdamiz —
                     bu odatda bir necha soniya davom etadi.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={closePaymentModal}
-                  className="w-full rounded-xl border border-white/15 bg-white/5 py-3 text-sm font-black text-white transition-colors hover:bg-white/10"
-                >
+                <button type="button" onClick={closePaymentModal} className="btn-ghost w-full rounded-lg py-3 text-sm font-bold">
                   Yopish
                 </button>
               </div>
             ) : (
               <>
+                {/* To'lov provayderlari — yagona joy, qattiq rang ATAYIN
+                    qoladi: bu brend identifikatori, mavzu bilan almashmaydi
+                    (`.code-block` palitrasi kabi). To'ldirilgan rangli yuzada
+                    matn oq/to'q qolishi to'g'ri.
+                    Click ko'ki brendning to'qroq tonida (#0072BC): asl #0D9BF5
+                    ustida oq matn 2.99:1 berardi — AA (4.5:1) dan past. To'q ton
+                    5.1:1 beradi va brend tanilishini saqlaydi. */}
                 <div className="space-y-3">
                   <button
                     type="button"
                     disabled={paying}
                     onClick={() => handleCreatePayment('payme')}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#00ccc0] py-3 text-sm font-black text-[#003d3a] transition-opacity hover:opacity-90 disabled:opacity-50"
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#00CCC0] py-3 text-sm font-bold text-[#003D3A] transition-opacity hover:opacity-90 disabled:opacity-50"
                   >
                     {paying ? 'Yuklanmoqda...' : 'Payme orqali to\'lash'}
                   </button>
@@ -500,13 +550,13 @@ const PricingPage = ({ onNavigate, user, onUserUpdate }) => {
                     type="button"
                     disabled={paying}
                     onClick={() => handleCreatePayment('click')}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0d9bf5] py-3 text-sm font-black text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-[#0072BC] py-3 text-sm font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                   >
                     {paying ? 'Yuklanmoqda...' : 'Click orqali to\'lash'}
                   </button>
                 </div>
 
-                <p className="mt-4 text-center text-[11px] text-white/30">
+                <p className="mt-4 text-center text-[11px] text-text-secondary">
                   To'lov tashqi xavfsiz sahifada amalga oshiriladi.
                 </p>
               </>

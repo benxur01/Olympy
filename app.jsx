@@ -89,6 +89,33 @@ const URL_PAGES = (() => {
 // o'zgartirmasligi uchun.
 const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','questions'];
 
+// Light mavzu tayyor bo'lgan yuzalar. Qolgan hamma joyda ekran majburiy dark
+// bo'ladi (`OlympyTheme.setLocked`) — rol dashboardlari, test, natijalar va
+// profil hali minglab `text-white` / `bg-white/5` / `border-white/10`
+// klassiga tayanadi; ular faqat qora fon uchun yozilgan va light rejimda
+// o'qib bo'lmaydi. Majburiy dark foydalanuvchining SAQLANGAN TANLOVINI
+// o'chirmaydi: u theme-ready sahifaga qaytishi bilan light qayta tiklanadi.
+//
+// DIQQAT: bu ro'yxat `public/theme-init.js` dagi URL tekshiruvi bilan mos
+// turishi kerak — o'sha skript React yuklanishidan oldin xuddi shu qarorni
+// URL bo'yicha qabul qiladi (FOUC oldini olish uchun). Biri o'zgarsa,
+// ikkinchisi ham yangilansin.
+//
+// `pending` va `pending-home` IKKALASI ham shu yerda: ular bitta `/pending`
+// manziliga ko'rsatadi (PAGE_URLS), lekin `page` state'i ikki xil yo'ldan
+// keladi — URL'dan (`pending`) va `roleHomePage`dan (`pending-home`). Faqat
+// bittasi ro'yxatda bo'lsa, ekran qaysi yo'l bilan ochilganiga qarab
+// mavzuni almashtirar edi.
+//
+// `leaderboard` — `pages/Leaderboard.jsx` to'liq token asosida qayta yozilgan,
+// shuning uchun u ham ro'yxatda. `/leaderboard` oson taxmin qilinadigan va
+// ulashiladigan manzil: light tanlagan foydalanuvchi uni to'g'ridan-to'g'ri
+// ochganda qorong'i sahifa ko'rmasligi kerak.
+const THEME_READY_PAGES = new Set([
+  'landing', 'pricing', 'login', 'register', 'student', 'pending', 'pending-home',
+  'leaderboard',
+]);
+
 const pageFromPath = () => {
   try {
     const raw = window.location.pathname || '/';
@@ -145,11 +172,11 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="dark min-h-screen flex items-center justify-center px-6" style={{ background: '#050508' }}>
+        <div className="dark min-h-screen flex items-center justify-center px-6" style={{ background: 'rgb(var(--color-ground))' }}>
           <div className="glass rounded-2xl p-8 max-w-md w-full text-center flex flex-col items-center gap-4">
-            <div className="w-14 h-14 rounded-2xl gradient-bg flex items-center justify-center text-white text-2xl font-bold">!</div>
-            <div className="text-lg font-semibold text-white">Xatolik yuz berdi</div>
-            <div className="text-sm text-white/50">
+            <div className="w-14 h-14 rounded-2xl gradient-bg flex items-center justify-center text-accent text-2xl font-bold">!</div>
+            <div className="text-lg font-semibold text-text-primary">Xatolik yuz berdi</div>
+            <div className="text-sm text-text-secondary">
               Kutilmagan xatolik sodir bo'ldi. Iltimos, sahifani yangilang. Muammo takrorlansa, birozdan so'ng qayta urinib ko'ring.
             </div>
             <button
@@ -683,6 +710,13 @@ const App = () => {
     if (NEEDS_AUTH_PAGES.includes(page) && !user) setPage('login');
   }, [page, user]);
 
+  // Mavzu qulfi: theme-ready bo'lmagan sahifada majburiy dark (yuqoridagi
+  // THEME_READY_PAGES izohiga qarang). Tanlov o'chirilmaydi — qulf olinishi
+  // bilan foydalanuvchining light tanlovi qaytadi.
+  useEffect(() => {
+    OlympyTheme.setLocked(!THEME_READY_PAGES.has(page));
+  }, [page]);
+
   // ─── Role-gated dashboard renderer ────────────────────────────────────────
   const renderDashboard = (role) => {
     if (!user) return null;
@@ -741,12 +775,17 @@ const App = () => {
           title={`${meta?.label || ''} arizasi kutilmoqda`}
           status="pending"
           message={messages[role] || ''}
+          // Bu karta theme-ready `student` sahifasida ham chiziladi (tasdiq
+          // kutayotgan o'quvchi `/dashboard`da shu ekranni ko'radi), shuning
+          // uchun `glass` + `text-white` emas, tokenlar: karta foni surface-1,
+          // demak ichki blok surface-2. Markaz harfi — ustida matn bo'lgan
+          // to'ldirilgan yuza, ya'ni `accent-fill` + `on-accent`.
           extra={center?.name && (
-            <div className="glass rounded-2xl p-4 inline-flex items-center gap-3">
-              <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center text-white font-bold">{center.name[0]}</div>
+            <div className="bg-surface-2 border border-edge rounded-2xl p-4 inline-flex items-center gap-3">
+              <div className="w-10 h-10 bg-accent-fill rounded-xl flex items-center justify-center text-on-accent font-bold">{center.name[0]}</div>
               <div className="text-left">
-                <div className="text-sm font-semibold text-white">{center.name}</div>
-                {center.city && <div className="text-xs text-white/40">{center.city}</div>}
+                <div className="text-sm font-semibold text-text-primary">{center.name}</div>
+                {center.city && <div className="text-xs text-text-secondary">{center.city}</div>}
               </div>
             </div>
           )}
@@ -836,22 +875,38 @@ const App = () => {
         }
         return <MockTestPage mock={activeMock} user={user} onFinish={handleTestFinish} onNavigate={navigate} />;
       }
+      // Reyting theme-ready (THEME_READY_PAGES) — o'rov chizmasi ham token
+      // qatlamida bo'lishi shart, aks holda light mavzuda hoshiya ko'rinmaydi.
+      // `ThemeToggle` shu qatorda: sahifa o'zining sarlavha qismiga ega emas,
+      // boshqa theme-ready ekranlarda esa tugma doim shu joyda turadi.
+      //
+      // ┌─ Nega `.glass` EMAS (uchala sarlavha qatorida ham) ─────────────────┐
+      // │ `.glass` hoshiyani `box-shadow: inset 0 0 0 1px` bilan chizadi, ya'ni│
+      // │ TO'RT tomondan halqa. Ustiga qo'yilgan `border-b` esa BOSHQA CSS    │
+      // │ xossasi — ikkalasi ham render bo'ladi va pastda bitta intizomli     │
+      // │ hairline o'rniga ikkita chiziq chiqadi.                             │
+      // │ To'liq kenglikdagi sarlavha qatori uchun to'g'ri naqsh — Landing    │
+      // │ navbar'i va Pricing header'idagi kabi: yuza + FAQAT pastki chegara. │
+      // └─────────────────────────────────────────────────────────────────────┘
       case 'leaderboard': return (
-        <div className="min-h-screen" style={{ background: '#050508' }}>
-          <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
+        <div className="min-h-screen" style={{ background: 'rgb(var(--color-ground))' }}>
+          <div className="bg-surface-1 border-b border-edge px-6 py-3 flex items-center gap-3">
             <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={() => navigate(roleHomePage(user))} aria-label="Dashboardga qaytish">
               <BrandLogo size="sm" />
             </button>
-            <button onClick={() => navigate(roleHomePage(user))} className="ml-auto btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5">
-              <Icon name="arrowLeft" size={13} /> Orqaga
-            </button>
+            <div className="ml-auto flex items-center gap-2">
+              <ThemeToggle />
+              <button onClick={() => navigate(roleHomePage(user))} className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5">
+                <Icon name="arrowLeft" size={13} /> Orqaga
+              </button>
+            </div>
           </div>
           <LeaderboardPage onNavigate={navigate} user={user} />
         </div>
       );
       case 'profile': return (
-        <div className="min-h-screen" style={{ background: '#050508' }}>
-          <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
+        <div className="min-h-screen" style={{ background: 'rgb(var(--color-ground))' }}>
+          <div className="bg-surface-1 border-b border-edge px-6 py-3 flex items-center gap-3">
             <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={() => navigate(roleHomePage(user))} aria-label="Dashboardga qaytish">
               <BrandLogo size="sm" />
             </button>
@@ -874,8 +929,8 @@ const App = () => {
       case 'results':
         if (page === 'results' && testResult) {
           return (
-            <div className="min-h-screen" style={{ background: '#050508' }}>
-              <div className="glass border-b border-white/5 px-6 py-3 flex items-center gap-3">
+            <div className="min-h-screen" style={{ background: 'rgb(var(--color-ground))' }}>
+              <div className="bg-surface-1 border-b border-edge px-6 py-3 flex items-center gap-3">
                 <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={() => navigate(roleHomePage(user))} aria-label="Dashboardga qaytish">
                   <BrandLogo size="sm" />
                 </button>
@@ -901,10 +956,10 @@ const App = () => {
     // foydalanuvchi dashboardiga sakrar va flicker hosil bo'lardi. Endi
     // bootstrap davomida loading skeleton ko'rsatamiz.
     return (
-      <div className="dark min-h-screen flex items-center justify-center" style={{ background: '#050508' }}>
-        <div className="flex flex-col items-center gap-4 text-white/70">
+      <div className="dark min-h-screen flex items-center justify-center" style={{ background: 'rgb(var(--color-ground))' }}>
+        <div className="flex flex-col items-center gap-4 text-text-secondary">
           <BrandLogo size="lg" />
-          <div className="w-12 h-12 rounded-full border-2 border-white/20 border-t-white animate-spin" />
+          <div className="w-12 h-12 rounded-full border-2 border-edge border-t-accent animate-spin" />
           <div className="text-sm font-semibold tracking-wide">Olympy yuklanmoqda...</div>
         </div>
       </div>
@@ -946,37 +1001,47 @@ const App = () => {
         onNavigate={navigate}
       />
       <AISupportWidget user={user} />
+      {/* Mavzu tugmasi bu yerda EMAS. Ilgari u suzuvchi boshqaruv sifatida shu
+          joydan chizilardi (header'larda hali joy yo'q edi), lekin endi har bir
+          theme-ready ekran uni O'Z sarlavha qismida ko'rsatadi: Landing navbar,
+          Auth o'ng ustun sarlavhasi, StudentDashboard Topbar'i, Pricing header'i
+          va PendingAccess kartalari. Suzuvchi variant ular bilan ikkilanardi,
+          ustiga Auth'dagi havolani va AI widjeti (z-999) uni yopardi. */}
+      {/* Push so'rovi App qobig'ida SHARTSIZ turadi, ya'ni theme-ready
+          sahifalar (landing, login, /dashboard, /leaderboard) ustida ham
+          suzadi — shuning uchun u qattiq yozilgan qora paneldan token
+          qatlamiga ko'chirildi. `backdrop-blur`, gradient va rangli soya yo'q;
+          suzuvchi panel fondan `edge-strong` hoshiya bilan ajraladi. */}
       {showPushPrompt && page !== 'test' && (
-        <div className="fixed bottom-4 left-4 right-4 md:left-auto md:bottom-6 md:right-6 z-[9999] max-w-sm md:w-[384px] p-5 rounded-2xl text-white shadow-2xl" 
-             style={{ 
-               animation: 'slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1)', 
-               background: 'rgba(9, 10, 15, 0.97)', 
-               backdropFilter: 'blur(20px)', 
-               border: '1px solid rgba(99, 102, 241, 0.25)' 
-             }}>
+        <div
+          className="fixed bottom-4 left-4 right-4 md:left-auto md:bottom-6 md:right-6 z-[9999] max-w-sm md:w-[384px] p-5 rounded-2xl bg-surface-1 border border-edge-strong"
+          style={{ animation: 'slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1)' }}
+          role="dialog"
+          aria-label="Bildirishnomalarni yoqish"
+        >
           <div className="flex gap-4">
-            <div className="w-12 h-12 rounded-xl flex items-center justify-center text-xl shrink-0"
-                 style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(168,85,247,0.15) 100%)', border: '1px solid rgba(99,102,241,0.2)' }}>
-              🔔
+            {/* Belgi matn ko'tarmaydi — to'ldirilgan akcent yuza emas, neytral
+                plastinka + `accent` ikonka. */}
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0 bg-surface-2 border border-edge text-accent">
+              <Icon name="bell" size={22} />
             </div>
             <div className="flex-1">
-              <h4 className="font-extrabold text-sm mb-1 text-white tracking-tight">Bildirishnomalarni yoqasizmi?</h4>
-              <p className="text-xs text-white/60 leading-relaxed mb-4">
+              <h4 className="font-extrabold text-sm mb-1 text-text-primary tracking-tight">Bildirishnomalarni yoqasizmi?</h4>
+              <p className="text-xs text-text-secondary leading-relaxed mb-4">
                 Yangi olimpiadalar, musobaqalar va natijalaringiz haqidagi xabarlarni sayt yopiq bo'lsa ham birinchilardan bo'lib bilib olasiz.
               </p>
               <div className="flex gap-2 justify-end">
                 <button
                   type="button"
                   onClick={handlePushDecline}
-                  className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white/50 hover:text-white hover:bg-white/5 transition-all"
+                  className="btn-ghost px-3.5 py-1.5 rounded-xl text-xs font-semibold"
                 >
                   Keyinroq
                 </button>
                 <button
                   type="button"
                   onClick={handlePushAccept}
-                  className="px-4 py-1.5 rounded-xl text-xs font-bold transition-all text-white shadow-lg hover:shadow-indigo-500/20 active:scale-[0.97] duration-150"
-                  style={{ background: 'linear-gradient(135deg, #6366f1, #a855f7)' }}
+                  className="btn-primary px-4 py-1.5 rounded-xl text-xs font-bold"
                 >
                   Ha, yoqish
                 </button>

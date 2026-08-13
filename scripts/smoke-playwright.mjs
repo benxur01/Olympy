@@ -214,9 +214,32 @@ const main = async () => {
       await page.getByRole('button', { name: /Kirish/i }).first().click();
       await page.waitForTimeout(3000);
       const url = page.url();
-      if (/login/i.test(url) && !(await page.locator('text=/dashboard|Profil|Olimpiada|Xush/i').count())) {
-        // Still on login — may be wrong creds or 2FA; soft fail
-        const err = await page.locator('.text-red-400, [class*="red"]').first().textContent().catch(() => '');
+      // Muvaffaqiyat mezoni — MANZIL: kirish o'tsa, ilova `roleHomePage`
+      // bo'yicha /dashboard, /dashboard/<rol> yoki /pending ga pushState
+      // qiladi (app.jsx dagi `page` -> URL sinxronizatsiyasi). Ya'ni /login
+      // da qolish har doim "kirilmadi" degani.
+      //
+      // Avval bu yerda qo'shimcha shart bor edi:
+      //   !(await page.locator('text=/dashboard|Profil|Olimpiada|Xush/i').count())
+      // Redizayndan keyin login sahifasining O'ZIDA "Xush kelibsiz" va
+      // "...olimpiada platformasiga kiring" matni paydo bo'ldi — shart doim
+      // yolg'on bo'lib qoldi va tekshiruv xato parol bilan ham
+      // "authenticated smoke" deb O'TARDI (pastdagi xato o'qish kodiga
+      // umuman yetib bormasdan). Marketing matniga bog'lanish shu sababli
+      // olib tashlandi.
+      if (/^\/login\/?$/.test(new URL(url).pathname)) {
+        // Still on login — may be wrong creds or 2FA; soft fail.
+        //
+        // Xato xabari KLASS bo'yicha izlanmaydi. Avval bu yerda
+        // `.text-red-400, [class*="red"]` turardi: redizayndan keyin xato
+        // holati `error` tokeniga o'tdi (`text-error`, `border-error/35`) va
+        // klass nomida "red" so'zi umuman qolmadi — selektor hech narsa
+        // topmasdi va tekshiruv JIMGINA "xato xabari yo'q" deb xulosa
+        // qilardi. Endi u ko'rinishga emas, MA'NOGA bog'langan:
+        // `ErrorBanner` (shared.jsx) va Auth.jsx dagi barcha xato bloklari
+        // `role="alert"` bilan chiziladi, ya'ni keyingi dizayn
+        // o'zgarishlarida ham selektor buzilmaydi.
+        const err = (await page.getByRole('alert').first().textContent().catch(() => '') || '').trim();
         fail(`login with SMOKE_* did not leave login page (${err || url})`);
       } else {
         ok(`authenticated smoke (${url})`);

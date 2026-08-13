@@ -1550,7 +1550,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 )}
                 <div className="space-y-3">
                   {(newQ.testCases || []).map((tc, idx) => (
-                    <div key={idx} className="glass rounded-xl p-3 border border-white/10 space-y-2">
+                    <div key={idx} className="glass rounded-xl p-3 space-y-2">
                       <div className="flex items-center justify-between mb-1">
                         <span className="text-xs text-white/40 font-semibold">#{idx + 1}</span>
                         <div className="flex items-center gap-3">
@@ -2112,7 +2112,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
 
       {bulkSaving && (
         <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/95 animate-in fade-in">
-          <div className="glass-strong border border-white/10 rounded-2xl p-6 flex flex-col items-center gap-4 max-w-xs text-center shadow-2xl">
+          <div className="glass-strong rounded-2xl p-6 flex flex-col items-center gap-4 max-w-xs text-center">
             <div className="relative flex items-center justify-center">
               <div className="animate-spin rounded-full h-12 w-12 border-2 border-white/15 border-t-white border-r-white"></div>
               <div className="absolute animate-pulse text-white/80">

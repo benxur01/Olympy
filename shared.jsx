@@ -288,11 +288,116 @@ const Icon = ({ name, size = 18, className = '' }) => {
     play: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 3a1 1 0 011.514-.857l13.999 8.999a1 1 0 010 1.716l-14 9A1 1 0 016 21z" />,
     lock: <><rect x="3" y="11" width="18" height="11" rx="2" ry="2" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11V7a5 5 0 0110 0v4" /></>,
     mic: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2a3 3 0 00-3 3v6a3 3 0 006 0V5a3 3 0 00-3-3z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v1a7 7 0 01-14 0v-1M12 18v4M8 22h8" /></>,
+    sun: <><circle cx="12" cy="12" r="4" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></>,
+    moon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3a6 6 0 009 9 9 9 0 11-9-9z" />,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" className={className}>
       {icons[name] || null}
     </svg>
+  );
+};
+
+// ─── Mavzu (theme): light / dark ──────────────────────────────────────────────
+// Holat ikki qismdan iborat:
+//
+//   preference — foydalanuvchi tanlovi ('light' | 'dark'), localStorage'da
+//                saqlanadi. Default 'dark' (hozirgi ko'rinish).
+//   locked     — joriy yuza hali light uchun tayyor emas (rol dashboardlari,
+//                test, savol yaratish va h.k.). Bunda ekran MAJBURIY dark
+//                bo'ladi, lekin tanlov saqlanib qoladi: foydalanuvchi
+//                theme-ready sahifaga qaytishi bilan light qayta tiklanadi.
+//
+//   effektiv mavzu = locked ? 'dark' : preference
+//
+// Qaysi yuza theme-ready ekanini app.jsx belgilaydi (`THEME_READY_PAGES`) va
+// `OlympyTheme.setLocked` orqali shu yerga uzatadi. Boshlang'ich qo'llash esa
+// React'dan oldin `public/theme-init.js` da bajariladi (FOUC oldini olish) —
+// bu yerdagi kod o'sha holatni davom ettiradi, qaytadan boshlamaydi.
+const THEME_STORAGE_KEY = 'olympy:theme';
+const THEME_META_COLORS = { dark: '#14161C', light: '#E7E4DC' };
+
+const OlympyTheme = (() => {
+  const listeners = new Set();
+  let locked = false;
+  let preference = (() => {
+    try {
+      const stored = localStorage.getItem(THEME_STORAGE_KEY);
+      return stored === 'light' || stored === 'dark' ? stored : 'dark';
+    } catch { return 'dark'; }
+  })();
+
+  const getEffective = () => (locked ? 'dark' : preference);
+
+  const apply = () => {
+    const theme = getEffective();
+    try {
+      document.documentElement.dataset.theme = theme;
+      // Brauzer chrome rangi sahifa fonidan farq qilmasin.
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', THEME_META_COLORS[theme]);
+    } catch {}
+    listeners.forEach(fn => { try { fn(); } catch {} });
+  };
+
+  const setPreference = (next) => {
+    if (next !== 'light' && next !== 'dark') return;
+    if (next === preference) return;
+    preference = next;
+    try { localStorage.setItem(THEME_STORAGE_KEY, next); } catch {}
+    apply();
+  };
+
+  const setLocked = (next) => {
+    if (!!next === locked) return;
+    locked = !!next;
+    apply();
+  };
+
+  return {
+    getPreference: () => preference,
+    getEffective,
+    isLocked: () => locked,
+    setPreference,
+    setLocked,
+    toggle: () => setPreference(preference === 'dark' ? 'light' : 'dark'),
+    subscribe: (fn) => { listeners.add(fn); return () => listeners.delete(fn); },
+  };
+})();
+
+const useTheme = () => {
+  const [, force] = React.useReducer(x => x + 1, 0);
+  React.useEffect(() => OlympyTheme.subscribe(force), []);
+  return {
+    theme: OlympyTheme.getEffective(),
+    locked: OlympyTheme.isLocked(),
+    setTheme: OlympyTheme.setPreference,
+    toggle: OlympyTheme.toggle,
+  };
+};
+
+// ─── ThemeToggle ──────────────────────────────────────────────────────────────
+// Theme-ready bo'lmagan yuzalarda UMUMAN ko'rsatilmaydi: bosilganda hech narsa
+// o'zgarmaydigan tugma yo'qligidan yomonroq.
+// Ko'rinish `.theme-toggle` (src/index.css) da: gradient/glow/translateY yo'q,
+// faqat chegara va fon o'zgaradi; klaviatura fokusi ko'rinadi.
+const ThemeToggle = ({ className = '' }) => {
+  const { theme, locked, toggle } = useTheme();
+  if (locked) return null;
+
+  const goingLight = theme === 'dark';
+  const label = goingLight ? "Yorug' mavzuga o'tish" : "To'q mavzuga o'tish";
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      className={`theme-toggle ${className}`}
+      title={label}
+      aria-label={label}
+    >
+      <Icon name={goingLight ? 'sun' : 'moon'} size={15} />
+      <span>{goingLight ? "Yorug'" : "To'q"}</span>
+    </button>
   );
 };
 
@@ -507,7 +612,27 @@ const BRAND_ASSET_BASE = window.location.protocol === 'file:' ? 'public/brand' :
 const BRAND_LOGO_SRC = `${BRAND_ASSET_BASE}/olympy-brand.png`;
 const BRAND_LOGO_SRC_WEBP = `${BRAND_ASSET_BASE}/olympy-brand.webp`;
 
-const BrandLogo = ({ compact = false, size = 'md', className = '', variant = 'default' }) => {
+// Brend rasmi to'q fonga chizilgan: "OLYMPY" so'zi va tog' cho'qqisi oq, fon
+// esa shaffof. Qog'oz (light) mavzuda oq matn yo'qoladi, `mixBlendMode:'screen'`
+// esa qolganini ham fon rangiga yuvib yuboradi.
+//
+// Ikkita yo'l bor edi:
+//   (a) light'da `wordmark` variantiga o'tish — lekin mavzu almashtirilganda
+//       brend butunlay boshqa belgiga aylanadi (tog' belgisi yo'qoladi);
+//   (b) rasmning YORQINLIGINI ag'darish: `invert(1) hue-rotate(180deg)`.
+//       Bu klassik juftlik — invert rangni ham teskari qiladi, hue-rotate esa
+//       tovushni (hue) joyiga qaytaradi. Natijada ko'k halqa ko'k qoladi, oq
+//       "OLYMPY" esa siyoh rangga o'tadi.
+// (b) tanlandi: bitta brend belgisi ikkala mavzuda ham saqlanadi. Dark mavzuda
+// hech narsa o'zgarmaydi (screen blend avvalgidek) — majburiy dark
+// dashboardlarda regressiya yo'q.
+const BrandLogo = ({ compact = false, size = 'md', className = '', variant = 'default', onDark = false }) => {
+  const { theme } = useTheme();
+  // `onDark` — element QOG'OZ mavzuda ham to'q yuzada turganini bildiradi
+  // (masalan `TelegramMockup` ning #2b5278 sarlavhasi). Bunday joyda light
+  // ishlovi rasmni to'q fonga to'q qilib qo'yadi, shuning uchun chetlab
+  // o'tamiz va dark ishlovini (screen blend) ishlatamiz.
+  const light = theme === 'light' && !onDark;
   const sizes = {
     xs: { width: 48, height: 32, mark: 28 },
     sm: { width: 84, height: 56, mark: 32 },
@@ -517,9 +642,10 @@ const BrandLogo = ({ compact = false, size = 'md', className = '', variant = 'de
   };
   const current = sizes[size] || sizes.md;
 
-  // Light yuzalar uchun matnli wordmark — brend rasmi to'q fonli (screen
-  // blend), oq fonda ko'rinmaydi. Shuning uchun Splash/Onboarding/Auth
-  // light ekranlarida yashil "Olympy" matnli logotip ishlatamiz.
+  // Faqat matnli wordmark — rasmsiz joylar uchun (masalan chop etiladigan
+  // sarlavha yoki juda tor panel). Avval Duolingo yashili (#58CC02) qattiq
+  // yozilgan edi va `--duo-green` hech qayerda e'lon qilinmagan — endi akcent
+  // tokeniga ulangan, rangli soya olib tashlandi.
   if (variant === 'wordmark') {
     const fontSizes = { xs: 22, sm: 28, md: 34, lg: 40, xl: 52 };
     const fs = fontSizes[size] || fontSizes.md;
@@ -528,42 +654,60 @@ const BrandLogo = ({ compact = false, size = 'md', className = '', variant = 'de
       <span className={`inline-flex items-center flex-shrink-0 ${className}`}
         style={{ gap: Math.round(fs * 0.18) }}>
         <span
-          style={{
-            width: dot, height: dot, borderRadius: '50%',
-            background: 'var(--duo-green, #58CC02)',
-            boxShadow: '0 3px 0 var(--duo-green-dark, #46A302)',
-            flexShrink: 0,
-          }}
+          className="bg-accent flex-shrink-0"
+          style={{ width: dot, height: dot, borderRadius: '50%' }}
         />
-        <span style={{
-          fontWeight: 800,
+        <span className="font-display text-text-primary" style={{
+          fontWeight: 700,
           fontSize: fs,
-          letterSpacing: '-0.02em',
-          color: 'var(--duo-green, #58CC02)',
+          letterSpacing: '-0.01em',
           lineHeight: 1,
         }}>Olympy</span>
       </span>
     );
   }
-  const imageBlend = {
-    mixBlendMode: 'screen',
-    opacity: 0.96,
-    backgroundColor: 'transparent',
-  };
+  // Rasm ikki qismdan iborat: OQ "OLYMPY" so'zi va KO'K tog' belgisi
+  // (piksel tahlili: ustun ranglar #E0E0E0 va #0040E0/#0060E0/#00C0E0).
+  //
+  // `invert(1) hue-rotate(180deg)` oq so'zni siyohga aylantiradi — to'g'ri —
+  // lekin ko'k belgini OQISH-kulrangga chiqaradi (invert → #FFBF1F, hue-rotate
+  // uni yorqinligicha qoldiradi). To'liq o'lchamda buni sezilmaydi, chunki
+  // belgini o'qishning hojati yo'q: yonida to'q "OLYMPY" so'zi turadi. Lekin
+  // `compact` da so'z 48px ga siqiladi va o'qilmay qoladi — ko'zga faqat o'sha
+  // oqargan belgi tashlanadi, ya'ni logotip qog'ozda deyarli yo'qoladi.
+  //
+  // `compact` uchun shuning uchun boshqa yo'l: `brightness(0)` — butun rasmni
+  // alfa kanali bo'yicha bitta siyoh siluetiga aylantiradi (bosma shtamp kabi,
+  // yo'nalishga mos). Qog'ozda 15:1 dan yuqori, har qanday o'lchamda o'qiladi.
+  // To'liq va `wordmark` variantlar to'g'ri ishlayapti — ularga tegilmadi.
+  const lightFilter = compact
+    ? 'brightness(0) opacity(0.92)'
+    : 'saturate(1.08) contrast(1.02) invert(1) hue-rotate(180deg)';
+  const imageBlend = light
+    ? {
+        // Qog'ozda blend rejimi kerak emas — rasmda allaqachon alfa kanali bor.
+        filter: lightFilter,
+        opacity: 1,
+        backgroundColor: 'transparent',
+      }
+    : {
+        mixBlendMode: 'screen',
+        filter: 'saturate(1.08) contrast(1.02)',
+        opacity: 0.96,
+        backgroundColor: 'transparent',
+      };
   const style = compact
     ? {
         ...imageBlend,
         width: Math.round(current.mark * 1.5),
         height: current.mark,
         objectFit: 'contain',
-        filter: 'saturate(1.08) contrast(1.02)',
       }
     : {
         ...imageBlend,
         width: current.width,
         height: current.height,
         objectFit: 'contain',
-        filter: 'saturate(1.08) contrast(1.02)',
       };
   return (
     <span className={`inline-flex items-center flex-shrink-0 ${className}`}>
@@ -596,6 +740,8 @@ const Avatar = ({ name = '', size = 36, gradient = 'from-indigo-500 to-purple-60
       />
     );
   }
+  // `text-white` bu yerda TO'G'RI: initsiallar rangli (to'q) chip ustida
+  // turadi, mavzu fonida emas. `gradient` chaqiruvchi sahifadan keladi.
   return (
     <div className={`bg-gradient-to-br ${gradient} rounded-full flex items-center justify-center font-bold text-white flex-shrink-0 ${premium ? 'avatar-premium' : ''}`}
       style={{ width: size, height: size, fontSize: size * 0.38 }}>
@@ -625,10 +771,11 @@ const StatCard = ({ label, value, sub, icon, color = 'from-indigo-500 to-purple-
   <div className={`stat-card glass rounded-2xl p-5 card-hover ${glow || ''}`}>
     <div className="flex items-start justify-between mb-4">
       <div className={`feature-icon bg-gradient-to-br ${color} opacity-90`}>{icon}</div>
-      {sub && <span className="text-xs text-green-400 font-medium">{sub}</span>}
+      {sub && <span className="text-xs text-success font-medium font-data">{sub}</span>}
     </div>
-    <div className="text-2xl font-bold text-white mb-1">{value}</div>
-    <div className="text-sm text-white/50">{label}</div>
+    {/* `font-data` — qiymat almashganda ustun sakramasin (tabular-nums). */}
+    <div className="text-2xl font-bold font-data text-text-primary mb-1">{value}</div>
+    <div className="text-sm text-text-secondary">{label}</div>
   </div>
 );
 
@@ -725,11 +872,11 @@ const makeDashboardUrlSync = (base, pageKeys, homeKey = 'home') => {
 const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick, collapsed, setCollapsed, onItemClick }) => (
   <>
     {/* Logo */}
-    <div className={`relative flex items-center py-5 border-b border-white/5 cursor-pointer flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'}`} onClick={logoClick}>
+    <div className={`relative flex items-center py-5 border-b border-edge cursor-pointer flex-shrink-0 ${collapsed ? 'justify-center px-2' : 'gap-3 px-4'}`} onClick={logoClick}>
       <BrandLogo compact={collapsed} size={collapsed ? 'sm' : 'md'} />
       {setCollapsed && (
         <button
-          className={`${collapsed ? 'absolute right-1 bottom-1' : 'ml-auto'} text-white/30 hover:text-white/70 transition-colors`}
+          className={`${collapsed ? 'absolute right-1 bottom-1' : 'ml-auto'} text-text-secondary hover:text-text-primary transition-colors`}
           onClick={e => { e.stopPropagation(); setCollapsed(!collapsed); }}
           aria-label={collapsed ? 'Panelni kengaytirish' : 'Panelni yig\'ish'}
         >
@@ -742,22 +889,26 @@ const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick,
     <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
       {items.map(item => (
         item.divider
-          ? <div key={item.key} className="my-2 border-t border-white/5" />
+          ? <div key={item.key} className="my-2 border-t border-edge" />
           : <button key={item.key}
               className={`sidebar-item group w-full flex items-center rounded-xl text-left transition-all duration-200 ${
                 collapsed ? 'justify-center px-0 py-3' : 'gap-3.5 px-4 py-3'
               } ${activePage === item.key ? 'active' : ''}`}
               onClick={() => { setPage(item.key); onItemClick && onItemClick(); }}>
-              <span className={`sidebar-icon flex items-center justify-center flex-shrink-0 w-9 h-9 rounded-full transition-all duration-200 ${activePage === item.key ? 'bg-gradient-to-br from-indigo-500 to-purple-600 text-white shadow-lg shadow-indigo-500/30' : 'bg-white/5 text-white/40 group-hover:bg-white/10'}`}>
+              {/* Faol belgi: gradient va rangli soya o'rniga qattiq akcent
+                  yuza. To'ldirilgan va ustida ikonka bor — demak `accent` emas,
+                  `accent-fill` + `on-accent` (`.btn-primary` bilan bir xil
+                  juftlik). */}
+              <span className={`sidebar-icon flex items-center justify-center flex-shrink-0 w-9 h-9 rounded-full transition-colors duration-200 ${activePage === item.key ? 'bg-accent-fill text-on-accent' : 'bg-surface-1 text-text-secondary group-hover:bg-surface-2'}`}>
                 <Icon name={item.icon} size={17} />
               </span>
               {!collapsed && (
-                <span className={`text-[15px] font-semibold tracking-wide transition-colors duration-200 ${activePage === item.key ? 'text-white' : 'text-white/65'}`}>
+                <span className={`text-[15px] font-semibold tracking-wide transition-colors duration-200 ${activePage === item.key ? 'text-text-primary' : 'text-text-secondary'}`}>
                   {item.label}
                 </span>
               )}
               {!collapsed && item.badge && (
-                <span className="ml-auto bg-indigo-500/20 text-indigo-400 text-[11px] font-bold px-2 py-0.5 rounded-full">
+                <span className="ml-auto bg-accent/15 text-accent text-[11px] font-bold font-data px-2 py-0.5 rounded-full">
                   {item.badge}
                 </span>
               )}
@@ -766,17 +917,17 @@ const SidebarContent = ({ items, activePage, setPage, user, onLogout, logoClick,
     </nav>
 
     {/* User footer */}
-    <div className="p-3 border-t border-white/5 flex-shrink-0">
-      <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-white/5 cursor-pointer">
+    <div className="p-3 border-t border-edge flex-shrink-0">
+      <div className="flex items-center gap-3 p-2 rounded-xl hover:bg-surface-1 cursor-pointer">
         <Avatar name={user?.name || 'U'} src={user?.avatarUrl || ''} size={32} />
         {!collapsed && (
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-semibold text-white truncate">{user?.name}</div>
-            <div className="text-xs text-white/40 truncate">{user?.role}</div>
+            <div className="text-sm font-semibold text-text-primary truncate">{user?.name}</div>
+            <div className="text-xs text-text-secondary truncate">{user?.role}</div>
           </div>
         )}
         {!collapsed && (
-          <button onClick={onLogout} className="text-white/30 hover:text-red-400 transition-colors p-1" aria-label="Chiqish">
+          <button onClick={onLogout} className="text-text-secondary hover:text-error transition-colors p-1" aria-label="Chiqish">
             <Icon name="logout" size={16} />
           </button>
         )}
@@ -793,9 +944,11 @@ const Sidebar = ({ items, activePage, setPage, user, onLogout, logoClick, mobile
   return (
     <>
       {/* Desktop sidebar — hidden below lg */}
+      {/* Avval qattiq `rgba(5,5,8,0.95)` edi — mobil drawer (`.mobile-drawer`)
+          esa allaqachon `ground` ishlatardi, ya'ni ikkita panel har xil to'qlikda
+          chiqardi. Endi ikkalasi ham bitta token'da. */}
       <aside
-        className={`sidebar-desktop flex flex-col border-r border-white/5 h-screen sticky top-0 flex-shrink-0 transition-all duration-300 ${collapsed ? 'w-16' : 'w-60'}`}
-        style={{ background: 'rgba(5,5,8,0.95)' }}>
+        className={`sidebar-desktop flex flex-col bg-ground border-r border-edge h-screen sticky top-0 flex-shrink-0 transition-all duration-300 ${collapsed ? 'w-16' : 'w-60'}`}>
         <SidebarContent {...sharedProps} collapsed={collapsed} setCollapsed={setCollapsed} />
       </aside>
 
@@ -826,12 +979,14 @@ const MobileBottomNav = ({ items, activePage, setPage }) => {
       {mainItems.map(item => (
         <button key={item.key} onClick={() => setPage(item.key)}
           className={`mobile-bottom-nav-item ${activePage === item.key ? 'active' : ''}`}>
-          <span className={`flex items-center justify-center transition-all duration-200 ${activePage === item.key ? 'w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-white' : ''}`}>
+          {/* To'ldirilgan pill va badge — ustida ikonka/raqam bor, shuning uchun
+              `accent` emas, `accent-fill` + `on-accent`. */}
+          <span className={`flex items-center justify-center transition-colors duration-200 ${activePage === item.key ? 'w-8 h-8 rounded-full bg-accent-fill text-on-accent' : ''}`}>
             <Icon name={item.icon} size={activePage === item.key ? 16 : 20} />
           </span>
           <span className="label truncate w-full text-center block">{item.label}</span>
           {item.badge && activePage !== item.key && (
-            <span className="absolute top-1.5 right-1/4 w-4 h-4 bg-indigo-500 rounded-full text-white text-[9px] flex items-center justify-center font-bold">{item.badge}</span>
+            <span className="absolute top-1.5 right-1/4 w-4 h-4 bg-accent-fill rounded-full text-on-accent text-[9px] font-data flex items-center justify-center font-bold">{item.badge}</span>
           )}
         </button>
       ))}
@@ -843,20 +998,20 @@ const MobileBottomNav = ({ items, activePage, setPage }) => {
 const Topbar = ({ title, subtitle, actions, user, onMenuClick }) => {
   const Bell = typeof NotificationsBell !== 'undefined' ? NotificationsBell : (window && window.NotificationsBell);
   return (
-    <header className="glass border-b border-white/5 px-6 py-4 flex items-center justify-between sticky top-0 z-30">
+    <header className="glass px-6 py-4 flex items-center justify-between sticky top-0 z-30">
       <div className="flex min-w-0 items-center gap-3">
-        <button className="lg:hidden flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-white/50 hover:bg-white/5 hover:text-white" onClick={onMenuClick} aria-label="Menyu"><Icon name="menu" size={20} /></button>
+        <button className="lg:hidden flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary" onClick={onMenuClick} aria-label="Menyu"><Icon name="menu" size={20} /></button>
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-bold text-white">{title}</h1>
-          {subtitle && <p className="truncate text-xs text-white/40">{subtitle}</p>}
+          <h1 className="truncate font-display text-xl font-bold text-text-primary">{title}</h1>
+          {subtitle && <p className="truncate text-xs text-text-secondary">{subtitle}</p>}
         </div>
       </div>
       <div className="flex flex-shrink-0 items-center gap-3">
         {actions}
         {user && Bell ? <Bell user={user} /> : (
-          <button className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-white/50 transition-colors hover:bg-white/5 hover:text-white" aria-label="Bildirishnomalar">
+          <button className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary" aria-label="Bildirishnomalar">
             <Icon name="bell" size={20} />
-            <span className="absolute -top-1 -right-1 w-2 h-2 bg-indigo-500 rounded-full"></span>
+            <span className="absolute -top-1 -right-1 w-2 h-2 bg-accent rounded-full"></span>
           </button>
         )}
       </div>
@@ -871,8 +1026,8 @@ const Modal = ({ open, onClose, title, children, width = 'max-w-lg', style, cont
     <div className="overlay" onClick={onClose}>
       <div className={`modal ${width} ${contentClassName}`} onClick={e => e.stopPropagation()} style={style}>
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-lg font-bold text-white">{title}</h3>
-          <button onClick={onClose} className="text-white/40 hover:text-white transition-colors" aria-label="Yopish"><Icon name="x" size={20} /></button>
+          <h3 className="font-display text-xl font-bold text-text-primary">{title}</h3>
+          <button onClick={onClose} className="text-text-secondary hover:text-text-primary transition-colors" aria-label="Yopish"><Icon name="x" size={20} /></button>
         </div>
         {children}
       </div>
@@ -900,7 +1055,7 @@ const ConfirmModal = ({
   if (!open) return null;
   return (
     <Modal open={open} onClose={busy ? () => {} : onClose} title={title} width="max-w-sm">
-      {message && <p className="text-sm text-white/60 leading-relaxed mb-5">{message}</p>}
+      {message && <p className="text-sm text-text-secondary leading-relaxed mb-5">{message}</p>}
       <div className="flex gap-2 justify-end">
         <button
           type="button"
@@ -915,9 +1070,7 @@ const ConfirmModal = ({
           onClick={onConfirm}
           disabled={busy}
           className={`font-semibold rounded-xl py-2.5 px-5 text-sm disabled:opacity-50 ${
-            danger
-              ? 'bg-rose-500/20 text-rose-200 border border-rose-500/30 hover:bg-rose-500/30'
-              : 'gradient-bg text-white'
+            danger ? 'btn-danger' : 'btn-primary'
           }`}
         >
           {busy ? '...' : confirmText}
@@ -1056,7 +1209,7 @@ const AvatarCropModal = ({ open, onClose, imageSrc, onCropComplete }) => {
       <div className="flex flex-col items-center gap-6">
         {/* The cropper viewport */}
         <div
-          className="relative overflow-hidden bg-slate-950 rounded-2xl cursor-grab active:cursor-grabbing touch-none border border-white/10"
+          className="relative overflow-hidden bg-surface-2 rounded-2xl cursor-grab active:cursor-grabbing touch-none border border-edge"
           style={{ width: V, height: V, touchAction: 'none' }}
           onMouseDown={handlePointerDown}
           onTouchStart={handlePointerDown}
@@ -1082,27 +1235,29 @@ const AvatarCropModal = ({ open, onClose, imageSrc, onCropComplete }) => {
           {/* SVG circular overlay */}
           <svg className="absolute inset-0 pointer-events-none w-full h-full z-10">
             <defs>
+              {/* `white`/`black` — RANG EMAS, mask yorqinligi: oq = qoplanadi,
+                  qora = teshik (kesish doirasi). Token'ga o'tkazilmaydi. */}
               <mask id="cropMask">
                 <rect width="100%" height="100%" fill="white" />
                 <circle cx="50%" cy="50%" r="48%" fill="black" />
               </mask>
             </defs>
-            <rect width="100%" height="100%" fill="rgba(5, 5, 8, 0.7)" mask="url(#cropMask)" />
-            <circle cx="50%" cy="50%" r="48%" fill="none" stroke="#6366f1" strokeWidth="2" strokeDasharray="4 4" />
+            <rect width="100%" height="100%" style={{ fill: 'rgb(var(--color-ground) / 0.7)' }} mask="url(#cropMask)" />
+            <circle cx="50%" cy="50%" r="48%" fill="none" style={{ stroke: 'rgb(var(--color-accent))' }} strokeWidth="2" strokeDasharray="4 4" />
           </svg>
         </div>
 
         {/* Slider Controls */}
         <div className="w-full max-w-xs space-y-2">
-          <div className="flex items-center justify-between text-xs text-white/50">
+          <div className="flex items-center justify-between text-xs text-text-secondary">
             <span>Kattalashtirish</span>
-            <span>{Math.round(scale * 100)}%</span>
+            <span className="font-data">{Math.round(scale * 100)}%</span>
           </div>
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => handleScaleChange(Math.max(1, scale - 0.2))}
-              className="text-white/40 hover:text-white transition-colors"
+              className="text-text-secondary hover:text-text-primary transition-colors"
               aria-label="Kichraytirish"
             >
               <Icon name="search" size={16} />
@@ -1114,12 +1269,12 @@ const AvatarCropModal = ({ open, onClose, imageSrc, onCropComplete }) => {
               step="0.01"
               value={scale}
               onChange={(e) => handleScaleChange(parseFloat(e.target.value))}
-              className="flex-1 accent-indigo-500 bg-white/10 h-1.5 rounded-lg appearance-none cursor-pointer"
+              className="flex-1 accent-accent bg-surface-2 h-1.5 rounded-lg appearance-none cursor-pointer"
             />
             <button
               type="button"
               onClick={() => handleScaleChange(Math.min(3, scale + 0.2))}
-              className="text-white/40 hover:text-white transition-colors"
+              className="text-text-secondary hover:text-text-primary transition-colors"
               aria-label="Kattalashtirish"
             >
               <Icon name="plus" size={16} />
@@ -1150,9 +1305,13 @@ const AvatarCropModal = ({ open, onClose, imageSrc, onCropComplete }) => {
 };
 
 // ─── Spinner ───────────────────────────────────────────────────────────────────
+// `border-current` — halqa atrofdagi MATN rangini oladi, ya'ni qaysi yuzada
+// tursa o'sha yerda o'qiladi (qog'oz fonda ham, siyoh fonda ham, akcent tugma
+// ichida ham). Avval qattiq `border-white/20 border-t-white` edi va light
+// mavzuda ko'rinmasdi.
 const Spinner = ({ size = 20, className = '' }) => (
   <span
-    className={`inline-block flex-shrink-0 rounded-full border-2 border-white/20 border-t-white animate-spin ${className}`}
+    className={`inline-block flex-shrink-0 rounded-full border-2 border-current border-t-transparent animate-spin ${className}`}
     style={{ width: size, height: size }}
     aria-hidden="true"
   />
@@ -1162,10 +1321,14 @@ const Spinner = ({ size = 20, className = '' }) => (
 // `loading` true bo'lsa: (1) tugma avtomatik disabled bo'ladi (double-submit
 // himoyasi — bir nechta joyda buni qo'lda unutib qo'yishardi), (2) spinner
 // ko'rsatiladi. `variant` — 'primary' | 'ghost' | 'danger'.
+// `primary` avval `gradient-bg text-white` edi. `.gradient-bg` endi gradient
+// emas, oddiy `surface-2` yuzasi — ya'ni oq matn och mavzuda yuzaga qo'shilib
+// ketardi. Uchala variant ham endi `src/index.css` dagi tugma klasslaridan
+// keladi (bitta joyda: fon, chegara, hover, fokus).
 const BUTTON_VARIANTS = {
-  primary: 'gradient-bg text-white',
+  primary: 'btn-primary',
   ghost: 'btn-ghost',
-  danger: 'bg-rose-500/20 text-rose-200 border border-rose-500/30 hover:bg-rose-500/30',
+  danger: 'btn-danger',
 };
 const Button = ({
   children, onClick, type = 'button', loading = false, disabled = false,
@@ -1178,7 +1341,7 @@ const Button = ({
     className={`inline-flex items-center justify-center gap-2 rounded-xl font-semibold text-sm px-5 py-2.5 transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${BUTTON_VARIANTS[variant] || BUTTON_VARIANTS.primary} ${className}`}
     {...rest}
   >
-    {loading && <Spinner size={14} className="border-white/30 border-t-white" />}
+    {loading && <Spinner size={14} />}
     {children}
   </button>
 );
@@ -1187,7 +1350,7 @@ const Button = ({
 const ErrorBanner = ({ message, className = '' }) => {
   if (!message) return null;
   return (
-    <div className={`rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-200 text-sm px-4 py-3 ${className}`} role="alert">
+    <div className={`rounded-xl border border-error/35 bg-error/10 text-error text-sm px-4 py-3 ${className}`} role="alert">
       {message}
     </div>
   );
@@ -1212,7 +1375,7 @@ const useToast = () => {
       {toasts.map(t => (
         <div
           key={t.id}
-          className={`glass rounded-xl px-4 py-3 text-sm text-white shadow-2xl max-w-sm ${t.variant === 'error' ? 'border border-rose-500/30' : 'border border-white/10'}`}
+          className={`glass rounded-xl px-4 py-3 text-sm text-text-primary shadow-2xl max-w-sm ${t.variant === 'error' ? 'border border-error/40' : 'border border-edge'}`}
         >
           {t.message}
         </div>
@@ -1225,30 +1388,31 @@ const useToast = () => {
 // ─── Empty State ───────────────────────────────────────────────────────────────
 const EmptyState = ({ icon, title, desc, action }) => (
   <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-    <div className="w-16 h-16 rounded-2xl glass flex items-center justify-center text-white/20 mb-4">
+    <div className="w-16 h-16 rounded-2xl glass flex items-center justify-center text-text-secondary mb-4">
       <Icon name={icon} size={28} />
     </div>
-    <div className="text-white/60 font-medium mb-1">{title}</div>
-    {desc && <div className="text-white/30 text-sm mb-4">{desc}</div>}
+    <div className="text-text-primary font-medium mb-1">{title}</div>
+    {desc && <div className="text-text-secondary text-sm mb-4">{desc}</div>}
     {action}
   </div>
 );
 
 // ─── DonutChart ───────────────────────────────────────────────────────────────
-const DonutChart = ({ value, max = 100, color = '#6366f1', size = 80, label }) => {
+const DonutChart = ({ value, max = 100, color = '#C0362C', size = 80, label }) => {
   const r = 28, cx = 40, cy = 40, circ = 2 * Math.PI * r;
   const pct = Math.min(value / max, 1);
   return (
     <div className="flex flex-col items-center gap-1">
       <svg width={size} height={size} viewBox="0 0 80 80">
-        <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="8" />
+        <circle cx={cx} cy={cy} r={r} fill="none" style={{ stroke: 'rgb(var(--color-edge))' }} strokeWidth="8" />
         <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth="8"
           strokeDasharray={`${circ * pct} ${circ * (1 - pct)}`}
           strokeLinecap="round" strokeDashoffset={circ * 0.25} className="donut-ring"
           style={{ transform: 'rotate(-90deg)', transformOrigin: '50% 50%' }} />
-        <text x="50%" y="50%" textAnchor="middle" dy=".3em" fill="white" fontSize="14" fontWeight="700">{Math.round(pct * 100)}%</text>
+        <text x="50%" y="50%" textAnchor="middle" dy=".3em" className="font-data"
+          style={{ fill: 'rgb(var(--color-text-primary))' }} fontSize="14" fontWeight="700">{Math.round(pct * 100)}%</text>
       </svg>
-      {label && <span className="text-xs text-white/50">{label}</span>}
+      {label && <span className="text-xs text-text-secondary">{label}</span>}
     </div>
   );
 };
@@ -1264,8 +1428,8 @@ const BarChart = ({ data }) => {
       {data.map((d, i) => (
         <div key={i} className="flex-1 flex flex-col items-center gap-1">
           <div className="w-full rounded-t-md transition-all duration-700"
-            style={{ height: `${(d.value / max) * 80}px`, background: `linear-gradient(180deg, #6366f1, #a855f7)`, opacity: 0.7 + i * 0.05 }} />
-          <span className="text-xs text-white/40">{d.label}</span>
+            style={{ height: `${(d.value / max) * 80}px`, background: 'rgb(var(--color-accent))', opacity: 0.7 + i * 0.05 }} />
+          <span className="text-xs text-text-secondary">{d.label}</span>
         </div>
       ))}
     </div>
@@ -1284,7 +1448,7 @@ const BarChart = ({ data }) => {
 // Yagona natija (n === 1) alohida ishlanadi: bunday holda chiziq path'i faqat
 // "M x,y" bo'lib hech narsa chizmasdi va grafik bo'sh maydonda "osilib qolgan"
 // bitta nuqtaga aylanardi. Endi tekis punktir daraja ko'rsatiladi.
-const SvgLineChart = ({ points = [], height = 160, stroke = '#6366f1' }) => {
+const SvgLineChart = ({ points = [], height = 160, stroke = '#C0362C' }) => {
   const wrapRef = useRef(null);
   const [boxW, setBoxW] = React.useState(0);
   React.useLayoutEffect(() => {
@@ -1320,11 +1484,11 @@ const SvgLineChart = ({ points = [], height = 160, stroke = '#6366f1' }) => {
   return (
     <div ref={wrapRef} className="w-full">
       {n === 0 ? (
-        <div className="text-center text-white/40 text-sm py-8">Hozircha ma'lumot yo'q</div>
+        <div className="text-center text-text-secondary text-sm py-8">Hozircha ma'lumot yo'q</div>
       ) : (
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full block" style={{ height: H }}>
           {[0, 25, 50, 75, 100].map(g => (
-            <line key={g} x1={padX} x2={W - padX} y1={yAt(g)} y2={yAt(g)} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
+            <line key={g} x1={padX} x2={W - padX} y1={yAt(g)} y2={yAt(g)} style={{ stroke: 'rgb(var(--color-edge))' }} strokeWidth="1" />
           ))}
           {n > 1 ? (
             <>
@@ -1345,12 +1509,14 @@ const SvgLineChart = ({ points = [], height = 160, stroke = '#6366f1' }) => {
             const labelX = isFirst ? padX : isLast ? W - padX : xAt(i);
             return (
               <g key={i}>
-                <circle cx={xAt(i)} cy={yAt(p.value)} r="4" fill={stroke} stroke="#0b0b14" strokeWidth="1.5">
+                {/* Nuqta atrofidagi halqa fon rangida — chiziqdan ajratib turadi. */}
+                <circle cx={xAt(i)} cy={yAt(p.value)} r="4" fill={stroke}
+                  style={{ stroke: 'rgb(var(--color-ground))' }} strokeWidth="1.5">
                   <title>{p.title || `${p.label}: ${p.value}%`}</title>
                 </circle>
                 {(n - 1 - i) % labelStep === 0 && (
                   <text x={labelX} y={H - 6} textAnchor={isFirst ? 'start' : isLast ? 'end' : 'middle'}
-                    fill="rgba(255,255,255,0.4)" fontSize={LABEL_FONT}>{p.label}</text>
+                    className="font-data" style={{ fill: 'rgb(var(--color-text-secondary))' }} fontSize={LABEL_FONT}>{p.label}</text>
                 )}
               </g>
             );
@@ -1365,17 +1531,17 @@ const SvgLineChart = ({ points = [], height = 160, stroke = '#6366f1' }) => {
 // `data` = [{ label, value }]. Ustun tepasida son ko'rsatiladi (dinamika).
 const MonthBarChart = ({ data = [] }) => {
   if (!data.length) {
-    return <div className="text-center text-white/40 text-sm py-8">Hozircha ma'lumot yo'q</div>;
+    return <div className="text-center text-text-secondary text-sm py-8">Hozircha ma'lumot yo'q</div>;
   }
   const max = Math.max(1, ...data.map(d => d.value || 0));
   return (
     <div className="flex items-end gap-2 md:gap-3 h-40 px-1">
       {data.map((d, i) => (
         <div key={i} className="flex-1 flex flex-col items-center justify-end gap-1 h-full min-w-0">
-          <span className="text-[10px] md:text-xs font-bold text-white">{d.value}</span>
+          <span className="text-[10px] md:text-xs font-bold font-data text-text-primary">{d.value}</span>
           <div className="w-full rounded-t-lg transition-all duration-500"
-            style={{ height: `${Math.max(4, (d.value / max) * 100)}%`, background: 'linear-gradient(180deg, #6366f1, #a855f7)' }} />
-          <span className="text-[9px] md:text-[10px] text-white/40 truncate w-full text-center">{d.label}</span>
+            style={{ height: `${Math.max(4, (d.value / max) * 100)}%`, background: 'rgb(var(--color-accent))' }} />
+          <span className="text-[9px] md:text-[10px] text-text-secondary truncate w-full text-center">{d.label}</span>
         </div>
       ))}
     </div>
@@ -1383,30 +1549,54 @@ const MonthBarChart = ({ data = [] }) => {
 };
 
 // ─── SubjectBadge ─────────────────────────────────────────────────────────────
+// Avval har fan o'z gradient chipiga ega edi (`from-blue-500/20 … text-blue-300`)
+// va matn rangi ATAYIN och tanlangan — ya'ni faqat to'q fonga hisoblangan.
+// Qog'oz mavzuda o'lchov: Matematika 1.53:1, Fizika/Informatika 1.87:1.
+//
+// Endi chip neytral: yuza `surface-2`, matn `text-primary` (dark 11.89:1,
+// light 13.06:1). Fan bo'yicha farq CHEGARA rangida qoldi — chegara dekorativ
+// (ma'noni fan NOMI o'zi olib yuradi), shuning uchun unga AA sharti qo'yilmaydi,
+// lekin baribir semantik tokenlardan olingani uchun ikkala mavzuda ko'rinadi.
+// Gradient qaytarilmadi.
+//
+// 9 fanga 6 token to'g'ri keladi — takrorlanish ataylab: yaqin fanlar bir
+// chegarani bo'lishadi (til fanlari, tabiiy fanlar, ijtimoiy fanlar).
 const subjectColors = {
-  'Matematika': 'from-blue-500/20 to-indigo-500/20 text-blue-300 border-blue-500/20',
-  'Ingliz tili': 'from-emerald-500/20 to-teal-500/20 text-emerald-300 border-emerald-500/20',
-  'Ona tili': 'from-orange-500/20 to-amber-500/20 text-orange-300 border-orange-500/20',
-  'Informatika': 'from-cyan-500/20 to-sky-500/20 text-cyan-300 border-cyan-500/20',
-  'Fizika': 'from-purple-500/20 to-violet-500/20 text-purple-300 border-purple-500/20',
-  'Kimyo': 'from-pink-500/20 to-rose-500/20 text-pink-300 border-pink-500/20',
-  'Biologiya': 'from-green-500/20 to-lime-500/20 text-green-300 border-green-500/20',
-  'Tarix': 'from-amber-500/20 to-yellow-500/20 text-amber-300 border-amber-500/20',
-  'Geografiya': 'from-teal-500/20 to-cyan-500/20 text-teal-300 border-teal-500/20',
+  'Matematika': 'border-accent-2/60',
+  'Ingliz tili': 'border-success/60',
+  'Ona tili': 'border-warning/60',
+  'Informatika': 'border-accent/60',
+  'Fizika': 'border-error/60',
+  'Kimyo': 'border-text-secondary/60',
+  'Biologiya': 'border-success/60',
+  'Tarix': 'border-warning/60',
+  'Geografiya': 'border-accent-2/60',
 };
 const SubjectBadge = ({ subject }) => {
-  const cls = subjectColors[subject] || 'from-indigo-500/20 to-purple-500/20 text-indigo-300 border-indigo-500/20';
-  return <span className={`chip bg-gradient-to-r ${cls} border`}>{subject}</span>;
+  const border = subjectColors[subject] || 'border-edge-strong';
+  return <span className={`chip border bg-surface-2 text-text-primary ${border}`}>{subject}</span>;
 };
 
 // ─── TelegramMockup ───────────────────────────────────────────────────────────
+// DIQQAT: bu Olympy interfeysi EMAS — Telegram ilovasining ko'rinishini
+// takrorlaydigan illyustratsiya (skrinshotga o'xshash). Shu sabab Telegram'ning
+// o'z ranglari (#17212b, #2b5278) va ular ustidagi oq matn ATAYIN qattiq
+// yozilgan: mavzu bilan almashsa, mockup Telegram'ga o'xshamay qoladi.
+// Token'ga o'tkazilmaydi.
+//
+// Kontrast tuzatildi, Telegram ranglari SAQLANGAN holda:
+//   • "✅ Tasdiqlash" 2.62:1 edi — yashil #2EB82E yorug' yuza, ustiga oq matn
+//     qo'yish xato juftlik. Fon o'sha-o'sha, matn siyohga o'tdi → 6.59:1.
+//   • "❌ Rad etish" 4.23:1 edi — qizil to'q yuza, oq matn to'g'ri, faqat fon
+//     bir tish to'qlashtirildi (#E53935 → #DF3330, ΔL 0.016) → 4.51:1.
+//   • "online" 2.72:1 va "12:45 ✓✓" 1.95:1 — oq matnning alfasi ko'tarildi.
 const TelegramMockup = ({ studentName, centerName, onApprove, onReject }) => (
   <div className="rounded-2xl overflow-hidden shadow-2xl" style={{ background: '#17212b', maxWidth: 340, width: '100%', fontFamily: 'system-ui' }}>
     <div style={{ background: '#2b5278', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
-      <BrandLogo compact size="sm" />
+      <BrandLogo compact size="sm" onDark />
       <div>
         <div className="text-white font-semibold text-sm">Olympy Bot</div>
-        <div className="text-white/50 text-xs">online</div>
+        <div className="text-white/70 text-xs">online</div>
       </div>
     </div>
     <div style={{ padding: 16 }}>
@@ -1420,13 +1610,13 @@ const TelegramMockup = ({ studentName, centerName, onApprove, onReject }) => (
           <br/>
           Tasdiqlaysizmi?
         </div>
-        <div className="text-white/30 text-xs mt-2 text-right">12:45 ✓✓</div>
+        <div className="text-white/70 text-xs mt-2 text-right">12:45 ✓✓</div>
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-        <button onClick={onApprove} style={{ flex: 1, background: '#2eb82e', color: 'white', border: 'none', borderRadius: 8, padding: '8px', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+        <button onClick={onApprove} style={{ flex: 1, background: '#2eb82e', color: '#0b1f0b', border: 'none', borderRadius: 8, padding: '8px', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
           ✅ Tasdiqlash
         </button>
-        <button onClick={onReject} style={{ flex: 1, background: '#e53935', color: 'white', border: 'none', borderRadius: 8, padding: '8px', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+        <button onClick={onReject} style={{ flex: 1, background: '#df3330', color: 'white', border: 'none', borderRadius: 8, padding: '8px', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
           ❌ Rad etish
         </button>
       </div>

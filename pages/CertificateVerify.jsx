@@ -49,7 +49,7 @@ const CertificateVerifyPage = ({ uuid }) => {
     : "Bu havola noto'g'ri yoki sertifikat o'chirilgan.";
 
   return (
-    <div className="dark min-h-screen flex flex-col items-center justify-center p-4" style={{ background: '#050508' }}>
+    <div className="dark min-h-screen flex flex-col items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
       <div className="w-full max-w-md">
         {/* Brend logosi — bosilsa bosh sahifaga. */}
         <button type="button" onClick={goHome} className="mx-auto mb-6 flex cursor-pointer items-center justify-center border-0 bg-transparent p-0" aria-label="Bosh sahifa">
@@ -57,7 +57,7 @@ const CertificateVerifyPage = ({ uuid }) => {
         </button>
 
         {state.loading && (
-          <div className="glass-strong rounded-3xl border border-white/8 p-8 text-center">
+          <div className="glass-strong rounded-3xl p-8 text-center">
             <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-white/20 border-t-white" />
             <div className="text-sm font-semibold text-white/60">Sertifikat tekshirilmoqda...</div>
           </div>

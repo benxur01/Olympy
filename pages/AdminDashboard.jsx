@@ -291,7 +291,7 @@ const AdminMetricCard = ({ label, value, delta, icon, tone = 'indigo', onClick }
           <div className="mt-3 text-2xl font-black leading-none tracking-tight text-white">{value}</div>
           {delta && (
             <div className="mt-2.5 text-[10px] font-semibold text-slate-400 flex items-center gap-1.5">
-              <span className="inline-block h-1 w-1 rounded-full bg-indigo-400 shadow-[0_0_4px_#6366f1]" />
+              <span className="inline-block h-1 w-1 rounded-full bg-indigo-400" />
               {delta}
             </div>
           )}
@@ -459,7 +459,7 @@ const ChartTooltip = ({ active, payload, label, suffix = '', valueLabel }) => {
       )}
       {payload.map((p, i) => (
         <div key={i} className="flex items-center gap-2 text-xs font-bold text-white">
-          <span className="h-2 w-2 rounded-full" style={{ background: p.color || p.fill || '#6366f1' }} />
+          <span className="h-2 w-2 rounded-full" style={{ background: p.color || p.fill || '#C0362C' }} />
           <span className="text-slate-300">{valueLabel || p.name}:</span>
           <span className="font-mono">{p.value}{suffix}</span>
         </div>
@@ -495,8 +495,8 @@ const UserGrowthArea = ({ data }) => {
         <ReAreaChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
           <defs>
             <linearGradient id="growthFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#6366f1" stopOpacity={0.5} />
-              <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+              <stop offset="0%" stopColor="#C0362C" stopOpacity={0.5} />
+              <stop offset="100%" stopColor="#C0362C" stopOpacity={0} />
             </linearGradient>
           </defs>
           <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
@@ -504,8 +504,8 @@ const UserGrowthArea = ({ data }) => {
           <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={34} />
           <ReTooltip content={<ChartTooltip valueLabel="Yangi" />} cursor={{ stroke: 'rgba(99,102,241,0.3)' }} />
           <ReArea type="monotone" dataKey="count" name="Yangi" stroke="#818cf8" strokeWidth={2.5}
-            fill="url(#growthFill)" dot={{ r: 3, fill: '#6366f1', strokeWidth: 0 }}
-            activeDot={{ r: 5, fill: '#a5b4fc', stroke: '#6366f1', strokeWidth: 2 }} />
+            fill="url(#growthFill)" dot={{ r: 3, fill: '#C0362C', strokeWidth: 0 }}
+            activeDot={{ r: 5, fill: '#E19F9A', stroke: '#C0362C', strokeWidth: 2 }} />
         </ReAreaChart>
       </RC>
     </div>
@@ -582,8 +582,8 @@ const ConversionFunnel = ({ data }) => {
         <ReBarChart data={data} layout="vertical" margin={{ top: 4, right: 56, left: 8, bottom: 4 }}>
           <defs>
             <linearGradient id="funnelFill" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#a855f7" stopOpacity={0.95} />
-              <stop offset="100%" stopColor="#6366f1" stopOpacity={0.95} />
+              <stop offset="0%" stopColor="#2F5D8C" stopOpacity={0.95} />
+              <stop offset="100%" stopColor="#C0362C" stopOpacity={0.95} />
             </linearGradient>
           </defs>
           <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
@@ -613,7 +613,7 @@ const AttemptsTrendChart = ({ data }) => {
           <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
           <ReTooltip content={<ChartTooltip suffix=" ta" valueLabel="Attempt" />} cursor={{ stroke: 'rgba(129,140,248,0.3)' }} labelFormatter={shortDay} />
           <ReLine type="monotone" dataKey="count" name="Attempt" stroke="#818cf8" strokeWidth={2.5}
-            dot={false} activeDot={{ r: 5, fill: '#a5b4fc', stroke: '#6366f1', strokeWidth: 2 }} />
+            dot={false} activeDot={{ r: 5, fill: '#E19F9A', stroke: '#C0362C', strokeWidth: 2 }} />
         </ReLineChart>
       </RC>
     </div>
@@ -629,8 +629,8 @@ const OlympiadParticipationChart = ({ data }) => {
         <ReBarChart data={data} layout="vertical" margin={{ top: 4, right: 52, left: 8, bottom: 4 }}>
           <defs>
             <linearGradient id="olympPartFill" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#a855f7" stopOpacity={0.95} />
-              <stop offset="100%" stopColor="#6366f1" stopOpacity={0.95} />
+              <stop offset="0%" stopColor="#2F5D8C" stopOpacity={0.95} />
+              <stop offset="100%" stopColor="#C0362C" stopOpacity={0.95} />
             </linearGradient>
           </defs>
           <ReGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
@@ -675,7 +675,7 @@ const QuestionBySubjectChart = ({ data }) => {
 };
 
 // Savol manbai taqsimoti (PieChart: manual/ai/pdf/import).
-const QUESTION_SOURCE_COLORS = ['#6366f1', '#a855f7', '#34d399', '#f59e0b', '#f43f5e'];
+const QUESTION_SOURCE_COLORS = ['#C0362C', '#2F5D8C', '#34d399', '#f59e0b', '#f43f5e'];
 const QuestionBySourceChart = ({ data }) => {
   if (!RC) return null;
   const total = data.reduce((s, d) => s + (d.count || 0), 0);
@@ -766,7 +766,7 @@ const CentersByRegionChart = ({ data }) => {
         <ReBarChart data={data} layout="vertical" margin={{ top: 4, right: 48, left: 8, bottom: 4 }}>
           <defs>
             <linearGradient id="regionFill" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#6366f1" stopOpacity={0.95} />
+              <stop offset="0%" stopColor="#C0362C" stopOpacity={0.95} />
               <stop offset="100%" stopColor="#818cf8" stopOpacity={0.95} />
             </linearGradient>
           </defs>
@@ -795,7 +795,7 @@ const PremiumVsFreeChart = ({ data }) => {
           <ReYAxis tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} width={32} />
           <ReTooltip content={<ChartTooltip suffix=" ta" />} cursor={{ fill: 'rgba(148,163,184,0.06)' }} labelFormatter={shortDay} />
           {ReLegend && <ReLegend wrapperStyle={{ fontSize: 10, fontWeight: 700, paddingTop: 4 }} iconType="circle" iconSize={8} />}
-          <ReBar dataKey="premium" name="Premium" fill="#a855f7" radius={[4, 4, 0, 0]} maxBarSize={18} />
+          <ReBar dataKey="premium" name="Premium" fill="#2F5D8C" radius={[4, 4, 0, 0]} maxBarSize={18} />
           <ReBar dataKey="free" name="Bepul" fill="#475569" radius={[4, 4, 0, 0]} maxBarSize={18} />
         </ReBarChart>
       </RC>
@@ -824,7 +824,7 @@ const DqTrendChart = ({ data }) => {
 };
 
 // Top-5 markaz rating dinamikasi (ko'p chiziqli LineChart).
-const TOP_CENTER_COLORS = ['#6366f1', '#34d399', '#f59e0b', '#a855f7', '#f43f5e'];
+const TOP_CENTER_COLORS = ['#C0362C', '#34d399', '#f59e0b', '#2F5D8C', '#f43f5e'];
 const TopCentersRatingChart = ({ series }) => {
   if (!RC) return null;
   // Har markaz {points:[{date,score}]} — barcha sanalarni birlashtirib, har
@@ -879,7 +879,7 @@ const TopCentersRatingChart = ({ series }) => {
 // Ustunlar yonma-yon EMAS, bir-birining ustiga teriladi (`stackId`): 30
 // kunlik oynada uchta yonma-yon ustun o'qib bo'lmas darajada ingichka
 // bo'lardi; terilgan ustun esa kunlik UMUMIY hajmni ham ko'rsatadi.
-const ABUSE_SERIES_COLORS = ['#f59e0b', '#f43f5e', '#a855f7', '#6366f1', '#34d399'];
+const ABUSE_SERIES_COLORS = ['#f59e0b', '#f43f5e', '#2F5D8C', '#C0362C', '#34d399'];
 const AbuseFlagTrendChart = ({ data, series }) => {
   if (!RC) return null;
   return (
@@ -2289,7 +2289,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     <aside className={`${mobileMenu ? 'translate-x-0' : '-translate-x-full'} fixed inset-y-0 left-0 z-50 flex w-60 flex-col admin-sidebar text-slate-300 shadow-2xl transition-transform duration-200 lg:static lg:translate-x-0 lg:shadow-none`}>
       <div className="flex h-[54px] items-center gap-2 border-b border-white/5 px-4 bg-white/[0.01]">
         <button onClick={() => setPage('home')} className="flex items-center gap-2">
-          <div className="relative flex h-7 w-7 items-center justify-center rounded-md bg-white text-base font-black text-[#050508]">
+          <div className="relative flex h-7 w-7 items-center justify-center rounded-md bg-white text-base font-black text-ground">
             O
             <span className="absolute -bottom-1 left-1 h-1 w-5 rounded-full bg-gradient-to-r from-amber-500 to-indigo-500" />
           </div>
@@ -2340,7 +2340,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   );
 
   const AdminTopbar = () => (
-    <header className="sticky top-0 z-30 flex h-[54px] items-center justify-between border-b border-white/5 bg-[#050508]/95 px-4 lg:px-5">
+    <header className="sticky top-0 z-30 flex h-[54px] items-center justify-between border-b border-white/5 bg-ground/95 px-4 lg:px-5">
       <div className="flex items-center gap-3">
         <button className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-white/5 lg:hidden" onClick={() => setMobileMenu(true)}>
           <Icon name="menu" size={18} />
@@ -2546,7 +2546,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <section className="admin-card p-5">
           <h2 className="mb-4 text-[12px] font-black uppercase tracking-wider text-slate-300">Tashkilotlar holati</h2>
           <AdminDonut segments={[
-            { label: 'Tasdiqlangan', value: approvedCenterPct, color: '#6366f1' },
+            { label: 'Tasdiqlangan', value: approvedCenterPct, color: '#C0362C' },
             { label: 'Kutilmoqda', value: pendingCenterPct, color: '#f59e0b' },
             { label: 'Boshqa', value: otherCenterPct, color: '#10b981' },
           ]} />
@@ -4144,8 +4144,8 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const trialOnly = prem.trial_only || 0;
     const freeUsers = Math.max(0, (prem.total_users || 0) - paidFlag - trialOnly);
     const premiumPieData = [
-      { label: 'Pullik', value: paidFlag, color: '#6366f1' },
-      { label: 'Faqat trial', value: trialOnly, color: '#a855f7' },
+      { label: 'Pullik', value: paidFlag, color: '#C0362C' },
+      { label: 'Faqat trial', value: trialOnly, color: '#2F5D8C' },
       { label: 'Bepul', value: freeUsers, color: '#334155' },
     ];
     const premiumPieEmpty = !hasMetrics || (paidFlag + trialOnly + freeUsers) === 0;
