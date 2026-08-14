@@ -98,6 +98,12 @@ export default {
         'edge-strong': v('edge-strong'),
         'text-primary': v('text-primary'),
         'text-secondary': v('text-secondary'),
+        // `wash` — har mavzuning eng chetki neytrali (light: surface-1,
+        // dark: ground). Rangli chip va banner foni SHU bo'ladi, `success/10`
+        // kabi o'z-o'zini tinlash EMAS: tint fonni matn rangiga tortadi va
+        // juftlik AA dan tushadi (o'lchangan: 3.98–4.69:1). `src/index.css`
+        // dagi `.badge-*` shu qoida ustiga qurilgan.
+        wash: v('wash'),
         // `accent` — fon ustiga chiziladigan belgi (matn, ikonka, chegara).
         // `accent-fill` — fonni almashtiradigan qattiq yuza; ustidagi matn
         // HAR DOIM `on-accent` bo'ladi (juftlik ikkala mavzuda 5.05:1).

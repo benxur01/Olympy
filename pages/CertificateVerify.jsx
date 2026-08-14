@@ -8,6 +8,20 @@
 // URL'dan UUID ajratiladi: /certificates/verify/<uuid>[/]. Backend topsa
 // {valid:true, student_name, olympiad_name, score, date, center_name},
 // topmasa {valid:false} 404 (ApiError.data orqali o'qiladi).
+//
+// ─── Dizayn: "Imtihon byulleteni" ─────────────────────────────────────────────
+// Bu sahifani BEGONA odam ochadi (ish beruvchi, boshqa maktab, ota-ona) va
+// ko'pincha bu mahsulot bilan birinchi uchrashuv bo'ladi. Shu sababli ko'rinish
+// rasmiy hujjat tekshiruvi kabi: bitta varaq, bitta natija halqasi, bezak yo'q.
+//
+// Natija halqasi (`success` / `warning` / `error`) HAQIQIY `border` bo'lishi
+// shart, shuning uchun `glass`/`glass-strong` alias'i ATAYIN ishlatilmadi:
+// u hoshiyasini `box-shadow: inset` bilan chizadi va ustiga qo'yilgan
+// `border-*` utility'si IKKINCHI halqa bo'lib chiqadi (`src/index.css` dagi
+// izohga qarang). Yuza tokenlardan ochiq yig'ildi: `bg-surface-1 border ...`.
+//
+// Uch xil yakun uch xil tokenda: haqiqiy → `success`, "1-o'rin emas" → `warning`
+// (bu xato emas, shunchaki sertifikat berilmagan), buzilgan havola → `error`.
 
 const CertificateVerifyPage = ({ uuid }) => {
   const [state, setState] = React.useState({ loading: true, data: null, error: false });
@@ -47,74 +61,88 @@ const CertificateVerifyPage = ({ uuid }) => {
   const invalidMessage = notAwarded
     ? "Bu natija 1-o'rinni egallamagan."
     : "Bu havola noto'g'ri yoki sertifikat o'chirilgan.";
+  // Klass nomlari TO'LIQ yozilgan: Tailwind manbani matn sifatida skanerlaydi,
+  // `border-${tone}` kabi yig'ilgan nom bundle'ga umuman tushmaydi.
+  //
+  // Halqa `/45` tintida EMAS, to'liq kuchda: `.badge-*` da tint yetarli, chunki
+  // u yerda holatni MATN aytadi; bu yerda esa halqa — sahifaning asosiy
+  // "hujjat haqiqiymi" belgisi. O'lchov: tint 1.87–2.07:1 (WCAG 1.4.11 uchun
+  // 3:1 kerak), to'liq token esa 4.4–5.6:1.
+  const invalidRing = notAwarded ? 'border-warning' : 'border-error';
+  const invalidMark = notAwarded ? 'border-warning text-warning' : 'border-error text-error';
 
   return (
-    <div className="dark min-h-screen flex flex-col items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
+    <div className="min-h-screen flex flex-col items-center justify-center bg-ground p-4">
       <div className="w-full max-w-md">
-        {/* Brend logosi — bosilsa bosh sahifaga. */}
-        <button type="button" onClick={goHome} className="mx-auto mb-6 flex cursor-pointer items-center justify-center border-0 bg-transparent p-0" aria-label="Bosh sahifa">
-          <BrandLogo size="lg" />
-        </button>
+        <div className="mb-6 flex items-center justify-between gap-3">
+          {/* Brend logosi — bosilsa bosh sahifaga. */}
+          <button type="button" onClick={goHome} className="flex cursor-pointer items-center justify-center border-0 bg-transparent p-0" aria-label="Bosh sahifa">
+            <BrandLogo size="lg" />
+          </button>
+          <ThemeToggle className="flex-shrink-0" />
+        </div>
 
         {state.loading && (
-          <div className="glass-strong rounded-3xl p-8 text-center">
-            <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-            <div className="text-sm font-semibold text-white/60">Sertifikat tekshirilmoqda...</div>
+          <div className="rounded-2xl border border-edge bg-surface-1 p-8 text-center">
+            <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-edge border-t-accent" />
+            <div className="text-sm text-text-secondary">Sertifikat tekshirilmoqda...</div>
           </div>
         )}
 
         {!state.loading && valid && (
-          <div className="glass-strong rounded-3xl border border-emerald-500/25 bg-gradient-to-br from-emerald-500/10 to-teal-500/5 p-8 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-lg shadow-emerald-500/20">
+          <div className="rounded-2xl border border-success bg-surface-1 p-8 text-center">
+            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-success bg-surface-2 text-success">
               <Icon name="check" size={32} />
             </div>
-            <div className="mb-1 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-1 text-xs font-black text-emerald-300">
+            <div className="chip badge-approved mb-1">
               <Icon name="shield" size={13} /> Haqiqiy sertifikat
             </div>
-            <h1 className="mt-3 text-2xl font-black text-white">{state.data.student_name || 'Foydalanuvchi'}</h1>
-            <p className="mt-1 text-sm font-semibold text-white/55">{state.data.olympiad_name || ''}</p>
+            <h1 className="mt-3 font-display text-2xl font-bold text-text-primary">{state.data.student_name || 'Foydalanuvchi'}</h1>
+            <p className="mt-1 text-sm text-text-secondary">{state.data.olympiad_name || ''}</p>
 
-            <div className="mt-6 space-y-2.5 text-left">
-              <div className="flex items-center justify-between rounded-xl glass px-4 py-3">
-                <span className="text-xs font-bold uppercase tracking-wide text-white/40">Natija</span>
-                <span className="text-base font-black text-emerald-300">{state.data.score != null ? `${state.data.score} ball` : '—'}</span>
+            {/* Hujjat qatorlari — imtihon varaqasidagi maydonlar kabi:
+                chapda belgi, o'ngda qiymat, raqamlar `font-data` da. */}
+            <div className="mt-6 space-y-2 text-left">
+              <div className="flex items-center justify-between rounded-xl border border-edge bg-surface-2 px-4 py-3">
+                <span className="text-xs font-bold uppercase tracking-wide text-text-secondary">Natija</span>
+                <span className="font-data text-base font-bold text-text-primary">{state.data.score != null ? `${state.data.score} ball` : '—'}</span>
               </div>
               {state.data.center_name ? (
-                <div className="flex items-center justify-between rounded-xl glass px-4 py-3">
-                  <span className="text-xs font-bold uppercase tracking-wide text-white/40">Tashkilot</span>
-                  <span className="truncate pl-3 text-sm font-bold text-white">{state.data.center_name}</span>
+                <div className="flex items-center justify-between rounded-xl border border-edge bg-surface-2 px-4 py-3">
+                  <span className="text-xs font-bold uppercase tracking-wide text-text-secondary">Tashkilot</span>
+                  <span className="truncate pl-3 text-sm font-bold text-text-primary">{state.data.center_name}</span>
                 </div>
               ) : null}
               {state.data.date ? (
-                <div className="flex items-center justify-between rounded-xl glass px-4 py-3">
-                  <span className="text-xs font-bold uppercase tracking-wide text-white/40">Sana</span>
-                  <span className="text-sm font-bold text-white">{state.data.date}</span>
+                <div className="flex items-center justify-between rounded-xl border border-edge bg-surface-2 px-4 py-3">
+                  <span className="text-xs font-bold uppercase tracking-wide text-text-secondary">Sana</span>
+                  <span className="font-data text-sm font-bold text-text-primary">{state.data.date}</span>
                 </div>
               ) : null}
             </div>
 
-            <button type="button" onClick={goHome} className="btn-primary mt-6 w-full rounded-xl py-3 text-sm font-black">
+            <button type="button" onClick={goHome} className="btn-primary mt-6 w-full rounded-xl py-3 text-sm font-semibold">
               Olympy'ga o'tish
             </button>
           </div>
         )}
 
         {!state.loading && !valid && (
-          <div className="glass-strong rounded-3xl border border-rose-500/25 bg-gradient-to-br from-rose-500/10 to-rose-600/5 p-8 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-500 to-rose-600 text-white">
+          <div className={`rounded-2xl border bg-surface-1 p-8 text-center ${invalidRing}`}>
+            <div className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border bg-surface-2 ${invalidMark}`}>
               <Icon name="x" size={32} />
             </div>
-            <h1 className="text-xl font-black text-white">{invalidTitle}</h1>
-            <p className="mt-2 text-sm font-medium text-white/55">
+            <h1 className="font-display text-xl font-bold text-text-primary">{invalidTitle}</h1>
+            <p className="mt-2 text-sm text-text-secondary">
               {invalidMessage}
             </p>
-            <button type="button" onClick={goHome} className="btn-ghost mt-6 w-full rounded-xl py-3 text-sm font-black">
+            <button type="button" onClick={goHome} className="btn-ghost mt-6 w-full rounded-xl py-3 text-sm font-semibold">
               Bosh sahifaga qaytish
             </button>
           </div>
         )}
 
-        <div className="mt-6 text-center text-xs font-semibold text-white/30">
+        <div className="mt-6 text-center text-xs text-text-secondary">
           Olympy — Online Olimpiada Platformasi
         </div>
       </div>

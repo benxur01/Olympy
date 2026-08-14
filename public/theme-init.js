@@ -25,37 +25,48 @@
   var STORAGE_KEY = 'olympy:theme';
   var META_COLORS = { dark: '#14161C', light: '#E7E4DC' };
 
-  // Light mavzu hozircha faqat bir qism yuzalarda tayyor. Bu tekshiruv
-  // app.jsx dagi `THEME_READY_PAGES` bilan MOS turishi kerak — u yerda
-  // qaror `page` state'i bo'yicha, bu yerda esa (React hali yo'q) URL
+  // Bu tekshiruv `app.jsx` dagi `THEME_READY_PAGES` bilan MOS turishi kerak —
+  // u yerda qaror `page` state'i bo'yicha, bu yerda esa (React hali yo'q) URL
   // bo'yicha qabul qilinadi. Ro'yxat o'zgarsa, ikkalasi ham yangilansin.
   //
-  // Tayyor: `/` (landing), `/pricing`, `/login`, `/register`, `/pending`
-  // (tasdiq kutish ekrani), `/leaderboard` (reyting jadvali) va
-  // `/dashboard[/...]` — o'quvchi dashboardi hamda 2-bosqichda tokenlarga
-  // ko'chirilgan rol dashboardlari (`/dashboard/{admin,owner,manager,teacher}`).
-  //
-  // Tayyor emas: `/dashboard/questions` (savol yaratuvchi) — u hali
-  // `text-white` klassiga tayanadi va light rejimda o'qib bo'lmaydi.
-  //
-  // Aniq mos keladigan manzillar. `/dashboard` esa prefiks bo'yicha
-  // tekshiriladi (pastdagi funksiyaga qarang) — uning ichki sahifalari ko'p.
-  var READY_PATHS = ['/', '/pricing', '/login', '/register', '/pending', '/leaderboard'];
+  // 3-bosqichdan keyin ilovaning BARCHA sahifalari ikkala mavzuda ishlaydi.
+  // Ro'yxat baribir aniq saqlanadi: yangi URL avtomatik theme-ready deb
+  // hisoblanmasin — ko'chirilmagan sahifa light rejimda o'qib bo'lmaydigan
+  // holda chiqib qolmasligi uchun.
+  var READY_PATHS = [
+    '/', '/pricing', '/login', '/register', '/pending',
+    '/leaderboard', '/profile', '/analytics',
+  ];
 
-  var LOCKED_DASHBOARD_BASES = [
-    '/dashboard/questions',
+  // Prefiks bo'yicha tekshiriladigan yo'llar — dinamik segmenti bor, ya'ni
+  // aniq tenglik ishlamaydi:
+  //   /dashboard[/...]             — o'quvchi va rol dashboardlari
+  //   /test[/<id>]                 — imtihon topshirish
+  //   /certificates/verify/<uuid>  — public sertifikat tekshiruvi
+  //   /portfolio/verify/<uuid>     — public portfolio tekshiruvi
+  //
+  // Oxirgi ikkitasi `<App>` dan TASHQARIDA render qilinadi (app.jsx top-level
+  // router), shuning uchun ular `THEME_READY_PAGES` da yo'q va faqat shu
+  // yerdagi tekshiruvga tayanadi.
+  // Har biri "aynan shu yo'l" YOKI "shu yo'l + `/`" bilan mos keladi —
+  // `path.indexOf(pre) === 0` yolg'iz o'zi yetarli emas: u `/test` ni
+  // `/testing` ga ham moslab yuborardi.
+  var READY_PREFIXES = [
+    '/dashboard',
+    '/test',
+    '/certificates/verify',
+    '/portfolio/verify',
   ];
 
   function isThemeReady(path) {
     for (var r = 0; r < READY_PATHS.length; r++) {
       if (path === READY_PATHS[r]) return true;
     }
-    if (path !== '/dashboard' && path.indexOf('/dashboard/') !== 0) return false;
-    for (var i = 0; i < LOCKED_DASHBOARD_BASES.length; i++) {
-      var base = LOCKED_DASHBOARD_BASES[i];
-      if (path === base || path.indexOf(base + '/') === 0) return false;
+    for (var p = 0; p < READY_PREFIXES.length; p++) {
+      var pre = READY_PREFIXES[p];
+      if (path === pre || path.indexOf(pre + '/') === 0) return true;
     }
-    return true;
+    return false;
   }
 
   // Default — dark (hozirgi holat). Saqlangan tanlov faqat theme-ready

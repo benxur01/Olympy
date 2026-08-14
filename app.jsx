@@ -89,12 +89,14 @@ const URL_PAGES = (() => {
 // o'zgartirmasligi uchun.
 const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','questions'];
 
-// Light mavzu tayyor bo'lgan yuzalar. Qolgan hamma joyda ekran majburiy dark
-// bo'ladi (`OlympyTheme.setLocked`) — test (`OlympiadTest`), savol yaratuvchi,
-// natijalar, profil va analitika hali `text-white` / `bg-white/5` /
-// `border-white/10` klassiga tayanadi; ular faqat qora fon uchun yozilgan va
-// light rejimda o'qib bo'lmaydi. Majburiy dark foydalanuvchining SAQLANGAN
-// TANLOVINI o'chirmaydi: u theme-ready sahifaga qaytishi bilan light tiklanadi.
+// Light mavzu tayyor bo'lgan yuzalar — 3-bosqichdan keyin BU ILOVANING BARCHA
+// SAHIFALARI. Ro'yxat baribir saqlanadi: yangi sahifa qo'shilganda u avtomatik
+// theme-ready deb hisoblanmaydi, balki bu yerga ataylab kiritiladi (aks holda
+// ko'chirilmagan sahifa light rejimda o'qib bo'lmaydigan holda chiqadi).
+//
+// Majburiy dark rejim (`OlympyTheme.setLocked`) mexanizmi ham joyida qoladi va
+// foydalanuvchining SAQLANGAN TANLOVINI o'chirmaydi: qulf olinishi bilan uning
+// light tanlovi qaytadi.
 //
 // DIQQAT: bu ro'yxat `public/theme-init.js` dagi URL tekshiruvi bilan mos
 // turishi kerak — o'sha skript React yuklanishidan oldin xuddi shu qarorni
@@ -112,14 +114,18 @@ const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','
 // ulashiladigan manzil: light tanlagan foydalanuvchi uni to'g'ridan-to'g'ri
 // ochganda qorong'i sahifa ko'rmasligi kerak.
 //
-// Rol dashboardlari (`admin`, `owner`, `manager`, `teacher`) — 2-bosqichda
-// tokenlarga ko'chirildi: `text-white` va xom `indigo/purple/cyan` klasslari
-// olib tashlandi, gradient/glow/rangli soya yo'q. Ular ham ikkala mavzuda
-// ishlaydi.
+// `certificates/verify/<uuid>` va `portfolio/verify/<uuid>` bu yerda YO'Q va
+// bo'lishi ham shart emas: ular `<App>` dan TASHQARIDA render qilinadi
+// (pastdagi top-level router), ya'ni `setLocked` ular uchun hech qachon
+// chaqirilmaydi va `locked` o'z default `false` qiymatida qoladi. Ularga faqat
+// `public/theme-init.js` dagi prefiks tekshiruvi kerak.
 const THEME_READY_PAGES = new Set([
-  'landing', 'pricing', 'login', 'register', 'student', 'pending', 'pending-home',
-  'leaderboard',
-  'admin', 'owner', 'manager', 'teacher',
+  // Mehmon yuzalari
+  'landing', 'pricing', 'login', 'register', 'pending', 'pending-home',
+  // O'quvchi
+  'student', 'test', 'mock-test', 'results', 'leaderboard', 'profile',
+  // Rol dashboardlari va ularning vositalari
+  'admin', 'owner', 'manager', 'teacher', 'questions', 'analytics',
 ]);
 
 const pageFromPath = () => {
@@ -178,7 +184,7 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="dark min-h-screen flex items-center justify-center px-6" style={{ background: 'rgb(var(--color-ground))' }}>
+        <div className="min-h-screen flex items-center justify-center px-6" style={{ background: 'rgb(var(--color-ground))' }}>
           <div className="glass rounded-2xl p-8 max-w-md w-full text-center flex flex-col items-center gap-4">
             <div className="w-14 h-14 rounded-2xl gradient-bg flex items-center justify-center text-accent text-2xl font-bold">!</div>
             <div className="text-lg font-semibold text-text-primary">Xatolik yuz berdi</div>
@@ -962,7 +968,7 @@ const App = () => {
     // foydalanuvchi dashboardiga sakrar va flicker hosil bo'lardi. Endi
     // bootstrap davomida loading skeleton ko'rsatamiz.
     return (
-      <div className="dark min-h-screen flex items-center justify-center" style={{ background: 'rgb(var(--color-ground))' }}>
+      <div className="min-h-screen flex items-center justify-center" style={{ background: 'rgb(var(--color-ground))' }}>
         <div className="flex flex-col items-center gap-4 text-text-secondary">
           <BrandLogo size="lg" />
           <div className="w-12 h-12 rounded-full border-2 border-edge border-t-accent animate-spin" />
@@ -976,7 +982,7 @@ const App = () => {
     // Impersonatsiya banneri sahifa ustida turadi (fixed), shuning uchun
     // kontentni shuncha pastga suramiz — tepadagi element banner ostida
     // yashirinib qolmasin.
-    <div className="dark" style={impersonation ? { paddingTop: 44 } : undefined}>
+    <div style={impersonation ? { paddingTop: 44 } : undefined}>
       {impersonation && (
         <div
           className="fixed top-0 left-0 right-0 z-[10000] flex h-11 items-center justify-between gap-3 border-b border-amber-300 bg-amber-400 px-3 md:px-5 text-[#1a1200]"

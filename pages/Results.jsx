@@ -8,6 +8,50 @@
 const ESSAY_AI_POLL_MS = 3000;
 const ESSAY_AI_MAX_TRIES = 60;
 
+// ─── Baho darajasi ──────────────────────────────────────────────────────────
+// Avval daraja gradient fon (`from-emerald-500/20 to-teal-500/10`) + rangli
+// matn bilan berilardi. Yo'nalishda gradient yo'q; ustiga rang YAKKA signal
+// edi — rang ko'rligida daraja umuman o'qilmasdi. Endi uch kanal: chap chiziq
+// (`border-l-4`), chegarali chip va yozma yorliq.
+//
+// Nomlar `RESULT_`/`result` prefiksi bilan: `generate-vite-entry.mjs` har
+// faylning top-level nomlarini `var` sifatida umumiy scope'ga chiqaradi,
+// ya'ni prefiksiz nom boshqa sahifaning nomini bosib ketishi mumkin.
+const RESULT_GRADE_BANDS = [
+  { min: 90, label: "A'lo", rule: 'border-l-success', chip: 'border-success/45 text-success' },
+  { min: 75, label: 'Yaxshi', rule: 'border-l-accent-2', chip: 'border-accent-2/45 text-accent-2' },
+  { min: 60, label: 'Qoniqarli', rule: 'border-l-warning', chip: 'border-warning/45 text-warning' },
+  { min: 0, label: 'Qoniqarsiz', rule: 'border-l-error', chip: 'border-error/45 text-error' },
+];
+const resultGradeOf = (pct) => RESULT_GRADE_BANDS.find(b => pct >= b.min) || RESULT_GRADE_BANDS[3];
+
+// Fan kesimidagi o'rtacha — bu "kim" emas, "qanchalik yaxshi" savoli, ya'ni
+// haqiqiy status o'qishi. Shuning uchun chiziq rangi status tokenini oladi
+// (dataviz qoidasi: seriya good/bad ma'nosini bildirsa — status palitrasi).
+// Rang yakka qolmasin deb har qatorda yozma yorliq ham turadi.
+const RESULT_SUBJECT_BANDS = [
+  { min: 70, label: 'Kuchli', chip: 'border-success/45 text-success', bar: 'rgb(var(--color-success))' },
+  { min: 50, label: "O'rta", chip: 'border-warning/45 text-warning', bar: 'rgb(var(--color-warning))' },
+  { min: 0, label: 'Zaif', chip: 'border-error/45 text-error', bar: 'rgb(var(--color-error))' },
+];
+const resultSubjectBand = (v) => RESULT_SUBJECT_BANDS.find(b => v >= b.min) || RESULT_SUBJECT_BANDS[2];
+
+// 1/2/3-o'rin belgisi — Leaderboard.jsx bilan bir xil qoida: medal rangi
+// MATNGA berilmaydi (qog'oz mavzuda oltin `surface-2` da 3.2:1 — belgi uchun
+// yetadi, matn uchun emas). Farq `.leaderboard-*` yuvish + chegara + chap
+// chiziq bilan, raqam esa `text-primary`. Emoji (🥇🥈🥉) ishlatilmaydi.
+const resultRankClass = (rank) => (
+  rank === 1 ? 'leaderboard-gold' :
+  rank === 2 ? 'leaderboard-silver' :
+  rank === 3 ? 'leaderboard-bronze' :
+  'border border-edge bg-ground'
+);
+
+// Javob bloklaridagi mayda sarlavha — takrorlanuvchi uslub bitta joyda.
+const ResultFieldLabel = ({ children }) => (
+  <div className="font-display text-[10px] uppercase tracking-widest text-text-secondary font-bold mb-1">{children}</div>
+);
+
 const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const store = useStore();
   const isApi = !!user?._api;
@@ -118,27 +162,27 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
       return (
         <div className="space-y-2">
           <div>
-            <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">Sizning javobingiz</div>
-            <div className="rounded-xl px-3 py-2 text-xs md:text-sm border bg-white/5 text-white/80 border-white/10 whitespace-pre-wrap break-words">
+            <ResultFieldLabel>Sizning javobingiz</ResultFieldLabel>
+            <div className="rounded-xl px-3 py-2 text-xs md:text-sm border bg-ground text-text-primary border-edge whitespace-pre-wrap break-words">
               {q.chosen_answer ? String(q.chosen_answer) : '(javob berilmagan)'}
             </div>
           </div>
           {graded ? (
             <>
-              <div className="text-[11px] text-emerald-300 flex items-center gap-1.5">
-                <Icon name="check" size={12} /> Ustoz bahosi: {q.essay_score}/{q.score} ball
+              <div className="text-[11px] text-success flex items-center gap-1.5">
+                <Icon name="check" size={12} /> Ustoz bahosi: <span className="font-data font-bold">{q.essay_score}/{q.score}</span> ball
               </div>
               {q.essay_feedback && (
                 <div>
-                  <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">Ustoz izohi</div>
-                  <div className="rounded-xl px-3 py-2 text-xs md:text-sm border bg-indigo-500/10 text-white/75 border-indigo-500/25 whitespace-pre-wrap break-words">
+                  <ResultFieldLabel>Ustoz izohi</ResultFieldLabel>
+                  <div className="rounded-xl px-3 py-2 text-xs md:text-sm border border-edge border-l-4 border-l-accent-2 bg-ground text-text-primary whitespace-pre-wrap break-words">
                     {q.essay_feedback}
                   </div>
                 </div>
               )}
             </>
           ) : (
-            <div className="text-[11px] text-amber-300 flex items-center gap-1.5">
+            <div className="text-[11px] text-warning flex items-center gap-1.5">
               <Icon name="info" size={12} /> Insho qo'lda baholanadi
             </div>
           )}
@@ -148,14 +192,14 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
             {!canPlusEssay ? (
               <button
                 onClick={() => setShowPremiumLockModal(true)}
-                className="text-[11px] text-white/50 hover:text-white/70 inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 border border-white/10 bg-white/5"
+                className="btn-ghost text-[11px] inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5"
               >
                 <Icon name="lock" size={12} /> Chuqur AI tahlil — Plus tarifi
               </button>
             ) : essayAI[q.id] ? (
-              <div className={`rounded-xl border p-3 text-xs whitespace-pre-wrap break-words ${essayAI[q.id].status === 'failed' ? 'bg-amber-500/10 border-amber-500/25 text-amber-200' : 'bg-surface-1 border-indigo-500/20 text-white/80'}`}>
-                <div className="flex items-center gap-1.5 text-indigo-400 font-bold mb-2">
-                  <Icon name="bolt" size={13} className="text-indigo-400" />
+              <div className={`rounded-xl border border-l-4 bg-ground p-3 text-xs text-text-primary whitespace-pre-wrap break-words ${essayAI[q.id].status === 'failed' ? 'border-warning/45 border-l-warning' : 'border-edge border-l-accent-2'}`}>
+                <div className="flex items-center gap-1.5 font-display uppercase tracking-widest text-[10px] text-text-secondary font-bold mb-2">
+                  <Icon name="bolt" size={13} className={essayAI[q.id].status === 'failed' ? 'text-warning' : 'text-accent-2'} />
                   <span>Chuqur AI tahlil</span>
                 </div>
                 <div className="whitespace-pre-line text-[11px] md:text-xs">
@@ -166,16 +210,16 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
               <button
                 onClick={() => handleEssayAIFeedback(q.id)}
                 disabled={!!essayAILoading[q.id]}
-                className="btn-ghost text-[11px] px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5 text-indigo-300 hover:text-indigo-200"
+                className="btn-ghost text-[11px] px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5"
               >
                 {essayAILoading[q.id] ? (
                   <>
-                    <span className="w-3 h-3 rounded-full border border-white/20 border-t-white animate-spin" />
+                    <span className="w-3 h-3 rounded-full border border-edge border-t-accent animate-spin" />
                     Tahlil qilinmoqda…
                   </>
                 ) : (
                   <>
-                    <Icon name="bolt" size={13} /> Chuqur AI tahlil
+                    <Icon name="bolt" size={13} className="text-accent-2" /> Chuqur AI tahlil
                   </>
                 )}
               </button>
@@ -191,15 +235,18 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
       return (
         <div className="space-y-2">
           <div>
-            <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">Sizning javobingiz</div>
-            <div className={`rounded-xl px-3 py-2 text-xs md:text-sm border whitespace-pre-wrap break-words ${q.is_correct ? 'bg-emerald-500/15 text-emerald-200 border-emerald-500/40' : 'bg-rose-500/15 text-rose-200 border-rose-500/40'}`}>
+            <ResultFieldLabel>Sizning javobingiz</ResultFieldLabel>
+            {/* Holat uch kanalda: chap chiziq (shakl), chegara rangi va
+                ikonka+yorliq. Matn `text-primary` bo'lib qoladi — javobning
+                O'ZI o'qilishi kerak, u status yorlig'i emas. */}
+            <div className={`rounded-xl px-3 py-2 text-xs md:text-sm border border-l-4 bg-ground text-text-primary whitespace-pre-wrap break-words ${q.is_correct ? 'border-success/45 border-l-success' : 'border-error/45 border-l-error'}`}>
               {q.chosen_answer != null && String(q.chosen_answer).trim() ? String(q.chosen_answer) : '(javob berilmagan)'}
             </div>
           </div>
           {!q.is_correct && correct && (
             <div>
-              <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">To'g'ri javob</div>
-              <div className="rounded-xl px-3 py-2 text-xs md:text-sm border bg-emerald-500/15 text-emerald-200 border-emerald-500/40 whitespace-pre-wrap break-words">{correct}</div>
+              <ResultFieldLabel>To'g'ri javob</ResultFieldLabel>
+              <div className="rounded-xl px-3 py-2 text-xs md:text-sm border border-success/45 border-l-4 border-l-success bg-ground text-text-primary whitespace-pre-wrap break-words">{correct}</div>
             </div>
           )}
         </div>
@@ -219,13 +266,15 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
             const ok = userVal.toLowerCase() === correctVal.toLowerCase() && !!correctVal;
             return (
               <div key={k} className="flex items-start gap-2">
-                <div className="w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs flex-shrink-0 bg-white/5 text-white/40 border border-white/10">{k}</div>
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center font-bold font-data text-xs flex-shrink-0 bg-ground text-text-secondary border border-edge">{k}</div>
                 <div className="flex-1 min-w-0 space-y-1">
-                  <div className={`rounded-xl px-3 py-1.5 text-xs md:text-sm border break-words ${ok ? 'bg-emerald-500/15 text-emerald-200 border-emerald-500/40' : 'bg-rose-500/15 text-rose-200 border-rose-500/40'}`}>
+                  <div className={`rounded-xl px-3 py-1.5 text-xs md:text-sm border border-l-4 bg-ground text-text-primary break-words ${ok ? 'border-success/45 border-l-success' : 'border-error/45 border-l-error'}`}>
                     {userVal || '(bo\'sh)'}
                   </div>
                   {!ok && correctVal && (
-                    <div className="text-[11px] text-emerald-300 break-words">To'g'ri: {correctVal}</div>
+                    <div className="text-[11px] text-success break-words flex items-start gap-1.5">
+                      <Icon name="check" size={11} className="flex-shrink-0 mt-0.5" /> <span>To'g'ri: {correctVal}</span>
+                    </div>
                   )}
                 </div>
               </div>
@@ -244,16 +293,16 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
           {(q.options || []).map((opt, oi) => {
             const isCorrect = correctSet.includes(oi);
             const isChosen = chosenSet.includes(oi);
-            let cls = 'bg-white/5 text-white/60 border-white/10';
-            if (isCorrect) cls = 'bg-emerald-500/15 text-emerald-200 border-emerald-500/40';
-            else if (isChosen && !isCorrect) cls = 'bg-rose-500/15 text-rose-200 border-rose-500/40';
+            let cls = 'border-edge bg-surface-1 text-text-secondary';
+            if (isCorrect) cls = 'border-success/45 border-l-4 border-l-success bg-ground text-text-primary';
+            else if (isChosen && !isCorrect) cls = 'border-error/45 border-l-4 border-l-error bg-ground text-text-primary';
             return (
               <div key={oi} className={`rounded-xl px-3 py-2 text-xs md:text-sm border flex items-center gap-2 ${cls}`}>
-                <span className="text-white/40 font-bold flex-shrink-0">{String.fromCharCode(65 + oi)}.</span>
+                <span className="text-text-secondary font-bold font-data flex-shrink-0">{String.fromCharCode(65 + oi)}.</span>
                 <MathText className="flex-1 break-words" text={String(opt)} />
-                {isChosen && <span className="text-[10px] text-white/40 flex-shrink-0">tanlangan</span>}
-                {isCorrect && <Icon name="check" size={12} className="text-emerald-400 flex-shrink-0" />}
-                {isChosen && !isCorrect && <Icon name="x" size={12} className="text-rose-400 flex-shrink-0" />}
+                {isChosen && <span className="text-[10px] text-text-secondary flex-shrink-0">tanlangan</span>}
+                {isCorrect && <Icon name="check" size={12} className="text-success flex-shrink-0" />}
+                {isChosen && !isCorrect && <Icon name="x" size={12} className="text-error flex-shrink-0" />}
               </div>
             );
           })}
@@ -267,15 +316,16 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
         {(q.options || []).map((opt, oi) => {
           const isCorrect = oi === q.correct_answer;
           const isChosen = oi === q.chosen_answer;
-          let cls = 'bg-white/5 text-white/60 border-white/10';
-          if (isCorrect) cls = 'bg-emerald-500/15 text-emerald-200 border-emerald-500/40';
-          else if (isChosen && !isCorrect) cls = 'bg-rose-500/15 text-rose-200 border-rose-500/40';
+          let cls = 'border-edge bg-surface-1 text-text-secondary';
+          if (isCorrect) cls = 'border-success/45 border-l-4 border-l-success bg-ground text-text-primary';
+          else if (isChosen && !isCorrect) cls = 'border-error/45 border-l-4 border-l-error bg-ground text-text-primary';
           return (
             <div key={oi} className={`rounded-xl px-3 py-2 text-xs md:text-sm border flex items-center gap-2 ${cls}`}>
-              <span className="text-white/40 font-bold flex-shrink-0">{String.fromCharCode(65 + oi)}.</span>
+              <span className="text-text-secondary font-bold font-data flex-shrink-0">{String.fromCharCode(65 + oi)}.</span>
               <span className="flex-1 break-words">{String(opt)}</span>
-              {isCorrect && <Icon name="check" size={12} className="text-emerald-400 flex-shrink-0" />}
-              {isChosen && !isCorrect && <Icon name="x" size={12} className="text-rose-400 flex-shrink-0" />}
+              {isChosen && <span className="text-[10px] text-text-secondary flex-shrink-0">tanlangan</span>}
+              {isCorrect && <Icon name="check" size={12} className="text-success flex-shrink-0" />}
+              {isChosen && !isCorrect && <Icon name="x" size={12} className="text-error flex-shrink-0" />}
             </div>
           );
         })}
@@ -428,24 +478,21 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const pct = (r.score !== undefined && r.score !== null)
     ? Math.round(r.score)
     : (r.total ? Math.round((r.correct / r.total) * 100) : 0);
-  const grade = pct >= 90 ? { label: 'A\'lo', color: 'text-emerald-400', bg: 'from-emerald-500/20 to-teal-500/10' }
-    : pct >= 75 ? { label: 'Yaxshi', color: 'text-indigo-400', bg: 'from-indigo-500/20 to-purple-500/10' }
-    : pct >= 60 ? { label: 'Qoniqarli', color: 'text-amber-400', bg: 'from-amber-500/20 to-orange-500/10' }
-    : { label: 'Qoniqarsiz', color: 'text-rose-400', bg: 'from-rose-500/20 to-pink-500/10' };
+  const grade = resultGradeOf(pct);
   const fmtTime = (s) => `${Math.floor((s||0)/60)}m ${(s||0)%60}s`;
 
   if (isLoadingAttempt) {
     return (
       <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-4 py-10`} style={embedded ? {} : { background: 'rgb(var(--color-ground))' }}>
-        <div className="glass rounded-2xl px-6 py-4 text-sm text-white/60">Natija yuklanmoqda...</div>
+        <div className="glass rounded-2xl px-6 py-4 text-sm text-text-secondary">Natija yuklanmoqda...</div>
       </div>
     );
   }
   if (fetchError) {
     return (
       <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-4 py-10`} style={embedded ? {} : { background: 'rgb(var(--color-ground))' }}>
-        <div className="glass rounded-2xl px-6 py-5 text-center max-w-sm">
-          <div className="text-rose-300 font-semibold text-sm mb-2">{fetchError}</div>
+        <div className="glass rounded-2xl border-l-4 border-l-error px-6 py-5 text-center max-w-sm">
+          <div className="text-error font-semibold text-sm mb-2">{fetchError}</div>
           <button onClick={() => onNavigate('leaderboard')} className="btn-ghost text-xs px-4 py-2 rounded-xl">Reytingga qaytish</button>
         </div>
       </div>
@@ -455,55 +502,88 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
   const content = (
     <div className={`${embedded ? '' : 'min-h-screen'} flex items-center justify-center px-3 md:px-4 py-4 md:py-10 mobile-content-pad`} style={embedded ? {} : { background: 'rgb(var(--color-ground))' }}>
       <div className="max-w-2xl w-full space-y-4 md:space-y-6 animate-in">
-        {/* Hero result card */}
-        <div className={`glass-strong rounded-3xl p-5 md:p-8 text-center bg-gradient-to-br ${grade.bg} border border-white/10 relative overflow-hidden`}>
-          <div className="relative z-10">
-            <div className="text-4xl md:text-5xl mb-3 md:mb-4">{pct >= 90 ? '🏆' : pct >= 75 ? '🎉' : pct >= 60 ? '👍' : '💪'}</div>
-            <div className="text-5xl md:text-7xl font-black text-white mb-2">{pct}<span className="text-white/30 text-2xl md:text-3xl">/100</span></div>
-            <div className={`text-xl md:text-2xl font-bold ${grade.color} mb-2`}>{grade.label}</div>
-            <div className="text-white/50 text-xs md:text-sm break-words px-2">{r.olympiad?.title || 'Olimpiada'}</div>
-            <div className="mt-2 flex flex-wrap items-center justify-center gap-2">
-              {r.olympiad?.subject && <SubjectBadge subject={r.olympiad.subject} />}
-              {r.olympiad?.testLevel && <span className="chip bg-violet-500/15 text-violet-300 border border-violet-500/20">{r.olympiad.testLevel}</span>}
-              {r.olympiad?.testType && <span className="chip bg-sky-500/15 text-sky-300 border border-sky-500/20">{testTypeLabel(r.olympiad.testType)}</span>}
+        {/* ─── Xulosa: byulleten sarlavhasi ─────────────────────────────────
+            Skaner qilinadigan yuza — "nechchi oldim?" javobi eng tepada,
+            detal (donut, fan kesimi, javoblar tahlili) undan keyin turadi.
+            Avval bu blok gradient fon + emoji (🏆/🎉/👍/💪) bilan berilardi:
+            gradient yo'nalishda yo'q, emoji esa bo'lim belgisi sifatida
+            ishlatilmaydi. Daraja endi chap chiziq + chip + yozma yorliq. */}
+        <div className={`glass-strong rounded-3xl p-5 md:p-8 border-l-4 ${grade.rule}`}>
+          <div className="font-display text-[10px] md:text-xs uppercase tracking-widest text-text-secondary font-bold">
+            Imtihon byulleteni
+          </div>
+          <h1 className="font-display text-lg md:text-2xl font-bold text-text-primary mt-1 break-words">
+            {r.olympiad?.title || 'Olimpiada'}
+          </h1>
+          <div className="mt-4 flex flex-wrap items-end gap-x-4 gap-y-2">
+            <div className="flex items-baseline">
+              <span className="font-data text-5xl md:text-7xl font-black text-text-primary leading-none">{pct}</span>
+              <span className="font-data text-text-secondary text-xl md:text-2xl">/100</span>
             </div>
+            <span className={`chip border bg-ground text-xs md:text-sm font-bold ${grade.chip}`}>{grade.label}</span>
+          </div>
+          <div className="mt-4 border-t border-edge pt-3 flex flex-wrap items-center gap-2">
+            {r.olympiad?.subject && <SubjectBadge subject={r.olympiad.subject} />}
+            {r.olympiad?.testLevel && <span className="chip border border-edge bg-ground text-text-secondary">{r.olympiad.testLevel}</span>}
+            {r.olympiad?.testType && <span className="chip border border-edge bg-ground text-text-secondary">{testTypeLabel(r.olympiad.testType)}</span>}
           </div>
         </div>
 
-        {/* Stats grid */}
+        {/* Stats grid — emoji o'rniga `Icon`, qiymatlar `font-data` bilan
+            (ustun sakramasin). Reyting o'rni 1/3 gacha bo'lsa medal yuvishini
+            oladi: rang MATNGA emas, plastinkaga beriladi. */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4">
           {[
-            { icon: '✅', label: "To'g'ri", value: r.correct, color: 'text-emerald-400' },
-            { icon: '❌', label: "Noto'g'ri", value: r.wrong, color: 'text-rose-400' },
-            { icon: '⏱', label: 'Sarflangan vaqt', value: fmtTime(r.time || 0), color: 'text-cyan-400' },
-            { icon: '🏅', label: 'Reyting o\'rni', value: r.rank ? `#${r.rank}` : '—', color: 'text-amber-400' },
+            { icon: 'check', label: "To'g'ri", value: r.correct, tone: 'text-success' },
+            { icon: 'x', label: "Noto'g'ri", value: r.wrong, tone: 'text-error' },
+            { icon: 'clock', label: 'Sarflangan vaqt', value: fmtTime(r.time || 0), tone: 'text-text-secondary' },
+            { icon: 'award', label: "Reyting o'rni", value: r.rank ? `#${r.rank}` : '—', tone: 'text-text-secondary', rank: r.rank },
           ].map((s, i) => (
-            <div key={i} className="glass rounded-2xl p-3 md:p-4 text-center card-hover">
-              <div className="text-xl md:text-2xl mb-1">{s.icon}</div>
-              <div className={`text-base md:text-xl font-black ${s.color}`}>{s.value}</div>
-              <div className="text-[10px] md:text-xs text-white/40">{s.label}</div>
+            <div key={i} className="glass rounded-2xl p-3 md:p-4 card-hover">
+              <div className="flex items-center gap-2">
+                <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 ${s.rank ? resultRankClass(s.rank) : 'border border-edge bg-ground'} ${s.tone}`}>
+                  <Icon name={s.icon} size={14} />
+                </span>
+                <span className="font-data text-base md:text-xl font-black text-text-primary truncate">{s.value}</span>
+              </div>
+              <div className="mt-1.5 text-[10px] md:text-xs text-text-secondary">{s.label}</div>
             </div>
           ))}
         </div>
 
-        {/* Accuracy breakdown */}
+        {/* ─── Natija tahlili ───────────────────────────────────────────────
+            Grafik ranglari: to'g'ri/noto'g'ri — bu "kim" emas, "yaxshimi
+            yomonmi" savoli, ya'ni haqiqiy status o'qishi, shuning uchun
+            `success`/`error` tokenlari (dataviz: seriya good/bad ma'nosini
+            bildirsa — status palitrasi, kategorik emas). Umumiy foiz esa
+            seriya emas, sarlavha raqami — u brend belgisi `accent` ni oladi va
+            shu bilan ikkala status rangidan ajralib turadi.
+            Qattiq #22c55e/#ef4444/#C0362C o'rniga tokenlar: ular qog'oz va
+            siyoh mavzuda alohida sozlangan. Rang yakka signal emas — har
+            donut ostida yozma yorliq va yonida raqamli qator turadi. */}
         <div className="glass rounded-2xl p-4 md:p-6">
-          <h3 className="font-bold text-white mb-3 md:mb-4 text-sm md:text-base">Natija tahlili</h3>
+          <h3 className="font-display font-bold text-text-primary mb-3 md:mb-4 text-sm md:text-base uppercase tracking-widest">Natija tahlili</h3>
           <div className="flex flex-col md:flex-row md:items-center gap-4 md:gap-6">
             {/* Donut row — on mobile horizontally centered & evenly spaced */}
             <div className="flex items-center justify-around md:justify-start md:gap-4 flex-wrap">
-              <DonutChart value={r.correct} max={r.total} color="#22c55e" size={64} label="To'g'ri" />
-              <DonutChart value={r.wrong} max={r.total} color="#ef4444" size={64} label="Noto'g'ri" />
-              <DonutChart value={pct} color="#C0362C" size={64} label="Umumiy %" />
+              <DonutChart value={r.correct} max={r.total} color="rgb(var(--color-success))" size={64} label="To'g'ri" />
+              <DonutChart value={r.wrong} max={r.total} color="rgb(var(--color-error))" size={64} label="Noto'g'ri" />
+              <DonutChart value={pct} color="rgb(var(--color-accent))" size={64} label="Umumiy %" />
             </div>
             <div className="flex-1 space-y-3 w-full min-w-0">
               <div>
-                <div className="flex justify-between text-xs text-white/50 mb-1 gap-2"><span className="truncate">To'g'ri javoblar</span><span className="text-emerald-400 flex-shrink-0">{r.correct}/{r.total}</span></div>
-                <div className="progress-bar h-2"><div className="progress-fill" style={{ width: r.total ? `${(r.correct/r.total)*100}%` : '0%', background: '#22c55e' }} /></div>
+                <div className="flex justify-between text-xs text-text-secondary mb-1 gap-2">
+                  <span className="truncate flex items-center gap-1.5"><Icon name="check" size={12} className="text-success flex-shrink-0" /> To'g'ri javoblar</span>
+                  <span className="font-data font-bold text-text-primary flex-shrink-0">{r.correct}/{r.total}</span>
+                </div>
+                <div className="progress-bar h-2"><div className="progress-fill" style={{ width: r.total ? `${(r.correct/r.total)*100}%` : '0%', background: 'rgb(var(--color-success))' }} /></div>
               </div>
               <div>
-                <div className="flex justify-between text-xs text-white/50 mb-1 gap-2"><span className="truncate">Noto'g'ri javoblar</span><span className="text-rose-400 flex-shrink-0">{r.wrong}/{r.total}</span></div>
-                <div className="progress-bar h-2"><div className="progress-fill" style={{ width: r.total ? `${(r.wrong/r.total)*100}%` : '0%', background: '#ef4444' }} /></div>
+                <div className="flex justify-between text-xs text-text-secondary mb-1 gap-2">
+                  <span className="truncate flex items-center gap-1.5"><Icon name="x" size={12} className="text-error flex-shrink-0" /> Noto'g'ri javoblar</span>
+                  <span className="font-data font-bold text-text-primary flex-shrink-0">{r.wrong}/{r.total}</span>
+                </div>
+                <div className="progress-bar h-2"><div className="progress-fill" style={{ width: r.total ? `${(r.wrong/r.total)*100}%` : '0%', background: 'rgb(var(--color-error))' }} /></div>
               </div>
             </div>
           </div>
@@ -511,36 +591,47 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
 
         {/* Subject performance — fan kesimi backenddan */}
         <div className="glass rounded-2xl p-4 md:p-6">
-          <h3 className="font-bold text-white mb-3 md:mb-4 text-sm md:text-base">Fanlar bo'yicha o'rtacha</h3>
+          <h3 className="font-display font-bold text-text-primary mb-3 md:mb-4 text-sm md:text-base uppercase tracking-widest">Fanlar bo'yicha o'rtacha</h3>
           {isApi && apiStatsRes.loading && (
-            <div className="text-xs text-white/40">Yuklanmoqda...</div>
+            <div className="text-xs text-text-secondary">Yuklanmoqda...</div>
           )}
           {/* Server xatosi va "chindan bo'sh" holatlari farqlanadi — xato
               bo'lsa aniq xabar + qayta urinish, aks holda bo'sh-holat matni. */}
           {isApi && !apiStatsRes.loading && apiStatsRes.error && (
-            <div className="text-xs text-rose-300">
+            <div className="rounded-xl border border-error/45 border-l-4 border-l-error bg-ground px-3 py-2 text-xs text-error">
               {OlympyApi.toUserMessage?.(apiStatsRes.error) || "Fan kesimini yuklab bo'lmadi."}{' '}
-              <button onClick={() => apiStatsRes.reload()} className="underline hover:text-rose-200">Qayta urinish</button>
+              <button onClick={() => apiStatsRes.reload()} className="underline font-bold">Qayta urinish</button>
             </div>
           )}
           {isApi && !apiStatsRes.loading && !apiStatsRes.error && subjectBreakdown.length === 0 && (
-            <div className="text-xs text-white/40">Hali fan kesimida natijalar yo'q.</div>
+            <div className="text-xs text-text-secondary">Hali fan kesimida natijalar yo'q.</div>
           )}
           {!isApi && (
-            <div className="text-xs text-white/40">Fan kesimi faqat akkaunt rejimida ko'rinadi.</div>
+            <div className="text-xs text-text-secondary">Fan kesimi faqat akkaunt rejimida ko'rinadi.</div>
           )}
           <div className="space-y-3">
-            {subjectBreakdown.map((s, i) => (
-              <div key={`${s.name}-${i}`}>
-                <div className="flex justify-between text-xs mb-1 gap-2">
-                  <span className="text-white/60 truncate min-w-0"><span className="truncate">{s.name}</span> <span className="text-white/30 whitespace-nowrap">· {s.attempts} ta</span></span>
-                  <span className={`font-medium flex-shrink-0 ${s.avg>=70?'text-emerald-400':s.avg>=50?'text-amber-400':'text-rose-400'}`}>{s.avg}%</span>
+            {subjectBreakdown.map((s, i) => {
+              const band = resultSubjectBand(s.avg);
+              return (
+                <div key={`${s.name}-${i}`}>
+                  <div className="flex justify-between items-center text-xs mb-1 gap-2">
+                    <span className="text-text-primary truncate min-w-0">
+                      <span className="truncate">{s.name}</span>{' '}
+                      <span className="text-text-secondary whitespace-nowrap">· <span className="font-data">{s.attempts}</span> ta</span>
+                    </span>
+                    <span className="flex items-center gap-2 flex-shrink-0">
+                      {/* Holat shakl bilan ham kodlangan: chegarali chip +
+                          yozma yorliq, ya'ni signal faqat rangda emas. */}
+                      <span className={`chip border bg-ground text-[10px] font-bold py-0.5 ${band.chip}`}>{band.label}</span>
+                      <span className="font-data font-bold text-text-primary">{s.avg}%</span>
+                    </span>
+                  </div>
+                  <div className="progress-bar h-2">
+                    <div className="progress-fill" style={{ width: `${s.avg}%`, background: band.bar }} />
+                  </div>
                 </div>
-                <div className="progress-bar h-2">
-                  <div className="progress-fill" style={{ width:`${s.avg}%`, background: s.avg>=70?'#22c55e':s.avg>=50?'#f59e0b':'#ef4444' }} />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -548,9 +639,10 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
         {isApi && Array.isArray(fetchedAttempt?.questions_review) && fetchedAttempt.questions_review.length > 0 && (
           <div className="glass rounded-2xl p-4 md:p-6">
             <div className="flex items-center justify-between gap-2 mb-3">
-              <h3 className="font-bold text-white text-sm md:text-base">Javoblar tahlili</h3>
+              <h3 className="font-display font-bold text-text-primary text-sm md:text-base uppercase tracking-widest">Javoblar tahlili</h3>
               <button
                 onClick={() => setReviewOpen(v => !v)}
+                aria-expanded={reviewOpen}
                 className="btn-ghost text-xs px-3 py-1.5 rounded-xl flex items-center gap-1.5"
               >
                 <Icon name={reviewOpen ? 'chevronDown' : 'chevronRight'} size={12} />
@@ -567,56 +659,63 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                   // Kod (IT) savol — variantlar o'rniga yuborilgan kod + AI bahosi.
                   if (q.question_type === 'code') {
                     return (
-                      <div key={q.id} className="rounded-2xl p-3 md:p-4 border border-sky-500/25 bg-sky-500/5">
+                      <div key={q.id} className="rounded-2xl p-3 md:p-4 border border-edge border-l-4 border-l-accent-2 bg-surface-2">
                         <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-white/40 text-xs font-bold">#{idx + 1}</span>
-                            <span className="chip bg-sky-500/15 text-sky-300 border border-sky-500/25 text-[10px] font-bold">{'</> '}{q.code_language || q.programming_language || 'kod'}</span>
+                            <span className="text-text-secondary text-xs font-bold font-data">#{idx + 1}</span>
+                            <span className="chip border border-accent-2/45 bg-ground text-accent-2 text-[10px] font-bold">{'</> '}{q.code_language || q.programming_language || 'kod'}</span>
                             {difficultyLabel && (
-                              <span className="chip bg-white/5 text-white/60 border border-white/10 text-[10px]">{difficultyLabel}</span>
+                              <span className="chip border border-edge bg-ground text-text-secondary text-[10px]">{difficultyLabel}</span>
                             )}
-                            <span className="chip bg-white/5 text-white/50 border border-white/10 text-[10px]">{q.score || 0} ball</span>
+                            <span className="chip border border-edge bg-ground text-text-secondary text-[10px]"><span className="font-data">{q.score || 0}</span> ball</span>
                           </div>
                           {typeof q.ai_code_score === 'number' && (
-                            <span className="chip text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold">AI: {q.ai_code_score}/100</span>
+                            <span className="chip text-[10px] border border-edge-strong bg-ground text-text-primary font-bold">AI: <span className="font-data">{q.ai_code_score}/100</span></span>
                           )}
                         </div>
-                        <div className="text-white text-sm font-medium mb-3 break-words whitespace-pre-wrap"><MathText text={q.text} /></div>
-                        <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">Sizning kodingiz</div>
-                        <pre className="text-xs text-white/80 bg-black/30 rounded-xl p-3 overflow-x-auto whitespace-pre-wrap break-words border border-white/5">{q.submitted_code || '(kod yuborilmagan)'}</pre>
+                        <div className="text-text-primary text-sm font-medium mb-3 break-words whitespace-pre-wrap"><MathText text={q.text} /></div>
+                        <ResultFieldLabel>Sizning kodingiz</ResultFieldLabel>
+                        {/* ManagerDashboard'dagi yuborilgan kod bloki bilan bir
+                            xil: `bg-black/30` o'rniga token yuzasi (qog'oz
+                            mavzuda qora plastinka o'qilmasdi). */}
+                        <pre className="text-xs font-mono text-text-primary bg-ground rounded-xl p-3 overflow-x-auto whitespace-pre-wrap break-words border border-edge">{q.submitted_code || '(kod yuborilmagan)'}</pre>
                         {q.ai_code_review && (
                           <div className="mt-3">
-                            <div className="text-[10px] uppercase tracking-wide text-white/35 font-bold mb-1">AI tavsiyasi</div>
-                            <div className="rounded-xl bg-surface-1 border border-indigo-500/20 p-3 text-xs text-white/80 whitespace-pre-wrap break-words">{q.ai_code_review}</div>
+                            <ResultFieldLabel>AI tavsiyasi</ResultFieldLabel>
+                            <div className="rounded-xl bg-ground border border-edge border-l-4 border-l-accent-2 p-3 text-xs text-text-primary whitespace-pre-wrap break-words">{q.ai_code_review}</div>
                           </div>
                         )}
                       </div>
                     );
                   }
                   return (
-                    <div key={q.id} className={`rounded-2xl p-3 md:p-4 border ${q.is_correct ? 'border-emerald-500/30 bg-emerald-500/5' : (q.chosen_answer == null ? 'border-amber-500/30 bg-amber-500/5' : 'border-rose-500/30 bg-rose-500/5')}`}>
+                    <div key={q.id} className={`rounded-2xl p-3 md:p-4 border border-edge border-l-4 bg-surface-2 ${q.is_correct ? 'border-l-success' : (q.chosen_answer == null ? 'border-l-warning' : 'border-l-error')}`}>
                       <div className="flex items-start justify-between gap-2 mb-2 flex-wrap">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-white/40 text-xs font-bold">#{idx + 1}</span>
+                          <span className="text-text-secondary text-xs font-bold font-data">#{idx + 1}</span>
                           {difficultyLabel && (
-                            <span className="chip bg-white/5 text-white/60 border border-white/10 text-[10px]">{difficultyLabel}</span>
+                            <span className="chip border border-edge bg-ground text-text-secondary text-[10px]">{difficultyLabel}</span>
                           )}
-                          <span className="chip bg-white/5 text-white/50 border border-white/10 text-[10px]">{q.score || 0} ball</span>
+                          <span className="chip border border-edge bg-ground text-text-secondary text-[10px]"><span className="font-data">{q.score || 0}</span> ball</span>
                         </div>
-                        <span className={`chip text-[10px] ${q.is_correct ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : (q.chosen_answer == null ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-rose-500/20 text-rose-300 border border-rose-500/30')}`}>
-                          {q.is_correct ? "✓ To'g'ri" : (q.chosen_answer == null ? "Bo'sh" : "✗ Noto'g'ri")}
+                        {/* Holat chipi: ikonka (shakl) + yozma yorliq + rang —
+                            uchala kanal. Avval faqat rang va ✓/✗ belgisi bor
+                            edi, matni esa rangli fonda 3:1 dan past chiqardi. */}
+                        <span className={`chip border bg-ground text-[10px] font-bold ${q.is_correct ? 'border-success/45 text-success' : (q.chosen_answer == null ? 'border-warning/45 text-warning' : 'border-error/45 text-error')}`}>
+                          <Icon name={q.is_correct ? 'check' : (q.chosen_answer == null ? 'info' : 'x')} size={11} />
+                          {q.is_correct ? "To'g'ri" : (q.chosen_answer == null ? "Bo'sh" : "Noto'g'ri")}
                         </span>
                       </div>
-                      <div className="text-white text-sm font-medium mb-3 break-words whitespace-pre-wrap"><MathText text={q.text} /></div>
+                      <div className="text-text-primary text-sm font-medium mb-3 break-words whitespace-pre-wrap"><MathText text={q.text} /></div>
                       {renderReviewAnswer(q)}
 
                       {/* AI Explanation Button & Content */}
-                      <div className="mt-4 pt-3 border-t border-white/5 space-y-2">
+                      <div className="mt-4 pt-3 border-t border-edge space-y-2">
                         {explanations[q.id] ? (
-                          <div className="rounded-xl bg-surface-1 border border-indigo-500/20 p-3 text-xs text-white/80 leading-relaxed animate-in">
-                            <div className="flex items-center gap-1.5 text-indigo-400 font-bold mb-2">
-                              <Icon name="bolt" size={13} className="text-indigo-400 animate-pulse" />
-                              <span>AI Yechim Tushuntirishi</span>
+                          <div className="rounded-xl bg-ground border border-edge border-l-4 border-l-accent-2 p-3 text-xs text-text-primary leading-relaxed animate-in">
+                            <div className="flex items-center gap-1.5 font-display uppercase tracking-widest text-[10px] text-text-secondary font-bold mb-2">
+                              <Icon name="bolt" size={13} className="text-accent-2" />
+                              <span>AI yechim tushuntirishi</span>
                             </div>
                             <div className="whitespace-pre-line text-[11px] md:text-xs">
                               {renderMarkdown(explanations[q.id])}
@@ -632,17 +731,17 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                               }
                             }}
                             disabled={explaining[q.id]}
-                            className="btn-ghost text-[11px] px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5 text-indigo-300 hover:text-indigo-200"
+                            className="btn-ghost text-[11px] px-3 py-1.5 rounded-xl inline-flex items-center gap-1.5"
                           >
                             {explaining[q.id] ? (
                               <>
-                                <span className="w-3 h-3 rounded-full border border-white/20 border-t-white animate-spin" />
+                                <span className="w-3 h-3 rounded-full border border-edge border-t-accent animate-spin" />
                                 Tushuntirish tayyorlanmoqda...
                               </>
                             ) : (
                               <>
-                                <Icon name={isPremium ? "bolt" : "lock"} size={12} className={isPremium ? "text-indigo-400" : "text-amber-400"} />
-                                <span>AI Yechim Tushuntirishi {!isPremium && <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.2 rounded font-extrabold ml-1">PRO</span>}</span>
+                                <Icon name={isPremium ? 'bolt' : 'lock'} size={12} className={isPremium ? 'text-accent-2' : 'text-warning'} />
+                                <span>AI yechim tushuntirishi {!isPremium && <span className="text-[9px] border border-warning/45 bg-ground text-warning px-1.5 py-0.5 rounded font-extrabold ml-1">PRO</span>}</span>
                               </>
                             )}
                           </button>
@@ -664,16 +763,22 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
         </div>
 
         {shareToast && (
-          <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 glass-strong rounded-2xl px-5 py-3 border border-indigo-500/30 text-sm font-medium text-white max-w-[calc(100%-1.5rem)] text-center">
+          <div role="status" className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-50 glass-strong rounded-2xl px-5 py-3 border-l-4 border-l-accent text-sm font-medium text-text-primary max-w-[calc(100%-1.5rem)] text-center">
             {shareToast}
           </div>
         )}
 
-        <Modal open={showPremiumLockModal} onClose={() => setShowPremiumLockModal(false)} title="👑 Premium Imkoniyat" width="max-w-md">
-          <div className="text-center p-4 space-y-4">
-            <div className="text-5xl animate-bounce">🔒</div>
-            <h3 className="text-lg font-black text-white">AI Yechim Tushuntirishi faqat Premium o'quvchilarga ochiq</h3>
-            <p className="text-xs text-white/60 leading-relaxed">
+        {/* Sarlavhadagi 👑 va sakrab turgan 🔒 emojisi olib tashlandi —
+            bo'lim belgisi `Icon`, ambient animatsiya yo'q. Tugmadan gradient
+            va rangli soya ham olib tashlandi (`.btn-primary` o'zi qattiq
+            akcent yuza). */}
+        <Modal open={showPremiumLockModal} onClose={() => setShowPremiumLockModal(false)} title="Premium imkoniyat" width="max-w-md">
+          <div className="p-4 space-y-4">
+            <div className="w-12 h-12 rounded-xl border border-warning/45 bg-ground flex items-center justify-center text-warning">
+              <Icon name="lock" size={22} />
+            </div>
+            <h3 className="font-display text-lg font-bold text-text-primary">AI yechim tushuntirishi faqat Premium o'quvchilarga ochiq</h3>
+            <p className="text-xs text-text-secondary leading-relaxed">
               Nega bu xatoga yo'l qo'yganingizni va to'g'ri yechim yo'lini batafsil tahlil qilish uchun AI o'qituvchi yordamidan foydalaning.
             </p>
             <div className="pt-4 flex flex-col gap-2">
@@ -682,13 +787,13 @@ const ResultsPage = ({ result, user, onNavigate, embedded }) => {
                   setShowPremiumLockModal(false);
                   if (onNavigate) onNavigate('premium');
                 }}
-                className="btn-primary py-3 rounded-xl font-bold text-sm bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white shadow-md shadow-indigo-600/20"
+                className="btn-primary py-3 rounded-xl font-bold text-sm"
               >
-                Premiumga o'tish ⚡
+                Premiumga o'tish
               </button>
               <button
                 onClick={() => setShowPremiumLockModal(false)}
-                className="btn-ghost py-2 rounded-xl text-xs font-semibold text-white/50"
+                className="btn-ghost py-2 rounded-xl text-xs font-semibold"
               >
                 Yopish
               </button>

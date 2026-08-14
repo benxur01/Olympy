@@ -11,6 +11,14 @@
 //   language   — 'python' | 'javascript' | 'java' | 'cpp' | 'c'
 //   readOnly   — faqat o'qish rejimi (boshlang'ich kod skeletni ko'rsatish uchun)
 //   height     — CSS balandlik, default '300px'
+//
+// ─── Dizayn: "Imtihon byulleteni" ─────────────────────────────────────────────
+// Muharrirning O'ZI (CodeMirror one-dark) mavzu tokenlaridan TASHQARIDA qoladi:
+// sintaksis ranglari kodning ma'nosini ko'rsatadi, sahifa mavzusini emas —
+// shu sababli `services/codemirror-loader.js` va `src/index.css` dagi
+// `.code-block` palitrasiga tegilmadi. Tokenlarga faqat muharrirni O'RAB
+// turgan UI ko'chirildi: yuklanish qatlami (`glass` + `text-secondary`) va
+// fallback `textarea` (`.input-field`).
 
 const CodeEditor = ({ value = '', onChange, language = 'python', readOnly = false, height = '300px' }) => {
   const hostRef = React.useRef(null);
@@ -114,11 +122,11 @@ const CodeEditor = ({ value = '', onChange, language = 'python', readOnly = fals
       <div ref={hostRef} style={{ minHeight: height }} />
       {!ready && (
         <div
-          className="absolute inset-0 flex items-center justify-center text-white/40 text-xs glass rounded-2xl"
+          className="absolute inset-0 flex items-center justify-center text-text-secondary text-xs glass rounded-2xl"
           style={{ minHeight: height }}
         >
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded-full border-2 border-white/20 border-t-white animate-spin" />
+            <div className="w-4 h-4 rounded-full border-2 border-edge border-t-accent animate-spin" />
             Muharrir yuklanmoqda...
           </div>
         </div>

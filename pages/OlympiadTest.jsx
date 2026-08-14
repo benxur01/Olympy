@@ -15,14 +15,29 @@ const LANG_LABELS = {
 //   {selected:[...]}; fill_blank/essay → {text}; fill_blanks → {blanks:{...}};
 //   slider → {value: son}.
 const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBlank, onMultiToggle, onYesNo, onSlider }) => {
-  const inputCls = 'w-full glass rounded-2xl px-4 py-3 text-white text-sm md:text-base placeholder-white/30 border border-white/10 focus:border-indigo-500 focus:outline-none transition-all';
+  // `.input-field` (src/index.css) — fon, hoshiya, matn va fokus halqasi bitta
+  // joyda, tokenlar ustida. Radius utility'si komponent qatlamini yengadi,
+  // shuning uchun `rounded-2xl` avvalgi shaklni saqlaydi.
+  const inputCls = 'input-field rounded-2xl text-sm md:text-base';
+
+  // Variant yuzasi. `.glass` ATAYIN ishlatilmadi: u hoshiyani
+  // `box-shadow: inset 0 0 0 1px` bilan chizadi, ustiga tanlov `border`i
+  // qo'shilsa ikkita halqa ko'rinardi. Yuzalar tokenlardan to'g'ridan-to'g'ri
+  // yig'ilgan, tanlov esa yagona signal — akcent hoshiya + yengil akcent fon.
+  const optionBase = 'w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left border transition-colors min-h-[56px]';
+  const optionOn = 'border-accent bg-accent/15';
+  const optionOff = 'border-edge bg-surface-1 hover:border-edge-strong hover:bg-surface-2';
+  // Variant oldidagi belgi (harf / ✓ / checkbox). Tanlangan holat — to'ldirilgan
+  // akcent yuza, ustidagi matn har doim `on-accent`.
+  const markOn = 'bg-accent-fill text-on-accent border border-accent-fill';
+  const markOff = 'bg-surface-2 text-text-secondary border border-edge';
 
   // Matn kiritilgan bo'lsa kichik "Saqlandi" belgisi — MCQ/yes_no/multiple_select
   // uchun tanlangan variant o'zi rangi bilan aniq ko'rinadi, lekin matnli
   // javoblarda (fill_blank/essay/fill_blanks) hech qanday tasdiq belgisi
   // yo'q edi: stressli talaba javob "ketdimi yo'qmi" bilmay qolardi.
   const SavedTag = () => (
-    <div className="flex items-center gap-1.5 text-xs text-emerald-400/90 mt-2">
+    <div className="flex items-center gap-1.5 text-xs text-success mt-2">
       <Icon name="check" size={12} /> Saqlandi
     </div>
   );
@@ -73,7 +88,7 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
           const filled = String(blanks[key] || '').trim().length > 0;
           return (
             <div key={key} className="flex items-center gap-3">
-              <div className="w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 glass text-white/50">
+              <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold font-data text-sm flex-shrink-0 ${markOff}`}>
                 {i + 1}
               </div>
               <input
@@ -84,7 +99,7 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
                 className={inputCls}
                 autoComplete="off"
               />
-              {filled && <Icon name="check" size={16} className="text-emerald-400/90 flex-shrink-0" />}
+              {filled && <Icon name="check" size={16} className="text-success flex-shrink-0" />}
             </div>
           );
         })}
@@ -105,13 +120,13 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
     const hasValue = typeof picked === 'number' && Number.isFinite(picked);
     const current = hasValue ? Math.min(max, Math.max(min, picked)) : min;
     return (
-      <div className="glass rounded-2xl p-4 md:p-5">
+      <div className="rounded-2xl border border-edge bg-surface-1 p-4 md:p-5">
         <div className="text-center mb-4">
-          <div className={`text-3xl md:text-4xl font-extrabold tabular-nums ${hasValue ? 'text-white' : 'text-white/30'}`}>
+          <div className={`text-3xl md:text-4xl font-display font-bold font-data ${hasValue ? 'text-text-primary' : 'text-text-secondary'}`}>
             {hasValue ? current : '—'}
           </div>
           {!hasValue && (
-            <div className="text-xs text-white/40 mt-1">Javob berish uchun surgichni suring</div>
+            <div className="text-xs text-text-secondary mt-1">Javob berish uchun surgichni suring</div>
           )}
         </div>
         <input
@@ -125,9 +140,9 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
           // surgichni qimirlatolmay javobini qayd eta olmasdi — bosib qo'yib
           // yuborish ham joriy qiymatni saqlaydi.
           onPointerUp={() => onSlider(current)}
-          className="w-full accent-indigo-500 cursor-pointer"
+          className="w-full accent-accent cursor-pointer"
         />
-        <div className="flex items-center justify-between text-xs text-white/40 mt-2 tabular-nums">
+        <div className="flex items-center justify-between text-xs text-text-secondary mt-2 font-data">
           <span>{min}</span>
           <span>{max}</span>
         </div>
@@ -145,9 +160,13 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
       <div className="grid grid-cols-2 gap-3">
         {labels.map((label, i) => {
           const selected = chosen === i;
+          // "Ha" yashil / "Yo'q" qizil EMAS: bu javob TANLOVI, to'g'ri-noto'g'ri
+          // signali emas. Yashil/qizil juftlik talabaga javobi baholangandek
+          // tuyulardi. Tanlov belgisi qolgan savol turlari bilan bir xil —
+          // akcent hoshiya; ✓/✗ glifi ikkisini ajratib turadi.
           return (
-            <button key={i} onClick={() => onYesNo(i)}
-              className={`flex items-center justify-center gap-2 p-4 rounded-2xl font-semibold text-sm md:text-base transition-all min-h-[64px] ${selected ? (i === 0 ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-300 border border-rose-500/40') : 'glass text-white/70 border border-transparent hover:border-edge-strong'}`}>
+            <button key={i} onClick={() => onYesNo(i)} aria-pressed={selected}
+              className={`flex items-center justify-center gap-2 p-4 rounded-2xl font-semibold text-sm md:text-base border transition-colors min-h-[64px] ${selected ? `${optionOn} text-text-primary` : `${optionOff} text-text-secondary`}`}>
               <span className="text-lg">{i === 0 ? '✓' : '✗'}</span>
               <MathText text={label} />
             </button>
@@ -165,12 +184,12 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
         {(q.options || []).map((opt, i) => {
           const checked = selected.includes(i);
           return (
-            <button key={i} onClick={() => onMultiToggle(i)}
-              className={`w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left transition-all min-h-[56px] ${checked ? 'border-indigo-500 bg-indigo-500/15 border glow-blue' : 'glass hover:bg-white/7 border border-transparent hover:border-edge-strong'}`}>
-              <div className={`w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${checked ? 'gradient-bg text-white' : 'glass text-white/30'}`}>
+            <button key={i} onClick={() => onMultiToggle(i)} aria-pressed={checked}
+              className={`${optionBase} ${checked ? optionOn : optionOff}`}>
+              <div className={`w-7 h-7 md:w-8 md:h-8 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${checked ? markOn : markOff}`}>
                 {checked && <Icon name="check" size={16} />}
               </div>
-              <MathText className={`font-medium text-sm md:text-base break-words min-w-0 ${checked ? 'text-white' : 'text-white/70'}`} text={opt} />
+              <MathText className={`font-medium text-sm md:text-base break-words min-w-0 ${checked ? 'text-text-primary' : 'text-text-secondary'}`} text={opt} />
             </button>
           );
         })}
@@ -185,13 +204,13 @@ const QuestionAnswerArea = ({ qType, q, isTrueFalse, value, onMcq, onText, onBla
       {(q.options || []).map((opt, i) => {
         const selected = mcqChosen === i;
         return (
-          <button key={i} onClick={() => onMcq(i)}
-            className={`w-full flex items-center gap-3 md:gap-4 p-3 md:p-4 rounded-2xl text-left transition-all min-h-[56px] ${selected ? 'border-indigo-500 bg-indigo-500/15 border glow-blue' : 'glass hover:bg-white/7 border border-transparent hover:border-edge-strong'}`}>
-            <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 transition-all ${selected ? 'gradient-bg text-white' : 'glass text-white/50'}`}>
+          <button key={i} onClick={() => onMcq(i)} aria-pressed={selected}
+            className={`${optionBase} ${selected ? optionOn : optionOff}`}>
+            <div className={`w-9 h-9 md:w-10 md:h-10 rounded-xl flex items-center justify-center font-bold text-sm flex-shrink-0 transition-colors ${selected ? markOn : markOff}`}>
               {isTrueFalse ? (i === 0 ? '✓' : '✗') : String.fromCharCode(65 + i)}
             </div>
-            <MathText className={`font-medium text-sm md:text-base break-words min-w-0 ${selected ? 'text-white' : 'text-white/70'}`} text={opt} />
-            {selected && <Icon name="check" size={16} className="ml-auto text-indigo-400 flex-shrink-0" />}
+            <MathText className={`font-medium text-sm md:text-base break-words min-w-0 ${selected ? 'text-text-primary' : 'text-text-secondary'}`} text={opt} />
+            {selected && <Icon name="check" size={16} className="ml-auto text-accent flex-shrink-0" />}
           </button>
         );
       })}
@@ -391,10 +410,10 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'rgb(var(--color-ground))' }}>
+      <div className="min-h-screen flex items-center justify-center bg-ground">
         <div className="text-center">
-          <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
-          <div className="text-white/60 text-sm">Mashq yuklanmoqda...</div>
+          <Spinner size={44} className="text-accent mb-4" />
+          <div className="text-text-secondary text-sm">Mashq yuklanmoqda...</div>
         </div>
       </div>
     );
@@ -402,11 +421,13 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
 
   if (loadError) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
-        <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
-          <div className="text-4xl">🔁</div>
-          <h2 className="text-lg font-black text-white">Mashqni ochib bo'lmadi</h2>
-          <p className="text-white/50 text-sm">{loadError}</p>
+      <div className="min-h-screen flex items-center justify-center p-4 bg-ground">
+        <div className="rounded-2xl border border-error/40 bg-surface-1 p-8 max-w-md text-center space-y-4">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-error/40 bg-wash text-error">
+            <Icon name="info" size={24} />
+          </div>
+          <h2 className="font-display text-lg font-bold text-text-primary">Mashqni ochib bo'lmadi</h2>
+          <p className="text-text-secondary text-sm">{loadError}</p>
           <button onClick={goHome} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold">Orqaga</button>
         </div>
       </div>
@@ -415,11 +436,13 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
 
   if (TOTAL === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
-        <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
-          <div className="text-4xl">📭</div>
-          <h2 className="text-lg font-black text-white">Mashqda savollar yo'q</h2>
-          <p className="text-white/50 text-sm">Bu olimpiada uchun savollar topilmadi.</p>
+      <div className="min-h-screen flex items-center justify-center p-4 bg-ground">
+        <div className="rounded-2xl border border-edge bg-surface-1 p-8 max-w-md text-center space-y-4">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-edge bg-surface-2 text-text-secondary">
+            <Icon name="file" size={24} />
+          </div>
+          <h2 className="font-display text-lg font-bold text-text-primary">Mashqda savollar yo'q</h2>
+          <p className="text-text-secondary text-sm">Bu olimpiada uchun savollar topilmadi.</p>
           <button onClick={goHome} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold">Orqaga</button>
         </div>
       </div>
@@ -428,33 +451,36 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
 
   if (timeUp && submitting) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
-        <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
-          <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto" />
-          <h2 className="text-lg font-black text-white">Vaqt tugadi</h2>
-          <p className="text-white/50 text-sm">Javoblaringiz avtomatik yuborilmoqda, iltimos kuting...</p>
+      <div className="min-h-screen flex items-center justify-center p-4 bg-ground">
+        <div className="rounded-2xl border border-edge bg-surface-1 p-8 max-w-md text-center space-y-4">
+          <Spinner size={44} className="text-accent" />
+          <h2 className="font-display text-lg font-bold text-text-primary">Vaqt tugadi</h2>
+          <p className="text-text-secondary text-sm">Javoblaringiz avtomatik yuborilmoqda, iltimos kuting...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen" style={{ background: 'rgb(var(--color-ground))' }}>
+    <div className="min-h-screen bg-ground">
       {/* Header */}
-      <div className="glass px-4 md:px-6 py-3 flex items-center gap-3 sticky top-0 z-20">
+      <div className="bg-surface-1 border-b border-edge px-4 md:px-6 py-3 flex items-center gap-3 sticky top-0 z-20">
         <button type="button" className="cursor-pointer border-0 bg-transparent p-0" onClick={goHome} aria-label="Orqaga">
           <BrandLogo size="sm" />
         </button>
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-bold text-white truncate flex items-center gap-2">
-            <span className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-300 bg-indigo-500/15 px-2 py-0.5 rounded-md flex-shrink-0">Mashq</span>
+          <div className="text-sm font-bold text-text-primary truncate flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wider font-extrabold text-accent border border-accent/40 bg-wash px-2 py-0.5 rounded-md flex-shrink-0">Mashq</span>
             <span className="truncate">{title}</span>
           </div>
         </div>
-        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-sm font-bold flex-shrink-0 ${
-          timeLeft < 60 ? 'bg-rose-500/15 text-rose-300 animate-pulse'
-            : timeLeft < 300 ? 'bg-amber-500/10 text-amber-300'
-            : 'glass text-white/70'
+        {/* Taymer — `font-data` majburiy: sekund almashganda raqam kengligi
+            o'zgarmasin, aks holda butun chip har tikda sakraydi. Puls
+            animatsiyasi yo'q (asosiy test ekranidagi izohga qarang). */}
+        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-sm font-bold font-data flex-shrink-0 ${
+          timeLeft < 60 ? 'bg-wash text-error border-error'
+            : timeLeft < 300 ? 'bg-wash text-warning border-warning/40'
+            : 'bg-surface-2 text-text-primary border-edge'
         }`}>
           <Icon name="clock" size={14} /> {fmtTime(timeLeft)}
         </div>
@@ -463,19 +489,19 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
       <div className="max-w-3xl mx-auto p-4 md:p-6 space-y-4 md:space-y-6 pb-28">
         {/* Progress */}
         <div className="flex items-center justify-between gap-2">
-          <div className="text-xs text-white/50">Savol {current + 1} / {TOTAL}</div>
-          <div className="text-xs text-white/50">{answered} ta belgilangan</div>
+          <div className="text-xs text-text-secondary font-data">Savol {current + 1} / {TOTAL}</div>
+          <div className="text-xs text-text-secondary font-data">{answered} ta belgilangan</div>
         </div>
         <div className="progress-bar h-1.5">
           <div className="progress-fill" style={{ width: `${((current + 1) / TOTAL) * 100}%` }} />
         </div>
 
         {/* Question */}
-        <div className="glass rounded-2xl p-4 md:p-6">
+        <div className="rounded-2xl border border-edge bg-surface-1 p-4 md:p-6">
           <div className="flex items-center gap-2 mb-3 flex-wrap">
-            {q?.subject && <span className="text-[10px] uppercase tracking-wider font-extrabold text-indigo-300 bg-indigo-500/10 px-2 py-0.5 rounded-md">{q.subject}</span>}
+            {q?.subject && <span className="text-[10px] uppercase tracking-wider font-extrabold text-accent border border-accent/40 bg-wash px-2 py-0.5 rounded-md">{q.subject}</span>}
           </div>
-          <div className="text-base md:text-lg font-bold text-white leading-relaxed mb-5 break-words select-none">{q?.text}</div>
+          <div className="text-base md:text-lg font-bold text-text-primary leading-relaxed mb-5 break-words select-none">{q?.text}</div>
           <QuestionAnswerArea
             qType={qType}
             q={q}
@@ -500,7 +526,7 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
         </div>
 
         {submitError && (
-          <div className="glass rounded-xl px-4 py-3 text-sm text-rose-300 border border-rose-500/20 flex items-center justify-between gap-3">
+          <div className="rounded-xl px-4 py-3 text-sm text-error bg-wash border border-error/40 flex items-center justify-between gap-3">
             <span className="flex items-center gap-2"><Icon name="info" size={15} /> {submitError}</span>
             {/* To'g'ridan-to'g'ri qayta yuborish — confirmModal'ni qayta ochmasdan */}
             <button onClick={handleSubmit} disabled={submitting}
@@ -534,9 +560,11 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
           {questions.map((qq, i) => {
             const isAns = answers[String(qq.id)] != null;
             const isCur = i === current;
+            // Real test ekranidagi navigator bilan bir xil klass — holat
+            // ranglari (joriy / javob berilgan) bitta joyda, src/index.css.
             return (
-              <button key={qq.id ?? i} onClick={() => setCurrent(i)}
-                className={`w-9 h-9 rounded-lg text-xs font-bold transition-all ${isCur ? 'gradient-bg text-white' : isAns ? 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30' : 'glass text-white/40'}`}>
+              <button key={qq.id ?? i} onClick={() => setCurrent(i)} aria-pressed={isCur}
+                className={`question-nav-btn font-data ${isCur ? 'current' : isAns ? 'answered' : ''}`}>
                 {i + 1}
               </button>
             );
@@ -548,11 +576,11 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
         <div className="space-y-4">
           <div className="space-y-3">
             {TOTAL - answered > 0 && (
-              <div className="flex items-center gap-2 bg-amber-500/10 text-amber-400 rounded-xl px-4 py-3 text-sm border border-amber-500/20">
+              <div className="flex items-center gap-2 bg-wash text-warning rounded-xl px-4 py-3 text-sm border border-warning/40">
                 <Icon name="info" size={15} /> {TOTAL - answered} ta savol javobsiz qoldi
               </div>
             )}
-            <p className="text-white/60 text-sm">Mashqni yakunlamoqchimisiz? Natija reytingga ta'sir qilmaydi.</p>
+            <p className="text-text-secondary text-sm">Mashqni yakunlamoqchimisiz? Natija reytingga ta'sir qilmaydi.</p>
           </div>
           <div className="flex gap-3">
             <button onClick={() => setConfirmModal(false)} className="btn-ghost flex-1 py-3 rounded-xl">Davom etish</button>
@@ -1891,21 +1919,23 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
     const countdownEl = (
       <div className="mt-6 space-y-4">
-        <div className="text-xs text-white/40 uppercase tracking-widest font-extrabold">Boshlanishigacha qoldi</div>
+        <div className="text-xs text-text-secondary uppercase tracking-widest font-extrabold">Boshlanishigacha qoldi</div>
         <div className="flex justify-center gap-2">
           {hours > 0 && (
-            <div className="glass rounded-2xl p-3 min-w-[70px]">
-              <div className="text-3xl font-black text-white font-mono leading-none">{String(hours).padStart(2, '0')}</div>
-              <div className="text-[8px] text-white/40 uppercase font-bold tracking-wider mt-1.5 leading-none">Soat</div>
+            <div className="rounded-2xl border border-edge bg-surface-2 p-3 min-w-[70px]">
+              <div className="text-3xl font-display font-bold font-data text-text-primary leading-none">{String(hours).padStart(2, '0')}</div>
+              <div className="text-[8px] text-text-secondary uppercase font-bold tracking-wider mt-1.5 leading-none">Soat</div>
             </div>
           )}
-          <div className="glass rounded-2xl p-3 min-w-[70px]">
-            <div className="text-3xl font-black text-white font-mono leading-none">{String(minutes).padStart(2, '0')}</div>
-            <div className="text-[8px] text-white/40 uppercase font-bold tracking-wider mt-1.5 leading-none">Daqiqa</div>
+          <div className="rounded-2xl border border-edge bg-surface-2 p-3 min-w-[70px]">
+            <div className="text-3xl font-display font-bold font-data text-text-primary leading-none">{String(minutes).padStart(2, '0')}</div>
+            <div className="text-[8px] text-text-secondary uppercase font-bold tracking-wider mt-1.5 leading-none">Daqiqa</div>
           </div>
-          <div className="glass rounded-2xl p-3 min-w-[70px]">
-            <div className="text-3xl font-black text-indigo-400 font-mono leading-none animate-pulse">{String(seconds).padStart(2, '0')}</div>
-            <div className="text-[8px] text-white/40 uppercase font-bold tracking-wider mt-1.5 leading-none">Soniya</div>
+          {/* Soniya — akcent rangda ajratiladi; puls animatsiyasi olib
+              tashlandi (yo'nalishda ambient harakat yo'q). */}
+          <div className="rounded-2xl border border-edge bg-surface-2 p-3 min-w-[70px]">
+            <div className="text-3xl font-display font-bold font-data text-accent leading-none">{String(seconds).padStart(2, '0')}</div>
+            <div className="text-[8px] text-text-secondary uppercase font-bold tracking-wider mt-1.5 leading-none">Soniya</div>
           </div>
         </div>
       </div>
@@ -1932,27 +1962,27 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // ko'rsatiladi. Rozilik + kamera ruxsatisiz imtihon boshlanmaydi.
   if (cameraProctoringEnabled && !cameraConsentAcked && user?._api && liveOlympiad?.backendId && !submitted && !cheated) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
-        <div className="glass rounded-2xl p-6 md:p-8 max-w-lg w-full space-y-5">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-ground">
+        <div className="rounded-2xl border border-edge bg-surface-1 p-6 md:p-8 max-w-lg w-full space-y-5">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-300 flex-shrink-0">
+            <div className="w-11 h-11 rounded-2xl bg-wash border border-accent/40 flex items-center justify-center text-accent flex-shrink-0">
               <Icon name="eye" size={20} />
             </div>
             <div>
-              <h2 className="text-lg font-black text-white">Webkamera nazorati</h2>
-              <p className="text-white/40 text-xs mt-0.5">{olympiad?.title || 'Olimpiada'}</p>
+              <h2 className="font-display text-lg font-bold text-text-primary">Webkamera nazorati</h2>
+              <p className="text-text-secondary text-xs mt-0.5">{olympiad?.title || 'Olimpiada'}</p>
             </div>
           </div>
 
-          <div className="text-sm text-white/70 leading-relaxed space-y-3">
+          <div className="text-sm text-text-secondary leading-relaxed space-y-3">
             <p>
               Bu olimpiada webkamera orqali nazorat qilinadi. Kamera yordamida siz ekran
               oldida ekanligingiz va ekranga qarab turganingiz tekshiriladi (yuzingiz
               ko'rinishi, begona odam yo'qligi va nigohingiz).
             </p>
-            <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/25 px-4 py-3 text-emerald-200 text-xs md:text-sm">
+            <div className="rounded-xl bg-wash border border-success/40 px-4 py-3 text-success text-xs md:text-sm">
               <div className="flex items-start gap-2">
-                <Icon name="check" size={15} className="text-emerald-300 flex-shrink-0 mt-0.5" />
+                <Icon name="check" size={15} className="text-success flex-shrink-0 mt-0.5" />
                 <span>
                   Hech qanday video yoki ovoz <b>yozib olinmaydi</b> va serverga
                   <b> yuborilmaydi</b>. Faqat aniqlangan holat signallari (yuz bor/yo'q,
@@ -1966,18 +1996,18 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           <label className="flex items-start gap-3 cursor-pointer select-none">
             <input
               type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-indigo-500 flex-shrink-0"
+              className="mt-0.5 h-4 w-4 accent-accent flex-shrink-0"
               checked={cameraConsentChecked}
               onChange={e => setCameraConsentChecked(e.target.checked)}
             />
-            <span className="text-sm text-white/80">
+            <span className="text-sm text-text-primary">
               Yuqoridagilarni o'qidim va webkamera nazoratiga roziman.
             </span>
           </label>
 
           {cameraError && (
-            <div className="rounded-xl bg-rose-500/10 border border-rose-500/25 px-4 py-3 text-rose-200 text-xs md:text-sm flex items-start gap-2">
-              <Icon name="info" size={15} className="text-rose-300 flex-shrink-0 mt-0.5" />
+            <div className="rounded-xl bg-wash border border-error/40 px-4 py-3 text-error text-xs md:text-sm flex items-start gap-2">
+              <Icon name="info" size={15} className="text-error flex-shrink-0 mt-0.5" />
               <span>{cameraError}</span>
             </div>
           )}
@@ -1989,7 +2019,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             </button>
             <button onClick={handleCameraConsent} disabled={!cameraConsentChecked || cameraStarting}
               className="btn-primary flex-1 py-3 rounded-xl font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2">
-              {cameraStarting && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+              {cameraStarting && <Spinner size={16} />}
               {cameraStarting ? 'Ulanmoqda...' : 'Davom etish'}
             </button>
           </div>
@@ -2004,26 +2034,26 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // ruxsatisiz imtihon boshlanmaydi.
   if (voiceProctoringEnabled && !voiceConsentAcked && user?._api && liveOlympiad?.backendId && !submitted && !cheated) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
-        <div className="glass rounded-2xl p-6 md:p-8 max-w-lg w-full space-y-5">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-ground">
+        <div className="rounded-2xl border border-edge bg-surface-1 p-6 md:p-8 max-w-lg w-full space-y-5">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-300 flex-shrink-0">
+            <div className="w-11 h-11 rounded-2xl bg-wash border border-accent/40 flex items-center justify-center text-accent flex-shrink-0">
               <Icon name="mic" size={20} />
             </div>
             <div>
-              <h2 className="text-lg font-black text-white">Ovoz nazorati</h2>
-              <p className="text-white/40 text-xs mt-0.5">{olympiad?.title || 'Olimpiada'}</p>
+              <h2 className="font-display text-lg font-bold text-text-primary">Ovoz nazorati</h2>
+              <p className="text-text-secondary text-xs mt-0.5">{olympiad?.title || 'Olimpiada'}</p>
             </div>
           </div>
 
-          <div className="text-sm text-white/70 leading-relaxed space-y-3">
+          <div className="text-sm text-text-secondary leading-relaxed space-y-3">
             <p>
               Bu olimpiada mikrofon orqali nazorat qilinadi. Mikrofon yordamida imtihon
               vaqtida atrofingizdan gapirish yoki begona ovoz eshitilmayotgani tekshiriladi.
             </p>
-            <div className="rounded-xl bg-emerald-500/10 border border-emerald-500/25 px-4 py-3 text-emerald-200 text-xs md:text-sm">
+            <div className="rounded-xl bg-wash border border-success/40 px-4 py-3 text-success text-xs md:text-sm">
               <div className="flex items-start gap-2">
-                <Icon name="check" size={15} className="text-emerald-300 flex-shrink-0 mt-0.5" />
+                <Icon name="check" size={15} className="text-success flex-shrink-0 mt-0.5" />
                 <span>
                   Hech qanday ovoz <b>yozib olinmaydi</b> va serverga <b>yuborilmaydi</b>.
                   Nutqingiz tahlil qilinmaydi — faqat kompyuteringizda "ovoz bor/yo'q"
@@ -2036,18 +2066,18 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           <label className="flex items-start gap-3 cursor-pointer select-none">
             <input
               type="checkbox"
-              className="mt-0.5 h-4 w-4 accent-indigo-500 flex-shrink-0"
+              className="mt-0.5 h-4 w-4 accent-accent flex-shrink-0"
               checked={voiceConsentChecked}
               onChange={e => setVoiceConsentChecked(e.target.checked)}
             />
-            <span className="text-sm text-white/80">
+            <span className="text-sm text-text-primary">
               Yuqoridagilarni o'qidim va ovoz nazoratiga roziman.
             </span>
           </label>
 
           {voiceError && (
-            <div className="rounded-xl bg-rose-500/10 border border-rose-500/25 px-4 py-3 text-rose-200 text-xs md:text-sm flex items-start gap-2">
-              <Icon name="info" size={15} className="text-rose-300 flex-shrink-0 mt-0.5" />
+            <div className="rounded-xl bg-wash border border-error/40 px-4 py-3 text-error text-xs md:text-sm flex items-start gap-2">
+              <Icon name="info" size={15} className="text-error flex-shrink-0 mt-0.5" />
               <span>{voiceError}</span>
             </div>
           )}
@@ -2059,7 +2089,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             </button>
             <button onClick={handleVoiceConsent} disabled={!voiceConsentChecked || voiceStarting}
               className="btn-primary flex-1 py-3 rounded-xl font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2">
-              {voiceStarting && <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />}
+              {voiceStarting && <Spinner size={16} />}
               {voiceStarting ? 'Ulanmoqda...' : 'Davom etish'}
             </button>
           </div>
@@ -2075,7 +2105,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   if (pendingReview) {
     const reviewSpinner = (
       <div className="flex items-center justify-center">
-        <div className="w-8 h-8 rounded-full border-2 border-amber-400/30 border-t-amber-400 animate-spin" />
+        <Spinner size={32} className="text-warning" />
       </div>
     );
     return <PendingAccessCard
@@ -2093,21 +2123,21 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // Xotirjam qiluvchi ekran — aloqa tiklangach avtomatik yuboriladi.
   if (offlineQueued) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
-        <div className="glass rounded-2xl p-8 max-w-md text-center space-y-5">
-          <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-300 mx-auto">
+      <div className="min-h-screen flex items-center justify-center p-4 bg-ground">
+        <div className="rounded-2xl border border-warning/40 bg-surface-1 p-8 max-w-md text-center space-y-5">
+          <div className="w-14 h-14 rounded-2xl bg-wash border border-warning/40 flex items-center justify-center text-warning mx-auto">
             <Icon name="clock" size={26} />
           </div>
           <div className="space-y-2">
-            <h2 className="text-lg font-black text-white">Javoblaringiz saqlandi</h2>
-            <p className="text-white/60 text-sm leading-relaxed">
+            <h2 className="font-display text-lg font-bold text-text-primary">Javoblaringiz saqlandi</h2>
+            <p className="text-text-secondary text-sm leading-relaxed">
               Internet aloqasi uzildi. Javoblaringiz qurilmangizda xavfsiz
               saqlandi va internet tiklangach avtomatik yuboriladi. Bu sahifani
               yopmang.
             </p>
           </div>
-          <div className="flex items-center justify-center gap-2 text-white/40 text-xs">
-            <div className="w-4 h-4 rounded-full border-2 border-amber-400/30 border-t-amber-400 animate-spin" />
+          <div className="flex items-center justify-center gap-2 text-text-secondary text-xs">
+            <Spinner size={16} className="text-warning" />
             Aloqa kutilmoqda...
           </div>
           <button
@@ -2130,12 +2160,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         onBack={() => onNavigate('student')} />;
     }
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: 'rgb(var(--color-ground))' }}>
-        <div className="flex flex-col items-center gap-4 text-white/70">
-          <div className="w-10 h-10 rounded-full border-2 border-white/20 border-t-white animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-ground">
+        <div className="flex flex-col items-center gap-4 text-text-secondary">
+          <Spinner size={40} className="text-accent" />
           <div className="text-sm font-semibold">Savollar yuklanmoqda...</div>
           {slowLoading && (
-            <div className="text-xs text-white/40 max-w-xs text-center">
+            <div className="text-xs text-text-secondary max-w-xs text-center">
               Internet sekinroq bo'lishi mumkin, biroz kuting...
             </div>
           )}
@@ -2173,11 +2203,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // bilan qaytadi, foydalanuvchi qayta urinishi mumkin.
   if (timeUp && submitting) {
     return (
-      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'rgb(var(--color-ground))' }}>
-        <div className="glass rounded-2xl p-8 max-w-md text-center space-y-4">
-          <div className="w-12 h-12 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto" />
-          <h2 className="text-lg font-black text-white">Vaqt tugadi</h2>
-          <p className="text-white/50 text-sm">Javoblaringiz avtomatik yuborilmoqda, iltimos kuting...</p>
+      <div className="min-h-screen flex items-center justify-center p-4 bg-ground">
+        <div className="rounded-2xl border border-edge bg-surface-1 p-8 max-w-md text-center space-y-4">
+          <Spinner size={44} className="text-accent" />
+          <h2 className="font-display text-lg font-bold text-text-primary">Vaqt tugadi</h2>
+          <p className="text-text-secondary text-sm">Javoblaringiz avtomatik yuborilmoqda, iltimos kuting...</p>
         </div>
       </div>
     );
@@ -2198,25 +2228,36 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const isTrueFalse = (q && !isCodeQuestion) ? (q.options || []).length === 2 && (q.options || []).every(o => /to'?g'?ri|no?to'?g'?ri/i.test(o)) : false;
 
   return (
-    <div className="min-h-screen flex flex-col select-none" style={{ background: 'rgb(var(--color-ground))', userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}>
+    <div className="min-h-screen flex flex-col select-none bg-ground" style={{ userSelect: 'none', WebkitUserSelect: 'none', MozUserSelect: 'none', msUserSelect: 'none' }}>
       {/* Header bar */}
-      <div className="glass px-3 md:px-8 py-2.5 md:py-3 flex items-center justify-between gap-2 sticky top-0 z-30">
+      <div className="bg-surface-1 border-b border-edge px-3 md:px-8 py-2.5 md:py-3 flex items-center justify-between gap-2 sticky top-0 z-30">
         <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
           <BrandLogo compact size="xs" />
           <div className="min-w-0">
-            <div className="text-[13px] md:text-sm font-bold text-white truncate">{olympiad?.title || 'Matematika Olimpiadasi'}</div>
-            <div className="text-[10px] md:text-xs text-white/40 truncate">
+            <div className="text-[13px] md:text-sm font-bold text-text-primary truncate">{olympiad?.title || 'Matematika Olimpiadasi'}</div>
+            <div className="text-[10px] md:text-xs text-text-secondary truncate">
               {olympiad?.subject}{liveOlympiad?.testLevel ? ` · ${liveOlympiad.testLevel}` : ''}{liveOlympiad?.testType ? ` · ${testTypeLabel(liveOlympiad.testType)}` : ''}
             </div>
           </div>
         </div>
 
-        <div className={`flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-xl md:rounded-2xl font-mono text-sm md:text-lg font-black transition-all flex-shrink-0 ${
-          isUrgent ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 animate-pulse'
-            : isWarning ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
-            : 'glass text-white'
+        {/* Taymer — sahifadagi eng muhim raqam, shuning uchun uch qoida:
+
+            1) `font-data` (tabular-nums) MAJBURIY: aks holda har sekundda
+               raqam kengligi o'zgarib butun chip sakraydi.
+            2) Fon `bg-wash`, `bg-error/10` kabi O'Z-O'ZINI tinlash EMAS: tint
+               fonni matn rangiga tortadi va juftlik AA dan tushadi (o'lchandi:
+               error/15 ustida 4.11 dark / 4.30 light). `wash` ustida esa
+               5.47 dark / 5.35 light.
+            3) `animate-pulse` yo'q: u shaffoflikni 0.5 gacha tushirib, aynan
+               oxirgi daqiqada kontrastni ikki barobar pasaytirardi. Kuchayish
+               harakat bilan emas — rang va to'liq kuchli hoshiya bilan. */}
+        <div className={`flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2 rounded-xl md:rounded-2xl border font-data text-sm md:text-lg font-black transition-colors flex-shrink-0 ${
+          isUrgent ? 'bg-wash text-error border-error'
+            : isWarning ? 'bg-wash text-warning border-warning/40'
+            : 'bg-surface-2 text-text-primary border-edge'
         }`}>
-          <Icon name="clock" size={14} className={isUrgent ? 'text-rose-400' : isWarning ? 'text-amber-400' : 'text-white/50'} />
+          <Icon name="clock" size={14} className={isUrgent ? 'text-error' : isWarning ? 'text-warning' : 'text-text-secondary'} />
           {formatTime(timeLeft)}
         </div>
 
@@ -2228,7 +2269,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       </div>
 
       {/* Progress bar */}
-      <div className="h-1 bg-white/5">
+      <div className="h-1 bg-surface-2">
         <div className="h-full transition-all duration-500" style={{ width: `${progress}%`, background: 'rgb(var(--color-accent))' }} />
       </div>
 
@@ -2236,18 +2277,18 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           etilganda ko'rsatiladi va foydalanuvchi qaytsa ham qoladi.
           Ikkinchi marta tark etishda disqualifikatsiya yuz beradi. */}
       {cheatWarning && (
-        <div className="bg-amber-500/15 border-b border-amber-500/30 px-3 md:px-8 py-2 text-amber-200 text-xs md:text-sm font-semibold flex items-center gap-2">
-          <Icon name="info" size={14} className="text-amber-300 flex-shrink-0" />
+        <div className="bg-wash border-b border-warning/40 border-l-4 border-l-warning px-3 md:px-8 py-2 text-warning text-xs md:text-sm font-bold flex items-center gap-2">
+          <Icon name="info" size={14} className="text-warning flex-shrink-0" />
           <span>{cheatWarning}</span>
         </div>
       )}
 
       {/* Mobile question strip — horizontal scrollable navigator */}
-      <div className="md:hidden glass">
+      <div className="md:hidden bg-surface-1 border-b border-edge">
         <div className="question-strip">
           {Array.from({ length: TOTAL }).map((_, i) => (
-            <button key={i} onClick={() => setCurrent(i)}
-              className={`question-strip-btn ${i === current ? 'current' : marked[i] ? 'marked' : isAnswerFilled(answers[i]) ? 'answered' : ''}`}>
+            <button key={i} onClick={() => setCurrent(i)} aria-pressed={i === current}
+              className={`question-strip-btn font-data ${i === current ? 'current' : marked[i] ? 'marked' : isAnswerFilled(answers[i]) ? 'answered' : ''}`}>
               {i+1}
             </button>
           ))}
@@ -2257,23 +2298,26 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       <div className="flex flex-1 overflow-hidden">
         {/* Question navigation sidebar — kod savolda yashiriladi (LeetCode
             split layoutiga joy kerak); mobil navigator pastda qoladi. */}
-        <div className={`hidden md:flex flex-col glass w-52 p-4 overflow-y-auto ${isCodeQuestion ? '!hidden' : ''}`}>
-          <div className="text-xs text-white/40 font-medium mb-3">Savollar ({answered}/{TOTAL})</div>
+        <div className={`hidden md:flex flex-col bg-surface-1 border-r border-edge w-52 p-4 overflow-y-auto ${isCodeQuestion ? '!hidden' : ''}`}>
+          <div className="text-xs text-text-secondary font-medium font-data mb-3">Savollar ({answered}/{TOTAL})</div>
           <div className="grid grid-cols-4 gap-1.5 mb-4">
             {Array.from({ length: TOTAL }).map((_, i) => (
-              <button key={i} onClick={() => setCurrent(i)}
-                className={`question-nav-btn ${i === current ? 'current' : marked[i] ? 'marked' : isAnswerFilled(answers[i]) ? 'answered' : ''}`}>
+              <button key={i} onClick={() => setCurrent(i)} aria-pressed={i === current}
+                className={`question-nav-btn font-data ${i === current ? 'current' : marked[i] ? 'marked' : isAnswerFilled(answers[i]) ? 'answered' : ''}`}>
                 {i+1}
               </button>
             ))}
           </div>
+          {/* Izoh belgilari `.question-nav-btn` holat ranglariga MOS turishi
+              shart (src/index.css): javob berildi → accent, belgilangan →
+              warning, javobsiz → bo'sh yuza + edge hoshiya. */}
           <div className="space-y-1.5 mt-auto">
             {[
-              { color: 'bg-indigo-500', label: 'Javob berildi' },
-              { color: 'bg-amber-500', label: 'Belgilangan' },
-              { color: 'bg-white/20', label: 'Javobsiz' },
+              { color: 'bg-accent', label: 'Javob berildi' },
+              { color: 'bg-warning', label: 'Belgilangan' },
+              { color: 'bg-surface-2 border border-edge-strong', label: 'Javobsiz' },
             ].map(({ color, label }) => (
-              <div key={label} className="flex items-center gap-2 text-xs text-white/40">
+              <div key={label} className="flex items-center gap-2 text-xs text-text-secondary">
                 <div className={`w-3 h-3 rounded ${color}`} /> {label}
               </div>
             ))}
@@ -2291,20 +2335,20 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           <div className="flex-1 overflow-y-auto md:overflow-hidden flex flex-col md:flex-row pb-28 md:pb-0">
             {/* CHAP — savol matni va boshlang'ich kod. Desktop'da o'z scroll'i,
                 mobil'da butun konteyner scroll bo'ladi. */}
-            <div className="md:w-2/5 md:min-w-[280px] flex flex-col md:border-r border-white/10 md:overflow-y-auto p-4 md:p-6 flex-shrink-0 md:flex-shrink">
+            <div className="md:w-2/5 md:min-w-[280px] flex flex-col md:border-r border-edge md:overflow-y-auto p-4 md:p-6 flex-shrink-0 md:flex-shrink">
               {/* Savol hisoblagichi + belgilash */}
               <div className="flex items-center justify-between mb-3 gap-2">
-                <div className="text-xs text-white/40 font-semibold uppercase tracking-wider">
-                  Savol <span className="text-white">{current+1}</span> / {TOTAL}
+                <div className="text-xs text-text-secondary font-semibold uppercase tracking-wider font-data">
+                  Savol <span className="text-text-primary">{current+1}</span> / {TOTAL}
                 </div>
-                <button onClick={toggleMark}
-                  className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-xl transition-all flex-shrink-0 ${marked[current] ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'glass text-white/40 hover:text-white/60'}`}>
+                <button onClick={toggleMark} aria-pressed={!!marked[current]}
+                  className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1.5 rounded-xl border transition-colors flex-shrink-0 ${marked[current] ? 'bg-wash text-warning border-warning/40' : 'bg-surface-1 text-text-secondary border-edge hover:border-edge-strong hover:text-text-primary'}`}>
                   <Icon name="star" size={13} /> {marked[current] ? 'Belgilangan' : 'Belgilash'}
                 </button>
               </div>
 
               {submitError && (
-                <div className="mb-4 flex items-center justify-between gap-3 bg-rose-500/10 text-rose-300 rounded-xl px-3 py-3 text-xs border border-rose-500/20">
+                <div className="mb-4 flex items-center justify-between gap-3 bg-wash text-error rounded-xl px-3 py-3 text-xs border border-error/40">
                   <span className="flex items-center gap-2"><Icon name="info" size={15} /> {submitError}</span>
                   {/* To'g'ridan-to'g'ri qayta yuborish — confirmModal'ni qayta ochmasdan */}
                   <button onClick={handleSubmit} disabled={submitting}
@@ -2315,12 +2359,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
               )}
 
               {/* Savol matni */}
-              <p className="text-white text-sm md:text-base leading-relaxed whitespace-pre-wrap break-words mb-4"><MathText text={q.text} /></p>
+              <p className="text-text-primary text-sm md:text-base leading-relaxed whitespace-pre-wrap break-words mb-4"><MathText text={q.text} /></p>
 
               {/* Boshlang'ich kod skelet (faqat o'qish) */}
               {(q.codeTemplate || q.code_template) ? (
                 <div className="mt-1 mb-4">
-                  <div className="mb-1.5 text-xs text-white/40">Boshlang'ich kod:</div>
+                  <div className="mb-1.5 text-xs text-text-secondary">Boshlang'ich kod:</div>
                   <CodeEditor
                     value={q.codeTemplate || q.code_template}
                     readOnly
@@ -2332,7 +2376,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
               {/* Til cheklovi ogohlantirishi */}
               {allowedLanguages.length > 0 && !allowedLanguages.includes(currentCodeLang(q)) && (
-                <div className="mt-1 flex items-center gap-2 bg-amber-500/10 text-amber-300 rounded-xl px-3 py-2 text-xs border border-amber-500/20">
+                <div className="mt-1 flex items-center gap-2 bg-wash text-warning rounded-xl px-3 py-2 text-xs border border-warning/40">
                   <Icon name="info" size={14} className="flex-shrink-0" />
                   Bu olimpiadada faqat {allowedLanguages.map(l => LANG_LABELS[l] || l).join(', ')} ishlatiladi
                 </div>
@@ -2341,17 +2385,17 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
             {/* O'NG — kod muharriri. Desktop'da qolgan kenglikni to'ldiradi va
                 ichki scroll bilan; mobil'da savol ostida vertikal joylashadi. */}
-            <div className="md:flex-1 flex flex-col md:overflow-hidden md:min-h-0 border-t md:border-t-0 border-white/10">
+            <div className="md:flex-1 flex flex-col md:overflow-hidden md:min-h-0 border-t md:border-t-0 border-edge">
               {/* Yuqori bar: til tanlash + desktop savol navigatsiyasi.
                   Kod savolda sidebar yashirin, shu sababli prev/next shu yerda
                   (desktop). Mobil'da pastdagi sticky navigator ishlatiladi. */}
-              <div className="flex items-center gap-2 px-3 md:px-4 py-2 border-b border-white/10 flex-shrink-0 overflow-x-auto scrollbar-none">
-                <span className="text-xs text-white/40 flex-shrink-0">Til:</span>
+              <div className="flex items-center gap-2 px-3 md:px-4 py-2 border-b border-edge flex-shrink-0 overflow-x-auto scrollbar-none">
+                <span className="text-xs text-text-secondary flex-shrink-0">Til:</span>
                 {(allowedLanguages.length ? allowedLanguages : ['python', 'javascript', 'java', 'cpp', 'c']).map(lng => {
                   const active = currentCodeLang(q) === lng;
                   return (
-                    <button key={lng} onClick={() => handleCodeLanguage(lng)}
-                      className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition-all flex-shrink-0 ${active ? 'gradient-bg text-white' : 'glass text-white/50 hover:text-white/70'}`}>
+                    <button key={lng} onClick={() => handleCodeLanguage(lng)} aria-pressed={active}
+                      className={`text-[11px] px-2.5 py-1 rounded-lg border font-semibold transition-colors flex-shrink-0 ${active ? 'bg-accent-fill text-on-accent border-accent-fill' : 'bg-surface-1 text-text-secondary border-edge hover:border-edge-strong hover:text-text-primary'}`}>
                       {LANG_LABELS[lng] || lng}
                     </button>
                   );
@@ -2395,11 +2439,11 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
                 const isRunning = runningIndex === current;
                 const runResult = runResults[current];
                 return (
-                <div className="border-t border-white/10 p-3 md:p-4 flex-shrink-0 max-h-[45%] overflow-y-auto">
+                <div className="border-t border-edge p-3 md:p-4 flex-shrink-0 max-h-[45%] overflow-y-auto">
                   <div className="flex flex-wrap gap-2">
                     <button
                       onClick={handleSkipCode}
-                      className="btn-ghost px-4 py-2 rounded-xl text-xs font-semibold text-white/40 hover:text-red-400 min-h-[40px]">
+                      className="btn-ghost px-4 py-2 rounded-xl text-xs font-semibold text-text-secondary hover:text-error min-h-[40px]">
                       O'tkazib yuborish
                     </button>
                     <button
@@ -2407,7 +2451,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
                       disabled={isRunning || !String(codeAnswers[current]?.code || '').trim()}
                       className="btn-ghost px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 min-h-[40px] disabled:opacity-40">
                       {isRunning
-                        ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Ishga tushirilmoqda...</>
+                        ? <><Spinner size={16} /> Ishga tushirilmoqda...</>
                         : <><Icon name="play" size={14} /> Ishga tushirish</>}
                     </button>
                     <button
@@ -2415,70 +2459,70 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
                       disabled={codeReviewLoading || !String(codeAnswers[current]?.code || '').trim()}
                       className="btn-ghost px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 min-h-[40px] disabled:opacity-40">
                       {codeReviewLoading
-                        ? <><div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Tekshirilmoqda...</>
+                        ? <><Spinner size={16} /> Tekshirilmoqda...</>
                         : <><Icon name="sparkles" size={14} /> AI bilan tekshirish</>}
                     </button>
                   </div>
 
                   {/* Judge0 natija paneli */}
                   {runResult && (
-                    <div className="mt-3 glass rounded-2xl p-3 md:p-4 space-y-2">
+                    <div className="mt-3 rounded-2xl border border-edge bg-surface-1 p-3 md:p-4 space-y-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`text-sm font-semibold ${runResult.status === 'Accepted' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        <span className={`text-sm font-semibold ${runResult.status === 'Accepted' ? 'text-success' : 'text-error'}`}>
                           ● {runResult.status || 'Xato'}
                         </span>
                         {runResult.time > 0 && (
-                          <span className="text-white/30 text-[11px]">{runResult.time}s · {runResult.memory} KB</span>
+                          <span className="text-text-secondary text-[11px] font-data">{runResult.time}s · {runResult.memory} KB</span>
                         )}
                       </div>
 
                       {/* Ulanish/xato (Judge0 umuman ishlamadi) */}
                       {runResult.error && (
-                        <div className="text-xs text-rose-300 bg-rose-500/10 rounded-lg px-3 py-2 break-words">{runResult.error}</div>
+                        <div className="text-xs text-error bg-wash border border-error/40 rounded-lg px-3 py-2 break-words">{runResult.error}</div>
                       )}
 
                       {/* stdout */}
                       {runResult.stdout && (
                         <div>
-                          <div className="text-[11px] text-white/40 mb-1">Natija:</div>
-                          <pre className="bg-black/30 rounded-lg p-3 text-xs md:text-sm text-emerald-300 font-mono overflow-x-auto whitespace-pre-wrap break-words">{runResult.stdout}</pre>
+                          <div className="text-[11px] text-text-secondary mb-1">Natija:</div>
+                          <pre className="bg-surface-2 border border-edge rounded-lg p-3 text-xs md:text-sm text-text-primary font-mono overflow-x-auto whitespace-pre-wrap break-words">{runResult.stdout}</pre>
                         </div>
                       )}
 
                       {/* stderr / compile error */}
                       {(runResult.stderr || runResult.compile_output) && (
                         <div>
-                          <div className="text-[11px] text-rose-400 mb-1">Xato:</div>
-                          <pre className="bg-black/30 rounded-lg p-3 text-xs md:text-sm text-rose-300 font-mono overflow-x-auto whitespace-pre-wrap break-words">{runResult.stderr || runResult.compile_output}</pre>
+                          <div className="text-[11px] text-error mb-1">Xato:</div>
+                          <pre className="bg-surface-2 border border-error/40 rounded-lg p-3 text-xs md:text-sm text-error font-mono overflow-x-auto whitespace-pre-wrap break-words">{runResult.stderr || runResult.compile_output}</pre>
                         </div>
                       )}
 
                       {/* Test case natijalar */}
                       {Array.isArray(runResult.test_results) && runResult.test_results.length > 0 && (
                         <div className="space-y-1">
-                          <div className="text-[11px] text-white/40 mb-1">Test natijalar:</div>
+                          <div className="text-[11px] text-text-secondary mb-1">Test natijalar:</div>
                           {runResult.test_results.map((t, i) => (
-                            <div key={i} className={`flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-lg flex-wrap ${t.passed ? 'bg-emerald-500/10 text-emerald-400' : 'bg-rose-500/10 text-rose-400'}`}>
-                              <span className="font-bold">{t.passed ? '✓' : '✗'} Test {i + 1}</span>
+                            <div key={i} className={`flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-lg border flex-wrap ${t.passed ? 'bg-wash text-success border-success/40' : 'bg-wash text-error border-error/40'}`}>
+                              <span className="font-bold font-data">{t.passed ? '✓' : '✗'} Test {i + 1}</span>
                               {t.is_hidden
-                                ? <span className="text-white/30">(yashirin)</span>
-                                : <span className="text-white/40 break-words">input: {String(t.input)} → {t.passed ? "to'g'ri" : `kutilgan: ${String(t.expected)}, olindi: ${String(t.got)}`}</span>}
+                                ? <span className="text-text-secondary">(yashirin)</span>
+                                : <span className="text-text-secondary break-words">input: {String(t.input)} → {t.passed ? "to'g'ri" : `kutilgan: ${String(t.expected)}, olindi: ${String(t.got)}`}</span>}
                             </div>
                           ))}
                         </div>
                       )}
-                      <div className="text-[10px] text-white/30">Bu faqat sinov — yakuniy ball test yakunlanganda hisoblanadi.</div>
+                      <div className="text-[10px] text-text-secondary">Bu faqat sinov — yakuniy ball test yakunlanganda hisoblanadi.</div>
                     </div>
                   )}
 
                   {/* AI tekshirish natija paneli */}
                   {codeReview[current] && (
-                    <div className="mt-3 glass rounded-2xl p-3 md:p-4 border border-indigo-500/20">
+                    <div className="mt-3 rounded-2xl border border-edge border-l-4 border-l-accent bg-surface-1 p-3 md:p-4">
                       {typeof codeReview[current].score === 'number' && (
-                        <div className="mb-2 text-sm font-bold text-indigo-300">AI ball: {codeReview[current].score}/100</div>
+                        <div className="mb-2 text-sm font-bold font-data text-accent">AI ball: {codeReview[current].score}/100</div>
                       )}
-                      <div className="text-xs md:text-sm text-white/70 whitespace-pre-wrap break-words">{codeReview[current].review}</div>
-                      <div className="mt-2 text-[10px] text-white/30">Bu faqat sinov — yakuniy ball test yakunlanganda hisoblanadi.</div>
+                      <div className="text-xs md:text-sm text-text-secondary whitespace-pre-wrap break-words">{codeReview[current].review}</div>
+                      <div className="mt-2 text-[10px] text-text-secondary">Bu faqat sinov — yakuniy ball test yakunlanganda hisoblanadi.</div>
                     </div>
                   )}
                 </div>
@@ -2491,17 +2535,17 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           <div className="max-w-2xl mx-auto w-full px-4 md:px-6 py-5 md:py-8 flex-1 pb-28 md:pb-8">
             {/* Question counter */}
             <div className="flex items-center justify-between mb-4 md:mb-6 gap-2">
-              <div className="text-xs md:text-sm text-white/40 font-medium">
-                Savol <span className="text-white font-bold">{current+1}</span> / {TOTAL}
+              <div className="text-xs md:text-sm text-text-secondary font-medium font-data">
+                Savol <span className="text-text-primary font-bold">{current+1}</span> / {TOTAL}
               </div>
-              <button onClick={toggleMark}
-                className={`flex items-center gap-1.5 text-[11px] md:text-xs px-2.5 md:px-3 py-1.5 rounded-xl transition-all ${marked[current] ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'glass text-white/40 hover:text-white/60'}`}>
+              <button onClick={toggleMark} aria-pressed={!!marked[current]}
+                className={`flex items-center gap-1.5 text-[11px] md:text-xs px-2.5 md:px-3 py-1.5 rounded-xl border transition-colors ${marked[current] ? 'bg-wash text-warning border-warning/40' : 'bg-surface-1 text-text-secondary border-edge hover:border-edge-strong hover:text-text-primary'}`}>
                 <Icon name="star" size={13} /> {marked[current] ? 'Belgilangan' : 'Belgilash'}
               </button>
             </div>
 
             {submitError && (
-              <div className="mb-4 md:mb-6 flex items-center justify-between gap-3 bg-rose-500/10 text-rose-300 rounded-xl px-3 md:px-4 py-3 text-xs md:text-sm border border-rose-500/20">
+              <div className="mb-4 md:mb-6 flex items-center justify-between gap-3 bg-wash text-error rounded-xl px-3 md:px-4 py-3 text-xs md:text-sm border border-error/40">
                 <span className="flex items-center gap-2"><Icon name="info" size={15} /> {submitError}</span>
                 {/* To'g'ridan-to'g'ri qayta yuborish — confirmModal'ni qayta ochmasdan */}
                 <button onClick={handleSubmit} disabled={submitting}
@@ -2513,15 +2557,15 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
             {/* Joriy savol yuklanmoqda — inline spinner. */}
             {questionPending ? (
-              <div className="glass-strong rounded-2xl p-8 md:p-10 mb-5 md:mb-6 flex flex-col items-center justify-center gap-4 text-white/60">
-                <div className="w-9 h-9 rounded-full border-2 border-white/20 border-t-white animate-spin" />
+              <div className="rounded-2xl border border-edge bg-surface-2 p-8 md:p-10 mb-5 md:mb-6 flex flex-col items-center justify-center gap-4 text-text-secondary">
+                <Spinner size={36} className="text-accent" />
                 <div className="text-sm font-semibold">Savol yuklanmoqda...</div>
               </div>
             ) : (
               <>
                 {/* Question text */}
-                <div className="glass-strong rounded-2xl p-4 md:p-6 mb-5 md:mb-6">
-                  <p className="text-white text-base md:text-lg leading-relaxed font-medium break-words whitespace-pre-wrap"><MathText text={q.text} /></p>
+                <div className="rounded-2xl border border-edge bg-surface-2 p-4 md:p-6 mb-5 md:mb-6">
+                  <p className="text-text-primary text-base md:text-lg leading-relaxed font-medium break-words whitespace-pre-wrap"><MathText text={q.text} /></p>
                 </div>
 
                 {/* Answer area — savol turiga qarab UI. */}
@@ -2548,7 +2592,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
                 className="btn-ghost px-5 py-2.5 rounded-xl text-sm font-medium disabled:opacity-30 flex items-center gap-2">
                 <Icon name="arrowLeft" size={15} /> Oldingi
               </button>
-              <div className="text-xs text-white/30">{answered} ta javob berildi</div>
+              <div className="text-xs text-text-secondary font-data">{answered} ta javob berildi</div>
               {current < TOTAL-1 ? (
                 <button onClick={() => setCurrent(current+1)} className="btn-primary px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center gap-2">
                   Keyingi <Icon name="chevronRight" size={15} />
@@ -2566,7 +2610,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
 
         {/* Mobile sticky bottom nav */}
         <div
-          className="md:hidden fixed bottom-0 left-0 right-0 z-40 glass px-3 py-3 flex items-center gap-2"
+          className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-surface-1 border-t border-edge px-3 py-3 flex items-center gap-2"
           style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
         >
           <button onClick={() => setCurrent(Math.max(0, current-1))} disabled={current === 0}
@@ -2591,7 +2635,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           ishonchli ko'rinadi. */}
       <Modal open={leaveConfirmModal} onClose={() => setLeaveConfirmModal(false)} title="Olimpiadadan chiqmoqchimisiz?">
         <div className="mb-6 space-y-3">
-          <p className="text-white/70 text-sm">
+          <p className="text-text-secondary text-sm">
             Hozirgacha kiritilgan javoblaringiz yo'qoladi va olimpiadaga qayta qatnasholmaysiz.
           </p>
         </div>
@@ -2607,7 +2651,9 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
               setLeaveConfirmModal(false);
               onNavigate && onNavigate('student');
             }}
-            className="btn-primary flex-1 py-3 rounded-xl font-bold"
+            /* Chiqish — javoblar yo'qoladi, ya'ni buzuvchi harakat: `.btn-danger`.
+               `.btn-primary` uni tavsiya etilgan yo'ldek ko'rsatib turardi. */
+            className="btn-danger flex-1 py-3 rounded-xl font-bold"
           >
             Chiqish
           </button>
@@ -2618,16 +2664,16 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       <Modal open={confirmModal} onClose={() => setConfirmModal(false)} title="Testni yakunlash">
         <div className="mb-6 space-y-3">
           <div className="grid grid-cols-3 gap-2 md:gap-3 text-center">
-            <div className="glass rounded-xl p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-black text-white">{answered}</div><div className="text-[10px] md:text-xs text-white/40 leading-tight">Javob</div></div>
-            <div className="glass rounded-xl p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-black text-amber-400">{Object.keys(marked).filter(k=>marked[k]).length}</div><div className="text-[10px] md:text-xs text-white/40 leading-tight">Belgi</div></div>
-            <div className="glass rounded-xl p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-black text-white/30">{TOTAL - answered}</div><div className="text-[10px] md:text-xs text-white/40 leading-tight">Bo'sh</div></div>
+            <div className="rounded-xl border border-edge bg-surface-2 p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-display font-bold font-data text-text-primary">{answered}</div><div className="text-[10px] md:text-xs text-text-secondary leading-tight">Javob</div></div>
+            <div className="rounded-xl border border-edge bg-surface-2 p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-display font-bold font-data text-warning">{Object.keys(marked).filter(k=>marked[k]).length}</div><div className="text-[10px] md:text-xs text-text-secondary leading-tight">Belgi</div></div>
+            <div className="rounded-xl border border-edge bg-surface-2 p-2 md:p-3 min-w-0"><div className="text-lg md:text-xl font-display font-bold font-data text-text-secondary">{TOTAL - answered}</div><div className="text-[10px] md:text-xs text-text-secondary leading-tight">Bo'sh</div></div>
           </div>
           {TOTAL - answered > 0 && (
-            <div className="flex items-center gap-2 bg-amber-500/10 text-amber-400 rounded-xl px-4 py-3 text-sm border border-amber-500/20">
+            <div className="flex items-center gap-2 bg-wash text-warning rounded-xl px-4 py-3 text-sm border border-warning/40">
               <Icon name="info" size={15} /> {TOTAL - answered} ta savol javobsiz qoldi
             </div>
           )}
-          <p className="text-white/60 text-sm">Testni yakunlamoqchimisiz? Yuborilgandan so'ng o'zgartirib bo'lmaydi.</p>
+          <p className="text-text-secondary text-sm">Testni yakunlamoqchimisiz? Yuborilgandan so'ng o'zgartirib bo'lmaydi.</p>
         </div>
         <div className="flex gap-3">
           <button onClick={() => setConfirmModal(false)} className="btn-ghost flex-1 py-3 rounded-xl">Davom etish</button>

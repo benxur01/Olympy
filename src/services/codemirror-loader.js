@@ -89,8 +89,29 @@ function _baseTheme(EditorView) {
       '.cm-gutters': {
         backgroundColor: 'transparent',
         border: 'none',
-        color: 'rgba(255,255,255,0.25)',
       },
+      // ┌─ Qator raqamlari — bu MATN, ya'ni AA (4.5:1) ga bo'ysunadi ────────┐
+      // │ Sintaksis palitrasi (one-dark) ATAYIN o'z-o'zicha yopiq va       │
+      // │ tegilmaydi — kod muharriri o'z rangiga ega. Lekin gutter kodni   │
+      // │ emas, INTERFEYSNI ko'rsatadi (qator raqami), shuning uchun u     │
+      // │ oddiy matn me'yorida.                                            │
+      // │                                                                   │
+      // │ one-dark o'z `#7d8799` ini beradi va o'lchov AA dan past chiqadi:│
+      // │   oddiy gutter (fon #282c34)        3.86:1                       │
+      // │   faol qator gutter'i (fon #2c313a) 3.61:1                       │
+      // │                                                                   │
+      // │ Rang `.cm-gutters` da EMAS, `.cm-gutterElement` da beriladi:     │
+      // │ ikkala selektorning solishtirma og'irligi bir xil, shuning uchun │
+      // │ shu blokdagi eski `color: rgba(255,255,255,0.25)` one-dark'ga    │
+      // │ yutqazardi va HECH QACHON qo'llanmasdi (o'lchangan rang har doim │
+      // │ #7d8799 edi). Bir daraja aniqroq selektor tartibdan qat'i nazar  │
+      // │ yutadi.                                                          │
+      // │                                                                   │
+      // │ `#9aa4b8`: oddiy gutter'da 5.58:1, faol qatorda 5.21:1. one-dark │
+      // │ kod matnidan (`#abb2bf`, 6.57:1) hamon xiraroq — gutter kodni    │
+      // │ ustidan bosmaydi, faqat o'qiladigan bo'ladi.                     │
+      // └───────────────────────────────────────────────────────────────────┘
+      '.cm-gutters .cm-gutterElement': { color: '#9aa4b8' },
       '&.cm-focused': { outline: 'none', borderColor: 'rgba(99,102,241,0.5)' },
       '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,0.03)' },
       '.cm-activeLineGutter': { backgroundColor: 'transparent' },
