@@ -2349,6 +2349,16 @@ const LandingPage = ({ onNavigate, user, onUserUpdate }) => {
               {paymentError && (
                 <div className="mb-4 text-xs font-semibold text-error bg-error/12 border border-error/35 rounded-xl p-3">
                   {paymentError}
+                  {/* AI yordamni QO'LDA ochish — to'lov oqimida foydalanuvchi
+                      yolg'iz qolmasin. Avtomatik ochilish cooldown'i bunga
+                      ta'sir qilmaydi (`openSupportChat` throttle qo'llamaydi). */}
+                  <button
+                    type="button"
+                    onClick={() => globalThis.OlympyApi?.openSupportChat?.('payment_error', paymentError)}
+                    className="ml-2 underline underline-offset-2 hover:opacity-80 cursor-pointer"
+                  >
+                    Yordam kerakmi?
+                  </button>
                 </div>
               )}
 

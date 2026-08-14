@@ -253,6 +253,19 @@ const extractErrorMessage = (data) => {
   return '';
 };
 
+// ─── Oflayn holat ────────────────────────────────────────────────────────────
+// "Internet yo'q" va "server sekin javob berdi" — IKKI BOSHQA nosozlik, lekin
+// ilgari ikkalasi ham bitta xabar ("Server bilan bog'lanishda xatolik") bilan
+// ko'rsatilardi: serveri sog'lom bo'lgan foydalanuvchi bekorga routerini qayta
+// yoqar, internetsiz qolgan foydalanuvchi esa serverni ayblardi.
+//
+// `navigator.onLine === false` — YAGONA ishonchli signal. `true` bo'lishi
+// internet BOR degani EMAS (u faqat "tarmoq interfeysi ulangan" ni bildiradi:
+// Wi-Fi'ga ulangan, lekin internetga chiqmaydigan holat ham `true` beradi).
+// Shuning uchun faqat aniq `=== false` ni oflayn deb hisoblaymiz.
+const _isOffline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
+const OFFLINE_MESSAGE = 'Internet aloqangiz uzilgan ko‘rinadi — ulanishni tekshirib, qaytadan urinib ko‘ring';
+
 const toUserMessage = (error) => {
   const text = `${error?.message || ''} ${extractErrorMessage(error?.data)}`.toLowerCase();
   if (text.includes("avval ro'yxatdan") || text.includes("avval ro‘yxatdan")) {
@@ -279,6 +292,12 @@ const toUserMessage = (error) => {
   // holati (tarmoq uzilgan, DNS/TLS xatosi, CORS bloki, abort). Faqat shu
   // holat haqiqiy "bog'lanish xatosi".
   if (error?.status === 0) {
+    // Brauzer AYNAN HOZIR oflayn bo'lsa sabab aniq — serverni ayblamaymiz.
+    // (`request()` xato paytida ham shu xabarni yozadi; bu yerdagi tekshiruv
+    // xatoni KEYINROQ ko'rsatadigan chaqiruvchilar uchun ham to'g'ri matn
+    // chiqishini kafolatlaydi, chunki status 0 da quyidagi umumiy matn
+    // ApiError'ning o'z xabarini bekor qiladi.)
+    if (_isOffline()) return OFFLINE_MESSAGE;
     return "Server bilan bog‘lanishda xatolik yuz berdi";
   }
   // `status` UMUMAN yo'q (undefined) — bu ApiError emas, ya'ni so'rov emas,
@@ -305,15 +324,58 @@ const toUserMessage = (error) => {
 // biriga alohida event yuborsak widget qayta-qayta ochilib foydalanuvchini
 // bezovta qiladi. Shu sababli oynani qisqa muddat ichida faqat bir marta
 // ochamiz.
+//
+// SABAB BO'YICHA "sovish" oynasi (cooldown): 15s throttle faqat BITTA to'lqinni
+// (bir vaqtda qulagan parallel so'rovlar) yig'adi, takroriy to'lqinlarga esa
+// ta'sir qilmaydi. Dashboard'da esa vaqt bo'yicha yangilanadigan so'rovlar bor
+// (ping, onlayn hisoblagich, bildirishnomalar) — sekin mobil internetda ular
+// navbatma-navbat qulab, widget foydalanuvchiga har yarim daqiqada qaytadan
+// "server bilan bog'lanishda muammo" deb ochilardi. Aynan shu "juda tez-tez
+// o'zi ochiladi" shikoyatining manbai.
+//
+// `network_error` — transport darajasidagi shovqin: foydalanuvchi bu haqda
+// bilib ham qo'shimcha hech nima qila olmaydi (u faqat kutadi yoki qayta
+// urinadi), shuning uchun tab umri davomida 10 daqiqada BIR MARTADAN ko'p
+// ochilmaydi. Boshqa sabablar (ayniqsa `api_error` — 5xx, ya'ni serverdagi
+// haqiqiy nosozlik) avvalgidek faqat 15s throttle bilan qoladi: ular kamdan-kam
+// uchraydi va har biri ko'rsatishga arziydi.
+const SUPPORT_DISPATCH_THROTTLE_MS = 15000;
+const SUPPORT_REASON_COOLDOWN_MS = { network_error: 10 * 60 * 1000 };
 let _lastSupportDispatchAt = 0;
+const _lastSupportDispatchByReason = {};
 const dispatchSupportNeeded = (reason, message) => {
   try {
     if (typeof window === 'undefined') return;
     const now = Date.now();
-    if (now - _lastSupportDispatchAt < 15000) return;
+    if (now - _lastSupportDispatchAt < SUPPORT_DISPATCH_THROTTLE_MS) return;
+    const key = reason || 'api_error';
+    const cooldownMs = SUPPORT_REASON_COOLDOWN_MS[key] || 0;
+    if (cooldownMs && now - (_lastSupportDispatchByReason[key] || 0) < cooldownMs) return;
     _lastSupportDispatchAt = now;
+    _lastSupportDispatchByReason[key] = now;
     window.dispatchEvent(new CustomEvent('olympy:support_needed', {
-      detail: { reason: reason || 'api_error', message: message || '' },
+      detail: { reason: key, message: message || '' },
+    }));
+  } catch {}
+};
+
+// Foydalanuvchi O'ZI so'ragan holat: doimiy launcher tugmasi yoki xato
+// banneridagi "Yordam kerakmi?" havolasi.
+//
+// Bu yerda ATAYIN hech qanday throttle/cooldown yo'q. Yuqoridagi chegaralar
+// faqat AVTOMATIK ochilishga tegishli — ular "widjet o'zi ochilaverdi"
+// muammosini hal qiladi. Foydalanuvchining o'zi bosgan tugma esa HAR DOIM
+// ishlashi shart: aks holda 10 daqiqalik `network_error` cooldown paytida
+// haqiqiy uzilish yuz bersa, u yordam so'ray olmasdi (widjetni qo'lda
+// ochishning boshqa yo'li yo'q edi).
+//
+// Hisoblagichlarga ham TEGMAYDI: qo'lda ochish avtomatik cooldown'ni na
+// boshlaydi, na uzaytiradi — ikkala kanal bir-biridan mustaqil.
+const openSupportChat = (reason, message) => {
+  try {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(new CustomEvent('olympy:support_needed', {
+      detail: { reason: reason || 'manual', message: message || '', manual: true },
     }));
   } catch {}
 };
@@ -340,8 +402,25 @@ let _refreshInFlight = null;
 // chaqiradi (yakunlanganda/unmount'da false) — shu bayroq true bo'lganda HECH
 // QANDAY so'rov global logout'ni trigger qilmaydi, xatolik faqat chaqiruvchi
 // komponentga (mahalliy holatda) qaytariladi.
+//
+// Bayroq o'zgarganda `olympy:exam_mode` eventi ham yuboriladi: AI yordam
+// widjetining doimiy launcher tugmasi imtihon davomida ekranni to'sib
+// qo'ymasligi kerak (imtihon ekranida taymer va savol navigatsiyasi aynan
+// o'sha burchakda). Widget shu eventni tinglab launcher'ni vaqtincha
+// yashiradi; xato banneridagi "Yordam kerakmi?" havolasi esa ishlayveradi.
+// Bir xil qiymat qayta o'rnatilganda event yuborilmaydi — `setExamMode`
+// React effektidan har bir holat o'zgarishida chaqiriladi.
 let _examModeActive = false;
-const setExamMode = (active) => { _examModeActive = !!active; };
+const setExamMode = (active) => {
+  const next = !!active;
+  if (next === _examModeActive) return;
+  _examModeActive = next;
+  try {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('olympy:exam_mode', { detail: { active: next } }));
+    }
+  } catch {}
+};
 
 const _refreshTokens = () => {
   if (_refreshInFlight) return _refreshInFlight;
@@ -395,11 +474,65 @@ const NETWORK_RETRY_DELAYS_MS = [600, 1200];
 // foydalanuvchiga na xato, na qayta urinish imkoni ko'rinadi.
 // Shuning uchun HAR BIR urinishga vaqt chegarasi qo'yamiz — chegara tugasa
 // so'rov abort qilinadi va odatdagi tarmoq-xatosi oqimiga tushadi.
-// 15s — Render'ning "uyqudan uyg'onayotgan" instansiyasi uchun yetarli darajada
-// saxiy, lekin foydalanuvchi tugmani abadiy kutmasligi uchun yetarlicha qisqa.
-// Qayta urinishlar bilan birga eng yomon holat ~47s, birinchi qayta urinish 15s.
-const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
+// Avval BARCHA so'rovlarga bir xil 15s qo'yilardi va bu soxta "server javob
+// bermadi" xabarlarining ASOSIY manbai edi: nginx og'ir so'rovga 300s ruxsat
+// beradi (`proxy_read_timeout`), klient esa 15s da voz kechardi — server halol
+// ishlab, javobni tayyorlab turgan paytda foydalanuvchi "server javob bermadi"
+// ni ko'rardi va AI yordam widjeti o'zidan-o'zi ochilardi.
+//
+// Endi uch pog'ona bor:
+//   * DEFAULT (30s) — oddiy CRUD/o'qish so'rovlari. 15s O'zbekistondagi sekin
+//     mobil internet uchun kam edi (TTFB ning o'zi 1s+), 30s esa sog'lom javob
+//     uchun bemalol yetadi va foydalanuvchi tugmani abadiy kutmaydi.
+//   * HEAVY (60s) — server tomonda haqiqiy ish bajaradigan yoki qayta urinish
+//     XAVFLI bo'lgan endpointlar: og'ir analitika agregatlari (cache sovuq
+//     bo'lsa butun jadval bo'yicha hisoblanadi) va idempotent BO'LMAGAN
+//     yozuvlar (submit, checkout) — ularda erta abort qilish qayta urinishda
+//     dublikat yozuv qoldirishi mumkin.
+//   * AI (120s) — Gemini chaqiruvi bilan bog'liq endpointlar. Backend'da
+//     bitta urinish 45-60s timeout bilan ketadi va model/kalit bo'yicha
+//     fallback qiladi; Celery broker mavjud bo'lganda POST darhol 202 qaytaradi,
+//     lekin Redis tushib qolsa `CELERY_TASK_ALWAYS_EAGER` yoqilib task AYNAN
+//     so'rov ichida sinxron bajariladi (`custom-test` esa har doim sinxron).
+// nginx'ning 300s iga tenglashtirmaymiz: bunda haqiqatan osilib qolgan so'rov
+// UI ni besh daqiqa "yuklanmoqda" holatida ushlab turardi.
+const DEFAULT_REQUEST_TIMEOUT_MS = 30000;
+const HEAVY_REQUEST_TIMEOUT_MS = 60000;
+const AI_REQUEST_TIMEOUT_MS = 120000;
 const REQUEST_TIMEOUT_MESSAGE = 'Server javob bermadi — internetni tekshirib, qaytadan urinib ko‘ring';
+
+// ─── Soxta vaqt chegarasi: qurilma uyqusi va fon tab ────────────────────────
+// `setTimeout` uxlab qolgan noutbukda yoki uzoq vaqt fonda turgan tabda
+// TO'XTAB turadi va qurilma uyg'onganda DARHOL ishga tushadi. Natijada bir
+// necha soniya oldin yuborilgan mutlaqo sog'lom so'rov "vaqt tugadi" deb
+// belgilanardi: foydalanuvchi noutbukini ochishi bilan ekranda "server javob
+// bermadi" chiqardi, holbuki server hech qachon so'ralmagan ham bo'lishi
+// mumkin. Ikkita mustaqil belgi bo'yicha aniqlaymiz:
+//   1) devor-soati (`Date.now()`) bo'yicha o'tgan vaqt kutilgan chegaradan
+//      sezilarli katta — timer kechikib ishga tushgan (qurilma uxlagan);
+//   2) urinish davomida sahifa fonda UZOQ turgan — brauzer fon tabdagi
+//      timerlarni siqadi va bir necha daqiqadan keyin butunlay muzlatadi,
+//      ya'ni bunday urinishning vaqt o'lchovi ishonchsiz.
+// Bunday holat tarmoq xatosi deb QAYD ETILMAYDI: jimgina qayta urinamiz va
+// widjetni ochmaymiz.
+const SUSPEND_DRIFT_TOLERANCE_MS = 5000;
+// MUHIM: "bir lahzaga yashirindi" YETARLI EMAS. Avval oddiy `wasHidden`
+// bayrog'i ishlatilardi va u alt-tab qilingan har qanday so'rovni ishonchsiz
+// deb belgilardi — bitta mantiqiy chaqiruv 5 ta fetch'gacha cho'zilib, AI
+// endpointida spinner daqiqalab osilib qolishi mumkin edi (tuzatilayotgan
+// bugdan ham yomon tajriba). Shu sababli fonda o'tgan vaqt YIG'IB boriladi va
+// faqat sezilarli chegaradan oshsa hisobga olinadi: qisqa alt-tab timerga
+// amalda ta'sir qilmaydi.
+const HIDDEN_SUSPEND_MIN_MS = 10000;
+// Soxta timeout'lar odatdagi urinishlar byudjetini yemasligi kerak (bitta uyqu
+// butun byudjetni yeb qo'ysa so'rov bekorga qulardi), lekin cheksiz sikl ham
+// bo'lmasin — shu sababli alohida va cheklangan hisob.
+const MAX_SUSPENDED_RETRIES = 2;
+// Bitta MANTIQIY `request()` chaqiruvi (barcha urinishlar + kutishlar) uchun
+// umumiy devor-soati byudjeti: nominal eng yomon holat (urinishlar × chegara)
+// ustiga kichik zaxira. Qo'shimcha "bepul" urinishlar shu byudjet ichida
+// bo'lishi shart — aks holda ular vaqtni cheksiz cho'zardi.
+const TOTAL_BUDGET_SLACK_MS = 5000;
 
 // Chaqiruvchining `signal`i va vaqt chegarasini bitta signalga birlashtiradi.
 // (`AbortSignal.any()` eski mobil brauzerlarda yo'q — qo'lda ulaymiz.)
@@ -408,6 +541,24 @@ const REQUEST_TIMEOUT_MESSAGE = 'Server javob bermadi — internetni tekshirib, 
 const _abortAfter = (signal, ms) => {
   const controller = new AbortController();
   let expired = false;
+  const startedAt = Date.now();
+  const canWatchVisibility = typeof document !== 'undefined' && typeof document.addEventListener === 'function';
+  // Fonda o'tgan vaqtni YIG'AMIZ (bir marta yashiringan-yashirinmaganini emas).
+  // `hiddenSince` — hozir fonda bo'lsa boshlanish vaqti, aks holda 0.
+  // Boshida ham tekshiramiz: so'rov allaqachon fonda turgan tabdan ketayotgan
+  // bo'lishi mumkin (masalan boshqa tabga o'tib ketilgan sahifadagi polling).
+  let hiddenMs = 0;
+  let hiddenSince = (canWatchVisibility && document.visibilityState === 'hidden') ? startedAt : 0;
+  const onVisibilityChange = () => {
+    if (document.visibilityState === 'hidden') {
+      if (!hiddenSince) hiddenSince = Date.now();
+    } else if (hiddenSince) {
+      hiddenMs += Date.now() - hiddenSince;
+      hiddenSince = 0;
+    }
+  };
+  if (canWatchVisibility) document.addEventListener('visibilitychange', onVisibilityChange);
+  const totalHiddenMs = () => hiddenMs + (hiddenSince ? Date.now() - hiddenSince : 0);
   const onCallerAbort = () => controller.abort();
   if (signal) {
     if (signal.aborted) controller.abort();
@@ -417,32 +568,64 @@ const _abortAfter = (signal, ms) => {
   return {
     signal: controller.signal,
     timedOut: () => expired,
+    // Shu urinishga devor-soati bo'yicha qancha vaqt ketgani. Uyquda o'tgan
+    // vaqtni umumiy byudjetdan chiqarib tashlash uchun kerak (pastga qarang).
+    elapsedMs: () => Date.now() - startedAt,
+    // Vaqt chegarasi tugadi, LEKIN o'lchovga ishonib bo'lmaydi (yuqoridagi
+    // "soxta vaqt chegarasi" izohiga qarang) — so'rov emas, timer nosoz.
+    timeoutUnreliable: () => expired && (
+      totalHiddenMs() >= HIDDEN_SUSPEND_MIN_MS
+      || (Date.now() - startedAt) > ms + SUSPEND_DRIFT_TOLERANCE_MS
+    ),
     cleanup: () => {
       if (timer) clearTimeout(timer);
       if (signal) signal.removeEventListener('abort', onCallerAbort);
+      if (canWatchVisibility) document.removeEventListener('visibilitychange', onVisibilityChange);
     },
   };
 };
 
 // Backoff kutuvi abort'ni darhol sezishi kerak: aks holda unmount bo'lgan
 // komponent so'rovni bekor qilsa ham loop 1.2s "osilib" turardi.
-const _waitBeforeNetworkRetry = (ms, signal) => new Promise((resolve, reject) => {
+//
+// OFLAYN holatda esa 600ms/1200ms kutishning ma'nosi yo'q — shu vaqt ichida
+// internet qaytmaydi va oxirgi urinish ham qulab, foydalanuvchiga xato
+// ko'rsatiladi. Buning o'rniga `online` eventini kutamiz (yuqori chegara bilan)
+// va aloqa tiklangan zahoti JIMGINA qayta urinamiz: foydalanuvchi lift/metrodan
+// chiqqanida so'rov o'zi ketadi, hech qanday xato oynasi ko'rinmaydi. Chegara
+// kerak, chunki internet umuman qaytmasligi mumkin — bunday holda so'rov
+// baribir tugashi va chaqiruvchiga xato qaytishi shart.
+//
+// `waitForOnline` FAQAT birinchi qayta urinishga beriladi (chaqiruvchiga
+// qarang): aks holda har bir urinish 15 soniyadan kutib, oflayn foydalanuvchi
+// tugmani bosgach yarim daqiqa "yuklanmoqda" spinnerini ko'rardi.
+const OFFLINE_RETRY_WAIT_MS = 15000;
+const _waitBeforeNetworkRetry = (ms, signal, waitForOnline = false) => new Promise((resolve, reject) => {
   if (signal?.aborted) {
     reject(new ApiError('aborted', { status: 0 }));
     return;
   }
-  const timer = setTimeout(resolve, ms);
-  if (signal) {
-    signal.addEventListener('abort', () => {
-      clearTimeout(timer);
-      reject(new ApiError('aborted', { status: 0 }));
-    }, { once: true });
-  }
+  const watchOnline = waitForOnline && _isOffline() && typeof window !== 'undefined';
+  let timer = null;
+  let settled = false;
+  const settle = (run) => {
+    if (settled) return;
+    settled = true;
+    if (timer) clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onAbort);
+    if (watchOnline) window.removeEventListener('online', onOnline);
+    run();
+  };
+  const onAbort = () => settle(() => reject(new ApiError('aborted', { status: 0 })));
+  const onOnline = () => settle(resolve);
+  timer = setTimeout(() => settle(resolve), watchOnline ? OFFLINE_RETRY_WAIT_MS : ms);
+  if (signal) signal.addEventListener('abort', onAbort);
+  if (watchOnline) window.addEventListener('online', onOnline);
 });
 
 const request = async (
   path,
-  { method = 'GET', body, token, headers = {}, retryOnAuth = true, keepalive = false, signal, silent = false, speculative = false, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS } = {},
+  { method = 'GET', body, token, headers = {}, retryOnAuth = true, keepalive = false, signal, silent = false, speculative = false, timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS, idempotent = true } = {},
 ) => {
   const requestHeaders = {
     Accept: 'application/json',
@@ -474,7 +657,16 @@ const request = async (
   // `keepalive` so'rovlari (masalan sahifa yopilayotganda ketadigan cheating
   // report) qayta urinilmaydi: unload paytida setTimeout ishga tushmaydi, va
   // takroriy yuborish serverda dublikat yozuv qoldirishi mumkin.
-  const maxNetworkRetries = keepalive ? 0 : NETWORK_RETRY_DELAYS_MS.length;
+  //
+  // `idempotent: false` — AYNAN shu sabab bo'yicha alohida bayroq. Avtomatik
+  // qayta urinish tarmoq xatosini yashiradi, lekin so'rov serverga YETIB
+  // BORGAN va faqat javob yo'qolgan holatda ikkinchi yozuv paydo bo'ladi.
+  // Chaqiruvchi buni ochiq belgilaganda BARCHA qayta urinishlar (odatdagisi
+  // ham, uyqu/fon bo'yicha "bepul"i ham) o'chiriladi: sekin tarmoqda bir marta
+  // xato ko'rsatish dublikat to'lovdan yoki yo'qolgan test natijasidan
+  // yaxshiroq. Ma'lumot butunligi tajribadan ustun.
+  const canRetry = !keepalive && idempotent;
+  const maxNetworkRetries = canRetry ? NETWORK_RETRY_DELAYS_MS.length : 0;
 
   // Fayl yuklash (FormData) sekin mobil internetda 20 soniyadan oshishi
   // TABIIY — yuklanish javob sarlavhalaridan OLDIN tugashi kerak. Shu sababli
@@ -482,8 +674,30 @@ const request = async (
   // vaqt chegarasi qo'yilmaydi.
   const effectiveTimeoutMs = (keepalive || isFormData) ? 0 : timeoutMs;
 
+  // Umumiy devor-soati byudjeti: barcha urinishlar + kutishlar shu ichida
+  // tugashi kerak. Nominal eng yomon holatga (urinishlar × chegara) teng, ya'ni
+  // ODATDAGI oqim hech qachon bunga urilmaydi — u faqat "bepul" urinishlar
+  // vaqtni cho'zib yuborishiga to'sqinlik qiladi. Vaqt chegarasi yo'q
+  // so'rovlarda (FormData/keepalive) byudjet ham qo'yilmaydi.
+  const totalBudgetMs = effectiveTimeoutMs
+    ? effectiveTimeoutMs * (1 + maxNetworkRetries) + TOTAL_BUDGET_SLACK_MS
+    : 0;
+  let deadlineAt = Date.now() + totalBudgetMs;
+  const _budgetLeft = () => !totalBudgetMs || Date.now() < deadlineAt;
+
   let response;
-  for (let attempt = 0; ; attempt += 1) {
+  // `attempt` — HAQIQIY tarmoq xatolari bo'yicha urinishlar hisobi.
+  // `suspendedRetries` — qurilma uyqusi/fon tab tufayli SOXTA deb topilgan
+  // vaqt chegaralari uchun alohida (bepul) hisob; ular odatdagi byudjetni
+  // yemaydi, lekin o'zlari ham cheklangan (MAX_SUSPENDED_RETRIES).
+  // `sawReliableFailure` — urinishlardan HECH BO'LMAGANDA bittasi ishonchli
+  // o'lchov bilan qulaganmi. Widjetni ochish qarori shunga tayanadi: aks holda
+  // aynan OXIRGI urinish paytida tab fonga o'tib qolsa, ROSTDAN o'lgan server
+  // haqida foydalanuvchi hech qanday taklif ko'rmasdi.
+  let attempt = 0;
+  let suspendedRetries = 0;
+  let sawReliableFailure = false;
+  for (;;) {
     const attemptAbort = _abortAfter(signal, effectiveTimeoutMs);
     try {
       response = await fetch(`${API_BASE_URL}${path}`, {
@@ -499,6 +713,8 @@ const request = async (
       // Vaqt chegarasi tugadi — bu ATAYIN abort emas, haqiqiy tarmoq nosozligi
       // (server javob bermayapti). Quyidagi qayta urinish oqimiga tushadi.
       const expired = attemptAbort.timedOut();
+      // ...lekin vaqt o'lchovining o'zi ishonchsiz bo'lishi ham mumkin.
+      const unreliable = attemptAbort.timeoutUnreliable();
       // AbortController.abort() — chaqiruvchi (masalan, unmount bo'lgan komponent)
       // so'rovni atayin bekor qilgan. Buni "server bilan bog'lanish xatosi" deb
       // ko'rsatmaymiz va HECH QACHON qayta urinmaymiz; chaqiruvchi catch'da
@@ -506,11 +722,32 @@ const request = async (
       if (!expired && (error?.name === 'AbortError' || signal?.aborted)) {
         throw new ApiError('aborted', { status: 0 });
       }
+      if (!unreliable) sawReliableFailure = true;
+      // SOXTA vaqt chegarasi (qurilma uyqudan uyg'ondi / tab uzoq fonda edi) —
+      // server haqida HECH QANDAY ma'lumot bermaydi. Qisqa kutishdan keyin
+      // jimgina qayta urinamiz; bu urinish odatdagi urinishlar hisobiga
+      // kirmaydi va widjetni ochmaydi.
+      if (unreliable && canRetry && suspendedRetries < MAX_SUSPENDED_RETRIES) {
+        // Uyquda/muzlashda o'tgan vaqt umumiy byudjetdan HISOBLANMAYDI: aks
+        // holda 10 daqiqa uxlagan noutbukda byudjet uyg'onish paytidayoq
+        // tugagan bo'lardi va bepul urinish umuman ishlamasdi. Faqat nominal
+        // chegaradan ortiqcha ("yo'qolgan") vaqt qaytariladi — urinishning
+        // o'zi baribir byudjetdan o'z ulushini oladi.
+        deadlineAt += Math.max(0, attemptAbort.elapsedMs() - effectiveTimeoutMs);
+        if (_budgetLeft()) {
+          suspendedRetries += 1;
+          await _waitBeforeNetworkRetry(NETWORK_RETRY_DELAYS_MS[0], signal);
+          continue;
+        }
+      }
       // Bir lahzalik uzilish bo'lishi mumkin — qisqa backoff bilan yana
       // urinamiz (yuqoridagi izohga qarang). Kutish paytida so'rov bekor
       // qilinsa `_waitBeforeNetworkRetry` abort xatosini otadi.
-      if (attempt < maxNetworkRetries) {
-        await _waitBeforeNetworkRetry(NETWORK_RETRY_DELAYS_MS[attempt], signal);
+      // Birinchi qayta urinishda (va faqat unda) oflayn bo'lsak aloqa
+      // tiklanishini kutamiz — `_waitBeforeNetworkRetry` izohiga qarang.
+      if (attempt < maxNetworkRetries && _budgetLeft()) {
+        await _waitBeforeNetworkRetry(NETWORK_RETRY_DELAYS_MS[attempt], signal, attempt === 0);
+        attempt += 1;
         continue;
       }
       // Barcha urinishlar tugadi — haqiqiy tarmoq xatosi (internet yo'q /
@@ -524,13 +761,28 @@ const request = async (
       // bermadi". Uni umumiy "bog‘lanishda xatolik" bilan almashtirmaymiz:
       // status 0 (so'rov serverga yetib bormadi) noto'g'ri bo'lardi, 504 esa
       // "kutish vaqti tugadi" ning halol status kodi (pollAiTask bilan bir xil).
-      const message = attemptAbort.timedOut()
-        ? REQUEST_TIMEOUT_MESSAGE
-        : "Server bilan bog‘lanishda xatolik yuz berdi";
-      if (!silent) {
+      // Brauzer oflayn bo'lsa esa sabab serverda EMAS — xabar internet haqida
+      // bo'ladi (status 0: so'rov haqiqatan serverga yetib bormadi).
+      const offline = _isOffline();
+      const message = offline
+        ? OFFLINE_MESSAGE
+        : (expired ? REQUEST_TIMEOUT_MESSAGE : "Server bilan bog‘lanishda xatolik yuz berdi");
+      // Widjet FAQAT foydalanuvchiga haqiqatan foyda beradigan holatda ochiladi:
+      //   * `silent` — fon so'rovlari (masalan widjetning o'z tarix preload'i)
+      //     hech qachon ochmaydi;
+      //   * OFLAYN — ochmaymiz: internetsiz foydalanuvchiga "internetingizni
+      //     tekshiring" deb AI chat ochish faqat bezovta qiladi (chatning o'zi
+      //     ham serverga so'rov yuboradi va quladi), ustiga aloqa tiklanganda
+      //     so'rov yuqorida jimgina qaytariladi;
+      //   * SOXTA timeout (uyqu/fon tab) — ochmaymiz, chunki server haqida
+      //     hech narsa ma'lum emas. Baholash OXIRGI urinish bo'yicha emas,
+      //     BARCHA urinishlar bo'yicha (`sawReliableFailure`): agar hech
+      //     bo'lmaganda bittasi ishonchli o'lchov bilan qulagan bo'lsa,
+      //     nosozlik haqiqiy — tab keyinchalik fonga o'tgani buni yuvmaydi.
+      if (!silent && !offline && sawReliableFailure) {
         dispatchSupportNeeded('network_error', message);
       }
-      throw new ApiError(message, { status: attemptAbort.timedOut() ? 504 : 0 });
+      throw new ApiError(message, { status: (expired && !offline) ? 504 : 0 });
     } finally {
       // Timer va chaqiruvchi signalidagi listener har urinishdan keyin
       // tozalanadi (aks holda uzoq yashaydigan `signal`da to'planib qolardi).
@@ -561,6 +813,14 @@ const request = async (
         try {
           // Single-flight: parallel 401'lar bitta refresh natijasini kutadi.
           const { token: nextToken } = await _refreshTokens();
+          // `silent` va `timeoutMs` ham UZATILADI. Ilgari ular tushib qolardi
+          // va bu ikkita soxta xatoni keltirib chiqarardi:
+          //   * `silent: true` so'rov (widjetning o'z fon tarix preload'i)
+          //     refreshdan keyingi urinishda "ovozli" bo'lib qolib, tarmoq
+          //     uzilsa widjetni O'ZI ochib yuborardi — aynan foydalanuvchi
+          //     shikoyat qilgan xulq;
+          //   * og'ir endpoint (AI/analitika) o'zining uzun chegarasini
+          //     yo'qotib, 30s da uzilardi.
           return request(path, {
             method,
             body,
@@ -568,6 +828,9 @@ const request = async (
             headers,
             retryOnAuth: false,
             signal,
+            silent,
+            timeoutMs,
+            idempotent,
           });
         } catch (refreshError) {
           // Refresh so'rovi tarmoq xatosi yoki serverning vaqtincha
@@ -940,6 +1203,10 @@ export const OlympyApi = {
   clearAuth,
   getToken,
   setExamMode,
+  // Widjetni QO'LDA ochish (launcher tugmasi va xato bannerlaridagi "Yordam
+  // kerakmi?" havolasi) — avtomatik cooldown'dan mustaqil, yuqoridagi izohga
+  // qarang.
+  openSupportChat,
   // Auth
   login: (payload) => request('/api/auth/login/', { method: 'POST', body: payload, retryOnAuth: false }),
   loginWithGoogle: (payload) => request('/api/auth/google/', { method: 'POST', body: payload, retryOnAuth: false }),
@@ -1038,8 +1305,12 @@ export const OlympyApi = {
   getStaffMemberships: (centerId, role, token) => requestAllPages(`/api/centers/${centerId}/memberships/staff/${role ? '?role=' + encodeURIComponent(role) : ''}`, { token }),
   getStudentMemberships: (centerId, statusFilter, token) => requestAllPages(`/api/centers/${centerId}/memberships/students/${statusFilter ? '?status=' + encodeURIComponent(statusFilter) : ''}`, { token }),
   getStudentDetail: (membershipId, token) => request(`/api/centers/students/${membershipId}/`, { token }),
-  createManager: (centerId, payload, token) => request(`/api/centers/${centerId}/managers/create/`, { method: 'POST', body: payload, token }),
-  createTeacher: (centerId, payload, token) => request(`/api/centers/${centerId}/teachers/create/`, { method: 'POST', body: payload, token }),
+  // Xodim yaratish — `idempotent: false`. Backend `User.objects.create_user()`
+  // chaqiradi va `phone` unique bo'lgani uchun DUBLIKAT AKKAUNT yaratilmaydi,
+  // lekin IntegrityError ushlanmagan: javob yo'lda yo'qolib, so'rov avtomatik
+  // takrorlansa admin toza xato o'rniga Django 500 sahifasini ko'radi.
+  createManager: (centerId, payload, token) => request(`/api/centers/${centerId}/managers/create/`, { method: 'POST', body: payload, token, idempotent: false }),
+  createTeacher: (centerId, payload, token) => request(`/api/centers/${centerId}/teachers/create/`, { method: 'POST', body: payload, token, idempotent: false }),
   approveStudent: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-student/`, { method: 'POST', body: payload, token }),
   approveTeacher: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-teacher/`, { method: 'POST', body: payload, token }),
   approveManager: (centerId, payload, token) => request(`/api/centers/${centerId}/approve-manager/`, { method: 'POST', body: payload, token }),
@@ -1453,8 +1724,12 @@ export const OlympyApi = {
   // AI savol generatsiyasi — backend Celery task'ni boshlaydi, natija polling
   // bilan olinadi (pollAiTask izohiga qarang). Javob shakli avvalgidek
   // { questions: [...] } bo'lib qoladi, shu sababli chaqiruvchi o'zgarmaydi.
+  // `timeoutMs` — boshlash (POST) so'roviga: broker sog'lom bo'lganda u darhol
+  // 202 qaytaradi, ammo Redis tushib qolsa Django task'ni AYNAN shu so'rov
+  // ichida sinxron bajaradi (CELERY_TASK_ALWAYS_EAGER) va Gemini'ni kutadi.
+  // Polling so'rovlari (status) yengil — ular default chegarada qoladi.
   generateAiQuestions: async (payload, token, signal) => pollAiTask(
-    await request('/api/questions/generate-ai/', { method: 'POST', body: payload, token, signal }),
+    await request('/api/questions/generate-ai/', { method: 'POST', body: payload, token, signal, timeoutMs: AI_REQUEST_TIMEOUT_MS }),
     (taskId) => `/api/questions/generate-ai/${taskId}/status/`,
     { token, signal, failMessage: "AI savol yarata olmadi", timeoutMessage: "AI savol yaratish vaqti tugadi (Timeout)" },
   ),
@@ -1463,7 +1738,7 @@ export const OlympyApi = {
   // Backend Gemini chaqiruvini Celery task'iga ko'chirgani uchun bu ham
   // submit + polling oqimida ishlaydi (javob maydonlari o'zgarmagan).
   reviewCode: async (payload, token, signal) => pollAiTask(
-    await request('/api/questions/code-review/', { method: 'POST', body: payload, token, signal }),
+    await request('/api/questions/code-review/', { method: 'POST', body: payload, token, signal, timeoutMs: AI_REQUEST_TIMEOUT_MS }),
     (taskId) => `/api/questions/code-review/${taskId}/status/`,
     {
       token,
@@ -1635,7 +1910,12 @@ export const OlympyApi = {
     return request('/api/questions/', { method: 'POST', body: fd, token });
   },
   // Attempts / results / leaderboard
-  submitAttempt: (payload, token) => request('/api/attempts/', { method: 'POST', body: payload, token }),
+  // Javoblarni topshirish — foydalanuvchi uchun ENG QIMMAT so'rov: server
+  // baholaydi, reyting va sertifikatni yozadi, va 100+ o'quvchi bir vaqtda
+  // topshirganda navbat yig'iladi. Erta uzilish o'quvchiga "ishlaringiz
+  // ketmadi" degan taassurot beradi (aslida server yozayotgan bo'ladi), shu
+  // sababli saxiy chegara.
+  submitAttempt: (payload, token) => request('/api/attempts/', { method: 'POST', body: payload, token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
   reportCheating: (payload, token) => request('/api/attempts/cheating/', { method: 'POST', body: payload, token, keepalive: true, retryOnAuth: false }),
   // Webkamera proktoring rozilik — student imtihonni boshlashdan oldin
   // tasdiqlaydi. Faqat boolean + vaqt tamg'asi yoziladi (video EMAS).
@@ -1742,14 +2022,22 @@ export const OlympyApi = {
   // Practice / Mashq rejimi
   getPracticeSubjects: (centerId, token) => request(`/api/practice/subjects/?center=${centerId}`, { token }),
   startPractice: (body, token) => request('/api/practice/start/', { method: 'POST', body, token }),
-  submitPractice: (body, token) => request('/api/practice/submit/', { method: 'POST', body, token }),
+  // Mashq javoblarini topshirish ham baholanadi va yozuv qoldiradi —
+  // submitAttempt bilan bir xil sababdan uzunroq chegara.
+  // `idempotent: false` — MAJBURIY: backend mashq sessiyasini cache'da saqlaydi
+  // va birinchi muvaffaqiyatli submit'da uni O'CHIRADI. Javob yo'lda yo'qolgan
+  // holatda avtomatik qayta yuborish 410 ("Sessiya muddati tugagan yoki
+  // topilmadi. Qaytadan boshlang.") oladi va testni ROSTDAN yakunlagan o'quvchi
+  // natija o'rniga xato ko'rardi. submitAttempt esa xavfsiz — u yerda unique
+  // constraint bor va dublikat POST mavjud attemptni qaytaradi.
+  submitPractice: (body, token) => request('/api/practice/submit/', { method: 'POST', body, token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS, idempotent: false }),
   getWrongAnswerSubjects: (token) => request('/api/practice/wrong-answers/', { token }),
   startWrongAnswerPractice: (body, token) => request('/api/practice/wrong-answers/start/', { method: 'POST', body, token }),
   // AI yechim tushuntirishi. Tushuntirish bazada bo'lsa backend darhol
   // { explanation } qaytaradi (task_id yo'q → pollAiTask javobni o'zini beradi);
   // aks holda Celery task boshlanadi va natija polling bilan olinadi.
   explainQuestion: async (questionId, token, signal) => pollAiTask(
-    await request(`/api/questions/${questionId}/explain/`, { method: 'POST', token, signal }),
+    await request(`/api/questions/${questionId}/explain/`, { method: 'POST', token, signal, timeoutMs: AI_REQUEST_TIMEOUT_MS }),
     (taskId) => `/api/questions/explain/${taskId}/status/`,
     {
       token,
@@ -1761,7 +2049,25 @@ export const OlympyApi = {
   // Billing / To'lov
   // Aktiv obuna rejalari — Landing'da ochiq ko'rsatiladi, autentifikatsiya talab qilinmaydi.
   getSubscriptionPlans: () => request(`/api/billing/plans/?_t=${Date.now()}`, { retryOnAuth: false }),
-  createCheckoutSession: (payload, token) => request('/api/billing/checkout/', { method: 'POST', body: payload, token }),
+  // Checkout — IDEMPOTENT EMAS: backend har chaqiruvda shartsiz yangi
+  // PaymentTransaction yozadi. Shu sababli ikki chora birga:
+  //   * `idempotent: false` — avtomatik qayta urinish YO'Q. Aks holda javob
+  //     yo'lda yo'qolgan (lekin server qabul qilgan) so'rov ikkinchi marta
+  //     yuborilib, ikkita "kutilmoqda" tranzaksiya qolardi;
+  //   * saxiy vaqt chegarasi — soxta timeout foydalanuvchini tugmani QAYTA
+  //     bosishga undaydi, bu ham aynan o'sha dublikatni yaratadi.
+  // To'lov paytida boshqa ilovaga (SMS kodi uchun) o'tish mutlaqo normal
+  // xatti-harakat, ya'ni "tab fonda" holati bu yerda tez-tez uchraydi.
+  //
+  // ATAYIN shunday qoldirilgan: `idempotent: false` bu yerda uyqu/fon-tab
+  // desensitizatsiyasini ham o'chiradi (soxta timeout ham qayta urinilmaydi).
+  // Ularni ajratishning foydasi yo'q — ikkala yo'lda ham dublikat PENDING
+  // yozuv paydo bo'ladi, farqi faqat foydalanuvchi bundan xabardor bo'lish-
+  // bo'lmasligida, va hozirgi holat avvalgisidan (15s + to'liq qayta urinish)
+  // baribir yaxshiroq. To'g'ri yechim — backendda idempotentlik kaliti
+  // (bir xil kalitli takroriy so'rov mavjud tranzaksiyani qaytarsin); u
+  // alohida ish sifatida bajariladi.
+  createCheckoutSession: (payload, token) => request('/api/billing/checkout/', { method: 'POST', body: payload, token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS, idempotent: false }),
   // To'lovdan keyin premium holatini polling qilish uchun — webhook obunani
   // aktivlashtirgach is_premium true bo'ladi. Kesh aralashmasligi uchun _t.
   getSubscriptionStatus: (token) => request(`/api/billing/subscription/status/?_t=${Date.now()}`, { token, retryOnAuth: false }),
@@ -1784,7 +2090,7 @@ export const OlympyApi = {
   // Umumiy xatolar tahlili. Xato bo'lmasa backend darhol { explanation }
   // qaytaradi (task_id yo'q); aks holda Celery task + polling.
   explainAllMistakes: async (token, signal) => pollAiTask(
-    await request('/api/attempts/mistakes/explain/', { method: 'POST', token, signal }),
+    await request('/api/attempts/mistakes/explain/', { method: 'POST', token, signal, timeoutMs: AI_REQUEST_TIMEOUT_MS }),
     (taskId) => `/api/attempts/mistakes/explain/${taskId}/status/`,
     {
       token,
@@ -1795,7 +2101,12 @@ export const OlympyApi = {
   ),
   // Reward Shop
   getRewards: (token) => request('/api/me/rewards/', { token }),
-  redeemReward: (productId, token) => request('/api/me/rewards/redeem/', { method: 'POST', body: { product_id: productId }, token }),
+  // Sovg'ani sotib olish — `idempotent: false` MAJBURIY. Backend har chaqiruvda
+  // yangi `RewardRedemption` yozadi; modelda `(user, product)` bo'yicha unique
+  // constraint YO'Q, ya'ni takroriy so'rov tangalarni IKKINCHI marta yechadi va
+  // omborni (stock) yana kamaytiradi. Kod ichidagi IntegrityError tutqichi bu
+  // yerda umuman ishga tushmaydi — tutadigan constraint mavjud emas.
+  redeemReward: (productId, token) => request('/api/me/rewards/redeem/', { method: 'POST', body: { product_id: productId }, token, idempotent: false }),
   getMyRedemptions: (token) => request('/api/me/rewards/my-redemptions/', { token }).then(unwrapList),
   // Markaz do'koni — o'quvchi (o'z markazining faol mahsulotlari)
   getShopProducts: (token) => request('/api/shop/products/', { token }),
@@ -1826,7 +2137,7 @@ export const OlympyApi = {
   // AI o'quv rejasi. Yetarli natija bo'lmasa backend darhol { plan: [], detail }
   // qaytaradi (task_id yo'q); aks holda Celery task + polling.
   getStudyPlan: async (token, signal) => pollAiTask(
-    await request('/api/me/study-plan/', { method: 'POST', token, signal }),
+    await request('/api/me/study-plan/', { method: 'POST', token, signal, timeoutMs: AI_REQUEST_TIMEOUT_MS }),
     (taskId) => `/api/me/study-plan/${taskId}/status/`,
     {
       token,
@@ -1839,7 +2150,10 @@ export const OlympyApi = {
   // backend 10 ta ko'p tanlovli savol qaytaradi (saqlanmaydi). Baholash
   // client-side (savollarda correct_answer indeksi bor). Tier yetmasa backend
   // 403 { detail, upgrade_required, required_tier } qaytaradi.
-  generateCustomTest: (payload, token) => request('/api/me/custom-test/', { method: 'POST', body: payload, token }),
+  // Bu endpoint Celery'ga CHIQMAYDI — Gemini so'rov ichida sinxron chaqiriladi
+  // (10 ta savol), shu sababli AI chegarasi majburiy: default 30s da so'rov
+  // deyarli har safar "server javob bermadi" bo'lib uzilardi.
+  generateCustomTest: (payload, token) => request('/api/me/custom-test/', { method: 'POST', body: payload, token, timeoutMs: AI_REQUEST_TIMEOUT_MS }),
   // Oylik mashq (practice) kvotasi holati. {used, limit, unlimited}.
   // Standart=10/oy, Plus=25/oy, Pro=cheksiz (unlimited:true, limit:null).
   getPracticeQuota: (token) => request('/api/me/practice-quota/', { token }),
@@ -2002,14 +2316,21 @@ export const OlympyApi = {
   // Mashq (mock) testini boshlash — savollar ro'yxati va sarlavhasini qaytaradi.
   startMockOlympiad: (mockId, body, token) => request(`/api/mock-olympiads/${mockId}/start/`, { method: 'POST', body: body || {}, token }),
   // Mashq javoblarini topshirish — backend baholaydi (reytingga ta'sir qilmaydi).
-  submitMockOlympiad: (mockId, body, token) => request(`/api/mock-olympiads/${mockId}/submit/`, { method: 'POST', body: body || {}, token }),
+  // `idempotent: false` — takroriy yuborish 400 "Siz bu mashqni allaqachon
+  // yakunlagansiz" beradi va OlympiadTest uni xato banneri qilib ko'rsatib,
+  // natijani umuman ochmaydi. Eng xavfli payt — vaqt tugagandagi AVTOMATIK
+  // yuborish: u aynan tarmoq sekin bo'lgan lahzada ishga tushadi.
+  submitMockOlympiad: (mockId, body, token) => request(`/api/mock-olympiads/${mockId}/submit/`, { method: 'POST', body: body || {}, token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS, idempotent: false }),
   // O'qituvchi/Manager analitikasi — eng ko'p noto'g'ri savollar.
   getQuestionAnalytics: (centerId, token) => request(`/api/questions/analytics/?center=${centerId}`, { token }),
   // Platforma admini — retention/conversion/premium metrikalari (Tahlil tabi).
   // Faqat is_platform_admin uchun (403 boshqa rollarga). `refresh=1` cache'ni
   // chetlab o'tib qayta hisoblaydi.
+  // Chegara: HEAVY. Bu bloklar backend'da 10 daqiqaga cache'lanadi AYNAN
+  // og'irligi uchun — cache sovuq bo'lganda (yoki `refresh=1` da) hisob butun
+  // jadval bo'yicha ketadi va default chegaraga sig'masligi mumkin.
   getAdminMetrics: (token, { refresh = false } = {}) =>
-    request(`/api/analytics/metrics/${refresh ? '?refresh=1' : ''}`, { token }),
+    request(`/api/analytics/metrics/${refresh ? '?refresh=1' : ''}`, { token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
   // Platforma admini — hozir onlayn foydalanuvchilar soni (Boshqaruv paneli).
   // `getAdminMetrics`dan alohida, chunki u 10 daqiqa cache'lanadi; bu esa
   // cache'siz va yengil, har 15 soniyada so'raladi. Javob:
@@ -2026,20 +2347,23 @@ export const OlympyApi = {
   ),
   // Admin panel "Tahlil" tabidagi kengaytirilgan diagrammalar (faqat admin).
   // Har biri alohida endpoint — bo'sh jadvalda backend bo'sh massiv qaytaradi.
-  getAttemptsTrend: (token) => request('/api/analytics/attempts-trend/', { token }),
+  // Quyidagilar ham getAdminMetrics bilan bir xil cache/og'irlikda va admin
+  // paneli ularni BIR VAQTDA yuklaydi (parallel so'rovlar bir-birini
+  // sekinlashtiradi) — shu sababli hammasi HEAVY chegarada.
+  getAttemptsTrend: (token) => request('/api/analytics/attempts-trend/', { token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
   // Eslatma: yuqorida `getOlympiadStats(olympiadId, token)` allaqachon mavjud
   // (bitta olimpiada statistikasi — OwnerDashboard/ManagerDashboard ishlatadi).
   // Bu admin analitikasi alohida nom oladi (getOlympiadAnalytics), aks holda
   // obyektda nom to'qnashib eski metod yo'qolardi.
-  getOlympiadAnalytics: (token) => request('/api/analytics/olympiad-stats/', { token }),
-  getQuestionStats: (token) => request('/api/analytics/question-stats/', { token }),
-  getRevenueTrend: (token) => request('/api/analytics/revenue-trend/', { token }),
-  getCenterAnalytics: (token) => request('/api/analytics/center-stats/', { token }),
+  getOlympiadAnalytics: (token) => request('/api/analytics/olympiad-stats/', { token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
+  getQuestionStats: (token) => request('/api/analytics/question-stats/', { token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
+  getRevenueTrend: (token) => request('/api/analytics/revenue-trend/', { token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
+  getCenterAnalytics: (token) => request('/api/analytics/center-stats/', { token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
   // Suiiste'mol signallari: bayroq/ogohlantirish dinamikasi, eng ko'p
   // ogohlantirilgan hisoblar va kontent portlashi. FAQAT o'qish uchun —
   // hech kim bloklanmaydi, bayroq ham qo'yilmaydi (chora "Xavfsizlik"
   // tabidagi moderatsiya navbatida ko'riladi).
-  getAbuseStats: (token) => request('/api/analytics/abuse-stats/', { token }),
+  getAbuseStats: (token) => request('/api/analytics/abuse-stats/', { token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
   // ─── B2B / O'sish (growth) funksiyalari ───
   // Feature #1: B2B markaz onboarding — owner sehrgarini tugatish/o'tkazib yuborish.
   completeCenterOnboarding: (token) => request('/api/me/center-onboarding/', { method: 'PATCH', token }),
@@ -2066,7 +2390,11 @@ export const OlympyApi = {
   getReferral: (token) => request('/api/me/referral/', { token }),
   useReferral: (code, token) => request('/api/me/referral/use/', { method: 'POST', body: { code }, token }),
   // AI Support Chatbot
-  sendSupportChat: (messages, token, sessionId) => request('/api/support/chat/', { method: 'POST', body: { messages, session_id: sessionId }, token }),
+  // Backend Gemini'ni SINXRON chaqiradi (model/kalit fallback bilan): eng yomon
+  // holat ~12s server ichida + tarmoq. Default chegarada bu javob chegaraga
+  // juda yaqin kelib, widjetning O'Z xabari "server javob bermadi" bo'lib
+  // qulardi — ya'ni yordam oynasi yordam bera olmasdan xato ko'rsatardi.
+  sendSupportChat: (messages, token, sessionId) => request('/api/support/chat/', { method: 'POST', body: { messages, session_id: sessionId }, token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
   // `silent`: bu AI widjetning fon (passiv) tarix preload'i — u qulasa
   // widjetni avtomatik ochib "server bilan bog'lanishda muammo" ko'rsatmaymiz
   // (widjet o'zining loadHistory catch'ida xatoni jimgina yutadi).

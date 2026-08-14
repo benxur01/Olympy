@@ -528,11 +528,22 @@ const MockTestPage = ({ mock, user, onFinish, onNavigate }) => {
         {submitError && (
           <div className="rounded-xl px-4 py-3 text-sm text-error bg-wash border border-error/40 flex items-center justify-between gap-3">
             <span className="flex items-center gap-2"><Icon name="info" size={15} /> {submitError}</span>
-            {/* To'g'ridan-to'g'ri qayta yuborish — confirmModal'ni qayta ochmasdan */}
-            <button onClick={handleSubmit} disabled={submitting}
-              className="btn-ghost text-xs px-3 py-1.5 rounded-lg flex-shrink-0 disabled:opacity-50">
-              {submitting ? 'Yuborilmoqda...' : 'Qayta yuborish'}
-            </button>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {/* To'g'ridan-to'g'ri qayta yuborish — confirmModal'ni qayta ochmasdan */}
+              <button onClick={handleSubmit} disabled={submitting}
+                className="btn-ghost text-xs px-3 py-1.5 rounded-lg disabled:opacity-50">
+                {submitting ? 'Yuborilmoqda...' : 'Qayta yuborish'}
+              </button>
+              {/* AI yordamni QO'LDA ochish. Imtihon ekranida doimiy launcher
+                  yashiriladi (u taymer/navigatsiyani to'sardi), shuning uchun
+                  yordamga yagona kirish nuqtasi shu havola. Avtomatik ochilish
+                  cooldown'i bunga ta'sir qilmaydi — `openSupportChat` throttle
+                  qo'llamaydi. */}
+              <button type="button" onClick={() => globalThis.OlympyApi?.openSupportChat?.('exam_submit_error', submitError)}
+                className="text-xs underline underline-offset-2 whitespace-nowrap hover:opacity-80 cursor-pointer">
+                Yordam kerakmi?
+              </button>
+            </div>
           </div>
         )}
 
@@ -2350,11 +2361,19 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
               {submitError && (
                 <div className="mb-4 flex items-center justify-between gap-3 bg-wash text-error rounded-xl px-3 py-3 text-xs border border-error/40">
                   <span className="flex items-center gap-2"><Icon name="info" size={15} /> {submitError}</span>
-                  {/* To'g'ridan-to'g'ri qayta yuborish — confirmModal'ni qayta ochmasdan */}
-                  <button onClick={handleSubmit} disabled={submitting}
-                    className="btn-ghost text-xs px-3 py-1.5 rounded-lg flex-shrink-0 disabled:opacity-50">
-                    {submitting ? 'Yuborilmoqda...' : 'Qayta yuborish'}
-                  </button>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* To'g'ridan-to'g'ri qayta yuborish — confirmModal'ni qayta ochmasdan */}
+                    <button onClick={handleSubmit} disabled={submitting}
+                      className="btn-ghost text-xs px-3 py-1.5 rounded-lg disabled:opacity-50">
+                      {submitting ? 'Yuborilmoqda...' : 'Qayta yuborish'}
+                    </button>
+                    {/* AI yordamni qo'lda ochish — yuqoridagi izohga qarang
+                        (imtihon ekranida doimiy launcher yashirilgan). */}
+                    <button type="button" onClick={() => globalThis.OlympyApi?.openSupportChat?.('exam_submit_error', submitError)}
+                      className="text-xs underline underline-offset-2 whitespace-nowrap hover:opacity-80 cursor-pointer">
+                      Yordam kerakmi?
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -2547,11 +2566,19 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             {submitError && (
               <div className="mb-4 md:mb-6 flex items-center justify-between gap-3 bg-wash text-error rounded-xl px-3 md:px-4 py-3 text-xs md:text-sm border border-error/40">
                 <span className="flex items-center gap-2"><Icon name="info" size={15} /> {submitError}</span>
-                {/* To'g'ridan-to'g'ri qayta yuborish — confirmModal'ni qayta ochmasdan */}
-                <button onClick={handleSubmit} disabled={submitting}
-                  className="btn-ghost text-xs px-3 py-1.5 rounded-lg flex-shrink-0 disabled:opacity-50">
-                  {submitting ? 'Yuborilmoqda...' : 'Qayta yuborish'}
-                </button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {/* To'g'ridan-to'g'ri qayta yuborish — confirmModal'ni qayta ochmasdan */}
+                  <button onClick={handleSubmit} disabled={submitting}
+                    className="btn-ghost text-xs px-3 py-1.5 rounded-lg disabled:opacity-50">
+                    {submitting ? 'Yuborilmoqda...' : 'Qayta yuborish'}
+                  </button>
+                  {/* AI yordamni qo'lda ochish — yuqoridagi izohga qarang
+                      (imtihon ekranida doimiy launcher yashirilgan). */}
+                  <button type="button" onClick={() => globalThis.OlympyApi?.openSupportChat?.('exam_submit_error', submitError)}
+                    className="text-xs underline underline-offset-2 whitespace-nowrap hover:opacity-80 cursor-pointer">
+                    Yordam kerakmi?
+                  </button>
+                </div>
               </div>
             )}
 
