@@ -772,10 +772,16 @@ const Badge = ({ status }) => {
 };
 
 // ─── Stat Card ─────────────────────────────────────────────────────────────────
-const StatCard = ({ label, value, sub, icon, color = 'from-indigo-500 to-purple-600', glow }) => (
+// `color` prop nomi tarixiy (26 ta chaqiruv joyi) — endi u tekis token
+// klassini oladi, gradient emas. Standart qiymat avval
+// `'from-indigo-500 to-purple-600'` edi va `bg-gradient-to-br` ostiga
+// qo'yilardi: remap'dan keyin u qizil→ko'k gradient berardi. Bugun hamma
+// chaqiruv `color=` uzatadi, ya'ni ko'rinadigan xato yo'q edi — lekin
+// `color` siz qo'shilgan yangi karta o'sha gradientni olib qolardi.
+const StatCard = ({ label, value, sub, icon, color = 'bg-surface-2 text-text-secondary', glow }) => (
   <div className={`stat-card glass rounded-2xl p-5 card-hover ${glow || ''}`}>
     <div className="flex items-start justify-between mb-4">
-      <div className={`feature-icon bg-gradient-to-br ${color} opacity-90`}>{icon}</div>
+      <div className={`feature-icon ${color} opacity-90`}>{icon}</div>
       {sub && <span className="text-xs text-success font-medium font-data">{sub}</span>}
     </div>
     {/* `font-data` — qiymat almashganda ustun sakramasin (tabular-nums). */}
@@ -1432,8 +1438,12 @@ const BarChart = ({ data }) => {
     <div className="flex items-end gap-2 h-24">
       {data.map((d, i) => (
         <div key={i} className="flex-1 flex flex-col items-center gap-1">
+          {/* Shaffoflik ATAYIN bir xil: avval `0.7 + i * 0.05` edi, ya'ni
+              o'ngdagi ustun chapdagisidan yorqinroq chiqardi. Bu ma'lumot
+              emas — qiymat farqi balandlikda beriladi; o'zgaruvchi shaffoflik
+              esa yolg'on ikkinchi o'lcham yasardi. */}
           <div className="w-full rounded-t-md transition-all duration-700"
-            style={{ height: `${(d.value / max) * 80}px`, background: 'rgb(var(--color-accent))', opacity: 0.7 + i * 0.05 }} />
+            style={{ height: `${(d.value / max) * 80}px`, background: 'rgb(var(--color-accent))' }} />
           <span className="text-xs text-text-secondary">{d.label}</span>
         </div>
       ))}
