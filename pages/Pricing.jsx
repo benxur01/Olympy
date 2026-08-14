@@ -471,6 +471,18 @@ const PricingPage = ({ onNavigate, user, onUserUpdate }) => {
             {payError && (
               <div className="mb-4 rounded-lg border border-error/40 bg-error/10 px-3 py-2 text-xs font-bold text-error">
                 {payError}
+                {/* AI yordamni QO'LDA ochish. Yuqoridagi `handleCreatePayment`
+                    faqat 5xx/tarmoq xatosida widjetni AVTOMATIK ochadi va u
+                    cooldown'ga bo'ysunadi; bu havola esa har qanday xatoda va
+                    har doim ishlaydi — to'lov oqimida foydalanuvchini yolg'iz
+                    qoldirmaslik eng muhim joy. */}
+                <button
+                  type="button"
+                  onClick={() => OlympyApi.openSupportChat?.('payment_error', payError)}
+                  className="ml-2 underline underline-offset-2 hover:opacity-80 cursor-pointer"
+                >
+                  Yordam kerakmi?
+                </button>
               </div>
             )}
 

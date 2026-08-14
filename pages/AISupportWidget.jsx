@@ -1,12 +1,17 @@
 // pages/AISupportWidget.jsx — AI Support Floating chat widget with Expand capability
 
 const AISupportWidget = ({ user }) => {
-  // visible — widget umuman ko'rinadimi. Default: false (butunlay yashirin).
-  // Faqat "muammo" eventi (olympy:support_needed yoki olympy:auth_error)
-  // kelganda true bo'ladi; foydalanuvchi yopganda yana false'ga qaytadi.
+  // visible — HAL QILINMAGAN muammo bormi. "Muammo" eventi (olympy:support_needed
+  // yoki olympy:auth_error) kelganda true bo'ladi, foydalanuvchi chatni yopganda
+  // yana false'ga qaytadi. Ilgari bu bayroq butun widgetni (launcher bilan
+  // birga) yashirardi; endi u faqat launcher ustidagi diqqat belgisini
+  // boshqaradi — launcherning o'zi doim ko'rinadi (pastdagi izohga qarang).
   const [visible, setVisible] = React.useState(false);
   const [isOpen, setIsOpen] = React.useState(false);
   const [isExpanded, setIsExpanded] = React.useState(false);
+  // Imtihon rejimi — api.js dagi `setExamMode()` dan keladigan event.
+  // Launcher imtihon ekranini to'sib qo'ymasligi uchun kerak.
+  const [examActive, setExamActive] = React.useState(false);
 
   // Mehmon sessiya endi server HttpOnly cookie orqali (client session_id yubormaydi —
   // IDOR himoyasi). Eski localStorage kalitini tozalaymiz.
@@ -97,7 +102,23 @@ const AISupportWidget = ({ user }) => {
           contextTip = `Serverda xatolik yuz berdi${detailSuffix}.\nBu vaqtincha muammo bo'lishi mumkin. Nima qilmoqchi edingiz — yordam beraymi?`;
           break;
         case 'network_error':
-          contextTip = `Server bilan bog'lanishda muammo bo'ldi${detailSuffix}.\nInternet aloqangizni tekshiring yoki bir ozdan so'ng qayta urinib ko'ring. Yordam kerakmi?`;
+          // "Internet yo'q" va "server sekin javob berdi" — IKKI BOSHQA muammo.
+          // Ilgari ikkalasiga ham bitta matn ("Internet aloqangizni tekshiring")
+          // chiqardi: interneti joyida bo'lgan foydalanuvchi bekorga routerini
+          // qayta yoqar va bizga "sayt ishlamayapti" deb yozardi. Endi sababni
+          // brauzerning o'zidan so'raymiz — `navigator.onLine === false` yagona
+          // ishonchli oflayn signali (`true` bo'lishi internet BOR degani emas,
+          // shuning uchun faqat aniq `false` ni oflayn deb hisoblaymiz).
+          contextTip = (typeof navigator !== 'undefined' && navigator.onLine === false)
+            ? `Internet aloqangiz uzilgan ko'rinadi${detailSuffix}.\nUlanish tiklangach qayta urinib ko'ring — ma'lumotlaringiz yo'qolmaydi. Boshqa savolingiz bormi?`
+            : `Server javobini kutish cho'zildi${detailSuffix}.\nBu odatda vaqtinchalik holat. Bir ozdan so'ng qayta urinib ko'ring — yordam kerakmi?`;
+          break;
+        // Imtihon/mashq javoblarini topshirishdagi xato — foydalanuvchi
+        // banner ichidagi "Yordam kerakmi?" ni bosganda keladi (qo'lda).
+        // Bu eng qimmat vaziyat: o'quvchi javoblari yuborilmagan deb
+        // o'ylaydi, shuning uchun xabar aniq va tinchlantiruvchi bo'lsin.
+        case 'exam_submit_error':
+          contextTip = `Javoblarni topshirishda xatolik chiqdi${detailSuffix}.\nSahifani YOPMANG. Nima bo'lganini tekshirib, keyingi qadamni aytaman — savolingizni yozing.`;
           break;
         case 'payment_error':
           contextTip = `To'lov / tarifni rasmiylashtirishda xatolik yuz berdi${detailSuffix}.\nTo'lov bo'yicha yordam beraymi?`;
@@ -125,6 +146,16 @@ const AISupportWidget = ({ user }) => {
       window.removeEventListener('olympy:auth_error', handleAuthError);
       window.removeEventListener('olympy:support_needed', handleSupportNeeded);
     };
+  }, []);
+
+  // Imtihon boshlanishi/tugashini kuzatamiz (OlympiadTest `OlympyApi.setExamMode`
+  // chaqiradi, api.js esa shu eventni yuboradi). Faqat launcher yashiriladi —
+  // ochiq chat oynasiga tegilmaydi, aks holda imtihon boshlanganda foydalanuvchi
+  // yozayotgan savol o'rtada yo'qolib qolardi.
+  React.useEffect(() => {
+    const handleExamMode = (e) => setExamActive(!!e.detail?.active);
+    window.addEventListener('olympy:exam_mode', handleExamMode);
+    return () => window.removeEventListener('olympy:exam_mode', handleExamMode);
   }, []);
 
   const handleSend = async (textToSend) => {
@@ -175,20 +206,32 @@ const AISupportWidget = ({ user }) => {
     { text: "🔑 Parolni o'zgartirish", query: "Parolimni qanday o'zgartirsam bo'ladi?" }
   ];
 
-  // Default holatda butunlay yashirin — foydalanuvchini bezovta qilmasin. Faqat
-  // "muammo" eventi kelib visible=true bo'lgandagina biror narsa render bo'ladi.
-  if (!visible) return null;
-
+  // Launcher DOIM ko'rinadi. Ilgari widget `visible=false` bo'lganda butunlay
+  // `null` qaytarardi — ya'ni chatni QO'LDA ochishning umuman yo'li yo'q edi:
+  // u faqat avtomatik "muammo" eventidan ochilardi. Avtomatik ochilishga
+  // cooldown qo'yilgandan keyin (api.js — `network_error` uchun 10 daqiqa) bu
+  // bo'shliq jiddiylashdi: cooldown oynasida haqiqiy uzilish yuz bersa
+  // foydalanuvchi yordam so'ray olmasdi. Endi doimiy tugma bor va u hech qanday
+  // throttle'ga bo'ysunmaydi.
   if (!isOpen) {
+    // Imtihon davomida launcher yashiriladi: u ekranning o'ng pastki
+    // burchagida turadi va aynan o'sha yerda imtihon taymeri/navigatsiyasi
+    // joylashgan. Bu ekranda yordam xato banneridagi "Yordam kerakmi?"
+    // havolasi orqali ochiladi (u chatni to'g'ridan-to'g'ri chaqiradi).
+    if (examActive) return null;
     return (
       <button
         onClick={() => setIsOpen(true)}
         className="btn-primary fixed bottom-6 right-6 z-[999] w-14 h-14 rounded-full flex items-center justify-center"
-        title="AI Support"
+        title="AI yordamchi"
         aria-label="AI yordamchini ochish"
       >
         <Icon name="sparkles" size={24} />
-        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-success rounded-full border-2 border-ground" />
+        {/* Diqqat belgisi faqat hal qilinmagan muammo bo'lganda. Doimiy yashil
+            nuqta "yangi xabar bor" degan yolg'on signal berardi. */}
+        {visible && (
+          <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-success rounded-full border-2 border-ground" />
+        )}
       </button>
     );
   }
