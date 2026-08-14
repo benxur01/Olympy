@@ -1,17 +1,21 @@
 // pages/OwnerDashboard.jsx — Center director panel scoped to one center
 
-// ─── Badge/plastinka foni: nega `bg-ground`, `bg-wash` EMAS ───────────────
-// `--color-wash` (src/index.css) badge foni uchun to'g'ri token, LEKIN u
-// `tailwind.config.js` ning `colors` bo'limida e'lon qilinmagan — ya'ni
-// `bg-wash` klassi umuman kompilyatsiya bo'lmaydi va fon shaffof qoladi
-// (`text-medal-1` ham xuddi shunday; Leaderboard.jsx buni allaqachon
-// `style={{ borderColor: 'rgb(var(--color-medal-N))' }}` bilan aylanib
-// o'tgan). Shu sababli bu yerda `bg-ground` ishlatiladi:
+// ─── Badge/plastinka foni: `bg-ground` ────────────────────────────────────
+// Rangli chip va banner foni HAR DOIM neytral plastinka bo'ladi — `success/10`
+// kabi o'z-o'zini tinlash EMAS: tint fonni matn rangiga tortadi va juftlik AA
+// dan tushadi (o'lchangan: 3.98–4.69:1).
+//
+// Bu yerda `bg-ground` ishlatiladi, `bg-wash` emas:
 //   dark  — `wash` AYNAN `ground` (bir xil qiymat), farq yo'q;
 //   light — `wash` = surface-1 #EEECE5, `ground` = paper #E7E4DC, ya'ni
 //           bir tish to'qroq. O'lchandi: accent 4.96, success 5.01,
 //           warning 4.97, error 5.01, text-secondary 4.93 — hammasi AA.
-// Agar `wash` config'ga qo'shilsa, bularni `bg-wash` ga qaytarsa bo'ladi.
+// Ikkalasi ham to'g'ri; `bg-wash` endi kompilyatsiya bo'ladi (u avval
+// `tailwind.config.js` da e'lon qilinmagani uchun fon shaffof qolardi).
+//
+// DIQQAT: `text-medal-*` hali ham utility sifatida MAVJUD EMAS — medal rangi
+// `style={{ borderColor: 'rgb(var(--color-medal-N))' }}` bilan beriladi
+// (`pages/Leaderboard.jsx` naqshi).
 
 // Dashboard ichki navigatsiyasi ↔ URL: har bir tab `/dashboard/owner/<key>`
 // manziliga bog'lanadi (home → /dashboard/owner).

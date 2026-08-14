@@ -369,23 +369,36 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
     : (() => { const ranks = myResults.map(r => r.rank || 999).filter(r => r < 999); return ranks.length ? Math.min(...ranks) : null; })();
   const totalAttempts = apiStats?.total_attempts != null ? apiStats.total_attempts : myResults.length;
 
+  // Yutuq belgilari — emoji EMAS (🥇🥈🥉 ni ham qo'shib): har platformada
+  // boshqacha chiziladi, o'lchamini boshqarib bo'lmaydi va ekran o'quvchi uni
+  // ovoz chiqarib o'qiydi. O'rin farqi `medal-*` tokenida — `place` maydoni
+  // pastda `medalBorderStyle` orqali chegara rangiga aylanadi (Leaderboard
+  // bilan bir xil naqsh), raqamning o'zi esa doim `text-primary` da qoladi.
   const achievements = [
-    bestRank === 1 && { icon:'🥇', title:"1-o'rin", desc:"Eng yuqori natija", color:'from-amber-500/20 to-orange-500/10 border-amber-500/20' },
-    bestRank === 3 && { icon:'🥉', title:"3-o'rin", desc:'Top 3 natija', color:'from-amber-700/20 to-orange-800/10 border-amber-700/20' },
-    totalAttempts >= 3 && { icon:'⭐', title:`${totalAttempts} ta olimpiada`, desc:'Faol ishtirokchi', color:'from-indigo-500/20 to-purple-500/10 border-indigo-500/20' },
-    avgScore >= 90 && { icon:'🎯', title:'90%+ natija', desc:"O'rtacha ball yuqori", color:'from-emerald-500/20 to-teal-500/10 border-emerald-500/20' },
+    bestRank === 1 && { icon:'award', place:1, title:"1-o'rin", desc:"Eng yuqori natija" },
+    bestRank === 3 && { icon:'award', place:3, title:"3-o'rin", desc:'Top 3 natija' },
+    totalAttempts >= 3 && { icon:'bolt', title:`${totalAttempts} ta olimpiada`, desc:'Faol ishtirokchi' },
+    avgScore >= 90 && { icon:'chart', title:'90%+ natija', desc:"O'rtacha ball yuqori" },
   ].filter(Boolean);
+  // `medalBorderStyle` — Leaderboard.jsx dagi umumiy yordamchi (fayllar bitta
+  // modulga birlashtiriladi, `fmtReceiptDate` shu yerda xuddi shunday
+  // ishlatiladi). `--color-medal-*` Tailwind rang xaritasida yo'q, shuning
+  // uchun token faqat inline `borderColor` orqali beriladi.
 
   // Avval bu blok 3 ta hardcoded fan bilan ko'rinardi (Tarix 91 va h.k.).
   // Endi /api/results/me/stats/ subjects ro'yxatidan yoki lokal myResults
   // o'rtacha qiymatlaridan haqiqiy fan kesimini olamiz.
-  const SUBJECT_PALETTE = ['#f59e0b', '#C0362C', '#22c55e', '#698AAC', '#2F5D8C', '#ef4444'];
+  //
+  // Har fanga alohida rang (avvalgi `SUBJECT_PALETTE` — 6 ta qattiq HEX)
+  // olib tashlandi: har chiziq tepasida fan nomi YOZILGAN, ya'ni rang hech
+  // qanday ma'lumot qo'shmasdi, ustiga o'sha oltita HEX ikkala mavzuda ham
+  // bir xil qolar edi. Endi barcha chiziqlar `.progress-fill` ning o'z
+  // `accent` tokenida (matn ko'tarmaydigan belgi → `accent`).
   const subjectStats = (() => {
     if (Array.isArray(apiStats?.subjects) && apiStats.subjects.length > 0) {
-      return apiStats.subjects.slice(0, 6).map((row, i) => ({
+      return apiStats.subjects.slice(0, 6).map((row) => ({
         s: row.subject || '—',
         pct: Math.round(row.average_score || 0),
-        color: SUBJECT_PALETTE[i % SUBJECT_PALETTE.length],
       }));
     }
     const buckets = {};
@@ -397,10 +410,9 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
       buckets[key] = b;
     });
     return Object.values(buckets)
-      .map((b, i) => ({
+      .map((b) => ({
         s: b.s,
         pct: b.count ? Math.round(b.total / b.count) : 0,
-        color: SUBJECT_PALETTE[i % SUBJECT_PALETTE.length],
       }))
       .sort((a, b) => b.pct - a.pct)
       .slice(0, 4);
@@ -484,13 +496,16 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
       <div className={`glass-strong rounded-3xl p-4 md:p-6 relative overflow-hidden ${isPremium ? 'premium-hero' : ''}`}>
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center gap-5">
           <div className="relative">
-            <Avatar name={user?.name || 'Ali Valiyev'} src={user?.avatarUrl || ''} size={80} gradient="from-indigo-500 to-purple-600" premium={isPremium} />
+            <Avatar name={user?.name || 'Ali Valiyev'} src={user?.avatarUrl || ''} size={80} gradient="bg-pencil-600" premium={isPremium} />
             {/* Tasdiq belgisi faqat haqiqatan ham telegram ulangan akkauntlarda
                 ko'rsatiladi. Avval bu belgi har bir foydalanuvchida fake
-                100% "tasdiqlangan profil" ko'rinishini yaratardi. */}
+                100% "tasdiqlangan profil" ko'rinishini yaratardi.
+                Rang `.badge-approved` mantig'i bo'yicha: neytral yuza + `success`
+                chegara va belgi (avval `gradient-bg` ustida oq ✓ turardi —
+                qog'oz mavzuda u ko'rinmay qolardi). */}
             {user?.telegramLinked && (
-              <div className="absolute -bottom-1 -right-1 w-6 h-6 gradient-bg rounded-full flex items-center justify-center" title="Telegram tasdiqlangan">
-                <span className="text-white text-xs">✓</span>
+              <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full border border-success bg-surface-1 text-success flex items-center justify-center" title="Telegram tasdiqlangan">
+                <Icon name="check" size={12} />
               </div>
             )}
             {isApi && (
@@ -499,8 +514,9 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                 <button
                   onClick={() => avatarInputRef.current?.click()}
                   disabled={avatarLoading}
-                  className="absolute -bottom-2 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full border border-white/15 bg-slate-950 text-white shadow-lg hover:bg-indigo-600 disabled:opacity-60"
+                  className="btn-primary absolute -bottom-2 left-1/2 flex h-8 w-8 -translate-x-1/2 items-center justify-center rounded-full disabled:opacity-60"
                   title="Profil rasmini yuklash"
+                  aria-label="Profil rasmini yuklash"
                 >
                   <Icon name="upload" size={14} />
                 </button>
@@ -509,12 +525,12 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-3 flex-wrap">
-              <h2 className={`text-2xl font-black break-words ${isPremium ? 'premium-name' : 'text-white'}`}>{user?.name || 'Ali Valiyev'}</h2>
-              {/* Premium badge — oltin gradient chip. Avval faqat ⭐ emoji edi. */}
+              <h2 className={`font-display text-2xl font-bold break-words ${isPremium ? 'premium-name' : 'text-text-primary'}`}>{user?.name || 'Ali Valiyev'}</h2>
+              {/* Premium badge — `.premium-badge` (qattiq oltin, src/index.css).
+                  Ichidagi ⭐ emoji olib tashlandi: Leaderboard'dagi bir xil
+                  badge ham faqat matndan iborat. */}
               {isPremium && (
-                <span className="premium-badge" title="Premium o'quvchi">
-                  <span aria-hidden="true">⭐</span> Premium
-                </span>
+                <span className="premium-badge" title="Premium o'quvchi">Premium</span>
               )}
               {/* A'zo chip — faqat haqiqatan ham biror rol approved bo'lsa.
                   Avval har bir foydalanuvchida ko'rinardi va anglashilmasdi. */}
@@ -526,7 +542,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                   : <span className="chip badge-draft text-xs">Yangi foydalanuvchi</span>;
               })()}
             </div>
-            <div className="text-white/40 text-sm mt-0.5">{(() => {
+            <div className="text-text-secondary font-data text-sm mt-0.5">{(() => {
               // Telefonni qisman yashirish — O'zbekiston va xalqaro raqamlar
               // uchun ham: boshini (davlat kodi + 2 raqam) va oxirgi 4 raqamni
               // ko'rsatib, oradagini *** bilan almashtiramiz.
@@ -535,7 +551,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
               return m ? `${m[1]} *** ${m[3]}` : phone;
             })()}</div>
             <div className="flex flex-wrap gap-3 mt-3">
-              <div className="flex items-center gap-1.5 text-sm text-white/50"><Icon name="building" size={14} />{(() => {
+              <div className="flex items-center gap-1.5 text-sm text-text-secondary"><Icon name="building" size={14} />{(() => {
                 // Avval store.centers dan qidirilardi va API rejimida bo'sh
                 // edi → "Tashkilotsiz" deb ko'rinardi. Endi mapBackendUser
                 // tayyorlagan centerName'ni ishlatamiz, store ga tushib
@@ -547,26 +563,30 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                 const fromStore = store.centers.find(c => String(c.id) === String(cid));
                 return fromStore?.name || 'Tashkilotsiz';
               })()}</div>
-              <div className="flex items-center gap-1.5 text-sm text-white/50"><Icon name="clock" size={14} />{user?.joined ? `${user.joined} dan` : '—'}</div>
+              <div className="flex items-center gap-1.5 text-sm text-text-secondary"><Icon name="clock" size={14} /><span className="font-data">{user?.joined ? `${user.joined} dan` : '—'}</span></div>
               {/* Premium muddati — StudentDashboard'dagi "Mening abonementim"
-                  bloki bilan bir xil format: "<sana> gacha (N kun qoldi)". */}
+                  bloki bilan bir xil format: "<sana> gacha (N kun qoldi)".
+                  Oltin rang `warning` tokenida (`.premium-name` bilan bir xil
+                  tanlov): qattiq amber-200 qog'oz mavzuda 1.4:1 edi. */}
               {isPremium && currentSub && (
-                <div className="flex items-center gap-1.5 text-sm text-amber-300/80">
+                <div className="flex items-center gap-1.5 text-sm text-text-secondary">
                   <Icon name="clock" size={14} />
-                  <span>Premium: <span className="font-bold text-amber-200">{fmtReceiptDate(currentSub.end_date)}</span> gacha</span>
+                  <span>Premium: <span className="font-data font-bold text-warning">{fmtReceiptDate(currentSub.end_date)}</span> gacha</span>
                   {typeof currentSub.days_remaining === 'number' && (
-                    <span className="font-bold text-emerald-300">({currentSub.days_remaining} kun qoldi)</span>
+                    <span className="font-data font-bold text-success">({currentSub.days_remaining} kun qoldi)</span>
                   )}
                 </div>
               )}
             </div>
+            {/* Raqamli ustunlar — `font-data` (tabular-nums): qiymat almashganda
+                to'rtta chip kengligi sakramasin. */}
             <div className="flex flex-wrap gap-3 mt-3">
-              <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="text-lg font-black text-white">{myResults.length}</div><div className="text-xs text-white/40">Olimpiada</div></div>
-              <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="text-lg font-black gradient-text">{bestRank ? `#${bestRank}` : '—'}</div><div className="text-xs text-white/40">Eng yaxshi</div></div>
-              <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="text-lg font-black text-white">{avgScore || '—'}{avgScore ? '%' : ''}</div><div className="text-xs text-white/40">O'rtacha</div></div>
-              <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="text-lg font-black text-white">{achievements.length}</div><div className="text-xs text-white/40">Yutuqlar</div></div>
+              <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="font-data text-lg font-bold text-text-primary">{myResults.length}</div><div className="text-xs text-text-secondary">Olimpiada</div></div>
+              <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="font-data text-lg font-bold text-accent">{bestRank ? `#${bestRank}` : '—'}</div><div className="text-xs text-text-secondary">Eng yaxshi</div></div>
+              <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="font-data text-lg font-bold text-text-primary">{avgScore || '—'}{avgScore ? '%' : ''}</div><div className="text-xs text-text-secondary">O'rtacha</div></div>
+              <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="font-data text-lg font-bold text-text-primary">{achievements.length}</div><div className="text-xs text-text-secondary">Yutuqlar</div></div>
             </div>
-            {avatarError && <div className="mt-2 text-xs font-semibold text-rose-300">{avatarError}</div>}
+            {avatarError && <div className="mt-2 text-xs font-semibold text-error" role="alert">{avatarError}</div>}
           </div>
           <div className="flex flex-col gap-2">
             <button
@@ -580,7 +600,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
               <button
                 onClick={() => setConfirmDeleteAvatar(true)}
                 disabled={avatarLoading}
-                className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 text-rose-300 hover:text-rose-200 disabled:opacity-50"
+                className="btn-danger text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 disabled:opacity-50"
               >
                 <Icon name="trash" size={13} /> Rasmni o'chirish
               </button>
@@ -591,13 +611,19 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
 
       {/* Achievements */}
       <div>
-        <h3 className="font-bold text-white mb-3">Yutuqlar</h3>
+        <h3 className="font-display font-bold text-text-primary mb-3">Yutuqlar</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {achievements.map((a,i) => (
-            <div key={i} className={`glass rounded-2xl p-4 text-center card-hover border bg-gradient-to-br ${a.color}`}>
-              <div className="text-3xl mb-2">{a.icon}</div>
-              <div className="text-sm font-bold text-white">{a.title}</div>
-              <div className="text-xs text-white/40">{a.desc}</div>
+            /* `glass` hoshiyasini `box-shadow: inset` bilan chizadi, shuning
+               uchun karta ustiga `border` QO'YILMAYDI — ikkita halqa chiqardi.
+               O'rin belgisi chap chetdagi 4px chiziqda: medal tokeni faqat
+               shu bitta tomonda, qolgan hoshiya token hoshiyasicha qoladi. */
+            <div key={i}
+              className={`glass rounded-2xl p-4 text-center card-hover ${a.place ? 'border-l-4' : ''}`}
+              style={medalBorderStyle(a.place)}>
+              <div className="flex justify-center mb-2 text-accent"><Icon name={a.icon} size={26} /></div>
+              <div className="text-sm font-bold text-text-primary">{a.title}</div>
+              <div className="text-xs text-text-secondary">{a.desc}</div>
             </div>
           ))}
         </div>
@@ -606,29 +632,29 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
       {/* Best subjects */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div className="glass rounded-2xl p-5">
-          <h3 className="font-bold text-white mb-4">Fanlar bo'yicha</h3>
+          <h3 className="font-display font-bold text-text-primary mb-4">Fanlar bo'yicha</h3>
           <div className="space-y-3">
             {/* Xato bo'lsa "bo'sh" o'rniga aniq xabar + qayta urinish. */}
             {subjectStats.length === 0 && isApi && apiStatsRes.error && (
-              <div className="text-sm text-rose-300">
+              <div className="text-sm text-error" role="alert">
                 {OlympyApi.toUserMessage?.(apiStatsRes.error) || "Fan kesimini yuklab bo'lmadi."}{' '}
-                <button onClick={() => apiStatsRes.reload()} className="underline hover:text-rose-200">Qayta urinish</button>
+                <button onClick={() => apiStatsRes.reload()} className="underline underline-offset-2">Qayta urinish</button>
               </div>
             )}
             {subjectStats.length === 0 && !(isApi && apiStatsRes.error) && (
-              <div className="text-sm text-white/40">Hali fan kesimida natijalar yo'q.</div>
+              <div className="text-sm text-text-secondary">Hali fan kesimida natijalar yo'q.</div>
             )}
             {subjectStats.map((x, i) => (
               <div key={`${x.s}-${i}`}>
-                <div className="flex justify-between mb-1"><span className="text-sm text-white/70">{x.s}</span><span className="text-sm font-bold text-white">{x.pct}%</span></div>
-                <div className="progress-bar h-2"><div className="progress-fill" style={{width:`${x.pct}%`,background:x.color}}/></div>
+                <div className="flex justify-between mb-1"><span className="text-sm text-text-secondary">{x.s}</span><span className="font-data text-sm font-bold text-text-primary">{x.pct}%</span></div>
+                <div className="progress-bar h-2"><div className="progress-fill" style={{width:`${x.pct}%`}}/></div>
               </div>
             ))}
           </div>
         </div>
 
         <div className="glass rounded-2xl p-5">
-          <h3 className="font-bold text-white mb-4">Natijalar dinamikasi</h3>
+          <h3 className="font-display font-bold text-text-primary mb-4">Natijalar dinamikasi</h3>
           {(() => {
             const months = isApi && Array.isArray(apiMonthlyRes.data?.months)
               ? apiMonthlyRes.data.months
@@ -639,29 +665,30 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             }));
             const hasAny = months.some(m => (m.attempts || 0) > 0);
             if (isApi && apiMonthlyRes.loading && !apiMonthlyRes.data) {
-              return <div className="text-xs text-white/40">Yuklanmoqda...</div>;
+              return <div className="text-xs text-text-secondary">Yuklanmoqda...</div>;
             }
             // Xato bo'lsa "to'planmagan" o'rniga aniq xabar + qayta urinish.
             if (isApi && apiMonthlyRes.error && !apiMonthlyRes.data) {
               return (
-                <div className="text-xs text-rose-300">
+                <div className="text-xs text-error" role="alert">
                   {OlympyApi.toUserMessage?.(apiMonthlyRes.error) || "Oylik dinamikani yuklab bo'lmadi."}{' '}
-                  <button onClick={() => apiMonthlyRes.reload()} className="underline hover:text-rose-200">Qayta urinish</button>
+                  <button onClick={() => apiMonthlyRes.reload()} className="underline underline-offset-2">Qayta urinish</button>
                 </div>
               );
             }
             if (!isApi || !hasAny) {
-              return <div className="text-xs text-white/40">Hali oylik natijalar to'planmagan.</div>;
+              return <div className="text-xs text-text-secondary">Hali oylik natijalar to'planmagan.</div>;
             }
             return <BarChart data={data} />;
           })()}
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* Tabs — `aria-pressed` bo'lmasa ekran o'quvchi qaysi biri tanlanganini
+          aytmaydi: faol holat faqat rang va pastdagi chiziq bilan berilgan. */}
       <div className="nav-tabs flex">
         {['results','olympiads','certificates','settings'].map(t => (
-          <button key={t} onClick={() => setTab(t)} className={`nav-tab ${tab===t?'active':''}`}>
+          <button key={t} type="button" onClick={() => setTab(t)} aria-pressed={tab===t} className={`nav-tab ${tab===t?'active':''}`}>
             {t==='results'?'Natijalar':t==='olympiads'?"Olimpiadalar":t==='certificates'?'Sertifikatlar':'Sozlamalar'}
           </button>
         ))}
@@ -672,24 +699,29 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
           {/* Xato bo'lsa "natijalar yo'q" o'rniga aniq xabar + qayta yuklash. */}
           {myResults.length === 0 && isApi && apiResultsRes.error && (
             <div className="text-center text-sm py-6 glass rounded-2xl">
-              <div className="text-rose-300 font-semibold mb-3">
+              <div className="text-error font-semibold mb-3" role="alert">
                 {OlympyApi.toUserMessage?.(apiResultsRes.error) || "Natijalarni yuklab bo'lmadi. Qayta urinib ko'ring."}
               </div>
               <button onClick={() => apiResultsRes.reload()} className="btn-ghost text-xs px-4 py-2 rounded-xl">Qayta yuklash</button>
             </div>
           )}
-          {myResults.length === 0 && !(isApi && apiResultsRes.error) && <div className="text-center text-white/40 text-sm py-6 glass rounded-2xl">Hali natijalar yo'q</div>}
+          {myResults.length === 0 && !(isApi && apiResultsRes.error) && <div className="text-center text-text-secondary text-sm py-6 glass rounded-2xl">Hali natijalar yo'q</div>}
           {myResults.map(r => (
-            <div key={r.id} className="glass rounded-2xl p-4 flex items-center gap-4 cursor-pointer hover:bg-white/5"
+            /* Hover `card-hover` da (fon + hoshiya), `hover:bg-white/5` emas —
+               qog'oz mavzuda oq yuvish umuman ko'rinmasdi. */
+            <div key={r.id} className="glass card-hover rounded-2xl p-4 flex items-center gap-4 cursor-pointer"
               onClick={() => onNavigate && onNavigate('results', { ...r.attempt, olympiad: baseOlympiads.find(o => String(o.id) === String(r.attempt.olympiadId)) })}>
-              <div className={`w-12 h-12 rounded-xl flex items-center justify-center font-black flex-shrink-0 ${r.rank===1?'bg-amber-500/20 text-amber-400':'bg-indigo-500/15 text-indigo-400'}`}>#{r.rank || '—'}</div>
+              {/* O'rin — Leaderboard naqshi: neytral yuza, medal tokeni faqat
+                  chegarada, raqamning o'zi doim `text-primary` da o'qiladi. */}
+              <div className="w-12 h-12 rounded-xl border border-edge bg-surface-2 flex items-center justify-center font-data font-bold text-text-primary flex-shrink-0"
+                style={medalBorderStyle(r.rank)}>#{r.rank || '—'}</div>
               <div className="flex-1 min-w-0">
-                <div className="font-semibold text-white truncate">{r.olympiad}</div>
-                <div className="flex items-center gap-2 mt-0.5"><SubjectBadge subject={r.subject} /><span className="text-xs text-white/30">{r.date}</span></div>
+                <div className="font-semibold text-text-primary truncate">{r.olympiad}</div>
+                <div className="flex items-center gap-2 mt-0.5"><SubjectBadge subject={r.subject} /><span className="font-data text-xs text-text-secondary">{r.date}</span></div>
               </div>
               <div className="text-right">
-                <div className="text-xl font-black text-white">{r.score}<span className="text-white/30 text-sm">/100</span></div>
-                <div className="text-xs text-emerald-400">{r.correct} to'g'ri</div>
+                <div className="font-data text-xl font-bold text-text-primary">{r.score}<span className="text-text-secondary text-sm">/100</span></div>
+                <div className="font-data text-xs text-success">{r.correct} to'g'ri</div>
               </div>
             </div>
           ))}
@@ -711,24 +743,30 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             if (list.length === 0 && isApi && apiOlympiadsRes.error) {
               return (
                 <div className="text-center text-sm py-6 glass rounded-2xl">
-                  <div className="text-rose-300 font-semibold mb-3">
+                  <div className="text-error font-semibold mb-3" role="alert">
                     {OlympyApi.toUserMessage?.(apiOlympiadsRes.error) || "Olimpiadalarni yuklab bo'lmadi. Qayta urinib ko'ring."}
                   </div>
                   <button onClick={() => apiOlympiadsRes.reload()} className="btn-ghost text-xs px-4 py-2 rounded-xl">Qayta yuklash</button>
                 </div>
               );
             }
-            if (list.length === 0) return <div className="text-center text-white/40 text-sm py-6 glass rounded-2xl">Olimpiadalar yo'q</div>;
+            if (list.length === 0) return <div className="text-center text-text-secondary text-sm py-6 glass rounded-2xl">Olimpiadalar yo'q</div>;
             return list.map(o => (
               <div key={o.id} className="glass rounded-2xl p-4 flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl gradient-bg flex items-center justify-center text-white flex-shrink-0">🏆</div>
+                {/* 🏆 emoji o'rniga `Icon` — bo'lim belgisi emoji bo'lmaydi. */}
+                <div className="w-10 h-10 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-text-secondary flex-shrink-0">
+                  <Icon name="trophy" size={18} />
+                </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-semibold text-white truncate">{o.title}</div>
+                  <div className="font-semibold text-text-primary truncate">{o.title}</div>
                   <div className="flex items-center gap-2 mt-0.5">
                     <SubjectBadge subject={o.subject} />
-                    {o.testLevel && <span className="chip bg-violet-500/15 text-violet-300 border border-violet-500/20">{o.testLevel}</span>}
-                    {o.testType && <span className="chip bg-sky-500/15 text-sky-300 border border-sky-500/20">{testTypeLabel(o.testType)}</span>}
-                    <span className="text-xs text-white/30">{o.startDate || o.date}</span>
+                    {/* Chip ranglari `.badge-*` to'plamidan: daraja — `accent-2`
+                        (qalam ko'ki), tur — neytral. Avvalgi violet/sky juftligi
+                        faqat bezak edi va ikkala mavzuda tekshirilmagan. */}
+                    {o.testLevel && <span className="chip badge-active">{o.testLevel}</span>}
+                    {o.testType && <span className="chip badge-draft">{testTypeLabel(o.testType)}</span>}
+                    <span className="font-data text-xs text-text-secondary">{o.startDate || o.date}</span>
                   </div>
                 </div>
                 <Badge status={statusLabel(o.status)} />
@@ -741,26 +779,29 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
       {tab === 'certificates' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {certificates.length === 0 && (
-            <div className="md:col-span-2 text-center text-white/40 text-sm py-6 glass rounded-2xl">
+            <div className="md:col-span-2 text-center text-text-secondary text-sm py-6 glass rounded-2xl">
               Hozircha sertifikatlar yo'q. 1-o'rinni egallasangiz, sertifikatlar shu yerda paydo bo'ladi.
             </div>
           )}
           {certificates.map((c, i) => (
-            <div key={i} className="glass rounded-2xl p-5 border border-amber-500/20 bg-gradient-to-br from-amber-500/5 to-orange-500/5">
-              <div className="text-3xl mb-3">🏅</div>
-              <div className="font-bold text-white mb-1">{c.title}</div>
-              <div className="text-sm text-white/50 mb-1">{c.olympiad}</div>
-              <div className="text-xs text-white/30 mb-4">{c.date}</div>
+            /* Sertifikat faqat 1-o'rin uchun beriladi, shuning uchun chap
+               chiziq `medal-1` (oltin) tokenida — gradient va ikkinchi halqa
+               o'rniga bitta ma'noli belgi. */
+            <div key={i} className="glass rounded-2xl p-5 border-l-4" style={medalBorderStyle(1)}>
+              <div className="mb-3 text-text-secondary"><Icon name="award" size={26} /></div>
+              <div className="font-bold text-text-primary mb-1">{c.title}</div>
+              <div className="text-sm text-text-secondary mb-1">{c.olympiad}</div>
+              <div className="font-data text-xs text-text-secondary mb-4">{c.date}</div>
               <button
                 onClick={() => handleDownloadCert(c)}
                 disabled={certDownloading === c.attemptId}
                 className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 disabled:opacity-50">
-                <Icon name="copy" size={13} /> {certDownloading === c.attemptId ? "Yuklanmoqda..." : 'Yuklab olish'}
+                <Icon name="download" size={13} /> {certDownloading === c.attemptId ? "Yuklanmoqda..." : 'Yuklab olish'}
               </button>
             </div>
           ))}
           {certError && (
-            <div className="md:col-span-2 text-xs text-rose-300 text-center">{certError}</div>
+            <div className="md:col-span-2 text-xs text-error text-center" role="alert">{certError}</div>
           )}
         </div>
       )}
@@ -769,36 +810,36 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {/* Profil ma'lumotlari */}
           <form onSubmit={handleProfileSubmit} className="glass rounded-2xl p-5 space-y-3">
-            <h3 className="font-bold text-white mb-1">Profil ma'lumotlari</h3>
+            <h3 className="font-display font-bold text-text-primary mb-1">Profil ma'lumotlari</h3>
             {!isApi && (
-              <div className="text-xs text-amber-300">Tahrirlash faqat akkaunt rejimida mavjud.</div>
+              <div className="text-xs text-warning">Tahrirlash faqat akkaunt rejimida mavjud.</div>
             )}
             <div>
-              <label className="block text-xs text-white/50 mb-1">Ism</label>
+              <label className="block text-xs text-text-secondary mb-1">Ism</label>
               <input
                 type="text"
                 value={profileForm.firstName}
                 onChange={(e) => setProfileForm(f => ({ ...f, firstName: e.target.value }))}
                 disabled={!isApi || profileSaving}
                 maxLength={60}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+                className="input-field text-sm px-3 py-2 disabled:opacity-50"
                 placeholder="Ali"
               />
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1">Familiya</label>
+              <label className="block text-xs text-text-secondary mb-1">Familiya</label>
               <input
                 type="text"
                 value={profileForm.lastName}
                 onChange={(e) => setProfileForm(f => ({ ...f, lastName: e.target.value }))}
                 disabled={!isApi || profileSaving}
                 maxLength={60}
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+                className="input-field text-sm px-3 py-2 disabled:opacity-50"
                 placeholder="Valiyev"
               />
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1">Username</label>
+              <label className="block text-xs text-text-secondary mb-1">Username</label>
               <input
                 type="text"
                 value={profileForm.username}
@@ -806,20 +847,20 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                 disabled={!isApi || profileSaving}
                 maxLength={32}
                 autoComplete="off"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+                className="input-field text-sm px-3 py-2 disabled:opacity-50"
                 placeholder="ali.valiyev"
               />
-              <div className="text-[10px] text-white/30 mt-1">Faqat harf, raqam, "_" va "." — kamida 3 belgi.</div>
+              <div className="text-[10px] text-text-secondary mt-1">Faqat harf, raqam, "_" va "." — kamida 3 belgi.</div>
             </div>
             {profileMsg.text && (
-              <div className={`text-xs font-semibold ${profileMsg.type === 'ok' ? 'text-emerald-300' : 'text-rose-300'}`}>
+              <div className={`text-xs font-semibold ${profileMsg.type === 'ok' ? 'text-success' : 'text-error'}`}>
                 {profileMsg.text}
               </div>
             )}
             <button
               type="submit"
               disabled={!isApi || profileSaving}
-              className="w-full gradient-bg text-white font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50"
+              className="btn-primary w-full rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
             >
               {profileSaving ? 'Saqlanmoqda...' : 'Saqlash'}
             </button>
@@ -827,55 +868,55 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
 
           {/* Parol o'zgartirish */}
           <form onSubmit={handlePasswordSubmit} className="glass rounded-2xl p-5 space-y-3">
-            <h3 className="font-bold text-white mb-1">Parolni o'zgartirish</h3>
+            <h3 className="font-display font-bold text-text-primary mb-1">Parolni o'zgartirish</h3>
             {!isApi && (
-              <div className="text-xs text-amber-300">Parol almashtirish faqat akkaunt rejimida mavjud.</div>
+              <div className="text-xs text-warning">Parol almashtirish faqat akkaunt rejimida mavjud.</div>
             )}
             <div>
-              <label className="block text-xs text-white/50 mb-1">Eski parol</label>
+              <label className="block text-xs text-text-secondary mb-1">Eski parol</label>
               <input
                 type="password"
                 value={pwForm.oldPassword}
                 onChange={(e) => setPwForm(f => ({ ...f, oldPassword: e.target.value }))}
                 disabled={!isApi || pwSaving}
                 autoComplete="current-password"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+                className="input-field text-sm px-3 py-2 disabled:opacity-50"
               />
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1">Yangi parol</label>
+              <label className="block text-xs text-text-secondary mb-1">Yangi parol</label>
               <input
                 type="password"
                 value={pwForm.newPassword}
                 onChange={(e) => setPwForm(f => ({ ...f, newPassword: e.target.value }))}
                 disabled={!isApi || pwSaving}
                 autoComplete="new-password"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+                className="input-field text-sm px-3 py-2 disabled:opacity-50"
               />
             </div>
             <div>
-              <label className="block text-xs text-white/50 mb-1">Yangi parolni tasdiqlash</label>
+              <label className="block text-xs text-text-secondary mb-1">Yangi parolni tasdiqlash</label>
               <input
                 type="password"
                 value={pwForm.confirmPassword}
                 onChange={(e) => setPwForm(f => ({ ...f, confirmPassword: e.target.value }))}
                 disabled={!isApi || pwSaving}
                 autoComplete="new-password"
-                className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+                className="input-field text-sm px-3 py-2 disabled:opacity-50"
               />
             </div>
             {pwMsg.text && (
-              <div className={`text-xs font-semibold ${pwMsg.type === 'ok' ? 'text-emerald-300' : 'text-rose-300'}`}>
+              <div className={`text-xs font-semibold ${pwMsg.type === 'ok' ? 'text-success' : 'text-error'}`}>
                 {pwMsg.text}
               </div>
             )}
-            <div className="text-[10px] text-white/30">
+            <div className="text-[10px] text-text-secondary">
               Parol o'zgartirilgandan keyin boshqa qurilmalardagi sessiyalar yopiladi.
             </div>
             <button
               type="submit"
               disabled={!isApi || pwSaving}
-              className="w-full gradient-bg text-white font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50"
+              className="btn-primary w-full rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
             >
               {pwSaving ? "O'zgartirilmoqda..." : "Parolni o'zgartirish"}
             </button>
@@ -885,8 +926,8 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
           <div className="glass rounded-2xl p-5 space-y-3 md:col-span-2">
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="flex items-center gap-2">
-                <Icon name="shield" size={18} className="text-indigo-400" />
-                <h3 className="font-bold text-white">Ikki bosqichli himoya (2FA)</h3>
+                <Icon name="shield" size={18} className="text-accent" />
+                <h3 className="font-display font-bold text-text-primary">Ikki bosqichli himoya (2FA)</h3>
                 {twoFAEnabled && (
                   <span className="chip badge-active text-xs">Yoqilgan</span>
                 )}
@@ -895,7 +936,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                 <button
                   onClick={() => { setTwoFADisableMode(true); setTwoFAMsg({ type: '', text: '' }); }}
                   disabled={twoFABusy}
-                  className="btn-ghost text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 text-rose-300 hover:text-rose-200 disabled:opacity-50"
+                  className="btn-danger text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 disabled:opacity-50"
                 >
                   <Icon name="x" size={13} /> O'chirish
                 </button>
@@ -903,19 +944,19 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             </div>
 
             {!isApi && (
-              <div className="text-xs text-amber-300">2FA faqat akkaunt rejimida mavjud.</div>
+              <div className="text-xs text-warning">2FA faqat akkaunt rejimida mavjud.</div>
             )}
 
             {isApi && !twoFAEnabled && !twoFASecret && (
               <>
-                <p className="text-sm text-white/50">
+                <p className="text-sm text-text-secondary">
                   Hisobingizni autentifikator ilovasi (Google Authenticator, Authy va h.k.)
                   bilan qo'shimcha himoyalang. Kirishda parol bilan birga bir martalik kod talab qilinadi.
                 </p>
                 <button
                   onClick={handleTwoFASetup}
                   disabled={twoFABusy}
-                  className="gradient-bg text-white font-semibold rounded-xl py-2.5 px-5 text-sm disabled:opacity-50"
+                  className="btn-primary rounded-xl py-2.5 px-5 text-sm font-semibold disabled:opacity-50"
                 >
                   {twoFABusy ? 'Tayyorlanmoqda...' : '2FA yoqish'}
                 </button>
@@ -924,14 +965,17 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
 
             {isApi && !twoFAEnabled && twoFASecret && (
               <form onSubmit={handleTwoFAVerify} className="space-y-3">
-                <p className="text-sm text-white/50">
+                <p className="text-sm text-text-secondary">
                   Autentifikator ilovangizga quyidagi maxfiy kalitni qo'shing, so'ng ilova
                   bergan 6 raqamli kodni kiriting.
                 </p>
                 <div>
-                  <label className="block text-xs text-white/50 mb-1">Maxfiy kalit</label>
+                  <label className="block text-xs text-text-secondary mb-1">Maxfiy kalit</label>
                   <div className="flex items-center gap-2">
-                    <code className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-indigo-200 font-mono break-all select-all">
+                    {/* Maxfiy kalit — `font-mono` ATAYIN qoladi: foydalanuvchi
+                        uni belgima-belgi ko'chirib yozadi, shu sababli 0/O va
+                        1/l farqlanishi kerak. */}
+                    <code className="flex-1 rounded-xl border border-edge bg-surface-2 px-3 py-2 text-sm text-text-primary font-mono break-all select-all">
                       {twoFASecret}
                     </code>
                     <button
@@ -946,14 +990,14 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                   {twoFAUri && (
                     <a
                       href={twoFAUri}
-                      className="inline-block text-[11px] text-indigo-300 hover:text-indigo-200 mt-2 underline"
+                      className="inline-block text-[11px] text-accent mt-2 underline underline-offset-2"
                     >
                       Autentifikator ilovasida ochish
                     </a>
                   )}
                 </div>
                 <div>
-                  <label className="block text-xs text-white/50 mb-1">Tasdiqlash kodi</label>
+                  <label className="block text-xs text-text-secondary mb-1">Tasdiqlash kodi</label>
                   <input
                     type="text"
                     inputMode="numeric"
@@ -962,14 +1006,14 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                     onChange={(e) => setTwoFACode(e.target.value.replace(/\D/g, '').slice(0, 6))}
                     disabled={twoFABusy}
                     placeholder="123456"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50 tracking-[0.4em] font-mono"
+                    className="input-field text-sm px-3 py-2 disabled:opacity-50 tracking-[0.4em] font-data"
                   />
                 </div>
                 <div className="flex gap-2">
                   <button
                     type="submit"
                     disabled={twoFABusy || twoFACode.length < 6}
-                    className="gradient-bg text-white font-semibold rounded-xl py-2.5 px-5 text-sm disabled:opacity-50"
+                    className="btn-primary rounded-xl py-2.5 px-5 text-sm font-semibold disabled:opacity-50"
                   >
                     {twoFABusy ? 'Tekshirilmoqda...' : 'Tasdiqlash'}
                   </button>
@@ -986,7 +1030,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             )}
 
             {isApi && twoFAEnabled && !twoFADisableMode && (
-              <p className="text-sm text-white/50">
+              <p className="text-sm text-text-secondary">
                 Hisobingiz ikki bosqichli himoya bilan himoyalangan. Kirishda autentifikator
                 kodini kiritishingiz kerak bo'ladi.
               </p>
@@ -994,12 +1038,12 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
 
             {isApi && twoFAEnabled && twoFADisableMode && (
               <form onSubmit={handleTwoFADisable} className="space-y-3">
-                <p className="text-sm text-white/50">
+                <p className="text-sm text-text-secondary">
                   Xavfsizlik uchun o'chirishdan oldin autentifikator ilovangiz bergan
                   joriy 6 raqamli kodni yoki hisobingiz parolini kiriting.
                 </p>
                 <div>
-                  <label className="block text-xs text-white/50 mb-1">Joriy kod yoki parol</label>
+                  <label className="block text-xs text-text-secondary mb-1">Joriy kod yoki parol</label>
                   <input
                     type="password"
                     autoComplete="off"
@@ -1007,14 +1051,14 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                     onChange={(e) => setTwoFADisableValue(e.target.value)}
                     disabled={twoFABusy}
                     placeholder="123456 yoki parol"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-rose-400 disabled:opacity-50"
+                    className="input-field text-sm px-3 py-2 disabled:opacity-50"
                   />
                 </div>
                 <div className="flex gap-2">
                   <button
                     type="submit"
                     disabled={twoFABusy || !twoFADisableValue.trim()}
-                    className="bg-rose-500/20 text-rose-200 border border-rose-500/30 font-semibold rounded-xl py-2.5 px-5 text-sm disabled:opacity-50"
+                    className="btn-danger rounded-xl py-2.5 px-5 text-sm font-semibold disabled:opacity-50"
                   >
                     {twoFABusy ? 'O\'chirilmoqda...' : "O'chirishni tasdiqlash"}
                   </button>
@@ -1031,7 +1075,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             )}
 
             {twoFAMsg.text && (
-              <div className={`text-xs font-semibold ${twoFAMsg.type === 'ok' ? 'text-emerald-300' : 'text-rose-300'}`}>
+              <div className={`text-xs font-semibold ${twoFAMsg.type === 'ok' ? 'text-success' : 'text-error'}`}>
                 {twoFAMsg.text}
               </div>
             )}
@@ -1040,23 +1084,23 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
           {/* Email — hisobni tiklash uchun zaxira kanal (to'liq kenglik) */}
           <div className="glass rounded-2xl p-5 space-y-3 md:col-span-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <Icon name="send" size={18} className="text-indigo-400" />
-              <h3 className="font-bold text-white">Email manzili</h3>
+              <Icon name="send" size={18} className="text-accent" />
+              <h3 className="font-display font-bold text-text-primary">Email manzili</h3>
               {emailVerified && (
                 <span className="chip badge-active text-xs">Tasdiqlangan</span>
               )}
             </div>
 
             {!isApi && (
-              <div className="text-xs text-amber-300">Email bog'lash faqat akkaunt rejimida mavjud.</div>
+              <div className="text-xs text-warning">Email bog'lash faqat akkaunt rejimida mavjud.</div>
             )}
 
             {isApi && (
               <>
-                <p className="text-sm text-white/50">
+                <p className="text-sm text-text-secondary">
                   {linkedEmail ? (
                     <>
-                      Hisobingizga <b className="text-white/80">{linkedEmail}</b> bog'langan.
+                      Hisobingizga <b className="text-text-primary">{linkedEmail}</b> bog'langan.
                       Boshqa manzilga almashtirish uchun yangisini kiriting va kod bilan tasdiqlang.
                     </>
                   ) : (
@@ -1068,7 +1112,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                 {!emailOtpSentTo && (
                   <form onSubmit={handleEmailStart} className="space-y-3">
                     <div>
-                      <label className="block text-xs text-white/50 mb-1">Email</label>
+                      <label className="block text-xs text-text-secondary mb-1">Email</label>
                       <input
                         type="email"
                         value={emailInput}
@@ -1076,13 +1120,13 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                         disabled={emailBusy}
                         autoComplete="email"
                         placeholder="ali.valiyev@gmail.com"
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50"
+                        className="input-field text-sm px-3 py-2 disabled:opacity-50"
                       />
                     </div>
                     <button
                       type="submit"
                       disabled={emailBusy || !emailInput.trim()}
-                      className="gradient-bg text-white font-semibold rounded-xl py-2.5 px-5 text-sm disabled:opacity-50"
+                      className="btn-primary rounded-xl py-2.5 px-5 text-sm font-semibold disabled:opacity-50"
                     >
                       {emailBusy ? 'Yuborilmoqda...' : 'Yuborish'}
                     </button>
@@ -1091,12 +1135,12 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
 
                 {emailOtpSentTo && (
                   <form onSubmit={handleEmailConfirm} className="space-y-3">
-                    <p className="text-sm text-white/50">
-                      <b className="text-white/80">{emailOtpSentTo}</b> manziliga 6 raqamli kod
+                    <p className="text-sm text-text-secondary">
+                      <b className="text-text-primary">{emailOtpSentTo}</b> manziliga 6 raqamli kod
                       yubordik. Kod kelmasa spam papkasini ham tekshirib ko'ring.
                     </p>
                     <div>
-                      <label className="block text-xs text-white/50 mb-1">Tasdiqlash kodi</label>
+                      <label className="block text-xs text-text-secondary mb-1">Tasdiqlash kodi</label>
                       <input
                         type="text"
                         inputMode="numeric"
@@ -1105,14 +1149,14 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                         onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                         disabled={emailBusy}
                         placeholder="123456"
-                        className="w-full bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-indigo-400 disabled:opacity-50 tracking-[0.4em] font-mono"
+                        className="input-field text-sm px-3 py-2 disabled:opacity-50 tracking-[0.4em] font-data"
                       />
                     </div>
                     <div className="flex gap-2">
                       <button
                         type="submit"
                         disabled={emailBusy || emailOtp.length < 6}
-                        className="gradient-bg text-white font-semibold rounded-xl py-2.5 px-5 text-sm disabled:opacity-50"
+                        className="btn-primary rounded-xl py-2.5 px-5 text-sm font-semibold disabled:opacity-50"
                       >
                         {emailBusy ? 'Tekshirilmoqda...' : 'Tasdiqlash'}
                       </button>
@@ -1139,7 +1183,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
             )}
 
             {emailMsg.text && (
-              <div className={`text-xs font-semibold ${emailMsg.type === 'ok' ? 'text-emerald-300' : 'text-rose-300'}`}>
+              <div className={`text-xs font-semibold ${emailMsg.type === 'ok' ? 'text-success' : 'text-error'}`}>
                 {emailMsg.text}
               </div>
             )}
@@ -1156,24 +1200,28 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
         </>
       )}
 
-      {/* Xavfli zona — hisobni butunlay o'chirish. Faqat akkaunt rejimida. */}
+      {/* Xavfli zona — hisobni butunlay o'chirish. Faqat akkaunt rejimida.
+          `glass` o'z hoshiyasini `box-shadow: inset` bilan chizadi, shuning
+          uchun bu yerda to'liq `border` YO'Q — u ikkinchi halqa bo'lib
+          chiqardi. Ogohlantirish belgisi bitta tomonda: chapdagi 4px `error`
+          chizig'i (Leaderboard'dagi `border-l-4` naqshi). */}
       {isApi && (
-        <div className="glass rounded-2xl p-5 border border-rose-500/30 bg-gradient-to-br from-rose-500/5 to-rose-600/5">
+        <div className="glass rounded-2xl p-5 border-l-4 border-l-error">
           <div className="flex items-center gap-2 mb-2">
-            <Icon name="trash" size={18} className="text-rose-400" />
-            <h3 className="font-bold text-rose-300">Xavfli zona</h3>
+            <Icon name="trash" size={18} className="text-error" />
+            <h3 className="font-display font-bold text-error">Xavfli zona</h3>
           </div>
-          <p className="text-sm text-white/50 mb-4">
+          <p className="text-sm text-text-secondary mb-4">
             Hisob o&apos;chirilgach 30 kun ichida telefon va parol bilan tiklash mumkin.
             Muddatdan keyin ma&apos;lumotlar butunlay o&apos;chiriladi.
           </p>
           {deleteError && (
-            <div className="text-xs font-semibold text-rose-300 mb-3">{deleteError}</div>
+            <div className="text-xs font-semibold text-error mb-3" role="alert">{deleteError}</div>
           )}
           <button
             onClick={() => setConfirmDeleteAccount(true)}
             disabled={deletingAccount}
-            className="bg-rose-500/20 text-rose-200 border border-rose-500/30 font-semibold rounded-xl py-2.5 px-5 text-sm flex items-center gap-1.5 hover:bg-rose-500/30 disabled:opacity-50"
+            className="btn-danger rounded-xl py-2.5 px-5 text-sm font-semibold flex items-center gap-1.5 disabled:opacity-50"
           >
             <Icon name="trash" size={14} />
             {deletingAccount ? "O'chirilmoqda..." : "Hisobni o'chirish"}
@@ -1214,11 +1262,11 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
         }}
         title="Hisobni o'chirish"
       >
-        <p className="text-sm text-white/60 mb-4">
+        <p className="text-sm text-text-secondary mb-4">
           30 kun ichida tiklash mumkin. Davom etish uchun parolingizni tasdiqlang.
           Muddatdan keyin hisob butunlay o&apos;chiriladi.
         </p>
-        <label className="block text-xs text-white/40 mb-1">Parol</label>
+        <label className="block text-xs text-text-secondary mb-1">Parol</label>
         <input
           type="password"
           value={deletePassword}
@@ -1230,7 +1278,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
         />
         {(user?.totpEnabled || user?.totp_enabled) && (
           <>
-            <label className="block text-xs text-white/40 mb-1">2FA kod</label>
+            <label className="block text-xs text-text-secondary mb-1">2FA kod</label>
             <input
               type="text"
               inputMode="numeric"
@@ -1243,12 +1291,12 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
           </>
         )}
         {deleteError && (
-          <div className="text-xs font-semibold text-rose-300 mb-3">{deleteError}</div>
+          <div className="text-xs font-semibold text-error mb-3" role="alert">{deleteError}</div>
         )}
         <div className="flex gap-2 justify-end">
           <button
             type="button"
-            className="px-4 py-2 rounded-xl text-sm text-white/60 hover:bg-white/5"
+            className="btn-ghost px-4 py-2 rounded-xl text-sm disabled:opacity-50"
             onClick={() => {
               setConfirmDeleteAccount(false);
               setDeletePassword('');
@@ -1261,7 +1309,7 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
           </button>
           <button
             type="button"
-            className="px-4 py-2 rounded-xl text-sm font-semibold bg-rose-500/20 text-rose-200 border border-rose-500/30 hover:bg-rose-500/30 disabled:opacity-50"
+            className="btn-danger px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50"
             onClick={handleDeleteAccount}
             disabled={deletingAccount}
           >

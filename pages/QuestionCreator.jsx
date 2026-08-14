@@ -58,12 +58,12 @@ const CODE_LANGUAGES = [
 const getLevelColorClass = (lvl) => {
   const l = (lvl || '').toLowerCase();
   if (l === 'oson' || l === 'easy' || l === 'beginner' || l === 'elementary') {
-    return 'emerald';
+    return 'success';
   }
   if (l === "o'rta" || l === 'medium' || l === 'pre-intermediate' || l === 'intermediate') {
-    return 'amber';
+    return 'warning';
   }
-  return 'rose';
+  return 'error';
 };
 
 const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitcher }) => {
@@ -953,20 +953,18 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   // ─── Preview inline-edit UI helperlari ──────────────────────────────────
   // Faqat o'ng yuqori burchakdagi qalam tugmasi. Bosilganda shu savol edit
   // rejimiga o'tadi (boshqasi ochiq bo'lsa avtomatik yopiladi, chunki
-  // editingPreview bitta {type,index} saqlaydi). accent — preview rangi.
-  // Eslatma: Tailwind build paytida purge qiladi, shuning uchun rang klasslari
-  // string-interpolation bilan emas, to'liq statik ko'rinishda yoziladi.
-  const PREVIEW_EDIT_BTN_HOVER = {
-    indigo: 'hover:text-indigo-300 hover:border-indigo-500/30',
-    cyan: 'hover:text-cyan-300 hover:border-cyan-500/30',
-    sky: 'hover:text-sky-300 hover:border-sky-500/30',
-  };
-  const renderPreviewEditButton = (type, index, q, accent = 'indigo') => (
+  // editingPreview bitta {type,index} saqlaydi).
+  //
+  // Avval har bir preview o'z rang oilasiga ega edi (AI — indigo, PDF — cyan,
+  // Word — sky) va u `accent` parametri orqali uzatilardi. Uch rejim bir vaqtda
+  // hech qachon ko'rinmaydi (`mode` bitta qiymat), ya'ni rang farqi hech qanday
+  // ma'lumot bermasdi — sof bezak edi. Endi bitta neytral tugma, parametr yo'q.
+  const renderPreviewEditButton = (type, index, q) => (
     <button
       type="button"
       onClick={() => startPreviewEdit(type, index, q)}
       title="Savolni tahrirlash"
-      className={`flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg border transition-all bg-white/5 text-white/40 border-white/10 ${PREVIEW_EDIT_BTN_HOVER[accent] || PREVIEW_EDIT_BTN_HOVER.indigo}`}
+      className="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg border border-edge bg-surface-1 text-text-secondary transition-colors hover:bg-surface-2 hover:border-edge-strong hover:text-text-primary"
     >
       <Icon name="edit" size={13} />
     </button>
@@ -974,14 +972,14 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
 
   // Preview kartasidagi o'chirish tugmasi: saqlashdan oldin kerakmas savolni
   // ro'yxatdan olib tashlaydi. type → tegishli setter (ai/pdf/word_ai).
-  const renderPreviewDeleteButton = (type, index, accent = 'indigo') => {
+  const renderPreviewDeleteButton = (type, index) => {
     const setter = type === 'ai' ? setAiResult : type === 'pdf' ? setPdfResult : setWordAiResult;
     return (
       <button
         type="button"
         onClick={() => setter(prev => prev.filter((_, idx) => idx !== index))}
         title="Savolni o'chirish"
-        className="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg border transition-all bg-white/5 text-white/40 border-white/10 hover:text-rose-400 hover:border-rose-500/30"
+        className="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg border border-edge bg-surface-1 text-text-secondary transition-colors hover:bg-surface-2 hover:border-error hover:text-error"
       >
         <Icon name="trash" size={13} />
       </button>
@@ -989,8 +987,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
   };
 
   // Edit rejimidagi savol kartasining ichki qismi (matn + variantlar + to'g'ri
-  // javob belgilash + Saqlash/Bekor). `accent` preview rangiga moslashish uchun.
-  const renderPreviewEditor = (accent = 'indigo') => {
+  // javob belgilash + Saqlash/Bekor).
+  const renderPreviewEditor = () => {
     if (!previewDraft) return null;
     const draft = previewDraft;
     const setText = (text) => setPreviewDraft(d => ({ ...d, text }));
@@ -1011,7 +1009,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
     return (
       <div className="space-y-3">
         <div>
-          <label className="block text-[11px] text-white/45 mb-1">Savol matni</label>
+          <label className="block text-[11px] text-text-secondary mb-1">Savol matni</label>
           <textarea
             value={draft.text}
             onChange={e => setText(e.target.value)}
@@ -1021,7 +1019,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           />
         </div>
         <div>
-          <label className="block text-[11px] text-white/45 mb-1">Variantlar — to'g'ri javobni belgilang</label>
+          <label className="block text-[11px] text-text-secondary mb-1">Variantlar — to'g'ri javobni belgilang</label>
           <div className="space-y-1.5">
             {options.map((option, optionIndex) => {
               const isCorrect = optionIndex === draft.correctAnswer;
@@ -1030,15 +1028,16 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   <button
                     type="button"
                     onClick={() => setCorrect(optionIndex)}
+                    aria-pressed={isCorrect}
                     title={isCorrect ? "To'g'ri javob" : "To'g'ri javob deb belgilash"}
-                    className={`flex-shrink-0 w-6 h-6 rounded-md border flex items-center justify-center text-[11px] font-bold transition-all ${isCorrect ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' : 'bg-white/5 border-white/10 text-white/40 hover:text-white/70'}`}
+                    className={`flex-shrink-0 w-6 h-6 rounded-md border flex items-center justify-center text-[11px] font-bold transition-colors ${isCorrect ? 'bg-ground border-success text-success' : 'bg-surface-1 border-edge text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}
                   >
                     {isCorrect ? <Icon name="check" size={12} /> : String.fromCharCode(65 + optionIndex)}
                   </button>
                   <input
                     value={option}
                     onChange={e => setOption(optionIndex, e.target.value)}
-                    className={`input-field flex-1 text-sm py-1.5 ${isCorrect ? 'border-emerald-500/30' : ''}`}
+                    className={`input-field flex-1 text-sm py-1.5 ${isCorrect ? 'border-success' : ''}`}
                     placeholder={`${String.fromCharCode(65 + optionIndex)} varianti`}
                   />
                   {options.length > 2 && (
@@ -1046,7 +1045,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                       type="button"
                       onClick={() => removeOption(optionIndex)}
                       title="Variantni o'chirish"
-                      className="flex-shrink-0 w-6 h-6 rounded-md text-white/30 hover:text-rose-400 hover:bg-white/5 flex items-center justify-center transition-colors"
+                      className="flex-shrink-0 w-6 h-6 rounded-md text-text-secondary hover:text-error hover:bg-surface-2 flex items-center justify-center transition-colors"
                     >
                       <Icon name="x" size={13} />
                     </button>
@@ -1059,7 +1058,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             <button
               type="button"
               onClick={addOption}
-              className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-white/45 hover:text-white/70 transition-colors"
+              className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-text-secondary hover:text-text-primary transition-colors"
             >
               <Icon name="plus" size={12} /> Variant qo'shish
             </button>
@@ -1118,19 +1117,19 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h2 className="text-lg md:text-xl font-black text-white">Savol yaratuvchi</h2>
-          <p className="text-white/40 text-xs md:text-sm">{questions.length} ta savol · {allSubjects.length} ta fan</p>
+          <h2 className="font-display text-lg md:text-xl font-black text-text-primary">Savol yaratuvchi</h2>
+          <p className="text-text-secondary text-xs md:text-sm font-data">{questions.length} ta savol · {allSubjects.length} ta fan</p>
         </div>
         {mode === 'list' && (
           <div className="grid grid-cols-2 md:flex md:flex-wrap md:gap-2 gap-2">
             <button onClick={() => setMode('manual')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5"><Icon name="edit" size={14} /> <span className="hidden sm:inline">Qo'lda yaratish</span><span className="sm:hidden">Qo'lda</span></button>
             <button onClick={() => setMode('ai')} className="btn-primary text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5"><Icon name="sparkles" size={14} /> <span className="hidden sm:inline">AI orqali</span><span className="sm:hidden">AI</span></button>
-            <button onClick={() => setMode('pdf')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-cyan-500/30 text-cyan-300"><Icon name="upload" size={14} /> <span className="hidden sm:inline">PDF dan</span><span className="sm:hidden">PDF</span></button>
-            <button onClick={() => setMode('word_ai')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-sky-500/30 text-sky-300"><Icon name="sparkles" size={14} /> <span className="hidden sm:inline">Word (AI)</span><span className="sm:hidden">W·AI</span></button>
+            <button onClick={() => setMode('pdf')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5"><Icon name="upload" size={14} /> <span className="hidden sm:inline">PDF dan</span><span className="sm:hidden">PDF</span></button>
+            <button onClick={() => setMode('word_ai')} className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5"><Icon name="sparkles" size={14} /> <span className="hidden sm:inline">Word (AI)</span><span className="sm:hidden">W·AI</span></button>
             <button
               onClick={() => importInputRef.current?.click()}
               disabled={importLoading}
-              className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-emerald-500/30 text-emerald-300 disabled:opacity-50"
+              className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               <Icon name="upload" size={14} />
               <span className="hidden sm:inline">{importLoading ? 'Yuklanmoqda...' : 'Excel/CSV import'}</span>
@@ -1138,7 +1137,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             </button>
             <button
               onClick={downloadImportTemplate}
-              className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-white/10 text-white/60"
+              className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5"
               title="Namuna CSV yuklab olish"
             >
               <Icon name="download" size={14} />
@@ -1148,7 +1147,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             <button
               onClick={() => wordInputRef.current?.click()}
               disabled={importLoading}
-              className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-blue-500/30 text-blue-300 disabled:opacity-50"
+              className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 disabled:opacity-50"
             >
               <Icon name="upload" size={14} />
               <span className="hidden sm:inline">{importLoading ? 'Yuklanmoqda...' : 'Word import'}</span>
@@ -1156,7 +1155,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             </button>
             <button
               onClick={downloadWordTemplate}
-              className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-white/10 text-white/60"
+              className="btn-ghost text-xs px-3 md:px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5"
               title="Word namuna (.docx) yuklab olish"
             >
               <Icon name="download" size={14} />
@@ -1184,12 +1183,12 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
 
       {/* Import natijasi banner */}
       {mode === 'list' && importResult && (
-        <div className={`glass rounded-2xl p-3 md:p-4 border ${(importResult.error_count || 0) > 0 ? 'border-amber-500/30' : 'border-emerald-500/30'}`}>
+        <div className={`glass rounded-2xl p-3 md:p-4 border-l-4 ${(importResult.error_count || 0) > 0 ? 'border-warning' : 'border-success'}`}>
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div className="text-sm">
-              <span className="text-white font-semibold">{importResult.created || 0} ta savol qo'shildi</span>
+              <span className="text-text-primary font-semibold font-data">{importResult.created || 0} ta savol qo'shildi</span>
               {(importResult.error_count || 0) > 0 && (
-                <span className="text-amber-300 ml-2">{importResult.error_count} ta xato bor</span>
+                <span className="text-warning ml-2 font-data">{importResult.error_count} ta xato bor</span>
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -1201,14 +1200,14 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               )}
               <button
                 onClick={() => { setImportResult(null); setImportErrorsOpen(false); }}
-                className="text-white/40 hover:text-white"
+                className="text-text-secondary hover:text-text-primary transition-colors"
               ><Icon name="x" size={16} /></button>
             </div>
           </div>
           {importErrorsOpen && (importResult.errors || []).length > 0 && (
             <div className="mt-3 max-h-48 overflow-y-auto space-y-1 text-xs">
               {(importResult.errors || []).map((err, i) => (
-                <div key={i} className="rounded-lg bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 text-rose-200">
+                <div key={i} className="rounded-lg bg-ground border border-error/45 px-3 py-1.5 text-error">
                   <span className="font-bold mr-2">Qator {err.row}:</span>{err.detail}
                 </div>
               ))}
@@ -1241,7 +1240,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               <option value="">Barcha darajalar</option>
               {(filterSubject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
             </select>
-            <button onClick={() => setNewSubjectModal(true)} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border-dashed border-white/20 text-white/40 w-full sm:w-auto">
+            <button onClick={() => setNewSubjectModal(true)} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 w-full sm:w-auto">
               <Icon name="plus" size={14} /> Yangi fan qo'shish
             </button>
             {questions.length > 0 && (
@@ -1250,7 +1249,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   <Icon name="trash" size={14} /> Tanlanganlarni o'chirish ({selectedIds.length})
                 </button>
               ) : (
-                <button onClick={() => setDeleteAllConfirm(true)} className="btn-ghost text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 transition-colors w-full sm:w-auto sm:ml-auto">
+                <button onClick={() => setDeleteAllConfirm(true)} className="btn-danger text-xs px-4 py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-colors w-full sm:w-auto sm:ml-auto">
                   <Icon name="trash" size={14} /> Barchasini o'chirish
                 </button>
               )
@@ -1258,11 +1257,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           </div>
 
           {filtered.length > 0 && (
-            <div className="flex items-center gap-2 px-3 py-1.5 glass rounded-xl text-white/50 text-xs w-fit select-none animate-in">
+            <div className="flex items-center gap-2 px-3 py-1.5 glass rounded-xl text-text-secondary text-xs w-fit select-none animate-in">
               <input
                 type="checkbox"
                 id="select-all-checkbox"
-                className="w-3.5 h-3.5 rounded border-white/15 bg-white/5 text-rose-500 focus:ring-rose-500/30 cursor-pointer"
+                className="w-3.5 h-3.5 rounded border-edge bg-surface-1 accent-accent-fill cursor-pointer"
                 checked={filtered.length > 0 && filtered.every(q => selectedIds.includes(q.id))}
                 onChange={toggleSelectAll}
               />
@@ -1276,32 +1275,37 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             {filtered.length === 0 && <EmptyState icon="book" title="Savollar yo'q" desc="Yangi savol yarating" action={<button onClick={() => setMode('manual')} className="btn-primary px-4 py-2 rounded-xl text-sm">Savol yaratish</button>} />}
             {filtered.map(q => (
               <div key={q.id} className="glass rounded-2xl p-3 md:p-4 flex gap-3 md:gap-4 group">
-                <div className={`w-1.5 md:w-2 rounded-full flex-shrink-0 ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-400' : 'bg-rose-400'}`} />
+                <div className={`w-1.5 md:w-2 rounded-full flex-shrink-0 ${getLevelColorClass(q.difficulty) === 'success' ? 'bg-success' : getLevelColorClass(q.difficulty) === 'warning' ? 'bg-warning' : 'bg-error'}`} />
                 <div className="flex-shrink-0 flex items-center pr-1 select-none">
                   <input
                     type="checkbox"
-                    className="w-4 h-4 rounded border-white/15 bg-white/5 text-rose-500 focus:ring-rose-500/30 cursor-pointer"
+                    className="w-4 h-4 rounded border-edge bg-surface-1 accent-accent-fill cursor-pointer"
                     checked={selectedIds.includes(q.id)}
                     onChange={() => toggleSelectQuestion(q.id)}
                   />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-white/90 mb-2 leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></p>
+                  <p className="text-sm text-text-primary mb-2 leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></p>
                   <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
                     <SubjectBadge subject={q.subject} />
                     {(q.questionType === 'code' || q.question_type === 'code') && (
-                      <span className="chip text-xs bg-sky-500/15 text-sky-300 border border-sky-500/25 font-bold">
+                      <span className="chip text-xs bg-ground text-accent-2 border border-accent-2/45 font-bold">
                         {'</> '}{(q.programmingLanguage || q.programming_language || 'kod')}
                       </span>
                     )}
-                    {q.source && <span className="chip glass text-white/50 text-xs">{q.source === 'ai' ? '✨ AI' : q.source === 'pdf' ? '📄 PDF' : '✏️ Qo\'lda'}</span>}
-                    <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
-                    <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
+                    {q.source && (
+                      <span className="chip glass text-text-secondary text-xs">
+                        <Icon name={q.source === 'ai' ? 'sparkles' : q.source === 'pdf' ? 'file' : 'edit'} size={11} />
+                        {q.source === 'ai' ? 'AI' : q.source === 'pdf' ? 'PDF' : "Qo'lda"}
+                      </span>
+                    )}
+                    <span className={`chip text-xs border bg-ground ${getLevelColorClass(q.difficulty) === 'success' ? 'border-success/45 text-success' : getLevelColorClass(q.difficulty) === 'warning' ? 'border-warning/45 text-warning' : 'border-error/45 text-error'}`}>{q.difficulty}</span>
+                    <span className="chip glass text-accent text-xs font-data">{q.score} ball</span>
                   </div>
                   {(q.options || []).length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mt-2">
                       {q.options.map((o, i) => (
-                        <MathText key={i} className={`text-xs px-2 py-0.5 rounded-lg ${i === q.correctAnswer ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'glass text-white/40'}`} text={o} />
+                        <MathText key={i} className={`text-xs px-2 py-0.5 rounded-lg ${i === q.correctAnswer ? 'bg-ground text-success border border-success/45' : 'glass text-text-secondary'}`} text={o} />
                       ))}
                     </div>
                   )}
@@ -1309,10 +1313,10 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 {/* Mobile'da har doim ko'rinadi (hover yo'q), desktop'da hover'da */}
                 <div className="flex gap-0.5 md:gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity flex-shrink-0">
                   {isApi && (
-                    <button onClick={() => { setFlagReason(''); setFlagId(q.id); }} title="Admin tekshiruviga qo'yish" className="text-white/40 hover:text-amber-400 transition-colors p-2 rounded-lg hover:bg-white/5"><Icon name="shield" size={15} /></button>
+                    <button onClick={() => { setFlagReason(''); setFlagId(q.id); }} title="Admin tekshiruviga qo'yish" className="text-text-secondary hover:text-warning transition-colors p-2 rounded-lg hover:bg-surface-2"><Icon name="shield" size={15} /></button>
                   )}
-                  <button onClick={() => startEditQuestion(q)} className="text-white/40 hover:text-indigo-400 transition-colors p-2 rounded-lg hover:bg-white/5"><Icon name="edit" size={15} /></button>
-                  <button onClick={() => setDeleteId(q.id)} className="text-white/40 hover:text-red-400 transition-colors p-2 rounded-lg hover:bg-white/5"><Icon name="trash" size={15} /></button>
+                  <button onClick={() => startEditQuestion(q)} className="text-text-secondary hover:text-accent transition-colors p-2 rounded-lg hover:bg-surface-2"><Icon name="edit" size={15} /></button>
+                  <button onClick={() => setDeleteId(q.id)} className="text-text-secondary hover:text-error transition-colors p-2 rounded-lg hover:bg-surface-2"><Icon name="trash" size={15} /></button>
                 </div>
               </div>
             ))}
@@ -1323,15 +1327,15 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       {/* MANUAL MODE */}
       {mode === 'manual' && (
         <div className="glass rounded-2xl p-4 md:p-6 space-y-4 md:space-y-5 animate-in">
-          <h3 className="font-bold text-white">{editingQuestionId ? "Savolni tahrirlash" : "Yangi savol yaratish"}</h3>
-          <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Savol matni</label>
+          <h3 className="font-display font-bold text-text-primary">{editingQuestionId ? "Savolni tahrirlash" : "Yangi savol yaratish"}</h3>
+          <div><label className="block text-xs text-text-secondary mb-1.5 font-medium">Savol matni</label>
             <textarea className="input-field" rows={3} placeholder="Savolingizni kiriting..." value={newQ.text} onChange={e => setNewQ({...newQ, text: e.target.value})} /></div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Savol turi</label>
+            <div><label className="block text-xs text-text-secondary mb-1.5 font-medium">Savol turi</label>
               <select className="input-field" value={newQ.type} onChange={e => setNewQ({...newQ, type: e.target.value})}>
                 {TYPES.map(t => <option key={t}>{t}</option>)}
               </select></div>
-            <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Fan</label>
+            <div><label className="block text-xs text-text-secondary mb-1.5 font-medium">Fan</label>
               <select className="input-field" value={newQ.subject} onChange={e => {
                 const newSubj = e.target.value;
                 let newLevel = newQ.level;
@@ -1348,21 +1352,21 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               }}>
                 {allSubjects.map(s => <option key={s}>{s}</option>)}
               </select></div>
-            <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Daraja</label>
+            <div><label className="block text-xs text-text-secondary mb-1.5 font-medium">Daraja</label>
               <select className="input-field" value={newQ.level} onChange={e => setNewQ({...newQ, level: e.target.value})}>
                 {(newQ.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
               </select></div>
-            <div><label className="block text-xs text-white/50 mb-1.5 font-medium">Ball</label>
+            <div><label className="block text-xs text-text-secondary mb-1.5 font-medium">Ball</label>
               <input type="number" className="input-field" value={newQ.score} onChange={e => setNewQ({...newQ, score: +e.target.value})} /></div>
           </div>
           {(newQ.type === "Ko'p tanlovli") && (
             <div>
-              <label className="block text-xs text-white/50 mb-2 font-medium">Javob variantlari (to'g'risini belgilang)</label>
+              <label className="block text-xs text-text-secondary mb-2 font-medium">Javob variantlari (to'g'risini belgilang)</label>
               <div className="space-y-2">
                 {newQ.options.map((opt, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <button onClick={() => setNewQ({...newQ, correct: i})}
-                      className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-all ${newQ.correct === i ? 'gradient-bg text-white' : 'glass text-white/40'}`}>
+                    <button onClick={() => setNewQ({...newQ, correct: i})} aria-pressed={newQ.correct === i}
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0 transition-colors ${newQ.correct === i ? 'bg-accent-fill text-on-accent' : 'border border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}>
                       {String.fromCharCode(65+i)}
                     </button>
                     <input className="input-field py-2" placeholder={`${String.fromCharCode(65+i)} varianti`}
@@ -1375,8 +1379,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           {newQ.type === "To'g'ri/Noto'g'ri" && (
             <div className="flex gap-3">
               {["To'g'ri","Noto'g'ri"].map((v,i) => (
-                <button key={v} onClick={() => setNewQ({...newQ, correct: i, options: ["To'g'ri","Noto'g'ri"]})}
-                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${newQ.correct === i ? 'gradient-bg text-white' : 'glass text-white/50'}`}>{v}</button>
+                <button key={v} onClick={() => setNewQ({...newQ, correct: i, options: ["To'g'ri","Noto'g'ri"]})} aria-pressed={newQ.correct === i}
+                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-colors ${newQ.correct === i ? 'bg-accent-fill text-on-accent' : 'border border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}>{v}</button>
               ))}
             </div>
           )}
@@ -1384,26 +1388,26 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           {newQ.type === "Ha / Yo'q" && (
             <div className="flex gap-3">
               {['Ha', "Yo'q"].map((v,i) => (
-                <button key={v} onClick={() => setNewQ({...newQ, correct: i, options: ['Ha', "Yo'q"]})}
-                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-all ${newQ.correct === i ? 'gradient-bg text-white' : 'glass text-white/50'}`}>{v}</button>
+                <button key={v} onClick={() => setNewQ({...newQ, correct: i, options: ['Ha', "Yo'q"]})} aria-pressed={newQ.correct === i}
+                  className={`flex-1 py-3 rounded-xl font-medium text-sm transition-colors ${newQ.correct === i ? 'bg-accent-fill text-on-accent' : 'border border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}>{v}</button>
               ))}
             </div>
           )}
           {/* Multiple Select — bir nechta to'g'ri javob (checkbox bilan) */}
           {newQ.type === "Bir nechta to'g'ri (Multiple Select)" && (
             <div>
-              <label className="block text-xs text-white/50 mb-2 font-medium">Javob variantlari (to'g'rilarini belgilang — bir nechta bo'lishi mumkin)</label>
+              <label className="block text-xs text-text-secondary mb-2 font-medium">Javob variantlari (to'g'rilarini belgilang — bir nechta bo'lishi mumkin)</label>
               <div className="space-y-2">
                 {newQ.options.map((opt, i) => {
                   const checked = (newQ.correctIndexes || []).includes(i);
                   return (
                     <div key={i} className="flex items-center gap-2">
-                      <button type="button" onClick={() => {
+                      <button type="button" aria-pressed={checked} onClick={() => {
                         const set = new Set(newQ.correctIndexes || []);
                         if (set.has(i)) set.delete(i); else set.add(i);
                         setNewQ({...newQ, correctIndexes: [...set].sort((a,b)=>a-b)});
                       }}
-                        className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${checked ? 'gradient-bg text-white' : 'glass text-white/40'}`}>
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${checked ? 'bg-accent-fill text-on-accent' : 'border border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}>
                         {checked ? <Icon name="check" size={14} /> : String.fromCharCode(65+i)}
                       </button>
                       <input className="input-field py-2" placeholder={`${String.fromCharCode(65+i)} varianti`}
@@ -1412,13 +1416,13 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   );
                 })}
               </div>
-              <p className="mt-2 text-[11px] text-white/35">Belgilangan barcha variantlar to'g'ri javob sifatida saqlanadi.</p>
+              <p className="mt-2 text-[11px] text-text-secondary">Belgilangan barcha variantlar to'g'ri javob sifatida saqlanadi.</p>
             </div>
           )}
           {/* Essay — katta matn (avtomatik baholanmaydi, menejer qo'lda ball beradi) */}
           {newQ.type === 'Essay (Katta matn)' && (
-            <div className="rounded-xl border border-white/10 bg-white/[0.03] p-3.5">
-              <p className="text-xs text-white/55 leading-relaxed">
+            <div className="rounded-xl border border-edge bg-surface-1 p-3.5">
+              <p className="text-xs text-text-secondary leading-relaxed">
                 <Icon name="info" size={13} className="inline -mt-0.5 mr-1" />
                 Essay savolda o'quvchi katta matn yozadi. Variant va to'g'ri javob belgilanmaydi —
                 javob <strong>menejer tomonidan qo'lda baholanadi</strong>. Yuqorida ball maydonida maksimal ballni belgilang.
@@ -1429,13 +1433,13 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               matnli to'g'ri javob (fill_blank backend type). */}
           {(newQ.type === "Bo'sh joy to'ldirish" || newQ.type === 'Qisqa javob') && (
             <div>
-              <label className="block text-xs text-white/50 mb-1.5 font-medium">To'g'ri javob</label>
+              <label className="block text-xs text-text-secondary mb-1.5 font-medium">To'g'ri javob</label>
               <input className="input-field" placeholder="Masalan: Toshkent"
                 value={newQ.correctText} onChange={e => setNewQ({...newQ, correctText: e.target.value})} />
-              <p className="mt-2 text-[11px] text-white/35">
+              <p className="mt-2 text-[11px] text-text-secondary">
                 {newQ.type === 'Qisqa javob'
                   ? "O'quvchi qisqa matnli javob yozadi va u shu to'g'ri javobga moslab tekshiriladi."
-                  : <>Savol matnida bo'sh joyni <code className="text-white/50">___</code> bilan belgilashingiz mumkin. O'quvchi javobi shu matnga moslab tekshiriladi.</>}
+                  : <>Savol matnida bo'sh joyni <code className="code-inline">___</code> bilan belgilashingiz mumkin. O'quvchi javobi shu matnga moslab tekshiriladi.</>}
               </p>
             </div>
           )}
@@ -1443,22 +1447,22 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           {newQ.type === "Ko'p bo'sh joy to'ldirish" && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label className="text-xs text-white/50 font-medium">Bo'sh joylar va javoblari</label>
+                <label className="text-xs text-text-secondary font-medium">Bo'sh joylar va javoblari</label>
                 <button type="button"
                   onClick={() => {
                     const next = [...(newQ.blanks || [])];
                     next.push({ key: String(next.length + 1), answer: '' });
                     setNewQ({...newQ, blanks: next});
                   }}
-                  className="text-xs px-3 py-1.5 rounded-lg glass text-indigo-300 hover:text-indigo-200 font-semibold transition-all">
+                  className="btn-ghost text-xs px-3 py-1.5 rounded-lg font-semibold">
                   + Bo'sh joy qo'shish
                 </button>
               </div>
-              <p className="mb-2 text-[11px] text-white/35">Savol matnida bo'sh joylarni <code className="text-white/50">[blank]</code> yoki <code className="text-white/50">___</code> bilan belgilang. Har bir bo'sh joyga tartib bo'yicha javob kiriting.</p>
+              <p className="mb-2 text-[11px] text-text-secondary">Savol matnida bo'sh joylarni <code className="code-inline">[blank]</code> yoki <code className="code-inline">___</code> bilan belgilang. Har bir bo'sh joyga tartib bo'yicha javob kiriting.</p>
               <div className="space-y-2">
                 {(newQ.blanks || []).map((b, idx) => (
                   <div key={idx} className="flex items-center gap-2">
-                    <span className="w-12 text-center text-xs font-bold text-white/40 flex-shrink-0">#{b.key || idx + 1}</span>
+                    <span className="w-12 text-center text-xs font-bold font-data text-text-secondary flex-shrink-0">#{b.key || idx + 1}</span>
                     <input className="input-field py-2" placeholder={`${idx + 1}-bo'sh joy javobi`}
                       value={b.answer} onChange={e => {
                         const next = [...newQ.blanks];
@@ -1471,7 +1475,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                           const next = newQ.blanks.filter((_, i) => i !== idx).map((x, i) => ({ ...x, key: String(i + 1) }));
                           setNewQ({...newQ, blanks: next});
                         }}
-                        className="text-rose-400 hover:text-rose-300 transition-colors p-2 rounded-lg glass flex-shrink-0">
+                        className="btn-danger p-2 rounded-lg flex-shrink-0">
                         <Icon name="trash" size={14} />
                       </button>
                     )}
@@ -1484,7 +1488,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               Sozlama correct_text ichida JSON bo'lib saqlanadi. */}
           {newQ.type === 'Slayder (raqamli)' && (
             <div>
-              <label className="block text-xs text-white/50 mb-2 font-medium">Slayder sozlamalari</label>
+              <label className="block text-xs text-text-secondary mb-2 font-medium">Slayder sozlamalari</label>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 {[
                   ['min', 'Min'],
@@ -1494,14 +1498,14 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   ['tolerance', 'Xatolik (±)'],
                 ].map(([key, label]) => (
                   <div key={key}>
-                    <label className="block text-[10px] text-white/35 mb-1">{label}</label>
+                    <label className="block text-[10px] text-text-secondary mb-1">{label}</label>
                     <input type="number" className="input-field py-2"
                       value={newQ.slider?.[key] ?? ''}
                       onChange={e => setNewQ({ ...newQ, slider: { ...(newQ.slider || DEFAULT_SLIDER), [key]: e.target.value === '' ? '' : +e.target.value } })} />
                   </div>
                 ))}
               </div>
-              <p className="mt-2 text-[11px] text-white/35">
+              <p className="mt-2 text-[11px] text-text-secondary">
                 O'quvchi slayderni surib raqam tanlaydi. Javob <strong>±{newQ.slider?.tolerance ?? 0}</strong> chegarasida bo'lsa to'g'ri hisoblanadi
                 (masalan to'g'ri javob {newQ.slider?.correct ?? 0} bo'lsa, {Number(newQ.slider?.correct || 0) - Number(newQ.slider?.tolerance || 0)}..{Number(newQ.slider?.correct || 0) + Number(newQ.slider?.tolerance || 0)} qabul qilinadi).
               </p>
@@ -1510,18 +1514,18 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           {newQ.type === 'Kod (dasturlash)' && (
             <div className="space-y-4">
               <div>
-                <label className="block text-xs text-white/50 mb-1.5 font-medium">Dasturlash tili</label>
+                <label className="block text-xs text-text-secondary mb-1.5 font-medium">Dasturlash tili</label>
                 <div className="flex flex-wrap gap-2">
                   {CODE_LANGUAGES.map(([val, label]) => (
-                    <button key={val} type="button" onClick={() => setNewQ({ ...newQ, programmingLanguage: val })}
-                      className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-all ${newQ.programmingLanguage === val ? 'gradient-bg text-white' : 'glass text-white/50 hover:text-white/70'}`}>
+                    <button key={val} type="button" aria-pressed={newQ.programmingLanguage === val} onClick={() => setNewQ({ ...newQ, programmingLanguage: val })}
+                      className={`text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors ${newQ.programmingLanguage === val ? 'bg-accent-fill text-on-accent' : 'border border-edge bg-surface-1 text-text-secondary hover:border-edge-strong hover:text-text-primary'}`}>
                       {label}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-white/50 mb-1.5 font-medium">Boshlang'ich kod skelet <span className="text-white/35">(ixtiyoriy)</span></label>
+                <label className="block text-xs text-text-secondary mb-1.5 font-medium">Boshlang'ich kod skelet <span className="text-text-secondary">(ixtiyoriy)</span></label>
                 <CodeEditor
                   value={newQ.codeTemplate}
                   onChange={(code) => setNewQ({ ...newQ, codeTemplate: code })}
@@ -1530,7 +1534,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 />
               </div>
               <div>
-                <label className="block text-xs text-white/50 mb-1.5 font-medium">Kutilgan natija <span className="text-white/35">(ixtiyoriy — AI/ustoz tekshiruvi uchun)</span></label>
+                <label className="block text-xs text-text-secondary mb-1.5 font-medium">Kutilgan natija <span className="text-text-secondary">(ixtiyoriy — AI/ustoz tekshiruvi uchun)</span></label>
                 <textarea className="input-field font-mono text-xs" rows={3}
                   placeholder="Masalan: 120"
                   value={newQ.expectedOutput}
@@ -1538,21 +1542,21 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               </div>
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-xs text-white/50 font-medium">Test case'lar <span className="text-white/35">(Judge0 avtomatik tekshiruv uchun)</span></label>
+                  <label className="text-xs text-text-secondary font-medium">Test case'lar <span className="text-text-secondary">(Judge0 avtomatik tekshiruv uchun)</span></label>
                   <button type="button"
                     onClick={() => setNewQ({ ...newQ, testCases: [...(newQ.testCases || []), { input: '', expected_output: '', is_hidden: false }] })}
-                    className="text-xs px-3 py-1.5 rounded-lg glass text-indigo-300 hover:text-indigo-200 font-semibold transition-all">
+                    className="btn-ghost text-xs px-3 py-1.5 rounded-lg font-semibold">
                     + Test case qo'shish
                   </button>
                 </div>
                 {(newQ.testCases || []).length === 0 && (
-                  <p className="text-xs text-white/25 italic">Test case'lar yo'q. "+" tugmasini bosib qo'shing.</p>
+                  <p className="text-xs text-text-secondary italic">Test case'lar yo'q. "+" tugmasini bosib qo'shing.</p>
                 )}
                 <div className="space-y-3">
                   {(newQ.testCases || []).map((tc, idx) => (
                     <div key={idx} className="glass rounded-xl p-3 space-y-2">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs text-white/40 font-semibold">#{idx + 1}</span>
+                        <span className="text-xs text-text-secondary font-semibold font-data">#{idx + 1}</span>
                         <div className="flex items-center gap-3">
                           <label className="flex items-center gap-1.5 cursor-pointer">
                             <input type="checkbox" checked={tc.is_hidden}
@@ -1561,19 +1565,19 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                                 updated[idx] = { ...updated[idx], is_hidden: e.target.checked };
                                 setNewQ({ ...newQ, testCases: updated });
                               }}
-                              className="w-3.5 h-3.5 accent-indigo-500" />
-                            <span className="text-xs text-white/40">Yashirin</span>
+                              className="w-3.5 h-3.5 accent-accent-fill" />
+                            <span className="text-xs text-text-secondary">Yashirin</span>
                           </label>
                           <button type="button"
                             onClick={() => setNewQ({ ...newQ, testCases: newQ.testCases.filter((_, i) => i !== idx) })}
-                            className="text-xs text-rose-400 hover:text-rose-300 transition-colors px-2 py-0.5 rounded glass">
+                            className="btn-danger text-xs px-2 py-0.5 rounded">
                             O'chirish
                           </button>
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-[10px] text-white/35 mb-1">Kirish (stdin)</label>
+                          <label className="block text-[10px] text-text-secondary mb-1">Kirish (stdin)</label>
                           <textarea className="input-field font-mono text-xs" rows={2}
                             placeholder="Masalan: 5"
                             value={tc.input}
@@ -1584,7 +1588,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                             }} />
                         </div>
                         <div>
-                          <label className="block text-[10px] text-white/35 mb-1">Kutilgan natija (stdout)</label>
+                          <label className="block text-[10px] text-text-secondary mb-1">Kutilgan natija (stdout)</label>
                           <textarea className="input-field font-mono text-xs" rows={2}
                             placeholder="Masalan: 25"
                             value={tc.expected_output}
@@ -1611,22 +1615,22 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       {/* AI MODE */}
       {mode === 'ai' && (
         <div className="space-y-5 animate-in">
-          <div className="glass rounded-2xl p-6 space-y-4 border border-indigo-500/20">
+          <div className="glass rounded-2xl p-6 space-y-4">
             <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center"><Icon name="sparkles" size={18} /></div>
-              <div className="flex-1"><div className="font-bold text-white">AI Savol Generatori</div><div className="text-xs text-white/40">Mavzu bo'yicha avtomatik savollar yaratadi</div></div>
+              <div className="w-10 h-10 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-accent"><Icon name="sparkles" size={18} /></div>
+              <div className="flex-1"><div className="font-display font-bold text-text-primary">AI Savol Generatori</div><div className="text-xs text-text-secondary">Mavzu bo'yicha avtomatik savollar yaratadi</div></div>
               {/* AI savollar oylik limit badge'i: cheksiz → ∞, aks holda used/limit
-                  (to'lsa qizil, 80%+ sariq, aks holda indigo). */}
+                  (to'lsa error, 80%+ warning, aks holda success). */}
               {isApi && myCenterId && (
                 aiLimits.unlimited ? (
-                  <span className="chip text-xs font-bold px-2.5 py-1 rounded-lg bg-indigo-500/15 text-indigo-300 whitespace-nowrap">∞ AI</span>
+                  <span className="chip text-xs font-bold px-2.5 py-1 rounded-lg border border-accent/45 bg-ground text-accent whitespace-nowrap">∞ AI</span>
                 ) : aiLimits.limit > 0 ? (
-                  <span className={`chip text-xs font-bold px-2.5 py-1 rounded-lg whitespace-nowrap ${aiLimitReached ? 'bg-rose-500/15 text-rose-300' : aiNearLimit ? 'bg-amber-500/15 text-amber-300' : 'bg-emerald-500/15 text-emerald-300'}`}>{aiLimits.used} / {aiLimits.limit} AI</span>
+                  <span className={`chip text-xs font-bold font-data px-2.5 py-1 rounded-lg border bg-ground whitespace-nowrap ${aiLimitReached ? 'border-error/45 text-error' : aiNearLimit ? 'border-warning/45 text-warning' : 'border-success/45 text-success'}`}>{aiLimits.used} / {aiLimits.limit} AI</span>
                 ) : null
               )}
             </div>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="block text-xs text-white/50 mb-1.5">Fan</label>
+              <div><label className="block text-xs text-text-secondary mb-1.5">Fan</label>
                 <select className="input-field" value={aiForm.subject} onChange={e => {
                   const newSubj = e.target.value;
                   let newLevel = aiForm.level;
@@ -1643,17 +1647,17 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 }}>
                   {allSubjects.map(s => <option key={s}>{s}</option>)}
                 </select></div>
-              <div><label className="block text-xs text-white/50 mb-1.5">Savollar soni</label>
+              <div><label className="block text-xs text-text-secondary mb-1.5">Savollar soni</label>
                 <input type="number" className="input-field" min={1} max={30} value={aiForm.count} onChange={e => setAiForm({...aiForm, count: +e.target.value})} /></div>
             </div>
-            <div><label className="block text-xs text-white/50 mb-1.5">Mavzu</label>
+            <div><label className="block text-xs text-text-secondary mb-1.5">Mavzu</label>
               <input className="input-field" placeholder="Masalan: Kvadrat tenglamalar, Past tenses..." value={aiForm.topic} onChange={e => setAiForm({...aiForm, topic: e.target.value})} /></div>
             <div className="grid grid-cols-2 gap-3">
-              <div><label className="block text-xs text-white/50 mb-1.5">Qiyinlik darajasi</label>
+              <div><label className="block text-xs text-text-secondary mb-1.5">Qiyinlik darajasi</label>
                 <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
                   {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
                 </select></div>
-              <div><label className="block text-xs text-white/50 mb-1.5">Test turi</label>
+              <div><label className="block text-xs text-text-secondary mb-1.5">Test turi</label>
                 <select className="input-field" value={aiForm.type} onChange={e => setAiForm({...aiForm, type: e.target.value})}>
                   {AI_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select></div>
@@ -1662,11 +1666,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               title={aiLimitReached ? 'AI limit tugadi. Tarifni yangilang.' : undefined}
               className="btn-primary w-full py-3.5 rounded-2xl font-bold flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed">
               {aiLoading ? (
-                <><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Yaratilmoqda...</>
+                <><div className="w-5 h-5 border-2 border-on-accent/30 border-t-on-accent rounded-full animate-spin" /> Yaratilmoqda...</>
               ) : <><Icon name="sparkles" size={18} /> AI orqali savol yaratish</>}
             </button>
             {aiLimitReached && (
-              <div className="text-center text-xs font-bold text-rose-300">AI limit tugadi. Tarifni yangilang.</div>
+              <div className="text-center text-xs font-bold text-error">AI limit tugadi. Tarifni yangilang.</div>
             )}
           </div>
 
@@ -1675,8 +1679,8 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
               <div className="space-y-3">
                 {Array.from({length:3}).map((_,i) => (
                   <div key={i} className="space-y-2">
-                    <div className="h-4 rounded-lg bg-white/10" style={{width:`${60+i*15}%`}} />
-                    <div className="h-3 rounded-lg bg-white/5 w-full" />
+                    <div className="h-4 rounded-lg bg-surface-2" style={{width:`${60+i*15}%`}} />
+                    <div className="h-3 rounded-lg bg-surface-2 w-full" />
                   </div>
                 ))}
               </div>
@@ -1686,7 +1690,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
           {aiResult && !aiLoading && (
             <div className="glass rounded-2xl p-5 space-y-4 animate-in">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-bold text-white">{aiResult.length} ta savol yaratildi ✨</div>
+                <div className="font-display text-sm font-bold text-text-primary"><span className="font-data">{aiResult.length}</span> ta savol yaratildi</div>
                 <div className="flex gap-2">
                   <button onClick={() => setAiResult(null)} className="btn-ghost text-xs px-3 py-1.5 rounded-xl">Tozalash</button>
                   <button onClick={saveAiQuestions} disabled={bulkSaving} className="btn-primary text-xs px-4 py-1.5 rounded-xl font-semibold disabled:opacity-50">Hammasini saqlash</button>
@@ -1696,25 +1700,25 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 {aiResult.map((q,i) => {
                   const isEditing = editingPreview.type === 'ai' && editingPreview.index === i;
                   return (
-                  <div key={i} className="glass rounded-xl p-3 text-sm text-white/70 space-y-2">
+                  <div key={i} className="glass rounded-xl p-3 text-sm text-text-primary space-y-2">
                     <div className="flex items-start gap-2">
-                      <span className="text-indigo-300 font-bold">{i+1}.</span>
+                      <span className="text-accent font-bold font-data">{i+1}.</span>
                       <div className="flex-1 min-w-0">
-                        {isEditing ? renderPreviewEditor('indigo') : (
+                        {isEditing ? renderPreviewEditor() : (
                           <>
                             <div className="leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></div>
                             <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mt-2">
                               <SubjectBadge subject={q.subject} />
-                              <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
-                              <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
+                              <span className={`chip text-xs border bg-ground ${getLevelColorClass(q.difficulty) === 'success' ? 'border-success/45 text-success' : getLevelColorClass(q.difficulty) === 'warning' ? 'border-warning/45 text-warning' : 'border-error/45 text-error'}`}>{q.difficulty}</span>
+                              <span className="chip glass text-accent text-xs font-data">{q.score} ball</span>
                             </div>
                           </>
                         )}
                       </div>
                       {!isEditing && (
                         <div className="flex-shrink-0 flex items-center gap-1.5">
-                          {renderPreviewEditButton('ai', i, q, 'indigo')}
-                          {renderPreviewDeleteButton('ai', i, 'indigo')}
+                          {renderPreviewEditButton('ai', i, q)}
+                          {renderPreviewDeleteButton('ai', i)}
                         </div>
                       )}
                     </div>
@@ -1722,7 +1726,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                       <div className="grid gap-1.5 sm:grid-cols-2 mt-1">
                         {q.options.map((option, optionIndex) => (
                           <div key={optionIndex}
-                            className={`rounded-lg px-2 py-1 text-xs ${optionIndex === q.correctAnswer ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'bg-white/5 text-white/50'}`}>
+                            className={`rounded-lg px-2 py-1 text-xs ${optionIndex === q.correctAnswer ? 'border border-success/45 bg-ground text-success' : 'bg-surface-2 text-text-secondary'}`}>
                             {String.fromCharCode(65 + optionIndex)}. <MathText text={option} />
 </div>
                         ))}
@@ -1740,13 +1744,13 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       {/* PDF MODE */}
       {mode === 'pdf' && (
         <div className="space-y-5 animate-in">
-          <div className="glass rounded-2xl p-6 border border-cyan-500/20">
+          <div className="glass rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 bg-cyan-500/15 rounded-xl flex items-center justify-center text-cyan-400"><Icon name="file" size={18} /></div>
-              <div><div className="font-bold text-white">PDF dan Savol Yaratish</div><div className="text-xs text-white/40">PDF yuklang va avtomatik savollar ajratiladi</div></div>
+              <div className="w-10 h-10 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-accent"><Icon name="file" size={18} /></div>
+              <div><div className="font-display font-bold text-text-primary">PDF dan Savol Yaratish</div><div className="text-xs text-text-secondary">PDF yuklang va avtomatik savollar ajratiladi</div></div>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <div><label className="block text-xs text-white/50 mb-1.5">Fan</label>
+              <div><label className="block text-xs text-text-secondary mb-1.5">Fan</label>
                 <select className="input-field" value={aiForm.subject} onChange={e => {
                   const newSubj = e.target.value;
                   let newLevel = aiForm.level;
@@ -1763,7 +1767,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 }}>
                   {allSubjects.map(s => <option key={s}>{s}</option>)}
                 </select></div>
-              <div><label className="block text-xs text-white/50 mb-1.5">Qiyinlik</label>
+              <div><label className="block text-xs text-text-secondary mb-1.5">Qiyinlik</label>
                 <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
                   {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
                 </select></div>
@@ -1771,21 +1775,21 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                   (handlePDF), shuning uchun ustoz fayl yuklashdan oldin turni
                   ko'rishi va tanlashi kerak. Avval bu select faqat AI rejimida
                   bor edi va PDF eski/standart qiymatni jimgina yuborardi. */}
-              <div className="col-span-2"><label className="block text-xs text-white/50 mb-1.5">Savol turi</label>
+              <div className="col-span-2"><label className="block text-xs text-text-secondary mb-1.5">Savol turi</label>
                 <select className="input-field" value={aiForm.type} onChange={e => setAiForm({...aiForm, type: e.target.value})}>
                   {AI_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select></div>
             </div>
-            <label className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-white/10 hover:border-cyan-500/30 transition-all cursor-pointer group">
-              <div className="text-4xl mb-3 group-hover:scale-110 transition-transform">📄</div>
-              <div className="text-sm font-medium text-white/60 mb-1">{pdfFile || 'PDF faylni shu yerga tashlang'}</div>
-              <div className="text-xs text-white/30">yoki bosib tanlang</div>
+            <label className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-edge bg-surface-1 hover:border-accent hover:bg-surface-2 transition-colors cursor-pointer">
+              <div className="mb-3 text-text-secondary"><Icon name="upload" size={28} /></div>
+              <div className="text-sm font-medium text-text-primary mb-1">{pdfFile || 'PDF faylni shu yerga tashlang'}</div>
+              <div className="text-xs text-text-secondary">yoki bosib tanlang</div>
               <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={handlePDF} />
             </label>
             {pdfLoading && (
               <div className="mt-4 space-y-2 ai-shimmer rounded-xl p-4">
-                <div className="text-xs text-cyan-400 mb-2">PDF tahlil qilinmoqda...</div>
-                {[80,60,70].map((w,i) => <div key={i} className="h-3 rounded bg-white/10" style={{width:`${w}%`}} />)}
+                <div className="text-xs text-accent mb-2">PDF tahlil qilinmoqda...</div>
+                {[80,60,70].map((w,i) => <div key={i} className="h-3 rounded bg-surface-2" style={{width:`${w}%`}} />)}
               </div>
             )}
           </div>
@@ -1793,13 +1797,13 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             <div className="glass rounded-2xl p-5 space-y-3 animate-in">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-bold text-white">{pdfResult.length} ta savol ajratildi</div>
-                  <div className="text-xs text-white/35">
+                  <div className="font-display text-sm font-bold text-text-primary"><span className="font-data">{pdfResult.length}</span> ta savol ajratildi</div>
+                  <div className="text-xs text-text-secondary">
                     {pdfProvider ? `${pdfProvider === 'gemini' ? 'Gemini' : pdfProvider === 'parser' ? 'PDF parser' : 'Demo'} tahlil qildi` : 'AI tahlil qildi'}
                     {pdfVision ? ' · PDF vision' : ''}
                     {pdfChunks > 1 ? ` · ${pdfChunks} bo'lak` : ''}
                   </div>
-                  {pdfWarning && <div className="mt-1 text-[11px] text-amber-300">{pdfWarning}</div>}
+                  {pdfWarning && <div className="mt-1 text-[11px] text-warning">{pdfWarning}</div>}
                 </div>
                 <div className="flex gap-2">
                   <button onClick={savePdfQuestions} disabled={bulkSaving} className="btn-primary text-xs px-4 py-1.5 rounded-xl font-semibold disabled:opacity-50">Saqlash</button>
@@ -1809,20 +1813,20 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 const isCode = (q.question_type || 'mcq') === 'code';
                 const isEditing = editingPreview.type === 'pdf' && editingPreview.index === i;
                 return (
-                <div key={i} className="glass rounded-xl p-3 text-sm text-white/70 space-y-2">
+                <div key={i} className="glass rounded-xl p-3 text-sm text-text-primary space-y-2">
                   <div className="flex items-start gap-2">
-                    <span className="text-cyan-300 font-bold">{i+1}.</span>
+                    <span className="text-accent font-bold font-data">{i+1}.</span>
                     <div className="flex-1 min-w-0">
-                      {isEditing ? renderPreviewEditor('cyan') : (
+                      {isEditing ? renderPreviewEditor() : (
                         <>
                           <div className="leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></div>
                           {q.needsReview && (
-                            <div className="mt-1 text-[11px] text-amber-300">Javob AI tomonidan taxmin qilindi, saqlashdan oldin tekshiring</div>
+                            <div className="mt-1 text-[11px] text-warning">Javob AI tomonidan taxmin qilindi, saqlashdan oldin tekshiring</div>
                           )}
                           <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mt-2">
                             <SubjectBadge subject={q.subject} />
-                            <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
-                            <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
+                            <span className={`chip text-xs border bg-ground ${getLevelColorClass(q.difficulty) === 'success' ? 'border-success/45 text-success' : getLevelColorClass(q.difficulty) === 'warning' ? 'border-warning/45 text-warning' : 'border-error/45 text-error'}`}>{q.difficulty}</span>
+                            <span className="chip glass text-accent text-xs font-data">{q.score} ball</span>
                           </div>
                         </>
                       )}
@@ -1830,20 +1834,21 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                     {!isEditing && (
                       <div className="flex-shrink-0 flex items-center gap-1.5">
                         {/* Faqat MCQ savollarni inline tahrirlaymiz; kod savolida variant yo'q. */}
-                        {!isCode && renderPreviewEditButton('pdf', i, q, 'cyan')}
+                        {!isCode && renderPreviewEditButton('pdf', i, q)}
                         {/* Savol turini MCQ ↔ kod savoli o'rtasida almashtirish.
                             Faqat PDF preview'da; saqlashda question_type backend'ga ketadi. */}
                         <button
                           type="button"
+                          aria-pressed={isCode}
                           onClick={() => setPdfResult(prev => prev.map((item, idx) =>
                             idx === i ? { ...item, question_type: isCode ? 'mcq' : 'code' } : item
                           ))}
                           title={isCode ? "Kod savoli sifatida saqlanadi — bosib MCQ ga qaytaring" : "MCQ sifatida saqlanadi — bosib kod savoliga o'tkazing"}
-                          className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg border transition-all ${isCode ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' : 'bg-white/5 text-white/40 border-white/10 hover:text-white/60'}`}
+                          className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg border transition-colors ${isCode ? 'bg-ground text-accent border-accent' : 'bg-surface-1 text-text-secondary border-edge hover:border-edge-strong hover:text-text-primary'}`}
                         >
                           {isCode ? <>{'</> '}Kod savoli</> : 'MCQ'}
                         </button>
-                        {renderPreviewDeleteButton('pdf', i, 'cyan')}
+                        {renderPreviewDeleteButton('pdf', i)}
                       </div>
                     )}
                   </div>
@@ -1851,14 +1856,14 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                     <div className="grid gap-1.5 sm:grid-cols-2">
                       {q.options.map((option, optionIndex) => (
                         <div key={optionIndex}
-                          className={`rounded-lg px-2 py-1 text-xs ${optionIndex === q.correctAnswer ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'bg-white/5 text-white/50'}`}>
+                          className={`rounded-lg px-2 py-1 text-xs ${optionIndex === q.correctAnswer ? 'border border-success/45 bg-ground text-success' : 'bg-surface-2 text-text-secondary'}`}>
                           {String.fromCharCode(65 + optionIndex)}. <MathText text={option} />
                         </div>
                       ))}
                     </div>
                   )}
                   {!isEditing && isCode && (
-                    <div className="text-[11px] text-indigo-300/70 pl-6">Bu savol kod (dasturlash) savoli sifatida saqlanadi. Variantlar o'rniga o'quvchi kod yozadi.</div>
+                    <div className="text-[11px] text-text-secondary pl-6">Bu savol kod (dasturlash) savoli sifatida saqlanadi. Variantlar o'rniga o'quvchi kod yozadi.</div>
                   )}
                 </div>
                 );
@@ -1871,13 +1876,13 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       {/* WORD (AI) MODE — Worddagi matndan AI savol ajratish (PDF MODE'ning .docx varianti) */}
       {mode === 'word_ai' && (
         <div className="space-y-5 animate-in">
-          <div className="glass rounded-2xl p-6 border border-sky-500/20">
+          <div className="glass rounded-2xl p-6">
             <div className="flex items-center gap-3 mb-5">
-              <div className="w-10 h-10 bg-sky-500/15 rounded-xl flex items-center justify-center text-sky-400"><Icon name="sparkles" size={18} /></div>
-              <div><div className="font-bold text-white">Word matnidan AI savol</div><div className="text-xs text-white/40">.docx, .txt, .pdf yuklang — AI matnni o'qib savollar ajratadi (jadval shart emas)</div></div>
+              <div className="w-10 h-10 rounded-xl border border-edge bg-surface-2 flex items-center justify-center text-accent"><Icon name="sparkles" size={18} /></div>
+              <div><div className="font-display font-bold text-text-primary">Word matnidan AI savol</div><div className="text-xs text-text-secondary">.docx, .txt, .pdf yuklang — AI matnni o'qib savollar ajratadi (jadval shart emas)</div></div>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <div><label className="block text-xs text-white/50 mb-1.5">Fan</label>
+              <div><label className="block text-xs text-text-secondary mb-1.5">Fan</label>
                 <select className="input-field" value={aiForm.subject} onChange={e => {
                   const newSubj = e.target.value;
                   let newLevel = aiForm.level;
@@ -1894,27 +1899,27 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 }}>
                   {allSubjects.map(s => <option key={s}>{s}</option>)}
                 </select></div>
-              <div><label className="block text-xs text-white/50 mb-1.5">Qiyinlik</label>
+              <div><label className="block text-xs text-text-secondary mb-1.5">Qiyinlik</label>
                 <select className="input-field" value={aiForm.level} onChange={e => setAiForm({...aiForm, level: e.target.value})}>
                   {(aiForm.subject === 'Ingliz tili' ? ENGLISH_LEVELS : LEVELS).map(l => <option key={l} value={l}>{l}</option>)}
                 </select></div>
               {/* Savol turi — handleWordAi ham `question_type`ni yuboradi, PDF
                   rejimidagi kabi ustoz oldindan tanlab qo'yadi. */}
-              <div className="col-span-2"><label className="block text-xs text-white/50 mb-1.5">Savol turi</label>
+              <div className="col-span-2"><label className="block text-xs text-text-secondary mb-1.5">Savol turi</label>
                 <select className="input-field" value={aiForm.type} onChange={e => setAiForm({...aiForm, type: e.target.value})}>
                   {AI_TYPES.map(t => <option key={t}>{t}</option>)}
                 </select></div>
             </div>
-            <label className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-white/10 hover:border-sky-500/30 transition-all cursor-pointer group">
-              <div className="text-4xl mb-3 group-hover:scale-110 transition-transform">📝</div>
-              <div className="text-sm font-medium text-white/60 mb-1">{wordAiFile || '.docx, .txt, .pdf faylni shu yerga tashlang'}</div>
-              <div className="text-xs text-white/30">yoki bosib tanlang</div>
+            <label className="flex flex-col items-center justify-center p-8 rounded-2xl border-2 border-dashed border-edge bg-surface-1 hover:border-accent hover:bg-surface-2 transition-colors cursor-pointer">
+              <div className="mb-3 text-text-secondary"><Icon name="upload" size={28} /></div>
+              <div className="text-sm font-medium text-text-primary mb-1">{wordAiFile || '.docx, .txt, .pdf faylni shu yerga tashlang'}</div>
+              <div className="text-xs text-text-secondary">yoki bosib tanlang</div>
               <input type="file" accept=".docx,.txt,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain,application/pdf" className="hidden" onChange={handleWordAi} />
             </label>
             {wordAiLoading && (
               <div className="mt-4 space-y-2 ai-shimmer rounded-xl p-4">
-                <div className="text-xs text-sky-400 mb-2">Word tahlil qilinmoqda...</div>
-                {[80,60,70].map((w,i) => <div key={i} className="h-3 rounded bg-white/10" style={{width:`${w}%`}} />)}
+                <div className="text-xs text-accent mb-2">Word tahlil qilinmoqda...</div>
+                {[80,60,70].map((w,i) => <div key={i} className="h-3 rounded bg-surface-2" style={{width:`${w}%`}} />)}
               </div>
             )}
           </div>
@@ -1922,12 +1927,12 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             <div className="glass rounded-2xl p-5 space-y-3 animate-in">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-sm font-bold text-white">{wordAiResult.length} ta savol ajratildi</div>
-                  <div className="text-xs text-white/35">
+                  <div className="font-display text-sm font-bold text-text-primary"><span className="font-data">{wordAiResult.length}</span> ta savol ajratildi</div>
+                  <div className="text-xs text-text-secondary">
                     {wordAiProvider ? `${wordAiProvider === 'gemini' ? 'Gemini' : wordAiProvider === 'parser' ? 'Matn parser' : 'Demo'} tahlil qildi` : 'AI tahlil qildi'}
                     {wordAiChunks > 1 ? ` · ${wordAiChunks} bo'lak` : ''}
                   </div>
-                  {wordAiWarning && <div className="mt-1 text-[11px] text-amber-300">{wordAiWarning}</div>}
+                  {wordAiWarning && <div className="mt-1 text-[11px] text-warning">{wordAiWarning}</div>}
                 </div>
                 <div className="flex gap-2">
                   <button onClick={saveWordAiQuestions} disabled={bulkSaving} className="btn-primary text-xs px-4 py-1.5 rounded-xl font-semibold disabled:opacity-50">Saqlash</button>
@@ -1937,20 +1942,20 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                 const isCode = (q.question_type || 'mcq') === 'code';
                 const isEditing = editingPreview.type === 'word_ai' && editingPreview.index === i;
                 return (
-                <div key={i} className="glass rounded-xl p-3 text-sm text-white/70 space-y-2">
+                <div key={i} className="glass rounded-xl p-3 text-sm text-text-primary space-y-2">
                   <div className="flex items-start gap-2">
-                    <span className="text-sky-300 font-bold">{i+1}.</span>
+                    <span className="text-accent font-bold font-data">{i+1}.</span>
                     <div className="flex-1 min-w-0">
-                      {isEditing ? renderPreviewEditor('sky') : (
+                      {isEditing ? renderPreviewEditor() : (
                         <>
                           <div className="leading-relaxed whitespace-pre-wrap"><MathText text={q.text} /></div>
                           {q.needsReview && (
-                            <div className="mt-1 text-[11px] text-amber-300">Javob AI tomonidan taxmin qilindi, saqlashdan oldin tekshiring</div>
+                            <div className="mt-1 text-[11px] text-warning">Javob AI tomonidan taxmin qilindi, saqlashdan oldin tekshiring</div>
                           )}
                           <div className="flex flex-wrap items-center gap-1.5 md:gap-2 mt-2">
                             <SubjectBadge subject={q.subject} />
-                            <span className={`chip text-xs ${getLevelColorClass(q.difficulty) === 'emerald' ? 'bg-emerald-500/10 text-emerald-400' : getLevelColorClass(q.difficulty) === 'amber' ? 'bg-amber-500/10 text-amber-400' : 'bg-rose-500/10 text-rose-400'}`}>{q.difficulty}</span>
-                            <span className="chip glass text-indigo-300 text-xs">{q.score} ball</span>
+                            <span className={`chip text-xs border bg-ground ${getLevelColorClass(q.difficulty) === 'success' ? 'border-success/45 text-success' : getLevelColorClass(q.difficulty) === 'warning' ? 'border-warning/45 text-warning' : 'border-error/45 text-error'}`}>{q.difficulty}</span>
+                            <span className="chip glass text-accent text-xs font-data">{q.score} ball</span>
                           </div>
                         </>
                       )}
@@ -1958,19 +1963,20 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                     {!isEditing && (
                       <div className="flex-shrink-0 flex items-center gap-1.5">
                         {/* Faqat MCQ savollarni inline tahrirlaymiz; kod savolida variant yo'q. */}
-                        {!isCode && renderPreviewEditButton('word_ai', i, q, 'sky')}
+                        {!isCode && renderPreviewEditButton('word_ai', i, q)}
                         {/* Savol turini MCQ ↔ kod savoli o'rtasida almashtirish (PDF preview bilan bir xil). */}
                         <button
                           type="button"
+                          aria-pressed={isCode}
                           onClick={() => setWordAiResult(prev => prev.map((item, idx) =>
                             idx === i ? { ...item, question_type: isCode ? 'mcq' : 'code' } : item
                           ))}
                           title={isCode ? "Kod savoli sifatida saqlanadi — bosib MCQ ga qaytaring" : "MCQ sifatida saqlanadi — bosib kod savoliga o'tkazing"}
-                          className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg border transition-all ${isCode ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' : 'bg-white/5 text-white/40 border-white/10 hover:text-white/60'}`}
+                          className={`inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-lg border transition-colors ${isCode ? 'bg-ground text-accent border-accent' : 'bg-surface-1 text-text-secondary border-edge hover:border-edge-strong hover:text-text-primary'}`}
                         >
                           {isCode ? <>{'</> '}Kod savoli</> : 'MCQ'}
                         </button>
-                        {renderPreviewDeleteButton('word_ai', i, 'sky')}
+                        {renderPreviewDeleteButton('word_ai', i)}
                       </div>
                     )}
                   </div>
@@ -1978,14 +1984,14 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
                     <div className="grid gap-1.5 sm:grid-cols-2">
                       {q.options.map((option, optionIndex) => (
                         <div key={optionIndex}
-                          className={`rounded-lg px-2 py-1 text-xs ${optionIndex === q.correctAnswer ? 'border border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'bg-white/5 text-white/50'}`}>
+                          className={`rounded-lg px-2 py-1 text-xs ${optionIndex === q.correctAnswer ? 'border border-success/45 bg-ground text-success' : 'bg-surface-2 text-text-secondary'}`}>
                           {String.fromCharCode(65 + optionIndex)}. <MathText text={option} />
                         </div>
                       ))}
                     </div>
                   )}
                   {!isEditing && isCode && (
-                    <div className="text-[11px] text-indigo-300/70 pl-6">Bu savol kod (dasturlash) savoli sifatida saqlanadi. Variantlar o'rniga o'quvchi kod yozadi.</div>
+                    <div className="text-[11px] text-text-secondary pl-6">Bu savol kod (dasturlash) savoli sifatida saqlanadi. Variantlar o'rniga o'quvchi kod yozadi.</div>
                   )}
                 </div>
                 );
@@ -1997,7 +2003,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
 
       {/* Delete confirm */}
       <Modal open={!!deleteId} onClose={() => !deletingQuestion && setDeleteId(null)} title="Savolni o'chirish">
-        <p className="text-white/60 mb-5">Bu savolni o'chirishni tasdiqlaysizmi?</p>
+        <p className="text-text-secondary mb-5">Bu savolni o'chirishni tasdiqlaysizmi?</p>
         <div className="flex gap-3">
           <button onClick={() => setDeleteId(null)} disabled={deletingQuestion} className="btn-ghost flex-1 py-3 rounded-xl disabled:opacity-50">Bekor qilish</button>
           <button onClick={() => {
@@ -2020,11 +2026,11 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
 
       {/* Savolni admin tekshiruviga qo'yish */}
       <Modal open={!!flagId} onClose={() => !flaggingQuestion && setFlagId(null)} title="Savolni tekshiruvga qo'yish">
-        <p className="text-white/60 text-sm mb-4 leading-relaxed">
+        <p className="text-text-secondary text-sm mb-4 leading-relaxed">
           Savol platforma admini navbatiga tushadi. Savol bankdan darhol yo'qolmaydi —
           uni faqat admin tekshiruvdan keyin arxivlashi mumkin.
         </p>
-        <label className="block text-xs text-white/50 mb-1.5 font-medium">Sabab</label>
+        <label className="block text-xs text-text-secondary mb-1.5 font-medium">Sabab</label>
         <textarea
           className="input-field mb-5"
           rows={3}
@@ -2042,18 +2048,18 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       {/* Delete all confirm */}
       <Modal open={deleteAllConfirm} onClose={() => !deletingAll && setDeleteAllConfirm(false)} title={selectedIds.length > 0 ? "Tanlangan savollarni o'chirish" : "Barcha savollarni o'chirish"}>
         <div className="space-y-4">
-          <p className="text-white/80 text-sm font-semibold leading-relaxed">
+          <p className="text-text-primary text-sm font-semibold leading-relaxed">
             {selectedIds.length > 0 ? `${selectedIds.length} ta tanlangan savol o'chirilsinmi?` : "Hamma savollar o'chirilsinmi?"}
           </p>
-          <p className="text-white/60 text-xs leading-relaxed">
+          <p className="text-text-secondary text-xs leading-relaxed">
             {selectedIds.length > 0 ? (
               <>Ushbu markazga tegishli <strong>tanlangan {selectedIds.length} ta savol</strong> o'chirib tashlanadi.</>
             ) : (
               <>Ushbu markazga tegishli <strong>barcha {questions.length} ta savol</strong> o'chirib tashlanadi.</>
             )}
           </p>
-          <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/25 text-rose-300 text-xs leading-relaxed">
-            ⚠️ <strong>DIQQAT:</strong> Ushbu amalni ortga qaytarib bo'lmaydi!
+          <div className="p-3.5 rounded-xl bg-ground border border-error/45 text-error text-xs leading-relaxed">
+            <Icon name="info" size={13} className="inline -mt-0.5 mr-1" /><strong>DIQQAT:</strong> Ushbu amalni ortga qaytarib bo'lmaydi!
           </div>
           <div className="flex gap-3 pt-2">
             <button onClick={() => setDeleteAllConfirm(false)} disabled={deletingAll} className="btn-ghost flex-1 py-3 rounded-xl disabled:opacity-50">
@@ -2111,34 +2117,40 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
       </Modal>
 
       {bulkSaving && (
-        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/95 animate-in fade-in">
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-ground/95 animate-in fade-in">
           <div className="glass-strong rounded-2xl p-6 flex flex-col items-center gap-4 max-w-xs text-center">
             <div className="relative flex items-center justify-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-2 border-white/15 border-t-white border-r-white"></div>
-              <div className="absolute animate-pulse text-white/80">
+              <div className="animate-spin rounded-full h-12 w-12 border-2 border-edge border-t-accent border-r-accent"></div>
+              <div className="absolute text-accent">
                 <Icon name="sparkles" size={20} />
               </div>
             </div>
             <div className="space-y-1">
-              <h3 className="text-sm font-bold text-white">Savollar saqlanmoqda</h3>
-              <p className="text-xs text-white/40">Iltimos kuting, savollar ma'lumotlar bazasiga yozilmoqda...</p>
+              <h3 className="font-display text-sm font-bold text-text-primary">Savollar saqlanmoqda</h3>
+              <p className="text-xs text-text-secondary">Iltimos kuting, savollar ma'lumotlar bazasiga yozilmoqda...</p>
             </div>
           </div>
         </div>
       )}
 
+      {/* Toast ohangi xabarning o'zidan olinadi: `⚠` bilan boshlanganlar
+          xato/ogohlantirish (ko'pchiligi shunday), qolganlari — neytral
+          ma'lumot. Avval hoshiya har doim bitta rangda edi, ya'ni foydalanuvchi
+          xato bilan oddiy xabarni bir qarashda ajrata olmasdi. */}
       {apiToast && (
-        <div className="fixed bottom-20 md:bottom-6 right-3 md:right-6 left-3 md:left-auto z-50 glass-strong rounded-2xl px-5 py-3.5 border border-rose-500/30 animate-in text-sm font-medium text-white md:max-w-sm">{apiToast}</div>
+        <div role="status" className={`fixed bottom-20 md:bottom-6 right-3 md:right-6 left-3 md:left-auto z-50 glass-strong rounded-2xl px-5 py-3.5 border-l-4 animate-in text-sm font-medium text-text-primary md:max-w-sm ${
+          String(apiToast).trim().startsWith('⚠') ? 'border-warning' : 'border-accent'
+        }`}>{apiToast}</div>
       )}
 
       {/* Premium Lock Modal */}
       <Modal open={!!premiumLockDetail} onClose={() => setPremiumLockDetail('')} title="Premium Imkoniyat">
         <div className="space-y-4 text-center py-4">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/30 animate-pulse mb-2">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-ground text-warning border border-warning/45 mb-2">
             <Icon name="star" size={32} />
           </div>
-          <h3 className="text-lg font-black text-white">Premium Obuna Kerak</h3>
-          <p className="text-white/70 text-sm leading-relaxed">
+          <h3 className="font-display text-lg font-black text-text-primary">Premium Obuna Kerak</h3>
+          <p className="text-text-secondary text-sm leading-relaxed">
             {premiumLockDetail}
           </p>
           {!!user?.roles?.owner ? (
@@ -2158,7 +2170,7 @@ const QuestionCreatorPage = ({ user, onNavigate, onLogout, embedded, onOpenSwitc
             </div>
           ) : (
             <div className="space-y-3 pt-2">
-              <p className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 leading-relaxed">
+              <p className="text-xs text-warning bg-ground border border-warning/45 rounded-xl p-3 leading-relaxed">
                 Tashkilotingiz bepul tarifda. Ushbu funksiyani ishlatish uchun iltimos tashkilot direktoriga (egasiga) Premium obunani faollashtirishini so'rab murojaat qiling.
               </p>
               <button onClick={() => setPremiumLockDetail('')} className="btn-primary w-full py-3 rounded-xl font-bold">
