@@ -1277,6 +1277,16 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     () => isApi ? OlympyApi.getAbuseStats(OlympyApi.getToken()) : Promise.resolve(null),
     [isApi],
   );
+  // Jonli imtihon va test jarayonlari radari
+  const apiLiveRadarRes = useApiData(
+    () => (isApi && page === 'home') ? OlympyApi.getLiveRadar(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, page],
+  );
+  // So'nggi to'lov tranzaksiyalari (Click / Payme)
+  const apiRecentTxRes = useApiData(
+    () => (isApi && page === 'home') ? OlympyApi.getRecentTransactions(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, page],
+  );
   // Recharts kutubxonasi — faqat "Tahlil" tabi ochilganda lazy yuklanadi
   // (backend so'rovlari bilan bir xil mantiq: kerak bo'lmasa so'ralmaydi).
   const rechartsReady = useRecharts(page === 'analytics');
@@ -2731,31 +2741,213 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     // hammani "oflayn" deb ko'rsatish yolg'on bo'lardi.
     const presenceUnknown = presenceRows.some(row => row.is_online === null);
     const presenceOnlineCount = presenceRows.filter(row => row.is_online === true).length;
+
+    // Moliyaviy va to'lov ko'rsatkichlari (Trial hisoblanmagan toza pullik xaridlar)
+    const financial = isApi ? (apiMetricsRes.data?.financial || {}) : {};
+    const totalRevenue = financial.total_revenue || 0;
+    const thisMonthRevenue = financial.this_month_revenue || 0;
+    const revenueGrowthPct = financial.revenue_growth_pct || 0;
+    const paidCustomersCount = financial.paid_customers_count || 0;
+    const activePaidSubs = financial.active_paid_subscriptions || 0;
+    const trialActiveCount = financial.trial_active_count != null ? financial.trial_active_count : allUsers.filter(u => u.isTrialActive).length;
+    const arpu = financial.arpu || 0;
+    const clickShare = financial.providers?.click || {};
+    const paymeShare = financial.providers?.payme || {};
+
     return (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
           <h1 className="text-[20px] font-bold leading-tight text-text-primary">Boshqaruv paneli</h1>
-          <p className="mt-1 text-[11px] font-bold text-text-secondary">Olympy platformasi ko'rsatkichlari va arizalar holati.</p>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">Olympy platformasi moliyaviy, foydalanuvchi va operatsion ko'rsatkichlari.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPage('analytics')}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-edge bg-surface-1 px-3 py-1.5 text-xs font-bold text-text-primary hover:bg-surface-2 transition"
+          >
+            <Icon name="chart" size={13} />
+            <span>To'liq tahlil</span>
+          </button>
         </div>
       </div>
 
+      {/* 1-qator: Asosiy Biznes va Daromad Metrikalari */}
       <div className="grid gap-[12px] md:grid-cols-2 xl:grid-cols-4">
-        <AdminMetricCard label="Tashkilotlar" value={approvedCenters.length.toLocaleString()} delta={pendingCenterReqs.length ? `${pendingCenterReqs.length} ta tasdiqlash kutilmoqda` : 'Barchasi ko\'rib chiqilgan'} icon={<Icon name="building" size={16} />} tone="accent" />
-        <AdminMetricCard label="Pending arizalar" value={pendingCenterReqs.length.toLocaleString()} delta={pendingCenterReqs.length ? "Ko'rib chiqish kerak" : "Bo'sh"} icon={<Icon name="bell" size={16} />} tone="success" />
-        <AdminMetricCard label="Foydalanuvchilar" value={allUsers.length.toLocaleString()} delta={`${activeUsersCount} ta faol`} icon={<Icon name="users" size={16} />} tone="warning" />
-        <AdminMetricCard label="Olimpiadalar" value={totalOlympiads.toLocaleString()} delta={`${activeOlympiadCount} ta faol`} icon={<Icon name="trophy" size={16} />} tone="neutral" />
+        <AdminMetricCard
+          label="Jami tushum (Daromad)"
+          value={`${totalRevenue.toLocaleString()} so'm`}
+          delta={`Shu oy: ${thisMonthRevenue.toLocaleString()} so'm (${revenueGrowthPct >= 0 ? '+' : ''}${revenueGrowthPct}%)`}
+          icon={<Icon name="dollar" size={16} />}
+          tone="success"
+        />
+        <AdminMetricCard
+          label="Pullik obunachilar"
+          value={`${paidCustomersCount.toLocaleString()} ta xaridor`}
+          delta={`Trial kiritilmagan • Faol pullik: ${activePaidSubs} ta`}
+          icon={<Icon name="creditCard" size={16} />}
+          tone="accent"
+        />
+        <AdminMetricCard
+          label="Tashkilotlar"
+          value={approvedCenters.length.toLocaleString()}
+          delta={pendingCenterReqs.length ? `${pendingCenterReqs.length} ta tasdiqlash kutilmoqda` : 'Barchasi ko\'rib chiqilgan'}
+          icon={<Icon name="building" size={16} />}
+          tone="warning"
+        />
+        <AdminMetricCard
+          label="Foydalanuvchilar"
+          value={allUsers.length.toLocaleString()}
+          delta={`${activeUsersCount} ta faol • ${trialActiveCount} ta trialda`}
+          icon={<Icon name="users" size={16} />}
+          tone="neutral"
+        />
       </div>
 
+      {/* 2-qator: Moliyaviy Samaradorlik va Jonli Operatsiyalar */}
       <div className="grid gap-[12px] md:grid-cols-2 xl:grid-cols-4">
-        <AdminMetricCard label="O'quvchilar" value={studentCount.toLocaleString()} delta="Tasdiqlangan" icon={<Icon name="users" size={16} />} tone="accent" />
-        <AdminMetricCard label="Faol olimpiadalar" value={activeOlympiadCount.toLocaleString()} delta={activeOlympiadCount ? "Hozir o'tmoqda" : "Hech qaysi faol emas"} icon={<Icon name="bolt" size={16} />} tone="success" />
-        {/* Yagona bosiladigan karta: ro'yxat faqat API rejimida mavjud
-            (mock store'da onlayn holati yo'q), shuning uchun onClick ham
-            shundagina beriladi — aks holda karta bosilar-u, hech narsa
-            ochilmasdi. */}
-        <AdminMetricCard label="Hozir onlayn" value={onlineCount == null ? '—' : onlineCount.toLocaleString()} delta={onlineCount == null ? "Ma'lumot yo'q" : "Oxirgi 3 daqiqada faol — ro'yxat uchun bosing"} icon={<Icon name="users" size={16} />} tone="info" onClick={isApi ? () => setOnlineListOpen(true) : undefined} />
-        <AdminMetricCard label="Tasdiqlangan tashkilotlar foizi" value={`${approvedCenterPct}%`} delta="Hammasi ichidan" icon={<Icon name="chart" size={16} />} tone="neutral" />
+        <AdminMetricCard
+          label="O'rtacha to'lov (ARPU)"
+          value={`${arpu.toLocaleString()} so'm`}
+          delta="Har bir xaridor hisobiga"
+          icon={<Icon name="wallet" size={16} />}
+          tone="accent"
+        />
+        <AdminMetricCard
+          label="To'lov tizimlari ulushi"
+          value={`Click: ${clickShare.pct || 0}% • Payme: ${paymeShare.pct || 0}%`}
+          delta={`Click: ${(clickShare.amount || 0).toLocaleString()} • Payme: ${(paymeShare.amount || 0).toLocaleString()}`}
+          icon={<Icon name="chart" size={16} />}
+          tone="info"
+        />
+        <AdminMetricCard
+          label="Hozir onlayn"
+          value={onlineCount == null ? '—' : onlineCount.toLocaleString()}
+          delta={onlineCount == null ? "Ma'lumot yo'q" : "Oxirgi 3 daqiqada faol — ro'yxat uchun bosing"}
+          icon={<Icon name="activity" size={16} />}
+          tone="success"
+          onClick={isApi ? () => setOnlineListOpen(true) : undefined}
+        />
+        <AdminMetricCard
+          label="Faol olimpiadalar"
+          value={activeOlympiadCount.toLocaleString()}
+          delta={activeOlympiadCount ? `${totalOlympiads} tadan hozir o'tmoqda` : `Jami ${totalOlympiads} ta olimpiada`}
+          icon={<Icon name="trophy" size={16} />}
+          tone="neutral"
+        />
+      </div>
+
+      {/* 3-qator: Jonli Test Radari va So'nggi To'lov Tranzaksiyalari */}
+      <div className="grid gap-[12px] xl:grid-cols-[1.2fr_0.8fr]">
+        {/* So'nggi To'lov Tranzaksiyalari */}
+        <section className="admin-card p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Icon name="creditCard" size={15} className="text-accent" />
+              <h2 className="text-[12px] font-bold uppercase tracking-wider text-text-primary">So'nggi to'lov tranzaksiyalari</h2>
+            </div>
+            <button onClick={() => setPage('analytics')} className="text-[11px] font-bold text-accent hover:underline transition">Barchasi</button>
+          </div>
+          <div className="overflow-x-auto admin-scroll">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-edge pb-2 text-[9px] font-bold uppercase tracking-widest text-text-secondary">
+                  <th className="pb-2">Foydalanuvchi</th>
+                  <th className="pb-2">Tarif</th>
+                  <th className="pb-2">Tizim</th>
+                  <th className="pb-2 text-right">Summa</th>
+                  <th className="pb-2 text-right">Holat</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-edge">
+                {(() => {
+                  const txs = (apiRecentTxRes.data?.transactions || []).slice(0, 5);
+                  if (txs.length === 0) {
+                    return <tr><td colSpan={5} className="py-8 text-center text-xs font-semibold text-text-secondary">Muvaffaqiyatli to'lov tranzaksiyalari hali mavjud emas</td></tr>;
+                  }
+                  return txs.map(tx => (
+                    <tr key={tx.id} className="text-xs admin-table-row">
+                      <td className="py-2.5 pr-2">
+                        <div className="font-bold text-text-primary truncate max-w-[140px]">{tx.user_name}</div>
+                        <div className="font-mono text-[10px] text-text-secondary">{tx.phone}</div>
+                      </td>
+                      <td className="py-2.5 font-semibold text-text-secondary">{tx.plan_name}</td>
+                      <td className="py-2.5">
+                        <span className={`rounded px-1.5 py-0.5 text-[10px] font-extrabold uppercase ${tx.provider === 'click' ? 'bg-info/15 text-info border border-info/45' : 'bg-accent/15 text-accent border border-accent/45'}`}>
+                          {tx.provider}
+                        </span>
+                      </td>
+                      <td className="py-2.5 text-right font-mono font-bold text-success">
+                        +{Number(tx.amount).toLocaleString()} so'm
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${tx.status === 'success' ? 'bg-success/15 text-success border border-success/45' : tx.status === 'pending' ? 'bg-warning/15 text-warning border border-warning/45' : 'bg-error/15 text-error border border-error/45'}`}>
+                          {tx.status === 'success' ? 'To\'landi' : tx.status === 'pending' ? 'Kutilmoqda' : 'Xato'}
+                        </span>
+                      </td>
+                    </tr>
+                  ));
+                })()}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        {/* Jonli Test & Imtihonlar Radari */}
+        <section className="admin-card p-4">
+          <div className="mb-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-error opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-error"></span>
+              </span>
+              <h2 className="text-[12px] font-bold uppercase tracking-wider text-text-primary">Jonli Test Radari</h2>
+            </div>
+            <span className="rounded-full bg-surface-2 px-2.5 py-0.5 text-[10px] font-bold text-text-primary border border-edge">
+              {(apiLiveRadarRes.data?.active_sessions_count || 0)} ta jonli
+            </span>
+          </div>
+
+          {/* Pending Reviews Alert */}
+          {(apiLiveRadarRes.data?.pending_review_count || 0) > 0 && (
+            <div className="mb-3 rounded-xl bg-warning/15 border border-warning/45 p-2.5 text-xs text-warning flex items-center gap-2 font-bold">
+              <Icon name="info" size={14} />
+              <span>{apiLiveRadarRes.data.pending_review_count} ta o'quvchi moderatsiya tekshiruvini kutmoqda (Cheating review)</span>
+            </div>
+          )}
+
+          <div className="space-y-2.5">
+            {(() => {
+              const live = (apiLiveRadarRes.data?.live_sessions || []).slice(0, 4);
+              if (live.length === 0) {
+                return (
+                  <div className="py-8 text-center text-xs font-semibold text-text-secondary">
+                    Hozirda jonli test topshirayotgan o'quvchilar yo'q
+                  </div>
+                );
+              }
+              return live.map(s => (
+                <div key={s.id} className="flex items-center justify-between rounded-xl bg-surface-1 border border-edge p-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Avatar name={s.user_name} size={28} gradient="bg-pencil-600" />
+                    <div className="min-w-0">
+                      <div className="truncate text-[11px] font-bold text-text-primary">{s.user_name}</div>
+                      <div className="truncate text-[10px] text-text-secondary font-semibold">{s.olympiad_title}</div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {s.camera_consent && <span className="text-[10px]" title="Kamera proktoring faol">📷</span>}
+                    {s.microphone_consent && <span className="text-[10px]" title="Mikrofon proktoring faol">🎙️</span>}
+                    <span className="rounded bg-success/15 border border-success/45 px-1.5 py-0.2 text-[9px] font-extrabold text-success animate-pulse">
+                      Jarayonda
+                    </span>
+                  </div>
+                </div>
+              ));
+            })()}
+          </div>
+        </section>
       </div>
 
       <div className="grid gap-[12px] xl:grid-cols-[1.55fr_1.45fr]">
@@ -5130,6 +5322,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const conv = metrics?.conversion || {};
     const ret = metrics?.retention || {};
     const signups = metrics?.signups || {};
+    const fin = metrics?.financial || {};
 
     // AreaChart datasi — userGrowthChart (allUsers'dan frontend'da hisoblangan).
     const growthData = userGrowthChart.labels.map((label, i) => ({
@@ -5139,16 +5332,18 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
     // Yuqori metrik kartalar.
     const totalUsers = hasMetrics ? (prem.total_users || 0) : allUsers.length;
-    const todayNew = hasMetrics ? (signups.last_1d || 0) : 0;
-    const premiumPct = hasMetrics ? (prem.premium_pct || 0) : 0;
+    const totalRevenue = fin.total_revenue || 0;
+    const thisMonthRevenue = fin.this_month_revenue || 0;
+    const paidCustomersCount = fin.paid_customers_count || 0;
+    const arpu = fin.arpu || 0;
     const trialToPaidPct = hasMetrics ? (conv.trial_to_paid_pct || 0) : 0;
 
     // Premium breakdown (Pie): paid / faqat-trial / bepul.
-    const paidFlag = prem.paid_flag || 0;
-    const trialOnly = prem.trial_only || 0;
+    const paidFlag = fin.paid_customers_count || prem.paid_flag || 0;
+    const trialOnly = fin.trial_active_count != null ? fin.trial_active_count : (prem.trial_only || 0);
     const freeUsers = Math.max(0, (prem.total_users || 0) - paidFlag - trialOnly);
     const premiumPieData = [
-      { label: 'Pullik', value: paidFlag, color: 'rgb(var(--color-accent))' },
+      { label: "Sof pullik (To'langan)", value: paidFlag, color: 'rgb(var(--color-accent))' },
       { label: 'Faqat trial', value: trialOnly, color: 'rgb(var(--color-accent-2))' },
       { label: 'Bepul', value: freeUsers, color: 'rgb(var(--color-text-secondary))' },
     ];
@@ -5165,7 +5360,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     const funnelData = [
       { label: "Ro'yxatdan o'tgan", value: prem.total_users || 0 },
       { label: 'Trial boshlagan', value: conv.trial_started || 0 },
-      { label: "Paid bo'lgan", value: conv.paid_total || 0 },
+      { label: "Sof pullik xaridor", value: fin.paid_customers_count || conv.paid_total || 0 },
     ];
 
     // ─── Kengaytirilgan diagrammalar uchun backend datasi ───
@@ -5232,10 +5427,34 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
 
         {/* Yuqori metrik kartalar */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <AdminMetricCard label="Jami foydalanuvchilar" value={totalUsers.toLocaleString()} delta={hasMetrics ? `${prem.active_users || 0} ta faol` : 'Mahalliy hisob'} icon={<Icon name="users" size={16} />} tone="accent" />
-          <AdminMetricCard label="Bugun yangi" value={hasMetrics ? todayNew.toLocaleString() : '—'} delta={hasMetrics ? `7 kunda ${signups.last_7d || 0} ta` : "Ma'lumot yo'q"} icon={<Icon name="chart" size={16} />} tone="success" />
-          <AdminMetricCard label="Premium %" value={hasMetrics ? `${premiumPct}%` : '—'} delta={hasMetrics ? `${prem.premium_active || 0} ta faol premium` : "Ma'lumot yo'q"} icon={<Icon name="star" size={16} />} tone="warning" />
-          <AdminMetricCard label="Trial → Paid" value={hasMetrics ? `${trialToPaidPct}%` : '—'} delta={hasMetrics ? `${conv.trial_to_paid || 0} / ${conv.trial_started || 0}` : "Ma'lumot yo'q"} icon={<Icon name="chart" size={16} />} tone="neutral" />
+          <AdminMetricCard
+            label="Jami tushum (Daromad)"
+            value={`${totalRevenue.toLocaleString()} so'm`}
+            delta={hasMetrics ? `Shu oy: ${thisMonthRevenue.toLocaleString()} so'm` : 'Mahalliy hisob'}
+            icon={<Icon name="dollar" size={16} />}
+            tone="success"
+          />
+          <AdminMetricCard
+            label="Sof pullik xaridorlar"
+            value={`${paidCustomersCount.toLocaleString()} ta`}
+            delta="Trial kiritilmagan"
+            icon={<Icon name="creditCard" size={16} />}
+            tone="accent"
+          />
+          <AdminMetricCard
+            label="Trial → Paid Konversiya"
+            value={hasMetrics ? `${trialToPaidPct}%` : '—'}
+            delta={hasMetrics ? `${conv.trial_to_paid || 0} / ${conv.trial_started || 0} ta trial` : "Ma'lumot yo'q"}
+            icon={<Icon name="star" size={16} />}
+            tone="warning"
+          />
+          <AdminMetricCard
+            label="O'rtacha chek (ARPU)"
+            value={`${arpu.toLocaleString()} so'm`}
+            delta="Har bir xaridor hisobiga"
+            icon={<Icon name="wallet" size={16} />}
+            tone="neutral"
+          />
         </div>
 
         {/* Diagramma 1 — Foydalanuvchi o'sishi (AreaChart) */}

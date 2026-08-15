@@ -24,11 +24,11 @@ from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.db.models import Count, Q
+from django.db.models import Avg, Count, Q, Sum
 from django.utils import timezone
 
 from attempts.models import TestAttempt
-from billing.models import UserSubscription
+from billing.models import PaymentTransaction, UserSubscription
 
 
 CACHE_KEY = 'analytics:dashboard:v1'
@@ -45,6 +45,81 @@ def _pct(part, whole):
     if not whole:
         return 0.0
     return round(part * 100.0 / whole, 1)
+
+
+def _financial_block(now):
+    """Sof pullik premium xaridlar va daromad ko'rsatkichlari (Trial hisoblanmagan)."""
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # O'tgan oy boshi va oxiri
+    last_month_end = month_start - timedelta(seconds=1)
+    last_month_start = last_month_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # 1. Jami muvaffaqiyatli tushum
+    success_txs = PaymentTransaction.objects.filter(status=PaymentTransaction.STATUS_SUCCESS)
+    total_revenue = int(success_txs.aggregate(total=Sum('amount'))['total'] or 0)
+
+    # 2. Shu oy va o'tgan oydagi tushum
+    this_month_revenue = int(success_txs.filter(created_at__gte=month_start).aggregate(total=Sum('amount'))['total'] or 0)
+    last_month_revenue = int(success_txs.filter(created_at__gte=last_month_start, created_at__lte=last_month_end).aggregate(total=Sum('amount'))['total'] or 0)
+
+    if last_month_revenue > 0:
+        revenue_growth_pct = round(((this_month_revenue - last_month_revenue) / last_month_revenue) * 100, 1)
+    else:
+        revenue_growth_pct = 100.0 if this_month_revenue > 0 else 0.0
+
+    # 3. Sof pullik xaridorlar soni (Barcha muvaffaqiyatli to'lagan unikal userlar - Trial hisoblanmaydi)
+    paid_user_ids = set(success_txs.filter(user__isnull=False).values_list('user_id', flat=True).distinct())
+    paid_customers_count = len(paid_user_ids)
+
+    # 4. Hozirda faol pullik obunachilar (faqat pul to'laganlar orasidan amal qilish muddati tugamaganlar)
+    active_paid_subscriptions = UserSubscription.objects.filter(
+        is_active=True,
+        end_date__gt=now,
+        user_id__in=paid_user_ids
+    ).values('user_id').distinct().count()
+
+    # 5. Hozirda faol trial foydalanuvchilar (pullik to'lamagan, faqat bepul trialda yurganlar)
+    trial_active_count = User.objects.filter(
+        premium_trial_end__gt=now
+    ).exclude(id__in=paid_user_ids).count()
+
+    # 6. O'rtacha to'lov (ARPU - Average Revenue Per Paying User)
+    arpu = int(total_revenue / paid_customers_count) if paid_customers_count > 0 else 0
+
+    # 7. To'lov tizimlari bo'yicha taqsimot (Click vs Payme)
+    providers = {}
+    for prov in ('click', 'payme'):
+        prov_txs = success_txs.filter(provider=prov)
+        prov_amt = int(prov_txs.aggregate(t=Sum('amount'))['t'] or 0)
+        prov_cnt = prov_txs.count()
+        providers[prov] = {
+            'count': prov_cnt,
+            'amount': prov_amt,
+            'pct': _pct(prov_amt, total_revenue),
+        }
+
+    # 8. Muvaffaqiyatli vs Bekor bo'lgan/Xatoli to'lovlar
+    total_tx_count = PaymentTransaction.objects.count()
+    success_tx_count = success_txs.count()
+    failed_tx_count = PaymentTransaction.objects.filter(
+        status__in=[PaymentTransaction.STATUS_FAILED, PaymentTransaction.STATUS_CANCELLED]
+    ).count()
+
+    return {
+        'total_revenue': total_revenue,
+        'this_month_revenue': this_month_revenue,
+        'last_month_revenue': last_month_revenue,
+        'revenue_growth_pct': revenue_growth_pct,
+        'paid_customers_count': paid_customers_count,
+        'active_paid_subscriptions': active_paid_subscriptions,
+        'trial_active_count': trial_active_count,
+        'arpu': arpu,
+        'providers': providers,
+        'success_tx_count': success_tx_count,
+        'failed_tx_count': failed_tx_count,
+        'total_tx_count': total_tx_count,
+    }
 
 
 def _retention_for_window(now, days):
@@ -212,6 +287,7 @@ def compute_metrics():
     now = timezone.now()
     return {
         'generated_at': now.isoformat(),
+        'financial': _financial_block(now),
         'retention': _retention_block(now),
         'conversion': _conversion_block(now),
         'premium': _premium_block(now),

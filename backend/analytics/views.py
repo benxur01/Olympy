@@ -866,3 +866,95 @@ def abuse_stats(request):
     return Response(get_cached_block(
         'abuse_stats', _abuse_stats_data, _refresh_requested(request),
     ))
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def admin_live_radar(request):
+    """GET /api/analytics/live-radar/ — Jonli imtihon va test jarayonlari radari."""
+    from attempts.models import TestSession
+    from olympiads.models import Olympiad
+
+    active_sessions_qs = TestSession.objects.filter(status=TestSession.STATUS_ACTIVE).select_related('user', 'olympiad')
+    pending_review_qs = TestSession.objects.filter(status=TestSession.STATUS_PENDING_REVIEW).select_related('user', 'olympiad')
+    active_olympiads_qs = Olympiad.objects.filter(is_deleted=False, status=Olympiad.STATUS_ACTIVE).select_related('center')
+
+    live_sessions = [
+        {
+            'id': s.id,
+            'user_id': s.user_id,
+            'user_name': s.user.full_name or s.user.normalized_phone,
+            'phone': s.user.normalized_phone,
+            'olympiad_id': s.olympiad_id,
+            'olympiad_title': s.olympiad.title,
+            'status': s.status,
+            'started_at': s.started_at.isoformat(),
+            'camera_consent': s.camera_consent_given,
+            'microphone_consent': s.microphone_consent_given,
+        }
+        for s in active_sessions_qs.order_by('-started_at')[:20]
+    ]
+
+    pending_reviews = [
+        {
+            'id': s.id,
+            'user_id': s.user_id,
+            'user_name': s.user.full_name or s.user.normalized_phone,
+            'olympiad_title': s.olympiad.title,
+            'cheating_reason': s.cheating_reason,
+            'review_requested_at': s.review_requested_at.isoformat() if s.review_requested_at else None,
+        }
+        for s in pending_review_qs.order_by('-review_requested_at')[:10]
+    ]
+
+    ongoing_olympiads = [
+        {
+            'id': o.id,
+            'title': o.title,
+            'subject': o.subject,
+            'center_name': o.center.name if o.center else 'Olympy Platform',
+            'duration_minutes': o.duration_minutes,
+            'live_active_count': TestSession.objects.filter(olympiad=o, status=TestSession.STATUS_ACTIVE).count(),
+        }
+        for o in active_olympiads_qs[:10]
+    ]
+
+    return Response({
+        'active_sessions_count': active_sessions_qs.count(),
+        'pending_review_count': pending_review_qs.count(),
+        'ongoing_olympiads_count': active_olympiads_qs.count(),
+        'live_sessions': live_sessions,
+        'pending_reviews': pending_reviews,
+        'ongoing_olympiads': ongoing_olympiads,
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsPlatformAdmin])
+def admin_recent_transactions(request):
+    """GET /api/analytics/recent-transactions/ — So'nggi to'lov tranzaksiyalari ro'yxati."""
+    from billing.models import PaymentTransaction
+
+    qs = (
+        PaymentTransaction.objects
+        .select_related('user', 'plan')
+        .order_by('-created_at')[:25]
+    )
+
+    rows = [
+        {
+            'id': tx.id,
+            'user_id': tx.user_id,
+            'user_name': tx.user.full_name if tx.user else 'Noma\'lum',
+            'phone': tx.user.normalized_phone if tx.user else '—',
+            'plan_name': tx.plan.name if tx.plan else 'Premium obuna',
+            'amount': int(tx.amount),
+            'provider': tx.provider,
+            'status': tx.status,
+            'created_at': tx.created_at.isoformat(),
+            'failure_reason': tx.failure_reason,
+        }
+        for tx in qs
+    ]
+
+    return Response({'transactions': rows})

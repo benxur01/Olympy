@@ -288,6 +288,10 @@ const Icon = ({ name, size = 18, className = '' }) => {
     play: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 3a1 1 0 011.514-.857l13.999 8.999a1 1 0 010 1.716l-14 9A1 1 0 016 21z" />,
     lock: <><rect x="3" y="11" width="18" height="11" rx="2" ry="2" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 11V7a5 5 0 0110 0v4" /></>,
     mic: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2a3 3 0 00-3 3v6a3 3 0 006 0V5a3 3 0 00-3-3z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 10v1a7 7 0 01-14 0v-1M12 18v4M8 22h8" /></>,
+    creditCard: <><rect x="2" y="5" width="20" height="14" rx="2" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2 10h20" /></>,
+    dollar: <><line x1="12" y1="1" x2="12" y2="23" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" /></>,
+    wallet: <><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12V8H6a2 2 0 01-2-2V4a2 2 0 012-2h12v4M4 6v14a2 2 0 002 2h14v-4M18 12a2 2 0 100 4h4v-4h-4z" /></>,
+    activity: <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />,
     sun: <><circle cx="12" cy="12" r="4" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" /></>,
     moon: <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3a6 6 0 009 9 9 9 0 11-9-9z" />,
   };
