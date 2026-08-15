@@ -45,9 +45,10 @@ const WARN_GAZE_AWAY =
  * @param {(reason:string)=>void} opts.onReport - cheating report (idempotent).
  * @returns {Promise<{stop:()=>void}>}
  */
-export async function startFaceMonitor({ stream, onWarn, onReport }) {
+export async function startFaceMonitor({ stream, onWarn, onReport, onFaceDetect }) {
   const warn = typeof onWarn === 'function' ? onWarn : () => {};
   const report = typeof onReport === 'function' ? onReport : () => {};
+  const onDetect = typeof onFaceDetect === 'function' ? onFaceDetect : () => {};
 
   // 1) Yashirin video — DOM'ga qo'shiladi, lekin ko'rinmaydi. `display:none`
   //    ba'zi brauzerlarda kadr dekodini to'xtatadi, shuning uchun ekrandan
@@ -175,7 +176,11 @@ export async function startFaceMonitor({ stream, onWarn, onReport }) {
     const d = ev.data || {};
     if (d.type === 'error') { logWorkerError(d.message); return; }
     if (d.type !== 'result') return;
-    handleResult(d.faceCount || 0, d.gazeOffset || null, Date.now());
+    const now = Date.now();
+    const faceCount = d.faceCount || 0;
+    const gazeOffset = d.gazeOffset || null;
+    onDetect({ faceCount, gazeOffset, timestamp: now });
+    handleResult(faceCount, gazeOffset, now);
   };
   // Worker xatosi — imtihonni bloklamaymiz, lekin jim ham qolmaymiz.
   worker.onerror = (ev) => logWorkerError((ev && ev.message) || 'worker onerror');

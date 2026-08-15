@@ -794,6 +794,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [cameraConsentChecked, setCameraConsentChecked] = React.useState(false);
   const [cameraStarting, setCameraStarting] = React.useState(false);
   const [cameraError, setCameraError] = React.useState('');
+  const [cameraPreviewActive, setCameraPreviewActive] = React.useState(false);
+  const [preflightFaceStatus, setPreflightFaceStatus] = React.useState('detecting'); // 'detecting' | 'no_face' | 'multi_face' | 'ready'
+  const [preflightFaceCount, setPreflightFaceCount] = React.useState(0);
+  const [previewStream, setPreviewStream] = React.useState(null);
   // FaceMonitor handle'i ({ stop }) — submit/DQ/unmount'da to'xtatish uchun.
   const faceMonitorRef = React.useRef(null);
   // Ovoz (mikrofon) proktoring (atrofdagi gapirish/ovoz kuzatuvi). Kamera
@@ -1222,6 +1226,9 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         stream = await navigator.mediaDevices.getUserMedia({ video: true });
       }
       liveStreamRef.current = stream;
+      setPreviewStream(stream);
+      setCameraPreviewActive(true);
+      setPreflightFaceStatus('detecting');
     } catch {
       setCameraError(
         "Kamera ruxsati berilmadi. Bu olimpiada webkamera nazorati bilan "
@@ -1236,18 +1243,44 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         stream,
         onWarn: (msg) => setCheatWarning(msg),
         onReport: (reason) => reportCheating(reason),
+        onFaceDetect: ({ faceCount }) => {
+          setPreflightFaceCount(faceCount);
+          if (faceCount === 0) {
+            setPreflightFaceStatus('no_face');
+          } else if (faceCount >= 2) {
+            setPreflightFaceStatus('multi_face');
+          } else {
+            setPreflightFaceStatus('ready');
+          }
+        },
       });
       faceMonitorRef.current = monitor;
     } catch {
-      // FaceMonitor yuklanmasa (masalan model yuklab bo'lmasa) — kamera
-      // stream'ini yopamiz va rozilikni tasdiqlaymiz. Detektsiyasiz ham
-      // imtihon davom etadi (boshqa passiv signallar ishlaydi), lekin
-      // studentni bloklamaymiz.
-      try { stream.getTracks().forEach(t => t.stop()); } catch {}
+      // FaceMonitor yuklanmasa ham davom ettirishga ruxsat
+      setPreflightFaceStatus('ready');
     }
-    setCameraConsentAcked(true);
     setCameraStarting(false);
   }, [cameraStarting, user?._api, liveOlympiad?.backendId, reportCheating]);
+
+  const handleStartExamAfterFaceCheck = React.useCallback(() => {
+    if (preflightFaceStatus !== 'ready') return;
+    setCameraConsentAcked(true);
+  }, [preflightFaceStatus]);
+
+  const handleCancelCameraCheck = React.useCallback(() => {
+    if (liveStreamRef.current) {
+      try { liveStreamRef.current.getTracks().forEach(t => t.stop()); } catch {}
+      liveStreamRef.current = null;
+    }
+    if (faceMonitorRef.current) {
+      try { faceMonitorRef.current.stop(); } catch {}
+      faceMonitorRef.current = null;
+    }
+    setPreviewStream(null);
+    setCameraPreviewActive(false);
+    setCameraStarting(false);
+    setPreflightFaceStatus('detecting');
+  }, []);
 
   // Nazoratchi (Admin/Direktor/O'qituvchi) so'raganda jonli kadr, ekran va audio uzatish
   const startLiveFrameStreaming = React.useCallback((sessionId) => {
@@ -2134,6 +2167,154 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   // `cameraProctoringEnabled` yoqilgan va rozilik hali berilmagan bo'lsa
   // ko'rsatiladi. Rozilik + kamera ruxsatisiz imtihon boshlanmaydi.
   if (cameraProctoringEnabled && !cameraConsentAcked && user?._api && liveOlympiad?.backendId && !submitted && !cheated) {
+    if (cameraPreviewActive) {
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4 bg-ground">
+          <div className="rounded-2xl border border-edge bg-surface-1 p-6 md:p-8 max-w-lg w-full space-y-5 text-center shadow-2xl">
+            <div className="flex items-center justify-center">
+              <div className="w-12 h-12 rounded-2xl bg-accent/15 border border-accent/40 flex items-center justify-center text-accent">
+                <Icon name="eye" size={24} />
+              </div>
+            </div>
+
+            <div>
+              <h2 className="font-display text-xl font-bold text-text-primary">Yuzni tekshirish</h2>
+              <p className="text-text-secondary text-xs mt-1">
+                Kamerangiz to'g'ri ishlayotgani va yuzingiz ko'rinayotgani tekshirilmoqda
+              </p>
+            </div>
+
+            {/* Live Camera Preview with status border */}
+            <div
+              className="relative mx-auto w-full max-w-[280px] aspect-[4/3] rounded-2xl overflow-hidden bg-black border-2 transition-all duration-300 shadow-lg flex items-center justify-center"
+              style={{
+                borderColor: preflightFaceStatus === 'ready' ? '#10b981' : preflightFaceStatus === 'no_face' ? '#ef4444' : preflightFaceStatus === 'multi_face' ? '#f59e0b' : '#6366f1',
+                boxShadow: preflightFaceStatus === 'ready' ? '0 0 20px rgba(16, 185, 129, 0.25)' : preflightFaceStatus === 'no_face' ? '0 0 20px rgba(239, 68, 68, 0.25)' : 'none'
+              }}
+            >
+              <video
+                ref={el => {
+                  if (el && previewStream && el.srcObject !== previewStream) {
+                    el.srcObject = previewStream;
+                    el.play().catch(() => {});
+                  }
+                }}
+                muted
+                playsInline
+                autoPlay
+                className="w-full h-full object-cover transform -scale-x-100"
+              />
+
+              {/* Status Badge overlay */}
+              <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none">
+                <span className="rounded-lg bg-black/65 backdrop-blur-md px-2 py-1 text-[10px] font-bold text-white flex items-center gap-1.5 border border-white/10">
+                  <span className="h-2 w-2 rounded-full bg-success animate-pulse"></span>
+                  Kamera
+                </span>
+                {preflightFaceStatus === 'ready' && (
+                  <span className="rounded-lg bg-success text-white px-2 py-1 text-[10px] font-black shadow-md flex items-center gap-1">
+                    ✓ Yuz aniqlandi
+                  </span>
+                )}
+                {preflightFaceStatus === 'no_face' && (
+                  <span className="rounded-lg bg-error text-white px-2 py-1 text-[10px] font-black shadow-md flex items-center gap-1 animate-pulse">
+                    ! Yuz ko'rinmayapti
+                  </span>
+                )}
+                {preflightFaceStatus === 'multi_face' && (
+                  <span className="rounded-lg bg-warning text-black px-2 py-1 text-[10px] font-black shadow-md flex items-center gap-1 animate-pulse">
+                    ! {preflightFaceCount} ta yuz
+                  </span>
+                )}
+              </div>
+
+              {/* Face Guide Oval */}
+              <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                <div
+                  className="w-36 h-44 rounded-[50%] border-2 border-dashed transition-all duration-300 opacity-60"
+                  style={{
+                    borderColor: preflightFaceStatus === 'ready' ? '#10b981' : preflightFaceStatus === 'no_face' ? '#ef4444' : '#ffffff'
+                  }}
+                ></div>
+              </div>
+            </div>
+
+            {/* Status alerts */}
+            {preflightFaceStatus === 'detecting' && (
+              <div className="rounded-xl bg-accent/10 border border-accent/30 p-3.5 text-accent text-xs flex items-center justify-center gap-2">
+                <Spinner size={16} />
+                <span className="font-bold">Yuz aniqlanmoqda... Iltimos, kameraga to'g'ri qarang.</span>
+              </div>
+            )}
+
+            {preflightFaceStatus === 'no_face' && (
+              <div className="rounded-xl bg-error/15 border-2 border-error p-3.5 text-error text-xs text-left flex items-start gap-3 shadow-md">
+                <span className="text-2xl shrink-0">🛑</span>
+                <div className="space-y-0.5">
+                  <div className="font-black text-sm uppercase tracking-wide">Yuzingiz aniqlanmadi!</div>
+                  <div className="text-[11px] text-error/90 font-medium leading-relaxed">
+                    Kameraga narsa yopishtirilmaganligiga, barmoq bilan to'silmaganligiga va yuzingiz to'liq ko'rinayotganiga ishonch hosil qiling.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {preflightFaceStatus === 'multi_face' && (
+              <div className="rounded-xl bg-warning/15 border-2 border-warning p-3.5 text-warning text-xs text-left flex items-start gap-3 shadow-md">
+                <span className="text-2xl shrink-0">⚠️</span>
+                <div className="space-y-0.5">
+                  <div className="font-black text-sm uppercase tracking-wide">Kamerada bir nechta odam ko'rinmoqda!</div>
+                  <div className="text-[11px] text-warning/90 font-medium leading-relaxed">
+                    Olimpiada qoidalariga ko'ra xonada faqat 1 nafar ishtirokchi bo'lishi shart.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {preflightFaceStatus === 'ready' && (
+              <div className="rounded-xl bg-success/15 border-2 border-success p-3.5 text-success text-xs text-left flex items-start gap-3 shadow-md">
+                <span className="text-2xl shrink-0">✅</span>
+                <div className="space-y-0.5">
+                  <div className="font-black text-sm uppercase tracking-wide">Yuz muvaffaqiyatli aniqlandi!</div>
+                  <div className="text-[11px] text-success/90 font-medium leading-relaxed">
+                    Kamera nazorati tayyor. Endi olimpiadani bemalol boshlashingiz mumkin.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Action buttons */}
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={handleCancelCameraCheck}
+                className="btn-ghost flex-1 py-3.5 rounded-xl font-bold text-xs"
+              >
+                Orqaga
+              </button>
+              {preflightFaceStatus === 'ready' ? (
+                <button
+                  type="button"
+                  onClick={handleStartExamAfterFaceCheck}
+                  className="btn-primary flex-1 py-3.5 rounded-xl font-black text-xs bg-success hover:bg-success/90 text-white shadow-lg flex items-center justify-center gap-2"
+                >
+                  Olimpiadani boshlash 🚀
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className="flex-1 py-3.5 rounded-xl font-bold text-xs bg-surface-3 text-text-muted border border-edge opacity-60 cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  <span>🛑 Yuzingizni ko'rsating...</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="min-h-screen flex items-center justify-center p-4 bg-ground">
         <div className="rounded-2xl border border-edge bg-surface-1 p-6 md:p-8 max-w-lg w-full space-y-5">
@@ -2193,7 +2374,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             <button onClick={handleCameraConsent} disabled={!cameraConsentChecked || cameraStarting}
               className="btn-primary flex-1 py-3 rounded-xl font-semibold disabled:opacity-50 inline-flex items-center justify-center gap-2">
               {cameraStarting && <Spinner size={16} />}
-              {cameraStarting ? 'Ulanmoqda...' : 'Davom etish'}
+              {cameraStarting ? 'Kamera yoqilmoqda...' : 'Kamerani tekshirish'}
             </button>
           </div>
         </div>
