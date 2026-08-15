@@ -60,9 +60,7 @@ async function getDetector() {
       return faceLandmarksDetection.createDetector(model, {
         runtime: 'tfjs',
         refineLandmarks: false,
-        // Ikkinchi (begona) yuzni ham aniqlash uchun >1 kerak.
-        maxFaces: 3,
-        // Ikkalasi ham o'z origin'imizdan — tashqi tarmoqqa chiqilmaydi.
+        maxFaces: 2,
         landmarkModelUrl: LANDMARK_MODEL_URL,
         detectorModelUrl: DETECTOR_MODEL_URL,
       });

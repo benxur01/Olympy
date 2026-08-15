@@ -1210,9 +1210,10 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       }
       const constraints = {
         video: {
-          width: { ideal: 640, max: 1280 },
-          height: { ideal: 480, max: 720 },
-          frameRate: { ideal: 15, max: 24 },
+          width: { ideal: 480, max: 640 },
+          height: { ideal: 360, max: 480 },
+          frameRate: { ideal: 15, max: 20 },
+          facingMode: 'user',
         },
       };
       try {
@@ -1275,14 +1276,14 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     }
 
     const camCanvas = document.createElement('canvas');
-    camCanvas.width = 320;
-    camCanvas.height = 240;
-    const camCtx = camCanvas.getContext('2d');
+    camCanvas.width = 280;
+    camCanvas.height = 210;
+    const camCtx = camCanvas.getContext('2d', { willReadFrequently: true });
 
     const scrCanvas = document.createElement('canvas');
-    scrCanvas.width = 480;
-    scrCanvas.height = 270;
-    const scrCtx = scrCanvas.getContext('2d');
+    scrCanvas.width = 400;
+    scrCanvas.height = 225;
+    const scrCtx = scrCanvas.getContext('2d', { willReadFrequently: true });
 
     liveFrameUploadTimerRef.current = setInterval(async () => {
       if (cheatReportedRef.current || !sessionId) {
@@ -1296,15 +1297,15 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         let frameData = null;
         const vid = liveVideoElRef.current;
         if (liveStreamRef.current && vid && vid.videoWidth > 0 && vid.readyState >= 2) {
-          camCtx.drawImage(vid, 0, 0, 320, 240);
-          frameData = camCanvas.toDataURL('image/jpeg', 0.42);
+          camCtx.drawImage(vid, 0, 0, 280, 210);
+          frameData = camCanvas.toDataURL('image/jpeg', 0.38);
         }
 
         let screenFrameData = null;
         const sVid = screenVideoElRef.current;
         if (screenStreamRef.current && sVid && sVid.videoWidth > 0 && sVid.readyState >= 2) {
-          scrCtx.drawImage(sVid, 0, 0, 480, 270);
-          screenFrameData = scrCanvas.toDataURL('image/jpeg', 0.42);
+          scrCtx.drawImage(sVid, 0, 0, 400, 225);
+          screenFrameData = scrCanvas.toDataURL('image/jpeg', 0.38);
         }
 
         let audioLevel = 0;
@@ -1331,7 +1332,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           }, token);
         }
       } catch {}
-    }, 1200);
+    }, 1500);
   }, []);
 
   // Ovoz nazorati rozilik oqimi: (1) backend'ga rozilikni yozamiz,
