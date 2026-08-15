@@ -1219,7 +1219,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   // stacked, id-based ro'yxat bilan hal qiladi — imzosi bir xil (showToast(msg))
   // bo'lgani uchun quyidagi 38 ta chaqiruv joyi o'zgarishsiz ishlayveradi.
   const { showToast, ToastHost } = useToast();
-  const [liveProctorSession, setLiveProctorSession] = useState(null);
+  const [liveProctorSession, setLiveProctorSession] = React.useState(null);
 
   const apiCentersRes = useApiData(
     () => isApi ? OlympyApi.getAdminCenters(null, OlympyApi.getToken()) : Promise.resolve(null),
