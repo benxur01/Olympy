@@ -2742,23 +2742,29 @@ def session_live_frame(request, session_id):
     )
 
     if request.method == 'POST':
-        # Faqat student o'z sessiyasi kadrini yuboradi
-        if session.user_id != request.user.id and not request.user.is_platform_admin:
-            return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+        # Student o'z kadrini, ekran kadrini va audio/ilovadan chiqish ma'lumotlarini yuklaydi
+        if session.user_id != request.user.id:
+            return Response({'detail': 'Faqat student o\'z video/ekran oqimini yuborishi mumkin'}, status=http_status.HTTP_403_FORBIDDEN)
 
         frame = request.data.get('frame')
+        screen_frame = request.data.get('screen_frame')
         audio_level = request.data.get('audio_level', 0)
         face_detected = request.data.get('face_detected', True)
         speech_detected = request.data.get('speech_detected', False)
+        app_switched = bool(request.data.get('app_switched', False))
+        tab_escapes = int(request.data.get('tab_escapes', 0))
+        is_in_background = bool(request.data.get('is_in_background', False))
 
         cache_key = f"proctor:live_frame:{session_id}"
         payload = {
-            'session_id': session_id,
-            'user_id': session.user_id,
             'frame': frame,
+            'screen_frame': screen_frame,
             'audio_level': audio_level,
             'face_detected': face_detected,
             'speech_detected': speech_detected,
+            'app_switched': app_switched,
+            'tab_escapes': tab_escapes,
+            'is_in_background': is_in_background,
             'updated_at': timezone.now().isoformat(),
         }
         cache.set(cache_key, payload, timeout=20)
@@ -2793,11 +2799,15 @@ def session_live_frame(request, session_id):
         'camera_consent': session.camera_consent_given,
         'microphone_consent': session.microphone_consent_given,
         'frame': data.get('frame'),
+        'screen_frame': data.get('screen_frame'),
         'audio_level': data.get('audio_level', 0),
         'face_detected': data.get('face_detected', True),
         'speech_detected': data.get('speech_detected', False),
+        'app_switched': data.get('app_switched', False),
+        'tab_escapes': data.get('tab_escapes', 0),
+        'is_in_background': data.get('is_in_background', False),
         'updated_at': data.get('updated_at'),
-        'is_live': bool(data.get('frame')),
+        'is_live': bool(data.get('frame') or data.get('screen_frame')),
     })
 
 
