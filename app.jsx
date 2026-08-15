@@ -48,6 +48,15 @@ const DASHBOARD_ROLE_BASES = {
   '/dashboard/teacher': 'teacher',
 };
 
+// Bootstrap paytidagi sessiya tekshiruvini KUTISH chegarasi. Saqlangan sessiya
+// izi bo'lganda ilova cookie javobini bloklab kutadi (landing miltillamasin),
+// lekin bu kutish backend nosozligiga bog'lanib qolmasligi kerak: `request()`
+// o'z byudjeti bilan (timeout × qayta urinishlar) bir necha o'n soniyaga
+// cho'zilishi mumkin va o'shanda HAR BIR qaytgan foydalanuvchi loaderda qotib
+// qolardi. Chegara tugasa ilova eski xulqqa qaytadi — so'ralgan sahifa
+// ko'rsatiladi, tekshiruv esa fonda davom etadi.
+const BOOT_SESSION_CHECK_TIMEOUT_MS = 6000;
+
 // Faol test sahifasidagi olimpiada ID'sini saqlash kaliti. F5 (sahifa
 // yangilash) yoki kraxdan keyin test sessiyasini shu ID orqali tiklaymiz.
 const ACTIVE_TEST_KEY = 'olympy:activeTestOlympiad';
@@ -88,6 +97,20 @@ const URL_PAGES = (() => {
 // har render'da qayta yaratilmasligi va useEffect bog'liqliklarini bekorga
 // o'zgartirmasligi uchun.
 const NEEDS_AUTH_PAGES = ['student','manager','admin','teacher','owner','test','mock-test','results','leaderboard','profile','pending','pending-home','analytics','questions'];
+
+// Autentifikatsiya tugagach ochiladigan sahifa. Mehmon sahifasidan kelingan
+// bo'lsa (yoki manzil tanilmagan bo'lsa) — foydalanuvchining rol home'i, aks
+// holda so'ralgan deep-link saqlanadi (masalan /leaderboard, /dashboard/owner).
+//
+// Rol → sahifa xaritasi bu yerda TAKRORLANMAYDI: yagona manba — `roleHomePage`
+// (pages/store.jsx, ROLE_META.dest ustida). Bu funksiya faqat "rol home'imi
+// yoki deep-link?" qarorini bir joyga yig'adi — u login'da ham, bootstrap
+// tiklashning ikkala tarmog'ida ham bir xil bo'lishi shart.
+const AUTH_ENTRY_PAGES = ['login', 'register', 'landing'];
+const authedDestination = (user, requestedPage) =>
+  (!requestedPage || AUTH_ENTRY_PAGES.includes(requestedPage))
+    ? roleHomePage(user)
+    : requestedPage;
 
 // Light mavzu tayyor bo'lgan yuzalar — 3-bosqichdan keyin BU ILOVANING BARCHA
 // SAHIFALARI. Ro'yxat baribir saqlanadi: yangi sahifa qo'shilganda u avtomatik
@@ -404,6 +427,25 @@ const App = () => {
     }
   };
 
+  // Auth qarori bilan qilinadigan o'tish (login yakuni va bootstrap tiklash):
+  // URL tarixga QO'SHILMAYDI, balki ALMASHTIRILADI. Aks holda "orqaga" tugmasi
+  // foydalanuvchini endigina o'tib ketgan login/landing sahifasiga qaytarardi,
+  // u yerdan esa auth guard yana dashboardga otib yuborardi.
+  //
+  // Guard'lar pastdagi URL sinxronlash effekti bilan bir xil: manzil allaqachon
+  // to'g'ri bo'lsa yoki bu `page`ning dashboard sub-path'i bo'lsa (deep-link)
+  // URL'ga tegilmaydi. replaceState'dan keyin o'sha effekt pushState
+  // chaqirmaydi — pathname allaqachon mos.
+  const goToAuthedPage = (dest) => {
+    try {
+      const url = PAGE_URLS[dest];
+      if (url && window.location.pathname !== url && pageFromPath() !== dest) {
+        window.history.replaceState({ page: dest }, '', url);
+      }
+    } catch {}
+    setPage(dest);
+  };
+
   // Persist backend JWT session only.
   useEffect(() => {
     let cancelled = false;
@@ -419,10 +461,15 @@ const App = () => {
       // HttpOnly cookie hali tirik bo'lishi mumkin. true => sessiya topildi va
       // sahifa o'rnatildi. Hech qachon reject qilmaydi — fonda ham chaqiriladi.
       //
-      // `speculative` — FON rejimi (pastdagi "cache umuman yo'q" tarmog'i):
-      // 401 "sessiya yo'q" degani, majburiy logout emas. Aks holda sekin
-      // tarmoqda kech kelgan javob foydalanuvchi shu orada kirgan yangi
-      // sessiyani o'chirib yuborardi (api.js'dagi izohga qarang).
+      // `speculative` — "cache umuman yo'q" tarmoqlari uchun (pastda): 401
+      // "sessiya yo'q" degani, majburiy logout emas. Aks holda sekin tarmoqda
+      // kech kelgan javob foydalanuvchi shu orada kirgan yangi sessiyani
+      // o'chirib yuborardi (api.js'dagi izohga qarang). Bayroq chaqiruv fonda
+      // ketishini BILDIRMAYDI — sessiya izi bo'lgan tarmoqda u bloklab kutiladi.
+      //
+      // `checkAbandoned` — o'sha bloklovchi kutish chegarasi tugab, chaqiruv
+      // fonga o'tganini bildiradi (pastdagi izohga qarang).
+      let checkAbandoned = false;
       const restoreFromCookieSession = async ({ speculative = false } = {}) => {
         try {
           const freshUser = await globalThis.OlympyApi?.getMe?.(null, { speculative });
@@ -431,19 +478,34 @@ const App = () => {
           globalThis.OlympyApi.saveAuth({ user: mappedUser, cookieAuth: true });
           hydrateBearerTokenIfMissing();
           setApiUser(mappedUser);
+          // Chegaradan keyin kelgan javob foydalanuvchini majburan KO'CHIRMAYDI:
+          // u shu orada boshqa sahifaga o'tgan bo'lsa (masalan login formasini
+          // ochgan yoki narxlarni ko'rayotgan), faqat `user` holati yangilanadi.
+          // Manzil o'zgarmagan bo'lsa — hech qayerga o'tmagan, odatdagidek
+          // rol sahifasiga olib boramiz.
+          if (checkAbandoned && pageFromPath() !== requestedPage) return true;
           if (requestedPage === 'test') {
             const restored = await tryRestoreActiveTest(mappedUser, urlTestId);
             if (cancelled) return true;
-            if (!restored) setPage(roleHomePage(mappedUser));
+            if (!restored) goToAuthedPage(roleHomePage(mappedUser));
             return true;
           }
-          const publicPages2 = ['login', 'register', 'landing'];
-          const dest2 = (!requestedPage || publicPages2.includes(requestedPage))
-            ? roleHomePage(mappedUser) : requestedPage;
-          setPage(dest2);
+          goToAuthedPage(authedDestination(mappedUser, requestedPage));
           tryResumePendingOlympiad(mappedUser);
           return true;
-        } catch { return false; }
+        } catch (err) {
+          // Sessiya rostdan yo'q ekan: `hasSession` izi eskirgan, tozalaymiz —
+          // aks holda keyingi har bir ochilishda ilova ayni shu muvaffaqiyatsiz
+          // tekshiruvni kutib turardi. MUHIM: har qanday 401 emas — tarmoq
+          // uzilganda refresh so'rovi ham 401 (`refresh_unavailable`) bo'lib
+          // yetkaziladi, o'shanda iz SAQLANADI, aks holda sessiyasi tirik
+          // foydalanuvchining izi bekordan-bekorga o'chib ketardi
+          // (api.js `isDefinitiveAuthError`).
+          if (globalThis.OlympyApi?.isDefinitiveAuthError?.(err)) {
+            globalThis.OlympyApi.clearSessionHint();
+          }
+          return false;
+        }
       };
 
       // Sessiya topilmadi — so'ralgan sahifada qolamiz.
@@ -468,14 +530,11 @@ const App = () => {
           if (requestedPage === 'test') {
             const restored = await tryRestoreActiveTest(mappedUser, urlTestId);
             if (cancelled) return;
-            if (!restored) setPage(roleHomePage(mappedUser));
+            if (!restored) goToAuthedPage(roleHomePage(mappedUser));
             setBootstrapping(false);
             return;
           }
-          const publicPages = ['login', 'register', 'landing'];
-          const dest1 = (!requestedPage || publicPages.includes(requestedPage))
-            ? roleHomePage(mappedUser) : requestedPage;
-          setPage(dest1);
+          goToAuthedPage(authedDestination(mappedUser, requestedPage));
           setBootstrapping(false);
           tryResumePendingOlympiad(mappedUser);
           return;
@@ -489,14 +548,47 @@ const App = () => {
         keepRequestedPage();
         return;
       }
-      // Umuman cache yo'q — birinchi marta kirgan mehmon, eng ko'p uchraydigan
-      // holat. Bu yerdagi getMe SPEKULYATIV: storage tozalangan-u cookie hali
-      // tirik bo'lish ehtimoli uchun. Shu ehtimol uchun butun ilovani tarmoq
-      // so'roviga bog'lab qo'ymaymiz (sekin mobil tarmoqda bu bir necha soniya
-      // "Olympy yuklanmoqda..." degani) — so'ralgan sahifani DARHOL ko'rsatamiz
-      // va tekshiruvni fonda davom ettiramiz. Cookie sessiyasi topilsa,
-      // foydalanuvchi javob kelishi bilan dashboard'ga o'tkaziladi (landing bir
-      // lahza ko'rinib ketishi — shu noyob holat uchun maqbul narx).
+      // Cache yo'q, LEKIN bu brauzerda sessiya izi bor (api.js `hasStoredSession`):
+      // profil keshi sessionStorage'da yashaydi, ya'ni yangi tabda yoki brauzer
+      // qayta ochilganda u bo'sh bo'ladi-yu, HttpOnly cookie sessiyasi tirik
+      // qoladi. Bu — "allaqachon kirgan foydalanuvchi saytni qayta ochdi" holati,
+      // ya'ni EHTIMOL emas, KUTILADIGAN holat: shuning uchun landing'ni
+      // chizmaymiz, cookie tekshiruvini BLOKLAB kutamiz va shu vaqt neytral
+      // "Olympy yuklanmoqda..." loaderida o'tadi. Aynan shu tarmoq landing
+      // miltillashini keltirib chiqarardi.
+      //
+      // Kutish CHEKLANGAN (BOOT_SESSION_CHECK_TIMEOUT_MS): backend javob
+      // bermasa — masalan hosting ko'chirish paytida yoki DNS o'tirmaganda —
+      // hech kim loaderda qotib qolmasin. Chegara tugasa so'ralgan sahifa
+      // ko'rsatiladi, tekshiruv esa FONDA davom etadi va javob kelgach
+      // foydalanuvchi o'z rol sahifasiga o'tkaziladi (eski xulq). Ya'ni sekin
+      // tarmoqda hech narsa yomonlashmaydi, tez tarmoqda esa landing
+      // miltillamaydi.
+      if (globalThis.OlympyApi?.hasStoredSession?.()) {
+        const TIMED_OUT = Symbol('boot-session-check-timeout');
+        let timer = null;
+        const check = restoreFromCookieSession({ speculative: true });
+        const settled = await Promise.race([
+          check,
+          new Promise(resolve => {
+            timer = setTimeout(() => resolve(TIMED_OUT), BOOT_SESSION_CHECK_TIMEOUT_MS);
+          }),
+        ]);
+        if (timer) clearTimeout(timer);
+        // Chegara tugadi — `check` fonda qoladi (u hech qachon reject qilmaydi).
+        if (settled === TIMED_OUT) checkAbandoned = true;
+        else if (settled) return; // sessiya topildi, sahifa o'rnatildi
+        // Sessiya yo'q ekan (iz eskirgan, yuqorida tozalandi) yoki javob hali
+        // kelmadi — mehmon sifatida so'ralgan sahifani ko'rsatamiz.
+        keepRequestedPage();
+        return;
+      }
+      // Umuman cache va iz yo'q — birinchi marta kirgan mehmon, eng ko'p
+      // uchraydigan holat. Bu yerdagi getMe SPEKULYATIV: storage tozalangan-u
+      // cookie hali tirik bo'lish ehtimoli uchun. Shu ehtimol uchun butun
+      // ilovani tarmoq so'roviga bog'lab qo'ymaymiz (sekin mobil tarmoqda bu bir
+      // necha soniya "Olympy yuklanmoqda..." degani) — so'ralgan sahifani DARHOL
+      // ko'rsatamiz va tekshiruvni fonda davom ettiramiz.
       // Test sahifasi tiklanishi ham buzilmaydi: `urlTestId` yuqorida, hech
       // qanday await'dan oldin URL'dan o'qib olingan.
       keepRequestedPage();
@@ -515,11 +607,10 @@ const App = () => {
     if (!u?._api) return;
     const requestedPage = pageFromPath();
     setApiUser(u);
-    const publicPages = ['login', 'register', 'landing'];
-    const dest = (!requestedPage || publicPages.includes(requestedPage))
-      ? roleHomePage(u)
-      : requestedPage;
-    setPage(dest);
+    // Rol sahifasiga TO'G'RIDAN-TO'G'RI, oraliq landing/`/` bosqichisiz. Manzil
+    // almashtiriladi (pushState emas) — "orqaga" endigina tugatilgan login
+    // formasiga qaytarmasin, u yerdan auth guard yana dashboardga otib yubormasin.
+    goToAuthedPage(authedDestination(u, requestedPage));
     tryResumePendingOlympiad(u);
   };
 

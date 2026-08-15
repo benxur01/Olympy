@@ -138,6 +138,40 @@ const _clearCachedUser = () => {
   try { _sessionStore && _sessionStore.removeItem(CURRENT_USER_KEY); } catch {}
 };
 
+// ─── Sessiya izi (localStorage) ──────────────────────────────────────────────
+// Yuqoridagi profil keshi ATAYIN sessionStorage'da — u tab yopilishi bilan
+// ketadi. HttpOnly cookie sessiyasi esa tirik qoladi, ya'ni YANGI tabda (yoki
+// brauzer qayta ochilganda) `loadAuth()` bo'sh qaytaradi va ilova foydalanuvchini
+// mehmon deb hisoblab landing'ni chizadi; cookie tekshiruvi qaytgach esa
+// dashboardga sakraydi — foydalanuvchi ko'radigan "landing miltillashi" shu.
+//
+// Bu iz — faqat vaqt belgisi: token ham, shaxsiy ma'lumot ham yo'q. U bootstrap'ga
+// (app.jsx) "bu brauzerda sessiya bo'lgan, tekshiruvni KUTIB tur" deyish uchun
+// kifoya, ya'ni landing o'rniga neytral loader ko'rsatiladi. Haqiqiy mehmon
+// (izsiz) hech narsa kutmaydi — landing avvalgidek darhol chiziladi.
+//
+// Muddat refresh token umri bilan bir xil (SIMPLE_JWT REFRESH_TOKEN_LIFETIME =
+// 90 kun): undan keyin cookie baribir o'lik, kutishning ma'nosi yo'q.
+const SESSION_HINT_KEY = 'olympy:hasSession';
+const SESSION_HINT_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+const _writeSessionHint = () => {
+  try { _localStore && _localStore.setItem(SESSION_HINT_KEY, String(Date.now())); } catch {}
+};
+const clearSessionHint = () => {
+  try { _localStore && _localStore.removeItem(SESSION_HINT_KEY); } catch {}
+};
+const hasStoredSession = () => {
+  try {
+    const raw = _localStore && _localStore.getItem(SESSION_HINT_KEY);
+    const ts = Number(raw);
+    if (!ts || Date.now() - ts > SESSION_HINT_TTL_MS) {
+      if (raw) clearSessionHint();
+      return false;
+    }
+    return true;
+  } catch { return false; }
+};
+
 let _activeAuthStore = _defaultAuthStore;
 const _setActiveStore = (store) => { _activeAuthStore = store || _defaultAuthStore; };
 
@@ -229,6 +263,20 @@ class ApiError extends Error {
     this.data = data || null;
   }
 }
+
+// Server "auth muvaffaqiyatsiz" deb ANIQ javob berdimi? Faqat 401/400 shunday
+// hisoblanadi; tarmoq xatosi (status 0), timeout (504) yoki 5xx — noaniq, ular
+// token yaroqsiz ekanini BILDIRMAYDI.
+const _isAuthRejection = (error) => error?.status === 401 || error?.status === 400;
+
+// Yuqoridagining chaqiruvchilar uchun to'liq shakli (app.jsx bootstrap'i saqlangan
+// sessiya izini shu bo'yicha tozalaydi). Farqi: `refresh_unavailable` — refresh
+// so'rovining O'ZI yetib bormagani (tarmoq uzilishi, server cold-start yoki
+// migratsiya paytidagi qisqa uzilish). U pastda 401 sifatida yetkaziladi, chunki
+// so'rov bajarilmadi — lekin bu sessiya YAROQSIZ degani emas, shuning uchun
+// bunday xatoda saqlangan holat o'chirilmasligi kerak.
+const isDefinitiveAuthError = (error) =>
+  _isAuthRejection(error) && error?.data?.code !== 'refresh_unavailable';
 
 const extractErrorMessage = (data) => {
   if (!data) return '';
@@ -840,7 +888,7 @@ const request = async (
           // Faqat backend aniq 401/400 bilan "refresh yaroqsiz" desa
           // logout qilamiz; aks holda tokenlarni saqlab qolamiz, keyingi
           // urinishda (server uyg'ongach) sessiya tiklanadi.
-          const isDefinitiveAuthFailure = refreshError?.status === 401 || refreshError?.status === 400;
+          const isDefinitiveAuthFailure = _isAuthRejection(refreshError);
           if (!isDefinitiveAuthFailure) {
             throw new ApiError('Session expired', {
               status: 401,
@@ -890,6 +938,7 @@ const request = async (
       _removeAuth(AUTH_TOKEN_KEY);
       _removeAuth(AUTH_REFRESH_KEY);
       _clearCachedUser();
+      clearSessionHint();
       _clearSwApiCache();
       try { window.dispatchEvent(new CustomEvent('olympy:logout')); } catch {}
       throw new ApiError('Session expired', { status: 401, data });
@@ -1080,7 +1129,13 @@ const saveAuth = ({ token, refresh, user, cookieAuth, persistent } = {}) => {
   // User obyekti in-memory + sessionStorage'da keshlanadi (CURRENT_USER_KEY).
   // `user` undefined bo'lsa joriy qiymat saqlanib qoladi (faqat token yangilash
   // chaqiruvlarida user'siz saveAuth ishlatiladi) — keshga tegmaymiz.
-  if (user !== undefined) _writeCachedUser(user || null);
+  if (user !== undefined) {
+    _writeCachedUser(user || null);
+    // Sessiya izi keshdan uzoq yashaydi (localStorage) — keyingi tabda
+    // bootstrap landing o'rniga loader ko'rsatishi uchun. Har bir muvaffaqiyatli
+    // auth (login/register va bootstrap tiklash) uni yangilab turadi.
+    if (user) _writeSessionHint();
+  }
 };
 
 const loadAuth = () => {
@@ -1108,6 +1163,7 @@ const clearAuth = async () => {
   // sifatida so'rov yuborardi.
   _writeImpersonation(null);
   _clearCachedUser();
+  clearSessionHint();
   _clearSwApiCache();
   // await — logout so'rovi tugashini kutamiz, aks holda refresh token
   // server tomonda blacklist'ga tushmasdan qolib ketishi mumkin (fetch
@@ -1201,6 +1257,13 @@ export const OlympyApi = {
   saveAuth,
   loadAuth,
   clearAuth,
+  // Bootstrap uchun: "bu brauzerda sessiya bo'lgan" izi (yuqoridagi izohga
+  // qarang). `hasStoredSession` sinxron — landing chizilishidan OLDIN qaror
+  // qabul qilinishi shart. `isDefinitiveAuthError` — izni FAQAT haqiqiy auth
+  // muvaffaqiyatsizligida tozalash uchun (tarmoq nosozligida sessiya saqlanadi).
+  hasStoredSession,
+  clearSessionHint,
+  isDefinitiveAuthError,
   getToken,
   setExamMode,
   // Widjetni QO'LDA ochish (launcher tugmasi va xato bannerlaridagi "Yordam
