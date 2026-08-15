@@ -21,8 +21,8 @@ import {
 
 // Debounce/kalibratsiya oynalari — OlympiadTest.jsx dagi `HIDDEN_GRACE_MS`
 // nomlash konvensiyasiga mos (aniq, ms birligida).
-const SAMPLE_INTERVAL_MS = 750;          // ~1.3 kadr/sekund — GPU/CPU yuklamasini keskin kamaytiradi
-const FRAME_WIDTH = 224;                 // MediaPipe uchun optimal inferens o'lchami
+const SAMPLE_INTERVAL_MS = 1000;         // 1 kadr/sekund — nol kechikish (zero lag) va minimal batareya/GPU sarfi
+const FRAME_WIDTH = 192;                 // Yengil va tezkor neyrotarmoq kadr o'lchami
 const NO_FACE_GRACE_MS = 9000;           // yuz yo'q ~9s uzluksiz
 const MULTIPLE_FACES_GRACE_MS = 4000;    // >=2 yuz ~4s uzluksiz
 const GAZE_AWAY_GRACE_MS = 18000;        // nigoh chetда ~18s uzluksiz
@@ -184,12 +184,25 @@ export async function startFaceMonitor({ stream, onWarn, onReport }) {
     if (stopped) return;
     const vw = video.videoWidth;
     const vh = video.videoHeight;
-    if (!vw || !vh) return;                 // kamera hali kadr bermadi
+    if (!vw || !vh || video.readyState < 2) return; // kamera hali kadr bermadi
+
+    const w = FRAME_WIDTH;
+    const h = Math.max(1, Math.round((vh / vw) * w));
+
+    // To'g'ridan-to'g'ri <video> dan hardware-accelerated ImageBitmap olish —
+    // asosiy JS thread'da canvas chizish (ctx.drawImage) CPU blokirovkasini 100% yo'qotadi.
+    if (typeof createImageBitmap === 'function') {
+      createImageBitmap(video, { resizeWidth: w, resizeHeight: h, resizeQuality: 'low' })
+        .then((bitmap) => {
+          if (stopped) { try { bitmap.close(); } catch {} return; }
+          worker.postMessage({ type: 'frame', bitmap, timestamp: Date.now() }, [bitmap]);
+        })
+        .catch(() => {});
+      return;
+    }
+
+    // Fallback: eski brauzerlar uchun OffscreenCanvas
     if (!canvas) {
-      const w = FRAME_WIDTH;
-      const h = Math.max(1, Math.round((vh / vw) * w));
-      // OffscreenCanvas mavjud bo'lsa undan (worker'ga transfer uchun ideal);
-      // aks holda oddiy canvas + createImageBitmap fallback.
       if (typeof OffscreenCanvas !== 'undefined') {
         canvas = new OffscreenCanvas(w, h);
       } else {
@@ -205,15 +218,8 @@ export async function startFaceMonitor({ stream, onWarn, onReport }) {
       if (typeof canvas.transferToImageBitmap === 'function') {
         const bitmap = canvas.transferToImageBitmap();
         worker.postMessage({ type: 'frame', bitmap, timestamp: Date.now() }, [bitmap]);
-      } else if (typeof createImageBitmap === 'function') {
-        createImageBitmap(canvas).then((bitmap) => {
-          if (stopped) { try { bitmap.close(); } catch {} return; }
-          worker.postMessage({ type: 'frame', bitmap, timestamp: Date.now() }, [bitmap]);
-        }).catch(() => {});
       }
-    } catch {
-      /* kadr yuborilmasa — keyingi intervalда qayta uriniladi */
-    }
+    } catch {}
   };
 
   sampleTimer = setInterval(sample, SAMPLE_INTERVAL_MS);
