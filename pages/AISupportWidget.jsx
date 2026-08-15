@@ -70,16 +70,22 @@ const AISupportWidget = ({ user }) => {
   // Widget default holatda butunlay yashirin (visible=false); shu eventlardan
   // biri kelganda ko'rinadi va ochiladi.
   React.useEffect(() => {
-    const openWithContext = (text) => {
+    const openWithContext = (text, isManual = false) => {
       setVisible(true);
-      setIsOpen(true);
+      if (isManual) {
+        setIsOpen(true);
+      }
       if (text) {
-        setMessages(prev => [...prev, { role: 'model', parts: [{ text }] }]);
+        setMessages(prev => {
+          const lastMsg = prev[prev.length - 1];
+          if (lastMsg?.parts?.[0]?.text === text) return prev;
+          return [...prev, { role: 'model', parts: [{ text }] }];
+        });
       }
     };
 
     const handleAuthError = (e) => {
-      const { error, type } = e.detail || {};
+      const { error, type, manual } = e.detail || {};
       let contextTip = "";
       if (type === 'login') {
         contextTip = `Tizimga kirishda xatolik yuz berdi: "${error}".\nUshbu muammoni hal qilish yoki parolni tiklash bo'yicha yordam kerakmi?`;
@@ -90,11 +96,11 @@ const AISupportWidget = ({ user }) => {
       } else {
         contextTip = `Muammo yuz berdi: "${error}". Sizga qanday yordam bera olaman?`;
       }
-      openWithContext(contextTip);
+      openWithContext(contextTip, !!manual);
     };
 
     const handleSupportNeeded = (e) => {
-      const { reason, message } = e.detail || {};
+      const { reason, message, manual } = e.detail || {};
       const detailSuffix = message ? `: "${message}"` : '';
       let contextTip;
       switch (reason) {
@@ -137,7 +143,7 @@ const AISupportWidget = ({ user }) => {
             ? `Muammo yuz berdi: "${message}". Sizga qanday yordam bera olaman?`
             : `Muammo yuz berdi. Sizga qanday yordam bera olaman?`;
       }
-      openWithContext(contextTip);
+      openWithContext(contextTip, !!manual);
     };
 
     window.addEventListener('olympy:auth_error', handleAuthError);
@@ -206,33 +212,43 @@ const AISupportWidget = ({ user }) => {
     { text: "🔑 Parolni o'zgartirish", query: "Parolimni qanday o'zgartirsam bo'ladi?" }
   ];
 
-  // Launcher DOIM ko'rinadi. Ilgari widget `visible=false` bo'lganda butunlay
-  // `null` qaytarardi — ya'ni chatni QO'LDA ochishning umuman yo'li yo'q edi:
-  // u faqat avtomatik "muammo" eventidan ochilardi. Avtomatik ochilishga
-  // cooldown qo'yilgandan keyin (api.js — `network_error` uchun 10 daqiqa) bu
-  // bo'shliq jiddiylashdi: cooldown oynasida haqiqiy uzilish yuz bersa
-  // foydalanuvchi yordam so'ray olmasdi. Endi doimiy tugma bor va u hech qanday
-  // throttle'ga bo'ysunmaydi.
+  // Launcher FAQAT xatolik / muammo yuz berganda (visible=true) ko'rinadi.
+  // Oddiy holatda butunlay yashirin (null) bo'lib, foydalanuvchiga umuman xalaqit qilmaydi.
   if (!isOpen) {
-    // Imtihon davomida launcher yashiriladi: u ekranning o'ng pastki
-    // burchagida turadi va aynan o'sha yerda imtihon taymeri/navigatsiyasi
-    // joylashgan. Bu ekranda yordam xato banneridagi "Yordam kerakmi?"
-    // havolasi orqali ochiladi (u chatni to'g'ridan-to'g'ri chaqiradi).
-    if (examActive) return null;
+    if (examActive || !visible) return null;
     return (
-      <button
-        onClick={() => setIsOpen(true)}
-        className="btn-primary fixed bottom-6 right-6 z-[999] w-14 h-14 rounded-full flex items-center justify-center"
-        title="AI yordamchi"
-        aria-label="AI yordamchini ochish"
+      <div
+        data-testid="ai-support-helper-card"
+        className="fixed bottom-6 right-6 z-[999] max-w-[340px] bg-surface-1 border border-edge-strong shadow-2xl rounded-2xl p-2.5 flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-300"
       >
-        <Icon name="sparkles" size={24} />
-        {/* Diqqat belgisi faqat hal qilinmagan muammo bo'lganda. Doimiy yashil
-            nuqta "yangi xabar bor" degan yolg'on signal berardi. */}
-        {visible && (
-          <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-success rounded-full border-2 border-ground" />
-        )}
-      </button>
+        <button
+          onClick={() => setIsOpen(true)}
+          className="flex-1 flex items-center gap-3 text-left group cursor-pointer"
+          title="AI yordamchini ochish"
+          aria-label="AI yordamchini ochish"
+        >
+          <div className="w-10 h-10 rounded-xl bg-accent-fill text-on-accent flex items-center justify-center shrink-0 shadow-sm relative">
+            <Icon name="sparkles" size={20} />
+            <span className="absolute -top-1 -right-1 w-3 h-3 bg-warning rounded-full border-2 border-surface-1 animate-pulse" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-bold text-xs text-text-primary group-hover:text-accent transition-colors flex items-center gap-1.5">
+              <span>Yordam kerakmi?</span>
+            </div>
+            <div className="text-[11px] text-text-secondary truncate">
+              AI maslahat berishga tayyor
+            </div>
+          </div>
+        </button>
+        <button
+          onClick={() => setVisible(false)}
+          className="p-1.5 rounded-xl text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors cursor-pointer shrink-0"
+          title="Yopish"
+          aria-label="Yopish"
+        >
+          <Icon name="x" size={15} />
+        </button>
+      </div>
     );
   }
 
@@ -243,6 +259,7 @@ const AISupportWidget = ({ user }) => {
 
   return (
     <div
+      data-testid="ai-support-chat-modal"
       className={`${sizeClasses} z-[999] flex flex-col overflow-hidden bg-surface-1 transition-all duration-300`}
     >
       {/* Header */}
