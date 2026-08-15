@@ -1085,6 +1085,10 @@ const mapBackendUser = (user) => {
     onboardingTeacherCompleted: user.onboarding_teacher_completed,
     // Tanga balansi (referral/mukofotlar uchun). Serializer qaytarmasa 0.
     coins: typeof user.coins === 'number' ? user.coins : 0,
+    adminTags: Array.isArray(user.admin_tags) ? user.admin_tags : [],
+    isExamBlocked: !!user.is_exam_blocked,
+    examBlockedUntil: user.exam_blocked_until || null,
+    lastSeenAt: user.last_seen_at || null,
     onboardingGrade: user.onboarding_grade || null,
     onboardingSubjects: Array.isArray(user.onboarding_subjects) ? user.onboarding_subjects : [],
     onboardingGoal: user.onboarding_goal || null,
@@ -1542,6 +1546,30 @@ export const OlympyApi = {
     `/api/admin/users/${userId}/sessions/${loginEventId}/force-logout/`,
     { method: 'POST', token },
   ),
+  // Foydalanuvchi ichki CRM eslatmalari (Notes)
+  getAdminUserNotes: (userId, token) => request(`/api/admin/users/${userId}/notes/`, { token }),
+  adminAddUserNote: (userId, text, token) => request(`/api/admin/users/${userId}/notes/`, { method: 'POST', body: { text }, token }),
+  adminDeleteUserNote: (userId, noteId, token) => request(`/api/admin/users/${userId}/notes/${noteId}/`, { method: 'DELETE', token }),
+  // Foydalanuvchi admin teglari (Tags)
+  adminUpdateUserTags: (userId, tags, token) => request(`/api/admin/users/${userId}/tags/`, { method: 'POST', body: { tags }, token }),
+  // Olimpiadalardan chetlatish (Exam Ban)
+  adminExamBanUser: (userId, { reason, durationDays } = {}, token) => request(
+    `/api/admin/users/${userId}/exam-ban/`,
+    { method: 'POST', body: { reason, duration_days: durationDays }, token },
+  ),
+  adminExamUnbanUser: (userId, token) => request(`/api/admin/users/${userId}/exam-unban/`, { method: 'POST', token }),
+  // Tangalar (Coins) balansini o'zgartirish
+  adminAdjustUserCoins: (userId, { amount, reason } = {}, token) => request(
+    `/api/admin/users/${userId}/adjust-coins/`,
+    { method: 'POST', body: { amount, reason }, token },
+  ),
+  // Testni qayta topshirish huquqini berish (Allow retake / Reset attempt)
+  adminAllowRetake: (userId, attemptId, token) => request(
+    `/api/admin/users/${userId}/attempts/${attemptId}/allow-retake/`,
+    { method: 'POST', token },
+  ),
+  // Segmentlangan / tanlangan ommaviy xabarnoma (Broadcast)
+  adminBroadcastNotification: (payload, token) => request('/api/admin/broadcast/', { method: 'POST', body: payload, token }),
   // ─── Xavfsizlik tabi ───
   // Bitta IP'dan kirgan turli hisoblar. `minAccounts`/`days` backendda
   // clamp qilinadi va AYNAN qo'llanilgan qiymat javobda qaytadi — panel

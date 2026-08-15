@@ -13,7 +13,8 @@ import jwt
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist, PermissionDenied, ValidationError
 from django.contrib.auth.hashers import check_password, make_password
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, models, transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -1307,9 +1308,6 @@ def update_my_avatar(request):
         image.seek(0)
     except Exception:
         return Response({'detail': 'Yaroqsiz rasm fayli'}, status=status.HTTP_400_BAD_REQUEST)
-    # Almashtirilgan avatar storage'da yetim qolmasin (DELETE oqimidagi
-    # tozalash bilan bir xil maqsad). Eski nomni yozishdan OLDIN olamiz,
-    # o'chirishni esa save'dan KEYIN — save xato bersa eski rasm joyida qoladi.
     old_avatar_name = request.user.avatar.name if request.user.avatar else ''
     request.user.avatar = image
     request.user.save(update_fields=['avatar'])
@@ -1318,38 +1316,167 @@ def update_my_avatar(request):
 
 
 def _filter_admin_users_by_search(qs, search):
-    """`?search=` filtri — telefon yoki ism bo'yicha.
-
-    Optimizatsiya: telefon raqamlari uchun `icontains` B-tree indeksdan
-    foydalanmaydi (har qatorni to'liq skanerlash). Qidiruv matnida raqam ko'p
-    bo'lsa, uni telefon deb hisoblab `normalized_phone__startswith` ishlatamiz
-    — bu indeksli prefiks qidiruvi. Ism qidiruvi uchun `icontains` qoladi
-    (aloxida trigram indeks pg_trgm talab qiladi — bu yerda qo'shilmaydi).
-
-    Ro'yxat (`admin_users_list`) va CSV eksport (`admin_users_export`) bir xil
-    natija berishi uchun ajratilgan: aks holda eksport admin ekranda ko'rgan
-    to'plamdan boshqa qatorlarni chiqarib berardi.
-    """
+    """`?search=` filtri — telefon yoki ism bo'yicha."""
     if not search:
         return qs
     import re as _re
 
     digits = _re.sub(r'\D', '', search)
-    # 3+ raqam va matnning ko'p qismi raqam bo'lsa — telefon qidiruvi.
     looks_like_phone = len(digits) >= 3 and len(digits) >= len(search.replace(' ', '')) - 2
     if not looks_like_phone:
         return qs.filter(full_name__icontains=search)
     norm = normalize_phone(search)
     if norm:
-        # To'liq normalizatsiya bo'ldi (+<davlat kodi><raqam>) — aniq prefiks.
         return qs.filter(normalized_phone__startswith=norm)
     if search.lstrip().startswith('+'):
-        # Xalqaro qisman raqam ('+' bilan boshlangan, lekin hali to'liq emas)
-        # — kiritilgan raqamlar bo'yicha prefiks qidiruvi.
         return qs.filter(normalized_phone__startswith=f'+{digits}')
-    # Qisman raqam, davlat kodisiz — orqaga moslik uchun O'zbekiston abonent
-    # raqami deb prefiks qidiramiz.
     return qs.filter(normalized_phone__startswith=f'+998{digits[-9:]}')
+
+
+def _filter_admin_users_advanced(qs, params):
+    """Admin paneli uchun ko'p parametrli filtrlash: rol, holat, tarif, faollik, teg va xavf."""
+    from datetime import timedelta
+    from django.utils import timezone
+    from django.db.models import Q
+
+    search = params.get('search', '').strip()
+    if search:
+        qs = _filter_admin_users_by_search(qs, search)
+
+    role = params.get('role', '').strip()
+    if role and role != 'all':
+        if role == 'admin':
+            qs = qs.filter(Q(is_platform_admin=True) | Q(roles__icontains='admin'))
+        else:
+            qs = qs.filter(roles__icontains=role)
+
+    status_filter = params.get('status', '').strip()
+    now = timezone.now()
+    if status_filter == 'active':
+        qs = qs.filter(is_active=True, deleted_at__isnull=True)
+    elif status_filter == 'blocked':
+        qs = qs.filter(is_active=False, deleted_at__isnull=True)
+    elif status_filter == 'exam_blocked':
+        qs = qs.filter(Q(exam_blocked_until__gt=now) | (~Q(exam_block_reason='') & Q(exam_blocked_until__isnull=True)))
+    elif status_filter == 'soft_deleted':
+        qs = qs.filter(deleted_at__isnull=False)
+    elif status_filter == 'telegram_linked':
+        qs = qs.filter(~Q(telegram_chat_id=''), telegram_chat_id__isnull=False)
+    elif status_filter == 'telegram_unlinked':
+        qs = qs.filter(Q(telegram_chat_id='') | Q(telegram_chat_id__isnull=True))
+
+    plan_filter = params.get('plan', '').strip()
+    if plan_filter == 'free':
+        qs = qs.filter(is_premium=False)
+    elif plan_filter == 'trial':
+        qs = qs.filter(is_premium=True, premium_trial_end__gt=now)
+    elif plan_filter == 'premium':
+        qs = qs.filter(is_premium=True)
+
+    activity_filter = params.get('activity', '').strip()
+    if activity_filter == 'online':
+        cutoff = now - timedelta(minutes=5)
+        qs = qs.filter(last_seen_at__gte=cutoff)
+    elif activity_filter == 'today':
+        today_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
+        today_date = timezone.localdate(now)
+        qs = qs.filter(Q(last_seen_at__gte=today_start) | Q(last_active_date=today_date))
+    elif activity_filter == 'inactive_7d':
+        cutoff = now - timedelta(days=7)
+        qs = qs.filter(Q(last_seen_at__lt=cutoff) | Q(last_seen_at__isnull=True, created_at__lt=cutoff))
+    elif activity_filter == 'never_tested':
+        qs = qs.filter(total_attempts_count=0)
+
+    tag_filter = params.get('tag', '').strip()
+    if tag_filter and tag_filter != 'all':
+        qs = qs.filter(admin_tags__icontains=tag_filter)
+
+    risk_filter = params.get('risk', '').strip()
+    if risk_filter == 'high':
+        qs = qs.filter(Q(attempts__disqualified=True) | ~Q(exam_block_reason='')).distinct()
+
+    return qs
+
+
+def compute_user_risk_profile(user):
+    """Foydalanuvchi ishonch va antifrod risk profilini hisoblaydi."""
+    from attempts.models import TestAttempt, TestSession
+    from moderation.models import ModerationFlag
+    from notifications.models import Notification
+    from accounts.security_queries import get_ip_account_ids
+    from .models import LoginEvent
+
+    factors = []
+    score = 0
+
+    # 1. Cheating / Disqualified imtihon urinishlari
+    disqualified_attempts = TestAttempt.objects.filter(user=user, disqualified=True).count()
+    if disqualified_attempts > 0:
+        pts = min(50, disqualified_attempts * 25)
+        score += pts
+        factors.append(f"{disqualified_attempts} ta olimpiadada diskvalifikatsiya qayd etilgan (+{pts}%)")
+
+    # 2. TestSession tekshiruvi (status pending_review / disqualified)
+    flagged_sessions = TestSession.objects.filter(
+        user=user,
+        status__in=[TestSession.STATUS_DISQUALIFIED, TestSession.STATUS_PENDING_REVIEW]
+    ).count()
+    if flagged_sessions > 0:
+        pts = min(30, flagged_sessions * 15)
+        score += pts
+        factors.append(f"{flagged_sessions} ta imtihon sessiyasida tekshiruv talab qilingan (+{pts}%)")
+
+    # 3. Exam block holati
+    if getattr(user, 'is_exam_blocked', False):
+        score += 20
+        factors.append(f"Olimpiada taqiqi (Exam Ban) faol: {user.exam_block_reason or 'qoidabuzarlik'} (+20%)")
+
+    # 4. Shared IP tahlili (bir xil IP orqali boshqa hisoblar)
+    last_logins = LoginEvent.objects.filter(user=user).order_by('-created_at')[:5]
+    for login_event in last_logins:
+        if login_event.ip_address:
+            accounts = get_ip_account_ids(login_event.ip_address)
+            other_accounts_count = len([uid for uid in accounts.keys() if uid != user.id])
+            if other_accounts_count >= 2:
+                pts = 20 if other_accounts_count >= 5 else 10
+                score += pts
+                factors.append(f"IP ({login_event.ip_address}) orqali yana {other_accounts_count} ta hisob kirgan (+{pts}%)")
+                break
+
+    # 5. Rasmiy ogohlantirishlar
+    warnings_count = Notification.objects.filter(user=user, type=Notification.TYPE_ACCOUNT_WARNING).count()
+    if warnings_count > 0:
+        pts = min(30, warnings_count * 15)
+        score += pts
+        factors.append(f"{warnings_count} ta rasmiy ogohlantirish yuborilgan (+{pts}%)")
+
+    # 6. Moderation Flags
+    flags_count = ModerationFlag.objects.filter(
+        models.Q(raised_by=user) | models.Q(target_type='user', target_id=user.id)
+    ).count()
+    if flags_count > 0:
+        pts = min(20, flags_count * 10)
+        score += pts
+        factors.append(f"{flags_count} ta moderatsiya bayrog'i qo'yilgan (+{pts}%)")
+
+    score = min(100, max(0, score))
+    if score == 0:
+        level = 'past'
+        factors.append("Shubhali faollik aniqlanmadi (Ishonchli hisob)")
+    elif score <= 25:
+        level = 'past'
+    elif score <= 55:
+        level = "o'rta"
+    elif score <= 80:
+        level = 'yuqori'
+    else:
+        level = 'kritik'
+
+    return {
+        'risk_score': score,
+        'risk_level': level,
+        'risk_factors': factors,
+    }
 
 
 @api_view(['GET'])
@@ -1403,9 +1530,8 @@ def admin_users_list(request):
         )
         .order_by('-created_at')
     )
-    # Optional search query: phone yoki ism bo'yicha (CSV eksport bilan
-    # bo'lishilgan filtr).
-    qs = _filter_admin_users_by_search(qs, request.query_params.get('search', '').strip())
+    # Ko'p parametrli filtrlash
+    qs = _filter_admin_users_advanced(qs, request.query_params)
     # O9: admin paneli uchun katta paginator — default 100 elem, ?page_size=
     # bilan max 200. Avval 50 limit bilan admin har sahifani alohida
     # varaqlardi va katta tashkilotlarda 1000+ foydalanuvchini ko'rish
@@ -1462,12 +1588,12 @@ def admin_users_export(request):
     from django.http import HttpResponse
 
     User = get_user_model()
-    qs = _filter_admin_users_by_search(
-        # `admin_users_list` bilan bir xil asos: platforma adminlari ro'yxatga
-        # ham, eksportga ham kirmaydi.
-        User.objects.exclude(is_platform_admin=True).order_by('-created_at'),
-        request.query_params.get('search', '').strip(),
-    ).only(
+    qs = (
+        User.objects.exclude(is_platform_admin=True)
+        .order_by('-created_at')
+    )
+    qs = _filter_admin_users_advanced(qs, request.query_params)
+    qs = qs.only(
         'id', 'full_name', 'normalized_phone', 'roles',
         'is_active', 'is_premium', 'created_at',
     )
@@ -1521,8 +1647,9 @@ def admin_user_detail(request, user_id):
     endpoint'ida javobga qo'shiladi.
     """
     from django.contrib.auth import get_user_model
-    from django.db.models import Prefetch
+    from django.db.models import Prefetch, Avg, Max
     from centers.models import CenterMembership
+    from .models import UserAdminNote, PhoneVerification, EmailVerification
 
     User = get_user_model()
     target = (
@@ -1542,6 +1669,76 @@ def admin_user_detail(request, user_id):
     data = UserSerializer(target, context={'request': request}).data
     data['block_reason'] = target.block_reason or None
     data['blocked_until'] = target.blocked_until.isoformat() if target.blocked_until else None
+
+    # Antifrod va Risk profile
+    risk_info = compute_user_risk_profile(target)
+    data['risk_score'] = risk_info['risk_score']
+    data['risk_level'] = risk_info['risk_level']
+    data['risk_factors'] = risk_info['risk_factors']
+
+    # Exam Ban ma'lumotlari
+    data['is_exam_blocked'] = target.is_exam_blocked
+    data['exam_blocked_until'] = target.exam_blocked_until.isoformat() if target.exam_blocked_until else None
+    data['exam_block_reason'] = target.exam_block_reason or None
+    data['admin_tags'] = target.admin_tags or []
+    data['coins'] = target.coins
+
+    # Ichki Admin Notes (CRM)
+    recent_notes = UserAdminNote.objects.filter(user=target).select_related('author').order_by('-created_at')[:10]
+    data['admin_notes'] = [{
+        'id': n.id,
+        'text': n.text,
+        'author_name': n.author.full_name if n.author else 'Admin',
+        'created_at': n.created_at.isoformat(),
+    } for n in recent_notes]
+
+    # OTP va yetkazilish jurnali (Delivery history)
+    phone_otps = PhoneVerification.objects.filter(normalized_phone=target.normalized_phone).order_by('-created_at')[:5]
+    email_otps = EmailVerification.objects.filter(user=target).order_by('-created_at')[:5]
+    otp_history = []
+    for p in phone_otps:
+        otp_history.append({
+            'channel': 'SMS / Telegram OTP',
+            'destination': p.phone,
+            'purpose': p.purpose or 'auth',
+            'is_verified': p.is_verified,
+            'created_at': p.created_at.isoformat(),
+            'verified_at': p.verified_at.isoformat() if p.verified_at else None,
+        })
+    for e in email_otps:
+        otp_history.append({
+            'channel': 'Email OTP',
+            'destination': e.email,
+            'purpose': 'email_link',
+            'is_verified': e.is_verified,
+            'created_at': e.created_at.isoformat(),
+            'verified_at': e.verified_at.isoformat() if e.verified_at else None,
+        })
+    otp_history.sort(key=lambda x: x['created_at'], reverse=True)
+    data['otp_history'] = otp_history[:10]
+
+    # O'quv va akademik tahlil ko'rsatkichlari
+    attempts = target.attempts.filter(disqualified=False)
+    attempts_count = attempts.count()
+    if attempts_count > 0:
+        stats = attempts.aggregate(avg_score=Avg('score'), max_score=Max('score'))
+        data['academic_summary'] = {
+            'attempts_count': attempts_count,
+            'avg_score': round(stats['avg_score'] or 0, 1),
+            'max_score': stats['max_score'] or 0,
+            'streak_count': target.streak_count,
+            'longest_streak': target.longest_streak,
+            'subject_levels': target.subject_levels or {},
+        }
+    else:
+        data['academic_summary'] = {
+            'attempts_count': 0,
+            'avg_score': 0,
+            'max_score': 0,
+            'streak_count': target.streak_count,
+            'longest_streak': target.longest_streak,
+            'subject_levels': target.subject_levels or {},
+        }
     return Response(data)
 
 
@@ -3320,6 +3517,320 @@ def admin_merge_users_commit(request):
         'coins_moved': moved_coins,
         'source': _merge_user_brief(source),
         'target': UserSerializer(target, context={'request': request}).data,
+    })
+
+
+# ---------------------------------------------------------------------------
+# Admin Foydalanuvchilar Nazorati (CRM Eslatmalar, Teglar, Taqiqlar, Tangalar, Qayta Topshirish)
+# ---------------------------------------------------------------------------
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_user_notes_list_create(request, user_id):
+    """GET /api/admin/users/<id>/notes/ — ichki CRM qaydlar ro'yxati.
+    POST /api/admin/users/<id>/notes/ — yangi qayd qo'shish.
+    """
+    from django.contrib.auth import get_user_model
+    from .models import UserAdminNote
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'}, status=status.HTTP_404_NOT_FOUND)
+
+    if request.method == 'GET':
+        notes = UserAdminNote.objects.filter(user=target).select_related('author').order_by('-created_at')
+        return Response({
+            'user_id': int(user_id),
+            'notes': [{
+                'id': n.id,
+                'text': n.text,
+                'author_id': n.author_id,
+                'author_name': n.author.full_name if n.author else 'Admin',
+                'created_at': n.created_at.isoformat(),
+            } for n in notes]
+        })
+
+    text = (request.data.get('text') or '').strip()
+    if not text:
+        return Response({'detail': "Eslatma matni bo'sh bo'lishi mumkin emas"}, status=status.HTTP_400_BAD_REQUEST)
+    note = UserAdminNote.objects.create(
+        user=target,
+        author=request.user,
+        text=text,
+    )
+    AuditLog.log(
+        request,
+        'admin_user_note_add',
+        target=target,
+        extra={'note_id': note.id, 'text_preview': text[:60]},
+    )
+    return Response({
+        'id': note.id,
+        'text': note.text,
+        'author_name': request.user.full_name,
+        'created_at': note.created_at.isoformat(),
+    }, status=status.HTTP_201_CREATED)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsPlatformAdmin])
+def admin_user_note_delete(request, user_id, note_id):
+    """DELETE /api/admin/users/<id>/notes/<note_id>/ — eslatmani o'chirish."""
+    from .models import UserAdminNote
+    note = UserAdminNote.objects.filter(pk=note_id, user_id=user_id).first()
+    if not note:
+        return Response({'detail': 'Eslatma topilmadi'}, status=status.HTTP_404_NOT_FOUND)
+    target = note.user
+    note.delete()
+    AuditLog.log(
+        request,
+        'admin_user_note_delete',
+        target=target,
+        extra={'note_id': int(note_id)},
+    )
+    return Response({'status': 'ok', 'detail': "Eslatma o'chirildi"})
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_user_tags_update(request, user_id):
+    """POST /api/admin/users/<id>/tags/ — admin teglari ro'yxatini yangilaydi."""
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'}, status=status.HTTP_404_NOT_FOUND)
+    raw_tags = request.data.get('tags', [])
+    if not isinstance(raw_tags, list):
+        return Response({'detail': "Tags ro'yxat bo'lishi kerak"}, status=status.HTTP_400_BAD_REQUEST)
+    cleaned_tags = list(dict.fromkeys(
+        str(t).strip().lstrip('#').lower()
+        for t in raw_tags if str(t).strip()
+    ))
+    target.admin_tags = cleaned_tags
+    target.save(update_fields=['admin_tags'])
+    AuditLog.log(
+        request,
+        'admin_user_tags_update',
+        target=target,
+        extra={'tags': cleaned_tags},
+    )
+    return Response({'status': 'ok', 'admin_tags': cleaned_tags})
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_user_exam_ban(request, user_id):
+    """POST /api/admin/users/<id>/exam-ban/ — olimpiadalardan chetlatish (Exam Ban)."""
+    from django.contrib.auth import get_user_model
+    from django.utils import timezone
+    from datetime import timedelta
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'}, status=status.HTTP_404_NOT_FOUND)
+    if target.is_platform_admin:
+        return Response({'detail': "Admin hisobini chetlatib bo'lmaydi"}, status=status.HTTP_400_BAD_REQUEST)
+
+    reason = (request.data.get('reason') or '').strip()
+    duration_days = request.data.get('duration_days')
+    if not reason:
+        return Response({'detail': "Chetlatish sababi ko'rsatilishi shart"}, status=status.HTTP_400_BAD_REQUEST)
+
+    until = None
+    if duration_days is not None and str(duration_days).isdigit() and int(duration_days) > 0:
+        until = timezone.now() + timedelta(days=int(duration_days))
+
+    target.exam_blocked_until = until
+    target.exam_block_reason = reason
+    target.save(update_fields=['exam_blocked_until', 'exam_block_reason'])
+
+    AuditLog.log(
+        request,
+        'admin_exam_ban',
+        target=target,
+        extra={'reason': reason, 'duration_days': duration_days, 'blocked_until': until.isoformat() if until else None},
+    )
+    return Response({
+        'status': 'ok',
+        'is_exam_blocked': True,
+        'exam_blocked_until': until.isoformat() if until else None,
+        'exam_block_reason': reason,
+        'detail': 'Foydalanuvchi olimpiadalardan chetlatildi',
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_user_exam_unban(request, user_id):
+    """POST /api/admin/users/<id>/exam-unban/ — olimpiada taqiqini bekor qilish."""
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'}, status=status.HTTP_404_NOT_FOUND)
+
+    target.exam_blocked_until = None
+    target.exam_block_reason = ''
+    target.save(update_fields=['exam_blocked_until', 'exam_block_reason'])
+
+    AuditLog.log(request, 'admin_exam_unban', target=target)
+    return Response({
+        'status': 'ok',
+        'is_exam_blocked': False,
+        'detail': 'Olimpiada taqiqi bekor qilindi',
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_user_adjust_coins(request, user_id):
+    """POST /api/admin/users/<id>/adjust-coins/ — tangalar balansini o'zgartirish."""
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        amount = int(request.data.get('amount', 0))
+    except (ValueError, TypeError):
+        return Response({'detail': "Noto'g'ri tanga miqdori"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if amount == 0:
+        return Response({'detail': "Miqdor 0 bo'lishi mumkin emas"}, status=status.HTTP_400_BAD_REQUEST)
+
+    reason = (request.data.get('reason') or '').strip()
+    if not reason:
+        return Response({'detail': "O'zgartirish sababini ko'rsating"}, status=status.HTTP_400_BAD_REQUEST)
+
+    old_coins = target.coins
+    new_coins = max(0, old_coins + amount)
+    target.coins = new_coins
+    target.save(update_fields=['coins'])
+
+    AuditLog.log(
+        request,
+        'admin_user_coins_adjust',
+        target=target,
+        extra={'old_coins': old_coins, 'new_coins': new_coins, 'amount': amount, 'reason': reason},
+    )
+    return Response({
+        'status': 'ok',
+        'coins': new_coins,
+        'detail': f'Balans yangilandi: {new_coins} ta tanga',
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_user_attempt_retake(request, user_id, attempt_id):
+    """POST /api/admin/users/<id>/attempts/<attempt_id>/allow-retake/
+
+    Foydalanuvchiga texnik nosozlik yoki uzilish bo'lgan testni qayta topshirishga
+    ruxsat berish: mavjud TestAttempt va TestSession tozalanadi.
+    """
+    from attempts.models import TestAttempt, TestSession
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+    target = User.objects.filter(pk=user_id).first()
+    if not target:
+        return Response({'detail': 'Foydalanuvchi topilmadi'}, status=status.HTTP_404_NOT_FOUND)
+
+    attempt = TestAttempt.objects.filter(pk=attempt_id, user=target).select_related('olympiad').first()
+    if not attempt:
+        return Response({'detail': 'Test urinishi topilmadi'}, status=status.HTTP_404_NOT_FOUND)
+
+    olympiad_id = attempt.olympiad_id
+    olympiad_title = attempt.olympiad.title if attempt.olympiad else f"#{olympiad_id}"
+
+    # Delete attempt and associated test session
+    attempt.delete()
+    TestSession.objects.filter(user=target, olympiad_id=olympiad_id).delete()
+
+    AuditLog.log(
+        request,
+        'admin_attempt_retake',
+        target=target,
+        extra={'olympiad_id': olympiad_id, 'attempt_id': int(attempt_id), 'olympiad_title': olympiad_title},
+    )
+    return Response({
+        'status': 'ok',
+        'detail': f"'{olympiad_title}' olimpiadasi uchun qayta topshirish ruxsati berildi",
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsPlatformAdmin])
+def admin_broadcast_notification(request):
+    """POST /api/admin/broadcast/ — tanlangan yoki segmentlangan foydalanuvchilarga ommaviy xabarnoma."""
+    from django.contrib.auth import get_user_model
+    from notifications.models import Notification
+    from notifications.services import send_telegram_markdown
+
+    User = get_user_model()
+    title = (request.data.get('title') or '').strip()
+    message = (request.data.get('message') or '').strip()
+    channel = request.data.get('channel', 'both')  # 'in_app' | 'telegram' | 'both'
+    user_ids = request.data.get('user_ids')
+    filter_role = request.data.get('filter_role')
+
+    if not title or not message:
+        return Response({'detail': 'Sarlavha va xabar matni majburiy'}, status=status.HTTP_400_BAD_REQUEST)
+
+    qs = User.objects.filter(is_active=True, deleted_at__isnull=True).exclude(is_platform_admin=True)
+
+    if user_ids and isinstance(user_ids, list) and len(user_ids) > 0:
+        qs = qs.filter(pk__in=user_ids)
+    elif filter_role and filter_role != 'all':
+        qs = qs.filter(roles__icontains=filter_role)
+
+    users = list(qs)
+    if not users:
+        return Response({'detail': 'Xabar yuborish uchun foydalanuvchilar topilmadi'}, status=status.HTTP_400_BAD_REQUEST)
+
+    notifications_to_create = []
+    telegram_sent_count = 0
+
+    tg_text = f"📢 *{title}*\n\n{message}"
+
+    for u in users:
+        if channel in ('in_app', 'both'):
+            notifications_to_create.append(
+                Notification(
+                    user=u,
+                    type=Notification.TYPE_ADMIN_BROADCAST,
+                    title=title,
+                    message=message,
+                )
+            )
+        if channel in ('telegram', 'both') and u.telegram_chat_id:
+            try:
+                send_telegram_markdown(u.telegram_chat_id, tg_text)
+                telegram_sent_count += 1
+            except Exception:
+                pass
+
+    if notifications_to_create:
+        Notification.objects.bulk_create(notifications_to_create, batch_size=500)
+
+    AuditLog.log(
+        request,
+        'admin_broadcast_message',
+        extra={
+            'title': title,
+            'channel': channel,
+            'recipients_count': len(users),
+            'telegram_sent_count': telegram_sent_count,
+        },
+    )
+
+    return Response({
+        'status': 'ok',
+        'total_recipients': len(users),
+        'in_app_created': len(notifications_to_create),
+        'telegram_sent': telegram_sent_count,
+        'detail': f"{len(users)} ta foydalanuvchiga xabarnoma yuborildi",
     })
 
 

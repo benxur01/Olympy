@@ -44,6 +44,8 @@ class Notification(models.Model):
     # Platforma admini yuboradigan rasmiy ogohlantirish — bloklashdan OLDINGI
     # qadam. Hisob holatiga tegmaydi, faqat foydalanuvchini xabardor qiladi.
     TYPE_ACCOUNT_WARNING = 'account_warning'
+    # Platforma admini yuboradigan ommaviy xabarnoma (broadcast).
+    TYPE_ADMIN_BROADCAST = 'admin_broadcast'
 
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
