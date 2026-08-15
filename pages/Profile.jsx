@@ -6,7 +6,22 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
   // Premium o'quvchi vizual belgisi: "Premium" badge + ism oltin gradient +
   // hero kartasi oltin ramka (.premium-hero) + avatar atrofida oltin halqa.
   const isPremium = !!(user?.isPremium ?? user?.is_premium);
-  const [tab, setTab] = React.useState('results');
+  const isStaff = Boolean(
+    user?.is_platform_admin ||
+    user?.is_staff ||
+    user?.roles?.admin ||
+    user?.roles?.owner ||
+    user?.roles?.manager ||
+    user?.roles?.teacher ||
+    user?.role === 'admin' ||
+    user?.role === 'owner' ||
+    user?.role === 'manager' ||
+    user?.role === 'teacher'
+  );
+  const [tab, setTab] = React.useState(isStaff ? 'settings' : 'results');
+  React.useEffect(() => {
+    if (isStaff) setTab('settings');
+  }, [isStaff]);
   const [avatarLoading, setAvatarLoading] = React.useState(false);
   const [avatarError, setAvatarError] = React.useState('');
   const avatarInputRef = React.useRef(null);
@@ -578,14 +593,15 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
                 </div>
               )}
             </div>
-            {/* Raqamli ustunlar — `font-data` (tabular-nums): qiymat almashganda
-                to'rtta chip kengligi sakramasin. */}
-            <div className="flex flex-wrap gap-3 mt-3">
-              <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="font-data text-lg font-bold text-text-primary">{myResults.length}</div><div className="text-xs text-text-secondary">Olimpiada</div></div>
-              <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="font-data text-lg font-bold text-accent">{bestRank ? `#${bestRank}` : '—'}</div><div className="text-xs text-text-secondary">Eng yaxshi</div></div>
-              <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="font-data text-lg font-bold text-text-primary">{avgScore || '—'}{avgScore ? '%' : ''}</div><div className="text-xs text-text-secondary">O'rtacha</div></div>
-              <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="font-data text-lg font-bold text-text-primary">{achievements.length}</div><div className="text-xs text-text-secondary">Yutuqlar</div></div>
-            </div>
+            {/* Raqamli ustunlar — `font-data` (tabular-nums): faqat o'quvchilar uchun */}
+            {!isStaff && (
+              <div className="flex flex-wrap gap-3 mt-3">
+                <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="font-data text-lg font-bold text-text-primary">{myResults.length}</div><div className="text-xs text-text-secondary">Olimpiada</div></div>
+                <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="font-data text-lg font-bold text-accent">{bestRank ? `#${bestRank}` : '—'}</div><div className="text-xs text-text-secondary">Eng yaxshi</div></div>
+                <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="font-data text-lg font-bold text-text-primary">{avgScore || '—'}{avgScore ? '%' : ''}</div><div className="text-xs text-text-secondary">O'rtacha</div></div>
+                <div className="glass rounded-xl px-3 py-1.5 text-center"><div className="font-data text-lg font-bold text-text-primary">{achievements.length}</div><div className="text-xs text-text-secondary">Yutuqlar</div></div>
+              </div>
+            )}
             {avatarError && <div className="mt-2 text-xs font-semibold text-error" role="alert">{avatarError}</div>}
           </div>
           <div className="flex flex-col gap-2">
@@ -609,90 +625,88 @@ const ProfilePage = ({ user, onNavigate, embedded, onUserUpdate, onLogout }) => 
         </div>
       </div>
 
-      {/* Achievements */}
-      <div>
-        <h3 className="font-display font-bold text-text-primary mb-3">Yutuqlar</h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {achievements.map((a,i) => (
-            /* `glass` hoshiyasini `box-shadow: inset` bilan chizadi, shuning
-               uchun karta ustiga `border` QO'YILMAYDI — ikkita halqa chiqardi.
-               O'rin belgisi chap chetdagi 4px chiziqda: medal tokeni faqat
-               shu bitta tomonda, qolgan hoshiya token hoshiyasicha qoladi. */
-            <div key={i}
-              className={`glass rounded-2xl p-4 text-center card-hover ${a.place ? 'border-l-4' : ''}`}
-              style={medalBorderStyle(a.place)}>
-              <div className="flex justify-center mb-2 text-accent"><Icon name={a.icon} size={26} /></div>
-              <div className="text-sm font-bold text-text-primary">{a.title}</div>
-              <div className="text-xs text-text-secondary">{a.desc}</div>
+      {/* O'quvchi statistikasi va tablari — faqat o'quvchilar uchun */}
+      {!isStaff && (
+        <>
+          {/* Achievements */}
+          <div>
+            <h3 className="font-display font-bold text-text-primary mb-3">Yutuqlar</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {achievements.map((a,i) => (
+                <div key={i}
+                  className={`glass rounded-2xl p-4 text-center card-hover ${a.place ? 'border-l-4' : ''}`}
+                  style={medalBorderStyle(a.place)}>
+                  <div className="flex justify-center mb-2 text-accent"><Icon name={a.icon} size={26} /></div>
+                  <div className="text-sm font-bold text-text-primary">{a.title}</div>
+                  <div className="text-xs text-text-secondary">{a.desc}</div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      </div>
+          </div>
 
-      {/* Best subjects */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <div className="glass rounded-2xl p-5">
-          <h3 className="font-display font-bold text-text-primary mb-4">Fanlar bo'yicha</h3>
-          <div className="space-y-3">
-            {/* Xato bo'lsa "bo'sh" o'rniga aniq xabar + qayta urinish. */}
-            {subjectStats.length === 0 && isApi && apiStatsRes.error && (
-              <div className="text-sm text-error" role="alert">
-                {OlympyApi.toUserMessage?.(apiStatsRes.error) || "Fan kesimini yuklab bo'lmadi."}{' '}
-                <button onClick={() => apiStatsRes.reload()} className="underline underline-offset-2">Qayta urinish</button>
+          {/* Best subjects */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div className="glass rounded-2xl p-5">
+              <h3 className="font-display font-bold text-text-primary mb-4">Fanlar bo'yicha</h3>
+              <div className="space-y-3">
+                {subjectStats.length === 0 && isApi && apiStatsRes.error && (
+                  <div className="text-sm text-error" role="alert">
+                    {OlympyApi.toUserMessage?.(apiStatsRes.error) || "Fan kesimini yuklab bo'lmadi."}{' '}
+                    <button onClick={() => apiStatsRes.reload()} className="underline underline-offset-2">Qayta urinish</button>
+                  </div>
+                )}
+                {subjectStats.length === 0 && !(isApi && apiStatsRes.error) && (
+                  <div className="text-sm text-text-secondary">Hali fan kesimida natijalar yo'q.</div>
+                )}
+                {subjectStats.map((x, i) => (
+                  <div key={`${x.s}-${i}`}>
+                    <div className="flex justify-between mb-1"><span className="text-sm text-text-secondary">{x.s}</span><span className="font-data text-sm font-bold text-text-primary">{x.pct}%</span></div>
+                    <div className="progress-bar h-2"><div className="progress-fill" style={{width:`${x.pct}%`}}/></div>
+                  </div>
+                ))}
               </div>
-            )}
-            {subjectStats.length === 0 && !(isApi && apiStatsRes.error) && (
-              <div className="text-sm text-text-secondary">Hali fan kesimida natijalar yo'q.</div>
-            )}
-            {subjectStats.map((x, i) => (
-              <div key={`${x.s}-${i}`}>
-                <div className="flex justify-between mb-1"><span className="text-sm text-text-secondary">{x.s}</span><span className="font-data text-sm font-bold text-text-primary">{x.pct}%</span></div>
-                <div className="progress-bar h-2"><div className="progress-fill" style={{width:`${x.pct}%`}}/></div>
-              </div>
+            </div>
+
+            <div className="glass rounded-2xl p-5">
+              <h3 className="font-display font-bold text-text-primary mb-4">Natijalar dinamikasi</h3>
+              {(() => {
+                const months = isApi && Array.isArray(apiMonthlyRes.data?.months)
+                  ? apiMonthlyRes.data.months
+                  : [];
+                const data = months.map(m => ({
+                  label: m.label,
+                  value: Math.max(1, Math.round(m.average_score || 0)),
+                }));
+                const hasAny = months.some(m => (m.attempts || 0) > 0);
+                if (isApi && apiMonthlyRes.loading && !apiMonthlyRes.data) {
+                  return <div className="text-xs text-text-secondary">Yuklanmoqda...</div>;
+                }
+                if (isApi && apiMonthlyRes.error && !apiMonthlyRes.data) {
+                  return (
+                    <div className="text-xs text-error" role="alert">
+                      {OlympyApi.toUserMessage?.(apiMonthlyRes.error) || "Oylik dinamikani yuklab bo'lmadi."}{' '}
+                      <button onClick={() => apiMonthlyRes.reload()} className="underline underline-offset-2">Qayta urinish</button>
+                    </div>
+                  );
+                }
+                if (!isApi || !hasAny) {
+                  return <div className="text-xs text-text-secondary">Hali oylik natijalar to'planmagan.</div>;
+                }
+                return <BarChart data={data} />;
+              })()}
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="nav-tabs flex">
+            {['results','olympiads','certificates','settings'].map(t => (
+              <button key={t} type="button" onClick={() => setTab(t)} aria-pressed={tab===t} className={`nav-tab ${tab===t?'active':''}`}>
+                {t==='results'?'Natijalar':t==='olympiads'?"Olimpiadalar":t==='certificates'?'Sertifikatlar':'Sozlamalar'}
+              </button>
             ))}
           </div>
-        </div>
-
-        <div className="glass rounded-2xl p-5">
-          <h3 className="font-display font-bold text-text-primary mb-4">Natijalar dinamikasi</h3>
-          {(() => {
-            const months = isApi && Array.isArray(apiMonthlyRes.data?.months)
-              ? apiMonthlyRes.data.months
-              : [];
-            const data = months.map(m => ({
-              label: m.label,
-              value: Math.max(1, Math.round(m.average_score || 0)),
-            }));
-            const hasAny = months.some(m => (m.attempts || 0) > 0);
-            if (isApi && apiMonthlyRes.loading && !apiMonthlyRes.data) {
-              return <div className="text-xs text-text-secondary">Yuklanmoqda...</div>;
-            }
-            // Xato bo'lsa "to'planmagan" o'rniga aniq xabar + qayta urinish.
-            if (isApi && apiMonthlyRes.error && !apiMonthlyRes.data) {
-              return (
-                <div className="text-xs text-error" role="alert">
-                  {OlympyApi.toUserMessage?.(apiMonthlyRes.error) || "Oylik dinamikani yuklab bo'lmadi."}{' '}
-                  <button onClick={() => apiMonthlyRes.reload()} className="underline underline-offset-2">Qayta urinish</button>
-                </div>
-              );
-            }
-            if (!isApi || !hasAny) {
-              return <div className="text-xs text-text-secondary">Hali oylik natijalar to'planmagan.</div>;
-            }
-            return <BarChart data={data} />;
-          })()}
-        </div>
-      </div>
-
-      {/* Tabs — `aria-pressed` bo'lmasa ekran o'quvchi qaysi biri tanlanganini
-          aytmaydi: faol holat faqat rang va pastdagi chiziq bilan berilgan. */}
-      <div className="nav-tabs flex">
-        {['results','olympiads','certificates','settings'].map(t => (
-          <button key={t} type="button" onClick={() => setTab(t)} aria-pressed={tab===t} className={`nav-tab ${tab===t?'active':''}`}>
-            {t==='results'?'Natijalar':t==='olympiads'?"Olimpiadalar":t==='certificates'?'Sertifikatlar':'Sozlamalar'}
-          </button>
-        ))}
-      </div>
+        </>
+      )}
 
       {tab === 'results' && (
         <div className="space-y-3">
