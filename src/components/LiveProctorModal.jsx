@@ -206,7 +206,7 @@ export function LiveProctorModal({
                 <img
                   src={data.frame}
                   alt="Live Proctor Feed"
-                  className="h-full w-full object-contain"
+                  className="h-full w-full object-contain transition-opacity duration-200"
                 />
               )}
 
@@ -264,7 +264,7 @@ export function LiveProctorModal({
               <img
                 src={data.screen_frame}
                 alt="Live Student Screen"
-                className="h-full w-full object-contain"
+                className="h-full w-full object-contain transition-opacity duration-200"
               />
               <div className="absolute top-3 left-3 flex items-center gap-2">
                 <span className="rounded-md bg-accent/80 backdrop-blur-md px-2 py-1 text-[10px] font-bold text-white flex items-center gap-1 border border-accent">

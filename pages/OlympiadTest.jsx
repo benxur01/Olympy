@@ -1208,7 +1208,18 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error('no_camera_api');
       }
-      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const constraints = {
+        video: {
+          width: { ideal: 640, max: 1280 },
+          height: { ideal: 480, max: 720 },
+          frameRate: { ideal: 15, max: 24 },
+        },
+      };
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      }
       liveStreamRef.current = stream;
     } catch {
       setCameraError(
@@ -1284,16 +1295,16 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       try {
         let frameData = null;
         const vid = liveVideoElRef.current;
-        if (liveStreamRef.current && vid && vid.videoWidth > 0) {
+        if (liveStreamRef.current && vid && vid.videoWidth > 0 && vid.readyState >= 2) {
           camCtx.drawImage(vid, 0, 0, 320, 240);
-          frameData = camCanvas.toDataURL('image/jpeg', 0.55);
+          frameData = camCanvas.toDataURL('image/jpeg', 0.42);
         }
 
         let screenFrameData = null;
         const sVid = screenVideoElRef.current;
-        if (screenStreamRef.current && sVid && sVid.videoWidth > 0) {
+        if (screenStreamRef.current && sVid && sVid.videoWidth > 0 && sVid.readyState >= 2) {
           scrCtx.drawImage(sVid, 0, 0, 480, 270);
-          screenFrameData = scrCanvas.toDataURL('image/jpeg', 0.55);
+          screenFrameData = scrCanvas.toDataURL('image/jpeg', 0.42);
         }
 
         let audioLevel = 0;

@@ -21,8 +21,8 @@ import {
 
 // Debounce/kalibratsiya oynalari — OlympiadTest.jsx dagi `HIDDEN_GRACE_MS`
 // nomlash konvensiyasiga mos (aniq, ms birligida).
-const SAMPLE_INTERVAL_MS = 350;          // ~3 kadr/sekund
-const FRAME_WIDTH = 256;                 // kichraytirilgan kadr — tezroq inferens
+const SAMPLE_INTERVAL_MS = 750;          // ~1.3 kadr/sekund — GPU/CPU yuklamasini keskin kamaytiradi
+const FRAME_WIDTH = 224;                 // MediaPipe uchun optimal inferens o'lchami
 const NO_FACE_GRACE_MS = 9000;           // yuz yo'q ~9s uzluksiz
 const MULTIPLE_FACES_GRACE_MS = 4000;    // >=2 yuz ~4s uzluksiz
 const GAZE_AWAY_GRACE_MS = 18000;        // nigoh chetда ~18s uzluksiz
