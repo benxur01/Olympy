@@ -810,6 +810,8 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const voiceMonitorRef = React.useRef(null);
   // Jonli proktoring (Admin / Direktor / O'qituvchi kuzatuvchi) uchun media oqimlari
   const liveStreamRef = React.useRef(null);
+  const screenStreamRef = React.useRef(null);
+  const screenVideoElRef = React.useRef(null);
   const liveAudioContextRef = React.useRef(null);
   const liveFrameUploadTimerRef = React.useRef(null);
   const liveVideoElRef = React.useRef(null);
@@ -1235,7 +1237,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     setCameraStarting(false);
   }, [cameraStarting, user?._api, liveOlympiad?.backendId, reportCheating]);
 
-  // Nazoratchi (Admin/Direktor/O'qituvchi) so'raganda jonli kadr va audio uzatish
+  // Nazoratchi (Admin/Direktor/O'qituvchi) so'raganda jonli kadr, ekran va audio uzatish
   const startLiveFrameStreaming = React.useCallback((sessionId) => {
     if (liveFrameUploadTimerRef.current || !sessionId) return;
 
@@ -1250,10 +1252,26 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       liveVideoElRef.current.play().catch(() => {});
     }
 
-    const canvas = document.createElement('canvas');
-    canvas.width = 320;
-    canvas.height = 240;
-    const ctx = canvas.getContext('2d');
+    if (!screenVideoElRef.current) {
+      const sVid = document.createElement('video');
+      sVid.muted = true;
+      sVid.playsInline = true;
+      screenVideoElRef.current = sVid;
+    }
+    if (screenStreamRef.current && screenVideoElRef.current.srcObject !== screenStreamRef.current) {
+      screenVideoElRef.current.srcObject = screenStreamRef.current;
+      screenVideoElRef.current.play().catch(() => {});
+    }
+
+    const camCanvas = document.createElement('canvas');
+    camCanvas.width = 320;
+    camCanvas.height = 240;
+    const camCtx = camCanvas.getContext('2d');
+
+    const scrCanvas = document.createElement('canvas');
+    scrCanvas.width = 480;
+    scrCanvas.height = 270;
+    const scrCtx = scrCanvas.getContext('2d');
 
     liveFrameUploadTimerRef.current = setInterval(async () => {
       if (cheatReportedRef.current || !sessionId) {
@@ -1267,8 +1285,15 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         let frameData = null;
         const vid = liveVideoElRef.current;
         if (liveStreamRef.current && vid && vid.videoWidth > 0) {
-          ctx.drawImage(vid, 0, 0, 320, 240);
-          frameData = canvas.toDataURL('image/jpeg', 0.55);
+          camCtx.drawImage(vid, 0, 0, 320, 240);
+          frameData = camCanvas.toDataURL('image/jpeg', 0.55);
+        }
+
+        let screenFrameData = null;
+        const sVid = screenVideoElRef.current;
+        if (screenStreamRef.current && sVid && sVid.videoWidth > 0) {
+          scrCtx.drawImage(sVid, 0, 0, 480, 270);
+          screenFrameData = scrCanvas.toDataURL('image/jpeg', 0.55);
         }
 
         let audioLevel = 0;
@@ -1280,13 +1305,18 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
           audioLevel = Math.min(100, Math.round((sum / dataArray.length) * 1.5));
         }
 
+        const isHidden = Boolean(document.hidden || hiddenEventFiredRef.current);
         const token = globalThis.OlympyApi?.getToken?.() ?? globalThis.OlympyApi?.loadAuth?.()?.token;
-        if (token && (frameData || audioLevel > 0)) {
+        if (token) {
           await globalThis.OlympyApi.sendLiveProctorFrame(sessionId, {
             frame: frameData,
+            screen_frame: screenFrameData,
             audio_level: audioLevel,
             face_detected: true,
             speech_detected: audioLevel > 35,
+            app_switched: isHidden,
+            tab_escapes: tabSwitchCountRef.current,
+            is_in_background: isHidden,
           }, token);
         }
       } catch {}
@@ -1409,6 +1439,19 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
       if (!cheatGuardActiveRef.current) return;
       if (hiddenEventFiredRef.current) return; // allaqachon hisoblangan/kutilmoqda
       hiddenEventFiredRef.current = true;
+
+      // Nazoratchiga darhol ilovadan chiqish signalini uzatish
+      if (sessionIdRef.current) {
+        const token = globalThis.OlympyApi?.getToken?.() ?? globalThis.OlympyApi?.loadAuth?.()?.token;
+        if (token) {
+          globalThis.OlympyApi.sendLiveProctorFrame(sessionIdRef.current, {
+            app_switched: true,
+            is_in_background: true,
+            tab_escapes: tabSwitchCountRef.current + 1,
+          }, token).catch(() => {});
+        }
+      }
+
       hiddenTimerRef.current = setTimeout(() => {
         hiddenTimerRef.current = null;
         tabSwitchCountRef.current += 1;
@@ -1429,6 +1472,18 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         hiddenTimerRef.current = null;
       }
       hiddenEventFiredRef.current = false;
+
+      // Nazoratchiga qaytib kelganlik holatini uzatish
+      if (sessionIdRef.current) {
+        const token = globalThis.OlympyApi?.getToken?.() ?? globalThis.OlympyApi?.loadAuth?.()?.token;
+        if (token) {
+          globalThis.OlympyApi.sendLiveProctorFrame(sessionIdRef.current, {
+            app_switched: false,
+            is_in_background: false,
+            tab_escapes: tabSwitchCountRef.current,
+          }, token).catch(() => {});
+        }
+      }
     };
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') onHidden();
