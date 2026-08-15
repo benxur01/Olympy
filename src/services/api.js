@@ -2455,6 +2455,10 @@ export const OlympyApi = {
   // hech kim bloklanmaydi, bayroq ham qo'yilmaydi (chora "Xavfsizlik"
   // tabidagi moderatsiya navbatida ko'riladi).
   getAbuseStats: (token) => request('/api/analytics/abuse-stats/', { token, timeoutMs: HEAVY_REQUEST_TIMEOUT_MS }),
+  // Jonli imtihon va test jarayonlari radari (faol sessiyalar, ongoing olimpiadalar)
+  getLiveRadar: (token) => request('/api/analytics/live-radar/', { token }),
+  // So'nggi to'lov tranzaksiyalari (Click / Payme)
+  getRecentTransactions: (token) => request('/api/analytics/recent-transactions/', { token }),
   // ─── B2B / O'sish (growth) funksiyalari ───
   // Feature #1: B2B markaz onboarding — owner sehrgarini tugatish/o'tkazib yuborish.
   completeCenterOnboarding: (token) => request('/api/me/center-onboarding/', { method: 'PATCH', token }),
