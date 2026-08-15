@@ -808,6 +808,12 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
   const [voiceError, setVoiceError] = React.useState('');
   // VoiceMonitor handle'i ({ stop }) — submit/DQ/unmount'da to'xtatish uchun.
   const voiceMonitorRef = React.useRef(null);
+  // Jonli proktoring (Admin / Direktor / O'qituvchi kuzatuvchi) uchun media oqimlari
+  const liveStreamRef = React.useRef(null);
+  const liveAudioContextRef = React.useRef(null);
+  const liveFrameUploadTimerRef = React.useRef(null);
+  const liveVideoElRef = React.useRef(null);
+  const sessionIdRef = React.useRef(null);
   // Yangi siyosat: son asosida. Tashqarida o'tkazilgan vaqtni emas,
   // balki tab/ilovani tark etish SONINI hisoblaymiz. 1-marta chiqishda
   // ogohlantirish, 2-marta chiqishda darhol disqualifikatsiya.
@@ -1114,6 +1120,25 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
             setServerClockSkewMs(Date.now() - new Date(resp.server_now).getTime());
           }
         }
+
+        // Jonli kuzatuvchi nazorati (Live Stream On-demand)
+        if (resp?.session_id) {
+          sessionIdRef.current = resp.session_id;
+          if (resp.stream_requested) {
+            startLiveFrameStreaming(resp.session_id);
+          } else if (liveFrameUploadTimerRef.current) {
+            clearInterval(liveFrameUploadTimerRef.current);
+            liveFrameUploadTimerRef.current = null;
+          }
+
+          // Nazoratchi yuborgan ogohlantirishlarni tekshirish
+          try {
+            const sig = await globalThis.OlympyApi.getProctorSignal(resp.session_id, token);
+            if (sig?.signal?.action === 'warning' && sig?.signal?.payload?.message) {
+              setCheatWarning(sig.signal.payload.message);
+            }
+          } catch {}
+        }
       }
     } catch (err) {
       // 409 — diskvalifikatsiya: parallel qurilma YOKI tekshiruvdan keyin
@@ -1182,6 +1207,7 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         throw new Error('no_camera_api');
       }
       stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      liveStreamRef.current = stream;
     } catch {
       setCameraError(
         "Kamera ruxsati berilmadi. Bu olimpiada webkamera nazorati bilan "
@@ -1208,6 +1234,64 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
     setCameraConsentAcked(true);
     setCameraStarting(false);
   }, [cameraStarting, user?._api, liveOlympiad?.backendId, reportCheating]);
+
+  // Nazoratchi (Admin/Direktor/O'qituvchi) so'raganda jonli kadr va audio uzatish
+  const startLiveFrameStreaming = React.useCallback((sessionId) => {
+    if (liveFrameUploadTimerRef.current || !sessionId) return;
+
+    if (!liveVideoElRef.current) {
+      const vid = document.createElement('video');
+      vid.muted = true;
+      vid.playsInline = true;
+      liveVideoElRef.current = vid;
+    }
+    if (liveStreamRef.current && liveVideoElRef.current.srcObject !== liveStreamRef.current) {
+      liveVideoElRef.current.srcObject = liveStreamRef.current;
+      liveVideoElRef.current.play().catch(() => {});
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 320;
+    canvas.height = 240;
+    const ctx = canvas.getContext('2d');
+
+    liveFrameUploadTimerRef.current = setInterval(async () => {
+      if (cheatReportedRef.current || !sessionId) {
+        if (liveFrameUploadTimerRef.current) {
+          clearInterval(liveFrameUploadTimerRef.current);
+          liveFrameUploadTimerRef.current = null;
+        }
+        return;
+      }
+      try {
+        let frameData = null;
+        const vid = liveVideoElRef.current;
+        if (liveStreamRef.current && vid && vid.videoWidth > 0) {
+          ctx.drawImage(vid, 0, 0, 320, 240);
+          frameData = canvas.toDataURL('image/jpeg', 0.55);
+        }
+
+        let audioLevel = 0;
+        if (liveAudioContextRef.current?.analyser) {
+          const { analyser, dataArray } = liveAudioContextRef.current;
+          analyser.getByteFrequencyData(dataArray);
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+          audioLevel = Math.min(100, Math.round((sum / dataArray.length) * 1.5));
+        }
+
+        const token = globalThis.OlympyApi?.getToken?.() ?? globalThis.OlympyApi?.loadAuth?.()?.token;
+        if (token && (frameData || audioLevel > 0)) {
+          await globalThis.OlympyApi.sendLiveProctorFrame(sessionId, {
+            frame: frameData,
+            audio_level: audioLevel,
+            face_detected: true,
+            speech_detected: audioLevel > 35,
+          }, token);
+        }
+      } catch {}
+    }, 1200);
+  }, []);
 
   // Ovoz nazorati rozilik oqimi: (1) backend'ga rozilikni yozamiz,
   // (2) mikrofon ruxsatini so'raymiz, (3) VoiceMonitor'ni lazy yuklab ishga
@@ -1236,6 +1320,17 @@ const OlympiadTestPage = ({ olympiad, user, onFinish, onNavigate }) => {
         throw new Error('no_microphone_api');
       }
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          const actx = new AudioCtx();
+          const src = actx.createMediaStreamSource(stream);
+          const analyser = actx.createAnalyser();
+          analyser.fftSize = 256;
+          src.connect(analyser);
+          liveAudioContextRef.current = { ctx: actx, analyser, dataArray: new Uint8Array(analyser.frequencyBinCount) };
+        }
+      } catch {}
     } catch {
       setVoiceError(
         "Mikrofon ruxsati berilmadi. Bu olimpiada ovoz nazorati bilan "

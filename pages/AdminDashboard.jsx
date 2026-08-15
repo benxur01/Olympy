@@ -1219,6 +1219,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   // stacked, id-based ro'yxat bilan hal qiladi — imzosi bir xil (showToast(msg))
   // bo'lgani uchun quyidagi 38 ta chaqiruv joyi o'zgarishsiz ishlayveradi.
   const { showToast, ToastHost } = useToast();
+  const [liveProctorSession, setLiveProctorSession] = useState(null);
 
   const apiCentersRes = useApiData(
     () => isApi ? OlympyApi.getAdminCenters(null, OlympyApi.getToken()) : Promise.resolve(null),
@@ -2928,7 +2929,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                 );
               }
               return live.map(s => (
-                <div key={s.id} className="flex items-center justify-between rounded-xl bg-surface-1 border border-edge p-2.5">
+                <div key={s.id} className="flex items-center justify-between rounded-xl bg-surface-1 border border-edge p-2.5 hover:border-accent/40 transition">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <Avatar name={s.user_name} size={28} gradient="bg-pencil-600" />
                     <div className="min-w-0">
@@ -2936,12 +2937,17 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                       <div className="truncate text-[10px] text-text-secondary font-semibold">{s.olympiad_title}</div>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     {s.camera_consent && <span className="text-[10px]" title="Kamera proktoring faol">📷</span>}
                     {s.microphone_consent && <span className="text-[10px]" title="Mikrofon proktoring faol">🎙️</span>}
-                    <span className="rounded bg-success/15 border border-success/45 px-1.5 py-0.2 text-[9px] font-extrabold text-success animate-pulse">
-                      Jarayonda
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setLiveProctorSession({ id: s.id, studentName: s.user_name, olympiadTitle: s.olympiad_title })}
+                      className="inline-flex items-center gap-1 rounded-lg bg-error/15 border border-error/45 px-2 py-1 text-[10px] font-bold text-error hover:bg-error/25 transition"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-error animate-pulse"></span>
+                      <span>Jonli ko'rish</span>
+                    </button>
                   </div>
                 </div>
               ));
@@ -7153,6 +7159,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           <MobileBottomNav items={mobileNavItems} activePage={page} setPage={setPage} />
         </div>
       </div>
+      <LiveProctorModal
+        open={Boolean(liveProctorSession)}
+        onClose={() => setLiveProctorSession(null)}
+        sessionId={liveProctorSession?.id}
+        studentName={liveProctorSession?.studentName}
+        olympiadTitle={liveProctorSession?.olympiadTitle}
+      />
       <ToastHost />
     </div>
   );

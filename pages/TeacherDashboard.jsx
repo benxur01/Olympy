@@ -251,6 +251,7 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
   const [proctoringSearch, setProctoringSearch] = React.useState('');
   const debouncedProctoringSearch = useDebounce(proctoringSearch, 300);
   const [reviewBusyIds, setReviewBusyIds] = React.useState({});
+  const [liveProctorSession, setLiveProctorSession] = React.useState(null);
   // Markaz do'koni (Mukofotlar) holatlari.
   const [shopProducts, setShopProducts] = React.useState([]);
   const [shopLoading, setShopLoading] = React.useState(false);
@@ -1489,7 +1490,17 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
                             </button>
                           </div>
                         ) : (
-                          <span className="text-text-secondary text-xs">Test topshirilmoqda...</span>
+                          <div className="space-y-1.5 min-w-[140px]">
+                            <button
+                              type="button"
+                              onClick={() => setLiveProctorSession({ id: p.session_id, studentName: p.student_name, olympiadTitle: activeOlym?.title })}
+                              className="w-full rounded-lg bg-error/15 border border-error/45 px-2.5 py-1.5 text-xs font-bold text-error hover:bg-error/25 transition inline-flex items-center justify-center gap-1.5"
+                            >
+                              <span className="h-2 w-2 rounded-full bg-error animate-pulse"></span>
+                              <span>🎥 Jonli kuzatish</span>
+                            </button>
+                            <span className="text-text-secondary text-xs block text-center">Test topshirilmoqda...</span>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -3020,6 +3031,14 @@ const TeacherDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUp
         confirmText="Ha, o'chirish"
         danger
         busy={shopDeleting}
+      />
+
+      <LiveProctorModal
+        open={Boolean(liveProctorSession)}
+        onClose={() => setLiveProctorSession(null)}
+        sessionId={liveProctorSession?.id}
+        studentName={liveProctorSession?.studentName}
+        olympiadTitle={liveProctorSession?.olympiadTitle}
       />
 
       <ToastHost />
