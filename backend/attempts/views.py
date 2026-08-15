@@ -2434,9 +2434,10 @@ def test_session_ping(request):
     # `active` + `reviewed_at` — davom etish signali) yoki `pending_review`
     # (hali kutilmoqda). Resume'da frontend taymerni serverning yangilangan
     # effektiv muddati (paused_seconds hisobga olingan) bilan resync qiladi.
-    resp = {'ok': True, 'status': session.status}
+    resp = {'ok': True, 'status': session.status, 'session_id': session.id}
     if session.reviewed_at:
         resp['reviewed_at'] = session.reviewed_at.isoformat()
+    resp['stream_requested'] = bool(cache.get(f"proctor:stream_req:{session.id}"))
     from .session_utils import session_end_time
     end_time = session_end_time(session, session.olympiad)
     if end_time:
@@ -2720,5 +2721,144 @@ def explain_all_mistakes_status(request, task_id):
         EXPLAIN_MISTAKES_TASK_PREFIX, task_id, request.user,
         failed_detail="AI yordamida xatolar tahlili generatsiya qilinmadi. Iltimos keyinroq urinib ko'ring.",
     )
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def session_live_frame(request, session_id):
+    """GET/POST /api/attempts/sessions/<session_id>/live-frame/
+
+    POST (O'quvchi tomonidan):
+      Jonli kamera kadri (base64) va mikrofon ovoz darajasi server keshiga yoziladi.
+
+    GET (Admin / Direktor / O'qituvchi tomonidan):
+      Kuzatuvchi o'quvchining so'nggi jonli kadrini va audio holatini o'qiydi.
+      So'rov kelganda student uchun avtomatik ravishda stream talabi faollashadi.
+    """
+    from django.core.cache import cache
+    session = get_object_or_404(
+        TestSession.objects.select_related('user', 'olympiad', 'olympiad__center'),
+        pk=session_id,
+    )
+
+    if request.method == 'POST':
+        # Faqat student o'z sessiyasi kadrini yuboradi
+        if session.user_id != request.user.id and not request.user.is_platform_admin:
+            return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+        frame = request.data.get('frame')
+        audio_level = request.data.get('audio_level', 0)
+        face_detected = request.data.get('face_detected', True)
+        speech_detected = request.data.get('speech_detected', False)
+
+        cache_key = f"proctor:live_frame:{session_id}"
+        payload = {
+            'session_id': session_id,
+            'user_id': session.user_id,
+            'frame': frame,
+            'audio_level': audio_level,
+            'face_detected': face_detected,
+            'speech_detected': speech_detected,
+            'updated_at': timezone.now().isoformat(),
+        }
+        cache.set(cache_key, payload, timeout=20)
+        return Response({'ok': True})
+
+    # GET: Kuzatuvchi (Admin, Center Owner/Manager/Teacher)
+    is_admin = request.user.is_platform_admin
+    is_center_staff = False
+    if session.olympiad.center:
+        is_center_staff = user_can_manage_center_event(request.user, session.olympiad.center)
+
+    if not (is_admin or is_center_staff or session.user_id == request.user.id):
+        return Response(
+            {'detail': 'Ushbu o\'quvchini kuzatish uchun huquqingiz yetarli emas'},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+
+    # Kuzatuvchi tomosha qilyapti - studentga 15 soniya stream yoqish signali
+    cache.set(f"proctor:stream_req:{session_id}", True, timeout=15)
+
+    cache_key = f"proctor:live_frame:{session_id}"
+    data = cache.get(cache_key) or {}
+
+    return Response({
+        'session_id': session_id,
+        'user_id': session.user_id,
+        'student_name': session.user.full_name or session.user.normalized_phone,
+        'phone': session.user.normalized_phone,
+        'olympiad_title': session.olympiad.title,
+        'status': session.status,
+        'started_at': session.started_at.isoformat(),
+        'camera_consent': session.camera_consent_given,
+        'microphone_consent': session.microphone_consent_given,
+        'frame': data.get('frame'),
+        'audio_level': data.get('audio_level', 0),
+        'face_detected': data.get('face_detected', True),
+        'speech_detected': data.get('speech_detected', False),
+        'updated_at': data.get('updated_at'),
+        'is_live': bool(data.get('frame')),
+    })
+
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
+def session_proctor_signal(request, session_id):
+    """GET/POST /api/attempts/sessions/<session_id>/proctor-signal/
+    WebRTC va proktoring signalizatsiyasi (offer/answer/ice/warning).
+    """
+    from django.core.cache import cache
+    session = get_object_or_404(
+        TestSession.objects.select_related('user', 'olympiad', 'olympiad__center'),
+        pk=session_id,
+    )
+
+    is_admin = request.user.is_platform_admin
+    is_center_staff = False
+    if session.olympiad.center:
+        is_center_staff = user_can_manage_center_event(request.user, session.olympiad.center)
+    is_student = (session.user_id == request.user.id)
+
+    if not (is_admin or is_center_staff or is_student):
+        return Response({'detail': 'Forbidden'}, status=http_status.HTTP_403_FORBIDDEN)
+
+    sig_key_to_student = f"proctor:sig:to_student:{session_id}"
+    sig_key_to_proctor = f"proctor:sig:to_proctor:{session_id}"
+
+    if request.method == 'POST':
+        action = request.data.get('action')
+        payload = request.data.get('payload', {})
+
+        msg = {
+            'action': action,
+            'payload': payload,
+            'sender_id': request.user.id,
+            'sender_name': request.user.full_name or 'Nazoratchi',
+            'created_at': timezone.now().isoformat(),
+        }
+
+        if is_student:
+            cache.set(sig_key_to_proctor, msg, timeout=30)
+        else:
+            cache.set(sig_key_to_student, msg, timeout=30)
+            if action == 'request_stream':
+                cache.set(f"proctor:stream_req:{session_id}", True, timeout=20)
+            elif action == 'stop_stream':
+                cache.delete(f"proctor:stream_req:{session_id}")
+
+        return Response({'ok': True})
+
+    # GET
+    if is_student:
+        msg = cache.get(sig_key_to_student)
+    else:
+        msg = cache.get(sig_key_to_proctor)
+
+    stream_req = cache.get(f"proctor:stream_req:{session_id}")
+    return Response({
+        'signal': msg,
+        'stream_requested': bool(stream_req),
+    })
+
 
 

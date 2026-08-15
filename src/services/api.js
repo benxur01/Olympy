@@ -2015,6 +2015,11 @@ export const OlympyApi = {
   // boolean + vaqt tamg'asi yoziladi (audio EMAS).
   microphoneConsent: (payload, token) => request('/api/attempts/microphone-consent/', { method: 'POST', body: payload, token }),
   pingTestSession: (olympiadId, answeredCount, tabEscapes, token, deviceId) => request('/api/attempts/ping/', { method: 'POST', body: { olympiad: olympiadId, answered_count: answeredCount, tab_escapes: tabEscapes, device_id: deviceId }, token }),
+  // Jonli Kamera va Mikrofon Proktoringi (Live Video & Audio feed)
+  sendLiveProctorFrame: (sessionId, data, token) => request(`/api/attempts/sessions/${sessionId}/live-frame/`, { method: 'POST', body: data, token, timeoutMs: 4000 }),
+  getLiveProctorFrame: (sessionId, token) => request(`/api/attempts/sessions/${sessionId}/live-frame/`, { token, timeoutMs: 5000 }),
+  sendProctorSignal: (sessionId, data, token) => request(`/api/attempts/sessions/${sessionId}/proctor-signal/`, { method: 'POST', body: data, token }),
+  getProctorSignal: (sessionId, token) => request(`/api/attempts/sessions/${sessionId}/proctor-signal/`, { token }),
   // Cheating tekshiruvi bo'yicha menejer/owner qarori: decision 'disqualify'
   // yoki 'continue'. 409 — holat allaqachon hal qilingan (boshqa menejer).
   reviewCheatingCase: (sessionId, decision, token) => request('/api/attempts/cheating/review/', { method: 'POST', body: { session_id: sessionId, decision }, token }),

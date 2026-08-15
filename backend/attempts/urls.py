@@ -9,6 +9,9 @@ urlpatterns = [
     path('camera-consent/', views.camera_consent, name='camera-consent'),
     path('microphone-consent/', views.microphone_consent, name='microphone-consent'),
     path('ping/', views.test_session_ping, name='test-session-ping'),
+    # Jonli Kamera va Mikrofon Proktoringi (Live Video & Audio feed)
+    path('sessions/<int:session_id>/live-frame/', views.session_live_frame, name='session-live-frame'),
+    path('sessions/<int:session_id>/proctor-signal/', views.session_proctor_signal, name='session-proctor-signal'),
     path('mistakes/', views.get_mistakes_list, name='mistakes-list'),
     path('mistakes/explain/', views.explain_all_mistakes, name='mistakes-explain-all'),
     path(
