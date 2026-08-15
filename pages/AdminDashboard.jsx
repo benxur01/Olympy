@@ -4,7 +4,7 @@
 // manziliga bog'lanadi (home → /dashboard/admin).
 const ADMIN_DASHBOARD_PAGES = [
   'home', 'users', 'centers', 'olympiads', 'requests',
-  'subjects', 'analytics', 'logs', 'security', 'settings', 'myprofile', 'support',
+  'subjects', 'analytics', 'logs', 'security', 'settings', 'support',
 ];
 const adminDashUrl = makeDashboardUrlSync('/dashboard/admin', ADMIN_DASHBOARD_PAGES);
 
@@ -1125,93 +1125,6 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   // (audit jurnalidagi bilan bir xil).
   const debouncedCheatingSearch = useDebounce(cheatingSearch, 300);
 
-  // Profile settings state
-  const [editFirstName, setEditFirstName] = React.useState('');
-  const [editLastName, setEditLastName] = React.useState('');
-  const [editUsername, setEditUsername] = React.useState('');
-  const [savingProfile, setSavingProfile] = React.useState(false);
-
-  // Password settings state
-  const [oldPassword, setOldPassword] = React.useState('');
-  const [newPassword, setNewPassword] = React.useState('');
-  const [confirmPassword, setConfirmPassword] = React.useState('');
-  const [savingPassword, setSavingPassword] = React.useState(false);
-
-  React.useEffect(() => {
-    if (user) {
-      setEditFirstName(user.firstName || user.first_name || '');
-      setEditLastName(user.lastName || user.last_name || '');
-      setEditUsername(user.username || '');
-    }
-  }, [user]);
-
-  const handleUpdateProfile = async (e) => {
-    e.preventDefault();
-    setSavingProfile(true);
-    try {
-      if (isApi) {
-        const token = OlympyApi.getToken();
-        const payload = {
-          first_name: editFirstName,
-          last_name: editLastName,
-          username: editUsername
-        };
-        const updated = await OlympyApi.updateProfile(payload, token);
-        showToast("Profil ma'lumotlari muvaffaqiyatli saqlandi!");
-        if (updated) {
-          const mapped = OlympyApi.mapBackendUser(updated);
-          onUserUpdate?.(mapped);
-        }
-      } else {
-        showToast("Profil ma'lumotlari yangilandi (Mock)!");
-      }
-    } catch (err) {
-      const errMsg = OlympyApi.toUserMessage?.(err) || err?.detail || "Xatolik yuz berdi";
-      showToast(`Xatolik: ${errMsg}`);
-    } finally {
-      setSavingProfile(false);
-    }
-  };
-
-  const handleUpdatePassword = async (e) => {
-    e.preventDefault();
-    if (!oldPassword || !newPassword || !confirmPassword) {
-      showToast("Barcha parollarni kiriting!");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      showToast("Yangi parollar bir-biriga mos kelmadi!");
-      return;
-    }
-    if (newPassword.length < 8) {
-      showToast("Parol kamida 8 belgi bo'lishi kerak!");
-      return;
-    }
-    setSavingPassword(true);
-    try {
-      if (isApi) {
-        const token = OlympyApi.getToken();
-        await OlympyApi.changePassword({
-          old_password: oldPassword,
-          new_password: newPassword
-        }, token);
-        showToast("Parol muvaffaqiyatli o'zgartirildi!");
-        setOldPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-      } else {
-        showToast("Parol o'zgartirildi (Mock)!");
-        setOldPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-      }
-    } catch (err) {
-      const errMsg = OlympyApi.toUserMessage?.(err) || err?.detail || "Xatolik yuz berdi";
-      showToast(`Xatolik: ${errMsg}`);
-    } finally {
-      setSavingPassword(false);
-    }
-  };
 
   // Avval bitta string state + bitta setTimeout bilan yasalgan edi: ikkinchi
   // toast 3s ichida kelsa, birinchi toastning eski setTimeout'i uni
@@ -2550,7 +2463,6 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'logs', icon: 'shield', label: 'Amallar tarixi' },
     { key: 'security', icon: 'lock', label: 'Xavfsizlik' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
-    { key: 'myprofile', icon: 'user', label: 'Mening profilim' },
     { key: 'support', icon: 'sparkles', label: 'AI Support' },
   ];
 
@@ -2657,7 +2569,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         <button className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg text-text-secondary hover:bg-surface-1 transition">
           <Icon name="info" size={15} />
         </button>
-        <div className="flex items-center gap-2 pl-2 border-l border-edge">
+        <button
+          type="button"
+          onClick={() => setPage('settings')}
+          className="flex items-center gap-2 pl-2 border-l border-edge hover:opacity-80 transition cursor-pointer text-left"
+          title="Sozlamalar va profil"
+        >
           <Avatar name={user?.name || 'Admin'} src={user?.avatarUrl || ''} size={28} gradient="bg-accent-fill" />
           <div className="hidden text-right sm:block">
             <div className="text-[11px] font-bold leading-tight text-text-primary">{user?.name || 'Admin'}</div>
@@ -2670,7 +2587,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             })()}</div>
           </div>
           <Icon name="chevronDown" size={12} className="hidden text-text-secondary sm:block" />
-        </div>
+        </button>
       </div>
     </header>
   );
@@ -7007,123 +6924,6 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     </div>
   );
 
-  const renderSettings = () => (
-    <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
-      <div>
-        <h1 className="text-[20px] font-bold leading-tight text-text-primary">Sozlamalar</h1>
-        <p className="mt-1 text-[11px] font-bold text-text-secondary">Profil ma'lumotlari va parolni o'zgartirish.</p>
-      </div>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        {/* Profil Sozlamalari */}
-        <section className="admin-card p-5 space-y-4">
-          <h2 className="text-xs font-bold tracking-wider uppercase text-text-primary mb-2 flex items-center gap-2">
-            <Icon name="edit" size={14} className="text-accent" />
-            Profil Sozlamalari
-          </h2>
-          <form onSubmit={handleUpdateProfile} className="space-y-4">
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Ism</label>
-              <input
-                type="text"
-                value={editFirstName}
-                onChange={e => setEditFirstName(e.target.value)}
-                className="h-9 w-full admin-input px-3 text-xs outline-none"
-                placeholder="Ismingizni kiriting"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Familiya</label>
-              <input
-                type="text"
-                value={editLastName}
-                onChange={e => setEditLastName(e.target.value)}
-                className="h-9 w-full admin-input px-3 text-xs outline-none"
-                placeholder="Familiyangizni kiriting"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Username</label>
-              <input
-                type="text"
-                value={editUsername}
-                onChange={e => setEditUsername(e.target.value)}
-                className="h-9 w-full admin-input px-3 text-xs outline-none"
-                placeholder="Username kiriting"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Telefon Raqami</label>
-              <input
-                type="text"
-                value={user?.phone || ''}
-                readOnly
-                disabled
-                className="h-9 w-full admin-input px-3 text-xs outline-none opacity-60 cursor-not-allowed"
-                placeholder="+998901234567"
-              />
-              <div className="text-[10px] text-text-secondary mt-1">Telefon raqamini tasdiqsiz o'zgartirib bo'lmaydi.</div>
-            </div>
-            <button
-              type="submit"
-              disabled={savingProfile}
-              className="w-full rounded-xl btn-primary py-3 text-xs font-bold transition disabled:opacity-50"
-            >
-              {savingProfile ? "Saqlanmoqda..." : "Saqlash"}
-            </button>
-          </form>
-        </section>
-
-        {/* Parolni Yangilash */}
-        <section className="admin-card p-5 space-y-4">
-          <h2 className="text-xs font-bold tracking-wider uppercase text-text-primary mb-2 flex items-center gap-2">
-            <Icon name="shield" size={14} className="text-success" />
-            Parolni O'zgartirish
-          </h2>
-          <form onSubmit={handleUpdatePassword} className="space-y-4">
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Joriy Parol</label>
-              <input
-                type="password"
-                value={oldPassword}
-                onChange={e => setOldPassword(e.target.value)}
-                className="h-9 w-full admin-input px-3 text-xs outline-none"
-                placeholder="Joriy parolingizni kiriting"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Yangi Parol</label>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={e => setNewPassword(e.target.value)}
-                className="h-9 w-full admin-input px-3 text-xs outline-none"
-                placeholder="Yangi parol kiriting"
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-text-secondary mb-1.5">Yangi Parolni Tasdiqlash</label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={e => setConfirmPassword(e.target.value)}
-                className="h-9 w-full admin-input px-3 text-xs outline-none"
-                placeholder="Yangi parolni qayta kiriting"
-              />
-            </div>
-            <button
-              type="submit"
-              disabled={savingPassword}
-              className="w-full rounded-xl btn-success py-3 text-xs font-bold transition disabled:opacity-50"
-            >
-              {savingPassword ? "Yangilanmoqda..." : "Parolni Yangilash"}
-            </button>
-          </form>
-        </section>
-      </div>
-    </div>
-  );
-
   const pageRenderers = {
     home: renderHome,
     requests: renderRequests,
@@ -7134,9 +6934,9 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     security: renderSecurity,
     olympiads: renderOlympiads,
     subjects: renderSubjects,
-    settings: renderSettings,
+    settings: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} onLogout={onLogout} />,
     support: renderSupport,
-    myprofile: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} />,
+    myprofile: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} onLogout={onLogout} />,
   };
 
   const mobileNavItems = [
