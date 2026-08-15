@@ -169,9 +169,31 @@ urlpatterns = [
     # `<int:user_id>` yo'lidan keyin turishi muhim emas (yo'l aniq matn
     # bo'yicha mos keladi), lekin juftlik sifatida yonma-yon turadi.
     path('admin/users/<int:user_id>/impersonate/', views.admin_impersonate_user,
-         name='admin-impersonate-user'),
+          name='admin-impersonate-user'),
     path('admin/users/<int:user_id>/impersonate/end/', views.admin_end_impersonation,
-         name='admin-end-impersonation'),
+          name='admin-end-impersonation'),
+    # Foydalanuvchi ichki CRM eslatmalari (Notes)
+    path('admin/users/<int:user_id>/notes/', views.admin_user_notes_list_create,
+          name='admin-user-notes-list-create'),
+    path('admin/users/<int:user_id>/notes/<int:note_id>/', views.admin_user_note_delete,
+          name='admin-user-note-delete'),
+    # Admin teglari (Tags)
+    path('admin/users/<int:user_id>/tags/', views.admin_user_tags_update,
+          name='admin-user-tags-update'),
+    # Olimpiadalardan chetlatish (Exam Ban)
+    path('admin/users/<int:user_id>/exam-ban/', views.admin_user_exam_ban,
+          name='admin-user-exam-ban'),
+    path('admin/users/<int:user_id>/exam-unban/', views.admin_user_exam_unban,
+          name='admin-user-exam-unban'),
+    # Tangalar balansi boshqaruvi
+    path('admin/users/<int:user_id>/adjust-coins/', views.admin_user_adjust_coins,
+          name='admin-user-adjust-coins'),
+    # Testni qayta topshirish huquqi berish (Retake grant)
+    path('admin/users/<int:user_id>/attempts/<int:attempt_id>/allow-retake/', views.admin_user_attempt_retake,
+          name='admin-user-attempt-retake'),
+    # Segmentlangan ommaviy xabarnoma (Broadcast)
+    path('admin/broadcast/', views.admin_broadcast_notification,
+          name='admin-broadcast-notification'),
     path('admin/audit-log/', views.audit_log_list, name='admin-audit-log'),
     # "Xavfsizlik" tabi — foydalanuvchilar bo'yicha kuzatuv bloklari.
     # `<str:ip_address>` IPv6 uchun ham yetarli: Django'ning `str`

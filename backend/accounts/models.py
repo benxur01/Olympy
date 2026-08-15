@@ -179,6 +179,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     # hech qachon tegmaydi.
     block_reason = models.CharField(max_length=255, blank=True, default='')
     blocked_until = models.DateTimeField(null=True, blank=True, db_index=True)
+    exam_blocked_until = models.DateTimeField(null=True, blank=True, db_index=True)
+    exam_block_reason = models.CharField(max_length=255, blank=True, default='')
+    admin_tags = models.JSONField(default=list, blank=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     # Admin panelidagi "Foydalanuvchilar holati" ro'yxati uchun: foydalanuvchi
@@ -204,6 +207,15 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     class Meta:
         ordering = ['-created_at']
+
+    @property
+    def is_exam_blocked(self):
+        """Olimpiadalardan chetlatilganmi (vaqtincha yoki doimiy)."""
+        if not self.exam_blocked_until and not self.exam_block_reason:
+            return False
+        if self.exam_blocked_until and self.exam_blocked_until <= timezone.now():
+            return False
+        return bool(self.exam_block_reason or self.exam_blocked_until)
 
     @property
     def is_soft_deleted(self):
@@ -986,6 +998,14 @@ class AuditLog(models.Model):
         ('question_archive', 'Savol arxivlandi'),
         ('member_approve', "A'zo tasdiqlandi"),
         ('member_reject', "A'zo rad etildi"),
+        ('admin_exam_ban', "Olimpiadalardan chetlatildi"),
+        ('admin_exam_unban', "Olimpiada taqiqi bekor qilindi"),
+        ('admin_user_note_add', "Ichki eslatma qo'shildi"),
+        ('admin_user_note_delete', "Ichki eslatma o'chirildi"),
+        ('admin_user_tags_update', "Admin teglari yangilandi"),
+        ('admin_user_coins_adjust', "Tangalar balansi o'zgartirildi"),
+        ('admin_attempt_retake', "Testni qayta topshirishga ruxsat berildi"),
+        ('admin_broadcast_message', "Ommaviy xabarnoma yuborildi"),
     ]
 
     actor = models.ForeignKey(
@@ -1145,4 +1165,31 @@ class SupportMessage(models.Model):
     def __str__(self):
         user_part = self.user_id if self.user_id else f'guest:{self.session_id[:8]}'
         return f'{user_part}:{self.role} -> {self.text[:30]}'
+
+
+class UserAdminNote(models.Model):
+    """Admin/moderatorlarning foydalanuvchi bo'yicha ichki eslatmalari (CRM notes)."""
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='admin_notes',
+    )
+    author = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='authored_admin_notes',
+    )
+    text = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'Note for user {self.user_id} by {self.author_id} @ {self.created_at:%Y-%m-%d %H:%M}'
 

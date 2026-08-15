@@ -1733,6 +1733,15 @@ def olympiad_questions(request, olympiad_id):
     )
 
     olympiad = get_object_or_404(Olympiad, pk=olympiad_id)
+    if getattr(request.user, 'is_exam_blocked', False):
+        reason = getattr(request.user, 'exam_block_reason', '') or "Qoidabuzarlik sababli"
+        until_dt = getattr(request.user, 'exam_blocked_until', None)
+        until_str = f" ({timezone.localtime(until_dt).strftime('%Y-%m-%d %H:%M')} gacha)" if until_dt else ""
+        return Response(
+            {'detail': f"Siz olimpiadalarda qatnashishdan chetlatilgansiz{until_str}. Sabab: {reason}"},
+            status=http_status.HTTP_403_FORBIDDEN,
+        )
+
     # Celery worker bo'lmagan muhitda muddati o'tgan olimpiadani lazy yopish.
     # Status o'zgargan bo'lsa pastdagi tekshiruvlar to'g'ri ishlaydi.
     try:
