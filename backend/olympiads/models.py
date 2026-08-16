@@ -124,6 +124,12 @@ class Olympiad(models.Model):
     # ko'radi va mikrofon ruxsatini beradi; server FAQAT hosila signalni
     # (atrofdagi ovoz aniqlandi) qabul qiladi — hech qachon audio saqlanmaydi.
     voice_proctoring_enabled = models.BooleanField(default=False)
+    # Jonli reytingni muzlatish (Leaderboard Freeze) — olimpiada yakuniga
+    # 15-30 daqiqa qolganda o'quvchilardan natijani yashirish, admin esa jonli ko'radi.
+    is_leaderboard_frozen = models.BooleanField(default=False, db_index=True)
+    frozen_at = models.DateTimeField(null=True, blank=True)
+    # Sertifikat va diplom shabloni (standard, modern, gold, dark)
+    certificate_template = models.CharField(max_length=50, default='standard', blank=True)
     is_deleted = models.BooleanField(default=False, db_index=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

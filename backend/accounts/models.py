@@ -1334,3 +1334,24 @@ class UserFlashAlert(models.Model):
         return f"FlashAlert to {self.user.full_name}: {self.title} ({self.alert_type})"
 
 
+class SystemConfig(models.Model):
+    """Platforma global konfiguratsiyasi va Dynamic Feature Flags."""
+    is_maintenance_mode = models.BooleanField(default=False, help_text="Texnik ishlar rejimi")
+    maintenance_message = models.TextField(
+        default="Platformada rejali texnik ishlar olib borilmoqda. Tez orada qaytamiz!",
+        blank=True,
+    )
+    allow_registrations = models.BooleanField(default=True, help_text="Yangi foydalanuvchilar ro'yxatdan o'tishi")
+    default_ai_model = models.CharField(max_length=50, default='gemini-2.5-flash')
+    camera_proctoring_global = models.BooleanField(default=True, help_text="Global proktoring yoqilganligi")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @classmethod
+    def get_settings(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return f"SystemConfig (Maintenance={self.is_maintenance_mode})"
+
+

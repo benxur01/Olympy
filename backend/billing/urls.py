@@ -1,7 +1,13 @@
 from django.urls import path
-from . import views
+from . import views, views_admin_promo
 
 urlpatterns = [
+    # Admin Promocodes
+    path('admin/promocodes/', views_admin_promo.admin_list_create_promocodes, name='admin-billing-promocodes'),
+    path('admin/promocodes/<int:pk>/toggle/', views_admin_promo.admin_toggle_promocode, name='admin-billing-promocodes-toggle'),
+    path('admin/promocodes/<int:pk>/', views_admin_promo.admin_delete_promocode, name='admin-billing-promocodes-delete'),
+    path('promocode/validate/', views_admin_promo.validate_promocode_public, name='billing-promocode-validate'),
+
     path('checkout/', views.create_checkout_session, name='billing-checkout'),
     path('plans/', views.list_subscription_plans, name='billing-plans'),
     path('subscription/status/', views.subscription_status, name='billing-subscription-status'),

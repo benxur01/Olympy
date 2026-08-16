@@ -1,9 +1,14 @@
 from django.urls import path
 
-from . import views
+from . import views, views_admin_ai
 
 # Mounted under /api/questions/
 urlpatterns = [
+    # Admin AI Orchestration Studio
+    path('admin/generate-exam/', views_admin_ai.admin_ai_generate_exam_questions, name='admin-ai-generate-exam'),
+    path('admin/moderate-appeal/', views_admin_ai.admin_ai_moderate_appeal, name='admin-ai-moderate-appeal'),
+    path('admin/ai-metrics/', views_admin_ai.admin_ai_usage_metrics, name='admin-ai-usage-metrics'),
+
     path('generate-ai/', views.generate_ai_questions, name='questions-generate-ai'),
     path('generate-ai/<str:task_id>/status/', views.generate_ai_questions_status, name='questions-generate-ai-status'),
     path('code-review/', views.code_review, name='questions-code-review'),

@@ -252,3 +252,59 @@ class AiGenerationLog(models.Model):
     def __str__(self):
         return f"AI gen {self.center_id} ({self.count}) @ {self.created_at:%Y-%m-%d}"
 
+
+class PromoCode(models.Model):
+    """Chegirma va marketing promokodlari."""
+    DISCOUNT_TYPE_PERCENT = 'percent'
+    DISCOUNT_TYPE_FIXED = 'fixed'
+    DISCOUNT_TYPE_CHOICES = [
+        (DISCOUNT_TYPE_PERCENT, 'Foiz (%)'),
+        (DISCOUNT_TYPE_FIXED, "Qat'iy summa (UZS)"),
+    ]
+
+    code = models.CharField(max_length=50, unique=True, db_index=True)
+    description = models.CharField(max_length=255, blank=True, default='')
+    discount_type = models.CharField(max_length=20, choices=DISCOUNT_TYPE_CHOICES, default=DISCOUNT_TYPE_PERCENT)
+    discount_value = models.DecimalField(max_digits=12, decimal_places=2, default=10)
+    max_uses = models.PositiveIntegerField(null=True, blank=True, help_text="Maksimal ishlatish soni (bo'sh bo'lsa cheksiz)")
+    used_count = models.PositiveIntegerField(default=0)
+    valid_from = models.DateTimeField(default=timezone.now)
+    valid_until = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='created_promocodes',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def is_valid(self):
+        if not self.is_active:
+            return False, "Promokod nofaol holatda."
+        now = timezone.now()
+        if self.valid_from and now < self.valid_from:
+            return False, "Promokodning amal qilish muddati hali boshlanmagan."
+        if self.valid_until and now > self.valid_until:
+            return False, "Promokodning amal qilish muddati tugagan."
+        if self.max_uses is not None and self.used_count >= self.max_uses:
+            return False, "Promokodning maksimal foydalanish soni tugagan."
+        return True, "Yaroqli."
+
+    def __str__(self):
+        return f"{self.code} ({self.discount_value} {self.discount_type})"
+
+
+class PromoCodeUsage(models.Model):
+    """Promokod ishlatilish tarixi."""
+    promocode = models.ForeignKey(PromoCode, on_delete=models.CASCADE, related_name='usages')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='promocode_usages')
+    discount_applied = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    original_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    final_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    used_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-used_at']
+

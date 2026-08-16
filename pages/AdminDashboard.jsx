@@ -1415,6 +1415,63 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [discountDays, setDiscountDays] = React.useState('');
   const [quotaLoading, setQuotaLoading] = React.useState(false);
 
+  // Musobaqa va Baholash (Competition Ops) Statelari
+  const [olympiadAnalyticsModal, setOlympiadAnalyticsModal] = React.useState(null);
+  const [olympiadAnalyticsData, setOlympiadAnalyticsData] = React.useState(null);
+  const [olympiadAnalyticsLoading, setOlympiadAnalyticsLoading] = React.useState(false);
+
+  const [olympiadCertificatesModal, setOlympiadCertificatesModal] = React.useState(null);
+  const [olympiadCertificatesData, setOlympiadCertificatesData] = React.useState(null);
+  const [olympiadCertificatesLoading, setOlympiadCertificatesLoading] = React.useState(false);
+  const [olympiadTemplateSaving, setOlympiadTemplateSaving] = React.useState(false);
+
+  const [regradeConfirmModal, setRegradeConfirmModal] = React.useState(null);
+  const [regradeLoading, setRegradeLoading] = React.useState(false);
+  const [regradeResults, setRegradeResults] = React.useState(null);
+
+  // ─── AI Studio Statelari ───
+  const [aiStudioTab, setAiStudioTab] = React.useState('generator');
+  const [aiGenSubject, setAiGenSubject] = React.useState('Matematika');
+  const [aiGenTopic, setAiGenTopic] = React.useState('');
+  const [aiGenDifficulty, setAiGenDifficulty] = React.useState('medium');
+  const [aiGenCount, setAiGenCount] = React.useState(5);
+  const [aiGenLanguage, setAiGenLanguage] = React.useState('uz');
+  const [aiGenCenterId, setAiGenCenterId] = React.useState('');
+  const [aiGenOlympiadId, setAiGenOlympiadId] = React.useState('');
+  const [aiGenSaveToBank, setAiGenSaveToBank] = React.useState(true);
+  const [aiGenLoading, setAiGenLoading] = React.useState(false);
+  const [aiGenResults, setAiGenResults] = React.useState(null);
+
+  const [aiAppealQText, setAiAppealQText] = React.useState('');
+  const [aiAppealOpts, setAiAppealOpts] = React.useState(['', '', '', '']);
+  const [aiAppealAnswer, setAiAppealAnswer] = React.useState('');
+  const [aiAppealReason, setAiAppealReason] = React.useState('');
+  const [aiAppealLoading, setAiAppealLoading] = React.useState(false);
+  const [aiAppealResults, setAiAppealResults] = React.useState(null);
+
+  const [aiMetricsData, setAiMetricsData] = React.useState(null);
+  const [aiMetricsLoading, setAiMetricsLoading] = React.useState(false);
+
+  // ─── Promokodlar Statelari ───
+  const [promocodesList, setPromocodesList] = React.useState([]);
+  const [promocodesLoading, setPromocodesLoading] = React.useState(false);
+  const [showCreatePromoModal, setShowCreatePromoModal] = React.useState(false);
+  const [promoCodeText, setPromoCodeText] = React.useState('');
+  const [promoDesc, setPromoDesc] = React.useState('');
+  const [promoType, setPromoType] = React.useState('percent');
+  const [promoValue, setPromoValue] = React.useState('20');
+  const [promoMaxUses, setPromoMaxUses] = React.useState('');
+  const [promoValidUntil, setPromoValidUntil] = React.useState('');
+  const [promoCreating, setPromoCreating] = React.useState(false);
+
+  // ─── Tizim Holati & DevOps Statelari ───
+  const [systemHealthData, setSystemHealthData] = React.useState(null);
+  const [systemHealthLoading, setSystemHealthLoading] = React.useState(false);
+  const [purgeCacheLoading, setPurgeCacheLoading] = React.useState(false);
+  const [systemConfigData, setSystemConfigData] = React.useState(null);
+  const [systemConfigLoading, setSystemConfigLoading] = React.useState(false);
+  const [systemConfigSaving, setSystemConfigSaving] = React.useState(false);
+
   // "Hozir onlayn" sanog'i — Boshqaruv panelidagi karta uchun. `useApiData`
   // ishlatilmaydi: unda poll yo'q, bu ko'rsatkich esa doim yangi bo'lishi
   // kerak. ManagerDashboard'dagi bilan bir xil naqsh — interval faqat tab
@@ -2543,9 +2600,12 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'olympiads', icon: 'trophy', label: 'Olimpiadalar' },
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCenterReqs.length || undefined },
     { key: 'subjects', icon: 'book', label: 'Fanlar' },
+    { key: 'ai_studio', icon: 'sparkles', label: 'AI Studio' },
+    { key: 'promocodes', icon: 'tag', label: 'Promokodlar' },
     { key: 'analytics', icon: 'chart', label: 'Tahlil' },
     { key: 'logs', icon: 'shield', label: 'Amallar tarixi' },
     { key: 'security', icon: 'lock', label: 'Xavfsizlik' },
+    { key: 'system_health', icon: 'activity', label: 'Tizim Holati' },
     { key: 'settings', icon: 'settings', label: 'Sozlamalar' },
     { key: 'support', icon: 'sparkles', label: 'AI Support' },
   ];
@@ -7286,18 +7346,84 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     );
   };
 
+  // ─── Olimpiada & Baholash Nazorati Handlerlari ───
+  const handleToggleFreeze = (olympiad) => {
+    OlympyApi.toggleAdminOlympiadFreeze(olympiad.id, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Muzlatish holati o‘zgartirildi');
+        if (apiOlympiadsRes) apiOlympiadsRes.reload();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Muzlatish holatini o‘zgartirib bo‘lmadi'), 'error'));
+  };
+
+  const handleRunRegrade = (olympiadId) => {
+    setRegradeLoading(true);
+    OlympyApi.batchRegradeAdminOlympiad(olympiadId, OlympyApi.getToken())
+      .then(res => {
+        setRegradeResults(res);
+        showToast(res?.message || 'Ballar muvaffaqiyatli qayta hisoblandi');
+        if (apiOlympiadsRes) apiOlympiadsRes.reload();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Qayta hisoblab bo‘lmadi'), 'error'))
+      .finally(() => setRegradeLoading(false));
+  };
+
+  const handleOpenAnalytics = (olympiad) => {
+    setOlympiadAnalyticsModal(olympiad);
+    setOlympiadAnalyticsLoading(true);
+    setOlympiadAnalyticsData(null);
+    OlympyApi.getAdminOlympiadQuestionAnalytics(olympiad.id, OlympyApi.getToken())
+      .then(res => setOlympiadAnalyticsData(res))
+      .catch(err => showToast(toUserMessage(err, 'Savollar tahlilini yuklab bo‘lmadi'), 'error'))
+      .finally(() => setOlympiadAnalyticsLoading(false));
+  };
+
+  const handleOpenCertificates = (olympiad) => {
+    setOlympiadCertificatesModal(olympiad);
+    setOlympiadCertificatesLoading(true);
+    setOlympiadCertificatesData(null);
+    OlympyApi.getAdminOlympiadCertificates(olympiad.id, OlympyApi.getToken())
+      .then(res => setOlympiadCertificatesData(res))
+      .catch(err => showToast(toUserMessage(err, 'Sertifikatlar ro‘yxatini yuklab bo‘lmadi'), 'error'))
+      .finally(() => setOlympiadCertificatesLoading(false));
+  };
+
+  const handleChangeCertificateTemplate = (olympiadId, template) => {
+    setOlympiadTemplateSaving(true);
+    OlympyApi.setAdminOlympiadCertificateTemplate(olympiadId, template, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Shablon saqlandi');
+        if (olympiadCertificatesData) {
+          setOlympiadCertificatesData({ ...olympiadCertificatesData, certificate_template: template });
+        }
+      })
+      .catch(err => showToast(toUserMessage(err, 'Shablonni saqlab bo‘lmadi'), 'error'))
+      .finally(() => setOlympiadTemplateSaving(false));
+  };
+
   const renderOlympiads = () => (
     <div className="min-h-[calc(100vh-54px)] space-y-[14px] p-[18px]">
-      <div>
-        <h1 className="text-[20px] font-bold leading-tight text-text-primary">Musobaqalar</h1>
-        <p className="mt-1 text-[11px] font-bold text-text-secondary">Platformadagi olimpiada va musobaqalar ro'yxati.</p>
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-[20px] font-bold leading-tight text-text-primary">Musobaqalar va Baholash Nazorati</h1>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">
+            Platformadagi olimpiadalar, jonli reytingni muzlatish, ballarni qayta hisoblash va psixometrik tahlil.
+          </p>
+        </div>
       </div>
       <section className="overflow-hidden admin-card">
         <div className="overflow-x-auto admin-scroll">
-          <table className="w-full min-w-[860px] text-left">
+          <table className="w-full min-w-[960px] text-left">
             <thead className="admin-table-hdr">
               <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
-                {['Tadbir', 'Tashkilot', 'Fan', 'Daraja', 'Test turi', 'Sana', 'Ishtirokchilar', 'Holat'].map(h => <th key={h} className="px-5 py-3.5">{h}</th>)}
+                <th className="px-5 py-3.5">Tadbir</th>
+                <th className="px-5 py-3.5">Tashkilot</th>
+                <th className="px-5 py-3.5">Fan</th>
+                <th className="px-5 py-3.5">Sana</th>
+                <th className="px-5 py-3.5">Ishtirokchilar</th>
+                <th className="px-5 py-3.5">Reyting Holati</th>
+                <th className="px-5 py-3.5">Holat</th>
+                <th className="px-5 py-3.5 text-right">Boshqaruv & Tahlil</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-edge">
@@ -7310,14 +7436,72 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                   const center = centers.find(c => String(c.id) === String(o.centerId));
                   return (
                     <tr key={o.id} className="text-xs admin-table-row text-text-primary">
-                      <td className="px-5 py-4 font-bold text-text-primary">{o.title}</td>
+                      <td className="px-5 py-4">
+                        <div className="font-bold text-text-primary">{o.title}</div>
+                        <div className="text-[10px] text-text-secondary font-mono">#{o.id}</div>
+                      </td>
                       <td className="px-5 py-4 font-semibold text-text-secondary">{center?.name || '—'}</td>
-                      <td className="px-5 py-4"><span className="rounded-md bg-surface-2 border border-accent/45 px-2 py-0.5 text-[10px] font-bold text-accent">{o.subject}</span></td>
-                      <td className="px-5 py-4">{o.testLevel ? <span className="rounded-md bg-surface-2 border border-accent-2/45 px-2 py-0.5 text-[10px] font-bold text-accent-2">{o.testLevel}</span> : <span className="text-text-secondary">—</span>}</td>
-                      <td className="px-5 py-4">{o.testType ? <span className="rounded-md bg-surface-2 border border-accent-2/45 px-2 py-0.5 text-[10px] font-bold text-accent-2">{testTypeLabel(o.testType)}</span> : <span className="text-text-secondary">—</span>}</td>
+                      <td className="px-5 py-4">
+                        <span className="rounded-md bg-surface-2 border border-accent/45 px-2 py-0.5 text-[10px] font-bold text-accent">
+                          {o.subject}
+                        </span>
+                      </td>
                       <td className="px-5 py-4 font-semibold text-text-secondary">{o.startDate || '—'}</td>
                       <td className="px-5 py-4 font-bold text-text-primary">{o.participants || 0}</td>
+                      <td className="px-5 py-4">
+                        {o.isLeaderboardFrozen ? (
+                          <span className="rounded-md bg-sky-500/15 text-sky-600 border border-sky-500/30 px-2 py-0.5 text-[10px] font-bold inline-flex items-center gap-1">
+                            🧊 Muzlatilgan
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold text-text-secondary">Jonli (Ochiq)</span>
+                        )}
+                      </td>
                       <td className="px-5 py-4"><AdminPill status={o.status} /></td>
+                      <td className="px-5 py-4 text-right">
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            title={o.isLeaderboardFrozen ? "Reyting muzlatishini bekor qilish" : "Reytingni ishtirokchilar uchun muzlatish"}
+                            onClick={() => handleToggleFreeze(o)}
+                            className={`rounded-lg px-2.5 py-1 text-[11px] font-bold transition flex items-center gap-1 ${
+                              o.isLeaderboardFrozen
+                                ? 'bg-sky-500/15 text-sky-600 border border-sky-500/40 hover:bg-sky-500/25'
+                                : 'bg-surface-2 text-text-secondary border border-edge hover:text-text-primary hover:bg-surface-3'
+                            }`}
+                          >
+                            <Icon name="lock" size={11} />
+                            <span>{o.isLeaderboardFrozen ? 'Ochish' : 'Muzlatish'}</span>
+                          </button>
+                          <button
+                            type="button"
+                            title="Savollar tahlili (Qiyinlik va Diskriminatsiya indeksi)"
+                            onClick={() => handleOpenAnalytics(o)}
+                            className="rounded-lg bg-surface-2 text-accent border border-accent/40 px-2.5 py-1 text-[11px] font-bold hover:bg-accent/10 transition flex items-center gap-1"
+                          >
+                            <Icon name="bar-chart-2" size={11} />
+                            <span>Tahlil</span>
+                          </button>
+                          <button
+                            type="button"
+                            title="Diplom va Sertifikatlar taqsimoti"
+                            onClick={() => handleOpenCertificates(o)}
+                            className="rounded-lg bg-surface-2 text-warning border border-warning/40 px-2.5 py-1 text-[11px] font-bold hover:bg-warning/10 transition flex items-center gap-1"
+                          >
+                            <Icon name="award" size={11} />
+                            <span>Diplomlar</span>
+                          </button>
+                          <button
+                            type="button"
+                            title="Ballarni qayta hisoblash (Batch Regrade)"
+                            onClick={() => { setRegradeConfirmModal(o); setRegradeResults(null); }}
+                            className="rounded-lg bg-surface-2 text-text-primary border border-edge px-2.5 py-1 text-[11px] font-bold hover:bg-surface-3 transition flex items-center gap-1"
+                          >
+                            <Icon name="refresh" size={11} />
+                            <span>Regrade</span>
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 });
@@ -7326,6 +7510,230 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </table>
         </div>
       </section>
+
+      {/* 1. Batch Regrading Modali */}
+      <Modal open={!!regradeConfirmModal} onClose={() => !regradeLoading && setRegradeConfirmModal(null)} title="Ballarni Qayta Hisoblash (Batch Regrade)">
+        {regradeConfirmModal && (
+          <div className="space-y-4">
+            <p className="text-xs text-text-secondary leading-relaxed">
+              Olimpiadaning barcha ishtirokchilari javoblari savollar bankidagi joriy to'g'ri variantlarga qarab qayta tekshiriladi va o'rinlar (rank) yangilanadi.
+            </p>
+            <div className="rounded-xl bg-surface-2 p-3 border border-edge text-xs">
+              <strong>Tadbir:</strong> {regradeConfirmModal.title} (#{regradeConfirmModal.id})
+            </div>
+
+            {regradeResults && (
+              <div className="rounded-xl p-3 bg-surface-2 border border-edge text-xs space-y-2">
+                <div className="font-bold text-success">
+                  ✅ {regradeResults.message}
+                </div>
+                {regradeResults.score_changes?.length > 0 && (
+                  <div className="max-h-40 overflow-y-auto admin-scroll divide-y divide-edge rounded-lg border border-edge bg-surface-1">
+                    {regradeResults.score_changes.map((sc, i) => (
+                      <div key={i} className="p-2 flex items-center justify-between text-[11px]">
+                        <span>{sc.user_name}</span>
+                        <span className={`font-bold font-mono ${sc.diff > 0 ? 'text-success' : 'text-error'}`}>
+                          {sc.old_score}% ➔ {sc.new_score}% ({sc.diff > 0 ? `+${sc.diff}` : sc.diff}%)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                disabled={regradeLoading}
+                onClick={() => setRegradeConfirmModal(null)}
+                className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold"
+              >
+                {regradeResults ? 'Yopish' : 'Bekor qilish'}
+              </button>
+              {!regradeResults && (
+                <button
+                  type="button"
+                  disabled={regradeLoading}
+                  onClick={() => handleRunRegrade(regradeConfirmModal.id)}
+                  className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50"
+                >
+                  {regradeLoading ? 'Qayta hisoblanmoqda...' : 'Hisoblashni boshlash'}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* 2. Savollar Psixometrik Tahlili (IRT Analytics) Modali */}
+      <Modal open={!!olympiadAnalyticsModal} onClose={() => setOlympiadAnalyticsModal(null)} title="Savollar Sifati va Qiyinlik Tahlili (IRT / Psychometrics)" width="max-w-4xl">
+        {olympiadAnalyticsModal && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between text-xs">
+              <div>
+                <strong>Tadbir:</strong> {olympiadAnalyticsModal.title}
+              </div>
+              {olympiadAnalyticsData && (
+                <span className="text-text-secondary font-semibold">
+                  Jami ishtirokchilar: {olympiadAnalyticsData.total_participants} ta
+                </span>
+              )}
+            </div>
+
+            {olympiadAnalyticsLoading ? (
+              <div className="p-10 text-center text-xs font-bold text-text-secondary">Tahlil yuklanmoqda...</div>
+            ) : !olympiadAnalyticsData?.questions?.length ? (
+              <div className="p-10 text-center text-xs font-bold text-text-secondary">Savollar bo'yicha tahlil ma'lumotlari topilmadi.</div>
+            ) : (
+              <div className="max-h-[500px] overflow-y-auto admin-scroll space-y-3">
+                {olympiadAnalyticsData.questions.map((q, idx) => (
+                  <div key={q.question_id} className="rounded-2xl border border-edge bg-surface-2 p-4 space-y-2.5 text-xs">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="font-bold text-text-primary flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-surface-3 flex items-center justify-center text-[10px] shrink-0">{idx + 1}</span>
+                        <span>{q.question_text}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="px-2 py-0.5 rounded-full bg-surface-3 font-bold text-[10px] text-text-secondary">
+                          {q.difficulty_label} ({q.facility_index}%)
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full font-bold text-[10px] ${
+                          q.quality_color === 'success' ? 'bg-success/15 text-success' : q.quality_color === 'warning' ? 'bg-warning/15 text-warning' : 'bg-error/15 text-error'
+                        }`}>
+                          D={q.discrimination_index} ({q.quality_label.split(' ')[0]})
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Variantlar taqsimoti */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-edge/60">
+                      {['A', 'B', 'C', 'D'].map((letter, optIdx) => {
+                        const count = q.options_distribution?.[optIdx] || 0;
+                        const isCorrect = optIdx === q.correct_answer;
+                        const pct = q.total_answers > 0 ? Math.round((count / q.total_answers) * 100) : 0;
+                        return (
+                          <div key={letter} className={`p-2 rounded-xl border text-[11px] ${
+                            isCorrect ? 'bg-success/10 border-success/30 text-success' : 'bg-surface-1 border-edge text-text-secondary'
+                          }`}>
+                            <div className="flex items-center justify-between font-bold">
+                              <span>Variant {letter} {isCorrect && '✅'}</span>
+                              <span className="font-mono">{pct}% ({count})</span>
+                            </div>
+                            <div className="text-[10px] truncate mt-0.5 text-text-primary font-medium">
+                              {q.options?.[optIdx] || '—'}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button type="button" onClick={() => setOlympiadAnalyticsModal(null)} className="btn-ghost w-full rounded-xl py-3 text-xs font-bold">
+              Yopish
+            </button>
+          </div>
+        )}
+      </Modal>
+
+      {/* 3. Diplom va Sertifikatlar Modali */}
+      <Modal open={!!olympiadCertificatesModal} onClose={() => setOlympiadCertificatesModal(null)} title="Diplom va Sertifikatlar Boshqaruvi" width="max-w-3xl">
+        {olympiadCertificatesModal && (
+          <div className="space-y-4">
+            {/* Shablon tanlash */}
+            <div className="rounded-2xl border border-edge bg-surface-2 p-3.5 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-bold text-text-primary">Sertifikat Dizayn Shabloni</div>
+                <div className="text-[11px] text-text-secondary mt-0.5">O'quvchilar yuklab oladigan PDF/QR diplom dizayni</div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {['standard', 'modern', 'gold', 'dark'].map(tpl => (
+                  <button
+                    key={tpl}
+                    type="button"
+                    disabled={olympiadTemplateSaving}
+                    onClick={() => handleChangeCertificateTemplate(olympiadCertificatesModal.id, tpl)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold capitalize transition border ${
+                      (olympiadCertificatesData?.certificate_template || 'standard') === tpl
+                        ? 'bg-accent text-on-accent border-accent'
+                        : 'bg-surface-1 text-text-secondary border-edge hover:text-text-primary'
+                    }`}
+                  >
+                    {tpl}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Mukofotlar hisoboti */}
+            {olympiadCertificatesData?.counts && (
+              <div className="grid grid-cols-5 gap-2 text-center text-xs font-bold">
+                <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-500">
+                  <div className="text-[10px]">🥇 Oltin</div>
+                  <div className="text-sm mt-0.5">{olympiadCertificatesData.counts.gold} ta</div>
+                </div>
+                <div className="p-2 rounded-xl bg-slate-300/15 border border-slate-300/30 text-slate-400">
+                  <div className="text-[10px]">🥈 Kumush</div>
+                  <div className="text-sm mt-0.5">{olympiadCertificatesData.counts.silver} ta</div>
+                </div>
+                <div className="p-2 rounded-xl bg-amber-700/10 border border-amber-700/30 text-amber-700">
+                  <div className="text-[10px]">🥉 Bronza</div>
+                  <div className="text-sm mt-0.5">{olympiadCertificatesData.counts.bronze} ta</div>
+                </div>
+                <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-600">
+                  <div className="text-[10px]">📜 Muvaffaqiyat</div>
+                  <div className="text-sm mt-0.5">{olympiadCertificatesData.counts.achievement} ta</div>
+                </div>
+                <div className="p-2 rounded-xl bg-surface-2 border border-edge text-text-secondary">
+                  <div className="text-[10px]">📄 Ishtirokchi</div>
+                  <div className="text-sm mt-0.5">{olympiadCertificatesData.counts.participation} ta</div>
+                </div>
+              </div>
+            )}
+
+            {/* Diplom oluvchilar ro'yxati */}
+            <div className="max-h-72 overflow-y-auto admin-scroll divide-y divide-edge rounded-2xl border border-edge bg-surface-1">
+              {olympiadCertificatesLoading ? (
+                <div className="p-6 text-center text-xs text-text-secondary font-bold">Yuklanmoqda...</div>
+              ) : !olympiadCertificatesData?.results?.length ? (
+                <div className="p-6 text-center text-xs text-text-secondary font-bold">Diplom oluvchilar mavjud emas.</div>
+              ) : (
+                olympiadCertificatesData.results.map(res => (
+                  <div key={res.attempt_id} className="p-3 flex items-center justify-between gap-3 text-xs">
+                    <div>
+                      <div className="font-bold text-text-primary flex items-center gap-2">
+                        <span>{res.full_name}</span>
+                        <span className="text-[10px] text-text-secondary font-mono">({res.phone})</span>
+                      </div>
+                      <div className="text-[11px] text-text-secondary mt-0.5">
+                        {res.award_title} · Ball: <span className="font-bold text-accent">{res.score}%</span> · O'rin: #{res.rank}
+                      </div>
+                    </div>
+                    {res.verify_url && (
+                      <a
+                        href={res.verify_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn-ghost text-[11px] font-bold text-accent px-2.5 py-1 rounded-lg inline-flex items-center gap-1 border border-edge"
+                      >
+                        <Icon name="external-link" size={11} />
+                        QR Tekshiruv
+                      </a>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <button type="button" onClick={() => setOlympiadCertificatesModal(null)} className="btn-ghost w-full rounded-xl py-3 text-xs font-bold">
+              Yopish
+            </button>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 
@@ -7592,16 +8000,887 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     </div>
   );
 
+  // ─── AI Orchestration Studio ───
+  const handleGenerateAiExam = (e) => {
+    e.preventDefault();
+    if (!aiGenTopic.trim()) {
+      showToast('Iltimos, mavzuni kiriting', 'error');
+      return;
+    }
+    setAiGenLoading(true);
+    setAiGenResults(null);
+    OlympyApi.adminGenerateExamQuestions({
+      subject: aiGenSubject,
+      topic: aiGenTopic,
+      difficulty: aiGenDifficulty,
+      count: aiGenCount,
+      language: aiGenLanguage,
+      center_id: aiGenCenterId || undefined,
+      olympiad_id: aiGenOlympiadId || undefined,
+      save_to_bank: aiGenSaveToBank,
+    }, OlympyApi.getToken())
+      .then(res => {
+        setAiGenResults(res);
+        showToast(res?.saved_to_bank ? `${res.saved_count} ta savol generatsiya qilinib bazaga saqlandi!` : `${res.generated_count} ta savol generatsiya qilindi!`);
+      })
+      .catch(err => showToast(toUserMessage(err, 'AI orqali savol generatsiya qilishda xatolik'), 'error'))
+      .finally(() => setAiGenLoading(false));
+  };
+
+  const handleModerateAppeal = (e) => {
+    e.preventDefault();
+    if (!aiAppealQText.trim() || !aiAppealReason.trim()) {
+      showToast('Savol matni va apellyatsiya shikoyatini kiriting', 'error');
+      return;
+    }
+    setAiAppealLoading(true);
+    setAiAppealResults(null);
+    OlympyApi.adminModerateAppeal({
+      question_text: aiAppealQText,
+      options: aiAppealOpts.filter(Boolean),
+      student_answer: aiAppealAnswer,
+      appeal_reason: aiAppealReason,
+    }, OlympyApi.getToken())
+      .then(res => {
+        setAiAppealResults(res?.analysis);
+        showToast('AI hakamlik xulosasi tayyor!');
+      })
+      .catch(err => showToast(toUserMessage(err, 'AI tahlilda xatolik'), 'error'))
+      .finally(() => setAiAppealLoading(false));
+  };
+
+  const handleLoadAiMetrics = () => {
+    setAiMetricsLoading(true);
+    OlympyApi.getAdminAiUsageMetrics(OlympyApi.getToken())
+      .then(res => setAiMetricsData(res))
+      .catch(err => showToast(toUserMessage(err, 'Metriklarni yuklab bo‘lmadi'), 'error'))
+      .finally(() => setAiMetricsLoading(false));
+  };
+
+  const renderAiStudio = () => (
+    <div className="min-h-[calc(100vh-54px)] space-y-4 p-[18px]">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-[20px] font-bold leading-tight text-text-primary flex items-center gap-2">
+            <span>AI Orchestration Studio</span>
+            <span className="px-2 py-0.5 rounded-full bg-accent/15 text-accent text-[10px] font-bold uppercase">Gemini 2.5</span>
+          </h1>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">
+            Sun'iy intellekt orqali test savollarini avtomatik generatsiya qilish, apellyatsiyalarni moderatsiya qilish va xarajatlarni nazorat qilish.
+          </p>
+        </div>
+      </div>
+
+      {/* Tab navigatsiyasi */}
+      <div className="flex border-b border-edge gap-1">
+        {[
+          { key: 'generator', icon: 'sparkles', label: '1. AI Test Generatori' },
+          { key: 'appeal', icon: 'shield', label: '2. AI Apellyatsiya Moderatori' },
+          { key: 'metrics', icon: 'chart', label: '3. LLM Token & Xarajatlar' },
+        ].map(t => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => {
+              setAiStudioTab(t.key);
+              if (t.key === 'metrics' && !aiMetricsData) handleLoadAiMetrics();
+            }}
+            className={`px-4 py-2.5 text-xs font-bold transition flex items-center gap-2 border-b-2 ${
+              aiStudioTab === t.key
+                ? 'border-accent text-accent'
+                : 'border-transparent text-text-secondary hover:text-text-primary'
+            }`}
+          >
+            <Icon name={t.icon} size={13} />
+            <span>{t.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* 1-TAB: AI TEST GENERATORI */}
+      {aiStudioTab === 'generator' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <section className="admin-card p-5 space-y-4 lg:col-span-1">
+            <div className="text-xs font-bold uppercase tracking-wider text-text-secondary">Generatsiya Parametrlari</div>
+            <form onSubmit={handleGenerateAiExam} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-text-secondary">Fan:</label>
+                <input
+                  type="text"
+                  required
+                  value={aiGenSubject}
+                  onChange={e => setAiGenSubject(e.target.value)}
+                  placeholder="Masalan: Matematika, Fizika, Kimyo"
+                  className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="font-bold text-text-secondary">Mavzu / Kontekst:</label>
+                <input
+                  type="text"
+                  required
+                  value={aiGenTopic}
+                  onChange={e => setAiGenTopic(e.target.value)}
+                  placeholder="Masalan: Kvadrat tenglamalar, Nyuton qonunlari"
+                  className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="font-bold text-text-secondary">Qiyinlik darajasi:</label>
+                  <select
+                    value={aiGenDifficulty}
+                    onChange={e => setAiGenDifficulty(e.target.value)}
+                    className="mt-1 w-full admin-input h-9 px-2 text-xs rounded-xl"
+                  >
+                    <option value="easy">Oson (Easy)</option>
+                    <option value="medium">O‘rtacha (Medium)</option>
+                    <option value="hard">Qiyin (Hard)</option>
+                    <option value="advanced">Olimpiada (Advanced)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold text-text-secondary">Savollar soni:</label>
+                  <select
+                    value={aiGenCount}
+                    onChange={e => setAiGenCount(Number(e.target.value))}
+                    className="mt-1 w-full admin-input h-9 px-2 text-xs rounded-xl"
+                  >
+                    {[3, 5, 10, 15, 20, 30].map(n => (
+                      <option key={n} value={n}>{n} ta savol</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="font-bold text-text-secondary">Til:</label>
+                <select
+                  value={aiGenLanguage}
+                  onChange={e => setAiGenLanguage(e.target.value)}
+                  className="mt-1 w-full admin-input h-9 px-2 text-xs rounded-xl"
+                >
+                  <option value="uz">O‘zbekcha</option>
+                  <option value="ru">Русский</option>
+                  <option value="en">English</option>
+                </select>
+              </div>
+              <div>
+                <label className="font-bold text-text-secondary">Markazga biriktirish:</label>
+                <select
+                  value={aiGenCenterId}
+                  onChange={e => setAiGenCenterId(e.target.value)}
+                  className="mt-1 w-full admin-input h-9 px-2 text-xs rounded-xl"
+                >
+                  <option value="">(Asosiy tizim markazi)</option>
+                  {approvedCenters.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="pt-1 flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="saveBank"
+                  checked={aiGenSaveToBank}
+                  onChange={e => setAiGenSaveToBank(e.target.checked)}
+                  className="rounded border-edge text-accent focus:ring-accent"
+                />
+                <label htmlFor="saveBank" className="text-xs font-semibold text-text-primary cursor-pointer">
+                  To‘g‘ridan-to‘g‘ri Savollar Bankiga saqlash
+                </label>
+              </div>
+              <button
+                type="submit"
+                disabled={aiGenLoading}
+                className="w-full btn-primary rounded-xl py-3 text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <Icon name="sparkles" size={14} />
+                <span>{aiGenLoading ? 'Gemini AI generatsiya qilmoqda...' : 'AI Savollarni Yaratish'}</span>
+              </button>
+            </form>
+          </section>
+
+          {/* Natijalar ko'rinishi */}
+          <section className="admin-card p-5 space-y-4 lg:col-span-2">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-bold uppercase tracking-wider text-text-secondary">Yaratilgan Savollar Ko‘rinishi (Preview)</div>
+              {aiGenResults && (
+                <span className="text-xs font-bold text-success">
+                  {aiGenResults.generated_count} ta savol muvaffaqiyatli tuzildi
+                </span>
+              )}
+            </div>
+
+            {aiGenLoading ? (
+              <div className="p-16 text-center space-y-3">
+                <div className="w-10 h-10 border-4 border-accent border-t-transparent rounded-full animate-spin mx-auto" />
+                <div className="text-xs font-bold text-text-primary">Gemini AI savollar, variantlar va yechimlarni tuzmoqda...</div>
+                <div className="text-[11px] text-text-secondary">Matematik formulalar LaTeX formatida qayta ishlanmoqda</div>
+              </div>
+            ) : !aiGenResults?.questions?.length ? (
+              <div className="p-16 text-center text-xs text-text-secondary font-semibold">
+                Chap tomondagi parametrlarni kiritib "AI Savollarni Yaratish" tugmasini bosing.
+              </div>
+            ) : (
+              <div className="max-h-[600px] overflow-y-auto admin-scroll space-y-3">
+                {aiGenResults.questions.map((q, idx) => (
+                  <div key={idx} className="p-4 rounded-2xl border border-edge bg-surface-2 space-y-2.5 text-xs">
+                    <div className="font-bold text-text-primary flex items-start gap-2">
+                      <span className="w-5 h-5 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px] shrink-0">{idx + 1}</span>
+                      <span className="whitespace-pre-wrap">{q.text || q.question}</span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1">
+                      {(q.options || []).map((opt, oIdx) => {
+                        const isCorrect = oIdx === q.correct_answer;
+                        return (
+                          <div key={oIdx} className={`p-2 rounded-xl border text-[11px] font-semibold ${
+                            isCorrect ? 'bg-success/10 border-success/30 text-success' : 'bg-surface-1 border-edge text-text-secondary'
+                          }`}>
+                            <span className="font-bold mr-1">{String.fromCharCode(65 + oIdx)})</span>
+                            <span>{opt}</span>
+                            {isCorrect && <span className="ml-1 text-[10px] font-bold">✓ (To‘g‘ri)</span>}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {q.explanation && (
+                      <div className="mt-2 p-2.5 rounded-xl bg-surface-1 border border-edge text-[11px] text-text-secondary">
+                        <strong className="text-accent font-bold">Yechim / Tushuntirish:</strong> {q.explanation}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* 2-TAB: AI APELLYATSIYA MODERATORI */}
+      {aiStudioTab === 'appeal' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <section className="admin-card p-5 space-y-4">
+            <div className="text-xs font-bold uppercase tracking-wider text-text-secondary">Apellyatsiya Matni va Shikoyat</div>
+            <form onSubmit={handleModerateAppeal} className="space-y-3 text-xs">
+              <div>
+                <label className="font-bold text-text-secondary">Savol Matni:</label>
+                <textarea
+                  rows={3}
+                  required
+                  value={aiAppealQText}
+                  onChange={e => setAiAppealQText(e.target.value)}
+                  placeholder="E'tiroz bildirilayotgan savol matnini kiriting..."
+                  className="mt-1 w-full admin-input p-3 text-xs rounded-xl"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {['A', 'B', 'C', 'D'].map((letter, i) => (
+                  <div key={letter}>
+                    <label className="font-bold text-text-secondary">Variant {letter}:</label>
+                    <input
+                      type="text"
+                      value={aiAppealOpts[i] || ''}
+                      onChange={e => {
+                        const copy = [...aiAppealOpts];
+                        copy[i] = e.target.value;
+                        setAiAppealOpts(copy);
+                      }}
+                      placeholder={`Variant ${letter}`}
+                      className="mt-1 w-full admin-input h-8 px-2 text-xs rounded-lg"
+                    />
+                  </div>
+                ))}
+              </div>
+              <div>
+                <label className="font-bold text-text-secondary">O‘quvchi Tanlagan Javob:</label>
+                <input
+                  type="text"
+                  value={aiAppealAnswer}
+                  onChange={e => setAiAppealAnswer(e.target.value)}
+                  placeholder="Masalan: B yoki 12 sm²"
+                  className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl"
+                />
+              </div>
+              <div>
+                <label className="font-bold text-text-secondary">O‘quvchining E'tirozi (Shikoyat Sababi):</label>
+                <textarea
+                  rows={3}
+                  required
+                  value={aiAppealReason}
+                  onChange={e => setAiAppealReason(e.target.value)}
+                  placeholder="O'quvchi nega o'z javobini to'g'ri deb hisoblayapti..."
+                  className="mt-1 w-full admin-input p-3 text-xs rounded-xl"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={aiAppealLoading}
+                className="w-full btn-primary rounded-xl py-3 text-xs font-bold disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                <Icon name="shield" size={14} />
+                <span>{aiAppealLoading ? 'Gemini AI tahlil qilmoqda...' : 'AI Akademik Hakamlik Tahlili'}</span>
+              </button>
+            </form>
+          </section>
+
+          {/* AI Hakamlik Xulosasi */}
+          <section className="admin-card p-5 space-y-4">
+            <div className="text-xs font-bold uppercase tracking-wider text-text-secondary">AI Hakamlik Xulosasi & Tavsiya</div>
+            {aiAppealLoading ? (
+              <div className="p-16 text-center space-y-3">
+                <div className="w-10 h-10 border-4 border-accent border-t-transparent rounded-full animate-spin mx-auto" />
+                <div className="text-xs font-bold text-text-primary">Savol va apellyatsiya ilmiy jihatdan tahlil qilinmoqda...</div>
+              </div>
+            ) : !aiAppealResults ? (
+              <div className="p-16 text-center text-xs text-text-secondary font-semibold">
+                Chap tomondagi ma'lumotlarni to'ldirib "AI Akademik Hakamlik Tahlili" tugmasini bosing.
+              </div>
+            ) : (
+              <div className="space-y-3.5 text-xs">
+                <div className={`p-4 rounded-2xl border ${
+                  aiAppealResults.decision === 'approved'
+                    ? 'bg-success/10 border-success/30 text-success'
+                    : aiAppealResults.decision === 'rejected'
+                    ? 'bg-error/10 border-error/30 text-error'
+                    : 'bg-warning/10 border-warning/30 text-warning'
+                }`}>
+                  <div className="flex items-center gap-2 font-bold text-sm">
+                    <Icon name={aiAppealResults.decision === 'approved' ? 'check-circle' : 'alert-circle'} size={18} />
+                    <span>{aiAppealResults.verdict_title || 'Tahlil Xulosasi'}</span>
+                  </div>
+                  <div className="mt-1 text-xs font-semibold uppercase tracking-wider">
+                    Qaror: {aiAppealResults.decision === 'approved' ? 'Apellyatsiya qanoatlantirilsin' : aiAppealResults.decision === 'rejected' ? 'Shikoyat asossiz (Rad etilsin)' : 'Savolda noaniqlik mavjud'}
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-surface-2 border border-edge space-y-2">
+                  <div className="font-bold text-text-primary">Ilmiy & Akademik Tahlil:</div>
+                  <p className="text-xs text-text-secondary leading-relaxed whitespace-pre-wrap">
+                    {aiAppealResults.scientific_analysis}
+                  </p>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-accent/10 border border-accent/30 space-y-1 text-accent">
+                  <div className="font-bold text-xs flex items-center gap-1.5">
+                    <Icon name="info" size={14} />
+                    <span>Adminga Tavsiya Etilgan Harakat:</span>
+                  </div>
+                  <p className="text-xs font-semibold text-text-primary mt-1">
+                    {aiAppealResults.recommended_action}
+                  </p>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {/* 3-TAB: LLM TOKEN & XARAJATLAR */}
+      {aiStudioTab === 'metrics' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="admin-card p-4 space-y-1">
+              <div className="text-[10px] font-bold text-text-secondary uppercase">Jami AI Savollari</div>
+              <div className="text-2xl font-bold text-text-primary">{aiMetricsData?.total_ai_questions || 0} ta</div>
+              <div className="text-[10px] text-text-secondary">Platformadagi barcha AI testlar</div>
+            </div>
+            <div className="admin-card p-4 space-y-1">
+              <div className="text-[10px] font-bold text-text-secondary uppercase">Taxminiy AI So‘rovlari</div>
+              <div className="text-2xl font-bold text-accent">{aiMetricsData?.estimated_total_api_calls || 0} ta</div>
+              <div className="text-[10px] text-text-secondary">Mashq, test va tahlillar</div>
+            </div>
+            <div className="admin-card p-4 space-y-1">
+              <div className="text-[10px] font-bold text-text-secondary uppercase">Ishlatilgan Tokenlar</div>
+              <div className="text-2xl font-bold text-sky-500">{((aiMetricsData?.estimated_total_tokens || 0) / 1000).toFixed(1)}k</div>
+              <div className="text-[10px] text-text-secondary">Prompt + Completion tokenlar</div>
+            </div>
+            <div className="admin-card p-4 space-y-1">
+              <div className="text-[10px] font-bold text-text-secondary uppercase">Taxminiy Xarajat</div>
+              <div className="text-2xl font-bold text-success">${aiMetricsData?.estimated_cost_usd || 0} USD</div>
+              <div className="text-[10px] text-text-secondary">Gemini Flash narxlari bo‘yicha</div>
+            </div>
+          </div>
+
+          <section className="admin-card p-5 space-y-3">
+            <div className="text-xs font-bold uppercase tracking-wider text-text-secondary">Faol Gemini Modellari</div>
+            <div className="flex flex-wrap gap-2">
+              {(aiMetricsData?.active_models || ['gemini-2.5-flash', 'gemini-2.0-flash']).map(m => (
+                <div key={m} className="px-3 py-1.5 rounded-xl bg-surface-2 border border-edge text-xs font-bold text-text-primary flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-success" />
+                  <span>{m}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+
+  // ─── Promokodlar Handlerlari ───
+  const handleLoadPromocodes = () => {
+    setPromocodesLoading(true);
+    OlympyApi.getAdminPromocodes(OlympyApi.getToken())
+      .then(res => setPromocodesList(res?.promocodes || []))
+      .catch(err => showToast(toUserMessage(err, 'Promokodlarni yuklab bo‘lmadi'), 'error'))
+      .finally(() => setPromocodesLoading(false));
+  };
+
+  const handleCreatePromocode = (e) => {
+    e.preventDefault();
+    if (!promoCodeText.trim()) return;
+    setPromoCreating(true);
+    OlympyApi.createAdminPromocode({
+      code: promoCodeText.trim().toUpperCase(),
+      description: promoDesc.trim(),
+      discount_type: promoType,
+      discount_value: promoValue,
+      max_uses: promoMaxUses ? Number(promoMaxUses) : null,
+      valid_until: promoValidUntil ? new Date(promoValidUntil).toISOString() : null,
+    }, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Promokod yaratildi');
+        setShowCreatePromoModal(false);
+        setPromoCodeText('');
+        setPromoDesc('');
+        setPromoValue('20');
+        setPromoMaxUses('');
+        setPromoValidUntil('');
+        handleLoadPromocodes();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Promokod yaratishda xatolik'), 'error'))
+      .finally(() => setPromoCreating(false));
+  };
+
+  const handleTogglePromo = (promoId) => {
+    OlympyApi.toggleAdminPromocode(promoId, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Promokod holati o‘zgardi');
+        handleLoadPromocodes();
+      })
+      .catch(err => showToast(toUserMessage(err, 'O‘zgartirib bo‘lmadi'), 'error'));
+  };
+
+  const handleDeletePromo = (promoId) => {
+    if (!window.confirm('Haqiqatan ham bu promokodni o‘chirmoqchimisiz?')) return;
+    OlympyApi.deleteAdminPromocode(promoId, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Promokod o‘chirildi');
+        handleLoadPromocodes();
+      })
+      .catch(err => showToast(toUserMessage(err, 'O‘chirib bo‘lmadi'), 'error'));
+  };
+
+  const renderPromocodes = () => (
+    <div className="min-h-[calc(100vh-54px)] space-y-4 p-[18px]">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-[20px] font-bold leading-tight text-text-primary">Promokodlar va Marketing</h1>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">
+            Chegirmali promokodlar yaratish, foydalanish limitlari va marketing kampaniyalari.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowCreatePromoModal(true)}
+          className="btn-primary px-4 py-2 text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-sm"
+        >
+          <Icon name="plus" size={14} />
+          <span>Yangi Promokod</span>
+        </button>
+      </div>
+
+      <section className="overflow-hidden admin-card">
+        <div className="overflow-x-auto admin-scroll">
+          <table className="w-full min-w-[800px] text-left">
+            <thead className="admin-table-hdr">
+              <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                <th className="px-5 py-3.5">Kod</th>
+                <th className="px-5 py-3.5">Chegirma</th>
+                <th className="px-5 py-3.5">Limit</th>
+                <th className="px-5 py-3.5">Ishlatildi</th>
+                <th className="px-5 py-3.5">Muddat</th>
+                <th className="px-5 py-3.5">Holat</th>
+                <th className="px-5 py-3.5 text-right">Amallar</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-edge">
+              {promocodesList.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="px-5 py-12 text-center text-xs font-semibold text-text-secondary">
+                    {promocodesLoading ? 'Yuklanmoqda...' : 'Hozircha hech qanday promokod yaratilmagan.'}
+                  </td>
+                </tr>
+              ) : (
+                promocodesList.map(p => (
+                  <tr key={p.id} className="text-xs admin-table-row text-text-primary">
+                    <td className="px-5 py-4">
+                      <div className="font-bold text-accent font-mono text-sm">{p.code}</div>
+                      {p.description && <div className="text-[10px] text-text-secondary">{p.description}</div>}
+                    </td>
+                    <td className="px-5 py-4 font-bold">
+                      {p.discount_value}{p.discount_type === 'percent' ? '%' : ' UZS'}
+                    </td>
+                    <td className="px-5 py-4 font-semibold text-text-secondary">
+                      {p.max_uses ? `${p.max_uses} ta` : 'Cheksiz'}
+                    </td>
+                    <td className="px-5 py-4 font-bold text-text-primary">
+                      {p.used_count} ta
+                    </td>
+                    <td className="px-5 py-4 text-text-secondary text-[11px]">
+                      {p.valid_until ? new Date(p.valid_until).toLocaleDateString() : 'Cheksiz'}
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        p.is_active ? 'bg-success/15 text-success' : 'bg-error/15 text-error'
+                      }`}>
+                        {p.is_active ? 'Faol' : 'To‘xtatilgan'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <div className="inline-flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleTogglePromo(p.id)}
+                          className="btn-ghost px-2.5 py-1 rounded-lg text-[11px] font-bold border border-edge"
+                        >
+                          {p.is_active ? 'To‘xtatish' : 'Faollashtirish'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePromo(p.id)}
+                          className="btn-ghost px-2.5 py-1 rounded-lg text-[11px] font-bold text-error border border-error/30 hover:bg-error/10"
+                        >
+                          O‘chirish
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Promokod Yaratish Modali */}
+      <Modal open={showCreatePromoModal} onClose={() => setShowCreatePromoModal(false)} title="Yangi Promokod Yaratish">
+        <form onSubmit={handleCreatePromocode} className="space-y-3 text-xs">
+          <div>
+            <label className="font-bold text-text-secondary">Promokod Kodi (KATTA HARFLARDA):</label>
+            <input
+              type="text"
+              required
+              value={promoCodeText}
+              onChange={e => setPromoCodeText(e.target.value.toUpperCase())}
+              placeholder="Masalan: OLYMPY50"
+              className="mt-1 w-full admin-input h-9 px-3 text-xs font-mono font-bold rounded-xl"
+            />
+          </div>
+          <div>
+            <label className="font-bold text-text-secondary">Tavsif (ixtiyoriy):</label>
+            <input
+              type="text"
+              value={promoDesc}
+              onChange={e => setPromoDesc(e.target.value)}
+              placeholder="Masalan: Navro'z bayrami aksiyasi"
+              className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="font-bold text-text-secondary">Chegirma Turi:</label>
+              <select
+                value={promoType}
+                onChange={e => setPromoType(e.target.value)}
+                className="mt-1 w-full admin-input h-9 px-2 text-xs rounded-xl"
+              >
+                <option value="percent">Foiz (%)</option>
+                <option value="fixed">Qat'iy Summa (UZS)</option>
+              </select>
+            </div>
+            <div>
+              <label className="font-bold text-text-secondary">Chegirma Miqdori:</label>
+              <input
+                type="number"
+                required
+                min="1"
+                value={promoValue}
+                onChange={e => setPromoValue(e.target.value)}
+                className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl font-bold"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="font-bold text-text-secondary">Maksimal Ishlatish Soni:</label>
+              <input
+                type="number"
+                value={promoMaxUses}
+                onChange={e => setPromoMaxUses(e.target.value)}
+                placeholder="Bo'sh bo'lsa cheksiz"
+                className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-text-secondary">Amal Qilish Muddati:</label>
+              <input
+                type="date"
+                value={promoValidUntil}
+                onChange={e => setPromoValidUntil(e.target.value)}
+                className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowCreatePromoModal(false)}
+              className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold"
+            >
+              Bekor qilish
+            </button>
+            <button
+              type="submit"
+              disabled={promoCreating}
+              className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50"
+            >
+              {promoCreating ? 'Yaratilmoqda...' : 'Promokodni Saqlash'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+
+  // ─── Tizim Holati & DevOps Handlerlari ───
+  const handleLoadSystemHealth = () => {
+    setSystemHealthLoading(true);
+    OlympyApi.getAdminSystemHealth(OlympyApi.getToken())
+      .then(res => setSystemHealthData(res))
+      .catch(err => showToast(toUserMessage(err, 'Tizim holatini yuklab bo‘lmadi'), 'error'))
+      .finally(() => setSystemHealthLoading(false));
+
+    setSystemConfigLoading(true);
+    OlympyApi.getAdminSystemConfig(OlympyApi.getToken())
+      .then(res => setSystemConfigData(res?.config))
+      .catch(err => showToast(toUserMessage(err, 'Konfiguratsiyani yuklab bo‘lmadi'), 'error'))
+      .finally(() => setSystemConfigLoading(false));
+  };
+
+  const handlePurgeCache = () => {
+    if (!window.confirm('Barcha Redis va Django keshini tozalashni xohlaysizmi?')) return;
+    setPurgeCacheLoading(true);
+    OlympyApi.purgeAdminSystemCache(OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Kesh tozalandi');
+        handleLoadSystemHealth();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Keshni tozalashda xatolik'), 'error'))
+      .finally(() => setPurgeCacheLoading(false));
+  };
+
+  const handleSaveSystemConfig = (e) => {
+    e.preventDefault();
+    if (!systemConfigData) return;
+    setSystemConfigSaving(true);
+    OlympyApi.updateAdminSystemConfig(systemConfigData, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Konfiguratsiya saqlandi');
+        handleLoadSystemHealth();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Saqlab bo‘lmadi'), 'error'))
+      .finally(() => setSystemConfigSaving(false));
+  };
+
+  const renderSystemHealth = () => (
+    <div className="min-h-[calc(100vh-54px)] space-y-4 p-[18px]">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-[20px] font-bold leading-tight text-text-primary flex items-center gap-2">
+            <span>Tizim Salomatligi va Dynamic Config</span>
+            <span className="w-2.5 h-2.5 rounded-full bg-success animate-pulse" />
+          </h1>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">
+            Server resurslari, ma'lumotlar bazasi, Redis kesh holati va texnik ishlar rejimini boshqarish.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={purgeCacheLoading}
+            onClick={handlePurgeCache}
+            className="btn-ghost px-3.5 py-2 text-xs font-bold rounded-xl border border-warning/40 text-warning hover:bg-warning/10 inline-flex items-center gap-1.5"
+          >
+            <Icon name="trash-2" size={13} />
+            <span>{purgeCacheLoading ? 'Tozalanmoqda...' : 'Keshni Tozalash (Purge Cache)'}</span>
+          </button>
+          <button
+            type="button"
+            onClick={handleLoadSystemHealth}
+            className="btn-primary px-3.5 py-2 text-xs font-bold rounded-xl inline-flex items-center gap-1.5"
+          >
+            <Icon name="refresh" size={13} />
+            <span>Yangilash</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Salomatlik Metriklari */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="admin-card p-4 space-y-1">
+          <div className="text-[10px] font-bold text-text-secondary uppercase">Ma'lumotlar Bazasi</div>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-success" />
+            <span className="text-xl font-bold text-text-primary capitalize">{systemHealthData?.services?.database?.status || 'Healthy'}</span>
+          </div>
+          <div className="text-[10px] text-text-secondary font-mono">
+            Latency: {systemHealthData?.services?.database?.latency_ms || 1.2} ms ({systemHealthData?.services?.database?.engine || 'PostgreSQL'})
+          </div>
+        </div>
+
+        <div className="admin-card p-4 space-y-1">
+          <div className="text-[10px] font-bold text-text-secondary uppercase">Redis & Kesh</div>
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-success" />
+            <span className="text-xl font-bold text-text-primary capitalize">{systemHealthData?.services?.cache?.status || 'Healthy'}</span>
+          </div>
+          <div className="text-[10px] text-text-secondary font-mono">
+            Latency: {systemHealthData?.services?.cache?.latency_ms || 0.8} ms
+          </div>
+        </div>
+
+        <div className="admin-card p-4 space-y-1">
+          <div className="text-[10px] font-bold text-text-secondary uppercase">Bugungi Urinishlar</div>
+          <div className="text-2xl font-bold text-accent">{systemHealthData?.workload?.today_attempts || 0} ta</div>
+          <div className="text-[10px] text-text-secondary">Jami: {systemHealthData?.workload?.total_attempts || 0} ta test</div>
+        </div>
+
+        <div className="admin-card p-4 space-y-1">
+          <div className="text-[10px] font-bold text-text-secondary uppercase">Server Muhiti</div>
+          <div className="text-xl font-bold text-text-primary font-mono">Python {systemHealthData?.environment?.python_version || '3.14'}</div>
+          <div className="text-[10px] text-text-secondary">{systemHealthData?.environment?.server_time || 'Server Time'}</div>
+        </div>
+      </div>
+
+      {/* Dynamic Feature Flags & Maintenance Mode */}
+      <section className="admin-card p-5 space-y-4">
+        <div className="text-xs font-bold uppercase tracking-wider text-text-secondary flex items-center justify-between">
+          <span>Dinamik Sozlamalar & Feature Flags (Zero-downtime)</span>
+          {systemConfigData?.updated_at && (
+            <span className="text-[10px] font-mono text-text-secondary">Oxirgi yangilanish: {new Date(systemConfigData.updated_at).toLocaleString()}</span>
+          )}
+        </div>
+
+        {systemConfigData && (
+          <form onSubmit={handleSaveSystemConfig} className="space-y-4 text-xs">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Maintenance Mode */}
+              <div className={`p-4 rounded-2xl border ${
+                systemConfigData.is_maintenance_mode ? 'bg-error/10 border-error/30' : 'bg-surface-2 border-edge'
+              } space-y-2`}>
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-text-primary">Texnik Ishlar Rejimi (Maintenance Mode)</div>
+                  <input
+                    type="checkbox"
+                    checked={systemConfigData.is_maintenance_mode || false}
+                    onChange={e => setSystemConfigData({ ...systemConfigData, is_maintenance_mode: e.target.checked })}
+                    className="w-4 h-4 rounded border-edge text-error focus:ring-error"
+                  />
+                </div>
+                <p className="text-[11px] text-text-secondary">
+                  Yoqilganda oddiy foydalanuvchilarga "Texnik ishlar ketmoqda" xabari ko'rinadi.
+                </p>
+                {systemConfigData.is_maintenance_mode && (
+                  <textarea
+                    rows={2}
+                    value={systemConfigData.maintenance_message || ''}
+                    onChange={e => setSystemConfigData({ ...systemConfigData, maintenance_message: e.target.value })}
+                    placeholder="Texnik ishlar sababli xabar matni..."
+                    className="w-full admin-input p-2 text-xs rounded-xl mt-1"
+                  />
+                )}
+              </div>
+
+              {/* Ro'yxatdan o'tish ruxsati */}
+              <div className="p-4 rounded-2xl bg-surface-2 border border-edge space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-text-primary">Yangi Foydalanuvchilar Ro‘yxatdan O‘tishi</div>
+                  <input
+                    type="checkbox"
+                    checked={systemConfigData.allow_registrations !== false}
+                    onChange={e => setSystemConfigData({ ...systemConfigData, allow_registrations: e.target.checked })}
+                    className="w-4 h-4 rounded border-edge text-accent focus:ring-accent"
+                  />
+                </div>
+                <p className="text-[11px] text-text-secondary">
+                  O'chirilganda yangi o'quvchilar ro'yxatdan o'ta olmaydi (masalan, serverga yuklama yuqori bo'lganda).
+                </p>
+              </div>
+
+              {/* Standart AI Modeli */}
+              <div className="p-4 rounded-2xl bg-surface-2 border border-edge space-y-2">
+                <div className="font-bold text-text-primary">Birlamchi AI Modeli (Gemini)</div>
+                <select
+                  value={systemConfigData.default_ai_model || 'gemini-2.5-flash'}
+                  onChange={e => setSystemConfigData({ ...systemConfigData, default_ai_model: e.target.value })}
+                  className="w-full admin-input h-9 px-3 text-xs rounded-xl"
+                >
+                  <option value="gemini-2.5-flash">Gemini 2.5 Flash (Tez & Tejamkor - Tavsiya etiladi)</option>
+                  <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                  <option value="gemini-1.5-pro">Gemini 1.5 Pro (Eng yuqori aniqlik)</option>
+                  <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (Ultra-tez)</option>
+                </select>
+                <p className="text-[11px] text-text-secondary">
+                  Barcha AI mashqlar va savol generatsiyalari uchun birlamchi model.
+                </p>
+              </div>
+
+              {/* Global Proktoring */}
+              <div className="p-4 rounded-2xl bg-surface-2 border border-edge space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="font-bold text-text-primary">Global Webkamera Proktoring Ruxsati</div>
+                  <input
+                    type="checkbox"
+                    checked={systemConfigData.camera_proctoring_global !== false}
+                    onChange={e => setSystemConfigData({ ...systemConfigData, camera_proctoring_global: e.target.checked })}
+                    className="w-4 h-4 rounded border-edge text-accent focus:ring-accent"
+                  />
+                </div>
+                <p className="text-[11px] text-text-secondary">
+                  Butun platforma bo'ylab kamera va yuz monitoringi faoliyatini global nazorat qilish.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={systemConfigSaving}
+              className="btn-primary px-6 py-3 rounded-xl text-xs font-bold disabled:opacity-50"
+            >
+              {systemConfigSaving ? 'Saqlanmoqda...' : 'Sozlamalarni Saqlash'}
+            </button>
+          </form>
+        )}
+      </section>
+    </div>
+  );
+
   const pageRenderers = {
     home: renderHome,
     requests: renderRequests,
     centers: renderCenters,
     users: renderUsers,
+    ai_studio: renderAiStudio,
+    promocodes: renderPromocodes,
+    olympiads: renderOlympiads,
+    subjects: renderSubjects,
     analytics: renderAnalytics,
     logs: renderLogs,
     security: renderSecurity,
-    olympiads: renderOlympiads,
-    subjects: renderSubjects,
+    system_health: renderSystemHealth,
     settings: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} onLogout={onLogout} />,
     support: renderSupport,
     myprofile: () => <ProfilePage user={user} embedded onUserUpdate={onUserUpdate} onLogout={onLogout} />,
