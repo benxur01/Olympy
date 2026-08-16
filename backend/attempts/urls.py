@@ -1,9 +1,12 @@
 from django.urls import path
 
-from . import views, views_essay
+from . import views, views_admin_plagiarism, views_essay
 
 # Mounted under /api/attempts/
 urlpatterns = [
+    # Admin Plagiarism & Cheating Analysis
+    path('admin/olympiad/<int:olympiad_id>/plagiarism/', views_admin_plagiarism.admin_olympiad_plagiarism_analysis, name='admin-olympiad-plagiarism'),
+
     path('cheating/', views.report_cheating, name='report-cheating'),
     path('cheating/review/', views.review_cheating_case, name='review-cheating-case'),
     path('camera-consent/', views.camera_consent, name='camera-consent'),
