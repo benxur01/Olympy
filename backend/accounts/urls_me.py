@@ -5,6 +5,7 @@ from billing import views as billing_views
 
 from . import export_views
 from . import views
+from . import views_admin_advanced
 from . import views_b2b
 from . import views_me_premium
 from . import views_retention
@@ -203,6 +204,14 @@ urlpatterns = [
          name='admin-shared-ip-accounts'),
     path('admin/security/shared-ip/<str:ip_address>/', views_security.admin_shared_ip_detail,
          name='admin-shared-ip-detail'),
+    # Qurilma bo'yicha ko'p-hisob aniqlash — IP ro'yxatining to'ldiruvchisi
+    # (markaz sinfxonasidagi bitta Wi-Fi yolg'on signal beradi, VPN esa
+    # haqiqiy fitnachini yashiradi). `<str:device_id>` — `TestSession.
+    # last_device_id` qiymati.
+    path('admin/security/shared-device/', views_security.admin_shared_device_accounts,
+         name='admin-shared-device-accounts'),
+    path('admin/security/shared-device/<str:device_id>/', views_security.admin_shared_device_detail,
+         name='admin-shared-device-detail'),
     # Barcha markazlar bo'yicha diskvalifikatsiya/tekshiruv kutayotgan
     # sessiyalar. View `attempts` app'ida (ma'lumot o'sha yerda), lekin URL
     # boshqa admin amallari bilan bir joyda — to'lovlar tarixidagi kabi.
@@ -212,5 +221,27 @@ urlpatterns = [
     path('admin/support/chats/', views_support.admin_support_threads, name='admin-support-chats'),
     path('admin/support/chats/<str:chat_key>/', views_support.admin_support_thread_detail, name='admin-support-chat-detail'),
     path('admin/support/chats/<str:chat_key>/reply/', views_support.admin_support_send_reply, name='admin-support-chat-reply'),
+    # Foydalanuvchi shaxsiy modal xabari (Flash Alert)
+    path('me/flash-alert/', views_admin_advanced.my_flash_alert, name='my-flash-alert'),
+    path('me/flash-alert/<int:alert_id>/read/', views_admin_advanced.my_flash_alert_read, name='my-flash-alert-read'),
+    # Kengaytirilgan Admin imkoniyatlari
+    path('admin/users/<int:user_id>/risk-score/', views_admin_advanced.admin_user_risk_score, name='admin-user-risk-score'),
+    path('admin/security/live-proctoring/', views_admin_advanced.admin_live_proctoring_list, name='admin-live-proctoring-list'),
+    path('admin/security/live-proctoring/<int:session_id>/terminate/', views_admin_advanced.admin_live_proctoring_terminate, name='admin-live-proctoring-terminate'),
+    path('admin/users/<int:user_id>/devices/', views_admin_advanced.admin_user_devices, name='admin-user-devices'),
+    path('admin/security/devices/ban/', views_admin_advanced.admin_ban_device, name='admin-ban-device'),
+    path('admin/security/devices/unban/', views_admin_advanced.admin_unban_device, name='admin-unban-device'),
+    path('admin/users/<int:user_id>/timeline/', views_admin_advanced.admin_user_timeline, name='admin-user-timeline'),
+    path('admin/users/<int:user_id>/heatmap/', views_admin_advanced.admin_user_activity_heatmap, name='admin-user-heatmap'),
+    path('admin/users/<int:user_id>/ai-summary/', views_admin_advanced.admin_user_ai_summary, name='admin-user-ai-summary'),
+    path('admin/users/churn-risk/', views_admin_advanced.admin_churn_risk_users, name='admin-churn-risk-users'),
+    path('admin/users/<int:user_id>/transfer-center/', views_admin_advanced.admin_user_transfer_center, name='admin-user-transfer-center'),
+    path('admin/users/<int:user_id>/set-quota/', views_admin_advanced.admin_user_set_quota, name='admin-user-set-quota'),
+    path('admin/users/<int:user_id>/coin-transactions/', views_admin_advanced.admin_user_coin_transactions, name='admin-user-coin-transactions'),
+    path('admin/billing/transactions/<int:transaction_id>/refund/', views_admin_advanced.admin_payment_refund, name='admin-payment-refund'),
+    path('admin/users/<int:user_id>/flash-alerts/', views_admin_advanced.admin_user_flash_alerts, name='admin-user-flash-alerts'),
+    path('admin/flash-alerts/<int:alert_id>/', views_admin_advanced.admin_delete_flash_alert, name='admin-delete-flash-alert'),
+    path('admin/users/<int:user_id>/send-telegram/', views_admin_advanced.admin_user_send_telegram, name='admin-user-send-telegram'),
+    path('admin/users/bulk-import/', views_admin_advanced.admin_bulk_import_users, name='admin-bulk-import-users'),
 ]
 

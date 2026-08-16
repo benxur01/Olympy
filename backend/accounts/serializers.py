@@ -36,6 +36,7 @@ class UserSerializer(serializers.ModelSerializer):
                   'is_active', 'avatar_url', 'created_at', 'last_seen_at',
                   'streak_count', 'longest_streak', 'last_active_date', 'badges',
                   'coins', 'admin_tags', 'is_exam_blocked', 'exam_blocked_until',
+                  'risk_score', 'custom_practice_quota', 'custom_discount_percent', 'custom_discount_until',
                   'onboarding_completed', 'onboarding_grade',
                   'onboarding_subjects', 'onboarding_goal',
                   'onboarding_center_completed',
@@ -64,6 +65,7 @@ class UserSerializer(serializers.ModelSerializer):
                             'is_active', 'avatar_url', 'created_at', 'last_seen_at',
                             'streak_count', 'longest_streak', 'last_active_date', 'badges',
                             'coins', 'admin_tags', 'is_exam_blocked', 'exam_blocked_until',
+                            'risk_score', 'custom_practice_quota', 'custom_discount_percent', 'custom_discount_until',
                             'onboarding_completed', 'onboarding_grade',
                             'onboarding_subjects', 'onboarding_goal',
                             'onboarding_center_completed',
@@ -206,6 +208,57 @@ class UserSerializer(serializers.ModelSerializer):
                     'centers': [],
                 }
         return roles_detail
+
+
+# `UserSerializer` ga qo'shilmaydigan, FAQAT platforma admini ko'radigan
+# maydonlar. Ro'yxatda ular bo'lmagani uchun admin har bir savolga ("nega
+# bloklangan?", "o'zi o'chirganmi yoki bloklanganmi?") javob topish uchun
+# "Batafsil" oynasini qayta-qayta ochishga majbur edi.
+ADMIN_ONLY_USER_FIELDS = [
+    # Soft-delete belgisi. Busiz o'z hisobini O'CHIRGAN foydalanuvchi
+    # (30 kunlik grace) admin BLOKLAGAN foydalanuvchidan farq qilmasdi:
+    # ikkalasi ham `is_active=False`.
+    'deleted_at',
+    # Telegram bog'lanishining tafsiloti. `telegram_linked` faqat "ha/yo'q"
+    # beradi, support esa aynan qaysi chat/hisob ulanganini so'raydi.
+    'telegram_chat_id', 'telegram_user_id', 'telegram_linked_at',
+    # Blok va imtihon taqiqi sabablari — jadvalda ko'rinsin (avval faqat
+    # `admin_user_detail` javobiga qo'lda qo'shilardi).
+    'block_reason', 'blocked_until', 'exam_block_reason',
+]
+
+
+class AdminUserListSerializer(UserSerializer):
+    """Admin foydalanuvchilar ro'yxati uchun kengaytirilgan `UserSerializer`.
+
+    Bu maydonlarni `UserSerializer` ning O'ZIGA qo'shish MUMKIN EMAS: o'sha
+    serializer markaz egasi/menejeriga qaytariladigan a'zo javoblarida ham
+    ishlatiladi (`centers/views.py`), ya'ni platforma admini yozgan blok
+    sababi, hisobning o'chirilgan sanasi va Telegram identifikatorlari
+    markaz xodimiga sizib ketardi (`accounts/views.py:admin_user_detail`
+    dagi izoh shu qarorni tushuntiradi).
+
+    `risk_tier` — `security_queries.annotate_admin_risk` qo'ygan
+    `risk_tier_score` annotatsiyasidan olinadi. Annotatsiyasiz queryset'da
+    `None` qaytadi: jimgina qimmat hisob-kitobga tushib N+1 yasagandan ko'ra
+    "ma'lumot yo'q" deyish afzal.
+    """
+
+    risk_tier = serializers.SerializerMethodField()
+
+    class Meta(UserSerializer.Meta):
+        fields = UserSerializer.Meta.fields + ADMIN_ONLY_USER_FIELDS + ['risk_tier']
+        # Hammasi read-only: bu serializer faqat OUTPUT uchun (ota-klassdagi
+        # privilege-escalation izohi bu yerga ham tegishli).
+        read_only_fields = (
+            UserSerializer.Meta.read_only_fields + ADMIN_ONLY_USER_FIELDS + ['risk_tier']
+        )
+
+    def get_risk_tier(self, obj):
+        from .security_queries import risk_tier_from_score
+
+        score = getattr(obj, 'risk_tier_score', None)
+        return risk_tier_from_score(score) if score is not None else None
 
 
 class RegisterSerializer(serializers.Serializer):

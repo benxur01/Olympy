@@ -29,6 +29,7 @@ const AUDIT_PAGE_SIZE = 50;
 // qolgan qismi (segment tugmalari, sarlavha, tanlov holati) o'zgarmaydi.
 const SECURITY_SECTIONS = [
   { key: 'shared-ip', label: "Bir xil IP'dan kirish" },
+  { key: 'live-proctoring', label: 'Jonli Proktoring' },
   { key: 'auto-flags', label: 'Avtomatik bayroqlar' },
   { key: 'blocked-ips', label: "Bloklangan IP'lar" },
   { key: 'cheating', label: 'Firibgarlik holatlari' },
@@ -1330,6 +1331,89 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       : Promise.resolve(null),
     [isApi, detailBackendId],
   );
+
+  // Kengaytirilgan boshqaruv ma'lumotlari (Detail Drawer)
+  const [detailSubTab, setDetailSubTab] = React.useState('overview');
+  const apiUserRiskScoreRes = useApiData(
+    () => (isApi && detailBackendId)
+      ? OlympyApi.getAdminUserRiskScore(detailBackendId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, detailBackendId],
+  );
+  const apiUserTimelineRes = useApiData(
+    () => (isApi && detailBackendId && detailSubTab === 'timeline')
+      ? OlympyApi.getAdminUserTimeline(detailBackendId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, detailBackendId, detailSubTab],
+  );
+  const apiUserHeatmapRes = useApiData(
+    () => (isApi && detailBackendId && detailSubTab === 'analytics')
+      ? OlympyApi.getAdminUserHeatmap(detailBackendId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, detailBackendId, detailSubTab],
+  );
+  const apiUserAiSummaryRes = useApiData(
+    () => (isApi && detailBackendId && detailSubTab === 'analytics')
+      ? OlympyApi.getAdminUserAiSummary(detailBackendId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, detailBackendId, detailSubTab],
+  );
+  const apiUserDevicesRes = useApiData(
+    () => (isApi && detailBackendId && detailSubTab === 'risk')
+      ? OlympyApi.getAdminUserDevices(detailBackendId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, detailBackendId, detailSubTab],
+  );
+  const apiUserCoinTxRes = useApiData(
+    () => (isApi && detailBackendId && detailSubTab === 'coins')
+      ? OlympyApi.getAdminUserCoinTransactions(detailBackendId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, detailBackendId, detailSubTab],
+  );
+  const apiUserFlashAlertsRes = useApiData(
+    () => (isApi && detailBackendId && detailSubTab === 'communication')
+      ? OlympyApi.getAdminUserFlashAlerts(detailBackendId, OlympyApi.getToken())
+      : Promise.resolve(null),
+    [isApi, detailBackendId, detailSubTab],
+  );
+
+  // Jonli proktoring va Churn risk
+  const [liveProctoringKey, setLiveProctoringKey] = React.useState(0);
+  const apiLiveProctoringRes = useApiData(
+    () => isApi ? OlympyApi.getAdminLiveProctoring(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi, liveProctoringKey],
+  );
+  const apiChurnRiskRes = useApiData(
+    () => isApi ? OlympyApi.getAdminChurnRiskUsers(OlympyApi.getToken()) : Promise.resolve(null),
+    [isApi],
+  );
+
+  // Modal statelari
+  const [showBulkImportModal, setShowBulkImportModal] = React.useState(false);
+  const [bulkImportText, setBulkImportText] = React.useState('');
+  const [bulkImportLoading, setBulkImportLoading] = React.useState(false);
+  const [bulkImportResults, setBulkImportResults] = React.useState(null);
+
+  const [showTelegramModal, setShowTelegramModal] = React.useState(false);
+  const [telegramMsgText, setTelegramMsgText] = React.useState('');
+  const [telegramMsgLoading, setTelegramMsgLoading] = React.useState(false);
+
+  const [showFlashAlertModal, setShowFlashAlertModal] = React.useState(false);
+  const [flashAlertTitle, setFlashAlertTitle] = React.useState('');
+  const [flashAlertMsg, setFlashAlertMsg] = React.useState('');
+  const [flashAlertType, setFlashAlertType] = React.useState('info');
+  const [flashAlertLoading, setFlashAlertLoading] = React.useState(false);
+
+  const [showCenterTransferModal, setShowCenterTransferModal] = React.useState(false);
+  const [transferTargetCenterId, setTransferTargetCenterId] = React.useState('');
+  const [transferRole, setTransferRole] = React.useState('student');
+  const [transferLoading, setTransferLoading] = React.useState(false);
+
+  const [showQuotaModal, setShowQuotaModal] = React.useState(false);
+  const [quotaPractice, setQuotaPractice] = React.useState('');
+  const [discountPercent, setDiscountPercent] = React.useState('');
+  const [discountDays, setDiscountDays] = React.useState('');
+  const [quotaLoading, setQuotaLoading] = React.useState(false);
 
   // "Hozir onlayn" sanog'i — Boshqaruv panelidagi karta uchun. `useApiData`
   // ishlatilmaydi: unda poll yo'q, bu ko'rsatkich esa doim yangi bo'lishi
@@ -3126,15 +3210,136 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     </div>
   );
 
-  // "Batafsil" oynasi. Jadval qatoridagi ma'lumot darhol ko'rsatiladi,
-  // backenddan kelgan to'liq profil (yangiroq holat, rollar detali, obuna)
-  // ustidan yoziladi; to'lovlar va kirish tarixi alohida so'rovlar bilan
-  // keladi va profilni kutdirmaydi.
+  // ─── Kengaytirilgan Foydalanuvchi Boshqaruvi Handlerlari ───
+  const handleSendTelegram = (userId) => {
+    if (!telegramMsgText.trim()) {
+      showToast('Xabar matnini kiriting', 'error');
+      return;
+    }
+    setTelegramMsgLoading(true);
+    OlympyApi.sendAdminUserTelegram(userId, telegramMsgText, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Telegram orqali xabar yuborildi');
+        setShowTelegramModal(false);
+        setTelegramMsgText('');
+      })
+      .catch(err => showToast(toUserMessage(err, 'Telegram xabar yuborilmadi'), 'error'))
+      .finally(() => setTelegramMsgLoading(false));
+  };
+
+  const handleCreateFlashAlert = (userId) => {
+    if (!flashAlertTitle.trim() || !flashAlertMsg.trim()) {
+      showToast('Sarlavha va xabar matnini kiriting', 'error');
+      return;
+    }
+    setFlashAlertLoading(true);
+    OlympyApi.createAdminUserFlashAlert(
+      userId,
+      { title: flashAlertTitle, message: flashAlertMsg, alert_type: flashAlertType },
+      OlympyApi.getToken(),
+    )
+      .then(() => {
+        showToast('Shaxsiy modal xabar yuborildi');
+        setShowFlashAlertModal(false);
+        setFlashAlertTitle('');
+        setFlashAlertMsg('');
+        apiUserFlashAlertsRes.reload();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Modal xabar yuborilmadi'), 'error'))
+      .finally(() => setFlashAlertLoading(false));
+  };
+
+  const handleTransferCenter = (userId) => {
+    if (!transferTargetCenterId) {
+      showToast('Markazni tanlang', 'error');
+      return;
+    }
+    setTransferLoading(true);
+    OlympyApi.transferAdminUserCenter(
+      userId,
+      { center_id: transferTargetCenterId, role: transferRole, action: 'transfer' },
+      OlympyApi.getToken(),
+    )
+      .then(res => {
+        showToast(res?.message || 'Markaz biriktirildi');
+        setShowCenterTransferModal(false);
+        apiUserDetailRes.reload();
+        apiUsersRes.reload();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Markazga biriktirib bo‘lmadi'), 'error'))
+      .finally(() => setTransferLoading(false));
+  };
+
+  const handleSaveQuota = (userId) => {
+    setQuotaLoading(true);
+    OlympyApi.setAdminUserQuota(
+      userId,
+      {
+        custom_practice_quota: quotaPractice !== '' ? Number(quotaPractice) : undefined,
+        custom_discount_percent: discountPercent !== '' ? Number(discountPercent) : undefined,
+        discount_days: discountDays !== '' ? Number(discountDays) : undefined,
+      },
+      OlympyApi.getToken(),
+    )
+      .then(res => {
+        showToast(res?.message || 'Imtiyoz va kvotalar saqlandi');
+        setShowQuotaModal(false);
+        apiUserDetailRes.reload();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Saqlab bo‘lmadi'), 'error'))
+      .finally(() => setQuotaLoading(false));
+  };
+
+  const handleRefundPayment = (txId) => {
+    if (!confirm('Haqiqatan ham bu to‘lovni bekor qilib, tegishli premium obunani to‘xtatmoqchimisiz?')) return;
+    OlympyApi.refundAdminPayment(txId, "Admin paneldan to'lov bekor qilindi", OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'To‘lov bekor qilindi');
+        apiUserBillingRes.reload();
+        apiUserDetailRes.reload();
+      })
+      .catch(err => showToast(toUserMessage(err, 'To‘lovni bekor qilib bo‘lmadi'), 'error'));
+  };
+
+  const handleBanDevice = (fingerprintHash, userId) => {
+    OlympyApi.banAdminDevice(
+      { fingerprint_hash: fingerprintHash, user_id: userId, reason: 'Qoidabuzarlik sababli apparat izi bloklandi' },
+      OlympyApi.getToken(),
+    )
+      .then(res => {
+        showToast(res?.message || 'Qurilma bloklandi');
+        apiUserDevicesRes.reload();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Qurilmani bloklab bo‘lmadi'), 'error'));
+  };
+
+  const handleUnbanDevice = (fingerprintHash) => {
+    OlympyApi.unbanAdminDevice({ fingerprint_hash: fingerprintHash }, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Qurilma bloki ochildi');
+        apiUserDevicesRes.reload();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Blokni ochib bo‘lmadi'), 'error'));
+  };
+
+  const handleBulkImportUsers = () => {
+    if (!bulkImportText.trim()) {
+      showToast('CSV yoki ma‘lumot matnini kiriting', 'error');
+      return;
+    }
+    setBulkImportLoading(true);
+    OlympyApi.bulkImportAdminUsers({ csv_text: bulkImportText }, OlympyApi.getToken())
+      .then(res => {
+        setBulkImportResults(res);
+        showToast(`${res?.created_count || 0} ta yangi foydalanuvchi yaratildi`);
+        apiUsersRes.reload();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Importda xatolik yuz berdi'), 'error'))
+      .finally(() => setBulkImportLoading(false));
+  };
+
+  // "Batafsil" oynasi — Kengaytirilgan Sub-tablar bilan
   const renderUserDetailModal = () => {
-    // ID tekshiruvi majburiy: useApiData yangi so'rov ketayotganda eski
-    // data'ni saqlab turadi — busiz ketma-ket ochilgan ikkinchi foydalanuvchi
-    // oynasida bir lahza BIRINCHISINING holati/premiumi ko'rinardi. Shu sabab
-    // tarix endpointlari ham javobda `user_id` qaytaradi.
     const fresh = isApi && apiUserDetailRes.data && apiUserDetailRes.data.id === detailBackendId
       ? OlympyApi.mapBackendUser(apiUserDetailRes.data)
       : null;
@@ -3148,58 +3353,24 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
       planName: fresh?.currentPlanName || detailUser.planName || '',
       center: detailUser.center,
       roles: fresh?.roles || null,
-      // 2FA holati faqat backend profilida keladi (jadval qatorida yo'q) —
-      // "2FA'ni o'chirish" tugmasi shu bayroqqa qarab ko'rsatiladi.
       totpEnabled: !!fresh?.totpEnabled,
-      // Boshqa admin ustidan bajarib bo'lmaydigan amallar (masalan
-      // "sifatida ko'rish") uchun — yangi profil kelgan bo'lsa o'shandan.
       isPlatformAdmin: fresh ? !!fresh.isPlatformAdmin : !!detailUser.isPlatformAdmin,
-      // Blok sababi/muddati `mapBackendUser` dan o'tmaydi: ular faqat shu
-      // admin endpoint javobida bo'ladi (UserSerializer'ga qo'shilmagan).
       blockReason: (isApi && apiUserDetailRes.data?.id === detailBackendId
         ? apiUserDetailRes.data.block_reason : null) || '',
       blockedUntil: (isApi && apiUserDetailRes.data?.id === detailBackendId
         ? apiUserDetailRes.data.blocked_until : null) || null,
+      customPracticeQuota: apiUserDetailRes.data?.custom_practice_quota || 0,
+      customDiscountPercent: apiUserDetailRes.data?.custom_discount_percent || 0,
+      customDiscountUntil: apiUserDetailRes.data?.custom_discount_until || null,
+      riskScore: apiUserDetailRes.data?.risk_score ?? 0,
+      coins: apiUserDetailRes.data?.coins ?? detailUser.coins ?? 0,
     } : null;
+
     const roleEntries = info?.roles ? Object.entries(info.roles) : [];
-    const billing = isApi && apiUserBillingRes.data?.user_id === detailBackendId
-      ? apiUserBillingRes.data
-      : null;
-    const logins = isApi && apiUserLoginsRes.data?.user_id === detailBackendId
-      ? apiUserLoginsRes.data
-      : null;
-    const warnings = isApi && apiUserWarningsRes.data?.user_id === detailBackendId
-      ? apiUserWarningsRes.data
-      : null;
-    const sessions = isApi && apiUserSessionsRes.data?.user_id === detailBackendId
-      ? apiUserSessionsRes.data
-      : null;
-    const content = isApi && apiUserContentRes.data?.user_id === detailBackendId
-      ? apiUserContentRes.data
-      : null;
+    const billing = isApi && apiUserBillingRes.data?.user_id === detailBackendId ? apiUserBillingRes.data : null;
     const txRows = Array.isArray(billing?.transactions) ? billing.transactions : [];
-    const loginRows = Array.isArray(logins?.events) ? logins.events : [];
-    const warningRows = Array.isArray(warnings?.warnings) ? warnings.warnings : [];
-    const sessionRows = Array.isArray(sessions?.sessions) ? sessions.sessions : [];
-    const activeSessionCount = sessionRows.filter(s => s.is_active).length;
-    // Kontent bloklari bitta so'rovdan keladi (savollar, olimpiadalar,
-    // urinishlar) — ro'yxatlar oxirgi 20 tasi bilan cheklangan, `totals` esa
-    // haqiqiy umumiy son (sarlavha yonida ko'rsatiladi).
-    const contentQuestionRows = Array.isArray(content?.questions) ? content.questions : [];
-    const contentOlympiadRows = Array.isArray(content?.olympiads) ? content.olympiads : [];
-    const contentAttemptRows = Array.isArray(content?.attempts) ? content.attempts : [];
-    const contentTotals = content?.totals || {};
-    // `res.loading` yolg'iz yetarli emas: useApiData effekti render'dan KEYIN
-    // ishga tushadi, ya'ni oyna ochilgan birinchi kadrda bayroq hali `false`
-    // va bir lahza "bo'sh" holat ko'rinib qolardi. Javob hali shu
-    // foydalanuvchiniki bo'lmagan holat ham yuklanish deb qaraladi.
     const billingLoading = apiUserBillingRes.loading || (!billing && !apiUserBillingRes.error);
-    const loginsLoading = apiUserLoginsRes.loading || (!logins && !apiUserLoginsRes.error);
-    const warningsLoading = apiUserWarningsRes.loading || (!warnings && !apiUserWarningsRes.error);
-    const sessionsLoading = apiUserSessionsRes.loading || (!sessions && !apiUserSessionsRes.error);
-    const contentLoading = apiUserContentRes.loading || (!content && !apiUserContentRes.error);
-    // Ikkala tarix bloki bir xil holatlarni boshqaradi (API emas / yuklanmoqda
-    // / xato / bo'sh / ro'yxat) — bitta o'ram orqali.
+
     const renderHistorySection = ({ title, note, loading, error, rows, emptyText, renderRow }) => (
       <div>
         <div className="mb-2 flex items-baseline justify-between gap-2">
@@ -3219,571 +3390,630 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
         </div>
       </div>
     );
+
     return (
       <Modal
         open={!!detailUser}
-        onClose={() => setDetailUser(null)}
-        title="Foydalanuvchi ma'lumotlari"
-        width="max-w-2xl"
+        onClose={() => { setDetailUser(null); setDetailSubTab('overview'); }}
+        title="Foydalanuvchi ma'lumotlari va nazorati"
+        width="max-w-3xl"
       >
         {info && (
           <div className="space-y-5">
-            <div className="flex items-center gap-3 rounded-xl bg-surface-2 p-3">
-              <Avatar name={info.name} src={info.avatarUrl} size={44} gradient="bg-pencil-600" />
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-text-primary truncate">{info.name}</div>
-                <div className="text-xs text-text-secondary font-mono">{info.phone || '—'}</div>
+            {/* Asosiy Header kartasi */}
+            <div className="flex items-center gap-3 rounded-2xl bg-surface-2 p-3.5 border border-edge">
+              <Avatar name={info.name} src={info.avatarUrl} size={48} gradient="bg-pencil-600" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-base font-bold text-text-primary truncate">{info.name}</span>
+                  {info.isPremium && (
+                    <span className="rounded-md bg-amber-500/15 text-amber-500 border border-amber-500/30 px-1.5 py-0.5 text-[10px] font-extrabold">
+                      ⭐ VIP
+                    </span>
+                  )}
+                </div>
+                <div className="text-xs text-text-secondary font-mono mt-0.5">{info.phone || '—'}</div>
               </div>
-              {apiUserDetailRes.loading && (
-                <span className="ml-auto text-[10px] font-bold text-text-secondary">Yuklanmoqda...</span>
-              )}
+              <div className="flex items-center gap-2">
+                <AdminPill status={info.isActive ? 'approved' : 'rejected'}>
+                  {info.isActive ? 'Faol' : 'Bloklangan'}
+                </AdminPill>
+                {apiUserDetailRes.loading && (
+                  <span className="text-[10px] font-bold text-text-secondary">Yangilanmoqda...</span>
+                )}
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
+            {/* Sub-tablar menyusi */}
+            <div className="flex flex-wrap gap-1.5 border-b border-edge pb-2">
               {[
-                { label: 'ID', value: detailBackendId ? `#${detailBackendId}` : '—' },
-                { label: "Ro'yxatdan o'tgan", value: formatAdminDate(info.joined) || '—' },
-                { label: 'Tashkilot', value: info.center || '—' },
-                { label: 'Tarif', value: info.planName || '—' },
-              ].map(f => (
-                <div key={f.label} className="rounded-xl bg-surface-2 px-3 py-2.5">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">{f.label}</div>
-                  <div className="mt-1 text-xs font-bold text-text-primary break-words">{f.value}</div>
-                </div>
+                { key: 'overview', label: 'Umumiy', icon: 'user' },
+                { key: 'timeline', label: 'Xronologiya', icon: 'clock' },
+                { key: 'risk', label: 'Xavfsizlik & Qurilmalar', icon: 'shield' },
+                { key: 'analytics', label: 'AI & Heatmap', icon: 'bar-chart-2' },
+                { key: 'center_quota', label: 'Markaz & Kvotalar', icon: 'layers' },
+                { key: 'finance', label: 'Moliya & Tangalar', icon: 'credit-card' },
+                { key: 'communication', label: 'Aloqa & Flash Alert', icon: 'message-square' },
+              ].map(st => (
+                <button
+                  key={st.key}
+                  type="button"
+                  onClick={() => setDetailSubTab(st.key)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                    detailSubTab === st.key
+                      ? 'bg-accent text-on-accent shadow-sm'
+                      : 'bg-surface-2 text-text-secondary hover:text-text-primary hover:bg-surface-3'
+                  }`}
+                >
+                  <Icon name={st.icon} size={12} />
+                  {st.label}
+                </button>
               ))}
             </div>
 
-            <div>
-              <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Rollar</div>
-              <div className="flex flex-wrap gap-2">
-                {roleEntries.length > 0 ? roleEntries.map(([key, val]) => (
-                  <span key={key} className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 border border-accent/45 px-2.5 py-1.5 text-[11px] font-bold text-accent">
-                    {ROLE_META[key]?.label || key}
-                    <AdminPill status={val?.status || 'pending'} />
-                  </span>
-                )) : (
-                  <span className="rounded-lg bg-surface-2 border border-accent/45 px-2.5 py-1.5 text-[11px] font-bold text-accent">
-                    {detailUser?.role || '—'}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <AdminPill status={info.isActive ? 'approved' : 'rejected'}>
-                {info.isActive ? 'Faol' : 'Bloklangan'}
-              </AdminPill>
-              <AdminPill status={info.isPremium ? 'active' : 'draft'}>
-                {info.isPremium ? 'Premium' : 'Premium yo\'q'}
-              </AdminPill>
-              {isApi && apiUserDetailRes.data?.is_exam_blocked && (
-                <span className="rounded-md bg-error/15 text-error border border-error/45 px-2 py-0.5 text-[10px] font-bold">
-                  🚫 Olimpiada taqiqida
-                </span>
-              )}
-            </div>
-
-            {isApi && apiUserDetailRes.data?.risk_score !== undefined && (
-              <div className="rounded-xl border border-edge bg-surface-2 p-3.5 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-text-primary">🛡️ Antifrod va Ishonch Indeksi</span>
-                    <span className={`rounded-md px-2 py-0.5 text-[10px] font-extrabold ${
-                      apiUserDetailRes.data.risk_level === 'low' ? 'bg-success/15 text-success border border-success/45' :
-                      apiUserDetailRes.data.risk_level === 'medium' ? 'bg-warning/15 text-warning border border-warning/45' :
-                      'bg-error/15 text-error border border-error/45'
-                    }`}>
-                      {apiUserDetailRes.data.risk_level === 'low' ? 'Ishonchli hisob' :
-                       apiUserDetailRes.data.risk_level === 'medium' ? "O'rtacha xavf" :
-                       apiUserDetailRes.data.risk_level === 'high' ? 'Yuqori xavf' : 'Kritik xavf'}
-                    </span>
-                  </div>
-                  <div className="text-xs font-extrabold text-text-primary font-mono">
-                    {100 - apiUserDetailRes.data.risk_score}% ishonch ({apiUserDetailRes.data.risk_score}% xavf)
-                  </div>
+            {/* 1. OVERVIEW SUB-TAB */}
+            {detailSubTab === 'overview' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {[
+                    { label: 'ID', value: detailBackendId ? `#${detailBackendId}` : '—' },
+                    { label: "Ro'yxatdan o'tgan", value: formatAdminDate(info.joined) || '—' },
+                    { label: 'Tashkilot', value: info.center || 'Biriktirilmagan' },
+                    { label: 'Tarif', value: info.planName || 'Standart' },
+                  ].map(f => (
+                    <div key={f.label} className="rounded-xl bg-surface-2 px-3 py-2.5 border border-edge">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">{f.label}</div>
+                      <div className="mt-1 text-xs font-bold text-text-primary truncate">{f.value}</div>
+                    </div>
+                  ))}
                 </div>
 
-                <div className="h-2 w-full rounded-full bg-surface-3 overflow-hidden">
-                  <div
-                    className={`h-full transition-all ${
-                      apiUserDetailRes.data.risk_score > 60 ? 'bg-error' :
-                      apiUserDetailRes.data.risk_score > 25 ? 'bg-warning' : 'bg-success'
-                    }`}
-                    style={{ width: `${Math.max(5, apiUserDetailRes.data.risk_score)}%` }}
-                  />
-                </div>
-
-                {apiUserDetailRes.data.risk_factors && apiUserDetailRes.data.risk_factors.length > 0 ? (
-                  <div className="space-y-1 pt-1">
-                    {apiUserDetailRes.data.risk_factors.map((factor, idx) => (
-                      <div key={idx} className="flex items-center gap-1.5 text-[11px] font-medium text-warning">
-                        <Icon name="alert-triangle" size={12} />
-                        <span>{factor}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-[11px] font-medium text-success flex items-center gap-1">
-                    <Icon name="check" size={12} /> Shubhali faoliyat aniqlanmadi
-                  </div>
-                )}
-              </div>
-            )}
-
-            {isApi && apiUserDetailRes.data?.is_exam_blocked && (
-              <div className="rounded-xl border border-error/45 bg-error/10 p-3.5 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-error flex items-center gap-1.5">
-                    🚫 Olimpiadalardan chetlatilgan (Exam Ban)
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleExamUnban(detailUser)}
-                    className="rounded-lg bg-surface-1 border border-error/45 px-2.5 py-1 text-[11px] font-bold text-error hover:bg-error hover:text-white transition"
-                  >
-                    Taqiqni bekor qilish
-                  </button>
-                </div>
-                <div className="text-xs font-semibold text-text-primary">
-                  Sabab: <span className="font-bold">{apiUserDetailRes.data.exam_block_reason || "Ko'rsatilmagan"}</span>
-                </div>
-                <div className="text-[11px] font-semibold text-text-secondary">
-                  Muddat: {apiUserDetailRes.data.exam_blocked_until ? formatAdminDateTime(apiUserDetailRes.data.exam_blocked_until) : 'Doimiy'}
-                </div>
-              </div>
-            )}
-
-            {isApi && apiUserDetailRes.data?.academic_summary && (
-              <div className="rounded-xl border border-edge bg-surface-2 p-3 space-y-2">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
-                  📊 O'quv va Test Natijalari Dinamikasi
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <div className="rounded-lg bg-surface-1 p-2 text-center border border-edge">
-                    <div className="text-[10px] font-semibold text-text-secondary">Topshirgan</div>
-                    <div className="text-sm font-bold text-text-primary mt-0.5">{apiUserDetailRes.data.academic_summary.attempts_count || 0} ta</div>
-                  </div>
-                  <div className="rounded-lg bg-surface-1 p-2 text-center border border-edge">
-                    <div className="text-[10px] font-semibold text-text-secondary">O'rtacha Ball</div>
-                    <div className="text-sm font-bold text-accent mt-0.5">{apiUserDetailRes.data.academic_summary.average_score || 0}%</div>
-                  </div>
-                  <div className="rounded-lg bg-surface-1 p-2 text-center border border-edge">
-                    <div className="text-[10px] font-semibold text-text-secondary">Maksimal Ball</div>
-                    <div className="text-sm font-bold text-success mt-0.5">{apiUserDetailRes.data.academic_summary.max_score || 0}%</div>
-                  </div>
-                  <div className="rounded-lg bg-surface-1 p-2 text-center border border-edge">
-                    <div className="text-[10px] font-semibold text-text-secondary">Streak</div>
-                    <div className="text-sm font-bold text-warning mt-0.5">🔥 {apiUserDetailRes.data.academic_summary.streak_count || 0} kun</div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {isApi && (
-              <div className="rounded-xl border border-edge bg-surface-2 p-3 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
-                    🏷️ Foydalanuvchi Teglari (Admin Tags)
-                  </div>
-                  {tagsBusy && <span className="text-[10px] text-text-secondary font-semibold">Saqlanmoqda...</span>}
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {['vip', 'shubhali', 'yutuqchi', 'kuzatuvda', 'testchi'].map(preset => {
-                    const currentTags = apiUserDetailRes.data?.admin_tags || [];
-                    const isAttached = currentTags.includes(preset);
-                    return (
-                      <button
-                        key={preset}
-                        type="button"
-                        disabled={tagsBusy}
-                        onClick={() => handleToggleTag(detailBackendId, currentTags, preset)}
-                        className={`rounded-lg px-2.5 py-1 text-xs font-bold transition flex items-center gap-1 ${
-                          isAttached
-                            ? 'bg-accent text-on-accent border border-accent'
-                            : 'bg-surface-1 text-text-secondary border border-edge hover:text-text-primary hover:bg-surface-3'
-                        }`}
-                      >
-                        <span>#{preset}</span>
-                        {isAttached ? <Icon name="check" size={11} /> : <Icon name="plus" size={11} />}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="text"
-                    value={newTagInput}
-                    onChange={e => setNewTagInput(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && newTagInput.trim()) {
-                        e.preventDefault();
-                        handleToggleTag(detailBackendId, apiUserDetailRes.data?.admin_tags || [], newTagInput.trim());
-                        setNewTagInput('');
-                      }
-                    }}
-                    placeholder="Yangi teg (#faol, #yordamchi...)"
-                    className="h-8 flex-1 rounded-lg bg-surface-1 border border-edge px-2.5 text-xs text-text-primary outline-none focus:border-accent"
-                  />
-                  <button
-                    type="button"
-                    disabled={tagsBusy || !newTagInput.trim()}
-                    onClick={() => {
-                      handleToggleTag(detailBackendId, apiUserDetailRes.data?.admin_tags || [], newTagInput.trim());
-                      setNewTagInput('');
-                    }}
-                    className="h-8 rounded-lg bg-surface-1 border border-edge px-3 text-xs font-bold text-text-primary hover:bg-surface-3 transition disabled:opacity-50"
-                  >
-                    Qo'shish
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {isApi && (
-              <div className="rounded-xl border border-edge bg-surface-2 p-3 flex items-center justify-between">
                 <div>
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">Tangalar Balansi</div>
-                  <div className="text-base font-extrabold text-warning flex items-center gap-1.5 mt-0.5">
-                    🪙 {apiUserDetailRes.data?.coins ?? detailUser?.coins ?? 0} ta tanga
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCoinsModalUser({ id: detailBackendId, name: info.name });
-                    setCoinsAmount(50);
-                    setCoinsReason('');
-                  }}
-                  className="rounded-lg bg-surface-1 border border-warning/45 px-3 py-1.5 text-xs font-bold text-warning hover:bg-warning hover:text-black transition"
-                >
-                  Tangalarni o'zgartirish (+/-)
-                </button>
-              </div>
-            )}
-
-            {isApi && (
-              <div className="space-y-2">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
-                  📝 Ichki Admin Eslatmalari (CRM Notes)
-                </div>
-                <div className="max-h-44 overflow-y-auto admin-scroll divide-y divide-edge rounded-xl border border-edge bg-surface-1">
-                  {apiUserDetailRes.data?.recent_notes && apiUserDetailRes.data.recent_notes.length > 0 ? (
-                    apiUserDetailRes.data.recent_notes.map(note => (
-                      <div key={note.id} className="p-2.5 flex items-start justify-between gap-2 text-xs">
-                        <div className="min-w-0">
-                          <div className="text-text-primary font-medium break-words">{note.text}</div>
-                          <div className="text-[10px] text-text-secondary font-semibold mt-1">
-                            {note.author_name} · {formatAdminDateTime(note.created_at)}
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          title="Eslatmani o'chirish"
-                          onClick={() => handleDeleteNote(detailBackendId, note.id)}
-                          className="text-text-secondary hover:text-error transition p-1"
-                        >
-                          <Icon name="trash-2" size={13} />
-                        </button>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="px-4 py-4 text-center text-[11px] font-semibold text-text-secondary">
-                      Hozircha admin eslatmalari yo'q
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="text"
-                    value={newNoteText}
-                    onChange={e => setNewNoteText(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' && newNoteText.trim()) {
-                        e.preventDefault();
-                        handleAddNote(detailBackendId);
-                      }
-                    }}
-                    placeholder="Ichki eslatma yozing (faqat adminlar ko'radi)..."
-                    className="h-8 flex-1 rounded-lg bg-surface-1 border border-edge px-2.5 text-xs text-text-primary outline-none focus:border-accent"
-                  />
-                  <button
-                    type="button"
-                    disabled={noteBusy || !newNoteText.trim()}
-                    onClick={() => handleAddNote(detailBackendId)}
-                    className="h-8 rounded-lg bg-accent text-on-accent px-3 text-xs font-bold transition disabled:opacity-50"
-                  >
-                    {noteBusy ? '...' : 'Saqlash'}
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {!info.isActive && info.blockReason && (
-              <div className="rounded-xl border border-error/45 bg-surface-2 px-3.5 py-3">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-error">Bloklash sababi</div>
-                <div className="mt-1 text-xs font-bold text-text-primary break-words">{info.blockReason}</div>
-                <div className="mt-2 text-[11px] font-semibold text-error">
-                  {info.blockedUntil
-                    ? `Ochilish vaqti: ${formatAdminDateTime(info.blockedUntil)}`
-                    : 'Muddat: doimiy (admin qo\'lda ochadi)'}
-                </div>
-              </div>
-            )}
-
-            {renderHistorySection({
-              title: "To'lovlar tarixi",
-              note: billing?.subscription
-                ? `${billing.subscription.plan_name} · ${billing.subscription.days_remaining} kun qoldi`
-                : null,
-              loading: billingLoading,
-              error: apiUserBillingRes.error,
-              rows: txRows,
-              emptyText: "To'lovlar hali yo'q",
-              renderRow: (tx) => {
-                const st = adminPaymentStatus(tx.status);
-                return (
-                  <div key={tx.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                    <div className="min-w-0">
-                      <div className="truncate text-[11px] font-bold text-text-primary">{tx.plan_name}</div>
-                      <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
-                        {formatAdminDateTime(tx.created_at)} · {adminProviderLabel(tx.provider)}
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <div className="text-[11px] font-bold font-data text-text-primary">{formatAdminAmount(tx.amount)}</div>
-                      <div className={`mt-0.5 text-[10px] font-bold ${st.cls}`}>{st.label}</div>
-                    </div>
-                  </div>
-                );
-              },
-            })}
-
-            {renderHistorySection({
-              title: 'Kirish tarixi',
-              loading: loginsLoading,
-              error: apiUserLoginsRes.error,
-              rows: loginRows,
-              emptyText: "Kirish tarixi hali bo'sh — faqat yangi kirishlar yoziladi",
-              renderRow: (event) => (
-                <div key={event.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                  <div className="min-w-0">
-                    <div className="truncate text-[11px] font-bold text-text-primary" title={event.user_agent || ''}>
-                      {adminDeviceLabel(event.user_agent)}
-                    </div>
-                    <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
-                      {formatAdminDateTime(event.created_at)}
-                    </div>
-                  </div>
-                  <div className="shrink-0 font-mono text-[10px] text-text-secondary">{event.ip || '—'}</div>
-                </div>
-              ),
-            })}
-
-            {isApi && (
-              renderHistorySection({
-                title: 'OTP & Xabarnomalar Yetkazilish Jurnali',
-                note: apiUserDetailRes.data?.otp_history ? `${apiUserDetailRes.data.otp_history.length} ta yozuv` : null,
-                loading: apiUserDetailRes.loading,
-                error: null,
-                rows: apiUserDetailRes.data?.otp_history || [],
-                emptyText: "OTP yuborish tarixi yo'q",
-                renderRow: (item) => (
-                  <div key={item.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5 text-xs">
-                    <div className="min-w-0">
-                      <div className="truncate text-[11px] font-bold text-text-primary">
-                        {item.purpose === 'phone_verification' ? 'Telefon tasdiqlash' :
-                         item.purpose === 'password_reset' ? 'Parolni tiklash' :
-                         item.purpose === 'login' ? 'Kirish tasdig\'i' : item.purpose}
-                        {' · '}
-                        <span className="font-mono text-text-secondary">{item.phone_or_email}</span>
-                      </div>
-                      <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
-                        {formatAdminDateTime(item.created_at)} · {item.attempts_count} ta urinish
-                      </div>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
-                        item.is_verified ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning'
-                      }`}>
-                        {item.is_verified ? 'Tasdiqlangan ✓' : 'Kutilmoqda'}
+                  <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-text-secondary">Rollar</div>
+                  <div className="flex flex-wrap gap-2">
+                    {roleEntries.length > 0 ? roleEntries.map(([key, val]) => (
+                      <span key={key} className="inline-flex items-center gap-1.5 rounded-lg bg-surface-2 border border-accent/45 px-2.5 py-1.5 text-[11px] font-bold text-accent">
+                        {ROLE_META[key]?.label || key}
+                        <AdminPill status={val?.status || 'pending'} />
                       </span>
-                    </div>
-                  </div>
-                ),
-              })
-            )}
-
-            {renderHistorySection({
-              title: 'Faol seanslar',
-              note: activeSessionCount > 0 ? `${activeSessionCount} ta faol` : null,
-              loading: sessionsLoading,
-              error: apiUserSessionsRes.error,
-              rows: sessionRows,
-              emptyText: "Yakunlash mumkin bo'lgan seans yo'q",
-              renderRow: (session) => {
-                const busy = sessionLogoutId === session.login_event_id;
-                return (
-                  <div key={session.login_event_id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                    <div className="min-w-0">
-                      <div className="truncate text-[11px] font-bold text-text-primary" title={session.user_agent || ''}>
-                        {adminDeviceLabel(session.user_agent)}
-                      </div>
-                      <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
-                        {formatAdminDateTime(session.created_at)} · <span className="font-mono">{session.ip_address || '—'}</span>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      {session.is_active ? (
-                        <button
-                          onClick={() => handleForceLogoutSession(session.login_event_id)}
-                          disabled={busy}
-                          className="rounded-lg border border-error/45 bg-surface-2 px-2.5 py-1 text-[10px] font-bold text-error transition hover:bg-surface-2 disabled:opacity-50"
-                        >
-                          {busy ? '...' : 'Chiqarish'}
-                        </button>
-                      ) : (
-                        <span className="text-[10px] font-bold text-text-secondary">Tugagan</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              },
-            })}
-
-            {renderHistorySection({
-              title: 'Ogohlantirishlar tarixi',
-              loading: warningsLoading,
-              error: apiUserWarningsRes.error,
-              rows: warningRows,
-              emptyText: "Ogohlantirishlar hali berilmagan",
-              renderRow: (warn) => (
-                <div key={warn.id} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-bold text-text-primary break-words">{warn.reason}</div>
-                    <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
-                      {warn.admin_name} · {formatAdminDateTime(warn.created_at)}
-                    </div>
-                  </div>
-                  <div className={`shrink-0 text-[10px] font-bold ${warn.is_read ? 'text-success' : 'text-warning'}`}>
-                    {warn.is_read ? "O'qilgan" : "O'qilmagan"}
-                  </div>
-                </div>
-              ),
-            })}
-
-            {renderHistorySection({
-              title: 'Yaratgan savollari',
-              note: contentTotals.questions ? `jami ${contentTotals.questions} ta` : null,
-              loading: contentLoading,
-              error: apiUserContentRes.error,
-              rows: contentQuestionRows,
-              emptyText: 'Savol yaratmagan',
-              renderRow: (q) => (
-                <div key={q.id} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-bold text-text-primary break-words">{q.text}</div>
-                    <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
-                      {q.subject} · {q.center_name} · {formatAdminDateTime(q.created_at)}
-                    </div>
-                  </div>
-                  {q.is_active ? (
-                    <button
-                      onClick={() => setContentDeleteConfirm({
-                        type: 'question', id: q.id, label: q.text,
-                      })}
-                      className="shrink-0 rounded-lg border border-error/45 bg-surface-2 px-2.5 py-1.5 text-[10px] font-bold text-error transition hover:bg-surface-2"
-                    >
-                      O'chirish
-                    </button>
-                  ) : (
-                    <span className="shrink-0 text-[10px] font-bold text-text-secondary">Arxivlangan</span>
-                  )}
-                </div>
-              ),
-            })}
-
-            {renderHistorySection({
-              title: 'Yaratgan olimpiadalari',
-              note: contentTotals.olympiads ? `jami ${contentTotals.olympiads} ta` : null,
-              loading: contentLoading,
-              error: apiUserContentRes.error,
-              rows: contentOlympiadRows,
-              emptyText: 'Olimpiada yaratmagan',
-              renderRow: (o) => (
-                <div key={o.id} className="flex items-start justify-between gap-3 px-3.5 py-2.5">
-                  <div className="min-w-0">
-                    <div className="truncate text-[11px] font-bold text-text-primary">{o.title}</div>
-                    <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
-                      {o.subject} · {o.center_name} · {formatAdminDateTime(o.created_at)}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <AdminPill status={o.status} />
-                    {o.is_deleted ? (
-                      <span className="text-[10px] font-bold text-text-secondary">O'chirilgan</span>
-                    ) : o.status === 'active' ? (
-                      <button
-                        type="button"
-                        disabled
-                        title="Faol tadbirni o'chirib bo'lmaydi — avval uni nofaol qiling"
-                        className="cursor-not-allowed rounded-lg border border-edge bg-surface-2 px-2.5 py-1.5 text-[10px] font-bold text-text-secondary"
-                      >
-                        O'chirish
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => setContentDeleteConfirm({
-                          type: 'olympiad', id: o.id, label: o.title,
-                        })}
-                        className="rounded-lg border border-error/45 bg-surface-2 px-2.5 py-1.5 text-[10px] font-bold text-error transition hover:bg-surface-2"
-                      >
-                        O'chirish
-                      </button>
+                    )) : (
+                      <span className="rounded-lg bg-surface-2 border border-accent/45 px-2.5 py-1.5 text-[11px] font-bold text-accent">
+                        {detailUser?.role || '—'}
+                      </span>
                     )}
                   </div>
                 </div>
-              ),
-            })}
 
-            {renderHistorySection({
-              title: 'Test urinishlari',
-              note: contentTotals.attempts ? `jami ${contentTotals.attempts} ta` : null,
-              loading: contentLoading,
-              error: apiUserContentRes.error,
-              rows: contentAttemptRows,
-              emptyText: 'Test topshirmagan',
-              renderRow: (a) => (
-                <div key={a.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
-                  <div className="min-w-0">
-                    <div className="truncate text-[11px] font-bold text-text-primary">{a.olympiad_title}</div>
-                    <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
-                      {formatAdminDateTime(a.submitted_at)}
+                {/* Admin Tags */}
+                {isApi && (
+                  <div className="rounded-xl border border-edge bg-surface-2 p-3 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                        🏷️ Foydalanuvchi Teglari (Admin Tags)
+                      </div>
+                      {tagsBusy && <span className="text-[10px] text-text-secondary font-semibold">Saqlanmoqda...</span>}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {['vip', 'shubhali', 'yutuqchi', 'kuzatuvda', 'iqtidorli'].map(preset => {
+                        const currentTags = apiUserDetailRes.data?.admin_tags || [];
+                        const isAttached = currentTags.includes(preset);
+                        return (
+                          <button
+                            key={preset}
+                            type="button"
+                            disabled={tagsBusy}
+                            onClick={() => handleToggleTag(detailBackendId, currentTags, preset)}
+                            className={`rounded-lg px-2.5 py-1 text-xs font-bold transition flex items-center gap-1 ${
+                              isAttached
+                                ? 'bg-accent text-on-accent border border-accent'
+                                : 'bg-surface-1 text-text-secondary border border-edge hover:text-text-primary hover:bg-surface-3'
+                            }`}
+                          >
+                            <span>#{preset}</span>
+                            {isAttached ? <Icon name="check" size={11} /> : <Icon name="plus" size={11} />}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2.5 shrink-0">
-                    <div className="text-right">
-                      <div className="text-[11px] font-bold font-data text-text-primary">{a.score}%</div>
-                      {a.disqualified && (
-                        <div className="mt-0.5 text-[10px] font-bold text-error">Diskvalifikatsiya</div>
+                )}
+
+                {/* CRM Notes */}
+                {isApi && (
+                  <div className="space-y-2">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                      📝 Ichki Admin Eslatmalari (CRM Notes)
+                    </div>
+                    <div className="max-h-40 overflow-y-auto admin-scroll divide-y divide-edge rounded-xl border border-edge bg-surface-1">
+                      {apiUserDetailRes.data?.recent_notes && apiUserDetailRes.data.recent_notes.length > 0 ? (
+                        apiUserDetailRes.data.recent_notes.map(note => (
+                          <div key={note.id} className="p-2.5 flex items-start justify-between gap-2 text-xs">
+                            <div className="min-w-0">
+                              <div className="text-text-primary font-medium break-words">{note.text}</div>
+                              <div className="text-[10px] text-text-secondary font-semibold mt-1">
+                                {note.author_name} · {formatAdminDateTime(note.created_at)}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              title="Eslatmani o'chirish"
+                              onClick={() => handleDeleteNote(detailBackendId, note.id)}
+                              className="text-text-secondary hover:text-error transition p-1"
+                            >
+                              <Icon name="trash-2" size={13} />
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="px-4 py-4 text-center text-[11px] font-semibold text-text-secondary">
+                          Hozircha admin eslatmalari yo'q
+                        </div>
                       )}
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1">
+                      <input
+                        type="text"
+                        value={newNoteText}
+                        onChange={e => setNewNoteText(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && newNoteText.trim()) {
+                            e.preventDefault();
+                            handleAddNote(detailBackendId);
+                          }
+                        }}
+                        placeholder="Ichki eslatma yozing (faqat adminlar ko'radi)..."
+                        className="h-8 flex-1 rounded-lg bg-surface-1 border border-edge px-2.5 text-xs text-text-primary outline-none focus:border-accent"
+                      />
+                      <button
+                        type="button"
+                        disabled={noteBusy || !newNoteText.trim()}
+                        onClick={() => handleAddNote(detailBackendId)}
+                        className="h-8 rounded-lg bg-accent text-on-accent px-3 text-xs font-bold transition disabled:opacity-50"
+                      >
+                        Qo'shish
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 2. TIMELINE SUB-TAB */}
+            {detailSubTab === 'timeline' && (
+              <div className="space-y-3">
+                <div className="text-xs font-bold text-text-primary flex items-center justify-between">
+                  <span>Foydalanuvchining Hayotiy Sikli (Activity Timeline)</span>
+                  <button
+                    type="button"
+                    onClick={() => apiUserTimelineRes.reload()}
+                    className="text-accent hover:underline text-[11px] font-bold inline-flex items-center gap-1"
+                  >
+                    <Icon name="refresh" size={11} /> Yangilash
+                  </button>
+                </div>
+
+                {apiUserTimelineRes.loading ? (
+                  <div className="p-8 text-center text-xs text-text-secondary font-bold">Timeline yuklanmoqda...</div>
+                ) : !apiUserTimelineRes.data?.results?.length ? (
+                  <div className="p-8 text-center text-xs text-text-secondary font-bold">Faollik xronologiyasi topilmadi</div>
+                ) : (
+                  <div className="relative pl-6 space-y-4 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-edge max-h-96 overflow-y-auto admin-scroll pr-2">
+                    {apiUserTimelineRes.data.results.map((evt, i) => (
+                      <div key={i} className="relative group">
+                        <div className={`absolute -left-6 top-1 w-3.5 h-3.5 rounded-full border-2 border-surface-1 ${
+                          evt.color === 'error' ? 'bg-error' : evt.color === 'success' ? 'bg-success' : evt.color === 'warning' ? 'bg-warning' : 'bg-accent'
+                        }`} />
+                        <div className="rounded-xl border border-edge bg-surface-2 p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-text-primary">{evt.title}</span>
+                            <span className="text-[10px] text-text-secondary font-semibold font-mono">{formatAdminDateTime(evt.timestamp)}</span>
+                          </div>
+                          <p className="text-xs text-text-secondary mt-1">{evt.description}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 3. RISK & DEVICES SUB-TAB */}
+            {detailSubTab === 'risk' && (
+              <div className="space-y-4">
+                {/* Risk Score */}
+                <div className="rounded-2xl border border-edge bg-surface-2 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold uppercase tracking-wider text-text-secondary">Antifrod va Risk Indeksi</div>
+                      <div className="text-sm font-bold text-text-primary mt-0.5">
+                        Xavf darajasi: <span className={info.riskScore > 50 ? 'text-error' : info.riskScore > 20 ? 'text-warning' : 'text-success'}>{info.riskScore}%</span>
+                      </div>
                     </div>
                     <button
                       type="button"
-                      onClick={() => setRetakeConfirm({ userId: detailBackendId, attemptId: a.id, olympiadTitle: a.olympiad_title })}
-                      title="Ushbu urinishni tozalab o'quvchiga qayta topshirish huquqini berish"
-                      className="rounded-lg bg-surface-2 border border-accent/45 px-2 py-1 text-[10px] font-bold text-accent hover:bg-surface-3 transition"
+                      onClick={() => apiUserRiskScoreRes.reload()}
+                      className="btn-ghost px-2.5 py-1 rounded-lg text-[11px] font-bold"
                     >
-                      Qayta topshirish (Retake)
+                      Qayta hisoblash
+                    </button>
+                  </div>
+
+                  <div className="h-2.5 w-full rounded-full bg-surface-3 overflow-hidden">
+                    <div
+                      className={`h-full transition-all ${
+                        info.riskScore > 60 ? 'bg-error' : info.riskScore > 25 ? 'bg-warning' : 'bg-success'
+                      }`}
+                      style={{ width: `${Math.max(4, info.riskScore)}%` }}
+                    />
+                  </div>
+
+                  {apiUserRiskScoreRes.data?.factors?.length > 0 ? (
+                    <div className="space-y-1.5 pt-2 border-t border-edge">
+                      {apiUserRiskScoreRes.data.factors.map((f, i) => (
+                        <div key={i} className="flex items-start gap-2 text-xs p-2 rounded-lg bg-surface-1 border border-edge">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                            f.severity === 'critical' || f.severity === 'high' ? 'bg-error/15 text-error' : 'bg-warning/15 text-warning'
+                          }`}>
+                            +{f.points} ball
+                          </span>
+                          <div>
+                            <div className="font-bold text-text-primary">{f.name}</div>
+                            <div className="text-[11px] text-text-secondary">{f.description}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-xs text-success font-semibold">Hech qanday shubhali xavf omillari aniqlanmadi.</div>
+                  )}
+                </div>
+
+                {/* Device Fingerprints */}
+                <div className="space-y-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                    🖥️ Qurilma Izlari (Device Fingerprints & Hardware Ban)
+                  </div>
+                  <div className="max-h-56 overflow-y-auto admin-scroll divide-y divide-edge rounded-xl border border-edge bg-surface-1">
+                    {!apiUserDevicesRes.data?.results?.length ? (
+                      <div className="p-5 text-center text-xs text-text-secondary">Qurilma izlari topilmadi</div>
+                    ) : (
+                      apiUserDevicesRes.data.results.map(dev => (
+                        <div key={dev.id} className="p-3 flex items-center justify-between gap-3 text-xs">
+                          <div className="min-w-0">
+                            <div className="font-bold text-text-primary flex items-center gap-2">
+                              <span>{dev.browser_name || 'Brauzer'} ({dev.os_name || 'Tizim'})</span>
+                              {dev.is_banned && (
+                                <span className="px-1.5 py-0.5 rounded bg-error/15 text-error text-[10px] font-bold">
+                                  BLOKLANGAN
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-text-secondary font-mono mt-0.5">
+                              IP: {dev.ip_address || '—'} · Hash: {dev.fingerprint_hash.slice(0, 16)}...
+                            </div>
+                          </div>
+                          <div>
+                            {dev.is_banned ? (
+                              <button
+                                type="button"
+                                onClick={() => handleUnbanDevice(dev.fingerprint_hash)}
+                                className="btn-ghost text-xs text-success hover:bg-success/10 px-2.5 py-1 rounded-lg font-bold"
+                              >
+                                Blokdan chiqarish
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleBanDevice(dev.fingerprint_hash, detailBackendId)}
+                                className="btn-ghost text-xs text-error hover:bg-error/10 px-2.5 py-1 rounded-lg font-bold"
+                              >
+                                Qurilmani bloklash
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 4. ANALYTICS & HEATMAP SUB-TAB */}
+            {detailSubTab === 'analytics' && (
+              <div className="space-y-4">
+                {/* AI Summary */}
+                <div className="rounded-2xl border border-edge bg-surface-2 p-4 space-y-2.5">
+                  <div className="flex items-center gap-2 text-xs font-bold text-accent">
+                    <Icon name="sparkles" size={14} />
+                    <span>AI Profil Diagnostikasi (Gemini Insights)</span>
+                  </div>
+
+                  {apiUserAiSummaryRes.loading ? (
+                    <div className="p-4 text-center text-xs text-text-secondary font-semibold">Tahlil hisoblanmoqda...</div>
+                  ) : apiUserAiSummaryRes.data ? (
+                    <div className="space-y-2 text-xs">
+                      <p className="text-text-primary font-medium">{apiUserAiSummaryRes.data.overview}</p>
+                      {apiUserAiSummaryRes.data.strengths?.length > 0 && (
+                        <div className="p-2.5 rounded-xl bg-success/10 border border-success/30">
+                          <div className="font-bold text-success text-[11px]">💪 Kuchli tomonlar:</div>
+                          <ul className="list-disc list-inside text-text-primary text-[11px] mt-1 space-y-0.5">
+                            {apiUserAiSummaryRes.data.strengths.map((s, i) => <li key={i}>{s}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      {apiUserAiSummaryRes.data.recommendations?.length > 0 && (
+                        <div className="p-2.5 rounded-xl bg-accent/10 border border-accent/30">
+                          <div className="font-bold text-accent text-[11px]">💡 Tavsiyalar:</div>
+                          <ul className="list-disc list-inside text-text-primary text-[11px] mt-1 space-y-0.5">
+                            {apiUserAiSummaryRes.data.recommendations.map((r, i) => <li key={i}>{r}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+
+                {/* Heatmap */}
+                <div className="rounded-2xl border border-edge bg-surface-2 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-bold text-text-primary">Faollik Issiqlik Xaritasi (Activity Heatmap - 90 kun)</div>
+                    {apiUserHeatmapRes.data && (
+                      <div className="text-[11px] font-bold text-accent">
+                        Eng faol: {apiUserHeatmapRes.data.peak_day}, soat {apiUserHeatmapRes.data.peak_hour}
+                      </div>
+                    )}
+                  </div>
+
+                  {apiUserHeatmapRes.loading ? (
+                    <div className="p-6 text-center text-xs text-text-secondary">Matritsa yuklanmoqda...</div>
+                  ) : apiUserHeatmapRes.data?.matrix ? (
+                    <div className="overflow-x-auto">
+                      <div className="min-w-[480px] space-y-1">
+                        {apiUserHeatmapRes.data.matrix.map((row, dayIdx) => (
+                          <div key={dayIdx} className="flex items-center gap-1">
+                            <span className="w-16 text-[10px] font-bold text-text-secondary truncate">
+                              {apiUserHeatmapRes.data.day_names[dayIdx].slice(0, 3)}
+                            </span>
+                            <div className="flex flex-1 gap-1">
+                              {row.map((val, hourIdx) => {
+                                const level = val === 0 ? 'bg-surface-1' : val < 3 ? 'bg-emerald-500/30' : val < 6 ? 'bg-emerald-500/60' : 'bg-emerald-500';
+                                return (
+                                  <div
+                                    key={hourIdx}
+                                    title={`${apiUserHeatmapRes.data.day_names[dayIdx]} ${hourIdx}:00 - ${val} ta faollik`}
+                                    className={`h-4 flex-1 rounded-sm border border-edge/30 transition hover:scale-125 cursor-pointer ${level}`}
+                                  />
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="flex justify-between text-[9px] text-text-secondary font-mono mt-2 pl-16">
+                        <span>00:00</span>
+                        <span>06:00</span>
+                        <span>12:00</span>
+                        <span>18:00</span>
+                        <span>23:00</span>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            )}
+
+            {/* 5. CENTER & QUOTAS SUB-TAB */}
+            {detailSubTab === 'center_quota' && (
+              <div className="space-y-4">
+                {/* Center Management */}
+                <div className="rounded-2xl border border-edge bg-surface-2 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-text-primary">O'quv Markazi Biriktiruvi</div>
+                      <div className="text-xs text-text-secondary mt-0.5">
+                        Joriy: <span className="font-bold text-accent">{info.center || 'Biriktirilmagan'}</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowCenterTransferModal(true)}
+                      className="btn-primary text-xs px-3 py-1.5 rounded-xl font-bold"
+                    >
+                      Markazga biriktirish / ko'chirish
                     </button>
                   </div>
                 </div>
-              ),
-            })}
 
+                {/* Custom Quota & Discounts */}
+                <div className="rounded-2xl border border-edge bg-surface-2 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-text-primary">Maxsus Kvotalar va Shaxsiy Chegirma</div>
+                      <div className="text-xs text-text-secondary mt-0.5">
+                        AI kvotasi: <span className="font-bold text-accent">+{info.customPracticeQuota} ta</span> · Chegirma: <span className="font-bold text-success">{info.customDiscountPercent}%</span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuotaPractice(String(info.customPracticeQuota || ''));
+                        setDiscountPercent(String(info.customDiscountPercent || ''));
+                        setDiscountDays('30');
+                        setShowQuotaModal(true);
+                      }}
+                      className="btn-ghost text-xs px-3 py-1.5 rounded-xl font-bold border border-edge"
+                    >
+                      O'zgartirish
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 6. FINANCE & COINS SUB-TAB */}
+            {detailSubTab === 'finance' && (
+              <div className="space-y-4">
+                {/* Tangalar Harakati */}
+                <div className="rounded-2xl border border-edge bg-surface-2 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-text-primary">Tangalar Harakati Jurnali (Coin Audit)</div>
+                      <div className="text-sm font-extrabold text-warning mt-0.5">
+                        🪙 {info.coins ?? 0} ta tanga
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCoinsModalUser({ id: detailBackendId, name: info.name });
+                        setCoinsAmount(50);
+                        setCoinsReason('');
+                      }}
+                      className="btn-ghost border border-warning/45 text-warning text-xs px-3 py-1.5 rounded-xl font-bold"
+                    >
+                      Balansni o'zgartirish (+/-)
+                    </button>
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto admin-scroll divide-y divide-edge rounded-xl border border-edge bg-surface-1">
+                    {!apiUserCoinTxRes.data?.results?.length ? (
+                      <div className="p-4 text-center text-xs text-text-secondary">Tangalar harakati yo'q</div>
+                    ) : (
+                      apiUserCoinTxRes.data.results.map(tx => (
+                        <div key={tx.id} className="p-2.5 flex items-center justify-between text-xs">
+                          <div>
+                            <div className="font-bold text-text-primary">{tx.transaction_type_display}</div>
+                            <div className="text-[11px] text-text-secondary">{tx.description || '—'} · {formatAdminDateTime(tx.created_at)}</div>
+                          </div>
+                          <div className={`font-bold font-data ${tx.amount > 0 ? 'text-success' : 'text-error'}`}>
+                            {tx.amount > 0 ? `+${tx.amount}` : tx.amount} tanga
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* To'lovlar Tarixi */}
+                {renderHistorySection({
+                  title: "To'lovlar tarixi",
+                  note: txRows.length > 0 ? `jami ${txRows.length} ta` : null,
+                  loading: billingLoading,
+                  error: apiUserBillingRes.error,
+                  rows: txRows,
+                  emptyText: "To'lovlar tarixi yo'q",
+                  renderRow: (tx) => {
+                    const st = adminPaymentStatus(tx.status);
+                    return (
+                      <div key={tx.id} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-bold text-text-primary">
+                            {formatAdminAmount(tx.amount)} · {ADMIN_PROVIDER_LABEL[tx.provider] || tx.provider}
+                          </div>
+                          <div className="mt-0.5 text-[10px] font-semibold text-text-secondary">
+                            {formatAdminDateTime(tx.created_at)} · #{tx.id}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`text-[10px] font-bold ${st.cls}`}>{st.label}</span>
+                          {tx.status === 'success' && (
+                            <button
+                              type="button"
+                              onClick={() => handleRefundPayment(tx.id)}
+                              className="text-error hover:bg-error/10 px-2 py-0.5 rounded text-[10px] font-bold border border-error/30 transition"
+                            >
+                              Refund
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  },
+                })}
+              </div>
+            )}
+
+            {/* 7. COMMUNICATION & FLASH ALERT SUB-TAB */}
+            {detailSubTab === 'communication' && (
+              <div className="space-y-4">
+                {/* Direct Telegram */}
+                <div className="rounded-2xl border border-edge bg-surface-2 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-text-primary flex items-center gap-2">
+                        <span>Telegram Bot orqali to'g'ridan-to'g'ri xabar</span>
+                        {fresh?.telegram_linked && (
+                          <span className="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-600 text-[10px] font-bold">
+                            Ulangan
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-text-secondary mt-0.5">
+                        Platforma boti nomidan ushbu o'quvchining shaxsiy Telegramiga xabar yuborish.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowTelegramModal(true)}
+                      className="btn-primary text-xs px-3.5 py-2 rounded-xl font-bold flex items-center gap-1.5"
+                    >
+                      <Icon name="send" size={13} />
+                      Xabar yuborish
+                    </button>
+                  </div>
+                </div>
+
+                {/* Flash Modal Alerts */}
+                <div className="rounded-2xl border border-edge bg-surface-2 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-bold text-text-primary">Shaxsiy Modal Ogohlantirishlar (Flash Alerts)</div>
+                      <p className="text-xs text-text-secondary mt-0.5">
+                        Foydalanuvchi keyingi kirishida uning ekranida majburiy ko'rinadigan popup xabar.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowFlashAlertModal(true)}
+                      className="btn-ghost border border-accent text-accent text-xs px-3 py-1.5 rounded-xl font-bold"
+                    >
+                      + Yangi Flash Alert
+                    </button>
+                  </div>
+
+                  <div className="max-h-44 overflow-y-auto admin-scroll divide-y divide-edge rounded-xl border border-edge bg-surface-1">
+                    {!apiUserFlashAlertsRes.data?.results?.length ? (
+                      <div className="p-4 text-center text-xs text-text-secondary">Flash ogohlantirishlar yo'q</div>
+                    ) : (
+                      apiUserFlashAlertsRes.data.results.map(al => (
+                        <div key={al.id} className="p-3 flex items-start justify-between gap-2 text-xs">
+                          <div>
+                            <div className="font-bold text-text-primary flex items-center gap-2">
+                              <span>{al.title}</span>
+                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                al.alert_type === 'urgent' ? 'bg-error/15 text-error' : 'bg-accent/15 text-accent'
+                              }`}>
+                                {al.alert_type}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-text-secondary mt-1">{al.message}</p>
+                            <div className="text-[10px] text-text-secondary font-semibold mt-1">
+                              {al.is_read ? `O'qildi (${formatAdminDateTime(al.read_at)})` : 'Hali o‘qilmadi'} · {formatAdminDateTime(al.created_at)}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Pastki Amal Tugmalari */}
             {isApi && (
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-edge">
                 <button
                   onClick={() => openWarnModal({
                     backendId: detailBackendId, name: info.name, phone: info.phone,
@@ -3848,7 +4078,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
               </div>
             )}
 
-            <button onClick={() => setDetailUser(null)} className="btn-ghost w-full rounded-xl py-3 text-xs font-bold">
+            <button onClick={() => { setDetailUser(null); setDetailSubTab('overview'); }} className="btn-ghost w-full rounded-xl py-3 text-xs font-bold">
               Yopish
             </button>
           </div>
@@ -3881,6 +4111,13 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           </div>
           <button
             type="button"
+            onClick={() => { setShowBulkImportModal(true); setBulkImportResults(null); }}
+            className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 text-white px-3 text-[11px] font-bold shadow-sm transition hover:bg-emerald-700"
+          >
+            <Icon name="upload" size={13} /> Ommaviy Import
+          </button>
+          <button
+            type="button"
             onClick={() => setBroadcastModalOpen(true)}
             className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-accent text-on-accent px-3 text-[11px] font-bold shadow-sm transition hover:opacity-90">
             <Icon name="send" size={13} /> Xabarnoma
@@ -3903,6 +4140,7 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
           { key: 'online', label: 'Onlayn', count: onlineCount, dot: 'bg-success' },
           { key: 'today', label: 'Bugun faol', icon: 'zap' },
           { key: 'inactive_7d', label: 'Inaktiv (7k+)', icon: 'clock' },
+          { key: 'churn_risk', label: 'Ketish xavfi (Churn)', count: apiChurnRiskRes.data?.total ?? undefined, icon: 'alert-triangle' },
           { key: 'exam_blocked', label: 'Olimpiada taqiqida', count: examBlockedCount, badgeClass: 'text-error' },
           { key: 'blocked', label: 'Bloklanganlar', count: blockedCount, badgeClass: 'text-error' },
           { key: 'high_risk', label: 'Shubhali xavf', count: riskCount, badgeClass: 'text-warning' },
@@ -5222,6 +5460,282 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* Ommaviy Foydalanuvchi Import Modali (Excel/CSV) */}
+      <Modal open={showBulkImportModal} onClose={() => !bulkImportLoading && setShowBulkImportModal(false)} title="Ommaviy Foydalanuvchilarni Import Qilish">
+        <div className="space-y-4">
+          <p className="text-xs text-text-secondary">
+            CSV yoki Excel formatida foydalanuvchilar ro'yxatini kiriting. Har bir qatorda: <code className="font-mono text-accent">Telefon, To'liq Ism, Parol (ixtiyoriy), Rol (ixtiyoriy)</code>
+          </p>
+          <div className="rounded-xl bg-surface-2 p-2.5 text-[11px] font-mono text-text-secondary border border-edge">
+            Misol:<br />
+            +998901234567, Ali Valiyev, parol123, student<br />
+            +998939876543, Gulnoza Karimova, parol123, teacher
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1">CSV / Matn Ma'lumotlari</label>
+            <textarea
+              value={bulkImportText}
+              onChange={e => setBulkImportText(e.target.value)}
+              rows={6}
+              placeholder="+998901234567, Ali Valiyev, parol123, student..."
+              className="w-full admin-input resize-none font-mono text-xs p-3 outline-none"
+            />
+          </div>
+
+          {bulkImportResults && (
+            <div className="rounded-xl p-3 bg-surface-2 border border-edge text-xs space-y-1">
+              <div className="font-bold text-success">
+                ✅ Yaratildi: {bulkImportResults.created_count} ta
+              </div>
+              {bulkImportResults.skipped_count > 0 && (
+                <div className="text-warning">
+                  ⚠️ Mavjud / O'tkazildi: {bulkImportResults.skipped_count} ta
+                </div>
+              )}
+              {bulkImportResults.errors?.length > 0 && (
+                <div className="text-error text-[11px]">
+                  Xatolar: {bulkImportResults.errors.join('; ')}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              disabled={bulkImportLoading}
+              onClick={() => setShowBulkImportModal(false)}
+              className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold"
+            >
+              Yopish
+            </button>
+            <button
+              type="button"
+              disabled={bulkImportLoading || !bulkImportText.trim()}
+              onClick={handleBulkImportUsers}
+              className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50"
+            >
+              {bulkImportLoading ? 'Import qilinmoqda...' : 'Import qilish'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Shaxsiy Telegram Xabar Yuborish Modali */}
+      <Modal open={showTelegramModal} onClose={() => !telegramMsgLoading && setShowTelegramModal(false)} title="Telegram Bot Orqali Shaxsiy Xabar">
+        <div className="space-y-4">
+          <p className="text-xs text-text-secondary">
+            Ushbu xabar platforma boti orqali foydalanuvchining shaxsiy Telegramiga boradi.
+          </p>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1">Xabar Matni</label>
+            <textarea
+              value={telegramMsgText}
+              onChange={e => setTelegramMsgText(e.target.value)}
+              rows={4}
+              placeholder="Foydalanuvchiga yuboriladigan xabar matni..."
+              className="w-full admin-input resize-none text-xs p-3 outline-none"
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              disabled={telegramMsgLoading}
+              onClick={() => setShowTelegramModal(false)}
+              className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold"
+            >
+              Bekor qilish
+            </button>
+            <button
+              type="button"
+              disabled={telegramMsgLoading || !telegramMsgText.trim()}
+              onClick={() => handleSendTelegram(detailBackendId)}
+              className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50"
+            >
+              {telegramMsgLoading ? 'Yuborilmoqda...' : 'Yuborish'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Shaxsiy Flash Modal Alert Yaratish Modali */}
+      <Modal open={showFlashAlertModal} onClose={() => !flashAlertLoading && setShowFlashAlertModal(false)} title="Shaxsiy Modal Xabar (Flash Alert)">
+        <div className="space-y-4">
+          <p className="text-xs text-text-secondary">
+            Foydalanuvchi platformaga kirishi bilanoq uning ekranida ushbu popup modal paydo bo'ladi.
+          </p>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1">Sarlavha</label>
+            <input
+              type="text"
+              value={flashAlertTitle}
+              onChange={e => setFlashAlertTitle(e.target.value)}
+              placeholder="Masalan: Muhim ogohlantirish yoki Tabrik"
+              className="w-full h-9 rounded-xl border border-edge bg-surface-2 px-3 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1">Xabar Turi</label>
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { id: 'info', label: 'Ma‘lumot' },
+                { id: 'warning', label: 'Ogohlik' },
+                { id: 'urgent', label: 'Shoshilinch' },
+                { id: 'success', label: 'Yutuq' },
+              ].map(t => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setFlashAlertType(t.id)}
+                  className={`rounded-xl border p-2 text-center text-xs font-bold transition ${
+                    flashAlertType === t.id
+                      ? 'border-accent bg-accent/15 text-accent'
+                      : 'border-edge bg-surface-2 text-text-secondary hover:text-text-primary'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1">To'liq Xabar Matni</label>
+            <textarea
+              value={flashAlertMsg}
+              onChange={e => setFlashAlertMsg(e.target.value)}
+              rows={4}
+              placeholder="Foydalanuvchiga ko'rsatiladigan to'liq matn..."
+              className="w-full admin-input resize-none text-xs p-3 outline-none"
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              disabled={flashAlertLoading}
+              onClick={() => setShowFlashAlertModal(false)}
+              className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold"
+            >
+              Bekor qilish
+            </button>
+            <button
+              type="button"
+              disabled={flashAlertLoading || !flashAlertTitle.trim() || !flashAlertMsg.trim()}
+              onClick={() => handleCreateFlashAlert(detailBackendId)}
+              className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50"
+            >
+              {flashAlertLoading ? 'Yaratilmoqda...' : 'Yaratish va Yuborish'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Markazga Biriktirish / Ko'chirish Modali */}
+      <Modal open={showCenterTransferModal} onClose={() => !transferLoading && setShowCenterTransferModal(false)} title="O'quv Markaziga Biriktirish / Ko'chirish">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1">Markazni Tanlang</label>
+            <select
+              value={transferTargetCenterId}
+              onChange={e => setTransferTargetCenterId(e.target.value)}
+              className="w-full h-9 rounded-xl border border-edge bg-surface-2 px-3 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+            >
+              <option value="">-- Markazni tanlang --</option>
+              {centers.map(c => (
+                <option key={c.id} value={c.backendId || c.id}>
+                  {c.name} ({c.type || 'Markaz'})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1">Markazdagi Roli</label>
+            <select
+              value={transferRole}
+              onChange={e => setTransferRole(e.target.value)}
+              className="w-full h-9 rounded-xl border border-edge bg-surface-2 px-3 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+            >
+              <option value="student">O'quvchi (Student)</option>
+              <option value="teacher">O'qituvchi (Teacher)</option>
+              <option value="manager">Menejer (Manager)</option>
+            </select>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              disabled={transferLoading}
+              onClick={() => setShowCenterTransferModal(false)}
+              className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold"
+            >
+              Bekor qilish
+            </button>
+            <button
+              type="button"
+              disabled={transferLoading || !transferTargetCenterId}
+              onClick={() => handleTransferCenter(detailBackendId)}
+              className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50"
+            >
+              {transferLoading ? 'Saqlanmoqda...' : 'Biriktirish'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Maxsus Kvota va Chegirma Modali */}
+      <Modal open={showQuotaModal} onClose={() => !quotaLoading && setShowQuotaModal(false)} title="Shaxsiy AI Mashq Kvotasi va Chegirma">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold text-text-secondary mb-1">Qo'shimcha Shaxsiy AI Mashq Kvotasi (ta)</label>
+            <input
+              type="number"
+              value={quotaPractice}
+              onChange={e => setQuotaPractice(e.target.value)}
+              placeholder="Masalan: 50"
+              className="w-full h-9 rounded-xl border border-edge bg-surface-2 px-3 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1">Shaxsiy Chegirma (%)</label>
+              <input
+                type="number"
+                value={discountPercent}
+                onChange={e => setDiscountPercent(e.target.value)}
+                placeholder="Masalan: 20"
+                className="w-full h-9 rounded-xl border border-edge bg-surface-2 px-3 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-text-secondary mb-1">Chegirma Muddati (kun)</label>
+              <input
+                type="number"
+                value={discountDays}
+                onChange={e => setDiscountDays(e.target.value)}
+                placeholder="30"
+                className="w-full h-9 rounded-xl border border-edge bg-surface-2 px-3 text-xs font-semibold text-text-primary outline-none focus:border-accent"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              type="button"
+              disabled={quotaLoading}
+              onClick={() => setShowQuotaModal(false)}
+              className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold"
+            >
+              Bekor qilish
+            </button>
+            <button
+              type="button"
+              disabled={quotaLoading}
+              onClick={() => handleSaveQuota(detailBackendId)}
+              className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50"
+            >
+              {quotaLoading ? 'Saqlanmoqda...' : 'Saqlash'}
+            </button>
+          </div>
+        </div>
       </Modal>
 
       {renderUserDetailModal()}
@@ -6575,8 +7089,162 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     );
   };
 
+  // ─── Jonli Proktoring Monitoringi ───
+  const [terminatingSessionId, setTerminatingSessionId] = React.useState(null);
+  const [terminateReason, setTerminateReason] = React.useState('');
+  const [terminateLoading, setTerminateLoading] = React.useState(false);
+
+  const handleTerminateLiveSession = (sessionId) => {
+    if (!terminateReason.trim()) {
+      showToast('To‘xtatish sababini kiriting', 'error');
+      return;
+    }
+    setTerminateLoading(true);
+    OlympyApi.terminateAdminLiveProctoring(sessionId, terminateReason, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Imtihon to‘xtatildi va diskvalifikatsiya qilindi');
+        setTerminatingSessionId(null);
+        setTerminateReason('');
+        setLiveProctoringKey(k => k + 1);
+      })
+      .catch(err => {
+        showToast(toUserMessage(err, 'Imtihonni to‘xtatib bo‘lmadi'), 'error');
+      })
+      .finally(() => setTerminateLoading(false));
+  };
+
+  const renderLiveProctoringSection = () => {
+    const liveSessions = apiLiveProctoringRes.data?.results || [];
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between gap-3 rounded-2xl bg-surface-1 border border-edge p-4">
+          <div>
+            <div className="text-sm font-bold text-text-primary flex items-center gap-2">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              Jonli Imtihon Monitoringi (Live Proctoring)
+            </div>
+            <p className="text-xs text-text-secondary mt-0.5">
+              Hozirda test topshirayotgan o'quvchilar, ularning qolgan vaqti va anticheat holati.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLiveProctoringKey(k => k + 1)}
+            disabled={apiLiveProctoringRes.loading}
+            className="btn-ghost px-3 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5"
+          >
+            <Icon name="refresh" size={13} className={apiLiveProctoringRes.loading ? 'animate-spin' : ''} />
+            Yangilash
+          </button>
+        </div>
+
+        {apiLiveProctoringRes.loading ? (
+          <div className="rounded-2xl border border-edge bg-surface-1 p-10 text-center text-xs font-bold text-text-secondary">
+            Jonli sessiyalar yuklanmoqda...
+          </div>
+        ) : liveSessions.length === 0 ? (
+          <div className="rounded-2xl border border-edge bg-surface-1 p-10 text-center text-xs font-bold text-text-secondary">
+            Ayni paytda test topshirayotgan faol ishtirokchilar mavjud emas.
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-2xl border border-edge bg-surface-1">
+            <table className="w-full text-left text-xs">
+              <thead className="border-b border-edge bg-surface-2 text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                <tr>
+                  <th className="px-4 py-3">Ishtirokchi</th>
+                  <th className="px-4 py-3">Olimpiada</th>
+                  <th className="px-4 py-3">O'tgan vaqt</th>
+                  <th className="px-4 py-3">Qolgan vaqt</th>
+                  <th className="px-4 py-3">Kamera / Ovoz</th>
+                  <th className="px-4 py-3">Holat</th>
+                  <th className="px-4 py-3 text-right">Amal</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-edge font-medium text-text-primary">
+                {liveSessions.map(s => (
+                  <tr key={s.session_id} className="hover:bg-surface-2/60 transition">
+                    <td className="px-4 py-3.5">
+                      <div className="font-bold text-text-primary">{s.user.full_name}</div>
+                      <div className="text-[11px] text-text-secondary font-mono">{s.user.phone}</div>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="font-semibold text-text-primary">{s.olympiad.title}</div>
+                      <div className="text-[11px] text-text-secondary">{s.olympiad.subject}</div>
+                    </td>
+                    <td className="px-4 py-3.5 font-mono text-[11px]">
+                      {Math.floor(s.elapsed_seconds / 60)} daq {s.elapsed_seconds % 60} son
+                    </td>
+                    <td className="px-4 py-3.5 font-mono text-[11px] text-accent font-bold">
+                      {Math.floor(s.remaining_seconds / 60)} daq {s.remaining_seconds % 60} son
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <div className="flex items-center gap-1.5 text-[11px]">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${s.camera_consent ? 'bg-emerald-500/15 text-emerald-600' : 'bg-surface-2 text-text-secondary'}`}>
+                          📷 {s.camera_consent ? 'ON' : 'OFF'}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${s.microphone_consent ? 'bg-emerald-500/15 text-emerald-600' : 'bg-surface-2 text-text-secondary'}`}>
+                          🎙️ {s.microphone_consent ? 'ON' : 'OFF'}
+                        </span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        s.status === 'pending_review' ? 'bg-amber-500/15 text-amber-600' : 'bg-emerald-500/15 text-emerald-600'
+                      }`}>
+                        {s.status === 'pending_review' ? 'Tekshiruvda' : 'Topshirmoqda'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5 text-right">
+                      {terminatingSessionId === s.session_id ? (
+                        <div className="inline-flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={terminateReason}
+                            onChange={(e) => setTerminateReason(e.target.value)}
+                            placeholder="Sabab (masalan, shpargalka)..."
+                            className="input-text text-xs py-1 px-2.5 w-44 rounded-lg"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleTerminateLiveSession(s.session_id)}
+                            disabled={terminateLoading}
+                            className="btn-danger text-xs px-2.5 py-1 rounded-lg font-bold"
+                          >
+                            {terminateLoading ? '...' : 'To‘xtatish'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => { setTerminatingSessionId(null); setTerminateReason(''); }}
+                            className="btn-ghost text-xs px-2 py-1 rounded-lg"
+                          >
+                            Bekor
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => { setTerminatingSessionId(s.session_id); setTerminateReason("Jonli imtihonda qoidabuzarlik aniqlandi"); }}
+                          className="btn-ghost text-xs text-error hover:bg-error/10 px-2.5 py-1 rounded-lg font-bold inline-flex items-center gap-1"
+                        >
+                          <Icon name="x" size={12} />
+                          To‘xtatish
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const securitySectionRenderers = {
     'shared-ip': renderSharedIpSection,
+    'live-proctoring': renderLiveProctoringSection,
     'auto-flags': renderAutoFlagsSection,
     'blocked-ips': renderBlockedIpsSection,
     cheating: renderCheatingOverviewSection,

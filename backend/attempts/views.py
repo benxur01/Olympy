@@ -2746,11 +2746,27 @@ def session_live_frame(request, session_id):
         if session.user_id != request.user.id:
             return Response({'detail': 'Faqat student o\'z video/ekran oqimini yuborishi mumkin'}, status=http_status.HTTP_403_FORBIDDEN)
 
-        frame = request.data.get('frame')
-        screen_frame = request.data.get('screen_frame')
-        audio_level = request.data.get('audio_level', 0)
-        face_detected = request.data.get('face_detected', True)
-        speech_detected = request.data.get('speech_detected', False)
+        # Rozilik SERVERDA tekshiriladi. Shu paytgacha u faqat frontend
+        # oqimida talab qilinardi — o'zgartirilgan klient yoki UI bug'i uni
+        # chetlab o'tib kamera/mikrofon ma'lumotini yuborishi va u keshga
+        # yozilib admin panelida ko'rinishi mumkin edi. Proktoring YOQILGAN,
+        # lekin rozilik BERILMAGAN kanal ma'lumoti umuman qabul qilinmaydi.
+        #
+        # So'rovning O'ZI rad etilmaydi (403 emas): `app_switched`,
+        # `tab_escapes`, `is_in_background` — kamera/mikrofonga bog'liq
+        # bo'lmagan signallar va ular baribir qayd etilishi kerak.
+        olympiad = session.olympiad
+        camera_allowed = not olympiad.camera_proctoring_enabled or session.camera_consent_given
+        microphone_allowed = not olympiad.voice_proctoring_enabled or session.microphone_consent_given
+
+        # `face_detected`/`speech_detected` aynan shu kanallardan hosil bo'ladi
+        # (rozilik bo'lmasa oqim ham yo'q), shuning uchun ular o'z guruhi bilan
+        # birga bloklanadi va GET dagi bilan bir xil neytral qiymatga tushadi.
+        frame = request.data.get('frame') if camera_allowed else None
+        screen_frame = request.data.get('screen_frame') if camera_allowed else None
+        face_detected = request.data.get('face_detected', True) if camera_allowed else True
+        audio_level = request.data.get('audio_level', 0) if microphone_allowed else 0
+        speech_detected = request.data.get('speech_detected', False) if microphone_allowed else False
         app_switched = bool(request.data.get('app_switched', False))
         tab_escapes = int(request.data.get('tab_escapes', 0))
         is_in_background = bool(request.data.get('is_in_background', False))

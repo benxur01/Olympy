@@ -253,7 +253,30 @@ const App = () => {
   );
   const [endingImpersonation, setEndingImpersonation] = React.useState(false);
 
+  // Shaxsiy Flash Modal Ogohlantirish (User Flash Alert)
+  const [activeFlashAlert, setActiveFlashAlert] = React.useState(null);
+
   const user = apiUser;
+
+  React.useEffect(() => {
+    if (!user) return;
+    const token = globalThis.OlympyApi?.getToken?.() || globalThis.OlympyApi?.loadAuth?.()?.token;
+    if (!token) return;
+    globalThis.OlympyApi?.getMyFlashAlert?.(token)
+      .then(res => {
+        if (res?.alert) {
+          setActiveFlashAlert(res.alert);
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
+  const handleDismissFlashAlert = () => {
+    if (!activeFlashAlert) return;
+    const token = globalThis.OlympyApi?.getToken?.() || globalThis.OlympyApi?.loadAuth?.()?.token;
+    globalThis.OlympyApi?.readMyFlashAlert?.(activeFlashAlert.id, token).catch(() => {});
+    setActiveFlashAlert(null);
+  };
 
   const subscribeUserToPush = async () => {
     try {
@@ -1104,6 +1127,39 @@ const App = () => {
         onNavigate={navigate}
       />
       <AISupportWidget user={user} />
+      {/* Shaxsiy Flash Modal Ogohlantirish (User Flash Alert) */}
+      {activeFlashAlert && (
+        <Modal
+          open={!!activeFlashAlert}
+          onClose={handleDismissFlashAlert}
+          title={activeFlashAlert.title || 'Platforma Bildirishnomasi'}
+          width="max-w-md"
+        >
+          <div className="space-y-4">
+            <div className={`p-4 rounded-2xl border ${
+              activeFlashAlert.alert_type === 'urgent' ? 'bg-error/10 border-error/30 text-error' :
+              activeFlashAlert.alert_type === 'warning' ? 'bg-amber-500/10 border-amber-500/30 text-amber-600' :
+              activeFlashAlert.alert_type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600' :
+              'bg-accent/10 border-accent/30 text-accent'
+            }`}>
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <Icon name={activeFlashAlert.alert_type === 'urgent' ? 'alert-triangle' : 'info'} size={18} />
+                <span>{activeFlashAlert.title}</span>
+              </div>
+              <p className="mt-2 text-xs font-medium text-text-primary leading-relaxed whitespace-pre-wrap">
+                {activeFlashAlert.message}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleDismissFlashAlert}
+              className="btn-primary w-full rounded-xl py-3 text-xs font-bold"
+            >
+              Tushundim, davom etish
+            </button>
+          </div>
+        </Modal>
+      )}
       {/* Mavzu tugmasi bu yerda EMAS. Ilgari u suzuvchi boshqaruv sifatida shu
           joydan chizilardi (header'larda hali joy yo'q edi), lekin endi har bir
           theme-ready ekran uni O'Z sarlavha qismida ko'rsatadi: Landing navbar,
