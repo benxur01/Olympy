@@ -1670,6 +1670,60 @@ export const OlympyApi = {
     '/api/admin/system/config/',
     { method: 'POST', body: payload, token },
   ),
+
+  // ─── 1. Ommaviy Xabarnomalar (Broadcast & Push Center) ───
+  getAdminBroadcasts: (token) => request('/api/notifications/admin/broadcasts/', { token }),
+  createAdminBroadcast: (payload, token) => request(
+    '/api/notifications/admin/broadcasts/',
+    { method: 'POST', body: payload, token },
+  ),
+  sendAdminBroadcastNow: (campaignId, token) => request(
+    `/api/notifications/admin/broadcasts/${campaignId}/send/`,
+    { method: 'POST', token },
+  ),
+  deleteAdminBroadcast: (campaignId, token) => request(
+    `/api/notifications/admin/broadcasts/${campaignId}/`,
+    { method: 'DELETE', token },
+  ),
+
+  // ─── 2. Plagiat & Similarity Tahlili ───
+  getAdminOlympiadPlagiarism: (olympiadId, token) => request(
+    `/api/attempts/admin/olympiad/${olympiadId}/plagiarism/`,
+    { token },
+  ),
+
+  // ─── 3. Chop etiladigan Test Kitobchasi (Printable Exam & OMR) ───
+  getAdminOlympiadPrintable: (olympiadId, token) => request(
+    `/api/olympiads/admin/${olympiadId}/printable/`,
+    { token },
+  ),
+
+  // ─── 4. Mukofotlar Do'koni & Fulfillment Ops ───
+  getAdminRewardProducts: (token) => request('/api/admin/rewards/products/', { token }),
+  createAdminRewardProduct: (payload, token) => request(
+    '/api/admin/rewards/products/',
+    { method: 'POST', body: payload, token },
+  ),
+  toggleAdminRewardProduct: (productId, token) => request(
+    `/api/admin/rewards/products/${productId}/toggle/`,
+    { method: 'POST', token },
+  ),
+  deleteAdminRewardProduct: (productId, token) => request(
+    `/api/admin/rewards/products/${productId}/`,
+    { method: 'DELETE', token },
+  ),
+  getAdminRewardRedemptions: (token) => request('/api/admin/rewards/redemptions/', { token }),
+  updateAdminRedemptionStatus: (redemptionId, status, token) => request(
+    `/api/admin/rewards/redemptions/${redemptionId}/status/`,
+    { method: 'POST', body: { status }, token },
+  ),
+
+  // ─── 5. Moliya, Daromad & B2B Invoyslar ───
+  getAdminRevenueAnalytics: (token) => request('/api/billing/admin/revenue/', { token }),
+  generateAdminB2BInvoice: (payload, token) => request(
+    '/api/billing/admin/invoice/generate/',
+    { method: 'POST', body: payload, token },
+  ),
   // ─── Xavfsizlik tabi ───
   // Bitta IP'dan kirgan turli hisoblar. `minAccounts`/`days` backendda
   // clamp qilinadi va AYNAN qo'llanilgan qiymat javobda qaytadi — panel

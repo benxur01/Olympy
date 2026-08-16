@@ -1472,6 +1472,55 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
   const [systemConfigLoading, setSystemConfigLoading] = React.useState(false);
   const [systemConfigSaving, setSystemConfigSaving] = React.useState(false);
 
+  // ─── 1. Xabarnomalar (Broadcasts) Statelari ───
+  const [broadcastsList, setBroadcastsList] = React.useState([]);
+  const [broadcastsLoading, setBroadcastsLoading] = React.useState(false);
+  const [showCreateBroadcastModal, setShowCreateBroadcastModal] = React.useState(false);
+  const [bcTitle, setBcTitle] = React.useState('');
+  const [bcMessage, setBcMessage] = React.useState('');
+  const [bcTarget, setBcTarget] = React.useState('all');
+  const [bcSendTelegram, setBcSendTelegram] = React.useState(true);
+  const [bcSendInApp, setBcSendInApp] = React.useState(true);
+  const [bcSending, setBcSending] = React.useState(false);
+
+  // ─── 2. Plagiat & Similarity Statelari ───
+  const [showPlagiarismModal, setShowPlagiarismModal] = React.useState(false);
+  const [plagiarismOlympiad, setPlagiarismOlympiad] = React.useState(null);
+  const [plagiarismData, setPlagiarismData] = React.useState(null);
+  const [plagiarismLoading, setPlagiarismLoading] = React.useState(false);
+
+  // ─── 3. Chop etish & OMR Statelari ───
+  const [showPrintModal, setShowPrintModal] = React.useState(false);
+  const [printOlympiad, setPrintOlympiad] = React.useState(null);
+  const [printData, setPrintData] = React.useState(null);
+  const [printLoading, setPrintLoading] = React.useState(false);
+  const [printViewType, setPrintViewType] = React.useState('booklet'); // 'booklet' | 'omr' | 'key'
+
+  // ─── 4. Mukofotlar & Fulfillment Statelari ───
+  const [rewardsList, setRewardsList] = React.useState([]);
+  const [rewardsLoading, setRewardsLoading] = React.useState(false);
+  const [rewardsTab, setRewardsTab] = React.useState('products'); // 'products' | 'orders'
+  const [showCreateRewardModal, setShowCreateRewardModal] = React.useState(false);
+  const [rewardTitle, setRewardTitle] = React.useState('');
+  const [rewardDesc, setRewardDesc] = React.useState('');
+  const [rewardCost, setRewardCost] = React.useState('200');
+  const [rewardStock, setRewardStock] = React.useState('15');
+  const [rewardIcon, setRewardIcon] = React.useState('🎁');
+  const [rewardCreating, setRewardCreating] = React.useState(false);
+  const [redemptionsList, setRedemptionsList] = React.useState([]);
+  const [redemptionsLoading, setRedemptionsLoading] = React.useState(false);
+
+  // ─── 5. Moliya & B2B Invoys Statelari ───
+  const [revenueData, setRevenueData] = React.useState(null);
+  const [revenueLoading, setRevenueLoading] = React.useState(false);
+  const [showInvoiceModal, setShowInvoiceModal] = React.useState(false);
+  const [invBuyerName, setInvBuyerName] = React.useState('');
+  const [invBuyerInn, setInvBuyerInn] = React.useState('');
+  const [invAmount, setInvAmount] = React.useState('3000000');
+  const [invPlanName, setInvPlanName] = React.useState('B2B Enterprise Litsenziyasi (500 o‘quvchi)');
+  const [invGenerating, setInvGenerating] = React.useState(false);
+  const [generatedInvoice, setGeneratedInvoice] = React.useState(null);
+
   // "Hozir onlayn" sanog'i — Boshqaruv panelidagi karta uchun. `useApiData`
   // ishlatilmaydi: unda poll yo'q, bu ko'rsatkich esa doim yangi bo'lishi
   // kerak. ManagerDashboard'dagi bilan bir xil naqsh — interval faqat tab
@@ -2601,7 +2650,10 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     { key: 'requests', icon: 'bell', label: 'Arizalar', badge: pendingCenterReqs.length || undefined },
     { key: 'subjects', icon: 'book', label: 'Fanlar' },
     { key: 'ai_studio', icon: 'sparkles', label: 'AI Studio' },
+    { key: 'broadcasts', icon: 'bell', label: 'Xabarnomalar' },
     { key: 'promocodes', icon: 'tag', label: 'Promokodlar' },
+    { key: 'rewards_shop', icon: 'gift', label: 'Mukofotlar' },
+    { key: 'revenue', icon: 'credit-card', label: 'Moliya' },
     { key: 'analytics', icon: 'chart', label: 'Tahlil' },
     { key: 'logs', icon: 'shield', label: 'Amallar tarixi' },
     { key: 'security', icon: 'lock', label: 'Xavfsizlik' },
@@ -7493,6 +7545,24 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
                           </button>
                           <button
                             type="button"
+                            title="Plagiat va Ko‘chirish Tahlili"
+                            onClick={() => handleOpenPlagiarism(o)}
+                            className="rounded-lg bg-surface-2 text-rose-500 border border-rose-500/40 px-2.5 py-1 text-[11px] font-bold hover:bg-rose-500/10 transition flex items-center gap-1"
+                          >
+                            <Icon name="shield" size={11} />
+                            <span>Plagiat</span>
+                          </button>
+                          <button
+                            type="button"
+                            title="Chop etiladigan Test Kitobi & OMR Javoblar Varaqasi"
+                            onClick={() => handleOpenPrintable(o)}
+                            className="rounded-lg bg-surface-2 text-sky-500 border border-sky-500/40 px-2.5 py-1 text-[11px] font-bold hover:bg-sky-500/10 transition flex items-center gap-1"
+                          >
+                            <Icon name="book" size={11} />
+                            <span>Chop etish</span>
+                          </button>
+                          <button
+                            type="button"
                             title="Ballarni qayta hisoblash (Batch Regrade)"
                             onClick={() => { setRegradeConfirmModal(o); setRegradeResults(null); }}
                             className="rounded-lg bg-surface-2 text-text-primary border border-edge px-2.5 py-1 text-[11px] font-bold hover:bg-surface-3 transition flex items-center gap-1"
@@ -8868,13 +8938,967 @@ const AdminDashboard = ({ user, onNavigate, onLogout, onOpenSwitcher, onUserUpda
     </div>
   );
 
+  // ─── Plagiat & Print Handlerlari ───
+  const handleOpenPlagiarism = (olympiad) => {
+    setPlagiarismOlympiad(olympiad);
+    setShowPlagiarismModal(true);
+    setPlagiarismLoading(true);
+    setPlagiarismData(null);
+    OlympyApi.getAdminOlympiadPlagiarism(olympiad.id, OlympyApi.getToken())
+      .then(res => setPlagiarismData(res))
+      .catch(err => showToast(toUserMessage(err, 'Plagiat ma‘lumotlarini yuklab bo‘lmadi'), 'error'))
+      .finally(() => setPlagiarismLoading(false));
+  };
+
+  const handleOpenPrintable = (olympiad) => {
+    setPrintOlympiad(olympiad);
+    setShowPrintModal(true);
+    setPrintLoading(true);
+    setPrintData(null);
+    setPrintViewType('booklet');
+    OlympyApi.getAdminOlympiadPrintable(olympiad.id, OlympyApi.getToken())
+      .then(res => setPrintData(res))
+      .catch(err => showToast(toUserMessage(err, 'Chop etish ma‘lumotlarini yuklab bo‘lmadi'), 'error'))
+      .finally(() => setPrintLoading(false));
+  };
+
+  // ─── 1. Xabarnomalar (Broadcasts) Handlerlari ───
+  const handleLoadBroadcasts = () => {
+    setBroadcastsLoading(true);
+    OlympyApi.getAdminBroadcasts(OlympyApi.getToken())
+      .then(res => setBroadcastsList(res?.broadcasts || []))
+      .catch(err => showToast(toUserMessage(err, 'Xabarnomalarni yuklab bo‘lmadi'), 'error'))
+      .finally(() => setBroadcastsLoading(false));
+  };
+
+  const handleCreateBroadcast = (e) => {
+    e.preventDefault();
+    if (!bcTitle.trim() || !bcMessage.trim()) return;
+    setBcSending(true);
+    OlympyApi.createAdminBroadcast({
+      title: bcTitle.trim(),
+      message: bcMessage.trim(),
+      target_audience: bcTarget,
+      send_telegram: bcSendTelegram,
+      send_in_app: bcSendInApp,
+      send_now: true,
+    }, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Xabar muvaffaqiyatli yuborildi');
+        setShowCreateBroadcastModal(false);
+        setBcTitle('');
+        setBcMessage('');
+        handleLoadBroadcasts();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Xabar yuborishda xatolik'), 'error'))
+      .finally(() => setBcSending(false));
+  };
+
+  const handleDeleteBroadcast = (bId) => {
+    if (!window.confirm('Bu xabarnomani o‘chirmoqchimisiz?')) return;
+    OlympyApi.deleteAdminBroadcast(bId, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'O‘chirildi');
+        handleLoadBroadcasts();
+      })
+      .catch(err => showToast(toUserMessage(err, 'O‘chirib bo‘lmadi'), 'error'));
+  };
+
+  const renderBroadcasts = () => (
+    <div className="min-h-[calc(100vh-54px)] space-y-4 p-[18px]">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-[20px] font-bold leading-tight text-text-primary">Ommaviy Xabarnomalar va Push Kampaniyalari</h1>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">
+            Foydalanuvchilar segmentlariga In-App va Telegram bot orqali tezkor xabarnomalar yuborish.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleLoadBroadcasts}
+            className="btn-ghost px-3.5 py-2 text-xs font-bold rounded-xl border border-edge inline-flex items-center gap-1.5"
+          >
+            <Icon name="refresh" size={13} />
+            <span>Yangilash</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowCreateBroadcastModal(true)}
+            className="btn-primary px-4 py-2 text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-sm"
+          >
+            <Icon name="plus" size={14} />
+            <span>Yangi Xabar Yuborish</span>
+          </button>
+        </div>
+      </div>
+
+      <section className="overflow-hidden admin-card">
+        <div className="overflow-x-auto admin-scroll">
+          <table className="w-full min-w-[800px] text-left">
+            <thead className="admin-table-hdr">
+              <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                <th className="px-5 py-3.5">Sarlavha & Matn</th>
+                <th className="px-5 py-3.5">Auditoriya</th>
+                <th className="px-5 py-3.5">Kanallar</th>
+                <th className="px-5 py-3.5">Yetkazildi</th>
+                <th className="px-5 py-3.5">Sana</th>
+                <th className="px-5 py-3.5 text-right">Amallar</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-edge">
+              {broadcastsList.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-5 py-12 text-center text-xs font-semibold text-text-secondary">
+                    {broadcastsLoading ? 'Yuklanmoqda...' : 'Hozircha hech qanday ommaviy xabarnoma yuborilmagan.'}
+                  </td>
+                </tr>
+              ) : (
+                broadcastsList.map(b => (
+                  <tr key={b.id} className="text-xs admin-table-row text-text-primary">
+                    <td className="px-5 py-4 max-w-sm">
+                      <div className="font-bold text-text-primary text-sm">{b.title}</div>
+                      <div className="text-[11px] text-text-secondary line-clamp-2 mt-0.5">{b.message}</div>
+                    </td>
+                    <td className="px-5 py-4">
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-accent/15 text-accent">
+                        {b.target_label || b.target_audience}
+                      </span>
+                    </td>
+                    <td className="px-5 py-4 text-[11px] text-text-secondary font-semibold">
+                      {b.send_in_app && '🔔 In-App'} {b.send_telegram && '✈️ Telegram'}
+                    </td>
+                    <td className="px-5 py-4 font-bold text-success">
+                      {b.sent_count} ta hisob
+                    </td>
+                    <td className="px-5 py-4 text-text-secondary text-[11px]">
+                      {new Date(b.created_at).toLocaleString()}
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteBroadcast(b.id)}
+                        className="btn-ghost px-2.5 py-1 rounded-lg text-[11px] font-bold text-error border border-error/30 hover:bg-error/10"
+                      >
+                        O‘chirish
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Xabar Yaratish Modali */}
+      <Modal open={showCreateBroadcastModal} onClose={() => setShowCreateBroadcastModal(false)} title="Ommaviy Xabarnoma Yuborish">
+        <form onSubmit={handleCreateBroadcast} className="space-y-3 text-xs">
+          <div>
+            <label className="font-bold text-text-secondary">Xabar Sarlavhasi:</label>
+            <input
+              type="text"
+              required
+              value={bcTitle}
+              onChange={e => setBcTitle(e.target.value)}
+              placeholder="Masalan: Bahor Olimpiadasi boshlandi!"
+              className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl font-bold"
+            />
+          </div>
+          <div>
+            <label className="font-bold text-text-secondary">Xabar Matni:</label>
+            <textarea
+              required
+              rows={4}
+              value={bcMessage}
+              onChange={e => setBcMessage(e.target.value)}
+              placeholder="Barcha foydalanuvchilar ekranida ko'rinadigan xabarnoma matni..."
+              className="mt-1 w-full admin-input p-3 text-xs rounded-xl"
+            />
+          </div>
+          <div>
+            <label className="font-bold text-text-secondary">Maqsadli Auditoriya:</label>
+            <select
+              value={bcTarget}
+              onChange={e => setBcTarget(e.target.value)}
+              className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl"
+            >
+              <option value="all">Barcha foydalanuvchilar (Global)</option>
+              <option value="pro_users">Faqat PRO (Obunachi) foydalanuvchilar</option>
+              <option value="inactive_7d">Oxirgi 7 kunda kirmaganlar (Retention)</option>
+              <option value="students">Faqat O‘quvchilar</option>
+              <option value="teachers">Faqat O‘qituvchilar</option>
+              <option value="center_owners">Faqat Markaz egalari</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-4 pt-1">
+            <label className="flex items-center gap-2 cursor-pointer font-bold text-text-secondary">
+              <input
+                type="checkbox"
+                checked={bcSendInApp}
+                onChange={e => setBcSendInApp(e.target.checked)}
+                className="w-4 h-4 rounded text-accent"
+              />
+              <span>Platforma ichida (In-App)</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer font-bold text-text-secondary">
+              <input
+                type="checkbox"
+                checked={bcSendTelegram}
+                onChange={e => setBcSendTelegram(e.target.checked)}
+                className="w-4 h-4 rounded text-accent"
+              />
+              <span>Telegram Bot orqali</span>
+            </label>
+          </div>
+          <div className="flex gap-2 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowCreateBroadcastModal(false)}
+              className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold"
+            >
+              Bekor qilish
+            </button>
+            <button
+              type="submit"
+              disabled={bcSending}
+              className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50"
+            >
+              {bcSending ? 'Yuborilmoqda...' : 'Xabarni Tarqatish'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+
+  // ─── 4. Mukofotlar & Fulfillment Handlerlari ───
+  const handleLoadRewards = () => {
+    setRewardsLoading(true);
+    OlympyApi.getAdminRewardProducts(OlympyApi.getToken())
+      .then(res => setRewardsList(res?.products || []))
+      .catch(err => showToast(toUserMessage(err, 'Mukofotlarni yuklab bo‘lmadi'), 'error'))
+      .finally(() => setRewardsLoading(false));
+
+    setRedemptionsLoading(true);
+    OlympyApi.getAdminRewardRedemptions(OlympyApi.getToken())
+      .then(res => setRedemptionsList(res?.redemptions || []))
+      .catch(err => showToast(toUserMessage(err, 'Buyurtmalarni yuklab bo‘lmadi'), 'error'))
+      .finally(() => setRedemptionsLoading(false));
+  };
+
+  const handleCreateReward = (e) => {
+    e.preventDefault();
+    if (!rewardTitle.trim()) return;
+    setRewardCreating(true);
+    OlympyApi.createAdminRewardProduct({
+      title: rewardTitle.trim(),
+      description: rewardDesc.trim(),
+      coin_cost: Number(rewardCost),
+      stock: Number(rewardStock),
+      icon: rewardIcon.trim() || '🎁',
+    }, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Mahsulot qo‘shildi');
+        setShowCreateRewardModal(false);
+        setRewardTitle('');
+        setRewardDesc('');
+        handleLoadRewards();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Mahsulot yaratishda xatolik'), 'error'))
+      .finally(() => setRewardCreating(false));
+  };
+
+  const handleToggleReward = (pId) => {
+    OlympyApi.toggleAdminRewardProduct(pId, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Holat o‘zgardi');
+        handleLoadRewards();
+      })
+      .catch(err => showToast(toUserMessage(err, 'O‘zgartirib bo‘lmadi'), 'error'));
+  };
+
+  const handleDeleteReward = (pId) => {
+    if (!window.confirm('Bu mahsulotni o‘chirmoqchimisiz?')) return;
+    OlympyApi.deleteAdminRewardProduct(pId, OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'O‘chirildi');
+        handleLoadRewards();
+      })
+      .catch(err => showToast(toUserMessage(err, 'O‘chirib bo‘lmadi'), 'error'));
+  };
+
+  const handleFulfillRedemption = (rId) => {
+    OlympyApi.updateAdminRedemptionStatus(rId, 'delivered', OlympyApi.getToken())
+      .then(res => {
+        showToast(res?.message || 'Topshirildi');
+        handleLoadRewards();
+      })
+      .catch(err => showToast(toUserMessage(err, 'Yangilab bo‘lmadi'), 'error'));
+  };
+
+  const renderRewardsShop = () => (
+    <div className="min-h-[calc(100vh-54px)] space-y-4 p-[18px]">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-[20px] font-bold leading-tight text-text-primary">Mukofotlar Do‘koni & Fulfillment</h1>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">
+            O‘quvchilar tangalari evaziga sovg‘alar (Merch, Kitoblar, Futbolkalar) va yetkazib berish nazorati.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-xl bg-surface-2 p-1 border border-edge text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setRewardsTab('products')}
+              className={`px-3 py-1.5 rounded-lg transition ${rewardsTab === 'products' ? 'bg-accent text-white shadow-sm' : 'text-text-secondary hover:text-text-primary'}`}
+            >
+              Sovg‘alar ({rewardsList.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setRewardsTab('orders')}
+              className={`px-3 py-1.5 rounded-lg transition ${rewardsTab === 'orders' ? 'bg-accent text-white shadow-sm' : 'text-text-secondary hover:text-text-primary'}`}
+            >
+              Buyurtmalar ({redemptionsList.length})
+            </button>
+          </div>
+          {rewardsTab === 'products' && (
+            <button
+              type="button"
+              onClick={() => setShowCreateRewardModal(true)}
+              className="btn-primary px-4 py-2 text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-sm"
+            >
+              <Icon name="plus" size={14} />
+              <span>Yangi Sovg‘a</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {rewardsTab === 'products' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {rewardsList.length === 0 ? (
+            <div className="col-span-full admin-card p-12 text-center text-xs font-semibold text-text-secondary">
+              {rewardsLoading ? 'Yuklanmoqda...' : 'Hozircha hech qanday sovg‘a qo‘shilmagan.'}
+            </div>
+          ) : (
+            rewardsList.map(p => (
+              <div key={p.id} className="admin-card p-4 space-y-3 relative group">
+                <div className="flex items-start justify-between">
+                  <div className="w-12 h-12 rounded-2xl bg-surface-2 border border-edge flex items-center justify-center text-2xl">
+                    {p.icon || '🎁'}
+                  </div>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    p.is_active ? 'bg-success/15 text-success' : 'bg-error/15 text-error'
+                  }`}>
+                    {p.is_active ? 'Faol' : 'To‘xtatilgan'}
+                  </span>
+                </div>
+                <div>
+                  <h3 className="font-bold text-text-primary text-sm">{p.title}</h3>
+                  {p.description && <p className="text-[11px] text-text-secondary mt-0.5 line-clamp-2">{p.description}</p>}
+                </div>
+                <div className="flex items-center justify-between text-xs pt-2 border-t border-edge">
+                  <div className="font-bold text-accent flex items-center gap-1">
+                    <span>🪙</span>
+                    <span>{p.coin_cost} tanga</span>
+                  </div>
+                  <div className="text-[11px] text-text-secondary font-semibold">
+                    Qoldiq: <span className="font-bold text-text-primary">{p.stock} ta</span>
+                  </div>
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleReward(p.id)}
+                    className="btn-ghost flex-1 py-1.5 rounded-xl text-[11px] font-bold border border-edge"
+                  >
+                    {p.is_active ? 'To‘xtatish' : 'Faollashtirish'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteReward(p.id)}
+                    className="btn-ghost px-3 py-1.5 rounded-xl text-[11px] font-bold text-error border border-error/30 hover:bg-error/10"
+                  >
+                    O‘chirish
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      ) : (
+        <section className="overflow-hidden admin-card">
+          <div className="overflow-x-auto admin-scroll">
+            <table className="w-full min-w-[800px] text-left">
+              <thead className="admin-table-hdr">
+                <tr className="text-[10px] font-bold uppercase tracking-wider text-text-secondary">
+                  <th className="px-5 py-3.5">O‘quvchi</th>
+                  <th className="px-5 py-3.5">Sovg‘a</th>
+                  <th className="px-5 py-3.5">Tanga</th>
+                  <th className="px-5 py-3.5">Holat</th>
+                  <th className="px-5 py-3.5">Sana</th>
+                  <th className="px-5 py-3.5 text-right">Amallar</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-edge">
+                {redemptionsList.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-12 text-center text-xs font-semibold text-text-secondary">
+                      {redemptionsLoading ? 'Yuklanmoqda...' : 'Hozircha hech qanday buyurtma kelib tushmagan.'}
+                    </td>
+                  </tr>
+                ) : (
+                  redemptionsList.map(r => (
+                    <tr key={r.id} className="text-xs admin-table-row text-text-primary">
+                      <td className="px-5 py-4">
+                        <div className="font-bold text-text-primary">{r.user?.name}</div>
+                        <div className="text-[11px] text-text-secondary font-mono">{r.user?.phone}</div>
+                      </td>
+                      <td className="px-5 py-4 font-bold flex items-center gap-2">
+                        <span>{r.product?.icon}</span>
+                        <span>{r.product?.title}</span>
+                      </td>
+                      <td className="px-5 py-4 font-bold text-accent font-mono">
+                        🪙 {r.product?.coin_cost}
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
+                          r.status === 'delivered' ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning'
+                        }`}>
+                          {r.status === 'delivered' ? 'Topshirildi' : 'Kutilmoqda'}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 text-text-secondary text-[11px]">
+                        {new Date(r.redeemed_at).toLocaleString()}
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        {r.status !== 'delivered' && (
+                          <button
+                            type="button"
+                            onClick={() => handleFulfillRedemption(r.id)}
+                            className="btn-primary px-3 py-1.5 rounded-xl text-[11px] font-bold"
+                          >
+                            Topshirildi deb belgilash
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {/* Sovg'a Qo'shish Modali */}
+      <Modal open={showCreateRewardModal} onClose={() => setShowCreateRewardModal(false)} title="Yangi Sovg‘a Qo‘shish">
+        <form onSubmit={handleCreateReward} className="space-y-3 text-xs">
+          <div>
+            <label className="font-bold text-text-secondary">Sovg‘a Nomi:</label>
+            <input
+              type="text"
+              required
+              value={rewardTitle}
+              onChange={e => setRewardTitle(e.target.value)}
+              placeholder="Masalan: Olympy Brendli Futbolka"
+              className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl font-bold"
+            />
+          </div>
+          <div>
+            <label className="font-bold text-text-secondary">Tavsif (ixtiyoriy):</label>
+            <input
+              type="text"
+              value={rewardDesc}
+              onChange={e => setRewardDesc(e.target.value)}
+              placeholder="Masalan: 100% paxta, o'lchamlar: S, M, L, XL"
+              className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl"
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="font-bold text-text-secondary">Tanga Narxi:</label>
+              <input
+                type="number"
+                required
+                min="1"
+                value={rewardCost}
+                onChange={e => setRewardCost(e.target.value)}
+                className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl font-bold"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-text-secondary">Ombordagi Soni:</label>
+              <input
+                type="number"
+                required
+                min="1"
+                value={rewardStock}
+                onChange={e => setRewardStock(e.target.value)}
+                className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl"
+              />
+            </div>
+            <div>
+              <label className="font-bold text-text-secondary">Ikonka (Emoji):</label>
+              <input
+                type="text"
+                value={rewardIcon}
+                onChange={e => setRewardIcon(e.target.value)}
+                className="mt-1 w-full admin-input h-9 px-3 text-xs text-center rounded-xl text-lg"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowCreateRewardModal(false)}
+              className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold"
+            >
+              Bekor qilish
+            </button>
+            <button
+              type="submit"
+              disabled={rewardCreating}
+              className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50"
+            >
+              {rewardCreating ? 'Saqlanmoqda...' : 'Sovg‘ani Saqlash'}
+            </button>
+          </div>
+        </form>
+      </Modal>
+    </div>
+  );
+
+  // ─── 5. Moliya & B2B Invoys Handlerlari ───
+  const handleLoadRevenue = () => {
+    setRevenueLoading(true);
+    OlympyApi.getAdminRevenueAnalytics(OlympyApi.getToken())
+      .then(res => setRevenueData(res))
+      .catch(err => showToast(toUserMessage(err, 'Moliya ma‘lumotlarini yuklab bo‘lmadi'), 'error'))
+      .finally(() => setRevenueLoading(false));
+  };
+
+  const handleGenerateInvoice = (e) => {
+    e.preventDefault();
+    if (!invBuyerName.trim() || !invAmount) return;
+    setInvGenerating(true);
+    OlympyApi.generateAdminB2BInvoice({
+      buyer_name: invBuyerName.trim(),
+      buyer_inn: invBuyerInn.trim(),
+      amount: invAmount,
+      plan_name: invPlanName.trim(),
+    }, OlympyApi.getToken())
+      .then(res => {
+        setGeneratedInvoice(res?.invoice);
+        showToast('Hisob-faktura tayyorlandi!');
+      })
+      .catch(err => showToast(toUserMessage(err, 'Invoys yaratishda xatolik'), 'error'))
+      .finally(() => setInvGenerating(false));
+  };
+
+  const renderRevenue = () => (
+    <div className="min-h-[calc(100vh-54px)] space-y-4 p-[18px]">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-[20px] font-bold leading-tight text-text-primary">Moliya va Daromad Tahlili</h1>
+          <p className="mt-1 text-[11px] font-bold text-text-secondary">
+            MRR, to‘lov provayderlari ulushi va B2B o‘quv markazlari uchun hisob-faktura (Invoice) generatori.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleLoadRevenue}
+            className="btn-ghost px-3.5 py-2 text-xs font-bold rounded-xl border border-edge inline-flex items-center gap-1.5"
+          >
+            <Icon name="refresh" size={13} />
+            <span>Yangilash</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => { setShowInvoiceModal(true); setGeneratedInvoice(null); }}
+            className="btn-primary px-4 py-2 text-xs font-bold rounded-xl inline-flex items-center gap-1.5 shadow-sm"
+          >
+            <Icon name="file-text" size={14} />
+            <span>B2B Hisob-Faktura Chiqarish</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Asosiy Metrikalar */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="admin-card p-4 space-y-1">
+          <div className="text-[10px] font-bold text-text-secondary uppercase">Jami Tushum</div>
+          <div className="text-2xl font-bold text-success">
+            {Number(revenueData?.metrics?.total_revenue || 0).toLocaleString()} UZS
+          </div>
+          <div className="text-[10px] text-text-secondary">Barcha muvaffaqiyatli to‘lovlar</div>
+        </div>
+
+        <div className="admin-card p-4 space-y-1">
+          <div className="text-[10px] font-bold text-text-secondary uppercase">Joriy Oylik MRR</div>
+          <div className="text-2xl font-bold text-accent">
+            {Number(revenueData?.metrics?.mrr || 0).toLocaleString()} UZS
+          </div>
+          <div className="text-[10px] text-text-secondary">Bu oy kutilayotgan tushum</div>
+        </div>
+
+        <div className="admin-card p-4 space-y-1">
+          <div className="text-[10px] font-bold text-text-secondary uppercase">To‘lovlar Soni</div>
+          <div className="text-2xl font-bold text-text-primary">
+            {revenueData?.metrics?.success_count || 0} ta
+          </div>
+          <div className="text-[10px] text-text-secondary font-semibold">
+            Muvaffaqiyatsiz: <span className="text-error">{revenueData?.metrics?.failed_count || 0} ta</span>
+          </div>
+        </div>
+
+        <div className="admin-card p-4 space-y-1">
+          <div className="text-[10px] font-bold text-text-secondary uppercase">O‘rtacha Chek (ARPU)</div>
+          <div className="text-2xl font-bold text-sky-500">
+            {Number(revenueData?.metrics?.average_check || 0).toLocaleString()} UZS
+          </div>
+          <div className="text-[10px] text-text-secondary">Bitta foydalanuvchiga to‘g‘ri keluvchi</div>
+        </div>
+      </div>
+
+      {/* Provayderlar Taqqoslashi */}
+      <section className="admin-card p-5 space-y-3">
+        <div className="text-xs font-bold uppercase tracking-wider text-text-secondary">To‘lov Provayderlari Ulushi</div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {(revenueData?.by_provider || [{ provider: 'payme', total_amount: 0, transaction_count: 0 }]).map(p => (
+            <div key={p.provider} className="p-4 rounded-2xl bg-surface-2 border border-edge space-y-1">
+              <div className="text-xs font-bold text-text-primary uppercase flex items-center justify-between">
+                <span>{p.provider}</span>
+                <span className="text-[10px] text-text-secondary">{p.transaction_count} ta to‘lov</span>
+              </div>
+              <div className="text-lg font-bold text-accent">
+                {Number(p.total_amount || 0).toLocaleString()} UZS
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* B2B Invoys Modali */}
+      <Modal open={showInvoiceModal} onClose={() => setShowInvoiceModal(false)} title="B2B Hisob-Faktura (Invoice) Generatori">
+        {!generatedInvoice ? (
+          <form onSubmit={handleGenerateInvoice} className="space-y-3 text-xs">
+            <div>
+              <label className="font-bold text-text-secondary">Tashkilot / O‘quv Markaz Nomi:</label>
+              <input
+                type="text"
+                required
+                value={invBuyerName}
+                onChange={e => setInvBuyerName(e.target.value)}
+                placeholder="Masalan: «EVEREST STUDY» MCHJ"
+                className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl font-bold"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="font-bold text-text-secondary">Tashkilot INN (STIR):</label>
+                <input
+                  type="text"
+                  value={invBuyerInn}
+                  onChange={e => setInvBuyerInn(e.target.value)}
+                  placeholder="Masalan: 309123456"
+                  className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl font-mono"
+                />
+              </div>
+              <div>
+                <label className="font-bold text-text-secondary">Hisob-Faktura Summasi (UZS):</label>
+                <input
+                  type="number"
+                  required
+                  min="1000"
+                  value={invAmount}
+                  onChange={e => setInvAmount(e.target.value)}
+                  className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl font-bold"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="font-bold text-text-secondary">Xizmat / Tarif Nomi:</label>
+              <input
+                type="text"
+                value={invPlanName}
+                onChange={e => setInvPlanName(e.target.value)}
+                className="mt-1 w-full admin-input h-9 px-3 text-xs rounded-xl"
+              />
+            </div>
+            <div className="flex gap-2 pt-3">
+              <button
+                type="button"
+                onClick={() => setShowInvoiceModal(false)}
+                className="btn-ghost flex-1 rounded-xl py-3 text-xs font-bold"
+              >
+                Bekor qilish
+              </button>
+              <button
+                type="submit"
+                disabled={invGenerating}
+                className="btn-primary flex-1 rounded-xl py-3 text-xs font-bold disabled:opacity-50"
+              >
+                {invGenerating ? 'Yaratilmoqda...' : 'Invoysni Generatsiya Qilish'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <div className="space-y-4 text-xs">
+            <div className="p-5 rounded-2xl bg-white text-gray-900 border border-gray-200 shadow-sm space-y-4 print:p-0 print:border-none">
+              <div className="flex items-start justify-between border-b pb-3">
+                <div>
+                  <h2 className="text-xl font-extrabold text-indigo-700 tracking-wide">OLYMPY EDTECH</h2>
+                  <div className="text-[10px] text-gray-500 font-medium">Elektron Ta'lim va Olimpiadalar Tizimi</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-bold text-gray-800 font-mono">{generatedInvoice.invoice_number}</div>
+                  <div className="text-[10px] text-gray-500">Sana: {generatedInvoice.issued_at}</div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 text-[11px]">
+                <div className="p-3 bg-gray-50 rounded-xl space-y-1 border">
+                  <div className="text-[10px] font-bold uppercase text-gray-500">Ijrochi (Sotuvchi):</div>
+                  <div className="font-bold text-gray-900">{generatedInvoice.seller?.name}</div>
+                  <div>INN: {generatedInvoice.seller?.inn} | MFO: {generatedInvoice.seller?.mfo}</div>
+                  <div className="font-mono text-[10px]">H/R: {generatedInvoice.seller?.account}</div>
+                </div>
+                <div className="p-3 bg-gray-50 rounded-xl space-y-1 border">
+                  <div className="text-[10px] font-bold uppercase text-gray-500">Buyurtmachi (Xaridor):</div>
+                  <div className="font-bold text-gray-900">{generatedInvoice.buyer_name}</div>
+                  <div>INN: {generatedInvoice.buyer_inn}</div>
+                  <div className="text-amber-600 font-semibold">To‘lov muddati: {generatedInvoice.due_date} gacha</div>
+                </div>
+              </div>
+
+              <table className="w-full border-collapse border border-gray-200 text-left text-[11px]">
+                <thead className="bg-gray-100 font-bold text-gray-700">
+                  <tr>
+                    <th className="border p-2">№</th>
+                    <th className="border p-2">Xizmat tavsifi</th>
+                    <th className="border p-2 text-right">Summa (UZS)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="border p-2">1</td>
+                    <td className="border p-2 font-semibold">{generatedInvoice.plan_name}</td>
+                    <td className="border p-2 text-right font-bold font-mono">
+                      {Number(generatedInvoice.amount).toLocaleString()}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div className="flex items-center justify-between pt-2 border-t text-sm font-bold">
+                <span>Jami To‘lov:</span>
+                <span className="text-indigo-700 font-mono text-base">{Number(generatedInvoice.amount).toLocaleString()} UZS</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="btn-primary flex-1 rounded-xl py-2.5 text-xs font-bold inline-flex items-center justify-center gap-1.5"
+              >
+                <Icon name="printer" size={13} />
+                <span>Chop etish (Print PDF)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setGeneratedInvoice(null)}
+                className="btn-ghost px-4 py-2.5 rounded-xl text-xs font-bold border border-edge"
+              >
+                Qaytadan yaratish
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Plagiat & Similarity Modali */}
+      <Modal open={showPlagiarismModal} onClose={() => setShowPlagiarismModal(false)} title={`Plagiat & Ko‘chirish Tahlili: ${plagiarismOlympiad?.title || ''}`}>
+        {plagiarismLoading ? (
+          <div className="p-8 text-center text-xs font-semibold text-text-secondary">Tahlil hisoblanmoqda...</div>
+        ) : !plagiarismData?.high_risk_pairs?.length ? (
+          <div className="p-8 text-center space-y-2">
+            <span className="text-4xl">🛡️</span>
+            <h3 className="text-sm font-bold text-text-primary">Shubhali juftliklar topilmadi!</h3>
+            <p className="text-xs text-text-secondary">Olimpiada ishtirokchilari o‘rtasida 75% dan yuqori g‘ayritabiiy o‘xshashlik aniqlanmadi.</p>
+          </div>
+        ) : (
+          <div className="space-y-4 text-xs">
+            <div className="p-3 rounded-xl bg-error/10 border border-error/30 text-error flex items-center justify-between font-bold">
+              <span>Jami aniqlangan shubhali juftliklar: {plagiarismData.suspicious_pairs_count} ta</span>
+              <span className="text-[10px] font-mono">Baholangan testlar: {plagiarismData.total_evaluated_attempts} ta</span>
+            </div>
+
+            <div className="max-h-96 overflow-y-auto space-y-2 admin-scroll">
+              {plagiarismData.high_risk_pairs.map((pair, idx) => (
+                <div key={pair.pair_id || idx} className="p-3 rounded-xl bg-surface-2 border border-edge space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      pair.risk_level === 'CRITICAL' ? 'bg-error text-white' : 'bg-warning/20 text-warning'
+                    }`}>
+                      {pair.risk_level} XAVF: {pair.similarity_percent}% O‘XSHASHLIK
+                    </span>
+                    <span className="text-[10px] font-mono text-text-secondary">
+                      Bir xil xatolar: {pair.identical_wrong_count} ta | Vaqt farqi: {pair.time_difference_seconds || 0}s
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
+                    <div className="p-2 rounded-lg bg-surface-1 border border-edge">
+                      <div className="font-bold text-text-primary">{pair.user1?.name}</div>
+                      <div className="text-text-secondary text-[10px]">Ball: {pair.user1?.score} | Urinish: #{pair.user1?.attempt_id}</div>
+                    </div>
+                    <div className="p-2 rounded-lg bg-surface-1 border border-edge">
+                      <div className="font-bold text-text-primary">{pair.user2?.name}</div>
+                      <div className="text-text-secondary text-[10px]">Ball: {pair.user2?.score} | Urinish: #{pair.user2?.attempt_id}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Chop etiladigan Test Kitobchasi & OMR Modali */}
+      <Modal open={showPrintModal} onClose={() => setShowPrintModal(false)} title={`Chop etish Studiyasi: ${printOlympiad?.title || ''}`}>
+        {printLoading ? (
+          <div className="p-8 text-center text-xs font-semibold text-text-secondary">Yuklanmoqda...</div>
+        ) : (
+          <div className="space-y-4 text-xs">
+            <div className="flex items-center justify-between">
+              <div className="flex rounded-xl bg-surface-2 p-1 border border-edge text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setPrintViewType('booklet')}
+                  className={`px-3 py-1.5 rounded-lg transition ${printViewType === 'booklet' ? 'bg-accent text-white' : 'text-text-secondary'}`}
+                >
+                  📖 A4 Test Kitobi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintViewType('omr')}
+                  className={`px-3 py-1.5 rounded-lg transition ${printViewType === 'omr' ? 'bg-accent text-white' : 'text-text-secondary'}`}
+                >
+                  🔘 OMR Javoblar Varaqasi
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintViewType('key')}
+                  className={`px-3 py-1.5 rounded-lg transition ${printViewType === 'key' ? 'bg-accent text-white' : 'text-text-secondary'}`}
+                >
+                  🔑 Javoblar Kaliti
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="btn-primary px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5"
+              >
+                <Icon name="printer" size={13} />
+                <span>Chop etish</span>
+              </button>
+            </div>
+
+            {/* Ko'rinish Maydoni */}
+            <div className="max-h-[500px] overflow-y-auto p-6 rounded-2xl bg-white text-gray-900 border border-gray-200 shadow-inner admin-scroll">
+              {printViewType === 'booklet' && (
+                <div className="space-y-6 text-left">
+                  <div className="text-center border-b pb-4">
+                    <h2 className="text-lg font-extrabold text-gray-900">{printData?.olympiad?.center_name}</h2>
+                    <h3 className="text-base font-bold text-indigo-700 mt-1">{printData?.olympiad?.title} ({printData?.olympiad?.subject})</h3>
+                    <div className="text-[11px] text-gray-500 mt-1">Vaqt: {printData?.olympiad?.duration_minutes} daqiqa | Jami savollar: {printData?.total_questions} ta</div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-[12px]">
+                    {(printData?.questions || []).map(q => (
+                      <div key={q.id} className="space-y-2 pb-3 border-b md:border-b-0">
+                        <div className="font-bold text-gray-900 flex items-start gap-1.5">
+                          <span className="text-indigo-600 font-mono">{q.number}.</span>
+                          <span>{q.text}</span>
+                        </div>
+                        <div className="space-y-1 pl-4">
+                          {q.options?.map(opt => (
+                            <div key={opt.letter} className="flex items-start gap-2">
+                              <span className="font-bold text-gray-700 font-mono">{opt.letter})</span>
+                              <span>{opt.text}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {printViewType === 'omr' && (
+                <div className="space-y-6 text-center">
+                  <div className="border-b pb-3">
+                    <h2 className="text-base font-extrabold text-gray-900">RASMIY JAVOBLAR VARAQASI (OMR SHEET)</h2>
+                    <p className="text-[11px] text-gray-600">{printData?.olympiad?.title} — {printData?.olympiad?.subject}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 text-left text-[11px] p-3 border rounded-xl bg-gray-50">
+                    <div>O‘quvchi F.I.Sh: _________________________________</div>
+                    <div>ID / Telefon: __________________________________</div>
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 pt-2 text-[11px]">
+                    {(printData?.questions || []).map(q => (
+                      <div key={q.id} className="p-2 border rounded-lg bg-gray-50 flex flex-col items-center gap-1">
+                        <span className="font-bold text-gray-800 font-mono">{q.number}</span>
+                        <div className="flex gap-1">
+                          {['A', 'B', 'C', 'D'].map(l => (
+                            <span key={l} className="w-5 h-5 rounded-full border border-gray-400 flex items-center justify-center text-[9px] font-bold text-gray-600">
+                              {l}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {printViewType === 'key' && (
+                <div className="space-y-4 text-left">
+                  <div className="border-b pb-2">
+                    <h2 className="text-base font-extrabold text-gray-900">TO‘G‘RI JAVOBLAR KALITI VA YECHIMLAR</h2>
+                    <p className="text-[11px] text-gray-600">{printData?.olympiad?.title}</p>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-xs">
+                    {(printData?.answer_keys || []).map(k => (
+                      <div key={k.number} className="p-2 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-between">
+                        <span className="font-bold text-gray-700">№{k.number}:</span>
+                        <span className="font-extrabold text-indigo-700 text-sm">{k.correct_letter}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+
   const pageRenderers = {
     home: renderHome,
     requests: renderRequests,
     centers: renderCenters,
     users: renderUsers,
     ai_studio: renderAiStudio,
+    broadcasts: renderBroadcasts,
     promocodes: renderPromocodes,
+    rewards_shop: renderRewardsShop,
+    revenue: renderRevenue,
     olympiads: renderOlympiads,
     subjects: renderSubjects,
     analytics: renderAnalytics,

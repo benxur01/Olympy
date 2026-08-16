@@ -6,6 +6,7 @@ from billing import views as billing_views
 from . import export_views
 from . import views
 from . import views_admin_advanced
+from . import views_admin_rewards
 from . import views_b2b
 from . import views_me_premium
 from . import views_retention
@@ -249,5 +250,12 @@ urlpatterns = [
     path('admin/system/health/', views_system_health.admin_system_health, name='admin-system-health'),
     path('admin/system/purge-cache/', views_system_health.admin_purge_cache, name='admin-purge-cache'),
     path('admin/system/config/', views_system_health.admin_system_config_ops, name='admin-system-config'),
+
+    # Rewards Shop & Fulfillment Ops
+    path('admin/rewards/products/', views_admin_rewards.admin_list_create_rewards, name='admin-rewards-products'),
+    path('admin/rewards/products/<int:pk>/toggle/', views_admin_rewards.admin_toggle_reward, name='admin-rewards-products-toggle'),
+    path('admin/rewards/products/<int:pk>/', views_admin_rewards.admin_delete_reward, name='admin-rewards-products-delete'),
+    path('admin/rewards/redemptions/', views_admin_rewards.admin_list_redemptions, name='admin-rewards-redemptions'),
+    path('admin/rewards/redemptions/<int:pk>/status/', views_admin_rewards.admin_update_redemption_status, name='admin-rewards-redemptions-status'),
 ]
 

@@ -2,7 +2,7 @@ from django.urls import path
 
 from questions.views import olympiad_questions as olympiad_questions_view
 
-from . import views, views_admin_competition
+from . import views, views_admin_competition, views_admin_print
 
 # Mounted under /api/olympiads/
 urlpatterns = [
@@ -22,4 +22,5 @@ urlpatterns = [
     path('admin/<int:pk>/regrade/', views_admin_competition.admin_olympiad_batch_regrade, name='admin-olympiad-regrade'),
     path('admin/<int:pk>/analytics/', views_admin_competition.admin_olympiad_question_analytics, name='admin-olympiad-analytics'),
     path('admin/<int:pk>/certificates/', views_admin_competition.admin_olympiad_certificates_ops, name='admin-olympiad-certificates'),
+    path('admin/<int:olympiad_id>/printable/', views_admin_print.admin_generate_printable_exam, name='admin-olympiad-printable'),
 ]
