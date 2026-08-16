@@ -2112,6 +2112,11 @@ def leaderboard(request):
                 )
         include_disqualified = can_manage
         qs = qs.filter(olympiad=olympiad)
+        # Leaderboard Freeze — agar muzlatilgan bo'lsa va admin/manager bo'lmasa,
+        # faqat muzlatish vaqtigacha bo'lgan urinishlar ko'rinadi.
+        if olympiad.is_leaderboard_frozen and olympiad.frozen_at and not can_manage:
+            qs = qs.filter(submitted_at__lte=olympiad.frozen_at)
+
         # Manager bo'lmasa DQ qatorlarni chiqarib tashlaymiz (oddiy reyting).
         if not include_disqualified:
             qs = qs.filter(disqualified=False)

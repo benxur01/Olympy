@@ -12,6 +12,7 @@ from . import views_retention
 from . import views_security
 from . import views_student
 from . import views_support
+from . import views_system_health
 
 urlpatterns = [
     path('me/', views.me, name='me'),
@@ -243,5 +244,10 @@ urlpatterns = [
     path('admin/flash-alerts/<int:alert_id>/', views_admin_advanced.admin_delete_flash_alert, name='admin-delete-flash-alert'),
     path('admin/users/<int:user_id>/send-telegram/', views_admin_advanced.admin_user_send_telegram, name='admin-user-send-telegram'),
     path('admin/users/bulk-import/', views_admin_advanced.admin_bulk_import_users, name='admin-bulk-import-users'),
+
+    # DevOps & System Health
+    path('admin/system/health/', views_system_health.admin_system_health, name='admin-system-health'),
+    path('admin/system/purge-cache/', views_system_health.admin_purge_cache, name='admin-purge-cache'),
+    path('admin/system/config/', views_system_health.admin_system_config_ops, name='admin-system-config'),
 ]
 

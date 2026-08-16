@@ -1610,6 +1610,66 @@ export const OlympyApi = {
   bulkImportAdminUsers: (payload, token) => request('/api/admin/users/bulk-import/', { method: 'POST', body: payload, token }),
   getMyFlashAlert: (token) => request('/api/me/flash-alert/', { token }),
   readMyFlashAlert: (alertId, token) => request(`/api/me/flash-alert/${alertId}/read/`, { method: 'POST', token }),
+  // ─── Olimpiada & Baholash Nazorati (Competition Ops) ───
+  toggleAdminOlympiadFreeze: (olympiadId, token) => request(
+    `/api/olympiads/admin/${olympiadId}/freeze/`,
+    { method: 'POST', token },
+  ),
+  batchRegradeAdminOlympiad: (olympiadId, token) => request(
+    `/api/olympiads/admin/${olympiadId}/regrade/`,
+    { method: 'POST', token },
+  ),
+  getAdminOlympiadQuestionAnalytics: (olympiadId, token) => request(
+    `/api/olympiads/admin/${olympiadId}/analytics/`,
+    { token },
+  ),
+  getAdminOlympiadCertificates: (olympiadId, token) => request(
+    `/api/olympiads/admin/${olympiadId}/certificates/`,
+    { token },
+  ),
+  setAdminOlympiadCertificateTemplate: (olympiadId, template, token) => request(
+    `/api/olympiads/admin/${olympiadId}/certificates/`,
+    { method: 'POST', body: { certificate_template: template }, token },
+  ),
+  // ─── AI Orchestration Studio ───
+  adminGenerateExamQuestions: (payload, token) => request(
+    '/api/questions/admin/generate-exam/',
+    { method: 'POST', body: payload, token },
+  ),
+  adminModerateAppeal: (payload, token) => request(
+    '/api/questions/admin/moderate-appeal/',
+    { method: 'POST', body: payload, token },
+  ),
+  getAdminAiUsageMetrics: (token) => request(
+    '/api/questions/admin/ai-metrics/',
+    { token },
+  ),
+  // ─── Promokodlar & Marketing ───
+  getAdminPromocodes: (token) => request('/api/billing/admin/promocodes/', { token }),
+  createAdminPromocode: (payload, token) => request(
+    '/api/billing/admin/promocodes/',
+    { method: 'POST', body: payload, token },
+  ),
+  toggleAdminPromocode: (promoId, token) => request(
+    `/api/billing/admin/promocodes/${promoId}/toggle/`,
+    { method: 'POST', token },
+  ),
+  deleteAdminPromocode: (promoId, token) => request(
+    `/api/billing/admin/promocodes/${promoId}/`,
+    { method: 'DELETE', token },
+  ),
+  validatePromocode: (code, planId, token) => request(
+    '/api/billing/promocode/validate/',
+    { method: 'POST', body: { code, plan_id: planId }, token },
+  ),
+  // ─── DevOps, Tizim Salomatligi & Dynamic Config ───
+  getAdminSystemHealth: (token) => request('/api/admin/system/health/', { token }),
+  purgeAdminSystemCache: (token) => request('/api/admin/system/purge-cache/', { method: 'POST', token }),
+  getAdminSystemConfig: (token) => request('/api/admin/system/config/', { token }),
+  updateAdminSystemConfig: (payload, token) => request(
+    '/api/admin/system/config/',
+    { method: 'POST', body: payload, token },
+  ),
   // ─── Xavfsizlik tabi ───
   // Bitta IP'dan kirgan turli hisoblar. `minAccounts`/`days` backendda
   // clamp qilinadi va AYNAN qo'llanilgan qiymat javobda qaytadi — panel
